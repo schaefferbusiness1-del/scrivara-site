@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scrivara — Ambient AI Medical Scribe that Captures Full Reimbursement</title>
+<meta name="description" content="Scrivara listens to the visit, writes the note, and suggests accurate billing codes — so doctors finish charting on time and capture the reimbursement they earned. $200/provider/month.">
+<style>
+  :root{
+    --bg:#f4f7fb; --ink:#16324f; --muted:#5f7186; --line:#e2e9f1;
+    --brand:#1f7ae0; --brand-dk:#155fb3; --green:#19a974; --green-dk:#127a55;
+    --soft:#eef4fc; --shadow:0 10px 40px rgba(31,122,224,.10);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;font-size:17px}
+  a{color:var(--brand);text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+  /* nav */
+  nav{position:sticky;top:0;z-index:30;background:rgba(244,247,251,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;color:var(--ink)}
+  .brand .mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(120deg,#1f7ae0,#155fb3);
+    display:grid;place-items:center;font-size:19px}
+  .navlinks{display:flex;gap:24px;align-items:center}
+  .navlinks a{color:var(--muted);font-weight:600;font-size:15.5px}
+  .navlinks a:hover{color:var(--brand)}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;border-radius:11px;
+    padding:12px 20px;cursor:pointer;border:none;font-size:16px;transition:.15s;font-family:inherit}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{background:var(--brand-dk);transform:translateY(-1px)}
+  .btn-ghost{background:#fff;color:var(--brand);border:1px solid var(--line)}
+  .btn-ghost:hover{background:var(--soft)}
+  @media(max-width:720px){.navlinks a:not(.btn){display:none}}
+  /* hero */
+  .hero{padding:78px 0 60px;text-align:center}
+  .eyebrow{display:inline-block;background:var(--soft);color:var(--brand-dk);font-weight:700;
+    font-size:13.5px;padding:6px 14px;border-radius:20px;border:1px solid #d6e6fa;margin-bottom:20px}
+  .hero h1{font-size:50px;line-height:1.1;margin:0 0 18px;letter-spacing:-1px}
+  .hero h1 .hl{background:linear-gradient(120deg,#1f7ae0,#19a974);-webkit-background-clip:text;
+    background-clip:text;color:transparent}
+  .hero p.lead{font-size:21px;color:var(--muted);max-width:730px;margin:0 auto 30px}
+  .hero .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .hero .reassure{margin-top:18px;color:var(--muted);font-size:14.5px}
+  @media(max-width:720px){.hero h1{font-size:34px}.hero p.lead{font-size:18px}}
+  /* trust strip */
+  .strip{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .strip .wrap{display:flex;flex-wrap:wrap;gap:20px;justify-content:space-around;padding:22px 22px;text-align:center}
+  .strip .stat b{display:block;font-size:28px;color:var(--brand-dk);font-weight:800}
+  .strip .stat span{font-size:14px;color:var(--muted)}
+  /* sections */
+  section{padding:64px 0}
+  .sec-head{text-align:center;max-width:720px;margin:0 auto 44px}
+  .sec-head h2{font-size:34px;margin:0 0 12px;letter-spacing:-.5px}
+  .sec-head p{font-size:18px;color:var(--muted);margin:0}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  @media(max-width:880px){.cards{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:var(--shadow)}
+  .card .ic{width:48px;height:48px;border-radius:12px;background:var(--soft);display:grid;place-items:center;
+    font-size:24px;margin-bottom:14px}
+  .card h3{margin:0 0 8px;font-size:19px}
+  .card p{margin:0;color:var(--muted);font-size:15.5px}
+  /* how it works */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;counter-reset:s}
+  @media(max-width:880px){.steps{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.steps{grid-template-columns:1fr}}
+  .step{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;position:relative}
+  .step .n{width:34px;height:34px;border-radius:50%;background:var(--brand);color:#fff;font-weight:800;
+    display:grid;place-items:center;margin-bottom:12px}
+  .step h4{margin:0 0 6px;font-size:17px}
+  .step p{margin:0;color:var(--muted);font-size:14.5px}
+  /* billing highlight */
+  .billing{background:linear-gradient(120deg,#143a63,#16324f);color:#fff;border-radius:24px;
+    padding:48px;display:grid;grid-template-columns:1.1fr 1fr;gap:40px;align-items:center}
+  @media(max-width:880px){.billing{grid-template-columns:1fr;padding:32px}}
+  .billing h2{font-size:32px;margin:0 0 14px;color:#fff}
+  .billing p{color:#c8d7ea;font-size:17px;margin:0 0 16px}
+  .billing ul{margin:0;padding:0;list-style:none}
+  .billing li{padding:8px 0 8px 30px;position:relative;color:#e7eef7}
+  .billing li:before{content:"✓";position:absolute;left:0;color:#5fd0a0;font-weight:800}
+  .billing .panel{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);
+    border-radius:16px;padding:22px;font-family:'Segoe UI',monospace;font-size:14px}
+  .billing .panel .lab{color:#8fb4dd;font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .billing .panel .code{display:inline-block;background:rgba(255,255,255,.12);border-radius:7px;
+    padding:3px 9px;margin:0 6px 6px 0;font-weight:700}
+  .billing .panel .em{font-size:22px;font-weight:800;color:#fff}
+  .billing .note{font-size:12.5px;color:#9fb4cc;margin-top:12px;font-style:italic}
+  /* who */
+  .who{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:880px){.who{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.who{grid-template-columns:1fr}}
+  .who div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-weight:600;
+    display:flex;align-items:center;gap:10px;font-size:15.5px}
+  /* pricing */
+  .price-card{max-width:460px;margin:0 auto;background:#fff;border:2px solid var(--brand);border-radius:22px;
+    padding:40px;text-align:center;box-shadow:var(--shadow);position:relative}
+  .price-card .tag{position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:var(--brand);
+    color:#fff;font-weight:700;font-size:13px;padding:5px 16px;border-radius:20px}
+  .price-card .amt{font-size:54px;font-weight:800;letter-spacing:-1px}
+  .price-card .amt span{font-size:20px;color:var(--muted);font-weight:600}
+  .price-card ul{list-style:none;padding:0;margin:22px 0;text-align:left}
+  .price-card li{padding:9px 0 9px 30px;position:relative;color:var(--ink)}
+  .price-card li:before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:800}
+  .price-card .btn{width:100%;justify-content:center;margin-top:6px}
+  .price-sub{text-align:center;color:var(--muted);font-size:14.5px;margin-top:18px}
+  /* trust/hipaa */
+  .trust{background:#fff;border:1px solid var(--line);border-radius:20px;padding:36px;display:grid;
+    grid-template-columns:repeat(3,1fr);gap:24px}
+  @media(max-width:880px){.trust{grid-template-columns:1fr}}
+  .trust .t h4{margin:0 0 6px;font-size:17px;display:flex;align-items:center;gap:8px}
+  .trust .t p{margin:0;color:var(--muted);font-size:15px}
+  .honest{max-width:760px;margin:22px auto 0;text-align:center;color:var(--muted);font-size:14.5px;
+    background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+  /* demo form */
+  .demo{background:linear-gradient(120deg,#1f7ae0,#155fb3);border-radius:24px;padding:48px;color:#fff;
+    display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+  @media(max-width:880px){.demo{grid-template-columns:1fr;padding:32px}}
+  .demo h2{font-size:32px;margin:0 0 12px;color:#fff}
+  .demo p{color:#dbe8f8;font-size:17px;margin:0 0 10px}
+  .demo .form{background:#fff;border-radius:16px;padding:26px}
+  .demo label{display:block;font-size:14px;font-weight:700;color:var(--ink);margin:0 0 6px}
+  .demo input,.demo textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    font-family:inherit;font-size:16px;margin-bottom:14px;background:#fbfdff;color:var(--ink)}
+  .demo input:focus,.demo textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+  .demo .btn-primary{width:100%;justify-content:center}
+  .demo .privacy{font-size:12.5px;color:var(--muted);margin:10px 0 0;text-align:center}
+  /* faq */
+  .faq details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px 20px;margin-bottom:12px}
+  .faq summary{cursor:pointer;font-weight:700;padding:14px 0;font-size:16.5px;list-style:none}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary:before{content:"+";color:var(--brand);font-weight:800;margin-right:10px}
+  .faq details[open] summary:before{content:"–"}
+  .faq p{margin:0 0 16px;color:var(--muted)}
+  /* footer */
+  footer{background:var(--ink);color:#c3d2e4;padding:40px 0;font-size:14.5px;margin-top:30px}
+  footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:18px;align-items:center}
+  footer a{color:#9fc3ef}
+  footer .disc{max-width:680px;font-size:12.5px;color:#8ea3bd;line-height:1.6}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="mark" style="background:none"><svg viewBox="0 0 56 56" width="36" height="36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svNavMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svNavMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> Scrivara</div>
+    <div class="navlinks">
+      <a href="#how">How it works</a>
+      <a href="#billing">Reimbursement</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#trust">Security</a>
+      <a href="#demo" class="btn btn-primary">Book a demo</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">Ambient AI scribe for busy clinicians</span>
+    <h1>Stop typing notes.<br><span class="hl">Start capturing every dollar you earned.</span></h1>
+    <p class="lead">Scrivara listens to the visit, writes a clean SOAP note, and suggests the <b>accurate</b> E/M level, ICD-10 and CPT codes — so you finish charting on time and bill for the care you actually delivered. No new hardware. No tech skills required.</p>
+    <div class="cta">
+      <a href="#demo" class="btn btn-primary">📅 Book a demo</a>
+      <a href="#how" class="btn btn-ghost">See how it works</a>
+    </div>
+    <p class="reassure">⚕️ Built HIPAA-ready · Provider reviews &amp; signs every note · Works in your browser</p>
+  </div>
+</header>
+
+<!-- TRUST STRIP -->
+<div class="strip">
+  <div class="wrap">
+    <div class="stat"><b>~2 hrs/day</b><span>typical charting time reclaimed</span></div>
+    <div class="stat"><b>99202–99215</b><span>accurate E/M level suggested per visit</span></div>
+    <div class="stat"><b>$200</b><span>per provider / month, flat</span></div>
+    <div class="stat"><b>5 min</b><span>to your first note</span></div>
+  </div>
+</div>
+
+<!-- VALUE PROP -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Documentation is eating your evenings. Fix that.</h2>
+      <p>Scrivara turns the conversation you're already having into finished, billable documentation.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="ic">⏱️</div>
+        <h3>Cut documentation time</h3>
+        <p>Talk to your patient like normal. The note writes itself in the background — SUBJECTIVE, OBJECTIVE, ASSESSMENT, PLAN — ready before they leave the room.</p>
+      </div>
+      <div class="card">
+        <div class="ic">💲</div>
+        <h3>Capture full reimbursement</h3>
+        <p>Get a suggested E/M level with a plain-English justification, plus ICD-10 and CPT codes — based only on what's documented. Stop under-coding visits you've earned.</p>
+      </div>
+      <div class="card">
+        <div class="ic">😌</div>
+        <h3>Easy for non-tech doctors</h3>
+        <p>No installs, no integrations to learn, no IT project. Open it in your browser, press start, and talk. If you can use a website, you can use Scrivara.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Four steps. That's the whole workflow.</h2>
+      <p>You stay in control the entire time — nothing is final until you sign.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h4>Start the visit</h4><p>Press one button. Scrivara ambiently captures the conversation as you talk naturally.</p></div>
+      <div class="step"><div class="n">2</div><h4>Generate the note</h4><p>A clean SOAP note appears in seconds, with structured EMR-ready fields to paste into your system.</p></div>
+      <div class="step"><div class="n">3</div><h4>Review the coding</h4><p>See the suggested E/M level, ICD-10 and CPT codes — and switch to an insurance-ready format in one click.</p></div>
+      <div class="step"><div class="n">4</div><h4>Review &amp; sign</h4><p>You edit anything, confirm the codes, and electronically sign. The clinician is always the final word.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- BILLING ANGLE -->
+<section id="billing">
+  <div class="wrap">
+    <div class="billing">
+      <div>
+        <h2>The reimbursement you're leaving on the table</h2>
+        <p>Most under-coding isn't fraud — it's good doctors being too busy to document the complexity they actually managed. Scrivara fixes the documentation gap, honestly.</p>
+        <ul>
+          <li>Suggests the E/M level the visit genuinely supports — with a one-line justification tied to the documented complexity</li>
+          <li>Surfaces ICD-10 codes for every diagnosis actually addressed</li>
+          <li>Flags CPT procedures actually performed in the visit</li>
+          <li>One-click "Insurance-Ready" format that spells out medical necessity, complexity, and each diagnosis</li>
+          <li>Never invents findings to raise the bill — it only reflects what's in the transcript</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <div class="lab">Suggested coding</div>
+        <div class="em">99213 <span style="font-size:13px;color:#8fb4dd;font-weight:600">established · low MDM</span></div>
+        <div style="color:#c8d7ea;font-size:13px;margin:8px 0 14px">1 acute + 1 stable chronic problem, imaging ordered, Rx management.</div>
+        <div class="lab">ICD-10</div>
+        <div><span class="code">J20.9</span><span class="code">R05.9</span><span class="code">I10</span></div>
+        <div class="lab" style="margin-top:12px">CPT procedures</div>
+        <div style="color:#9fb4cc;font-size:14px">None performed in-office this visit</div>
+        <div class="note">Suggested codes for the provider to review and confirm — final coding is the provider's responsibility.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHO IT'S FOR -->
+<section style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Built for practices that document heavily</h2>
+      <p>The more complex your visits, the more time and reimbursement Scrivara recovers.</p>
+    </div>
+    <div class="who">
+      <div>🩺 Primary &amp; family medicine</div>
+      <div>❤️ Cardiology</div>
+      <div>🧠 Behavioral health</div>
+      <div>🦴 Orthopedics</div>
+      <div>🫁 Pulmonology</div>
+      <div>👶 Pediatrics</div>
+      <div>🩹 Internal medicine</div>
+      <div>🏥 Urgent care &amp; small clinics</div>
+      <div>👩‍⚕️ Solo &amp; small-group practices</div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Simple, honest pricing</h2>
+      <p>One flat price per provider. No per-note fees, no surprise overages.</p>
+    </div>
+    <div class="price-card">
+      <span class="tag">MOST POPULAR</span>
+      <div class="amt">$200<span> / provider / month</span></div>
+      <ul>
+        <li>Unlimited visits &amp; AI-generated notes</li>
+        <li>Suggested E/M, ICD-10 &amp; CPT coding on every visit</li>
+        <li>Insurance-ready note formatting</li>
+        <li>Structured EMR fields to paste anywhere</li>
+        <li>Provider review &amp; e-signature workflow</li>
+        <li>Built HIPAA-ready architecture</li>
+        <li>Email support &amp; onboarding help</li>
+      </ul>
+      <a href="#demo" class="btn btn-primary">Book a demo</a>
+      <p style="color:var(--muted);font-size:13.5px;margin:14px 0 0">Annual plan available. Multi-provider discounts for clinics.</p>
+    </div>
+    <p class="price-sub">Most providers recover the cost in a single more-accurately-coded visit per month — and get their evenings back on top.</p>
+  </div>
+</section>
+
+<!-- TRUST / HIPAA -->
+<section id="trust" style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Security you can stand behind</h2>
+      <p>We're straight with you about what's true today — no inflated claims.</p>
+    </div>
+    <div class="trust">
+      <div class="t"><h4>🔒 Built HIPAA-ready</h4><p>Designed from the ground up for encryption in transit and at rest, access controls, and audit logging. We say "built HIPAA-ready," not "certified" — because there's no such thing as HIPAA certification.</p></div>
+      <div class="t"><h4>✍️ You sign every note</h4><p>AI drafts; the clinician reviews, edits, and signs. The provider is always the final medical and coding authority. Nothing is submitted without your confirmation.</p></div>
+      <div class="t"><h4>🤝 BAA before any PHI</h4><p>Real patient data is only used after Business Associate Agreements are signed with our AI provider and hosting, and a compliance review is complete. Until then, demos use synthetic data.</p></div>
+    </div>
+    <p class="honest">Honest note: Scrivara is a documentation and coding-support tool. Suggested codes are for the provider to review and confirm — final coding is the provider's responsibility, and Scrivara never inflates documentation to raise a bill.</p>
+  </div>
+</section>
+
+<!-- DEMO / CTA -->
+<section id="demo">
+  <div class="wrap">
+    <div class="demo">
+      <div>
+        <h2>See it on one of your visit types</h2>
+        <p>Book a 20-minute demo and we'll run Scrivara on a sample visit from your specialty — note, coding, and insurance-ready format, start to finish.</p>
+        <p style="color:#bcd4f4;font-size:15px">No commitment. No credit card. Just show up and watch the charting disappear.</p>
+      </div>
+      <div class="form">
+        <form id="demoForm" onsubmit="return submitDemo(event)">
+          <label for="name">Your name</label>
+          <input id="name" name="name" type="text" placeholder="Dr. Jane Smith" required>
+          <label for="email">Work email</label>
+          <input id="email" name="email" type="email" placeholder="jane@yourpractice.com" required>
+          <label for="practice">Practice / specialty</label>
+          <input id="practice" name="practice" type="text" placeholder="Family Medicine — Springfield Clinic">
+          <label for="msg">Anything you'd like us to focus on?</label>
+          <textarea id="msg" name="msg" rows="2" placeholder="e.g. I'm under-coding my chronic-care visits"></textarea>
+          <button class="btn btn-primary" type="submit">📅 Request my demo</button>
+          <p class="privacy">We'll only use this to schedule your demo. No spam, ever.</p>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section style="padding-top:20px">
+  <div class="wrap" style="max-width:780px">
+    <div class="sec-head"><h2>Questions doctors ask us</h2></div>
+    <div class="faq">
+      <details><summary>Does Scrivara upcode to inflate my billing?</summary><p>No — and that's a deliberate design choice. It only suggests codes supported by what's actually documented in the visit, and it's instructed never to invent findings to raise a level. It helps you stop <i>under</i>-coding accurately; the provider reviews and confirms every code.</p></details>
+      <details><summary>Is it HIPAA compliant?</summary><p>It's built HIPAA-ready: encryption, access controls, and audit logging by design. We don't claim "certification" (that doesn't exist for HIPAA). We use real patient data only after BAAs are signed with our AI and hosting providers and a compliance review is done. Demos use synthetic data.</p></details>
+      <details><summary>Do I need to install anything or train my staff?</summary><p>No. Scrivara runs in your web browser. Press start, talk, generate, review, sign. Onboarding takes minutes, not an IT project.</p></details>
+      <details><summary>Will it replace my judgment?</summary><p>Never. It drafts; you decide. You edit the note, confirm the codes, and electronically sign. You're always the final medical and coding authority.</p></details>
+      <details><summary>How does $200/month pay off?</summary><p>Two ways: hours of charting time returned to you each week, and fewer accurately-documented visits slipping to a lower code than they should. For most providers, one correctly-coded visit a month covers it.</p></details>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="brand" style="color:#fff"><span class="mark" style="background:none;width:32px;height:32px"><svg viewBox="0 0 56 56" width="32" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svFootMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svFootMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> Scrivara</div>
+    <div><a href="#how">How it works</a> · <a href="#pricing">Pricing</a> · <a href="#demo">Book a demo</a> · <a href="mailto:hello@scrivara.ai">Contact</a></div>
+  </div>
+  <div class="wrap" style="margin-top:14px">
+    <p class="disc">Scrivara is a clinical documentation and coding-support tool. AI-generated notes and suggested 
