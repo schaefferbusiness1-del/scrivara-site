@@ -33,6 +33,8 @@
   .btn-primary:hover{background:var(--brand-dk);transform:translateY(-1px)}
   .btn-ghost{background:#fff;color:var(--brand);border:1px solid var(--line)}
   .btn-ghost:hover{background:var(--soft)}
+  .btn-dark{background:#0c1521;color:#fff}
+  .btn-dark:hover{background:#000;transform:translateY(-1px)}
   @media(max-width:720px){.navlinks a:not(.btn){display:none}}
   /* hero */
   .hero{padding:78px 0 60px;text-align:center}
@@ -125,6 +127,7 @@
     font-family:inherit;font-size:16px;margin-bottom:14px;background:#fbfdff;color:var(--ink)}
   .demo input:focus,.demo textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
   .demo .btn-primary{width:100%;justify-content:center}
+  .demo .btn-dark{width:100%;justify-content:center}
   .demo .privacy{font-size:12.5px;color:var(--muted);margin:10px 0 0;text-align:center}
   /* faq */
   .faq details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px 20px;margin-bottom:12px}
@@ -150,7 +153,7 @@
       <a href="#billing">Reimbursement</a>
       <a href="#pricing">Pricing</a>
       <a href="#trust">Security</a>
-      <a href="#demo" class="btn btn-primary">Book a demo</a>
+      <a href="#demo" class="btn btn-dark">Book a demo</a>
     </div>
   </div>
 </nav>
@@ -158,11 +161,11 @@
 <!-- HERO -->
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow">Ambient AI scribe for busy clinicians</span>
+    <span class="eyebrow">Simple. Cheap. Fast.</span>
     <h1>Stop typing notes.<br><span class="hl">Start capturing every dollar you earned.</span></h1>
     <p class="lead">Scrivara listens to the visit, writes a clean SOAP note, and suggests the <b>accurate</b> E/M level, ICD-10 and CPT codes — so you finish charting on time and bill for the care you actually delivered. No new hardware. No tech skills required.</p>
     <div class="cta">
-      <a href="#demo" class="btn btn-primary">📅 Book a demo</a>
+      <a href="#demo" class="btn btn-dark">📅 Book a demo</a>
       <a href="#how" class="btn btn-ghost">See how it works</a>
     </div>
     <p class="reassure">⚕️ Built HIPAA-ready · Provider reviews &amp; signs every note · Works in your browser</p>
@@ -291,7 +294,7 @@
         <li>Built HIPAA-ready architecture</li>
         <li>Email support &amp; onboarding help</li>
       </ul>
-      <a href="#demo" class="btn btn-primary">Book a demo</a>
+      <a href="#demo" class="btn btn-dark">Book a demo</a>
       <p style="color:var(--muted);font-size:13.5px;margin:14px 0 0">Annual plan available. Multi-provider discounts for clinics.</p>
     </div>
     <p class="price-sub">Most providers recover the cost in a single more-accurately-coded visit per month — and get their evenings back on top.</p>
@@ -333,7 +336,8 @@
           <input id="practice" name="practice" type="text" placeholder="Family Medicine — Springfield Clinic">
           <label for="msg">Anything you'd like us to focus on?</label>
           <textarea id="msg" name="msg" rows="2" placeholder="e.g. I'm under-coding my chronic-care visits"></textarea>
-          <button class="btn btn-primary" type="submit">📅 Request my demo</button>
+          <button class="btn btn-dark" type="submit">📅 Request my demo</button>
+          <p id="demoStatus" class="privacy" style="display:none"></p>
           <p class="privacy">We'll only use this to schedule your demo. No spam, ever.</p>
         </form>
       </div>
@@ -361,4 +365,29 @@
     <div><a href="#how">How it works</a> · <a href="#pricing">Pricing</a> · <a href="#demo">Book a demo</a> · <a href="mailto:hello@scrivara.ai">Contact</a></div>
   </div>
   <div class="wrap" style="margin-top:14px">
-    <p class="disc">Scrivara is a clinical documentation and coding-support tool. AI-generated notes and suggested 
+    <p class="disc">Scrivara is a clinical documentation and coding-support tool. AI-generated notes and suggested codes are for the licensed provider to review, edit, and confirm — final documentation and coding are the provider's responsibility. "Built HIPAA-ready" describes our architecture; it is not a claim of certification. Do not use with real patient data until applicable Business Associate Agreements are signed and a compliance review is complete. © 2026 Scrivara.</p>
+  </div>
+</footer>
+
+<script>
+const DEMO_ENDPOINT="https://formsubmit.co/ajax/leeschaeffer41@gmail.com";
+async function submitDemo(e){
+  e.preventDefault();
+  const f=e.target;
+  const status=document.getElementById('demoStatus');
+  const btn=f.querySelector('button[type=submit]');
+  status.style.display='block'; status.style.color='var(--muted)'; status.textContent='Sending…';
+  if(btn){btn.disabled=true;}
+  const payload={name:f.name.value,email:f.email.value,practice:f.practice.value||'',focus:f.msg.value||'',_subject:'New Scrivara demo request',_template:'table'};
+  try{
+    const r=await fetch(DEMO_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)});
+    const data=await r.json();
+    if(r.ok&&(data.success===true||data.success==='true')){f.reset();status.style.color='var(--green-dk)';status.textContent='✓ Thanks! Your demo request was sent. We\'ll be in touch shortly.';}
+    else{throw new Error(data.message||'failed');}
+  }catch(err){status.style.color='#c0392b';status.textContent='Something went wrong. Please email hello@scrivara.ai directly.';}
+  finally{if(btn){btn.disabled=false;}}
+  return false;
+}
+</script>
+</body>
+</html>
