@@ -107,6 +107,9 @@
     border-radius:10px;padding:12px 14px;margin-top:10px;color:var(--ink);min-height:60px}
   .sec-copy{background:none;color:var(--muted);font-size:12px;font-weight:600;padding:3px 9px;border-radius:7px;border:1px solid var(--line)}
   .sec-copy:hover{background:var(--soft);color:var(--brand-dk)}
+  .rf-line{padding:7px 11px;border-radius:8px;margin-bottom:6px;font-size:14px;line-height:1.45;border:1px solid var(--line);background:#fff}
+  .rf-present{background:#fdecec;border-color:var(--red);color:#a3262a;font-weight:600}
+  .rf-absent{background:#f7faff;color:var(--muted)}
   .superbill td{padding:7px 6px;border-bottom:1px solid var(--line);font-size:14px}
   .superbill td.k{color:var(--muted);font-weight:600;width:150px}
   .note-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
@@ -617,6 +620,102 @@
         <textarea id="fhirBody" style="min-height:240px;margin-top:10px;font-family:'Consolas','Courier New',monospace;font-size:13px" readonly></textarea>
       </div>
 
+      <!-- RED-FLAG SAFETY SCAN -->
+      <div class="extra-card" id="redflagCard" style="display:none">
+        <h3>🚩 Red-flag safety scan <span style="font-weight:400;font-size:13px;color:var(--muted)">(advisory)</span>
+          <button class="sec-copy" style="margin-left:auto" onclick="copyRedFlags()">📑 Copy</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 10px">Screens the note/transcript for spine, neuro &amp; pain red flags. Advisory only — based solely on what is documented; it never invents findings. Use clinical judgment.</p>
+        <div id="redflagBanner" style="display:none"></div>
+        <div class="xbody" id="redflagBody" style="white-space:normal"></div>
+      </div>
+
+      <!-- DIFFERENTIAL DIAGNOSIS -->
+      <div class="extra-card" id="ddxCard" style="display:none">
+        <h3>🔍 Differential considerations <span style="font-weight:400;font-size:13px;color:var(--muted)">(for the provider)</span>
+          <button class="sec-copy" style="margin-left:auto" onclick="copyDdx()">📑 Copy</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 10px">A ranked differential with rationale and what would confirm/exclude each. These are considerations for the provider, not a diagnosis.</p>
+        <div class="xbody" id="ddxBody"></div>
+      </div>
+
+      <!-- OPIOID MME CALCULATOR -->
+      <div class="extra-card" id="mmeCard">
+        <h3>💊 Opioid MME calculator <span style="font-weight:400;font-size:13px;color:var(--muted)">(CDC morphine-milligram-equivalents)</span></h3>
+        <p class="sub" style="margin:4px 0 10px">Add the patient's opioids to compute total daily MME with CDC risk banding. Client-side math; methadone and fentanyl factors are approximate. Saved with the visit.</p>
+        <div id="mmeRows"></div>
+        <div class="row tight">
+          <button class="btn-ghost" onclick="addMmeRow()" style="font-size:14px;padding:9px 15px">➕ Add opioid</button>
+          <button class="btn-ghost" onclick="clearMme()" style="font-size:14px;padding:9px 15px">Clear</button>
+        </div>
+        <div id="mmeResult" style="display:none;margin-top:14px"></div>
+      </div>
+
+      <!-- INJECTION PROCEDURE NOTE -->
+      <div class="extra-card" id="procNoteCard">
+        <h3>💉 Injection procedure note <span style="font-weight:400;font-size:13px;color:var(--muted)">(spine / pain)</span></h3>
+        <p class="sub" style="margin:4px 0 10px">Build a structured procedure note. Pulls the indication from the current diagnosis; bracket anything not yet documented.</p>
+        <div class="row tight" style="align-items:flex-end">
+          <div style="flex:2;min-width:220px">
+            <label for="procType">Procedure</label>
+            <select id="procType" class="sf-select">
+              <option value="">— Choose —</option>
+              <option>Lumbar epidural steroid injection — interlaminar</option>
+              <option>Lumbar epidural steroid injection — transforaminal</option>
+              <option>Caudal epidural steroid injection</option>
+              <option>Cervical epidural steroid injection</option>
+              <option>Facet joint injection</option>
+              <option>Medial branch block</option>
+              <option>Trigger point injection</option>
+              <option>Sacroiliac (SI) joint injection</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:150px">
+            <label for="procLevel">Level / side</label>
+            <input type="text" id="procLevel" placeholder="e.g. L4–L5, right">
+          </div>
+          <div style="flex:1;min-width:140px">
+            <label for="procGuidance">Guidance</label>
+            <select id="procGuidance" class="sf-select">
+              <option>Fluoroscopic</option>
+              <option>Ultrasound</option>
+              <option>Landmark / palpation</option>
+            </select>
+          </div>
+        </div>
+        <div class="row tight" style="align-items:flex-end">
+          <div style="flex:1;min-width:200px">
+            <label for="procSteroid">Steroid</label>
+            <input type="text" id="procSteroid" placeholder="e.g. triamcinolone 40 mg">
+          </div>
+          <div style="flex:1;min-width:200px">
+            <label for="procAnesthetic">Anesthetic / other meds</label>
+            <input type="text" id="procAnesthetic" placeholder="e.g. 0.25% bupivacaine 2 mL; contrast">
+          </div>
+        </div>
+        <div class="row tight" style="align-items:flex-end">
+          <div style="flex:1;min-width:200px">
+            <label for="procComplications">Complications</label>
+            <input type="text" id="procComplications" placeholder="default: none">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;min-width:200px;padding-bottom:10px">
+            <input type="checkbox" id="procConsent" checked style="width:18px;height:18px">
+            <label for="procConsent" style="margin:0">Informed consent obtained</label>
+          </div>
+        </div>
+        <div class="row tight">
+          <button class="btn-green" onclick="generateProcNote()">📝 Generate procedure note</button>
+        </div>
+        <div id="procResultWrap" style="display:none;margin-top:12px">
+          <label>Procedure note <span style="font-weight:400;color:var(--muted)">(editable — complete any [bracketed] items)</span></label>
+          <textarea id="procNoteBody" style="min-height:280px"></textarea>
+          <div class="row tight">
+            <button class="btn-ghost" onclick="copyProcNote()">📑 Copy</button>
+            <button class="btn-ghost" onclick="printProcNote()">🖨 Print</button>
+          </div>
+        </div>
+      </div>
+
       <div class="sign-line" id="signLine" style="display:none"></div>
 
       <!-- Revenue estimate readout -->
@@ -629,6 +728,8 @@
       <div class="note-actions">
         <button class="btn-gold" id="optBtn" onclick="optimizeForPayout()" disabled>📈 Optimize for Insurance Payout</button>
         <button class="btn-ghost" id="mipsBtn" onclick="runMipsCheck()" disabled>🎯 MIPS check</button>
+        <button class="btn-ghost" id="redflagBtn" onclick="runRedFlagScan()" disabled>🚩 Red-flag scan</button>
+        <button class="btn-ghost" id="ddxBtn" onclick="generateDifferentials()" disabled>🔍 Differentials</button>
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="avsBtn" onclick="generateAVS()" disabled>👤 Patient summary</button>
         <button class="btn-ghost" id="handoutBtn" onclick="generateHandout()" disabled>📝 Patient handout</button>
@@ -805,10 +906,16 @@
         </div>
       </div>
 
-      <!-- PRIOR AUTHORIZATION DRAFTER -->
+      <!-- PRIOR AUTHORIZATION DRAFTER / APPEAL -->
       <div class="extra-card" id="priorAuthCard" style="margin-top:14px">
-        <h3>📝 Prior-authorization letter <span style="font-weight:400;font-size:13px;color:var(--muted)">(payer-ready medical-necessity draft)</span></h3>
-        <p class="sub" style="margin:6px 0 10px">Draft a medical-necessity letter for a service that needs prior auth (imaging, injection, DME/brace). Pulls the diagnosis and necessity narrative from the current note. Honest: it brackets anything not documented for you to complete — it never invents clinical facts.</p>
+        <h3 id="paCardTitle">📝 Prior-authorization letter <span style="font-weight:400;font-size:13px;color:var(--muted)">(payer-ready medical-necessity draft)</span></h3>
+        <!-- mode toggle: Prior-Auth ⇄ Appeal -->
+        <div class="row tight" style="margin:2px 0 10px">
+          <button class="btn-ghost" id="paModeAuthBtn" onclick="setPaMode('auth')" style="font-size:13px;padding:8px 14px">📝 Prior-auth request</button>
+          <button class="btn-ghost" id="paModeAppealBtn" onclick="setPaMode('appeal')" style="font-size:13px;padding:8px 14px">⚖️ Appeal a denial</button>
+        </div>
+        <p class="sub" id="paSubAuth" style="margin:6px 0 10px">Draft a medical-necessity letter for a service that needs prior auth (imaging, injection, DME/brace). Pulls the diagnosis and necessity narrative from the current note. Honest: it brackets anything not documented for you to complete — it never invents clinical facts.</p>
+        <p class="sub" id="paSubAppeal" style="margin:6px 0 10px;display:none">Draft a targeted appeal letter that directly rebuts the payer's stated denial reason, pulling medical necessity and conservative care from the note. Honest: it uses only documented facts and brackets anything not in the chart for you to complete.</p>
         <div class="field" style="margin-top:8px">
           <label>Service requested</label>
           <select class="sf-select" id="paServiceSelect" onchange="onPaServiceChange()">
@@ -818,6 +925,24 @@
         <div class="field" id="paOtherField" style="display:none">
           <label>Service / item (free text)</label>
           <input type="text" id="paOtherText" placeholder="e.g. MRI lumbar spine without contrast; CPT 72148">
+        </div>
+        <!-- appeal-only fields -->
+        <div id="paAppealFields" style="display:none">
+          <div class="field">
+            <label>Reason the payer gave for denial</label>
+            <select class="sf-select" id="paDenialReason">
+              <option value="Not medically necessary">Not medically necessary</option>
+              <option value="Step therapy not met">Step therapy not met</option>
+              <option value="Experimental / investigational">Experimental / investigational</option>
+              <option value="Insufficient documentation">Insufficient documentation</option>
+              <option value="Out of network">Out of network</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Paste the payer's denial letter <span style="font-weight:400;color:var(--muted)">(optional — improves the rebuttal)</span></label>
+            <textarea id="paDenialText" style="min-height:120px" placeholder="Paste the denial letter / EOB language here, including any reference, claim, or authorization number."></textarea>
+          </div>
         </div>
         <div class="row tight">
           <button class="btn-green" id="paGenBtn" onclick="generatePriorAuth()">✨ Generate prior-auth letter</button>
@@ -1946,8 +2071,14 @@ function newVisit(){
   currentAVS=''; currentReferral=''; currentRecs=null; currentHandout='';
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
   currentPriorAuth=''; currentMips=''; currentOutcome=null; lastOutcomeEntryId=null;
-  ['paResultWrap'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  currentRedFlags=''; currentDdx=''; currentProcNote=''; mmeOpioids=[]; paMode='auth';
+  if(typeof setPaMode==='function') setPaMode('auth');
+  ['paResultWrap','procResultWrap','redflagCard','ddxCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   { const pl=document.getElementById('paLetter'); if(pl) pl.value=''; }
+  { const pb=document.getElementById('procNoteBody'); if(pb) pb.value=''; }
+  { const dt=document.getElementById('paDenialText'); if(dt) dt.value=''; }
+  ['procLevel','procSteroid','procAnesthetic','procComplications'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  if(typeof renderMmeRows==='function'){ renderMmeRows(); renderMmeResult(); }
   ['mipsCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   ['outPain','outFunc','outNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const cb=document.getElementById('contextBox'); if(cb) cb.value='';
@@ -1983,6 +2114,10 @@ function noteRecordFromState(markSigned){
     orders: currentOrders.slice(),
     ordersDx: ordersDx,
     priorAuth: currentPriorAuth||'',
+    redFlags: currentRedFlags||'',
+    ddx: currentDdx||'',
+    procNote: (function(){const pb=document.getElementById('procNoteBody'); return (pb&&pb.value)?pb.value:(currentProcNote||'');})(),
+    mmeOpioids: Array.isArray(mmeOpioids)?mmeOpioids.slice():[],
     mips: currentMips||'',
     outcome: currentOutcome||null,
     context: (document.getElementById('contextBox')?document.getElementById('contextBox').value:''),
@@ -2185,6 +2320,13 @@ function loadRecordIntoEditor(n){
   currentOrders=Array.isArray(n.orders)?n.orders.slice():[]; editingOrderId=null;
   ordersDx=n.ordersDx&&typeof n.ordersDx==='object'?{text:n.ordersDx.text||'',icd:n.ordersDx.icd||[]}:{text:'',icd:[]};
   currentPriorAuth=n.priorAuth||''; currentMips=n.mips||''; currentOutcome=n.outcome||null; lastOutcomeEntryId=null;
+  currentRedFlags=n.redFlags||''; currentDdx=n.ddx||''; currentProcNote=n.procNote||'';
+  mmeOpioids=Array.isArray(n.mmeOpioids)?n.mmeOpioids.slice():[];
+  paMode='auth'; setPaMode('auth');
+  if(currentRedFlags) renderRedFlags(currentRedFlags); else { const rc=document.getElementById('redflagCard'); if(rc) rc.style.display='none'; }
+  if(currentDdx) showExtra('ddxCard','ddxBody',currentDdx); else { const dc=document.getElementById('ddxCard'); if(dc) dc.style.display='none'; }
+  if(currentProcNote){ const pb=document.getElementById('procNoteBody'); if(pb){ pb.value=currentProcNote; document.getElementById('procResultWrap').style.display='block'; } } else { const pr=document.getElementById('procResultWrap'); if(pr) pr.style.display='none'; }
+  renderMmeRows(); renderMmeResult();
   if(currentPriorAuth){ const ta=document.getElementById('paLetter'); if(ta){ ta.value=currentPriorAuth; document.getElementById('paResultWrap').style.display='block'; } }
   if(currentMips){ const mb=document.getElementById('mipsBody'); if(mb){ mb.innerHTML=mipsToHtml(currentMips); document.getElementById('mipsCard').style.display='block'; } }
   restoreOutcomeInputs();
@@ -2338,7 +2480,7 @@ function setBadge(s){
   b.textContent=s?'✔ Signed':'● Draft';
 }
 function enableOutputs(on){
-  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn','mipsBtn','handoutBtn','fhirBtn'].forEach(id=>{
+  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn','mipsBtn','handoutBtn','fhirBtn','redflagBtn','ddxBtn'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.disabled=!on;
   });
   const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
@@ -3339,6 +3481,11 @@ let currentOrders = [];           // [{id,type,fields:{...}}]
 let editingOrderId = null;        // id when editing an existing order, else null
 let ordersDx = { text:'', icd:[] }; // diagnosis context pulled from the note
 let currentPriorAuth = '';        // latest generated prior-auth letter for this visit
+let paMode = 'auth';              // 'auth' (prior-auth request) or 'appeal' (appeal a denial)
+let currentRedFlags = '';         // latest red-flag scan result text for this visit
+let currentDdx = '';              // latest differential-diagnosis result for this visit
+let currentProcNote = '';         // latest injection procedure note for this visit
+let mmeOpioids = [];              // [{drug, mg, doses}] opioids for the MME calculator
 let currentMips = '';             // latest MIPS quality-check result for this visit
 let currentOutcome = null;        // {pain, func, note} captured for this visit
 let lastOutcomeEntryId = null;    // de-dup key for outcome saves before the note has an id
@@ -3882,10 +4029,27 @@ function paSelectedService(){
   }
   return '';
 }
+/* Toggle the prior-auth panel between request ('auth') and appeal ('appeal') modes. */
+function setPaMode(mode){
+  paMode = (mode==='appeal') ? 'appeal' : 'auth';
+  const isAppeal = paMode==='appeal';
+  const setOn=(id,on)=>{ const el=document.getElementById(id); if(!el) return; el.classList.toggle('btn-green',on); el.classList.toggle('btn-ghost',!on); };
+  setOn('paModeAuthBtn',!isAppeal);
+  setOn('paModeAppealBtn',isAppeal);
+  const t=document.getElementById('paCardTitle');
+  if(t) t.innerHTML = isAppeal
+    ? '⚖️ Appeal a denial <span style="font-weight:400;font-size:13px;color:var(--muted)">(targeted rebuttal letter)</span>'
+    : '📝 Prior-authorization letter <span style="font-weight:400;font-size:13px;color:var(--muted)">(payer-ready medical-necessity draft)</span>';
+  const sa=document.getElementById('paSubAuth'); if(sa) sa.style.display=isAppeal?'none':'block';
+  const sp=document.getElementById('paSubAppeal'); if(sp) sp.style.display=isAppeal?'block':'none';
+  const af=document.getElementById('paAppealFields'); if(af) af.style.display=isAppeal?'block':'none';
+  const gb=document.getElementById('paGenBtn'); if(gb) gb.innerHTML = isAppeal?'✨ Generate appeal letter':'✨ Generate prior-auth letter';
+}
 async function generatePriorAuth(){
   const service=paSelectedService();
   if(!service){ toast('Pick an order or enter the service requested first.','err'); return; }
-  if(!hasAI()){ toast('Add your OpenAI key (Settings) to draft a prior-auth letter.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to draft this letter.','err'); return; }
+  const isAppeal = paMode==='appeal';
   const btn=document.getElementById('paGenBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
@@ -3897,7 +4061,37 @@ async function generatePriorAuth(){
     const dxLine=[dx.text, (dx.icd&&dx.icd.length)?('ICD-10: '+dx.icd.join('; ')):''].filter(Boolean).join(' · ') || (ordersDx.text||'[diagnosis — provider to complete]');
     const note=currentNoteText();
     const pctx=buildPatientContext();
-    const sys=`You are a physician's assistant drafting a PAYER-READY PRIOR-AUTHORIZATION / MEDICAL-NECESSITY LETTER addressed to a health insurance plan's utilization-management department, requesting approval for a specific service. Write a complete, professional business letter.
+    let sys, user;
+    if(isAppeal){
+      const reason=(document.getElementById('paDenialReason')||{}).value||'Not medically necessary';
+      const denialText=((document.getElementById('paDenialText')||{}).value||'').trim();
+      sys=`You are a physician's assistant drafting a PAYER-READY APPEAL LETTER addressed to a health insurance plan's appeals / utilization-management department, appealing the DENIAL of a previously requested service. Write a complete, professional business letter that DIRECTLY REBUTS the specific stated denial reason.
+
+STRUCTURE:
+- Date line and a "To: [Insurance Plan / Appeals Department]" line (bracket the plan name if not given).
+- "Re:" line with the de-identified patient identifier, the requested service (CPT/HCPCS if known, else "[CPT/HCPCS: ___]"), and an "[Authorization/Claim/Reference #: ___]" placeholder (use the number if it appears in the pasted denial text, otherwise bracket it).
+- Salutation.
+- Opening: state that you are formally appealing the denial dated [date if given, else bracket], and name the specific denial reason being appealed.
+- POINT-BY-POINT REBUTTAL of the stated denial reason, tailored to it:
+   * "Not medically necessary" -> marshal the documented symptoms, exam findings, functional impairment, duration, and failed conservative care to establish medical necessity.
+   * "Step therapy not met" -> enumerate the conservative/first-line treatments already tried and their outcome (from the note/meds/orders); if not documented, bracket each step for the provider.
+   * "Experimental / investigational" -> note the service is a standard, accepted treatment for the diagnosis and reference that it is widely used (without inventing citations; if a guideline name is not provided, bracket "[guideline/citation — provider to add]").
+   * "Insufficient documentation" -> supply/summarize the relevant documentation from the note and offer the full record.
+   * "Out of network" -> request a network-adequacy / continuity-of-care exception and bracket the supporting specifics the provider must add.
+   * "Other" -> rebut the reason as quoted from the denial text.
+- MEDICAL NECESSITY narrative built ONLY from the documented note: presenting symptoms, duration, pertinent exam findings, functional impact.
+- CONSERVATIVE / PRIOR TREATMENTS already tried (from note, meds, orders). If not documented, insert a clearly bracketed placeholder — DO NOT invent specifics.
+- Closing: formally request that the denial be overturned and the service approved; offer to provide records and to discuss in a peer-to-peer review.
+- Signature block with the provider name and specialty.
+
+CRITICAL HONESTY RULES:
+- Use ONLY facts present in the provided note, chart, and pasted denial text. NEVER invent symptoms, exam findings, durations, prior treatments, test results, guideline citations, or reference numbers.
+- Anything required but NOT documented must appear as a clearly bracketed placeholder "[ ... — provider to complete]".
+- Do not invent patient PHI; use the de-identified identifier or a bracketed placeholder.
+Return ONLY the letter text, no preamble, no markdown fences.`;
+      user='DENIED SERVICE / ITEM:\n'+service+'\n\nSTATED DENIAL REASON (rebut this specifically): '+reason+'\n\n'+ptLine+'\nRequesting provider: '+provider+(spec?(' ('+spec+')'):'')+'\nWorking diagnosis: '+dxLine+'\n\n'+(denialText?('PAYER DENIAL LETTER (verbatim — pull any reference/claim/auth numbers and dates from here; do not invent others):\n'+denialText+'\n\n'):'PAYER DENIAL LETTER: [not provided — bracket reference numbers and the denial date for the provider]\n\n')+'VISIT NOTE (sole source of clinical facts — do not invent beyond this):\n'+(note||'[No note generated — provider to complete clinical narrative]')+(pctx?('\n\nPATIENT CHART BACKGROUND (history/meds/allergies — for context; do not invent new findings):\n'+pctx):'');
+    } else {
+      sys=`You are a physician's assistant drafting a PAYER-READY PRIOR-AUTHORIZATION / MEDICAL-NECESSITY LETTER addressed to a health insurance plan's utilization-management department, requesting approval for a specific service. Write a complete, professional business letter.
 
 STRUCTURE:
 - Date line and a "To: [Insurance Plan / Utilization Management]" line (leave the plan name bracketed if not given).
@@ -3914,14 +4108,15 @@ CRITICAL HONESTY RULES:
 - Anything required by the letter but NOT documented must appear as a clearly bracketed placeholder "[ ... — provider to complete]". Do not fabricate to fill gaps.
 - Do not invent patient PHI (full name, DOB, member ID); use the de-identified identifier given or a bracketed placeholder.
 Return ONLY the letter text, no preamble, no markdown fences.`;
-    const user='REQUESTED SERVICE / ITEM:\n'+service+'\n\n'+ptLine+'\nRequesting provider: '+provider+(spec?(' ('+spec+')'):'')+'\nWorking diagnosis: '+dxLine+'\n\nVISIT NOTE (sole source of clinical facts — do not invent beyond this):\n'+(note||'[No note generated — provider to complete clinical narrative]')+(pctx?('\n\nPATIENT CHART BACKGROUND (history/meds/allergies — for context; do not invent new findings):\n'+pctx):'');
+      user='REQUESTED SERVICE / ITEM:\n'+service+'\n\n'+ptLine+'\nRequesting provider: '+provider+(spec?(' ('+spec+')'):'')+'\nWorking diagnosis: '+dxLine+'\n\nVISIT NOTE (sole source of clinical facts — do not invent beyond this):\n'+(note||'[No note generated — provider to complete clinical narrative]')+(pctx?('\n\nPATIENT CHART BACKGROUND (history/meds/allergies — for context; do not invent new findings):\n'+pctx):'');
+    }
     currentPriorAuth=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     document.getElementById('paLetter').value=currentPriorAuth;
     document.getElementById('paResultWrap').style.display='block';
     document.getElementById('paResultWrap').scrollIntoView({behavior:'smooth',block:'nearest'});
-    toast('Prior-auth letter drafted. Review and complete any [bracketed] items.','ok');
+    toast((isAppeal?'Appeal letter':'Prior-auth letter')+' drafted. Review and complete any [bracketed] items.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
-  finally{ btn.disabled=false; btn.innerHTML='✨ Generate prior-auth letter'; }
+  finally{ btn.disabled=false; btn.innerHTML=(isAppeal?'✨ Generate appeal letter':'✨ Generate prior-auth letter'); }
 }
 function copyPriorAuth(){
   const ta=document.getElementById('paLetter');
@@ -4279,6 +4474,343 @@ function showExtra(cardId,bodyId,text){
   document.getElementById(bodyId).textContent=text;
   card.style.display='block';
   card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* =========================================================
+   RED-FLAG SAFETY SCANNER  (AI, advisory)
+   Reviews the note/transcript for spine/neuro/pain red flags and
+   returns a structured list. Honest: only documented findings;
+   never invents. Persists with the visit.
+   ========================================================= */
+async function runRedFlagScan(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to run the red-flag scan.','err'); return; }
+  const btn=document.getElementById('redflagBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Scanning…';
+  try{
+    const note=currentNoteText();
+    const tr=(document.getElementById('transcript').value||'').trim();
+    const pctx=buildPatientContext();
+    const sys=`You are a clinical safety reviewer for a spine / PM&R / pain practice. Review the provided visit note (and transcript) for RED FLAGS that warrant urgent evaluation. Check EACH of these categories:
+1. Cauda equina syndrome (saddle anesthesia, bowel/bladder dysfunction or retention, bilateral sciatica, progressive motor loss)
+2. Progressive or severe neurologic deficit (worsening weakness, foot drop, myelopathy signs)
+3. Suspected fracture (significant trauma, osteoporosis, chronic steroid use, age >70 with new pain)
+4. Infection (fever/chills, IV drug use, recent spinal procedure/injection, immunosuppression, night sweats)
+5. Malignancy (history of cancer, unexplained weight loss, night pain unrelieved by rest, age >50 with new back pain)
+6. Abdominal aortic aneurysm (pulsatile abdominal mass, atherosclerosis risk, tearing/throbbing pain)
+7. Any other "see urgently / refer to ED" concern documented
+
+For EACH category output a line in EXACTLY this format:
+[STATUS] Category: evidence — action
+where STATUS is "PRESENT" if supporting findings are documented, or "NOT MENTIONED" if the note does not document it. EVIDENCE must quote or paraphrase ONLY what is actually in the note (write "none documented" if NOT MENTIONED). ACTION is the suggested next step (e.g., "Urgent MRI + ED referral / surgical consult" for a present cauda equina).
+
+CRITICAL: Never invent findings. "PRESENT" only when the note actually documents supporting evidence. If nothing is documented for a category, it is "NOT MENTIONED" with evidence "none documented". Start your answer with a single summary line: "OVERALL: <n> red flag(s) present" or "OVERALL: No red flags documented". Then the per-category lines. No markdown, no preamble.`;
+    const user='VISIT NOTE:\n'+note+(tr?('\n\nRAW TRANSCRIPT (for additional context):\n'+tr):'')+(pctx?('\n\nPATIENT CHART BACKGROUND:\n'+pctx):'');
+    currentRedFlags=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    renderRedFlags(currentRedFlags);
+    toast('Red-flag scan complete. Advisory — confirm clinically.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='🚩 Red-flag scan'; }
+}
+function renderRedFlags(text){
+  const card=document.getElementById('redflagCard');
+  const body=document.getElementById('redflagBody');
+  const banner=document.getElementById('redflagBanner');
+  if(!card||!body) return;
+  const lines=String(text||'').split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  let anyPresent=false, summary='';
+  let html='';
+  lines.forEach(l=>{
+    if(/^OVERALL\s*:/i.test(l)){ summary=l.replace(/^OVERALL\s*:\s*/i,''); if(/[1-9]/.test(summary)&&!/no red flag/i.test(summary)) anyPresent=true; return; }
+    const isPresent=/^\[?\s*PRESENT/i.test(l);
+    if(isPresent) anyPresent=true;
+    const cls=isPresent?'present':'absent';
+    html+='<div class="rf-line rf-'+cls+'">'+(isPresent?'🔴 ':'⚪ ')+esc(l.replace(/^\[?\s*(PRESENT|NOT MENTIONED)\s*\]?\s*/i,m=>m.replace(/[\[\]]/g,'')))+'</div>';
+  });
+  body.innerHTML=html||esc(text);
+  banner.style.display='block';
+  if(anyPresent){
+    banner.style.cssText='display:block;background:#fdecec;border:1px solid var(--red);color:#a3262a;border-radius:10px;padding:10px 14px;font-weight:700;margin-bottom:10px';
+    banner.textContent='🚩 '+(summary||'Red flag(s) present')+' — review urgently. Advisory; confirm clinically.';
+    card.style.borderColor='var(--red)';
+  } else {
+    banner.style.cssText='display:block;background:#f0f9f4;border:1px solid #cdebd9;color:var(--green-dk);border-radius:10px;padding:10px 14px;font-weight:700;margin-bottom:10px';
+    banner.textContent='✅ '+(summary||'No red flags documented')+'. Advisory; based only on documentation.';
+    card.style.borderColor='var(--line)';
+  }
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function copyRedFlags(){
+  if(!currentRedFlags){ toast('Run the scan first.','err'); return; }
+  navigator.clipboard.writeText(currentRedFlags)
+    .then(()=>toast('Red-flag scan copied.','ok'))
+    .catch(()=>toast('Could not copy.','err'));
+}
+
+/* =========================================================
+   DIFFERENTIAL DIAGNOSIS ASSISTANT  (AI, advisory)
+   ========================================================= */
+async function generateDifferentials(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to list differentials.','err'); return; }
+  const btn=document.getElementById('ddxBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Thinking…';
+  try{
+    const note=currentNoteText();
+    const tr=(document.getElementById('transcript').value||'').trim();
+    const cc=(lastEMR&&lastEMR.cc&&lastEMR.cc!=='—')?lastEMR.cc:'';
+    const pctx=buildPatientContext();
+    const sys=`You are an experienced physician assisting a spine / PM&R / pain colleague. From the presentation below, produce a RANKED DIFFERENTIAL DIAGNOSIS (most to least likely given what is documented). For EACH item give:
+- the diagnosis,
+- a one-line rationale grounded in the documented findings,
+- and "Confirm/exclude: " with the test, exam maneuver, or finding that would confirm or exclude it.
+
+Be spine/MSK/pain aware (e.g., lumbar radiculopathy, discogenic pain, facet arthropathy, SI joint dysfunction, spinal stenosis, myofascial pain, neuropathy, hip pathology referring, vascular claudication, inflammatory/infectious/neoplastic causes when red flags are present). List 4–8 considerations. Number them.
+
+CRITICAL: These are CONSIDERATIONS FOR THE PROVIDER, not a diagnosis. Reason ONLY from documented findings; do not invent symptoms or exam results. End with one line: "These are considerations for the provider, not a diagnosis." No markdown fences.`;
+    const user=(cc?('CHIEF COMPLAINT: '+cc+'\n\n'):'')+'VISIT NOTE:\n'+note+(tr?('\n\nRAW TRANSCRIPT:\n'+tr):'')+(pctx?('\n\nPATIENT CHART BACKGROUND:\n'+pctx):'');
+    currentDdx=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    showExtra('ddxCard','ddxBody',currentDdx);
+    toast('Differential considerations ready. For the provider — not a diagnosis.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='🔍 Differentials'; }
+}
+function copyDdx(){
+  if(!currentDdx){ toast('Generate the differential first.','err'); return; }
+  navigator.clipboard.writeText(currentDdx)
+    .then(()=>toast('Differential copied.','ok'))
+    .catch(()=>toast('Could not copy.','err'));
+}
+
+/* =========================================================
+   OPIOID MME CALCULATOR  (pure client-side; CDC factors)
+   Daily MME = mg/dose × doses/day × conversion factor.
+   Fentanyl is dosed in mcg/hr (patch); methadone & fentanyl are
+   approximate. Math is hardcoded and unit-tested.
+   ========================================================= */
+const MME_FACTORS=[
+  {key:'morphine',     label:'Morphine',                factor:1,    unit:'mg'},
+  {key:'oxycodone',    label:'Oxycodone',               factor:1.5,  unit:'mg'},
+  {key:'hydrocodone',  label:'Hydrocodone',             factor:1,    unit:'mg'},
+  {key:'hydromorphone',label:'Hydromorphone',           factor:4,    unit:'mg'},
+  {key:'oxymorphone',  label:'Oxymorphone',             factor:3,    unit:'mg'},
+  {key:'codeine',      label:'Codeine',                 factor:0.15, unit:'mg'},
+  {key:'tramadol',     label:'Tramadol',                factor:0.1,  unit:'mg'},
+  {key:'fentanyl',     label:'Fentanyl patch (mcg/hr)', factor:2.4,  unit:'mcg/hr', approx:true},
+  {key:'methadone',    label:'Methadone',               factor:4.7,  unit:'mg', approx:true}
+];
+function mmeFactor(key){ const f=MME_FACTORS.find(x=>x.key===key); return f?f.factor:null; }
+/* Pure compute: returns {total, rows:[{label,mg,doses,mme,approx}], anyApprox}. */
+function computeMME(opioids){
+  let total=0, anyApprox=false;
+  const rows=(opioids||[]).map(o=>{
+    const def=MME_FACTORS.find(x=>x.key===o.drug);
+    const mg=Number(o.mg)||0;
+    const doses=Number(o.doses)||0;
+    const factor=def?def.factor:0;
+    const mme=mg*doses*factor;
+    if(def&&def.approx&&mme>0) anyApprox=true;
+    total+=mme;
+    return { label:def?def.label:o.drug, unit:def?def.unit:'mg', mg, doses, factor, mme, approx:!!(def&&def.approx) };
+  });
+  return { total:Math.round(total*100)/100, rows, anyApprox };
+}
+/* CDC risk band for a daily MME total. */
+function mmeBand(total){
+  if(total>=90) return {level:'high', label:'High risk (≥90 MME/day)', color:'var(--red)', bg:'#fdecec', ink:'#a3262a',
+    guidance:'Avoid or carefully justify ≥90 MME/day. Offer naloxone, reassess risk/benefit, consider tapering, and consider a pain-management specialist consult.'};
+  if(total>=50) return {level:'caution', label:'Use caution (50–89 MME/day)', color:'var(--amber)', bg:'#fef6e7', ink:'#8a5a00',
+    guidance:'Reassess benefits/risks before increasing. Consider offering naloxone and increased monitoring at ≥50 MME/day.'};
+  return {level:'lower', label:'Lower range (<50 MME/day)', color:'var(--green)', bg:'#f0f9f4', ink:'var(--green-dk)',
+    guidance:'Lower-dose range. Continue to use the lowest effective dose and monitor.'};
+}
+function mmeRowHtml(i,o){
+  o=o||{drug:'',mg:'',doses:''};
+  const opts=MME_FACTORS.map(f=>'<option value="'+f.key+'"'+(o.drug===f.key?' selected':'')+'>'+esc(f.label)+'</option>').join('');
+  const def=MME_FACTORS.find(x=>x.key===o.drug);
+  const unit=def?def.unit:'mg';
+  return '<div class="row tight mme-row" data-i="'+i+'" style="align-items:flex-end">'
+    +'<div style="flex:2;min-width:170px"><label>Opioid</label>'
+    +'<select class="sf-select" onchange="updateMmeRow('+i+',\'drug\',this.value)"><option value="">— Choose —</option>'+opts+'</select></div>'
+    +'<div style="flex:1;min-width:110px"><label>mg / dose <span style="font-weight:400;color:var(--muted)">('+esc(unit)+')</span></label>'
+    +'<input type="number" min="0" step="any" value="'+esc(String(o.mg||''))+'" oninput="updateMmeRow('+i+',\'mg\',this.value)" placeholder="e.g. 10"></div>'
+    +'<div style="flex:1;min-width:110px"><label>doses / day</label>'
+    +'<input type="number" min="0" step="any" value="'+esc(String(o.doses||''))+'" oninput="updateMmeRow('+i+',\'doses\',this.value)" placeholder="e.g. 4"></div>'
+    +'<button class="del" title="Remove" style="width:auto;padding:6px 11px" onclick="removeMmeRow('+i+')">🗑</button>'
+    +'</div>';
+}
+function renderMmeRows(){
+  const wrap=document.getElementById('mmeRows');
+  if(!wrap) return;
+  if(!mmeOpioids.length){ wrap.innerHTML='<div class="empty" style="padding:18px"><span class="big">💊</span>No opioids added. Press “Add opioid”.</div>'; }
+  else wrap.innerHTML=mmeOpioids.map((o,i)=>mmeRowHtml(i,o)).join('');
+}
+function addMmeRow(){ mmeOpioids.push({drug:'',mg:'',doses:''}); renderMmeRows(); renderMmeResult(); }
+function removeMmeRow(i){ mmeOpioids.splice(i,1); renderMmeRows(); renderMmeResult(); }
+function updateMmeRow(i,field,val){
+  if(!mmeOpioids[i]) return;
+  mmeOpioids[i][field]=val;
+  // if drug changed, refresh the unit label by re-rendering rows (preserve focus is fine on change)
+  if(field==='drug') renderMmeRows();
+  renderMmeResult();
+}
+function clearMme(){ mmeOpioids=[]; renderMmeRows(); renderMmeResult(); }
+function renderMmeResult(){
+  const box=document.getElementById('mmeResult');
+  if(!box) return;
+  const usable=mmeOpioids.filter(o=>o.drug && Number(o.mg)>0 && Number(o.doses)>0);
+  if(!usable.length){ box.style.display='none'; return; }
+  const res=computeMME(usable);
+  const band=mmeBand(res.total);
+  let breakdown=res.rows.map(r=>esc(r.label)+': '+r.mg+(r.unit==='mcg/hr'?' mcg/hr':' mg')+' × '+r.doses+'/day × '+r.factor+' = <b>'+(Math.round(r.mme*100)/100)+' MME</b>'+(r.approx?' <span style="color:var(--muted)">(approx)</span>':'')).join('<br>');
+  box.innerHTML='<div style="background:'+band.bg+';border:1px solid '+band.color+';border-radius:11px;padding:14px 16px;color:'+band.ink+'">'
+    +'<div style="font-size:20px;font-weight:800">Total: '+res.total+' MME / day</div>'
+    +'<div style="font-weight:700;margin-top:3px">'+esc(band.label)+'</div>'
+    +'<div style="margin-top:6px;font-size:14px;color:var(--ink)">'+breakdown+'</div>'
+    +'<div style="margin-top:8px;font-size:13.5px;font-weight:600">'+esc(band.guidance)+'</div>'
+    +(res.anyApprox?'<div style="margin-top:6px;font-size:12px;color:var(--muted)">⚠️ Methadone and fentanyl conversions are approximate and nonlinear (methadone\'s factor rises with dose) — verify clinically.</div>':'')
+    +'<div style="margin-top:6px;font-size:12px;color:var(--muted)">MME estimates per CDC conversion factors. A calculator aid only — clinical judgment governs.</div>'
+    +'</div>';
+  box.style.display='block';
+}
+
+/* =========================================================
+   INJECTION PROCEDURE-NOTE GENERATOR  (client-side template)
+   Builds a structured spine/pain procedure note. Indication is
+   pulled from the current diagnosis; missing items are bracketed.
+   ========================================================= */
+function generateProcNote(){
+  const proc=(document.getElementById('procType')||{}).value||'';
+  if(!proc){ toast('Choose a procedure first.','err'); return; }
+  const level=((document.getElementById('procLevel')||{}).value||'').trim();
+  const guidance=(document.getElementById('procGuidance')||{}).value||'Fluoroscopic';
+  const steroid=((document.getElementById('procSteroid')||{}).value||'').trim();
+  const anes=((document.getElementById('procAnesthetic')||{}).value||'').trim();
+  const comps=((document.getElementById('procComplications')||{}).value||'').trim()||'None';
+  const consent=!!(document.getElementById('procConsent')||{}).checked;
+  const ap=activePatient();
+  const provider=getName()||'[Provider]';
+  const spec=getSpec()||getPreset()||'';
+  const dx=noteDiagnosisText();
+  const dxLine=[dx.text,(dx.icd&&dx.icd.length)?('ICD-10: '+dx.icd.join('; ')):''].filter(Boolean).join(' · ')||(ordersDx.text||'[indication / diagnosis — provider to complete]');
+  const now=new Date().toLocaleString();
+  const guidanceWord = guidance==='Fluoroscopic' ? 'fluoroscopic' : (guidance==='Ultrasound' ? 'ultrasound' : 'landmark-based');
+  const contrastLine = guidance==='Fluoroscopic'
+    ? 'Under fluoroscopic guidance, the target was localized and needle position confirmed; contrast was injected confirming appropriate spread without intravascular or intrathecal uptake.'
+    : (guidance==='Ultrasound'
+      ? 'Under real-time ultrasound guidance, the target was localized and needle advanced to the target under direct visualization.'
+      : 'Using anatomic landmarks and palpation, the target was localized and the needle advanced to the target.');
+
+  const lines=[];
+  lines.push('PROCEDURE NOTE');
+  lines.push('Date/Time: '+now);
+  lines.push('Patient: '+(ap?ap.name:'[Patient — provider to complete]')+(ap&&ap.mrn?(' (MRN '+ap.mrn+')'):''));
+  lines.push('Provider: '+provider+(spec?(' ('+spec+')'):''));
+  lines.push('');
+  lines.push('PROCEDURE: '+proc+(level?(' — '+level):' — [level/side — provider to complete]'));
+  lines.push('INDICATION: '+dxLine);
+  lines.push('');
+  lines.push('PRE-PROCEDURE:');
+  lines.push('- The procedure, alternatives, risks (including bleeding, infection, nerve injury, dural puncture, and failure to relieve pain) and benefits were discussed with the patient.');
+  lines.push('- Consent: '+(consent?'Informed written consent was obtained.':'[Informed consent — NOT documented; provider to obtain/document.]'));
+  lines.push('- Pre-procedure pain level: [___/10 — provider to complete]');
+  lines.push('- Allergies and current anticoagulation status reviewed: [provider to confirm].');
+  lines.push('');
+  lines.push('TIME-OUT: A time-out was performed verifying correct patient, procedure, site/level, and laterality prior to the start of the procedure.');
+  lines.push('');
+  lines.push('TECHNIQUE:');
+  lines.push('- The patient was positioned appropriately and the skin over the target site was prepped with chlorhexidine/povidone-iodine and draped in sterile fashion.');
+  lines.push('- Local anesthetic was infiltrated into the skin and subcutaneous tissue.');
+  lines.push('- '+contrastLine);
+  if(level) lines.push('- Target level/side: '+level+'.');
+  lines.push('');
+  lines.push('MEDICATIONS INJECTED:');
+  lines.push('- Steroid: '+(steroid||'[steroid + dose — provider to complete]'));
+  lines.push('- Anesthetic / other: '+(anes||'[local anesthetic ± contrast — provider to complete]'));
+  lines.push('');
+  lines.push('ESTIMATED BLOOD LOSS: Minimal.');
+  lines.push('COMPLICATIONS: '+comps+'.');
+  lines.push('');
+  lines.push('POST-PROCEDURE PLAN:');
+  lines.push('- The patient tolerated the procedure well and was transferred to recovery in stable condition; neurovascular status intact.');
+  lines.push('- Monitor for post-injection soreness; ice and usual activity as tolerated. Return precautions reviewed (new weakness, numbness, bowel/bladder change, fever, or severe headache → seek urgent care).');
+  lines.push('- Follow up in [__ weeks — provider to complete] to assess response.');
+  lines.push('');
+  lines.push('Provider signature: ______________________  Date: __________');
+  lines.push('');
+  lines.push('[Draft procedure note generated by Scrivara — review and complete any [bracketed] items before signing.]');
+
+  currentProcNote=lines.join('\n');
+  document.getElementById('procNoteBody').value=currentProcNote;
+  document.getElementById('procResultWrap').style.display='block';
+  document.getElementById('procResultWrap').scrollIntoView({behavior:'smooth',block:'nearest'});
+  toast('Procedure note built. Review and complete any [bracketed] items.','ok');
+}
+function copyProcNote(){
+  const ta=document.getElementById('procNoteBody');
+  currentProcNote=ta.value;
+  if(!currentProcNote){ toast('Generate the procedure note first.','err'); return; }
+  navigator.clipboard.writeText(ta.value)
+    .then(()=>toast('Procedure note copied.','ok'))
+    .catch(()=>toast('Could not copy — select manually.','err'));
+}
+function printProcNote(){
+  const txt=(document.getElementById('procNoteBody').value||currentProcNote||'').trim();
+  if(!txt){ toast('Generate the procedure note first.','err'); return; }
+  const ap=activePatient();
+  const patient=ap?ap.name:'[Patient — provider to complete]';
+  const docName=getName()||'Clinician';
+  const spec=getSpec();
+  const now=new Date().toLocaleString();
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Scrivara Procedure Note — ${esc(patient)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
+  .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
+  .meta b{color:#16324f}
+  h1.title{font-size:17px;color:#155fb3;margin:6px 0 14px}
+  pre.note{white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0}
+  .disc{font-size:11.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;border-radius:6px;padding:7px 10px;margin-top:16px}
+  .foot{margin-top:22px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:10px}
+  @media print{body{padding:0}}
+</style></head><body>
+  <div class="hd">
+    <div class="brand">Scrivara<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <div class="meta">
+      <div><b>Patient:</b> ${esc(patient)}</div>
+      <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
+      <div><b>Printed:</b> ${esc(now)}</div>
+    </div>
+  </div>
+  <h1 class="title">Injection Procedure Note</h1>
+  <pre class="note">${esc(txt)}</pre>
+  <div class="disc">⚠️ Draft for provider review. Verify all details and complete any [bracketed] items before signing.</div>
+  <div class="foot">Generated with Scrivara — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+</body></html>`;
+  let win=null;
+  try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
+  if(win && win.document){
+    win.document.open(); win.document.write(html); win.document.close(); win.focus();
+    const go=()=>{ try{win.print();}catch(e){} };
+    if(win.document.readyState==='complete') setTimeout(go,250); else win.onload=()=>setTimeout(go,150);
+    toast('Opening print view…','ok');
+  } else {
+    let frame=document.getElementById('sfProcPrintFrame');
+    if(frame) frame.remove();
+    frame=document.createElement('iframe'); frame.id='sfProcPrintFrame';
+    frame.style.position='fixed'; frame.style.right='0'; frame.style.bottom='0';
+    frame.style.width='0'; frame.style.height='0'; frame.style.border='0';
+    document.body.appendChild(frame);
+    const doc=frame.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); }catch(e){ toast('Could not open print dialog.','err'); } },300);
+    toast('Printing procedure note…','ok');
+  }
 }
 
 /* =========================================================
@@ -4784,6 +5316,9 @@ window.addEventListener('DOMContentLoaded',()=>{
   });
   const ptNameEl=document.getElementById('ptName');
   if(ptNameEl) ptNameEl.addEventListener('keydown',e=>{ if(e.key==='Enter') savePatient(); });
+  // initialize MME calculator empty state + prior-auth mode toggle
+  if(typeof renderMmeRows==='function'){ renderMmeRows(); }
+  if(typeof setPaMode==='function'){ setPaMode('auth'); }
   // enter to submit auth
   ['authEmail','authPass','authPass2'].forEach(id=>{
     const el=document.getElementById(id);
