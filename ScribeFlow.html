@@ -338,6 +338,7 @@
   <div class="mainnav">
     <div class="navtab on" id="nav_patients" onclick="showView('patients')">👥 Patients <span class="nbadge" id="navPtCount">0</span></div>
     <div class="navtab" id="nav_visit" onclick="showView('visit')">🎙️ Visit</div>
+    <div class="navtab" id="nav_orders" onclick="showView('orders')">📋 Orders <span class="nbadge" id="navOrdCount">0</span></div>
     <div class="navtab" id="nav_recs" onclick="showView('recs')">💡 Recommendations</div>
     <div class="navtab" id="nav_history" onclick="showView('history')">📚 History <span class="nbadge" id="navHistCount">0</span></div>
     <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
@@ -661,6 +662,74 @@
     </div>
   </div>
   </div><!-- /recsView -->
+
+  <!-- ============ ORDERS VIEW ============ -->
+  <div id="ordersView" style="display:none">
+  <div class="card" id="ordersCard">
+    <h2><span class="ic">📋</span> Orders <span style="font-weight:400;font-size:14px;color:var(--muted)">(scripts, referrals, DME, imaging, injections)</span></h2>
+    <p class="sub">Build orders for the active patient. Pull the diagnosis from the current note, accept AI-style suggestions, then print or copy a clean order sheet to hand to the patient.</p>
+    <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🖊 Orders are drafted for the provider to review and sign. Final orders are the provider's responsibility.</div>
+
+    <!-- no active patient prompt -->
+    <div id="ordersNoPt" class="empty" style="display:none">
+      <span class="big">👤</span>
+      No active patient. Pick or create a patient in <b>Patients</b> to build orders for their chart.
+      <div class="row" style="justify-content:center;margin-top:12px"><button class="btn-primary" onclick="showView('patients')">Go to Patients</button></div>
+    </div>
+
+    <div id="ordersBody" style="display:none">
+      <!-- diagnosis context + auto-suggest -->
+      <div class="extra-card" id="ordersDxCard">
+        <h3>🩺 Diagnosis context</h3>
+        <p class="sub" style="margin:6px 0 10px">Pull diagnoses & ICD-10 from the current generated note, then add AI-suggested orders with one tap.</p>
+        <div class="row tight">
+          <button class="btn-ghost" onclick="pullDxFromNote()">⤵ Pull from current note</button>
+          <button class="btn-ghost" onclick="suggestOrdersFromDx()">✨ Suggest orders</button>
+        </div>
+        <div id="ordersDxBody" class="xbody" style="margin-top:10px">No diagnosis pulled yet. Generate a note in Visit, then “Pull from current note”.</div>
+        <div id="ordersSuggestWrap" style="display:none;margin-top:12px">
+          <div class="dotbar"><span class="dotbar-lbl">Suggested orders</span></div>
+          <div id="ordersSuggestChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+      </div>
+
+      <!-- order builder -->
+      <div class="extra-card" id="ordersBuilderCard" style="margin-top:14px">
+        <h3>➕ New order</h3>
+        <div class="field" style="margin-top:8px">
+          <label>Order type</label>
+          <select class="sf-select" id="ordType" onchange="renderOrderFields()">
+            <option value="">— Choose a type —</option>
+            <option value="medication">💊 Medication</option>
+            <option value="pt">🏃 Physical Therapy</option>
+            <option value="dme">🦿 DME / Brace</option>
+            <option value="imaging">🩻 Imaging</option>
+            <option value="injection">💉 Injection</option>
+            <option value="referral">✉️ Referral</option>
+          </select>
+        </div>
+        <div id="ordFields"></div>
+        <div class="row tight" id="ordAddRow" style="display:none">
+          <button class="btn-green" id="ordAddBtn" onclick="addOrderFromForm()">➕ Add order</button>
+          <button class="btn-ghost" onclick="cancelOrderEdit()">Clear</button>
+        </div>
+      </div>
+
+      <!-- order list -->
+      <div class="extra-card" id="ordersListCard" style="margin-top:14px">
+        <h3>🗒 Orders for this visit <span id="ordCountLbl" style="font-weight:400;font-size:13px;color:var(--muted)"></span></h3>
+        <div id="ordEmpty" class="empty" style="margin-top:10px"><span class="big">🗒</span>No orders yet. Choose a type above, or accept a suggestion.</div>
+        <div id="ordList" class="hist-list"></div>
+        <div class="row" id="ordActionsRow" style="display:none">
+          <button class="btn-primary" onclick="printOrders()">🖨 Print orders</button>
+          <button class="btn-ghost" onclick="copyOrders()">📑 Copy orders</button>
+          <button class="btn-ghost" onclick="saveOrdersToHistory()">💾 Save with visit</button>
+          <button class="btn-ghost btn-red-ghost" onclick="clearAllOrders()" style="margin-left:auto">🗑 Clear all</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div><!-- /ordersView -->
 
   <!-- ============ ADMIN VIEW (owner only) ============ -->
   <div id="adminView" style="display:none">
@@ -1357,10 +1426,12 @@ function showView(v){
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
   document.getElementById('historyView').style.display  = v==='history'?'block':'none';
   document.getElementById('recsView').style.display     = v==='recs'?'block':'none';
+  const ordersV=document.getElementById('ordersView'); if(ordersV) ordersV.style.display = v==='orders'?'block':'none';
   const adminV=document.getElementById('adminView'); if(adminV) adminV.style.display = v==='admin'?'block':'none';
   document.getElementById('nav_patients').classList.toggle('on',v==='patients');
   document.getElementById('nav_visit').classList.toggle('on',v==='visit');
   document.getElementById('nav_recs').classList.toggle('on',v==='recs');
+  const ordersTab=document.getElementById('nav_orders'); if(ordersTab) ordersTab.classList.toggle('on',v==='orders');
   document.getElementById('nav_history').classList.toggle('on',v==='history');
   const adminTab=document.getElementById('nav_admin'); if(adminTab) adminTab.classList.toggle('on',v==='admin');
   // active-patient bar appears on every view except the patients list
@@ -1369,6 +1440,7 @@ function showView(v){
   updateNavCounts();
   if(v==='patients'){ renderPatients(); renderProfile(); }
   if(v==='history') renderHistory();
+  if(v==='orders') renderOrdersView();
   if(v==='recs') renderRecommendations();
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); }
   window.scrollTo({top:0,behavior:'smooth'});
@@ -1390,8 +1462,16 @@ function updateNavCounts(){
   const hc=document.getElementById('navHistCount');
   if(hc){
     const ap=activePatient();
-    hc.textContent = ap ? patientNotes(ap.id).length : getNotes().length;
+    if(ap){
+      // patient's own visits + any unassigned visits that are still surfaced in History
+      const orphans=getNotes().filter(n=>!n.patientId).length;
+      hc.textContent = patientNotes(ap.id).length + orphans;
+    } else {
+      hc.textContent = getNotes().length;
+    }
   }
+  const oc=document.getElementById('navOrdCount');
+  if(oc) oc.textContent = currentOrders.length;
 }
 
 /* ---------- PATIENTS LIST ---------- */
@@ -1741,6 +1821,7 @@ function newVisit(){
   document.getElementById('transcript').value=''; finalText='';
   currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap';
   currentAVS=''; currentReferral=''; currentRecs=null;
+  currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
   const cb=document.getElementById('contextBox'); if(cb) cb.value='';
   document.getElementById('noteBox').style.display='none';
   document.getElementById('noteBox').value='';
@@ -1770,6 +1851,8 @@ function noteRecordFromState(markSigned){
     emr: lastEMR,
     avs: currentAVS||'',
     referral: currentReferral||'',
+    orders: currentOrders.slice(),
+    ordersDx: ordersDx,
     context: (document.getElementById('contextBox')?document.getElementById('contextBox').value:''),
     signed: typeof markSigned==='boolean' ? markSigned : signed,
     signLine: document.getElementById('signLine').style.display!=='none' ? document.getElementById('signLine').textContent : '',
@@ -1821,7 +1904,11 @@ function saveCurrentNote(announce){
     toast('Could not save this visit: '+((err&&err.message)||err),'err');
     return;
   }
-  if(announce) toast(rec.signed?'Signed note saved to history.':'Note saved to history (draft).','ok');
+  if(announce){
+    const ap=activePatient();
+    if(ap) toast((rec.signed?'Signed note':'Note')+' saved to '+ap.name+'’s history.','ok');
+    else toast('Note saved to history (no active patient — it shows as “Unassigned”; open History to attach it to a chart).','ok');
+  }
   // Best-effort: also push to the backend if hosted. Never blocks or fails the local save.
   saveNoteToBackend(rec);
 }
@@ -1843,34 +1930,69 @@ function saveNoteToBackend(rec){
 }
 
 function renderHistory(){
-  let arr=getNotes();
+  const all=getNotes();
   const ap=activePatient();
-  // when a patient is active, History shows that patient's visits (per-patient history)
-  if(ap){ arr=arr.filter(n=>n.patientId===ap.id); }
+  // When a patient is active, History shows that patient's visits (per-patient
+  // history) PLUS any unassigned visits (saved with no active patient at the time)
+  // so a saved note is NEVER silently invisible. Unassigned visits are flagged and
+  // can be one-click attached to the active patient.
+  let mine=[], orphans=[];
+  if(ap){
+    mine    = all.filter(n=>n.patientId===ap.id);
+    orphans = all.filter(n=>!n.patientId);
+  } else {
+    mine = all.slice();
+  }
+  const arr=mine.concat(orphans);
   const list=document.getElementById('histList');
   const empty=document.getElementById('histEmpty');
   const sub=document.querySelector('#historyCard .sub');
+  // NOTE: keep the #histWho span present so startSession()/refreshMe() can set it.
   if(sub) sub.innerHTML=ap
-    ? 'Showing visits for <b>'+esc(ap.name)+'</b>. Switch or clear the active patient to see others.'
+    ? 'Showing visits for <b>'+esc(ap.name)+'</b>'+(orphans.length?' plus '+orphans.length+' unassigned visit'+(orphans.length===1?'':'s')+' (tap “Attach” to file them here)':'')+'. Saved locally for <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.'
     : 'Click a past visit to reopen it. Notes are saved locally in this browser for <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.';
-  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
+  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet. Generate a note and press <b>Save to history</b>.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
   empty.style.display='none';
-  arr.sort((a,b)=>(b.updated||0)-(a.updated||0));
-  list.innerHTML=arr.map(n=>{
+  mine.sort((a,b)=>(b.updated||0)-(a.updated||0));
+  orphans.sort((a,b)=>(b.updated||0)-(a.updated||0));
+  const ordered=mine.concat(orphans);
+  list.innerHTML=ordered.map(n=>{
     const d=new Date(n.updated||n.created||Date.now());
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     const status = n.isDraft ? '<span class="badge draft">● Draft (no note)</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
     const cc = esc(n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Transcript only':'No chief complaint'));
+    const isOrphan = ap && !n.patientId;
+    const orphanTag = isOrphan ? ' <span class="badge draft" style="background:#fdf6e3;color:#b8860b;border-color:#f0e0b0">⚠ Unassigned</span>' : '';
+    const attachBtn = isOrphan
+      ? `<button class="del" title="Attach this visit to ${esc(ap.name)}" style="color:var(--green-dk);font-size:14px;font-weight:700;width:auto;padding:4px 9px" onclick="event.stopPropagation();attachNoteToActive('${n.id}')">＋ Attach</button>`
+      : '';
     return `<div class="hist-item" onclick="openNoteFromHistory('${n.id}')">
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
-        <div class="t">${esc(n.patient)} — ${cc}</div>
+        <div class="t">${esc(n.patient)} — ${cc}${orphanTag}</div>
         <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}</div>
       </div>
+      ${attachBtn}
       <button class="del" title="Delete" onclick="event.stopPropagation();deleteNote('${n.id}')">🗑</button>
     </div>`;
   }).join('');
+}
+
+/* One-click: file an unassigned saved visit into the active patient's chart. */
+function attachNoteToActive(id){
+  const ap=activePatient();
+  if(!ap){ toast('Select a patient first.','err'); return; }
+  const arr=getNotes();
+  const n=arr.find(x=>x.id===id);
+  if(!n){ toast('That visit no longer exists.','err'); return; }
+  n.patientId=ap.id;
+  if(!n.isDraft) attachVisitToPatient(n); // also fold dx/meds/summary into the chart
+  saveNotes(arr);
+  renderHistory();
+  updateNavCounts();
+  if(currentView==='patients'){ renderPatients(); renderProfile(); }
+  toast('Visit filed to '+ap.name+'’s chart.','ok');
 }
 
 function deleteNote(id){
@@ -1899,6 +2021,9 @@ function openNoteFromHistory(id){
     body=(n.soap||'')+'\n\n'+('— — — INSURANCE-READY — — —\n'+(n.insurance||'(none)'))+codingText(n.coding);
     if(n.signLine) body+='\n\n'+n.signLine;
   }
+  if(Array.isArray(n.orders) && n.orders.length){
+    body+='\n\n— — — ORDERS — — —\n'+savedOrdersText(n.orders);
+  }
   document.getElementById('viewBody').value=body;
   document.getElementById('viewModal').classList.add('show');
 }
@@ -1923,6 +2048,8 @@ function loadRecordIntoEditor(n){
   currentSoap=n.soap||''; currentInsurance=n.insurance||''; currentCoding=n.coding||null;
   currentOpt=n.opt||null; currentFormat='soap'; lastEMR=n.emr||null;
   currentAVS=n.avs||''; currentReferral=n.referral||''; currentRecs=null;
+  currentOrders=Array.isArray(n.orders)?n.orders.slice():[]; editingOrderId=null;
+  ordersDx=n.ordersDx&&typeof n.ordersDx==='object'?{text:n.ordersDx.text||'',icd:n.ordersDx.icd||[]}:{text:'',icd:[]};
   if(document.getElementById('contextBox')) document.getElementById('contextBox').value=n.context||'';
   if(currentAVS) showExtra('avsCard','avsBody',currentAVS);
   if(currentReferral) showExtra('refCard','refBody',currentReferral);
@@ -3006,6 +3133,488 @@ function printNote(){
     setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); }catch(e){ toast('Could not open print dialog.','err'); } },300);
     toast('Printing note…','ok');
   }
+}
+
+/* =========================================================
+   ORDERS MODULE
+   Spine / PM&R order entry: medication, PT, DME/brace, imaging,
+   injection, referral. Diagnosis auto-pull from the current note,
+   keyword/ICD-driven order suggestions, an editable order list,
+   a printable order sheet, and persistence alongside the visit.
+   All client-side; reuses existing CSS classes.
+   ========================================================= */
+
+// Orders for the visit currently open in the editor. Restored from a saved
+// note when one is reopened; saved back into the note record on save.
+let currentOrders = [];           // [{id,type,fields:{...}}]
+let editingOrderId = null;        // id when editing an existing order, else null
+let ordersDx = { text:'', icd:[] }; // diagnosis context pulled from the note
+
+/* Field definitions per order type. `key`,`label`,`type`(text|textarea|select),
+   `opts` for selects, `quick` quick-pick chips, `ph` placeholder. */
+const ORDER_DEFS = {
+  medication: { label:'Medication', icon:'💊', fields:[
+    {key:'drug',  label:'Drug name', ph:'e.g. Gabapentin'},
+    {key:'dose',  label:'Dose',      ph:'e.g. 300 mg'},
+    {key:'route', label:'Route', type:'select', opts:['PO','IM','IV','SQ','Topical','PR','SL','Inhaled']},
+    {key:'freq',  label:'Frequency', ph:'e.g. TID'},
+    {key:'qty',   label:'Quantity',  ph:'e.g. 90'},
+    {key:'refills',label:'Refills',  ph:'e.g. 2'},
+    {key:'notes', label:'Notes / instructions', type:'textarea', ph:'e.g. titrate as tolerated; take with food'}
+  ]},
+  pt: { label:'Physical Therapy', icon:'🏃', fields:[
+    {key:'dx',    label:'Associated diagnosis', ph:'e.g. Lumbar radiculopathy (M54.16)'},
+    {key:'freq',  label:'Frequency', ph:'e.g. 3x/week'},
+    {key:'duration',label:'Duration', ph:'e.g. 4 weeks'},
+    {key:'modalities',label:'Modalities / goals', type:'textarea', ph:'e.g. lumbar stabilization, core strengthening, McKenzie protocol; goal: reduce radicular pain, improve ADLs'},
+    {key:'notes', label:'Notes', type:'textarea', ph:'e.g. precautions; no axial loading'}
+  ]},
+  dme: { label:'DME / Brace', icon:'🦿', fields:[
+    {key:'item',  label:'Item', ph:'e.g. TLSO brace', quick:['TLSO brace','Lumbar support (LSO)','Cervical collar','Knee brace','Wrist splint']},
+    {key:'dx',    label:'Indication / diagnosis', ph:'e.g. L1 compression fracture'},
+    {key:'icd',   label:'ICD-10', ph:'e.g. S32.019A'},
+    {key:'notes', label:'Notes', type:'textarea', ph:'e.g. fit and dispense; wear while upright x 8 weeks'}
+  ]},
+  imaging: { label:'Imaging', icon:'🩻', fields:[
+    {key:'study', label:'Study', type:'select', opts:['X-ray','MRI','CT','Ultrasound','DEXA','EMG/NCS']},
+    {key:'region',label:'Body region', ph:'e.g. Lumbar spine'},
+    {key:'indication',label:'Indication', ph:'e.g. r/o compression fracture; persistent low back pain'},
+    {key:'notes', label:'Notes', type:'textarea', ph:'e.g. with and without contrast; compare to prior'}
+  ]},
+  injection: { label:'Injection', icon:'💉', fields:[
+    {key:'inj',   label:'Injection type', ph:'e.g. Epidural steroid injection', quick:['Epidural steroid injection','Facet joint injection','Medial branch block','Trigger point injection','Sacroiliac joint injection']},
+    {key:'level', label:'Level / site', ph:'e.g. L4-L5'},
+    {key:'laterality',label:'Laterality', type:'select', opts:['','Left','Right','Bilateral','Midline']},
+    {key:'notes', label:'Notes', type:'textarea', ph:'e.g. under fluoroscopy; triamcinolone 80 mg'}
+  ]},
+  referral: { label:'Referral', icon:'✉️', fields:[
+    {key:'specialty',label:'Specialty / provider', ph:'e.g. Neurosurgery — Dr. Lee'},
+    {key:'reason',label:'Reason', type:'textarea', ph:'e.g. surgical evaluation of progressive radiculopathy'},
+    {key:'notes', label:'Notes', type:'textarea', ph:'e.g. include MRI report; urgent'}
+  ]}
+};
+
+/* Suggestion rules: keyword/ICD match (case-insensitive) on the diagnosis text.
+   Each rule yields one or more pre-filled order templates. Easy to extend. */
+const ORDER_SUGGEST_RULES = [
+  { test:(t)=>/lumbar compression fracture|compression fracture/.test(t) || /\bs32\b|s32\.|m48\.5/.test(t),
+    orders:[
+      {type:'dme', label:'TLSO brace', fields:{item:'TLSO brace', dx:'Lumbar compression fracture'}},
+      {type:'imaging', label:'Lumbar spine X-ray', fields:{study:'X-ray', region:'Lumbar spine', indication:'Evaluate compression fracture'}}
+    ]},
+  { test:(t)=>/lumbar radiculopathy|sciatica/.test(t) || /m54\.1[0-9]?|m54\.3|m54\.4/.test(t),
+    orders:[
+      {type:'pt', label:'PT — lumbar', fields:{dx:'Lumbar radiculopathy', freq:'3x/week', duration:'4 weeks', modalities:'Lumbar stabilization, core strengthening, nerve glides'}},
+      {type:'injection', label:'Lumbar ESI', fields:{inj:'Epidural steroid injection', level:'L4-L5', notes:'Under fluoroscopy'}}
+    ]},
+  { test:(t)=>/cervical/.test(t) && /radiculopathy/.test(t) || /m54\.12/.test(t),
+    orders:[
+      {type:'pt', label:'PT — cervical', fields:{dx:'Cervical radiculopathy', freq:'3x/week', duration:'4 weeks', modalities:'Cervical traction, postural retraining, scapular stabilization'}},
+      {type:'dme', label:'Cervical collar', fields:{item:'Cervical collar', dx:'Cervical radiculopathy'}}
+    ]},
+  { test:(t)=>/low back pain/.test(t) || /m54\.5/.test(t),
+    orders:[
+      {type:'pt', label:'PT — lumbar', fields:{dx:'Low back pain', freq:'2-3x/week', duration:'4 weeks', modalities:'Core strengthening, lumbar stabilization, flexibility'}},
+      {type:'dme', label:'Lumbar support (LSO)', fields:{item:'Lumbar support (LSO)', dx:'Low back pain'}}
+    ]},
+  { test:(t)=>/osteoarthritis/.test(t) && /knee/.test(t) || /m17/.test(t),
+    orders:[
+      {type:'dme', label:'Knee brace', fields:{item:'Knee brace', dx:'Knee osteoarthritis'}},
+      {type:'pt', label:'PT — knee', fields:{dx:'Knee osteoarthritis', freq:'2x/week', duration:'6 weeks', modalities:'Quadriceps strengthening, ROM, low-impact conditioning'}}
+    ]}
+];
+
+function renderOrdersView(){
+  const noPt=document.getElementById('ordersNoPt');
+  const body=document.getElementById('ordersBody');
+  const ap=activePatient();
+  if(!ap){ noPt.style.display='block'; body.style.display='none'; return; }
+  noPt.style.display='none'; body.style.display='block';
+  // reflect any diagnosis already pulled
+  renderOrdersDx();
+  renderOrderFields();
+  renderOrderList();
+  updateNavCounts();
+}
+
+/* ---- diagnosis pull from the current generated note ---- */
+function noteDiagnosisText(){
+  // Combine the structured diagnoses string + ICD chips + chief complaint.
+  const e=lastEMR||{};
+  const c=currentCoding||{};
+  const parts=[];
+  if(e.dx && e.dx!=='—') parts.push(e.dx);
+  if(e.cc && e.cc!=='—') parts.push(e.cc);
+  const icd=(c.icd&&c.icd.length)?c.icd.slice():[];
+  return { text:parts.join('; '), icd:icd };
+}
+function pullDxFromNote(){
+  const d=noteDiagnosisText();
+  if(!d.text && !d.icd.length){
+    toast('No diagnosis on the current note yet — generate a note in Visit first.','err');
+    return;
+  }
+  ordersDx={ text:d.text, icd:d.icd };
+  renderOrdersDx();
+  // also prefill any open builder fields that take a diagnosis
+  prefillDxIntoForm();
+  // auto-run suggestions for convenience
+  suggestOrdersFromDx();
+  toast('Diagnosis pulled from the current note.','ok');
+}
+function renderOrdersDx(){
+  const el=document.getElementById('ordersDxBody');
+  if(!el) return;
+  if(!ordersDx.text && !ordersDx.icd.length){
+    el.textContent='No diagnosis pulled yet. Generate a note in Visit, then “Pull from current note”.';
+    return;
+  }
+  let html='';
+  if(ordersDx.text) html+='<div><b>Diagnoses:</b> '+esc(ordersDx.text)+'</div>';
+  if(ordersDx.icd.length) html+='<div style="margin-top:6px">'+ordersDx.icd.map(x=>'<span class="codechip">'+esc(x)+'</span>').join(' ')+'</div>';
+  el.innerHTML=html;
+}
+function dxCombinedString(){
+  return ((ordersDx.text||'')+' '+(ordersDx.icd||[]).join(' ')).toLowerCase();
+}
+
+/* ---- AI-style suggested orders from the diagnosis ---- */
+function suggestOrdersFromDx(){
+  const wrap=document.getElementById('ordersSuggestWrap');
+  const chips=document.getElementById('ordersSuggestChips');
+  const t=dxCombinedString();
+  if(!t.trim()){
+    toast('Pull a diagnosis from the note first.','err');
+    wrap.style.display='none'; return;
+  }
+  // collect matching suggestion templates (de-duped by type+label)
+  const seen=new Set(); const suggestions=[];
+  ORDER_SUGGEST_RULES.forEach(rule=>{
+    let match=false;
+    try{ match=rule.test(t); }catch(e){ match=false; }
+    if(match){
+      rule.orders.forEach(o=>{
+        const k=o.type+'|'+o.label;
+        if(!seen.has(k)){ seen.add(k); suggestions.push(o); }
+      });
+    }
+  });
+  if(!suggestions.length){
+    wrap.style.display='block';
+    chips.innerHTML='<span style="color:var(--muted);font-size:13px">No automatic suggestions for this diagnosis — build an order manually below.</span>';
+    return;
+  }
+  // stash for click handlers
+  window.__ordSuggestions=suggestions;
+  wrap.style.display='block';
+  chips.innerHTML=suggestions.map((o,i)=>{
+    const def=ORDER_DEFS[o.type]||{icon:'•',label:o.type};
+    return '<span class="dotchip" onclick="acceptSuggestion('+i+')" title="Add this order">'+def.icon+' '+esc(o.label)+' <span style="opacity:.6">＋</span></span>';
+  }).join('');
+}
+function acceptSuggestion(i){
+  const s=(window.__ordSuggestions||[])[i];
+  if(!s) return;
+  const def=ORDER_DEFS[s.type]; if(!def){ return; }
+  const fields={};
+  def.fields.forEach(f=>{ fields[f.key]=s.fields[f.key]||''; });
+  // if the suggestion didn't set an ICD but we have one, drop it into dme/icd
+  if(s.type==='dme' && !fields.icd && ordersDx.icd.length) fields.icd=ordersDx.icd[0].split(' — ')[0];
+  currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:s.type, fields });
+  renderOrderList();
+  updateNavCounts();
+  toast('Added: '+def.label+' — '+(s.label||'')+'. Edit in the list if needed.','ok');
+}
+
+/* ---- builder form ---- */
+function renderOrderFields(){
+  const type=document.getElementById('ordType').value;
+  const host=document.getElementById('ordFields');
+  const addRow=document.getElementById('ordAddRow');
+  if(!type){ host.innerHTML=''; addRow.style.display='none'; editingOrderId=null; return; }
+  const def=ORDER_DEFS[type];
+  addRow.style.display='flex';
+  document.getElementById('ordAddBtn').textContent = editingOrderId ? '✔ Update order' : '➕ Add order';
+  host.innerHTML=def.fields.map(f=>{
+    const id='ordf_'+f.key;
+    let control;
+    if(f.type==='textarea'){
+      control='<textarea id="'+id+'" rows="2" placeholder="'+esc(f.ph||'')+'"></textarea>';
+    } else if(f.type==='select'){
+      control='<select class="sf-select" id="'+id+'">'+f.opts.map(o=>'<option value="'+esc(o)+'">'+(o===''?'—':esc(o))+'</option>').join('')+'</select>';
+    } else {
+      control='<input type="text" id="'+id+'" placeholder="'+esc(f.ph||'')+'">';
+    }
+    let quick='';
+    if(f.quick&&f.quick.length){
+      quick='<div class="dotbar" style="margin-top:7px"><span class="dotbar-lbl">Quick pick:</span>'+
+        f.quick.map(q=>'<span class="dotchip" onclick="setOrderField(\''+id+'\',this.dataset.q)" data-q="'+esc(q)+'">'+esc(q)+'</span>').join('')+'</div>';
+    }
+    return '<div class="field" style="margin-bottom:12px"><label>'+esc(f.label)+'</label>'+control+quick+'</div>';
+  }).join('');
+  // prefill diagnosis fields if we have a pulled dx
+  prefillDxIntoForm();
+}
+function setOrderField(id,val){ const el=document.getElementById(id); if(el){ el.value=val; el.focus&&el.focus(); } }
+function prefillDxIntoForm(){
+  const type=document.getElementById('ordType')?document.getElementById('ordType').value:'';
+  if(!type || editingOrderId) return;
+  if(!ordersDx.text && !ordersDx.icd.length) return;
+  const dxStr=ordersDx.text||'';
+  const icd0=ordersDx.icd.length?ordersDx.icd[0].split(' — ')[0]:'';
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el && !el.value && v) el.value=v; };
+  if(type==='pt')        set('ordf_dx', dxStr);
+  if(type==='dme'){      set('ordf_dx', dxStr); set('ordf_icd', icd0); }
+  if(type==='imaging')   set('ordf_indication', dxStr);
+}
+function readOrderForm(type){
+  const def=ORDER_DEFS[type]; const fields={};
+  def.fields.forEach(f=>{ const el=document.getElementById('ordf_'+f.key); fields[f.key]=el?el.value.trim():''; });
+  return fields;
+}
+function orderFormHasContent(type,fields){
+  // require at least the first (primary) field to be filled
+  const primary=ORDER_DEFS[type].fields[0].key;
+  return !!(fields[primary] && fields[primary].trim());
+}
+function addOrderFromForm(){
+  const type=document.getElementById('ordType').value;
+  if(!type){ toast('Choose an order type first.','err'); return; }
+  const fields=readOrderForm(type);
+  if(!orderFormHasContent(type,fields)){ toast('Fill in at least the '+ORDER_DEFS[type].fields[0].label.toLowerCase()+'.','err'); return; }
+  if(editingOrderId){
+    const o=currentOrders.find(x=>x.id===editingOrderId);
+    if(o){ o.type=type; o.fields=fields; }
+    editingOrderId=null;
+    toast('Order updated.','ok');
+  } else {
+    currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type, fields });
+    toast('Order added.','ok');
+  }
+  cancelOrderEdit();
+  renderOrderList();
+  updateNavCounts();
+}
+function cancelOrderEdit(){
+  editingOrderId=null;
+  const sel=document.getElementById('ordType'); if(sel) sel.value='';
+  renderOrderFields();
+}
+function editOrder(id){
+  const o=currentOrders.find(x=>x.id===id); if(!o) return;
+  editingOrderId=id;
+  document.getElementById('ordType').value=o.type;
+  renderOrderFields();
+  // fill values
+  (ORDER_DEFS[o.type].fields).forEach(f=>{ const el=document.getElementById('ordf_'+f.key); if(el) el.value=o.fields[f.key]||''; });
+  document.getElementById('ordAddBtn').textContent='✔ Update order';
+  document.getElementById('ordersBuilderCard').scrollIntoView({behavior:'smooth'});
+}
+function removeOrder(id){
+  currentOrders=currentOrders.filter(x=>x.id!==id);
+  if(editingOrderId===id) cancelOrderEdit();
+  renderOrderList();
+  updateNavCounts();
+  toast('Order removed.','');
+}
+function clearAllOrders(){
+  if(!currentOrders.length) return;
+  if(!confirm('Remove all orders for this visit?')) return;
+  currentOrders=[]; editingOrderId=null;
+  renderOrderList(); updateNavCounts();
+  toast('All orders cleared.','');
+}
+
+/* Human-readable one-line summary of an order (used in list + copy). */
+function orderSummary(o){
+  const f=o.fields||{};
+  switch(o.type){
+    case 'medication': return [f.drug,f.dose,f.route,f.freq].filter(Boolean).join(' ')+
+      (f.qty?(' · #'+f.qty):'')+(f.refills?(' · refills '+f.refills):'');
+    case 'pt': return 'Physical therapy'+(f.dx?(' for '+f.dx):'')+(f.freq?(' · '+f.freq):'')+(f.duration?(' x '+f.duration):'');
+    case 'dme': return (f.item||'DME')+(f.dx?(' — '+f.dx):'')+(f.icd?(' ('+f.icd+')'):'');
+    case 'imaging': return [f.study,f.region].filter(Boolean).join(' ')+(f.indication?(' — '+f.indication):'');
+    case 'injection': return (f.inj||'Injection')+(f.level?(' at '+f.level):'')+(f.laterality?(' · '+f.laterality):'');
+    case 'referral': return 'Referral to '+(f.specialty||'specialist')+(f.reason?(' — '+f.reason):'');
+    default: return o.type;
+  }
+}
+function renderOrderList(){
+  const list=document.getElementById('ordList');
+  const empty=document.getElementById('ordEmpty');
+  const actions=document.getElementById('ordActionsRow');
+  const cnt=document.getElementById('ordCountLbl');
+  if(!list) return;
+  cnt.textContent=currentOrders.length?('· '+currentOrders.length+' order'+(currentOrders.length===1?'':'s')):'';
+  if(!currentOrders.length){ empty.style.display='block'; list.innerHTML=''; actions.style.display='none'; return; }
+  empty.style.display='none'; actions.style.display='flex';
+  list.innerHTML=currentOrders.map(o=>{
+    const def=ORDER_DEFS[o.type]||{icon:'•',label:o.type};
+    return `<div class="hist-item" onclick="editOrder('${o.id}')" title="Click to edit">
+      <span class="ic">${def.icon}</span>
+      <div class="hist-main">
+        <div class="t">${esc(def.label)}</div>
+        <div class="s">${esc(orderSummary(o))}</div>
+      </div>
+      <button class="del" title="Remove" onclick="event.stopPropagation();removeOrder('${o.id}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+/* ---- formatted text blocks (copy + print) ---- */
+function orderDetailLines(o){
+  const def=ORDER_DEFS[o.type]; const f=o.fields||{};
+  const lines=[];
+  def.fields.forEach(fd=>{
+    const v=f[fd.key];
+    if(v && String(v).trim()) lines.push(fd.label+': '+v);
+  });
+  return lines;
+}
+function ordersAsText(){
+  const ap=activePatient();
+  const out=[];
+  out.push('ORDERS — '+(ap?ap.name:'Unassigned patient'));
+  out.push('Provider: '+(getName()||'Clinician')+(getSpec()?(' · '+getSpec()):''));
+  out.push('Date: '+new Date().toLocaleString());
+  if(ordersDx.text||ordersDx.icd.length) out.push('Diagnosis: '+[ordersDx.text,ordersDx.icd.join('; ')].filter(Boolean).join(' · '));
+  out.push('');
+  currentOrders.forEach((o,i)=>{
+    const def=ORDER_DEFS[o.type]||{label:o.type};
+    out.push((i+1)+'. '+def.label.toUpperCase());
+    orderDetailLines(o).forEach(l=>out.push('   '+l));
+    out.push('');
+  });
+  out.push('Signature: ______________________________   Date: ____________');
+  return out.join('\n');
+}
+/* Render a saved orders array (from a history record) to plain text. */
+function savedOrdersText(orders){
+  const out=[];
+  (orders||[]).forEach((o,i)=>{
+    const def=ORDER_DEFS[o.type]||{label:o.type};
+    out.push((i+1)+'. '+def.label.toUpperCase());
+    orderDetailLines(o).forEach(l=>out.push('   '+l));
+  });
+  return out.join('\n');
+}
+function copyOrders(){
+  if(!currentOrders.length){ toast('No orders to copy.','err'); return; }
+  navigator.clipboard.writeText(ordersAsText())
+    .then(()=>toast('Orders copied.','ok'))
+    .catch(()=>toast('Could not copy.','err'));
+}
+
+/* ---- printable order sheet (mirrors buildPrintHTML) ---- */
+function buildOrdersPrintHTML(){
+  const ap=activePatient();
+  const patient=ap?ap.name:'Unassigned patient';
+  const ptMeta=ap?[ap.sex,ap.dob,ap.mrn?('MRN '+ap.mrn):''].filter(Boolean).join(' · '):'';
+  const docName=getName()||'Clinician';
+  const spec=getSpec();
+  const now=new Date().toLocaleString();
+  const dxLine=[ordersDx.text,ordersDx.icd.join('; ')].filter(Boolean).join(' · ');
+
+  const blocks=currentOrders.map((o,i)=>{
+    const def=ORDER_DEFS[o.type]||{label:o.type,icon:''};
+    const rows=orderDetailLines(o).map(l=>{
+      const idx=l.indexOf(':');
+      const k=idx>=0?l.slice(0,idx):l;
+      const v=idx>=0?l.slice(idx+1).trim():'';
+      return '<tr><td class="k">'+esc(k)+'</td><td>'+esc(v)+'</td></tr>';
+    }).join('');
+    return '<div class="ord">'+
+      '<h3>'+(i+1)+'. '+esc(def.label)+'</h3>'+
+      '<table class="emr">'+rows+'</table>'+
+    '</div>';
+  }).join('');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Scrivara Orders — ${esc(patient)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
+  .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
+  .meta b{color:#16324f}
+  h1.title{font-size:17px;color:#155fb3;margin:6px 0 14px}
+  .dx{background:#eef4fc;border:1px solid #cfe2f8;border-radius:8px;padding:8px 12px;margin-bottom:16px;font-size:13px;color:#155fb3}
+  .ord{margin-bottom:14px;border:1px solid #e2e9f1;border-radius:9px;padding:10px 14px;page-break-inside:avoid}
+  .ord h3{font-size:14.5px;color:#155fb3;margin:0 0 6px}
+  table.emr{width:100%;border-collapse:collapse}
+  table.emr td{padding:5px 5px;border-bottom:1px solid #eef2f7;vertical-align:top}
+  table.emr td.k{color:#5f7186;font-weight:600;width:200px;white-space:nowrap}
+  .sign{margin-top:26px;padding-top:16px;border-top:1px solid #e2e9f1;font-size:13px}
+  .sign .line{display:inline-block;border-bottom:1px solid #16324f;min-width:280px;margin:0 8px}
+  .disc{font-size:11.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;border-radius:6px;padding:7px 10px;margin-top:14px}
+  .foot{margin-top:22px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:10px}
+  @media print{body{padding:0}}
+</style></head><body>
+  <div class="hd">
+    <div class="brand">Scrivara<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <div class="meta">
+      <div><b>Patient:</b> ${esc(patient)}</div>
+      ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
+      <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
+      <div><b>Date:</b> ${esc(now)}</div>
+    </div>
+  </div>
+  <h1 class="title">Orders / Prescriptions</h1>
+  ${dxLine?('<div class="dx"><b>Diagnosis:</b> '+esc(dxLine)+'</div>'):''}
+  ${blocks||'<p>(No orders)</p>'}
+  <div class="sign">Provider signature: <span class="line"></span> Date: <span class="line" style="min-width:140px"></span></div>
+  <div class="disc">⚠️ Orders to be reviewed and signed by the provider. Final orders are the provider's responsibility.</div>
+  <div class="foot">Generated with Scrivara — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+</body></html>`;
+}
+function printOrders(){
+  if(!currentOrders.length){ toast('Add at least one order first.','err'); return; }
+  const html=buildOrdersPrintHTML();
+  let win=null;
+  try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
+  if(win && win.document){
+    win.document.open(); win.document.write(html); win.document.close(); win.focus();
+    const go=()=>{ try{win.print();}catch(e){} };
+    if(win.document.readyState==='complete') setTimeout(go,250); else win.onload=()=>setTimeout(go,150);
+    toast('Opening print view…','ok');
+  } else {
+    let frame=document.getElementById('sfOrdPrintFrame');
+    if(frame) frame.remove();
+    frame=document.createElement('iframe'); frame.id='sfOrdPrintFrame';
+    frame.style.position='fixed'; frame.style.right='0'; frame.style.bottom='0';
+    frame.style.width='0'; frame.style.height='0'; frame.style.border='0';
+    document.body.appendChild(frame);
+    const doc=frame.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); }catch(e){ toast('Could not open print dialog.','err'); } },300);
+    toast('Printing orders…','ok');
+  }
+}
+
+/* ---- persistence: save orders alongside the current visit note ---- */
+function saveOrdersToHistory(){
+  if(!currentOrders.length){ toast('No orders to save.','err'); return; }
+  // Keep editor note in sync, then persist the visit record (which now carries orders).
+  if(currentFormat==='soap'){
+    const nb=document.getElementById('noteBox');
+    if(nb && nb.style.display!=='none') currentSoap=nb.value;
+  }
+  let rec;
+  try{
+    rec=noteRecordFromState();
+    rec.orders=currentOrders.slice();
+    rec.ordersDx=ordersDx;
+    rec.isDraft = !currentSoap; // orders can be saved even without a full note
+    upsertNote(rec);
+  }catch(err){
+    console.error('saveOrdersToHistory failed',err);
+    toast('Could not save orders: '+((err&&err.message)||err),'err');
+    return;
+  }
+  const ap=activePatient();
+  toast('Orders saved with the visit'+(ap?(' to '+ap.name+'’s history'):'')+'.','ok');
 }
 
 /* =========================================================
