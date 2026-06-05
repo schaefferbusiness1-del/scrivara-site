@@ -741,22 +741,30 @@
         <div style="font-size:12px;color:var(--muted);margin-top:5px">Estimate only — ballpark national Medicare-ish averages. Actual reimbursement varies by payer, contract, geography, and modifiers.</div>
       </div>
 
+      <!-- PRIMARY actions — always visible. One Generate auto-produces the visit;
+           these are the everyday next steps. Extra tools live under "More tools". -->
       <div class="note-actions">
+        <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
+        <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
+        <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
+        <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
+        <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
+        <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
+      </div>
+
+      <!-- Secondary / manual tools — hidden by default, one click away. All
+           handlers unchanged; only relocated under this collapsible container. -->
+      <div class="note-actions" id="moreTools" style="display:none">
         <button class="btn-gold" id="optBtn" onclick="optimizeForPayout()" disabled>📈 Optimize for Insurance Payout</button>
         <button class="btn-ghost" id="mipsBtn" onclick="runMipsCheck()" disabled>🎯 MIPS check</button>
         <button class="btn-ghost" id="redflagBtn" onclick="runRedFlagScan()" disabled>🚩 Red-flag scan</button>
         <button class="btn-ghost" id="ddxBtn" onclick="generateDifferentials()" disabled>🔍 Differentials</button>
-        <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="avsBtn" onclick="generateAVS()" disabled>👤 Patient summary</button>
         <button class="btn-ghost" id="handoutBtn" onclick="generateHandout()" disabled>📝 Patient handout</button>
         <button class="btn-ghost" id="refBtn" onclick="generateReferral()" disabled>✉️ Referral letter</button>
         <button class="btn-ghost" id="billBtn" onclick="showSuperbill()" disabled>🧾 Superbill</button>
         <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach Scrivara</button>
-        <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
-        <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
         <button class="btn-ghost" onclick="exportFHIR()" disabled id="fhirBtn" title="Build a FHIR R4 Bundle">🔌 Export FHIR</button>
-        <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
-        <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
         <button class="btn-ghost" onclick="downloadNote()" disabled id="dlBtn">⬇ Download .txt</button>
       </div>
     </div>
@@ -882,6 +890,10 @@
           <button class="btn-ghost" onclick="suggestOrdersFromDx()">✨ Suggest orders</button>
         </div>
         <div id="ordersDxBody" class="xbody" style="margin-top:10px">No diagnosis pulled yet. Generate a note in Visit, then “Pull from current note”.</div>
+        <div id="aiOrdersWrap" style="display:none;margin-top:12px">
+          <div class="dotbar"><span class="dotbar-lbl">✨ AI-suggested orders (from this visit)</span></div>
+          <div id="aiOrdersChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
         <div id="ordersSuggestWrap" style="display:none;margin-top:12px">
           <div class="dotbar"><span class="dotbar-lbl">Suggested orders</span></div>
           <div id="ordersSuggestChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
@@ -2643,6 +2655,18 @@ function enableOutputs(on){
   });
   const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
 }
+/* Show/hide the secondary "More tools" button cluster on the Visit tab. */
+function toggleMoreTools(){
+  const box=document.getElementById('moreTools');
+  const btn=document.getElementById('moreToolsBtn');
+  if(!box) return;
+  const open=box.style.display==='none'||box.style.display==='';
+  box.style.display=open?'flex':'none';
+  if(btn){
+    btn.setAttribute('aria-expanded',open?'true':'false');
+    btn.innerHTML=open?'🛠 More tools ▴':'🛠 More tools ▾';
+  }
+}
 function showNote(text){
   document.getElementById('noteEmpty').style.display='none';
   const nb=document.getElementById('noteBox');
@@ -2697,12 +2721,116 @@ async function generateNote(){
     renderCoding(currentCoding);
     document.getElementById('optCard').style.display='none';
     populateEMR(result.emr,currentCoding);
+    // AUTO-POPULATE the new AI extras (red flags, differentials, MME, orders, recommendations).
+    autoPopulateExtras(result);
     toast('Note generated. Optimize coding or sign when ready.','ok');
   }catch(err){
     toast(friendlyError(err),'err');
   }finally{
     gb.disabled=false; gb.innerHTML='✨ Generate Note';
   }
+}
+
+/* =========================================================
+   AUTO-POPULATE EXTRAS after a successful generate.
+   Reads the parsed result's new arrays (red_flags, differentials,
+   opioids, suggested_orders, recommendations) and renders each into
+   its existing panel WITHOUT requiring a button click. Every block is
+   independently guarded: an empty array changes nothing, and a thrown
+   error in one block cannot block the others or the note.
+   ========================================================= */
+function autoPopulateExtras(result){
+  result=result||{};
+  // --- Red flags ---
+  try{
+    const rf=Array.isArray(result.red_flags)?result.red_flags.filter(Boolean):[];
+    const rc=document.getElementById('redflagCard');
+    if(rf.length){
+      // Build text in the format renderRedFlags() expects (OVERALL summary + per-line).
+      const present=rf.map(s=>String(s).trim()).filter(Boolean);
+      const text='OVERALL: '+present.length+' red flag(s) present\n'
+        +present.map(l=>/^\s*\[?\s*(PRESENT|NOT MENTIONED)/i.test(l)?l:('PRESENT '+l)).join('\n');
+      currentRedFlags=text;
+      renderRedFlags(currentRedFlags);
+    } else {
+      currentRedFlags='';
+      if(rc) rc.style.display='none';
+    }
+  }catch(e){ /* never block the note */ }
+
+  // --- Differentials ---
+  try{
+    const dd=Array.isArray(result.differentials)?result.differentials:[];
+    const items=dd.map(d=>{
+      if(typeof d==='string') return d.trim();
+      if(d&&typeof d==='object'){
+        const dx=(d.dx||d.diagnosis||'').toString().trim();
+        const rat=(d.rationale||d.reason||'').toString().trim();
+        return [dx,rat].filter(Boolean).join(' — ');
+      }
+      return '';
+    }).filter(Boolean);
+    const dc=document.getElementById('ddxCard');
+    if(items.length){
+      currentDdx=items.map((s,i)=>(i+1)+'. '+s).join('\n')
+        +'\n\nThese are considerations for the provider, not a diagnosis.';
+      showExtra('ddxCard','ddxBody',currentDdx);
+    } else {
+      currentDdx='';
+      if(dc) dc.style.display='none';
+    }
+  }catch(e){ /* */ }
+
+  // --- Opioid MME ---
+  try{
+    const ops=Array.isArray(result.opioids)?result.opioids:[];
+    const mapped=ops.map(o=>{
+      const drug=mapOpioidName((o&&(o.drug||o.name))||'');
+      const mg=Number(o&&(o.mg_per_dose!=null?o.mg_per_dose:o.mg))||'';
+      const doses=Number(o&&(o.doses_per_day!=null?o.doses_per_day:o.doses))||'';
+      return drug?{drug,mg:mg===''?'':String(mg),doses:doses===''?'':String(doses)}:null;
+    }).filter(Boolean);
+    if(mapped.length){
+      mmeOpioids=mapped;
+      renderMmeRows();
+      renderMmeResult();
+    }
+    // if empty: leave the MME card in its current/empty state (no change)
+  }catch(e){ /* */ }
+
+  // --- Suggested orders (AI-provided add-able chips) ---
+  try{
+    const so=Array.isArray(result.suggested_orders)?result.suggested_orders.filter(Boolean).map(String):[];
+    renderAiSuggestedOrders(so);
+  }catch(e){ /* */ }
+
+  // --- Recommendations (auto) ---
+  try{
+    const recs=Array.isArray(result.recommendations)?result.recommendations.filter(Boolean).map(String):[];
+    if(recs.length){
+      // Show the AI-provided list under "Follow-up & monitoring" so the
+      // Recommendations view is populated without a manual generate.
+      currentRecs={ care_gaps:[], interactions:[], follow_up:recs, documentation:[] };
+      renderRecommendations();
+    }
+  }catch(e){ /* */ }
+}
+
+/* Map a free-text opioid name to an existing MME_FACTORS key (case-insensitive). */
+function mapOpioidName(raw){
+  const s=String(raw||'').toLowerCase().trim();
+  if(!s) return '';
+  if(/fentanyl/.test(s)) return 'fentanyl';            // "fentanyl patch", "fentanyl"
+  if(/hydromorphone|dilaudid/.test(s)) return 'hydromorphone';
+  if(/oxymorphone|opana/.test(s)) return 'oxymorphone';
+  if(/oxycodone|oxycontin|percocet|roxicodone/.test(s)) return 'oxycodone';
+  if(/hydrocodone|norco|vicodin|lortab/.test(s)) return 'hydrocodone';
+  if(/methadone/.test(s)) return 'methadone';
+  if(/tramadol|ultram/.test(s)) return 'tramadol';
+  if(/codeine/.test(s)) return 'codeine';
+  if(/morphine|ms contin|kadian|avinza/.test(s)) return 'morphine';
+  // exact-key fallback
+  const f=MME_FACTORS.find(x=>x.key===s); return f?f.key:'';
 }
 
 function friendlyError(err){
@@ -2795,8 +2923,14 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
  "em_level": "<single most appropriate code 99202-99215>",
  "em_justification": "<one concise line tying the level to documented MDM (problems/data/risk) or stated time>",
  "icd10": [ {"code":"<e.g. J20.9>","desc":"<diagnosis name>"} ],
- "cpt": [ {"code":"<e.g. 93000>","desc":"<procedure actually performed in this visit; empty array if none>"} ]
-}`+docPrefsBlock();
+ "cpt": [ {"code":"<e.g. 93000>","desc":"<procedure actually performed in this visit; empty array if none>"} ],
+ "red_flags": [ "<spine/neuro/pain RED FLAG actually documented (e.g. cauda equina, progressive deficit, fracture, infection, malignancy, AAA), each as 'Category: evidence — suggested action'. Empty array if none documented. NEVER invent.>" ],
+ "suggested_orders": [ "<concrete order this visit reasonably warrants based ONLY on the documented assessment/plan, e.g. 'Physical therapy — lumbar, 3x/week x4 weeks', 'MRI lumbar spine', 'TLSO brace'. Empty array if none.>" ],
+ "differentials": [ {"dx":"<diagnosis to consider>","rationale":"<one-line rationale grounded in documented findings + what would confirm/exclude>"} ],
+ "opioids": [ {"drug":"<opioid name as said, e.g. oxycodone, fentanyl patch>","mg_per_dose":<number>,"doses_per_day":<number>} ],
+ "recommendations": [ "<advisory care-gap / follow-up / monitoring / documentation item FOR THE PROVIDER to consider; never a directive, never upcoding. Empty array if none.>" ]
+}
+For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.`+docPrefsBlock();
   return await postChat(sys,'Visit transcript:\n\n'+transcript+ctxLine,key);
 }
 
@@ -2913,8 +3047,10 @@ function emrText(v){
 function parseGenJSON(content){
   let parsed;
   try{ parsed=JSON.parse(content); }
-  catch(e){ return {note:content,insuranceNote:'',coding:null,emr:{cc:'—',dx:'—',meds:'—',orders:'—',fu:'—'},raw:parsed}; }
+  catch(e){ return {note:content,insuranceNote:'',coding:null,emr:{cc:'—',dx:'—',meds:'—',orders:'—',fu:'—'},raw:parsed,
+    red_flags:[],suggested_orders:[],differentials:[],opioids:[],recommendations:[]}; }
   const fmtCodes=arr=>Array.isArray(arr)?arr.map(c=>(c.code||'')+(c.desc?' — '+c.desc:'')).filter(Boolean):[];
+  const arrOf=v=>Array.isArray(v)?v:[];
   return {
     note:parsed.note||content,
     insuranceNote:parsed.insurance_note||'',
@@ -2931,6 +3067,12 @@ function parseGenJSON(content){
       orders:emrText(parsed.orders),
       fu:emrText(parsed.follow_up)
     },
+    // NEW backend/key fields (all default to [] so downstream auto-populate is safe)
+    red_flags:arrOf(parsed.red_flags),
+    suggested_orders:arrOf(parsed.suggested_orders),
+    differentials:arrOf(parsed.differentials),
+    opioids:arrOf(parsed.opioids),
+    recommendations:arrOf(parsed.recommendations),
     raw:parsed
   };
 }
@@ -3732,6 +3874,8 @@ function renderOrdersView(){
   noPt.style.display='none'; body.style.display='block';
   // reflect any diagnosis already pulled
   renderOrdersDx();
+  // re-show any AI-suggested orders captured at the last generate
+  renderAiSuggestedOrders(aiSuggestedOrders);
   renderOrderFields();
   renderOrderList();
   populatePaServiceSelect();
@@ -3813,6 +3957,64 @@ function suggestOrdersFromDx(){
     return '<span class="dotchip" onclick="acceptSuggestion('+i+')" title="Add this order">'+def.icon+' '+esc(o.label)+' <span style="opacity:.6">＋</span></span>';
   }).join('');
 }
+/* ---- AI-provided suggested orders (free-text strings from /api/generate) ----
+   Stored so they survive until the next generate; rendered as add-able chips in
+   the Orders view alongside the rule-based ones. Each is parsed into a best-guess
+   order type so "Add" drops a usable draft into the order list. */
+let aiSuggestedOrders=[];   // array of plain strings from the last generate
+function renderAiSuggestedOrders(list){
+  aiSuggestedOrders=Array.isArray(list)?list.filter(Boolean).map(String):[];
+  const wrap=document.getElementById('aiOrdersWrap');
+  const chips=document.getElementById('aiOrdersChips');
+  if(!wrap||!chips) return;
+  if(!aiSuggestedOrders.length){ wrap.style.display='none'; chips.innerHTML=''; return; }
+  wrap.style.display='block';
+  chips.innerHTML=aiSuggestedOrders.map((s,i)=>{
+    const p=parseSuggestedOrder(s);
+    const def=ORDER_DEFS[p.type]||{icon:'•'};
+    return '<span class="dotchip" onclick="acceptAiSuggestion('+i+')" title="Add this order">'+def.icon+' '+esc(s)+' <span style="opacity:.6">＋</span></span>';
+  }).join('');
+}
+/* Best-effort parse of a free-text order string into {type, fields}. */
+function parseSuggestedOrder(str){
+  const s=String(str||''); const t=s.toLowerCase();
+  if(/physical therapy|^pt\b|\bpt\b|therapy/.test(t)){
+    const freqM=s.match(/(\d+\s*x\s*\/?\s*week|\d+x\/wk|\d+\s*times?\s*\/?\s*week)/i);
+    const durM=s.match(/x?\s*(\d+)\s*week/i);
+    return {type:'pt', fields:{dx:(ordersDx&&ordersDx.text)||'', freq:freqM?freqM[0]:'', duration:durM?(durM[1]+' weeks'):'', modalities:s}};
+  }
+  if(/mri|x-?ray|\bct\b|ultrasound|dexa|emg|ncs|imaging/.test(t)){
+    let study='X-ray';
+    if(/mri/.test(t)) study='MRI'; else if(/\bct\b/.test(t)) study='CT';
+    else if(/ultrasound/.test(t)) study='Ultrasound'; else if(/dexa/.test(t)) study='DEXA';
+    else if(/emg|ncs/.test(t)) study='EMG/NCS';
+    return {type:'imaging', fields:{study, region:s.replace(/.*?(mri|x-?ray|ct|ultrasound|dexa|emg\/?ncs)\s*/i,'').trim()||s, indication:s}};
+  }
+  if(/brace|tlso|lso|collar|splint|orthos|dme/.test(t)){
+    return {type:'dme', fields:{item:s, dx:(ordersDx&&ordersDx.text)||'', icd:(ordersDx&&ordersDx.icd&&ordersDx.icd[0])?ordersDx.icd[0].split(' — ')[0]:''}};
+  }
+  if(/injection|epidural|esi|facet|medial branch|trigger point|sacroiliac|\bsi\b/.test(t)){
+    return {type:'injection', fields:{inj:s, level:'', notes:''}};
+  }
+  if(/refer|referral|consult|neurosurg|ortho|specialist/.test(t)){
+    return {type:'referral', fields:{specialty:s, reason:'', notes:''}};
+  }
+  // default: medication
+  return {type:'medication', fields:{drug:s, dose:'', freq:'', notes:''}};
+}
+function acceptAiSuggestion(i){
+  const s=aiSuggestedOrders[i];
+  if(!s) return;
+  const p=parseSuggestedOrder(s);
+  const def=ORDER_DEFS[p.type]; if(!def) return;
+  const fields={};
+  def.fields.forEach(f=>{ fields[f.key]=p.fields[f.key]||''; });
+  currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:p.type, fields });
+  renderOrderList();
+  updateNavCounts();
+  toast('Added suggested order: '+s+'. Edit in the list if needed.','ok');
+}
+
 function acceptSuggestion(i){
   const s=(window.__ordSuggestions||[])[i];
   if(!s) return;
