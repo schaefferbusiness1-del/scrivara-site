@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scrivara — Ambient AI Medical Scribe</title>
+<title>MLS — Ambient AI Medical Scribe</title>
 <style>
   :root{
     --bg:#f4f7fb; --card:#ffffff; --ink:#16324f; --muted:#5f7186;
@@ -312,7 +312,7 @@
 <!-- ============ AUTH SCREEN ============ -->
 <div class="auth-wrap" id="authScreen">
   <div class="auth-card">
-    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> Scrivara</div>
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
     <p class="auth-sub">Ambient AI medical scribe — sign in to continue</p>
 
     <div class="auth-tabs">
@@ -355,7 +355,7 @@
 
   <!-- Set-a-new-password card, shown when ?reset=<token> is in the URL -->
   <div class="auth-card" id="resetCard" style="display:none">
-    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkR)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> Scrivara</div>
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkR)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
     <p class="auth-sub">Set a new password</p>
     <div class="auth-err" id="resetErr"></div>
     <div class="field">
@@ -372,7 +372,7 @@
 
   <!-- Two-factor code card, shown when login returns twofa_required -->
   <div class="auth-card" id="twofaCard" style="display:none">
-    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMark2)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> Scrivara</div>
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMark2)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
     <p class="auth-sub" id="twofaSub">Enter the 6-digit code from your authenticator app</p>
     <div class="auth-err" id="twofaErr"></div>
     <div class="field">
@@ -391,7 +391,7 @@
 
 <!-- ============ PHONE MIC PAGE (shown when ?mic=<CODE>) ============ -->
 <div id="phoneMicPage" style="display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,#0e3a4f,#0b6b6e);color:#fff;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:inherit">
-  <div style="font-size:24px;font-weight:700;margin-bottom:6px">Scrivara phone mic</div>
+  <div style="font-size:24px;font-weight:700;margin-bottom:6px">MLS phone mic</div>
   <div style="font-size:14px;opacity:.85;margin-bottom:4px">Pairing code</div>
   <div id="phoneMicPageCode" style="font-size:30px;font-weight:700;letter-spacing:4px;font-family:monospace;margin-bottom:24px">------</div>
   <button id="phoneRecBtn" onclick="togglePhoneRec()" style="width:170px;height:170px;border-radius:50%;border:none;background:#fff;color:#0b6b6e;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.3)">● Record</button>
@@ -406,7 +406,7 @@
 <header>
   <div class="logo">
     <div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div>
-    <div>Scrivara
+    <div>MLS
       <small>Ambient AI medical scribe</small>
     </div>
   </div>
@@ -622,6 +622,15 @@
         <span class="pill-toggle" id="togIns" onclick="setFormat('insurance')">🧾 Insurance-Ready</span>
       </div>
 
+      <!-- Per-visit comment: auto-fills from the doctor's default, woven into the note -->
+      <div class="field" style="margin-top:14px">
+        <label for="visitComment" style="font-size:14px;font-weight:600">💬 Comment <span style="font-weight:400;color:var(--muted)">(added to the note as a COMMENT: line)</span></label>
+        <textarea id="visitComment" class="note-box" style="min-height:60px;margin-top:6px" placeholder="Comment for this visit (auto-fills from your default)…"></textarea>
+        <div class="row tight" style="gap:8px;margin-top:6px">
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="saveVisitCommentAsDefault()" title="Remember this comment as your standing default for future visits">⭐ Save as my default</button>
+        </div>
+      </div>
+
       <!-- Suggested coding -->
       <div class="code-card" id="codeCard" style="display:none">
         <h3>💲 Suggested coding <span style="font-weight:400;font-size:13px;color:var(--muted)">(for your review)</span></h3>
@@ -666,7 +675,7 @@
 
       <!-- Teach Scrivara: suggested preferences learned from edits -->
       <div class="extra-card" id="teachCard" style="display:none">
-        <h3>💡 Teach Scrivara</h3>
+        <h3>💡 Teach MLS</h3>
         <div class="xbody" id="teachBody" style="white-space:normal"></div>
       </div>
 
@@ -865,7 +874,7 @@
         <button class="btn-ghost" id="handoutBtn" onclick="generateHandout()" disabled>📝 Patient handout</button>
         <button class="btn-ghost" id="refBtn" onclick="generateReferral()" disabled>✉️ Referral letter</button>
         <button class="btn-ghost" id="billBtn" onclick="showSuperbill()" disabled>🧾 Superbill</button>
-        <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach Scrivara</button>
+        <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach MLS</button>
         <button class="btn-ghost" onclick="exportFHIR()" disabled id="fhirBtn" title="Build a FHIR R4 Bundle">🔌 Export FHIR</button>
         <button class="btn-ghost" onclick="downloadNote()" disabled id="dlBtn">⬇ Download .txt</button>
       </div>
@@ -1215,7 +1224,7 @@
 
 <footer>
   <span class="noprint">⚕️ <b>Always review AI notes before signing.</b> Don't use with real patient data until you're HIPAA-compliant
-  (a signed BAA with OpenAI, encryption, and patient consent). Scrivara runs entirely in your browser; accounts and notes are stored locally on this device only.</span>
+  (a signed BAA with OpenAI, encryption, and patient consent). MLS runs entirely in your browser; accounts and notes are stored locally on this device only.</span>
 </footer>
 </div>
 
@@ -1233,7 +1242,7 @@
       <p class="keyok" id="keyOk">✔ Key saved on this device.</p>
     </div>
     <div class="field" id="backendNotice" style="display:none">
-      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Connected to your clinic's Scrivara server.</b> AI note generation is ready — no API key needed on this device. Your key stays securely on the server.</p>
+      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Connected to your clinic's MLS server.</b> AI note generation is ready — no API key needed on this device. Your key stays securely on the server.</p>
     </div>
     <div class="field" id="redeemField" style="display:none">
       <label for="redeemInputSettings">Access code</label>
@@ -1254,14 +1263,22 @@
 
     <!-- My preferences: "learns your way" -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label style="font-size:15px">🎚️ My preferences <span style="font-weight:400;color:var(--muted)">(Scrivara learns your way)</span></label>
-      <p class="note" style="margin:2px 0 10px">Add reusable style/content rules and Scrivara follows them on every note. These are remembered instructions applied to the AI — not patient details.<br>
+      <label style="font-size:15px">🎚️ My preferences <span style="font-weight:400;color:var(--muted)">(MLS learns your way)</span></label>
+      <p class="note" style="margin:2px 0 10px">Add reusable style/content rules and MLS follows them on every note. These are remembered instructions applied to the AI — not patient details.<br>
         <span style="color:var(--muted)">e.g. Use APSO format · Keep HPI to 3 sentences · Always add return precautions · Never suggest benzodiazepines · Use my normal-exam template</span></p>
       <div class="row tight" style="gap:8px">
         <input type="text" id="docPrefInput" placeholder="Add a preference…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addDocPrefFromInput();}">
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="addDocPrefFromInput()">+ Add</button>
       </div>
       <div id="docPrefList" class="docpref-list"></div>
+    </div>
+
+    <!-- Default visit comment: the doctor's standing "preferred comment" -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label for="defaultComment" style="font-size:15px">💬 Default visit comment <span style="font-weight:400;color:var(--muted)">(auto-fills each visit)</span></label>
+      <p class="note" style="margin:2px 0 10px">Your standing comment is dropped into the Comment box on every new visit and woven into the generated note. Edit it per visit as needed.<br>
+        <span style="color:var(--muted)">e.g. Risk/benefit discussed; patient verbalized understanding. Follow up in 2 weeks or sooner if symptoms worsen.</span></p>
+      <textarea id="defaultComment" class="note-box" style="min-height:72px" placeholder="Your preferred default comment…" onblur="setDefaultComment(this.value)"></textarea>
     </div>
 
     <!-- Automatic inactivity logoff (HIPAA technical safeguard) -->
@@ -1619,7 +1636,7 @@ async function doResetPassword(){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({token:resetToken,password:p1})
       });
-    }catch(netErr){ showErr('Could not reach the Scrivara server. Try again.'); return; }
+    }catch(netErr){ showErr('Could not reach the MLS server. Try again.'); return; }
     try{ data=await res.json(); }catch(e){ data={}; }
     if(!res.ok){ showErr((data&&(data.error||data.message))||('Could not reset password ('+res.status+').')); return; }
     // success → strip ?reset= so a refresh won't re-trigger, then go to login.
@@ -1669,7 +1686,7 @@ async function doAuth(){
           body:JSON.stringify(body)
         });
       }catch(netErr){
-        showAuthErr('Could not reach the Scrivara server. Check your connection and try again.');
+        showAuthErr('Could not reach the MLS server. Check your connection and try again.');
         return;
       }
       try{ data=await res.json(); }catch(e){ data={}; }
@@ -1774,7 +1791,7 @@ async function doTwofaLogin(){
         body:JSON.stringify({pending:twofaPending,code})
       });
     }catch(netErr){
-      showErr('Could not reach the Scrivara server. Check your connection and try again.');
+      showErr('Could not reach the MLS server. Check your connection and try again.');
       return;
     }
     try{ data=await res.json(); }catch(e){ data={}; }
@@ -2269,10 +2286,48 @@ function removeDocPref(i){
   saveDocPrefs(arr);
   renderDocPrefs();
 }
+
+/* ---- Doctor "preferred comment": a standing default plus a per-visit box ---- */
+function getDefaultComment(){ return localStorage.getItem(uns('defaultComment'))||''; }
+function setDefaultComment(txt){ localStorage.setItem(uns('defaultComment'),(txt||'').trim()); }
+function getVisitComment(){ const el=document.getElementById('visitComment'); return el?el.value.trim():''; }
+/* Auto-fill the per-visit comment box from the saved default, but only when it's
+   currently empty so we never clobber what the doctor typed for this visit. */
+function autoFillVisitComment(){
+  const el=document.getElementById('visitComment');
+  if(!el) return;
+  if(!el.value.trim()){ el.value=getDefaultComment(); }
+}
+/* Strip any prior "COMMENT:" block off the end of a note so re-generating or
+   re-saving never duplicates it (idempotent). */
+function stripCommentBlock(text){
+  return (text||'').replace(/\n*COMMENT:\n[\s\S]*$/,'').replace(/\s+$/,'');
+}
+/* Return the note with the current visit comment appended under a COMMENT: line.
+   Empty comment appends nothing. Always strips a prior block first. */
+function withCommentBlock(text){
+  const base=stripCommentBlock(text);
+  const c=getVisitComment();
+  return c ? (base+'\n\nCOMMENT:\n'+c) : base;
+}
+/* Fold the current visit comment into currentSoap + the editor so it travels
+   with the note through save, copy, EMR export, FHIR, print, etc. */
+function applyVisitCommentToNote(){
+  if(!currentSoap) return;
+  currentSoap=withCommentBlock(currentSoap);
+  const nb=document.getElementById('noteBox');
+  if(nb && nb.style.display!=='none' && currentFormat==='soap'){ nb.value=currentSoap; }
+}
+function saveVisitCommentAsDefault(){
+  const c=getVisitComment();
+  if(!c){ toast('Type a comment first, then save it as your default.','err'); return; }
+  setDefaultComment(c);
+  toast('Saved as your default visit comment.','ok');
+}
 function addDocPrefFromInput(){
   const el=document.getElementById('docPrefInput');
   if(!el) return;
-  if(addDocPref(el.value)){ el.value=''; toast('Preference saved. Scrivara will follow it.','ok'); }
+  if(addDocPref(el.value)){ el.value=''; toast('Preference saved. MLS will follow it.','ok'); }
   el.focus();
 }
 function renderDocPrefs(){
@@ -2280,7 +2335,7 @@ function renderDocPrefs(){
   if(!list) return;
   const arr=getDocPrefs();
   if(!arr.length){
-    list.innerHTML='<p class="note" style="margin:0">No preferences yet. Add one above and Scrivara will follow it on every note.</p>';
+    list.innerHTML='<p class="note" style="margin:0">No preferences yet. Add one above and MLS will follow it on every note.</p>';
     return;
   }
   list.innerHTML=arr.map((p,i)=>
@@ -2367,6 +2422,7 @@ function openSettings(){
   document.getElementById('docSpec').value=getSpec();
   document.getElementById('keyOk').className=getKey()?'keyok show':'keyok';
   const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=String(getIdleMins());
+  const dc=document.getElementById('defaultComment'); if(dc) dc.value=getDefaultComment();
   renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
@@ -2378,6 +2434,7 @@ function saveSettings(){
   localStorage.setItem(uns('apikey'),k);
   localStorage.setItem(uns('docname'),document.getElementById('docName').value.trim());
   localStorage.setItem(uns('docspec'),document.getElementById('docSpec').value.trim());
+  const dc=document.getElementById('defaultComment'); if(dc) setDefaultComment(dc.value);
   const idleSel=document.getElementById('idleMins');
   if(idleSel){
     const m=parseInt(idleSel.value,10);
@@ -2475,11 +2532,11 @@ function twofaCopyRecovery(){
   }
 }
 function twofaDownloadRecovery(){
-  const txt='Scrivara 2FA recovery codes\nKeep these somewhere safe. Each can be used once.\n\n'+twofaLastRecoveryCodes.join('\n')+'\n';
+  const txt='MLS 2FA recovery codes\nKeep these somewhere safe. Each can be used once.\n\n'+twofaLastRecoveryCodes.join('\n')+'\n';
   const b=new Blob([txt],{type:'text/plain'});
   const u=URL.createObjectURL(b);
   const a=document.createElement('a');
-  a.href=u; a.download='scrivara-recovery-codes.txt'; a.click();
+  a.href=u; a.download='mls-recovery-codes.txt'; a.click();
   URL.revokeObjectURL(u);
 }
 function twofaDismissRecovery(){
@@ -3129,6 +3186,7 @@ function newVisit(){
   ['mipsCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   ['outPain','outFunc','outNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const cb=document.getElementById('contextBox'); if(cb) cb.value='';
+  { const vc=document.getElementById('visitComment'); if(vc){ vc.value=''; } autoFillVisitComment(); }
   document.getElementById('noteBox').style.display='none';
   document.getElementById('noteBox').value='';
   document.getElementById('noteEmpty').style.display='block';
@@ -3170,6 +3228,7 @@ function noteRecordFromState(markSigned){
     mips: currentMips||'',
     outcome: currentOutcome||null,
     context: (document.getElementById('contextBox')?document.getElementById('contextBox').value:''),
+    visitComment: getVisitComment(),
     signed: typeof markSigned==='boolean' ? markSigned : signed,
     signLine: document.getElementById('signLine').style.display!=='none' ? document.getElementById('signLine').textContent : '',
     patientId: getActivePtId()||'',
@@ -3210,6 +3269,8 @@ function saveCurrentNote(announce){
     if(nb && nb.style.display!=='none') currentSoap=nb.value;
   }
   if(!currentSoap){ toast('Generate a note before saving.','err'); return; }
+  // Weave the (possibly edited) visit comment into the note, idempotently.
+  if(currentFormat==='soap') applyVisitCommentToNote();
   let rec;
   try{
     rec=noteRecordFromState();
@@ -3384,6 +3445,7 @@ function loadRecordIntoEditor(n){
   if(currentMips){ const mb=document.getElementById('mipsBody'); if(mb){ mb.innerHTML=mipsToHtml(currentMips); document.getElementById('mipsCard').style.display='block'; } }
   restoreOutcomeInputs();
   if(document.getElementById('contextBox')) document.getElementById('contextBox').value=n.context||'';
+  if(document.getElementById('visitComment')) document.getElementById('visitComment').value=n.visitComment||'';
   if(currentAVS) showExtra('avsCard','avsBody',currentAVS);
   if(currentReferral) showExtra('refCard','refBody',currentReferral);
   if(currentHandout){ const hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; document.getElementById('handoutCard').style.display='block'; } }
@@ -3738,6 +3800,8 @@ async function generateNote(){
       currentFormat='soap';
       lastEMR=offlineExampleEMR();
       syncFormatToggle();
+      autoFillVisitComment();
+      applyVisitCommentToNote();
       showNote(currentSoap);
       renderCoding(currentCoding);
       document.getElementById('optCard').style.display='none';
@@ -3761,6 +3825,8 @@ async function generateNote(){
     currentFormat='soap';
     lastEMR=result.emr;
     syncFormatToggle();
+    autoFillVisitComment();
+    applyVisitCommentToNote();
     showNote(currentSoap);
     renderCoding(currentCoding);
     document.getElementById('optCard').style.display='none';
@@ -4695,7 +4761,7 @@ function downloadNote(){
   const blob=new Blob([fullText()],{type:'text/plain'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download='Scrivara_Note_'+new Date().toISOString().slice(0,10)+'.txt';
+  a.download='MLS_Note_'+new Date().toISOString().slice(0,10)+'.txt';
   a.click(); URL.revokeObjectURL(a.href);
   toast('Downloaded .txt','ok');
 }
@@ -4785,7 +4851,7 @@ function compilePatientRecord(p){
   }
   L.push('');
   L.push('-'.repeat(50));
-  L.push('Generated by Scrivara on this device. Stored locally only. Not for real PHI until HIPAA-compliant (BAA, encryption, consent). Secure cross-provider sharing comes with the hosted version.');
+  L.push('Generated by MLS on this device. Stored locally only. Not for real PHI until HIPAA-compliant (BAA, encryption, consent). Secure cross-provider sharing comes with the hosted version.');
   return L.join('\n');
 }
 function openShareModal(){
@@ -4803,7 +4869,7 @@ function downloadShare(){
   const p=activePatient(); if(!p) return;
   const blob=new Blob([document.getElementById('shareText').value],{type:'text/plain'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='Scrivara_Record_'+p.name.replace(/[^A-Za-z0-9]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.txt';
+  a.download='MLS_Record_'+p.name.replace(/[^A-Za-z0-9]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.txt';
   a.click(); URL.revokeObjectURL(a.href); toast('Record downloaded.','ok');
 }
 function printShare(){
@@ -4815,7 +4881,7 @@ function printShare(){
     'pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0}'+
     '.foot{margin-top:18px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:8px}'+
     '@media print{body{padding:0}}</style></head><body>'+
-    '<h1>Scrivara — Patient Record</h1><pre>'+esc(txt)+'</pre>'+
+    '<h1>MLS — Patient Record</h1><pre>'+esc(txt)+'</pre>'+
     '<div class="foot">Stored locally on this device. Not for real PHI until HIPAA-compliant.</div></body></html>';
   let win=null; try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
   if(win&&win.document){ win.document.open(); win.document.write(html); win.document.close(); win.focus();
@@ -4887,7 +4953,7 @@ function buildPrintHTML(){
   }
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Scrivara Note — ${esc(patient)}</title>
+<title>MLS Note — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
@@ -4907,7 +4973,7 @@ function buildPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">Scrivara<small>Ambient AI medical scribe</small></div>
+    <div class="brand">MLS<small>Ambient AI medical scribe</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
@@ -4927,7 +4993,7 @@ function buildPrintHTML(){
   ):''}
   ${codeBlock}
   ${signedTxt?('<div class="sign">'+esc(signedTxt)+'</div>'):''}
-  <div class="foot">AI-generated — reviewed before signing. Scrivara runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+  <div class="foot">AI-generated — reviewed before signing. MLS runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
 </body></html>`;
 }
 
@@ -5430,7 +5496,7 @@ function buildOrdersPrintHTML(){
   }).join('');
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Scrivara Orders — ${esc(patient)}</title>
+<title>MLS Orders — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
@@ -5453,7 +5519,7 @@ function buildOrdersPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">Scrivara<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <div class="brand">MLS<small>Physical Medicine &amp; Rehabilitation</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
@@ -5466,7 +5532,7 @@ function buildOrdersPrintHTML(){
   ${blocks||'<p>(No orders)</p>'}
   <div class="sign">Provider signature: <span class="line"></span> Date: <span class="line" style="min-width:140px"></span></div>
   <div class="disc">⚠️ Orders to be reviewed and signed by the provider. Final orders are the provider's responsibility.</div>
-  <div class="foot">Generated with Scrivara — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+  <div class="foot">Generated with MLS — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
 </body></html>`;
 }
 function printOrders(){
@@ -5692,7 +5758,7 @@ function buildPriorAuthPrintHTML(){
   const now=new Date().toLocaleString();
   const letter=document.getElementById('paLetter').value||currentPriorAuth||'';
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Scrivara Prior-Auth — ${esc(patient)}</title>
+<title>MLS Prior-Auth — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
@@ -5708,7 +5774,7 @@ function buildPriorAuthPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">Scrivara<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <div class="brand">MLS<small>Physical Medicine &amp; Rehabilitation</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
@@ -5719,7 +5785,7 @@ function buildPriorAuthPrintHTML(){
   <h1 class="title">Prior-Authorization / Medical-Necessity Letter</h1>
   <pre class="letter">${esc(letter||'(no letter)')}</pre>
   <div class="disc">⚠️ Draft for provider review. Verify all clinical facts and complete any [bracketed] items before submitting to the payer.</div>
-  <div class="foot">Generated with Scrivara — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+  <div class="foot">Generated with MLS — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
 </body></html>`;
 }
 function printPriorAuth(){
@@ -6046,13 +6112,13 @@ function _normForDiff(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
 async function teachFromEdits(){
   if(!session) return;
   if(!lastAIDraft){ toast('Generate a note first — there is no AI draft to compare against yet.','err'); return; }
-  const edited=currentNoteText();
+  const edited=stripCommentBlock(currentNoteText());
   if(!edited || !edited.trim()){ toast('Generate a note first.','err'); return; }
   if(_normForDiff(edited)===_normForDiff(lastAIDraft)){
-    toast('No edits detected yet. Edit the note the way you like, then teach Scrivara.','');
+    toast('No edits detected yet. Edit the note the way you like, then teach MLS.','');
     return;
   }
-  if(!hasAI()){ toast('Add your OpenAI key (Settings) to let Scrivara learn from your edits.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to let MLS learn from your edits.','err'); return; }
   const btn=document.getElementById('teachBtn');
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Learning…'; }
   try{
@@ -6077,12 +6143,12 @@ Rules for your output:
     const existing=getDocPrefs().map(p=>p.toLowerCase());
     rules=rules.filter(r=>!existing.includes(r.toLowerCase())).slice(0,3);
     if(!rules.length){
-      toast('No new reusable preference found in your edits. (Scrivara only learns general style rules, not patient details.)','');
+      toast('No new reusable preference found in your edits. (MLS only learns general style rules, not patient details.)','');
       return;
     }
     showTeachSuggestions(rules);
   }catch(err){ toast(friendlyError(err),'err'); }
-  finally{ if(btn){ btn.disabled=false; btn.innerHTML='💡 Teach Scrivara'; } }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='💡 Teach MLS'; } }
 }
 /* Render suggested rules with checkboxes so the doctor adds only what they want. */
 function showTeachSuggestions(rules){
@@ -6090,13 +6156,13 @@ function showTeachSuggestions(rules){
   const body=document.getElementById('teachBody');
   if(!card||!body){
     // Fallback: simple confirm if the panel isn't present for some reason.
-    const pick=rules.filter(r=>confirm('Add this preference to Scrivara?\n\n'+r));
+    const pick=rules.filter(r=>confirm('Add this preference to MLS?\n\n'+r));
     pick.forEach(addDocPref);
     if(pick.length) toast('Added '+pick.length+' preference'+(pick.length>1?'s':'')+'.','ok');
     return;
   }
   body.innerHTML=
-    '<p class="note" style="margin:0 0 10px">Scrivara noticed how you edited this note. Pick the reusable preferences to remember (no patient details are stored):</p>'+
+    '<p class="note" style="margin:0 0 10px">MLS noticed how you edited this note. Pick the reusable preferences to remember (no patient details are stored):</p>'+
     rules.map((r,i)=>
       '<label class="teach-opt"><input type="checkbox" class="teach-cb" data-rule="'+esc(r)+'" checked> <span>'+esc(r)+'</span></label>'
     ).join('')+
@@ -6110,7 +6176,7 @@ function applyTeachSuggestions(){
   let n=0;
   cbs.forEach(cb=>{ if(cb.checked){ if(addDocPref(cb.getAttribute('data-rule'))) n++; } });
   document.getElementById('teachCard').style.display='none';
-  toast(n?('Added '+n+' preference'+(n>1?'s':'')+'. Scrivara will follow '+(n>1?'them':'it')+' going forward.'):'No preferences added.', n?'ok':'');
+  toast(n?('Added '+n+' preference'+(n>1?'s':'')+'. MLS will follow '+(n>1?'them':'it')+' going forward.'):'No preferences added.', n?'ok':'');
 }
 
 /* =========================================================
@@ -6376,7 +6442,7 @@ function generateProcNote(){
   lines.push('');
   lines.push('Provider signature: ______________________  Date: __________');
   lines.push('');
-  lines.push('[Draft procedure note generated by Scrivara — review and complete any [bracketed] items before signing.]');
+  lines.push('[Draft procedure note generated by MLS — review and complete any [bracketed] items before signing.]');
 
   currentProcNote=lines.join('\n');
   document.getElementById('procNoteBody').value=currentProcNote;
@@ -6401,7 +6467,7 @@ function printProcNote(){
   const spec=getSpec();
   const now=new Date().toLocaleString();
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Scrivara Procedure Note — ${esc(patient)}</title>
+<title>MLS Procedure Note — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
@@ -6417,7 +6483,7 @@ function printProcNote(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">Scrivara<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <div class="brand">MLS<small>Physical Medicine &amp; Rehabilitation</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
@@ -6427,7 +6493,7 @@ function printProcNote(){
   <h1 class="title">Injection Procedure Note</h1>
   <pre class="note">${esc(txt)}</pre>
   <div class="disc">⚠️ Draft for provider review. Verify all details and complete any [bracketed] items before signing.</div>
-  <div class="foot">Generated with Scrivara — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+  <div class="foot">Generated with MLS — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
 </body></html>`;
   let win=null;
   try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
@@ -6573,7 +6639,7 @@ function buildFHIRBundle(){
       attachment:{
         contentType:'text/plain',
         data:b64(note.trim()),
-        title:'Scrivara visit note'
+        title:'MLS visit note'
       }
     }]
   };
@@ -6610,7 +6676,7 @@ function downloadFhir(){
   const blob=new Blob([ta.value],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download='Scrivara_FHIR_'+new Date().toISOString().slice(0,10)+'.json';
+  a.download='MLS_FHIR_'+new Date().toISOString().slice(0,10)+'.json';
   a.click(); URL.revokeObjectURL(a.href);
   toast('Downloaded FHIR bundle (.json)','ok');
 }
@@ -6885,7 +6951,7 @@ function printExtra(title,bodyId){
   .m{font-size:12px;color:#5f7186;margin-bottom:14px}
   table{width:100%;border-collapse:collapse}td{padding:6px 5px;border-bottom:1px solid #e2e9f1;vertical-align:top}
   td.k{color:#5f7186;font-weight:600;width:150px}</style></head><body>
-  <h1>Scrivara — ${esc(title)}</h1>
+  <h1>MLS — ${esc(title)}</h1>
   <div class="m">Patient: ${esc(patient)} · Provider: ${esc(docName)} · ${esc(now)}</div>
   ${content}</body></html>`;
   let win=null; try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
