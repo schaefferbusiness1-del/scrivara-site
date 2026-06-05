@@ -369,6 +369,24 @@
     <button class="btn-primary" id="resetBtn" style="width:100%" onclick="doResetPassword()">Update password</button>
     <p class="local-note">🔒 Choose a password of at least 6 characters. You'll log in with it next.</p>
   </div>
+
+  <!-- Two-factor code card, shown when login returns twofa_required -->
+  <div class="auth-card" id="twofaCard" style="display:none">
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMark2)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> Scrivara</div>
+    <p class="auth-sub" id="twofaSub">Enter the 6-digit code from your authenticator app</p>
+    <div class="auth-err" id="twofaErr"></div>
+    <div class="field">
+      <label for="twofaCode" id="twofaLabel">Two-factor code</label>
+      <input type="text" id="twofaCode" placeholder="123456" autocomplete="one-time-code" inputmode="numeric" onkeydown="if(event.key==='Enter'){event.preventDefault();doTwofaLogin();}">
+    </div>
+    <button class="btn-primary" id="twofaBtn" style="width:100%" onclick="doTwofaLogin()">Verify</button>
+    <div style="text-align:center;margin-top:12px">
+      <a href="#" id="twofaToggleLink" style="font-size:13px;color:var(--brand);text-decoration:none" onclick="toggleTwofaRecovery();return false;">Use a recovery code instead</a>
+    </div>
+    <div style="text-align:center;margin-top:10px">
+      <a href="#" style="font-size:13px;color:var(--muted);text-decoration:none" onclick="cancelTwofa();return false;">← Back</a>
+    </div>
+  </div>
 </div>
 
 <!-- ============ PHONE MIC PAGE (shown when ?mic=<CODE>) ============ -->
@@ -1134,6 +1152,51 @@
         </table>
       </div>
     </div>
+
+    <!-- Admin — Backups -->
+    <div class="card">
+      <h2><span class="ic">💾</span> Admin — Backups
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminBackups()">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Create and download encrypted snapshots of the server database.</p>
+      <p class="note" style="background:#eef4fc;color:var(--brand-dk);border:1px solid #cfe2f8">🔐 Backups are AES-256 encrypted — store a copy somewhere safe; you control the key.</p>
+      <div class="row tight">
+        <button class="btn-primary" style="font-size:14px;padding:10px 16px" id="backupRunBtn" onclick="runAdminBackup()">＋ Create backup now</button>
+      </div>
+      <div id="adminBackupsEmpty" class="empty" style="margin-top:14px"><span class="big">💾</span>Press <b>Refresh</b> to load backups.</div>
+      <div style="overflow-x:auto">
+        <table id="adminBackupsTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+            <th style="padding:8px 6px">Filename</th><th style="padding:8px 6px">Size</th>
+            <th style="padding:8px 6px">Created</th><th style="padding:8px 6px">Actions</th>
+          </tr></thead>
+          <tbody id="adminBackupsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Admin — Audit log -->
+    <div class="card">
+      <h2><span class="ic">📜</span> Admin — Audit log
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminAudit()">🔄 Load recent</button>
+      </h2>
+      <p class="sub">Tamper-evident record of admin and account actions. No patient data is recorded here.</p>
+      <div class="row tight">
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="verifyAdminAudit()">🔎 Verify integrity</button>
+        <span id="auditVerifyResult" style="font-size:14px;font-weight:600;align-self:center"></span>
+      </div>
+      <div id="adminAuditEmpty" class="empty" style="margin-top:14px"><span class="big">📜</span>Press <b>Load recent</b> to view the log.</div>
+      <div style="overflow-x:auto">
+        <table id="adminAuditTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+            <th style="padding:8px 6px">Time</th><th style="padding:8px 6px">User</th>
+            <th style="padding:8px 6px">Action</th><th style="padding:8px 6px">Target</th>
+            <th style="padding:8px 6px">IP</th>
+          </tr></thead>
+          <tbody id="adminAuditBody"></tbody>
+        </table>
+      </div>
+    </div>
   </div><!-- /adminView -->
 
   <!-- ============ TEAM VIEW (head doctor only — read-only) ============ -->
@@ -1211,6 +1274,48 @@
         <option value="15">15 minutes (default)</option>
         <option value="30">30 minutes</option>
       </select>
+    </div>
+
+    <!-- Two-factor authentication (hosted mode only) -->
+    <div class="field" id="twofaSettingsField" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px;display:none">
+      <label style="font-size:15px">🔐 Two-factor authentication (2FA)</label>
+      <p class="note" style="margin:2px 0 10px">Add a one-time code from an authenticator app on top of your password. Recommended for accounts that touch patient data.</p>
+
+      <!-- State: ON -->
+      <div id="twofaOnBox" style="display:none">
+        <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>2FA is on ✓</b> — you'll be asked for a code when you log in.</p>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="twofaDisable()">Disable 2FA</button>
+      </div>
+
+      <!-- State: OFF (not yet enrolling) -->
+      <div id="twofaOffBox" style="display:none">
+        <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="twofaSetup()">Enable 2FA</button>
+      </div>
+
+      <!-- State: enrolling (QR + verify) -->
+      <div id="twofaEnrollBox" style="display:none;margin-top:6px">
+        <p class="note" style="margin:2px 0 8px">Scan this with your authenticator app (Google Authenticator, Authy, 1Password…), then enter the 6-digit code to confirm.</p>
+        <div style="text-align:center;margin:8px 0">
+          <img id="twofaQR" alt="2FA QR code" width="180" height="180" style="border:1px solid var(--line);border-radius:8px;background:#fff">
+        </div>
+        <p class="note" style="margin:2px 0 8px">Can't scan? Enter this key manually: <code id="twofaSecret" style="font-weight:700;letter-spacing:1px;word-break:break-all"></code></p>
+        <div class="row tight" style="gap:8px">
+          <input type="text" id="twofaEnrollCode" placeholder="6-digit code" inputmode="numeric" autocomplete="one-time-code" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();twofaEnable();}">
+          <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="twofaEnable()">Verify &amp; turn on</button>
+          <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="twofaCancelEnroll()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Recovery codes (shown once after enabling) -->
+      <div id="twofaRecoveryBox" style="display:none;margin-top:10px;background:#fff7e6;border:1px solid #f3dca0;border-radius:10px;padding:12px 14px">
+        <p class="note" style="margin:0 0 8px;color:#8a6d3b"><b>⚠ Save these recovery codes now.</b> Each can be used once if you lose your authenticator. They won't be shown again.</p>
+        <div id="twofaRecoveryList" style="font-family:monospace;font-size:14px;line-height:1.7;white-space:pre-wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px"></div>
+        <div class="row tight" style="margin-top:10px">
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="twofaCopyRecovery()">📋 Copy</button>
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="twofaDownloadRecovery()">⬇ Download .txt</button>
+          <button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="twofaDismissRecovery()">I've saved them</button>
+        </div>
+      </div>
     </div>
 
     <!-- athenahealth connection (honest scaffold) -->
@@ -1572,6 +1677,11 @@ async function doAuth(){
         showAuthErr((data&&(data.error||data.message))||('Sign-in failed ('+res.status+').'));
         return;
       }
+      // 2FA: server may withhold the token until a second factor is verified.
+      if(data && data.twofa_required){
+        showTwofaScreen(data.pending, email);
+        return;
+      }
       setBkToken(data.token);
       bkUser=data.user||null;
       startSession(email);
@@ -1600,6 +1710,92 @@ async function doAuth(){
     if(h!==acct.hash){ showAuthErr('Incorrect password.'); return; }
     startSession(email);
     toast('Welcome back.','ok');
+  }
+}
+
+/* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
+let twofaPending='';      // short-lived JWT from the login response
+let twofaEmail='';        // email being authenticated, for the final startSession
+let twofaRecoveryMode=false;
+function showTwofaScreen(pending,email){
+  twofaPending=pending||'';
+  twofaEmail=email||'';
+  twofaRecoveryMode=false;
+  // Hide the normal login card; reveal the 2FA card.
+  const authScreen=document.getElementById('authScreen');
+  const cards=authScreen.querySelectorAll('.auth-card');
+  if(cards[0]) cards[0].style.display='none';
+  const rc=document.getElementById('resetCard'); if(rc) rc.style.display='none';
+  const tc=document.getElementById('twofaCard'); if(tc) tc.style.display='block';
+  const err=document.getElementById('twofaErr'); if(err) err.classList.remove('show');
+  document.getElementById('twofaSub').textContent='Enter the 6-digit code from your authenticator app';
+  document.getElementById('twofaLabel').textContent='Two-factor code';
+  document.getElementById('twofaToggleLink').textContent='Use a recovery code instead';
+  const inp=document.getElementById('twofaCode');
+  if(inp){ inp.value=''; inp.placeholder='123456'; inp.focus(); }
+}
+function toggleTwofaRecovery(){
+  twofaRecoveryMode=!twofaRecoveryMode;
+  const inp=document.getElementById('twofaCode');
+  if(twofaRecoveryMode){
+    document.getElementById('twofaSub').textContent='Enter one of your saved recovery codes';
+    document.getElementById('twofaLabel').textContent='Recovery code';
+    document.getElementById('twofaToggleLink').textContent='Use an authenticator code instead';
+    if(inp){ inp.placeholder='xxxx-xxxx'; inp.value=''; inp.focus(); }
+  } else {
+    document.getElementById('twofaSub').textContent='Enter the 6-digit code from your authenticator app';
+    document.getElementById('twofaLabel').textContent='Two-factor code';
+    document.getElementById('twofaToggleLink').textContent='Use a recovery code instead';
+    if(inp){ inp.placeholder='123456'; inp.value=''; inp.focus(); }
+  }
+}
+function cancelTwofa(){
+  twofaPending=''; twofaEmail=''; twofaRecoveryMode=false;
+  const tc=document.getElementById('twofaCard'); if(tc) tc.style.display='none';
+  const authScreen=document.getElementById('authScreen');
+  const cards=authScreen.querySelectorAll('.auth-card');
+  if(cards[0]) cards[0].style.display='block';
+}
+async function doTwofaLogin(){
+  const err=document.getElementById('twofaErr');
+  const showErr=m=>{ if(err){ err.textContent=m; err.classList.add('show'); } };
+  if(err) err.classList.remove('show');
+  const code=(document.getElementById('twofaCode').value||'').trim();
+  if(!code){ showErr('Enter your code.'); return; }
+  const btn=document.getElementById('twofaBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
+  try{
+    let res,data;
+    try{
+      res=await fetch(bkBase()+'/api/auth/2fa/login',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({pending:twofaPending,code})
+      });
+    }catch(netErr){
+      showErr('Could not reach the Scrivara server. Check your connection and try again.');
+      return;
+    }
+    try{ data=await res.json(); }catch(e){ data={}; }
+    if(!res.ok || !data.token){
+      showErr((data&&(data.error||data.message))||'That code didn\'t work — try again.');
+      return;
+    }
+    // Success: finish login exactly like the normal path.
+    const email=twofaEmail;
+    setBkToken(data.token);
+    bkUser=data.user||null;
+    const tc=document.getElementById('twofaCard'); if(tc) tc.style.display='none';
+    const authScreen=document.getElementById('authScreen');
+    const cards=authScreen.querySelectorAll('.auth-card');
+    if(cards[0]) cards[0].style.display='block';
+    twofaPending=''; twofaEmail=''; twofaRecoveryMode=false;
+    startSession(email);
+    toast('Welcome back.','ok');
+    refreshMe();
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
   }
 }
 
@@ -1642,7 +1838,13 @@ function logout(){
     bkUser=null;
   }
   document.getElementById('appScreen').style.display='none';
-  document.getElementById('authScreen').style.display='flex';
+  const authScreen=document.getElementById('authScreen');
+  authScreen.style.display='flex';
+  // make sure the normal login card is showing (not a stale 2FA / reset card)
+  const tc=document.getElementById('twofaCard'); if(tc) tc.style.display='none';
+  const rc=document.getElementById('resetCard'); if(rc) rc.style.display='none';
+  const cards=authScreen.querySelectorAll('.auth-card');
+  if(cards[0]) cards[0].style.display='block';
   document.getElementById('authPass').value='';
   switchAuth('login');
 }
@@ -1810,6 +2012,113 @@ function adminSetTrial(id){
   const days=parseInt(v,10);
   if(!days||days<1){ toast('Enter a valid number of days.','err'); return; }
   adminSetAccess(id,'active',days);
+}
+
+/* =========================================================
+   ADMIN — Encrypted backups
+   ========================================================= */
+function fmtBytes(n){
+  n=Number(n)||0;
+  if(n<1024) return n+' B';
+  if(n<1024*1024) return (n/1024).toFixed(1)+' KB';
+  return (n/(1024*1024)).toFixed(1)+' MB';
+}
+async function runAdminBackup(){
+  if(!backendMode()){ return; }
+  const btn=document.getElementById('backupRunBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Backing up…'; }
+  try{
+    const d=await adminFetch('/api/admin/backup/run',{method:'POST'});
+    toast('Backup created: '+((d&&d.filename)||'done'),'ok');
+    loadAdminBackups();
+  }catch(e){ toast('Backup failed: '+e.message,'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
+}
+async function loadAdminBackups(){
+  if(!backendMode()){ return; }
+  const empty=document.getElementById('adminBackupsEmpty');
+  const table=document.getElementById('adminBackupsTable');
+  const body=document.getElementById('adminBackupsBody');
+  if(!empty||!table||!body) return;
+  try{
+    const d=await adminFetch('/api/admin/backups');
+    const rows=Array.isArray(d)?d:((d&&d.backups)||[]);
+    if(!rows.length){ empty.style.display='block'; empty.innerHTML='<span class="big">💾</span>No backups yet — press <b>Create backup now</b>.'; table.style.display='none'; return; }
+    empty.style.display='none'; table.style.display='table';
+    body.innerHTML=rows.map(b=>{
+      let when='—';
+      if(b.created_at){ try{ when=new Date(b.created_at).toLocaleString(); }catch(e){ when=esc(String(b.created_at)); } }
+      const name=b.filename||'';
+      return '<tr style="border-bottom:1px solid var(--line)">'+
+        '<td style="padding:8px 6px;word-break:break-all">'+esc(name)+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap">'+esc(fmtBytes(b.size))+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap">'+esc(when)+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap"><button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="downloadAdminBackup(\''+esc(name).replace(/'/g,"\\'")+'\')">⬇ Download</button></td>'+
+      '</tr>';
+    }).join('');
+  }catch(e){ toast('Could not load backups: '+e.message,'err'); }
+}
+async function downloadAdminBackup(name){
+  if(!name){ return; }
+  try{
+    const r=await fetch(bkBase()+'/api/admin/backups/'+encodeURIComponent(name)+'/download',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    if(!r.ok){ toast('Download failed ('+r.status+').','err'); return; }
+    const b=await r.blob();
+    const u=URL.createObjectURL(b);
+    const a=document.createElement('a');
+    a.href=u; a.download=name; a.click();
+    URL.revokeObjectURL(u);
+  }catch(e){ toast('Download failed: '+e.message,'err'); }
+}
+
+/* =========================================================
+   ADMIN — Tamper-evident audit log
+   ========================================================= */
+async function verifyAdminAudit(){
+  if(!backendMode()){ return; }
+  const el=document.getElementById('auditVerifyResult');
+  if(el){ el.textContent='Checking…'; el.style.color='var(--muted)'; }
+  try{
+    const d=await adminFetch('/api/admin/audit/verify');
+    if(d && d.intact){
+      if(el){ el.textContent='✓ Intact ('+(d.checked!=null?d.checked:0)+' entries checked)'; el.style.color='var(--green-dk,#1d7a4d)'; }
+    } else {
+      const id=(d&&d.firstBrokenId!=null)?d.firstBrokenId:'?';
+      if(el){ el.textContent='⚠ Tampering detected at #'+id; el.style.color='var(--danger,#c0392b)'; }
+    }
+  }catch(e){ if(el){ el.textContent='Verify failed: '+e.message; el.style.color='var(--danger,#c0392b)'; } }
+}
+async function loadAdminAudit(){
+  if(!backendMode()){ return; }
+  const empty=document.getElementById('adminAuditEmpty');
+  const table=document.getElementById('adminAuditTable');
+  const body=document.getElementById('adminAuditBody');
+  if(!empty||!table||!body) return;
+  try{
+    const d=await adminFetch('/api/admin/audit?limit=100');
+    let rows=Array.isArray(d)?d:((d&&d.entries)||[]);
+    if(!rows.length){ empty.style.display='block'; empty.innerHTML='<span class="big">📜</span>No audit entries yet.'; table.style.display='none'; return; }
+    // newest first
+    rows=rows.slice().sort((a,b)=>{
+      const ta=new Date(a.ts||0).getTime()||0, tb=new Date(b.ts||0).getTime()||0;
+      if(tb!==ta) return tb-ta;
+      return (Number(b.id)||0)-(Number(a.id)||0);
+    });
+    empty.style.display='none'; table.style.display='table';
+    body.innerHTML=rows.map(r=>{
+      let when='—';
+      if(r.ts){ try{ when=new Date(r.ts).toLocaleString(); }catch(e){ when=esc(String(r.ts)); } }
+      return '<tr style="border-bottom:1px solid var(--line)">'+
+        '<td style="padding:8px 6px;white-space:nowrap">'+esc(when)+'</td>'+
+        '<td style="padding:8px 6px">'+esc(r.user_id!=null?String(r.user_id):'—')+'</td>'+
+        '<td style="padding:8px 6px">'+esc(r.action||'—')+'</td>'+
+        '<td style="padding:8px 6px">'+esc(r.target_id!=null?String(r.target_id):'—')+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap">'+esc(r.ip||'—')+'</td>'+
+      '</tr>';
+    }).join('');
+  }catch(e){ toast('Could not load audit log: '+e.message,'err'); }
 }
 
 /* ---- Role + head-doctor assignment (owner only) ---- */
@@ -2060,6 +2369,7 @@ function openSettings(){
   const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=String(getIdleMins());
   renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
+  renderTwofaSettings();
   document.getElementById('settingsModal').classList.add('show');
 }
 function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
@@ -2077,6 +2387,105 @@ function saveSettings(){
   document.getElementById('keyOk').className=k?'keyok show':'keyok';
   toast('Settings saved on this device.','ok');
   setTimeout(closeSettings,500);
+}
+
+/* =========================================================
+   TWO-FACTOR AUTH (enrollment, in Settings) — hosted mode
+   ========================================================= */
+let twofaLastRecoveryCodes=[]; // held only long enough to copy/download once
+function renderTwofaSettings(){
+  const wrap=document.getElementById('twofaSettingsField');
+  if(!wrap) return;
+  // 2FA needs the hosted backend + a logged-in token.
+  if(!backendMode() || !bkToken()){ wrap.style.display='none'; return; }
+  wrap.style.display='block';
+  const on=!!(bkUser && bkUser.totp_enabled);
+  document.getElementById('twofaOnBox').style.display=on?'block':'none';
+  document.getElementById('twofaOffBox').style.display=on?'none':'block';
+  // collapse the transient sub-panels whenever we re-render top-level state
+  document.getElementById('twofaEnrollBox').style.display='none';
+  if(!on){
+    // keep a freshly-shown recovery box visible until the user dismisses it,
+    // but hide it on a normal (re-open settings) render
+    const rb=document.getElementById('twofaRecoveryBox');
+    if(rb && rb.dataset.fresh!=='1') rb.style.display='none';
+  } else {
+    document.getElementById('twofaRecoveryBox').style.display='none';
+  }
+}
+async function twofaSetup(){
+  const btn=document.querySelector('#twofaOffBox button');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Starting…'; }
+  try{
+    const d=await adminFetch('/api/auth/2fa/setup',{method:'POST'});
+    const url=d&&d.otpauthUrl, secret=d&&d.secret;
+    if(!url){ toast('Could not start 2FA setup.','err'); return; }
+    document.getElementById('twofaQR').src='https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+encodeURIComponent(url);
+    document.getElementById('twofaSecret').textContent=secret||'';
+    document.getElementById('twofaOffBox').style.display='none';
+    document.getElementById('twofaEnrollBox').style.display='block';
+    const inp=document.getElementById('twofaEnrollCode'); if(inp){ inp.value=''; inp.focus(); }
+  }catch(e){ toast('2FA setup failed: '+e.message,'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
+}
+function twofaCancelEnroll(){
+  document.getElementById('twofaEnrollBox').style.display='none';
+  document.getElementById('twofaOffBox').style.display='block';
+}
+async function twofaEnable(){
+  const code=(document.getElementById('twofaEnrollCode').value||'').trim();
+  if(!code){ toast('Enter the 6-digit code from your app.','err'); return; }
+  try{
+    const d=await adminFetch('/api/auth/2fa/enable',{method:'POST',body:JSON.stringify({code})});
+    const codes=(d&&d.recoveryCodes)||[];
+    // reflect new state locally; server me() will confirm on next refresh
+    if(bkUser) bkUser.totp_enabled=true; else bkUser={totp_enabled:true};
+    document.getElementById('twofaEnrollBox').style.display='none';
+    document.getElementById('twofaOnBox').style.display='block';
+    document.getElementById('twofaOffBox').style.display='none';
+    // show recovery codes once
+    twofaLastRecoveryCodes=codes.slice();
+    document.getElementById('twofaRecoveryList').textContent=codes.join('\n');
+    const rb=document.getElementById('twofaRecoveryBox');
+    rb.style.display='block'; rb.dataset.fresh='1';
+    toast('Two-factor authentication is on.','ok');
+  }catch(e){ toast('Could not turn on 2FA: '+e.message,'err'); }
+}
+async function twofaDisable(){
+  const code=prompt('Enter a current 2FA code (or a recovery code) to turn off two-factor authentication:','');
+  if(code===null) return;
+  if(!code.trim()){ toast('A current code is required to disable 2FA.','err'); return; }
+  try{
+    await adminFetch('/api/auth/2fa/disable',{method:'POST',body:JSON.stringify({code:code.trim()})});
+    if(bkUser) bkUser.totp_enabled=false;
+    document.getElementById('twofaOnBox').style.display='none';
+    document.getElementById('twofaOffBox').style.display='block';
+    document.getElementById('twofaRecoveryBox').style.display='none';
+    toast('Two-factor authentication is off.','ok');
+  }catch(e){ toast('Could not disable 2FA: '+e.message,'err'); }
+}
+function twofaCopyRecovery(){
+  const txt=twofaLastRecoveryCodes.join('\n');
+  if(!txt){ toast('No codes to copy.','err'); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast('Recovery codes copied.','ok'),()=>toast('Copy failed — select and copy manually.','err'));
+  } else {
+    toast('Copy not supported — select the codes and copy manually.','err');
+  }
+}
+function twofaDownloadRecovery(){
+  const txt='Scrivara 2FA recovery codes\nKeep these somewhere safe. Each can be used once.\n\n'+twofaLastRecoveryCodes.join('\n')+'\n';
+  const b=new Blob([txt],{type:'text/plain'});
+  const u=URL.createObjectURL(b);
+  const a=document.createElement('a');
+  a.href=u; a.download='scrivara-recovery-codes.txt'; a.click();
+  URL.revokeObjectURL(u);
+}
+function twofaDismissRecovery(){
+  const rb=document.getElementById('twofaRecoveryBox');
+  rb.style.display='none'; rb.dataset.fresh='0';
+  twofaLastRecoveryCodes=[];
 }
 
 /* =========================================================
@@ -2324,7 +2733,7 @@ function showView(v){
   if(v==='visit') renderOutcomes();
   if(v==='orders') renderOrdersView();
   if(v==='recs') renderRecommendations();
-  if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); }
+  if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); }
   if(v==='team') loadTeamPatients();
   window.scrollTo({top:0,behavior:'smooth'});
 }
