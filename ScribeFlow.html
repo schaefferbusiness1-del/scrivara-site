@@ -443,6 +443,40 @@
       <a href="#" style="font-size:13px;color:var(--muted);text-decoration:none" onclick="cancelTwofa();return false;">← Back</a>
     </div>
   </div>
+
+  <!-- Mandatory 2FA enrollment, shown after a NEW account registers.
+       The user cannot reach the app until totp_enabled is true. -->
+  <div class="auth-card" id="regTwofaCard" style="display:none">
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMark3)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
+    <p class="auth-sub" style="font-weight:600">🔐 Finish creating your account</p>
+    <p class="note" style="background:#eef6ff;border:1px solid #cfe4ff;color:#1f4e79;margin:6px 0 12px">For your patients' security, set up two-factor authentication to finish creating your account.</p>
+    <div class="auth-err" id="regTwofaErr"></div>
+
+    <!-- Step 1: scan / enroll -->
+    <div id="regTwofaEnrollBox">
+      <p class="note" style="margin:2px 0 8px">Scan this QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.):</p>
+      <div style="text-align:center;margin:8px 0">
+        <img id="regTwofaQR" alt="2FA QR code" width="180" height="180" style="border:1px solid var(--line);border-radius:8px;background:#fff">
+      </div>
+      <p class="note" style="margin:2px 0 8px">Can't scan? Enter this key manually: <code id="regTwofaSecret" style="font-weight:700;letter-spacing:1px;word-break:break-all"></code></p>
+      <div class="field">
+        <label for="regTwofaCode">Enter the 6-digit code to confirm</label>
+        <input type="text" id="regTwofaCode" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" onkeydown="if(event.key==='Enter'){event.preventDefault();regTwofaEnable();}">
+      </div>
+      <button class="btn-primary" id="regTwofaBtn" style="width:100%" onclick="regTwofaEnable()">Verify &amp; turn on</button>
+    </div>
+
+    <!-- Step 2: save recovery codes, then enter the app -->
+    <div id="regTwofaRecoveryBox" style="display:none;margin-top:6px">
+      <p class="note" style="background:#fff7e6;border:1px solid #f3dca0;color:#7a5a00;margin:2px 0 10px">✅ Two-factor is on. Save these one-time recovery codes somewhere safe — each can be used once if you lose your authenticator.</p>
+      <div id="regTwofaRecoveryList" style="font-family:monospace;font-size:14px;line-height:1.7;white-space:pre-wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="regTwofaCopyRecovery()">📋 Copy</button>
+        <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="regTwofaDownloadRecovery()">⬇ Download .txt</button>
+      </div>
+      <button class="btn-green" id="regTwofaDoneBtn" style="width:100%;margin-top:12px" onclick="regTwofaFinish()">I've saved them — enter MLS</button>
+    </div>
+  </div>
 </div>
 
 <!-- ============ PHONE MIC PAGE (shown when ?mic=<CODE>) ============ -->
@@ -554,7 +588,7 @@
           <button class="edit" onclick="addDocPaste()">＋ Paste text</button>
           <button class="edit" onclick="document.getElementById('docFileInput').click()">⬆ Upload file</button>
         </h3>
-        <input type="file" id="docFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg" style="display:none" onchange="onDocFile(event)">
+        <input type="file" id="docFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="onDocFile(event)">
         <p class="mini" style="margin:0 0 4px">Add labs, prior records, discharge summaries. .txt and PDF text are extracted in-browser; images are stored but not OCR'd. Then press <b>Analyze with AI</b> to summarize and pull key items into the profile.</p>
         <div id="docEmpty" class="mini" style="color:var(--muted)">No documents yet.</div>
         <div class="doc-list" id="docList"></div>
@@ -1908,6 +1942,12 @@ async function doAuth(){
       }
       setBkToken(data.token);
       bkUser=data.user||null;
+      // NEW SIGNUPS must set up two-factor auth before reaching the app.
+      // Existing users logging in are unaffected (this only fires on register).
+      if(authMode==='signup' && !(bkUser && bkUser.totp_enabled)){
+        showRegTwofaGate(email);
+        return;
+      }
       startSession(email);
       toast(authMode==='signup'?'Account created. Welcome!':'Welcome back.','ok');
       refreshMe();
@@ -2021,6 +2061,87 @@ async function doTwofaLogin(){
   } finally {
     if(btn){ btn.disabled=false; btn.textContent=orig; }
   }
+}
+
+/* ---------- Mandatory 2FA enrollment after a NEW account registers ---------- */
+/* Reuses /api/auth/2fa/setup → QR → /api/auth/2fa/enable. The user is held on
+   this gate until totp_enabled is true; only then do we startSession. */
+let regTwofaEmail='';
+let regTwofaRecoveryCodes=[];
+async function showRegTwofaGate(email){
+  regTwofaEmail=email||'';
+  regTwofaRecoveryCodes=[];
+  // Hide every other auth card; show the enrollment gate.
+  const authScreen=document.getElementById('authScreen');
+  authScreen.querySelectorAll('.auth-card').forEach(c=>{ c.style.display='none'; });
+  const rc=document.getElementById('resetCard'); if(rc) rc.style.display='none';
+  const tc=document.getElementById('twofaCard'); if(tc) tc.style.display='none';
+  const card=document.getElementById('regTwofaCard'); if(card) card.style.display='block';
+  document.getElementById('regTwofaEnrollBox').style.display='block';
+  document.getElementById('regTwofaRecoveryBox').style.display='none';
+  const err=document.getElementById('regTwofaErr'); if(err) err.classList.remove('show');
+  const inp=document.getElementById('regTwofaCode'); if(inp){ inp.value=''; }
+  // Begin enrollment server-side: generate + store the (still-disabled) secret.
+  try{
+    const d=await adminFetch('/api/auth/2fa/setup',{method:'POST'});
+    const url=d.otpauthUrl, secret=d.secret;
+    if(!url){ regTwofaShowErr('Could not start two-factor setup. Please refresh and try again.'); return; }
+    document.getElementById('regTwofaQR').src='https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+encodeURIComponent(url);
+    document.getElementById('regTwofaSecret').textContent=secret||'';
+    if(inp) inp.focus();
+  }catch(e){ regTwofaShowErr('Could not start two-factor setup: '+friendlyError(e)); }
+}
+function regTwofaShowErr(m){
+  const err=document.getElementById('regTwofaErr');
+  if(err){ err.textContent=m; err.classList.add('show'); }
+}
+async function regTwofaEnable(){
+  const err=document.getElementById('regTwofaErr'); if(err) err.classList.remove('show');
+  const code=(document.getElementById('regTwofaCode').value||'').trim();
+  if(!code){ regTwofaShowErr('Enter the 6-digit code from your authenticator app.'); return; }
+  const btn=document.getElementById('regTwofaBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Verifying…'; }
+  try{
+    const d=await adminFetch('/api/auth/2fa/enable',{method:'POST',body:JSON.stringify({code})});
+    const codes=Array.isArray(d.recoveryCodes)?d.recoveryCodes:[];
+    if(bkUser) bkUser.totp_enabled=true; else bkUser={totp_enabled:true};
+    regTwofaRecoveryCodes=codes.slice();
+    document.getElementById('regTwofaRecoveryList').textContent=codes.join('\n');
+    document.getElementById('regTwofaEnrollBox').style.display='none';
+    document.getElementById('regTwofaRecoveryBox').style.display='block';
+  }catch(e){
+    regTwofaShowErr('That code didn\'t work: '+friendlyError(e));
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
+  }
+}
+function regTwofaCopyRecovery(){
+  const txt=regTwofaRecoveryCodes.join('\n');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast('Recovery codes copied.','ok')).catch(()=>toast('Copy failed — select and copy manually.','err'));
+  } else { toast('Select and copy the codes manually.',''); }
+}
+function regTwofaDownloadRecovery(){
+  const txt='MLS 2FA recovery codes\nKeep these somewhere safe. Each can be used once.\n\n'+regTwofaRecoveryCodes.join('\n')+'\n';
+  const blob=new Blob([txt],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='mls-recovery-codes.txt';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function regTwofaFinish(){
+  // Only proceed once 2FA is actually enabled (re-check the flag set by enable).
+  if(!(bkUser && bkUser.totp_enabled)){ regTwofaShowErr('Please verify your authenticator code first.'); return; }
+  const email=regTwofaEmail||(bkUser&&bkUser.email)||'';
+  const card=document.getElementById('regTwofaCard'); if(card) card.style.display='none';
+  const authScreen=document.getElementById('authScreen');
+  const cards=authScreen.querySelectorAll('.auth-card');
+  if(cards[0]) cards[0].style.display='block';
+  regTwofaRecoveryCodes=[]; regTwofaEmail='';
+  startSession(email);
+  toast('Account created. Welcome!','ok');
+  refreshMe();
 }
 
 function startSession(email){
@@ -3687,6 +3808,14 @@ function addDocPaste(){
   const d=addDocToActive(name.trim(),text.trim(),'text');
   if(d){ toast('Document added. Open it to Analyze with AI.','ok'); openDoc(d.id); }
 }
+function readFileAsDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Could not read the image file.'));
+    reader.onloadend=()=>resolve(reader.result); // "data:<mime>;base64,<...>"
+    reader.readAsDataURL(file);
+  });
+}
 async function onDocFile(ev){
   const file=ev.target.files&&ev.target.files[0];
   ev.target.value='';
@@ -3703,11 +3832,40 @@ async function onDocFile(ev){
       const text=await extractPdfText(file);
       const d=addDocToActive(file.name,text,'text');
       if(d){ toast(text.trim()?'PDF text extracted.':'PDF added but no extractable text (may be scanned).','ok'); openDoc(d.id); }
-    } else if(/\.(png|jpe?g)$/.test(lower)){
-      const d=addDocToActive(file.name,'','image');
-      if(d){ toast('Image stored. OCR isn\'t included — paste any text manually to analyze it.',''); openDoc(d.id); }
+    } else if(/\.(png|jpe?g|webp)$/.test(lower)){
+      // Image OCR runs server-side (OpenAI vision) and needs the hosted backend.
+      if(!backendMode()||!bkToken()){
+        const d=addDocToActive(file.name,'','image');
+        if(d){ toast('Image stored. Photo/scan text extraction needs the hosted version — paste any text manually to analyze it.',''); openDoc(d.id); }
+        return;
+      }
+      const dataUrl=await readFileAsDataUrl(file);
+      toast('Reading image…','');
+      let text='';
+      try{
+        const r=await fetch(bkBase()+'/api/vision',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+          body:JSON.stringify({image:dataUrl,mimetype:file.type||'image/png'})
+        });
+        let j={}; try{ j=await r.json(); }catch(e){}
+        if(!r.ok){ throw new Error((j&&(j.error||j.message))||('Vision failed ('+r.status+').')); }
+        text=(j.text||'').trim();
+      }catch(e){
+        toast('Could not read image: '+friendlyError(e),'err');
+        // Still store the image so nothing is lost.
+        const d=addDocToActive(file.name,'','image');
+        if(d) openDoc(d.id);
+        return;
+      }
+      // Feed the extracted text into the SAME downstream path as a text document.
+      const d=addDocToActive(file.name,text,'text');
+      if(d){
+        toast(text?'Text extracted.':'No readable text found in the image.','ok');
+        openDoc(d.id);
+      }
     } else {
-      toast('Unsupported file type. Use .txt, .pdf, or paste text.','err');
+      toast('Unsupported file type. Use .txt, .pdf, an image, or paste text.','err');
     }
   }catch(e){ toast('Could not read file: '+(e.message||e),'err'); }
 }
