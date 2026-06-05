@@ -144,6 +144,11 @@
   /* extra-outputs (handout / referral / superbill) */
   .extra-card{background:#f7fbff;border:1px solid var(--line);border-radius:13px;padding:16px;margin-top:14px}
   .extra-card h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:8px}
+  /* Collapsible situational extra-cards (default closed) */
+  .extra-card.collapsible>h3{margin-bottom:0;user-select:none}
+  .extra-card.collapsible .collapse-caret{font-size:13px;color:var(--muted);width:14px;display:inline-block;transition:transform .12s}
+  .extra-card.collapsible .collapse-body{display:none}
+  .extra-card.collapsible.open .collapse-body{display:block;margin-top:8px}
   .extra-card .xbody{white-space:pre-wrap;font-size:14px;line-height:1.55;background:#fff;border:1px solid var(--line);
     border-radius:10px;padding:12px 14px;margin-top:10px;color:var(--ink);min-height:60px}
   .sec-copy{background:none;color:var(--muted);font-size:12px;font-weight:600;padding:3px 9px;border-radius:7px;border:1px solid var(--line)}
@@ -871,7 +876,7 @@
         <div class="row tight" style="align-items:flex-end">
           <div style="flex:2;min-width:220px">
             <label for="procType">Procedure</label>
-            <select id="procType" class="sf-select">
+            <select id="procType" class="sf-select" onchange="syncProcOther()">
               <option value="">— Choose —</option>
               <option>Lumbar epidural steroid injection — interlaminar</option>
               <option>Lumbar epidural steroid injection — transforaminal</option>
@@ -881,7 +886,9 @@
               <option>Medial branch block</option>
               <option>Trigger point injection</option>
               <option>Sacroiliac (SI) joint injection</option>
+              <option value="__other__">Other… (type below)</option>
             </select>
+            <input type="text" id="procTypeOther" placeholder="Type the procedure name" style="display:none;margin-top:8px" oninput="syncProcOther()">
           </div>
           <div style="flex:1;min-width:150px">
             <label for="procLevel">Level / side</label>
@@ -3531,6 +3538,10 @@ function newVisit(){
   { const pb=document.getElementById('procNoteBody'); if(pb) pb.value=''; }
   { const dt=document.getElementById('paDenialText'); if(dt) dt.value=''; }
   ['procLevel','procSteroid','procAnesthetic','procComplications'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  { const po=document.getElementById('procTypeOther'); if(po){ po.value=''; po.style.display='none'; } }
+  { const pt=document.getElementById('procType'); if(pt) pt.value=''; }
+  // Reset collapsible situational cards to closed for the new visit.
+  if(typeof COLLAPSIBLE_EXTRA_IDS!=='undefined'){ COLLAPSIBLE_EXTRA_IDS.forEach(id=>{const c=document.getElementById(id); if(c){ c.classList.remove('open'); const ct=c.querySelector('.collapse-caret'); if(ct) ct.textContent='▸'; }}); }
   if(typeof renderMmeRows==='function'){ renderMmeRows(); renderMmeResult(); }
   ['mipsCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   ['outPain','outFunc','outNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -4157,6 +4168,11 @@ async function generateNote(){
       renderCoding(currentCoding);
       document.getElementById('optCard').style.display='none';
       populateEMR(lastEMR,currentCoding);
+      // Run the same situational auto-extras (injection note, pain capture, collapsibles)
+      // on the offline example path so behavior is consistent.
+      try{ maybeAutoProcNote({note:currentSoap}); }catch(e){}
+      try{ maybeCapturePainScore({note:currentSoap}); }catch(e){}
+      try{ initCollapsibleExtras(); }catch(e){}
       toast('No API key yet — showing an offline example note. Add your key in Settings for AI on any visit.','');
     } else {
       toast('Add your OpenAI API key in Settings to generate notes. (Or "Load example visit" to see a sample.)','err');
@@ -4278,6 +4294,176 @@ function autoPopulateExtras(result){
 
   // --- Surgical planning (auto) ---
   try{ renderSurgicalPlan(result); }catch(e){ /* never block the note */ }
+
+  // --- Auto-detect an injection performed → auto-build the procedure note ---
+  try{ maybeAutoProcNote(result); }catch(e){ /* never block the note */ }
+
+  // --- Auto-capture a stated pain score → save as an outcome ---
+  try{ maybeCapturePainScore(result); }catch(e){ /* never block the note */ }
+
+  // --- Collapse the situational extra-cards (default closed) ---
+  try{ initCollapsibleExtras(); }catch(e){ /* never block the note */ }
+}
+
+/* =========================================================
+   FEATURE 2 — Auto-generate the injection procedure note when an
+   injection was actually performed during the visit. Conservative:
+   only fires on clear injection language in the transcript/note.
+   ========================================================= */
+function gatherVisitText(result){
+  const t=(document.getElementById('transcript')||{}).value||'';
+  const n=(result&&result.note)||currentSoap||'';
+  return (t+'\n'+n);
+}
+/* Returns a procedure-name string if an injection appears genuinely
+   performed, else '' (don't fire). Matches common injection terms +
+   CPT codes; requires a "performed/administered/injected" cue OR a CPT
+   code so that merely *recommending* an injection does not auto-fire. */
+function detectInjection(text){
+  const s=String(text||'').toLowerCase();
+  if(!s) return '';
+  // CPT codes for common injections — presence alone is strong evidence it was done.
+  const cptMap=[
+    [/\b20610\b/,'Major joint / bursa injection'],
+    [/\b20611\b/,'Major joint / bursa injection (with ultrasound)'],
+    [/\b20552\b|\b20553\b/,'Trigger point injection'],
+    [/\b62321\b|\b62323\b/,'Lumbar epidural steroid injection — interlaminar'],
+    [/\b62320\b|\b62322\b/,'Cervical epidural steroid injection — interlaminar'],
+    [/\b64483\b|\b64484\b/,'Lumbar epidural steroid injection — transforaminal'],
+    [/\b64479\b|\b64480\b/,'Cervical epidural steroid injection — transforaminal'],
+    [/\b64490\b|\b64491\b|\b64493\b|\b64494\b/,'Facet joint injection'],
+    [/\b27096\b|\bg0260\b/,'Sacroiliac (SI) joint injection']
+  ];
+  for(const [re,name] of cptMap){ if(re.test(s)) return name; }
+  // Injection nouns/phrases.
+  const termMap=[
+    [/\btfesi\b|transforaminal epidural/,'Lumbar epidural steroid injection — transforaminal'],
+    [/\besi\b|epidural steroid|interlaminar epidural|caudal epidural/,'Epidural steroid injection'],
+    [/\bmedial branch block\b|\bmbb\b/,'Medial branch block'],
+    [/facet (joint )?injection|facet block/,'Facet joint injection'],
+    [/\bsi joint injection\b|sacroiliac (joint )?injection/,'Sacroiliac (SI) joint injection'],
+    [/trigger point injection|\btpi\b/,'Trigger point injection'],
+    [/bursa injection|bursal injection/,'Bursa injection'],
+    [/joint injection|intra-?articular injection/,'Joint injection'],
+    [/\binjection\b/,'Injection']
+  ];
+  // A "performed" cue avoids firing on mere recommendations.
+  const performedCue=/(performed|administered|injected|placed|carried out|completed|was given|did (a|an|the) [a-z ]*injection|under (fluoroscop|ultrasound))/.test(s);
+  for(const [re,name] of termMap){
+    if(re.test(s)){
+      // Generic "injection" only counts with a performed cue or a steroid+needle context.
+      if(name==='Injection' && !performedCue) return '';
+      if(name==='Injection' && performedCue) return 'Injection';
+      // Specific procedures: accept if performed cue present OR the specific noun itself
+      // strongly implies a procedure (ESI/TFESI/MBB/facet/SI/TPI are procedures by name).
+      if(performedCue || name!=='Injection') return name;
+    }
+  }
+  return '';
+}
+function maybeAutoProcNote(result){
+  // Don't double-generate if a procedure note already exists this session.
+  if(currentProcNote && String(currentProcNote).trim()) return;
+  const wrap=document.getElementById('procResultWrap');
+  if(wrap && wrap.style.display==='block' && (document.getElementById('procNoteBody')||{}).value) return;
+  const name=detectInjection(gatherVisitText(result));
+  if(!name) return;
+  // Generate silently using the detected procedure as the override.
+  generateProcNote({proc:name, silent:true});
+  toast('Injection detected — draft procedure note auto-built. Review it below.','ok');
+}
+
+/* =========================================================
+   FEATURE 4 — Auto-capture a stated pain score from the visit and
+   save it as an outcome on the active patient (no duplicates per visit/date).
+   ========================================================= */
+/* Extracts a 0–10 pain score from free text. Matches:
+   "pain 6/10", "7 out of 10", "pain score 8", "VAS 5", "6 out of ten".
+   Returns an integer 0–10 or null. */
+function extractPainScore(text){
+  const s=String(text||'');
+  if(!s) return null;
+  let m;
+  // "6/10", "pain 6 / 10" (X out of 10 in slash form)
+  m=s.match(/\b(10|[0-9])\s*\/\s*10\b/);
+  if(m) return Number(m[1]);
+  // "7 out of 10" / "7 out of ten"
+  m=s.match(/\b(10|[0-9])\s+out\s+of\s+(?:10|ten)\b/i);
+  if(m) return Number(m[1]);
+  // "pain score 8", "pain level 8", "pain of 8", "pain is 8", "pain: 8"
+  m=s.match(/pain(?:\s+(?:score|level|rating|intensity))?\s*(?:is|of|:|=|at|rated)?\s*(10|[0-9])\b/i);
+  if(m) return Number(m[1]);
+  // "VAS 5", "NRS 5"
+  m=s.match(/\b(?:vas|nrs)\s*(?:score|of|:|=)?\s*(10|[0-9])\b/i);
+  if(m) return Number(m[1]);
+  return null;
+}
+function maybeCapturePainScore(result){
+  const ap=activePatient();
+  if(!ap) return; // only save when a patient is active
+  const pain=extractPainScore(gatherVisitText(result));
+  if(pain==null || pain<0 || pain>10) return;
+  const arr=getOutcomes(ap.id);
+  // Don't duplicate the same score for the same visit (noteId) or same calendar day.
+  const today=new Date(); today.setHours(0,0,0,0);
+  const dup=arr.some(x=>{
+    if(x.pain==null) return false;
+    const sameVisit = currentNoteId && x.noteId===currentNoteId;
+    const d=new Date(x.date||0); d.setHours(0,0,0,0);
+    const sameDay = d.getTime()===today.getTime();
+    return (sameVisit || sameDay) && Number(x.pain)===Number(pain);
+  });
+  if(dup) return;
+  // If there is already an entry for this visit, update its pain rather than add a row.
+  const i = currentNoteId ? arr.findIndex(x=>x.noteId && x.noteId===currentNoteId) : -1;
+  if(i>=0){ arr[i].pain=pain; lastOutcomeEntryId=arr[i].id; }
+  else {
+    const rec={ id:'o'+Date.now(), noteId:currentNoteId||'', pain:pain, func:null, note:'', date:Date.now() };
+    arr.push(rec); lastOutcomeEntryId=rec.id;
+  }
+  currentOutcome={ pain:pain, func:(currentOutcome&&currentOutcome.func)||null, note:(currentOutcome&&currentOutcome.note)||'' };
+  saveOutcomesArr(ap.id,arr);
+  try{ restoreOutcomeInputs(); }catch(e){ try{ renderOutcomes(); }catch(_){} }
+  toast('Pain score '+pain+'/10 captured.','ok');
+}
+
+/* =========================================================
+   FEATURE 3 — Collapsible situational extra-cards (default closed).
+   Wraps each card's content (everything after the <h3>) in a toggle
+   body and turns the <h3> into a clickable header with a ▸/▾ caret.
+   Idempotent: safe to call repeatedly. Only applies to the situational
+   "extra" cards listed below — never the main SOAP note or coding.
+   ========================================================= */
+const COLLAPSIBLE_EXTRA_IDS=['redflagCard','ddxCard','surgPlanCard','mmeCard','procNoteCard'];
+function makeCardCollapsible(cardId){
+  const card=document.getElementById(cardId);
+  if(!card || card.classList.contains('collapsible')) return;
+  const h=card.querySelector('h3');
+  if(!h) return;
+  card.classList.add('collapsible');
+  // Move all siblings after the <h3> into a body wrapper.
+  const body=document.createElement('div');
+  body.className='collapse-body';
+  let node=h.nextSibling;
+  while(node){ const next=node.nextSibling; body.appendChild(node); node=next; }
+  card.appendChild(body);
+  // Add a caret to the header and make it clickable.
+  const caret=document.createElement('span');
+  caret.className='collapse-caret';
+  caret.textContent='▸';
+  h.insertBefore(caret, h.firstChild);
+  h.style.cursor='pointer';
+  h.setAttribute('role','button');
+  h.setAttribute('tabindex','0');
+  const toggle=()=>{
+    const open=card.classList.toggle('open');
+    caret.textContent=open?'▾':'▸';
+  };
+  h.addEventListener('click',toggle);
+  h.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
+}
+function initCollapsibleExtras(){
+  COLLAPSIBLE_EXTRA_IDS.forEach(makeCardCollapsible);
 }
 
 /* Build the plain-text version of the surgical plan (for chart paste / copy).
@@ -6783,8 +6969,27 @@ function renderMmeResult(){
    Builds a structured spine/pain procedure note. Indication is
    pulled from the current diagnosis; missing items are bracketed.
    ========================================================= */
-function generateProcNote(){
-  const proc=(document.getElementById('procType')||{}).value||'';
+/* Reveal/hide the "Other…" custom procedure input when the dropdown changes. */
+function syncProcOther(){
+  const sel=document.getElementById('procType');
+  const other=document.getElementById('procTypeOther');
+  if(!sel||!other) return;
+  if(sel.value==='__other__'){ other.style.display='block'; }
+  else { other.style.display='none'; }
+}
+/* Resolve the chosen procedure name, honoring the "Other…" custom text input. */
+function resolveProcType(){
+  const sel=document.getElementById('procType');
+  const other=document.getElementById('procTypeOther');
+  const v=(sel&&sel.value)||'';
+  if(v==='__other__') return ((other&&other.value)||'').trim();
+  return v;
+}
+/* generateProcNote(opts): opts.proc overrides the chosen procedure name (used by
+   the auto-fire injection detector); opts.silent suppresses the toast/scroll. */
+function generateProcNote(opts){
+  opts=opts||{};
+  const proc=(opts.proc!=null?String(opts.proc).trim():resolveProcType());
   if(!proc){ toast('Choose a procedure first.','err'); return; }
   const level=((document.getElementById('procLevel')||{}).value||'').trim();
   const guidance=(document.getElementById('procGuidance')||{}).value||'Fluoroscopic';
@@ -6847,8 +7052,11 @@ function generateProcNote(){
   currentProcNote=lines.join('\n');
   document.getElementById('procNoteBody').value=currentProcNote;
   document.getElementById('procResultWrap').style.display='block';
-  document.getElementById('procResultWrap').scrollIntoView({behavior:'smooth',block:'nearest'});
-  toast('Procedure note built. Review and complete any [bracketed] items.','ok');
+  if(!opts.silent){
+    document.getElementById('procResultWrap').scrollIntoView({behavior:'smooth',block:'nearest'});
+    toast('Procedure note built. Review and complete any [bracketed] items.','ok');
+  }
+  return proc;
 }
 function copyProcNote(){
   const ta=document.getElementById('procNoteBody');
