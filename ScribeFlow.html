@@ -120,6 +120,17 @@
   .rf-line{padding:7px 11px;border-radius:8px;margin-bottom:6px;font-size:14px;line-height:1.45;border:1px solid var(--line);background:#fff}
   .rf-present{background:#fdecec;border-color:var(--red);color:#a3262a;font-weight:600}
   .rf-absent{background:#f7faff;color:var(--muted)}
+  .sp-sec{margin-bottom:14px}
+  .sp-sec:last-child{margin-bottom:0}
+  .sp-sec h4{margin:0 0 6px;font-size:14px;color:var(--brand-dk);font-weight:700}
+  .sp-sec ul{margin:0 0 0 2px;padding-left:18px}
+  .sp-sec li{font-size:14px;line-height:1.5;margin-bottom:3px}
+  .sp-label{font-size:13px;font-weight:700;color:var(--muted);margin:6px 0 2px}
+  .sp-gap{background:#fffaf0;border:1px solid #ffe9c2;border-radius:8px;padding:8px 11px;margin-top:4px}
+  .sp-gap .sp-label{color:#b4790a}
+  .sp-conc{border-radius:8px;padding:8px 11px;font-size:14px;line-height:1.5;border:1px solid var(--line);background:#fff}
+  .sp-conc.ok{background:#f0f9f4;border-color:#cdebd9;color:var(--green-dk)}
+  .sp-conc.warn{background:#fdecec;border-color:var(--red);color:#a3262a}
   .superbill td{padding:7px 6px;border-bottom:1px solid var(--line);font-size:14px}
   .superbill td.k{color:var(--muted);font-weight:600;width:150px}
   .note-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
@@ -653,6 +664,15 @@
         </h3>
         <p class="sub" style="margin:4px 0 10px">A ranked differential with rationale and what would confirm/exclude each. These are considerations for the provider, not a diagnosis.</p>
         <div class="xbody" id="ddxBody"></div>
+      </div>
+
+      <!-- SURGICAL PLANNING (auto-populated for surgical visits) -->
+      <div class="extra-card" id="surgPlanCard" style="display:none">
+        <h3>🦴 Surgical planning <span style="font-weight:400;font-size:13px;color:var(--muted)">(auto — for the provider)</span>
+          <button class="sec-copy" style="margin-left:auto" onclick="copySurgicalPlan()">📑 Copy</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 10px">Auto-assembled when surgery is discussed: conservative-care gaps for prior-auth, imaging concordance, surgical options, pre-op workup, and informed-consent talking points. Advisory — based only on what is documented.</p>
+        <div class="xbody" id="surgPlanBody" style="white-space:normal"></div>
       </div>
 
       <!-- OPIOID MME CALCULATOR -->
@@ -2239,8 +2259,9 @@ function newVisit(){
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
   currentPriorAuth=''; currentMips=''; currentOutcome=null; lastOutcomeEntryId=null;
   currentRedFlags=''; currentDdx=''; currentProcNote=''; mmeOpioids=[]; paMode='auth';
+  currentSurgicalPlan=''; currentSurgicalData=null;
   if(typeof setPaMode==='function') setPaMode('auth');
-  ['paResultWrap','procResultWrap','redflagCard','ddxCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  ['paResultWrap','procResultWrap','redflagCard','ddxCard','surgPlanCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   { const pl=document.getElementById('paLetter'); if(pl) pl.value=''; }
   { const pb=document.getElementById('procNoteBody'); if(pb) pb.value=''; }
   { const dt=document.getElementById('paDenialText'); if(dt) dt.value=''; }
@@ -2283,6 +2304,8 @@ function noteRecordFromState(markSigned){
     priorAuth: currentPriorAuth||'',
     redFlags: currentRedFlags||'',
     ddx: currentDdx||'',
+    surgicalPlan: currentSurgicalData||null,
+    surgicalPlanText: currentSurgicalPlan||'',
     procNote: (function(){const pb=document.getElementById('procNoteBody'); return (pb&&pb.value)?pb.value:(currentProcNote||'');})(),
     mmeOpioids: Array.isArray(mmeOpioids)?mmeOpioids.slice():[],
     mips: currentMips||'',
@@ -2490,6 +2513,10 @@ function loadRecordIntoEditor(n){
   currentRedFlags=n.redFlags||''; currentDdx=n.ddx||''; currentProcNote=n.procNote||'';
   mmeOpioids=Array.isArray(n.mmeOpioids)?n.mmeOpioids.slice():[];
   paMode='auth'; setPaMode('auth');
+  currentSurgicalData=(n.surgicalPlan&&typeof n.surgicalPlan==='object')?n.surgicalPlan:null;
+  currentSurgicalPlan=n.surgicalPlanText||'';
+  if(currentSurgicalData){ try{ renderSurgicalPlan(currentSurgicalData); }catch(e){ const sp=document.getElementById('surgPlanCard'); if(sp) sp.style.display='none'; } }
+  else { const sp=document.getElementById('surgPlanCard'); if(sp) sp.style.display='none'; currentSurgicalPlan=''; }
   if(currentRedFlags) renderRedFlags(currentRedFlags); else { const rc=document.getElementById('redflagCard'); if(rc) rc.style.display='none'; }
   if(currentDdx) showExtra('ddxCard','ddxBody',currentDdx); else { const dc=document.getElementById('ddxCard'); if(dc) dc.style.display='none'; }
   if(currentProcNote){ const pb=document.getElementById('procNoteBody'); if(pb){ pb.value=currentProcNote; document.getElementById('procResultWrap').style.display='block'; } } else { const pr=document.getElementById('procResultWrap'); if(pr) pr.style.display='none'; }
@@ -2814,6 +2841,139 @@ function autoPopulateExtras(result){
       renderRecommendations();
     }
   }catch(e){ /* */ }
+
+  // --- Surgical planning (auto) ---
+  try{ renderSurgicalPlan(result); }catch(e){ /* never block the note */ }
+}
+
+/* Build the plain-text version of the surgical plan (for chart paste / copy).
+   Returns '' when there is no surgical content. */
+function surgicalPlanText(result){
+  result=result||{};
+  const cc=result.conservative_care||{tried:[],still_needed:[]};
+  const tried=(Array.isArray(cc.tried)?cc.tried:[]).map(s=>String(s).trim()).filter(Boolean);
+  const still=(Array.isArray(cc.still_needed)?cc.still_needed:[]).map(s=>String(s).trim()).filter(Boolean);
+  const conc=String(result.imaging_concordance||'').trim();
+  const opts=(Array.isArray(result.surgical_options)?result.surgical_options:[]).filter(o=>o&&typeof o==='object');
+  const workup=(Array.isArray(result.preop_workup)?result.preop_workup:[]).map(s=>String(s).trim()).filter(Boolean);
+  const cp=result.consent_points||{benefits:[],risks:[],alternatives:[]};
+  const ben=(Array.isArray(cp.benefits)?cp.benefits:[]).map(s=>String(s).trim()).filter(Boolean);
+  const rsk=(Array.isArray(cp.risks)?cp.risks:[]).map(s=>String(s).trim()).filter(Boolean);
+  const alt=(Array.isArray(cp.alternatives)?cp.alternatives:[]).map(s=>String(s).trim()).filter(Boolean);
+  const optLines=opts.map(o=>{
+    const proc=String(o.procedure||'').trim();
+    if(!proc) return '';
+    const lv=String(o.levels||'').trim();
+    const rat=String(o.rationale||'').trim();
+    return proc+(lv?(' ('+lv+')'):'')+(rat?(' — '+rat):'');
+  }).filter(Boolean);
+  if(!tried.length&&!still.length&&!conc&&!optLines.length&&!workup.length&&!ben.length&&!rsk.length&&!alt.length) return '';
+  const out=['SURGICAL PLANNING'];
+  if(tried.length||still.length){
+    out.push('','Conservative care:');
+    if(tried.length) out.push('  Documented: '+tried.join('; '));
+    if(still.length) out.push('  Still needed for surgical auth: '+still.join('; '));
+  }
+  if(conc){ out.push('','Imaging–symptom concordance:','  '+conc); }
+  if(optLines.length){ out.push('','Surgical options:'); optLines.forEach(l=>out.push('  - '+l)); }
+  if(workup.length){ out.push('','Pre-op workup:'); workup.forEach(w=>out.push('  - '+w)); }
+  if(ben.length||rsk.length||alt.length){
+    out.push('','Informed-consent talking points:');
+    if(ben.length) out.push('  Benefits: '+ben.join('; '));
+    if(rsk.length) out.push('  Risks: '+rsk.join('; '));
+    if(alt.length) out.push('  Alternatives: '+alt.join('; '));
+  }
+  return out.join('\n');
+}
+
+/* AUTO-render the Surgical planning card from a parsed generate result.
+   Shows only sub-sections with content; hides the whole card if all empty. */
+function renderSurgicalPlan(result){
+  result=result||{};
+  const card=document.getElementById('surgPlanCard');
+  const body=document.getElementById('surgPlanBody');
+  if(!card||!body) return;
+  const cc=result.conservative_care||{tried:[],still_needed:[]};
+  const tried=(Array.isArray(cc.tried)?cc.tried:[]).map(s=>String(s).trim()).filter(Boolean);
+  const still=(Array.isArray(cc.still_needed)?cc.still_needed:[]).map(s=>String(s).trim()).filter(Boolean);
+  const conc=String(result.imaging_concordance||'').trim();
+  const opts=(Array.isArray(result.surgical_options)?result.surgical_options:[]).filter(o=>o&&typeof o==='object');
+  const workup=(Array.isArray(result.preop_workup)?result.preop_workup:[]).map(s=>String(s).trim()).filter(Boolean);
+  const cp=result.consent_points||{benefits:[],risks:[],alternatives:[]};
+  const ben=(Array.isArray(cp.benefits)?cp.benefits:[]).map(s=>String(s).trim()).filter(Boolean);
+  const rsk=(Array.isArray(cp.risks)?cp.risks:[]).map(s=>String(s).trim()).filter(Boolean);
+  const alt=(Array.isArray(cp.alternatives)?cp.alternatives:[]).map(s=>String(s).trim()).filter(Boolean);
+
+  const optLines=opts.map(o=>{
+    const proc=String(o.procedure||'').trim();
+    if(!proc) return '';
+    const lv=String(o.levels||'').trim();
+    const rat=String(o.rationale||'').trim();
+    return proc+(lv?(' ('+lv+')'):'')+(rat?(' — '+rat):'');
+  }).filter(Boolean);
+
+  const hasAny=tried.length||still.length||conc||optLines.length||workup.length||ben.length||rsk.length||alt.length;
+  if(!hasAny){
+    currentSurgicalPlan='';
+    currentSurgicalData=null;
+    body.innerHTML='';
+    card.style.display='none';
+    return;
+  }
+  // Keep a normalized structured copy so the card can be restored on reopen.
+  currentSurgicalData={
+    conservative_care:{tried:tried,still_needed:still},
+    imaging_concordance:conc,
+    surgical_options:opts,
+    preop_workup:workup,
+    consent_points:{benefits:ben,risks:rsk,alternatives:alt}
+  };
+
+  const ul=arr=>'<ul>'+arr.map(s=>'<li>'+esc(s)+'</li>').join('')+'</ul>';
+  let html='';
+
+  if(tried.length||still.length){
+    html+='<div class="sp-sec"><h4>Conservative care</h4>';
+    if(tried.length){ html+='<div class="sp-label">Documented:</div>'+ul(tried); }
+    if(still.length){
+      html+='<div class="sp-gap"><div class="sp-label">Still needed for surgical auth:</div>'+ul(still)+'</div>';
+    }
+    html+='</div>';
+  }
+
+  if(conc){
+    const lc=conc.toLowerCase();
+    const cls=/discordant/.test(lc)?'warn':(/concordant/.test(lc)?'ok':'');
+    html+='<div class="sp-sec"><h4>Imaging–symptom concordance</h4><div class="sp-conc'+(cls?(' '+cls):'')+'">'+esc(conc)+'</div></div>';
+  }
+
+  if(optLines.length){
+    html+='<div class="sp-sec"><h4>Surgical options</h4>'+ul(optLines)+'</div>';
+  }
+
+  if(workup.length){
+    html+='<div class="sp-sec"><h4>Pre-op workup</h4>'+ul(workup)+'</div>';
+  }
+
+  if(ben.length||rsk.length||alt.length){
+    html+='<div class="sp-sec"><h4>Informed-consent talking points</h4>';
+    if(ben.length){ html+='<div class="sp-label">Benefits</div>'+ul(ben); }
+    if(rsk.length){ html+='<div class="sp-label">Risks</div>'+ul(rsk); }
+    if(alt.length){ html+='<div class="sp-label">Alternatives</div>'+ul(alt); }
+    html+='</div>';
+  }
+
+  body.innerHTML=html;
+  currentSurgicalPlan=surgicalPlanText(result);
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function copySurgicalPlan(){
+  if(!currentSurgicalPlan){ toast('No surgical plan to copy.','err'); return; }
+  navigator.clipboard.writeText(currentSurgicalPlan)
+    .then(()=>toast('Surgical plan copied.','ok'))
+    .catch(()=>toast('Could not copy.','err'));
 }
 
 /* Map a free-text opioid name to an existing MME_FACTORS key (case-insensitive). */
@@ -2928,8 +3088,14 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
  "suggested_orders": [ "<concrete order this visit reasonably warrants based ONLY on the documented assessment/plan, e.g. 'Physical therapy — lumbar, 3x/week x4 weeks', 'MRI lumbar spine', 'TLSO brace'. Empty array if none.>" ],
  "differentials": [ {"dx":"<diagnosis to consider>","rationale":"<one-line rationale grounded in documented findings + what would confirm/exclude>"} ],
  "opioids": [ {"drug":"<opioid name as said, e.g. oxycodone, fentanyl patch>","mg_per_dose":<number>,"doses_per_day":<number>} ],
- "recommendations": [ "<advisory care-gap / follow-up / monitoring / documentation item FOR THE PROVIDER to consider; never a directive, never upcoding. Empty array if none.>" ]
+ "recommendations": [ "<advisory care-gap / follow-up / monitoring / documentation item FOR THE PROVIDER to consider; never a directive, never upcoding. Empty array if none.>" ],
+ "conservative_care": {"tried":["<conservative measure ALREADY documented as tried, e.g. 'PT x6 weeks', 'NSAIDs', 'epidural steroid injection'>"],"still_needed":["<conservative measure typically required for surgical prior-auth that is NOT yet documented, e.g. '6 weeks supervised PT', 'recent imaging'>"]},
+ "imaging_concordance": "<one line stating whether the imaging findings are CONCORDANT or DISCORDANT with the symptoms/exam, and why. Empty string if no imaging discussed.>",
+ "surgical_options": [ {"procedure":"<surgical procedure considered, e.g. 'Microdiscectomy', 'TLIF'>","levels":"<spinal level(s), e.g. 'L4-L5'>","rationale":"<one-line rationale grounded in documented findings>"} ],
+ "preop_workup": [ "<pre-operative workup item this surgery would require, e.g. 'Cardiac clearance', 'Updated MRI', 'DEXA scan'. Empty array if no surgery contemplated.>" ],
+ "consent_points": {"benefits":["<expected benefit to discuss in informed consent>"],"risks":["<material risk to disclose, e.g. 'infection', 'nerve injury', 'dural tear'>"],"alternatives":["<reasonable alternative, e.g. 'continued conservative care', 'injection'>"]}
 }
+For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.`+docPrefsBlock();
   return await postChat(sys,'Visit transcript:\n\n'+transcript+ctxLine,key);
 }
@@ -3048,7 +3214,8 @@ function parseGenJSON(content){
   let parsed;
   try{ parsed=JSON.parse(content); }
   catch(e){ return {note:content,insuranceNote:'',coding:null,emr:{cc:'—',dx:'—',meds:'—',orders:'—',fu:'—'},raw:parsed,
-    red_flags:[],suggested_orders:[],differentials:[],opioids:[],recommendations:[]}; }
+    red_flags:[],suggested_orders:[],differentials:[],opioids:[],recommendations:[],
+    conservative_care:{tried:[],still_needed:[]},imaging_concordance:'',surgical_options:[],preop_workup:[],consent_points:{benefits:[],risks:[],alternatives:[]}}; }
   const fmtCodes=arr=>Array.isArray(arr)?arr.map(c=>(c.code||'')+(c.desc?' — '+c.desc:'')).filter(Boolean):[];
   const arrOf=v=>Array.isArray(v)?v:[];
   return {
@@ -3073,6 +3240,16 @@ function parseGenJSON(content){
     differentials:arrOf(parsed.differentials),
     opioids:arrOf(parsed.opioids),
     recommendations:arrOf(parsed.recommendations),
+    // NEW surgical-planning fields (all optional; guarded defaults)
+    conservative_care:(parsed.conservative_care&&typeof parsed.conservative_care==='object')
+      ?{tried:arrOf(parsed.conservative_care.tried),still_needed:arrOf(parsed.conservative_care.still_needed)}
+      :{tried:[],still_needed:[]},
+    imaging_concordance:typeof parsed.imaging_concordance==='string'?parsed.imaging_concordance:'',
+    surgical_options:arrOf(parsed.surgical_options),
+    preop_workup:arrOf(parsed.preop_workup),
+    consent_points:(parsed.consent_points&&typeof parsed.consent_points==='object')
+      ?{benefits:arrOf(parsed.consent_points.benefits),risks:arrOf(parsed.consent_points.risks),alternatives:arrOf(parsed.consent_points.alternatives)}
+      :{benefits:[],risks:[],alternatives:[]},
     raw:parsed
   };
 }
@@ -3787,6 +3964,8 @@ let paMode = 'auth';              // 'auth' (prior-auth request) or 'appeal' (ap
 let currentRedFlags = '';         // latest red-flag scan result text for this visit
 let currentDdx = '';              // latest differential-diagnosis result for this visit
 let currentProcNote = '';         // latest injection procedure note for this visit
+let currentSurgicalPlan = '';     // plain-text surgical plan (for copy/paste) for this visit
+let currentSurgicalData = null;   // structured surgical-planning data {conservative_care,imaging_concordance,surgical_options,preop_workup,consent_points}
 let mmeOpioids = [];              // [{drug, mg, doses}] opioids for the MME calculator
 let currentMips = '';             // latest MIPS quality-check result for this visit
 let currentOutcome = null;        // {pain, func, note} captured for this visit
