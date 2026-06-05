@@ -11,7 +11,38 @@
     --green:#19a974; --green-dk:#127a55; --amber:#f59e0b;
     --red:#e0494b; --soft:#eef4fc; --shadow:0 2px 18px rgba(31,122,224,.08);
     --gold:#b8860b; --gold-bg:#fdf6e3;
+    /* QoL: surface colors hoisted to variables so dark mode can re-skin them */
+    --surface:#ffffff; --field-bg:#fbfdff; --soft2:#f7fbff;
   }
+  /* ===== QoL: DARK MODE (MLS) — overrides the color variables above ===== */
+  body.theme-dark{
+    --bg:#0f1722; --card:#16202e; --ink:#e6edf5; --muted:#9fb0c2;
+    --line:#2a3848; --brand:#3b8df0; --brand-dk:#5aa0f5;
+    --green:#2cb583; --green-dk:#3fd29b; --amber:#f0ad3c;
+    --red:#e0606b; --soft:#1c2937; --shadow:0 2px 18px rgba(0,0,0,.45);
+    --gold:#d9a93b; --gold-bg:#2a2415;
+    --surface:#16202e; --field-bg:#101a26; --soft2:#162130;
+  }
+  /* Re-point common hardcoded surfaces at the themeable variables so they
+     follow dark mode (they default to white/very-light in light mode). */
+  textarea, input[type=text],input[type=password],input[type=email], .sf-select{ background:var(--field-bg) }
+  .note-box{ background:var(--surface) }
+  .modal{ background:var(--surface) }
+  .extra-card, .code-card, .opt-card{ background:var(--soft2) }
+  .extra-card .xbody, .rf-line, .sp-conc, .codechip{ background:var(--surface) }
+  .empty{ background:var(--soft2) }
+  body.theme-dark .badge.draft{filter:brightness(.85)}
+  /* ===== QoL: TEXT SIZE (MLS) ===== */
+  body.text-small{ font-size:15px }
+  body.text-large{ font-size:19px }
+  /* ===== QoL: COMPACT MODE (MLS) — denser cards ===== */
+  body.compact .card{ padding:13px }
+  body.compact .wrap{ padding:14px }
+  body.compact .grid{ gap:13px }
+  body.compact .field{ margin-bottom:9px }
+  body.compact .extra-card,
+  body.compact .code-card,
+  body.compact .opt-card{ padding:11px;margin-top:10px }
   *{box-sizing:border-box}
   body{
     margin:0; font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
@@ -1350,6 +1381,58 @@
       <textarea id="defaultComment" class="note-box" style="min-height:72px" placeholder="Your preferred default comment…" onblur="setDefaultComment(this.value)"></textarea>
     </div>
 
+    <!-- QoL: appearance + workflow preferences (MLS) -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">🎨 Appearance &amp; workflow <span style="font-weight:400;color:var(--muted)">(MLS — this device)</span></label>
+
+      <div class="field">
+        <label for="qolTheme">Theme</label>
+        <select class="sf-select" id="qolTheme" onchange="applyThemePreview(this.value)">
+          <option value="light">Light (default)</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="qolTextSize">Text size</label>
+        <select class="sf-select" id="qolTextSize" onchange="applyTextSizePreview(this.value)">
+          <option value="small">Small</option>
+          <option value="normal">Normal (default)</option>
+          <option value="large">Large</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="qolCompact" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+          <input type="checkbox" id="qolCompact" style="width:17px;height:17px;cursor:pointer" onchange="applyCompactPreview(this.checked)">
+          <span>Compact mode <span style="font-weight:400;color:var(--muted)">(denser cards)</span></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="qolConfirmLogout" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+          <input type="checkbox" id="qolConfirmLogout" style="width:17px;height:17px;cursor:pointer">
+          <span>Confirm before logging out</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- QoL: provider signature block (MLS) -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label for="qolSignature" style="font-size:15px">✍️ Provider signature block <span style="font-weight:400;color:var(--muted)">(appended to notes)</span></label>
+      <p class="note" style="margin:2px 0 10px">Saved credentials added to the bottom of every generated note under an "Electronically signed by:" line. Leave blank to append nothing.<br>
+        <span style="color:var(--muted)">e.g. Matthew W. Schaeffer, MD — Chester County Spine Care</span></p>
+      <textarea id="qolSignature" class="note-box" style="min-height:64px" placeholder="Your name, credentials, practice…"></textarea>
+    </div>
+
+    <!-- QoL: default follow-up interval (MLS) -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label for="qolFollowup" style="font-size:15px">📅 Default follow-up interval</label>
+      <p class="note" style="margin:2px 0 10px">Your standing follow-up window, shared with MLS as a preference for the plan/return-precautions.<br>
+        <span style="color:var(--muted)">e.g. 2 weeks</span></p>
+      <input type="text" id="qolFollowup" placeholder="e.g. 2 weeks">
+    </div>
+
     <!-- Automatic inactivity logoff (HIPAA technical safeguard) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
       <label for="idleMins" style="font-size:15px">🔒 Auto log off after inactivity</label>
@@ -1896,6 +1979,7 @@ function startSession(email){
   document.getElementById('authPass').value='';
   if(document.getElementById('authPass2')) document.getElementById('authPass2').value='';
   loadUserSettingsIntoMemory();
+  if(typeof applyAppearance==='function') applyAppearance(); // per-user appearance (MLS)
   renderDots();
   renderHistory();
   newVisit();
@@ -1912,7 +1996,12 @@ function startSession(email){
   }
 }
 
-function logout(){
+function logout(force){
+  // QoL: optional confirmation before logging out (off by default). The
+  // inactivity safeguard passes force=true so it never blocks on a prompt.
+  if(force!==true && typeof getQolConfirmLogout==='function' && getQolConfirmLogout()){
+    if(!confirm('Log out of MLS now?')) return;
+  }
   if(capturing) stopCapture();
   stopIdle();            // clear the inactivity timer
   session=null;
@@ -1970,7 +2059,7 @@ function handle401(){
   setBkToken(''); bkUser=null;
   if(session){
     toast('Your session expired — please log in again.','err');
-    logout();
+    logout(true);
   }
 }
 
@@ -2383,7 +2472,11 @@ function withCommentBlock(text){
    with the note through save, copy, EMR export, FHIR, print, etc. */
 function applyVisitCommentToNote(){
   if(!currentSoap) return;
+  // Strip any prior signature first so the COMMENT regex sees a clean tail,
+  // then fold in the comment, then re-append the signature (both idempotent).
+  currentSoap=stripSignatureBlock(currentSoap);
   currentSoap=withCommentBlock(currentSoap);
+  currentSoap=withSignatureBlock(currentSoap);
   const nb=document.getElementById('noteBox');
   if(nb && nb.style.display!=='none' && currentFormat==='soap'){ nb.value=currentSoap; }
 }
@@ -2415,10 +2508,58 @@ function renderDocPrefs(){
 /* Build the PROVIDER PREFERENCES block injected into AI system prompts.
    Returns '' when there are no preferences, so nothing changes for empty lists. */
 function docPrefsBlock(){
-  const arr=getDocPrefs();
+  const arr=getDocPrefs().slice();
+  // QoL: include the default follow-up interval as a provider preference.
+  const fu=(typeof getQolFollowup==='function')?getQolFollowup().trim():'';
+  if(fu) arr.push('Default follow-up interval is '+fu+' unless the visit warrants otherwise.');
   if(!arr.length) return '';
   return '\n\nPROVIDER PREFERENCES (follow these unless clinically inappropriate or unsafe; they are reusable style/formatting/content preferences, never override clinical accuracy or coding ethics):\n'+
     arr.map(p=>'- '+p).join('\n');
+}
+
+/* =========================================================
+   QoL SETTINGS (MLS) — appearance, signature, follow-up, logout
+   All persisted per-device via uns(): qolTheme, qolTextSize, qolCompact,
+   qolConfirmLogout, qolSignature, qolFollowup.
+   Appearance (theme/text size/compact) is applied to <body> on load.
+   ========================================================= */
+function getQolTheme(){ return localStorage.getItem(uns('qolTheme'))||'light'; }
+function getQolTextSize(){ return localStorage.getItem(uns('qolTextSize'))||'normal'; }
+function getQolCompact(){ return localStorage.getItem(uns('qolCompact'))==='1'; }
+function getQolConfirmLogout(){ return localStorage.getItem(uns('qolConfirmLogout'))==='1'; }
+function getQolSignature(){ return localStorage.getItem(uns('qolSignature'))||''; }
+function getQolFollowup(){ return localStorage.getItem(uns('qolFollowup'))||''; }
+
+/* Apply the saved appearance prefs to <body>. Safe to call repeatedly and
+   before login (uns() falls back to a device namespace when no session). */
+function applyAppearance(){
+  const b=document.body; if(!b) return;
+  b.classList.toggle('theme-dark', getQolTheme()==='dark');
+  const ts=getQolTextSize();
+  b.classList.remove('text-small','text-large');
+  if(ts==='small') b.classList.add('text-small');
+  else if(ts==='large') b.classList.add('text-large');
+  b.classList.toggle('compact', getQolCompact());
+}
+/* Live preview helpers wired to the Settings selects/checkbox. */
+function applyThemePreview(v){ document.body.classList.toggle('theme-dark', v==='dark'); }
+function applyTextSizePreview(v){
+  const b=document.body; b.classList.remove('text-small','text-large');
+  if(v==='small') b.classList.add('text-small'); else if(v==='large') b.classList.add('text-large');
+}
+function applyCompactPreview(on){ document.body.classList.toggle('compact', !!on); }
+
+/* Strip any prior signature block off the end of a note so re-generating or
+   re-saving never duplicates it (idempotent). Mirrors stripCommentBlock(). */
+function stripSignatureBlock(text){
+  return (text||'').replace(/\n*Electronically signed by:\n[\s\S]*$/,'').replace(/\s+$/,'');
+}
+/* Return the note with the saved signature appended. Empty signature appends
+   nothing. Always strips a prior signature block first (idempotent). */
+function withSignatureBlock(text){
+  const base=stripSignatureBlock(text);
+  const sig=getQolSignature().trim();
+  return sig ? (base+'\n\nElectronically signed by:\n'+sig) : base;
 }
 
 /* =========================================================
@@ -2438,7 +2579,7 @@ function getIdleMins(){
 function idleLogout(){
   if(!session) return;
   toast('Logged out due to inactivity.','');
-  logout();
+  logout(true);
 }
 function resetIdle(){
   clearTimeout(idleTimer);
@@ -2492,6 +2633,13 @@ function openSettings(){
   document.getElementById('keyOk').className=getKey()?'keyok show':'keyok';
   const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=String(getIdleMins());
   const dc=document.getElementById('defaultComment'); if(dc) dc.value=getDefaultComment();
+  // QoL settings (MLS)
+  const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
+  const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
+  const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
+  const qcl=document.getElementById('qolConfirmLogout'); if(qcl) qcl.checked=getQolConfirmLogout();
+  const qsig=document.getElementById('qolSignature'); if(qsig) qsig.value=getQolSignature();
+  const qfu=document.getElementById('qolFollowup'); if(qfu) qfu.value=getQolFollowup();
   renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
@@ -2504,6 +2652,15 @@ function saveSettings(){
   localStorage.setItem(uns('docname'),document.getElementById('docName').value.trim());
   localStorage.setItem(uns('docspec'),document.getElementById('docSpec').value.trim());
   const dc=document.getElementById('defaultComment'); if(dc) setDefaultComment(dc.value);
+  // QoL settings (MLS) — persist per-device
+  const qt=document.getElementById('qolTheme'); if(qt) localStorage.setItem(uns('qolTheme'),qt.value);
+  const qts=document.getElementById('qolTextSize'); if(qts) localStorage.setItem(uns('qolTextSize'),qts.value);
+  const qc=document.getElementById('qolCompact'); if(qc) localStorage.setItem(uns('qolCompact'),qc.checked?'1':'0');
+  const qcl=document.getElementById('qolConfirmLogout'); if(qcl) localStorage.setItem(uns('qolConfirmLogout'),qcl.checked?'1':'0');
+  const qsig=document.getElementById('qolSignature'); if(qsig) localStorage.setItem(uns('qolSignature'),(qsig.value||'').trim());
+  const qfu=document.getElementById('qolFollowup'); if(qfu) localStorage.setItem(uns('qolFollowup'),(qfu.value||'').trim());
+  applyAppearance();                 // apply theme / text size / compact now
+  if(typeof applyVisitCommentToNote==='function') applyVisitCommentToNote(); // refresh signature on any open note
   const idleSel=document.getElementById('idleMins');
   if(idleSel){
     const m=parseInt(idleSel.value,10);
@@ -4606,7 +4763,10 @@ Return ONLY valid JSON (no fences) with this shape:
 }
 
 async function postChatRaw(sys,user,key){
-  let content=await aiCallRaw(sys,user,key);
+  // freeform → hosted mode routes to /api/complete (honors this custom prompt),
+  // per-device-key mode ignores the flag. Without it, hosted mode wrongly hit
+  // /api/generate (the SOAP-note generator) and ignored the prompt.
+  let content=await aiCallRaw(sys,user,key,{freeform:true});
   content=content.replace(/^```json\s*/i,'').replace(/```$/,'').trim();
   return JSON.parse(content);
 }
@@ -6352,7 +6512,7 @@ function _normForDiff(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
 async function teachFromEdits(){
   if(!session) return;
   if(!lastAIDraft){ toast('Generate a note first — there is no AI draft to compare against yet.','err'); return; }
-  const edited=stripCommentBlock(currentNoteText());
+  const edited=stripCommentBlock(stripSignatureBlock(currentNoteText()));
   if(!edited || !edited.trim()){ toast('Generate a note first.','err'); return; }
   if(_normForDiff(edited)===_normForDiff(lastAIDraft)){
     toast('No edits detected yet. Edit the note the way you like, then teach MLS.','');
@@ -7488,6 +7648,8 @@ GUARDRAILS: You may reference evidence-based utilization frameworks generally (e
    INIT
    ========================================================= */
 window.addEventListener('DOMContentLoaded',()=>{
+  // QoL (MLS): apply saved appearance prefs ASAP so there's no light flash.
+  if(typeof applyAppearance==='function') applyAppearance();
   // ---- Phone-mic page: if ?mic=<CODE>, render the dedicated recorder and stop. ----
   const _params=new URLSearchParams(location.search);
   const _micCode=_params.get('mic');
