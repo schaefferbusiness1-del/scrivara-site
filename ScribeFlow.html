@@ -1026,6 +1026,7 @@
         <button class="btn-ghost" id="costBtn" onclick="showCostEstimate()" title="Estimate this patient's out-of-pocket from their own insurance benefits">💲 Cost estimate</button>
         <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach MLS</button>
         <button class="btn-ghost" onclick="exportFHIR()" disabled id="fhirBtn" title="Build a FHIR R4 Bundle">🔌 Export FHIR</button>
+        <button class="btn-ghost" id="templatesBtn" onclick="openTemplates()" title="Import and manage output templates (optional — off by default)">📄 Templates</button>
         <button class="btn-ghost" onclick="downloadNote()" disabled id="dlBtn">⬇ Download .txt</button>
       </div>
     </div>
@@ -1610,6 +1611,62 @@
     <div class="row">
       <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Reopen in editor</button>
       <button class="btn-ghost" onclick="closeView()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- TEMPLATES MODAL (optional output-formatting templates) -->
+<div class="modal-bg" id="templatesModal">
+  <div class="modal" style="max-width:720px">
+    <button class="modal-x" onclick="closeTemplates()">×</button>
+    <h3>📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></h3>
+    <p class="note">Import a blank template/form (PDF or image). When enabled, MLS formats the generated note to match the template's structure and fields. Templates are stored locally on this device. Off by default — when off, generation is unchanged.</p>
+
+    <div class="field" style="margin-top:4px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="tplUseToggle" onchange="onTplToggleChange()" style="width:auto;margin:0">
+        <span>Use templates when generating</span>
+      </label>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">When on, after a note is generated MLS reformats it to follow the active (or auto-chosen) template.</div>
+    </div>
+
+    <div class="field" id="tplActiveWrap">
+      <label for="tplActiveSel">Active template</label>
+      <select id="tplActiveSel" class="sf-select" onchange="onTplActiveChange()"></select>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px">
+        <input type="checkbox" id="tplAutoChoose" onchange="onTplAutoChange()" style="width:auto;margin:0">
+        <span>Auto-choose the best-matching template by keywords</span>
+      </label>
+    </div>
+
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+
+    <h4 style="margin:0 0 8px">Add a template</h4>
+    <div class="field">
+      <label for="tplName">Name *</label>
+      <input type="text" id="tplName" placeholder="e.g. Ortho consult form">
+    </div>
+    <div class="field">
+      <label for="tplKeywords">Keywords / specialty tags <span style="font-weight:400;color:var(--muted)">(comma-separated, optional — used for auto-choose)</span></label>
+      <input type="text" id="tplKeywords" placeholder="e.g. ortho, knee, consult, MRI">
+    </div>
+    <div class="row tight" style="margin-top:0">
+      <button class="edit" onclick="document.getElementById('tplFileInput').click()">⬆ Upload template (PDF / image)</button>
+      <button class="btn-ghost" onclick="tplPasteText()">📋 Paste text instead</button>
+    </div>
+    <input type="file" id="tplFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="onTplFile(event)">
+    <textarea id="tplText" placeholder="Extracted template text appears here. You can edit it before saving." style="min-height:120px;font-size:13px;margin-top:8px"></textarea>
+    <div class="row" style="margin-top:6px">
+      <button class="btn-green" onclick="saveTemplateFromForm()" style="flex:1">💾 Save template</button>
+      <button class="btn-ghost" onclick="clearTplForm()">Clear</button>
+    </div>
+
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <h4 style="margin:0 0 8px">Saved templates</h4>
+    <div id="tplList"></div>
+
+    <div class="row" style="margin-top:14px">
+      <button class="btn-ghost" onclick="closeTemplates()" style="flex:1">Close</button>
     </div>
   </div>
 </div>
@@ -3882,6 +3939,205 @@ async function extractPdfText(file){
   }
   return out.trim();
 }
+/* =========================================================
+   TEMPLATES (OPTIONAL) — import blank forms, store per-device,
+   and (when enabled) reformat a generated note to match a template.
+   Storage: uns('templates') -> JSON array of
+     {id, name, keywords:[...], text, created}
+   Toggle:  uns('useTemplates') -> '1' | '0'   (default OFF)
+   Active:  uns('templateActive') -> template id  ('' = none)
+   Auto:    uns('templateAuto') -> '1' | '0'
+   This whole subsystem is additive and is ONLY consulted when the
+   toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
+   ========================================================= */
+function getTemplates(){
+  try{ const a=JSON.parse(localStorage.getItem(uns('templates'))||'[]'); return Array.isArray(a)?a:[]; }
+  catch(e){ return []; }
+}
+function setTemplates(arr){ localStorage.setItem(uns('templates'),JSON.stringify(arr||[])); }
+function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
+function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
+function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
+function getTemplateById(id){ return getTemplates().find(t=>t.id===id)||null; }
+
+function openTemplates(){
+  document.getElementById('tplUseToggle').checked=useTemplatesOn();
+  document.getElementById('tplAutoChoose').checked=templateAutoOn();
+  renderTemplateList();
+  renderTemplateActiveSelect();
+  document.getElementById('templatesModal').classList.add('show');
+}
+function closeTemplates(){ document.getElementById('templatesModal').classList.remove('show'); }
+
+function onTplToggleChange(){
+  localStorage.setItem(uns('useTemplates'),document.getElementById('tplUseToggle').checked?'1':'0');
+  toast(useTemplatesOn()?'Templates ON — generated notes will follow the selected template.':'Templates OFF — generation unchanged.','');
+}
+function onTplActiveChange(){
+  localStorage.setItem(uns('templateActive'),document.getElementById('tplActiveSel').value||'');
+}
+function onTplAutoChange(){
+  localStorage.setItem(uns('templateAuto'),document.getElementById('tplAutoChoose').checked?'1':'0');
+}
+
+function renderTemplateActiveSelect(){
+  const sel=document.getElementById('tplActiveSel'); if(!sel) return;
+  const list=getTemplates();
+  const cur=getActiveTemplateId();
+  let html='<option value="">— none selected —</option>';
+  html+=list.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join('');
+  sel.innerHTML=html;
+  sel.value=getTemplateById(cur)?cur:'';
+  // keep storage consistent if the active template was deleted
+  if(sel.value!==cur) localStorage.setItem(uns('templateActive'),sel.value);
+}
+function renderTemplateList(){
+  const box=document.getElementById('tplList'); if(!box) return;
+  const list=getTemplates();
+  if(!list.length){ box.innerHTML='<p style="color:var(--muted);font-size:13px">No templates yet. Add one above.</p>'; return; }
+  box.innerHTML=list.map(t=>{
+    const kw=(t.keywords&&t.keywords.length)?'<div style="font-size:12px;color:var(--muted)">Keywords: '+esc(t.keywords.join(', '))+'</div>':'';
+    const len=(t.text||'').length;
+    return '<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+      '<div style="flex:1"><strong>'+esc(t.name)+'</strong> <span style="font-size:11px;color:var(--muted)">('+len+' chars)</span>'+kw+'</div>'+
+      '<button class="btn-ghost" style="padding:4px 10px" onclick="deleteTemplate(\''+esc(t.id)+'\')">🗑 Delete</button>'+
+      '</div></div>';
+  }).join('');
+}
+function deleteTemplate(id){
+  setTemplates(getTemplates().filter(t=>t.id!==id));
+  renderTemplateList();
+  renderTemplateActiveSelect();
+  toast('Template deleted.','ok');
+}
+function clearTplForm(){
+  document.getElementById('tplName').value='';
+  document.getElementById('tplKeywords').value='';
+  document.getElementById('tplText').value='';
+}
+function tplPasteText(){
+  const t=prompt('Paste the template / blank form text:');
+  if(t===null) return;
+  document.getElementById('tplText').value=t;
+}
+async function onTplFile(ev){
+  const file=ev.target.files&&ev.target.files[0];
+  ev.target.value='';
+  if(!file) return;
+  const lower=file.name.toLowerCase();
+  const nameEl=document.getElementById('tplName');
+  if(nameEl && !nameEl.value.trim()) nameEl.value=file.name.replace(/\.[^.]+$/,'');
+  try{
+    if(lower.endsWith('.txt')){
+      document.getElementById('tplText').value=await file.text();
+      toast('Text file loaded.','ok');
+    } else if(lower.endsWith('.pdf')){
+      toast('Extracting PDF text…','');
+      const text=await extractPdfText(file);
+      document.getElementById('tplText').value=text;
+      toast(text.trim()?'PDF text extracted.':'PDF added but no extractable text (may be scanned — try an image, or paste text).','ok');
+    } else if(/\.(png|jpe?g|webp)$/.test(lower)){
+      if(!backendMode()||!bkToken()){
+        toast('Image OCR needs the hosted version — paste the template text manually instead.','err');
+        return;
+      }
+      const dataUrl=await readFileAsDataUrl(file);
+      toast('Reading image…','');
+      const r=await fetch(bkBase()+'/api/vision',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+        body:JSON.stringify({image:dataUrl,mimetype:file.type||'image/png'})
+      });
+      let j={}; try{ j=await r.json(); }catch(e){}
+      if(!r.ok){ throw new Error((j&&(j.error||j.message))||('Vision failed ('+r.status+').')); }
+      document.getElementById('tplText').value=(j.text||'').trim();
+      toast((j.text||'').trim()?'Text extracted from image.':'No readable text found in the image.','ok');
+    } else {
+      toast('Unsupported file type. Use .txt, .pdf, an image, or paste text.','err');
+    }
+  }catch(e){ toast('Could not read template: '+(e.message||e),'err'); }
+}
+function saveTemplateFromForm(){
+  const name=document.getElementById('tplName').value.trim();
+  const text=document.getElementById('tplText').value.trim();
+  if(!name){ toast('Name the template first.','err'); return; }
+  if(!text){ toast('No template text — upload a file or paste text first.','err'); return; }
+  const keywords=document.getElementById('tplKeywords').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const list=getTemplates();
+  const t={ id:'tpl'+Date.now()+Math.random().toString(36).slice(2,5), name:name, keywords:keywords, text:text, created:Date.now() };
+  list.unshift(t);
+  setTemplates(list);
+  // First template added → make it the active one for convenience (still OFF by default).
+  if(!getActiveTemplateId()) localStorage.setItem(uns('templateActive'),t.id);
+  clearTplForm();
+  renderTemplateList();
+  renderTemplateActiveSelect();
+  toast('Template saved on this device.','ok');
+}
+
+/* Auto-choose: score saved templates against the visit text by simple
+   case-insensitive keyword/name matching. Returns the best template or null. */
+function pickTemplateForVisit(visitText){
+  const list=getTemplates();
+  if(!list.length) return null;
+  const hay=String(visitText||'').toLowerCase();
+  let best=null, bestScore=0;
+  list.forEach(t=>{
+    let score=0;
+    (t.keywords||[]).forEach(k=>{ if(k && hay.indexOf(k)!==-1) score+=2; });
+    // a multi-word name also contributes weak signal
+    String(t.name||'').toLowerCase().split(/\s+/).forEach(w=>{ if(w.length>2 && hay.indexOf(w)!==-1) score+=1; });
+    if(score>bestScore){ bestScore=score; best=t; }
+  });
+  return bestScore>0 ? best : null;
+}
+
+/* Resolve which template (if any) to apply right now, honoring the toggle.
+   When the toggle is OFF this returns null and the caller does nothing. */
+function resolveActiveTemplate(visitText){
+  if(!useTemplatesOn()) return null;
+  if(templateAutoOn()){
+    const picked=pickTemplateForVisit(visitText);
+    if(picked){ toast('Auto-chose template: '+picked.name,''); return picked; }
+    // fall back to the explicitly active template, if any
+  }
+  return getTemplateById(getActiveTemplateId());
+}
+
+/* Reformat the just-generated note to follow a template. Uses the freeform
+   /api/complete path (which honors a custom system prompt in BOTH hosted and
+   per-device-key modes). Only ever called when templates are ON. On any
+   failure the original note is kept unchanged. */
+async function applyTemplateToNote(template,visitText){
+  if(!template || !template.text) return;
+  if(!hasAI()) return; // offline example path: leave note as-is
+  const baseNote=(currentFormat==='soap'?currentSoap:currentInsurance)||currentSoap||'';
+  if(!baseNote.trim()) return;
+  const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. Output ONLY the filled template as plain text, no commentary, no code fences.';
+  const user='TEMPLATE (match this format exactly):\n"""\n'+String(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
+  try{
+    let out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    if(out){
+      if(currentFormat==='soap') currentSoap=out; else currentInsurance=out;
+      const nb=document.getElementById('noteBox');
+      if(nb && nb.style.display!=='none') nb.value=out;
+      toast('Note formatted to template: '+template.name,'ok');
+    }
+  }catch(e){
+    toast('Template formatting skipped: '+friendlyError(e),'err');
+  }
+}
+
+/* Entry point called from generateNote AFTER a note is produced.
+   No-op (and never touches the prompt) unless the toggle is ON. */
+async function maybeApplyTemplate(visitText){
+  if(!useTemplatesOn()) return;               // OFF path: do nothing
+  const tpl=resolveActiveTemplate(visitText);
+  if(!tpl){ return; }
+  await applyTemplateToNote(tpl,visitText);
+}
+
 function openDoc(id){
   const p=activePatient(); if(!p) return;
   const d=(p.docs||[]).find(x=>x.id===id); if(!d) return;
@@ -4684,6 +4940,9 @@ async function generateNote(){
     // AUTO-POPULATE the new AI extras (red flags, differentials, MME, orders, recommendations).
     autoPopulateExtras(result);
     toast('Note generated. Optimize coding or sign when ready.','ok');
+    // OPTIONAL: if templates are enabled, reformat the note to the chosen
+    // template. This is a guarded no-op when the toggle is OFF (default).
+    try{ await maybeApplyTemplate(transcript); }catch(e){}
   }catch(err){
     toast(friendlyError(err),'err');
   }finally{
