@@ -365,6 +365,7 @@
     <div class="navtab" id="nav_orders" onclick="showView('orders')">📋 Orders <span class="nbadge" id="navOrdCount">0</span></div>
     <div class="navtab" id="nav_recs" onclick="showView('recs')">💡 Recommendations</div>
     <div class="navtab" id="nav_history" onclick="showView('history')">📚 History <span class="nbadge" id="navHistCount">0</span></div>
+    <div class="navtab" id="nav_team" style="display:none" onclick="showView('team')">👥 Team</div>
     <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
   </div>
 
@@ -1022,6 +1023,7 @@
           <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
             <th style="padding:8px 6px">Email</th><th style="padding:8px 6px">Name</th>
             <th style="padding:8px 6px">Access</th><th style="padding:8px 6px">Visits</th>
+            <th style="padding:8px 6px">Role / Head</th>
             <th style="padding:8px 6px">Actions</th>
           </tr></thead>
           <tbody id="adminUsersBody"></tbody>
@@ -1070,6 +1072,19 @@
       </div>
     </div>
   </div><!-- /adminView -->
+
+  <!-- ============ TEAM VIEW (head doctor only — read-only) ============ -->
+  <div id="teamView" style="display:none">
+    <div class="card">
+      <h2><span class="ic">👥</span> Team — your doctors' patients
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Read-only overview of the patients belonging to the doctors assigned to you. Only the owning doctor can edit a chart.</p>
+      <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">👁️ Read-only — these charts belong to your team. You cannot edit or save them here.</div>
+      <div id="teamEmpty" class="empty"><span class="big">👥</span>Press <b>Refresh</b> to load your team's patients.</div>
+      <div id="teamList"></div>
+    </div>
+  </div><!-- /teamView -->
 </div>
 
 <footer>
@@ -1169,6 +1184,20 @@
     <div class="row">
       <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Reopen in editor</button>
       <button class="btn-ghost" onclick="closeView()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- TEAM PATIENT (READ-ONLY) MODAL -->
+<div class="modal-bg" id="teamPtModal">
+  <div class="modal" style="max-width:720px">
+    <button class="modal-x" onclick="closeTeamPt()">×</button>
+    <h3 id="teamPtTitle">🗃️ Patient — read-only</h3>
+    <p class="note" id="teamPtOwner"></p>
+    <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8" id="teamPtRoBanner">👁️ Read-only — you cannot edit or save this chart.</div>
+    <div id="teamPtBody"></div>
+    <div class="row">
+      <button class="btn-ghost" onclick="closeTeamPt()" style="flex:1">Close</button>
     </div>
   </div>
 </div>
@@ -1472,7 +1501,13 @@ async function refreshMe(){
   try{
     const r=await fetch(bkBase()+'/api/me',{headers:{'Authorization':'Bearer '+bkToken()}});
     if(r.status===401){ handle401(); return; }
-    if(r.ok){ const d=await r.json(); bkUser=d.user||bkUser; applyAccessUI(); }
+    if(r.ok){
+      const d=await r.json();
+      bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
+      applyAccessUI();
+      // hosted mode: pull this doctor's own patients so they follow them across devices
+      loadPatientsFromServer();
+    }
   }catch(e){/* offline — leave UI as-is */}
 }
 
@@ -1490,6 +1525,10 @@ function applyAccessUI(){
   const adminTab=document.getElementById('nav_admin');
   const isAdmin=!!(bkUser&&bkUser.isAdmin);
   if(adminTab) adminTab.style.display=(backendMode()&&isAdmin)?'':'none';
+  // Head doctors get a read-only "Team" tab to see their assigned doctors' patients.
+  const teamTab=document.getElementById('nav_team');
+  const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
+  if(teamTab) teamTab.style.display=(backendMode()&&isHead)?'':'none';
   const banner=document.getElementById('noAccessBanner');
   if(banner){
     const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin;
@@ -1557,6 +1596,8 @@ async function loadAdminUsers(){
     const users=(d&&d.users)||[];
     if(!users.length){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>No users yet.'; table.style.display='none'; return; }
     empty.style.display='none'; table.style.display='table';
+    // heads available for assignment (role==='head', not the owner)
+    const heads=users.filter(u=>u.role==='head'&&!(u.role==='owner'||u.isAdmin));
     body.innerHTML=users.map(u=>{
       const isOwner=(u.role==='owner'||u.isAdmin);
       const actions=isOwner
@@ -1564,11 +1605,13 @@ async function loadAdminUsers(){
         : '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> '+
           '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetTrial(\''+u.id+'\')">Trial…</button> '+
           '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminSetAccess(\''+u.id+'\',\'blocked\')">Block</button>';
+      const roleHead=isOwner ? '<span style="color:var(--muted)">Owner</span>' : adminRoleHeadCell(u,heads);
       return '<tr style="border-bottom:1px solid var(--line)">'+
         '<td style="padding:8px 6px">'+esc(u.email||'')+'</td>'+
         '<td style="padding:8px 6px">'+esc(u.name||'—')+'</td>'+
         '<td style="padding:8px 6px">'+esc(fmtAccess(u))+'</td>'+
         '<td style="padding:8px 6px">'+(u.visits!=null?u.visits:'—')+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap;min-width:230px">'+roleHead+'</td>'+
         '<td style="padding:8px 6px;white-space:nowrap">'+actions+'</td>'+
       '</tr>';
     }).join('');
@@ -1590,6 +1633,43 @@ function adminSetTrial(id){
   const days=parseInt(v,10);
   if(!days||days<1){ toast('Enter a valid number of days.','err'); return; }
   adminSetAccess(id,'active',days);
+}
+
+/* ---- Role + head-doctor assignment (owner only) ---- */
+function adminRoleHeadCell(u,heads){
+  const role=(u.role==='head')?'head':'doctor'; // owner handled by caller
+  const roleBtns=
+    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='doctor'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'doctor\')">Doctor</button> '+
+    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='head'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'head\')">Head Dr</button>';
+  let headSel='';
+  if(role==='doctor'){
+    const opts=['<option value="">— Unassigned —</option>'].concat(
+      heads.filter(h=>String(h.id)!==String(u.id)).map(h=>{
+        const sel=(u.head_id!=null&&String(u.head_id)===String(h.id))?' selected':'';
+        return '<option value="'+esc(String(h.id))+'"'+sel+'>'+esc(h.email||h.name||('Head #'+h.id))+'</option>';
+      })
+    ).join('');
+    headSel='<div style="margin-top:5px"><select class="sf-select" style="font-size:12px;padding:5px 7px" onchange="adminSetHead(\''+u.id+'\',this.value)">'+opts+'</select></div>';
+    if(u.head_email){ headSel+='<div class="mini" style="color:var(--muted);margin-top:3px">Under: '+esc(u.head_email)+'</div>'; }
+  }else{
+    headSel='<div class="mini" style="color:var(--muted);margin-top:5px">Head doctor — doctors can be assigned to them.</div>';
+  }
+  return roleBtns+headSel;
+}
+async function adminSetRole(id,role){
+  try{
+    await adminFetch('/api/admin/users/'+id+'/role',{method:'POST',body:JSON.stringify({role:role})});
+    toast('Role updated.','ok');
+    loadAdminUsers();
+  }catch(e){ toast('Role update failed: '+e.message,'err'); }
+}
+async function adminSetHead(id,headId){
+  try{
+    const body={head_id: headId? headId : null};
+    await adminFetch('/api/admin/users/'+id+'/head',{method:'POST',body:JSON.stringify(body)});
+    toast(headId?'Doctor assigned to head.':'Doctor unassigned.','ok');
+    loadAdminUsers();
+  }catch(e){ toast('Assignment failed: '+e.message,'err'); }
 }
 
 let lastNewCode='';
@@ -1844,6 +1924,8 @@ function upsertPatient(p){
   p.updated=Date.now();
   if(i>=0) arr[i]=p; else { p.created=Date.now(); arr.unshift(p); }
   savePatients(arr);
+  // hosted mode: mirror to the server (best-effort, non-blocking)
+  if(backendMode() && bkToken()){ try{ syncPatientToServer(p); }catch(e){} }
 }
 function ptInitials(name){
   const parts=String(name||'?').replace(/[^A-Za-z0-9 .]/g,'').trim().split(/[\s.]+/).filter(Boolean);
@@ -1851,6 +1933,190 @@ function ptInitials(name){
   return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase();
 }
 function patientNotes(id){ return getNotes().filter(n=>n.patientId===id); }
+
+/* ---------- SERVER SYNC (hosted mode only) ----------
+   Patients live in localStorage as the source of truth on each device.
+   In hosted mode we ALSO mirror the owning doctor's patients to the server
+   so they follow the doctor across devices and so a head can see their team.
+   All server calls are best-effort and never block the local save. */
+// Map of local external_id -> server patient id, learned from the last GET.
+let _serverPtIds={};
+function ptServerLabel(p){
+  // Short, non-PHI label: prefer initials; never send the full name as the label.
+  try{ return ptInitials(p&&p.name)||''; }catch(e){ return ''; }
+}
+async function syncPatientToServer(patient){
+  if(!backendMode()||!bkToken()||!patient||!patient.id) return;
+  try{
+    const r=await fetch(bkBase()+'/api/patients',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({ external_id:patient.id, label:ptServerLabel(patient), data:patient })
+    });
+    if(r.status===401){ handle401(); return; }
+    if(r.ok){ let d={}; try{ d=await r.json(); }catch(e){} if(d&&d.id) _serverPtIds[patient.id]=d.id; }
+  }catch(e){/* offline — local save already succeeded */}
+}
+async function deletePatientOnServer(externalId){
+  if(!backendMode()||!bkToken()||!externalId) return;
+  const sid=_serverPtIds[externalId];
+  if(!sid) return; // no server id known — skip (don't error)
+  try{
+    const r=await fetch(bkBase()+'/api/patients/'+encodeURIComponent(sid),{
+      method:'DELETE', headers:{'Authorization':'Bearer '+bkToken()}
+    });
+    if(r.status===401){ handle401(); return; }
+    if(r.ok) delete _serverPtIds[externalId];
+  }catch(e){/* best-effort */}
+}
+/* Pull the caller's OWN server patients and merge into the local list,
+   matching on external_id so nothing is duplicated. */
+async function loadPatientsFromServer(){
+  if(!backendMode()||!bkToken()) return;
+  try{
+    const r=await fetch(bkBase()+'/api/patients',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    if(!r.ok) return;
+    let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
+    const rows=Array.isArray(d)?d:(d&&d.patients)||[];
+    const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
+    let changed=false;
+    const local=getPatients();
+    rows.forEach(row=>{
+      // remember server id for every visible row (used for delete + team open)
+      if(row.external_id && row.id!=null) _serverPtIds[row.external_id]=row.id;
+      // only merge the caller's OWN patients into their local list
+      const isMine = !row.owner_email || (myEmail && String(row.owner_email).toLowerCase()===myEmail);
+      if(!isMine) return;
+      if(!row.data || !row.external_id) return;
+      const i=local.findIndex(p=>p.id===row.external_id);
+      if(i<0){
+        const np=Object.assign({},row.data,{id:row.external_id});
+        if(!np.created) np.created=Date.now();
+        if(!np.updated) np.updated=Date.now();
+        local.unshift(np); changed=true;
+      }else{
+        // adopt server copy if it is strictly newer than the local copy
+        const sUpd=row.data.updated||0, lUpd=local[i].updated||0;
+        if(sUpd>lUpd){ local[i]=Object.assign({},row.data,{id:row.external_id}); changed=true; }
+      }
+    });
+    if(changed){
+      savePatients(local);
+      if(currentView==='patients'){ renderPatients(); renderProfile(); }
+      updateNavCounts();
+    }
+  }catch(e){/* offline — keep local list */}
+}
+
+/* ---------- HEAD-DOCTOR TEAM VIEW (read-only) ----------
+   A head sees /api/patients (own + assigned doctors'). Here we surface ONLY
+   the team's patients (owner_user_id !== me), grouped by owner_email, opened
+   strictly read-only. The owning doctor remains the only one who can edit. */
+let _teamRows=[];
+async function loadTeamPatients(){
+  if(!backendMode()||!bkToken()) return;
+  const empty=document.getElementById('teamEmpty');
+  const list=document.getElementById('teamList');
+  const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
+  if(!isHead){ if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>The Team view is only available to head doctors.'; } if(list) list.innerHTML=''; return; }
+  try{
+    const r=await fetch(bkBase()+'/api/patients',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    if(!r.ok){ throw new Error('Request failed ('+r.status+').'); }
+    let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
+    const rows=Array.isArray(d)?d:(d&&d.patients)||[];
+    const myId=(bkUser&&bkUser.id!=null)?bkUser.id:null;
+    const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():'';
+    // team = patients NOT owned by me
+    const team=rows.filter(row=>{
+      if(myId!=null && row.owner_user_id!=null) return String(row.owner_user_id)!==String(myId);
+      if(myEmail && row.owner_email) return String(row.owner_email).toLowerCase()!==myEmail;
+      return true;
+    });
+    _teamRows=team;
+    if(!team.length){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>No team patients yet. Patients appear here once a doctor assigned to you saves a chart.'; list.innerHTML=''; return; }
+    empty.style.display='none';
+    // group by owner_email
+    const groups={};
+    team.forEach((row,idx)=>{
+      const key=row.owner_email||('Doctor #'+(row.owner_user_id!=null?row.owner_user_id:'?'));
+      (groups[key]=groups[key]||[]).push(Object.assign({_idx:idx},row));
+    });
+    list.innerHTML=Object.keys(groups).sort().map(owner=>{
+      const items=groups[owner].map(row=>{
+        const data=row.data||{};
+        const nm=data.name||row.label||row.external_id||'Patient';
+        const meta=[data.sex,data.dob,data.mrn].filter(Boolean).join(' · ');
+        const upd=row.updated_at?(' · updated '+new Date(row.updated_at).toLocaleDateString()):'';
+        return '<div class="pt-item" onclick="openTeamPatient('+row._idx+')">'+
+          '<div class="pt-avatar">'+esc(ptInitials(nm))+'</div>'+
+          '<div class="pt-main"><div class="t">'+esc(nm)+'</div>'+
+          '<div class="s">'+(meta?esc(meta)+' · ':'')+'Read-only'+esc(upd)+'</div></div>'+
+        '</div>';
+      }).join('');
+      return '<div style="margin-top:14px"><div style="font-weight:700;color:var(--muted);font-size:14px;margin:0 0 6px">🩺 '+esc(owner)+'</div><div class="pt-list">'+items+'</div></div>';
+    }).join('');
+  }catch(e){
+    empty.style.display='block';
+    empty.innerHTML='<span class="big">⚠️</span>Could not load team patients: '+esc(e.message||'error');
+    list.innerHTML='';
+  }
+}
+function teamRoField(label,txt,placeholder){
+  const has=txt&&String(txt).trim();
+  return '<div class="prof-box"><h3>'+label+'</h3><div class="body'+(has?'':' empty-txt')+'">'+
+    (has?esc(txt):esc(placeholder||'—'))+'</div></div>';
+}
+function openTeamPatient(idx){
+  const row=_teamRows[idx];
+  if(!row) return;
+  const data=row.data||{};
+  const ownerName=row.owner_email||('Doctor #'+(row.owner_user_id!=null?row.owner_user_id:'?'));
+  document.getElementById('teamPtTitle').textContent='🗃️ '+(data.name||row.label||'Patient')+' — read-only';
+  document.getElementById('teamPtOwner').textContent='Dr. '+ownerName+'’s patient';
+  document.getElementById('teamPtRoBanner').innerHTML='👁️ Read-only — Dr. '+esc(ownerName)+'’s patient. You cannot edit or save this chart.';
+  const demo=[data.sex,data.dob,data.mrn?('MRN '+data.mrn):''].filter(Boolean).join(' · ')||'No demographics on file.';
+  let html='<p class="sub">'+esc(demo)+'</p><div class="prof-grid">'+
+    teamRoField('🩺 Problem list',data.problems,'No problems recorded.')+
+    teamRoField('💊 Medications',data.meds,'No medications recorded.')+
+    teamRoField('⚠️ Allergies',data.allergies,'No allergies recorded.')+
+    teamRoField('📋 Summary',data.summary,'No summary on file.')+
+  '</div>';
+  // Documents (if present on the patient object)
+  const docs=Array.isArray(data.docs)?data.docs:[];
+  if(docs.length){
+    html+='<div class="prof-box" style="margin-top:16px"><h3>📎 Documents</h3><div class="doc-list">'+
+      docs.map(dd=>{
+        const dt=new Date(dd.date||Date.now()).toLocaleDateString();
+        return '<div class="doc-item"><span class="ic">'+(dd.kind==='image'?'🖼️':'📄')+'</span>'+
+          '<div class="dm"><div class="t">'+esc(dd.name||'Document')+'</div>'+
+          '<div class="s">'+esc(dt)+(dd.aiSummary?' · ✓ AI summary':'')+'</div>'+
+          (dd.aiSummary?('<div class="s" style="white-space:pre-wrap;margin-top:4px">'+esc(dd.aiSummary)+'</div>'):'')+
+          '</div></div>';
+      }).join('')+'</div></div>';
+  }
+  // Saved visit notes (only if the patient object carries them)
+  const notes=Array.isArray(data.notes)?data.notes:(Array.isArray(data.visits)?data.visits:[]);
+  html+='<div class="prof-box" style="margin-top:16px"><h3>📚 Visit notes</h3>';
+  if(notes.length){
+    html+='<div class="doc-list">'+notes.slice().sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0)).map(n=>{
+      const d=new Date(n.updated||n.created||Date.now()).toLocaleString();
+      const cc=(n.cc&&n.cc!=='—')?n.cc:(n.isDraft?'Transcript only':'Visit note');
+      const bodyTxt=n.isDraft?(n.transcript||''):((n.soap||'')+(n.signLine?('\n\n'+n.signLine):''));
+      return '<div class="doc-item" style="display:block"><div class="t">'+esc(cc)+'</div>'+
+        '<div class="s">'+esc(d)+' · '+esc(n.isDraft?'Draft':(n.signed?'Signed':'Unsigned'))+'</div>'+
+        (bodyTxt?('<div class="s" style="white-space:pre-wrap;margin-top:6px">'+esc(bodyTxt)+'</div>'):'')+
+      '</div>';
+    }).join('')+'</div>';
+  }else{
+    html+='<div class="mini" style="color:var(--muted)">No visit notes stored on this chart.</div>';
+  }
+  html+='</div>';
+  document.getElementById('teamPtBody').innerHTML=html;
+  document.getElementById('teamPtModal').classList.add('show');
+}
+function closeTeamPt(){ document.getElementById('teamPtModal').classList.remove('show'); }
 
 /* ---------- VIEW SWITCHING ---------- */
 let currentView='patients';
@@ -1862,14 +2128,16 @@ function showView(v){
   document.getElementById('recsView').style.display     = v==='recs'?'block':'none';
   const ordersV=document.getElementById('ordersView'); if(ordersV) ordersV.style.display = v==='orders'?'block':'none';
   const adminV=document.getElementById('adminView'); if(adminV) adminV.style.display = v==='admin'?'block':'none';
+  const teamV=document.getElementById('teamView'); if(teamV) teamV.style.display = v==='team'?'block':'none';
   document.getElementById('nav_patients').classList.toggle('on',v==='patients');
   document.getElementById('nav_visit').classList.toggle('on',v==='visit');
   document.getElementById('nav_recs').classList.toggle('on',v==='recs');
   const ordersTab=document.getElementById('nav_orders'); if(ordersTab) ordersTab.classList.toggle('on',v==='orders');
   document.getElementById('nav_history').classList.toggle('on',v==='history');
   const adminTab=document.getElementById('nav_admin'); if(adminTab) adminTab.classList.toggle('on',v==='admin');
-  // active-patient bar appears on every view except the patients list
-  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin')?'none':'flex';
+  const teamTab=document.getElementById('nav_team'); if(teamTab) teamTab.classList.toggle('on',v==='team');
+  // active-patient bar appears on every view except the patients list / admin / team
+  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team')?'none':'flex';
   renderPatientBar();
   updateNavCounts();
   if(v==='patients'){ renderPatients(); renderProfile(); }
@@ -1878,6 +2146,7 @@ function showView(v){
   if(v==='orders') renderOrdersView();
   if(v==='recs') renderRecommendations();
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); }
+  if(v==='team') loadTeamPatients();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderPatientBar(){
@@ -1944,6 +2213,8 @@ function selectPatient(id){
 function deletePatient(id){
   if(!confirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
   savePatients(getPatients().filter(p=>p.id!==id));
+  // hosted mode: best-effort server delete (owner-only; skips silently if no server id known)
+  if(backendMode() && bkToken()){ try{ deletePatientOnServer(id); }catch(e){} }
   // unassign their notes
   const notes=getNotes(); let changed=false;
   notes.forEach(n=>{ if(n.patientId===id){ n.patientId=''; changed=true; } });
@@ -5931,7 +6202,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   // backdrop closes modals
   document.getElementById('settingsModal').addEventListener('click',e=>{ if(e.target.id==='settingsModal') closeSettings(); });
   document.getElementById('viewModal').addEventListener('click',e=>{ if(e.target.id==='viewModal') closeView(); });
-  [['patientModal',closePatientModal],['docModal',closeDocModal],['shareModal',closeShareModal]].forEach(([id,fn])=>{
+  [['patientModal',closePatientModal],['docModal',closeDocModal],['shareModal',closeShareModal],['teamPtModal',closeTeamPt]].forEach(([id,fn])=>{
     const m=document.getElementById(id); if(m) m.addEventListener('click',e=>{ if(e.target.id===id) fn(); });
   });
   const ptNameEl=document.getElementById('ptName');
