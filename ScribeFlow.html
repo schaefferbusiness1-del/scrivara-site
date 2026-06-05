@@ -296,6 +296,13 @@
   .pt-item{display:flex;align-items:center;gap:14px;background:#fbfdff;border:1px solid var(--line);
     border-radius:12px;padding:14px 16px;cursor:pointer;transition:.12s}
   .pt-item:hover{border-color:var(--brand);background:#f3f8ff}
+  .team-docrow{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+  .team-doc{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:#fbfdff;border:1px solid var(--line);
+    border-radius:12px;padding:10px 14px;cursor:pointer;transition:.12s;text-align:left;min-width:150px}
+  .team-doc:hover{border-color:var(--brand);background:#f3f8ff}
+  .team-doc.on{border-color:var(--brand);background:#eaf3ff;box-shadow:0 0 0 2px rgba(31,122,224,.15)}
+  .team-doc .dlabel{font-weight:700;font-size:14px;color:var(--ink,#16324f)}
+  .team-doc .dmeta{font-size:12px;color:var(--muted)}
   .pt-item.active{border-color:var(--brand);background:#eaf3ff;box-shadow:0 0 0 2px rgba(31,122,224,.15)}
   .pt-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(120deg,#1f7ae0,#155fb3);
     color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex-shrink:0}
@@ -462,6 +469,7 @@
     <div class="navtab" id="nav_recs" onclick="showView('recs')">💡 Recommendations</div>
     <div class="navtab" id="nav_history" onclick="showView('history')">📚 History <span class="nbadge" id="navHistCount">0</span></div>
     <div class="navtab" id="nav_team" style="display:none" onclick="showView('team')">👥 Team</div>
+    <div class="navtab" id="nav_analysis" style="display:none" onclick="showView('analysis')">📊 Analysis</div>
     <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
   </div>
 
@@ -1310,9 +1318,9 @@
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="generateEfficiencyReport()">📊 Efficiency report</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh</button>
       </h2>
-      <p class="sub">Read-only overview of the patients belonging to the doctors assigned to you. Only the owning doctor can edit a chart.</p>
+      <p class="sub">Pick a doctor below to browse their patients. Includes every doctor assigned to you (plus yourself). Read-only — only the owning doctor can edit a chart.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">👁️ Read-only — these charts belong to your team. You cannot edit or save them here.</div>
-      <div id="teamEmpty" class="empty"><span class="big">👥</span>Press <b>Refresh</b> to load your team's patients.</div>
+      <div id="teamEmpty" class="empty"><span class="big">👥</span>Press <b>Refresh</b> to load your team.</div>
       <div id="teamList"></div>
 
       <!-- Head-doctor efficiency report -->
@@ -1327,6 +1335,33 @@
       </div>
     </div>
   </div><!-- /teamView -->
+
+  <!-- ============ ANALYSIS / REVIEW VIEW (head + owner only) ============ -->
+  <div id="analysisView" style="display:none">
+    <div class="card">
+      <h2><span class="ic">📊</span> Doctor analysis &amp; review
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh data</button>
+      </h2>
+      <p class="sub">Review a doctor on your team — or yourself. Generates an activity summary and an AI performance/documentation analysis with constructive feedback.</p>
+      <div class="field" style="max-width:480px">
+        <label for="analysisDoc">Doctor to review</label>
+        <select id="analysisDoc" onchange="renderAnalysisSummary()"></select>
+      </div>
+      <button class="btn-primary" style="margin-top:6px" onclick="generateDoctorAnalysis()">🧠 Generate AI analysis</button>
+      <div id="analysisEmpty" class="empty" style="margin-top:14px"><span class="big">📊</span>Press <b>Refresh data</b> to load your team, then pick a doctor.</div>
+      <div id="analysisSummary" style="margin-top:14px"></div>
+
+      <div class="extra-card" id="analysisCard" style="display:none;margin-top:16px">
+        <h3>🧠 MLS Performance analysis
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('analysisBodyText')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Performance Analysis','analysisBody')">🖨 Print</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Aggregate activity only — doctor identity plus numeric counts and coding-level distribution. No patient names, note text, or other PHI ever leaves your browser.</p>
+        <div class="xbody" id="analysisBody" style="white-space:normal"></div>
+        <div class="code-disclaim">⚠️ Performance analysis based on available activity data — for supervisory/quality use; not a substitute for formal peer review.</div>
+      </div>
+    </div>
+  </div><!-- /analysisView -->
 </div>
 
 <footer>
@@ -2079,6 +2114,9 @@ function applyAccessUI(){
   const teamTab=document.getElementById('nav_team');
   const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
   if(teamTab) teamTab.style.display=(backendMode()&&isHead)?'':'none';
+  // Analysis/review tab: head doctors AND the owner (same supervisory gate).
+  const analysisTab=document.getElementById('nav_analysis');
+  if(analysisTab) analysisTab.style.display=(backendMode()&&(isHead||isAdmin))?'':'none';
   const banner=document.getElementById('noAccessBanner');
   if(banner){
     const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin;
@@ -2888,10 +2926,63 @@ async function loadPatientsFromServer(){
 }
 
 /* ---------- HEAD-DOCTOR TEAM VIEW (read-only) ----------
-   A head sees /api/patients (own + assigned doctors'). Here we surface ONLY
-   the team's patients (owner_user_id !== me), grouped by owner_email, opened
-   strictly read-only. The owning doctor remains the only one who can edit. */
-let _teamRows=[];
+   A head sees /api/patients (own + assigned doctors'). We load ALL visible
+   rows (own + team), build a per-DOCTOR roster (grouped by owner) with patient
+   and note counts, render a doctor picker, and let the head browse each
+   doctor's patients read-only. The owning doctor remains the only one who can
+   edit. The head's OWN patients are included as a "You" group so the head can
+   self-review (and so the Analysis tab can target them). */
+let _teamRows=[];          // every visible patient row (own + team), with _idx
+let _teamRoster=[];        // [{key,label,email,id,isMe,rows:[idx...],patients,notes}]
+let _teamSelectedKey=null; // currently expanded doctor key in the Team view
+function _ownerKey(row){
+  if(row.owner_user_id!=null) return 'id:'+row.owner_user_id;
+  if(row.owner_email) return 'em:'+String(row.owner_email).toLowerCase();
+  return 'id:?';
+}
+function _isMine(row){
+  const myId=(bkUser&&bkUser.id!=null)?bkUser.id:null;
+  const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():'';
+  if(myId!=null && row.owner_user_id!=null) return String(row.owner_user_id)===String(myId);
+  if(myEmail && row.owner_email) return String(row.owner_email).toLowerCase()===myEmail;
+  return false;
+}
+/* Build _teamRoster from _teamRows. Optionally merge a doctor list (from a
+   roster endpoint) so doctors with ZERO patients still appear. */
+function _buildTeamRoster(extraDoctors){
+  const map={};
+  _teamRows.forEach((row,idx)=>{
+    const key=_ownerKey(row);
+    let g=map[key];
+    if(!g){
+      g=map[key]={key,email:row.owner_email||'',id:row.owner_user_id!=null?row.owner_user_id:null,isMe:_isMine(row),rows:[],patients:0,notes:0};
+      map[key]=g;
+    }
+    const data=row.data||{};
+    const notes=Array.isArray(data.notes)?data.notes:(Array.isArray(data.visits)?data.visits:[]);
+    g.rows.push(idx); g.patients+=1; g.notes+=notes.length;
+  });
+  // Merge any doctors from a roster endpoint that have no patients yet.
+  (Array.isArray(extraDoctors)?extraDoctors:[]).forEach(doc=>{
+    const id=doc.id!=null?doc.id:null;
+    const email=doc.email||'';
+    const key=id!=null?('id:'+id):(email?('em:'+String(email).toLowerCase()):null);
+    if(!key) return;
+    if(!map[key]){
+      const isMe=(bkUser&&bkUser.id!=null&&String(bkUser.id)===String(id))||(bkUser&&bkUser.email&&email&&String(bkUser.email).toLowerCase()===String(email).toLowerCase());
+      map[key]={key,email,id,name:doc.name||'',isMe:!!isMe,rows:[],patients:0,notes:0};
+    } else if(doc.name && !map[key].name){ map[key].name=doc.name; }
+  });
+  const roster=Object.keys(map).map(k=>{
+    const g=map[k];
+    g.label=g.isMe?('You'+(g.email?(' ('+g.email+')'):'')):(g.name?(g.name+(g.email?(' · '+g.email):'')):(g.email||('Doctor #'+(g.id!=null?g.id:'?'))));
+    return g;
+  });
+  // sort: self first, then by label
+  roster.sort((a,b)=> (a.isMe?-1:0)-(b.isMe?-1:0) || a.label.localeCompare(b.label));
+  _teamRoster=roster;
+  return roster;
+}
 async function loadTeamPatients(){
   if(!backendMode()||!bkToken()) return;
   const empty=document.getElementById('teamEmpty');
@@ -2904,42 +2995,67 @@ async function loadTeamPatients(){
     if(!r.ok){ throw new Error('Request failed ('+r.status+').'); }
     let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
     const rows=Array.isArray(d)?d:(d&&d.patients)||[];
-    const myId=(bkUser&&bkUser.id!=null)?bkUser.id:null;
-    const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():'';
-    // team = patients NOT owned by me
-    const team=rows.filter(row=>{
-      if(myId!=null && row.owner_user_id!=null) return String(row.owner_user_id)!==String(myId);
-      if(myEmail && row.owner_email) return String(row.owner_email).toLowerCase()!==myEmail;
-      return true;
-    });
-    _teamRows=team;
-    if(!team.length){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>No team patients yet. Patients appear here once a doctor assigned to you saves a chart.'; list.innerHTML=''; return; }
+    // keep ALL rows (own + team) and tag each with a stable _idx
+    _teamRows=rows.map((row,i)=>Object.assign({_idx:i},row));
+    // optional: a roster endpoint so doctors with no patients still show up.
+    // Degrades silently if the backend doesn't expose it (404 / error).
+    let extraDoctors=[];
+    try{
+      const rr=await fetch(bkBase()+'/api/team/doctors',{headers:{'Authorization':'Bearer '+bkToken()}});
+      if(rr.ok){ const dd=await rr.json(); extraDoctors=Array.isArray(dd)?dd:((dd&&dd.doctors)||[]); }
+    }catch(e){/* no roster endpoint — derive roster from patient rows only */}
+    _buildTeamRoster(extraDoctors);
+    // keep the Analysis tab's picker in sync if it's built
+    if(typeof refreshAnalysisDoctors==='function') refreshAnalysisDoctors();
+    if(!_teamRoster.length){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>No doctors or patients to show yet. Doctors appear here once they are assigned to you; their patients appear once they save a chart.'; list.innerHTML=''; return; }
     empty.style.display='none';
-    // group by owner_email
-    const groups={};
-    team.forEach((row,idx)=>{
-      const key=row.owner_email||('Doctor #'+(row.owner_user_id!=null?row.owner_user_id:'?'));
-      (groups[key]=groups[key]||[]).push(Object.assign({_idx:idx},row));
-    });
-    list.innerHTML=Object.keys(groups).sort().map(owner=>{
-      const items=groups[owner].map(row=>{
-        const data=row.data||{};
-        const nm=data.name||row.label||row.external_id||'Patient';
-        const meta=[data.sex,data.dob,data.mrn].filter(Boolean).join(' · ');
-        const upd=row.updated_at?(' · updated '+new Date(row.updated_at).toLocaleDateString()):'';
-        return '<div class="pt-item" onclick="openTeamPatient('+row._idx+')">'+
-          '<div class="pt-avatar">'+esc(ptInitials(nm))+'</div>'+
-          '<div class="pt-main"><div class="t">'+esc(nm)+'</div>'+
-          '<div class="s">'+(meta?esc(meta)+' · ':'')+'Read-only'+esc(upd)+'</div></div>'+
-        '</div>';
-      }).join('');
-      return '<div style="margin-top:14px"><div style="font-weight:700;color:var(--muted);font-size:14px;margin:0 0 6px">🩺 '+esc(owner)+'</div><div class="pt-list">'+items+'</div></div>';
-    }).join('');
+    // if nothing selected (or selection vanished), default to the first doctor
+    if(!_teamSelectedKey || !_teamRoster.some(g=>g.key===_teamSelectedKey)){
+      _teamSelectedKey=_teamRoster[0].key;
+    }
+    renderTeamView();
   }catch(e){
     empty.style.display='block';
     empty.innerHTML='<span class="big">⚠️</span>Could not load team patients: '+esc(e.message||'error');
     list.innerHTML='';
   }
+}
+function selectTeamDoctor(key){ _teamSelectedKey=key; renderTeamView(); }
+function renderTeamView(){
+  const list=document.getElementById('teamList');
+  if(!list) return;
+  if(!_teamRoster.length){ list.innerHTML=''; return; }
+  // --- doctor roster as selectable chips/cards ---
+  const chips=_teamRoster.map(g=>{
+    const on=g.key===_teamSelectedKey;
+    return '<button class="team-doc'+(on?' on':'')+'" onclick="selectTeamDoctor('+JSON.stringify(g.key).replace(/"/g,'&quot;')+')">'+
+      '<span class="dlabel">'+(g.isMe?'⭐ ':'🩺 ')+esc(g.label)+'</span>'+
+      '<span class="dmeta">'+g.patients+' patient'+(g.patients===1?'':'s')+' · '+g.notes+' note'+(g.notes===1?'':'s')+'</span>'+
+    '</button>';
+  }).join('');
+  // --- selected doctor's patients ---
+  const sel=_teamRoster.find(g=>g.key===_teamSelectedKey)||_teamRoster[0];
+  let patientsHtml;
+  if(!sel.rows.length){
+    patientsHtml='<div class="empty" style="margin-top:10px"><span class="big">🗂️</span>No charts saved by this doctor yet.</div>';
+  }else{
+    const items=sel.rows.map(idx=>{
+      const row=_teamRows[idx]; const data=row.data||{};
+      const nm=data.name||row.label||row.external_id||'Patient';
+      const meta=[data.sex,data.dob,data.mrn].filter(Boolean).join(' · ');
+      const upd=row.updated_at?(' · updated '+new Date(row.updated_at).toLocaleDateString()):'';
+      return '<div class="pt-item" onclick="openTeamPatient('+idx+')">'+
+        '<div class="pt-avatar">'+esc(ptInitials(nm))+'</div>'+
+        '<div class="pt-main"><div class="t">'+esc(nm)+'</div>'+
+        '<div class="s">'+(meta?esc(meta)+' · ':'')+'Read-only'+esc(upd)+'</div></div>'+
+      '</div>';
+    }).join('');
+    patientsHtml='<div class="pt-list" style="margin-top:10px">'+items+'</div>';
+  }
+  list.innerHTML='<div class="team-docrow">'+chips+'</div>'+
+    '<div style="font-weight:700;color:var(--muted);font-size:14px;margin:14px 0 0">'+
+    (sel.isMe?'⭐ ':'🩺 ')+esc(sel.label)+' — '+sel.patients+' patient'+(sel.patients===1?'':'s')+'</div>'+
+    patientsHtml;
 }
 function teamRoField(label,txt,placeholder){
   const has=txt&&String(txt).trim();
@@ -3070,6 +3186,121 @@ async function generateEfficiencyReport(){
   }
 }
 
+/* =========================================================
+   DOCTOR ANALYSIS / REVIEW (head + owner). Reviews one doctor (or self) from
+   the team data already loaded by loadTeamPatients(). Builds a NON-PHI activity
+   summary (patient count, note/visit count, signed-rate, E/M coding-level
+   distribution) and an AI performance analysis. ONLY doctor identity + numeric
+   aggregates + coding-level counts are sent to the AI — never patient names,
+   note text, or any PHI. ========================================================= */
+function refreshAnalysisDoctors(){
+  const sel=document.getElementById('analysisDoc');
+  const empty=document.getElementById('analysisEmpty');
+  if(!sel) return;
+  if(!_teamRoster.length){
+    sel.innerHTML='';
+    const isAdmin=!!(bkUser&&bkUser.isAdmin);
+    if(empty){ empty.style.display='block';
+      empty.innerHTML=isAdmin
+        ? '<span class="big">📊</span>The owner account cannot access clinician patient data. Doctor analysis is available to head doctors reviewing their assigned team.'
+        : '<span class="big">📊</span>No doctors to review yet. Press <b>Refresh data</b>.'; }
+    document.getElementById('analysisSummary').innerHTML='';
+    return;
+  }
+  if(empty) empty.style.display='none';
+  const prev=sel.value;
+  sel.innerHTML=_teamRoster.map(g=>'<option value="'+esc(g.key)+'">'+(g.isMe?'⭐ ':'')+esc(g.label)+'</option>').join('');
+  if(prev && _teamRoster.some(g=>g.key===prev)) sel.value=prev;
+  renderAnalysisSummary();
+}
+/* Aggregate a single doctor's activity into NON-PHI counts only. */
+function _analysisAgg(g){
+  let notes=0,signed=0,drafts=0,docs=0;
+  const em={}; // E/M level -> count
+  let withCoding=0;
+  g.rows.forEach(idx=>{
+    const row=_teamRows[idx]||{}; const data=row.data||{};
+    const ns=Array.isArray(data.notes)?data.notes:(Array.isArray(data.visits)?data.visits:[]);
+    notes+=ns.length;
+    const dd=Array.isArray(data.docs)?data.docs:[]; docs+=dd.length;
+    ns.forEach(n=>{
+      if(n.isDraft) drafts++; else if(n.signed) signed++;
+      const lvl=(n.coding&&n.coding.em)||(n.emr&&n.emr.em)||'';
+      if(lvl){ const k=String(lvl).trim(); em[k]=(em[k]||0)+1; withCoding++; }
+    });
+  });
+  return {patients:g.patients,notes,signed,drafts,docs,em,withCoding,
+    avg:g.patients?(Math.round((notes/g.patients)*10)/10):0};
+}
+function renderAnalysisSummary(){
+  const sel=document.getElementById('analysisDoc');
+  const out=document.getElementById('analysisSummary');
+  if(!sel||!out) return;
+  const g=_teamRoster.find(x=>x.key===sel.value);
+  if(!g){ out.innerHTML=''; return; }
+  const a=_analysisAgg(g);
+  const emRows=Object.keys(a.em).sort().map(k=>'<tr><td>'+esc(k)+'</td><td style="text-align:right">'+a.em[k]+'</td></tr>').join('');
+  const emTbl=Object.keys(a.em).length
+    ? '<table class="superbill" style="width:auto;min-width:220px;border-collapse:collapse;margin-top:6px"><tr><td class="k">E/M level</td><td class="k" style="text-align:right">Notes</td></tr>'+emRows+'</table>'
+    : '<div class="mini" style="color:var(--muted);margin-top:6px">No E/M coding levels recorded on these notes.</div>';
+  out.innerHTML='<div class="extra-card" style="margin-top:0">'+
+    '<h3>📋 Activity summary — '+(g.isMe?'⭐ ':'🩺 ')+esc(g.label)+'</h3>'+
+    '<table class="superbill" style="width:100%;border-collapse:collapse;margin-top:6px">'+
+      '<tr><td class="k">Patients</td><td style="text-align:right">'+a.patients+'</td></tr>'+
+      '<tr><td class="k">Notes / visits</td><td style="text-align:right">'+a.notes+'</td></tr>'+
+      '<tr><td class="k">Avg notes / patient</td><td style="text-align:right">'+a.avg+'</td></tr>'+
+      '<tr><td class="k">Signed notes</td><td style="text-align:right">'+a.signed+'</td></tr>'+
+      '<tr><td class="k">Drafts (unsigned)</td><td style="text-align:right">'+a.drafts+'</td></tr>'+
+      '<tr><td class="k">Documents</td><td style="text-align:right">'+a.docs+'</td></tr>'+
+    '</table>'+
+    '<div style="font-weight:700;color:var(--muted);font-size:13px;margin:12px 0 0">Coding-level distribution</div>'+emTbl+
+  '</div>';
+}
+async function generateDoctorAnalysis(){
+  const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
+  const isAdmin=!!(bkUser&&bkUser.isAdmin);
+  if(!(isHead||isAdmin)){ toast('Analysis is only available to head doctors and the owner.','err'); return; }
+  if(!_teamRoster.length){ try{ await loadTeamPatients(); }catch(e){} }
+  const sel=document.getElementById('analysisDoc');
+  const g=sel?_teamRoster.find(x=>x.key===sel.value):null;
+  if(!g){ toast('Pick a doctor to review first.','err'); return; }
+  renderAnalysisSummary();
+  const a=_analysisAgg(g);
+  const card=document.getElementById('analysisCard');
+  const body=document.getElementById('analysisBody');
+  // ---- non-PHI payload: identity label + numeric counts + coding levels ----
+  const emLines=Object.keys(a.em).sort().map(k=>'  '+k+': '+a.em[k]).join('\n')||'  (none recorded)';
+  const payload='Doctor under review: '+g.label+(g.isMe?' (self-review)':'')+'\n'+
+    'Patients: '+a.patients+'\n'+
+    'Notes/visits: '+a.notes+'\n'+
+    'Average notes per patient: '+a.avg+'\n'+
+    'Signed notes: '+a.signed+'\n'+
+    'Unsigned drafts: '+a.drafts+'\n'+
+    'Documents on file: '+a.docs+'\n'+
+    'E/M coding-level distribution (count of notes per level):\n'+emLines;
+  // plain-text copy/print version
+  let txt='MLS — PERFORMANCE ANALYSIS\nGenerated: '+new Date().toLocaleString()+'\n\n'+payload+'\n';
+  let h=document.getElementById('analysisBodyText');
+  if(!h){ h=document.createElement('div'); h.id='analysisBodyText'; h.style.display='none'; card.appendChild(h); }
+  h.textContent=txt;
+  card.style.display='block';
+  if(!hasAI()){
+    body.innerHTML='<div class="mini" style="color:var(--muted)">AI is not configured, so only the activity counts above are available. Connect your clinic server or add an API key to generate the written analysis.</div>';
+    card.scrollIntoView({behavior:'smooth',block:'nearest'});
+    return;
+  }
+  body.innerHTML='<div class="mini" style="color:var(--muted)"><span class="spin"></span> Generating analysis…</div>';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+  try{
+    const sys='You are a clinical documentation quality analyst writing a brief, constructive PERFORMANCE & DOCUMENTATION ANALYSIS of a single physician for a supervising head doctor (or the physician\'s own self-review). You are given ONLY aggregate activity counts and an E/M coding-level distribution — NO patient information of any kind. Write a short structured analysis (plain text, ~6-12 lines): (1) a one-line overview of documentation volume and completeness, (2) observations on signing discipline (signed vs unsigned drafts) and notes-per-patient, (3) observations on the coding-level distribution (e.g. concentration at one level, or a healthy spread) WITHOUT ever suggesting upcoding — only that coding should reflect documented work, (4) 2-3 specific, constructive, non-judgmental suggestions. Do not invent metrics you were not given (no time, no RVUs, no revenue, no diagnoses, no patient details). Be professional and supportive. Plain text only.';
+    const out=(await aiCallRaw(sys,payload,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    body.innerHTML='<div style="white-space:pre-wrap">'+esc(out)+'</div>';
+    h.textContent=txt+'\nANALYSIS:\n'+out+'\n';
+  }catch(err){
+    body.innerHTML='<div class="mini" style="color:var(--muted)">AI analysis unavailable: '+esc(friendlyError(err))+'</div>';
+  }
+}
+
 /* ---------- VIEW SWITCHING ---------- */
 let currentView='patients';
 function showView(v){
@@ -3081,6 +3312,7 @@ function showView(v){
   const ordersV=document.getElementById('ordersView'); if(ordersV) ordersV.style.display = v==='orders'?'block':'none';
   const adminV=document.getElementById('adminView'); if(adminV) adminV.style.display = v==='admin'?'block':'none';
   const teamV=document.getElementById('teamView'); if(teamV) teamV.style.display = v==='team'?'block':'none';
+  const analysisV=document.getElementById('analysisView'); if(analysisV) analysisV.style.display = v==='analysis'?'block':'none';
   document.getElementById('nav_patients').classList.toggle('on',v==='patients');
   document.getElementById('nav_visit').classList.toggle('on',v==='visit');
   document.getElementById('nav_recs').classList.toggle('on',v==='recs');
@@ -3088,8 +3320,9 @@ function showView(v){
   document.getElementById('nav_history').classList.toggle('on',v==='history');
   const adminTab=document.getElementById('nav_admin'); if(adminTab) adminTab.classList.toggle('on',v==='admin');
   const teamTab=document.getElementById('nav_team'); if(teamTab) teamTab.classList.toggle('on',v==='team');
-  // active-patient bar appears on every view except the patients list / admin / team
-  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team')?'none':'flex';
+  const analysisTab=document.getElementById('nav_analysis'); if(analysisTab) analysisTab.classList.toggle('on',v==='analysis');
+  // active-patient bar appears on every view except the patients list / admin / team / analysis
+  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis')?'none':'flex';
   renderPatientBar();
   updateNavCounts();
   if(v==='patients'){ renderPatients(); renderProfile(); }
@@ -3099,6 +3332,7 @@ function showView(v){
   if(v==='recs') renderRecommendations();
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); }
   if(v==='team') loadTeamPatients();
+  if(v==='analysis'){ if(!_teamRoster.length){ loadTeamPatients(); } else { refreshAnalysisDoctors(); } }
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderPatientBar(){
@@ -7910,3 +8144,4 @@ window.addEventListener('DOMContentLoaded',()=>{
 </script>
 </body>
 </html>
+
