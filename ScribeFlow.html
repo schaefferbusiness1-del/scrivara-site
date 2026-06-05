@@ -1504,6 +1504,18 @@ async function refreshMe(){
     if(r.ok){
       const d=await r.json();
       bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
+      // Canonical identity comes from the server (the Bearer token), not a stale
+      // localStorage value. Sync session + header UI so they always match the
+      // actually-authenticated user. (backend mode only — guarded above.)
+      const em=bkUser&&bkUser.email;
+      if(em){
+        session={email:em};
+        localStorage.setItem('sf_session',em);
+        const whoEl=document.getElementById('whoLabel');
+        if(whoEl) whoEl.textContent='👤 '+em;
+        const histEl=document.getElementById('histWho');
+        if(histEl) histEl.textContent=em;
+      }
       applyAccessUI();
       // hosted mode: pull this doctor's own patients so they follow them across devices
       loadPatientsFromServer();
@@ -1637,6 +1649,8 @@ function adminSetTrial(id){
 
 /* ---- Role + head-doctor assignment (owner only) ---- */
 function adminRoleHeadCell(u,heads){
+  // The owner/admin row never gets role or head controls — just a muted "Owner" label.
+  if(u.role==='admin'||u.role==='owner'||u.isAdmin){ return '<span style="color:var(--muted)">Owner</span>'; }
   const role=(u.role==='head')?'head':'doctor'; // owner handled by caller
   const roleBtns=
     '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='doctor'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'doctor\')">Doctor</button> '+
