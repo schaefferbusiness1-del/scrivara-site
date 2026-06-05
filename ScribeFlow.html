@@ -856,6 +856,22 @@
         <div class="code-disclaim">⚠️ DRAFT for the examining physician to review, complete, and sign. All opinions, causation findings, and any impairment rating are the physician's responsibility. The applicable AMA Guides edition varies by jurisdiction.</div>
       </div>
 
+      <!-- MLS additive — OPTIONAL Legal report output card (only used when Legal is enabled) -->
+      <div class="extra-card" id="legalCard" style="display:none">
+        <h3>⚖️ Medical-legal report <span id="legalSignedBadge" style="display:none;font-weight:600;font-size:12px;color:#1f7a4d;background:#e3f5ec;border:1px solid #b9e6cf;border-radius:20px;padding:2px 9px">✔ Signed</span>
+          <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="sec-copy" onclick="copyExtra('legalBody')">📑 Copy</button>
+            <button class="sec-copy" onclick="printExtra('Medical-Legal Report','legalBody')">🖨 Print</button>
+            <button class="sec-copy" onclick="signLegalReport()">✍️ Sign</button>
+            <button class="sec-copy" onclick="downloadLegalPdf()">📄 Save as PDF</button>
+            <button class="sec-copy" onclick="saveLegalToChart()">🗂 Save to chart</button>
+          </span>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Formal medical-legal report drafted from the active patient's record. Built only from what is documented; missing data appears as [bracketed placeholders]. Edit below, then sign and save.</p>
+        <textarea class="xbody" id="legalBody" style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
+        <div class="code-disclaim">⚠️ DRAFT — the physician must verify, complete, and sign. All diagnoses, opinions, causation, and impairment statements are the physician's responsibility and must be held to a reasonable degree of medical probability/certainty.</div>
+      </div>
+
       <!-- Utilization review (paste a course of notes → reasonableness) -->
       <div class="extra-card" id="urToolCard">
         <h3>📋 Utilization review <span style="font-weight:400;font-size:13px;color:var(--muted)">(medical-necessity decision support)</span></h3>
@@ -1068,6 +1084,7 @@
         <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach MLS</button>
         <button class="btn-ghost" onclick="exportFHIR()" disabled id="fhirBtn" title="Build a FHIR R4 Bundle">🔌 Export FHIR</button>
         <button class="btn-ghost" id="templatesBtn" onclick="openTemplates()" title="Import and manage output templates (optional — off by default)">📄 Templates</button>
+        <button class="btn-ghost" id="legalBtn" onclick="openLegal()" title="Generate a formal medical-legal report (optional — enable in Settings)" style="display:none">⚖️ Legal</button>
         <button class="btn-ghost" onclick="downloadNote()" disabled id="dlBtn">⬇ Download .txt</button>
       </div>
     </div>
@@ -1629,6 +1646,15 @@
         <span style="color:var(--muted)">e.g. 2 weeks</span></p>
       <input type="text" id="qolFollowup" placeholder="e.g. 2 weeks">
     </div>
+
+    <!-- MLS additive — OPTIONAL Legal feature (off by default) -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label for="legalEnabled" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+        <input type="checkbox" id="legalEnabled" style="width:17px;height:17px;cursor:pointer">
+        <span>⚖️ Legal reports <span style="font-weight:400;color:var(--muted)">(medical-legal reports — optional)</span></span>
+      </label>
+      <p class="note" style="margin:6px 0 0">When on, a <b>⚖️ Legal</b> button appears in the tools row. It drafts a formal medical-legal report from the active patient's record plus an attorney request, lets you e-sign it, and saves it as a PDF. Off by default — when off, nothing changes.</p>
+    </div>
     </div><!-- /Provider preferences section -->
 
     <!-- ============ SECTION: Security & privacy ============ -->
@@ -1791,6 +1817,57 @@
     <div class="row" style="margin-top:14px">
       <button class="btn-ghost" onclick="closeTemplates()" style="flex:1">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- MLS additive — OPTIONAL LEGAL MODAL (medical-legal report builder) -->
+<div class="modal-bg" id="legalModal">
+  <div class="modal" style="max-width:680px">
+    <button class="modal-x" onclick="closeLegal()">×</button>
+    <h3>⚖️ Medical-legal report <span style="font-weight:400;font-size:14px;color:var(--muted)">(attorney request → formal report)</span></h3>
+    <p class="note">Drafts a formal medical-legal report for the <b>active patient</b> using their record and the attorney's request. Built only from documented facts — anything missing appears as a [bracketed placeholder] for you to complete. A DRAFT you must verify and sign.</p>
+
+    <div class="row tight" style="margin-top:4px">
+      <div class="field" style="flex:1">
+        <label for="legalAttorney">Attorney / firm name</label>
+        <input type="text" id="legalAttorney" placeholder="e.g. Jane Roe, Roe &amp; Associates">
+      </div>
+      <div class="field" style="flex:1">
+        <label for="legalCase">Case / claim number</label>
+        <input type="text" id="legalCase" placeholder="e.g. CV-2026-01234">
+      </div>
+    </div>
+    <div class="row tight">
+      <div class="field" style="flex:1">
+        <label for="legalDoi">Date of injury / onset</label>
+        <input type="text" id="legalDoi" placeholder="e.g. 2025-03-14">
+      </div>
+      <div class="field" style="flex:1">
+        <label for="legalJurisdiction">Jurisdiction / state <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <input type="text" id="legalJurisdiction" placeholder="e.g. Pennsylvania">
+      </div>
+    </div>
+    <div class="field">
+      <label for="legalDocType">Document type</label>
+      <select id="legalDocType" class="sf-select">
+        <option value="Narrative medical report">Narrative medical report</option>
+        <option value="Independent Medical Exam (IME)">Independent Medical Exam (IME)</option>
+        <option value="Causation opinion">Causation opinion</option>
+        <option value="Disability / work-status report">Disability / work-status report</option>
+        <option value="Records review">Records review</option>
+        <option value="Deposition summary">Deposition summary</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="legalQuestions">Legal questions to address</label>
+      <textarea id="legalQuestions" style="min-height:110px;font-size:13.5px" placeholder="The specific questions counsel wants answered, e.g.&#10;1. Is the lumbar injury causally related to the 3/14/2025 accident?&#10;2. What are the patient's current work restrictions?&#10;3. Has the patient reached maximum medical improvement?"></textarea>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <button class="btn-green" id="legalGenBtn" onclick="generateLegalReport()" style="flex:1">⚖️ Generate report</button>
+      <button class="btn-ghost" onclick="closeLegal()">Close</button>
+    </div>
+    <p class="note" style="margin-top:10px;color:var(--muted)">Uses the active patient's chart and any note for clinical content. The report is a DRAFT to verify, complete, and sign.</p>
   </div>
 </div>
 
@@ -2336,6 +2413,7 @@ function startSession(email){
   if(document.getElementById('authPass2')) document.getElementById('authPass2').value='';
   loadUserSettingsIntoMemory();
   if(typeof applyAppearance==='function') applyAppearance(); // per-user appearance (MLS)
+  if(typeof applyLegalUI==='function') applyLegalUI();       // optional ⚖️ Legal button (off by default)
   renderDots();
   renderHistory();
   newVisit();
@@ -2892,6 +2970,17 @@ function getQolCompact(){ return localStorage.getItem(uns('qolCompact'))==='1'; 
 function getQolConfirmLogout(){ return localStorage.getItem(uns('qolConfirmLogout'))==='1'; }
 function getQolSignature(){ return localStorage.getItem(uns('qolSignature'))||''; }
 function getQolFollowup(){ return localStorage.getItem(uns('qolFollowup'))||''; }
+/* MLS additive — OPTIONAL Legal feature toggle (default OFF). */
+function legalEnabled(){ return localStorage.getItem(uns('legalEnabled'))==='1'; }
+/* Show or hide the ⚖️ Legal header button based on the toggle. Called on load and on settings save. */
+function applyLegalUI(){
+  const btn=document.getElementById('legalBtn');
+  if(btn) btn.style.display=legalEnabled()?'':'none';
+  if(!legalEnabled()){
+    const c=document.getElementById('legalCard'); if(c) c.style.display='none';
+    const m=document.getElementById('legalModal'); if(m) m.classList.remove('show');
+  }
+}
 
 /* =========================================================
    MLS — additive Settings getters (Practice/Provider, Note defaults)
@@ -3016,6 +3105,7 @@ function openSettings(){
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) qcl.checked=getQolConfirmLogout();
   const qsig=document.getElementById('qolSignature'); if(qsig) qsig.value=getQolSignature();
   const qfu=document.getElementById('qolFollowup'); if(qfu) qfu.value=getQolFollowup();
+  const _le=document.getElementById('legalEnabled'); if(_le) _le.checked=legalEnabled();
   // MLS additive — Practice/Provider + Note defaults
   const _pn=document.getElementById('practiceName'); if(_pn) _pn.value=getPracticeName();
   const _prn=document.getElementById('providerName'); if(_prn) _prn.value=getProviderName();
@@ -3062,6 +3152,7 @@ function saveSettings(){
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) localStorage.setItem(uns('qolConfirmLogout'),qcl.checked?'1':'0');
   const qsig=document.getElementById('qolSignature'); if(qsig) localStorage.setItem(uns('qolSignature'),(qsig.value||'').trim());
   const qfu=document.getElementById('qolFollowup'); if(qfu) localStorage.setItem(uns('qolFollowup'),(qfu.value||'').trim());
+  const _le=document.getElementById('legalEnabled'); if(_le) localStorage.setItem(uns('legalEnabled'),_le.checked?'1':'0');
   // MLS additive — persist Practice/Provider + Note defaults per-device
   const _pn=document.getElementById('practiceName'); if(_pn) localStorage.setItem(uns('practiceName'),(_pn.value||'').trim());
   const _prn=document.getElementById('providerName'); if(_prn) localStorage.setItem(uns('providerName'),(_prn.value||'').trim());
@@ -3072,6 +3163,7 @@ function saveSettings(){
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
   applyAppearance();                 // apply theme / text size / compact now
+  if(typeof applyLegalUI==='function') applyLegalUI(); // show/hide the optional ⚖️ Legal button
   if(typeof applyVisitCommentToNote==='function') applyVisitCommentToNote(); // refresh signature on any open note
   const idleSel=document.getElementById('idleMins');
   if(idleSel){
@@ -4986,6 +5078,7 @@ let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, cu
 let lastAIDraft='';
 let lastEMR=null;
 let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='', currentIME='';
+let currentLegal=''; // MLS additive — optional Legal report (off by default)
 let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
 
 function syncFormatToggle(){
@@ -8573,7 +8666,8 @@ function showCostEstimate(){
 /* ---------- copy / print helpers for extra outputs ---------- */
 function copyExtra(bodyId){
   const el=document.getElementById(bodyId);
-  navigator.clipboard.writeText(el.textContent)
+  const txt=('value' in el && (el.tagName==='TEXTAREA'||el.tagName==='INPUT'))?el.value:el.textContent;
+  navigator.clipboard.writeText(txt)
     .then(()=>toast('Copied to clipboard.','ok'))
     .catch(()=>toast('Could not copy — select manually.','err'));
 }
@@ -8597,7 +8691,8 @@ function printExtra(title,bodyId){
   const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
   const docName=getName()||'Clinician';
   const now=new Date().toLocaleString();
-  const content=body.tagName==='TABLE'?body.outerHTML:('<pre style="white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0">'+esc(body.textContent)+'</pre>');
+  const bodyText=(body.tagName==='TEXTAREA'||body.tagName==='INPUT')?body.value:body.textContent;
+  const content=body.tagName==='TABLE'?body.outerHTML:('<pre style="white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0">'+esc(bodyText)+'</pre>');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)} — ${esc(patient)}</title>
   <style>body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13.5px;line-height:1.55}
   h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px}
@@ -8768,6 +8863,201 @@ Date: [Date]
 }
 
 /* =========================================================
+   ⚖️ LEGAL  (OPTIONAL — off by default)
+   Generates a formal medical-legal report from the ACTIVE patient's
+   record plus an attorney request, lets the physician e-sign it, and
+   saves it as a PDF (jsPDF on demand; print fallback). Fully additive:
+   when uns('legalEnabled') is off the button/panel are hidden and nothing
+   else changes. Mirrors generateIME's medico-legal prompt + guardrails.
+   ========================================================= */
+function openLegal(){
+  if(!legalEnabled()) return;                 // guard — feature is off
+  if(!activePatient()){ toast('Select or create a patient first — the report is built from the active patient’s chart.','err'); showView('patients'); return; }
+  const m=document.getElementById('legalModal'); if(m) m.classList.add('show');
+}
+function closeLegal(){ const m=document.getElementById('legalModal'); if(m) m.classList.remove('show'); }
+
+async function generateLegalReport(){
+  if(!legalEnabled()) return;
+  const p=activePatient();
+  if(!p){ toast('Select or create a patient first.','err'); showView('patients'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to draft a medical-legal report.','err'); return; }
+  const attorney=(document.getElementById('legalAttorney')||{}).value||'';
+  const caseNo=(document.getElementById('legalCase')||{}).value||'';
+  const doi=(document.getElementById('legalDoi')||{}).value||'';
+  const jurisdiction=(document.getElementById('legalJurisdiction')||{}).value||'';
+  const docType=(document.getElementById('legalDocType')||{}).value||'Narrative medical report';
+  const questions=(document.getElementById('legalQuestions')||{}).value||'';
+  const btn=document.getElementById('legalGenBtn');
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…'; }
+  try{
+    const pctx=buildPatientContext();
+    const note=(typeof currentNoteText==='function')?currentNoteText():'';
+    const today=new Date().toLocaleDateString();
+    const sys=`You are a physician drafting a formal MEDICAL-LEGAL REPORT of type "${docType}" at the request of counsel. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Produce a report appropriate to the chosen document type using the following standard structure, each section header on its own line in UPPERCASE:
+
+1. CAPTION / HEADER BLOCK (label each on its own line): Examinee (patient) name; Date of birth; Attorney / requesting firm; Case / claim number; Date of injury/onset; Jurisdiction (if provided); Date of this report.
+2. PURPOSE OF REPORT — why the report was requested and the specific matters counsel asked you to address.
+3. RECORDS AND HISTORY REVIEWED — the records/notes that informed this report; bracket if none are documented.
+4. RELEVANT HISTORY AND CURRENT STATUS — history of the injury/illness, course, current subjective complaints, and pertinent past history. Include ONLY what is documented.
+5. EXAMINATION / CLINICAL FINDINGS — objective findings drawn from the patient record/note ONLY.
+6. DIAGNOSES.
+7. OPINIONS — your medical opinions, each explicitly stated "to a reasonable degree of medical probability" (or "medical certainty"), with the reasoning tied to the documented record. For a Causation opinion, address the relationship of the condition to the claimed injury. For a Disability/work-status report, address restrictions and work capacity. For a Records review, summarize and critique the records. For a Deposition summary, summarize the testimony/record. Where the record does not support an opinion, state that it is undeterminable from the record provided.
+8. ANSWERS TO LEGAL QUESTIONS — restate and explicitly answer EACH question counsel posed, one by one. If no questions were provided, write a bracketed placeholder.
+9. SIGNATURE BLOCK — a signature/credentials/date block using bracketed placeholders ([Physician signature], [Name, credentials], [NPI], Date: [Date]) and a certification that the opinions are held to a reasonable degree of medical probability/certainty.
+
+CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient record/note/background and the request details provided. NEVER fabricate findings, history, diagnoses, causation, impairment percentages, disability ratings, restrictions, dates, or records. For ANYTHING not present in the record, insert a clearly [bracketed placeholder] for the physician to complete. Do not present uncertain items as established fact. This is a DRAFT the physician must verify, complete, and SIGN before any legal use.`+(typeof docPrefsBlock==='function'?docPrefsBlock():'');
+    const reqLines=[];
+    if(attorney) reqLines.push('Attorney / requesting firm: '+attorney);
+    if(caseNo) reqLines.push('Case / claim number: '+caseNo);
+    if(doi) reqLines.push('Date of injury / onset: '+doi);
+    if(jurisdiction) reqLines.push('Jurisdiction / state: '+jurisdiction);
+    reqLines.push('Document type: '+docType);
+    reqLines.push('Date of this report: '+today);
+    reqLines.push('Legal questions to address:\n'+(questions.trim()||'[No specific questions were provided — insert a bracketed placeholder.]'));
+    const user='ATTORNEY REQUEST / CASE DETAILS:\n'+reqLines.join('\n')
+      +(note&&note.trim()?('\n\nCLINICAL NOTE FROM THIS VISIT:\n'+note.trim()):'')
+      +(pctx?('\n\nPATIENT RECORD / CHART (context only — do not invent new findings):\n'+pctx):'');
+    const out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    currentLegal=out;
+    const card=document.getElementById('legalCard');
+    const body=document.getElementById('legalBody');
+    if(body) body.value=out;
+    legalSetSignedBadge(false);
+    if(card){ card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+    closeLegal();
+    toast('Medical-legal report drafted. DRAFT — verify, complete, and sign before use.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='⚖️ Generate report'; } }
+}
+
+/* Strip any prior e-signature block so signing is idempotent. */
+function legalStripSignature(text){
+  return String(text||'').replace(/\n*={5,}\s*\nELECTRONICALLY SIGNED[\s\S]*$/,'').replace(/\s+$/,'');
+}
+function legalSetSignedBadge(on){
+  const b=document.getElementById('legalSignedBadge');
+  if(b) b.style.display=on?'inline-block':'none';
+  if(b&&on){ b.textContent='✔ Signed '+new Date().toLocaleDateString(); }
+}
+/* E-sign: append a signature block sourced from the Practice/Provider settings.
+   Idempotent — strips a prior block first. Marks the card as signed. */
+function signLegalReport(){
+  if(!legalEnabled()) return;
+  const body=document.getElementById('legalBody');
+  if(!body || !body.value.trim()){ toast('Generate a report first.','err'); return; }
+  let name=(typeof getProviderName==='function')?getProviderName():'';
+  let cred=(typeof getProviderCred==='function')?getProviderCred():'';
+  const npi=(typeof getNpi==='function')?getNpi():'';
+  if(!name){
+    // fall back to the saved signature block, then prompt
+    const sig=(typeof getQolSignature==='function')?getQolSignature():'';
+    if(sig){ name=sig.split('\n')[0].trim(); }
+  }
+  if(!name){
+    const entered=prompt('Enter the signing physician’s name (set Provider name in Settings to skip this):','');
+    if(entered===null || !entered.trim()){ toast('Signing cancelled — no provider name.','err'); return; }
+    name=entered.trim();
+  }
+  const today=new Date().toLocaleDateString();
+  const who=name+(cred?(', '+cred):'');
+  const lines=[];
+  lines.push('=========================================');
+  lines.push('ELECTRONICALLY SIGNED');
+  lines.push('Electronically signed by: '+who);
+  if(npi) lines.push('NPI: '+npi);
+  lines.push('Date: '+today);
+  lines.push('The opinions expressed in this report are held to a reasonable degree of medical probability/certainty.');
+  const base=legalStripSignature(body.value);
+  body.value=base+'\n\n'+lines.join('\n');
+  currentLegal=body.value;
+  legalSetSignedBadge(true);
+  toast('Report electronically signed.','ok');
+}
+
+/* Lazy-load jsPDF from cdnjs once. Resolves with window.jspdf or rejects. */
+let _jspdfLoading=null;
+function loadJsPdf(){
+  if(window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf);
+  if(_jspdfLoading) return _jspdfLoading;
+  _jspdfLoading=new Promise((resolve,reject)=>{
+    const existing=document.getElementById('jspdfScript');
+    const onok=()=>{ (window.jspdf&&window.jspdf.jsPDF)?resolve(window.jspdf):reject(new Error('jsPDF unavailable')); };
+    if(existing){ existing.addEventListener('load',onok); existing.addEventListener('error',()=>reject(new Error('jsPDF failed to load'))); return; }
+    const s=document.createElement('script');
+    s.id='jspdfScript';
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload=onok;
+    s.onerror=()=>reject(new Error('jsPDF failed to load'));
+    document.head.appendChild(s);
+  });
+  return _jspdfLoading;
+}
+
+/* Save the (signed) report as a PDF via jsPDF, with header + pagination.
+   Falls back to the print path if jsPDF cannot load. */
+async function downloadLegalPdf(){
+  if(!legalEnabled()) return;
+  const body=document.getElementById('legalBody');
+  if(!body || !body.value.trim()){ toast('Generate a report first.','err'); return; }
+  const text=body.value;
+  const docType=(document.getElementById('legalDocType')||{}).value||'Medical report';
+  const today=new Date();
+  const dateStr=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+  const safeType=docType.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'report';
+  const practice=(typeof getPracticeName==='function'&&getPracticeName())||'MLS';
+  const addr=(typeof getClinicAddress==='function')?getClinicAddress():'';
+  const phone=(typeof getClinicPhone==='function')?getClinicPhone():'';
+  try{
+    const ns=await loadJsPdf();
+    const { jsPDF }=ns;
+    const doc=new jsPDF({unit:'pt',format:'letter'});
+    const pageW=doc.internal.pageSize.getWidth();
+    const pageH=doc.internal.pageSize.getHeight();
+    const margin=54;
+    const maxW=pageW-margin*2;
+    let y=margin;
+    // Header
+    doc.setFont('helvetica','bold'); doc.setFontSize(15);
+    doc.text(String(practice),margin,y); y+=18;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    const hdrBits=[addr,phone].filter(Boolean);
+    if(hdrBits.length){ doc.text(hdrBits.join('  ·  '),margin,y); y+=14; }
+    doc.setDrawColor(31,122,224); doc.setLineWidth(1.2);
+    doc.line(margin,y,pageW-margin,y); y+=22;
+    // Title (document type)
+    doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text(String(docType),margin,y); y+=22;
+    // Body with word-wrap + pagination
+    doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+    const lineH=14.5;
+    const lines=doc.splitTextToSize(text,maxW);
+    for(let i=0;i<lines.length;i++){
+      if(y>pageH-margin){ doc.addPage(); y=margin; }
+      doc.text(lines[i],margin,y);
+      y+=lineH;
+    }
+    doc.save('MLS_Legal_'+safeType+'_'+dateStr+'.pdf');
+    toast('Saved as PDF.','ok');
+  }catch(err){
+    // Fall back to the browser print dialog so "Save as PDF" still works.
+    toast('Could not load the PDF engine — opening the print dialog (choose “Save as PDF”).','');
+    try{ printExtra('Medical-Legal Report — '+docType,'legalBody'); }catch(e){ toast('Could not open the print dialog.','err'); }
+  }
+}
+
+/* Save the (signed) report into the active patient's Documents. */
+function saveLegalToChart(){
+  if(!legalEnabled()) return;
+  const body=document.getElementById('legalBody');
+  if(!body || !body.value.trim()){ toast('Generate a report first.','err'); return; }
+  const docType=(document.getElementById('legalDocType')||{}).value||'Medical report';
+  const name='Legal report — '+docType+' ('+new Date().toLocaleDateString()+')';
+  const d=addDocToActive(name,body.value,'text');
+  if(d) toast('Report saved to the patient’s chart.','ok');
+}
+
+/* =========================================================
    UTILIZATION REVIEW  (paste a course of notes → reasonableness)
    Independent of the current visit — assesses medical necessity and
    appropriateness of the documented care from the pasted text only.
@@ -8816,7 +9106,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   // backdrop closes modals
   document.getElementById('settingsModal').addEventListener('click',e=>{ if(e.target.id==='settingsModal') closeSettings(); });
   document.getElementById('viewModal').addEventListener('click',e=>{ if(e.target.id==='viewModal') closeView(); });
-  [['patientModal',closePatientModal],['docModal',closeDocModal],['shareModal',closeShareModal],['teamPtModal',closeTeamPt]].forEach(([id,fn])=>{
+  [['patientModal',closePatientModal],['docModal',closeDocModal],['shareModal',closeShareModal],['teamPtModal',closeTeamPt],['legalModal',closeLegal]].forEach(([id,fn])=>{
     const m=document.getElementById(id); if(m) m.addEventListener('click',e=>{ if(e.target.id===id) fn(); });
   });
   const ptNameEl=document.getElementById('ptName');
