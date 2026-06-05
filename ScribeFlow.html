@@ -98,6 +98,16 @@
   .dotchip{display:inline-block;background:var(--soft);border:1px solid var(--line);color:var(--brand-dk);
     border-radius:16px;padding:4px 11px;font-size:13px;font-weight:600;cursor:pointer}
   .dotchip:hover{background:#e2edfb;border-color:var(--brand)}
+  /* doctor preferences ("learn my way") */
+  .docpref-list{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+  .docpref-item{display:flex;align-items:center;gap:10px;background:var(--soft);border:1px solid var(--line);
+    border-radius:10px;padding:8px 10px 8px 13px;font-size:14.5px;color:var(--ink)}
+  .docpref-item span{flex:1;line-height:1.4}
+  .docpref-x{background:none;border:none;color:var(--muted);font-size:20px;line-height:1;padding:0 4px;
+    cursor:pointer;border-radius:6px}
+  .docpref-x:hover{color:var(--red);background:#fdecea}
+  .teach-opt{display:flex;align-items:flex-start;gap:9px;font-weight:500;margin:0 0 8px;cursor:pointer;font-size:15px}
+  .teach-opt input{margin-top:3px;width:16px;height:16px;cursor:pointer;flex:none}
   .dot-add{background:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:4px 8px;border-radius:8px}
   .dot-add:hover{background:var(--soft);color:var(--brand-dk)}
   /* extra-outputs (handout / referral / superbill) */
@@ -561,6 +571,12 @@
         <button class="sec-copy" onclick="regenerateNote()" title="Re-run AI on the same transcript">🔄 Regenerate</button>
       </div>
 
+      <!-- Teach Scrivara: suggested preferences learned from edits -->
+      <div class="extra-card" id="teachCard" style="display:none">
+        <h3>💡 Teach Scrivara</h3>
+        <div class="xbody" id="teachBody" style="white-space:normal"></div>
+      </div>
+
       <!-- Patient after-visit summary -->
       <div class="extra-card" id="avsCard" style="display:none">
         <h3>👤 Patient after-visit summary
@@ -735,6 +751,7 @@
         <button class="btn-ghost" id="handoutBtn" onclick="generateHandout()" disabled>📝 Patient handout</button>
         <button class="btn-ghost" id="refBtn" onclick="generateReferral()" disabled>✉️ Referral letter</button>
         <button class="btn-ghost" id="billBtn" onclick="showSuperbill()" disabled>🧾 Superbill</button>
+        <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach Scrivara</button>
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
         <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
         <button class="btn-ghost" onclick="exportFHIR()" disabled id="fhirBtn" title="Build a FHIR R4 Bundle">🔌 Export FHIR</button>
@@ -1062,6 +1079,30 @@
       <input type="text" id="docSpec" placeholder="e.g. Family Medicine, Cardiology, Pediatrics">
     </div>
 
+    <!-- My preferences: "learns your way" -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">🎚️ My preferences <span style="font-weight:400;color:var(--muted)">(Scrivara learns your way)</span></label>
+      <p class="note" style="margin:2px 0 10px">Add reusable style/content rules and Scrivara follows them on every note. These are remembered instructions applied to the AI — not patient details.<br>
+        <span style="color:var(--muted)">e.g. Use APSO format · Keep HPI to 3 sentences · Always add return precautions · Never suggest benzodiazepines · Use my normal-exam template</span></p>
+      <div class="row tight" style="gap:8px">
+        <input type="text" id="docPrefInput" placeholder="Add a preference…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addDocPrefFromInput();}">
+        <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="addDocPrefFromInput()">+ Add</button>
+      </div>
+      <div id="docPrefList" class="docpref-list"></div>
+    </div>
+
+    <!-- Automatic inactivity logoff (HIPAA technical safeguard) -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label for="idleMins" style="font-size:15px">🔒 Auto log off after inactivity</label>
+      <p class="note" style="margin:2px 0 8px">Protects open charts when you step away (HIPAA technical safeguard). Resets on any activity.</p>
+      <select class="sf-select" id="idleMins">
+        <option value="5">5 minutes</option>
+        <option value="10">10 minutes</option>
+        <option value="15">15 minutes (default)</option>
+        <option value="30">30 minutes</option>
+      </select>
+    </div>
+
     <!-- athenahealth connection (honest scaffold) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
       <label style="font-size:15px">🔗 athenahealth connection</label>
@@ -1365,6 +1406,9 @@ function startSession(email){
   showView('patients');
   applyBackendModeUI();
   applyAccessUI();
+  renderDocPrefs();
+  attachIdleListeners();
+  resetIdle();            // start the inactivity timer for this session
   if(backendMode() && bkToken()) refreshMe();
   if(!hasAI()){
     setTimeout(()=>toast('Try "Load example visit", or add your OpenAI key in Settings.',''),700);
@@ -1373,6 +1417,7 @@ function startSession(email){
 
 function logout(){
   if(capturing) stopCapture();
+  stopIdle();            // clear the inactivity timer
   session=null;
   localStorage.removeItem('sf_session');
   if(backendMode()){
@@ -1596,6 +1641,108 @@ function getName(){ return localStorage.getItem(uns('docname'))||''; }
 function getSpec(){ return localStorage.getItem(uns('docspec'))||''; }
 function loadUserSettingsIntoMemory(){ /* values read on demand via getters */ }
 
+/* =========================================================
+   DOCTOR PREFERENCES — "Learn my way" (per user)
+   A list of reusable, plain-language style/content preferences the
+   physician wants applied to AI output. These are REMEMBERED INSTRUCTIONS
+   injected into the AI prompts via docPrefsBlock() — NOT model retraining,
+   and they store reusable style rules only, never patient-specific PHI.
+   Stored per-user at uns('docprefs') as a JSON array of strings.
+   ========================================================= */
+function getDocPrefs(){ try{ const a=JSON.parse(localStorage.getItem(uns('docprefs'))); return Array.isArray(a)?a.filter(s=>typeof s==='string'&&s.trim()):[]; }catch(e){ return []; } }
+function saveDocPrefs(arr){ localStorage.setItem(uns('docprefs'),JSON.stringify((arr||[]).filter(s=>typeof s==='string'&&s.trim()).map(s=>s.trim()))); }
+function addDocPref(text){
+  const t=(text||'').trim();
+  if(!t) return false;
+  const arr=getDocPrefs();
+  // avoid case-insensitive duplicates
+  if(arr.some(p=>p.toLowerCase()===t.toLowerCase())){ toast('That preference is already saved.',''); return false; }
+  arr.push(t);
+  saveDocPrefs(arr);
+  renderDocPrefs();
+  return true;
+}
+function removeDocPref(i){
+  const arr=getDocPrefs();
+  if(i<0||i>=arr.length) return;
+  arr.splice(i,1);
+  saveDocPrefs(arr);
+  renderDocPrefs();
+}
+function addDocPrefFromInput(){
+  const el=document.getElementById('docPrefInput');
+  if(!el) return;
+  if(addDocPref(el.value)){ el.value=''; toast('Preference saved. Scrivara will follow it.','ok'); }
+  el.focus();
+}
+function renderDocPrefs(){
+  const list=document.getElementById('docPrefList');
+  if(!list) return;
+  const arr=getDocPrefs();
+  if(!arr.length){
+    list.innerHTML='<p class="note" style="margin:0">No preferences yet. Add one above and Scrivara will follow it on every note.</p>';
+    return;
+  }
+  list.innerHTML=arr.map((p,i)=>
+    '<div class="docpref-item"><span>'+esc(p)+'</span>'+
+    '<button type="button" class="docpref-x" title="Remove" onclick="removeDocPref('+i+')">×</button></div>'
+  ).join('');
+}
+/* Build the PROVIDER PREFERENCES block injected into AI system prompts.
+   Returns '' when there are no preferences, so nothing changes for empty lists. */
+function docPrefsBlock(){
+  const arr=getDocPrefs();
+  if(!arr.length) return '';
+  return '\n\nPROVIDER PREFERENCES (follow these unless clinically inappropriate or unsafe; they are reusable style/formatting/content preferences, never override clinical accuracy or coding ethics):\n'+
+    arr.map(p=>'- '+p).join('\n');
+}
+
+/* =========================================================
+   AUTOMATIC INACTIVITY LOGOFF (HIPAA technical safeguard)
+   After a period of inactivity, log the user out automatically.
+   Timeout (minutes) stored per-user at uns('idleMins'), default 15.
+   Activity listeners are attached once and throttled; the timer only
+   runs while a session exists and is cleared on logout.
+   ========================================================= */
+let idleTimer=null;
+let _idleLastReset=0;
+let _idleListenersAttached=false;
+function getIdleMins(){
+  const v=parseInt(localStorage.getItem(uns('idleMins')),10);
+  return (v && v>0) ? v : 15;
+}
+function idleLogout(){
+  if(!session) return;
+  toast('Logged out due to inactivity.','');
+  logout();
+}
+function resetIdle(){
+  clearTimeout(idleTimer);
+  idleTimer=null;
+  if(session){
+    idleTimer=setTimeout(idleLogout, getIdleMins()*60000);
+  }
+}
+function stopIdle(){
+  clearTimeout(idleTimer);
+  idleTimer=null;
+}
+/* Throttled activity handler — resets the timer at most ~once/sec. */
+function _onUserActivity(){
+  if(!session) return;
+  const now=Date.now();
+  if(now-_idleLastReset < 1000) return;
+  _idleLastReset=now;
+  resetIdle();
+}
+function attachIdleListeners(){
+  if(_idleListenersAttached) return;
+  _idleListenersAttached=true;
+  ['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>{
+    window.addEventListener(ev,_onUserActivity,{passive:true});
+  });
+}
+
 /* ---------- settings ---------- */
 /* Hide the API-key field & nudges when running in hosted backend mode. */
 function applyBackendModeUI(){
@@ -1619,6 +1766,8 @@ function openSettings(){
   document.getElementById('docName').value=getName();
   document.getElementById('docSpec').value=getSpec();
   document.getElementById('keyOk').className=getKey()?'keyok show':'keyok';
+  const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=String(getIdleMins());
+  renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   document.getElementById('settingsModal').classList.add('show');
 }
@@ -1628,6 +1777,12 @@ function saveSettings(){
   localStorage.setItem(uns('apikey'),k);
   localStorage.setItem(uns('docname'),document.getElementById('docName').value.trim());
   localStorage.setItem(uns('docspec'),document.getElementById('docSpec').value.trim());
+  const idleSel=document.getElementById('idleMins');
+  if(idleSel){
+    const m=parseInt(idleSel.value,10);
+    if(m && m>0) localStorage.setItem(uns('idleMins'),String(m));
+  }
+  resetIdle();  // apply the (possibly changed) timeout immediately
   document.getElementById('keyOk').className=k?'keyok show':'keyok';
   toast('Settings saved on this device.','ok');
   setTimeout(closeSettings,500);
@@ -2088,7 +2243,7 @@ function newVisit(){
   document.getElementById('formatToggleRow').style.display='none';
   document.getElementById('codeCard').style.display='none';
   document.getElementById('optCard').style.display='none';
-  ['avsCard','refCard','billCard','secCopyRow','handoutCard','fhirCard','revEstBox'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  ['avsCard','refCard','billCard','secCopyRow','handoutCard','fhirCard','revEstBox','teachCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   document.getElementById('emrTable').style.display='none';
   document.getElementById('emrEmpty').style.display='block';
   document.getElementById('emrCodeNote').style.display='none';
@@ -2428,6 +2583,9 @@ function loadExample(){
    ========================================================= */
 let signed=false;
 let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, currentFormat='soap';
+/* Snapshot of the AI's ORIGINAL note draft, captured at generation time BEFORE
+   the physician edits it. Used by "Teach Scrivara" to diff draft vs. edited. */
+let lastAIDraft='';
 let lastEMR=null;
 let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='';
 let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
@@ -2480,7 +2638,7 @@ function setBadge(s){
   b.textContent=s?'✔ Signed':'● Draft';
 }
 function enableOutputs(on){
-  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn','mipsBtn','handoutBtn','fhirBtn','redflagBtn','ddxBtn'].forEach(id=>{
+  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn','mipsBtn','handoutBtn','fhirBtn','redflagBtn','ddxBtn','teachBtn'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.disabled=!on;
   });
   const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
@@ -2505,6 +2663,7 @@ async function generateNote(){
   if(!hasAI()){
     if(transcript.trim()===EXAMPLE.trim()){
       currentSoap=offlineExampleNote();
+      lastAIDraft=currentSoap; // baseline for "Teach Scrivara"
       currentInsurance=offlineExampleInsuranceNote();
       currentCoding=offlineExampleCoding();
       currentOpt=null;
@@ -2527,6 +2686,7 @@ async function generateNote(){
   try{
     const result=await callOpenAI(transcript,key);
     currentSoap=result.note;
+    lastAIDraft=currentSoap; // baseline snapshot for "Teach Scrivara" before edits
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
     currentOpt=null;
@@ -2636,7 +2796,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
  "em_justification": "<one concise line tying the level to documented MDM (problems/data/risk) or stated time>",
  "icd10": [ {"code":"<e.g. J20.9>","desc":"<diagnosis name>"} ],
  "cpt": [ {"code":"<e.g. 93000>","desc":"<procedure actually performed in this visit; empty array if none>"} ]
-}`;
+}`+docPrefsBlock();
   return await postChat(sys,'Visit transcript:\n\n'+transcript+ctxLine,key);
 }
 
@@ -4431,7 +4591,7 @@ async function generateAVS(){
   }
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
   try{
-    const sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`;
+    const sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+docPrefsBlock();
     const pctx=buildPatientContext();
     const user='CLINICAL NOTE:\n'+currentNoteText()+(pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+pctx):'');
     currentAVS=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
@@ -4460,7 +4620,7 @@ async function generateReferral(){
     const from=getName()||'Referring provider';
     const spec=getPreset()||getSpec()||'';
     const pctx=buildPatientContext();
-    const sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. Use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`;
+    const sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. Use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`+docPrefsBlock();
     const user=`Referring provider: ${from}${spec?' ('+spec+')':''}\nReferring to: ${to.trim()||'Specialist'}\n\nCLINICAL NOTE:\n${currentNoteText()}`+(pctx?('\n\nPATIENT BACKGROUND (chart history):\n'+pctx):'');
     currentReferral=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     showExtra('refCard','refBody',currentReferral);
@@ -4474,6 +4634,85 @@ function showExtra(cardId,bodyId,text){
   document.getElementById(bodyId).textContent=text;
   card.style.display='block';
   card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* =========================================================
+   "TEACH SCRIVARA" — learn reusable preferences from the doctor's edits.
+   Compares the ORIGINAL AI draft (lastAIDraft) to the physician's CURRENT
+   (edited) note, asks the AI to extract 1-3 REUSABLE style/format/content
+   rules (no patient-specific PHI), and lets the doctor add the ones they want
+   to their saved preferences. Honest: this is preference EXTRACTION applied via
+   prompting, not model retraining, and it never stores PHI as a rule.
+   ========================================================= */
+function _normForDiff(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
+async function teachFromEdits(){
+  if(!session) return;
+  if(!lastAIDraft){ toast('Generate a note first — there is no AI draft to compare against yet.','err'); return; }
+  const edited=currentNoteText();
+  if(!edited || !edited.trim()){ toast('Generate a note first.','err'); return; }
+  if(_normForDiff(edited)===_normForDiff(lastAIDraft)){
+    toast('No edits detected yet. Edit the note the way you like, then teach Scrivara.','');
+    return;
+  }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to let Scrivara learn from your edits.','err'); return; }
+  const btn=document.getElementById('teachBtn');
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Learning…'; }
+  try{
+    const sys=`You analyze how a physician edited an AI-drafted clinical note, and you output REUSABLE style/formatting/content PREFERENCES that should apply to FUTURE notes.
+
+Rules for your output:
+- Output 1 to 3 short, general, reusable preference rules.
+- Write each as an imperative instruction (e.g. "Keep the HPI to 3 sentences", "Always add return precautions", "Use APSO format", "Do not suggest benzodiazepines").
+- Describe ONLY reusable style, formatting, structure, tone, or content-policy preferences.
+- ABSOLUTELY DO NOT include any patient-specific facts (names, diagnoses, medications, dates, numbers, history) — no PHI. If an edit is purely a one-off factual correction with no generalizable style preference, output nothing for it.
+- If you cannot infer any genuine reusable preference, return an empty list.
+- Return ONLY a JSON array of strings, e.g. ["Keep the HPI to 3 sentences","Always add return precautions"]. No prose, no markdown, no code fences.`;
+    const user='AI-DRAFTED NOTE:\n"""\n'+lastAIDraft+'\n"""\n\nPHYSICIAN-EDITED VERSION:\n"""\n'+edited+'\n"""';
+    let raw=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let rules=[];
+    try{
+      const m=raw.match(/\[[\s\S]*\]/);
+      const parsed=JSON.parse(m?m[0]:raw);
+      if(Array.isArray(parsed)) rules=parsed.filter(s=>typeof s==='string'&&s.trim()).map(s=>s.trim());
+    }catch(e){ rules=[]; }
+    // drop any rule that duplicates an existing preference
+    const existing=getDocPrefs().map(p=>p.toLowerCase());
+    rules=rules.filter(r=>!existing.includes(r.toLowerCase())).slice(0,3);
+    if(!rules.length){
+      toast('No new reusable preference found in your edits. (Scrivara only learns general style rules, not patient details.)','');
+      return;
+    }
+    showTeachSuggestions(rules);
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='💡 Teach Scrivara'; } }
+}
+/* Render suggested rules with checkboxes so the doctor adds only what they want. */
+function showTeachSuggestions(rules){
+  const card=document.getElementById('teachCard');
+  const body=document.getElementById('teachBody');
+  if(!card||!body){
+    // Fallback: simple confirm if the panel isn't present for some reason.
+    const pick=rules.filter(r=>confirm('Add this preference to Scrivara?\n\n'+r));
+    pick.forEach(addDocPref);
+    if(pick.length) toast('Added '+pick.length+' preference'+(pick.length>1?'s':'')+'.','ok');
+    return;
+  }
+  body.innerHTML=
+    '<p class="note" style="margin:0 0 10px">Scrivara noticed how you edited this note. Pick the reusable preferences to remember (no patient details are stored):</p>'+
+    rules.map((r,i)=>
+      '<label class="teach-opt"><input type="checkbox" class="teach-cb" data-rule="'+esc(r)+'" checked> <span>'+esc(r)+'</span></label>'
+    ).join('')+
+    '<div class="row tight"><button class="btn-green" onclick="applyTeachSuggestions()">+ Add selected</button>'+
+    '<button class="btn-ghost" onclick="document.getElementById(\'teachCard\').style.display=\'none\'">Dismiss</button></div>';
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function applyTeachSuggestions(){
+  const cbs=document.querySelectorAll('#teachBody .teach-cb');
+  let n=0;
+  cbs.forEach(cb=>{ if(cb.checked){ if(addDocPref(cb.getAttribute('data-rule'))) n++; } });
+  document.getElementById('teachCard').style.display='none';
+  toast(n?('Added '+n+' preference'+(n>1?'s':'')+'. Scrivara will follow '+(n>1?'them':'it')+' going forward.'):'No preferences added.', n?'ok':'');
 }
 
 /* =========================================================
