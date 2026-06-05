@@ -588,10 +588,20 @@
         <div class="code-disclaim">⚠️ Suggested codes for provider review — confirm before submitting a claim. Final coding is the provider's responsibility.</div>
       </div>
 
+      <!-- MIPS quality auto-capture -->
+      <div class="extra-card" id="mipsCard" style="display:none">
+        <h3>🎯 MIPS quality check
+          <button class="sec-copy" style="margin-left:auto" onclick="copyMips()">📑 Copy</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Advisory review of common pain/PM&amp;R quality measures based only on this note. For any gap, a one-line snippet you could add to capture the measure.</p>
+        <div class="xbody" id="mipsBody"></div>
+      </div>
+
       <div class="sign-line" id="signLine" style="display:none"></div>
 
       <div class="note-actions">
         <button class="btn-gold" id="optBtn" onclick="optimizeForPayout()" disabled>📈 Optimize for Insurance Payout</button>
+        <button class="btn-ghost" id="mipsBtn" onclick="runMipsCheck()" disabled>🎯 MIPS check</button>
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="avsBtn" onclick="generateAVS()" disabled>👤 Patient summary</button>
         <button class="btn-ghost" id="refBtn" onclick="generateReferral()" disabled>✉️ Referral letter</button>
@@ -621,6 +631,32 @@
       <tr><td class="k">CPT procedures</td><td class="v" id="emr_cpt">—</td></tr>
     </table>
     <p class="mini" id="emrCodeNote" style="display:none">💲 E/M level, ICD-10 and CPT codes are AI suggestions — review and confirm before submitting a claim. Final coding is the provider's responsibility.</p>
+  </div>
+
+  <!-- OUTCOME TRACKING -->
+  <div class="card" id="outcomesCard" style="margin-top:20px">
+    <h2><span class="ic">📈</span> Outcomes <span style="font-weight:400;font-size:14px;color:var(--muted)">(pain &amp; function over time)</span></h2>
+    <p class="sub">Record this visit's pain and function scores. Scores are saved with the visit and tracked for the active patient so you can see the trend.</p>
+    <div class="row tight" style="align-items:flex-end">
+      <div style="flex:1;min-width:130px">
+        <label for="outPain">Pain score (0–10)</label>
+        <select id="outPain" class="sf-select">
+          <option value="">—</option>
+          <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option>
+          <option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+        </select>
+      </div>
+      <div style="flex:1;min-width:150px">
+        <label for="outFunc">Disability index (%) <span style="font-weight:400;color:var(--muted)">(e.g. Oswestry ODI)</span></label>
+        <input type="text" id="outFunc" placeholder="e.g. 42">
+      </div>
+      <div style="flex:2;min-width:200px">
+        <label for="outNote">Note (optional)</label>
+        <input type="text" id="outNote" placeholder="e.g. improving with PT">
+      </div>
+      <button class="btn-green" onclick="saveOutcome()" style="min-width:150px">💾 Save outcome</button>
+    </div>
+    <div id="outcomesTrend" style="margin-top:16px"></div>
   </div>
   </div><!-- /visitView -->
 
@@ -725,6 +761,33 @@
           <button class="btn-ghost" onclick="copyOrders()">📑 Copy orders</button>
           <button class="btn-ghost" onclick="saveOrdersToHistory()">💾 Save with visit</button>
           <button class="btn-ghost btn-red-ghost" onclick="clearAllOrders()" style="margin-left:auto">🗑 Clear all</button>
+        </div>
+      </div>
+
+      <!-- PRIOR AUTHORIZATION DRAFTER -->
+      <div class="extra-card" id="priorAuthCard" style="margin-top:14px">
+        <h3>📝 Prior-authorization letter <span style="font-weight:400;font-size:13px;color:var(--muted)">(payer-ready medical-necessity draft)</span></h3>
+        <p class="sub" style="margin:6px 0 10px">Draft a medical-necessity letter for a service that needs prior auth (imaging, injection, DME/brace). Pulls the diagnosis and necessity narrative from the current note. Honest: it brackets anything not documented for you to complete — it never invents clinical facts.</p>
+        <div class="field" style="margin-top:8px">
+          <label>Service requested</label>
+          <select class="sf-select" id="paServiceSelect" onchange="onPaServiceChange()">
+            <option value="">— Pick from this visit's orders, or choose “Other” —</option>
+          </select>
+        </div>
+        <div class="field" id="paOtherField" style="display:none">
+          <label>Service / item (free text)</label>
+          <input type="text" id="paOtherText" placeholder="e.g. MRI lumbar spine without contrast; CPT 72148">
+        </div>
+        <div class="row tight">
+          <button class="btn-green" id="paGenBtn" onclick="generatePriorAuth()">✨ Generate prior-auth letter</button>
+        </div>
+        <div id="paResultWrap" style="display:none;margin-top:12px">
+          <label>Draft letter <span style="font-weight:400;color:var(--muted)">(editable — review and complete any [bracketed] items before sending)</span></label>
+          <textarea id="paLetter" style="min-height:300px"></textarea>
+          <div class="row tight">
+            <button class="btn-ghost" onclick="copyPriorAuth()">📑 Copy</button>
+            <button class="btn-ghost" onclick="printPriorAuth()">🖨 Print</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1440,6 +1503,7 @@ function showView(v){
   updateNavCounts();
   if(v==='patients'){ renderPatients(); renderProfile(); }
   if(v==='history') renderHistory();
+  if(v==='visit') renderOutcomes();
   if(v==='orders') renderOrdersView();
   if(v==='recs') renderRecommendations();
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); }
@@ -1822,6 +1886,11 @@ function newVisit(){
   currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap';
   currentAVS=''; currentReferral=''; currentRecs=null;
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
+  currentPriorAuth=''; currentMips=''; currentOutcome=null; lastOutcomeEntryId=null;
+  ['paResultWrap'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  { const pl=document.getElementById('paLetter'); if(pl) pl.value=''; }
+  ['mipsCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  ['outPain','outFunc','outNote'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const cb=document.getElementById('contextBox'); if(cb) cb.value='';
   document.getElementById('noteBox').style.display='none';
   document.getElementById('noteBox').value='';
@@ -1853,6 +1922,9 @@ function noteRecordFromState(markSigned){
     referral: currentReferral||'',
     orders: currentOrders.slice(),
     ordersDx: ordersDx,
+    priorAuth: currentPriorAuth||'',
+    mips: currentMips||'',
+    outcome: currentOutcome||null,
     context: (document.getElementById('contextBox')?document.getElementById('contextBox').value:''),
     signed: typeof markSigned==='boolean' ? markSigned : signed,
     signLine: document.getElementById('signLine').style.display!=='none' ? document.getElementById('signLine').textContent : '',
@@ -2050,6 +2122,10 @@ function loadRecordIntoEditor(n){
   currentAVS=n.avs||''; currentReferral=n.referral||''; currentRecs=null;
   currentOrders=Array.isArray(n.orders)?n.orders.slice():[]; editingOrderId=null;
   ordersDx=n.ordersDx&&typeof n.ordersDx==='object'?{text:n.ordersDx.text||'',icd:n.ordersDx.icd||[]}:{text:'',icd:[]};
+  currentPriorAuth=n.priorAuth||''; currentMips=n.mips||''; currentOutcome=n.outcome||null; lastOutcomeEntryId=null;
+  if(currentPriorAuth){ const ta=document.getElementById('paLetter'); if(ta){ ta.value=currentPriorAuth; document.getElementById('paResultWrap').style.display='block'; } }
+  if(currentMips){ const mb=document.getElementById('mipsBody'); if(mb){ mb.innerHTML=mipsToHtml(currentMips); document.getElementById('mipsCard').style.display='block'; } }
+  restoreOutcomeInputs();
   if(document.getElementById('contextBox')) document.getElementById('contextBox').value=n.context||'';
   if(currentAVS) showExtra('avsCard','avsBody',currentAVS);
   if(currentReferral) showExtra('refCard','refBody',currentReferral);
@@ -2198,7 +2274,7 @@ function setBadge(s){
   b.textContent=s?'✔ Signed':'● Draft';
 }
 function enableOutputs(on){
-  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn'].forEach(id=>{
+  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn','mipsBtn'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.disabled=!on;
   });
   const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
@@ -2440,6 +2516,34 @@ async function postChat(sys,user,key){
   return parseGenJSON(content);
 }
 
+/* Coerce any AI value (string, array, or object) into clean readable text,
+   so EMR fields never render the literal "[object Object]". */
+function emrItem(x){
+  if(x==null) return '';
+  if(typeof x!=='object') return String(x).trim();
+  // diagnosis / code style {code, desc}
+  if(x.code || x.desc || x.description){
+    return [x.code, (x.desc||x.description)].filter(Boolean).join(' — ').trim();
+  }
+  // medication / order style
+  const med=[x.name||x.drug||x.medication||x.order||x.item||x.text||x.value,
+             x.dose||x.dosage||x.strength, x.route, x.frequency||x.freq, x.duration, x.quantity, x.instructions]
+            .filter(Boolean).join(' ').trim();
+  if(med) return med;
+  // last resort: join primitive values
+  return Object.values(x).filter(v=>v!=null && typeof v!=='object').map(String).join(' ').trim();
+}
+function emrText(v){
+  if(v==null) return '—';
+  if(typeof v==='string') return v.trim()||'—';
+  if(Array.isArray(v)){
+    const parts=v.map(emrItem).filter(Boolean);
+    return parts.length?parts.join('; '):'—';
+  }
+  if(typeof v==='object'){ const s=emrItem(v); return s||'—'; }
+  return String(v);
+}
+
 function parseGenJSON(content){
   let parsed;
   try{ parsed=JSON.parse(content); }
@@ -2455,11 +2559,11 @@ function parseGenJSON(content){
       cpt:fmtCodes(parsed.cpt)
     },
     emr:{
-      cc:parsed.chief_complaint||'—',
-      dx:parsed.diagnoses||'—',
-      meds:parsed.medications||'—',
-      orders:parsed.orders||'—',
-      fu:parsed.follow_up||'—'
+      cc:emrText(parsed.chief_complaint),
+      dx:emrText(parsed.diagnoses),
+      meds:emrText(parsed.medications),
+      orders:emrText(parsed.orders),
+      fu:emrText(parsed.follow_up)
     },
     raw:parsed
   };
@@ -3098,6 +3202,13 @@ function buildPrintHTML(){
   <h2>Clinical note</h2>
   <pre class="note">${esc(noteText||'(no note)')}</pre>
   ${emrRows?('<h2>EMR fields</h2><table class="emr">'+emrRows+'</table>'):''}
+  ${(currentOutcome && (currentOutcome.pain!=null || (currentOutcome.func!=null&&currentOutcome.func!=='')))?(
+    '<h2>Outcome scores</h2><table class="emr">'+
+    (currentOutcome.pain!=null?('<tr><td class="k">Pain score</td><td>'+esc(String(currentOutcome.pain))+' / 10</td></tr>'):'')+
+    (currentOutcome.func!=null&&currentOutcome.func!==''?('<tr><td class="k">Disability index</td><td>'+esc(String(currentOutcome.func))+'%</td></tr>'):'')+
+    (currentOutcome.note?('<tr><td class="k">Outcome note</td><td>'+esc(currentOutcome.note)+'</td></tr>'):'')+
+    '</table>'
+  ):''}
   ${codeBlock}
   ${signedTxt?('<div class="sign">'+esc(signedTxt)+'</div>'):''}
   <div class="foot">AI-generated — reviewed before signing. Scrivara runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
@@ -3149,6 +3260,10 @@ function printNote(){
 let currentOrders = [];           // [{id,type,fields:{...}}]
 let editingOrderId = null;        // id when editing an existing order, else null
 let ordersDx = { text:'', icd:[] }; // diagnosis context pulled from the note
+let currentPriorAuth = '';        // latest generated prior-auth letter for this visit
+let currentMips = '';             // latest MIPS quality-check result for this visit
+let currentOutcome = null;        // {pain, func, note} captured for this visit
+let lastOutcomeEntryId = null;    // de-dup key for outcome saves before the note has an id
 
 /* Field definitions per order type. `key`,`label`,`type`(text|textarea|select),
    `opts` for selects, `quick` quick-pick chips, `ph` placeholder. */
@@ -3234,6 +3349,7 @@ function renderOrdersView(){
   renderOrdersDx();
   renderOrderFields();
   renderOrderList();
+  populatePaServiceSelect();
   updateNavCounts();
 }
 
@@ -3459,6 +3575,7 @@ function renderOrderList(){
       <button class="del" title="Remove" onclick="event.stopPropagation();removeOrder('${o.id}')">🗑</button>
     </div>`;
   }).join('');
+  populatePaServiceSelect();
 }
 
 /* ---- formatted text blocks (copy + print) ---- */
@@ -3615,6 +3732,336 @@ function saveOrdersToHistory(){
   }
   const ap=activePatient();
   toast('Orders saved with the visit'+(ap?(' to '+ap.name+'’s history'):'')+'.','ok');
+}
+
+/* =========================================================
+   FEATURE 1 — PRIOR-AUTHORIZATION AUTO-DRAFTER
+   Drafts a payer-ready medical-necessity letter for a service
+   that needs prior auth. Pulls dx/ICD/necessity from the note;
+   brackets anything not documented. Never fabricates facts.
+   ========================================================= */
+
+/* A short label + any CPT/HCPCS for an order that commonly needs prior auth. */
+function paOrderLabel(o){
+  const f=o.fields||{};
+  if(o.type==='imaging'){
+    return [f.study,f.region].filter(Boolean).join(' ').trim()||'Imaging study';
+  }
+  if(o.type==='injection'){
+    return [f.inj,f.level,f.laterality].filter(Boolean).join(' ').trim()||'Injection';
+  }
+  if(o.type==='dme'){
+    return f.item||'DME / brace';
+  }
+  if(o.type==='referral'){
+    return 'Referral: '+(f.specialty||'specialist');
+  }
+  if(o.type==='medication'){
+    return [f.drug,f.dose].filter(Boolean).join(' ').trim()||'Medication';
+  }
+  return (ORDER_DEFS[o.type]||{label:o.type}).label;
+}
+/* Only imaging / injection / DME / medication typically need prior auth. */
+function paEligibleOrders(){
+  return currentOrders.filter(o=>['imaging','injection','dme','medication'].includes(o.type));
+}
+function populatePaServiceSelect(){
+  const sel=document.getElementById('paServiceSelect');
+  if(!sel) return;
+  const prev=sel.value;
+  const eligible=paEligibleOrders();
+  let html='<option value="">— Pick from this visit\'s orders, or choose “Other” —</option>';
+  eligible.forEach(o=>{
+    html+='<option value="ord:'+o.id+'">'+esc(((ORDER_DEFS[o.type]||{icon:''}).icon||'')+' '+paOrderLabel(o))+'</option>';
+  });
+  html+='<option value="other">✏️ Other (free text)…</option>';
+  sel.innerHTML=html;
+  // keep selection if still valid
+  if(prev && (prev==='other' || eligible.some(o=>('ord:'+o.id)===prev))) sel.value=prev;
+  onPaServiceChange();
+}
+function onPaServiceChange(){
+  const sel=document.getElementById('paServiceSelect');
+  const other=document.getElementById('paOtherField');
+  if(!sel||!other) return;
+  other.style.display = sel.value==='other' ? 'block' : 'none';
+}
+/* Resolve the chosen service to a descriptive string for the AI. */
+function paSelectedService(){
+  const sel=document.getElementById('paServiceSelect');
+  if(!sel) return '';
+  const v=sel.value;
+  if(v==='other'){
+    return (document.getElementById('paOtherText').value||'').trim();
+  }
+  if(v && v.indexOf('ord:')===0){
+    const id=v.slice(4);
+    const o=currentOrders.find(x=>x.id===id);
+    if(o){
+      const lines=orderDetailLines(o);
+      return paOrderLabel(o)+(lines.length?(' — '+lines.join('; ')):'');
+    }
+  }
+  return '';
+}
+async function generatePriorAuth(){
+  const service=paSelectedService();
+  if(!service){ toast('Pick an order or enter the service requested first.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to draft a prior-auth letter.','err'); return; }
+  const btn=document.getElementById('paGenBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
+  try{
+    const ap=activePatient();
+    const ptLine = ap ? ('Patient (de-identified): '+ap.name+(ap.dob?(' · DOB/age context: '+ap.dob):'')+(ap.sex?(' · '+ap.sex):'')+(ap.mrn?(' · MRN '+ap.mrn):'')) : 'Patient: [patient initials / age — provider to complete]';
+    const provider=getName()||'[Provider name]';
+    const spec=getPreset()||getSpec()||'';
+    const dx=noteDiagnosisText();
+    const dxLine=[dx.text, (dx.icd&&dx.icd.length)?('ICD-10: '+dx.icd.join('; ')):''].filter(Boolean).join(' · ') || (ordersDx.text||'[diagnosis — provider to complete]');
+    const note=currentNoteText();
+    const pctx=buildPatientContext();
+    const sys=`You are a physician's assistant drafting a PAYER-READY PRIOR-AUTHORIZATION / MEDICAL-NECESSITY LETTER addressed to a health insurance plan's utilization-management department, requesting approval for a specific service. Write a complete, professional business letter.
+
+STRUCTURE:
+- Date line and a "To: [Insurance Plan / Utilization Management]" line (leave the plan name bracketed if not given).
+- "Re:" line with the de-identified patient identifier and the requested service (include the CPT/HCPCS code if one is provided or clearly standard for the service; if unknown, write "[CPT/HCPCS: ___]").
+- Salutation.
+- Opening: state the specific service/item being requested and the working diagnosis with ICD-10 code(s).
+- MEDICAL NECESSITY narrative built ONLY from the documented note: presenting symptoms, duration, pertinent exam findings, functional impact, and why this service is medically necessary now.
+- CONSERVATIVE / PRIOR TREATMENTS already tried and failed or insufficient (pull from the note, medications, and orders). If conservative care is NOT documented, insert a clearly bracketed placeholder like "[Conservative care tried: PT x__ weeks, NSAIDs/____, activity modification — provider to complete]" — DO NOT invent specifics.
+- Closing: explicitly request authorization/approval and offer to provide records.
+- Signature block with the provider name and specialty.
+
+CRITICAL HONESTY RULES:
+- Use ONLY facts present in the provided note and chart. NEVER invent symptoms, exam findings, durations, prior treatments, or test results.
+- Anything required by the letter but NOT documented must appear as a clearly bracketed placeholder "[ ... — provider to complete]". Do not fabricate to fill gaps.
+- Do not invent patient PHI (full name, DOB, member ID); use the de-identified identifier given or a bracketed placeholder.
+Return ONLY the letter text, no preamble, no markdown fences.`;
+    const user='REQUESTED SERVICE / ITEM:\n'+service+'\n\n'+ptLine+'\nRequesting provider: '+provider+(spec?(' ('+spec+')'):'')+'\nWorking diagnosis: '+dxLine+'\n\nVISIT NOTE (sole source of clinical facts — do not invent beyond this):\n'+(note||'[No note generated — provider to complete clinical narrative]')+(pctx?('\n\nPATIENT CHART BACKGROUND (history/meds/allergies — for context; do not invent new findings):\n'+pctx):'');
+    currentPriorAuth=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    document.getElementById('paLetter').value=currentPriorAuth;
+    document.getElementById('paResultWrap').style.display='block';
+    document.getElementById('paResultWrap').scrollIntoView({behavior:'smooth',block:'nearest'});
+    toast('Prior-auth letter drafted. Review and complete any [bracketed] items.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='✨ Generate prior-auth letter'; }
+}
+function copyPriorAuth(){
+  const ta=document.getElementById('paLetter');
+  currentPriorAuth=ta.value;
+  navigator.clipboard.writeText(ta.value)
+    .then(()=>toast('Prior-auth letter copied.','ok'))
+    .catch(()=>toast('Could not copy — select manually.','err'));
+}
+function buildPriorAuthPrintHTML(){
+  const ap=activePatient();
+  const patient=ap?ap.name:'[Patient — provider to complete]';
+  const ptMeta=ap?[ap.sex,ap.dob,ap.mrn?('MRN '+ap.mrn):''].filter(Boolean).join(' · '):'';
+  const docName=getName()||'Clinician';
+  const spec=getSpec();
+  const now=new Date().toLocaleString();
+  const letter=document.getElementById('paLetter').value||currentPriorAuth||'';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Scrivara Prior-Auth — ${esc(patient)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
+  .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
+  .meta b{color:#16324f}
+  h1.title{font-size:17px;color:#155fb3;margin:6px 0 14px}
+  pre.letter{white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0}
+  .disc{font-size:11.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;border-radius:6px;padding:7px 10px;margin-top:16px}
+  .foot{margin-top:22px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:10px}
+  @media print{body{padding:0}}
+</style></head><body>
+  <div class="hd">
+    <div class="brand">Scrivara<small>Physical Medicine &amp; Rehabilitation</small></div>
+    <div class="meta">
+      <div><b>Patient:</b> ${esc(patient)}</div>
+      ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
+      <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
+      <div><b>Printed:</b> ${esc(now)}</div>
+    </div>
+  </div>
+  <h1 class="title">Prior-Authorization / Medical-Necessity Letter</h1>
+  <pre class="letter">${esc(letter||'(no letter)')}</pre>
+  <div class="disc">⚠️ Draft for provider review. Verify all clinical facts and complete any [bracketed] items before submitting to the payer.</div>
+  <div class="foot">Generated with Scrivara — runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+</body></html>`;
+}
+function printPriorAuth(){
+  if(!(document.getElementById('paLetter').value||currentPriorAuth)){ toast('Generate the letter first.','err'); return; }
+  const html=buildPriorAuthPrintHTML();
+  let win=null;
+  try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
+  if(win && win.document){
+    win.document.open(); win.document.write(html); win.document.close(); win.focus();
+    const go=()=>{ try{win.print();}catch(e){} };
+    if(win.document.readyState==='complete') setTimeout(go,250); else win.onload=()=>setTimeout(go,150);
+    toast('Opening print view…','ok');
+  } else {
+    let frame=document.getElementById('sfPaPrintFrame');
+    if(frame) frame.remove();
+    frame=document.createElement('iframe'); frame.id='sfPaPrintFrame';
+    frame.style.position='fixed'; frame.style.right='0'; frame.style.bottom='0';
+    frame.style.width='0'; frame.style.height='0'; frame.style.border='0';
+    document.body.appendChild(frame);
+    const doc=frame.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); }catch(e){ toast('Could not open print dialog.','err'); } },300);
+    toast('Printing letter…','ok');
+  }
+}
+
+/* =========================================================
+   FEATURE 2 — OUTCOME TRACKING (pain + function over time)
+   Per-patient history array in localStorage + per-visit copy.
+   Inline-SVG sparkline of pain by visit date; no libraries.
+   ========================================================= */
+function outcomesKey(ptId){ return uns('outcomes::'+ptId); }
+function getOutcomes(ptId){
+  if(!ptId) return [];
+  try{ const v=JSON.parse(localStorage.getItem(outcomesKey(ptId))); return Array.isArray(v)?v:[]; }
+  catch(e){ return []; }
+}
+function saveOutcomesArr(ptId,arr){ if(ptId) localStorage.setItem(outcomesKey(ptId),JSON.stringify(arr)); }
+
+function saveOutcome(){
+  const painRaw=document.getElementById('outPain').value;
+  const funcRaw=(document.getElementById('outFunc').value||'').trim();
+  const noteRaw=(document.getElementById('outNote').value||'').trim();
+  if(painRaw==='' && funcRaw===''){ toast('Enter a pain score or disability index first.','err'); return; }
+  const pain = painRaw===''?null:Number(painRaw);
+  const func = funcRaw===''?null:funcRaw;
+  currentOutcome={ pain:pain, func:func, note:noteRaw };
+  const ap=activePatient();
+  if(ap){
+    const arr=getOutcomes(ap.id);
+    // one entry per visit record where possible: replace an existing entry for this note id
+    const key = currentNoteId || lastOutcomeEntryId;
+    const rec={ id:key||('o'+Date.now()), noteId:currentNoteId||'', pain:pain, func:func, note:noteRaw, date:Date.now() };
+    const i = key ? arr.findIndex(x=>x.id===key || (x.noteId && x.noteId===currentNoteId)) : -1;
+    if(i>=0){ rec.date=arr[i].date||rec.date; rec.id=arr[i].id; arr[i]=rec; } else arr.push(rec);
+    lastOutcomeEntryId=rec.id;
+    saveOutcomesArr(ap.id,arr);
+    renderOutcomes();
+    toast('Outcome saved to '+ap.name+'’s trend.','ok');
+  } else {
+    renderOutcomes();
+    toast('Outcome recorded with this visit. Select a patient to track the trend over time.','ok');
+  }
+}
+/* Restore the input fields + trend when a saved record is reopened. */
+function restoreOutcomeInputs(){
+  const pe=document.getElementById('outPain'), fe=document.getElementById('outFunc'), ne=document.getElementById('outNote');
+  if(pe) pe.value = (currentOutcome && currentOutcome.pain!=null) ? String(currentOutcome.pain) : '';
+  if(fe) fe.value = (currentOutcome && currentOutcome.func!=null) ? String(currentOutcome.func) : '';
+  if(ne) ne.value = (currentOutcome && currentOutcome.note) ? currentOutcome.note : '';
+  renderOutcomes();
+}
+/* Build a small inline-SVG sparkline of pain scores (0-10). Robust to 0/1 points. */
+function painSparkline(points){
+  // points: array of {date, pain} with pain!=null, oldest→newest
+  if(!points.length) return '';
+  const W=240, H=46, pad=6;
+  if(points.length===1){
+    const cy = H-pad - (points[0].pain/10)*(H-2*pad);
+    return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="max-width:100%">'+
+      '<circle cx="'+(W/2)+'" cy="'+cy.toFixed(1)+'" r="3.5" fill="#1f7ae0"/></svg>';
+  }
+  const n=points.length;
+  const xs=i=>pad + i*((W-2*pad)/(n-1));
+  const ys=p=>H-pad - (p/10)*(H-2*pad);
+  let d='';
+  points.forEach((pt,i)=>{ d+=(i?' L':'M')+xs(i).toFixed(1)+' '+ys(pt.pain).toFixed(1); });
+  let dots='';
+  points.forEach((pt,i)=>{ dots+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(pt.pain).toFixed(1)+'" r="2.6" fill="#1f7ae0"/>'; });
+  return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="max-width:100%">'+
+    '<path d="'+d+'" fill="none" stroke="#1f7ae0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+
+    dots+'</svg>';
+}
+function renderOutcomes(){
+  const wrap=document.getElementById('outcomesTrend');
+  if(!wrap) return;
+  const ap=activePatient();
+  if(!ap){
+    wrap.innerHTML='<p class="mini" style="color:var(--muted);margin:0">Select a patient (Patients tab) to track pain &amp; function over time. This visit\'s scores are still saved with the note.</p>';
+    return;
+  }
+  const arr=getOutcomes(ap.id).slice().sort((a,b)=>(a.date||0)-(b.date||0));
+  if(!arr.length){
+    wrap.innerHTML='<p class="mini" style="color:var(--muted);margin:0">No outcomes recorded yet for '+esc(ap.name)+'. Enter a pain score and press Save outcome.</p>';
+    return;
+  }
+  const painPts=arr.filter(o=>o.pain!=null).map(o=>({date:o.date,pain:Number(o.pain)}));
+  let summary='';
+  if(painPts.length>=2){
+    const first=painPts[0].pain, last=painPts[painPts.length-1].pain;
+    const arrow = last<first?'↓':(last>first?'↑':'→');
+    summary='<div style="font-weight:600;font-size:15px;margin-bottom:6px">Pain '+first+' '+arrow+' '+last+' over '+painPts.length+' visit'+(painPts.length===1?'':'s')+'</div>';
+  } else if(painPts.length===1){
+    summary='<div style="font-weight:600;font-size:15px;margin-bottom:6px">Pain '+painPts[0].pain+'/10 (1 visit recorded)</div>';
+  }
+  const spark = painPts.length ? '<div style="margin:4px 0 10px">'+painSparkline(painPts)+'</div>' : '';
+  const rows=arr.slice().reverse().map(o=>{
+    const d=new Date(o.date||Date.now()).toLocaleDateString();
+    const bits=[];
+    if(o.pain!=null) bits.push('Pain '+o.pain+'/10');
+    if(o.func!=null && o.func!=='') bits.push('Disability '+esc(String(o.func))+'%');
+    if(o.note) bits.push(esc(o.note));
+    return '<div class="doc-item" style="cursor:default"><span class="ic">📈</span><div class="dm"><div class="t">'+bits.join(' · ')+'</div><div class="s">'+esc(d)+'</div></div></div>';
+  }).join('');
+  wrap.innerHTML=summary+spark+'<div class="doc-list">'+rows+'</div>';
+}
+
+/* =========================================================
+   FEATURE 3 — MIPS QUALITY AUTO-CAPTURE
+   Advisory: which common pain/PM&R MIPS measures are MET or a
+   GAP in this note, with a one-line capture snippet per gap.
+   ========================================================= */
+function mipsToHtml(text){
+  // Light formatting: bold MET/GAP keywords, preserve line breaks.
+  const safe=esc(text||'');
+  return safe
+    .replace(/\bMET\b/g,'<b style="color:var(--green-dk)">MET</b>')
+    .replace(/\bGAP\b/g,'<b style="color:var(--amber)">GAP</b>')
+    .replace(/\n/g,'<br>');
+}
+async function runMipsCheck(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to run a MIPS check.','err'); return; }
+  const btn=document.getElementById('mipsBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Checking…';
+  try{
+    const sys=`You are a MIPS / quality-measure auditor for a pain medicine / PM&R practice. Given a visit note, review these common quality measures and state, for EACH, whether it appears MET or is a GAP based ONLY on what is documented in the note:
+1. Pain assessment AND documented follow-up plan
+2. Functional status / functional outcome assessment
+3. Documentation of current medications in the medical record
+4. Opioid safety: PDMP review / treatment agreement / safe-use counseling (only applies if opioids are involved; otherwise mark N/A)
+5. Falls risk screening (and plan if positive)
+6. BMI screening and follow-up plan
+7. Tobacco use screening and cessation counseling
+
+RULES:
+- Judge each measure ONLY from the documented note — do not assume undocumented care happened.
+- For each measure output one line: "<Measure name>: MET" or "<Measure name>: GAP — <one concise documentation snippet the provider could add to capture it>" or "<Measure name>: N/A (<short reason>)".
+- Keep snippets short, realistic, and clinically appropriate; never instruct the provider to document something that did not happen — phrase snippets as prompts to document real care.
+- This is advisory only. Output a clean plain-text list, one measure per line, no markdown fences, no preamble.`;
+    const user='VISIT NOTE:\n'+currentNoteText();
+    currentMips=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    document.getElementById('mipsBody').innerHTML=mipsToHtml(currentMips);
+    document.getElementById('mipsCard').style.display='block';
+    document.getElementById('mipsCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    toast('MIPS check complete — advisory, based on the note.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='🎯 MIPS check'; }
+}
+function copyMips(){
+  navigator.clipboard.writeText(currentMips||document.getElementById('mipsBody').innerText||'')
+    .then(()=>toast('MIPS check copied.','ok'))
+    .catch(()=>toast('Could not copy.','err'));
 }
 
 /* =========================================================
