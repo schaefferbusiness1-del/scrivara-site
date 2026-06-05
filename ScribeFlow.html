@@ -6,22 +6,22 @@
 <title>MLS — Ambient AI Medical Scribe</title>
 <style>
   :root{
-    --bg:#f4f7fb; --card:#ffffff; --ink:#16324f; --muted:#5f7186;
-    --line:#e2e9f1; --brand:#1f7ae0; --brand-dk:#155fb3;
-    --green:#19a974; --green-dk:#127a55; --amber:#f59e0b;
-    --red:#e0494b; --soft:#eef4fc; --shadow:0 2px 18px rgba(31,122,224,.08);
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1a2e44; --muted:#64748b;
+    --line:#e6ebf2; --brand:#2563c9; --brand-dk:#1d4ed8;
+    --green:#159068; --green-dk:#0f7351; --amber:#e0930b;
+    --red:#d94a4c; --soft:#eef3fb; --shadow:0 1px 3px rgba(20,40,70,.05),0 6px 20px rgba(20,40,70,.05);
     --gold:#b8860b; --gold-bg:#fdf6e3;
     /* QoL: surface colors hoisted to variables so dark mode can re-skin them */
-    --surface:#ffffff; --field-bg:#fbfdff; --soft2:#f7fbff;
+    --surface:#ffffff; --field-bg:#f8fafd; --soft2:#f6f9fd;
   }
   /* ===== QoL: DARK MODE (MLS) — overrides the color variables above ===== */
   body.theme-dark{
-    --bg:#0f1722; --card:#16202e; --ink:#e6edf5; --muted:#9fb0c2;
-    --line:#2a3848; --brand:#3b8df0; --brand-dk:#5aa0f5;
-    --green:#2cb583; --green-dk:#3fd29b; --amber:#f0ad3c;
-    --red:#e0606b; --soft:#1c2937; --shadow:0 2px 18px rgba(0,0,0,.45);
+    --bg:#0e1620; --card:#17212e; --ink:#e7edf4; --muted:#9aabbd;
+    --line:#283645; --brand:#4f93f2; --brand-dk:#6aa6f6;
+    --green:#2fb986; --green-dk:#43d39c; --amber:#f0ad3c;
+    --red:#e0606b; --soft:#1b2735; --shadow:0 1px 3px rgba(0,0,0,.3),0 6px 22px rgba(0,0,0,.4);
     --gold:#d9a93b; --gold-bg:#2a2415;
-    --surface:#16202e; --field-bg:#101a26; --soft2:#162130;
+    --surface:#17212e; --field-bg:#0f1925; --soft2:#152030;
   }
   /* Re-point common hardcoded surfaces at the themeable variables so they
      follow dark mode (they default to white/very-light in light mode). */
@@ -46,12 +46,14 @@
   *{box-sizing:border-box}
   body{
     margin:0; font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
-    background:var(--bg); color:var(--ink); font-size:17px; line-height:1.5;
+    background:var(--bg); color:var(--ink); font-size:16px; line-height:1.55;
+    -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    letter-spacing:.1px;
   }
   header{
-    background:linear-gradient(120deg,#1f7ae0,#155fb3); color:#fff;
-    padding:18px 26px; display:flex; align-items:center; justify-content:space-between;
-    flex-wrap:wrap; gap:12px; box-shadow:0 2px 14px rgba(21,95,179,.25);
+    background:linear-gradient(120deg,var(--brand),var(--brand-dk)); color:#fff;
+    padding:16px 26px; display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:12px; box-shadow:0 1px 0 rgba(0,0,0,.04),0 4px 16px rgba(20,40,70,.12);
   }
   .logo{display:flex; align-items:center; gap:12px; font-weight:700; font-size:22px}
   .logo .mark{
@@ -74,24 +76,24 @@
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
   @media(max-width:920px){.grid{grid-template-columns:1fr}}
   .card{
-    background:var(--card);border:1px solid var(--line);border-radius:16px;
-    padding:20px;box-shadow:var(--shadow);
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:22px;box-shadow:var(--shadow);
   }
-  .card h2{margin:0 0 4px;font-size:18px;display:flex;align-items:center;gap:9px}
+  .card h2{margin:0 0 4px;font-size:18px;font-weight:650;letter-spacing:-.2px;display:flex;align-items:center;gap:9px}
   .card h2 .ic{font-size:20px}
-  .card .sub{color:var(--muted);font-size:14px;margin:0 0 16px}
+  .card .sub{color:var(--muted);font-size:14px;margin:0 0 16px;line-height:1.5}
   button{
-    font-family:inherit;font-size:16px;font-weight:600;cursor:pointer;border:none;
-    border-radius:11px;padding:12px 18px;transition:.15s;display:inline-flex;
-    align-items:center;gap:8px;justify-content:center;
+    font-family:inherit;font-size:15.5px;font-weight:600;cursor:pointer;border:none;
+    border-radius:10px;padding:11px 18px;transition:background .15s,box-shadow .15s,transform .05s;
+    display:inline-flex;align-items:center;gap:8px;justify-content:center;letter-spacing:.1px;
   }
   button:active{transform:translateY(1px)}
-  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary{background:var(--brand);color:#fff;box-shadow:0 1px 2px rgba(20,40,70,.12)}
   .btn-primary:hover{background:var(--brand-dk)}
   .btn-green{background:var(--green);color:#fff}
   .btn-green:hover{background:var(--green-dk)}
-  .btn-ghost{background:var(--soft);color:var(--brand);border:1px solid var(--line)}
-  .btn-ghost:hover{background:#e2edfb}
+  .btn-ghost{background:var(--soft);color:var(--brand-dk);border:1px solid var(--line)}
+  .btn-ghost:hover{background:var(--card);border-color:var(--brand)}
   .btn-white{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.3)}
   .btn-white:hover{background:rgba(255,255,255,.27)}
   .btn-red{background:var(--red);color:#fff}
@@ -109,21 +111,25 @@
   @keyframes blink{50%{opacity:.25}}
   textarea{
     width:100%;font-family:inherit;font-size:15.5px;line-height:1.55;border:1px solid var(--line);
-    border-radius:11px;padding:14px;resize:vertical;color:var(--ink);background:#fbfdff;
+    border-radius:10px;padding:14px;resize:vertical;color:var(--ink);background:var(--field-bg);
+    transition:border-color .12s,box-shadow .12s;
   }
-  textarea:focus,input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+  textarea:focus,input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,201,.16)}
   .transcript{min-height:200px}
   .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
   .row.tight{margin-top:10px}
   label{display:block;font-size:14px;font-weight:600;margin:0 0 6px;color:var(--ink)}
   input[type=text],input[type=password],input[type=email]{
-    width:100%;font-family:inherit;font-size:16px;border:1px solid var(--line);
-    border-radius:11px;padding:12px 14px;background:#fbfdff;color:var(--ink);
+    width:100%;font-family:inherit;font-size:15.5px;border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px;background:var(--field-bg);color:var(--ink);
+    transition:border-color .12s,box-shadow .12s;
   }
   .field{margin-bottom:14px}
+  label{letter-spacing:.1px}
   .sf-select{width:100%;font-family:inherit;font-size:15px;border:1px solid var(--line);
-    border-radius:11px;padding:11px 13px;background:#fbfdff;color:var(--ink);cursor:pointer}
-  .sf-select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+    border-radius:10px;padding:11px 13px;background:var(--field-bg);color:var(--ink);cursor:pointer;
+    transition:border-color .12s,box-shadow .12s}
+  .sf-select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,201,.16)}
   .dotbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 7px;font-size:13px}
   .dotbar-lbl{color:var(--muted);font-weight:600}
   .dotchip{display:inline-block;background:var(--soft);border:1px solid var(--line);color:var(--brand-dk);
@@ -142,13 +148,14 @@
   .dot-add{background:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:4px 8px;border-radius:8px}
   .dot-add:hover{background:var(--soft);color:var(--brand-dk)}
   /* extra-outputs (handout / referral / superbill) */
-  .extra-card{background:#f7fbff;border:1px solid var(--line);border-radius:13px;padding:16px;margin-top:14px}
-  .extra-card h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:8px}
-  /* Collapsible situational extra-cards (default closed) */
-  .extra-card.collapsible>h3{margin-bottom:0;user-select:none}
-  .extra-card.collapsible .collapse-caret{font-size:13px;color:var(--muted);width:14px;display:inline-block;transition:transform .12s}
+  .extra-card{background:var(--soft2);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
+  .extra-card h3{margin:0 0 4px;font-size:15.5px;font-weight:650;display:flex;align-items:center;gap:8px}
+  /* Collapsible situational extra-cards (default closed) — clean tappable rows */
+  .extra-card.collapsible>h3{margin-bottom:0;user-select:none;cursor:pointer;padding:2px 0;min-height:28px}
+  .extra-card.collapsible .collapse-caret{font-size:13px;color:var(--muted);width:14px;display:inline-block}
+  .extra-card.collapsible>h3:hover{color:var(--brand-dk)}
   .extra-card.collapsible .collapse-body{display:none}
-  .extra-card.collapsible.open .collapse-body{display:block;margin-top:8px}
+  .extra-card.collapsible.open .collapse-body{display:block;margin-top:10px}
   .extra-card .xbody{white-space:pre-wrap;font-size:14px;line-height:1.55;background:#fff;border:1px solid var(--line);
     border-radius:10px;padding:12px 14px;margin-top:10px;color:var(--ink);min-height:60px}
   .sec-copy{background:none;color:var(--muted);font-size:12px;font-weight:600;padding:3px 9px;border-radius:7px;border:1px solid var(--line)}
@@ -196,11 +203,11 @@
     border-radius:9px;padding:9px 13px;margin-bottom:14px;display:flex;gap:8px;align-items:center}
   footer{max-width:1180px;margin:18px auto 40px;padding:0 22px;color:var(--muted);font-size:13.5px;text-align:center;line-height:1.6}
   /* modal */
-  .modal-bg{position:fixed;inset:0;background:rgba(16,50,79,.5);
+  .modal-bg{position:fixed;inset:0;background:rgba(16,40,70,.55);backdrop-filter:blur(2px);
     display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
   .modal-bg.show{display:flex}
-  .modal{background:#fff;border-radius:18px;max-width:560px;width:100%;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow:auto}
-  .modal h3{margin:0 0 6px;font-size:21px;display:flex;align-items:center;gap:9px}
+  .modal{background:#fff;border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.32);max-height:90vh;overflow:auto}
+  .modal h3{margin:0 0 6px;font-size:20px;font-weight:650;letter-spacing:-.2px;display:flex;align-items:center;gap:9px}
   .modal p.note{font-size:13.5px;color:var(--muted);background:var(--soft);padding:10px 13px;border-radius:9px;margin:6px 0 16px}
   .modal-x{float:right;background:none;color:var(--muted);font-size:22px;padding:0;line-height:1}
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(80px);
@@ -276,12 +283,13 @@
     .note-box{min-height:auto}
   }
   /* ---- main navigation tabs ---- */
-  .mainnav{display:flex;gap:8px;margin-bottom:16px;background:#fff;border:1px solid var(--line);
-    border-radius:13px;padding:6px;box-shadow:var(--shadow);flex-wrap:wrap}
-  .navtab{flex:1;min-width:120px;text-align:center;padding:12px 14px;border-radius:10px;font-weight:700;
-    font-size:16px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px}
+  .mainnav{display:flex;gap:6px;margin-bottom:16px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:6px;box-shadow:var(--shadow);flex-wrap:wrap}
+  .navtab{flex:1;min-width:120px;text-align:center;padding:11px 14px;border-radius:9px;font-weight:600;
+    font-size:15.5px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;
+    transition:background .12s,color .12s}
   .navtab:hover{background:var(--soft)}
-  .navtab.on{background:var(--brand);color:#fff}
+  .navtab.on{background:var(--brand);color:#fff;font-weight:700}
   .navtab .nbadge{background:rgba(255,255,255,.25);border-radius:10px;font-size:12px;padding:1px 7px;font-weight:700}
   .navtab:not(.on) .nbadge{background:var(--soft);color:var(--brand-dk)}
   /* ---- active patient bar ---- */
@@ -359,6 +367,28 @@
   .rec-group.doc .rec-item{border-left-color:var(--gold)}
   .rec-group.doc .rec-item .chk{color:var(--gold)}
   .rec-empty{font-size:14px;color:var(--muted);font-style:italic;padding:4px 0}
+  /* ===== Settings sections (additive, MLS) — titled groups in the Settings modal ===== */
+  .set-section{border-top:1px solid var(--line);padding-top:16px;margin-top:18px}
+  .set-section:first-of-type{border-top:none;padding-top:0;margin-top:0}
+  .set-section>.set-head{font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+    color:var(--muted);margin:0 0 4px;display:flex;align-items:center;gap:7px}
+  .set-section>.set-desc{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5}
+  .set-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+  @media(max-width:560px){.set-grid2{grid-template-columns:1fr}}
+  /* ===== Refined responsive behaviour for small screens (iPhone) ===== */
+  @media(max-width:600px){
+    body{font-size:16px}
+    header{padding:14px 16px}
+    .logo{font-size:19px}
+    .wrap{padding:16px}
+    .card{padding:16px;border-radius:13px}
+    .navtab{min-width:0;padding:11px 8px;font-size:14.5px}
+    /* comfortable tap targets on touch */
+    button{min-height:44px}
+    .pill-toggle{min-height:40px}
+    .modal{padding:20px;border-radius:14px}
+    .howto{font-size:14.5px;padding:11px 14px}
+  }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -1452,6 +1482,64 @@
       <input type="text" id="docSpec" placeholder="e.g. Family Medicine, Cardiology, Pediatrics">
     </div>
 
+    <!-- ============ SECTION: Practice / Provider (MLS — additive) ============ -->
+    <div class="set-section">
+      <p class="set-head">🏥 Practice &amp; provider</p>
+      <p class="set-desc">Your clinic and provider details. Stored on this device. When filled, they appear on the printed note header.</p>
+      <div class="field">
+        <label for="practiceName">Clinic / practice name</label>
+        <input type="text" id="practiceName" placeholder="e.g. Chester County Spine Care">
+      </div>
+      <div class="set-grid2">
+        <div class="field">
+          <label for="providerName">Provider full name</label>
+          <input type="text" id="providerName" placeholder="e.g. Jane A. Smith">
+        </div>
+        <div class="field">
+          <label for="providerCred">Credentials</label>
+          <input type="text" id="providerCred" placeholder="e.g. MD, DO, NP">
+        </div>
+      </div>
+      <div class="set-grid2">
+        <div class="field">
+          <label for="npi">NPI number</label>
+          <input type="text" id="npi" placeholder="10-digit NPI" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="clinicPhone">Clinic phone</label>
+          <input type="text" id="clinicPhone" placeholder="e.g. (555) 123-4567">
+        </div>
+      </div>
+      <div class="field">
+        <label for="clinicAddress">Clinic address</label>
+        <input type="text" id="clinicAddress" placeholder="Street, City, State ZIP">
+      </div>
+    </div>
+
+    <!-- ============ SECTION: Note defaults (MLS — additive) ============ -->
+    <div class="set-section">
+      <p class="set-head">📝 Note defaults</p>
+      <p class="set-desc">Defaults applied to new notes. The note style is shared with MLS as a writing preference.</p>
+      <div class="set-grid2">
+        <div class="field">
+          <label for="defaultFormat">Default note format</label>
+          <select class="sf-select" id="defaultFormat">
+            <option value="soap">SOAP (standard)</option>
+            <option value="insurance">Insurance-ready</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="mlsNoteStyle">Note style</label>
+          <select class="sf-select" id="mlsNoteStyle">
+            <option value="balanced">Balanced (default)</option>
+            <option value="concise">Concise</option>
+            <option value="detailed">Detailed</option>
+          </select>
+        </div>
+      </div>
+      <p class="note" style="margin:2px 0 0">Tip: your standing follow-up interval lives below under Provider preferences.</p>
+    </div>
+
     <!-- My preferences: "learns your way" -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
       <label style="font-size:15px">🎚️ My preferences <span style="font-weight:400;color:var(--muted)">(MLS learns your way)</span></label>
@@ -1472,9 +1560,13 @@
       <textarea id="defaultComment" class="note-box" style="min-height:72px" placeholder="Your preferred default comment…" onblur="setDefaultComment(this.value)"></textarea>
     </div>
 
+    <!-- ============ SECTION: Display (groups existing appearance toggles) ============ -->
+    <div class="set-section"><p class="set-head">🎨 Display</p>
+    <p class="set-desc">Appearance and workflow preferences for this device.</p>
+
     <!-- QoL: appearance + workflow preferences (MLS) -->
-    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label style="font-size:15px">🎨 Appearance &amp; workflow <span style="font-weight:400;color:var(--muted)">(MLS — this device)</span></label>
+    <div class="field" style="padding-top:0;margin-top:0">
+      <label style="font-size:15px">Appearance &amp; workflow <span style="font-weight:400;color:var(--muted)">(MLS — this device)</span></label>
 
       <div class="field">
         <label for="qolTheme">Theme</label>
@@ -1507,6 +1599,10 @@
         </label>
       </div>
     </div>
+    </div><!-- /Display section -->
+
+    <!-- ============ SECTION: Provider preferences (signature + follow-up) ============ -->
+    <div class="set-section"><p class="set-head">✍️ Provider preferences</p>
 
     <!-- QoL: provider signature block (MLS) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
@@ -1523,9 +1619,14 @@
         <span style="color:var(--muted)">e.g. 2 weeks</span></p>
       <input type="text" id="qolFollowup" placeholder="e.g. 2 weeks">
     </div>
+    </div><!-- /Provider preferences section -->
+
+    <!-- ============ SECTION: Security & privacy ============ -->
+    <div class="set-section"><p class="set-head">🔒 Security &amp; privacy</p>
+    <p class="set-desc">Protect access on this device. Clearing saved data only affects this browser — it never touches server data.</p>
 
     <!-- Automatic inactivity logoff (HIPAA technical safeguard) -->
-    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+    <div class="field" style="padding-top:0;margin-top:0">
       <label for="idleMins" style="font-size:15px">🔒 Auto log off after inactivity</label>
       <p class="note" style="margin:2px 0 8px">Protects open charts when you step away (HIPAA technical safeguard). Resets on any activity.</p>
       <select class="sf-select" id="idleMins">
@@ -1580,6 +1681,14 @@
         </div>
       </div>
     </div>
+
+    <!-- Clear saved data on this device (scoped to this app's namespace only) -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">🗑️ Clear saved data on this device</label>
+      <p class="note" style="margin:2px 0 10px">Removes this account's MLS settings, preferences, patients and notes saved in <b>this browser</b>. This cannot be undone. It does <b>not</b> delete anything on a server or affect other accounts/devices.</p>
+      <button class="btn-red" style="font-size:14px;padding:9px 15px" onclick="clearDeviceData()">Clear saved data</button>
+    </div>
+    </div><!-- /Security & privacy section -->
 
     <!-- athenahealth connection (honest scaffold) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
@@ -2752,6 +2861,10 @@ function docPrefsBlock(){
   // QoL: include the default follow-up interval as a provider preference.
   const fu=(typeof getQolFollowup==='function')?getQolFollowup().trim():'';
   if(fu) arr.push('Default follow-up interval is '+fu+' unless the visit warrants otherwise.');
+  // MLS: include the preferred note style (concise / detailed) as a writing preference.
+  const ns=(typeof getMlsNoteStyle==='function')?getMlsNoteStyle():'balanced';
+  if(ns==='concise') arr.push('Write notes concisely — prefer tight, economical phrasing without omitting clinically relevant detail.');
+  else if(ns==='detailed') arr.push('Write notes in a thorough, detailed style — fully fleshed-out sections where clinically supported.');
   if(!arr.length) return '';
   return '\n\nPROVIDER PREFERENCES (follow these unless clinically inappropriate or unsafe; they are reusable style/formatting/content preferences, never override clinical accuracy or coding ethics):\n'+
     arr.map(p=>'- '+p).join('\n');
@@ -2769,6 +2882,19 @@ function getQolCompact(){ return localStorage.getItem(uns('qolCompact'))==='1'; 
 function getQolConfirmLogout(){ return localStorage.getItem(uns('qolConfirmLogout'))==='1'; }
 function getQolSignature(){ return localStorage.getItem(uns('qolSignature'))||''; }
 function getQolFollowup(){ return localStorage.getItem(uns('qolFollowup'))||''; }
+
+/* =========================================================
+   MLS — additive Settings getters (Practice/Provider, Note defaults)
+   All per-device via uns(). Read on demand; safe defaults when unset.
+   ========================================================= */
+function getPracticeName(){ return localStorage.getItem(uns('practiceName'))||''; }
+function getProviderName(){ return localStorage.getItem(uns('providerName'))||''; }
+function getProviderCred(){ return localStorage.getItem(uns('providerCred'))||''; }
+function getNpi(){ return localStorage.getItem(uns('npi'))||''; }
+function getClinicAddress(){ return localStorage.getItem(uns('clinicAddress'))||''; }
+function getClinicPhone(){ return localStorage.getItem(uns('clinicPhone'))||''; }
+function getDefaultFormat(){ const v=localStorage.getItem(uns('defaultFormat')); return (v==='insurance')?'insurance':'soap'; }
+function getMlsNoteStyle(){ const v=localStorage.getItem(uns('noteStyle')); return (v==='concise'||v==='detailed')?v:'balanced'; }
 
 /* Apply the saved appearance prefs to <body>. Safe to call repeatedly and
    before login (uns() falls back to a device namespace when no session). */
@@ -2880,12 +3006,39 @@ function openSettings(){
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) qcl.checked=getQolConfirmLogout();
   const qsig=document.getElementById('qolSignature'); if(qsig) qsig.value=getQolSignature();
   const qfu=document.getElementById('qolFollowup'); if(qfu) qfu.value=getQolFollowup();
+  // MLS additive — Practice/Provider + Note defaults
+  const _pn=document.getElementById('practiceName'); if(_pn) _pn.value=getPracticeName();
+  const _prn=document.getElementById('providerName'); if(_prn) _prn.value=getProviderName();
+  const _prc=document.getElementById('providerCred'); if(_prc) _prc.value=getProviderCred();
+  const _npi=document.getElementById('npi'); if(_npi) _npi.value=getNpi();
+  const _cad=document.getElementById('clinicAddress'); if(_cad) _cad.value=getClinicAddress();
+  const _cph=document.getElementById('clinicPhone'); if(_cph) _cph.value=getClinicPhone();
+  const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
+  const _nst=document.getElementById('mlsNoteStyle'); if(_nst) _nst.value=getMlsNoteStyle();
   renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
   document.getElementById('settingsModal').classList.add('show');
 }
 function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
+/* MLS — Clear saved data on THIS device only.
+   Scoped strictly to this app's per-user namespace produced by uns():
+   'sf_u::<email>::*'. Never touches the session, other accounts, or any
+   server data — it only removes localStorage keys under this prefix, then reloads. */
+function clearDeviceData(){
+  const prefix=uns('');  // 'sf_u::<email>::'
+  if(!confirm('Clear all MLS data saved for this account in this browser?\n\nThis removes your settings, preferences, patients and notes stored on THIS device only. It cannot be undone and does NOT delete anything on a server.')) return;
+  try{
+    const keys=[];
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k && k.indexOf(prefix)===0) keys.push(k);
+    }
+    keys.forEach(k=>localStorage.removeItem(k));
+  }catch(e){}
+  try{ toast('Cleared saved data on this device. Reloading…','ok'); }catch(e){}
+  setTimeout(()=>{ try{ location.reload(); }catch(e){ location.href=location.href; } },400);
+}
 function saveSettings(){
   const k=document.getElementById('apiKey').value.trim();
   localStorage.setItem(uns('apikey'),k);
@@ -2899,6 +3052,15 @@ function saveSettings(){
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) localStorage.setItem(uns('qolConfirmLogout'),qcl.checked?'1':'0');
   const qsig=document.getElementById('qolSignature'); if(qsig) localStorage.setItem(uns('qolSignature'),(qsig.value||'').trim());
   const qfu=document.getElementById('qolFollowup'); if(qfu) localStorage.setItem(uns('qolFollowup'),(qfu.value||'').trim());
+  // MLS additive — persist Practice/Provider + Note defaults per-device
+  const _pn=document.getElementById('practiceName'); if(_pn) localStorage.setItem(uns('practiceName'),(_pn.value||'').trim());
+  const _prn=document.getElementById('providerName'); if(_prn) localStorage.setItem(uns('providerName'),(_prn.value||'').trim());
+  const _prc=document.getElementById('providerCred'); if(_prc) localStorage.setItem(uns('providerCred'),(_prc.value||'').trim());
+  const _npi=document.getElementById('npi'); if(_npi) localStorage.setItem(uns('npi'),(_npi.value||'').trim());
+  const _cad=document.getElementById('clinicAddress'); if(_cad) localStorage.setItem(uns('clinicAddress'),(_cad.value||'').trim());
+  const _cph=document.getElementById('clinicPhone'); if(_cph) localStorage.setItem(uns('clinicPhone'),(_cph.value||'').trim());
+  const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
+  const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
   applyAppearance();                 // apply theme / text size / compact now
   if(typeof applyVisitCommentToNote==='function') applyVisitCommentToNote(); // refresh signature on any open note
   const idleSel=document.getElementById('idleMins');
@@ -6275,6 +6437,12 @@ function buildPrintHTML(){
   const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
   const docName=getName()||'Clinician';
   const spec=getSpec();
+  // MLS additive — optional practice/provider header details (render only if set)
+  const practiceName=(typeof getPracticeName==='function')?getPracticeName():'';
+  const providerCred=(typeof getProviderCred==='function')?getProviderCred():'';
+  const npiVal=(typeof getNpi==='function')?getNpi():'';
+  const clinicAddr=(typeof getClinicAddress==='function')?getClinicAddress():'';
+  const clinicPh=(typeof getClinicPhone==='function')?getClinicPhone():'';
   const now=new Date().toLocaleString();
   const fmtLabel=currentFormat==='insurance'?'Insurance-Ready':'Standard';
   const signLine=document.getElementById('signLine');
@@ -6320,10 +6488,11 @@ function buildPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">MLS<small>Ambient AI medical scribe</small></div>
+    <div class="brand">${practiceName?esc(practiceName):'MLS'}<small>${practiceName?'Prepared with MLS — ambient AI medical scribe':'Ambient AI medical scribe'}</small>${clinicAddr?('<small>'+esc(clinicAddr)+'</small>'):''}${clinicPh?('<small>'+esc(clinicPh)+'</small>'):''}</div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
-      <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
+      <div><b>Provider:</b> ${esc(docName)}${providerCred?', '+esc(providerCred):''}${spec?' · '+esc(spec):''}</div>
+      ${npiVal?('<div><b>NPI:</b> '+esc(npiVal)+'</div>'):''}
       <div><b>Printed:</b> ${esc(now)}</div>
       <div><b>Format:</b> ${esc(fmtLabel)}</div>
     </div>
