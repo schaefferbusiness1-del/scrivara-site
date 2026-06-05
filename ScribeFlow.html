@@ -313,7 +313,7 @@
 
     <button class="btn-primary" id="authBtn" style="width:100%" onclick="doAuth()">Log in</button>
 
-    <p class="local-note">🔒 <b>Local account on this device</b> (full multi-device accounts come with the hosted version). Your email, an obfuscated password, and your notes are stored only in this browser's local storage — nothing is sent to a server.</p>
+    <p class="local-note" id="authNote">🔒 <b>Secure account.</b> Your password is protected and your saved notes are encrypted on the server. Sign in from any device.</p>
   </div>
 </div>
 
@@ -3289,6 +3289,11 @@ window.addEventListener('DOMContentLoaded',()=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('keydown',e=>{ if(e.key==='Enter') doAuth(); });
   });
+  // auth-screen privacy note reflects the actual mode
+  const _an=document.getElementById('authNote');
+  if(_an) _an.innerHTML = backendMode()
+    ? '🔒 <b>Secure account.</b> Your password is protected and your saved notes are encrypted on the server. Sign in from any device.'
+    : '🔒 <b>Local account on this device.</b> Your email, an obfuscated password, and your notes are stored only in this browser — nothing is sent to a server.';
   // restore session if present
   const saved=localStorage.getItem('sf_session');
   if(backendMode() && bkToken() && saved){
