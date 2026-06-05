@@ -586,10 +586,10 @@
       <div class="prof-box" style="margin-top:16px">
         <h3>📎 Documents
           <button class="edit" onclick="addDocPaste()">＋ Paste text</button>
-          <button class="edit" onclick="document.getElementById('docFileInput').click()">⬆ Upload file</button>
+          <button class="edit" onclick="document.getElementById('docFileInput').click()">📷 Upload photo / file</button>
         </h3>
         <input type="file" id="docFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="onDocFile(event)">
-        <p class="mini" style="margin:0 0 4px">Add labs, prior records, discharge summaries. .txt and PDF text are extracted in-browser; images are stored but not OCR'd. Then press <b>Analyze with AI</b> to summarize and pull key items into the profile.</p>
+        <p class="mini" style="margin:0 0 4px">Add labs, prior records, discharge summaries — or snap a <b>photo of a document</b>. Photos &amp; scans are read automatically with OCR; .txt and PDF text are extracted too. Then press <b>Analyze with AI</b> to summarize and pull key items into the profile. <span style="color:var(--muted)">(Select a patient first.)</span></p>
         <div id="docEmpty" class="mini" style="color:var(--muted)">No documents yet.</div>
         <div class="doc-list" id="docList"></div>
       </div>
