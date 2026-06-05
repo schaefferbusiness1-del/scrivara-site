@@ -3528,6 +3528,9 @@ function showView(v){
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); }
   if(v==='team') loadTeamPatients();
   if(v==='analysis'){ if(!_teamRoster.length){ loadTeamPatients(); } else { refreshAnalysisDoctors(); } }
+  // Feature/tool cards in any view collapse to a clickable sliver by default
+  // (idempotent — safe to call on every view switch; runs even before a note is generated).
+  try{ initCollapsibleExtras(); }catch(e){}
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderPatientBar(){
@@ -5180,7 +5183,9 @@ function maybeCapturePainScore(result){
    Idempotent: safe to call repeatedly. Only applies to the situational
    "extra" cards listed below — never the main SOAP note or coding.
    ========================================================= */
-const COLLAPSIBLE_EXTRA_IDS=['redflagCard','ddxCard','surgPlanCard','mmeCard','procNoteCard'];
+const COLLAPSIBLE_EXTRA_IDS=['redflagCard','ddxCard','surgPlanCard','mmeCard','procNoteCard',
+  'teachCard','avsCard','refCard','imeCard','urToolCard','urCard','billCard','costCard',
+  'mipsCard','handoutCard','fhirCard','chartSumCard','priorAuthCard','effCard','analysisCard'];
 function makeCardCollapsible(cardId){
   const card=document.getElementById(cardId);
   if(!card || card.classList.contains('collapsible')) return;
@@ -5210,6 +5215,16 @@ function makeCardCollapsible(cardId){
 }
 function initCollapsibleExtras(){
   COLLAPSIBLE_EXTRA_IDS.forEach(makeCardCollapsible);
+}
+/* Make a card collapsible (if it isn't already) and expand it — used right after
+   the user explicitly generates that feature so they see the fresh result.
+   Default for every other card stays collapsed. No-op if the id isn't collapsible. */
+function expandCardSliver(cardId){
+  makeCardCollapsible(cardId);
+  const c=document.getElementById(cardId);
+  if(!c || !c.classList.contains('collapsible')) return;
+  c.classList.add('open');
+  const ct=c.querySelector('.collapse-caret'); if(ct) ct.textContent='▾';
 }
 
 /* Build the plain-text version of the surgical plan (for chart paste / copy).
@@ -7282,6 +7297,7 @@ RULES:
     currentMips=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     document.getElementById('mipsBody').innerHTML=mipsToHtml(currentMips);
     document.getElementById('mipsCard').style.display='block';
+    try{ expandCardSliver('mipsCard'); }catch(e){}
     document.getElementById('mipsCard').scrollIntoView({behavior:'smooth',block:'nearest'});
     toast('MIPS check complete — advisory, based on the note.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
@@ -8016,6 +8032,7 @@ function exportFHIR(){
   const ta=document.getElementById('fhirBody');
   ta.value=json;
   document.getElementById('fhirCard').style.display='block';
+  try{ expandCardSliver('fhirCard'); }catch(e){}
   document.getElementById('fhirCard').scrollIntoView({behavior:'smooth',block:'nearest'});
   toast('FHIR R4 Bundle built. De-identified — replace [PATIENT_ID] placeholders before real use.','ok');
 }
@@ -8080,6 +8097,7 @@ async function generateHandout(){
     currentHandout=offlineHandout(dxStr);
     document.getElementById('handoutBody').value=currentHandout;
     document.getElementById('handoutCard').style.display='block';
+    try{ expandCardSliver('handoutCard'); }catch(e){}
     document.getElementById('handoutCard').scrollIntoView({behavior:'smooth',block:'nearest'});
     toast(backendMode()?'':'Offline example handout shown. Add your key for any visit.','');
     return;
@@ -8097,6 +8115,7 @@ Use ONLY the diagnosis and note provided; do not invent specific medications or 
     currentHandout=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     document.getElementById('handoutBody').value=currentHandout;
     document.getElementById('handoutCard').style.display='block';
+    try{ expandCardSliver('handoutCard'); }catch(e){}
     document.getElementById('handoutCard').scrollIntoView({behavior:'smooth',block:'nearest'});
     toast('Patient handout ready. Review and edit before printing.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
@@ -8282,6 +8301,7 @@ function showSuperbill(){
   if(!h){ h=document.createElement('div'); h.id='billBodyText'; h.style.display='none'; document.getElementById('billCard').appendChild(h); }
   h.textContent=txt;
   document.getElementById('billCard').style.display='block';
+  try{ expandCardSliver('billCard'); }catch(e){}
   document.getElementById('billCard').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
@@ -8593,6 +8613,9 @@ GUARDRAILS: You may reference evidence-based utilization frameworks generally (e
     const user='COURSE OF CARE (pasted notes):\n'+input.trim().slice(0,16000);
     const out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     showExtra('urCard','urBody',out);
+    // Auto-expand the just-generated UR cards so the result is visible immediately
+    // (urCard is nested inside urToolCard; expand both).
+    try{ expandCardSliver('urToolCard'); expandCardSliver('urCard'); }catch(e){}
     toast('Utilization review complete. Decision support — not an official determination.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='🔎 Run utilization review'; }
