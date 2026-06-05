@@ -6947,6 +6947,14 @@ function showSuperbill(){
   const patient=document.getElementById('patientLabel').value.trim()||(ap?ap.name:'')||'Unlabeled';
   const icd=(c.icd&&c.icd.length)?c.icd:[];
   const cpt=(c.cpt&&c.cpt.length)?c.cpt:[];
+  // Estimated reimbursement from the coded E/M + CPTs (same ballpark fee table as the revenue estimate)
+  let estTotal=0, estAny=false; const estParts=[];
+  if(c.em){ const f=feeForCode(c.em); if(f!=null){ estTotal+=f; estAny=true; estParts.push(c.em+': $'+f); } }
+  cpt.forEach(cp=>{ const code=String(cp).trim().split(/[\s—\-:]/)[0]; const f=feeForCode(cp); if(f!=null){ estTotal+=f; estAny=true; estParts.push(code+': $'+f); } });
+  const estHtml=estAny
+    ? '<b>$'+estTotal.toLocaleString()+'</b>'+(estParts.length?' <span style="color:var(--muted);font-size:12px">('+esc(estParts.join(' · '))+')</span>':'')
+      +'<div style="color:var(--muted);font-size:11px;margin-top:3px">Ballpark national Medicare-ish estimate — actual pay varies by payer, contract, geography, and modifiers.</div>'
+    : '—';
   const emRow=c.em?`<tr><td class="k">E/M visit code</td><td>${esc(c.em)}${c.emJust?' — '+esc(c.emJust):''}</td></tr>`:'';
   const rows=`
     <tr><td class="k">Provider</td><td>${esc(provider)}${spec?' · '+esc(spec):''}</td></tr>
@@ -6955,12 +6963,15 @@ function showSuperbill(){
     <tr><td class="k">Chief complaint</td><td>${esc(e.cc||'—')}</td></tr>
     ${emRow}
     <tr><td class="k">ICD-10 (dx)</td><td>${icd.length?icd.map(x=>esc(x)).join('<br>'):'None documented'}</td></tr>
-    <tr><td class="k">CPT (procedures)</td><td>${cpt.length?cpt.map(x=>esc(x)).join('<br>'):'None performed in visit'}</td></tr>`;
+    <tr><td class="k">CPT (procedures)</td><td>${cpt.length?cpt.map(x=>esc(x)).join('<br>'):'None performed in visit'}</td></tr>
+    <tr><td class="k">💵 Est. reimbursement</td><td>${estHtml}</td></tr>`;
   document.getElementById('billBody').innerHTML=rows;
   // hidden plain-text copy for the Copy button
   let txt=`SUPERBILL\nProvider: ${provider}${spec?' ('+spec+')':''}\nDate of service: ${dateStr}\nPatient: ${patient}\nChief complaint: ${e.cc||'—'}\n`;
   if(c.em) txt+=`E/M code: ${c.em}${c.emJust?' — '+c.emJust:''}\n`;
-  txt+=`ICD-10: ${icd.length?icd.join('; '):'None documented'}\nCPT: ${cpt.length?cpt.join('; '):'None performed in visit'}\n[Suggested codes — provider confirms before claim submission.]`;
+  txt+=`ICD-10: ${icd.length?icd.join('; '):'None documented'}\nCPT: ${cpt.length?cpt.join('; '):'None performed in visit'}\n`;
+  if(estAny) txt+=`Estimated reimbursement: $${estTotal.toLocaleString()} (${estParts.join(' · ')}) — ballpark estimate, varies by payer/contract/geography/modifiers.\n`;
+  txt+=`[Suggested codes — provider confirms before claim submission.]`;
   let h=document.getElementById('billBodyText');
   if(!h){ h=document.createElement('div'); h.id='billBodyText'; h.style.display='none'; document.getElementById('billCard').appendChild(h); }
   h.textContent=txt;
