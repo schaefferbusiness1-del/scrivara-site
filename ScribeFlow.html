@@ -6609,8 +6609,10 @@ function renderRevenueEstimate(){
     if(f!=null){ total+=f; any=true; parts.push(c.em+': $'+f); }
     else parts.push(c.em+': —');
   }
+  const emBase2=c.em?String(c.em).trim().split(/[\s—\-:]/)[0]:'';
   (c.cpt||[]).forEach(cp=>{
     const code=String(cp).trim().split(/[\s—\-:]/)[0];
+    if(emBase2 && code===emBase2) return; // don't double-count the E/M if echoed as a CPT
     const f=feeForCode(cp);
     if(f!=null){ total+=f; any=true; parts.push(code+': $'+f); }
     else parts.push(code+': —');
@@ -6949,8 +6951,9 @@ function showSuperbill(){
   const cpt=(c.cpt&&c.cpt.length)?c.cpt:[];
   // Estimated reimbursement from the coded E/M + CPTs (same ballpark fee table as the revenue estimate)
   let estTotal=0, estAny=false; const estParts=[];
+  const emBase=c.em?String(c.em).trim().split(/[\s—\-:]/)[0]:'';
   if(c.em){ const f=feeForCode(c.em); if(f!=null){ estTotal+=f; estAny=true; estParts.push(c.em+': $'+f); } }
-  cpt.forEach(cp=>{ const code=String(cp).trim().split(/[\s—\-:]/)[0]; const f=feeForCode(cp); if(f!=null){ estTotal+=f; estAny=true; estParts.push(code+': $'+f); } });
+  cpt.forEach(cp=>{ const code=String(cp).trim().split(/[\s—\-:]/)[0]; if(emBase && code===emBase) return; /* don't double-count the E/M if it's echoed in the CPT list */ const f=feeForCode(cp); if(f!=null){ estTotal+=f; estAny=true; estParts.push(code+': $'+f); } });
   const estHtml=estAny
     ? '<b>$'+estTotal.toLocaleString()+'</b>'+(estParts.length?' <span style="color:var(--muted);font-size:12px">('+esc(estParts.join(' · '))+')</span>':'')
       +'<div style="color:var(--muted);font-size:11px;margin-top:3px">Ballpark national Medicare-ish estimate — actual pay varies by payer, contract, geography, and modifiers.</div>'
