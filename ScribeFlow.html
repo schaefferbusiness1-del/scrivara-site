@@ -652,6 +652,11 @@
           <div class="h">Supported E/M level</div>
           <div class="lv"><span class="em-pill" id="opt_em">—</span><span id="opt_em_just" style="color:#7a5c08;font-size:13.5px"></span></div>
         </div>
+        <div class="opt-section" id="opt_reimb_sec">
+          <div class="h">💵 Reimbursement impact (estimate)</div>
+          <div id="opt_reimb" style="font-size:14px;color:var(--ink)"></div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:5px">Ballpark national Medicare-ish allowables — actual pay varies by payer, contract, geography, and modifiers. Estimate only; the higher levels are valid only if the documented work genuinely supports them.</div>
+        </div>
         <div class="opt-section" id="opt_mdm_sec">
           <div class="h">MDM justification (2021+ AMA)</div>
           <div id="opt_mdm" style="font-size:14px;color:var(--ink)"></div>
@@ -4344,6 +4349,7 @@ function parseGenJSON(content){
 async function optimizeForPayout(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   const key=getKey();
+  const preOptEm=(currentCoding&&currentCoding.em)||'';
   const noteText=(currentFormat==='soap'?document.getElementById('noteBox').value:currentSoap);
   const insText=currentInsurance||'';
   const transcript=document.getElementById('transcript').value.trim();
@@ -4353,6 +4359,7 @@ async function optimizeForPayout(){
   if(!hasAI()){
     if(transcript.trim()===EXAMPLE.trim()){
       currentOpt=offlineExampleOptimization();
+      currentOpt.docEm=preOptEm;
       renderOpt(currentOpt);
       toast('Offline example optimization shown. Add your OpenAI key for any visit.','');
       document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
@@ -4381,6 +4388,7 @@ ${STANDARDS}
 Return ONLY valid JSON (no fences) with this shape:
 {
  "supported_em": "<the highest E/M code 99202-99215 ACTUALLY supported by current documentation>",
+ "potential_em": "<the E/M code that WOULD be supported IF the real-but-possibly-undocumented work flagged in 'gaps' were properly documented. Equal to supported_em when there are no gaps. This is CONDITIONAL on that work having truly occurred — never a promise, and never higher than the flagged real work could legitimately support.>",
  "em_justification": "<one line tying it to documented MDM or time>",
  "mdm_breakdown": "<2-4 sentences walking the 3 MDM elements as currently documented: (1) number/complexity of problems addressed, (2) data reviewed/ordered, (3) risk — and which 2 of 3 set the level>",
  "icd10": [ {"code":"","desc":""} ],
@@ -4391,6 +4399,7 @@ Return ONLY valid JSON (no fences) with this shape:
     const user=`SOAP NOTE:\n${noteText}\n\nINSURANCE-READY NOTE:\n${insText||'(none)'}\n\nORIGINAL TRANSCRIPT (ground truth — do not exceed what this supports):\n${transcript||'(not available)'}`+(pctx?('\n\nPATIENT CHART BACKGROUND (chronic problems/meds already on file — relevant to MDM problem-complexity, but do NOT invent data review or findings not documented):\n'+pctx):'');
     const data=await postChatRaw(sys,user,key);
     currentOpt=normalizeOpt(data);
+    currentOpt.docEm=preOptEm;
     // update suggested coding to the audited (still accurate) codes if present
     if(currentOpt.icd && currentOpt.icd.length) currentCoding.icd=currentOpt.icd;
     if(currentOpt.cpt) currentCoding.cpt=currentOpt.cpt;
@@ -4417,6 +4426,7 @@ function normalizeOpt(p){
   const fmtCodes=arr=>Array.isArray(arr)?arr.map(c=>(c.code||'')+(c.desc?' — '+c.desc:'')).filter(Boolean):[];
   return {
     em:p.supported_em||'',
+    potentialEm:p.potential_em||p.supported_em||'',
     emJust:p.em_justification||'',
     mdm:p.mdm_breakdown||'',
     icd:fmtCodes(p.icd10),
@@ -4431,12 +4441,52 @@ function renderOpt(o){
   document.getElementById('opt_em').textContent=o.em||'—';
   document.getElementById('opt_em_just').textContent=o.emJust?(' — '+o.emJust):'';
   document.getElementById('opt_mdm').textContent=o.mdm||'(no MDM breakdown returned)';
+  renderOptReimb(o);
   const g=document.getElementById('opt_gaps');
   if(o.gaps && o.gaps.length){
     g.innerHTML=o.gaps.map(x=>'<div class="gap-item">⚑ '+esc(x)+'</div>').join('');
   } else {
     g.innerHTML='<div class="gap-item">✅ No gaps flagged — documentation already supports the coded level. Confirm and sign.</div>';
   }
+}
+
+/* Reimbursement before -> after on the optimization card.
+   Shows: as originally coded -> highest level supported now -> potential
+   level IF the flagged real work is documented, each with a $ estimate
+   from FEE_TABLE, plus the per-visit delta. Honest: higher tiers are
+   conditional on the work having actually occurred. */
+function renderOptReimb(o){
+  const box=document.getElementById('opt_reimb');
+  if(!box) return;
+  const money=n=>'$'+Number(n).toLocaleString();
+  const docEm=o.docEm||'', supEm=o.em||'', potEm=o.potentialEm||supEm;
+  const fD=feeForCode(docEm), fS=feeForCode(supEm), fP=feeForCode(potEm);
+  const rows=[];
+  const row=(label,em,fee,extra)=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0">'
+    +'<span>'+label+' — <b>'+esc(em)+'</b>'+(extra||'')+'</span>'
+    +'<span style="font-weight:700">'+(fee!=null?money(fee):'—')+'</span></div>';
+  if(docEm && fD!=null) rows.push(row('As originally coded',docEm,fD,''));
+  if(supEm && fS!=null){
+    let ex='';
+    if(fD!=null && fS>fD) ex=' <span style="color:#15803d;font-weight:700">▲ +'+money(fS-fD)+'/visit</span>';
+    else if(fD!=null && fS===fD) ex=' <span style="color:var(--muted)">— already at the supported level</span>';
+    rows.push(row('Optimized · supported now',supEm,fS,ex));
+  }
+  if(potEm && potEm!==supEm && fP!=null && (fS==null || fP>fS)){
+    const ex=(fS!=null?' <span style="color:#b45309;font-weight:700">▲ +'+money(fP-fS)+' more</span>':'')
+      +' <span style="color:var(--muted);font-size:12px">(only if that work truly occurred)</span>';
+    rows.push(row('Potential · with complete documentation',potEm,fP,ex));
+  }
+  if(!rows.length){ box.innerHTML='<span class="note" style="margin:0">No fee estimate available for the coded level.</span>'; return; }
+  // Headline: from the starting code to the best honest target.
+  const fromEm=docEm||supEm, toEm=potEm||supEm;
+  const fFrom=feeForCode(fromEm), fTo=feeForCode(toEm);
+  let head='';
+  if(fromEm && toEm && fFrom!=null && fTo!=null && fTo>fFrom){
+    head='<div style="font-weight:800;font-size:15px;margin-bottom:7px">'+esc(fromEm)+' → '+esc(toEm)
+      +' &nbsp;('+money(fFrom)+' → '+money(fTo)+', up to +'+money(fTo-fFrom)+'/visit)</div>';
+  }
+  box.innerHTML=head+rows.join('');
 }
 
 /* =========================================================
@@ -4554,6 +4604,7 @@ Documentation supports CPT 99213 (established patient, LOW MDM): 1 acute uncompl
 function offlineExampleOptimization(){
   return {
     em:'99213',
+    potentialEm:'99214',
     emJust:'Established patient, LOW MDM as currently documented (2 problems + data ordered).',
     mdm:'(1) Problems addressed: 1 acute uncomplicated illness (acute bronchitis) + 1 stable chronic illness (hypertension) = low. (2) Data: a chest X-ray was ordered (minimal-to-limited data as documented). (3) Risk: prescription drug management (conditional doxycycline) = moderate risk. Two of three elements (problems + data) currently sit at the low level, so the supported level is 99213.',
     icd:['J20.9 — Acute bronchitis, unspecified','R05.9 — Cough, unspecified','I10 — Essential (primary) hypertension'],
