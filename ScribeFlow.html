@@ -482,6 +482,15 @@
         </div>
       </div>
 
+      <!-- INSURANCE & BENEFITS (per-patient; drives the cost estimate) -->
+      <div class="prof-box" style="margin-top:16px" id="insBox">
+        <h3>💳 Insurance &amp; benefits
+          <button class="edit" onclick="editInsurance()">✎ Edit</button>
+        </h3>
+        <p class="mini" style="margin:0 0 4px;color:var(--muted)">Enter from the patient's insurance card / benefits. Used by the Cost estimate. (De-identified — no full PHI required.)</p>
+        <div class="body" id="profInsurance"></div>
+      </div>
+
       <!-- DOCUMENTS -->
       <div class="prof-box" style="margin-top:16px">
         <h3>📎 Documents
@@ -704,6 +713,36 @@
         <div class="xbody" id="refBody"></div>
       </div>
 
+      <!-- IME report (Independent Medical Examination) -->
+      <div class="extra-card" id="imeCard" style="display:none">
+        <h3>🧾 IME report <span style="font-weight:400;font-size:13px;color:var(--muted)">(Independent Medical Examination)</span>
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('imeBody')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('IME Report','imeBody')">🖨 Print</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Independent Medical Examination report drafted from this visit. Built only from what is documented; missing data appears as [bracketed placeholders].</p>
+        <div class="xbody" id="imeBody"></div>
+        <div class="code-disclaim">⚠️ DRAFT for the examining physician to review, complete, and sign. All opinions, causation findings, and any impairment rating are the physician's responsibility. The applicable AMA Guides edition varies by jurisdiction.</div>
+      </div>
+
+      <!-- Utilization review (paste a course of notes → reasonableness) -->
+      <div class="extra-card" id="urToolCard">
+        <h3>📋 Utilization review <span style="font-weight:400;font-size:13px;color:var(--muted)">(medical-necessity decision support)</span></h3>
+        <p class="sub" style="margin:4px 0 10px">Paste a full course of care and MLS will assess whether the number of visits, frequency, and treatments look medically necessary and reasonable. Works on the pasted text — no current visit needed.</p>
+        <textarea id="urInput" style="min-height:170px" placeholder="Paste a course of notes here — multiple office visits, PT, injections, etc. MLS will assess whether the number of visits, frequency, and treatments look medically necessary and reasonable."></textarea>
+        <div class="row tight" style="margin-top:10px">
+          <button class="btn-green" id="urBtn" onclick="generateUtilizationReview()">🔎 Run utilization review</button>
+        </div>
+        <!-- UR result -->
+        <div class="extra-card" id="urCard" style="display:none;margin-top:14px">
+          <h3>📋 Utilization review result
+            <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('urBody')">📑 Copy</button>
+            <button class="sec-copy" onclick="printExtra('Utilization Review','urBody')">🖨 Print</button>
+          </h3>
+          <div class="xbody" id="urBody"></div>
+          <div class="code-disclaim">⚠️ Clinical decision-support only — NOT an official utilization-review determination. An authorized reviewer / medical director makes the actual determination under the applicable guidelines and payer policy.</div>
+        </div>
+      </div>
+
       <!-- Superbill -->
       <div class="extra-card" id="billCard" style="display:none">
         <h3>🧾 Superbill <span style="font-weight:400;font-size:13px;color:var(--muted)">(dx + CPT for billing)</span>
@@ -712,6 +751,17 @@
         </h3>
         <table class="superbill" style="width:100%;border-collapse:collapse;margin-top:10px" id="billBody"></table>
         <div class="code-disclaim">⚠️ Suggested codes for provider review — confirm before submitting a claim. Final coding is the provider's responsibility.</div>
+      </div>
+
+      <!-- Patient cost estimate (Good Faith Estimate off the patient's own benefits) -->
+      <div class="extra-card" id="costCard" style="display:none">
+        <h3>💲 Cost estimate <span style="font-weight:400;font-size:13px;color:var(--muted)">(MLS Good Faith Estimate)</span>
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('costBodyText')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Good Faith Estimate','costBody')">🖨 Print</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Estimated out-of-pocket for the ordered procedure, based on the benefit information entered for this patient's plan.</p>
+        <table class="superbill" style="width:100%;border-collapse:collapse;margin-top:10px" id="costBody"></table>
+        <div class="code-disclaim">⚠️ Estimate based on the benefit information entered for this patient's plan and ballpark allowed amounts — NOT a guarantee. Actual cost depends on the payer's adjudication and your contracted rates. For a verified amount, real-time insurance eligibility is required.</div>
       </div>
 
       <!-- MIPS quality auto-capture -->
@@ -878,7 +928,9 @@
         <button class="btn-ghost" id="avsBtn" onclick="generateAVS()" disabled>👤 Patient summary</button>
         <button class="btn-ghost" id="handoutBtn" onclick="generateHandout()" disabled>📝 Patient handout</button>
         <button class="btn-ghost" id="refBtn" onclick="generateReferral()" disabled>✉️ Referral letter</button>
+        <button class="btn-ghost" id="imeBtn" onclick="generateIME()" disabled>🧾 IME report</button>
         <button class="btn-ghost" id="billBtn" onclick="showSuperbill()" disabled>🧾 Superbill</button>
+        <button class="btn-ghost" id="costBtn" onclick="showCostEstimate()" title="Estimate this patient's out-of-pocket from their own insurance benefits">💲 Cost estimate</button>
         <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach MLS</button>
         <button class="btn-ghost" onclick="exportFHIR()" disabled id="fhirBtn" title="Build a FHIR R4 Bundle">🔌 Export FHIR</button>
         <button class="btn-ghost" onclick="downloadNote()" disabled id="dlBtn">⬇ Download .txt</button>
@@ -1217,12 +1269,24 @@
   <div id="teamView" style="display:none">
     <div class="card">
       <h2><span class="ic">👥</span> Team — your doctors' patients
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh</button>
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="generateEfficiencyReport()">📊 Efficiency report</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh</button>
       </h2>
       <p class="sub">Read-only overview of the patients belonging to the doctors assigned to you. Only the owning doctor can edit a chart.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">👁️ Read-only — these charts belong to your team. You cannot edit or save them here.</div>
       <div id="teamEmpty" class="empty"><span class="big">👥</span>Press <b>Refresh</b> to load your team's patients.</div>
       <div id="teamList"></div>
+
+      <!-- Head-doctor efficiency report -->
+      <div class="extra-card" id="effCard" style="display:none;margin-top:16px">
+        <h3>📊 MLS Efficiency report
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('effBodyText')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Efficiency Report','effBody')">🖨 Print</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Per-doctor documentation volume from the team charts visible to you. Aggregate counts only — no patient content leaves your browser.</p>
+        <div class="xbody" id="effBody" style="white-space:normal"></div>
+        <div class="code-disclaim">⚠️ Based on visit/documentation activity visible to you. Detailed productivity metrics (time, RVUs) require additional reporting and are estimates.</div>
+      </div>
     </div>
   </div><!-- /teamView -->
 </div>
@@ -2768,6 +2832,80 @@ function openTeamPatient(idx){
 }
 function closeTeamPt(){ document.getElementById('teamPtModal').classList.remove('show'); }
 
+/* =========================================================
+   HEAD-DOCTOR EFFICIENCY REPORT (head/owner only — same gating as Team view).
+   Builds a per-doctor summary from _teamRows already loaded by
+   loadTeamPatients(): for each doctor, # patients and # notes/visits visible.
+   Renders a table, then (if hasAI()) appends an AI narrative via aiCallRaw —
+   fed ONLY doctor names + numeric counts. NO patient names/notes/PHI are
+   ever sent to the AI. ========================================================= */
+async function generateEfficiencyReport(){
+  const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
+  if(!isHead){ toast('The Efficiency report is only available to head doctors.','err'); return; }
+  if(!Array.isArray(_teamRows)||!_teamRows.length){
+    // try a fresh load, then re-check
+    try{ await loadTeamPatients(); }catch(e){}
+  }
+  const card=document.getElementById('effCard');
+  const body=document.getElementById('effBody');
+  if(!Array.isArray(_teamRows)||!_teamRows.length){
+    body.innerHTML='<div class="mini" style="color:var(--muted)">No team activity to report yet.</div>';
+    let h=document.getElementById('effBodyText');
+    if(!h){ h=document.createElement('div'); h.id='effBodyText'; h.style.display='none'; card.appendChild(h); }
+    h.textContent='MLS Efficiency report\nNo team activity to report yet.';
+    card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'nearest'});
+    return;
+  }
+  // ---- aggregate per doctor (counts only) ----
+  const agg={}; // owner -> {patients, notes}
+  _teamRows.forEach(row=>{
+    const owner=row.owner_email||('Doctor #'+(row.owner_user_id!=null?row.owner_user_id:'?'));
+    const data=row.data||{};
+    const notes=Array.isArray(data.notes)?data.notes:(Array.isArray(data.visits)?data.visits:[]);
+    const a=agg[owner]||(agg[owner]={patients:0,notes:0});
+    a.patients+=1;
+    a.notes+=notes.length;
+  });
+  const names=Object.keys(agg).sort();
+  let totPt=0,totNotes=0;
+  const rows=names.map(n=>{ const a=agg[n]; totPt+=a.patients; totNotes+=a.notes;
+    const avg=a.patients?(Math.round((a.notes/a.patients)*10)/10):0;
+    return '<tr><td>'+esc(n)+'</td><td style="text-align:right">'+a.patients+'</td><td style="text-align:right">'+a.notes+'</td><td style="text-align:right">'+avg+'</td></tr>';
+  }).join('');
+  const tbl='<table class="superbill" style="width:100%;border-collapse:collapse;margin-top:6px">'+
+    '<tr><td class="k">Doctor</td><td class="k" style="text-align:right">Patients</td><td class="k" style="text-align:right">Notes/visits</td><td class="k" style="text-align:right">Avg/patient</td></tr>'+
+    rows+
+    '<tr><td><b>Team total</b></td><td style="text-align:right"><b>'+totPt+'</b></td><td style="text-align:right"><b>'+totNotes+'</b></td><td style="text-align:right"><b>'+(totPt?(Math.round((totNotes/totPt)*10)/10):0)+'</b></td></tr>'+
+    '</table>';
+  body.innerHTML='<div id="effNarr"></div>'+tbl;
+  // plain-text copy/print version (counts only — no PHI)
+  let txt='MLS — EFFICIENCY REPORT\nGenerated: '+new Date().toLocaleString()+'\n\nDoctor | Patients | Notes/visits | Avg per patient\n';
+  names.forEach(n=>{ const a=agg[n]; const avg=a.patients?(Math.round((a.notes/a.patients)*10)/10):0; txt+=n+' | '+a.patients+' | '+a.notes+' | '+avg+'\n'; });
+  txt+='Team total | '+totPt+' | '+totNotes+' | '+(totPt?(Math.round((totNotes/totPt)*10)/10):0)+'\n';
+  let h=document.getElementById('effBodyText');
+  if(!h){ h=document.createElement('div'); h.id='effBodyText'; h.style.display='none'; card.appendChild(h); }
+  h.textContent=txt;
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+  // ---- optional AI narrative: ONLY doctor names + numeric counts (no PHI) ----
+  if(hasAI()){
+    const narr=document.getElementById('effNarr');
+    narr.innerHTML='<div class="mini" style="color:var(--muted)"><span class="spin"></span> Drafting summary…</div>';
+    try{
+      // Build a non-PHI aggregate payload: doctor label + counts ONLY.
+      const aggLines=names.map(n=>{ const a=agg[n]; const avg=a.patients?(Math.round((a.notes/a.patients)*10)/10):0; return '- '+n+': '+a.patients+' patients, '+a.notes+' notes/visits, avg '+avg+' notes/patient'; }).join('\n');
+      const sys='You are an analyst writing a brief, constructive EFFICIENCY SUMMARY for a head doctor about their team\'s documentation volume. You are given ONLY aggregate counts per doctor (no patient information). Write 2-4 short sentences: note overall volume, point out any notable spread in documentation activity between doctors, and offer 1-2 constructive, non-judgmental suggestions to support documentation efficiency. Do not invent metrics you were not given (no time, no RVUs, no revenue). Be concise and professional. Plain text only.';
+      const user='Team documentation activity (aggregate counts only):\n'+aggLines+'\n\nTeam total: '+totPt+' patients, '+totNotes+' notes/visits across '+names.length+' doctor(s).';
+      const out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+      narr.innerHTML='<div style="white-space:pre-wrap;margin-bottom:10px">'+esc(out)+'</div>';
+      // append narrative to the copy/print text too
+      h.textContent=txt+'\nSUMMARY:\n'+out+'\n';
+    }catch(err){
+      narr.innerHTML='<div class="mini" style="color:var(--muted)">AI summary unavailable: '+esc(friendlyError(err))+'</div>';
+    }
+  }
+}
+
 /* ---------- VIEW SWITCHING ---------- */
 let currentView='patients';
 function showView(v){
@@ -2924,6 +3062,7 @@ function renderProfile(){
   fieldBody('profMeds',p.meds,'No medications recorded.');
   fieldBody('profAllergies',p.allergies,'No allergies recorded.');
   fieldBody('profSummary',p.summary,'No summary yet. The AI updates this from visits & documents; you can also edit it.');
+  renderInsurance(p);
   renderDocs(p);
   renderPtTimeline(p);
 }
@@ -2937,6 +3076,54 @@ function editProfField(field){
   upsertPatient(p);
   renderProfile();
   toast(labels[field]+' updated.','ok');
+}
+/* ---------- PER-PATIENT INSURANCE & BENEFITS ----------
+   Stored on the patient object as p.insurance = {payer,planName,memberId,
+   deductibleRemaining,coinsurancePct,copay,oopRemaining}. Persisted via
+   upsertPatient (same local-save + server-sync path as every other field).
+   Drives showCostEstimate() — the estimate reads THIS patient's benefits. */
+function insNum(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
+function insHasBenefits(ins){
+  if(!ins) return false;
+  const hasPlan = !!(String(ins.payer||'').trim() || String(ins.planName||'').trim());
+  const filled = ['deductibleRemaining','coinsurancePct','copay','oopRemaining']
+    .some(k => String(ins[k]==null?'':ins[k]).trim()!=='');
+  return hasPlan && filled;
+}
+function renderInsurance(p){
+  const el=document.getElementById('profInsurance'); if(!el) return;
+  const ins=p&&p.insurance;
+  const plan=ins?[ins.payer,ins.planName].filter(x=>x&&String(x).trim()).join(' — '):'';
+  const lines=[];
+  if(ins){
+    if(plan) lines.push('Plan: '+plan);
+    if(String(ins.memberId||'').trim()) lines.push('Member ID: '+ins.memberId);
+    if(String(ins.deductibleRemaining||'').trim()!=='') lines.push('Deductible remaining: $'+insNum(ins.deductibleRemaining).toLocaleString());
+    if(String(ins.coinsurancePct||'').trim()!=='') lines.push('Coinsurance: '+insNum(ins.coinsurancePct)+'%');
+    if(String(ins.copay||'').trim()!=='') lines.push('Copay: $'+insNum(ins.copay).toLocaleString());
+    if(String(ins.oopRemaining||'').trim()!=='') lines.push('Out-of-pocket remaining: $'+insNum(ins.oopRemaining).toLocaleString());
+  }
+  if(lines.length){ el.textContent=lines.join('\n'); el.classList.remove('empty-txt'); }
+  else { el.textContent='No insurance benefits recorded. Add the payer/plan, deductible remaining, coinsurance %, copay, and out-of-pocket remaining to enable a cost estimate.'; el.classList.add('empty-txt'); }
+}
+function editInsurance(){
+  const p=activePatient(); if(!p){ toast('Open a patient first.','err'); return; }
+  const ins=p.insurance||{};
+  let v;
+  v=prompt('Payer / plan name (e.g. "Aetna — PPO 5000"):', [ins.payer,ins.planName].filter(Boolean).join(' — ')||''); if(v===null) return;
+  // split on an em-dash or hyphen separator if the staff used one
+  const parts=String(v).split(/\s+[—-]\s+/);
+  const payer=(parts[0]||'').trim();
+  const planName=parts.slice(1).join(' — ').trim();
+  v=prompt('Member ID (optional):', ins.memberId||''); if(v===null) return; const memberId=v.trim();
+  v=prompt('Deductible remaining ($):', ins.deductibleRemaining!=null?String(ins.deductibleRemaining):''); if(v===null) return; const deductibleRemaining=v.trim();
+  v=prompt('Coinsurance (%) — patient share after deductible:', ins.coinsurancePct!=null?String(ins.coinsurancePct):''); if(v===null) return; const coinsurancePct=v.trim();
+  v=prompt('Copay ($) for this visit/procedure:', ins.copay!=null?String(ins.copay):''); if(v===null) return; const copay=v.trim();
+  v=prompt('Out-of-pocket maximum remaining ($) — leave blank if unknown:', ins.oopRemaining!=null?String(ins.oopRemaining):''); if(v===null) return; const oopRemaining=v.trim();
+  p.insurance={ payer, planName, memberId, deductibleRemaining, coinsurancePct, copay, oopRemaining };
+  upsertPatient(p);
+  renderInsurance(p);
+  toast('Insurance & benefits saved.','ok');
 }
 function renderDocs(p){
   const list=document.getElementById('docList');
@@ -3176,7 +3363,7 @@ function newVisit(){
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
   currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap';
-  currentAVS=''; currentReferral=''; currentRecs=null; currentHandout='';
+  currentAVS=''; currentReferral=''; currentRecs=null; currentHandout=''; currentIME='';
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
   currentPriorAuth=''; currentMips=''; currentOutcome=null; lastOutcomeEntryId=null;
   currentRedFlags=''; currentDdx=''; currentProcNote=''; mmeOpioids=[]; paMode='auth';
@@ -3198,7 +3385,7 @@ function newVisit(){
   document.getElementById('formatToggleRow').style.display='none';
   document.getElementById('codeCard').style.display='none';
   document.getElementById('optCard').style.display='none';
-  ['avsCard','refCard','billCard','secCopyRow','handoutCard','fhirCard','revEstBox','teachCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  ['avsCard','refCard','imeCard','billCard','secCopyRow','handoutCard','fhirCard','revEstBox','teachCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   document.getElementById('emrTable').style.display='none';
   document.getElementById('emrEmpty').style.display='block';
   document.getElementById('emrCodeNote').style.display='none';
@@ -3220,6 +3407,7 @@ function noteRecordFromState(markSigned){
     emr: lastEMR,
     avs: currentAVS||'',
     referral: currentReferral||'',
+    ime: currentIME||'',
     handout: (function(){const hb=document.getElementById('handoutBody'); return (hb&&hb.value)?hb.value:(currentHandout||'');})(),
     orders: currentOrders.slice(),
     ordersDx: ordersDx,
@@ -3431,7 +3619,7 @@ function loadRecordIntoEditor(n){
   document.getElementById('transcript').value=n.transcript||''; finalText=(n.transcript||'')+' ';
   currentSoap=n.soap||''; currentInsurance=n.insurance||''; currentCoding=n.coding||null;
   currentOpt=n.opt||null; currentFormat='soap'; lastEMR=n.emr||null;
-  currentAVS=n.avs||''; currentReferral=n.referral||''; currentRecs=null; currentHandout=n.handout||'';
+  currentAVS=n.avs||''; currentReferral=n.referral||''; currentRecs=null; currentHandout=n.handout||''; currentIME=n.ime||'';
   currentOrders=Array.isArray(n.orders)?n.orders.slice():[]; editingOrderId=null;
   ordersDx=n.ordersDx&&typeof n.ordersDx==='object'?{text:n.ordersDx.text||'',icd:n.ordersDx.icd||[]}:{text:'',icd:[]};
   currentPriorAuth=n.priorAuth||''; currentMips=n.mips||''; currentOutcome=n.outcome||null; lastOutcomeEntryId=null;
@@ -3453,6 +3641,7 @@ function loadRecordIntoEditor(n){
   if(document.getElementById('visitComment')) document.getElementById('visitComment').value=n.visitComment||'';
   if(currentAVS) showExtra('avsCard','avsBody',currentAVS);
   if(currentReferral) showExtra('refCard','refBody',currentReferral);
+  if(currentIME) showExtra('imeCard','imeBody',currentIME); else { const ic=document.getElementById('imeCard'); if(ic) ic.style.display='none'; }
   if(currentHandout){ const hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; document.getElementById('handoutCard').style.display='block'; } }
   if(n.isDraft || !currentSoap){
     document.getElementById('noteBox').style.display='none';
@@ -3710,7 +3899,7 @@ let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, cu
    the physician edits it. Used by "Teach Scrivara" to diff draft vs. edited. */
 let lastAIDraft='';
 let lastEMR=null;
-let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='';
+let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='', currentIME='';
 let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
 
 function syncFormatToggle(){
@@ -3761,7 +3950,7 @@ function setBadge(s){
   b.textContent=s?'✔ Signed':'● Draft';
 }
 function enableOutputs(on){
-  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn','mipsBtn','handoutBtn','fhirBtn','redflagBtn','ddxBtn','teachBtn'].forEach(id=>{
+  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','imeBtn','billBtn','mipsBtn','handoutBtn','fhirBtn','redflagBtn','ddxBtn','teachBtn'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.disabled=!on;
   });
   const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
@@ -6982,6 +7171,92 @@ function showSuperbill(){
   document.getElementById('billCard').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
+/* =========================================================
+   PATIENT COST ESTIMATOR — out-of-pocket off THIS patient's own benefits.
+   Reads activePatient().insurance (NOT any global), defaults the procedure
+   CPT(s) from currentCoding.cpt, prices each via feeForCode() (same ballpark
+   FEE_TABLE used by the superbill), then applies deductible → coinsurance →
+   copay, clamped by the out-of-pocket remaining. Output is a Good Faith
+   Estimate the patient can take home (Copy / Print via printExtra).
+   ========================================================= */
+function showCostEstimate(){
+  const ap=activePatient();
+  if(!ap){ toast('Open a patient first to estimate their cost.','err'); return; }
+  const ins=ap.insurance||null;
+  if(!insHasBenefits(ins)){
+    showView('patients'); renderProfile();
+    const box=document.getElementById('insBox');
+    if(box) box.scrollIntoView({behavior:'smooth',block:'center'});
+    toast("Add this patient's insurance benefits first.",'err');
+    return;
+  }
+  // Default the procedure CPT(s) from the current coding; let staff edit them.
+  const c=currentCoding||{};
+  const defCpt=((c.cpt&&c.cpt.length)?c.cpt:[]).map(x=>String(x).trim().split(/[\s—\-:]/)[0]).filter(Boolean).join(', ');
+  let cptStr=prompt('Procedure CPT code(s) being ordered (comma-separated):', defCpt||'');
+  if(cptStr===null) return;
+  const codes=String(cptStr).split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean);
+  if(!codes.length){ toast('Enter at least one CPT code to estimate.','err'); return; }
+  // Price each code from the ballpark fee table; collect any that have no fee.
+  let allowed=0; const priced=[]; const noFee=[];
+  codes.forEach(code=>{
+    const f=feeForCode(code);
+    if(f!=null){ allowed+=f; priced.push(code+': $'+f); }
+    else noFee.push(code);
+  });
+  if(noFee.length){
+    const ask=prompt('No ballpark allowed amount on file for: '+noFee.join(', ')+
+      '.\nEnter a total allowed amount ($) for these code(s), or leave blank to skip them:', '');
+    if(ask===null) return;
+    const extra=insNum(ask);
+    if(extra>0){ allowed+=extra; priced.push(noFee.join(', ')+': $'+extra+' (manual)'); }
+    else noFee.forEach(code=>priced.push(code+': allowed n/a'));
+  }
+  if(allowed<=0){ toast('No allowed amount available — enter one to estimate.','err'); return; }
+  // ---- the math (clamp negatives to 0; tolerate string inputs) ----
+  const deductibleRemaining=Math.max(0,insNum(ins.deductibleRemaining));
+  const coinsurancePct=Math.max(0,insNum(ins.coinsurancePct));
+  const copay=Math.max(0,insNum(ins.copay));
+  const oopProvided=String(ins.oopRemaining==null?'':ins.oopRemaining).trim()!=='';
+  const oopRemaining=Math.max(0,insNum(ins.oopRemaining));
+  const toDeductible=Math.min(allowed,deductibleRemaining);
+  const afterDed=Math.max(0,allowed-toDeductible);
+  const coins=afterDed*(coinsurancePct/100);
+  let patient=toDeductible+coins+copay;
+  let oopCapped=false;
+  if(oopProvided && patient>oopRemaining){ patient=oopRemaining; oopCapped=true; }
+  patient=Math.max(0,patient);
+  const planPays=Math.max(0,allowed-patient);
+  const money=n=>'$'+(Math.round(n*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const plan=[ins.payer,ins.planName].filter(x=>x&&String(x).trim()).join(' — ')||'(plan on file)';
+  // ---- render ----
+  const rows=`
+    <tr><td class="k">Patient</td><td>${esc(ap.name||'Patient')}</td></tr>
+    <tr><td class="k">Payer / plan</td><td>${esc(plan)}${String(ins.memberId||'').trim()?(' · Member '+esc(ins.memberId)):''}</td></tr>
+    <tr><td class="k">Procedure(s)</td><td>${esc(codes.join(', '))}</td></tr>
+    <tr><td class="k">Allowed amount</td><td><b>${money(allowed)}</b>${priced.length?' <span style="color:var(--muted);font-size:12px">('+esc(priced.join(' · '))+')</span>':''}</td></tr>
+    <tr><td class="k">Applied to deductible</td><td>${money(toDeductible)}</td></tr>
+    <tr><td class="k">Coinsurance (${coinsurancePct}%)</td><td>${money(coins)}</td></tr>
+    <tr><td class="k">Copay</td><td>${money(copay)}</td></tr>
+    <tr><td class="k">💳 Estimated patient responsibility</td><td><b>${money(patient)}</b>${oopCapped?' <span style="color:var(--muted);font-size:12px">(capped at out-of-pocket remaining '+money(oopRemaining)+')</span>':''}</td></tr>
+    <tr><td class="k">Estimated plan pays</td><td>${money(planPays)}</td></tr>`;
+  document.getElementById('costBody').innerHTML=rows;
+  // hidden plain-text copy for the Copy button + take-home print
+  let txt=`MLS — GOOD FAITH ESTIMATE\nPatient: ${ap.name||'Patient'}\nPayer/plan: ${plan}${String(ins.memberId||'').trim()?(' (Member '+ins.memberId+')'):''}\n`;
+  txt+=`Procedure(s): ${codes.join(', ')}\nAllowed amount: ${money(allowed)}${priced.length?(' ('+priced.join(' · ')+')'):''}\n`;
+  txt+=`Applied to deductible: ${money(toDeductible)}\nCoinsurance (${coinsurancePct}%): ${money(coins)}\nCopay: ${money(copay)}\n`;
+  txt+=`ESTIMATED PATIENT RESPONSIBILITY: ${money(patient)}${oopCapped?(' (capped at out-of-pocket remaining '+money(oopRemaining)+')'):''}\n`;
+  txt+=`Estimated plan pays: ${money(planPays)}\n\n`;
+  txt+=`Estimate based on the benefit information entered for this patient's plan and ballpark allowed amounts — NOT a guarantee. Actual cost depends on the payer's adjudication and your contracted rates. For a verified amount, real-time insurance eligibility is required.`;
+  let h=document.getElementById('costBodyText');
+  if(!h){ h=document.createElement('div'); h.id='costBodyText'; h.style.display='none'; document.getElementById('costCard').appendChild(h); }
+  h.textContent=txt;
+  const card=document.getElementById('costCard');
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+  toast('Cost estimate ready.','ok');
+}
+
 /* ---------- copy / print helpers for extra outputs ---------- */
 function copyExtra(bodyId){
   const el=document.getElementById(bodyId);
@@ -7070,6 +7345,143 @@ Thank you,
 ${from}
 
 [Offline example — add your OpenAI key for AI-drafted referrals.]`;
+}
+
+/* =========================================================
+   IME REPORT  (Independent Medical Examination — legal format)
+   Auto-drafted from the current visit (note + transcript), mirroring
+   generateReferral. Builds ONLY from documented data; uses bracketed
+   placeholders for anything not in the record. A DRAFT for the
+   examining physician to verify, complete, and sign.
+   ========================================================= */
+async function generateIME(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  const btn=document.getElementById('imeBtn');
+  const tr=(document.getElementById('transcript').value||'').trim();
+  if(!hasAI()){
+    if(tr===EXAMPLE.trim()){
+      currentIME=offlineIME();
+      showExtra('imeCard','imeBody',currentIME);
+      toast('Offline example IME report shown.','');
+      return;
+    }
+    toast('Add your OpenAI key (Settings) to draft an IME report.','err');
+    return;
+  }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
+  try{
+    const pctx=buildPatientContext();
+    const sys=`You are drafting an INDEPENDENT MEDICAL EXAMINATION (IME) report in correct medico-legal format for a physician examiner. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Use UPPERCASE section headers exactly as listed, in this order, each on its own line:
+
+1. Header block (label each on its own line): Examinee name; Date of birth; Date of examination; Examiner [name, credentials]; Referral source; Claim/Case number; Date of injury/onset.
+2. PURPOSE OF EXAMINATION — the reason for the exam and the specific referral questions being addressed.
+3. RECORDS REVIEWED — list the records the note/transcript indicates were reviewed; bracket if none are documented.
+4. HISTORY — history of the injury/illness, current subjective complaints, and pertinent past medical/surgical/medication/social/occupational history. Include ONLY what is documented.
+5. PHYSICAL EXAMINATION — objective findings from the note only.
+6. DIAGNOSTIC STUDIES REVIEWED — imaging/labs mentioned in the record.
+7. DIAGNOSES / IMPRESSIONS.
+8. CAUSATION — opinion on the relationship of the condition to the claimed injury, stated "to a reasonable degree of medical probability," with reasoning. If the record does not support a causation determination, write a bracketed placeholder stating it is undeterminable from the record provided.
+9. MAXIMUM MEDICAL IMPROVEMENT (MMI) — status; bracket if not determinable.
+10. IMPAIRMENT RATING — reference the AMA Guides and state the edition is jurisdiction-dependent: "[per the applicable AMA Guides edition]". DO NOT invent any percentage; provide the rating framework and leave a [placeholder — examiner to determine] for the figure.
+11. WORK STATUS / FUNCTIONAL RESTRICTIONS.
+12. APPORTIONMENT — address if applicable; otherwise state not applicable or that there is insufficient information.
+13. ANSWERS TO REFERRAL QUESTIONS — address each referral question; bracket the questions if none are documented.
+14. EXAMINER ATTESTATION — a certification that the examination was performed for evaluation purposes only, that no physician-patient treating relationship is established, and that the opinions are the examiner's own and held to a reasonable degree of medical certainty; followed by a signature/credentials/date block (use bracketed placeholders for the signature, name, credentials, and date).
+
+CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the note/transcript/background. NEVER fabricate findings, history, causation, impairment percentages, MMI status, restrictions, or records. For anything not present in the record, use a clearly [bracketed placeholder]. This is a DRAFT for the examining physician to verify, complete, and sign — do not present uncertain items as established fact.`+docPrefsBlock();
+    const user='CLINICAL NOTE:\n'+currentNoteText()+(tr?('\n\nRAW TRANSCRIPT (for additional context):\n'+tr):'')+(pctx?('\n\nPATIENT BACKGROUND (chart history — context only, do not invent new findings):\n'+pctx):'');
+    currentIME=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    showExtra('imeCard','imeBody',currentIME);
+    toast('IME report drafted. DRAFT — verify, complete, and sign before use.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='🧾 IME report'; }
+}
+function offlineIME(){
+  return `INDEPENDENT MEDICAL EXAMINATION REPORT [Offline example]
+
+Examinee name: [Examinee name]
+Date of birth: [DOB]
+Date of examination: ${new Date().toLocaleDateString()}
+Examiner: [Examiner name, credentials]
+Referral source: [Referral source]
+Claim/Case number: [Claim/Case number]
+Date of injury/onset: [Date of injury/onset]
+
+PURPOSE OF EXAMINATION
+This independent medical examination was requested to address [the specific referral questions]. The examinee was evaluated for an ongoing chest/respiratory complaint documented as a persistent productive cough.
+
+RECORDS REVIEWED
+[No prior records were provided for review in the record supplied. List records here when available.]
+
+HISTORY
+The examinee reports an approximately two-week history of a productive cough with yellow-green sputum, worse at night. Past medical history: essential hypertension on lisinopril 10 mg daily. Allergies: penicillin (rash). Social/occupational history: [not documented].
+
+PHYSICAL EXAMINATION
+Vital signs: Temp 99.1F, BP 128/80, HR 78, SpO2 97% on room air. Lungs: coarse breath sounds at the right base. Remainder of exam [not documented].
+
+DIAGNOSTIC STUDIES REVIEWED
+Chest X-ray ordered; results [not yet documented].
+
+DIAGNOSES / IMPRESSIONS
+1. Acute bronchitis; rule out early pneumonia.
+
+CAUSATION
+[Causation in relation to any claimed injury is undeterminable from the record provided.] Any opinion offered must be stated to a reasonable degree of medical probability.
+
+MAXIMUM MEDICAL IMPROVEMENT (MMI)
+[MMI status not determinable from the record provided.]
+
+IMPAIRMENT RATING
+Any impairment rating is to be assigned [per the applicable AMA Guides edition], which is jurisdiction-dependent. [Placeholder — examiner to determine the impairment percentage.]
+
+WORK STATUS / FUNCTIONAL RESTRICTIONS
+[Work status and functional restrictions not documented.]
+
+APPORTIONMENT
+Not applicable / insufficient information to apportion.
+
+ANSWERS TO REFERRAL QUESTIONS
+[Referral questions not documented in the record provided.]
+
+EXAMINER ATTESTATION
+This examination was performed for evaluation purposes only. No physician-patient treating relationship is established by this examination. The opinions expressed are my own and are held to a reasonable degree of medical certainty based solely on the information made available to me.
+
+_______________________________
+[Examiner signature]
+[Examiner name, credentials]
+Date: [Date]
+
+[Offline example — add your OpenAI key for AI-drafted IME reports. DRAFT for the examining physician to verify, complete, and sign.]`;
+}
+
+/* =========================================================
+   UTILIZATION REVIEW  (paste a course of notes → reasonableness)
+   Independent of the current visit — assesses medical necessity and
+   appropriateness of the documented care from the pasted text only.
+   Decision support, NOT an official determination.
+   ========================================================= */
+async function generateUtilizationReview(){
+  const input=(document.getElementById('urInput')||{}).value||'';
+  if(!input.trim()){ toast('Paste a course of notes into the box first.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to run a utilization review.','err'); return; }
+  const btn=document.getElementById('urBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Reviewing…';
+  try{
+    const sys=`You are a careful UTILIZATION-REVIEW PHYSICIAN assessing the medical necessity and appropriateness of the documented course of care. Be evidence-based, honest, and objective. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Use these UPPERCASE section headers, in this order:
+
+1. SUMMARY OF CARE — counts pulled ONLY from the notes: number of office visits, PT/OT visits, injections, imaging studies, medications, and the date span of care. If a count is not derivable, say "[not specified in the notes]".
+2. PER-TREATMENT REASONABLENESS — for EACH treatment type present, assess whether the documented frequency/number is reasonable and supported by a documented functional response/improvement. Label each clearly as one of: "Supported", "Questionable", or "Not supported by documentation", followed by a one-line rationale tied to the notes.
+3. OVER/UNDER-UTILIZATION FLAGS — e.g., continued PT without documented functional gains, repeated injections beyond a typical course without documented benefit, duplicative imaging, gaps in care. List only flags grounded in the notes.
+4. DOCUMENTATION GAPS — what additional documentation would be needed to support medical necessity / certification.
+5. RECOMMENDATION — framed as decision-support guidance: which care appears supported versus which warrants modification or peer review.
+
+GUARDRAILS: You may reference evidence-based utilization frameworks generally (e.g., MTUS/ODG/ACOEM-style principles) but do NOT fabricate specific guideline citations, page numbers, or authoritative visit-limit numbers. Be explicit that exact limits depend on the applicable guideline, jurisdiction, and payer. Base EVERYTHING ONLY on the pasted notes; never invent treatments, visits, or outcomes. End with one line: "Decision support only — an authorized reviewer/medical director makes the actual determination under the applicable guidelines and payer policy."`;
+    const user='COURSE OF CARE (pasted notes):\n'+input.trim().slice(0,16000);
+    const out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    showExtra('urCard','urBody',out);
+    toast('Utilization review complete. Decision support — not an official determination.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='🔎 Run utilization review'; }
 }
 
 /* =========================================================
