@@ -322,6 +322,19 @@
   .prof-box .body{white-space:pre-wrap;font-size:14px;line-height:1.55;color:var(--ink);min-height:24px}
   .prof-box .body.empty-txt{color:var(--muted);font-style:italic}
   .prof-box textarea{min-height:80px;font-size:14px}
+  /* Inline field editors (replace old prompt() popups) */
+  .inline-edit-area{width:100%;min-height:90px;font-size:14px;line-height:1.5;padding:8px 10px;
+    border:1px solid var(--line);border-radius:8px;font-family:inherit;color:var(--ink);
+    background:#fff;box-sizing:border-box;resize:vertical}
+  .inline-edit-area:focus{outline:none;border-color:var(--brand)}
+  .inline-edit-actions{display:flex;gap:8px;margin-top:8px}
+  .inline-edit-actions button{font-size:13px;padding:6px 14px;border-radius:7px;cursor:pointer}
+  .inline-ins-form{display:flex;flex-direction:column;gap:8px}
+  .inline-ins-row{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+  .inline-ins-row span{font-weight:600}
+  .inline-ins-input{font-size:14px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;
+    font-family:inherit;color:var(--ink);background:#fff;box-sizing:border-box}
+  .inline-ins-input:focus{outline:none;border-color:var(--brand)}
   .doc-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
   .doc-item{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);
     border-radius:10px;padding:10px 12px;cursor:pointer}
@@ -3464,16 +3477,48 @@ function renderProfile(){
   renderDocs(p);
   renderPtTimeline(p);
 }
+/* ---------- INLINE PROFILE FIELD EDITOR ----------
+   Replaces the old prompt() flow: clicking ✎ Edit swaps the field's display
+   <div class="body"> for an in-place <textarea> with Save/Cancel. State lives
+   in the DOM (the textarea value); Save persists via upsertPatient and re-renders,
+   Cancel just re-renders (restoring the original value from the patient object). */
+/* field-id map for inline profile editors */
+const PROF_FIELD_BODY={problems:'profProblems',meds:'profMeds',allergies:'profAllergies',summary:'profSummary'};
 function editProfField(field){
   const p=activePatient(); if(!p) return;
+  const bodyId=PROF_FIELD_BODY[field]; if(!bodyId) return;
+  const el=document.getElementById(bodyId); if(!el) return;
+  if(el.querySelector('textarea')) return; // already editing
   const labels={problems:'Problem list',meds:'Medications',allergies:'Allergies',summary:'Summary'};
   const cur=p[field]||'';
-  const v=prompt('Edit '+labels[field]+' (one item per line where relevant):',cur);
-  if(v===null) return;
-  p[field]=v.trim();
+  el.classList.remove('empty-txt');
+  el.innerHTML=
+    '<textarea class="inline-edit-area" id="ie_'+bodyId+'" '+
+      'placeholder="One item per line where relevant.">'+esc(cur)+'</textarea>'+
+    '<div class="inline-edit-actions">'+
+      '<button class="btn-green" onclick="saveProfField(\''+field+'\')">Save</button>'+
+      '<button class="btn-ghost" onclick="cancelProfField()">Cancel</button>'+
+    '</div>';
+  const ta=document.getElementById('ie_'+bodyId);
+  if(ta){
+    ta.focus();
+    ta.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){ e.preventDefault(); cancelProfField(); }
+    });
+  }
+}
+function saveProfField(field){
+  const p=activePatient(); if(!p) return;
+  const bodyId=PROF_FIELD_BODY[field]; if(!bodyId) return;
+  const ta=document.getElementById('ie_'+bodyId); if(!ta) return;
+  const labels={problems:'Problem list',meds:'Medications',allergies:'Allergies',summary:'Summary'};
+  p[field]=ta.value.trim();
   upsertPatient(p);
   renderProfile();
   toast(labels[field]+' updated.','ok');
+}
+function cancelProfField(){
+  renderProfile();
 }
 /* ---------- PER-PATIENT INSURANCE & BENEFITS ----------
    Stored on the patient object as p.insurance = {payer,planName,memberId,
@@ -3504,24 +3549,70 @@ function renderInsurance(p){
   if(lines.length){ el.textContent=lines.join('\n'); el.classList.remove('empty-txt'); }
   else { el.textContent='No insurance benefits recorded. Add the payer/plan, deductible remaining, coinsurance %, copay, and out-of-pocket remaining to enable a cost estimate.'; el.classList.add('empty-txt'); }
 }
+/* ---------- INLINE INSURANCE EDITOR ----------
+   Replaces the old sequential prompt() flow with an in-place form rendered into
+   #profInsurance. State lives in the DOM (the input values). Save persists via
+   upsertPatient (same path as before) and re-renders; Cancel re-renders from the
+   patient object (restoring original values). */
 function editInsurance(){
   const p=activePatient(); if(!p){ toast('Open a patient first.','err'); return; }
+  const el=document.getElementById('profInsurance'); if(!el) return;
+  if(document.getElementById('insEdit_payerPlan')) return; // already editing
   const ins=p.insurance||{};
-  let v;
-  v=prompt('Payer / plan name (e.g. "Aetna — PPO 5000"):', [ins.payer,ins.planName].filter(Boolean).join(' — ')||''); if(v===null) return;
-  // split on an em-dash or hyphen separator if the staff used one
-  const parts=String(v).split(/\s+[—-]\s+/);
+  const payerPlan=[ins.payer,ins.planName].filter(Boolean).join(' — ')||'';
+  const val=v=>v!=null?String(v):'';
+  el.classList.remove('empty-txt');
+  el.innerHTML=
+    '<div class="inline-ins-form">'+
+      insRow('Payer / plan (e.g. "Aetna — PPO 5000")','insEdit_payerPlan',payerPlan,'text')+
+      insRow('Member ID (optional)','insEdit_memberId',val(ins.memberId),'text')+
+      insRow('Deductible remaining ($)','insEdit_deductibleRemaining',val(ins.deductibleRemaining),'number')+
+      insRow('Coinsurance (%) — patient share after deductible','insEdit_coinsurancePct',val(ins.coinsurancePct),'number')+
+      insRow('Copay ($) for this visit/procedure','insEdit_copay',val(ins.copay),'number')+
+      insRow('Out-of-pocket remaining ($) — blank if unknown','insEdit_oopRemaining',val(ins.oopRemaining),'number')+
+    '</div>'+
+    '<div class="inline-edit-actions">'+
+      '<button class="btn-green" onclick="saveInsurance()">Save</button>'+
+      '<button class="btn-ghost" onclick="cancelInsurance()">Cancel</button>'+
+    '</div>';
+  const first=document.getElementById('insEdit_payerPlan');
+  if(first) first.focus();
+  // Enter saves, Escape cancels (single-line inputs)
+  el.querySelectorAll('.inline-ins-input').forEach(inp=>{
+    inp.addEventListener('keydown',e=>{
+      if(e.key==='Enter'){ e.preventDefault(); saveInsurance(); }
+      else if(e.key==='Escape'){ e.preventDefault(); cancelInsurance(); }
+    });
+  });
+}
+function insRow(label,id,value,type){
+  return '<label class="inline-ins-row">'+
+    '<span>'+esc(label)+'</span>'+
+    '<input class="inline-ins-input" id="'+id+'" type="'+type+'" value="'+esc(value)+'">'+
+  '</label>';
+}
+function saveInsurance(){
+  const p=activePatient(); if(!p) return;
+  const get=id=>{ const e=document.getElementById(id); return e?e.value.trim():''; };
+  const payerPlanRaw=get('insEdit_payerPlan');
+  const parts=String(payerPlanRaw).split(/\s+[—-]\s+/);
   const payer=(parts[0]||'').trim();
   const planName=parts.slice(1).join(' — ').trim();
-  v=prompt('Member ID (optional):', ins.memberId||''); if(v===null) return; const memberId=v.trim();
-  v=prompt('Deductible remaining ($):', ins.deductibleRemaining!=null?String(ins.deductibleRemaining):''); if(v===null) return; const deductibleRemaining=v.trim();
-  v=prompt('Coinsurance (%) — patient share after deductible:', ins.coinsurancePct!=null?String(ins.coinsurancePct):''); if(v===null) return; const coinsurancePct=v.trim();
-  v=prompt('Copay ($) for this visit/procedure:', ins.copay!=null?String(ins.copay):''); if(v===null) return; const copay=v.trim();
-  v=prompt('Out-of-pocket maximum remaining ($) — leave blank if unknown:', ins.oopRemaining!=null?String(ins.oopRemaining):''); if(v===null) return; const oopRemaining=v.trim();
-  p.insurance={ payer, planName, memberId, deductibleRemaining, coinsurancePct, copay, oopRemaining };
+  p.insurance={
+    payer, planName,
+    memberId:get('insEdit_memberId'),
+    deductibleRemaining:get('insEdit_deductibleRemaining'),
+    coinsurancePct:get('insEdit_coinsurancePct'),
+    copay:get('insEdit_copay'),
+    oopRemaining:get('insEdit_oopRemaining')
+  };
   upsertPatient(p);
   renderInsurance(p);
   toast('Insurance & benefits saved.','ok');
+}
+function cancelInsurance(){
+  const p=activePatient();
+  renderInsurance(p);
 }
 function renderDocs(p){
   const list=document.getElementById('docList');
