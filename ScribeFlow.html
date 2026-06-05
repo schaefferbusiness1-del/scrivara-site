@@ -1,0 +1,3309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scrivara — Ambient AI Medical Scribe</title>
+<style>
+  :root{
+    --bg:#f4f7fb; --card:#ffffff; --ink:#16324f; --muted:#5f7186;
+    --line:#e2e9f1; --brand:#1f7ae0; --brand-dk:#155fb3;
+    --green:#19a974; --green-dk:#127a55; --amber:#f59e0b;
+    --red:#e0494b; --soft:#eef4fc; --shadow:0 2px 18px rgba(31,122,224,.08);
+    --gold:#b8860b; --gold-bg:#fdf6e3;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); font-size:17px; line-height:1.5;
+  }
+  header{
+    background:linear-gradient(120deg,#1f7ae0,#155fb3); color:#fff;
+    padding:18px 26px; display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:12px; box-shadow:0 2px 14px rgba(21,95,179,.25);
+  }
+  .logo{display:flex; align-items:center; gap:12px; font-weight:700; font-size:22px}
+  .logo .mark{
+    width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.18);
+    display:grid;place-items:center;font-size:22px;
+  }
+  .logo small{display:block;font-weight:400;font-size:13px;opacity:.85;margin-top:1px}
+  header .tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  header .who{font-size:13px;opacity:.9;margin-right:4px}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px}
+  .howto{
+    background:var(--soft);border:1px solid var(--line);border-radius:12px;
+    padding:12px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;
+    flex-wrap:wrap;color:var(--ink);font-size:15.5px;
+  }
+  .howto b{color:var(--brand)}
+  .howto .step{display:inline-flex;align-items:center;gap:7px}
+  .howto .num{background:var(--brand);color:#fff;width:24px;height:24px;border-radius:50%;
+    display:grid;place-items:center;font-size:13px;font-weight:700}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:920px){.grid{grid-template-columns:1fr}}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:20px;box-shadow:var(--shadow);
+  }
+  .card h2{margin:0 0 4px;font-size:18px;display:flex;align-items:center;gap:9px}
+  .card h2 .ic{font-size:20px}
+  .card .sub{color:var(--muted);font-size:14px;margin:0 0 16px}
+  button{
+    font-family:inherit;font-size:16px;font-weight:600;cursor:pointer;border:none;
+    border-radius:11px;padding:12px 18px;transition:.15s;display:inline-flex;
+    align-items:center;gap:8px;justify-content:center;
+  }
+  button:active{transform:translateY(1px)}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{background:var(--brand-dk)}
+  .btn-green{background:var(--green);color:#fff}
+  .btn-green:hover{background:var(--green-dk)}
+  .btn-ghost{background:var(--soft);color:var(--brand);border:1px solid var(--line)}
+  .btn-ghost:hover{background:#e2edfb}
+  .btn-white{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.3)}
+  .btn-white:hover{background:rgba(255,255,255,.27)}
+  .btn-red{background:var(--red);color:#fff}
+  .btn-red:hover{background:#c23b3d}
+  .btn-gold{background:var(--gold);color:#fff}
+  .btn-gold:hover{background:#9c7209}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .big-capture{
+    width:100%;font-size:21px;padding:22px;border-radius:14px;margin-bottom:14px;
+    box-shadow:0 4px 16px rgba(31,122,224,.25);
+  }
+  .recording{background:var(--red)!important;animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(224,73,75,.5)}50%{box-shadow:0 0 0 14px rgba(224,73,75,0)}}
+  .live-dot{width:13px;height:13px;border-radius:50%;background:#fff;display:inline-block;animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  textarea{
+    width:100%;font-family:inherit;font-size:15.5px;line-height:1.55;border:1px solid var(--line);
+    border-radius:11px;padding:14px;resize:vertical;color:var(--ink);background:#fbfdff;
+  }
+  textarea:focus,input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+  .transcript{min-height:200px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .row.tight{margin-top:10px}
+  label{display:block;font-size:14px;font-weight:600;margin:0 0 6px;color:var(--ink)}
+  input[type=text],input[type=password],input[type=email]{
+    width:100%;font-family:inherit;font-size:16px;border:1px solid var(--line);
+    border-radius:11px;padding:12px 14px;background:#fbfdff;color:var(--ink);
+  }
+  .field{margin-bottom:14px}
+  .sf-select{width:100%;font-family:inherit;font-size:15px;border:1px solid var(--line);
+    border-radius:11px;padding:11px 13px;background:#fbfdff;color:var(--ink);cursor:pointer}
+  .sf-select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+  .dotbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 7px;font-size:13px}
+  .dotbar-lbl{color:var(--muted);font-weight:600}
+  .dotchip{display:inline-block;background:var(--soft);border:1px solid var(--line);color:var(--brand-dk);
+    border-radius:16px;padding:4px 11px;font-size:13px;font-weight:600;cursor:pointer}
+  .dotchip:hover{background:#e2edfb;border-color:var(--brand)}
+  .dot-add{background:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:4px 8px;border-radius:8px}
+  .dot-add:hover{background:var(--soft);color:var(--brand-dk)}
+  /* extra-outputs (handout / referral / superbill) */
+  .extra-card{background:#f7fbff;border:1px solid var(--line);border-radius:13px;padding:16px;margin-top:14px}
+  .extra-card h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:8px}
+  .extra-card .xbody{white-space:pre-wrap;font-size:14px;line-height:1.55;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px;margin-top:10px;color:var(--ink);min-height:60px}
+  .sec-copy{background:none;color:var(--muted);font-size:12px;font-weight:600;padding:3px 9px;border-radius:7px;border:1px solid var(--line)}
+  .sec-copy:hover{background:var(--soft);color:var(--brand-dk)}
+  .superbill td{padding:7px 6px;border-bottom:1px solid var(--line);font-size:14px}
+  .superbill td.k{color:var(--muted);font-weight:600;width:150px}
+  .note-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .empty{
+    color:var(--muted);text-align:center;padding:34px 16px;border:2px dashed var(--line);
+    border-radius:12px;background:#fafcff;font-size:15px;
+  }
+  .empty .big{font-size:34px;display:block;margin-bottom:8px}
+  .note-box{
+    min-height:260px;
+    /* Backend returns the note pre-formatted with SUBJECTIVE:/OBJECTIVE:/ASSESSMENT:/PLAN:
+       headers and line breaks. Preserve that formatting cleanly. */
+    white-space:pre-wrap;
+    font-size:14.5px;line-height:1.6;tab-size:2;
+    background:#fff;
+  }
+  .emr-table{width:100%;border-collapse:collapse;font-size:15px}
+  .emr-table td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  .emr-table td.k{color:var(--muted);font-weight:600;width:155px;white-space:nowrap}
+  .emr-table td.v{color:var(--ink)}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
+    padding:5px 12px;border-radius:20px}
+  .badge.draft{background:#fff5e6;color:#b3760a;border:1px solid #ffe2b0}
+  .badge.signed{background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3}
+  .sign-line{font-size:13.5px;color:var(--muted);margin-top:10px;font-style:italic}
+  .disclaim{font-size:13px;color:var(--amber);background:#fffaf0;border:1px solid #ffe9c2;
+    border-radius:9px;padding:9px 13px;margin-bottom:14px;display:flex;gap:8px;align-items:center}
+  footer{max-width:1180px;margin:18px auto 40px;padding:0 22px;color:var(--muted);font-size:13.5px;text-align:center;line-height:1.6}
+  /* modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(16,50,79,.5);
+    display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal-bg.show{display:flex}
+  .modal{background:#fff;border-radius:18px;max-width:560px;width:100%;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow:auto}
+  .modal h3{margin:0 0 6px;font-size:21px;display:flex;align-items:center;gap:9px}
+  .modal p.note{font-size:13.5px;color:var(--muted);background:var(--soft);padding:10px 13px;border-radius:9px;margin:6px 0 16px}
+  .modal-x{float:right;background:none;color:var(--muted);font-size:22px;padding:0;line-height:1}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(80px);
+    background:var(--ink);color:#fff;padding:13px 22px;border-radius:12px;font-size:15px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;transition:.3s;z-index:60;max-width:90vw}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  .toast.err{background:var(--red)}
+  .toast.ok{background:var(--green-dk)}
+  .keyok{font-size:13px;color:var(--green-dk);margin-top:8px;display:none}
+  .keyok.show{display:block}
+  /* coding / billing */
+  .code-card{background:#f7fbff;border:1px solid var(--line);border-radius:13px;padding:16px;margin-top:14px}
+  .code-card h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:8px}
+  .code-grid{display:grid;grid-template-columns:150px 1fr;gap:8px 14px;font-size:15px;margin-top:10px}
+  .code-grid .lk{color:var(--muted);font-weight:600}
+  .code-grid .lv{color:var(--ink)}
+  .em-pill{display:inline-block;background:#e6f0fb;color:var(--brand-dk);border:1px solid #cfe2f8;
+    font-weight:700;border-radius:8px;padding:3px 10px;font-size:14px;margin-right:6px}
+  .codechip{display:inline-block;background:#fff;border:1px solid var(--line);border-radius:7px;
+    padding:2px 9px;font-size:13.5px;margin:0 5px 5px 0;font-family:'Segoe UI',monospace}
+  .code-disclaim{font-size:12.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;
+    border-radius:8px;padding:8px 11px;margin-top:12px}
+  .toggle-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 0}
+  .pill-toggle{display:inline-flex;align-items:center;gap:8px;background:var(--soft);
+    border:1px solid var(--line);border-radius:20px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:600;color:var(--brand-dk)}
+  .pill-toggle.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .mini{font-size:13px;color:var(--muted);margin-top:6px}
+  .spin{width:17px;height:17px;border:3px solid rgba(255,255,255,.4);border-top-color:#fff;
+    border-radius:50%;animation:rot .7s linear infinite;display:inline-block}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  /* optimize-for-payout panel */
+  .opt-card{background:var(--gold-bg);border:1px solid #efe2b8;border-radius:13px;padding:16px;margin-top:14px}
+  .opt-card h3{margin:0 0 8px;font-size:16px;display:flex;align-items:center;gap:8px;color:#7a5c08}
+  .opt-section{margin-top:12px}
+  .opt-section .h{font-weight:700;font-size:14px;color:var(--ink);margin-bottom:5px}
+  .gap-item{background:#fff;border:1px solid #efe2b8;border-left:4px solid var(--gold);
+    border-radius:8px;padding:9px 12px;margin:7px 0;font-size:14px;line-height:1.5}
+  .gap-item b{color:#7a5c08}
+  .opt-disclaim{font-size:12.5px;color:#7a5c08;background:#fbf0d0;border:1px solid #efe2b8;
+    border-radius:8px;padding:9px 12px;margin-top:12px;font-weight:600}
+  /* auth */
+  .auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px;
+    background:linear-gradient(135deg,#eaf2fc,#f4f7fb)}
+  .auth-card{background:#fff;border:1px solid var(--line);border-radius:20px;max-width:430px;width:100%;
+    padding:32px 30px;box-shadow:0 14px 50px rgba(31,122,224,.16)}
+  .auth-logo{display:flex;align-items:center;gap:12px;font-weight:700;font-size:24px;color:var(--ink);margin-bottom:2px}
+  .auth-logo .mark{width:46px;height:46px;border-radius:13px;background:linear-gradient(120deg,#1f7ae0,#155fb3);
+    display:grid;place-items:center;font-size:25px}
+  .auth-sub{color:var(--muted);font-size:14px;margin:0 0 22px}
+  .auth-tabs{display:flex;gap:8px;margin-bottom:20px;background:var(--soft);padding:5px;border-radius:12px}
+  .auth-tab{flex:1;text-align:center;padding:10px;border-radius:9px;font-weight:600;font-size:15px;cursor:pointer;color:var(--muted)}
+  .auth-tab.on{background:#fff;color:var(--brand-dk);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .auth-err{display:none;font-size:13.5px;color:var(--red);background:#fdeced;border:1px solid #f6cccd;
+    border-radius:9px;padding:9px 12px;margin-bottom:12px}
+  .auth-err.show{display:block}
+  .local-note{font-size:12.5px;color:var(--muted);background:var(--soft);border:1px solid var(--line);
+    border-radius:9px;padding:10px 13px;margin-top:16px;line-height:1.5}
+  /* history */
+  .hist-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .hist-item{display:flex;align-items:center;gap:12px;background:#fbfdff;border:1px solid var(--line);
+    border-radius:11px;padding:12px 14px;cursor:pointer;transition:.12s}
+  .hist-item:hover{border-color:var(--brand);background:#f3f8ff}
+  .hist-item .ic{font-size:22px}
+  .hist-main{flex:1;min-width:0}
+  .hist-main .t{font-weight:700;font-size:15px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hist-main .s{font-size:13px;color:var(--muted);margin-top:2px}
+  .hist-item .del{background:none;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:8px}
+  .hist-item .del:hover{background:#fdeced;color:var(--red)}
+  .save-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px}
+  @media print{
+    header,.howto,.tools,.note-actions,.big-capture,.row,#captureCard,#emrCard,#historyCard,.disclaim,.opt-card,footer .noprint,.mainnav,#patientsView,#patientBar{display:none!important}
+    body{background:#fff}.grid{display:block}.card{box-shadow:none;border:none}
+    .note-box{min-height:auto}
+  }
+  /* ---- main navigation tabs ---- */
+  .mainnav{display:flex;gap:8px;margin-bottom:16px;background:#fff;border:1px solid var(--line);
+    border-radius:13px;padding:6px;box-shadow:var(--shadow);flex-wrap:wrap}
+  .navtab{flex:1;min-width:120px;text-align:center;padding:12px 14px;border-radius:10px;font-weight:700;
+    font-size:16px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px}
+  .navtab:hover{background:var(--soft)}
+  .navtab.on{background:var(--brand);color:#fff}
+  .navtab .nbadge{background:rgba(255,255,255,.25);border-radius:10px;font-size:12px;padding:1px 7px;font-weight:700}
+  .navtab:not(.on) .nbadge{background:var(--soft);color:var(--brand-dk)}
+  /* ---- active patient bar ---- */
+  #patientBar{display:flex;align-items:center;gap:12px;background:#eef6ff;border:1px solid #cfe2f8;
+    border-radius:12px;padding:11px 16px;margin-bottom:16px;flex-wrap:wrap}
+  #patientBar .pname{font-weight:700;font-size:16px;color:var(--brand-dk)}
+  #patientBar .pmeta{font-size:13px;color:var(--muted)}
+  #patientBar .pnone{color:var(--muted);font-size:14px}
+  #patientBar .spacer{flex:1}
+  /* ---- patients list ---- */
+  .pt-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .pt-item{display:flex;align-items:center;gap:14px;background:#fbfdff;border:1px solid var(--line);
+    border-radius:12px;padding:14px 16px;cursor:pointer;transition:.12s}
+  .pt-item:hover{border-color:var(--brand);background:#f3f8ff}
+  .pt-item.active{border-color:var(--brand);background:#eaf3ff;box-shadow:0 0 0 2px rgba(31,122,224,.15)}
+  .pt-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(120deg,#1f7ae0,#155fb3);
+    color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex-shrink:0}
+  .pt-main{flex:1;min-width:0}
+  .pt-main .t{font-weight:700;font-size:16px;color:var(--ink)}
+  .pt-main .s{font-size:13px;color:var(--muted);margin-top:2px}
+  .pt-item .del{background:none;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:8px}
+  .pt-item .del:hover{background:#fdeced;color:var(--red)}
+  /* ---- profile sections ---- */
+  .prof-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px}
+  @media(max-width:760px){.prof-grid{grid-template-columns:1fr}}
+  .prof-box{background:#fbfdff;border:1px solid var(--line);border-radius:12px;padding:14px}
+  .prof-box h3{margin:0 0 8px;font-size:15px;display:flex;align-items:center;gap:7px}
+  .prof-box h3 .edit{margin-left:auto;background:none;color:var(--muted);font-size:12px;font-weight:600;
+    padding:3px 9px;border-radius:7px;border:1px solid var(--line)}
+  .prof-box h3 .edit:hover{background:var(--soft);color:var(--brand-dk)}
+  .prof-box .body{white-space:pre-wrap;font-size:14px;line-height:1.55;color:var(--ink);min-height:24px}
+  .prof-box .body.empty-txt{color:var(--muted);font-style:italic}
+  .prof-box textarea{min-height:80px;font-size:14px}
+  .doc-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .doc-item{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:10px 12px;cursor:pointer}
+  .doc-item:hover{border-color:var(--brand)}
+  .doc-item .ic{font-size:18px}
+  .doc-item .dm{flex:1;min-width:0}
+  .doc-item .dm .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .doc-item .dm .s{font-size:12px;color:var(--muted)}
+  .doc-item .ai-yes{font-size:11px;color:var(--green-dk);background:#e6f7ef;border:1px solid #b8ecd3;border-radius:8px;padding:2px 7px;font-weight:700}
+  .doc-item .del{background:none;color:var(--muted);font-size:16px;padding:3px 7px;border-radius:7px}
+  .doc-item .del:hover{background:#fdeced;color:var(--red)}
+  .ptimeline{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  /* ---- recommendations ---- */
+  .rec-group{margin-top:16px}
+  .rec-group .rg-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;color:var(--ink);margin-bottom:8px}
+  .rec-list{display:flex;flex-direction:column;gap:8px}
+  .rec-item{display:flex;align-items:flex-start;gap:10px;background:#fbfdff;border:1px solid var(--line);
+    border-left:4px solid var(--brand);border-radius:9px;padding:10px 13px;font-size:14.5px;line-height:1.5}
+  .rec-item .chk{flex-shrink:0;color:var(--brand);font-size:15px;margin-top:1px}
+  .rec-group.interact .rec-item{border-left-color:var(--amber)}
+  .rec-group.interact .rec-item .chk{color:var(--amber)}
+  .rec-group.doc .rec-item{border-left-color:var(--gold)}
+  .rec-group.doc .rec-item .chk{color:var(--gold)}
+  .rec-empty{font-size:14px;color:var(--muted);font-style:italic;padding:4px 0}
+</style>
+<!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div class="auth-wrap" id="authScreen">
+  <div class="auth-card">
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> Scrivara</div>
+    <p class="auth-sub">Ambient AI medical scribe — sign in to continue</p>
+
+    <div class="auth-tabs">
+      <div class="auth-tab on" id="tabLogin" onclick="switchAuth('login')">Log in</div>
+      <div class="auth-tab" id="tabSignup" onclick="switchAuth('signup')">Sign up</div>
+    </div>
+
+    <div class="auth-err" id="authErr"></div>
+
+    <div class="field">
+      <label for="authEmail">Email</label>
+      <input type="email" id="authEmail" placeholder="you@clinic.com" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="authPass">Password</label>
+      <input type="password" id="authPass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="field" id="authConfirmField" style="display:none">
+      <label for="authPass2">Confirm password</label>
+      <input type="password" id="authPass2" placeholder="••••••••" autocomplete="new-password">
+    </div>
+
+    <button class="btn-primary" id="authBtn" style="width:100%" onclick="doAuth()">Log in</button>
+
+    <p class="local-note">🔒 <b>Local account on this device</b> (full multi-device accounts come with the hosted version). Your email, an obfuscated password, and your notes are stored only in this browser's local storage — nothing is sent to a server.</p>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="appScreen" style="display:none">
+<header>
+  <div class="logo">
+    <div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div>
+    <div>Scrivara
+      <small>Ambient AI medical scribe</small>
+    </div>
+  </div>
+  <div class="tools">
+    <span class="who" id="whoLabel"></span>
+    <button class="btn-white" onclick="openSettings()">⚙️ Settings</button>
+    <button class="btn-white" onclick="logout()">↪ Log out</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- MAIN NAV -->
+  <div class="mainnav">
+    <div class="navtab on" id="nav_patients" onclick="showView('patients')">👥 Patients <span class="nbadge" id="navPtCount">0</span></div>
+    <div class="navtab" id="nav_visit" onclick="showView('visit')">🎙️ Visit</div>
+    <div class="navtab" id="nav_recs" onclick="showView('recs')">💡 Recommendations</div>
+    <div class="navtab" id="nav_history" onclick="showView('history')">📚 History <span class="nbadge" id="navHistCount">0</span></div>
+    <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
+  </div>
+
+  <!-- NO-ACCESS BANNER (hosted mode, account without access) -->
+  <div id="noAccessBanner" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#fff7e6;border:1px solid #f3d79b;color:#8a5a00;border-radius:12px;padding:12px 14px;margin:0 0 14px">
+    <span style="font-weight:600">🔒 Your account doesn't have access yet — enter an access code below.</span>
+    <input id="redeemInputBanner" placeholder="Access code" style="flex:0 1 200px;padding:8px 10px;border:1px solid #e0c283;border-radius:8px;font-size:14px">
+    <button class="btn-primary" style="font-size:14px;padding:8px 14px" onclick="redeemFromBanner()">Redeem</button>
+  </div>
+
+  <!-- ACTIVE PATIENT BAR (shown on Visit + History) -->
+  <div id="patientBar" style="display:none">
+    <span id="patientBarInner"></span>
+    <span class="spacer"></span>
+    <button class="btn-ghost" style="font-size:13px;padding:8px 13px" onclick="showView('patients')">Switch patient</button>
+  </div>
+
+  <!-- ============ PATIENTS VIEW ============ -->
+  <div id="patientsView" style="display:none">
+    <div class="card">
+      <h2><span class="ic">👥</span> Patients
+        <button class="btn-primary" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
+      </h2>
+      <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
+      <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">💾 Patient records are stored locally on this device only. Secure cross-device records and sharing come with the hosted / HIPAA version. Use de-identified labels until you're HIPAA-compliant.</div>
+      <div id="ptEmpty" class="empty"><span class="big">👤</span>No patients yet. Press <b>＋ New patient</b> to add one.</div>
+      <div class="pt-list" id="ptList"></div>
+    </div>
+
+    <!-- ACTIVE PATIENT PROFILE -->
+    <div class="card" id="profileCard" style="margin-top:20px;display:none">
+      <h2><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
+        <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
+      </h2>
+      <p class="sub" id="profDemo">—</p>
+
+      <div class="prof-grid">
+        <div class="prof-box">
+          <h3>🩺 Problem list <button class="edit" onclick="editProfField('problems')">✎ Edit</button></h3>
+          <div class="body" id="profProblems"></div>
+        </div>
+        <div class="prof-box">
+          <h3>💊 Medications <button class="edit" onclick="editProfField('meds')">✎ Edit</button></h3>
+          <div class="body" id="profMeds"></div>
+        </div>
+        <div class="prof-box">
+          <h3>⚠️ Allergies <button class="edit" onclick="editProfField('allergies')">✎ Edit</button></h3>
+          <div class="body" id="profAllergies"></div>
+        </div>
+        <div class="prof-box">
+          <h3>📋 Summary <button class="edit" onclick="editProfField('summary')">✎ Edit</button></h3>
+          <div class="body" id="profSummary"></div>
+        </div>
+      </div>
+
+      <!-- DOCUMENTS -->
+      <div class="prof-box" style="margin-top:16px">
+        <h3>📎 Documents
+          <button class="edit" onclick="addDocPaste()">＋ Paste text</button>
+          <button class="edit" onclick="document.getElementById('docFileInput').click()">⬆ Upload file</button>
+        </h3>
+        <input type="file" id="docFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg" style="display:none" onchange="onDocFile(event)">
+        <p class="mini" style="margin:0 0 4px">Add labs, prior records, discharge summaries. .txt and PDF text are extracted in-browser; images are stored but not OCR'd. Then press <b>Analyze with AI</b> to summarize and pull key items into the profile.</p>
+        <div id="docEmpty" class="mini" style="color:var(--muted)">No documents yet.</div>
+        <div class="doc-list" id="docList"></div>
+      </div>
+
+      <!-- PER-PATIENT VISIT TIMELINE -->
+      <div class="prof-box" style="margin-top:16px">
+        <h3>📚 Visit timeline</h3>
+        <div id="ptTimelineEmpty" class="mini" style="color:var(--muted)">No visits yet for this patient.</div>
+        <div class="ptimeline" id="ptTimeline"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ VISIT VIEW ============ -->
+  <div id="visitView" style="display:none">
+  <div class="howto">
+    <b>How it works:</b>
+    <span class="step"><span class="num">1</span> Start visit</span>
+    <span class="step"><span class="num">2</span> Stop</span>
+    <span class="step"><span class="num">3</span> Generate note</span>
+    <span class="step"><span class="num">4</span> Optimize coding</span>
+    <span class="step"><span class="num">5</span> Review &amp; sign</span>
+  </div>
+
+  <div class="grid">
+    <!-- CAPTURE -->
+    <div class="card" id="captureCard">
+      <h2><span class="ic">🎙️</span> Capture the visit
+        <button class="btn-ghost" style="margin-left:auto;font-size:13px;padding:7px 12px" onclick="newVisit()">＋ New visit</button>
+      </h2>
+      <p class="sub">Press start and just talk naturally with your patient. The conversation appears below.</p>
+
+      <div class="field" style="margin-bottom:12px">
+        <label for="patientLabel">Patient label <span style="font-weight:400;color:var(--muted)">(de-identified — initials or MRN, no full PHI)</span></label>
+        <input type="text" id="patientLabel" placeholder="e.g. J.D. or MRN-1042">
+      </div>
+
+      <div class="row tight" style="margin-top:0;margin-bottom:12px">
+        <div style="flex:1;min-width:170px">
+          <label for="specialtyPreset">Specialty template</label>
+          <select id="specialtyPreset" class="sf-select" onchange="onPresetChange()">
+            <option value="">General / Auto</option>
+            <option value="Primary Care">Primary Care</option>
+            <option value="Pediatrics">Pediatrics</option>
+            <option value="Cardiology">Cardiology</option>
+            <option value="Psychiatry">Psychiatry / Behavioral</option>
+            <option value="Orthopedics">Orthopedics</option>
+            <option value="OB/GYN">OB/GYN</option>
+            <option value="Dermatology">Dermatology</option>
+            <option value="Emergency Medicine">Emergency Medicine</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:170px">
+          <label for="noteStyle">Note format</label>
+          <select id="noteStyle" class="sf-select">
+            <option value="SOAP">SOAP</option>
+            <option value="APSO">APSO (Assessment first)</option>
+            <option value="Narrative">Narrative</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom:12px">
+        <label for="contextBox">Problem list / past-visit context <span style="font-weight:400;color:var(--muted)">(optional — paste chronic conditions, meds, history)</span></label>
+        <textarea id="contextBox" style="min-height:64px" placeholder="e.g. Active problems: T2DM, HTN, GERD. Home meds: metformin 1000 BID, lisinopril 10 daily. Last A1c 7.4%. Paste anything the note should account for."></textarea>
+      </div>
+
+      <button id="captureBtn" class="btn-primary big-capture" onclick="toggleCapture()">▶ Start Visit</button>
+
+      <div id="micWarn" style="display:none" class="disclaim">⚠️ <span></span></div>
+
+      <label for="transcript">Live transcript <span style="font-weight:400;color:var(--muted)">(you can also type or paste)</span></label>
+      <div class="dotbar" id="dotBar">
+        <span class="dotbar-lbl">⚡ Dot phrases:</span>
+        <span id="dotChips"></span>
+        <button class="dot-add" onclick="addDotPhrase()" title="Save a new quick-text macro">＋ Add</button>
+        <button class="dot-add" onclick="manageDotPhrases()" title="Edit or delete saved macros">⚙ Manage</button>
+      </div>
+      <textarea id="transcript" class="transcript" placeholder="The conversation will show up here as you speak. No microphone? Type or paste the visit conversation here, or load an example below."></textarea>
+
+      <div class="row tight">
+        <button class="btn-ghost" onclick="loadExample()">📋 Load example visit</button>
+        <button class="btn-ghost" onclick="clearTranscript()">🧹 Clear</button>
+        <button id="draftBtn" class="btn-ghost" onclick="saveDraft()">💾 Save draft</button>
+        <button id="genBtn" class="btn-green" style="margin-left:auto" onclick="generateNote()">✨ Generate Note</button>
+      </div>
+      <p class="mini">Tip: works best in Chrome or Edge. Your transcript never leaves this page until you press Generate Note.</p>
+    </div>
+
+    <!-- NOTE -->
+    <div class="card" id="noteCard">
+      <h2><span class="ic">📝</span> Clinical note
+        <span id="statusBadge" class="badge draft" style="margin-left:auto">● Draft</span>
+      </h2>
+      <p class="sub">A clean SOAP note, generated from the visit. Edit anything before signing.</p>
+
+      <div class="disclaim">ℹ️ AI-generated — review before signing.</div>
+
+      <div id="noteEmpty" class="empty">
+        <span class="big">📄</span>
+        Your note will appear here.<br>Capture or load a visit, then press <b>Generate Note</b>.
+      </div>
+      <textarea id="noteBox" class="note-box" style="display:none" placeholder="Generated note..."></textarea>
+
+      <!-- Insurance-Ready toggle -->
+      <div class="toggle-row" id="formatToggleRow" style="display:none;margin-top:12px">
+        <span style="font-size:14px;color:var(--muted);font-weight:600">Format:</span>
+        <span class="pill-toggle on" id="togSoap" onclick="setFormat('soap')">📝 Standard SOAP</span>
+        <span class="pill-toggle" id="togIns" onclick="setFormat('insurance')">🧾 Insurance-Ready</span>
+      </div>
+
+      <!-- Suggested coding -->
+      <div class="code-card" id="codeCard" style="display:none">
+        <h3>💲 Suggested coding <span style="font-weight:400;font-size:13px;color:var(--muted)">(for your review)</span></h3>
+        <div class="code-grid">
+          <div class="lk">E/M visit level</div>
+          <div class="lv"><span class="em-pill" id="code_em">—</span><span id="code_em_just" style="color:var(--muted);font-size:13.5px"></span></div>
+          <div class="lk">ICD-10 dx codes</div>
+          <div class="lv" id="code_icd">—</div>
+          <div class="lk">CPT procedures</div>
+          <div class="lv" id="code_cpt">—</div>
+        </div>
+        <div class="code-disclaim" id="codeDisclaim">⚠️ Suggested codes for the provider to review and confirm — final coding is the provider's responsibility. Codes reflect only what is documented in this visit; nothing is added to raise the level of billing.</div>
+      </div>
+
+      <!-- Optimize for payout output -->
+      <div class="opt-card" id="optCard" style="display:none">
+        <h3>📈 Reimbursement optimization <span style="font-weight:400;font-size:13px;color:#9c7209">(complete documentation of real work)</span></h3>
+        <div class="opt-section">
+          <div class="h">Supported E/M level</div>
+          <div class="lv"><span class="em-pill" id="opt_em">—</span><span id="opt_em_just" style="color:#7a5c08;font-size:13.5px"></span></div>
+        </div>
+        <div class="opt-section" id="opt_mdm_sec">
+          <div class="h">MDM justification (2021+ AMA)</div>
+          <div id="opt_mdm" style="font-size:14px;color:var(--ink)"></div>
+        </div>
+        <div class="opt-section" id="opt_gaps_sec">
+          <div class="h">Documentation gaps to review</div>
+          <div id="opt_gaps"></div>
+        </div>
+        <div class="opt-disclaim">✅ Suggested codes — provider reviews and confirms; document only what actually occurred. This tool flags real work you may have left undocumented and confirms correct coding. It never invents findings, problems, time, or complexity, and never instructs you to bill for anything that did not happen.</div>
+      </div>
+
+      <!-- per-section copy -->
+      <div class="row tight" id="secCopyRow" style="display:none">
+        <span style="font-size:13px;color:var(--muted);font-weight:600;align-self:center">Copy section:</span>
+        <button class="sec-copy" onclick="copySection('S')">Subjective</button>
+        <button class="sec-copy" onclick="copySection('O')">Objective</button>
+        <button class="sec-copy" onclick="copySection('A')">Assessment</button>
+        <button class="sec-copy" onclick="copySection('P')">Plan</button>
+        <button class="sec-copy" onclick="regenerateNote()" title="Re-run AI on the same transcript">🔄 Regenerate</button>
+      </div>
+
+      <!-- Patient after-visit summary -->
+      <div class="extra-card" id="avsCard" style="display:none">
+        <h3>👤 Patient after-visit summary
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('avsBody')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Patient After-Visit Summary','avsBody')">🖨 Print</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Plain-language instructions to hand the patient. Review before giving out.</p>
+        <div class="xbody" id="avsBody"></div>
+      </div>
+
+      <!-- Referral letter -->
+      <div class="extra-card" id="refCard" style="display:none">
+        <h3>✉️ Referral letter
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('refBody')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Referral Letter','refBody')">🖨 Print</button>
+        </h3>
+        <p class="sub" style="margin:4px 0 0">Draft letter to the specialist/consultant. Edit the recipient and specialty as needed.</p>
+        <div class="xbody" id="refBody"></div>
+      </div>
+
+      <!-- Superbill -->
+      <div class="extra-card" id="billCard" style="display:none">
+        <h3>🧾 Superbill <span style="font-weight:400;font-size:13px;color:var(--muted)">(dx + CPT for billing)</span>
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('billBodyText')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Superbill','billBody')">🖨 Print</button>
+        </h3>
+        <table class="superbill" style="width:100%;border-collapse:collapse;margin-top:10px" id="billBody"></table>
+        <div class="code-disclaim">⚠️ Suggested codes for provider review — confirm before submitting a claim. Final coding is the provider's responsibility.</div>
+      </div>
+
+      <div class="sign-line" id="signLine" style="display:none"></div>
+
+      <div class="note-actions">
+        <button class="btn-gold" id="optBtn" onclick="optimizeForPayout()" disabled>📈 Optimize for Insurance Payout</button>
+        <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
+        <button class="btn-ghost" id="avsBtn" onclick="generateAVS()" disabled>👤 Patient summary</button>
+        <button class="btn-ghost" id="refBtn" onclick="generateReferral()" disabled>✉️ Referral letter</button>
+        <button class="btn-ghost" id="billBtn" onclick="showSuperbill()" disabled>🧾 Superbill</button>
+        <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
+        <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean text ready to paste into your real EMR">📋 Copy for EMR</button>
+        <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
+        <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
+        <button class="btn-ghost" onclick="downloadNote()" disabled id="dlBtn">⬇ Download .txt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EMR -->
+  <div class="card" id="emrCard" style="margin-top:20px">
+    <h2><span class="ic">🗂️</span> EMR fields <span style="font-weight:400;font-size:14px;color:var(--muted)">(structured data ready to paste)</span></h2>
+    <p class="sub">Auto-filled from the note so you can drop it straight into your records system.</p>
+    <div id="emrEmpty" class="empty"><span class="big">🗂️</span>Structured fields populate here after you generate a note.</div>
+    <table class="emr-table" id="emrTable" style="display:none">
+      <tr><td class="k">Chief complaint</td><td class="v" id="emr_cc">—</td></tr>
+      <tr><td class="k">Diagnoses</td><td class="v" id="emr_dx">—</td></tr>
+      <tr><td class="k">Medications</td><td class="v" id="emr_meds">—</td></tr>
+      <tr><td class="k">Orders</td><td class="v" id="emr_orders">—</td></tr>
+      <tr><td class="k">Follow-up</td><td class="v" id="emr_fu">—</td></tr>
+      <tr><td class="k">E/M level (CPT)</td><td class="v" id="emr_em">—</td></tr>
+      <tr><td class="k">ICD-10 codes</td><td class="v" id="emr_icd">—</td></tr>
+      <tr><td class="k">CPT procedures</td><td class="v" id="emr_cpt">—</td></tr>
+    </table>
+    <p class="mini" id="emrCodeNote" style="display:none">💲 E/M level, ICD-10 and CPT codes are AI suggestions — review and confirm before submitting a claim. Final coding is the provider's responsibility.</p>
+  </div>
+  </div><!-- /visitView -->
+
+  <!-- ============ HISTORY VIEW ============ -->
+  <div id="historyView" style="display:none">
+  <!-- HISTORY -->
+  <div class="card" id="historyCard">
+    <h2><span class="ic">📚</span> Visit history <span style="font-weight:400;font-size:14px;color:var(--muted)">(saved on this device)</span></h2>
+    <p class="sub">Click a past visit to reopen it. Notes are saved locally in this browser for <b id="histWho">your account</b>.</p>
+    <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">💾 Saved locally on this device only. The hosted / HIPAA version stores notes encrypted server-side, syncs across devices, and is backed up.</div>
+    <div id="histEmpty" class="empty"><span class="big">📭</span>No saved visits yet. Generate a note and press <b>Save to history</b>.</div>
+    <div class="hist-list" id="histList"></div>
+  </div>
+  </div><!-- /historyView -->
+
+  <!-- ============ RECOMMENDATIONS VIEW ============ -->
+  <div id="recsView" style="display:none">
+  <div class="card" id="recsCard">
+    <h2><span class="ic">💡</span> Recommendations for the provider
+      <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="genRecsBtn" onclick="generateRecommendations()">✨ Generate Recommendations</button>
+    </h2>
+    <p class="sub">AI looks at this visit plus the active patient's chart (problem list, meds, allergies, history) and suggests items for <b>you</b> to consider — care gaps, interaction flags, follow-up/monitoring, and documentation tips.</p>
+    <div class="disclaim">🤝 AI suggestions for the provider to consider — use clinical judgment; not medical advice or directives.</div>
+    <div id="recsEmpty" class="empty">
+      <span class="big">💡</span>
+      Generate a visit note first, then press <b>Generate Recommendations</b>.<br>
+      Suggestions are drawn from the visit and the active patient's profile.
+    </div>
+    <div id="recsContent" style="display:none">
+      <div class="rec-group" id="recGap"></div>
+      <div class="rec-group" id="recInteract"></div>
+      <div class="rec-group" id="recFollow"></div>
+      <div class="rec-group" id="recDoc"></div>
+      <div class="opt-disclaim" style="margin-top:16px">🤝 These are advisory prompts based on documented information and the patient's chart — they are not directives and not medical advice. The provider decides what applies. Documentation tips support <b>accurate</b> coding of work actually done; nothing here is intended to upcode.</div>
+      <div class="row tight">
+        <button class="btn-ghost" onclick="copyRecommendations()">📑 Copy</button>
+        <button class="btn-ghost" onclick="generateRecommendations()">🔄 Regenerate</button>
+      </div>
+    </div>
+  </div>
+  </div><!-- /recsView -->
+
+  <!-- ============ ADMIN VIEW (owner only) ============ -->
+  <div id="adminView" style="display:none">
+    <div class="card">
+      <h2><span class="ic">🛡️</span> Admin — Users
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminUsers()">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Manage who can generate notes. Grant a comp (forever) account, a timed trial, or block access.</p>
+      <div id="adminUsersEmpty" class="empty"><span class="big">👥</span>Press <b>Refresh</b> to load users.</div>
+      <div style="overflow-x:auto">
+        <table id="adminUsersTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+            <th style="padding:8px 6px">Email</th><th style="padding:8px 6px">Name</th>
+            <th style="padding:8px 6px">Access</th><th style="padding:8px 6px">Visits</th>
+            <th style="padding:8px 6px">Actions</th>
+          </tr></thead>
+          <tbody id="adminUsersBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="ic">🎟️</span> Admin — Access codes
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminCodes()">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Generate an access code to hand out. "Forever" unlocks permanently; "Trial" grants a set number of days.</p>
+      <div class="row tight" style="flex-wrap:wrap;align-items:flex-end;gap:10px">
+        <div class="field" style="margin:0">
+          <label for="codeType">Type</label>
+          <select id="codeType" onchange="document.getElementById('codeDaysWrap').style.display=this.value==='trial'?'block':'none'">
+            <option value="forever">Forever</option>
+            <option value="trial">Trial</option>
+          </select>
+        </div>
+        <div class="field" id="codeDaysWrap" style="margin:0;display:none">
+          <label for="codeDays">Trial days</label>
+          <input type="number" id="codeDays" min="1" value="30" style="width:110px">
+        </div>
+        <div class="field" style="margin:0;flex:1;min-width:160px">
+          <label for="codeNote">Note (optional)</label>
+          <input type="text" id="codeNote" placeholder="e.g. Dr. Smith trial">
+        </div>
+        <button class="btn-primary" style="font-size:14px;padding:10px 16px" onclick="generateAdminCode()">＋ Generate</button>
+      </div>
+      <div id="newCodeBox" style="display:none;margin-top:14px;background:#e6f7ef;border:1px solid #b8ecd3;border-radius:10px;padding:12px 14px">
+        <span style="color:var(--muted);font-size:13px">New code:</span>
+        <code id="newCodeVal" style="font-size:18px;font-weight:700;letter-spacing:1px"></code>
+        <button class="btn-ghost" style="font-size:13px;padding:6px 11px;margin-left:8px" onclick="copyNewCode()">📋 Copy</button>
+      </div>
+      <div id="adminCodesEmpty" class="empty" style="margin-top:14px"><span class="big">🎟️</span>Press <b>Refresh</b> to load codes.</div>
+      <div style="overflow-x:auto">
+        <table id="adminCodesTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+            <th style="padding:8px 6px">Code</th><th style="padding:8px 6px">Type</th>
+            <th style="padding:8px 6px">Note</th><th style="padding:8px 6px">Status</th>
+            <th style="padding:8px 6px">Actions</th>
+          </tr></thead>
+          <tbody id="adminCodesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /adminView -->
+</div>
+
+<footer>
+  <span class="noprint">⚕️ <b>Always review AI notes before signing.</b> Don't use with real patient data until you're HIPAA-compliant
+  (a signed BAA with OpenAI, encryption, and patient consent). Scrivara runs entirely in your browser; accounts and notes are stored locally on this device only.</span>
+</footer>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-bg" id="settingsModal">
+  <div class="modal">
+    <button class="modal-x" onclick="closeSettings()">×</button>
+    <h3>⚙️ Settings</h3>
+    <p style="margin:0 0 14px;color:var(--muted);font-size:15px" id="settingsIntro">Enter your OpenAI API key once to enable AI note generation.</p>
+
+    <div class="field" id="apiKeyField">
+      <label for="apiKey">OpenAI API key</label>
+      <input type="password" id="apiKey" placeholder="sk-...">
+      <p class="note">🔒 Your key stays on this computer; only sent to OpenAI. It is saved in this browser's local storage and never shared with anyone else.</p>
+      <p class="keyok" id="keyOk">✔ Key saved on this device.</p>
+    </div>
+    <div class="field" id="backendNotice" style="display:none">
+      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Connected to your clinic's Scrivara server.</b> AI note generation is ready — no API key needed on this device. Your key stays securely on the server.</p>
+    </div>
+    <div class="field" id="redeemField" style="display:none">
+      <label for="redeemInputSettings">Access code</label>
+      <div class="row tight" style="gap:8px">
+        <input type="text" id="redeemInputSettings" placeholder="Enter code to unlock access" style="flex:1">
+        <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="redeemFromSettings()">Redeem</button>
+      </div>
+      <p class="note">Have an access code? Redeem it here to unlock note generation.</p>
+    </div>
+    <div class="field">
+      <label for="docName">Your name <span style="font-weight:400;color:var(--muted)">(optional — appears on signed notes)</span></label>
+      <input type="text" id="docName" placeholder="Dr. Jane Smith">
+    </div>
+    <div class="field">
+      <label for="docSpec">Specialty <span style="font-weight:400;color:var(--muted)">(optional — tailors the note)</span></label>
+      <input type="text" id="docSpec" placeholder="e.g. Family Medicine, Cardiology, Pediatrics">
+    </div>
+    <div class="row">
+      <button class="btn-primary" onclick="saveSettings()" style="flex:1">💾 Save</button>
+      <button class="btn-ghost" onclick="closeSettings()">Close</button>
+    </div>
+    <p class="mini" id="keyHint">No key yet? Get one at platform.openai.com → API keys. The API is billed separately from ChatGPT — you may need to add a payment method. You can still try the app with "Load example visit".</p>
+  </div>
+</div>
+
+<!-- VIEW NOTE MODAL (history) -->
+<div class="modal-bg" id="viewModal">
+  <div class="modal" style="max-width:680px">
+    <button class="modal-x" onclick="closeView()">×</button>
+    <h3 id="viewTitle">📄 Saved visit</h3>
+    <p class="note" id="viewMeta"></p>
+    <textarea id="viewBody" style="min-height:340px;font-size:14px" readonly></textarea>
+    <div class="row">
+      <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Reopen in editor</button>
+      <button class="btn-ghost" onclick="closeView()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW PATIENT MODAL -->
+<div class="modal-bg" id="patientModal">
+  <div class="modal">
+    <button class="modal-x" onclick="closePatientModal()">×</button>
+    <h3 id="patientModalTitle">👤 New patient</h3>
+    <p class="note">Use de-identified labels (initials / MRN) until you're HIPAA-compliant. Stored locally on this device.</p>
+    <div class="field">
+      <label for="ptName">Name / label *</label>
+      <input type="text" id="ptName" placeholder="e.g. J.D. or MRN-1042">
+    </div>
+    <div class="row tight" style="margin-top:0">
+      <div style="flex:2;min-width:150px">
+        <label for="ptMrn">MRN / chart # <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <input type="text" id="ptMrn" placeholder="MRN-1042">
+      </div>
+      <div style="flex:1;min-width:110px">
+        <label for="ptSex">Sex</label>
+        <select id="ptSex" class="sf-select">
+          <option value="">—</option><option>Female</option><option>Male</option><option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="field" style="margin-top:14px">
+      <label for="ptDob">Date of birth <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <input type="text" id="ptDob" placeholder="e.g. 1980-05-14 or 'age 44'">
+    </div>
+    <div class="row">
+      <button class="btn-primary" onclick="savePatient()" style="flex:1">💾 Save patient</button>
+      <button class="btn-ghost" onclick="closePatientModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- DOCUMENT VIEW MODAL -->
+<div class="modal-bg" id="docModal">
+  <div class="modal" style="max-width:720px">
+    <button class="modal-x" onclick="closeDocModal()">×</button>
+    <h3 id="docTitle">📄 Document</h3>
+    <p class="note" id="docMeta"></p>
+    <div id="docAiWrap" style="display:none">
+      <label style="margin-top:4px">AI summary &amp; key items</label>
+      <div class="xbody" id="docAiBody" style="white-space:pre-wrap"></div>
+      <div class="row tight">
+        <button class="btn-green" id="docMergeBtn" onclick="mergeDocIntoProfile()">⬇ Merge key items into profile</button>
+        <button class="btn-ghost" onclick="copyDocSummary()">📑 Copy summary</button>
+      </div>
+    </div>
+    <label style="margin-top:14px">Document text</label>
+    <textarea id="docText" style="min-height:240px;font-size:13.5px" readonly></textarea>
+    <div class="row">
+      <button class="btn-primary" id="docAnalyzeBtn" onclick="analyzeDoc()" style="flex:1">✨ Analyze with AI</button>
+      <button class="btn-ghost" onclick="closeDocModal()">Close</button>
+    </div>
+    <p class="mini">AI summarizes and extracts only what's in this document — it won't invent findings. Review before merging into the profile.</p>
+  </div>
+</div>
+
+<!-- SHARE / EXPORT MODAL -->
+<div class="modal-bg" id="shareModal">
+  <div class="modal" style="max-width:720px">
+    <button class="modal-x" onclick="closeShareModal()">×</button>
+    <h3>📤 Share / Export patient record</h3>
+    <p class="note">A clean, compiled record: profile + visit notes + document summaries. Real secure sending to another provider comes with the hosted version — for now, copy, print, or download.</p>
+    <textarea id="shareText" style="min-height:300px;font-size:13px" readonly></textarea>
+    <div class="row">
+      <button class="btn-primary" onclick="copyShare()">📑 Copy</button>
+      <button class="btn-ghost" onclick="printShare()">🖨 Print</button>
+      <button class="btn-ghost" onclick="downloadShare()">⬇ Download .txt</button>
+      <button class="btn-ghost" onclick="generatePatientLetter()">✉️ Referral / summary letter</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   Scrivara — single-file client app (v4)
+   Local accounts + per-user note history in localStorage.
+   v4 adds: Recommendations tab + unlabeled-transcript handling.
+   ========================================================= */
+
+/* =========================================================
+   ⚙️ BACKEND MODE CONFIG  (read this before deploying)
+   ---------------------------------------------------------
+   Scrivara can run in TWO modes:
+
+   1) PER-DEVICE KEY MODE  (default — BACKEND_URL is "")
+      Each doctor pastes their own OpenAI API key in Settings.
+      The browser calls OpenAI directly. Good for a quick
+      personal/dev build. The key lives in this browser only.
+
+   2) HOSTED BACKEND MODE  (set BACKEND_URL below)
+      Point BACKEND_URL at your deployed server, e.g.
+        const BACKEND_URL = "https://scrivara-api.example.com";
+      The app then POSTs to  BACKEND_URL + "/api/generate"
+      and your server holds the OpenAI key SERVER-SIDE.
+      NO API key is needed in the browser, and the API-key
+      field in Settings hides itself automatically.
+
+      ---- Expected backend contract ----
+      POST {BACKEND_URL}/api/generate
+        Content-Type: application/json
+        Body: { "system": "<system prompt>",
+                "user":   "<user message>" }
+        Returns: 200 with JSON body that is EITHER
+          (a) the model's JSON object directly, or
+          (b) { "content": "<JSON string from the model>" }
+        On error: non-2xx with optional { "error": "msg" }.
+      The server is responsible for calling OpenAI (or any
+      LLM), injecting its own secret key, and returning the
+      JSON. This keeps the key off every doctor's device.
+
+   To make a "send to my dad" build: just fill in BACKEND_URL
+   with your deployed URL and ship the file — no key needed.
+   ========================================================= */
+const BACKEND_URL = "https://scrivara-backend.onrender.com"; // hosted mode: server holds the OpenAI key; no key needed on this device
+function backendMode(){ return !!(BACKEND_URL && BACKEND_URL.trim()); }
+function bkBase(){ return BACKEND_URL.replace(/\/$/,''); }
+
+/* ---------- backend token + user (hosted Bearer auth) ---------- */
+function bkToken(){ return localStorage.getItem('sf_bk_token')||''; }
+function setBkToken(t){ if(t) localStorage.setItem('sf_bk_token',t); else localStorage.removeItem('sf_bk_token'); }
+let bkUser=null; // {email,name,specialty,isAdmin,access,access_expires,hasAccess}
+/* Special marker thrown when the backend says the account lacks access (402). */
+function isNoAccessErr(e){ return !!(e && (e.noAccess || /no_access/i.test((e&&e.message)||''))); }
+
+/* ---------- toast ---------- */
+let toastT;
+function toast(msg,type){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+(type||'');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.className='toast',4000);
+}
+function esc(s){return String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+
+/* =========================================================
+   AUTH (local accounts)
+   - accounts stored under sf_accounts (keyed by email)
+   - password stored only as an obfuscated salted hash
+   - NOTE: client-side obfuscation is NOT real security; the
+     hosted version does proper server-side auth.
+   ========================================================= */
+const ACCT_KEY='sf_accounts';
+let session=null; // {email}
+let authMode='login';
+
+function getAccounts(){ try{return JSON.parse(localStorage.getItem(ACCT_KEY))||{};}catch(e){return {};} }
+function saveAccounts(a){ localStorage.setItem(ACCT_KEY,JSON.stringify(a)); }
+
+// Lightweight salted hash (obfuscation only — not cryptographically strong).
+async function hashPass(email,pass){
+  const data=new TextEncoder().encode('sf::'+email.toLowerCase()+'::'+pass);
+  if(window.crypto && crypto.subtle){
+    const buf=await crypto.subtle.digest('SHA-256',data);
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  // fallback simple hash
+  let h=5381; const s='sf::'+email.toLowerCase()+'::'+pass;
+  for(let i=0;i<s.length;i++){ h=((h<<5)+h)+s.charCodeAt(i); h|=0; }
+  return 'fb'+(h>>>0).toString(16);
+}
+
+function switchAuth(mode){
+  authMode=mode;
+  document.getElementById('tabLogin').classList.toggle('on',mode==='login');
+  document.getElementById('tabSignup').classList.toggle('on',mode==='signup');
+  document.getElementById('authConfirmField').style.display=mode==='signup'?'block':'none';
+  document.getElementById('authBtn').textContent=mode==='signup'?'Create account':'Log in';
+  document.getElementById('authPass').setAttribute('autocomplete',mode==='signup'?'new-password':'current-password');
+  hideAuthErr();
+}
+function showAuthErr(m){ const e=document.getElementById('authErr'); e.textContent=m; e.classList.add('show'); }
+function hideAuthErr(){ document.getElementById('authErr').classList.remove('show'); }
+
+async function doAuth(){
+  hideAuthErr();
+  const email=document.getElementById('authEmail').value.trim().toLowerCase();
+  const pass=document.getElementById('authPass').value;
+  if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showAuthErr('Enter a valid email address.'); return; }
+  if(!pass || pass.length<6){ showAuthErr('Password must be at least 6 characters.'); return; }
+
+  // HOSTED BACKEND MODE → server-side auth via Bearer token (no local accounts).
+  if(backendMode()){
+    const btn=document.getElementById('authBtn');
+    const origLabel=btn?btn.textContent:'';
+    if(btn){ btn.disabled=true; btn.textContent=authMode==='signup'?'Creating…':'Logging in…'; }
+    try{
+      if(authMode==='signup'){
+        const pass2=document.getElementById('authPass2').value;
+        if(pass!==pass2){ showAuthErr('Passwords do not match.'); return; }
+      }
+      const path=authMode==='signup'?'/api/auth/register':'/api/auth/login';
+      const body={email,password:pass};
+      if(authMode==='signup'){
+        // include name/specialty if the user already saved them locally (rare on first signup)
+        const nm=getName(), sp=getSpec();
+        if(nm) body.name=nm;
+        if(sp) body.specialty=sp;
+      }
+      let res, data;
+      try{
+        res=await fetch(bkBase()+path,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(body)
+        });
+      }catch(netErr){
+        showAuthErr('Could not reach the Scrivara server. Check your connection and try again.');
+        return;
+      }
+      try{ data=await res.json(); }catch(e){ data={}; }
+      if(!res.ok){
+        showAuthErr((data&&(data.error||data.message))||('Sign-in failed ('+res.status+').'));
+        return;
+      }
+      setBkToken(data.token);
+      bkUser=data.user||null;
+      startSession(email);
+      toast(authMode==='signup'?'Account created. Welcome!':'Welcome back.','ok');
+      refreshMe();
+    } finally {
+      if(btn){ btn.disabled=false; btn.textContent=origLabel; }
+    }
+    return;
+  }
+
+  const accts=getAccounts();
+
+  if(authMode==='signup'){
+    const pass2=document.getElementById('authPass2').value;
+    if(pass!==pass2){ showAuthErr('Passwords do not match.'); return; }
+    if(accts[email]){ showAuthErr('An account with that email already exists on this device. Try logging in.'); return; }
+    accts[email]={ hash:await hashPass(email,pass), created:Date.now() };
+    saveAccounts(accts);
+    startSession(email);
+    toast('Account created on this device. Welcome!','ok');
+  } else {
+    const acct=accts[email];
+    if(!acct){ showAuthErr('No local account found for that email on this device. Sign up first.'); return; }
+    const h=await hashPass(email,pass);
+    if(h!==acct.hash){ showAuthErr('Incorrect password.'); return; }
+    startSession(email);
+    toast('Welcome back.','ok');
+  }
+}
+
+function startSession(email){
+  session={email};
+  localStorage.setItem('sf_session',email);
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('appScreen').style.display='block';
+  document.getElementById('whoLabel').textContent='👤 '+email;
+  document.getElementById('histWho').textContent=email;
+  // clear sensitive auth fields
+  document.getElementById('authPass').value='';
+  if(document.getElementById('authPass2')) document.getElementById('authPass2').value='';
+  loadUserSettingsIntoMemory();
+  renderDots();
+  renderHistory();
+  newVisit();
+  updateNavCounts();
+  showView('patients');
+  applyBackendModeUI();
+  applyAccessUI();
+  if(backendMode() && bkToken()) refreshMe();
+  if(!hasAI()){
+    setTimeout(()=>toast('Try "Load example visit", or add your OpenAI key in Settings.',''),700);
+  }
+}
+
+function logout(){
+  if(capturing) stopCapture();
+  session=null;
+  localStorage.removeItem('sf_session');
+  if(backendMode()){
+    // best-effort server logout; ignore failures
+    try{ fetch(bkBase()+'/api/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()}}).catch(()=>{}); }catch(e){}
+    setBkToken('');
+    bkUser=null;
+  }
+  document.getElementById('appScreen').style.display='none';
+  document.getElementById('authScreen').style.display='flex';
+  document.getElementById('authPass').value='';
+  switchAuth('login');
+}
+
+/* =========================================================
+   HOSTED BACKEND: account info, access gating, redeem, admin
+   ========================================================= */
+async function refreshMe(){
+  if(!backendMode()||!bkToken()) return;
+  try{
+    const r=await fetch(bkBase()+'/api/me',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    if(r.ok){ const d=await r.json(); bkUser=d.user||bkUser; applyAccessUI(); }
+  }catch(e){/* offline — leave UI as-is */}
+}
+
+/* 401 from the backend → token is stale/invalid; force re-login. */
+function handle401(){
+  setBkToken(''); bkUser=null;
+  if(session){
+    toast('Your session expired — please log in again.','err');
+    logout();
+  }
+}
+
+/* Show/hide the Admin nav item and the no-access banner based on bkUser. */
+function applyAccessUI(){
+  const adminTab=document.getElementById('nav_admin');
+  const isAdmin=!!(bkUser&&bkUser.isAdmin);
+  if(adminTab) adminTab.style.display=(backendMode()&&isAdmin)?'':'none';
+  const banner=document.getElementById('noAccessBanner');
+  if(banner){
+    const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin;
+    banner.style.display=show?'flex':'none';
+  }
+}
+
+async function redeemCode(value,inputEl){
+  if(!backendMode()){ toast('Redeeming codes requires the hosted version.','err'); return; }
+  const code=String(value||'').trim();
+  if(!code){ toast('Enter an access code first.','err'); return; }
+  try{
+    const r=await fetch(bkBase()+'/api/redeem',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({code})
+    });
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&(d.error||d.message))||'That code could not be redeemed.','err'); return; }
+    bkUser=d.user||bkUser;
+    applyAccessUI();
+    if(inputEl) inputEl.value='';
+    toast('Access unlocked!','ok');
+  }catch(e){ toast('Network problem reaching the server. Try again.','err'); }
+}
+// Convenience wired to the two redeem inputs (banner + settings).
+function redeemFromBanner(){ redeemCode(document.getElementById('redeemInputBanner').value,document.getElementById('redeemInputBanner')); }
+function redeemFromSettings(){ redeemCode(document.getElementById('redeemInputSettings').value,document.getElementById('redeemInputSettings')); }
+
+/* =========================================================
+   ADMIN PANEL (owner only) — users + access codes
+   ========================================================= */
+async function adminFetch(path,opts){
+  opts=opts||{};
+  opts.headers=Object.assign({'Authorization':'Bearer '+bkToken()},opts.headers||{});
+  if(opts.body && !opts.headers['Content-Type']) opts.headers['Content-Type']='application/json';
+  const r=await fetch(bkBase()+path,opts);
+  if(r.status===401){ handle401(); throw new Error('401'); }
+  let d={}; try{ d=await r.json(); }catch(e){}
+  if(!r.ok){ throw new Error((d&&(d.error||d.message))||('Request failed ('+r.status+').')); }
+  return d;
+}
+
+function fmtAccess(u){
+  const a=u.access||'';
+  let label=a||'—';
+  if(a==='comp') label='Comp (forever)';
+  else if(a==='active') label='Active';
+  else if(a==='blocked') label='Blocked';
+  if(u.access_expires){
+    try{ label+=' · until '+new Date(u.access_expires).toLocaleDateString(); }catch(e){}
+  }
+  if(u.role==='owner'||u.isAdmin) label='Owner';
+  return label;
+}
+
+async function loadAdminUsers(){
+  if(!backendMode()){ return; }
+  const empty=document.getElementById('adminUsersEmpty');
+  const table=document.getElementById('adminUsersTable');
+  const body=document.getElementById('adminUsersBody');
+  try{
+    const d=await adminFetch('/api/admin/users');
+    const users=(d&&d.users)||[];
+    if(!users.length){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>No users yet.'; table.style.display='none'; return; }
+    empty.style.display='none'; table.style.display='table';
+    body.innerHTML=users.map(u=>{
+      const isOwner=(u.role==='owner'||u.isAdmin);
+      const actions=isOwner
+        ? '<span style="color:var(--muted)">Owner</span>'
+        : '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> '+
+          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetTrial(\''+u.id+'\')">Trial…</button> '+
+          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminSetAccess(\''+u.id+'\',\'blocked\')">Block</button>';
+      return '<tr style="border-bottom:1px solid var(--line)">'+
+        '<td style="padding:8px 6px">'+esc(u.email||'')+'</td>'+
+        '<td style="padding:8px 6px">'+esc(u.name||'—')+'</td>'+
+        '<td style="padding:8px 6px">'+esc(fmtAccess(u))+'</td>'+
+        '<td style="padding:8px 6px">'+(u.visits!=null?u.visits:'—')+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap">'+actions+'</td>'+
+      '</tr>';
+    }).join('');
+  }catch(e){ toast('Could not load users: '+e.message,'err'); }
+}
+
+async function adminSetAccess(id,access,days){
+  try{
+    const body={access:access};
+    if(days) body.days=days;
+    await adminFetch('/api/admin/users/'+id+'/access',{method:'POST',body:JSON.stringify(body)});
+    toast('Access updated.','ok');
+    loadAdminUsers();
+  }catch(e){ toast('Update failed: '+e.message,'err'); }
+}
+function adminSetTrial(id){
+  const v=prompt('Trial length in days:','30');
+  if(v===null) return;
+  const days=parseInt(v,10);
+  if(!days||days<1){ toast('Enter a valid number of days.','err'); return; }
+  adminSetAccess(id,'active',days);
+}
+
+let lastNewCode='';
+async function generateAdminCode(){
+  const type=document.getElementById('codeType').value;
+  const note=document.getElementById('codeNote').value.trim();
+  const body={type:type};
+  if(type==='trial'){
+    const days=parseInt(document.getElementById('codeDays').value,10);
+    if(!days||days<1){ toast('Enter trial days.','err'); return; }
+    body.days=days;
+  }
+  if(note) body.note=note;
+  try{
+    const d=await adminFetch('/api/admin/codes',{method:'POST',body:JSON.stringify(body)});
+    const code=(d&&d.code&&d.code.code)||'';
+    lastNewCode=code;
+    document.getElementById('newCodeVal').textContent=code;
+    document.getElementById('newCodeBox').style.display='block';
+    document.getElementById('codeNote').value='';
+    toast('Code generated.','ok');
+    loadAdminCodes();
+  }catch(e){ toast('Could not generate code: '+e.message,'err'); }
+}
+function copyNewCode(){
+  if(!lastNewCode) return;
+  try{ navigator.clipboard.writeText(lastNewCode); toast('Code copied.','ok'); }
+  catch(e){ toast('Copy failed — select and copy manually.','err'); }
+}
+
+function fmtCodeStatus(c){
+  if(c.active===false||c.revoked) return 'Revoked';
+  if(c.redeemed_by||c.redeemed_email) return 'Used by '+esc(c.redeemed_email||c.redeemed_by);
+  return 'Available';
+}
+
+async function loadAdminCodes(){
+  if(!backendMode()){ return; }
+  const empty=document.getElementById('adminCodesEmpty');
+  const table=document.getElementById('adminCodesTable');
+  const body=document.getElementById('adminCodesBody');
+  try{
+    const d=await adminFetch('/api/admin/codes');
+    const codes=(d&&d.codes)||[];
+    if(!codes.length){ empty.style.display='block'; empty.innerHTML='<span class="big">🎟️</span>No codes yet.'; table.style.display='none'; return; }
+    empty.style.display='none'; table.style.display='table';
+    body.innerHTML=codes.map(c=>{
+      const used=(c.redeemed_by||c.redeemed_email);
+      const revoked=(c.active===false||c.revoked);
+      const typeLabel=c.type==='trial'?('Trial'+(c.days?(' '+c.days+'d'):'')):'Forever';
+      const action=(used||revoked)?'<span style="color:var(--muted)">—</span>':
+        '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminRevokeCode(\''+c.id+'\')">Revoke</button>';
+      return '<tr style="border-bottom:1px solid var(--line)">'+
+        '<td style="padding:8px 6px"><code>'+esc(c.code||'')+'</code></td>'+
+        '<td style="padding:8px 6px">'+esc(typeLabel)+'</td>'+
+        '<td style="padding:8px 6px">'+esc(c.note||'—')+'</td>'+
+        '<td style="padding:8px 6px">'+fmtCodeStatus(c)+'</td>'+
+        '<td style="padding:8px 6px;white-space:nowrap">'+action+'</td>'+
+      '</tr>';
+    }).join('');
+  }catch(e){ toast('Could not load codes: '+e.message,'err'); }
+}
+
+async function adminRevokeCode(id){
+  if(!confirm('Revoke this code? It can no longer be redeemed.')) return;
+  try{
+    await adminFetch('/api/admin/codes/'+id+'/revoke',{method:'POST'});
+    toast('Code revoked.','ok');
+    loadAdminCodes();
+  }catch(e){ toast('Revoke failed: '+e.message,'err'); }
+}
+
+/* =========================================================
+   PER-USER STORAGE (settings + notes namespaced by email)
+   ========================================================= */
+function uns(suffix){ return 'sf_u::'+(session?session.email:'_')+'::'+suffix; }
+function getKey(){ return localStorage.getItem(uns('apikey'))||''; }
+/* AI is available if we're in hosted backend mode OR a per-device key is set. */
+function hasAI(){ return backendMode() || !!getKey(); }
+function getName(){ return localStorage.getItem(uns('docname'))||''; }
+function getSpec(){ return localStorage.getItem(uns('docspec'))||''; }
+function loadUserSettingsIntoMemory(){ /* values read on demand via getters */ }
+
+/* ---------- settings ---------- */
+/* Hide the API-key field & nudges when running in hosted backend mode. */
+function applyBackendModeUI(){
+  const on=backendMode();
+  const f=document.getElementById('apiKeyField');
+  const notice=document.getElementById('backendNotice');
+  const intro=document.getElementById('settingsIntro');
+  const keyHint=document.getElementById('keyHint');
+  if(f) f.style.display=on?'none':'block';
+  if(notice) notice.style.display=on?'block':'none';
+  const redeem=document.getElementById('redeemField');
+  if(redeem) redeem.style.display=on?'block':'none';
+  if(keyHint) keyHint.style.display=on?'none':'block';
+  if(intro) intro.textContent=on
+    ? 'AI note generation is provided by your clinic server — no API key needed here. Add your name and specialty below.'
+    : 'Enter your OpenAI API key once to enable AI note generation.';
+}
+function openSettings(){
+  applyBackendModeUI();
+  document.getElementById('apiKey').value=getKey();
+  document.getElementById('docName').value=getName();
+  document.getElementById('docSpec').value=getSpec();
+  document.getElementById('keyOk').className=getKey()?'keyok show':'keyok';
+  document.getElementById('settingsModal').classList.add('show');
+}
+function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
+function saveSettings(){
+  const k=document.getElementById('apiKey').value.trim();
+  localStorage.setItem(uns('apikey'),k);
+  localStorage.setItem(uns('docname'),document.getElementById('docName').value.trim());
+  localStorage.setItem(uns('docspec'),document.getElementById('docSpec').value.trim());
+  document.getElementById('keyOk').className=k?'keyok show':'keyok';
+  toast('Settings saved on this device.','ok');
+  setTimeout(closeSettings,500);
+}
+
+/* =========================================================
+   NOTE HISTORY (per user, localStorage)
+   ========================================================= */
+function getNotes(){ try{return JSON.parse(localStorage.getItem(uns('notes')))||[];}catch(e){return [];} }
+function saveNotes(arr){ localStorage.setItem(uns('notes'),JSON.stringify(arr)); }
+
+/* =========================================================
+   PATIENTS  (per-user list; each patient has profile + docs)
+   - patients list:  uns('patients')  -> [{id,name,dob,sex,mrn,
+       problems,meds,allergies,summary,docs:[],created,updated}]
+   - active patient: uns('activePt')  -> patientId
+   - notes are tagged with note.patientId so visit history is per-patient
+   ========================================================= */
+function getPatients(){ try{return JSON.parse(localStorage.getItem(uns('patients')))||[];}catch(e){return [];} }
+function savePatients(arr){ localStorage.setItem(uns('patients'),JSON.stringify(arr)); }
+function getActivePtId(){ return localStorage.getItem(uns('activePt'))||''; }
+function setActivePtId(id){ if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt')); }
+function activePatient(){ const id=getActivePtId(); return getPatients().find(p=>p.id===id)||null; }
+function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
+function upsertPatient(p){
+  const arr=getPatients(); const i=arr.findIndex(x=>x.id===p.id);
+  p.updated=Date.now();
+  if(i>=0) arr[i]=p; else { p.created=Date.now(); arr.unshift(p); }
+  savePatients(arr);
+}
+function ptInitials(name){
+  const parts=String(name||'?').replace(/[^A-Za-z0-9 .]/g,'').trim().split(/[\s.]+/).filter(Boolean);
+  if(!parts.length) return '?';
+  return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase();
+}
+function patientNotes(id){ return getNotes().filter(n=>n.patientId===id); }
+
+/* ---------- VIEW SWITCHING ---------- */
+let currentView='patients';
+function showView(v){
+  currentView=v;
+  document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
+  document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
+  document.getElementById('historyView').style.display  = v==='history'?'block':'none';
+  document.getElementById('recsView').style.display     = v==='recs'?'block':'none';
+  const adminV=document.getElementById('adminView'); if(adminV) adminV.style.display = v==='admin'?'block':'none';
+  document.getElementById('nav_patients').classList.toggle('on',v==='patients');
+  document.getElementById('nav_visit').classList.toggle('on',v==='visit');
+  document.getElementById('nav_recs').classList.toggle('on',v==='recs');
+  document.getElementById('nav_history').classList.toggle('on',v==='history');
+  const adminTab=document.getElementById('nav_admin'); if(adminTab) adminTab.classList.toggle('on',v==='admin');
+  // active-patient bar appears on every view except the patients list
+  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin')?'none':'flex';
+  renderPatientBar();
+  updateNavCounts();
+  if(v==='patients'){ renderPatients(); renderProfile(); }
+  if(v==='history') renderHistory();
+  if(v==='recs') renderRecommendations();
+  if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); }
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderPatientBar(){
+  const p=activePatient();
+  const inner=document.getElementById('patientBarInner');
+  if(p){
+    const meta=[p.sex,p.dob,p.mrn].filter(Boolean).join(' · ');
+    inner.innerHTML='<span class="pname">👤 '+esc(p.name)+'</span> '+(meta?'<span class="pmeta">'+esc(meta)+'</span>':'');
+  } else {
+    inner.innerHTML='<span class="pnone">No active patient — visits won\'t attach to a chart. Pick one in Patients.</span>';
+  }
+}
+function updateNavCounts(){
+  const pc=document.getElementById('navPtCount'); if(pc) pc.textContent=getPatients().length;
+  // History badge reflects the ACTIVE patient's real saved-visit count (per-patient,
+  // matching what the History view shows). With no active patient it shows the total.
+  const hc=document.getElementById('navHistCount');
+  if(hc){
+    const ap=activePatient();
+    hc.textContent = ap ? patientNotes(ap.id).length : getNotes().length;
+  }
+}
+
+/* ---------- PATIENTS LIST ---------- */
+function renderPatients(){
+  updateNavCounts();
+  const arr=getPatients();
+  const list=document.getElementById('ptList');
+  const empty=document.getElementById('ptEmpty');
+  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; return; }
+  empty.style.display='none';
+  const activeId=getActivePtId();
+  list.innerHTML=arr.map(p=>{
+    const notes=patientNotes(p.id);
+    const docs=(p.docs||[]).length;
+    let last='No visits yet';
+    if(notes.length){
+      notes.sort((a,b)=>(b.updated||0)-(a.updated||0));
+      last='Last visit '+new Date(notes[0].updated||notes[0].created).toLocaleDateString();
+    }
+    const meta=[p.sex,p.dob,p.mrn].filter(Boolean).join(' · ');
+    return `<div class="pt-item ${p.id===activeId?'active':''}" onclick="selectPatient('${p.id}')">
+      <div class="pt-avatar">${esc(ptInitials(p.name))}</div>
+      <div class="pt-main">
+        <div class="t">${esc(p.name)} ${p.id===activeId?'<span style="font-size:12px;color:var(--brand);font-weight:700">• active</span>':''}</div>
+        <div class="s">${meta?esc(meta)+' · ':''}${esc(last)} · ${notes.length} note${notes.length===1?'':'s'} · ${docs} doc${docs===1?'':'s'}</div>
+      </div>
+      <button class="del" title="Delete patient" onclick="event.stopPropagation();deletePatient('${p.id}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+function selectPatient(id){
+  setActivePtId(id);
+  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+}
+function deletePatient(id){
+  if(!confirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
+  savePatients(getPatients().filter(p=>p.id!==id));
+  // unassign their notes
+  const notes=getNotes(); let changed=false;
+  notes.forEach(n=>{ if(n.patientId===id){ n.patientId=''; changed=true; } });
+  if(changed) saveNotes(notes);
+  if(getActivePtId()===id) setActivePtId('');
+  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  toast('Patient deleted.','');
+}
+
+/* ---------- NEW / EDIT PATIENT MODAL ---------- */
+let editingPtId=null;
+function newPatient(){
+  editingPtId=null;
+  document.getElementById('patientModalTitle').textContent='👤 New patient';
+  document.getElementById('ptName').value='';
+  document.getElementById('ptMrn').value='';
+  document.getElementById('ptSex').value='';
+  document.getElementById('ptDob').value='';
+  document.getElementById('patientModal').classList.add('show');
+  setTimeout(()=>document.getElementById('ptName').focus(),50);
+}
+function closePatientModal(){ document.getElementById('patientModal').classList.remove('show'); }
+function savePatient(){
+  const name=document.getElementById('ptName').value.trim();
+  if(!name){ toast('Enter a name or label for the patient.','err'); return; }
+  let p = editingPtId ? findPatient(editingPtId) : null;
+  if(!p){
+    p={ id:'p'+Date.now()+Math.random().toString(36).slice(2,5),
+        problems:'', meds:'', allergies:'', summary:'', docs:[] };
+  }
+  p.name=name;
+  p.mrn=document.getElementById('ptMrn').value.trim();
+  p.sex=document.getElementById('ptSex').value;
+  p.dob=document.getElementById('ptDob').value.trim();
+  upsertPatient(p);
+  setActivePtId(p.id);
+  closePatientModal();
+  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  toast('Patient saved and set active.','ok');
+}
+
+/* ---------- PROFILE RENDER ---------- */
+function fieldBody(elId,txt,placeholder){
+  const el=document.getElementById(elId);
+  if(txt && txt.trim()){ el.textContent=txt; el.classList.remove('empty-txt'); }
+  else { el.textContent=placeholder; el.classList.add('empty-txt'); }
+}
+function renderProfile(){
+  const card=document.getElementById('profileCard');
+  const p=activePatient();
+  if(!p){ card.style.display='none'; return; }
+  card.style.display='block';
+  document.getElementById('profName').textContent=p.name;
+  const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
+  document.getElementById('profDemo').textContent=demo||'No demographics on file (optional).';
+  fieldBody('profProblems',p.problems,'No problems recorded. Generate a visit or analyze a document to populate, or edit.');
+  fieldBody('profMeds',p.meds,'No medications recorded.');
+  fieldBody('profAllergies',p.allergies,'No allergies recorded.');
+  fieldBody('profSummary',p.summary,'No summary yet. The AI updates this from visits & documents; you can also edit it.');
+  renderDocs(p);
+  renderPtTimeline(p);
+}
+function editProfField(field){
+  const p=activePatient(); if(!p) return;
+  const labels={problems:'Problem list',meds:'Medications',allergies:'Allergies',summary:'Summary'};
+  const cur=p[field]||'';
+  const v=prompt('Edit '+labels[field]+' (one item per line where relevant):',cur);
+  if(v===null) return;
+  p[field]=v.trim();
+  upsertPatient(p);
+  renderProfile();
+  toast(labels[field]+' updated.','ok');
+}
+function renderDocs(p){
+  const list=document.getElementById('docList');
+  const empty=document.getElementById('docEmpty');
+  const docs=p.docs||[];
+  if(!docs.length){ empty.style.display='block'; list.innerHTML=''; return; }
+  empty.style.display='none';
+  list.innerHTML=docs.map(d=>{
+    const dt=new Date(d.date||Date.now()).toLocaleDateString();
+    return `<div class="doc-item" onclick="openDoc('${d.id}')">
+      <span class="ic">${d.kind==='image'?'🖼️':'📄'}</span>
+      <div class="dm"><div class="t">${esc(d.name)}</div>
+        <div class="s">${esc(dt)} · ${d.text?(d.text.length+' chars'):'no text'}</div></div>
+      ${d.aiSummary?'<span class="ai-yes">✓ AI</span>':''}
+      <button class="del" title="Delete document" onclick="event.stopPropagation();deleteDoc('${d.id}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+function renderPtTimeline(p){
+  const wrap=document.getElementById('ptTimeline');
+  const empty=document.getElementById('ptTimelineEmpty');
+  const notes=patientNotes(p.id).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  if(!notes.length){ empty.style.display='block'; wrap.innerHTML=''; return; }
+  empty.style.display='none';
+  wrap.innerHTML=notes.map(n=>{
+    const d=new Date(n.updated||n.created).toLocaleString();
+    const status=n.isDraft?'Draft':(n.signed?'✔ Signed':'Unsigned');
+    const cc=n.cc&&n.cc!=='—'?n.cc:(n.isDraft?'Transcript only':'Visit note');
+    return `<div class="doc-item" onclick="openNoteFromHistory('${n.id}')">
+      <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
+      <div class="dm"><div class="t">${esc(cc)}</div><div class="s">${esc(d)} · ${esc(status)}</div></div>
+    </div>`;
+  }).join('');
+}
+function goNewVisitForPatient(){
+  if(!activePatient()){ toast('Select a patient first.','err'); return; }
+  showView('visit');
+  newVisit();
+  // prefill context from profile so the note accounts for known problems/meds
+  prefillContextFromProfile();
+}
+function prefillContextFromProfile(){
+  const p=activePatient(); if(!p) return;
+  const cb=document.getElementById('contextBox'); if(!cb) return;
+  const parts=[];
+  if(p.problems) parts.push('Active problems: '+p.problems.replace(/\n/g,'; '));
+  if(p.meds) parts.push('Home meds: '+p.meds.replace(/\n/g,'; '));
+  if(p.allergies) parts.push('Allergies: '+p.allergies.replace(/\n/g,'; '));
+  if(parts.length && !cb.value.trim()) cb.value=parts.join('\n');
+  const pl=document.getElementById('patientLabel');
+  if(pl && !pl.value.trim()) pl.value=p.name;
+}
+
+/* ---------- DOCUMENTS ---------- */
+let viewingDocId=null;
+function addDocToActive(name,text,kind){
+  const p=activePatient();
+  if(!p){ toast('Select or create a patient first.','err'); showView('patients'); return null; }
+  const d={ id:'d'+Date.now()+Math.random().toString(36).slice(2,5),
+            name:name||'Document', text:text||'', kind:kind||'text',
+            date:Date.now(), aiSummary:'', aiItems:null };
+  p.docs=p.docs||[]; p.docs.unshift(d);
+  upsertPatient(p);
+  renderProfile();
+  return d;
+}
+function addDocPaste(){
+  if(!activePatient()){ toast('Select a patient first.','err'); return; }
+  const text=prompt('Paste the document text (lab result, prior note, discharge summary, etc.):');
+  if(text===null || !text.trim()){ return; }
+  const name=prompt('Name this document:','Pasted document '+new Date().toLocaleDateString())||'Pasted document';
+  const d=addDocToActive(name.trim(),text.trim(),'text');
+  if(d){ toast('Document added. Open it to Analyze with AI.','ok'); openDoc(d.id); }
+}
+async function onDocFile(ev){
+  const file=ev.target.files&&ev.target.files[0];
+  ev.target.value='';
+  if(!file) return;
+  if(!activePatient()){ toast('Select a patient first.','err'); return; }
+  const lower=file.name.toLowerCase();
+  try{
+    if(lower.endsWith('.txt')){
+      const text=await file.text();
+      const d=addDocToActive(file.name,text,'text');
+      if(d){ toast('Text file added.','ok'); openDoc(d.id); }
+    } else if(lower.endsWith('.pdf')){
+      toast('Extracting PDF text…','');
+      const text=await extractPdfText(file);
+      const d=addDocToActive(file.name,text,'text');
+      if(d){ toast(text.trim()?'PDF text extracted.':'PDF added but no extractable text (may be scanned).','ok'); openDoc(d.id); }
+    } else if(/\.(png|jpe?g)$/.test(lower)){
+      const d=addDocToActive(file.name,'','image');
+      if(d){ toast('Image stored. OCR isn\'t included — paste any text manually to analyze it.',''); openDoc(d.id); }
+    } else {
+      toast('Unsupported file type. Use .txt, .pdf, or paste text.','err');
+    }
+  }catch(e){ toast('Could not read file: '+(e.message||e),'err'); }
+}
+async function extractPdfText(file){
+  if(!window.pdfjsLib){ throw new Error('PDF reader not loaded (check internet connection).'); }
+  try{ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){}
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let out='';
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i);
+    const content=await page.getTextContent();
+    out+=content.items.map(it=>it.str).join(' ')+'\n\n';
+  }
+  return out.trim();
+}
+function openDoc(id){
+  const p=activePatient(); if(!p) return;
+  const d=(p.docs||[]).find(x=>x.id===id); if(!d) return;
+  viewingDocId=id;
+  document.getElementById('docTitle').textContent=(d.kind==='image'?'🖼️ ':'📄 ')+d.name;
+  document.getElementById('docMeta').textContent=new Date(d.date).toLocaleString()+(d.kind==='image'?' · image (no OCR)':'');
+  document.getElementById('docText').value=d.text||(d.kind==='image'?'[Image stored — no text extracted. Paste any relevant text via "Paste text" to analyze.]':'(no text)');
+  const aiWrap=document.getElementById('docAiWrap');
+  if(d.aiSummary){ aiWrap.style.display='block'; document.getElementById('docAiBody').textContent=d.aiSummary; }
+  else aiWrap.style.display='none';
+  document.getElementById('docModal').classList.add('show');
+}
+function closeDocModal(){ document.getElementById('docModal').classList.remove('show'); }
+function deleteDoc(id){
+  if(!confirm('Delete this document from the patient?')) return;
+  const p=activePatient(); if(!p) return;
+  p.docs=(p.docs||[]).filter(x=>x.id!==id);
+  upsertPatient(p); renderProfile();
+  toast('Document deleted.','');
+}
+async function analyzeDoc(){
+  const p=activePatient(); if(!p) return;
+  const d=(p.docs||[]).find(x=>x.id===viewingDocId); if(!d) return;
+  if(!d.text||!d.text.trim()){ toast('No text to analyze. Paste text for this document first.','err'); return; }
+  const btn=document.getElementById('docAnalyzeBtn');
+  if(!hasAI()){
+    // offline graceful fallback: a simple structural summary, honest about no-AI
+    d.aiSummary='[Offline — no AI key set] Document stored but not AI-analyzed.\n\nFirst lines:\n'+d.text.split(/\n/).slice(0,8).join('\n');
+    d.aiItems=null;
+    upsertPatient(p);
+    document.getElementById('docAiWrap').style.display='block';
+    document.getElementById('docAiBody').textContent=d.aiSummary;
+    document.getElementById('docMergeBtn').style.display='none';
+    toast('No AI key — add one in Settings to summarize & extract from documents.','');
+    return;
+  }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Analyzing…';
+  try{
+    const sys=`You are a clinical assistant reading a patient document (e.g. lab report, prior note, discharge summary, imaging report). Summarize and EXTRACT key clinical items. STRICT HONESTY: use ONLY what is actually present in the document. Do not infer, guess, or invent diagnoses, medications, or results. If something isn't stated, omit it.
+Return ONLY valid JSON (no fences) with this shape:
+{
+ "summary": "<a concise 3-6 sentence clinical summary of what this document contains>",
+ "diagnoses": ["<problems/diagnoses explicitly stated>"],
+ "medications": ["<medications with dose if stated>"],
+ "results": ["<key labs/imaging/test results with values if stated>"],
+ "history": ["<other relevant history items explicitly stated>"]
+}`;
+    const raw=await aiCallRaw(sys,'PATIENT DOCUMENT:\n\n'+d.text.slice(0,12000),getKey(),{freeform:true});
+    let parsed; try{ parsed=JSON.parse(raw.replace(/^```\w*\s*/,'').replace(/```$/,'').trim()); }catch(e){ parsed={summary:raw,diagnoses:[],medications:[],results:[],history:[]}; }
+    const lines=[];
+    lines.push(parsed.summary||'(no summary)');
+    const sec=(label,arr)=>{ if(Array.isArray(arr)&&arr.length){ lines.push('\n'+label+':'); arr.forEach(x=>lines.push('• '+x)); } };
+    sec('Diagnoses / problems',parsed.diagnoses);
+    sec('Medications',parsed.medications);
+    sec('Results',parsed.results);
+    sec('Relevant history',parsed.history);
+    d.aiSummary=lines.join('\n');
+    d.aiItems={ diagnoses:parsed.diagnoses||[], medications:parsed.medications||[], results:parsed.results||[], history:parsed.history||[], summary:parsed.summary||'' };
+    upsertPatient(p);
+    document.getElementById('docAiWrap').style.display='block';
+    document.getElementById('docAiBody').textContent=d.aiSummary;
+    document.getElementById('docMergeBtn').style.display='inline-flex';
+    renderProfile();
+    toast('Document analyzed. Review, then merge key items into the profile.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='✨ Analyze with AI'; }
+}
+function mergeListInto(existing,additions){
+  const have=new Set((existing||'').split(/\n/).map(s=>s.trim().toLowerCase()).filter(Boolean));
+  const lines=(existing||'').split(/\n/).filter(s=>s.trim());
+  (additions||[]).forEach(a=>{ const k=String(a).trim(); if(k && !have.has(k.toLowerCase())){ lines.push(k); have.add(k.toLowerCase()); } });
+  return lines.join('\n');
+}
+function mergeDocIntoProfile(){
+  const p=activePatient(); if(!p) return;
+  const d=(p.docs||[]).find(x=>x.id===viewingDocId); if(!d||!d.aiItems){ toast('Analyze the document first.','err'); return; }
+  const it=d.aiItems;
+  p.problems=mergeListInto(p.problems,it.diagnoses);
+  p.meds=mergeListInto(p.meds,it.medications);
+  if(it.summary){
+    const stamp='[From document: '+d.name+' — '+new Date(d.date).toLocaleDateString()+']';
+    p.summary=((p.summary||'').trim()+'\n\n'+stamp+'\n'+it.summary).trim();
+  }
+  upsertPatient(p);
+  renderProfile();
+  closeDocModal();
+  toast('Key items merged into the patient profile.','ok');
+}
+function copyDocSummary(){
+  const b=document.getElementById('docAiBody');
+  navigator.clipboard.writeText(b.textContent).then(()=>toast('Summary copied.','ok')).catch(()=>toast('Could not copy.','err'));
+}
+
+/* ---------- ATTACH A SIGNED/GENERATED VISIT TO THE ACTIVE PATIENT ----------
+   Called when a note is saved. Updates the patient's summary, problem and
+   med lists from the visit's EMR data, and links the note via patientId. */
+function attachVisitToPatient(rec){
+  const p=activePatient();
+  if(!p){ return; }                 // no active patient → note simply stays unassigned
+  rec.patientId=p.id;               // tag the note
+  // update problem & med lists from this visit's structured data (honest: only what's documented)
+  const e=rec.emr||{};
+  if(e.dx && e.dx!=='—'){
+    const dxItems=e.dx.split(/[;\n]/).map(s=>s.trim()).filter(Boolean);
+    p.problems=mergeListInto(p.problems,dxItems);
+  }
+  if(e.meds && e.meds!=='—'){
+    const medItems=e.meds.split(/[;\n]/).map(s=>s.trim()).filter(Boolean);
+    p.meds=mergeListInto(p.meds,medItems);
+  }
+  // append a one-line visit summary to the running profile summary
+  const when=new Date(rec.updated||Date.now()).toLocaleDateString();
+  const cc=(e.cc&&e.cc!=='—')?e.cc:(rec.cc||'Visit');
+  const sline='['+when+'] Visit: '+cc+(e.dx&&e.dx!=='—'?(' — '+e.dx):'');
+  if(!(p.summary||'').includes(sline)){
+    p.summary=((p.summary||'').trim()+'\n'+sline).trim();
+  }
+  upsertPatient(p);
+}
+
+let currentNoteId=null; // id of the history record being edited (null = brand new)
+
+function newVisit(){
+  if(capturing) stopCapture();
+  currentNoteId=null;
+  document.getElementById('patientLabel').value='';
+  document.getElementById('transcript').value=''; finalText='';
+  currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap';
+  currentAVS=''; currentReferral=''; currentRecs=null;
+  const cb=document.getElementById('contextBox'); if(cb) cb.value='';
+  document.getElementById('noteBox').style.display='none';
+  document.getElementById('noteBox').value='';
+  document.getElementById('noteEmpty').style.display='block';
+  document.getElementById('formatToggleRow').style.display='none';
+  document.getElementById('codeCard').style.display='none';
+  document.getElementById('optCard').style.display='none';
+  ['avsCard','refCard','billCard','secCopyRow'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  document.getElementById('emrTable').style.display='none';
+  document.getElementById('emrEmpty').style.display='block';
+  document.getElementById('emrCodeNote').style.display='none';
+  document.getElementById('signLine').style.display='none';
+  enableOutputs(false);
+  setBadge(false);
+}
+
+function noteRecordFromState(markSigned){
+  return {
+    id: currentNoteId || ('n'+Date.now()+Math.random().toString(36).slice(2,6)),
+    patient: document.getElementById('patientLabel').value.trim() || 'Unlabeled',
+    cc: (currentCoding && lastEMR && lastEMR.cc) ? lastEMR.cc : (lastEMR&&lastEMR.cc)||'—',
+    transcript: document.getElementById('transcript').value,
+    soap: (currentFormat==='soap'?document.getElementById('noteBox').value:currentSoap),
+    insurance: (currentFormat==='insurance'?document.getElementById('noteBox').value:currentInsurance),
+    coding: currentCoding,
+    opt: currentOpt,
+    emr: lastEMR,
+    avs: currentAVS||'',
+    referral: currentReferral||'',
+    context: (document.getElementById('contextBox')?document.getElementById('contextBox').value:''),
+    signed: typeof markSigned==='boolean' ? markSigned : signed,
+    signLine: document.getElementById('signLine').style.display!=='none' ? document.getElementById('signLine').textContent : '',
+    patientId: getActivePtId()||'',
+    updated: Date.now()
+  };
+}
+
+function upsertNote(rec){
+  const arr=getNotes();
+  const i=arr.findIndex(n=>n.id===rec.id);
+  // preserve an existing patient link if the note already had one
+  if(i>=0 && arr[i].patientId && !rec.patientId) rec.patientId=arr[i].patientId;
+  // attach to (and update) the active patient — only for real notes, not bare drafts
+  if(!rec.isDraft) attachVisitToPatient(rec);
+  else if(activePatient() && !rec.patientId) rec.patientId=getActivePtId();
+  if(i>=0){ const created=arr[i].created||arr[i].updated; arr[i]=rec; arr[i].created=created; }
+  else { rec.created=Date.now(); arr.unshift(rec); }
+  saveNotes(arr);
+  currentNoteId=rec.id;
+  renderHistory();
+  updateNavCounts();
+  if(currentView==='patients'){ renderPatients(); renderProfile(); }
+}
+
+function saveDraft(){
+  const tr=document.getElementById('transcript').value.trim();
+  if(!tr && !currentSoap){ toast('Nothing to save yet — capture or load a visit first.','err'); return; }
+  const rec=noteRecordFromState(false);
+  rec.isDraft = !currentSoap; // a draft is a transcript with no generated note yet
+  upsertNote(rec);
+  toast('Draft saved to history on this device.','ok');
+}
+
+function saveCurrentNote(announce){
+  // Keep currentSoap in sync with any in-editor edits before saving.
+  if(currentFormat==='soap'){
+    const nb=document.getElementById('noteBox');
+    if(nb && nb.style.display!=='none') currentSoap=nb.value;
+  }
+  if(!currentSoap){ toast('Generate a note before saving.','err'); return; }
+  let rec;
+  try{
+    rec=noteRecordFromState();
+    rec.isDraft=false;
+    upsertNote(rec);   // local save: writes to localStorage, updates history list + per-patient count
+  }catch(err){
+    console.error('saveCurrentNote failed',err);
+    toast('Could not save this visit: '+((err&&err.message)||err),'err');
+    return;
+  }
+  if(announce) toast(rec.signed?'Signed note saved to history.':'Note saved to history (draft).','ok');
+  // Best-effort: also push to the backend if hosted. Never blocks or fails the local save.
+  saveNoteToBackend(rec);
+}
+
+/* Best-effort backend persistence. Local save is the source of truth; this is additive
+   and silently no-ops on any failure so it can never break "Save to history". */
+function saveNoteToBackend(rec){
+  if(!backendMode() || !bkToken()) return;
+  try{
+    fetch(bkBase()+'/api/notes',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({
+        id:rec.id, patient:rec.patient, cc:rec.cc, soap:rec.soap,
+        insurance:rec.insurance, signed:!!rec.signed, updated:rec.updated
+      })
+    }).catch(()=>{});
+  }catch(e){ /* ignore — local save already succeeded */ }
+}
+
+function renderHistory(){
+  let arr=getNotes();
+  const ap=activePatient();
+  // when a patient is active, History shows that patient's visits (per-patient history)
+  if(ap){ arr=arr.filter(n=>n.patientId===ap.id); }
+  const list=document.getElementById('histList');
+  const empty=document.getElementById('histEmpty');
+  const sub=document.querySelector('#historyCard .sub');
+  if(sub) sub.innerHTML=ap
+    ? 'Showing visits for <b>'+esc(ap.name)+'</b>. Switch or clear the active patient to see others.'
+    : 'Click a past visit to reopen it. Notes are saved locally in this browser for <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.';
+  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
+  empty.style.display='none';
+  arr.sort((a,b)=>(b.updated||0)-(a.updated||0));
+  list.innerHTML=arr.map(n=>{
+    const d=new Date(n.updated||n.created||Date.now());
+    const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    const status = n.isDraft ? '<span class="badge draft">● Draft (no note)</span>'
+                  : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
+    const cc = esc(n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Transcript only':'No chief complaint'));
+    return `<div class="hist-item" onclick="openNoteFromHistory('${n.id}')">
+      <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
+      <div class="hist-main">
+        <div class="t">${esc(n.patient)} — ${cc}</div>
+        <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}</div>
+      </div>
+      <button class="del" title="Delete" onclick="event.stopPropagation();deleteNote('${n.id}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+function deleteNote(id){
+  if(!confirm('Delete this saved visit from this device? This cannot be undone.')) return;
+  saveNotes(getNotes().filter(n=>n.id!==id));
+  if(currentNoteId===id){ currentNoteId=null; }
+  renderHistory();
+  toast('Visit deleted.','');
+}
+
+/* ---- view a saved note in modal, with reopen option ---- */
+let viewingId=null;
+function openNoteFromHistory(id){
+  const n=getNotes().find(x=>x.id===id);
+  if(!n) return;
+  viewingId=id;
+  document.getElementById('viewTitle').textContent='📄 '+ (n.patient||'Saved visit');
+  const d=new Date(n.updated||n.created);
+  document.getElementById('viewMeta').textContent=
+    (n.cc&&n.cc!=='—'?('CC: '+n.cc+' · '):'') + d.toLocaleString() + ' · ' +
+    (n.isDraft?'Draft (transcript only)':(n.signed?'Signed':'Unsigned note'));
+  let body='';
+  if(n.isDraft){
+    body='[TRANSCRIPT DRAFT — no note generated yet]\n\n'+(n.transcript||'');
+  } else {
+    body=(n.soap||'')+'\n\n'+('— — — INSURANCE-READY — — —\n'+(n.insurance||'(none)'))+codingText(n.coding);
+    if(n.signLine) body+='\n\n'+n.signLine;
+  }
+  document.getElementById('viewBody').value=body;
+  document.getElementById('viewModal').classList.add('show');
+}
+function closeView(){ document.getElementById('viewModal').classList.remove('show'); }
+function reopenViewed(){
+  const n=getNotes().find(x=>x.id===viewingId);
+  if(!n) return;
+  closeView();
+  if(n.patientId && findPatient(n.patientId)) setActivePtId(n.patientId);
+  showView('visit');
+  loadRecordIntoEditor(n);
+  renderPatientBar();
+  toast('Reopened in editor. Edits create a new save unless you Save to history again.','');
+  document.getElementById('noteCard').scrollIntoView({behavior:'smooth'});
+}
+
+function loadRecordIntoEditor(n){
+  if(capturing) stopCapture();
+  currentNoteId=n.id;
+  document.getElementById('patientLabel').value=n.patient&&n.patient!=='Unlabeled'?n.patient:'';
+  document.getElementById('transcript').value=n.transcript||''; finalText=(n.transcript||'')+' ';
+  currentSoap=n.soap||''; currentInsurance=n.insurance||''; currentCoding=n.coding||null;
+  currentOpt=n.opt||null; currentFormat='soap'; lastEMR=n.emr||null;
+  currentAVS=n.avs||''; currentReferral=n.referral||''; currentRecs=null;
+  if(document.getElementById('contextBox')) document.getElementById('contextBox').value=n.context||'';
+  if(currentAVS) showExtra('avsCard','avsBody',currentAVS);
+  if(currentReferral) showExtra('refCard','refBody',currentReferral);
+  if(n.isDraft || !currentSoap){
+    document.getElementById('noteBox').style.display='none';
+    document.getElementById('noteEmpty').style.display='block';
+    document.getElementById('formatToggleRow').style.display='none';
+    document.getElementById('codeCard').style.display='none';
+    document.getElementById('optCard').style.display='none';
+    enableOutputs(false);
+    setBadge(false);
+  } else {
+    syncFormatToggle();
+    showNote(currentSoap);
+    renderCoding(currentCoding);
+    if(currentOpt) renderOpt(currentOpt); else document.getElementById('optCard').style.display='none';
+    if(lastEMR) populateEMR(lastEMR,currentCoding);
+    if(n.signed){
+      setBadge(true);
+      const line=document.getElementById('signLine');
+      line.style.display='block'; line.textContent=n.signLine||'Signed (restored from history).';
+    }
+  }
+}
+
+/* =========================================================
+   SPEECH CAPTURE
+   ========================================================= */
+let recog=null, capturing=false, finalText='';
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function initRecog(){
+  if(!SR) return false;
+  recog=new SR(); recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
+  recog.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      if(r.isFinal) finalText+=r[0].transcript+' ';
+      else interim+=r[0].transcript;
+    }
+    document.getElementById('transcript').value=(finalText+interim).trim();
+  };
+  recog.onerror=e=>{
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      showMicWarn('Microphone access was blocked. Allow mic access in your browser, or just type/paste the visit below.');
+      stopCapture();
+    } else if(e.error==='no-speech'){ /* keep going */ }
+  };
+  recog.onend=()=>{ if(capturing){ try{recog.start()}catch(e){} } };
+  return true;
+}
+function showMicWarn(msg){
+  const w=document.getElementById('micWarn');
+  w.style.display='flex'; w.querySelector('span').textContent=msg;
+}
+function toggleCapture(){ capturing?stopCapture():startCapture(); }
+function startCapture(){
+  if(!recog && !initRecog()){
+    showMicWarn('Live voice transcription isn’t supported in this browser. Try Chrome or Edge — or just type/paste the visit conversation below. Everything else works the same.');
+    return;
+  }
+  finalText=document.getElementById('transcript').value?document.getElementById('transcript').value+' ':'';
+  try{ recog.start(); }catch(e){}
+  capturing=true;
+  const b=document.getElementById('captureBtn');
+  b.classList.remove('btn-primary'); b.classList.add('recording');
+  b.innerHTML='<span class="live-dot"></span> Recording… Stop Visit';
+}
+function stopCapture(){
+  capturing=false;
+  if(recog){ try{recog.stop()}catch(e){} }
+  const b=document.getElementById('captureBtn');
+  b.classList.remove('recording'); b.classList.add('btn-primary');
+  b.innerHTML='▶ Start Visit';
+}
+function clearTranscript(){
+  document.getElementById('transcript').value=''; finalText='';
+}
+
+/* =========================================================
+   EXAMPLE VISIT
+   ========================================================= */
+/* The example reads like a NATURAL, unlabeled conversation — the way a real
+   ambient transcript (or live mic dictation) arrives, with no "Doctor:" /
+   "Patient:" prefixes. The app and prompts infer who's speaking from context. */
+const EXAMPLE=`Good morning, what brings you in today? Hi, I've had this cough for about two weeks now and it's just not going away. It's worse at night. Okay. Any fever, chills, or shortness of breath? I had a low fever the first few days, around a hundred, but that's gone. No real trouble breathing, but my chest feels a little tight when I cough hard. Are you bringing up any phlegm? What color? Yeah, a bit, kind of yellowish-green. Any sore throat, runny nose, or ear pain? A little stuffy nose at the start. No ear pain. Do you smoke? Any asthma or lung problems before? I quit smoking three years ago. No asthma. I do have high blood pressure, I take lisinopril ten milligrams. Any allergies to medications? Penicillin gives me a rash. Alright, let me listen to your lungs. Take a deep breath. And again. Okay, I hear some coarse sounds at the right base. Your temperature today is ninety-nine one, blood pressure a hundred twenty-eight over eighty, heart rate seventy-eight, oxygen saturation ninety-seven percent. Your throat looks fine and your ears are clear. So what do you think it is? This looks like acute bronchitis, possibly an early lower respiratory infection. Given the colored sputum and the lung sounds, I'd like to get a chest X-ray to rule out pneumonia. Since you're allergic to penicillin, if we treat it I'll use doxycycline a hundred milligrams twice a day for seven days. For now, push fluids, rest, and you can take guaifenesin for the cough. Okay. If you get a high fever, worsening shortness of breath, or coughing up blood, go to urgent care right away. Otherwise come back in one week if you're not improving. Sounds good, thank you.`;
+function loadExample(){
+  document.getElementById('transcript').value=EXAMPLE; finalText=EXAMPLE+' ';
+  if(!document.getElementById('patientLabel').value.trim()) document.getElementById('patientLabel').value='Example — R.B.';
+  toast('Example visit loaded. Press Generate Note.','ok');
+}
+
+/* =========================================================
+   NOTE STATE + RENDERING
+   ========================================================= */
+let signed=false;
+let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, currentFormat='soap';
+let lastEMR=null;
+let currentAVS='', currentReferral='';
+let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
+
+function syncFormatToggle(){
+  const row=document.getElementById('formatToggleRow');
+  const hasIns=!!(currentInsurance && currentInsurance.trim());
+  row.style.display=(currentSoap?'flex':'none');
+  document.getElementById('togIns').style.opacity=hasIns?'1':'.45';
+  document.getElementById('togIns').style.pointerEvents=hasIns?'auto':'none';
+  document.getElementById('togSoap').classList.toggle('on',currentFormat==='soap');
+  document.getElementById('togIns').classList.toggle('on',currentFormat==='insurance');
+}
+function setFormat(fmt){
+  if(fmt==='insurance' && !(currentInsurance && currentInsurance.trim())){
+    toast('No insurance-ready version available for this note.','err'); return;
+  }
+  const nb=document.getElementById('noteBox');
+  if(currentFormat==='soap') currentSoap=nb.value; else currentInsurance=nb.value;
+  currentFormat=fmt;
+  nb.value=(fmt==='insurance')?currentInsurance:currentSoap;
+  syncFormatToggle();
+  if(signed){ setBadge(false); document.getElementById('signLine').style.display='none'; }
+  toast(fmt==='insurance'?'Showing insurance-ready format.':'Showing standard SOAP.','');
+}
+
+function renderCoding(c){
+  const card=document.getElementById('codeCard');
+  if(!c || (!c.em && !(c.icd&&c.icd.length) && !(c.cpt&&c.cpt.length))){ card.style.display='none'; return; }
+  card.style.display='block';
+  document.getElementById('code_em').textContent=c.em||'—';
+  document.getElementById('code_em_just').textContent=c.emJust?(' — '+c.emJust):'';
+  const chips=arr=>(arr&&arr.length)?arr.map(x=>'<span class="codechip">'+esc(x)+'</span>').join(''):'<span style="color:var(--muted)">None documented</span>';
+  document.getElementById('code_icd').innerHTML=chips(c.icd);
+  document.getElementById('code_cpt').innerHTML=chips(c.cpt);
+}
+function codingText(c){
+  if(!c) return '';
+  let t='\n\n---\nSUGGESTED CODING (for provider review — final coding is the provider\'s responsibility):\n';
+  if(c.em) t+='E/M level: '+c.em+(c.emJust?' — '+c.emJust:'')+'\n';
+  t+='ICD-10: '+((c.icd&&c.icd.length)?c.icd.join('; '):'None documented')+'\n';
+  t+='CPT procedures: '+((c.cpt&&c.cpt.length)?c.cpt.join('; '):'None documented')+'\n';
+  return t;
+}
+function setBadge(s){
+  const b=document.getElementById('statusBadge');
+  signed=s;
+  b.className='badge '+(s?'signed':'draft');
+  b.textContent=s?'✔ Signed':'● Draft';
+}
+function enableOutputs(on){
+  ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','billBtn'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.disabled=!on;
+  });
+  const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
+}
+function showNote(text){
+  document.getElementById('noteEmpty').style.display='none';
+  const nb=document.getElementById('noteBox');
+  nb.style.display='block'; nb.value=text;
+  enableOutputs(true); setBadge(false);
+  document.getElementById('signLine').style.display='none';
+}
+
+/* =========================================================
+   GENERATE NOTE
+   ========================================================= */
+async function generateNote(){
+  const transcript=document.getElementById('transcript').value.trim();
+  if(!transcript){ toast('Add a visit first — try "Load example visit".','err'); return; }
+  const key=getKey();
+  const gb=document.getElementById('genBtn');
+
+  if(!hasAI()){
+    if(transcript.trim()===EXAMPLE.trim()){
+      currentSoap=offlineExampleNote();
+      currentInsurance=offlineExampleInsuranceNote();
+      currentCoding=offlineExampleCoding();
+      currentOpt=null;
+      currentFormat='soap';
+      lastEMR=offlineExampleEMR();
+      syncFormatToggle();
+      showNote(currentSoap);
+      renderCoding(currentCoding);
+      document.getElementById('optCard').style.display='none';
+      populateEMR(lastEMR,currentCoding);
+      toast('No API key yet — showing an offline example note. Add your key in Settings for AI on any visit.','');
+    } else {
+      toast('Add your OpenAI API key in Settings to generate notes. (Or "Load example visit" to see a sample.)','err');
+      openSettings();
+    }
+    return;
+  }
+
+  gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
+  try{
+    const result=await callOpenAI(transcript,key);
+    currentSoap=result.note;
+    currentInsurance=result.insuranceNote||'';
+    currentCoding=result.coding;
+    currentOpt=null;
+    currentFormat='soap';
+    lastEMR=result.emr;
+    syncFormatToggle();
+    showNote(currentSoap);
+    renderCoding(currentCoding);
+    document.getElementById('optCard').style.display='none';
+    populateEMR(result.emr,currentCoding);
+    toast('Note generated. Optimize coding or sign when ready.','ok');
+  }catch(err){
+    toast(friendlyError(err),'err');
+  }finally{
+    gb.disabled=false; gb.innerHTML='✨ Generate Note';
+  }
+}
+
+function friendlyError(err){
+  const m=(err&&err.message)||String(err);
+  if(err&&err.noAccess) return 'Your account needs access — enter an access code (Settings) or ask the owner to enable you.';
+  if(err&&err.freeform) return 'This AI helper isn\'t available in the hosted server version yet. (Note generation still works.)';
+  if(/insufficient_quota|exceeded your current quota|billing/i.test(m))
+    return 'Your OpenAI account needs billing/credits — add a payment method at platform.openai.com → Billing. The API is billed separately from ChatGPT.';
+  if(/429|rate.?limit/i.test(m))
+    return 'OpenAI is rate-limiting (too many requests) or your account is out of credit. Wait a moment, or add billing/credits at platform.openai.com — the API is billed separately from ChatGPT.';
+  if(/401|invalid|incorrect api key/i.test(m)) return 'That API key looks invalid. Check it in Settings.';
+  if(/network|failed to fetch|load failed/i.test(m)) return 'Network problem reaching OpenAI. Check your internet connection.';
+  return 'Could not generate the note: '+m;
+}
+
+/* ---- Standards block reused by both prompts ---- */
+const STANDARDS=`CLINICAL FORMAT & CODING STANDARDS (follow precisely):
+- SOAP structure: SUBJECTIVE (Chief Complaint; HPI; pertinent ROS; PMH/PSH/FH/SH as relevant; Medications; Allergies), OBJECTIVE (Vitals; focused Exam by system; results of any in-visit tests), ASSESSMENT (numbered problem list, each with a working diagnosis), PLAN (per-problem: orders, meds, patient instructions, follow-up, return precautions).
+- ICD-10-CM format: valid alphanumeric codes, 3-7 characters, first char a letter, decimal point after the 3rd character when >3 chars (e.g. J20.9, I10, R05.9, J06.9). Code to the highest documented specificity; do not pad with unspecified digits that aren't supported.
+- CPT format: 5-digit numeric codes (e.g. 93000, 94010, 12001). List a CPT only for a procedure/service actually PERFORMED in this visit, not one merely ordered to be done elsewhere.
+- E/M selection per 2021+ AMA outpatient guidelines (revised office/outpatient 99202-99215): choose by Medical Decision Making (MDM) OR total time on the date of the encounter. MDM uses the highest 2 of 3 elements:
+  (1) Number/complexity of problems addressed (self-limited/minor; stable chronic; chronic with exacerbation; acute uncomplicated; acute with systemic sx; new problem w/ uncertain prognosis; acute/chronic w/ threat to life or function),
+  (2) Amount/complexity of data reviewed (tests ordered/reviewed, external notes, independent interpretation, discussion with another provider),
+  (3) Risk of complications/morbidity from management (minimal; low; moderate e.g. prescription drug management; high e.g. drug therapy requiring intensive monitoring, decision re: hospitalization).
+  MDM-to-level: Straightforward=99202/99212; Low=99203/99213; Moderate=99204/99214; High=99205/99215. New (99202-99205) vs Established (99211-99215).
+  Time thresholds (date of encounter, may be used instead of MDM): New 99202≥15,99203≥30,99204≥45,99205≥60 min; Established 99212≥10,99213≥20,99214≥30,99215≥40 min. Only use time if a total time is documented in the transcript.`;
+
+/* Read the chosen specialty preset, note style, and pasted context. */
+function getPreset(){ const el=document.getElementById('specialtyPreset'); return el?el.value:''; }
+function getNoteStyle(){ const el=document.getElementById('noteStyle'); return el?el.value:'SOAP'; }
+function getContext(){ const el=document.getElementById('contextBox'); return el?el.value.trim():''; }
+
+/* Build a background-context block from the ACTIVE patient's saved chart
+   (problem list, current meds, allergies, running summary) PLUS anything the
+   doctor pasted in the context box. This is fed to the AI as BACKGROUND so the
+   note/summary/referral/coding reflect the patient's real history & meds — but
+   the AI is told to document only NEW findings actually in the transcript. */
+function buildPatientContext(){
+  const parts=[];
+  const p=activePatient();
+  if(p){
+    if(p.name)      parts.push('Patient: '+p.name);
+    const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
+    if(demo)        parts.push('Demographics: '+demo);
+    if(p.problems && p.problems.trim())   parts.push('Active problem list:\n'+p.problems.trim());
+    if(p.meds && p.meds.trim())           parts.push('Current medications:\n'+p.meds.trim());
+    if(p.allergies && p.allergies.trim()) parts.push('Allergies:\n'+p.allergies.trim());
+    if(p.summary && p.summary.trim())     parts.push('Running history / prior-visit summary:\n'+p.summary.trim());
+  }
+  const pasted=getContext();
+  if(pasted) parts.push('Additional context the clinician pasted for this visit:\n'+pasted);
+  return parts.join('\n\n');
+}
+
+async function callOpenAI(transcript,key){
+  const preset=getPreset();
+  const spec=preset||getSpec();
+  const style=getNoteStyle();
+  const ctx=buildPatientContext();
+  const specLine=spec?`The clinician's specialty / note template is ${spec}; tailor terminology, relevant ROS/exam, and plan to that specialty.`:'';
+  const styleLine = style==='APSO'
+    ? 'FORMAT THE NOTE AS APSO: put ASSESSMENT and PLAN FIRST, then SUBJECTIVE and OBJECTIVE (same content, reordered) — clinicians scan A/P first.'
+    : style==='Narrative'
+    ? 'FORMAT THE NOTE AS A NARRATIVE paragraph-style clinical note (flowing prose with brief headers), not rigid SOAP bullets, while still covering subjective, objective, assessment and plan.'
+    : 'FORMAT THE NOTE AS STANDARD SOAP with the section headers below.';
+  const ctxLine = ctx?`\n\nACTIVE PATIENT CHART / BACKGROUND (the patient's saved problem list, current medications, allergies, and prior-visit history). Use this as BACKGROUND so the note correctly reflects known problems, home meds, and allergies in the PMH, problem list, medication reconciliation, and plan. CRITICAL: this is history, NOT today's encounter — do NOT invent exam findings, vitals, ROS, or new diagnoses from it. Document NEW findings/assessment/plan ONLY from what is actually said in today's transcript:\n"""${ctx}"""`:'';
+  const sys=`You are an expert clinical documentation and medical-coding assistant for physicians. Convert the raw doctor-patient visit transcript into a clean, professional medical note AND suggest accurate billing codes. ${specLine}
+
+TRANSCRIPT FORMAT — IMPORTANT: The transcript is a NATURAL conversation, usually from live ambient microphone transcription. It typically has NO speaker labels — no "Doctor:" or "Patient:" prefixes — and may be one continuous run of unpunctuated or loosely punctuated speech where the clinician's questions and the patient's answers are interleaved. INFER from context who is speaking (clinician = asks history questions, states exam findings/vitals, gives the assessment and plan; patient = describes symptoms, history, and answers). Do NOT require or expect speaker labels. If labels happen to be present, use them; if not, work entirely from context. Produce the same high-quality note either way.
+
+NOTE STYLE: ${styleLine}
+
+CRITICAL CODING ETHICS — read carefully:
+- Document and code ONLY what is actually supported by the transcript. NEVER invent symptoms, exam findings, history, time spent, or complexity to raise the E/M level or the bill. This is about accurately capturing what really happened, not upcoding.
+- Choose the E/M level that the documented complexity genuinely supports. If the documentation supports a lower level, pick the lower level. When unsure, choose conservatively.
+- Suggest ICD-10 codes only for diagnoses actually addressed, and CPT procedure codes only for procedures/services actually performed in the visit. Do NOT list an ordered-elsewhere study (e.g. a chest X-ray sent to radiology) as an in-office CPT.
+- All codes are SUGGESTIONS for the provider to review and confirm.
+
+${STANDARDS}
+
+Return ONLY valid JSON (no markdown fences) with this exact shape:
+{
+ "note": "<full SOAP note as plain text with the section headers above. Use concise clinical language. If vitals/details are missing, write 'not documented' rather than inventing them.>",
+ "insurance_note": "<the SAME visit reformatted as payer-facing documentation that makes medical necessity explicit. Include: (1) DATE/ENCOUNTER TYPE (new vs established), (2) CHIEF COMPLAINT & MEDICAL NECESSITY, (3) HISTORY (HPI elements, pertinent ROS, relevant PMH/meds/allergies), (4) EXAMINATION findings, (5) ASSESSMENT — each diagnosis explicitly stated and addressed with ICD-10, (6) MEDICAL DECISION MAKING — explicitly walk the 3 MDM elements (problems addressed; data reviewed/ordered; risk) and state the resulting MDM level; include total time only if documented, (7) PLAN per diagnosis, (8) E/M LEVEL RATIONALE tying the chosen level to the documented MDM (or time). Use ONLY information present in the transcript.>",
+ "chief_complaint": "<short phrase>",
+ "diagnoses": "<comma or semicolon separated diagnoses>",
+ "medications": "<medications with doses, or 'None'>",
+ "orders": "<labs/imaging/tests ordered, or 'None'>",
+ "follow_up": "<follow-up timing and return precautions>",
+ "em_level": "<single most appropriate code 99202-99215>",
+ "em_justification": "<one concise line tying the level to documented MDM (problems/data/risk) or stated time>",
+ "icd10": [ {"code":"<e.g. J20.9>","desc":"<diagnosis name>"} ],
+ "cpt": [ {"code":"<e.g. 93000>","desc":"<procedure actually performed in this visit; empty array if none>"} ]
+}`;
+  return await postChat(sys,'Visit transcript:\n\n'+transcript+ctxLine,key);
+}
+
+/* ---------------------------------------------------------
+   CORE AI TRANSPORT — backend-aware.
+   In HOSTED BACKEND MODE: POST {BACKEND_URL}/api/generate
+   In PER-DEVICE KEY MODE: POST OpenAI directly with the key.
+   Returns the raw JSON string the model produced.
+   --------------------------------------------------------- */
+async function aiCallRaw(sys,user,key,opts){
+  opts=opts||{};
+  if(backendMode()){
+    // Structured note generation -> /api/generate ({transcript}->{result}).
+    // Free-form helpers (referral, AVS, document analysis) -> /api/complete
+    // ({system,user}->{content}). Both are auth+access gated server-side.
+    if(opts.freeform){
+      const r=await fetch(bkBase()+'/api/complete',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+        body:JSON.stringify({system:sys,user:user})
+      });
+      if(r.status===401){ handle401(); throw new Error('401 unauthorized'); }
+      if(r.status===402){
+        let msg=''; try{const j=await r.json();msg=(j&&(j.message||j.error))||'';}catch(e){}
+        const e=new Error('no_access '+msg); e.noAccess=true; throw e;
+      }
+      if(!r.ok){
+        let detail=''; try{const j=await r.json();detail=(j&&(j.error||j.message))||'';}catch(e){}
+        throw new Error(r.status+' '+detail);
+      }
+      const d=await r.json();
+      return String((d&&d.content)||'').trim();
+    }
+    const res=await fetch(bkBase()+'/api/generate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({transcript:user})
+    });
+    if(res.status===401){ handle401(); const e=new Error('401 unauthorized'); throw e; }
+    if(res.status===402){
+      let msg=''; try{const j=await res.json();msg=(j&&(j.message||j.error))||'';}catch(e){}
+      const e=new Error('no_access '+msg); e.noAccess=true; throw e;
+    }
+    if(!res.ok){
+      let detail='';
+      try{const j=await res.json();detail=(j&&(j.error||j.message))||'';}catch(e){}
+      throw new Error(res.status+' '+detail);
+    }
+    const data=await res.json();
+    // Primary contract: {result:<object>} — re-stringify so downstream JSON.parse works.
+    if(data && data.result!==undefined){
+      return typeof data.result==='string' ? data.result.trim() : JSON.stringify(data.result);
+    }
+    // Tolerate older/alternate shapes.
+    if(data && typeof data.content==='string') return data.content.trim();
+    if(data && data.choices && data.choices[0] && data.choices[0].message)
+      return String(data.choices[0].message.content||'').trim();
+    return JSON.stringify(data);
+  }
+  // per-device key mode → OpenAI directly
+  const res=await fetch('https://api.openai.com/v1/chat/completions',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify({
+      model:'gpt-4o-mini',
+      temperature:0.2,
+      response_format:{type:'json_object'},
+      messages:[{role:'system',content:sys},{role:'user',content:user}]
+    })
+  });
+  if(!res.ok){
+    let detail='', code='';
+    try{const j=await res.json();detail=(j.error&&j.error.message)||'';code=(j.error&&j.error.code)||'';}catch(e){}
+    throw new Error(res.status+' '+code+' '+detail);
+  }
+  const data=await res.json();
+  return String(data.choices[0].message.content||'').trim();
+}
+
+async function postChat(sys,user,key){
+  let content=await aiCallRaw(sys,user,key);
+  content=content.replace(/^```json\s*/i,'').replace(/```$/,'').trim();
+  return parseGenJSON(content);
+}
+
+function parseGenJSON(content){
+  let parsed;
+  try{ parsed=JSON.parse(content); }
+  catch(e){ return {note:content,insuranceNote:'',coding:null,emr:{cc:'—',dx:'—',meds:'—',orders:'—',fu:'—'},raw:parsed}; }
+  const fmtCodes=arr=>Array.isArray(arr)?arr.map(c=>(c.code||'')+(c.desc?' — '+c.desc:'')).filter(Boolean):[];
+  return {
+    note:parsed.note||content,
+    insuranceNote:parsed.insurance_note||'',
+    coding:{
+      em:parsed.em_level||'',
+      emJust:parsed.em_justification||'',
+      icd:fmtCodes(parsed.icd10),
+      cpt:fmtCodes(parsed.cpt)
+    },
+    emr:{
+      cc:parsed.chief_complaint||'—',
+      dx:parsed.diagnoses||'—',
+      meds:parsed.medications||'—',
+      orders:parsed.orders||'—',
+      fu:parsed.follow_up||'—'
+    },
+    raw:parsed
+  };
+}
+
+/* =========================================================
+   OPTIMIZE FOR INSURANCE PAYOUT
+   Accurate-coding + gap-flagging ONLY. Never upcodes.
+   ========================================================= */
+async function optimizeForPayout(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  const key=getKey();
+  const noteText=(currentFormat==='soap'?document.getElementById('noteBox').value:currentSoap);
+  const insText=currentInsurance||'';
+  const transcript=document.getElementById('transcript').value.trim();
+  const optBtn=document.getElementById('optBtn');
+
+  // OFFLINE example path
+  if(!hasAI()){
+    if(transcript.trim()===EXAMPLE.trim()){
+      currentOpt=offlineExampleOptimization();
+      renderOpt(currentOpt);
+      toast('Offline example optimization shown. Add your OpenAI key for any visit.','');
+      document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
+    } else {
+      toast('Add your OpenAI API key in Settings to optimize coding. (Or use the example visit.)','err');
+      openSettings();
+    }
+    return;
+  }
+
+  optBtn.disabled=true; optBtn.innerHTML='<span class="spin"></span> Optimizing…';
+  try{
+    const sys=`You are a meticulous, ethical medical-coding auditor. The clinician has a finished clinical note. Your job is to ensure the documentation FULLY and EXPLICITLY supports the appropriate, ACCURATE E/M level under the 2021+ AMA outpatient E/M guidelines — by ensuring COMPLETE documentation of REAL work and CORRECT coding. You are an accuracy + completeness tool, NOT an upcoding tool.
+
+ABSOLUTE HONESTY GUARDRAILS — non-negotiable:
+- NEVER invent or assume findings, problems, diagnoses, data reviewed, time spent, or complexity that are not actually present in the note/transcript.
+- NEVER tell the provider to fabricate, exaggerate, or document something that did not occur.
+- Optimize ONLY by (a) confirming the highest E/M level ACTUALLY SUPPORTED by what is documented, with explicit MDM justification, and (b) flagging GAPS: things the clinician plausibly DID but may have left undocumented — phrased as a question/prompt to document ONLY IF it truly occurred.
+- Each gap MUST be conditional ("If you also reviewed labs/imaging, documenting it would support 99214"), never a directive to add unreal content.
+- If the documentation already fully supports the level, say so and list no fabricated gaps.
+
+NOTE: The original transcript provided as ground truth is a natural conversation and usually has NO speaker labels (no "Doctor:"/"Patient:" prefixes). Infer speakers from context; do not assume labels are present.
+
+${STANDARDS}
+
+Return ONLY valid JSON (no fences) with this shape:
+{
+ "supported_em": "<the highest E/M code 99202-99215 ACTUALLY supported by current documentation>",
+ "em_justification": "<one line tying it to documented MDM or time>",
+ "mdm_breakdown": "<2-4 sentences walking the 3 MDM elements as currently documented: (1) number/complexity of problems addressed, (2) data reviewed/ordered, (3) risk — and which 2 of 3 set the level>",
+ "icd10": [ {"code":"","desc":""} ],
+ "cpt": [ {"code":"","desc":""} ],
+ "gaps": [ "<each item a conditional prompt to document real-but-possibly-omitted work, e.g. 'You addressed 2 chronic conditions; IF you also reviewed labs or imaging during the visit, documenting that data would support moderate MDM (99214).' Include 0-6 items. Empty array if documentation is already complete.>" ]
+}`;
+    const pctx=buildPatientContext();
+    const user=`SOAP NOTE:\n${noteText}\n\nINSURANCE-READY NOTE:\n${insText||'(none)'}\n\nORIGINAL TRANSCRIPT (ground truth — do not exceed what this supports):\n${transcript||'(not available)'}`+(pctx?('\n\nPATIENT CHART BACKGROUND (chronic problems/meds already on file — relevant to MDM problem-complexity, but do NOT invent data review or findings not documented):\n'+pctx):'');
+    const data=await postChatRaw(sys,user,key);
+    currentOpt=normalizeOpt(data);
+    // update suggested coding to the audited (still accurate) codes if present
+    if(currentOpt.icd && currentOpt.icd.length) currentCoding.icd=currentOpt.icd;
+    if(currentOpt.cpt) currentCoding.cpt=currentOpt.cpt;
+    if(currentOpt.em){ currentCoding.em=currentOpt.em; currentCoding.emJust=currentOpt.emJust; }
+    renderCoding(currentCoding);
+    if(lastEMR) populateEMR(lastEMR,currentCoding);
+    renderOpt(currentOpt);
+    toast('Coding reviewed. Check the flagged gaps — document only what truly happened.','ok');
+    document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
+  }catch(err){
+    toast(friendlyError(err),'err');
+  }finally{
+    optBtn.disabled=false; optBtn.innerHTML='📈 Optimize for Insurance Payout';
+  }
+}
+
+async function postChatRaw(sys,user,key){
+  let content=await aiCallRaw(sys,user,key);
+  content=content.replace(/^```json\s*/i,'').replace(/```$/,'').trim();
+  return JSON.parse(content);
+}
+
+function normalizeOpt(p){
+  const fmtCodes=arr=>Array.isArray(arr)?arr.map(c=>(c.code||'')+(c.desc?' — '+c.desc:'')).filter(Boolean):[];
+  return {
+    em:p.supported_em||'',
+    emJust:p.em_justification||'',
+    mdm:p.mdm_breakdown||'',
+    icd:fmtCodes(p.icd10),
+    cpt:fmtCodes(p.cpt),
+    gaps:Array.isArray(p.gaps)?p.gaps.filter(Boolean):[]
+  };
+}
+
+function renderOpt(o){
+  const card=document.getElementById('optCard');
+  card.style.display='block';
+  document.getElementById('opt_em').textContent=o.em||'—';
+  document.getElementById('opt_em_just').textContent=o.emJust?(' — '+o.emJust):'';
+  document.getElementById('opt_mdm').textContent=o.mdm||'(no MDM breakdown returned)';
+  const g=document.getElementById('opt_gaps');
+  if(o.gaps && o.gaps.length){
+    g.innerHTML=o.gaps.map(x=>'<div class="gap-item">⚑ '+esc(x)+'</div>').join('');
+  } else {
+    g.innerHTML='<div class="gap-item">✅ No gaps flagged — documentation already supports the coded level. Confirm and sign.</div>';
+  }
+}
+
+/* =========================================================
+   EMR
+   ========================================================= */
+function populateEMR(e,c){
+  if(!e) return;
+  document.getElementById('emrEmpty').style.display='none';
+  document.getElementById('emrTable').style.display='table';
+  document.getElementById('emr_cc').textContent=e.cc||'—';
+  document.getElementById('emr_dx').textContent=e.dx||'—';
+  document.getElementById('emr_meds').textContent=e.meds||'—';
+  document.getElementById('emr_orders').textContent=e.orders||'—';
+  document.getElementById('emr_fu').textContent=e.fu||'—';
+  if(c){
+    document.getElementById('emr_em').textContent=(c.em||'—')+(c.emJust?' ('+c.emJust+')':'');
+    document.getElementById('emr_icd').textContent=(c.icd&&c.icd.length)?c.icd.join('; '):'None documented';
+    document.getElementById('emr_cpt').textContent=(c.cpt&&c.cpt.length)?c.cpt.join('; '):'None documented';
+    document.getElementById('emrCodeNote').style.display='block';
+  } else {
+    document.getElementById('emr_em').textContent='—';
+    document.getElementById('emr_icd').textContent='—';
+    document.getElementById('emr_cpt').textContent='—';
+  }
+}
+
+/* =========================================================
+   OFFLINE EXAMPLE CONTENT
+   ========================================================= */
+function offlineExampleNote(){
+  const spec=getSpec()?` (${getSpec()})`:'';
+  return `CLINICAL NOTE${spec}
+[Offline example — generated without AI. Add your OpenAI key in Settings for real notes on any visit.]
+
+SUBJECTIVE
+Chief Complaint: Persistent cough x 2 weeks, worse at night.
+HPI: Patient reports a productive cough for approximately two weeks, worsening at night, with yellow-green sputum. Low-grade fever (~100°F) for the first few days, now resolved. Mild chest tightness with forceful coughing. Initial nasal congestion. Denies dyspnea, ear pain, or hemoptysis.
+ROS: Respiratory — positive for cough, sputum production, mild chest tightness; negative for dyspnea. Constitutional — prior low-grade fever, now resolved. ENT — initial congestion; negative for ear pain.
+PMH: Hypertension. Former smoker (quit 3 years ago). No asthma.
+Medications: Lisinopril 10 mg PO daily.
+Allergies: Penicillin (rash).
+
+OBJECTIVE
+Vitals: Temp 99.1°F, BP 128/80, HR 78, SpO2 97% on room air.
+Exam: Lungs — coarse breath sounds at the right base, no wheeze. Oropharynx unremarkable. Tympanic membranes clear bilaterally.
+
+ASSESSMENT
+1. Acute bronchitis, rule out early lower respiratory tract infection / pneumonia (J20.9).
+2. Essential hypertension — stable on current therapy (I10).
+
+PLAN
+1. Acute bronchitis:
+   - Chest X-ray (PA/lateral) today to rule out pneumonia.
+   - If treatment indicated: doxycycline 100 mg PO BID x 7 days (penicillin allergy — amoxicillin avoided).
+   - Supportive care: increase fluids, rest, guaifenesin PRN cough.
+   - Return precautions: urgent care for high fever, worsening dyspnea, or hemoptysis.
+   - Follow-up in 1 week if not improving.
+2. Hypertension: continue lisinopril 10 mg daily; BP at goal today.
+
+AI-generated — review before signing.`;
+}
+function offlineExampleEMR(){
+  return {
+    cc:'Persistent cough x 2 weeks, worse at night',
+    dx:'Acute bronchitis (r/o pneumonia); Essential hypertension (stable)',
+    meds:'Doxycycline 100 mg PO BID x7d (if treated); Guaifenesin PRN; continue Lisinopril 10 mg daily',
+    orders:'Chest X-ray (PA/lateral) today',
+    fu:'Return in 1 week if not improving; urgent care for high fever, dyspnea, or hemoptysis'
+  };
+}
+function offlineExampleCoding(){
+  return {
+    em:'99213',
+    emJust:'Established patient, low MDM: 1 acute uncomplicated illness + 1 stable chronic illness; diagnostic imaging ordered; prescription drug management.',
+    icd:['J20.9 — Acute bronchitis, unspecified','R05.9 — Cough, unspecified','I10 — Essential (primary) hypertension'],
+    cpt:[] // chest X-ray performed in radiology, not an in-office CPT here
+  };
+}
+function offlineExampleInsuranceNote(){
+  return `INSURANCE-READY ENCOUNTER NOTE  [Offline example]
+
+ENCOUNTER TYPE: Established patient, office/outpatient visit (problem-focused, in person).
+
+CHIEF COMPLAINT & MEDICAL NECESSITY
+Productive cough x2 weeks, worse at night, with colored sputum and prior low-grade fever. Visit medically necessary to evaluate persistent lower-respiratory symptoms, rule out pneumonia, and manage a comorbid chronic condition (hypertension).
+
+HISTORY
+HPI (4+ elements): duration ~2 weeks; timing worse at night; quality productive with yellow-green sputum; associated prior low-grade fever (~100F, resolved), mild chest tightness, initial nasal congestion. Denies dyspnea, ear pain, hemoptysis.
+Pertinent ROS: Respiratory positive for cough/sputum/chest tightness, negative for dyspnea; Constitutional fever (resolved); ENT negative for ear pain.
+Relevant PMH/Meds/Allergies: Hypertension; former smoker (quit 3 yrs); no asthma. Lisinopril 10 mg daily. Penicillin allergy (rash).
+
+EXAMINATION
+Vitals: Temp 99.1F, BP 128/80, HR 78, SpO2 97% RA.
+Exam: Lungs — coarse breath sounds at right base, no wheeze. Oropharynx unremarkable. TMs clear.
+
+ASSESSMENT (each diagnosis explicitly addressed)
+1. Acute bronchitis, r/o early pneumonia — ICD-10 J20.9 (with R05.9 cough). Addressed: imaging ordered, conditional antibiotic plan.
+2. Essential hypertension — ICD-10 I10. Addressed: stable on therapy, continued.
+
+MEDICAL DECISION MAKING (2021+ AMA, 2 of 3 elements)
+- Number/complexity of problems addressed: 1 acute uncomplicated illness (bronchitis) + 1 stable chronic illness (HTN) = LOW.
+- Amount/complexity of data: chest X-ray ordered/to be reviewed = MINIMAL-to-LOW.
+- Risk of management: prescription drug management (conditional antibiotic) = MODERATE-leaning, overall supports LOW.
+Resulting MDM: LOW (the problems + data elements set the level).
+
+PLAN
+1. Acute bronchitis: chest X-ray today to r/o pneumonia; if indicated, doxycycline 100 mg PO BID x7d (penicillin allergy noted); fluids, rest, guaifenesin PRN; return precautions (high fever, dyspnea, hemoptysis); follow-up 1 week if not improving.
+2. Hypertension: continue lisinopril 10 mg daily.
+
+E/M LEVEL RATIONALE
+Documentation supports CPT 99213 (established patient, LOW MDM): 1 acute uncomplicated + 1 stable chronic problem, diagnostic imaging ordered, and prescription drug management. Coded to documented complexity only — not elevated.
+
+[Suggested codes — provider reviews and confirms; document only what actually occurred.]`;
+}
+function offlineExampleOptimization(){
+  return {
+    em:'99213',
+    emJust:'Established patient, LOW MDM as currently documented (2 problems + data ordered).',
+    mdm:'(1) Problems addressed: 1 acute uncomplicated illness (acute bronchitis) + 1 stable chronic illness (hypertension) = low. (2) Data: a chest X-ray was ordered (minimal-to-limited data as documented). (3) Risk: prescription drug management (conditional doxycycline) = moderate risk. Two of three elements (problems + data) currently sit at the low level, so the supported level is 99213.',
+    icd:['J20.9 — Acute bronchitis, unspecified','R05.9 — Cough, unspecified','I10 — Essential (primary) hypertension'],
+    cpt:[],
+    gaps:[
+      'You addressed 2 problems and ordered imaging. IF you also independently reviewed the chest X-ray result or any prior labs during this visit, documenting that data review would strengthen the data element toward moderate MDM (99214). Document only if it actually occurred.',
+      'Risk is already moderate (prescription drug management). IF you also documented the clinical reasoning for choosing/holding the antibiotic (e.g. weighing the penicillin allergy), that supports the moderate-risk element explicitly.',
+      'IF the total time you spent on this encounter on the date of service reached 30 minutes or more (including review, counseling, and documentation), you may alternatively support 99214 by time — but only document the actual time spent.',
+      'No in-office procedure CPT is coded because the chest X-ray is performed in radiology. IF any in-office service was actually performed (e.g. pulse oximetry as a billable service per payer rules), confirm and document it.'
+    ]
+  };
+}
+
+/* =========================================================
+   RECOMMENDATIONS FOR THE PROVIDER
+   Advisory only — care gaps, interaction flags, follow-up/
+   monitoring, and accurate-coding documentation tips. Built
+   from the visit note + the active patient's chart. Never a
+   directive; never upcoding. Uses aiCallRaw (backend-or-key),
+   with an offline fallback for the built-in example.
+   ========================================================= */
+function renderRecommendations(){
+  const empty=document.getElementById('recsEmpty');
+  const content=document.getElementById('recsContent');
+  if(!currentRecs){
+    content.style.display='none';
+    empty.style.display='block';
+    empty.innerHTML = currentSoap
+      ? '<span class="big">💡</span>Note ready. Press <b>Generate Recommendations</b> to see provider suggestions for this visit.'
+      : '<span class="big">💡</span>Generate a visit note first, then press <b>Generate Recommendations</b>.<br>Suggestions are drawn from the visit and the active patient\'s profile.';
+    return;
+  }
+  empty.style.display='none';
+  content.style.display='block';
+  const r=currentRecs;
+  fillRecGroup('recGap','','🩺 Care gaps & preventive items likely due', r.care_gaps,'No preventive care gaps flagged from the documented conditions.');
+  fillRecGroup('recInteract','interact','⚠️ Drug-interaction / contraindication flags', r.interactions,'No interaction or contraindication concerns flagged from the medication list.');
+  fillRecGroup('recFollow','','🔁 Follow-up & monitoring the plan implies', r.follow_up,'No additional follow-up/monitoring items flagged beyond the plan.');
+  fillRecGroup('recDoc','doc','📝 Documentation tips (support accurate coding — not upcoding)', r.documentation,'Documentation appears complete for the level supported.');
+}
+function fillRecGroup(id,cls,head,items,emptyTxt){
+  const g=document.getElementById(id);
+  g.className='rec-group'+(cls?(' '+cls):'');
+  const arr=Array.isArray(items)?items.filter(Boolean):[];
+  const body = arr.length
+    ? '<div class="rec-list">'+arr.map(x=>'<div class="rec-item"><span class="chk">☐</span><span>'+esc(x)+'</span></div>').join('')+'</div>'
+    : '<div class="rec-empty">'+esc(emptyTxt)+'</div>';
+  g.innerHTML='<div class="rg-head">'+esc(head)+'</div>'+body;
+}
+function normalizeRecs(p){
+  const arr=x=>Array.isArray(x)?x.filter(Boolean).map(String):[];
+  return {
+    care_gaps:arr(p.care_gaps),
+    interactions:arr(p.interactions||p.drug_interactions),
+    follow_up:arr(p.follow_up),
+    documentation:arr(p.documentation||p.documentation_tips)
+  };
+}
+async function generateRecommendations(){
+  showView('recs');
+  const noteNow=currentNoteText();
+  const transcript=document.getElementById('transcript').value.trim();
+  // Recommendations must reflect the REAL current visit: require an actual note or transcript.
+  if(!noteNow && !transcript){ toast('Generate or load a visit first.','err'); return; }
+  if(!currentSoap && !noteNow){ toast('Generate a visit note first (on the Visit tab).','err'); return; }
+  const btn=document.getElementById('genRecsBtn');
+
+  // OFFLINE example path
+  if(!hasAI()){
+    if(transcript && transcript===EXAMPLE.trim()){
+      currentRecs=offlineExampleRecommendations();
+      renderRecommendations();
+      toast('Offline example recommendations shown. Add your OpenAI key for any visit.','');
+    } else {
+      toast('Add your OpenAI API key in Settings to generate recommendations. (Or use the example visit.)','err');
+      openSettings();
+    }
+    return;
+  }
+
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Thinking…';
+  try{
+    const c=currentCoding||{};
+    const codingLine='Suggested coding for this visit (already accurate; do NOT upcode): E/M '+(c.em||'—')+'; ICD-10 '+((c.icd&&c.icd.length)?c.icd.join('; '):'none')+'; CPT '+((c.cpt&&c.cpt.length)?c.cpt.join('; '):'none')+'.';
+    const sys=`You are a clinical decision-support assistant generating ADVISORY recommendations FOR THE PHYSICIAN (not the patient) after a visit. You receive the clinical note for today's visit and the patient's chart background (problem list, medications, allergies, history). Produce concise, genuinely useful items the provider may want to consider.
+
+STRICT GUARDRAILS:
+- These are SUGGESTIONS for the provider to consider using clinical judgment — NEVER directives, NEVER medical advice to the patient.
+- Base care-gap and monitoring suggestions on the patient's documented conditions and standard preventive/chronic-care practice (e.g. A1c & lipid panel for diabetes, BP monitoring & renal function for hypertension, age/sex-appropriate cancer screening and vaccines). Frame each as something to CONSIDER or VERIFY (the patient may already be up to date).
+- For interactions/contraindications, reason ONLY over the medications and allergies actually listed; flag plausible interaction or contraindication concerns and clearly say the provider must verify. If nothing notable, return an empty list. Do not invent meds not present.
+- Follow-up/monitoring items should reflect what the documented plan implies (labs to recheck, return timing, parameters to monitor for prescribed drugs).
+- Documentation tips must tie to ACCURATE coding only: flag real work that, IF it occurred, should be documented to fully support the already-appropriate E/M level. NEVER suggest fabricating, exaggerating, or upcoding. Phrase conditionally ("If you also ... documenting it would support ...").
+- Use ONLY conditions/meds/allergies present in the note or chart background. Do not invent diagnoses or results.
+
+Return ONLY valid JSON (no markdown fences) with this exact shape (each value an array of short plain-text strings; use [] if none):
+{
+ "care_gaps": [ "<preventive/chronic-care item likely due to CONSIDER/VERIFY, tied to a documented condition>" ],
+ "interactions": [ "<possible drug-interaction or contraindication flag to VERIFY, referencing the specific meds/allergy>" ],
+ "follow_up": [ "<follow-up or monitoring item the documented plan implies>" ],
+ "documentation": [ "<conditional documentation tip to fully + accurately support the coded level; never upcoding>" ]
+}`;
+    const pctx=buildPatientContext();
+    const noteText=currentNoteText();
+    const trans=document.getElementById('transcript').value.trim();
+    const user='TODAY\'S CLINICAL NOTE:\n'+(noteText||'(note not generated — see transcript below)')+'\n\n'+codingLine+
+      (trans?('\n\nORIGINAL VISIT TRANSCRIPT (ground truth for today\'s encounter):\n'+trans):'')+
+      (pctx?('\n\nPATIENT CHART BACKGROUND (problem list, current meds, allergies, prior-visit history):\n'+pctx):'\n\n(No additional chart background on file — use the visit data only.)');
+    let data;
+    if(backendMode()){
+      // hosted: free-form helper → /api/complete with Bearer auth
+      let raw=await aiCallRaw(sys,user,getKey(),{freeform:true});
+      raw=String(raw||'').replace(/^```json\s*/i,'').replace(/```$/,'').trim();
+      try{ data=JSON.parse(raw); }
+      catch(e){ data={}; }
+    } else {
+      data=await postChatRaw(sys,user,getKey());
+    }
+    currentRecs=normalizeRecs(data);
+    renderRecommendations();
+    toast('Recommendations ready — advisory only; use clinical judgment.','ok');
+  }catch(err){
+    toast(friendlyError(err),'err');
+  }finally{
+    btn.disabled=false; btn.innerHTML='✨ Generate Recommendations';
+  }
+}
+function recommendationsText(){
+  if(!currentRecs) return '';
+  const r=currentRecs;
+  const L=['RECOMMENDATIONS FOR THE PROVIDER (advisory — use clinical judgment; not medical advice or directives)',''];
+  const sec=(title,arr,emptyTxt)=>{
+    L.push(title);
+    if(arr&&arr.length) arr.forEach(x=>L.push('  ☐ '+x)); else L.push('  • '+emptyTxt);
+    L.push('');
+  };
+  sec('Care gaps & preventive items likely due:',r.care_gaps,'None flagged.');
+  sec('Drug-interaction / contraindication flags:',r.interactions,'None flagged.');
+  sec('Follow-up & monitoring:',r.follow_up,'None beyond the plan.');
+  sec('Documentation tips (accurate coding — not upcoding):',r.documentation,'Appears complete.');
+  L.push('AI suggestions for the provider to consider — not directives, not medical advice.');
+  return L.join('\n');
+}
+function copyRecommendations(){
+  const t=recommendationsText();
+  if(!t){ toast('Generate recommendations first.','err'); return; }
+  navigator.clipboard.writeText(t)
+    .then(()=>toast('Recommendations copied.','ok'))
+    .catch(()=>toast('Could not copy — select manually.','err'));
+}
+function offlineExampleRecommendations(){
+  return {
+    care_gaps:[
+      'Hypertension is on the problem list — consider verifying a recent lipid panel and renal function/electrolytes (lisinopril) are up to date.',
+      'Consider confirming the patient is current on age-appropriate vaccinations (e.g. annual influenza; pneumococcal and Tdap per age/risk).',
+      'Former smoker (quit 3 years ago) — consider whether low-dose CT lung-cancer screening criteria are met (age 50-80 with sufficient pack-year history); verify smoking history.',
+      'Confirm age/sex-appropriate cancer screenings (e.g. colorectal screening) are current.'
+    ],
+    interactions:[
+      'Penicillin allergy noted — doxycycline was appropriately chosen instead of a beta-lactam; verify no prior tetracycline intolerance.',
+      'Verify no clinically significant interaction between doxycycline and the patient\'s other medications; counsel on photosensitivity and taking it upright with water.'
+    ],
+    follow_up:[
+      'Chest X-ray ordered to rule out pneumonia — ensure the result is reviewed and the patient is contacted if abnormal.',
+      'Planned 1-week follow-up if not improving; return precautions (high fever, dyspnea, hemoptysis) documented.',
+      'Continue routine blood-pressure monitoring for the stable hypertension; reassess at the next visit.'
+    ],
+    documentation:[
+      'Two problems were addressed (acute bronchitis + stable hypertension) with prescription drug management — this supports 99213 as coded. IF you independently reviewed the chest X-ray or prior labs during the visit, documenting that data review would support moderate MDM (99214). Document only if it truly occurred.',
+      'IF total time on the date of service (review, counseling, documentation) reached 30+ minutes, you may alternatively support 99214 by time — document the actual time only.',
+      'The penicillin-allergy reasoning for antibiotic choice is good supporting documentation for the risk/MDM element — ensure it stays in the note.'
+    ]
+  };
+}
+
+/* =========================================================
+   SIGN / OUTPUT
+   ========================================================= */
+function signNote(){
+  if(signed){ toast('Note is already signed.',''); return; }
+  setBadge(true);
+  const name=getName()||'Clinician';
+  const ts=new Date().toLocaleString();
+  const line=document.getElementById('signLine');
+  line.style.display='block';
+  line.textContent=`Electronically signed by ${name} on ${ts}. AI-generated — reviewed before signing.`;
+  // auto-save the signed note to history
+  saveCurrentNote(false);
+  toast('Note signed and saved to history on this device.','ok');
+}
+function fullText(){
+  const nb=document.getElementById('noteBox');
+  if(currentFormat==='soap') currentSoap=nb.value; else currentInsurance=nb.value;
+  let t=nb.value;
+  t+=codingText(currentCoding);
+  const line=document.getElementById('signLine');
+  if(line.style.display!=='none') t+='\n\n'+line.textContent;
+  return t;
+}
+function copyNote(){
+  navigator.clipboard.writeText(fullText())
+    .then(()=>toast('Note copied to clipboard.','ok'))
+    .catch(()=>toast('Could not copy — select the text manually.','err'));
+}
+function downloadNote(){
+  const blob=new Blob([fullText()],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='Scrivara_Note_'+new Date().toISOString().slice(0,10)+'.txt';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Downloaded .txt','ok');
+}
+
+/* ---- Copy for EMR: clean structured block a doctor pastes straight in ---- */
+function emrReadyText(){
+  const nb=document.getElementById('noteBox');
+  if(nb && nb.style.display!=='none'){ if(currentFormat==='soap') currentSoap=nb.value; else currentInsurance=nb.value; }
+  const note=(currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'';
+  const p=activePatient();
+  const e=lastEMR||{}; const c=currentCoding;
+  let t='';
+  t+='PATIENT: '+(p?p.name:(document.getElementById('patientLabel').value.trim()||'Unlabeled'))+'\n';
+  t+='DATE: '+new Date().toLocaleString()+'\n';
+  if(getName()) t+='PROVIDER: '+getName()+(getSpec()?' ('+getSpec()+')':'')+'\n';
+  t+='\n'+note.trim()+'\n';
+  // structured fields
+  const rows=[['Chief complaint',e.cc],['Diagnoses',e.dx],['Medications',e.meds],['Orders',e.orders],['Follow-up',e.fu]].filter(r=>r[1]&&r[1]!=='—');
+  if(rows.length){ t+='\n--- STRUCTURED FIELDS ---\n'; rows.forEach(r=>t+=r[0]+': '+r[1]+'\n'); }
+  if(c && (c.em||(c.icd&&c.icd.length)||(c.cpt&&c.cpt.length))){
+    t+='\n--- SUGGESTED CODING (provider review) ---\n';
+    if(c.em) t+='E/M: '+c.em+(c.emJust?' — '+c.emJust:'')+'\n';
+    t+='ICD-10: '+((c.icd&&c.icd.length)?c.icd.join('; '):'None documented')+'\n';
+    t+='CPT: '+((c.cpt&&c.cpt.length)?c.cpt.join('; '):'None performed in visit')+'\n';
+  }
+  const line=document.getElementById('signLine');
+  if(line && line.style.display!=='none') t+='\n'+line.textContent+'\n';
+  return t.trim();
+}
+function copyForEMR(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  navigator.clipboard.writeText(emrReadyText())
+    .then(()=>toast('Clean note + fields + codes copied — paste straight into your EMR.','ok'))
+    .catch(()=>toast('Could not copy — use Copy or Download instead.','err'));
+}
+
+/* =========================================================
+   SHARE / EXPORT PATIENT RECORD
+   Compiles profile + per-patient notes + document summaries.
+   ========================================================= */
+function compilePatientRecord(p){
+  const L=[];
+  L.push('PATIENT RECORD');
+  L.push('='.repeat(50));
+  L.push('Patient: '+p.name);
+  const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
+  if(demo) L.push(demo);
+  L.push('Compiled: '+new Date().toLocaleString());
+  if(getName()) L.push('Provider: '+getName()+(getSpec()?' ('+getSpec()+')':''));
+  L.push('');
+  L.push('PROBLEM LIST');L.push('-'.repeat(20));L.push((p.problems||'').trim()||'(none recorded)');L.push('');
+  L.push('MEDICATIONS');L.push('-'.repeat(20));L.push((p.meds||'').trim()||'(none recorded)');L.push('');
+  L.push('ALLERGIES');L.push('-'.repeat(20));L.push((p.allergies||'').trim()||'(none recorded)');L.push('');
+  L.push('SUMMARY');L.push('-'.repeat(20));L.push((p.summary||'').trim()||'(none)');L.push('');
+  const notes=patientNotes(p.id).sort((a,b)=>(a.updated||0)-(b.updated||0));
+  L.push('VISIT NOTES ('+notes.length+')');L.push('='.repeat(50));
+  if(!notes.length) L.push('(no visits recorded)');
+  notes.forEach(n=>{
+    L.push('');
+    L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
+    if(n.isDraft){ L.push('[Transcript only — no note generated]'); }
+    else {
+      L.push((n.soap||'').trim());
+      if(n.coding) L.push(codingText(n.coding).trim());
+      if(n.signLine) L.push(n.signLine);
+    }
+    L.push('-'.repeat(50));
+  });
+  const docs=(p.docs||[]).filter(d=>d.aiSummary);
+  if(docs.length){
+    L.push('');L.push('DOCUMENT SUMMARIES ('+docs.length+')');L.push('='.repeat(50));
+    docs.forEach(d=>{ L.push('');L.push('• '+d.name+' ('+new Date(d.date).toLocaleDateString()+')');L.push(d.aiSummary.trim()); });
+  }
+  L.push('');
+  L.push('-'.repeat(50));
+  L.push('Generated by Scrivara on this device. Stored locally only. Not for real PHI until HIPAA-compliant (BAA, encryption, consent). Secure cross-provider sharing comes with the hosted version.');
+  return L.join('\n');
+}
+function openShareModal(){
+  const p=activePatient();
+  if(!p){ toast('Select a patient first.','err'); return; }
+  document.getElementById('shareText').value=compilePatientRecord(p);
+  document.getElementById('shareModal').classList.add('show');
+}
+function closeShareModal(){ document.getElementById('shareModal').classList.remove('show'); }
+function copyShare(){
+  navigator.clipboard.writeText(document.getElementById('shareText').value)
+    .then(()=>toast('Patient record copied.','ok')).catch(()=>toast('Could not copy.','err'));
+}
+function downloadShare(){
+  const p=activePatient(); if(!p) return;
+  const blob=new Blob([document.getElementById('shareText').value],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='Scrivara_Record_'+p.name.replace(/[^A-Za-z0-9]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.txt';
+  a.click(); URL.revokeObjectURL(a.href); toast('Record downloaded.','ok');
+}
+function printShare(){
+  const p=activePatient(); if(!p) return;
+  const txt=document.getElementById('shareText').value;
+  const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Patient Record — '+esc(p.name)+'</title>'+
+    '<style>body{font-family:\'Segoe UI\',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13px;line-height:1.55}'+
+    'h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px}'+
+    'pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0}'+
+    '.foot{margin-top:18px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:8px}'+
+    '@media print{body{padding:0}}</style></head><body>'+
+    '<h1>Scrivara — Patient Record</h1><pre>'+esc(txt)+'</pre>'+
+    '<div class="foot">Stored locally on this device. Not for real PHI until HIPAA-compliant.</div></body></html>';
+  let win=null; try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
+  if(win&&win.document){ win.document.open(); win.document.write(html); win.document.close(); win.focus();
+    win.onload=()=>setTimeout(()=>{try{win.print();}catch(e){}},150);
+    setTimeout(()=>{try{win.print();}catch(e){}},400); toast('Opening print view…','ok');
+  } else { toast('Allow pop-ups to print.','err'); }
+}
+async function generatePatientLetter(){
+  const p=activePatient(); if(!p) return;
+  const notes=patientNotes(p.id).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  const latest=notes.find(n=>!n.isDraft);
+  const profileBlock='Patient: '+p.name+'\nProblems: '+(p.problems||'none')+'\nMedications: '+(p.meds||'none')+'\nAllergies: '+(p.allergies||'none')+'\nSummary: '+(p.summary||'none');
+  if(!hasAI()){
+    const txt=new Date().toLocaleDateString()+'\n\nDear Colleague:\n\nThank you for seeing '+p.name+'.\n\n'+profileBlock+
+      (latest?('\n\nMost recent visit note:\n'+(latest.soap||'')):'')+
+      '\n\nThank you,\n'+(getName()||'Referring Provider')+'\n\n[Offline example — add your OpenAI key for an AI-drafted letter.]';
+    document.getElementById('shareText').value=txt;
+    toast('Offline summary letter shown. Add your key for AI drafting.','');
+    return;
+  }
+  const to=prompt('Send letter to (specialty / consultant):','Specialist');
+  toast('Drafting letter…','');
+  try{
+    const sys='You are drafting a concise professional referral/summary letter from one physician to another about a patient. Standard letter format: date, "Dear [recipient]:", reason, brief relevant history (problems, meds, allergies), recent visit summary, and the request. Use ONLY the facts provided — do not invent. Close with a signature block. Under ~280 words.';
+    const user='Referring provider: '+(getName()||'Referring provider')+'\nReferring to: '+(to||'Specialist')+'\n\nPATIENT PROFILE:\n'+profileBlock+(latest?('\n\nMOST RECENT VISIT NOTE:\n'+(latest.soap||'')):'');
+    const letter=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    document.getElementById('shareText').value=letter;
+    toast('Letter drafted. Review before sending.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+}
+/* =========================================================
+   PRINT — builds a clean, self-contained printable document
+   (note + structured EMR fields + suggested codes) in a new
+   window and triggers the print dialog. Falls back to an
+   in-page print stylesheet if pop-ups are blocked.
+   ========================================================= */
+function buildPrintHTML(){
+  // make sure the latest edits in the textarea are captured
+  const nb=document.getElementById('noteBox');
+  if(nb && nb.style.display!=='none'){
+    if(currentFormat==='soap') currentSoap=nb.value; else currentInsurance=nb.value;
+  }
+  const noteText=(currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'';
+  const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
+  const docName=getName()||'Clinician';
+  const spec=getSpec();
+  const now=new Date().toLocaleString();
+  const fmtLabel=currentFormat==='insurance'?'Insurance-Ready':'Standard';
+  const signLine=document.getElementById('signLine');
+  const signedTxt=(signLine && signLine.style.display!=='none')?signLine.textContent:'';
+
+  const e=lastEMR||{}; const c=currentCoding;
+  const emrRows=[
+    ['Chief complaint',e.cc],['Diagnoses',e.dx],['Medications',e.meds],
+    ['Orders',e.orders],['Follow-up',e.fu]
+  ].filter(r=>r[1]&&r[1]!=='—')
+   .map(r=>`<tr><td class="k">${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('');
+
+  let codeBlock='';
+  if(c && (c.em || (c.icd&&c.icd.length) || (c.cpt&&c.cpt.length))){
+    const chips=a=>(a&&a.length)?a.map(x=>esc(x)).join('; '):'None documented';
+    codeBlock=`<h2>Suggested coding (for provider review)</h2>
+      <table class="emr">
+        <tr><td class="k">E/M visit level</td><td>${esc(c.em||'—')}${c.emJust?' — '+esc(c.emJust):''}</td></tr>
+        <tr><td class="k">ICD-10 dx codes</td><td>${chips(c.icd)}</td></tr>
+        <tr><td class="k">CPT procedures</td><td>${chips(c.cpt)}</td></tr>
+      </table>
+      <p class="disc">⚠️ Suggested codes for the provider to review and confirm — final coding is the provider's responsibility. Codes reflect only what is documented in this visit.</p>`;
+  }
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Scrivara Note — ${esc(patient)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
+  .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
+  .meta b{color:#16324f}
+  h2{font-size:15px;color:#155fb3;margin:20px 0 7px;border-bottom:1px solid #e2e9f1;padding-bottom:4px}
+  pre.note{white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0}
+  table.emr{width:100%;border-collapse:collapse;margin-top:4px}
+  table.emr td{padding:6px 5px;border-bottom:1px solid #e2e9f1;vertical-align:top}
+  table.emr td.k{color:#5f7186;font-weight:600;width:170px;white-space:nowrap}
+  .disc{font-size:11.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;border-radius:6px;padding:7px 10px;margin-top:10px}
+  .sign{margin-top:18px;padding-top:10px;border-top:1px solid #e2e9f1;font-size:12.5px;font-style:italic;color:#127a55}
+  .foot{margin-top:24px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:10px}
+  @media print{body{padding:0}}
+</style></head><body>
+  <div class="hd">
+    <div class="brand">Scrivara<small>Ambient AI medical scribe</small></div>
+    <div class="meta">
+      <div><b>Patient:</b> ${esc(patient)}</div>
+      <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
+      <div><b>Printed:</b> ${esc(now)}</div>
+      <div><b>Format:</b> ${esc(fmtLabel)}</div>
+    </div>
+  </div>
+  <h2>Clinical note</h2>
+  <pre class="note">${esc(noteText||'(no note)')}</pre>
+  ${emrRows?('<h2>EMR fields</h2><table class="emr">'+emrRows+'</table>'):''}
+  ${codeBlock}
+  ${signedTxt?('<div class="sign">'+esc(signedTxt)+'</div>'):''}
+  <div class="foot">AI-generated — reviewed before signing. Scrivara runs in your browser; not for real PHI without HIPAA compliance (BAA, encryption, patient consent).</div>
+</body></html>`;
+}
+
+function printNote(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  const html=buildPrintHTML();
+  let win=null;
+  try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
+  if(win && win.document){
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    // give the new window a tick to render, then print
+    const go=()=>{ try{win.print();}catch(e){} };
+    if(win.document.readyState==='complete') setTimeout(go,250);
+    else win.onload=()=>setTimeout(go,150);
+    toast('Opening print view…','ok');
+  } else {
+    // Pop-up blocked → fall back to a hidden iframe so printing still works.
+    let frame=document.getElementById('sfPrintFrame');
+    if(frame) frame.remove();
+    frame=document.createElement('iframe');
+    frame.id='sfPrintFrame';
+    frame.style.position='fixed'; frame.style.right='0'; frame.style.bottom='0';
+    frame.style.width='0'; frame.style.height='0'; frame.style.border='0';
+    document.body.appendChild(frame);
+    const doc=frame.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); }catch(e){ toast('Could not open print dialog.','err'); } },300);
+    toast('Printing note…','ok');
+  }
+}
+
+/* =========================================================
+   DOT PHRASES / QUICK-TEXT MACROS  (per user, localStorage)
+   Click a chip to insert its text at the transcript cursor.
+   ========================================================= */
+const DEFAULT_DOTS=[
+  {name:'normal-exam', text:'Physical exam: well-appearing, no acute distress. Heart regular rate and rhythm. Lungs clear bilaterally. Abdomen soft, non-tender. No edema.'},
+  {name:'ros-neg', text:'ROS otherwise negative except as noted in HPI.'},
+  {name:'return-precautions', text:'Return precautions reviewed: return or seek urgent care for worsening symptoms, high fever, shortness of breath, or chest pain.'}
+];
+function getDots(){
+  try{ const v=JSON.parse(localStorage.getItem(uns('dots'))); return Array.isArray(v)?v:DEFAULT_DOTS.slice(); }
+  catch(e){ return DEFAULT_DOTS.slice(); }
+}
+function saveDots(arr){ localStorage.setItem(uns('dots'),JSON.stringify(arr)); }
+function renderDots(){
+  const wrap=document.getElementById('dotChips'); if(!wrap) return;
+  const dots=getDots();
+  wrap.innerHTML=dots.length
+    ? dots.map((d,i)=>`<span class="dotchip" title="${esc(d.text)}" onclick="insertDot(${i})">.${esc(d.name)}</span>`).join('')
+    : '<span style="color:var(--muted);font-size:12.5px">No macros yet — press Add.</span>';
+}
+function insertDot(i){
+  const dots=getDots(); const d=dots[i]; if(!d) return;
+  const ta=document.getElementById('transcript');
+  const start=ta.selectionStart??ta.value.length, end=ta.selectionEnd??ta.value.length;
+  const before=ta.value.slice(0,start), after=ta.value.slice(end);
+  const ins=(before && !/\s$/.test(before)?'\n':'')+d.text+(after?'\n':'');
+  ta.value=before+ins+after;
+  finalText=ta.value+' ';
+  ta.focus(); ta.selectionStart=ta.selectionEnd=(before+ins).length;
+  toast('Inserted .'+d.name,'ok');
+}
+function addDotPhrase(){
+  const name=prompt('Macro name (short, no spaces) — e.g. normal-heart');
+  if(!name) return;
+  const text=prompt('Quick-text for ".'+name.trim()+'":');
+  if(!text) return;
+  const dots=getDots();
+  const clean=name.trim().replace(/\s+/g,'-');
+  const ex=dots.findIndex(d=>d.name===clean);
+  if(ex>=0) dots[ex].text=text.trim(); else dots.push({name:clean,text:text.trim()});
+  saveDots(dots); renderDots(); toast('Macro .'+clean+' saved.','ok');
+}
+function manageDotPhrases(){
+  const dots=getDots();
+  if(!dots.length){ toast('No macros to manage. Press Add.',''); return; }
+  const list=dots.map((d,i)=>(i+1)+'. .'+d.name).join('\n');
+  const pick=prompt('Your macros:\n'+list+'\n\nType a number to DELETE it, or Cancel.');
+  if(!pick) return;
+  const n=parseInt(pick,10);
+  if(n>=1 && n<=dots.length){
+    const removed=dots.splice(n-1,1)[0];
+    saveDots(dots); renderDots(); toast('Deleted .'+removed.name,'');
+  }
+}
+
+/* When a specialty preset is picked, prefill the Settings specialty too. */
+function onPresetChange(){
+  const p=getPreset();
+  if(p) toast(p+' template selected — note will be tailored.','');
+}
+
+/* =========================================================
+   REGENERATE — re-run the AI note on the same transcript
+   ========================================================= */
+function regenerateNote(){
+  if(!document.getElementById('transcript').value.trim()){ toast('Nothing to regenerate.','err'); return; }
+  // clear derived outputs so they re-generate from the fresh note
+  currentAVS=''; currentReferral=''; currentRecs=null;
+  ['avsCard','refCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  generateNote();
+}
+
+/* =========================================================
+   PATIENT AFTER-VISIT SUMMARY  (plain-language handout)
+   ========================================================= */
+function currentNoteText(){
+  const nb=document.getElementById('noteBox');
+  if(nb && nb.style.display!=='none'){
+    if(currentFormat==='soap') currentSoap=nb.value; else currentInsurance=nb.value;
+  }
+  return (currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'';
+}
+async function generateAVS(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  const btn=document.getElementById('avsBtn');
+  if(!hasAI()){
+    currentAVS=offlineAVS();
+    showExtra('avsCard','avsBody',currentAVS);
+    toast(backendMode()?'':'Offline example summary shown. Add your key for any visit.','');
+    return;
+  }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
+  try{
+    const sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`;
+    const pctx=buildPatientContext();
+    const user='CLINICAL NOTE:\n'+currentNoteText()+(pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+pctx):'');
+    currentAVS=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    showExtra('avsCard','avsBody',currentAVS);
+    toast('Patient summary ready. Review before handing out.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='👤 Patient summary'; }
+}
+
+/* =========================================================
+   REFERRAL LETTER
+   ========================================================= */
+async function generateReferral(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  const btn=document.getElementById('refBtn');
+  if(!hasAI()){
+    currentReferral=offlineReferral();
+    showExtra('refCard','refBody',currentReferral);
+    toast('Offline example referral shown.','');
+    return;
+  }
+  const to=prompt('Refer to which specialty / consultant? (e.g. Cardiology, Dr. Lee)','Specialist');
+  if(to===null){ return; } // user cancelled
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
+  try{
+    const from=getName()||'Referring provider';
+    const spec=getPreset()||getSpec()||'';
+    const pctx=buildPatientContext();
+    const sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. Use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`;
+    const user=`Referring provider: ${from}${spec?' ('+spec+')':''}\nReferring to: ${to.trim()||'Specialist'}\n\nCLINICAL NOTE:\n${currentNoteText()}`+(pctx?('\n\nPATIENT BACKGROUND (chart history):\n'+pctx):'');
+    currentReferral=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    showExtra('refCard','refBody',currentReferral);
+    toast('Referral letter drafted. Review before sending.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='✉️ Referral letter'; }
+}
+
+function showExtra(cardId,bodyId,text){
+  const card=document.getElementById(cardId);
+  document.getElementById(bodyId).textContent=text;
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* =========================================================
+   SUPERBILL  (dx + CPT + provider + date for billing)
+   ========================================================= */
+function showSuperbill(){
+  if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  const c=currentCoding||{};
+  const e=lastEMR||{};
+  const provider=getName()||'Clinician';
+  const spec=getPreset()||getSpec()||'';
+  const dateStr=new Date().toLocaleDateString();
+  const ap=activePatient();
+  const patient=document.getElementById('patientLabel').value.trim()||(ap?ap.name:'')||'Unlabeled';
+  const icd=(c.icd&&c.icd.length)?c.icd:[];
+  const cpt=(c.cpt&&c.cpt.length)?c.cpt:[];
+  const emRow=c.em?`<tr><td class="k">E/M visit code</td><td>${esc(c.em)}${c.emJust?' — '+esc(c.emJust):''}</td></tr>`:'';
+  const rows=`
+    <tr><td class="k">Provider</td><td>${esc(provider)}${spec?' · '+esc(spec):''}</td></tr>
+    <tr><td class="k">Date of service</td><td>${esc(dateStr)}</td></tr>
+    <tr><td class="k">Patient</td><td>${esc(patient)}</td></tr>
+    <tr><td class="k">Chief complaint</td><td>${esc(e.cc||'—')}</td></tr>
+    ${emRow}
+    <tr><td class="k">ICD-10 (dx)</td><td>${icd.length?icd.map(x=>esc(x)).join('<br>'):'None documented'}</td></tr>
+    <tr><td class="k">CPT (procedures)</td><td>${cpt.length?cpt.map(x=>esc(x)).join('<br>'):'None performed in visit'}</td></tr>`;
+  document.getElementById('billBody').innerHTML=rows;
+  // hidden plain-text copy for the Copy button
+  let txt=`SUPERBILL\nProvider: ${provider}${spec?' ('+spec+')':''}\nDate of service: ${dateStr}\nPatient: ${patient}\nChief complaint: ${e.cc||'—'}\n`;
+  if(c.em) txt+=`E/M code: ${c.em}${c.emJust?' — '+c.emJust:''}\n`;
+  txt+=`ICD-10: ${icd.length?icd.join('; '):'None documented'}\nCPT: ${cpt.length?cpt.join('; '):'None performed in visit'}\n[Suggested codes — provider confirms before claim submission.]`;
+  let h=document.getElementById('billBodyText');
+  if(!h){ h=document.createElement('div'); h.id='billBodyText'; h.style.display='none'; document.getElementById('billCard').appendChild(h); }
+  h.textContent=txt;
+  document.getElementById('billCard').style.display='block';
+  document.getElementById('billCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* ---------- copy / print helpers for extra outputs ---------- */
+function copyExtra(bodyId){
+  const el=document.getElementById(bodyId);
+  navigator.clipboard.writeText(el.textContent)
+    .then(()=>toast('Copied to clipboard.','ok'))
+    .catch(()=>toast('Could not copy — select manually.','err'));
+}
+function copySection(letter){
+  const txt=currentNoteText();
+  const map={S:['SUBJECTIVE','OBJECTIVE'],O:['OBJECTIVE','ASSESSMENT'],A:['ASSESSMENT','PLAN'],P:['PLAN',null]};
+  const names={S:'Subjective',O:'Objective',A:'Assessment',P:'Plan'};
+  const [start,end]=map[letter];
+  const up=txt.toUpperCase();
+  const si=up.indexOf(start);
+  if(si<0){ toast('No '+names[letter]+' section found in this note.','err'); return; }
+  let ei=end?up.indexOf(end,si+start.length):txt.length;
+  if(ei<0) ei=txt.length;
+  const sec=txt.slice(si,ei).trim();
+  navigator.clipboard.writeText(sec)
+    .then(()=>toast(names[letter]+' copied.','ok'))
+    .catch(()=>toast('Could not copy.','err'));
+}
+function printExtra(title,bodyId){
+  const body=document.getElementById(bodyId);
+  const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
+  const docName=getName()||'Clinician';
+  const now=new Date().toLocaleString();
+  const content=body.tagName==='TABLE'?body.outerHTML:('<pre style="white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0">'+esc(body.textContent)+'</pre>');
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)} — ${esc(patient)}</title>
+  <style>body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13.5px;line-height:1.55}
+  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px}
+  .m{font-size:12px;color:#5f7186;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse}td{padding:6px 5px;border-bottom:1px solid #e2e9f1;vertical-align:top}
+  td.k{color:#5f7186;font-weight:600;width:150px}</style></head><body>
+  <h1>Scrivara — ${esc(title)}</h1>
+  <div class="m">Patient: ${esc(patient)} · Provider: ${esc(docName)} · ${esc(now)}</div>
+  ${content}</body></html>`;
+  let win=null; try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
+  if(win&&win.document){ win.document.open(); win.document.write(html); win.document.close(); win.focus();
+    win.onload=()=>setTimeout(()=>{try{win.print();}catch(e){}},150);
+    setTimeout(()=>{try{win.print();}catch(e){}},400);
+  } else { toast('Allow pop-ups to print this.','err'); }
+}
+
+function offlineAVS(){
+  return `AFTER-VISIT SUMMARY [Offline example]
+
+Why you came in today
+You came in because of a cough that has lasted about two weeks and is worse at night.
+
+What we found
+Your lungs had some rough sounds at the bottom of the right side, and your cough brings up yellow-green mucus. This looks like a chest infection (acute bronchitis). We want a chest X-ray to make sure it is not pneumonia.
+
+Your medicines
+- If we treat the infection, take doxycycline 100 mg twice a day for 7 days (we are not using penicillin because you are allergic).
+- You can take guaifenesin to help loosen the cough.
+- Keep taking your blood pressure pill (lisinopril 10 mg once a day).
+
+What to do at home
+Rest and drink plenty of fluids.
+
+Tests / follow-up
+Get the chest X-ray today. Come back in 1 week if you are not getting better.
+
+When to get help right away
+Go to urgent care or call us if you have a high fever, trouble breathing, or you cough up blood.`;
+}
+function offlineReferral(){
+  const from=getName()||'Referring Provider';
+  return `${new Date().toLocaleDateString()}
+
+Dear Colleague:
+
+Thank you for seeing this patient (Example — R.B.) for evaluation of a persistent productive cough of approximately two weeks' duration with yellow-green sputum and coarse breath sounds at the right lung base.
+
+Brief history: Former smoker (quit 3 years ago), no asthma. Known essential hypertension on lisinopril 10 mg daily. Penicillin allergy (rash). Low-grade fever early in the course, now resolved. No dyspnea or hemoptysis.
+
+Exam: Temp 99.1F, BP 128/80, HR 78, SpO2 97% RA. Lungs with coarse sounds at the right base.
+
+Assessment: Acute bronchitis, rule out early pneumonia. Chest X-ray ordered.
+
+I would appreciate your evaluation and recommendations regarding further pulmonary workup if symptoms persist. Please contact me with any questions.
+
+Thank you,
+
+${from}
+
+[Offline example — add your OpenAI key for AI-drafted referrals.]`;
+}
+
+/* =========================================================
+   INIT
+   ========================================================= */
+window.addEventListener('DOMContentLoaded',()=>{
+  // backdrop closes modals
+  document.getElementById('settingsModal').addEventListener('click',e=>{ if(e.target.id==='settingsModal') closeSettings(); });
+  document.getElementById('viewModal').addEventListener('click',e=>{ if(e.target.id==='viewModal') closeView(); });
+  [['patientModal',closePatientModal],['docModal',closeDocModal],['shareModal',closeShareModal]].forEach(([id,fn])=>{
+    const m=document.getElementById(id); if(m) m.addEventListener('click',e=>{ if(e.target.id===id) fn(); });
+  });
+  const ptNameEl=document.getElementById('ptName');
+  if(ptNameEl) ptNameEl.addEventListener('keydown',e=>{ if(e.key==='Enter') savePatient(); });
+  // enter to submit auth
+  ['authEmail','authPass','authPass2'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('keydown',e=>{ if(e.key==='Enter') doAuth(); });
+  });
+  // restore session if present
+  const saved=localStorage.getItem('sf_session');
+  if(backendMode() && bkToken() && saved){
+    // hosted mode: a stored Bearer token means we can auto-enter and verify with the server
+    startSession(saved); // startSession() calls refreshMe() in backend mode
+  } else {
+    const accts=getAccounts();
+    if(!backendMode() && saved && accts[saved]){
+      startSession(saved);
+    } else {
+      if(!SR){ /* mic warning shown only after login when relevant */ }
+      switchAuth('login');
+    }
+  }
+});
+</script>
+</body>
+</html>
