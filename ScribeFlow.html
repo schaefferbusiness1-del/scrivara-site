@@ -337,8 +337,50 @@
 
     <button class="btn-primary" id="authBtn" style="width:100%" onclick="doAuth()">Log in</button>
 
+    <!-- Forgot-password link + inline email-reset panel -->
+    <div id="forgotLinkWrap" style="text-align:center;margin-top:12px">
+      <a href="#" id="forgotLink" style="font-size:13px;color:var(--brand);text-decoration:none" onclick="showForgot();return false;">Forgot password?</a>
+    </div>
+    <div id="forgotPanel" style="display:none;margin-top:12px">
+      <div class="field">
+        <label for="forgotEmail">Email for password reset</label>
+        <input type="email" id="forgotEmail" placeholder="you@clinic.com" autocomplete="username">
+      </div>
+      <button class="btn-ghost" style="width:100%" id="forgotBtn" onclick="doForgot()">Send reset link</button>
+      <div class="auth-err" id="forgotMsg" style="margin-top:10px"></div>
+    </div>
+
     <p class="local-note" id="authNote">🔒 <b>Secure account.</b> Your password is protected and your saved notes are encrypted on the server. Sign in from any device.</p>
   </div>
+
+  <!-- Set-a-new-password card, shown when ?reset=<token> is in the URL -->
+  <div class="auth-card" id="resetCard" style="display:none">
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkR)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> Scrivara</div>
+    <p class="auth-sub">Set a new password</p>
+    <div class="auth-err" id="resetErr"></div>
+    <div class="field">
+      <label for="resetPass">New password</label>
+      <input type="password" id="resetPass" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label for="resetPass2">Confirm new password</label>
+      <input type="password" id="resetPass2" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <button class="btn-primary" id="resetBtn" style="width:100%" onclick="doResetPassword()">Update password</button>
+    <p class="local-note">🔒 Choose a password of at least 6 characters. You'll log in with it next.</p>
+  </div>
+</div>
+
+<!-- ============ PHONE MIC PAGE (shown when ?mic=<CODE>) ============ -->
+<div id="phoneMicPage" style="display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,#0e3a4f,#0b6b6e);color:#fff;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:inherit">
+  <div style="font-size:24px;font-weight:700;margin-bottom:6px">Scrivara phone mic</div>
+  <div style="font-size:14px;opacity:.85;margin-bottom:4px">Pairing code</div>
+  <div id="phoneMicPageCode" style="font-size:30px;font-weight:700;letter-spacing:4px;font-family:monospace;margin-bottom:24px">------</div>
+  <button id="phoneRecBtn" onclick="togglePhoneRec()" style="width:170px;height:170px;border-radius:50%;border:none;background:#fff;color:#0b6b6e;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.3)">● Record</button>
+  <div id="phoneRecStatus" style="margin-top:22px;font-size:16px;min-height:24px"></div>
+  <div id="phoneRecSent" style="margin-top:6px;font-size:13px;opacity:.8"></div>
+  <button id="phoneDoneBtn" onclick="stopPhoneRec()" style="display:none;margin-top:24px;background:transparent;border:1px solid rgba(255,255,255,.6);color:#fff;border-radius:8px;padding:10px 22px;font-size:15px;cursor:pointer">Done</button>
+  <div id="phoneRecError" style="margin-top:18px;font-size:14px;color:#ffd2d2;max-width:340px"></div>
 </div>
 
 <!-- ============ MAIN APP ============ -->
@@ -498,6 +540,27 @@
       </div>
 
       <button id="captureBtn" class="btn-primary big-capture" onclick="toggleCapture()">▶ Start Visit</button>
+
+      <div class="row tight" style="margin-top:10px">
+        <button id="phoneMicBtn" class="btn-ghost" onclick="startPhoneMic()">📱 Phone mic</button>
+        <span id="phoneMicListening" style="display:none;align-self:center;font-size:13px;color:var(--brand)">🎙 listening from phone…</span>
+      </div>
+
+      <!-- Phone-mic pairing panel (desktop side) -->
+      <div id="phoneMicPanel" style="display:none;margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--card,#fff)">
+        <div style="font-weight:600;margin-bottom:6px">📱 Pair your phone as a microphone</div>
+        <p class="mini" style="color:var(--muted);margin:0 0 10px">Open this link on your phone and start talking — the transcript appears here live.</p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+          <div>
+            <div class="mini" style="color:var(--muted)">Code</div>
+            <div id="phoneMicCode" style="font-size:34px;font-weight:700;letter-spacing:4px;font-family:monospace">------</div>
+            <a id="phoneMicLink" href="#" target="_blank" rel="noopener" style="font-size:12px;color:var(--brand);word-break:break-all"></a>
+          </div>
+          <!-- QR points at api.qrserver.com — a free convenience QR image generator (no JS library added). -->
+          <img id="phoneMicQR" alt="QR code to open phone mic" width="180" height="180" style="border:1px solid var(--line);border-radius:8px;background:#fff">
+        </div>
+        <button class="btn-ghost" style="margin-top:12px;color:var(--danger,#c0392b)" onclick="stopPhoneMic()">Stop phone mic</button>
+      </div>
 
       <div id="micWarn" style="display:none" class="disclaim">⚠️ <span></span></div>
 
@@ -1377,6 +1440,97 @@ function switchAuth(mode){
 function showAuthErr(m){ const e=document.getElementById('authErr'); e.textContent=m; e.classList.add('show'); }
 function hideAuthErr(){ document.getElementById('authErr').classList.remove('show'); }
 
+/* ---------- Forgot password (inline email reset request) ---------- */
+function showForgot(){
+  const p=document.getElementById('forgotPanel');
+  const l=document.getElementById('forgotLinkWrap');
+  if(p) p.style.display='block';
+  if(l) l.style.display='none';
+  const em=document.getElementById('forgotEmail');
+  // prefill with whatever is in the login email field, for convenience
+  const le=document.getElementById('authEmail');
+  if(em && le && le.value) em.value=le.value.trim();
+  if(em) em.focus();
+}
+async function doForgot(){
+  const msg=document.getElementById('forgotMsg');
+  const email=(document.getElementById('forgotEmail').value||'').trim().toLowerCase();
+  if(msg) msg.classList.remove('show');
+  if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    if(msg){ msg.textContent='Enter a valid email address.'; msg.classList.add('show'); }
+    return;
+  }
+  const btn=document.getElementById('forgotBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+  try{
+    // Neutral response regardless of outcome — no account enumeration.
+    try{
+      await fetch(bkBase()+'/api/auth/forgot',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email})
+      });
+    }catch(e){/* even on network error we show the neutral message */}
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
+  }
+  if(msg){
+    msg.textContent='If that email is registered, a reset link is on its way. Check your inbox (and spam).';
+    msg.classList.add('show');
+  }
+}
+
+/* ---------- Reset password via emailed token (?reset=<token>) ---------- */
+let resetToken=''; // set during boot when ?reset= is present
+function showResetScreen(token){
+  resetToken=token||'';
+  // Show the auth wrapper, hide the login card, reveal the reset card.
+  document.getElementById('appScreen').style.display='none';
+  const authScreen=document.getElementById('authScreen');
+  if(authScreen) authScreen.style.display='flex';
+  // hide the normal login card (it's the first .auth-card inside authScreen)
+  const cards=authScreen.querySelectorAll('.auth-card');
+  if(cards[0]) cards[0].style.display='none';
+  const rc=document.getElementById('resetCard');
+  if(rc) rc.style.display='block';
+}
+async function doResetPassword(){
+  const errEl=document.getElementById('resetErr');
+  const showErr=m=>{ if(errEl){ errEl.textContent=m; errEl.classList.add('show'); } };
+  if(errEl) errEl.classList.remove('show');
+  const p1=document.getElementById('resetPass').value;
+  const p2=document.getElementById('resetPass2').value;
+  if(!p1 || p1.length<6){ showErr('Password must be at least 6 characters.'); return; }
+  if(p1!==p2){ showErr('Passwords do not match.'); return; }
+  const btn=document.getElementById('resetBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Updating…'; }
+  try{
+    let res,data;
+    try{
+      res=await fetch(bkBase()+'/api/auth/reset',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:resetToken,password:p1})
+      });
+    }catch(netErr){ showErr('Could not reach the Scrivara server. Try again.'); return; }
+    try{ data=await res.json(); }catch(e){ data={}; }
+    if(!res.ok){ showErr((data&&(data.error||data.message))||('Could not reset password ('+res.status+').')); return; }
+    // success → strip ?reset= so a refresh won't re-trigger, then go to login.
+    try{ history.replaceState(null,'',location.origin+location.pathname); }catch(e){}
+    const rc=document.getElementById('resetCard');
+    if(rc) rc.style.display='none';
+    const authScreen=document.getElementById('authScreen');
+    const cards=authScreen.querySelectorAll('.auth-card');
+    if(cards[0]) cards[0].style.display='';
+    switchAuth('login');
+    toast('Password updated — you can now log in','ok');
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
+  }
+}
+
 async function doAuth(){
   hideAuthErr();
   const email=document.getElementById('authEmail').value.trim().toLowerCase();
@@ -1616,6 +1770,7 @@ async function loadAdminUsers(){
         ? '<span style="color:var(--muted)">Owner</span>'
         : '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> '+
           '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetTrial(\''+u.id+'\')">Trial…</button> '+
+          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminResetPassword(\''+u.id+'\',\''+esc(u.email||'')+'\')">Reset PW</button> '+
           '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminSetAccess(\''+u.id+'\',\'blocked\')">Block</button>';
       const roleHead=isOwner ? '<span style="color:var(--muted)">Owner</span>' : adminRoleHeadCell(u,heads);
       return '<tr style="border-bottom:1px solid var(--line)">'+
@@ -1638,6 +1793,16 @@ async function adminSetAccess(id,access,days){
     toast('Access updated.','ok');
     loadAdminUsers();
   }catch(e){ toast('Update failed: '+e.message,'err'); }
+}
+/* Owner-only fallback: set a new password for a user directly (works before email is configured). */
+async function adminResetPassword(id,email){
+  const pw=prompt('Set a new password for '+(email||'this user')+' (min 6 characters):','');
+  if(pw===null) return;
+  if(!pw || pw.length<6){ toast('Password must be at least 6 characters.','err'); return; }
+  try{
+    await adminFetch('/api/admin/users/'+id+'/reset-password',{method:'POST',body:JSON.stringify({password:pw})});
+    toast('Password reset for '+(email||'user')+'.','ok');
+  }catch(e){ toast('Reset failed: '+e.message,'err'); }
 }
 function adminSetTrial(id){
   const v=prompt('Trial length in days:','30');
@@ -2887,6 +3052,164 @@ function stopCapture(){
 }
 function clearTranscript(){
   document.getElementById('transcript').value=''; finalText='';
+}
+
+/* =========================================================
+   PHONE MICROPHONE  (desktop side)
+   The doctor's phone records the visit; audio streams to the
+   backend, which transcribes it; we poll and append the new
+   tail into the active visit transcript on this computer.
+   ========================================================= */
+let phoneMicCode='', phoneMicPollT=null, phoneMicSeen=0;
+async function startPhoneMic(){
+  if(!backendMode()){ toast('Phone mic requires the hosted version.','err'); return; }
+  const btn=document.getElementById('phoneMicBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Starting…'; }
+  try{
+    let res,data;
+    res=await fetch(bkBase()+'/api/mic/start',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+bkToken()}
+    });
+    if(res.status===401){ handle401(); return; }
+    try{ data=await res.json(); }catch(e){ data={}; }
+    if(!res.ok || !data.code){ toast((data&&(data.error||data.message))||'Could not start phone mic.','err'); return; }
+    phoneMicCode=data.code;
+    // how much of the server transcript we've already pulled in — start from
+    // whatever the doctor has typed so far is NOT counted; server starts empty.
+    phoneMicSeen=0;
+    const appUrl=location.origin+location.pathname;
+    const link=appUrl+'?mic='+encodeURIComponent(phoneMicCode);
+    document.getElementById('phoneMicCode').textContent=phoneMicCode;
+    const linkEl=document.getElementById('phoneMicLink');
+    linkEl.textContent=link; linkEl.href=link;
+    // QR via api.qrserver.com (convenience generator — no JS library dependency added).
+    document.getElementById('phoneMicQR').src='https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+encodeURIComponent(link);
+    document.getElementById('phoneMicPanel').style.display='block';
+    document.getElementById('phoneMicListening').style.display='inline';
+    if(phoneMicPollT) clearInterval(phoneMicPollT);
+    phoneMicPollT=setInterval(pollPhoneMic,3000);
+    toast('Phone mic ready — scan the QR or open the link on your phone.','ok');
+  }catch(e){ toast('Network problem starting phone mic.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
+}
+async function pollPhoneMic(){
+  if(!phoneMicCode) return;
+  try{
+    const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(phoneMicCode),{
+      headers:{'Authorization':'Bearer '+bkToken()}
+    });
+    if(r.status===401){ handle401(); stopPhoneMic(); return; }
+    if(!r.ok) return;
+    const d=await r.json();
+    const full=(d&&d.transcript)||'';
+    if(full.length>phoneMicSeen){
+      // Append ONLY the new tail — never clobber what the doctor typed.
+      const tail=full.slice(phoneMicSeen);
+      const ta=document.getElementById('transcript');
+      if(ta){
+        const sep=(ta.value && !/\s$/.test(ta.value))?' ':'';
+        ta.value=ta.value+sep+tail;
+        // keep the SpeechRecognition buffer in sync so it doesn't overwrite us
+        finalText=ta.value+' ';
+      }
+      phoneMicSeen=full.length;
+    }
+  }catch(e){/* transient — keep polling */}
+}
+async function stopPhoneMic(){
+  const code=phoneMicCode;
+  if(phoneMicPollT){ clearInterval(phoneMicPollT); phoneMicPollT=null; }
+  phoneMicCode='';
+  document.getElementById('phoneMicPanel').style.display='none';
+  document.getElementById('phoneMicListening').style.display='none';
+  if(code){
+    try{
+      await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/stop',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+bkToken()}
+      });
+    }catch(e){/* best-effort */}
+  }
+}
+
+/* =========================================================
+   PHONE MICROPHONE  (phone side — ?mic=<CODE> page)
+   Records audio in ~8s chunks and uploads each as base64 to
+   /api/mic/<CODE>/audio. No login required (code is the cap).
+   ========================================================= */
+let phoneRecCode='', phoneRec=null, phoneRecStream=null, phoneRecSentCount=0, phoneRecActive=false;
+function initPhoneMicPage(code){
+  phoneRecCode=code;
+  document.getElementById('phoneMicPage').style.display='flex';
+  const a=document.getElementById('appScreen'); if(a) a.style.display='none';
+  const au=document.getElementById('authScreen'); if(au) au.style.display='none';
+  document.getElementById('phoneMicPageCode').textContent=code;
+  // iOS note: MediaRecorder works in iOS Safari 14.5+. If unsupported, tell the
+  // user to upgrade rather than crashing.
+  if(typeof MediaRecorder==='undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    document.getElementById('phoneRecError').textContent='Recording isn’t supported in this browser. Please use a recent Safari or Chrome.';
+    const b=document.getElementById('phoneRecBtn'); if(b) b.disabled=true;
+  }
+}
+function togglePhoneRec(){ phoneRecActive?stopPhoneRec():startPhoneRec(); }
+async function startPhoneRec(){
+  const errEl=document.getElementById('phoneRecError'); if(errEl) errEl.textContent='';
+  if(typeof MediaRecorder==='undefined'){
+    if(errEl) errEl.textContent='Please use a recent Safari or Chrome.'; return;
+  }
+  try{
+    phoneRecStream=await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(e){
+    if(errEl) errEl.textContent='Microphone access was blocked. Allow mic access in your browser settings and tap Record again.';
+    return;
+  }
+  let rec;
+  try{ rec=new MediaRecorder(phoneRecStream); }
+  catch(e){
+    // some browsers need an explicit mimetype
+    try{ rec=new MediaRecorder(phoneRecStream,{mimeType:'audio/webm'}); }
+    catch(e2){ if(errEl) errEl.textContent='Could not start recording on this device.'; return; }
+  }
+  phoneRec=rec;
+  phoneRecActive=true;
+  rec.ondataavailable=ev=>{ if(ev.data && ev.data.size>0) uploadPhoneChunk(ev.data,rec.mimeType||ev.data.type); };
+  // fire ondataavailable roughly every 8s so audio streams in near-real-time
+  try{ rec.start(8000); }catch(e){ try{ rec.start(); }catch(e2){} }
+  const btn=document.getElementById('phoneRecBtn');
+  if(btn){ btn.textContent='■ Stop'; btn.style.background='#ffdede'; btn.style.color='#b00020'; }
+  document.getElementById('phoneRecStatus').textContent='● Recording…';
+  document.getElementById('phoneDoneBtn').style.display='inline-block';
+}
+function uploadPhoneChunk(blob,mimetype){
+  const reader=new FileReader();
+  reader.onloadend=async ()=>{
+    // readAsDataURL → "data:<mime>;base64,<...>". Backend tolerates the data: prefix.
+    const audio=reader.result;
+    try{
+      const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(phoneRecCode)+'/audio',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'}, // NO auth header — code is the capability
+        body:JSON.stringify({audio:audio,mimetype:mimetype||blob.type||'audio/webm'})
+      });
+      if(r.ok){
+        phoneRecSentCount++;
+        const s=document.getElementById('phoneRecSent');
+        if(s) s.textContent=phoneRecSentCount+' clip'+(phoneRecSentCount===1?'':'s')+' sent';
+      }
+    }catch(e){/* transient upload error — next chunk will retry */}
+  };
+  reader.readAsDataURL(blob);
+}
+function stopPhoneRec(){
+  phoneRecActive=false;
+  if(phoneRec){ try{ phoneRec.stop(); }catch(e){} phoneRec=null; }
+  if(phoneRecStream){ try{ phoneRecStream.getTracks().forEach(t=>t.stop()); }catch(e){} phoneRecStream=null; }
+  const btn=document.getElementById('phoneRecBtn');
+  if(btn){ btn.textContent='● Record'; btn.style.background='#fff'; btn.style.color='#0b6b6e'; }
+  document.getElementById('phoneRecStatus').textContent=phoneRecSentCount?'Stopped. You can close this page.':'Stopped.';
+  document.getElementById('phoneDoneBtn').style.display='none';
 }
 
 /* =========================================================
@@ -6213,6 +6536,13 @@ ${from}
    INIT
    ========================================================= */
 window.addEventListener('DOMContentLoaded',()=>{
+  // ---- Phone-mic page: if ?mic=<CODE>, render the dedicated recorder and stop. ----
+  const _params=new URLSearchParams(location.search);
+  const _micCode=_params.get('mic');
+  if(_micCode){
+    initPhoneMicPage(_micCode);
+    return; // dedicated phone page — skip the normal app boot entirely
+  }
   // backdrop closes modals
   document.getElementById('settingsModal').addEventListener('click',e=>{ if(e.target.id==='settingsModal') closeSettings(); });
   document.getElementById('viewModal').addEventListener('click',e=>{ if(e.target.id==='viewModal') closeView(); });
@@ -6234,6 +6564,12 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(_an) _an.innerHTML = backendMode()
     ? '🔒 <b>Secure account.</b> Your password is protected and your saved notes are encrypted on the server. Sign in from any device.'
     : '🔒 <b>Local account on this device.</b> Your email, an obfuscated password, and your notes are stored only in this browser — nothing is sent to a server.';
+  // ---- Password-reset link: if ?reset=<token>, show the "set new password" screen. ----
+  const _resetTok=new URLSearchParams(location.search).get('reset');
+  if(_resetTok){
+    showResetScreen(_resetTok);
+    return; // don't auto-enter the app while resetting
+  }
   // restore session if present
   const saved=localStorage.getItem('sf_session');
   if(backendMode() && bkToken() && saved){
