@@ -870,6 +870,7 @@
           </span>
         </h3>
         <div id="legalReqRef" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
+        <div id="legalReqAttach" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
         <p class="sub" style="margin:4px 0 0">Formal medical-legal report drafted from the active patient's record. Built only from what is documented; missing data appears as [bracketed placeholders]. Edit below, then sign and save.</p>
         <textarea class="xbody" id="legalBody" style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
         <div class="code-disclaim">⚠️ DRAFT — the physician must verify, complete, and sign. All diagnoses, opinions, causation, and impairment statements are the physician's responsibility and must be held to a reasonable degree of medical probability/certainty.</div>
@@ -1538,6 +1539,7 @@
     <div class="row">
       <button class="btn-green" id="lawSubmitBtn" onclick="submitLegalRequest()" style="flex:1">⚖️ Submit request</button>
     </div>
+    <p class="sub" style="margin:10px 0 0;color:var(--muted)">📎 After submitting, open the request below to attach case files — the cover letter, signed patient authorization / release, and medical records — so the clinician can review them before writing the report.</p>
   </div>
 
   <div class="card" style="margin-top:20px">
@@ -9288,24 +9290,201 @@ function legalReqRowHtml(rq,mode){
   const bits=[meta];
   if(caseNo) bits.push('Case '+esc(String(caseNo)));
   if(when) bits.push(esc(when));
+  const idStr=String(id);
+  const safeId=idStr.replace(/[^A-Za-z0-9_-]/g,'');
+  const initCount=Number((rq.attachments_count!=null?rq.attachments_count:(Array.isArray(rq.attachments)?rq.attachments.length:0)))||0;
   let actions='';
   if(mode==='lawyer'){
+    actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="toggleAttachPanel(\''+esc(idStr)+'\')">📎 Documents (<span id="attachCount-'+safeId+'">'+initCount+'</span>)</button>';
     if(fulfilled){
       _lawReports[id]={result_text:rq.result_text||'',doc_type:docType};
-      actions='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="lawViewReport(\''+esc(String(id))+'\')">📄 View report</button>';
+      actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="lawViewReport(\''+esc(String(id))+'\')">📄 View report</button>';
     }
   }else{
     actions='<button class="'+(fulfilled?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="openLegalRequest(\''+esc(String(id))+'\')">'+(fulfilled?'⚖️ Re-open':'⚖️ Fulfill')+'</button>';
   }
   // Stash the full request so the clinician inbox can prefill from it.
   if(mode==='clinician') _legalInboxById[String(id)]=rq;
-  return '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px">'
+  // Per-mode attachments affordance shown below the row.
+  let attachBlock='';
+  if(mode==='lawyer'){
+    attachBlock='<div id="attachPanel-'+safeId+'" data-reqid="'+esc(idStr)+'" style="display:none;flex-basis:100%;width:100%;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"></div>';
+  }else{
+    attachBlock='<div style="flex-basis:100%;width:100%"><div id="clinAttach-'+safeId+'" class="mini" style="color:var(--muted);margin-top:6px">📎 Loading documents…</div></div>';
+  }
+  const html='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px">'
     +'<div style="flex:1;min-width:200px">'
     +'<div style="font-weight:600">'+esc(docType)+' '+statusBadge+'</div>'
     +'<div class="mini" style="color:var(--muted);margin-top:3px">'+bits.join(' · ')+'</div>'
     +'</div>'
-    +(actions?('<div>'+actions+'</div>'):'')
+    +(actions?('<div style="display:flex;gap:6px;flex-wrap:wrap">'+actions+'</div>'):'')
+    +attachBlock
     +'</div>';
+  // Clinician: kick off an async load of this request's attachment list.
+  if(mode==='clinician'){ setTimeout(()=>{ renderClinicianAttachments(idStr,safeId); },0); }
+  return html;
+}
+
+/* ============================================================
+   LEGAL REQUEST FILE ATTACHMENTS  (MLS additive)
+   Lawyer uploads case files to an existing request; the clinician
+   reviews/downloads them. Backend endpoints already exist.
+   ============================================================ */
+let currentAttachReqId=null;            // request id whose lawyer panel is open
+const ATTACH_MAX_BYTES=20*1024*1024;    // client-side ~20MB guard
+const ATTACH_CATEGORIES=[
+  ['cover_letter','Cover letter'],
+  ['authorization','Authorization / release'],
+  ['medical_records','Medical records'],
+  ['imaging','Imaging report'],
+  ['therapy','Therapy / PT'],
+  ['other','Other']
+];
+function attachCatLabel(v){
+  const hit=ATTACH_CATEGORIES.find(c=>c[0]===String(v));
+  return hit?hit[1]:(v?String(v):'Other');
+}
+function _attachSafeId(id){ return String(id).replace(/[^A-Za-z0-9_-]/g,''); }
+
+/* Lawyer: open/close the inline Documents panel for a request. */
+function toggleAttachPanel(id){
+  const safeId=_attachSafeId(id);
+  const panel=document.getElementById('attachPanel-'+safeId);
+  if(!panel) return;
+  if(panel.style.display==='none'){
+    currentAttachReqId=id;
+    panel.style.display='block';
+    panel.innerHTML=
+      '<div class="row tight" style="align-items:flex-end">'
+      +'<div class="field" style="flex:1;min-width:160px">'
+      +'<label for="attachCat-'+safeId+'">Category</label>'
+      +'<select id="attachCat-'+safeId+'" class="sf-select">'
+      +ATTACH_CATEGORIES.map(c=>'<option value="'+c[0]+'">'+esc(c[1])+'</option>').join('')
+      +'</select></div>'
+      +'<div class="field" style="flex:2;min-width:200px">'
+      +'<label for="attachFile-'+safeId+'">File <span style="font-weight:400;color:var(--muted)">(PDF, image, Word, or text · max 20MB)</span></label>'
+      +'<input type="file" id="attachFile-'+safeId+'" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt">'
+      +'</div>'
+      +'<div class="field"><button class="btn-green" id="attachUploadBtn-'+safeId+'" style="padding:9px 16px" onclick="uploadLegalAttachment(\''+esc(String(id))+'\')">⬆ Upload</button></div>'
+      +'</div>'
+      +'<div id="attachList-'+safeId+'" class="mini" style="color:var(--muted)">Loading documents…</div>';
+    loadLegalAttachments(id);
+  }else{
+    panel.style.display='none';
+    if(currentAttachReqId===id) currentAttachReqId=null;
+  }
+}
+
+/* Fetch the attachment metadata list for a request (shared by both sides). */
+async function fetchLegalAttachments(id){
+  const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/attachments',{headers:{'Authorization':'Bearer '+bkToken()}});
+  if(r.status===401){ handle401(); throw new Error('401'); }
+  let d={}; try{ d=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error((d&&(d.error||d.message))||'Could not load documents.');
+  return Array.isArray(d)?d:(d.attachments||d.items||[]);
+}
+
+/* Lawyer: (re)render the attachment list inside an open panel + refresh count. */
+async function loadLegalAttachments(id){
+  const safeId=_attachSafeId(id);
+  const listEl=document.getElementById('attachList-'+safeId);
+  try{
+    const items=await fetchLegalAttachments(id);
+    const cnt=document.getElementById('attachCount-'+safeId); if(cnt) cnt.textContent=items.length;
+    if(!listEl) return;
+    if(!items.length){ listEl.innerHTML='<div style="margin-top:8px">No documents attached yet. Add the cover letter, signed authorization, and records above.</div>'; return; }
+    listEl.innerHTML='<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">'
+      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--soft,#f7f9fc);border:1px solid var(--line);border-radius:8px;padding:7px 10px">'
+        +'<span style="flex:1;min-width:160px"><b>'+esc(a.filename||'file')+'</b> <span style="color:var(--muted)">· '+esc(attachCatLabel(a.category))+' · '+esc(fmtBytes(a.size))+'</span></span>'
+        +'</div>').join('')
+      +'</div>';
+  }catch(e){ if(listEl) listEl.innerHTML='<div style="margin-top:8px">⚠️ '+esc(friendlyError(e))+'</div>'; }
+}
+
+/* Lawyer: read one file → base64 data URL → POST to the request. */
+async function uploadLegalAttachment(id){
+  if(!backendMode()||!bkToken()){ toast('This requires the hosted version.','err'); return; }
+  const safeId=_attachSafeId(id);
+  const catEl=document.getElementById('attachCat-'+safeId);
+  const fileEl=document.getElementById('attachFile-'+safeId);
+  const btn=document.getElementById('attachUploadBtn-'+safeId);
+  const file=fileEl&&fileEl.files&&fileEl.files[0];
+  if(!file){ toast('Choose a file to upload first.','err'); return; }
+  if(file.size>ATTACH_MAX_BYTES){ toast('That file is '+fmtBytes(file.size)+' — the limit is 20MB.','err'); return; }
+  const category=(catEl&&catEl.value)||'other';
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Uploading…'; }
+  try{
+    const data=await readFileAsDataUrl(file); // "data:<mime>;base64,<...>" — backend tolerates the prefix
+    const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/attachments',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({filename:file.name,mimetype:file.type||'application/octet-stream',category,data})
+    });
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&(d.error||d.message))||'Upload failed.','err'); return; }
+    toast('Uploaded “'+esc(file.name)+'”.','ok');
+    if(fileEl) fileEl.value='';
+    loadLegalAttachments(id); // refresh list + count
+  }catch(e){ toast(friendlyError(e),'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='⬆ Upload'; } }
+}
+
+/* Clinician: render a request's attachments (filename · category · size · Download). */
+async function renderClinicianAttachments(id,safeId){
+  const el=document.getElementById('clinAttach-'+safeId);
+  if(!el) return;
+  try{
+    const items=await fetchLegalAttachments(id);
+    if(!items.length){ el.innerHTML='📎 No documents attached.'; return; }
+    el.innerHTML='<div style="margin-top:4px"><b>📎 '+items.length+' document'+(items.length===1?'':'s')+'</b></div>'
+      +'<div style="margin-top:5px;display:flex;flex-direction:column;gap:6px">'
+      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--soft,#f7f9fc);border:1px solid var(--line);border-radius:8px;padding:6px 10px">'
+        +'<span style="flex:1;min-width:160px"><b>'+esc(a.filename||'file')+'</b> <span style="color:var(--muted)">· '+esc(attachCatLabel(a.category))+' · '+esc(fmtBytes(a.size))+'</span></span>'
+        +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="downloadLegalAttachment(\''+esc(String(id))+'\',\''+esc(String(a.id))+'\')">⬇ Download</button>'
+        +'</div>').join('')
+      +'</div>';
+  }catch(e){ el.innerHTML='📎 <span style="color:var(--muted)">Documents unavailable</span>'; }
+}
+
+/* Clinician: download one attachment — base64 → Blob → save via temp anchor. */
+async function downloadLegalAttachment(id,aid){
+  try{
+    const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(aid)+'/download',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&(d.error||d.message))||'Could not download the file.','err'); return; }
+    const b64=String(d.data||'').replace(/^data:[^;]*;base64,/,'');
+    const bin=atob(b64);
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    const blob=new Blob([bytes],{type:d.mimetype||'application/octet-stream'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=d.filename||'attachment';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){ toast(friendlyError(e),'err'); }
+}
+
+/* Clinician Legal tool: list a request's attachments prominently in the
+   prefill banner so the doctor can open the records before writing. */
+async function renderLegalToolAttachments(id){
+  const box=document.getElementById('legalReqAttach');
+  if(!box) return;
+  box.style.display='block';
+  box.innerHTML='<span class="mini" style="color:var(--muted)">📎 Loading attorney documents…</span>';
+  try{
+    const items=await fetchLegalAttachments(id);
+    if(!items.length){ box.innerHTML='<span class="mini" style="color:var(--muted)">📎 No documents were attached to this request.</span>'; return; }
+    box.innerHTML='<div style="font-weight:600;margin-bottom:6px">📎 Attorney documents — review before writing</div>'
+      +'<div style="display:flex;flex-direction:column;gap:6px">'
+      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid #cfe2f8;border-radius:8px;padding:6px 10px">'
+        +'<span style="flex:1;min-width:160px"><b>'+esc(a.filename||'file')+'</b> <span style="color:var(--muted)">· '+esc(attachCatLabel(a.category))+' · '+esc(fmtBytes(a.size))+'</span></span>'
+        +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="downloadLegalAttachment(\''+esc(String(id))+'\',\''+esc(String(a.id))+'\')">⬇ Download</button>'
+        +'</div>').join('')
+      +'</div>';
+  }catch(e){ box.innerHTML='<span class="mini" style="color:var(--muted)">📎 Documents unavailable.</span>'; }
 }
 
 /* Lawyer portal: show a returned signed report in the viewer card. */
@@ -9388,6 +9567,9 @@ function openLegalRequest(id){
     ref.innerHTML='⚖️ <b>Attorney request</b> — pull up this patient from your own list (no PHI is auto-loaded):<br><b>Patient reference:</b> '+esc(rq.patient_ref||'[none provided]')
       +(rq.firm?('<br><b>Requesting firm:</b> '+esc(rq.firm)):'');
   }
+  // Show the attorney's attached case files prominently so the doctor can
+  // open the records before writing the report.
+  renderLegalToolAttachments(id);
   // Reveal the Return-to-attorney button on the Legal card.
   const rb=document.getElementById('legalReturnBtn'); if(rb) rb.style.display='';
   // Open the Legal tool. openLegal() requires an active patient; guide the doctor there.
@@ -9420,6 +9602,7 @@ async function returnLegalToAttorney(){
     currentLegalRequestId=null;
     if(btn) btn.style.display='none';
     const ref=document.getElementById('legalReqRef'); if(ref){ ref.style.display='none'; ref.innerHTML=''; }
+    const att=document.getElementById('legalReqAttach'); if(att){ att.style.display='none'; att.innerHTML=''; }
     loadLegalRequests();
   }catch(e){ toast(friendlyError(e),'err'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='↩ Return to attorney'; } }
