@@ -533,7 +533,7 @@
 
 <!-- ============ MAIN APP ============ -->
 <div id="appScreen" style="display:none">
-<header>
+<header id="appHeader">
   <div class="logo">
     <div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div>
     <div>MLS
@@ -548,7 +548,7 @@
   </div>
 </header>
 
-<div class="wrap">
+<div class="wrap" id="appWrap">
   <!-- MAIN NAV -->
   <div class="mainnav">
     <div class="navtab on" id="nav_patients" onclick="showView('patients')">👥 Patients <span class="nbadge" id="navPtCount">0</span></div>
@@ -556,6 +556,7 @@
     <div class="navtab" id="nav_orders" onclick="showView('orders')">📋 Orders <span class="nbadge" id="navOrdCount">0</span></div>
     <div class="navtab" id="nav_recs" onclick="showView('recs')">💡 Recommendations</div>
     <div class="navtab" id="nav_history" onclick="showView('history')">📚 History <span class="nbadge" id="navHistCount">0</span></div>
+    <div class="navtab" id="nav_legalreq" style="display:none" onclick="showView('legalreq')">⚖️ Legal requests <span class="nbadge" id="navLegalReqCount">0</span></div>
     <div class="navtab" id="nav_team" style="display:none" onclick="showView('team')">👥 Team</div>
     <div class="navtab" id="nav_analysis" style="display:none" onclick="showView('analysis')">📊 Analysis</div>
     <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
@@ -865,8 +866,10 @@
             <button class="sec-copy" onclick="signLegalReport()">✍️ Sign</button>
             <button class="sec-copy" onclick="downloadLegalPdf()">📄 Save as PDF</button>
             <button class="sec-copy" onclick="saveLegalToChart()">🗂 Save to chart</button>
+            <button class="sec-copy" id="legalReturnBtn" style="display:none;background:var(--green);color:#fff;border-color:var(--green)" onclick="returnLegalToAttorney()">↩ Return to attorney</button>
           </span>
         </h3>
+        <div id="legalReqRef" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
         <p class="sub" style="margin:4px 0 0">Formal medical-legal report drafted from the active patient's record. Built only from what is documented; missing data appears as [bracketed placeholders]. Edit below, then sign and save.</p>
         <textarea class="xbody" id="legalBody" style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
         <div class="code-disclaim">⚠️ DRAFT — the physician must verify, complete, and sign. All diagnoses, opinions, causation, and impairment statements are the physician's responsibility and must be held to a reasonable degree of medical probability/certainty.</div>
@@ -1468,9 +1471,96 @@
       </div>
     </div>
   </div><!-- /analysisView -->
+
+  <!-- ============ LEGAL REQUESTS INBOX (clinician — incoming attorney requests) ============ -->
+  <div id="legalReqView" style="display:none">
+    <div class="card">
+      <h2><span class="ic">⚖️</span> Legal requests
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadLegalRequests()">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Incoming medical-legal report requests sent to you by attorneys. Click a pending request to open the Legal tool prefilled with the request — then pull up the matching patient, generate, sign, and return the report to the attorney.</p>
+      <div id="legalReqEmpty" class="empty"><span class="big">⚖️</span>No legal requests yet.</div>
+      <div id="legalReqList"></div>
+    </div>
+  </div><!-- /legalReqView -->
 </div>
 
-<footer>
+<!-- ============ LAWYER PORTAL (role === 'lawyer' — replaces the entire clinical app) ============ -->
+<div class="wrap" id="lawyerPortal" style="display:none">
+  <div class="card">
+    <h2><span class="ic">⚖️</span> New legal request</h2>
+    <p class="sub">Request a medical-legal report from a treating clinician. They receive your request, prepare the report from their patient's record, sign it, and return it to you here.</p>
+    <div class="row tight">
+      <div class="field" style="flex:1">
+        <label for="lawDoctorEmail">Doctor's email <span style="font-weight:400;color:var(--muted)">(the clinician you're requesting from)</span></label>
+        <input type="email" id="lawDoctorEmail" placeholder="e.g. dr.smith@clinic.com">
+      </div>
+      <div class="field" style="flex:1">
+        <label for="lawFirm">Attorney / firm name</label>
+        <input type="text" id="lawFirm" placeholder="e.g. Jane Roe, Roe &amp; Associates">
+      </div>
+    </div>
+    <div class="row tight">
+      <div class="field" style="flex:1">
+        <label for="lawCase">Case / claim number</label>
+        <input type="text" id="lawCase" placeholder="e.g. CV-2026-01234">
+      </div>
+      <div class="field" style="flex:1">
+        <label for="lawDoi">Date of injury / onset</label>
+        <input type="text" id="lawDoi" placeholder="e.g. 2025-03-14">
+      </div>
+    </div>
+    <div class="row tight">
+      <div class="field" style="flex:1">
+        <label for="lawJurisdiction">Jurisdiction / state <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <input type="text" id="lawJurisdiction" placeholder="e.g. Pennsylvania">
+      </div>
+      <div class="field" style="flex:1">
+        <label for="lawDocType">Document type</label>
+        <select id="lawDocType" class="sf-select">
+          <option value="Narrative medical report">Narrative medical report</option>
+          <option value="Independent Medical Exam (IME)">Independent Medical Exam (IME)</option>
+          <option value="Causation opinion">Causation opinion</option>
+          <option value="Disability / work-status report">Disability / work-status report</option>
+          <option value="Records review">Records review</option>
+          <option value="Deposition summary">Deposition summary</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="lawPatientRef">Patient reference <span style="font-weight:400;color:var(--muted)">(your client — name + DOB + claim, so the doctor can identify the chart)</span></label>
+      <input type="text" id="lawPatientRef" placeholder="e.g. John Doe, DOB 1980-05-02, claim CV-2026-01234">
+    </div>
+    <div class="field">
+      <label for="lawQuestions">Legal questions to address</label>
+      <textarea id="lawQuestions" style="min-height:120px;font-size:13.5px" placeholder="The specific questions you want answered, e.g.&#10;1. Is the lumbar injury causally related to the 3/14/2025 accident?&#10;2. What are the patient's current work restrictions?&#10;3. Has the patient reached maximum medical improvement?"></textarea>
+    </div>
+    <div class="row">
+      <button class="btn-green" id="lawSubmitBtn" onclick="submitLegalRequest()" style="flex:1">⚖️ Submit request</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <h2><span class="ic">📚</span> My requests
+      <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadLawyerRequests()">🔄 Refresh</button>
+    </h2>
+    <p class="sub">Requests you've submitted. When a clinician returns a signed report, you can view it and save it as a PDF here.</p>
+    <div id="lawReqEmpty" class="empty"><span class="big">⚖️</span>No requests yet. Submit one above.</div>
+    <div id="lawReqList"></div>
+    <!-- Returned-report viewer -->
+    <div class="extra-card" id="lawReportCard" style="display:none;margin-top:16px">
+      <h3>⚖️ <span id="lawReportTitle">Returned report</span>
+        <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="sec-copy" onclick="lawCopyReport()">📑 Copy</button>
+          <button class="sec-copy" onclick="lawDownloadReport()">📄 Save as PDF</button>
+        </span>
+      </h3>
+      <textarea class="xbody" id="lawReportBody" readonly style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
+    </div>
+  </div>
+</div>
+
+<footer id="appFooter">
   <span class="noprint">⚕️ <b>Always review AI notes before signing.</b> Don't use with real patient data until you're HIPAA-compliant
   (a signed BAA with OpenAI, encryption, and patient consent). MLS runs entirely in your browser; accounts and notes are stored locally on this device only.</span>
 </footer>
@@ -2509,9 +2599,23 @@ function applyAccessUI(){
   // Analysis/review tab: head doctors AND the owner (same supervisory gate).
   const analysisTab=document.getElementById('nav_analysis');
   if(analysisTab) analysisTab.style.display=(backendMode()&&(isHead||isAdmin))?'':'none';
+  // ⚖️ Legal requests inbox tab: clinicians only (not owner, not lawyer).
+  // Shown when the Legal feature is enabled OR whenever requests exist.
+  const isLawyer=isLawyerUser();
+  const legalReqTab=document.getElementById('nav_legalreq');
+  if(legalReqTab){
+    const clinician=backendMode()&&bkUser&&!isAdmin&&!isLawyer;
+    const showInbox=clinician&&((typeof legalEnabled==='function'&&legalEnabled())||((document.getElementById('navLegalReqCount')||{}).textContent>0));
+    legalReqTab.style.display=showInbox?'':'none';
+    // Clinicians: keep the pending count fresh on boot so the tab can appear even
+    // before the Legal feature is enabled, if requests are waiting.
+    if(clinician && backendMode() && bkToken() && typeof loadLegalRequests==='function'){ loadLegalRequests().then(()=>{ const n=Number((document.getElementById('navLegalReqCount')||{}).textContent||0); if(n>0) legalReqTab.style.display=''; }).catch(()=>{}); }
+  }
+  // Lawyer portal: replaces the entire clinical app for lawyer accounts.
+  if(typeof applyLawyerPortal==='function') applyLawyerPortal();
   const banner=document.getElementById('noAccessBanner');
   if(banner){
-    const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin;
+    const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin&&!isLawyer;
     banner.style.display=show?'flex':'none';
   }
 }
@@ -2737,12 +2841,15 @@ async function loadAdminAudit(){
 function adminRoleHeadCell(u,heads){
   // The owner/admin row never gets role or head controls — just a muted "Owner" label.
   if(u.role==='admin'||u.role==='owner'||u.isAdmin){ return '<span style="color:var(--muted)">Owner</span>'; }
-  const role=(u.role==='head')?'head':'doctor'; // owner handled by caller
+  const role=(u.role==='lawyer')?'lawyer':((u.role==='head')?'head':'doctor'); // owner handled by caller
   const roleBtns=
     '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='doctor'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'doctor\')">Doctor</button> '+
-    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='head'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'head\')">Head Dr</button>';
+    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='head'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'head\')">Head Dr</button> '+
+    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='lawyer'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'lawyer\')">Lawyer</button>';
   let headSel='';
-  if(role==='doctor'){
+  if(role==='lawyer'){
+    headSel='<div class="mini" style="color:var(--muted);margin-top:5px">Lawyer — uses the attorney portal; no clinical access.</div>';
+  }else if(role==='doctor'){
     const opts=['<option value="">— Unassigned —</option>'].concat(
       heads.filter(h=>String(h.id)!==String(u.id)).map(h=>{
         const sel=(u.head_id!=null&&String(u.head_id)===String(h.id))?' selected':'';
@@ -3772,6 +3879,7 @@ function showView(v){
   const adminV=document.getElementById('adminView'); if(adminV) adminV.style.display = v==='admin'?'block':'none';
   const teamV=document.getElementById('teamView'); if(teamV) teamV.style.display = v==='team'?'block':'none';
   const analysisV=document.getElementById('analysisView'); if(analysisV) analysisV.style.display = v==='analysis'?'block':'none';
+  const legalReqV=document.getElementById('legalReqView'); if(legalReqV) legalReqV.style.display = v==='legalreq'?'block':'none';
   document.getElementById('nav_patients').classList.toggle('on',v==='patients');
   document.getElementById('nav_visit').classList.toggle('on',v==='visit');
   document.getElementById('nav_recs').classList.toggle('on',v==='recs');
@@ -3780,8 +3888,9 @@ function showView(v){
   const adminTab=document.getElementById('nav_admin'); if(adminTab) adminTab.classList.toggle('on',v==='admin');
   const teamTab=document.getElementById('nav_team'); if(teamTab) teamTab.classList.toggle('on',v==='team');
   const analysisTab=document.getElementById('nav_analysis'); if(analysisTab) analysisTab.classList.toggle('on',v==='analysis');
-  // active-patient bar appears on every view except the patients list / admin / team / analysis
-  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis')?'none':'flex';
+  const legalReqTab=document.getElementById('nav_legalreq'); if(legalReqTab) legalReqTab.classList.toggle('on',v==='legalreq');
+  // active-patient bar appears on every view except the patients list / admin / team / analysis / legal requests
+  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq')?'none':'flex';
   renderPatientBar();
   updateNavCounts();
   if(v==='patients'){ renderPatients(); renderProfile(); }
@@ -3792,6 +3901,7 @@ function showView(v){
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); }
   if(v==='team') loadTeamPatients();
   if(v==='analysis'){ if(!_teamRoster.length){ loadTeamPatients(); } else { refreshAnalysisDoctors(); } }
+  if(v==='legalreq') loadLegalRequests();
   // Feature/tool cards in any view collapse to a clickable sliver by default
   // (idempotent — safe to call on every view switch; runs even before a note is generated).
   try{ initCollapsibleExtras(); }catch(e){}
@@ -5079,6 +5189,8 @@ let lastAIDraft='';
 let lastEMR=null;
 let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='', currentIME='';
 let currentLegal=''; // MLS additive — optional Legal report (off by default)
+let currentLegalRequestId=null; // MLS additive — set when a clinician opens an attorney request to fulfill
+let _lawReports={}; // MLS additive — lawyer portal: requestId -> {result_text, doc_type} for the report viewer
 let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
 
 function syncFormatToggle(){
@@ -8994,17 +9106,13 @@ function loadJsPdf(){
   return _jspdfLoading;
 }
 
-/* Save the (signed) report as a PDF via jsPDF, with header + pagination.
-   Falls back to the print path if jsPDF cannot load. */
-async function downloadLegalPdf(){
-  if(!legalEnabled()) return;
-  const body=document.getElementById('legalBody');
-  if(!body || !body.value.trim()){ toast('Generate a report first.','err'); return; }
-  const text=body.value;
-  const docType=(document.getElementById('legalDocType')||{}).value||'Medical report';
+/* Shared: render a titled text report to a PDF via jsPDF (header + pagination).
+   Reused by the doctor Legal tool AND the lawyer portal's returned reports.
+   Throws if jsPDF cannot load so callers can fall back to the print path. */
+async function legalTextToPdf(docType,text,fallbackBodyId){
   const today=new Date();
   const dateStr=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
-  const safeType=docType.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'report';
+  const safeType=String(docType||'report').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'report';
   const practice=(typeof getPracticeName==='function'&&getPracticeName())||'MLS';
   const addr=(typeof getClinicAddress==='function')?getClinicAddress():'';
   const phone=(typeof getClinicPhone==='function')?getClinicPhone():'';
@@ -9027,11 +9135,11 @@ async function downloadLegalPdf(){
     doc.line(margin,y,pageW-margin,y); y+=22;
     // Title (document type)
     doc.setFont('helvetica','bold'); doc.setFontSize(13);
-    doc.text(String(docType),margin,y); y+=22;
+    doc.text(String(docType||'Medical report'),margin,y); y+=22;
     // Body with word-wrap + pagination
     doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
     const lineH=14.5;
-    const lines=doc.splitTextToSize(text,maxW);
+    const lines=doc.splitTextToSize(String(text||''),maxW);
     for(let i=0;i<lines.length;i++){
       if(y>pageH-margin){ doc.addPage(); y=margin; }
       doc.text(lines[i],margin,y);
@@ -9042,8 +9150,18 @@ async function downloadLegalPdf(){
   }catch(err){
     // Fall back to the browser print dialog so "Save as PDF" still works.
     toast('Could not load the PDF engine — opening the print dialog (choose “Save as PDF”).','');
-    try{ printExtra('Medical-Legal Report — '+docType,'legalBody'); }catch(e){ toast('Could not open the print dialog.','err'); }
+    try{ printExtra('Medical-Legal Report — '+(docType||''),fallbackBodyId); }catch(e){ toast('Could not open the print dialog.','err'); }
   }
+}
+
+/* Save the (signed) report as a PDF via jsPDF, with header + pagination.
+   Falls back to the print path if jsPDF cannot load. */
+async function downloadLegalPdf(){
+  if(!legalEnabled()) return;
+  const body=document.getElementById('legalBody');
+  if(!body || !body.value.trim()){ toast('Generate a report first.','err'); return; }
+  const docType=(document.getElementById('legalDocType')||{}).value||'Medical report';
+  await legalTextToPdf(docType,body.value,'legalBody');
 }
 
 /* Save the (signed) report into the active patient's Documents. */
@@ -9055,6 +9173,256 @@ function saveLegalToChart(){
   const name='Legal report — '+docType+' ('+new Date().toLocaleDateString()+')';
   const d=addDocToActive(name,body.value,'text');
   if(d) toast('Report saved to the patient’s chart.','ok');
+}
+
+/* =========================================================
+   LAWYER PORTAL + LEGAL-REQUEST WORKFLOW (MLS additive)
+   - Lawyer (role==='lawyer'): a dedicated portal to submit requests
+     and view returned signed reports. ALL clinical UI is hidden.
+   - Clinician (doctor/head): a "⚖️ Legal requests" inbox that opens the
+     existing Legal tool prefilled, then returns the signed text to the
+     attorney via the fulfill endpoint.
+   Backend endpoints already exist; this is front-end only.
+   ========================================================= */
+function isLawyerUser(){ return !!(bkUser && (bkUser.isLawyer || bkUser.role==='lawyer')); }
+
+/* Show the lawyer portal and hide EVERY clinical view + nav + footer.
+   For non-lawyers, ensure the clinical app is visible (idempotent). */
+function applyLawyerPortal(){
+  const portal=document.getElementById('lawyerPortal');
+  const wrap=document.getElementById('appWrap');
+  const footer=document.getElementById('appFooter');
+  const lawyer=isLawyerUser();
+  if(lawyer){
+    // Hide all clinical views explicitly (belt-and-suspenders with hiding appWrap).
+    ['patientsView','visitView','historyView','recsView','ordersView','adminView','teamView','analysisView','legalReqView'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.style.display='none';
+    });
+    const pb=document.getElementById('patientBar'); if(pb) pb.style.display='none';
+    if(wrap) wrap.style.display='none';
+    if(footer) footer.style.display='none';
+    if(portal) portal.style.display='block';
+    loadLawyerRequests();
+  }else{
+    if(portal) portal.style.display='none';
+    if(wrap) wrap.style.display='';
+    if(footer) footer.style.display='';
+  }
+  return lawyer;
+}
+
+/* ---- Lawyer portal: submit a new request ---- */
+async function submitLegalRequest(){
+  if(!backendMode()||!bkToken()){ toast('This requires the hosted version.','err'); return; }
+  const v=id=>((document.getElementById(id)||{}).value||'').trim();
+  const target_email=v('lawDoctorEmail');
+  const doc_type=(document.getElementById('lawDocType')||{}).value||'Narrative medical report';
+  const questions=v('lawQuestions');
+  if(!target_email){ toast("Enter the doctor's email you're requesting from.",'err'); return; }
+  const body={
+    target_email,
+    firm:v('lawFirm'),
+    case_number:v('lawCase'),
+    doi:v('lawDoi'),
+    jurisdiction:v('lawJurisdiction'),
+    patient_ref:v('lawPatientRef'),
+    doc_type,
+    questions
+  };
+  const btn=document.getElementById('lawSubmitBtn');
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…'; }
+  try{
+    const r=await fetch(bkBase()+'/api/legal/request',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify(body)
+    });
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&(d.error||d.message))||'Could not submit the request.','err'); return; }
+    toast('Request submitted to '+esc(target_email)+'.','ok');
+    // clear the form
+    ['lawDoctorEmail','lawFirm','lawCase','lawDoi','lawJurisdiction','lawPatientRef','lawQuestions'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+    const dt=document.getElementById('lawDocType'); if(dt) dt.selectedIndex=0;
+    loadLawyerRequests();
+  }catch(e){ toast(friendlyError(e),'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='⚖️ Submit request'; } }
+}
+
+/* ---- Lawyer portal: load + render "My requests" ---- */
+async function loadLawyerRequests(){
+  if(!backendMode()||!bkToken()) return;
+  const list=document.getElementById('lawReqList');
+  const empty=document.getElementById('lawReqEmpty');
+  try{
+    const r=await fetch(bkBase()+'/api/legal/requests',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ if(list) list.innerHTML=''; if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">⚠️</span>Could not load your requests.'; } return; }
+    const reqs=Array.isArray(d)?d:(d.requests||d.items||[]);
+    _lawReports={};
+    if(!reqs.length){ if(list) list.innerHTML=''; if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">⚖️</span>No requests yet. Submit one above.'; } return; }
+    if(empty) empty.style.display='none';
+    if(list) list.innerHTML=reqs.map(rq=>legalReqRowHtml(rq,'lawyer')).join('');
+  }catch(e){ if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">⚠️</span>Network problem loading requests.'; } }
+}
+
+/* Shared row renderer for both the lawyer "My requests" list and the
+   clinician inbox. mode: 'lawyer' | 'clinician'. */
+function legalReqRowHtml(rq,mode){
+  const id=rq.id;
+  const status=String(rq.status||'pending').toLowerCase();
+  const fulfilled=(status==='fulfilled'||status==='done'||status==='complete'||!!rq.result_text);
+  const docType=rq.doc_type||'Medical report';
+  const caseNo=rq.case_number||rq.case||'';
+  const when=(rq.created_at||rq.created||rq.submitted_at||rq.date)? (()=>{ try{ return new Date(rq.created_at||rq.created||rq.submitted_at||rq.date).toLocaleDateString(); }catch(e){ return ''; } })():'';
+  const statusBadge=fulfilled
+    ? '<span style="font-weight:600;font-size:12px;color:#1f7a4d;background:#e3f5ec;border:1px solid #b9e6cf;border-radius:20px;padding:3px 10px">✔ Fulfilled</span>'
+    : '<span style="font-weight:600;font-size:12px;color:#8a5a00;background:#fff7e6;border:1px solid #f3d79b;border-radius:20px;padding:3px 10px">Pending</span>';
+  let meta='';
+  if(mode==='lawyer'){
+    meta='To: '+esc(rq.target_email||rq.target||'—');
+  }else{
+    meta='From: '+esc(rq.requester_email||rq.lawyer_email||rq.firm||rq.attorney_email||'attorney');
+  }
+  const bits=[meta];
+  if(caseNo) bits.push('Case '+esc(String(caseNo)));
+  if(when) bits.push(esc(when));
+  let actions='';
+  if(mode==='lawyer'){
+    if(fulfilled){
+      _lawReports[id]={result_text:rq.result_text||'',doc_type:docType};
+      actions='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="lawViewReport(\''+esc(String(id))+'\')">📄 View report</button>';
+    }
+  }else{
+    actions='<button class="'+(fulfilled?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="openLegalRequest(\''+esc(String(id))+'\')">'+(fulfilled?'⚖️ Re-open':'⚖️ Fulfill')+'</button>';
+  }
+  // Stash the full request so the clinician inbox can prefill from it.
+  if(mode==='clinician') _legalInboxById[String(id)]=rq;
+  return '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px">'
+    +'<div style="flex:1;min-width:200px">'
+    +'<div style="font-weight:600">'+esc(docType)+' '+statusBadge+'</div>'
+    +'<div class="mini" style="color:var(--muted);margin-top:3px">'+bits.join(' · ')+'</div>'
+    +'</div>'
+    +(actions?('<div>'+actions+'</div>'):'')
+    +'</div>';
+}
+
+/* Lawyer portal: show a returned signed report in the viewer card. */
+function lawViewReport(id){
+  const rec=_lawReports[String(id)];
+  if(!rec){ toast('Report not available.','err'); return; }
+  const card=document.getElementById('lawReportCard');
+  const body=document.getElementById('lawReportBody');
+  const title=document.getElementById('lawReportTitle');
+  if(title) title.textContent=rec.doc_type||'Returned report';
+  if(body) body.value=rec.result_text||'';
+  if(card){ card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+}
+function lawCopyReport(){
+  const body=document.getElementById('lawReportBody');
+  if(!body||!body.value){ toast('Nothing to copy.','err'); return; }
+  try{ navigator.clipboard.writeText(body.value); toast('Copied.','ok'); }catch(e){ toast('Could not copy.','err'); }
+}
+async function lawDownloadReport(){
+  const body=document.getElementById('lawReportBody');
+  const title=document.getElementById('lawReportTitle');
+  if(!body||!body.value.trim()){ toast('Open a report first.','err'); return; }
+  await legalTextToPdf((title&&title.textContent)||'Medical report',body.value,'lawReportBody');
+}
+
+/* ---- Clinician inbox: load + render incoming requests ---- */
+let _legalInboxById={}; // requestId -> full request object (for prefill)
+async function loadLegalRequests(){
+  if(!backendMode()||!bkToken()) return;
+  const list=document.getElementById('legalReqList');
+  const empty=document.getElementById('legalReqEmpty');
+  try{
+    const r=await fetch(bkBase()+'/api/legal/requests',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ if(list) list.innerHTML=''; if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">⚠️</span>Could not load legal requests.'; } updateLegalReqCount(0); return; }
+    const reqs=Array.isArray(d)?d:(d.requests||d.items||[]);
+    _legalInboxById={};
+    const pending=reqs.filter(rq=>{ const s=String(rq.status||'pending').toLowerCase(); return !(s==='fulfilled'||s==='done'||s==='complete'||rq.result_text); }).length;
+    updateLegalReqCount(pending);
+    if(!reqs.length){ if(list) list.innerHTML=''; if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">⚖️</span>No legal requests yet.'; } return; }
+    if(empty) empty.style.display='none';
+    if(list) list.innerHTML=reqs.map(rq=>legalReqRowHtml(rq,'clinician')).join('');
+  }catch(e){ if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">⚠️</span>Network problem loading requests.'; } }
+}
+function updateLegalReqCount(n){
+  const b=document.getElementById('navLegalReqCount'); if(b) b.textContent=n||0;
+}
+
+/* Clinician: open the existing Legal tool PREFILLED from an attorney request.
+   Does NOT auto-pull PHI — the doctor selects the matching patient themselves. */
+function openLegalRequest(id){
+  const rq=_legalInboxById[String(id)];
+  if(!rq){ toast('Request not found — refresh the list.','err'); return; }
+  if(!legalEnabled()){
+    // The Legal tool is gated behind the Legal feature toggle.
+    toast('Enable the ⚖️ Legal tool in Settings to fulfill requests.','err');
+    return;
+  }
+  currentLegalRequestId=id;
+  // Prefill the Legal modal fields from the request.
+  const set=(elId,val)=>{ const el=document.getElementById(elId); if(el) el.value=val||''; };
+  set('legalAttorney',rq.firm||rq.attorney||'');
+  set('legalCase',rq.case_number||rq.case||'');
+  set('legalDoi',rq.doi||'');
+  set('legalJurisdiction',rq.jurisdiction||'');
+  set('legalQuestions',rq.questions||'');
+  // Doc type: match an existing option if possible.
+  const dt=document.getElementById('legalDocType');
+  if(dt && (rq.doc_type)){
+    const want=String(rq.doc_type).toLowerCase();
+    let matched=false;
+    for(let i=0;i<dt.options.length;i++){ if(String(dt.options[i].value).toLowerCase()===want){ dt.selectedIndex=i; matched=true; break; } }
+    if(!matched){ for(let i=0;i<dt.options.length;i++){ if(String(dt.options[i].value).toLowerCase().indexOf(want)>=0||want.indexOf(String(dt.options[i].value).toLowerCase())>=0){ dt.selectedIndex=i; matched=true; break; } } }
+  }
+  // Show the lawyer's patient reference prominently (on the result card banner).
+  const ref=document.getElementById('legalReqRef');
+  if(ref){
+    ref.style.display='block';
+    ref.innerHTML='⚖️ <b>Attorney request</b> — pull up this patient from your own list (no PHI is auto-loaded):<br><b>Patient reference:</b> '+esc(rq.patient_ref||'[none provided]')
+      +(rq.firm?('<br><b>Requesting firm:</b> '+esc(rq.firm)):'');
+  }
+  // Reveal the Return-to-attorney button on the Legal card.
+  const rb=document.getElementById('legalReturnBtn'); if(rb) rb.style.display='';
+  // Open the Legal tool. openLegal() requires an active patient; guide the doctor there.
+  if(!activePatient()){
+    toast('Pick the matching patient (see the reference), then click ⚖️ Legal to generate.','');
+    showView('patients');
+    return;
+  }
+  openLegal();
+}
+
+/* Clinician: return the signed report text to the attorney via fulfill. */
+async function returnLegalToAttorney(){
+  if(!currentLegalRequestId){ toast('No attorney request is open.','err'); return; }
+  const body=document.getElementById('legalBody');
+  if(!body || !body.value.trim()){ toast('Generate and sign the report first.','err'); return; }
+  const rid=currentLegalRequestId;
+  const btn=document.getElementById('legalReturnBtn');
+  if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+  try{
+    const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(rid)+'/fulfill',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({result_text:body.value})
+    });
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&(d.error||d.message))||'Could not return the report.','err'); return; }
+    toast('Sent to attorney.','ok');
+    currentLegalRequestId=null;
+    if(btn) btn.style.display='none';
+    const ref=document.getElementById('legalReqRef'); if(ref){ ref.style.display='none'; ref.innerHTML=''; }
+    loadLegalRequests();
+  }catch(e){ toast(friendlyError(e),'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='↩ Return to attorney'; } }
 }
 
 /* =========================================================
