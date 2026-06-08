@@ -564,6 +564,12 @@
 .ik-opt input{width:20px;height:20px;margin-top:1px;flex:none;accent-color:#127a7d}
 .ik-submit{display:block;width:100%;margin-top:20px;min-height:60px;border:none;border-radius:14px;background:#127a7d;color:#fff;font-size:20px;font-weight:700;cursor:pointer}
 .ik-cardbtn{display:inline-flex;align-items:center;gap:8px;min-height:50px;padding:12px 18px;border:1px dashed #127a7d;border-radius:10px;background:#f0fafa;color:#0e5e60;font-size:16px;font-weight:600;cursor:pointer}
+/* MLS additive — patient-satisfaction 1–5 buttons (intake kiosk) */
+.ik-sat-row{display:flex;gap:8px;flex-wrap:wrap}
+.ik-sat{flex:1;min-width:96px;min-height:64px;border:1px solid #cfdee6;border-radius:12px;background:#fbfdfe;cursor:pointer;color:#0e3a4f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 4px}
+.ik-sat .n{font-size:22px;font-weight:700}
+.ik-sat .l{font-size:12px;font-weight:600;text-align:center}
+.ik-sat.on{background:#127a7d;border-color:#127a7d;color:#fff}
 </style>
 <div id="intakeView">
   <div class="ik-wrap">
@@ -683,6 +689,23 @@
         <h3>📏 How your pain affects daily life</h3>
         <p class="ik-sub">For each section, tap the ONE statement that best describes you today. Skip any that don't apply. (Oswestry Disability Index)</p>
         <div id="ikOdiWrap"></div>
+      </div>
+
+      <!-- PATIENT SATISFACTION (MLS additive — optional, skippable) -->
+      <div class="ik-sec" id="ikSatSection">
+        <h3>💬 Your experience with us</h3>
+        <p class="ik-sub">Optional — feel free to skip these if this is your first visit.</p>
+        <div class="ik-field">
+          <label>How satisfied are you with your care so far?</label>
+          <div class="ik-sat-row" id="ikSatScale"></div>
+        </div>
+        <div class="ik-field" style="margin-bottom:2px">
+          <label>Would you recommend us to a friend or family member?</label>
+          <div class="ik-checks">
+            <label class="ik-check"><input type="radio" name="ikRec" value="yes"><span>Yes</span></label>
+            <label class="ik-check"><input type="radio" name="ikRec" value="no"><span>No</span></label>
+          </div>
+        </div>
       </div>
 
       <!-- DOCTOR'S CUSTOM QUESTIONS (from Settings → Intake questions) -->
@@ -2848,6 +2871,8 @@ async function refreshMe(){
       loadPatientsFromServer();
       // ...and their server-stored visit history (merged into the local cache)
       loadRecordsFromServer();
+      // ...and their cloud-synced settings/templates (fills local gaps only; silent)
+      try{ loadPrefsFromServer(); }catch(e){}
     }
   }catch(e){/* offline — leave UI as-is */}
 }
@@ -3602,7 +3627,62 @@ function saveSettings(){
   resetIdle();  // apply the (possibly changed) timeout immediately
   document.getElementById('keyOk').className=k?'keyok show':'keyok';
   toast('Settings saved on this device.','ok');
+  // MLS additive — cloud-sync preferences so they follow the account (hosted
+  // mode only; fire-and-forget; silent on success or failure).
+  try{ syncPrefsToServer(); }catch(e){}
   setTimeout(closeSettings,500);
+}
+
+/* =========================================================
+   MLS additive — SETTINGS/TEMPLATES CLOUD SYNC (Feature: prefs follow the account)
+   A whitelisted set of uns() localStorage keys is bundled into ONE JSON blob and
+   stored server-side (POST /api/prefs — AES-encrypted at rest, per-user).
+   On login (refreshMe) the blob is fetched and ONLY fills LOCAL GAPS: a key is
+   written back only when this device has no value (absent/empty) — local edits
+   always win. Never PHI: settings, toggles, templates, intake questions only.
+   ========================================================= */
+const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact',
+  'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
+  'providerCred','npi','clinicAddress','clinicPhone','defaultFormat','noteStyle',
+  'featMME','featSurgical','featUR','featIME','featCost','legalEnabled',
+  'useTemplates','templateActive','templateAuto','intakeQuestions','templates'];
+function syncPrefsToServer(){
+  if(!backendMode()||!bkToken()) return;   // hosted mode only
+  try{
+    const prefs={};
+    PREF_SYNC_KEYS.forEach(k=>{
+      const v=localStorage.getItem(uns(k));
+      if(v!==null) prefs[k]=v;             // store raw string values as-is
+    });
+    fetch(bkBase()+'/api/prefs',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({prefs:prefs})
+    }).catch(()=>{ /* offline / transient — next save retries */ });
+  }catch(e){ /* never block settings save */ }
+}
+async function loadPrefsFromServer(){
+  if(!backendMode()||!bkToken()) return;
+  try{
+    const r=await fetch(bkBase()+'/api/prefs',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(!r.ok) return;                      // incl. 401 — refreshMe handles auth
+    let d={}; try{ d=await r.json(); }catch(e){ return; }
+    const prefs=(d&&d.prefs)||null;
+    if(!prefs||typeof prefs!=='object') return;
+    let changed=false;
+    PREF_SYNC_KEYS.forEach(k=>{
+      if(!Object.prototype.hasOwnProperty.call(prefs,k)) return;
+      const sv=prefs[k];
+      if(typeof sv!=='string') return;     // blob stores raw strings only
+      const local=localStorage.getItem(uns(k));
+      if(local===null||local===''){ localStorage.setItem(uns(k),sv); changed=true; } // server fills gaps; local wins
+    });
+    if(changed){
+      try{ applyAppearance(); }catch(e){}
+      try{ if(typeof applyFeatureToggles==='function') applyFeatureToggles(); }catch(e){}
+      try{ if(typeof applyLegalUI==='function') applyLegalUI(); }catch(e){}
+    }
+  }catch(e){ /* offline — local values stand */ }
 }
 
 /* =========================================================
@@ -4243,6 +4323,12 @@ async function loadAnalysisBaseline(force){
   let rvu=0,rvuNotes=0;
   emDist.forEach(e=>{ const code=String(e.code||'').trim().split(/[\s—\-:]/)[0]; const w=ANA_WRVU[code]; if(w!=null){ rvu+=w*(e.n||0); rvuNotes+=(e.n||0); } });
   rvu=Math.round(rvu*100)/100;
+  // MLS additive — overall patient-satisfaction aggregate (server AVG of the
+  // plaintext 1–5 meta column; card only appears once any rated visits exist).
+  const satAgg=(d&&d.satisfaction)||{};
+  const satCard=(satAgg.avg_satisfaction!=null)
+    ? _anaCard('Patient satisfaction (avg /5)',satAgg.avg_satisfaction,(satAgg.satisfaction_n||0)+' rated visit'+(satAgg.satisfaction_n===1?'':'s'))
+    : '';
   const cards=
     _anaCard('Total patients seen',distinctPts,'distinct charts, all time')+
     _anaCard('New patients',latest.new_patients||0,'latest month ('+esc(latest.month||'—')+')')+
@@ -4250,19 +4336,23 @@ async function loadAnalysisBaseline(force){
     _anaCard('wRVU (approx.)',rvu,'from E/M levels on '+rvuNotes+' visits')+
     _anaCard('Injections',inj,'visits with an injection')+
     _anaCard('Total charges (est.)',_anaMoney(charges),'fee-schedule estimate')+
+    satCard+
     _anaCard('Collections','—','needs billing data');
-  // ---- per-month table ----
+  // ---- per-month table (a Satisfaction column appears only when data exists) ----
+  const anySat=months.some(m=>m.satisfaction_avg!=null);
   const monthRows=months.map(m=>'<tr><td>'+esc(m.month||'?')+'</td>'+
     '<td style="text-align:right">'+(m.visits||0)+'</td>'+
     '<td style="text-align:right">'+(m.new_patients||0)+'</td>'+
     '<td style="text-align:right">'+(m.injections||0)+'</td>'+
     '<td style="text-align:right">'+(m.signed||0)+'</td>'+
-    '<td style="text-align:right">'+esc(_anaMoney(m.est_charge_total))+'</td></tr>').join('');
+    '<td style="text-align:right">'+esc(_anaMoney(m.est_charge_total))+'</td>'+
+    (anySat?('<td style="text-align:right">'+(m.satisfaction_avg!=null?esc(String(m.satisfaction_avg))+'/5':'—')+'</td>'):'')+
+    '</tr>').join('');
   box.innerHTML=
     '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">'+cards+'</div>'+
     '<div style="font-weight:700;color:var(--muted);font-size:13px;margin:14px 0 0">By month</div>'+
     '<table class="superbill" style="width:100%;border-collapse:collapse;margin-top:6px">'+
-      '<tr><td class="k">Month</td><td class="k" style="text-align:right">Visits</td><td class="k" style="text-align:right">New pts</td><td class="k" style="text-align:right">Injections</td><td class="k" style="text-align:right">Signed</td><td class="k" style="text-align:right">Est. charges</td></tr>'+
+      '<tr><td class="k">Month</td><td class="k" style="text-align:right">Visits</td><td class="k" style="text-align:right">New pts</td><td class="k" style="text-align:right">Injections</td><td class="k" style="text-align:right">Signed</td><td class="k" style="text-align:right">Est. charges</td>'+(anySat?'<td class="k" style="text-align:right">Satisfaction</td>':'')+'</tr>'+
       monthRows+
     '</table>'+
     '<div class="code-disclaim">⚠️ wRVU values are approximate CMS work-RVUs for E/M codes only; charges are fee-schedule estimates, not collections. Computed from non-PHI visit metadata.</div>';
@@ -4825,7 +4915,11 @@ function getTemplates(){
   try{ const a=JSON.parse(localStorage.getItem(uns('templates'))||'[]'); return Array.isArray(a)?a:[]; }
   catch(e){ return []; }
 }
-function setTemplates(arr){ localStorage.setItem(uns('templates'),JSON.stringify(arr||[])); }
+function setTemplates(arr){
+  localStorage.setItem(uns('templates'),JSON.stringify(arr||[]));
+  // MLS additive — template edits also follow the account (hosted, fire-and-forget)
+  try{ if(typeof syncPrefsToServer==='function') syncPrefsToServer(); }catch(e){}
+}
 function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
 function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
 function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
@@ -5290,6 +5384,17 @@ function recordMeta(rec){
   if(c.em){ const f=feeForCode(c.em); if(f!=null){ est+=f; any=true; } }
   cpt.forEach(code=>{ if(em && code===em) return; const f=feeForCode(code); if(f!=null){ est+=f; any=true; } });
   const injection = cpt.some(code=>INJ_CPT_SET.has(code)) || !!(rec.procNote && String(rec.procNote).trim());
+  // MLS additive — patient satisfaction (1–5) from this patient's most recent
+  // outcome entry. A bare integer score — non-identifying, never PHI — so the
+  // server can aggregate it without decrypting any records.
+  let satisfaction=null;
+  try{
+    const ocArr=getOutcomes(rec.patientId).slice().sort((a,b)=>(a.date||0)-(b.date||0));
+    if(ocArr.length){
+      const sv=Number(ocArr[ocArr.length-1].satisfaction);
+      if(Number.isInteger(sv) && sv>=1 && sv<=5) satisfaction=sv;
+    }
+  }catch(e){}
   const d=new Date(rec.updated||rec.created||Date.now());
   return {
     note_date: isNaN(d.getTime())?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10),
@@ -5299,7 +5404,8 @@ function recordMeta(rec){
     injection: !!injection,
     est_charge: any?est:null,
     signed: !!rec.signed,
-    is_draft: !!rec.isDraft
+    is_draft: !!rec.isDraft,
+    satisfaction: satisfaction
   };
 }
 function saveNoteToBackend(rec){
@@ -8238,6 +8344,9 @@ function renderOutcomes(){
     if(o.pain!=null) bits.push('Pain '+o.pain+'/10');
     if(o.func!=null && o.func!=='') bits.push('Disability '+esc(String(o.func))+'%');
     if(o.odi!=null && o.odi!=='') bits.push('ODI '+esc(String(o.odi))+'%');
+    if(o.satisfaction!=null && o.satisfaction!=='') bits.push('Sat '+esc(String(o.satisfaction))+'/5');
+    if(o.recommend===true) bits.push('Would recommend');
+    else if(o.recommend===false) bits.push('Would not recommend');
     if(o.note) bits.push(esc(o.note));
     return '<div class="doc-item" style="cursor:default"><span class="ic">📈</span><div class="dm"><div class="t">'+bits.join(' · ')+'</div><div class="s">'+esc(d)+'</div></div></div>';
   }).join('');
@@ -8266,6 +8375,7 @@ const IK_ODI=[
  {t:'Employment / homemaking',o:['My normal work or homemaking activities do not cause pain','My normal activities cause some pain, but I can still do all that is required','I can do most of my usual work, but pain prevents the more physically stressful activities','Pain prevents me from doing anything but light duties','Pain prevents me from doing even light duties','Pain prevents me from doing any work or home chores at all']}
 ];
 let ikPainVal=null;     // 0–10 or null (big-button pain scale)
+let ikSatVal=null;      // 1–5 or null (MLS additive — satisfaction scale, optional)
 let ikCardText='';      // raw OCR text of the insurance-card photo (saved into docs)
 
 function openIntake(){
@@ -8304,7 +8414,7 @@ function intakeNextPatient(){
   const v=document.getElementById('intakeView'); if(v) v.scrollTop=0;
 }
 function resetIntakeForm(){
-  ikPainVal=null; ikCardText='';
+  ikPainVal=null; ikSatVal=null; ikCardText='';
   const form=document.getElementById('ikForm'); if(!form) return;
   form.querySelectorAll('input[type=text],input[type=tel],input[type=email],input[type=date],textarea').forEach(el=>{ el.value=''; });
   form.querySelectorAll('select').forEach(el=>{ el.selectedIndex=0; });
@@ -8329,6 +8439,14 @@ function buildIntakeForm(){
       q.o.map((opt,j)=>'<label class="ik-opt"><input type="radio" name="ikOdi'+i+'" value="'+j+'"><span>'+esc(opt)+'</span></label>').join('')+
       '</div>').join('');
   }
+  // MLS additive — satisfaction 1–5 big buttons (optional; tap again to clear)
+  const ss=document.getElementById('ikSatScale');
+  if(ss){
+    const satLabels=['Very dissatisfied','Dissatisfied','Neutral','Satisfied','Very satisfied'];
+    let sh='';
+    for(let n=1;n<=5;n++) sh+='<button type="button" class="ik-sat'+(ikSatVal===n?' on':'')+'" onclick="ikSetSat('+n+')"><span class="n">'+n+'</span><span class="l">'+satLabels[n-1]+'</span></button>';
+    ss.innerHTML=sh;
+  }
   // Doctor's custom questions: one per line at uns('intakeQuestions'); zero lines hides the section.
   const qs=String(localStorage.getItem(uns('intakeQuestions'))||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const sec=document.getElementById('ikCustomSection');
@@ -8345,6 +8463,12 @@ function ikSetPain(n){
   ikPainVal=(ikPainVal===n)?null:n; // tap again to clear
   const ps=document.getElementById('ikPainScale'); if(!ps) return;
   Array.from(ps.children).forEach((b,i)=>{ b.classList.toggle('on',ikPainVal===i); });
+}
+/* MLS additive — satisfaction button handler (optional; tap again to clear). */
+function ikSetSat(n){
+  ikSatVal=(ikSatVal===n)?null:n;
+  const ss=document.getElementById('ikSatScale'); if(!ss) return;
+  Array.from(ss.children).forEach((b,i)=>{ b.classList.toggle('on',ikSatVal===(i+1)); });
 }
 /* ODI % = (sum of answered items) / (5 × items answered) × 100, rounded. Null if none answered. */
 function ikOdiScore(){
@@ -8431,6 +8555,10 @@ function submitIntake(){
   const odi=ikOdiScore();
   const locs=checked('ikLoc'), tx=checked('ikTx'), conds=checked('ikCond');
   const smoke=(document.querySelector('input[name="ikSmoke"]:checked')||{}).value||'';
+  // MLS additive — optional satisfaction (1–5) + would-recommend (yes/no); both skippable
+  const sat=ikSatVal;
+  const recRaw=(document.querySelector('input[name="ikRec"]:checked')||{}).value||'';
+  const recommend=(recRaw==='yes')?true:((recRaw==='no')?false:null);
 
   // ---- structured INTAKE block → summary (append, never clobber)
   const lines=['INTAKE ('+new Date().toLocaleDateString()+')'];
@@ -8443,6 +8571,8 @@ function submitIntake(){
   add('Worse with',v('ikWorse'));
   add('Prior treatments',[tx.join(', '),v('ikTxFree')].filter(Boolean).join('; '));
   if(odi!=null) lines.push('ODI: '+odi+'% ('+ikOdiBand(odi)+')');
+  if(sat!=null) lines.push('Satisfaction: '+sat+'/5');
+  if(recommend!=null) lines.push('Would recommend: '+(recommend?'Yes':'No'));
   add('Medical conditions',[conds.join(', '),v('ikCondFree')].filter(Boolean).join('; '));
   add('Prior surgeries',v('ikSurgeries'));
   add('Family history',v('ikFamHx'));
@@ -8488,11 +8618,11 @@ function submitIntake(){
 
   upsertPatient(p); // local save + best-effort server sync (hosted mode)
 
-  // ---- outcomes: one intake record with pain + ODI (renderOutcomes shows "ODI x%")
-  if(pain!=null || odi!=null){
+  // ---- outcomes: one intake record with pain + ODI + satisfaction (renderOutcomes shows "ODI x%" / "Sat x/5")
+  if(pain!=null || odi!=null || sat!=null || recommend!=null){
     try{
       const arr=getOutcomes(p.id);
-      arr.push({ id:'o'+Date.now(), noteId:'', pain:(pain!=null?pain:null), func:null, odi:(odi!=null?odi:null), note:'Patient intake', date:Date.now() });
+      arr.push({ id:'o'+Date.now(), noteId:'', pain:(pain!=null?pain:null), func:null, odi:(odi!=null?odi:null), satisfaction:(sat!=null?sat:null), recommend:recommend, note:'Patient intake', date:Date.now() });
       saveOutcomesArr(p.id,arr);
     }catch(e){}
   }
