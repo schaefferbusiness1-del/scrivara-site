@@ -549,7 +549,7 @@
 <footer>
   <div class="wrap">
     <div class="brand" style="color:#fff"><span class="mark" style="background:none;width:32px;height:32px"><svg viewBox="0 0 56 56" width="32" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svFootMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svFootMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</div>
-    <div><a href="#how">How it works</a> · <a href="#pricing">Pricing</a> · <a href="#demo">Book a demo</a> · <a href="mailto:hello@scrivara.ai">Contact</a></div>
+    <div><a href="#how">How it works</a> · <a href="#pricing">Pricing</a> · <a href="#demo">Book a demo</a> · <a href="mailto:michael@mlsscribe.com">Contact</a></div>
   </div>
   <div class="wrap" style="margin-top:14px">
     <p class="disc">MLS is a clinical documentation and coding-support tool. AI-generated notes and suggested codes are for the licensed provider to review, edit, and confirm — final documentation and coding are the provider's responsibility. "HIPAA-ready architecture" describes our design; it is not a claim of certification, and BAAs are in progress. Do not use with real patient data until applicable Business Associate Agreements are signed and a compliance review is complete. © 2026 MLS.</p>
@@ -560,7 +560,7 @@
 // Real email delivery via FormSubmit (no account needed). Submissions are
 // emailed straight to the practice owner's inbox. A one-time confirmation
 // link (sent on the first submission) must be clicked once to activate.
-const DEMO_ENDPOINT="https://formsubmit.co/ajax/leeschaeffer41@gmail.com";
+const DEMO_ENDPOINT="https://formsubmit.co/ajax/michael@mlsscribe.com";
 async function submitDemo(e){
   e.preventDefault();
   const f=e.target;
@@ -594,7 +594,7 @@ async function submitDemo(e){
     }
   }catch(err){
     status.style.color='#c0392b';
-    status.textContent='Something went wrong sending the form. Please email hello@scrivara.ai directly.';
+    status.textContent='Something went wrong sending the form. Please email michael@mlsscribe.com directly.';
   }finally{
     if(btn){btn.disabled=false;}
   }
