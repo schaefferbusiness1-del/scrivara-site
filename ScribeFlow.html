@@ -385,6 +385,7 @@
   .set-section:first-of-type{border-top:none;padding-top:0;margin-top:0}
   .set-section>.set-head{font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
     color:var(--muted);margin:0 0 4px;display:flex;align-items:center;gap:7px}
+  .set-section>.set-head:after{content:"";flex:1;height:1px;background:var(--line);margin-left:6px;min-width:24px}
   .set-section>.set-desc{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5}
   .set-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
   @media(max-width:560px){.set-grid2{grid-template-columns:1fr}}
@@ -1828,6 +1829,10 @@
     <h3>⚙️ Settings</h3>
     <p style="margin:0 0 14px;color:var(--muted);font-size:15px" id="settingsIntro">Enter your OpenAI API key once to enable AI note generation.</p>
 
+    <!-- ============ SECTION: Account & access (MLS — additive heading wrapper) ============ -->
+    <div class="set-section">
+    <p class="set-head">🔑 Account &amp; access</p>
+    <p class="set-desc">How this device connects to AI note generation, plus the name and specialty shown on your notes.</p>
     <div class="field" id="apiKeyField">
       <label for="apiKey">OpenAI API key</label>
       <input type="password" id="apiKey" placeholder="sk-...">
@@ -1853,6 +1858,7 @@
       <label for="docSpec">Specialty <span style="font-weight:400;color:var(--muted)">(optional — tailors the note)</span></label>
       <input type="text" id="docSpec" placeholder="e.g. Family Medicine, Cardiology, Pediatrics">
     </div>
+    </div><!-- /Account & access section -->
 
     <!-- ============ SECTION: Practice / Provider (MLS — additive) ============ -->
     <div class="set-section">
@@ -1912,6 +1918,11 @@
       <p class="note" style="margin:2px 0 0">Tip: your standing follow-up interval lives below under Provider preferences.</p>
     </div>
 
+    <!-- ============ SECTION: AI personalization (MLS — additive heading wrapper) ============ -->
+    <div class="set-section">
+    <p class="set-head">🎚️ AI personalization</p>
+    <p class="set-desc">Standing instructions and defaults MLS applies to every note it writes for you.</p>
+
     <!-- My preferences: "learns your way" -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
       <label style="font-size:15px">🎚️ My preferences <span style="font-weight:400;color:var(--muted)">(MLS learns your way)</span></label>
@@ -1931,6 +1942,7 @@
         <span style="color:var(--muted)">e.g. Risk/benefit discussed; patient verbalized understanding. Follow up in 2 weeks or sooner if symptoms worsen.</span></p>
       <textarea id="defaultComment" class="note-box" style="min-height:72px" placeholder="Your preferred default comment…" onblur="setDefaultComment(this.value)"></textarea>
     </div>
+    </div><!-- /AI personalization section -->
 
     <!-- ============ SECTION: Display (groups existing appearance toggles) ============ -->
     <div class="set-section"><p class="set-head">🎨 Display</p>
@@ -2137,6 +2149,11 @@
     </div>
     </div><!-- /Security & privacy section -->
 
+    <!-- ============ SECTION: Integrations (MLS — additive heading wrapper) ============ -->
+    <div class="set-section">
+    <p class="set-head">🔗 Integrations</p>
+    <p class="set-desc">Connections to outside systems like your EMR.</p>
+
     <!-- athenahealth connection (honest scaffold) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
       <label style="font-size:15px">🔗 athenahealth connection</label>
@@ -2152,6 +2169,7 @@
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="pushToAthena()" title="Pending API access" disabled>⤴ Push to Athena</button>
       </div>
     </div>
+    </div><!-- /Integrations section -->
 
     <div class="row">
       <button class="btn-primary" onclick="saveSettings()" style="flex:1">💾 Save</button>

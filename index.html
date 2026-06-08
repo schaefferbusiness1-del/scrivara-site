@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MLS — AI Scribe for Spine, PM&amp;R &amp; Pain | Notes, Orders, Prior-Auths</title>
-<meta name="description" content="MLS is the AI ambient scribe built for spine, PM&R and pain. It writes the SOAP note and handles orders, DME, prior-auths, appeals, MIPS and outcomes — with accurate E/M, ICD-10 and CPT coding. $30/provider/month.">
+<title>MLS — AI Scribe for Spine, PM&amp;R &amp; Pain | Build Your Own AI Widgets</title>
+<meta name="description" content="MLS is the AI ambient scribe built for spine, PM&R and pain. Build your own AI widgets, get structured SOAP notes with E/M, ICD-10 and CPT coding, iPad patient intake, outcomes tracking, and a premium ask-your-data Study Engine. From $30/provider/month.">
 <style>
   :root{
     --bg:#f4f7fb; --ink:#16324f; --muted:#5f7186; --line:#e2e9f1;
@@ -37,16 +37,34 @@
   .btn-dark:hover{background:#000;transform:translateY(-1px)}
   @media(max-width:720px){.navlinks a:not(.btn){display:none}}
   /* hero */
-  .hero{padding:78px 0 60px;text-align:center}
+  .hero{padding:72px 0 56px;text-align:center}
   .eyebrow{display:inline-block;background:var(--soft);color:var(--brand-dk);font-weight:700;
     font-size:13.5px;padding:6px 14px;border-radius:20px;border:1px solid #d6e6fa;margin-bottom:20px}
-  .hero h1{font-size:50px;line-height:1.1;margin:0 0 18px;letter-spacing:-1px}
+  .hero h1{font-size:48px;line-height:1.12;margin:0 0 18px;letter-spacing:-1px}
   .hero h1 .hl{background:linear-gradient(120deg,#1f7ae0,#19a974);-webkit-background-clip:text;
     background-clip:text;color:transparent}
-  .hero p.lead{font-size:21px;color:var(--muted);max-width:730px;margin:0 auto 30px}
+  .hero p.lead{font-size:20.5px;color:var(--muted);max-width:780px;margin:0 auto 30px}
   .hero .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
   .hero .reassure{margin-top:18px;color:var(--muted);font-size:14.5px}
-  @media(max-width:720px){.hero h1{font-size:34px}.hero p.lead{font-size:18px}}
+  @media(max-width:720px){.hero h1{font-size:33px}.hero p.lead{font-size:18px}}
+  /* screenshots */
+  .shot{display:block;width:100%;max-width:100%;height:auto;border-radius:12px}
+  .shot-frame{background:#fff;border:1px solid var(--line);border-radius:18px;padding:10px;
+    box-shadow:0 18px 60px rgba(22,50,79,.16)}
+  .shot-cap{font-size:13.5px;color:var(--muted);text-align:center;margin:10px 4px 2px}
+  .hero-shot{max-width:960px;margin:42px auto 0}
+  /* split feature rows */
+  .split{display:grid;grid-template-columns:1fr 1.15fr;gap:44px;align-items:center}
+  .split.rev{grid-template-columns:1.15fr 1fr}
+  @media(max-width:880px){.split,.split.rev{grid-template-columns:1fr}}
+  .split h2{font-size:32px;margin:0 0 14px;letter-spacing:-.5px}
+  .split p.big{font-size:17.5px;color:var(--muted);margin:0 0 16px}
+  .split ul{margin:0;padding:0;list-style:none}
+  .split li{padding:7px 0 7px 30px;position:relative;color:var(--ink);font-size:15.5px}
+  .split li:before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:800}
+  .pill{display:inline-block;background:var(--soft);color:var(--brand-dk);font-weight:700;font-size:12.5px;
+    letter-spacing:.6px;text-transform:uppercase;padding:5px 12px;border-radius:16px;border:1px solid #d6e6fa;margin-bottom:14px}
+  .pill.gold{background:#fff7e6;color:#8a6d3b;border-color:#f3dca0}
   /* trust strip */
   .strip{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .strip .wrap{display:flex;flex-wrap:wrap;gap:20px;justify-content:space-around;padding:22px 22px;text-align:center}
@@ -54,7 +72,7 @@
   .strip .stat span{font-size:14px;color:var(--muted)}
   /* sections */
   section{padding:64px 0}
-  .sec-head{text-align:center;max-width:720px;margin:0 auto 44px}
+  .sec-head{text-align:center;max-width:760px;margin:0 auto 44px}
   .sec-head h2{font-size:34px;margin:0 0 12px;letter-spacing:-.5px}
   .sec-head p{font-size:18px;color:var(--muted);margin:0}
   .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
@@ -64,6 +82,9 @@
     font-size:24px;margin-bottom:14px}
   .card h3{margin:0 0 8px;font-size:19px}
   .card p{margin:0;color:var(--muted);font-size:15.5px}
+  .card .mini-tag{display:inline-block;background:#fff7e6;color:#8a6d3b;border:1px solid #f3dca0;
+    font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border-radius:12px;
+    padding:2px 9px;margin-left:8px;vertical-align:middle}
   /* how it works */
   .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;counter-reset:s}
   @media(max-width:880px){.steps{grid-template-columns:1fr 1fr}}
@@ -96,15 +117,20 @@
   .who div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-weight:600;
     display:flex;align-items:center;gap:10px;font-size:15.5px}
   /* pricing */
-  .price-card{max-width:460px;margin:0 auto;background:#fff;border:2px solid var(--brand);border-radius:22px;
-    padding:40px;text-align:center;box-shadow:var(--shadow);position:relative}
+  .price-grid{display:grid;grid-template-columns:1fr 1fr;gap:26px;max-width:920px;margin:0 auto;align-items:stretch}
+  @media(max-width:820px){.price-grid{grid-template-columns:1fr;max-width:480px}}
+  .price-card{background:#fff;border:1px solid var(--line);border-radius:22px;
+    padding:40px;text-align:center;box-shadow:var(--shadow);position:relative;display:flex;flex-direction:column}
+  .price-card.featured{border:2px solid var(--brand)}
   .price-card .tag{position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:var(--brand);
-    color:#fff;font-weight:700;font-size:13px;padding:5px 16px;border-radius:20px}
+    color:#fff;font-weight:700;font-size:13px;padding:5px 16px;border-radius:20px;white-space:nowrap}
+  .price-card .tier{font-size:15px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   .price-card .amt{font-size:54px;font-weight:800;letter-spacing:-1px}
   .price-card .amt span{font-size:20px;color:var(--muted);font-weight:600}
-  .price-card ul{list-style:none;padding:0;margin:22px 0;text-align:left}
-  .price-card li{padding:9px 0 9px 30px;position:relative;color:var(--ink)}
+  .price-card ul{list-style:none;padding:0;margin:22px 0;text-align:left;flex:1}
+  .price-card li{padding:8px 0 8px 30px;position:relative;color:var(--ink);font-size:15.5px}
   .price-card li:before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:800}
+  .price-card li.star:before{content:"★";color:#d99a23}
   .price-card .btn{width:100%;justify-content:center;margin-top:6px}
   .price-sub{text-align:center;color:var(--muted);font-size:14.5px;margin-top:18px}
   /* trust/hipaa */
@@ -148,11 +174,12 @@
   <div class="wrap">
     <div class="brand"><span class="mark" style="background:none"><svg viewBox="0 0 56 56" width="36" height="36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svNavMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svNavMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</div>
     <div class="navlinks">
-      <a href="#how">How it works</a>
-      <a href="#specialty">For spine &amp; pain</a>
-      <a href="#billing">Reimbursement</a>
+      <a href="#widgets">Custom widgets</a>
+      <a href="#features">Features</a>
+      <a href="#studies">Data studies</a>
       <a href="#pricing">Pricing</a>
       <a href="#trust">Security</a>
+      <a href="ScribeFlow.html">Sign in</a>
       <a href="#demo" class="btn btn-dark">Book a demo</a>
     </div>
   </div>
@@ -161,14 +188,21 @@
 <!-- HERO -->
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow">Ambient AI scribe built for spine, PM&amp;R &amp; pain</span>
-    <h1>The AI scribe that speaks <span class="hl">spine, PM&amp;R and pain.</span></h1>
-    <p class="lead">MLS listens to the visit, writes a clean SOAP note, and handles the work your specialty actually lives on — <b>PT scripts and DME orders, prior-auths and appeals, MIPS, outcome tracking</b>, and accurate E/M, ICD-10 and CPT coding. Built with a spine practice, for spine and pain practices. No new hardware. No tech skills required.</p>
+    <span class="eyebrow">Ambient AI scribe + mini-EMR built for spine, PM&amp;R &amp; pain</span>
+    <h1>Build your own <span class="hl">AI widgets.</span><br>The note writes itself around them.</h1>
+    <p class="lead">Describe any card you want — an injection tracker, a work-status box, a red-flag screen — and <b>MLS designs it and auto-fills it on every visit</b>. Underneath, the ambient scribe turns the conversation into a structured SOAP note with suggested E/M, ICD-10 and CPT coding and an estimated reimbursement. Built with a spine practice, for spine and pain practices.</p>
     <div class="cta">
       <a href="#demo" class="btn btn-dark">📅 Book a demo</a>
-      <a href="#how" class="btn btn-ghost">See how it works</a>
+      <a href="#widgets" class="btn btn-ghost">See the widget builder</a>
     </div>
-    <p class="reassure">⚕️ Built HIPAA-ready · Provider reviews &amp; signs every note · Works in your browser</p>
+    <p class="reassure">⚕️ HIPAA-ready architecture · Provider reviews &amp; signs every note · Works in your browser — no install</p>
+    <div class="hero-shot">
+      <div class="shot-frame">
+        <img class="shot" src="shot-visit-widget.jpg" loading="eager"
+             alt="MLS visit page showing a generated SOAP note with suggested E/M, ICD-10 and CPT coding alongside an auto-filled custom widget card">
+      </div>
+      <p class="shot-cap">A real MLS visit: the generated note with suggested coding — and a custom widget the doctor built, filled in automatically.</p>
+    </div>
   </div>
 </header>
 
@@ -177,33 +211,32 @@
   <div class="wrap">
     <div class="stat"><b>~2 hrs/day</b><span>typical charting time reclaimed</span></div>
     <div class="stat"><b>99202–99215</b><span>accurate E/M level suggested per visit</span></div>
-    <div class="stat"><b>$30</b><span>per provider / month, flat</span></div>
+    <div class="stat"><b>From $30</b><span>per provider / month, flat</span></div>
     <div class="stat"><b>5 min</b><span>to your first note</span></div>
   </div>
 </div>
 
-<!-- VALUE PROP -->
-<section>
+<!-- HEADLINE: CUSTOM WIDGET BUILDER -->
+<section id="widgets">
   <div class="wrap">
-    <div class="sec-head">
-      <h2>Documentation and prior-auths are eating your evenings. Fix that.</h2>
-      <p>Generalist scribes stop at the note. MLS turns a spine or pain visit into finished documentation, orders, and authorizations.</p>
-    </div>
-    <div class="cards">
-      <div class="card">
-        <div class="ic">⏱️</div>
-        <h3>Cut documentation time</h3>
-        <p>Talk to your patient like normal. The note writes itself in the background — SUBJECTIVE, OBJECTIVE, ASSESSMENT, PLAN — ready before they leave the room.</p>
+    <div class="split">
+      <div>
+        <span class="pill">Headline feature</span>
+        <h2>The Custom Widget Builder — your EMR, designed by you, in a sentence</h2>
+        <p class="big">Every practice tracks something the big EMRs don't have a field for. In MLS you just describe the card you want, and the AI designs it. From then on it appears on every visit and fills itself from the conversation.</p>
+        <ul>
+          <li>Describe any card in plain English — "track injection sites, response %, and next-step plan"</li>
+          <li>MLS designs the widget: fields, layout, and the logic to populate it</li>
+          <li>It auto-fills on every Generate, exactly like the built-in cards</li>
+          <li>Edit, rename, or remove widgets anytime — no vendor ticket, no waiting</li>
+        </ul>
       </div>
-      <div class="card">
-        <div class="ic">💲</div>
-        <h3>Capture full reimbursement</h3>
-        <p>Get a suggested E/M level with a plain-English justification, plus ICD-10 and CPT codes — based only on what's documented. Stop under-coding visits you've earned.</p>
-      </div>
-      <div class="card">
-        <div class="ic">😌</div>
-        <h3>Easy for non-tech doctors</h3>
-        <p>No installs, no integrations to learn, no IT project. Open it in your browser, press start, and talk. If you can use a website, you can use MLS.</p>
+      <div>
+        <div class="shot-frame">
+          <img class="shot" src="shot-widget-builder.jpg" loading="lazy"
+               alt="MLS Custom Widget Builder modal where the doctor describes a card in plain English and the AI designs it">
+        </div>
+        <p class="shot-cap">The Custom Widget Builder: describe it, and MLS builds it.</p>
       </div>
     </div>
   </div>
@@ -217,58 +250,144 @@
       <p>You stay in control the entire time — nothing is final until you sign.</p>
     </div>
     <div class="steps">
-      <div class="step"><div class="n">1</div><h4>Start the visit</h4><p>Press one button. MLS ambiently captures the conversation as you talk naturally.</p></div>
-      <div class="step"><div class="n">2</div><h4>Generate the note</h4><p>A clean SOAP note appears in seconds, with structured EMR-ready fields to paste into your system.</p></div>
-      <div class="step"><div class="n">3</div><h4>Review the coding</h4><p>See the suggested E/M level, ICD-10 and CPT codes — and switch to an insurance-ready format in one click.</p></div>
+      <div class="step"><div class="n">1</div><h4>Start the visit</h4><p>Press one button. MLS ambiently captures the conversation as you talk naturally — or dictate from your phone mic.</p></div>
+      <div class="step"><div class="n">2</div><h4>Generate the note</h4><p>A clean SOAP note appears in seconds — and every widget on the page, including your custom ones, fills itself.</p></div>
+      <div class="step"><div class="n">3</div><h4>Review the coding</h4><p>See the suggested E/M level, ICD-10 and CPT codes with an estimated reimbursement, and produce a superbill in one click.</p></div>
       <div class="step"><div class="n">4</div><h4>Review &amp; sign</h4><p>You edit anything, confirm the codes, and electronically sign. The clinician is always the final word.</p></div>
     </div>
   </div>
 </section>
 
-<!-- SPECIALTY FEATURES -->
-<section id="specialty">
+<!-- FULL FEATURE GRID -->
+<section id="features">
   <div class="wrap">
     <div class="sec-head">
-      <h2>Everything a spine &amp; pain visit needs — not just the note</h2>
-      <p>The orders, authorizations, quality capture, and outcomes that generalist AI scribes leave on your plate. Diagnosis-driven, provider-reviewed, ready to sign.</p>
+      <h2>Everything a spine &amp; pain practice needs — in one place</h2>
+      <p>Note, coding, intake, outcomes, studies, and the specialty documents generalist AI scribes leave on your plate. Diagnosis-driven, provider-reviewed, ready to sign.</p>
     </div>
     <div class="cards">
       <div class="card">
-        <div class="ic">📝</div>
-        <h3>Orders, DME &amp; PT scripts</h3>
-        <p>Diagnosis-driven auto-suggestions for PT referrals, braces, and DME — drafted from the visit so the order is ready when the note is, not three clicks later.</p>
+        <div class="ic">🎙️</div>
+        <h3>Ambient visit → structured SOAP note</h3>
+        <p>Talk to your patient like normal. The transcript becomes a clean, structured SOAP note with suggested E/M, ICD-10 and CPT coding and an <b>estimated reimbursement</b> for the visit — before the patient leaves the room.</p>
       </div>
       <div class="card">
-        <div class="ic">📄</div>
-        <h3>Prior-auth &amp; appeal letters</h3>
-        <p>Drafts the prior-authorization and denial-appeal letters spine and pain practices write all day — pulling the medical necessity straight from the documented visit.</p>
+        <div class="ic">🧩</div>
+        <h3>Custom Widget Builder</h3>
+        <p>The headline: describe any card you want and MLS designs it, then auto-fills it on every visit. Your practice's own fields, without an EMR vendor in the loop.</p>
+      </div>
+      <div class="card">
+        <div class="ic">💲</div>
+        <h3>Reimbursement optimization + superbill</h3>
+        <p>Stop under-coding visits you've earned. MLS suggests the level the documentation genuinely supports, flags missed billable work, and produces a superbill in one click.</p>
       </div>
       <div class="card">
         <div class="ic">📊</div>
-        <h3>Outcomes &amp; MIPS capture</h3>
-        <p>Tracks pain scores and ODI over time and captures MIPS quality measures in the flow of the visit — so your outcomes and quality reporting build themselves.</p>
+        <h3>Ask-your-data Study Engine <span class="mini-tag">Premium</span></h3>
+        <p>Ask plain-English questions about your own practice data and get studies back — graphs, Excel-exportable tables, and one-click PDF reports, powered by a GPT-5.2-class reasoning model.</p>
       </div>
       <div class="card">
-        <div class="ic">🏃</div>
-        <h3>Patient home-exercise handouts</h3>
-        <p>Generates a clear, condition-specific home-exercise sheet for the patient to leave with — reinforcing the plan without extra work for your staff.</p>
+        <div class="ic">📋</div>
+        <h3>iPad patient intake</h3>
+        <p>Hand the patient an iPad in the waiting room: ODI, satisfaction, your custom questions, and an insurance-card photo with OCR — all flowing straight into the chart.</p>
       </div>
       <div class="card">
         <div class="ic">📈</div>
-        <h3>Chart summaries &amp; revenue estimates</h3>
-        <p>AI chart summaries for fast catch-up on returning patients, plus a per-visit revenue estimate so you can see the value of the care you delivered.</p>
+        <h3>Outcomes tracking (ODI &amp; satisfaction)</h3>
+        <p>ODI and patient-satisfaction scores are captured at intake and tracked over time per patient and across the practice — so your outcomes data builds itself.</p>
       </div>
       <div class="card">
-        <div class="ic">🔗</div>
-        <h3>EMR / FHIR export</h3>
-        <p>Push the finished note and structured data to your EMR with a FHIR export layer — including "send to Athena" — so nothing gets re-typed.</p>
+        <div class="ic">🧾</div>
+        <h3>Referral, UR, IME &amp; procedure notes</h3>
+        <p>One-click referral reports, utilization-review assessments, IME reports, and injection procedure notes — including BVN ablation (Intracept) and MILD — drafted from the documented visit.</p>
+      </div>
+      <div class="card">
+        <div class="ic">⚖️</div>
+        <h3>Legal / IME lawyer portal</h3>
+        <p>Attorneys submit record requests through their own portal; MLS drafts the formal medical-legal report from the chart for the clinician to review, e-sign, and return as a PDF.</p>
+      </div>
+      <div class="card">
+        <div class="ic">📱</div>
+        <h3>Phone mic dictation</h3>
+        <p>Use your phone as a wireless microphone — dictate or capture the visit from wherever you are in the room, synced to the visit on your main screen.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🔄</div>
+        <h3>Encrypted multi-device sync</h3>
+        <p>Your patients, notes, and settings are encrypted and synced across every device you sign into — exam room, office, home, iPad.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🔐</div>
+        <h3>2FA, audit logs &amp; encrypted backups</h3>
+        <p>Two-factor authentication, automatic inactivity log-off, audit logging, and encrypted backups — a HIPAA-ready architecture, with BAAs in progress.</p>
+      </div>
+      <div class="card">
+        <div class="ic">👥</div>
+        <h3>Team &amp; head-doctor analytics</h3>
+        <p>Multi-provider practices get a head-doctor view: visit volumes, coding patterns, outcomes and satisfaction across the team — at a glance.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PREMIUM: DATA STUDY ENGINE -->
+<section id="studies" style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="split rev">
+      <div>
+        <div class="shot-frame">
+          <img class="shot" src="shot-data-study.jpg" loading="lazy"
+               alt="MLS Data Study screen showing generated charts and an ODI outcomes table, powered by gpt-5.2">
+        </div>
+        <p class="shot-cap">A real Data Study: charts plus an ODI table, powered by gpt-5.2.</p>
+      </div>
+      <div>
+        <span class="pill gold">Premium</span>
+        <h2>Ask your data anything. Get a study back.</h2>
+        <p class="big">"Did ODI improve more after Intracept than after MILD?" "What's my satisfaction trend this quarter?" The premium Study Engine runs a GPT-5.2-class reasoning model over your own practice data and answers with real analysis.</p>
+        <ul>
+          <li>Plain-English questions — no query language, no spreadsheet wrangling</li>
+          <li>Charts and graphs generated for you</li>
+          <li>Excel-exportable tables for deeper digging</li>
+          <li>One-click PDF reports to share with partners, payers, or referral sources</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PATIENT CHART + INTAKE -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>A mini-EMR that starts working in the waiting room</h2>
+      <p>From iPad intake to a longitudinal patient chart — the data flows in once and follows the patient everywhere.</p>
+    </div>
+    <div class="split">
+      <div>
+        <h2 style="font-size:26px">The patient chart, kept for you</h2>
+        <p class="big">Every visit, note, outcome score and document lives on the patient's profile — with AI chart summaries for fast catch-up on returning patients.</p>
+        <div class="shot-frame">
+          <img class="shot" src="shot-patients.jpg" loading="lazy"
+               alt="MLS patient profile and chart view with visit history, notes and outcome scores">
+        </div>
+        <p class="shot-cap">The patient profile: history, notes and outcomes in one chart view.</p>
+      </div>
+      <div>
+        <h2 style="font-size:26px">Intake that fills the chart itself</h2>
+        <p class="big">The patient answers ODI, satisfaction, and your custom questions on an iPad — and snaps a photo of their insurance card, which MLS reads with OCR. No front-desk re-typing.</p>
+        <div class="shot-frame">
+          <img class="shot" src="shot-intake.jpg" loading="lazy"
+               alt="MLS iPad patient intake questionnaire with ODI, satisfaction questions and insurance-card photo capture">
+        </div>
+        <p class="shot-cap">The iPad intake questionnaire patients complete in the waiting room.</p>
       </div>
     </div>
   </div>
 </section>
 
 <!-- BILLING ANGLE -->
-<section id="billing">
+<section id="billing" style="padding-top:20px">
   <div class="wrap">
     <div class="billing">
       <div>
@@ -277,8 +396,8 @@
         <ul>
           <li>Suggests the E/M level the visit genuinely supports — with a one-line justification tied to the documented complexity</li>
           <li>Surfaces ICD-10 codes for every diagnosis actually addressed</li>
-          <li>Flags CPT procedures actually performed in the visit</li>
-          <li>One-click "Insurance-Ready" format that spells out medical necessity, complexity, and each diagnosis</li>
+          <li>Flags CPT procedures actually performed in the visit, with an estimated reimbursement</li>
+          <li>One-click superbill and "Insurance-Ready" format that spells out medical necessity, complexity, and each diagnosis</li>
           <li>Never invents findings to raise the bill — it only reflects what's in the transcript</li>
         </ul>
       </div>
@@ -322,24 +441,41 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>Simple, honest pricing</h2>
-      <p>One flat price per provider. No per-note fees, no surprise overages.</p>
+      <p>Flat per-provider pricing. No per-note fees, no surprise overages.</p>
     </div>
-    <div class="price-card">
-      <span class="tag">MOST POPULAR</span>
-      <div class="amt">$30<span> / provider / month</span></div>
-      <ul>
-        <li>Unlimited visits &amp; AI-generated notes</li>
-        <li>Suggested E/M, ICD-10 &amp; CPT coding on every visit</li>
-        <li>Orders, DME &amp; PT scripts with diagnosis-driven suggestions</li>
-        <li>Prior-auth &amp; appeal-letter drafting</li>
-        <li>MIPS capture, outcome tracking &amp; home-exercise handouts</li>
-        <li>EMR / FHIR export ("send to Athena")</li>
-        <li>Provider review &amp; e-signature workflow</li>
-        <li>Built HIPAA-ready architecture · email support &amp; onboarding</li>
-      </ul>
-      <a href="#demo" class="btn btn-dark">Book a demo</a>
-      <p style="color:var(--muted);font-size:13.5px;margin:14px 0 0">Annual plan available. Multi-provider discounts for clinics.</p>
+    <div class="price-grid">
+      <div class="price-card">
+        <div class="tier">Standard</div>
+        <div class="amt">$30<span> / provider / month</span></div>
+        <ul>
+          <li>Unlimited visits &amp; AI-generated notes</li>
+          <li>Suggested E/M, ICD-10 &amp; CPT coding + estimated reimbursement on every visit</li>
+          <li>Custom Widget Builder — unlimited widgets</li>
+          <li>Reimbursement optimization &amp; one-click superbill</li>
+          <li>iPad patient intake (ODI, satisfaction, insurance-card OCR)</li>
+          <li>Outcomes tracking · referral, UR, IME &amp; procedure notes</li>
+          <li>Phone mic dictation &amp; encrypted multi-device sync</li>
+          <li>2FA, audit logs, encrypted backups · HIPAA-ready architecture</li>
+        </ul>
+        <a href="#demo" class="btn btn-ghost">Book a demo</a>
+      </div>
+      <div class="price-card featured">
+        <span class="tag">PREMIUM — FOR DATA-DRIVEN PRACTICES</span>
+        <div class="tier">Premium</div>
+        <div class="amt">$80<span> / provider / month</span></div>
+        <ul>
+          <li>Everything in Standard</li>
+          <li class="star"><b>Ask-your-data Study Engine</b> (GPT-5.2-class reasoning model) with charts, Excel and PDF exports</li>
+          <li class="star">Plain-English questions → full studies with graphs</li>
+          <li class="star">Excel-exportable tables &amp; one-click PDF reports</li>
+          <li>Legal / IME lawyer portal</li>
+          <li>Team &amp; head-doctor analytics across providers</li>
+          <li>Priority email support &amp; onboarding</li>
+        </ul>
+        <a href="#demo" class="btn btn-dark">Book a demo</a>
+      </div>
     </div>
+    <p style="text-align:center;color:var(--muted);font-size:13.5px;margin:18px 0 0">Annual plans available. Multi-provider discounts for clinics.</p>
     <p class="price-sub">Most providers recover the cost in a single more-accurately-coded visit per month — and get their evenings back on top.</p>
   </div>
 </section>
@@ -352,7 +488,7 @@
       <p>We're straight with you about what's true today — no inflated claims.</p>
     </div>
     <div class="trust">
-      <div class="t"><h4>🔒 Built HIPAA-ready</h4><p>Designed from the ground up for encryption in transit and at rest, access controls, and audit logging. We say "built HIPAA-ready," not "certified" — because there's no such thing as HIPAA certification.</p></div>
+      <div class="t"><h4>🔒 HIPAA-ready architecture</h4><p>Encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging, and encrypted backups. We say "HIPAA-ready architecture; BAAs in progress" — not "certified" — because there's no such thing as HIPAA certification.</p></div>
       <div class="t"><h4>✍️ You sign every note</h4><p>AI drafts; the clinician reviews, edits, and signs. The provider is always the final medical and coding authority. Nothing is submitted without your confirmation.</p></div>
       <div class="t"><h4>🤝 BAA before any PHI</h4><p>Real patient data is only used after Business Associate Agreements are signed with our AI provider and hosting, and a compliance review is complete. Until then, demos use synthetic data.</p></div>
     </div>
@@ -366,7 +502,7 @@
     <div class="demo">
       <div>
         <h2>See it on one of your spine or pain visits</h2>
-        <p>Book a 20-minute demo and we'll run MLS on a sample spine, PM&amp;R or pain visit — note, coding, orders, and a prior-auth draft, start to finish.</p>
+        <p>Book a 20-minute demo and we'll run MLS on a sample spine, PM&amp;R or pain visit — note, coding, a custom widget you describe on the spot, and a data study, start to finish.</p>
         <p style="color:#bcd4f4;font-size:15px">No commitment. No credit card. Just show up and watch the charting disappear.</p>
       </div>
       <div class="form">
@@ -378,7 +514,7 @@
           <label for="practice">Practice / specialty</label>
           <input id="practice" name="practice" type="text" placeholder="Interventional Pain — West Chester, PA">
           <label for="msg">Anything you'd like us to focus on?</label>
-          <textarea id="msg" name="msg" rows="2" placeholder="e.g. prior-auths and DME orders are killing my evenings"></textarea>
+          <textarea id="msg" name="msg" rows="2" placeholder="e.g. I want a widget that tracks injection outcomes"></textarea>
           <button class="btn btn-dark" type="submit">📅 Request my demo</button>
           <p class="privacy">We'll only use this to schedule your demo. No spam, ever.</p>
           <p id="demoStatus" class="privacy" style="display:none"></p>
@@ -393,11 +529,13 @@
   <div class="wrap" style="max-width:780px">
     <div class="sec-head"><h2>Questions doctors ask us</h2></div>
     <div class="faq">
+      <details><summary>What exactly is a "custom widget"?</summary><p>Any card you wish your EMR had. You describe it in plain English — "track injection site, relief %, and next step" — and MLS designs the card with the right fields. From then on it appears on every visit and fills itself from the conversation, exactly like the built-in cards. You can edit or remove it anytime.</p></details>
       <details><summary>Does MLS upcode to inflate my billing?</summary><p>No — and that's a deliberate design choice. It only suggests codes supported by what's actually documented in the visit, and it's instructed never to invent findings to raise a level. It helps you stop <i>under</i>-coding accurately; the provider reviews and confirms every code.</p></details>
-      <details><summary>Is it HIPAA compliant?</summary><p>It's built HIPAA-ready: encryption, access controls, and audit logging by design. We don't claim "certification" (that doesn't exist for HIPAA). We use real patient data only after BAAs are signed with our AI and hosting providers and a compliance review is done. Demos use synthetic data.</p></details>
-      <details><summary>Do I need to install anything or train my staff?</summary><p>No. MLS runs in your web browser. Press start, talk, generate, review, sign. Onboarding takes minutes, not an IT project.</p></details>
+      <details><summary>Is it HIPAA compliant?</summary><p>It's a HIPAA-ready architecture: encryption, two-factor authentication, access controls, audit logging, and encrypted backups by design — with BAAs in progress. We don't claim "certification" (that doesn't exist for HIPAA). We use real patient data only after BAAs are signed with our AI and hosting providers and a compliance review is done. Demos use synthetic data.</p></details>
+      <details><summary>Do I need to install anything or train my staff?</summary><p>No. MLS runs in your web browser, and the patient intake runs on any iPad's browser. Press start, talk, generate, review, sign. Onboarding takes minutes, not an IT project.</p></details>
+      <details><summary>What does Premium add over Standard?</summary><p>The Ask-your-data Study Engine: plain-English questions over your own practice data, answered with full studies — graphs, Excel-exportable tables, and one-click PDF reports — powered by a GPT-5.2-class reasoning model. Premium also includes the legal/IME lawyer portal and team-wide head-doctor analytics.</p></details>
       <details><summary>Will it replace my judgment?</summary><p>Never. It drafts; you decide. You edit the note, confirm the codes, and electronically sign. You're always the final medical and coding authority.</p></details>
-      <details><summary>How does $30/month pay off?</summary><p>Two ways: hours of charting time returned to you each week, and fewer accurately-documented visits slipping to a lower code than they should. For most providers, one correctly-coded visit a month covers it.</p></details>
+      <details><summary>How does the price pay off?</summary><p>Two ways: hours of charting time returned to you each week, and fewer accurately-documented visits slipping to a lower code than they should. For most providers, one correctly-coded visit a month covers it.</p></details>
     </div>
   </div>
 </section>
@@ -408,7 +546,7 @@
     <div><a href="#how">How it works</a> · <a href="#pricing">Pricing</a> · <a href="#demo">Book a demo</a> · <a href="mailto:hello@scrivara.ai">Contact</a></div>
   </div>
   <div class="wrap" style="margin-top:14px">
-    <p class="disc">MLS is a clinical documentation and coding-support tool. AI-generated notes and suggested codes are for the licensed provider to review, edit, and confirm — final documentation and coding are the provider's responsibility. "Built HIPAA-ready" describes our architecture; it is not a claim of certification. Do not use with real patient data until applicable Business Associate Agreements are signed and a compliance review is complete. © 2026 MLS.</p>
+    <p class="disc">MLS is a clinical documentation and coding-support tool. AI-generated notes and suggested codes are for the licensed provider to review, edit, and confirm — final documentation and coding are the provider's responsibility. "HIPAA-ready architecture" describes our design; it is not a claim of certification, and BAAs are in progress. Do not use with real patient data until applicable Business Associate Agreements are signed and a compliance review is complete. © 2026 MLS.</p>
   </div>
 </footer>
 
