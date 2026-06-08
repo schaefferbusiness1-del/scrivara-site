@@ -11459,8 +11459,27 @@ function cwSanitizeContent(layout,data){
   if(Array.isArray(data)) arr=data;
   else if(data && typeof data==='object' && Array.isArray(data.blocks)) arr=data.blocks;
   if(!arr) return null;
+  // The model commonly wraps each block's content by its type key — e.g.
+  // {"select":"Right"}, {"badge":{...}} — and sometimes MERGES several into one
+  // entry ({"fields":[...],"score":2}) or shifts alignment. To be robust we
+  // flatten every type-keyed value into per-type queues, then each layout block
+  // pulls the next value of its own type; anything left maps positionally.
+  const queues={};
+  arr.forEach(entry=>{
+    if(entry && typeof entry==='object' && !Array.isArray(entry)){
+      const tks=Object.keys(entry).filter(k=>CW_BLOCK_TYPES[k]);
+      if(tks.length){ tks.forEach(k=>{ (queues[k]=queues[k]||[]).push(entry[k]); }); }
+    }
+  });
+  const pull=(t,i)=>{
+    if(queues[t] && queues[t].length) return queues[t].shift();
+    const e=arr[i];
+    // positional fallback, unwrapping a lone type-key wrapper if present
+    if(e && typeof e==='object' && !Array.isArray(e) && e[t]!==undefined) return e[t];
+    return e;
+  };
   return layout.map((blk,i)=>{
-    const c=arr[i];
+    const c=pull(blk.type,i);
     try{
       switch(blk.type){
         case 'text':{
@@ -11481,7 +11500,14 @@ function cwSanitizeContent(layout,data){
           return v.length?v:null;
         }
         case 'fields':{
-          const src=(c&&typeof c==='object'&&!Array.isArray(c))?((c.values&&typeof c.values==='object'&&!Array.isArray(c.values))?c.values:c):null;
+          let src=null;
+          if(Array.isArray(c)){
+            // array of {label,value} pairs → fold into a {label:value} object
+            src={};
+            c.forEach(p=>{ if(p&&typeof p==='object'){ const lk=p.label!=null?p.label:p.name; if(lk!=null) src[lk]=(p.value!=null?p.value:p.val); } });
+          } else if(c&&typeof c==='object'){
+            src=(c.values&&typeof c.values==='object'&&!Array.isArray(c.values))?c.values:c;
+          }
           if(!src) return null;
           const out={};
           blk.items.forEach(lbl=>{
