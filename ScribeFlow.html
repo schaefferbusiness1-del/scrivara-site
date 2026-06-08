@@ -12654,6 +12654,14 @@ window.addEventListener('DOMContentLoaded',()=>{
   // localStorage seed → auto-enters the last account, unchanged single-tab UX)
   const saved=getSessionEmail();
   if(backendMode() && bkToken() && saved){
+    // CLAIM the session into THIS tab's sessionStorage. If we only seeded from
+    // the localStorage "last login" (sessionStorage empty), copy it into
+    // sessionStorage now so this tab owns its session independently — another
+    // tab later logging into a different account (which rewrites the localStorage
+    // seed) can no longer clobber this tab. setBkToken/setSessionEmail write both
+    // stores; the key effect is populating sessionStorage for this tab.
+    try{ if(!sessionStorage.getItem('sf_bk_token')) setBkToken(bkToken()); }catch(e){}
+    try{ if(!sessionStorage.getItem('sf_session')) setSessionEmail(saved); }catch(e){}
     // hosted mode: a stored Bearer token means we can auto-enter and verify with the server
     startSession(saved); // startSession() calls refreshMe() in backend mode
   } else {
