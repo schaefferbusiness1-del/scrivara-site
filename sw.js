@@ -1,10 +1,19 @@
 /* MLS service worker — enables install (PWA) + offline shell.
    Strategy: NETWORK-FIRST for same-origin requests so users always get the
    latest deployed app when online (avoids stale-version problems); falls back
-   to cache only when offline. The API backend (onrender.com) is never cached. */
-const CACHE = 'mls-v1';
+   to cache only when offline. The API backend (onrender.com) is never cached.
+
+   v2 (2026-06-08): self-healing update. The cache name is bumped so the
+   activate handler deletes every older cache — this purges any bad responses
+   (e.g. a 404 page cached while a deploy was mid-flight). We now ALSO refuse to
+   cache anything that isn't a real 200 OK, so an error page can never be stored
+   and replayed. Changing this file's bytes makes browsers fetch, install, and
+   (via skipWaiting + clients.claim) immediately activate this new worker, so
+   existing visitors self-heal on their next load with no manual cache clearing. */
+const CACHE = 'mls-v2';
 const SHELL = [
   'ScribeFlow.html',
+  'index.html',
   'manifest.webmanifest',
   'icon-192.png',
   'icon-512.png',
@@ -36,8 +45,12 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(req)
       .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        // Cache ONLY genuine, complete 200 OK responses — never 404s, redirects,
+        // or opaque/error responses, so a bad page can't be stored and replayed.
+        if (res && res.ok && res.status === 200 && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        }
         return res;
       })
       .catch(() => caches.match(req).then((m) => m || caches.match('ScribeFlow.html')))
