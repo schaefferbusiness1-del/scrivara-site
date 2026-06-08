@@ -5391,6 +5391,8 @@ let lastEMR=null;
 let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='', currentIME='';
 let currentLegal=''; // MLS additive — optional Legal report (off by default)
 let currentLegalRequestId=null; // MLS additive — set when a clinician opens an attorney request to fulfill
+let legalReqFilesText='';       // MLS additive — extracted text of the attorney's uploaded files (feeds the legal draft)
+let _legalAutoDraftedFor=null;  // MLS additive — request id already auto-drafted (guard: fire once per request)
 let _lawReports={}; // MLS additive — lawyer portal: requestId -> {result_text, doc_type} for the report viewer
 let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
 
@@ -9229,7 +9231,9 @@ async function generateLegalReport(){
 8. ANSWERS TO LEGAL QUESTIONS — restate and explicitly answer EACH question counsel posed, one by one. If no questions were provided, write a bracketed placeholder.
 9. SIGNATURE BLOCK — a signature/credentials/date block using bracketed placeholders ([Physician signature], [Name, credentials], [NPI], Date: [Date]) and a certification that the opinions are held to a reasonable degree of medical probability/certainty.
 
-CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient record/note/background and the request details provided. NEVER fabricate findings, history, diagnoses, causation, impairment percentages, disability ratings, restrictions, dates, or records. For ANYTHING not present in the record, insert a clearly [bracketed placeholder] for the physician to complete. Do not present uncertain items as established fact. This is a DRAFT the physician must verify, complete, and SIGN before any legal use.`+(typeof docPrefsBlock==='function'?docPrefsBlock():'');
+CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient record/note/background and the request details provided. NEVER fabricate findings, history, diagnoses, causation, impairment percentages, disability ratings, restrictions, dates, or records. For ANYTHING not present in the record, insert a clearly [bracketed placeholder] for the physician to complete. Do not present uncertain items as established fact. This is a DRAFT the physician must verify, complete, and SIGN before any legal use.`
+      +((currentLegalRequestId&&legalReqFilesText&&legalReqFilesText.trim())?'\nCOUNSEL-PROVIDED RECORDS GUARDRAIL: Counsel has uploaded case records (extracted below). Base the report on BOTH the patient record AND these counsel-provided records — cite findings from them where relevant (especially in RECORDS AND HISTORY REVIEWED) — and NEVER invent anything beyond what either source documents.':'')
+      +(typeof docPrefsBlock==='function'?docPrefsBlock():'');
     const reqLines=[];
     if(attorney) reqLines.push('Attorney / requesting firm: '+attorney);
     if(caseNo) reqLines.push('Case / claim number: '+caseNo);
@@ -9240,7 +9244,8 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     reqLines.push('Legal questions to address:\n'+(questions.trim()||'[No specific questions were provided — insert a bracketed placeholder.]'));
     const user='ATTORNEY REQUEST / CASE DETAILS:\n'+reqLines.join('\n')
       +(note&&note.trim()?('\n\nCLINICAL NOTE FROM THIS VISIT:\n'+note.trim()):'')
-      +(pctx?('\n\nPATIENT RECORD / CHART (context only — do not invent new findings):\n'+pctx):'');
+      +(pctx?('\n\nPATIENT RECORD / CHART (context only — do not invent new findings):\n'+pctx):'')
+      +((currentLegalRequestId&&legalReqFilesText&&legalReqFilesText.trim())?('\n\nRECORDS PROVIDED BY COUNSEL (extracted from the attorney\'s uploaded files — treat as the records reviewed; cite findings from them where relevant):\n'+legalReqFilesText.trim()):'');
     const out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     currentLegal=out;
     const card=document.getElementById('legalCard');
@@ -9593,6 +9598,80 @@ async function fetchLegalAttachments(id){
   return Array.isArray(d)?d:(d.attachments||d.items||[]);
 }
 
+/* MLS additive — extract readable TEXT from the attorney's uploaded files so
+   the legal-report generator can actually use their content.
+   Per type: PDF → pdf.js text layer (reuses extractPdfText; notes scanned PDFs);
+   image → backend /api/vision OCR; .txt → decoded directly; .doc/.docx → noted
+   as not extractable in-browser. Caps: first 8 files, ~15k chars per file,
+   ~60k chars total. Every failure degrades to a bracketed note and continues. */
+async function loadLegalRequestFilesText(requestId){
+  const PER_FILE_CAP=15000, TOTAL_CAP=60000, MAX_FILES=8;
+  let out='';
+  try{
+    const items=await fetchLegalAttachments(requestId);
+    if(!items.length) return '';
+    const files=items.slice(0,MAX_FILES);
+    for(let i=0;i<files.length;i++){
+      const a=files[i];
+      try{ toast('Reading attorney’s files… '+(i+1)+'/'+files.length,''); }catch(e){}
+      let text='';
+      let fname=a.filename||'file';
+      try{
+        const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(requestId)+'/attachments/'+encodeURIComponent(a.id)+'/download',{headers:{'Authorization':'Bearer '+bkToken()}});
+        if(r.status===401){ handle401(); break; }
+        let d={}; try{ d=await r.json(); }catch(e){}
+        if(!r.ok) throw new Error((d&&(d.error||d.message))||'download failed');
+        fname=d.filename||fname;
+        const mt=String(d.mimetype||'').toLowerCase();
+        const lower=String(fname).toLowerCase();
+        const b64=String(d.data||'').replace(/^data:[^;]*;base64,/,'');
+        if(!b64) throw new Error('empty file data');
+        if(lower.endsWith('.pdf')||mt.indexOf('application/pdf')===0){
+          const bin=atob(b64);
+          const bytes=new Uint8Array(bin.length);
+          for(let k=0;k<bin.length;k++) bytes[k]=bin.charCodeAt(k);
+          const f=new File([bytes],fname,{type:mt||'application/pdf'});
+          try{ text=await extractPdfText(f); }catch(e){ text=''; }
+          if(!String(text||'').trim()) text='[scanned PDF — no text layer: '+fname+']';
+        } else if(/\.(png|jpe?g|webp)$/.test(lower)||/^image\/(png|jpe?g|webp)/.test(mt)){
+          if(backendMode()&&bkToken()){
+            const dataUrl='data:'+(mt||'image/png')+';base64,'+b64;
+            const vr=await fetch(bkBase()+'/api/vision',{
+              method:'POST',
+              headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+              body:JSON.stringify({image:dataUrl,mimetype:mt||'image/png'})
+            });
+            let vj={}; try{ vj=await vr.json(); }catch(e){}
+            if(!vr.ok) throw new Error((vj&&(vj.error||vj.message))||'vision failed');
+            text=(vj.text||'').trim()||'[no readable text found in image: '+fname+']';
+          } else {
+            text='['+fname+' — image text extraction needs the hosted version]';
+          }
+        } else if(lower.endsWith('.txt')||mt.indexOf('text/plain')===0){
+          try{ text=decodeURIComponent(escape(atob(b64))); }catch(e){ try{ text=atob(b64); }catch(e2){ text='[could not decode text file: '+fname+']'; } }
+        } else if(lower.endsWith('.doc')||lower.endsWith('.docx')){
+          text='['+fname+' — format not extractable in-browser]';
+        } else {
+          text='['+fname+' — unsupported format, not extracted]';
+        }
+      }catch(e){
+        text='[could not read file: '+fname+']';
+      }
+      text=String(text||'').trim();
+      if(text.length>PER_FILE_CAP) text=text.slice(0,PER_FILE_CAP)+'\n[…file content truncated]';
+      out+=(out?'\n\n':'')+'=== '+attachCatLabel(a.category)+': '+fname+' ===\n'+text;
+      if(out.length>TOTAL_CAP){
+        out=out.slice(0,TOTAL_CAP)+'\n[…additional counsel-provided content truncated — open the remaining files via Download]';
+        break;
+      }
+    }
+    if(items.length>MAX_FILES && out.length<=TOTAL_CAP){
+      out+='\n\n['+(items.length-MAX_FILES)+' additional attached file(s) were not extracted — open them via Download.]';
+    }
+  }catch(e){ /* degrade gracefully — the draft falls back to the patient record alone */ }
+  return out;
+}
+
 /* Lawyer: (re)render the attachment list inside an open panel + refresh count. */
 async function loadLegalAttachments(id){
   const safeId=_attachSafeId(id);
@@ -9745,7 +9824,7 @@ function updateLegalReqCount(n){
 
 /* Clinician: open the existing Legal tool PREFILLED from an attorney request.
    Does NOT auto-pull PHI — the doctor selects the matching patient themselves. */
-function openLegalRequest(id){
+async function openLegalRequest(id){
   const rq=_legalInboxById[String(id)];
   if(!rq){ toast('Request not found — refresh the list.','err'); return; }
   if(!legalEnabled()){
@@ -9781,6 +9860,15 @@ function openLegalRequest(id){
   renderLegalToolAttachments(id);
   // Reveal the Return-to-attorney button on the Legal card.
   const rb=document.getElementById('legalReturnBtn'); if(rb) rb.style.display='';
+  // MLS additive — extract the CONTENT of the attorney's uploaded files so the
+  // generated report is based on the actual records counsel provided.
+  // Failures degrade gracefully to '' (the draft then uses the chart alone).
+  legalReqFilesText='';
+  try{
+    toast('Reading the attorney’s attached files…','');
+    legalReqFilesText=await loadLegalRequestFilesText(id);
+    if(legalReqFilesText) toast('Attorney files read — their content will inform the draft.','ok');
+  }catch(e){ legalReqFilesText=''; }
   // Open the Legal tool. openLegal() requires an active patient; guide the doctor there.
   if(!activePatient()){
     toast('Pick the matching patient (see the reference), then click ⚖️ Legal to generate.','');
@@ -9788,6 +9876,20 @@ function openLegalRequest(id){
     return;
   }
   openLegal();
+  // MLS additive — AUTO-DRAFT the requested document from the case file.
+  // Guards: request still pending, report body empty, AI key present, and only
+  // once per request. The lawyer never sees this draft — only an explicit
+  // "Return to attorney" (fulfill) sends anything back.
+  try{
+    const st=String(rq.status||'pending').toLowerCase();
+    const stillPending=!(st==='fulfilled'||st==='done'||st==='complete'||rq.result_text);
+    const bodyEl=document.getElementById('legalBody');
+    if(stillPending && bodyEl && !bodyEl.value.trim() && _legalAutoDraftedFor!==String(id) && hasAI()){
+      _legalAutoDraftedFor=String(id);
+      toast('Drafting the requested '+(rq.doc_type||'report')+' from the case file…','');
+      generateLegalReport();
+    }
+  }catch(e){ /* auto-draft is best-effort — the doctor can always generate manually */ }
 }
 
 /* Clinician: return the signed report text to the attorney via fulfill. */
@@ -9809,6 +9911,7 @@ async function returnLegalToAttorney(){
     if(!r.ok){ toast((d&&(d.error||d.message))||'Could not return the report.','err'); return; }
     toast('Sent to attorney.','ok');
     currentLegalRequestId=null;
+    legalReqFilesText=''; // MLS additive — counsel file text is per-request; clear with it
     if(btn) btn.style.display='none';
     const ref=document.getElementById('legalReqRef'); if(ref){ ref.style.display='none'; ref.innerHTML=''; }
     const att=document.getElementById('legalReqAttach'); if(att){ att.style.display='none'; att.innerHTML=''; }
