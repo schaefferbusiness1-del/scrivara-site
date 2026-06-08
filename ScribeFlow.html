@@ -13441,8 +13441,9 @@ async function cwChartToPrintPng(blk,c){
       options:{responsive:false,maintainAspectRatio:false,animation:false,
         devicePixelRatio:2,plugins:{legend:{display:isPie}}}
     });
-    // animation:false draws synchronously, but give one frame as a safety net
-    await new Promise(r=>requestAnimationFrame(()=>r()));
+    // animation:false draws synchronously; a short timeout is a reliable safety
+    // net (requestAnimationFrame does NOT fire in a backgrounded/print context).
+    await new Promise(r=>setTimeout(r,60));
     url=cv.toDataURL('image/png');
     if(url==='data:,' || !/^data:image\/png/.test(url)) url='';
   }catch(e){ url=''; }
