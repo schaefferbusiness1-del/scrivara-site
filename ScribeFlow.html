@@ -44,6 +44,107 @@
   .extra-card .xbody, .rf-line, .sp-conc, .codechip{ background:var(--surface) }
   .empty{ background:var(--soft2) }
   body.theme-dark .badge.draft{filter:brightness(.85)}
+  /* ===== MLS additive — DARK-MODE PASS (only applies under body.theme-dark, so
+     light mode is untouched; print/PDF use their own <style> docs and never get
+     .theme-dark). Re-skins every hard-coded light surface to theme variables. ===== */
+  /* core surfaces / text */
+  body.theme-dark .note-box{ background:var(--surface) }
+  body.theme-dark .modal{ background:var(--surface); color:var(--ink) }
+  body.theme-dark .code-card{ background:var(--soft2) }
+  body.theme-dark .extra-card .xbody,
+  body.theme-dark .rf-line,
+  body.theme-dark .sp-conc,
+  body.theme-dark .codechip,
+  body.theme-dark .gap-item{ background:var(--surface); color:var(--ink) }
+  body.theme-dark .live-dot{ background:var(--ink) }
+  /* status / semantic chips → translucent tints that read on dark */
+  body.theme-dark .badge.draft{ background:rgba(240,173,60,.16); color:var(--amber); border-color:rgba(240,173,60,.4) }
+  body.theme-dark .badge.signed{ background:rgba(47,185,134,.16); color:var(--green); border-color:rgba(47,185,134,.4) }
+  body.theme-dark .em-pill{ background:rgba(79,147,242,.18); color:var(--brand-dk); border-color:rgba(79,147,242,.4) }
+  body.theme-dark .dotchip:hover{ background:var(--soft) }
+  /* disclaimers / notes that hard-code warm/cool light backgrounds */
+  body.theme-dark .disclaim,
+  body.theme-dark .sp-gap{ background:var(--gold-bg); border-color:rgba(217,169,59,.4); color:var(--amber) }
+  body.theme-dark .code-disclaim,
+  body.theme-dark .opt-disclaim{ background:var(--gold-bg); border-color:rgba(217,169,59,.4); color:var(--gold) }
+  body.theme-dark .sp-conc.ok{ background:rgba(47,185,134,.13); border-color:rgba(47,185,134,.4); color:var(--green) }
+  body.theme-dark .sp-conc.warn,
+  body.theme-dark .rf-present{ background:rgba(224,96,107,.14); border-color:rgba(224,96,107,.4); color:var(--red) }
+  body.theme-dark .rf-absent{ background:var(--soft2); color:var(--muted) }
+  /* opt / gold panel */
+  body.theme-dark .opt-card h3,
+  body.theme-dark .opt-section .h-warn,
+  body.theme-dark .gap-item b{ color:var(--gold) }
+  /* auth screen */
+  body.theme-dark .auth-wrap{ background:radial-gradient(120% 90% at 50% 0%,#15212f 0%,var(--bg) 60%) }
+  body.theme-dark .auth-err{ background:rgba(224,96,107,.14); border-color:rgba(224,96,107,.4); color:var(--red) }
+  /* lists: history / patients / docs / team / recs cards */
+  body.theme-dark .hist-item,
+  body.theme-dark .pt-item,
+  body.theme-dark .team-doc,
+  body.theme-dark .prof-box,
+  body.theme-dark .doc-item,
+  body.theme-dark .rec-item{ background:var(--soft2); border-color:var(--line) }
+  body.theme-dark .hist-item:hover,
+  body.theme-dark .pt-item:hover,
+  body.theme-dark .team-doc:hover,
+  body.theme-dark .team-doc.on,
+  body.theme-dark .pt-item.active{ background:var(--soft); border-color:var(--brand) }
+  body.theme-dark .hist-item .del:hover,
+  body.theme-dark .pt-item .del:hover,
+  body.theme-dark .doc-item .del:hover,
+  body.theme-dark .docpref-x:hover{ background:rgba(224,96,107,.16); color:var(--red) }
+  body.theme-dark .doc-item .ai-yes{ background:rgba(47,185,134,.16); color:var(--green); border-color:rgba(47,185,134,.4) }
+  /* profile editor inputs that hard-code #fff */
+  body.theme-dark .prof-box input,
+  body.theme-dark .prof-box textarea,
+  body.theme-dark .doc-item{ background:var(--field-bg); color:var(--ink) }
+  /* active patient bar (hard-coded #eef6ff) */
+  body.theme-dark #patientBar{ background:var(--soft); border-color:var(--line) }
+  /* settings tabs */
+  body.theme-dark .set-tab:hover{ background:var(--soft) }
+  /* generic inline-styled info notes (.note baseline already var; covers the
+     hard-coded #eef4fc/#e6f7ef/#fff7e6 inline boxes via attribute targeting) */
+  body.theme-dark [style*="background:#eef4fc"],
+  body.theme-dark [style*="background:#eef6ff"],
+  body.theme-dark [style*="background:#eef4fb"]{ background:var(--soft)!important; color:var(--ink) }
+  body.theme-dark [style*="background:#e6f7ef"]{ background:rgba(47,185,134,.13)!important; color:var(--green)!important; border-color:rgba(47,185,134,.4)!important }
+  body.theme-dark [style*="background:#fff7e6"],
+  body.theme-dark [style*="background:#fdf6e3"]{ background:var(--gold-bg)!important; color:var(--amber)!important; border-color:rgba(217,169,59,.4)!important }
+  body.theme-dark [style*="background:#fdecea"],
+  body.theme-dark [style*="background:#fdecec"],
+  body.theme-dark [style*="background:#fdeced"]{ background:rgba(224,96,107,.14)!important; color:var(--red)!important; border-color:rgba(224,96,107,.4)!important }
+  body.theme-dark [style*="background:#f0f9f4"],
+  body.theme-dark [style*="background:#e3f5ec"],
+  body.theme-dark [style*="background:#e6f7ef"]{ border-color:rgba(47,185,134,.4)!important }
+  /* signature/QR/canvas wrappers that hard-code white inline (#fff) — keep the
+     signature pad readable; canvas ink is dark so give a light pad */
+  body.theme-dark [style*="background:#fff"] canvas,
+  body.theme-dark canvas#agSigPad{ background:#f4f6fa }
+  /* widget custom-builder library cards already use vars; ensure add btn text
+     and lib desc stay readable (handled by var(--ink) fix above) */
+
+  /* ---- intake kiosk (patient-facing) dark mode ---- */
+  body.theme-dark #intakeView{ background:var(--bg); color:var(--ink) }
+  body.theme-dark .ik-wrap{ color:var(--ink) }
+  body.theme-dark .ik-brand,
+  body.theme-dark .ik-sec h3{ color:var(--ink) }
+  body.theme-dark .ik-sec{ background:var(--card); border-color:var(--line); box-shadow:var(--shadow) }
+  body.theme-dark .ik-sec .ik-sub,
+  body.theme-dark .ik-exit{ color:var(--muted) }
+  body.theme-dark .ik-field input[type=text],
+  body.theme-dark .ik-field input[type=tel],
+  body.theme-dark .ik-field input[type=email],
+  body.theme-dark .ik-field input[type=date],
+  body.theme-dark .ik-field select,
+  body.theme-dark .ik-field textarea{ background:var(--field-bg); border-color:var(--line); color:var(--ink) }
+  body.theme-dark .ik-check,
+  body.theme-dark .ik-pain{ background:var(--field-bg); border-color:var(--line); color:var(--ink) }
+  body.theme-dark .ik-opt,
+  body.theme-dark .ik-sat{ background:var(--soft2); border-color:var(--line); color:var(--ink) }
+  body.theme-dark .ik-odi-q{ border-top-color:var(--line) }
+  body.theme-dark .ik-cardbtn{ background:rgba(79,147,242,.12); border-color:var(--brand); color:var(--brand-dk) }
+  /* intake accent (brand teal) selected states stay legible as-is (#127a7d + #fff) */
   /* ===== MLS additive — CUSTOM WIDGET v2 blocks (all colors via theme variables,
      so light & dark mode both work with zero extra rules) ===== */
   .cw-blk{margin:0 0 13px}
@@ -89,7 +190,7 @@
   .cw-lib-head{display:flex;align-items:center;gap:8px}
   .cw-lib-emoji{font-size:20px}
   .cw-lib-head b{font-size:14px}
-  .cw-lib-desc{font-size:12.5px;color:var(--text)}
+  .cw-lib-desc{font-size:12.5px;color:var(--ink)}
   .cw-lib-cap{font-size:11.5px;color:var(--muted)}
   .cw-lib-hist{font-size:11px;color:var(--brand);font-weight:600}
   .cw-lib-add{margin-top:6px;align-self:flex-start}
@@ -2427,7 +2528,7 @@
     </div>
     <div class="row tight" style="margin-top:0">
       <button class="btn-primary" id="cwDesignBtn" onclick="designCustomWidget()">✨ Design my widget</button>
-      <button class="btn-white" onclick="cwShowLibrary()" title="Add a ready-made clinical widget in one click">📚 Browse library</button>
+      <button class="btn-ghost" onclick="cwShowLibrary()" title="Add a ready-made clinical widget in one click">📚 Browse library</button>
     </div>
 
     <!-- v3: one-click prebuilt clinical widgets -->
