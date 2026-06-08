@@ -469,7 +469,7 @@
   <!-- Two-factor code card, shown when login returns twofa_required -->
   <div class="auth-card" id="twofaCard" style="display:none">
     <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMark2)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
-    <p class="auth-sub" id="twofaSub">Enter the 6-digit code from your authenticator app</p>
+    <p class="auth-sub" id="twofaSub">Enter the 6-digit code from your Google Authenticator app</p>
     <div class="auth-err" id="twofaErr"></div>
     <div class="field">
       <label for="twofaCode" id="twofaLabel">Two-factor code</label>
@@ -494,7 +494,7 @@
 
     <!-- Step 1: scan / enroll -->
     <div id="regTwofaEnrollBox">
-      <p class="note" style="margin:2px 0 8px">Scan this QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.):</p>
+      <p class="note" style="margin:2px 0 8px">You'll need an authenticator app — download <b>Google Authenticator</b> (free, on the App Store / Google Play), then scan this QR code with it:</p>
       <div style="text-align:center;margin:8px 0">
         <img id="regTwofaQR" alt="2FA QR code" width="180" height="180" style="border:1px solid var(--line);border-radius:8px;background:#fff">
       </div>
@@ -531,6 +531,179 @@
   <div id="phoneRecError" style="margin-top:18px;font-size:14px;color:#ffd2d2;max-width:340px"></div>
 </div>
 
+<!-- ============ PATIENT INTAKE KIOSK (📋 — full-screen, patient-facing) ============
+     Opened from the header "📋 Patient intake" button. Hides the ENTIRE clinical app
+     (appScreen is display:none while this is up) so the iPad can be handed to the
+     patient safely. Exit is confirm-gated and staff-only. Additive; nothing else changes. -->
+<style>
+/* Intake kiosk — big touch targets (44px+), patient-friendly type sizes */
+#intakeView{position:fixed;inset:0;z-index:9000;background:#f2f7f9;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none}
+.ik-wrap{max-width:760px;margin:0 auto;padding:20px 18px 70px;font-size:17px;color:#16323c}
+.ik-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.ik-brand{font-size:22px;font-weight:700;color:#0e3a4f}
+.ik-exit{font-size:12px;color:#8aa3ad;text-decoration:none}
+.ik-sec{background:#fff;border:1px solid #d8e4ea;border-radius:14px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(14,58,79,.05)}
+.ik-sec h3{margin:0 0 4px;font-size:19px;color:#0e3a4f}
+.ik-sec .ik-sub{margin:0 0 12px;font-size:14px;color:#5c7682}
+.ik-field{margin-bottom:14px}
+.ik-field label{display:block;font-weight:600;margin-bottom:6px;font-size:16px}
+.ik-field input[type=text],.ik-field input[type=tel],.ik-field input[type=email],.ik-field input[type=date],.ik-field select,.ik-field textarea{width:100%;box-sizing:border-box;min-height:48px;padding:12px 14px;font-size:17px;border:1px solid #c8d8e0;border-radius:10px;background:#fff;color:inherit}
+.ik-field textarea{min-height:84px;resize:vertical}
+.ik-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media (max-width:560px){.ik-grid2{grid-template-columns:1fr}}
+.ik-checks{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.ik-check{display:flex;align-items:center;gap:9px;border:1px solid #c8d8e0;border-radius:10px;padding:10px 14px;min-height:48px;cursor:pointer;background:#fff;font-size:16px;user-select:none}
+.ik-check input{width:22px;height:22px;flex:none;accent-color:#127a7d}
+.ik-pain-row{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
+.ik-pain{width:52px;height:52px;border-radius:10px;border:1px solid #c8d8e0;background:#fff;font-size:19px;font-weight:700;cursor:pointer;color:#16323c}
+.ik-pain.on{background:#127a7d;color:#fff;border-color:#127a7d}
+.ik-odi-q{border-top:1px solid #e6eef2;padding-top:12px;margin-top:12px}
+.ik-odi-q:first-child{border-top:none;padding-top:0;margin-top:0}
+.ik-odi-t{font-weight:700;font-size:16px;margin-bottom:4px}
+.ik-opt{display:flex;align-items:flex-start;gap:10px;border:1px solid #e2ecf1;border-radius:10px;padding:11px 12px;margin-top:6px;cursor:pointer;font-size:15px;background:#fbfdfe;user-select:none}
+.ik-opt input{width:20px;height:20px;margin-top:1px;flex:none;accent-color:#127a7d}
+.ik-submit{display:block;width:100%;margin-top:20px;min-height:60px;border:none;border-radius:14px;background:#127a7d;color:#fff;font-size:20px;font-weight:700;cursor:pointer}
+.ik-cardbtn{display:inline-flex;align-items:center;gap:8px;min-height:50px;padding:12px 18px;border:1px dashed #127a7d;border-radius:10px;background:#f0fafa;color:#0e5e60;font-size:16px;font-weight:600;cursor:pointer}
+</style>
+<div id="intakeView">
+  <div class="ik-wrap">
+    <div class="ik-top">
+      <div class="ik-brand">📋 New patient questionnaire</div>
+      <a href="#" class="ik-exit" onclick="exitIntake();return false;">Staff: exit</a>
+    </div>
+
+    <!-- The form -->
+    <div id="ikForm">
+      <p style="margin:4px 0 0;font-size:16px;color:#41606d">Please answer what you can — your care team will review everything with you. When you're finished, press the green button at the bottom and hand the iPad back to the front desk.</p>
+
+      <!-- ABOUT YOU -->
+      <div class="ik-sec">
+        <h3>👤 About you</h3>
+        <div class="ik-grid2">
+          <div class="ik-field"><label for="ikName">Full name *</label><input type="text" id="ikName" autocomplete="off"></div>
+          <div class="ik-field"><label for="ikDob">Date of birth</label><input type="date" id="ikDob"></div>
+          <div class="ik-field"><label for="ikSex">Sex</label>
+            <select id="ikSex"><option value=""></option><option>Female</option><option>Male</option><option>Other</option></select>
+          </div>
+          <div class="ik-field"><label for="ikPhone">Phone</label><input type="tel" id="ikPhone" autocomplete="off"></div>
+          <div class="ik-field"><label for="ikEmail">Email</label><input type="email" id="ikEmail" autocomplete="off"></div>
+          <div class="ik-field"><label for="ikPharmacy">Preferred pharmacy</label><input type="text" id="ikPharmacy"></div>
+          <div class="ik-field"><label for="ikEmName">Emergency contact — name</label><input type="text" id="ikEmName"></div>
+          <div class="ik-field"><label for="ikEmPhone">Emergency contact — phone</label><input type="tel" id="ikEmPhone"></div>
+        </div>
+        <div class="ik-field" style="margin-bottom:2px"><label for="ikReferrer">Referring physician (who sent you to us?)</label><input type="text" id="ikReferrer"></div>
+      </div>
+
+      <!-- INSURANCE -->
+      <div class="ik-sec">
+        <h3>💳 Insurance</h3>
+        <p class="ik-sub">The fastest way: take a photo of your insurance card and we'll fill this in for you.</p>
+        <input type="file" id="ikCardFile" accept="image/*" capture="environment" style="display:none" onchange="onIntakeCardPhoto(event)">
+        <button type="button" class="ik-cardbtn" onclick="document.getElementById('ikCardFile').click()">📷 Photo of insurance card</button>
+        <div id="ikCardStatus" style="font-size:14px;color:#41606d;margin:8px 0 12px;min-height:18px"></div>
+        <div class="ik-grid2">
+          <div class="ik-field"><label for="ikInsPayer">Insurance company</label><input type="text" id="ikInsPayer"></div>
+          <div class="ik-field"><label for="ikInsPlan">Plan name / type</label><input type="text" id="ikInsPlan" placeholder="e.g. PPO 5000"></div>
+        </div>
+        <div class="ik-field" style="margin-bottom:2px"><label for="ikInsMember">Member ID</label><input type="text" id="ikInsMember" autocomplete="off"></div>
+      </div>
+
+      <!-- TODAY'S VISIT -->
+      <div class="ik-sec">
+        <h3>🩺 Today's visit</h3>
+        <div class="ik-field"><label for="ikChief">What brings you in today?</label><textarea id="ikChief"></textarea></div>
+        <div class="ik-field">
+          <label>Where is your pain? (tap all that apply)</label>
+          <div class="ik-checks">
+            <label class="ik-check"><input type="checkbox" name="ikLoc" value="Neck"><span>Neck</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikLoc" value="Mid-back"><span>Mid-back</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikLoc" value="Low back"><span>Low back</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikLoc" value="Leg"><span>Leg</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikLoc" value="Arm"><span>Arm</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikLoc" value="Other"><span>Other</span></label>
+          </div>
+          <input type="text" id="ikLocFree" placeholder="Describe in your own words (optional)">
+        </div>
+        <div class="ik-field">
+          <label>How bad is your pain right now? (0 = none, 10 = worst imaginable)</label>
+          <div class="ik-pain-row" id="ikPainScale"></div>
+        </div>
+        <div class="ik-field"><label for="ikOnset">When did it start, and how long has it been going on?</label><input type="text" id="ikOnset"></div>
+        <div class="ik-grid2">
+          <div class="ik-field"><label for="ikBetter">What makes it better?</label><input type="text" id="ikBetter"></div>
+          <div class="ik-field"><label for="ikWorse">What makes it worse?</label><input type="text" id="ikWorse"></div>
+        </div>
+        <div class="ik-field" style="margin-bottom:2px">
+          <label>What have you already tried for this? (tap all that apply)</label>
+          <div class="ik-checks">
+            <label class="ik-check"><input type="checkbox" name="ikTx" value="Physical therapy"><span>Physical therapy</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikTx" value="Injections"><span>Injections</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikTx" value="Chiropractic"><span>Chiropractic</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikTx" value="Surgery"><span>Surgery</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikTx" value="Medications"><span>Medications</span></label>
+          </div>
+          <input type="text" id="ikTxFree" placeholder="Anything else you've tried (optional)">
+        </div>
+      </div>
+
+      <!-- HEALTH HISTORY -->
+      <div class="ik-sec">
+        <h3>📚 Your health history</h3>
+        <div class="ik-field">
+          <label>Do you have any of these conditions? (tap all that apply)</label>
+          <div class="ik-checks">
+            <label class="ik-check"><input type="checkbox" name="ikCond" value="High blood pressure"><span>High blood pressure</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikCond" value="Diabetes"><span>Diabetes</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikCond" value="Heart disease"><span>Heart disease</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikCond" value="Cancer"><span>Cancer</span></label>
+            <label class="ik-check"><input type="checkbox" name="ikCond" value="Osteoporosis"><span>Osteoporosis</span></label>
+          </div>
+          <input type="text" id="ikCondFree" placeholder="Other medical conditions (optional)">
+        </div>
+        <div class="ik-field"><label for="ikSurgeries">Prior surgeries (what and roughly when)</label><textarea id="ikSurgeries"></textarea></div>
+        <div class="ik-field"><label for="ikMeds">Current medications (name and dose if you know it)</label><textarea id="ikMeds"></textarea></div>
+        <div class="ik-field"><label for="ikAllergies">Allergies (medications, latex, etc.)</label><input type="text" id="ikAllergies"></div>
+        <div class="ik-field"><label for="ikFamHx">Family history (anything that runs in the family)</label><input type="text" id="ikFamHx"></div>
+        <div class="ik-field">
+          <label>Do you smoke?</label>
+          <div class="ik-checks">
+            <label class="ik-check"><input type="radio" name="ikSmoke" value="Never"><span>Never</span></label>
+            <label class="ik-check"><input type="radio" name="ikSmoke" value="Quit"><span>I quit</span></label>
+            <label class="ik-check"><input type="radio" name="ikSmoke" value="Yes"><span>Yes</span></label>
+          </div>
+        </div>
+        <div class="ik-grid2" style="margin-bottom:2px">
+          <div class="ik-field"><label for="ikAlcohol">Alcohol (how often / how much)</label><input type="text" id="ikAlcohol"></div>
+          <div class="ik-field"><label for="ikOccupation">Occupation</label><input type="text" id="ikOccupation"></div>
+        </div>
+      </div>
+
+      <!-- ODI -->
+      <div class="ik-sec">
+        <h3>📏 How your pain affects daily life</h3>
+        <p class="ik-sub">For each section, tap the ONE statement that best describes you today. Skip any that don't apply. (Oswestry Disability Index)</p>
+        <div id="ikOdiWrap"></div>
+      </div>
+
+      <!-- DOCTOR'S CUSTOM QUESTIONS (from Settings → Intake questions) -->
+      <div class="ik-sec" id="ikCustomSection" style="display:none">
+        <h3>✏️ A few more questions from your doctor</h3>
+        <div id="ikCustomWrap"></div>
+      </div>
+
+      <button type="button" class="ik-submit" onclick="submitIntake()">✅ Done — hand back to staff</button>
+    </div>
+
+    <!-- Thank-you screen (after submit) -->
+    <div id="ikDone" style="display:none;text-align:center;padding:70px 10px">
+      <div style="font-size:54px">🙏</div>
+      <div style="font-size:26px;font-weight:700;color:#0e3a4f;margin:14px 0 8px">Thank you!</div>
+      <div style="font-size:18px;color:#41606d">Your answers have been saved for your visit.<br>Please hand the iPad back to the front desk.</div>
+      <button type="button" class="ik-cardbtn" style="margin-top:40px" onclick="intakeNextPatient()">Staff: start next patient</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MAIN APP ============ -->
 <div id="appScreen" style="display:none">
 <header id="appHeader">
@@ -542,6 +715,7 @@
   </div>
   <div class="tools">
     <span class="who" id="whoLabel"></span>
+    <button class="btn-white" id="intakeBtn" style="display:none" onclick="openIntake()">📋 Patient intake</button>
     <button class="btn-white" onclick="openTemplates()">📄 Templates</button>
     <button class="btn-white" onclick="openSettings()">⚙️ Settings</button>
     <button class="btn-white" onclick="logout()">↪ Log out</button>
@@ -1805,6 +1979,13 @@
         </label>
         <p class="note" style="margin:4px 0 0 26px">Adds a <b>⚖️ Legal</b> button that drafts a formal medical-legal report from the active patient's record plus an attorney request, lets you e-sign it, and saves it as a PDF.</p>
       </div>
+
+      <!-- MLS additive — 📋 Patient intake: doctor's custom questions -->
+      <div class="field" style="margin-bottom:4px;border-top:1px solid var(--line);padding-top:12px;margin-top:10px">
+        <label for="intakeQuestions" style="font-size:15px">📋 Patient intake — your custom questions</label>
+        <p class="note" style="margin:2px 0 8px">One question per line. These appear at the end of the <b>📋 Patient intake</b> form (the header button you hand to the patient on the iPad), and the answers flow automatically into the patient's summary/history. Leave empty to hide the section.</p>
+        <textarea id="intakeQuestions" rows="4" placeholder="e.g. Have you had an MRI of this area? When?&#10;Do you have an attorney involved in this injury?"></textarea>
+      </div>
     </div><!-- /Features section -->
 
     <!-- ============ SECTION: Security & privacy ============ -->
@@ -1829,7 +2010,7 @@
     <!-- Two-factor authentication (hosted mode only) -->
     <div class="field" id="twofaSettingsField" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px;display:none">
       <label style="font-size:15px">🔐 Two-factor authentication (2FA)</label>
-      <p class="note" style="margin:2px 0 10px">Add a one-time code from an authenticator app on top of your password. Recommended for accounts that touch patient data.</p>
+      <p class="note" style="margin:2px 0 10px">Add a one-time code from an authenticator app on top of your password. Recommended for accounts that touch patient data. You'll need an authenticator app — download <b>Google Authenticator</b> (free, on the App Store / Google Play) before you enable 2FA.</p>
 
       <!-- State: ON -->
       <div id="twofaOnBox" style="display:none">
@@ -1844,7 +2025,7 @@
 
       <!-- State: enrolling (QR + verify) -->
       <div id="twofaEnrollBox" style="display:none;margin-top:6px">
-        <p class="note" style="margin:2px 0 8px">Scan this with your authenticator app (Google Authenticator, Authy, 1Password…), then enter the 6-digit code to confirm.</p>
+        <p class="note" style="margin:2px 0 8px">Download <b>Google Authenticator</b> (free, App Store / Google Play) if you don't have it yet, then scan this QR code with it and enter the 6-digit code to confirm.</p>
         <div style="text-align:center;margin:8px 0">
           <img id="twofaQR" alt="2FA QR code" width="180" height="180" style="border:1px solid var(--line);border-radius:8px;background:#fff">
         </div>
@@ -2414,7 +2595,7 @@ function toggleTwofaRecovery(){
     document.getElementById('twofaToggleLink').textContent='Use an authenticator code instead';
     if(inp){ inp.placeholder='xxxx-xxxx'; inp.value=''; inp.focus(); }
   } else {
-    document.getElementById('twofaSub').textContent='Enter the 6-digit code from your authenticator app';
+    document.getElementById('twofaSub').textContent='Enter the 6-digit code from your Google Authenticator app';
     document.getElementById('twofaLabel').textContent='Two-factor code';
     document.getElementById('twofaToggleLink').textContent='Use a recovery code instead';
     if(inp){ inp.placeholder='123456'; inp.value=''; inp.focus(); }
@@ -2674,6 +2855,9 @@ function applyAccessUI(){
     // before the Legal feature is enabled, if requests are waiting.
     if(clinician && backendMode() && bkToken() && typeof loadLegalRequests==='function'){ loadLegalRequests().then(()=>{ const n=Number((document.getElementById('navLegalReqCount')||{}).textContent||0); if(n>0) legalReqTab.style.display=''; }).catch(()=>{}); }
   }
+  // 📋 Patient intake kiosk button: clinicians (and the owner) in hosted mode; never lawyers.
+  const intakeBtn=document.getElementById('intakeBtn');
+  if(intakeBtn) intakeBtn.style.display=(backendMode()&&bkUser&&!isLawyer)?'':'none';
   // Lawyer portal: replaces the entire clinical app for lawyer accounts.
   if(typeof applyLawyerPortal==='function') applyLawyerPortal();
   const banner=document.getElementById('noAccessBanner');
@@ -3318,6 +3502,8 @@ function openSettings(){
   const _cph=document.getElementById('clinicPhone'); if(_cph) _cph.value=getClinicPhone();
   const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) _nst.value=getMlsNoteStyle();
+  // MLS additive — 📋 Patient intake custom questions (one per line)
+  const _iq=document.getElementById('intakeQuestions'); if(_iq) _iq.value=localStorage.getItem(uns('intakeQuestions'))||'';
   renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
@@ -3368,6 +3554,8 @@ function saveSettings(){
   const _cph=document.getElementById('clinicPhone'); if(_cph) localStorage.setItem(uns('clinicPhone'),(_cph.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
+  // MLS additive — persist 📋 Patient intake custom questions
+  const _iq=document.getElementById('intakeQuestions'); if(_iq) localStorage.setItem(uns('intakeQuestions'),_iq.value.trim());
   applyAppearance();                 // apply theme / text size / compact now
   if(typeof applyLegalUI==='function') applyLegalUI(); // show/hide the optional ⚖️ Legal button
   if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide
@@ -7851,10 +8039,256 @@ function renderOutcomes(){
     const bits=[];
     if(o.pain!=null) bits.push('Pain '+o.pain+'/10');
     if(o.func!=null && o.func!=='') bits.push('Disability '+esc(String(o.func))+'%');
+    if(o.odi!=null && o.odi!=='') bits.push('ODI '+esc(String(o.odi))+'%');
     if(o.note) bits.push(esc(o.note));
     return '<div class="doc-item" style="cursor:default"><span class="ic">📈</span><div class="dm"><div class="t">'+bits.join(' · ')+'</div><div class="s">'+esc(d)+'</div></div></div>';
   }).join('');
   wrap.innerHTML=summary+spark+'<div class="doc-list">'+rows+'</div>';
+}
+
+/* =========================================================
+   PATIENT INTAKE KIOSK (📋) — patient-facing full-screen form
+   Opened by staff from the header button; hides the whole clinical
+   app (the patient never sees other charts), collects a standard
+   new-patient spine/pain intake + the 10-question ODI + the doctor's
+   custom questions (Settings → Intake questions), then writes into
+   the matching/new patient via the SAME upsertPatient path (which
+   also mirrors to the server in hosted mode). Additive only.
+   ========================================================= */
+const IK_ODI=[
+ {t:'Pain intensity',o:['I have no pain at the moment','The pain is very mild at the moment','The pain is moderate at the moment','The pain is fairly severe at the moment','The pain is very severe at the moment','The pain is the worst imaginable at the moment']},
+ {t:'Personal care (washing, dressing)',o:['I can look after myself normally without extra pain','I can look after myself normally but it causes extra pain','It is painful to look after myself and I am slow and careful','I need some help but manage most of my personal care','I need help every day in most aspects of self-care','I cannot get dressed, wash with difficulty, and stay in bed']},
+ {t:'Lifting',o:['I can lift heavy weights without extra pain','I can lift heavy weights but it gives extra pain','Pain prevents lifting heavy weights off the floor, but I manage if they are conveniently placed (e.g. on a table)','Pain prevents lifting heavy weights, but I can manage light to medium weights if conveniently placed','I can lift only very light weights','I cannot lift or carry anything at all']},
+ {t:'Walking',o:['Pain does not prevent me walking any distance','Pain prevents me walking more than 1 mile','Pain prevents me walking more than half a mile','Pain prevents me walking more than 100 yards','I can only walk using a stick or crutches','I am in bed most of the time and have to crawl to the toilet']},
+ {t:'Sitting',o:['I can sit in any chair as long as I like','I can only sit in my favorite chair as long as I like','Pain prevents me from sitting more than 1 hour','Pain prevents me from sitting more than half an hour','Pain prevents me from sitting more than 10 minutes','Pain prevents me from sitting at all']},
+ {t:'Standing',o:['I can stand as long as I want without extra pain','I can stand as long as I want but it gives me extra pain','Pain prevents me from standing more than 1 hour','Pain prevents me from standing more than half an hour','Pain prevents me from standing more than 10 minutes','Pain prevents me from standing at all']},
+ {t:'Sleeping',o:['My sleep is never disturbed by pain','My sleep is occasionally disturbed by pain','Because of pain I have less than 6 hours sleep','Because of pain I have less than 4 hours sleep','Because of pain I have less than 2 hours sleep','Pain prevents me from sleeping at all']},
+ {t:'Social life',o:['My social life is normal and gives me no extra pain','My social life is normal but increases my pain','Pain has no significant effect on my social life apart from limiting energetic interests (e.g. sport)','Pain has restricted my social life and I do not go out as often','Pain has restricted my social life to my home','I have no social life because of pain']},
+ {t:'Traveling',o:['I can travel anywhere without pain','I can travel anywhere but it gives me extra pain','Pain is bad but I manage journeys over 2 hours','Pain restricts me to journeys of less than 1 hour','Pain restricts me to short necessary journeys under 30 minutes','Pain prevents me from traveling except to receive treatment']},
+ {t:'Employment / homemaking',o:['My normal work or homemaking activities do not cause pain','My normal activities cause some pain, but I can still do all that is required','I can do most of my usual work, but pain prevents the more physically stressful activities','Pain prevents me from doing anything but light duties','Pain prevents me from doing even light duties','Pain prevents me from doing any work or home chores at all']}
+];
+let ikPainVal=null;     // 0–10 or null (big-button pain scale)
+let ikCardText='';      // raw OCR text of the insurance-card photo (saved into docs)
+
+function openIntake(){
+  if(typeof isLawyerUser==='function' && isLawyerUser()) return; // never for lawyer accounts
+  resetIntakeForm();
+  // privacy: close any open modal (they live outside appScreen) + hide ALL clinical UI
+  document.querySelectorAll('.modal-bg.show').forEach(m=>m.classList.remove('show'));
+  const app=document.getElementById('appScreen'); if(app) app.style.display='none';
+  const v=document.getElementById('intakeView');
+  if(v){ v.style.display='block'; v.scrollTop=0; }
+}
+function exitIntake(){
+  if(!confirm('Staff only — exit patient intake and return to the clinical app?')) return;
+  const v=document.getElementById('intakeView'); if(v) v.style.display='none';
+  const app=document.getElementById('appScreen'); if(app) app.style.display='block';
+  resetIntakeForm(); // never leave a patient's answers on screen
+  try{ renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts(); }catch(e){}
+}
+function intakeNextPatient(){
+  if(!confirm('Staff only — clear this form and start a new intake for the next patient?')) return;
+  resetIntakeForm();
+  const v=document.getElementById('intakeView'); if(v) v.scrollTop=0;
+}
+function resetIntakeForm(){
+  ikPainVal=null; ikCardText='';
+  const form=document.getElementById('ikForm'); if(!form) return;
+  form.querySelectorAll('input[type=text],input[type=tel],input[type=email],input[type=date],textarea').forEach(el=>{ el.value=''; });
+  form.querySelectorAll('select').forEach(el=>{ el.selectedIndex=0; });
+  form.querySelectorAll('input[type=checkbox],input[type=radio]').forEach(el=>{ el.checked=false; });
+  const st=document.getElementById('ikCardStatus'); if(st) st.textContent='';
+  buildIntakeForm();
+  form.style.display='block';
+  const done=document.getElementById('ikDone'); if(done) done.style.display='none';
+}
+/* Render the dynamic pieces: 0-10 pain buttons, the 10 ODI items, custom questions. */
+function buildIntakeForm(){
+  const ps=document.getElementById('ikPainScale');
+  if(ps){
+    let h='';
+    for(let n=0;n<=10;n++) h+='<button type="button" class="ik-pain'+(ikPainVal===n?' on':'')+'" onclick="ikSetPain('+n+')">'+n+'</button>';
+    ps.innerHTML=h;
+  }
+  const ow=document.getElementById('ikOdiWrap');
+  if(ow){
+    ow.innerHTML=IK_ODI.map((q,i)=>
+      '<div class="ik-odi-q"><div class="ik-odi-t">'+(i+1)+'. '+esc(q.t)+'</div>'+
+      q.o.map((opt,j)=>'<label class="ik-opt"><input type="radio" name="ikOdi'+i+'" value="'+j+'"><span>'+esc(opt)+'</span></label>').join('')+
+      '</div>').join('');
+  }
+  // Doctor's custom questions: one per line at uns('intakeQuestions'); zero lines hides the section.
+  const qs=String(localStorage.getItem(uns('intakeQuestions'))||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const sec=document.getElementById('ikCustomSection');
+  const cw=document.getElementById('ikCustomWrap');
+  if(sec&&cw){
+    if(!qs.length){ sec.style.display='none'; cw.innerHTML=''; }
+    else{
+      sec.style.display='block';
+      cw.innerHTML=qs.map((q,i)=>'<div class="ik-field"><label for="ikCustom'+i+'">'+esc(q)+'</label><input class="ik-custom" type="text" id="ikCustom'+i+'" data-q="'+esc(q)+'"></div>').join('');
+    }
+  }
+}
+function ikSetPain(n){
+  ikPainVal=(ikPainVal===n)?null:n; // tap again to clear
+  const ps=document.getElementById('ikPainScale'); if(!ps) return;
+  Array.from(ps.children).forEach((b,i)=>{ b.classList.toggle('on',ikPainVal===i); });
+}
+/* ODI % = (sum of answered items) / (5 × items answered) × 100, rounded. Null if none answered. */
+function ikOdiScore(){
+  let sum=0,n=0;
+  for(let i=0;i<IK_ODI.length;i++){
+    const sel=document.querySelector('input[name="ikOdi'+i+'"]:checked');
+    if(sel){ sum+=Number(sel.value); n++; }
+  }
+  return n?Math.round((sum/(5*n))*100):null;
+}
+function ikOdiBand(pct){
+  if(pct<=20) return 'minimal disability';
+  if(pct<=40) return 'moderate disability';
+  if(pct<=60) return 'severe disability';
+  if(pct<=80) return 'crippling back pain';
+  return 'bed-bound or exaggerating';
+}
+/* 📷 Insurance-card photo → /api/vision OCR (hosted) → prefill payer/plan/member ID.
+   Raw OCR text is kept and saved into the patient's documents on submit. */
+async function onIntakeCardPhoto(ev){
+  const file=ev.target.files&&ev.target.files[0];
+  ev.target.value='';
+  if(!file) return;
+  const st=document.getElementById('ikCardStatus');
+  const say=t=>{ if(st) st.textContent=t; };
+  if(!/^image\//.test(file.type||'') && !/\.(png|jpe?g|webp)$/i.test(file.name||'')){ say('Please choose a photo (JPG or PNG).'); return; }
+  if(!backendMode()||!bkToken()){ say('Photo noted — automatic reading needs the hosted version. Please type the details below.'); return; }
+  try{
+    say('Reading your card…');
+    const dataUrl=await readFileAsDataUrl(file);
+    const r=await fetch(bkBase()+'/api/vision',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({image:dataUrl,mimetype:file.type||'image/jpeg'})
+    });
+    let j={}; try{ j=await r.json(); }catch(e){}
+    if(!r.ok) throw new Error((j&&(j.error||j.message))||('Could not read the card ('+r.status+').'));
+    const text=String(j.text||'').trim();
+    ikCardText=text;
+    if(text){ ikPrefillFromCard(text); say('✓ Card read — please double-check the fields below.'); }
+    else say('We could not read any text from that photo — please type the details below.');
+  }catch(e){
+    say('Could not read the photo — please type the details below.');
+  }
+}
+/* Simple heuristics over the OCR text: member ID, plan type line, known payer names. */
+function ikPrefillFromCard(text){
+  if(!text) return;
+  const set=(id,val)=>{ const el=document.getElementById(id); if(el && !el.value.trim() && val) el.value=String(val).trim(); };
+  const lines=text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  let m=text.match(/(?:member|subscriber|identification)\s*(?:id|#|number|no\.?)?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9-]{4,20})\b/i)
+       || text.match(/\bID\s*[:#]\s*([A-Za-z0-9-]{5,20})\b/i);
+  if(m) set('ikInsMember',m[1]);
+  const planLine=lines.find(l=>/\b(PPO|HMO|EPO|POS|HDHP|Advantage|Choice|Select)\b/i.test(l) && l.length<60);
+  if(planLine) set('ikInsPlan',planLine.replace(/^plan\s*[:\-]?\s*/i,''));
+  const payers=['UnitedHealthcare','United Healthcare','Blue Cross Blue Shield','BlueCross BlueShield','Blue Cross','Blue Shield','Anthem','Aetna','Cigna','Humana','Kaiser Permanente','Kaiser','Medicare','Medicaid','Tricare','Ambetter','Molina','Oscar','Centene'];
+  let payer='';
+  for(const nm of payers){ if(new RegExp(nm.replace(/\s+/g,'\\s*'),'i').test(text)){ payer=nm; break; } }
+  if(!payer && lines.length && lines[0].length<=40) payer=lines[0];
+  if(payer) set('ikInsPayer',payer);
+}
+/* Submit: match (exact name + DOB) or create a patient, write the INTAKE block into the
+   summary, merge problems/meds/allergies/insurance (append — never clobber non-empty),
+   save an ODI/pain outcome record, store the card OCR text as a document, then
+   upsertPatient (local save + best-effort server sync). */
+function submitIntake(){
+  const v=id=>((document.getElementById(id)||{}).value||'').trim();
+  const checked=nm=>Array.from(document.querySelectorAll('input[name="'+nm+'"]:checked')).map(c=>c.value);
+  const name=v('ikName');
+  if(!name){ toast('Please enter your full name in the first box.','err'); const el=document.getElementById('ikName'); if(el){ el.focus(); el.scrollIntoView({block:'center'}); } return; }
+  const dob=v('ikDob');
+  // Match an existing patient by exact name (case-insensitive) + same/absent DOB; else create new.
+  const nmLower=name.toLowerCase();
+  let p=getPatients().find(x=>String(x.name||'').trim().toLowerCase()===nmLower && (!dob || !String(x.dob||'').trim() || String(x.dob).trim()===dob));
+  if(!p){
+    p={ id:'p'+Date.now()+Math.random().toString(36).slice(2,5),
+        name:name, problems:'', meds:'', allergies:'', summary:'', docs:[] };
+  }
+  p.name=name;
+  if(dob && !String(p.dob||'').trim()) p.dob=dob;
+  const sex=v('ikSex'); if(sex && !p.sex) p.sex=sex;
+
+  const pain=ikPainVal;
+  const odi=ikOdiScore();
+  const locs=checked('ikLoc'), tx=checked('ikTx'), conds=checked('ikCond');
+  const smoke=(document.querySelector('input[name="ikSmoke"]:checked')||{}).value||'';
+
+  // ---- structured INTAKE block → summary (append, never clobber)
+  const lines=['INTAKE ('+new Date().toLocaleDateString()+')'];
+  const add=(label,val)=>{ const s=String(val||'').trim(); if(s) lines.push(label+': '+s); };
+  add('Chief complaint',v('ikChief'));
+  if(pain!=null) lines.push('Pain score: '+pain+'/10');
+  add('Pain location',[locs.join(', '),v('ikLocFree')].filter(Boolean).join('; '));
+  add('Onset / duration',v('ikOnset'));
+  add('Better with',v('ikBetter'));
+  add('Worse with',v('ikWorse'));
+  add('Prior treatments',[tx.join(', '),v('ikTxFree')].filter(Boolean).join('; '));
+  if(odi!=null) lines.push('ODI: '+odi+'% ('+ikOdiBand(odi)+')');
+  add('Medical conditions',[conds.join(', '),v('ikCondFree')].filter(Boolean).join('; '));
+  add('Prior surgeries',v('ikSurgeries'));
+  add('Family history',v('ikFamHx'));
+  add('Social',[smoke?('Smoking: '+smoke):'',v('ikAlcohol')?('Alcohol: '+v('ikAlcohol')):'',v('ikOccupation')?('Occupation: '+v('ikOccupation')):''].filter(Boolean).join(' · '));
+  add('Phone',v('ikPhone'));
+  add('Email',v('ikEmail'));
+  add('Emergency contact',[v('ikEmName'),v('ikEmPhone')].filter(Boolean).join(' — '));
+  add('Preferred pharmacy',v('ikPharmacy'));
+  add('Referring physician',v('ikReferrer'));
+  document.querySelectorAll('#ikCustomWrap input.ik-custom').forEach(inp=>{
+    const a=(inp.value||'').trim();
+    if(a) lines.push((inp.dataset.q||'Question')+': '+a);
+  });
+  const block=lines.join('\n');
+  p.summary=(p.summary&&p.summary.trim())?(p.summary.trim()+'\n\n'+block):block;
+
+  // ---- problems: append checked conditions not already listed
+  const newProbs=conds.filter(c=>!(p.problems||'').toLowerCase().includes(c.toLowerCase()));
+  if(newProbs.length) p.problems=((p.problems||'').trim()?(p.problems.trim()+'\n'):'')+newProbs.join('\n');
+
+  // ---- meds / allergies: set when empty, append when not already present
+  const meds=v('ikMeds');
+  if(meds && !(p.meds||'').includes(meds)) p.meds=((p.meds||'').trim()?(p.meds.trim()+'\n'):'')+meds;
+  const allg=v('ikAllergies');
+  if(allg && !(p.allergies||'').includes(allg)) p.allergies=((p.allergies||'').trim()?(p.allergies.trim()+'\n'):'')+allg;
+
+  // ---- insurance: fill payer/plan/member ID (other benefit fields untouched)
+  const payer=v('ikInsPayer'), plan=v('ikInsPlan'), member=v('ikInsMember');
+  if(payer||plan||member){
+    p.insurance=p.insurance||{};
+    if(payer) p.insurance.payer=payer;
+    if(plan) p.insurance.planName=plan;
+    if(member) p.insurance.memberId=member;
+  }
+
+  // ---- raw card OCR text → patient documents (same shape as addDocToActive)
+  if(ikCardText){
+    p.docs=p.docs||[];
+    p.docs.unshift({ id:'d'+Date.now()+Math.random().toString(36).slice(2,5),
+      name:'Insurance card (intake photo)', text:ikCardText, kind:'text',
+      date:Date.now(), aiSummary:'', aiItems:null });
+  }
+
+  upsertPatient(p); // local save + best-effort server sync (hosted mode)
+
+  // ---- outcomes: one intake record with pain + ODI (renderOutcomes shows "ODI x%")
+  if(pain!=null || odi!=null){
+    try{
+      const arr=getOutcomes(p.id);
+      arr.push({ id:'o'+Date.now(), noteId:'', pain:(pain!=null?pain:null), func:null, odi:(odi!=null?odi:null), note:'Patient intake', date:Date.now() });
+      saveOutcomesArr(p.id,arr);
+    }catch(e){}
+  }
+
+  // ---- thank-you screen (form stays hidden until staff starts the next patient)
+  const form=document.getElementById('ikForm'); if(form) form.style.display='none';
+  const done=document.getElementById('ikDone'); if(done) done.style.display='block';
+  const view=document.getElementById('intakeView'); if(view) view.scrollTop=0;
 }
 
 /* =========================================================
