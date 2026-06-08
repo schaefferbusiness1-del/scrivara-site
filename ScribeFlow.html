@@ -568,12 +568,18 @@
     .logo{font-size:19px}
     .wrap{padding:16px}
     .card{padding:16px;border-radius:13px}
-    .navtab{min-width:0;padding:11px 8px;font-size:14.5px}
+    /* Tabs: horizontal swipe-scroller so labels never collide on a phone */
+    .mainnav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;scrollbar-width:thin}
+    .mainnav::-webkit-scrollbar{height:5px}
+    .mainnav::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+    .navtab{flex:0 0 auto;min-width:0;white-space:nowrap;padding:10px 13px;font-size:14px}
     /* comfortable tap targets on touch */
     button{min-height:44px}
     .pill-toggle{min-height:40px}
     .modal{padding:20px;border-radius:14px}
     .howto{font-size:14.5px;padding:11px 14px}
+    .code-grid{grid-template-columns:108px 1fr;font-size:14px}
+    header{flex-wrap:wrap;row-gap:8px}
   }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
