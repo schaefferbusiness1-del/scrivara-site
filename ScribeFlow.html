@@ -11275,7 +11275,13 @@ function agGateLogout(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); hideAg
    app). On network error we DO NOT lock the user out (return false → app opens). */
 async function checkAgreementsGate(){
   if(!backendMode()||!bkToken()) return false;
-  // Lawyers and every authenticated role must sign; no role is exempted.
+  // The OWNER/ADMIN is MLS itself — the Business Associate that COUNTERSIGNS the
+  // BAA and is the recipient of everyone's signed forms. They are not a Covered
+  // Entity workforce member, so they do NOT go through the Covered-Entity signing
+  // gate (which would otherwise block them from reaching Admin to countersign).
+  // Clinicians (doctor/head) and lawyers still sign.
+  try{ if(bkUser && bkUser.role==='admin') return false; }catch(e){}
+  // Every other authenticated role must sign.
   try{
     const r=await fetch(bkBase()+'/api/agreements/me',{headers:{'Authorization':'Bearer '+bkToken()}});
     if(r.status===401){ handle401(); return false; }
