@@ -69,6 +69,30 @@
   .cw-sum{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--field-bg)}
   .cw-sum-row{display:flex;gap:8px;align-items:baseline;font-size:12.5px;padding:3px 0}
   .cw-sum-tag{flex:0 0 auto;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--brand);background:var(--soft);border-radius:6px;padding:1px 7px}
+  /* v3 block types: timeline / rating / number */
+  .cw-timeline{display:flex;flex-direction:column;gap:0;border-left:2px solid var(--line);padding-left:0}
+  .cw-tl-row{display:flex;gap:9px;align-items:baseline;font-size:13.5px;padding:5px 0 5px 12px;position:relative}
+  .cw-tl-row::before{content:'';position:absolute;left:-5px;top:10px;width:8px;height:8px;border-radius:50%;background:var(--brand)}
+  .cw-tl-date{flex:0 0 auto;font-weight:700;color:var(--muted);font-size:12px;min-width:78px}
+  .cw-tl-text{flex:1}
+  .cw-rating{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .cw-rt-num{font-size:18px;font-weight:800}
+  .cw-rt-dots{display:inline-flex;gap:4px}
+  .cw-rt-dot{width:11px;height:11px;border-radius:50%;background:var(--line)}
+  .cw-rt-dot.on{background:var(--brand)}
+  .cw-number{display:flex;align-items:baseline;gap:7px}
+  .cw-num-big{font-size:30px;font-weight:800;line-height:1}
+  .cw-num-unit{font-size:14px;color:var(--muted);font-weight:600}
+  /* v3 library browse grid */
+  .cw-lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+  .cw-lib-card{border:1px solid var(--line);border-radius:11px;padding:11px 12px;display:flex;flex-direction:column;gap:5px;background:var(--field-bg)}
+  .cw-lib-head{display:flex;align-items:center;gap:8px}
+  .cw-lib-emoji{font-size:20px}
+  .cw-lib-head b{font-size:14px}
+  .cw-lib-desc{font-size:12.5px;color:var(--text)}
+  .cw-lib-cap{font-size:11.5px;color:var(--muted)}
+  .cw-lib-hist{font-size:11px;color:var(--brand);font-weight:600}
+  .cw-lib-add{margin-top:6px;align-self:flex-start}
   /* ===== QoL: TEXT SIZE (MLS) ===== */
   body.text-small{ font-size:15px }
   body.text-large{ font-size:19px }
@@ -2395,6 +2419,17 @@
     </div>
     <div class="row tight" style="margin-top:0">
       <button class="btn-primary" id="cwDesignBtn" onclick="designCustomWidget()">✨ Design my widget</button>
+      <button class="btn-white" onclick="cwShowLibrary()" title="Add a ready-made clinical widget in one click">📚 Browse library</button>
+    </div>
+
+    <!-- v3: one-click prebuilt clinical widgets -->
+    <div id="cwLibrary" style="display:none;margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:14px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <h4 style="margin:0;flex:1">📚 Widget library <span style="font-weight:400;font-size:13px;color:var(--muted)">— ready-made cards for spine / PM&amp;R / pain</span></h4>
+        <button class="btn-ghost" style="font-size:12px;padding:3px 10px" onclick="cwHideLibrary()">Close library</button>
+      </div>
+      <p class="note" style="margin:6px 0 10px">One click adds a copy you fully own — editable, auto-filling, deletable like any widget.</p>
+      <div id="cwLibraryGrid" class="cw-lib-grid"></div>
     </div>
 
     <!-- Preview / edit step (hidden until a design exists or an edit starts) -->
@@ -2437,6 +2472,10 @@
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:6px 0 2px">
         <input type="checkbox" id="cwAuto" checked style="width:17px;height:17px;margin:0">
         <span>Auto-fill on every Generate</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:4px 0 2px">
+        <input type="checkbox" id="cwUseHistory" style="width:17px;height:17px;margin:0">
+        <span>Let this widget see the patient's prior visits <span style="color:var(--muted);font-weight:400">(for trends / longitudinal tracking)</span></span>
       </label>
       <div class="row" style="margin-top:10px">
         <button class="btn-green" onclick="saveCustomWidget()" style="flex:1">💾 Save widget</button>
@@ -12249,6 +12288,12 @@ GUARDRAILS: You may reference evidence-based utilization frameworks generally (e
    Spec shape v1: {id, emoji, title, description, prompt,
                    format:'text'|'bullets'|'table', auto, created}
    Spec shape v2 adds layout:[BLOCKS] (when present, format is ignored).
+   Spec shape v3 adds useHistory:bool (widget sees the patient's prior
+   visits for trend/longitudinal blocks). v3 also adds a one-click
+   WIDGET LIBRARY (CW_LIBRARY → installLibraryWidget), three new block
+   types (timeline / rating / number), and a push-to-note action
+   (cwPushToNote appends the widget's serialized text into the visit
+   note). All back-compatible: v1/v2 widgets render unchanged.
    BLOCK DSL (whitelist — anything else is stripped by the sanitizer):
      {type:'text',      label?}
      {type:'bullets',   label?}
@@ -12267,7 +12312,7 @@ GUARDRAILS: You may reference evidence-based utilization frameworks generally (e
 const CW_MAX_WIDGETS=10;
 const CW_MAX_BLOCKS=8;          // blocks per widget layout
 const CW_MAX_OPTS=12;           // options/items per block (select/checklist/fields)
-const CW_BLOCK_TYPES={text:1,bullets:1,table:1,fields:1,select:1,checklist:1,badge:1,score:1,chart:1};
+const CW_BLOCK_TYPES={text:1,bullets:1,table:1,fields:1,select:1,checklist:1,badge:1,score:1,chart:1,timeline:1,rating:1,number:1};
 let _cwEditingId=null;          // widget id being edited in the builder (null = creating new)
 let _cwPendingLayout=null;      // sanitized layout sitting in the preview (saved with the widget)
 const _cwLatest={};             // widgetId -> latest RAW model reply (this session)
@@ -12322,6 +12367,17 @@ function cwSanitizeLayout(layout){
     } else if(type==='chart'){
       blk.kind=(b.kind==='line'||b.kind==='pie')?b.kind:'bar';
       if(!blk.label) blk.label='Chart';
+    } else if(type==='timeline'){
+      if(!blk.label) blk.label='Timeline';
+    } else if(type==='rating'){
+      let mx=Number(b.max);
+      if(!isFinite(mx)||mx<=0) mx=10;
+      blk.max=Math.min(100,Math.round(mx));
+      if(!blk.label) blk.label='Rating';
+    } else if(type==='number'){
+      const unit=cwStr(b.unit,16);
+      if(unit) blk.unit=unit;
+      if(!blk.label) blk.label='Value';
     }
     out.push(blk);
   }
@@ -12432,6 +12488,32 @@ function cwSanitizeContent(layout,data){
           if(n<1) return null;
           return {labels:labels.slice(0,n), data:nums.slice(0,n)};
         }
+        case 'timeline':{
+          const rows=Array.isArray(c)?c:(c&&typeof c==='object'&&!Array.isArray(c))?(c.events||c.items||c.rows):null;
+          if(!Array.isArray(rows)) return null;
+          const v=rows.map(r=>{
+            if(!r||typeof r!=='object'||Array.isArray(r)) return null;
+            const date=cwStr(r.date!=null?r.date:r.when,40);
+            const text=cwStr(r.text!=null?r.text:(r.event!=null?r.event:r.label),300);
+            if(!text&&!date) return null;
+            return {date:date, text:text};
+          }).filter(Boolean).slice(0,30);
+          return v.length?v:null;
+        }
+        case 'rating':{
+          const raw=(c&&typeof c==='object')?(c.value!=null?c.value:c.rating):c;
+          if(raw==null||raw==='') return null;         // nothing documented
+          const v=Number(raw);
+          if(!isFinite(v)) return null;
+          return Math.min(blk.max,Math.max(0,Math.round(v*10)/10));
+        }
+        case 'number':{
+          const raw=(c&&typeof c==='object')?(c.value!=null?c.value:c.number):c;
+          if(raw==null||raw==='') return null;         // nothing documented
+          const v=Number(raw);
+          if(!isFinite(v)) return null;
+          return Math.round(v*100)/100;
+        }
       }
     }catch(e){}
     return null;
@@ -12452,6 +12534,7 @@ function cwSanitizeSpec(w){
     prompt:prompt,
     format:format,
     auto:w.auto!==false,
+    useHistory:w.useHistory===true,
     created:Number(w.created)||Date.now()
   };
   const layout=cwSanitizeLayout(w.layout);   // v2: optional block layout
@@ -12472,15 +12555,171 @@ function setCustomWidgets(arr){
   try{ syncPrefsToServer(); }catch(e){ /* offline — next save retries */ }
 }
 
+/* =========================================================
+   v3 — WIDGET LIBRARY: curated, ready-made clinical widgets for a
+   spine / PM&R / pain practice. Each entry is a COMPLETE valid spec
+   in the existing block DSL. "captures" is a short human line for the
+   browse grid. Installing a library widget runs it through
+   cwSanitizeSpec()/cwSanitizeLayout() (never trusted raw) and gives it
+   a fresh unique id — from then on it's an ordinary user widget.
+   ========================================================= */
+const CW_LIBRARY=[
+  {
+    emoji:'💉', title:'Injection tracker',
+    description:'Captures any injection performed or planned this visit, with laterality and pain.',
+    captures:'Injection details, laterality, pain score, post-procedure checklist',
+    prompt:'From the documented visit, extract any interventional injection performed or planned: status, procedure name, spinal level/site, medication and dose, and laterality. Capture the documented post-procedure pain score (0-10). Check only post-procedure items actually documented. Use ONLY documented facts; never infer; use [bracketed placeholders] for anything missing.',
+    auto:true, useHistory:false,
+    layout:[
+      {type:'badge',label:'Status'},
+      {type:'select',label:'Laterality',options:['Left','Right','Bilateral','Midline','Not documented']},
+      {type:'fields',label:'Procedure details',items:['Procedure','Level / site','Medication & dose','Date']},
+      {type:'score',label:'Post-procedure pain',min:0,max:10},
+      {type:'checklist',label:'Post-procedure',items:['Sterile prep','Imaging guidance used','Tolerated well','No immediate complication','Post-procedure instructions given']}
+    ]
+  },
+  {
+    emoji:'🧰', title:'Return-to-work status',
+    description:'The patient\'s documented work status, restrictions, and details.',
+    captures:'Work status, restriction checklist, dates & details',
+    prompt:'Extract the patient\'s documented work/duty status and any work restrictions, including effective dates and the next re-evaluation date if stated. Check only restrictions actually documented. Use ONLY documented facts; use [bracketed placeholders] for anything missing.',
+    auto:true, useHistory:false,
+    layout:[
+      {type:'select',label:'Current status',options:['Full duty','Modified duty','Off work','Not addressed']},
+      {type:'checklist',label:'Restrictions documented',items:['No lifting >10 lbs','No lifting >25 lbs','No prolonged standing','No repetitive bending/twisting','Sit/stand option as needed','No driving','No overhead work','No climbing/ladders']},
+      {type:'text',label:'Details & dates'}
+    ]
+  },
+  {
+    emoji:'⚖️', title:'Opioid risk & MME',
+    description:'Advisory snapshot of documented opioid regimen, total daily MME, and risk flags.',
+    captures:'Total daily MME (number), risk level badge, risk-factor checklist',
+    prompt:'Summarize the documented opioid regimen for this patient. Report the total daily morphine milligram equivalents (MME) AS A NUMBER ONLY IF it is explicitly documented or directly calculable from documented doses — otherwise leave it null (never estimate). Set the risk badge from documented risk factors. Check only risk factors actually documented. This is ADVISORY ONLY for provider review — never a directive. Use ONLY documented facts.',
+    auto:true, useHistory:false,
+    layout:[
+      {type:'badge',label:'Risk level'},
+      {type:'number',label:'Total daily MME',unit:'MME'},
+      {type:'fields',label:'Regimen',items:['Opioid(s)','Total daily dose','Last PDMP review','Naloxone offered']},
+      {type:'checklist',label:'Risk factors documented',items:['Concurrent benzodiazepine','History of substance use disorder','MME ≥ 50/day','MME ≥ 90/day','Multiple prescribers','Prior overdose']}
+    ]
+  },
+  {
+    emoji:'🚩', title:'Red-flag screen',
+    description:'Spine/back-pain red flags documented this visit, at a glance.',
+    captures:'Red-flag checklist + overall green/red badge',
+    prompt:'Screen the documented visit for spinal/back-pain red-flag findings. Check ONLY red flags explicitly documented as present. Set the badge to red if any red flag is documented present, green if explicitly screened and negative, otherwise gray. Use ONLY documented facts; never infer.',
+    auto:true, useHistory:false,
+    layout:[
+      {type:'badge',label:'Overall'},
+      {type:'checklist',label:'Red flags present',items:['Bowel/bladder dysfunction','Saddle anesthesia','Progressive motor deficit','Fever / suspected infection','Unexplained weight loss','History of malignancy','Major trauma','IV drug use','Night pain / rest pain']},
+      {type:'text',label:'Notes'}
+    ]
+  },
+  {
+    emoji:'🎯', title:'Functional goals',
+    description:'The patient\'s documented functional goals and baseline metrics.',
+    captures:'Goal bullets + baseline functional fields',
+    prompt:'Extract the patient\'s documented functional goals (what they want to be able to do) as concise bullets, plus any documented baseline functional metrics. Use ONLY documented facts; use [bracketed placeholders] for anything missing.',
+    auto:true, useHistory:false,
+    layout:[
+      {type:'bullets',label:'Functional goals'},
+      {type:'fields',label:'Baseline metrics',items:['Walking tolerance','Sitting tolerance','Standing tolerance','Sleep quality','Target / timeframe']}
+    ]
+  },
+  {
+    emoji:'🩺', title:'Procedure follow-up',
+    description:'Outcome of a prior procedure: relief, current pain, and next-step checklist.',
+    captures:'Procedure fields, current pain score, follow-up checklist',
+    prompt:'Summarize the documented follow-up of any recent procedure/injection: which procedure, date, and the patient\'s documented response (percent relief, duration). Capture the current documented pain score (0-10). Check only follow-up steps actually documented. Use ONLY documented facts; use [bracketed placeholders] for anything missing.',
+    auto:true, useHistory:true,
+    layout:[
+      {type:'fields',label:'Prior procedure',items:['Procedure','Date performed','% relief reported','Duration of relief']},
+      {type:'score',label:'Current pain',min:0,max:10},
+      {type:'checklist',label:'Follow-up plan',items:['Repeat injection considered','Escalate to next-level intervention','Continue conservative care','Imaging ordered','Refer to surgery','No further intervention']}
+    ]
+  },
+  {
+    emoji:'📈', title:'Pain trend',
+    description:'The patient\'s documented pain scores over prior visits.',
+    captures:'Line chart of pain across visits + since-last-visit change',
+    prompt:'Using the prior-visit information provided, collect the documented pain scores (0-10) across dated visits, oldest to newest, for a pain-trend chart. State the change since the last visit in one short line. Use ONLY documented numbers; if no prior pain scores are documented, return null for the chart.',
+    auto:true, useHistory:true,
+    layout:[
+      {type:'chart',label:'Pain trend (0-10)',kind:'line'},
+      {type:'select',label:'Direction since last visit',options:['Improved','Unchanged','Worsened','Not enough data']},
+      {type:'text',label:'Trend summary'}
+    ]
+  },
+  {
+    emoji:'📋', title:'PROMIS / ODI snapshot',
+    description:'Documented patient-reported outcome scores for this visit.',
+    captures:'ODI score + PROMIS fields + interpretation badge',
+    prompt:'Extract documented patient-reported outcome measures: the Oswestry Disability Index (ODI, 0-100) and any PROMIS / other documented scores. Set the badge to reflect documented disability severity (green minimal, yellow moderate, red severe) only if an ODI is documented. Use ONLY documented numbers; leave anything not documented null.',
+    auto:true, useHistory:true,
+    layout:[
+      {type:'badge',label:'Disability level'},
+      {type:'score',label:'Oswestry Disability Index',min:0,max:100},
+      {type:'fields',label:'Other measures',items:['PROMIS Physical Function','PROMIS Pain Interference','Patient satisfaction','Date collected']}
+    ]
+  }
+];
+
+/* Install a copy of a library widget as a brand-new user widget. */
+function installLibraryWidget(idx){
+  const tpl=CW_LIBRARY[idx];
+  if(!tpl){ toast('That library widget is unavailable.','err'); return; }
+  const list=getCustomWidgets();
+  if(list.length>=CW_MAX_WIDGETS){ toast('Widget limit reached ('+CW_MAX_WIDGETS+') — delete one first.','err'); return; }
+  const spec=cwSanitizeSpec(Object.assign({},tpl,{
+    id:'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+    created:Date.now()
+  }));
+  if(!spec){ toast('Could not add that widget.','err'); return; }
+  list.push(spec);
+  setCustomWidgets(list);
+  renderWidgetBuilderList();
+  renderCustomWidgets();
+  cwHideLibrary();
+  toast('Added "'+spec.title+'" — it now appears with the visit cards and fills on every Generate.','ok');
+}
+/* Browse-library view: a grid of cards built with createElement/textContent
+   only (library text is ours, but stay consistent and XSS-proof). */
+function cwShowLibrary(){
+  const box=document.getElementById('cwLibraryGrid');
+  const wrap=document.getElementById('cwLibrary');
+  if(!box||!wrap) return;
+  hideWidgetPreview();
+  box.innerHTML='';
+  CW_LIBRARY.forEach((tpl,i)=>{
+    const card=document.createElement('div'); card.className='cw-lib-card';
+    const head=document.createElement('div'); head.className='cw-lib-head';
+    const em=document.createElement('span'); em.className='cw-lib-emoji'; em.textContent=tpl.emoji||'🧩';
+    const ttl=document.createElement('b'); ttl.textContent=tpl.title;
+    head.appendChild(em); head.appendChild(ttl);
+    const desc=document.createElement('div'); desc.className='cw-lib-desc'; desc.textContent=tpl.description||'';
+    const cap=document.createElement('div'); cap.className='cw-lib-cap'; cap.textContent='Captures: '+(tpl.captures||'');
+    const btn=document.createElement('button'); btn.className='btn-green cw-lib-add'; btn.textContent='＋ Add';
+    btn.addEventListener('click',()=>installLibraryWidget(i));
+    card.appendChild(head); card.appendChild(desc); card.appendChild(cap);
+    if(tpl.useHistory){ const h=document.createElement('div'); h.className='cw-lib-hist'; h.textContent='📈 sees prior visits'; card.appendChild(h); }
+    card.appendChild(btn);
+    box.appendChild(card);
+  });
+  wrap.style.display='block';
+}
+function cwHideLibrary(){ const w=document.getElementById('cwLibrary'); if(w) w.style.display='none'; }
+
 /* ---- builder modal ---- */
 function openWidgetBuilder(){
   hideWidgetPreview();
+  cwHideLibrary();
   renderWidgetBuilderList();
   document.getElementById('widgetBuilderModal').classList.add('show');
 }
 function closeWidgetBuilder(){
   document.getElementById('widgetBuilderModal').classList.remove('show');
   hideWidgetPreview();
+  cwHideLibrary();
 }
 function hideWidgetPreview(){
   _cwEditingId=null;
@@ -12489,12 +12728,14 @@ function hideWidgetPreview(){
   const h=document.getElementById('cwPreviewHead'); if(h) h.textContent='Preview — tweak anything, then save';
 }
 function showWidgetPreview(spec){
+  cwHideLibrary();
   document.getElementById('cwEmoji').value=spec.emoji||'🧩';
   document.getElementById('cwTitle').value=spec.title||'';
   document.getElementById('cwDescription').value=spec.description||'';
   document.getElementById('cwPrompt').value=spec.prompt||'';
   document.getElementById('cwFormat').value=(spec.format==='bullets'||spec.format==='table')?spec.format:'text';
   document.getElementById('cwAuto').checked=spec.auto!==false;
+  const uh=document.getElementById('cwUseHistory'); if(uh) uh.checked=spec.useHistory===true;
   _cwPendingLayout=cwSanitizeLayout(spec.layout);   // v2 (null for v1/simple widgets)
   cwRenderLayoutSummary();
   document.getElementById('cwPreview').style.display='block';
@@ -12531,6 +12772,8 @@ function cwRenderLayoutSummary(){
     else if(b.type==='table')     extra=' — columns: '+b.columns.join(', ');
     else if(b.type==='score')     extra=' — range '+b.min+'–'+b.max;
     else if(b.type==='chart')     extra=' — '+b.kind;
+    else if(b.type==='rating')    extra=' — out of '+b.max;
+    else if(b.type==='number')    extra=b.unit?(' — '+b.unit):'';
     txt.textContent=(b.label||'(unlabeled)')+extra;
     row.appendChild(tag); row.appendChild(txt);
     box.appendChild(row);
@@ -12549,7 +12792,7 @@ async function designCustomWidget(){
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Designing…';
   try{
     const sys=`You design a CUSTOM CLINICAL WIDGET SPEC for a medical-scribe app used by physicians. The doctor describes a card they want on the visit page; you return the spec that powers it. Return ONLY valid JSON (no markdown fences, no commentary) with EXACTLY this shape:
-{"emoji":"<one fitting emoji>","title":"<short card title, max 6 words>","description":"<one plain sentence shown under the title explaining what the card shows>","prompt":"<the per-visit instruction>","layout":[<1-8 blocks from the DSL below>]}
+{"emoji":"<one fitting emoji>","title":"<short card title, max 6 words>","description":"<one plain sentence shown under the title explaining what the card shows>","prompt":"<the per-visit instruction>","useHistory":<true ONLY if the card tracks trends/progress over time, since-last-visit change, or longitudinal history; otherwise false>,"layout":[<1-8 blocks from the DSL below>]}
 
 BLOCK DSL — these are the ONLY block types that exist (never invent others):
 - {"type":"text","label":"<optional>"} — a short prose paragraph
@@ -12561,8 +12804,11 @@ BLOCK DSL — these are the ONLY block types that exist (never invent others):
 - {"type":"badge","label":"<required>"} — a colored status pill (green/yellow/red/gray) for at-a-glance status
 - {"type":"score","label":"<required>","min":<number>,"max":<number>} — a big number with a gauge bar; use for numeric scores (pain 0-10, ODI 0-100, etc.)
 - {"type":"chart","label":"<required>","kind":"bar"|"line"|"pie"} — a small chart of documented numbers (e.g. pain trend across documented visits)
+- {"type":"timeline","label":"<required>"} — a chronological list of dated events {date,text}; ideal for longitudinal/over-time tracking across prior visits
+- {"type":"rating","label":"<required>","max":<number, default 10>} — a compact "N / max" rating with dots; lighter than score, for quick 0-10 style ratings
+- {"type":"number","label":"<required>","unit":"<optional, e.g. mg, MME, kg/m²>"} — a single big number with an optional unit (MME, BMI, dose totals)
 
-GUIDANCE: choose 2-5 blocks that genuinely fit the doctor's description. Choices → select; fixed criteria → checklist; overall status → badge; numeric score → score; trends/distributions over documented numbers → chart; otherwise text/bullets/table/fields. For a dead-simple prose card a single text or bullets block is fine.
+GUIDANCE: choose 2-5 blocks that genuinely fit the doctor's description. Choices → select; fixed criteria → checklist; overall status → badge; numeric score → score (with gauge) or rating (compact dots); a single standalone number/total → number; trends/distributions over documented numbers → chart; a dated event history → timeline; otherwise text/bullets/table/fields. For a dead-simple prose card a single text or bullets block is fine.
 
 EXAMPLE 1 — doctor says "track my injections with pain trend":
 {"emoji":"💉","title":"Injection tracker","description":"Summarizes any injection performed or planned this visit, with the documented pain trend.","prompt":"From the documented visit, extract any interventional injection performed or planned: procedure name, spinal level or site, medication and dose, laterality, and outcome status. Also collect any documented pain scores (0-10) across the dates mentioned in the record for the pain-trend chart. Use ONLY documented facts; never infer.","layout":[{"type":"badge","label":"Status"},{"type":"fields","label":"Procedure details","items":["Procedure","Level / site","Medication & dose","Date"]},{"type":"select","label":"Laterality","options":["Left","Right","Bilateral","Midline","Not documented"]},{"type":"chart","label":"Pain trend (0-10)","kind":"line"}]}
@@ -12579,8 +12825,16 @@ The "prompt" is the instruction executed on EVERY visit against the clinical not
     const spec=JSON.parse(s.slice(a,b+1));
     if(!String(spec.title||'').trim()||!String(spec.prompt||'').trim())
       throw new Error('The designer returned an incomplete spec — try rephrasing your description.');
+    // history-aware: trust the designer's flag, but also auto-enable when the
+    // doctor's description (or any chart/timeline block) implies trends/over-time.
+    let useHistory=spec.useHistory===true;
+    if(!useHistory){
+      const hay=(desc+' '+String(spec.prompt||'')+' '+String(spec.description||'')).toLowerCase();
+      if(/\btrend|over time|over-time|since last|last visit|progress|longitudinal|history|across visits|compared? to (?:prior|previous|last)\b/.test(hay)) useHistory=true;
+      else if(Array.isArray(spec.layout)&&spec.layout.some(b=>b&&(b.type==='chart'||b.type==='timeline'))) useHistory=true;
+    }
     _cwEditingId=null;
-    showWidgetPreview({emoji:spec.emoji,title:spec.title,description:spec.description,prompt:spec.prompt,format:spec.format,layout:spec.layout,auto:true});
+    showWidgetPreview({emoji:spec.emoji,title:spec.title,description:spec.description,prompt:spec.prompt,format:spec.format,layout:spec.layout,auto:true,useHistory:useHistory});
     document.getElementById('cwPreviewHead').textContent='Preview — tweak anything, then save';
     toast('Widget designed — review and tweak it, then save.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
@@ -12599,7 +12853,8 @@ function saveCustomWidget(){
     prompt:prompt,
     format:document.getElementById('cwFormat').value,
     layout:_cwPendingLayout,          // v2 (null = simple v1 widget; overrides any old layout on edit)
-    auto:document.getElementById('cwAuto').checked
+    auto:document.getElementById('cwAuto').checked,
+    useHistory:(function(){const uh=document.getElementById('cwUseHistory');return !!(uh&&uh.checked);})()
   };
   const list=getCustomWidgets();
   if(_cwEditingId){
@@ -12669,7 +12924,7 @@ function renderWidgetBuilderList(){
     +'<span style="font-size:18px">'+esc(w.emoji)+'</span>'
     +'<div style="flex:1;min-width:160px"><b style="font-size:14px">'+esc(w.title)+'</b>'
     +(w.description?'<div style="font-size:12px;color:var(--muted)">'+esc(w.description)+'</div>':'')
-    +'<div style="font-size:11px;color:var(--muted)">'+(w.layout&&w.layout.length?(w.layout.length+'-block layout: '+esc(w.layout.map(b=>b.type).join(', ')) ):('format: '+esc(w.format)))+'</div></div>'
+    +'<div style="font-size:11px;color:var(--muted)">'+(w.layout&&w.layout.length?(w.layout.length+'-block layout: '+esc(w.layout.map(b=>b.type).join(', ')) ):('format: '+esc(w.format)))+(w.useHistory?' · 📈 sees prior visits':'')+'</div></div>'
     +'<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;margin:0">'
     +'<input type="checkbox" '+(w.auto?'checked':'')+' onchange="toggleCustomWidgetAuto(\''+w.id+'\',this.checked)" style="width:15px;height:15px;margin:0">Auto</label>'
     +'<button class="sec-copy" onclick="editCustomWidget(\''+w.id+'\')">✏️ Edit</button>'
@@ -12703,6 +12958,7 @@ function renderCustomWidgets(){
     card.innerHTML=
       '<h3>'+esc(w.emoji)+' '+esc(w.title)+' <span style="font-weight:400;font-size:13px;color:var(--muted)">(custom)</span>'
       +'<button class="sec-copy" style="margin-left:auto" id="cwRefresh_'+w.id+'" title="Generate this widget for the current visit" onclick="event.stopPropagation();refreshCustomWidget(\''+w.id+'\')">↻ Refresh</button>'
+      +'<button class="sec-copy" title="Append this widget\'s content to the current visit note" onclick="event.stopPropagation();cwPushToNote(\''+w.id+'\')">➕ Add to note</button>'
       +'<button class="sec-copy" onclick="event.stopPropagation();copyExtra(\'cwText_'+w.id+'\')">📑 Copy</button>'
       +'<button class="sec-copy" onclick="event.stopPropagation();printCustomWidget(\''+w.id+'\')">🖨 Print</button>'
       +'</h3>'
@@ -12788,6 +13044,15 @@ function cwSerializeLayout(w,content){
         break;
       case 'chart':
         if(c&&Array.isArray(c.labels)) out.push((lbl||'Chart')+' ('+blk.kind+'): '+c.labels.map((l,k)=>l+'='+c.data[k]).join('; '));
+        break;
+      case 'timeline':
+        if(Array.isArray(c)&&c.length) out.push((lbl?lbl+':\n':'')+c.map(ev=>(ev.date?ev.date+' • ':'')+(ev.text||'')).join('\n'));
+        break;
+      case 'rating':
+        if(c!=null) out.push((lbl||'Rating')+': '+c+' / '+blk.max);
+        break;
+      case 'number':
+        if(c!=null) out.push((lbl||'Value')+': '+c+(blk.unit?(' '+blk.unit):''));
         break;
     }
   });
@@ -12937,6 +13202,38 @@ function cwRenderLayoutBlocks(w,content){
         });
         hasInfo=true; break;
       }
+      case 'timeline':{
+        const ol=document.createElement('div'); ol.className='cw-timeline';
+        c.forEach(ev=>{
+          const row=document.createElement('div'); row.className='cw-tl-row';
+          if(ev.date){ const d=document.createElement('span'); d.className='cw-tl-date'; d.textContent=ev.date; row.appendChild(d); }
+          const t=document.createElement('span'); t.className='cw-tl-text'; t.textContent=ev.text||''; row.appendChild(t);
+          ol.appendChild(row);
+        });
+        holder.appendChild(ol); hasInfo=true; break;
+      }
+      case 'rating':{
+        const rt=document.createElement('div'); rt.className='cw-rating';
+        const lbl2=document.createElement('span'); lbl2.className='cw-rt-num';
+        lbl2.textContent=String(c)+' / '+blk.max;
+        const dots=document.createElement('span'); dots.className='cw-rt-dots';
+        const maxDots=Math.min(10,blk.max);
+        const filled=Math.round((c/(blk.max||1))*maxDots);
+        for(let d=0;d<maxDots;d++){
+          const dot=document.createElement('span');
+          dot.className='cw-rt-dot'+(d<filled?' on':'');
+          dots.appendChild(dot);
+        }
+        rt.appendChild(lbl2); rt.appendChild(dots);
+        holder.appendChild(rt); hasInfo=true; break;
+      }
+      case 'number':{
+        const nb=document.createElement('div'); nb.className='cw-number';
+        const big=document.createElement('span'); big.className='cw-num-big'; big.textContent=String(c);
+        nb.appendChild(big);
+        if(blk.unit){ const u=document.createElement('span'); u.className='cw-num-unit'; u.textContent=blk.unit; nb.appendChild(u); }
+        holder.appendChild(nb); hasInfo=true; break;
+      }
     }
     body.appendChild(holder);
   });
@@ -13015,6 +13312,50 @@ function printCustomWidget(id){
   printExtra(w.emoji+' '+w.title,'cwText_'+id);
 }
 
+/* v3 — PUSH-TO-NOTE. Append this widget's current serialized content into the
+   active visit note under a titled header, inserted BEFORE any signature block
+   so signing stays valid. Idempotent-ish: if an identical block for this widget
+   is already present, we don't double-append. Refreshes the note + toasts. */
+function cwPushToNote(id){
+  const w=getCustomWidgets().find(x=>x.id===id);
+  if(!w) return;
+  // Prefer live block state; fall back to a parse of this session's latest reply.
+  let serialized='';
+  if(Array.isArray(w.layout)&&w.layout.length){
+    let content=(_cwState[w.id]&&_cwState[w.id].length===w.layout.length)?_cwState[w.id]:null;
+    if(!content && _cwLatest[w.id]) content=cwParseLayoutContent(w.layout,_cwLatest[w.id]);
+    serialized=content?cwSerializeLayout(w,content):'';
+  } else {
+    const mirror=document.getElementById('cwText_'+w.id);
+    serialized=(mirror&&mirror.textContent||'').trim();
+  }
+  serialized=String(serialized||'').trim();
+  if(!serialized){ toast('Nothing to add yet — generate or refresh this widget first.','err'); return; }
+  if(!currentSoap && !currentInsurance){ toast('Generate a note first.','err'); return; }
+  const header='— '+w.title+' —';
+  const block=header+'\n'+serialized;
+  const isInsurance=(currentFormat==='insurance');
+  let base=isInsurance?(currentInsurance||''):(currentSoap||'');
+  // already appended this exact block? skip (idempotent-ish)
+  if(base.indexOf(block)>=0){ toast('"'+w.title+'" is already in the note.',''); return; }
+  // insert before the signature block (keeps the signature at the very end)
+  const sigStr=stripSignatureBlock(base);
+  const hadSig=(sigStr.length!==base.replace(/\s+$/,'').length);
+  let next=sigStr.replace(/\s+$/,'')+'\n\n'+block;
+  if(hadSig) next=withSignatureBlock(next);   // re-append the signature after the new block
+  if(isInsurance){
+    currentInsurance=next;
+  } else {
+    currentSoap=next;
+  }
+  // refresh the visible note buffer if it's the one showing
+  const nb=document.getElementById('noteBox');
+  if(nb && nb.style.display!=='none'){
+    if((isInsurance&&currentFormat==='insurance')||(!isInsurance&&currentFormat==='soap')) nb.value=next;
+  }
+  toast('Added "'+w.title+'" to the visit note.','ok');
+}
+
 /* ---- per-visit generation (auto on Generate + manual ↻) ---- */
 function cwFormatSpec(format){
   if(format==='bullets') return 'a list of concise lines, each starting with "- " (a hyphen bullet). No other text.';
@@ -13036,6 +13377,9 @@ function cwLayoutOutputSpec(layout){
       case 'badge':     return (i+1)+'. badge'+lbl+': an object {"text":"short status","level":"green"|"yellow"|"red"|"gray"} or null.';
       case 'score':     return (i+1)+'. score'+lbl+': a number between '+b.min+' and '+b.max+' (the documented score) or null.';
       case 'chart':     return (i+1)+'. chart'+lbl+': an object {"labels":[...],"data":[numbers]} of documented values (e.g. across dated visits), or null if no numbers documented.';
+      case 'timeline':  return (i+1)+'. timeline'+lbl+': an array of {"date":"<date or visit label>","text":"<what happened>"} events in chronological order (most recent last), built ONLY from documented/prior-visit information, or null.';
+      case 'rating':    return (i+1)+'. rating'+lbl+': a single number from 0 to '+b.max+' (the documented rating) or null.';
+      case 'number':    return (i+1)+'. number'+lbl+': a single documented number'+(b.unit?(' (in '+b.unit+')'):'')+' or null. Return just the number, not a string.';
     }
     return (i+1)+'. unknown';
   });
@@ -13048,6 +13392,38 @@ function cwBuildUserPayload(){
   return 'CLINICAL NOTE:\n'+currentNoteText()
     +(tr?('\n\nRAW TRANSCRIPT (for additional context):\n'+tr):'')
     +(pctx?('\n\nPATIENT BACKGROUND (chart history — context only, do not invent new findings):\n'+pctx):'');
+}
+/* v3 — history-aware widgets. Gather the ACTIVE patient's PRIOR visit records
+   (most recent first, capped, de-identified-ish summaries + any saved pain/ODI
+   outcome values) so the model can fill trend/longitudinal blocks. Returns ''
+   when there's no active patient or no prior visits — never throws. */
+function cwBuildPriorVisits(){
+  try{
+    const ap=activePatient();
+    if(!ap) return '';
+    const outcomes=getOutcomes(ap.id)||[];
+    const byNote={};
+    outcomes.forEach(o=>{ if(o&&o.noteId) byNote[o.noteId]=o; });
+    let notes=patientNotes(ap.id)
+      .filter(n=>n && n.id!==currentNoteId && !n.isDraft && ((n.soap||'').trim()||(n.insurance||'').trim()))
+      .sort((a,b)=>(b.updated||0)-(a.updated||0))
+      .slice(0,8);
+    if(!notes.length) return '';
+    const fmtDate=ts=>{ try{ return ts?new Date(ts).toISOString().slice(0,10):''; }catch(e){ return ''; } };
+    const blocks=notes.map((n,idx)=>{
+      const date=fmtDate(n.updated);
+      const body=String(n.soap||n.insurance||'').replace(/\s+/g,' ').trim().slice(0,600);
+      const oc=n.outcome||byNote[n.id]||null;
+      const vals=[];
+      if(oc){
+        if(oc.pain!=null&&oc.pain!=='') vals.push('pain '+oc.pain+'/10');
+        if(oc.func!=null&&oc.func!=='') vals.push('ODI/disability '+oc.func);
+        if(oc.note) vals.push('outcome note: '+String(oc.note).slice(0,120));
+      }
+      return 'VISIT '+(idx+1)+(date?(' ['+date+']'):'')+(vals.length?(' — '+vals.join('; ')):'')+':\n'+body;
+    });
+    return blocks.join('\n\n');
+  }catch(e){ return ''; }
 }
 async function runCustomWidget(id,opts){
   opts=opts||{};
@@ -13076,7 +13452,12 @@ async function runCustomWidget(id,opts){
       +'This is an advisory DRAFT the provider reviews — never a directive. '
       +(hasLayout?'':'If the visit contains nothing relevant to this widget, output exactly: Nothing documented this visit for this widget.')
       +'\n\n'+outSpec;
-    const raw=(await aiCallRaw(sys,cwBuildUserPayload(),getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let payload=cwBuildUserPayload();
+    if(w.useHistory){
+      const prior=cwBuildPriorVisits();
+      if(prior) payload+='\n\nPRIOR VISITS (most recent first — use ONLY for trends/longitudinal blocks; do NOT treat as today\'s findings):\n'+prior;
+    }
+    const raw=(await aiCallRaw(sys,payload,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     _cwLatest[id]=raw;
     delete _cwState[id];           // fresh fill → recompute block state from this reply
     cwRenderOutput(w,raw);
