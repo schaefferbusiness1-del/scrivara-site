@@ -1321,11 +1321,12 @@
   <div id="historyView" style="display:none">
   <!-- HISTORY -->
   <div class="card" id="historyCard">
-    <h2><span class="ic">📚</span> Visit history <span style="font-weight:400;font-size:14px;color:var(--muted)">(saved on this device)</span>
+    <h2><span class="ic">📚</span> Visit history
       <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
     </h2>
-    <p class="sub">Click a past visit to reopen it. Notes are saved locally in this browser for <b id="histWho">your account</b>.</p>
-    <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">💾 Saved locally on this device only. The hosted / HIPAA version stores notes encrypted server-side, syncs across devices, and is backed up.</div>
+    <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
+    <div class="disclaim" id="histStorageNote" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Encrypted and synced to your account — your visit history is available on any device you log into, and is included in backups.</div>
+    <script>/* accurate per-role storage note */ (function(){ try{ var n=document.getElementById('histStorageNote'); if(!n) return; var apply=function(){ try{ if(typeof backendMode==='function' && backendMode() && typeof bkUser!=='undefined' && bkUser && (bkUser.role==='admin'||bkUser.isAdmin)){ n.textContent='💾 Owner accounts are walled off from clinical records, so this history is local to this device only. Doctor accounts sync encrypted to the server across devices.'; } }catch(e){} }; setTimeout(apply,1500); }catch(e){} })();</script>
 
     <!-- AI chart summary / timeline -->
     <div class="extra-card" id="chartSumCard" style="display:none">
@@ -1624,9 +1625,38 @@
     </div>
   </div><!-- /teamView -->
 
-  <!-- ============ ANALYSIS / REVIEW VIEW (head + owner only) ============ -->
+  <!-- ============ ANALYSIS VIEW (clinicians + head + owner; never lawyers) ============ -->
   <div id="analysisView" style="display:none">
-    <div class="card">
+
+    <!-- 🔎 FREE-TEXT DATA STUDY BOX — ask anything of your practice records -->
+    <div class="card" id="anaAsk">
+      <h2><span class="ic">🔎</span> Ask your data</h2>
+      <p class="sub">Ask any question about your practice records — volumes, trends, outcomes, coding — or request a de-identified retrospective study summary. Built from your stored visit records; no patient names are sent to the AI.</p>
+      <div class="field">
+        <label for="anaAskQ">Your question or study request</label>
+        <textarea id="anaAskQ" rows="2" placeholder="e.g. How did my injection volume change month over month? · Draft a retrospective study summary of pain outcomes after epidural steroid injections."></textarea>
+      </div>
+      <button class="btn-primary" id="anaAskBtn" style="margin-top:6px" onclick="runDataStudy()">🔎 Generate from my data</button>
+      <div class="extra-card" id="anaStudyCard" style="display:none;margin-top:16px">
+        <h3>📄 Data study
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('anaStudyOut')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Practice Data Study','anaStudyOut')">🖨 Print</button>
+        </h3>
+        <div class="xbody" id="anaStudyOut" style="white-space:pre-wrap"></div>
+        <div class="code-disclaim">⚠️ Generated from your practice records — verify before clinical, billing, or legal use; publication or external use requires IRB/compliance review.</div>
+      </div>
+    </div>
+
+    <!-- 📈 BASELINE METRICS — server-side aggregates over your visit records -->
+    <div class="card" id="anaBaseline">
+      <h2><span class="ic">📈</span> Baseline metrics
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAnalysisBaseline(true)">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Practice-wide aggregates computed on the clinic server from non-PHI visit metadata (head doctors see their whole team).</p>
+      <div id="anaBaselineBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+    </div>
+
+    <div class="card" id="anaDoctorReview">
       <h2><span class="ic">📊</span> Doctor analysis &amp; review
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh data</button>
       </h2>
@@ -2840,9 +2870,13 @@ function applyAccessUI(){
   const teamTab=document.getElementById('nav_team');
   const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
   if(teamTab) teamTab.style.display=(backendMode()&&isHead)?'':'none';
-  // Analysis/review tab: head doctors AND the owner (same supervisory gate).
+  // 📊 Analysis tab: ANY clinician (doctor or head) + the owner — never lawyers.
+  // (The per-doctor review card inside the view stays gated to head/owner below.)
   const analysisTab=document.getElementById('nav_analysis');
-  if(analysisTab) analysisTab.style.display=(backendMode()&&(isHead||isAdmin))?'':'none';
+  if(analysisTab) analysisTab.style.display=(backendMode()&&bkUser&&!isLawyerUser())?'':'none';
+  // Per-doctor review section keeps its original head/owner supervisory gate.
+  const anaReviewCard=document.getElementById('anaDoctorReview');
+  if(anaReviewCard) anaReviewCard.style.display=(isHead||isAdmin)?'':'none';
   // ⚖️ Legal requests inbox tab: clinicians only (not owner, not lawyer).
   // Shown when the Legal feature is enabled OR whenever requests exist.
   const isLawyer=isLawyerUser();
@@ -4155,6 +4189,163 @@ async function generateDoctorAnalysis(){
   }
 }
 
+/* =========================================================
+   📈 ANALYSIS — BASELINE METRICS (any clinician + owner-with-empty-state).
+   Pulls GET /api/records/summary (server-side SQL aggregates over non-PHI
+   plaintext meta — zero decryption) and renders stat cards + a per-month
+   table. wRVUs are approximated client-side from the E/M distribution.
+   ========================================================= */
+const ANA_WRVU={'99202':0.93,'99203':1.6,'99204':2.6,'99205':3.5,'99211':0.18,'99212':0.7,'99213':1.3,'99214':1.92,'99215':2.8};
+function _anaMoney(n){ const v=Math.round((Number(n)||0)*100)/100; return '$'+v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function _anaCard(label,value,sub){
+  return '<div style="flex:1 1 160px;min-width:150px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px 14px">'+
+    '<div style="font-size:12px;font-weight:700;color:var(--muted)">'+esc(label)+'</div>'+
+    '<div style="font-size:22px;font-weight:800;color:var(--ink);margin-top:2px">'+esc(String(value))+'</div>'+
+    (sub?'<div class="mini" style="color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+
+  '</div>';
+}
+async function loadAnalysisBaseline(force){
+  const box=document.getElementById('anaBaselineBody');
+  if(!box) return;
+  if(!backendMode()||!bkToken()){
+    box.innerHTML='<div class="empty"><span class="big">📈</span>Baseline metrics need the hosted clinic server — log in to your clinic account to see practice-wide numbers.</div>';
+    return;
+  }
+  box.innerHTML='<div class="mini" style="color:var(--muted)"><span class="spin"></span> Loading metrics…</div>';
+  let d=null;
+  try{
+    const r=await fetch(bkBase()+'/api/records/summary',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    if(r.status===403){
+      const isAdmin=!!(bkUser&&bkUser.isAdmin);
+      box.innerHTML='<div class="empty"><span class="big">🔒</span>'+(isAdmin
+        ?'Owner accounts don\'t access clinical records — baseline metrics are available to clinicians and head doctors.'
+        :'Your account doesn\'t have access to visit records yet.')+'</div>';
+      return;
+    }
+    if(!r.ok) throw new Error('The server could not build the summary ('+r.status+').');
+    d=await r.json();
+  }catch(e){
+    box.innerHTML='<div class="mini" style="color:var(--muted)">⚠️ Could not load metrics: '+esc(friendlyError(e))+'</div>';
+    return;
+  }
+  const months=(d&&d.months)||[];
+  const emDist=(d&&d.em_distribution)||[];
+  if(!months.length){
+    box.innerHTML='<div class="empty"><span class="big">📈</span>No visit records yet — records start accruing as notes are saved.</div>';
+    return;
+  }
+  // ---- totals across all months ----
+  let visits=0,inj=0,signed=0,charges=0,distinctPts=0;
+  months.forEach(m=>{ visits+=m.visits||0; inj+=m.injections||0; signed+=m.signed||0; charges+=Number(m.est_charge_total)||0; distinctPts+=m.new_patients||0; });
+  const latest=months[months.length-1]||{};
+  // ---- approx. work-RVUs from the E/M distribution ----
+  let rvu=0,rvuNotes=0;
+  emDist.forEach(e=>{ const code=String(e.code||'').trim().split(/[\s—\-:]/)[0]; const w=ANA_WRVU[code]; if(w!=null){ rvu+=w*(e.n||0); rvuNotes+=(e.n||0); } });
+  rvu=Math.round(rvu*100)/100;
+  const cards=
+    _anaCard('Total patients seen',distinctPts,'distinct charts, all time')+
+    _anaCard('New patients',latest.new_patients||0,'latest month ('+esc(latest.month||'—')+')')+
+    _anaCard('Office visits',visits,signed+' signed')+
+    _anaCard('wRVU (approx.)',rvu,'from E/M levels on '+rvuNotes+' visits')+
+    _anaCard('Injections',inj,'visits with an injection')+
+    _anaCard('Total charges (est.)',_anaMoney(charges),'fee-schedule estimate')+
+    _anaCard('Collections','—','needs billing data');
+  // ---- per-month table ----
+  const monthRows=months.map(m=>'<tr><td>'+esc(m.month||'?')+'</td>'+
+    '<td style="text-align:right">'+(m.visits||0)+'</td>'+
+    '<td style="text-align:right">'+(m.new_patients||0)+'</td>'+
+    '<td style="text-align:right">'+(m.injections||0)+'</td>'+
+    '<td style="text-align:right">'+(m.signed||0)+'</td>'+
+    '<td style="text-align:right">'+esc(_anaMoney(m.est_charge_total))+'</td></tr>').join('');
+  box.innerHTML=
+    '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">'+cards+'</div>'+
+    '<div style="font-weight:700;color:var(--muted);font-size:13px;margin:14px 0 0">By month</div>'+
+    '<table class="superbill" style="width:100%;border-collapse:collapse;margin-top:6px">'+
+      '<tr><td class="k">Month</td><td class="k" style="text-align:right">Visits</td><td class="k" style="text-align:right">New pts</td><td class="k" style="text-align:right">Injections</td><td class="k" style="text-align:right">Signed</td><td class="k" style="text-align:right">Est. charges</td></tr>'+
+      monthRows+
+    '</table>'+
+    '<div class="code-disclaim">⚠️ wRVU values are approximate CMS work-RVUs for E/M codes only; charges are fee-schedule estimates, not collections. Computed from non-PHI visit metadata.</div>';
+}
+
+/* =========================================================
+   🔎 ANALYSIS — FREE-TEXT DATA STUDY. Fetches /api/records/summary and
+   /api/records (most recent 200), strips each record to a compact
+   DE-IDENTIFIED line (date, E/M, CPTs, injection/signed flags, est. charge,
+   pain/ODI outcome + procedure when present — NEVER patient names/labels),
+   then asks the AI to answer the question / draft a retrospective study
+   summary using ONLY that dataset. ========================================================= */
+async function runDataStudy(){
+  const qEl=document.getElementById('anaAskQ');
+  const q=(qEl&&qEl.value||'').trim();
+  if(!q){ toast('Type a question about your data first.','err'); return; }
+  if(!backendMode()||!bkToken()){ toast('The data study needs the hosted clinic server — log in first.','err'); return; }
+  if(!hasAI()){ toast('AI is not configured — connect your clinic server or add an API key in Settings.','err'); return; }
+  const card=document.getElementById('anaStudyCard');
+  const out=document.getElementById('anaStudyOut');
+  const btn=document.getElementById('anaAskBtn');
+  if(!card||!out) return;
+  card.style.display='block';
+  out.innerHTML='<div class="mini" style="color:var(--muted)"><span class="spin"></span> Gathering your data and analyzing…</div>';
+  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+  if(btn) btn.disabled=true;
+  try{
+    const [sr,rr]=await Promise.all([
+      fetch(bkBase()+'/api/records/summary',{headers:{'Authorization':'Bearer '+bkToken()}}),
+      fetch(bkBase()+'/api/records',{headers:{'Authorization':'Bearer '+bkToken()}})
+    ]);
+    if(sr.status===401||rr.status===401){ handle401(); return; }
+    if(sr.status===403&&rr.status===403){
+      const isAdmin=!!(bkUser&&bkUser.isAdmin);
+      out.innerHTML='<div class="mini" style="color:var(--muted)">'+(isAdmin
+        ?'Owner accounts don\'t access clinical records, so data studies aren\'t available on this account.'
+        :'Your account doesn\'t have access to visit records.')+'</div>';
+      return;
+    }
+    let summary={}; if(sr.ok){ try{ summary=await sr.json(); }catch(e){ summary={}; } }
+    let recsD={}; if(rr.ok){ try{ recsD=await rr.json(); }catch(e){ recsD={}; } }
+    const allRows=(recsD&&recsD.records)||[];
+    const rows=allRows.slice().sort((a,b)=>String(b.note_date||'').localeCompare(String(a.note_date||''))).slice(0,200);
+    if(!rows.length&&!((summary&&summary.months)||[]).length){
+      out.innerHTML='<div class="mini" style="color:var(--muted)">No visit records yet — records start accruing as notes are saved. Ask again once you have data.</div>';
+      return;
+    }
+    // ---- compact, DE-IDENTIFIED dataset lines (no names, no chart labels) ----
+    const lines=rows.map(r=>{
+      const rec=(r&&r.record)||{};
+      const parts=['date='+(r.note_date||'?'),
+        'em='+(r.em||'-'),
+        'cpt='+((String(r.cpt_codes||'').replace(/\s+/g,''))||'-'),
+        'injection='+(r.injection?'Y':'N'),
+        'signed='+(r.signed?'Y':'N'),
+        'est_charge='+(r.est_charge!=null?r.est_charge:'-')];
+      const oc=rec.outcomes||rec.outcome||{};
+      const pain=(oc.pain!=null&&oc.pain!=='')?oc.pain:((oc.painNow!=null&&oc.painNow!=='')?oc.painNow:((rec.pain!=null&&rec.pain!=='')?rec.pain:null));
+      if(pain!=null) parts.push('pain='+pain);
+      const odi=(oc.odi!=null&&oc.odi!=='')?oc.odi:((rec.odi!=null&&rec.odi!=='')?rec.odi:null);
+      if(odi!=null) parts.push('odi='+odi);
+      let proc=(rec.procedure&&typeof rec.procedure==='object')?rec.procedure.name:(typeof rec.procedure==='string'?rec.procedure:'');
+      if(!proc&&rec.coding&&typeof rec.coding.procedure==='string') proc=rec.coding.procedure;
+      if(proc) parts.push('procedure='+String(proc).replace(/[\n\r|]/g,' ').slice(0,60));
+      const vt=r.visit_type||rec.visitType||'';
+      if(vt) parts.push('type='+String(vt).replace(/[\n\r|]/g,' ').slice(0,24));
+      return parts.join(' | ');
+    });
+    let dataset='SUMMARY (per-month aggregates + E/M distribution, computed server-side):\n'+
+      JSON.stringify({months:(summary&&summary.months)||[],em_distribution:(summary&&summary.em_distribution)||[]})+
+      '\n\nRECENT VISIT RECORDS ('+lines.length+' most recent of '+allRows.length+' total; one per line; de-identified):\n'+lines.join('\n');
+    if(dataset.length>50000) dataset=dataset.slice(0,50000)+'\n[dataset truncated]';
+    const sys='You are a careful, honest practice-data analyst for a single medical practice. Answer the user\'s question using ONLY the provided practice dataset (per-month aggregates plus de-identified visit-record lines). Show your math and counts explicitly so the clinician can verify every number. If the user asks for a "study", produce a properly structured, DE-IDENTIFIED retrospective summary with sections: Background, Methods (retrospective chart review of n records — state n from the dataset), Results (real numbers computed from the data), and Limitations — and end by noting that IRB/compliance and legal review are required before any publication or external use. NEVER fabricate numbers, patients, dates, or outcomes. If the dataset cannot answer the question, say so plainly and state what additional data would be needed. The dataset is de-identified — never invent or guess patient identities. Plain text only.';
+    const user='QUESTION: '+q+'\n\nPRACTICE DATASET (de-identified):\n'+dataset;
+    const ans=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    out.textContent=ans;
+  }catch(err){
+    out.innerHTML='<div class="mini" style="color:var(--muted)">⚠️ Could not run the study: '+esc(friendlyError(err))+'</div>';
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+}
+
 /* ---------- VIEW SWITCHING ---------- */
 let currentView='patients';
 function showView(v){
@@ -4192,7 +4383,14 @@ function showView(v){
   if(v==='recs') renderRecommendations();
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); }
   if(v==='team') loadTeamPatients();
-  if(v==='analysis'){ if(!_teamRoster.length){ loadTeamPatients(); } else { refreshAnalysisDoctors(); } }
+  if(v==='analysis'){
+    loadAnalysisBaseline();                       // 📈 baseline metrics (any clinician + owner)
+    const _isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
+    const _isAdmin=!!(bkUser&&bkUser.isAdmin);
+    if(_isHead||_isAdmin){                        // per-doctor review stays head/owner-only
+      if(!_teamRoster.length){ loadTeamPatients(); } else { refreshAnalysisDoctors(); }
+    }
+  }
   if(v==='legalreq') loadLegalRequests();
   // Feature/tool cards in any view collapse to a clickable sliver by default
   // (idempotent — safe to call on every view switch; runs even before a note is generated).
@@ -8079,8 +8277,22 @@ function openIntake(){
   const v=document.getElementById('intakeView');
   if(v){ v.style.display='block'; v.scrollTop=0; }
 }
-function exitIntake(){
-  if(!confirm('Staff only — exit patient intake and return to the clinical app?')) return;
+async function exitIntake(){
+  // SECURITY: the iPad is in the patient's hands — exiting back to the clinical
+  // app requires the logged-in clinician's PASSWORD (re-auth), not just a confirm.
+  const pw=prompt('Staff only — enter your account password to exit patient intake:');
+  if(pw===null) return; // cancelled
+  if(!pw){ toast('Password required to exit intake.','err'); return; }
+  try{
+    const r=await fetch(bkBase()+'/api/auth/login',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:(bkUser&&bkUser.email)||'', password:pw})
+    });
+    const d=await r.json().catch(()=>({}));
+    // Correct password = full login OR a 2FA challenge (password stage passed).
+    const ok = (r.ok && (d.token || d.twofa_required));
+    if(!ok){ toast('Incorrect password — staying in patient intake.','err'); return; }
+  }catch(e){ toast('Could not verify password (offline?). Staying in intake.','err'); return; }
   const v=document.getElementById('intakeView'); if(v) v.style.display='none';
   const app=document.getElementById('appScreen'); if(app) app.style.display='block';
   resetIntakeForm(); // never leave a patient's answers on screen
