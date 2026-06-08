@@ -756,6 +756,33 @@
   </div>
 </div>
 
+<!-- ============ FIRST-LOGIN COMPLIANCE SIGNING GATE (MLS additive) ============ -->
+<!-- Full-screen blocking gate shown after auth but BEFORE the app, until the user
+     reads + e-signs the required onboarding agreements. Not dismissible except by
+     signing or logging out. Mirrors the showResetScreen full-screen pattern. -->
+<div id="agreementsGate" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg,#f4f7fb);overflow:auto;padding:24px 16px">
+  <div style="max-width:760px;margin:0 auto">
+    <div class="card">
+      <h2 style="margin-top:0"><span class="ic">🛡️</span> Before you start — required compliance forms</h2>
+      <p class="sub">To keep patient information safe, every MLS user must read and electronically sign the agreements below at first sign-in. Your signed copy is saved and sent to your administrator. You can download your own copy after signing.</p>
+      <div id="agGateSections"></div>
+
+      <div style="border-top:1px solid var(--line);margin-top:18px;padding-top:16px">
+        <div class="field" style="max-width:420px">
+          <label for="agSignName">Type your full legal name to sign</label>
+          <input type="text" id="agSignName" autocomplete="name" placeholder="e.g. Jane A. Smith" oninput="agSyncSignState()">
+        </div>
+        <p class="sub" style="margin:4px 0 0">Date: <strong id="agSignDate"></strong> · Your typed name + a timestamp form your electronic signature.</p>
+        <div id="agGateErr" class="auth-err" style="display:none;margin-top:12px"></div>
+        <div class="row tight" style="margin-top:16px;align-items:center;gap:14px">
+          <button class="btn-primary" id="agSignBtn" disabled onclick="agSubmitSign()">✍️ Sign &amp; continue</button>
+          <a href="#" id="agLogoutLink" onclick="agGateLogout(event)" style="font-size:14px;color:var(--muted)">Log out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MAIN APP ============ -->
 <div id="appScreen" style="display:none">
 <header id="appHeader">
@@ -1651,6 +1678,25 @@
             <th style="padding:8px 6px">IP</th>
           </tr></thead>
           <tbody id="adminAuditBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Admin — Signed compliance forms -->
+    <div class="card">
+      <h2><span class="ic">✍️</span> Admin — Signed compliance forms
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminAgreements()">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Every user's first-login HIPAA / confidentiality / policy acknowledgment. Download a user's signed PDF receipt. No patient data is recorded here.</p>
+      <div id="adminAgreementsEmpty" class="empty" style="margin-top:14px"><span class="big">✍️</span>Press <b>Refresh</b> to load signed forms.</div>
+      <div style="overflow-x:auto">
+        <table id="adminAgreementsTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
+            <th style="padding:8px 6px">Name</th><th style="padding:8px 6px">Role</th>
+            <th style="padding:8px 6px">Email</th><th style="padding:8px 6px">Signed</th>
+            <th style="padding:8px 6px">IP</th><th style="padding:8px 6px">Version</th>
+            <th style="padding:8px 6px">Receipt</th>
+          </tr></thead>
+          <tbody id="adminAgreementsBody"></tbody>
         </table>
       </div>
     </div>
@@ -2955,7 +3001,13 @@ function startSession(email){
   renderDocPrefs();
   attachIdleListeners();
   resetIdle();            // start the inactivity timer for this session
-  if(backendMode() && bkToken()) refreshMe();
+  if(backendMode() && bkToken()){
+    // Refresh identity, THEN enforce the first-login compliance signing gate.
+    // If the user hasn't signed the current agreements, the full-screen gate
+    // covers the app until they sign or log out. A network error never traps
+    // them (checkAgreementsGate returns false → the app stays open).
+    Promise.resolve(refreshMe()).then(()=>checkAgreementsGate()).catch(()=>{});
+  }
   if(!hasAI()){
     setTimeout(()=>toast('Add your OpenAI key in Settings to start generating notes.',''),700);
   }
@@ -5090,7 +5142,7 @@ function showView(v){
   if(v==='visit') renderOutcomes();
   if(v==='orders') renderOrdersView();
   if(v==='recs') renderRecommendations();
-  if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); }
+  if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); loadAdminAgreements(); }
   if(v==='team') loadTeamPatients();
   if(v==='analysis'){
     applyPremiumUI();                             // 🔒 wall/unlock the premium Data Study box
@@ -10706,6 +10758,278 @@ function signLegalReport(){
 
 /* Lazy-load jsPDF from cdnjs once. Resolves with window.jspdf or rejects. */
 let _jspdfLoading=null;
+/* =========================================================
+   FIRST-LOGIN COMPLIANCE SIGNING GATE (MLS additive)
+   On first sign-in every user must read + e-sign the required onboarding
+   agreements before the app opens. Signed forms are stored server-side AND
+   emailed to the owner; the user can download their own PDF receipt. The gate
+   is checked after refreshMe; a network error on the check NEVER locks anyone
+   out of the clinical tool (re-checked next login).
+   ========================================================= */
+const AGREEMENTS_VERSION='2026-06-08'; // MUST match server-side AGREEMENTS_VERSION
+const MLS_AGREEMENTS=[
+  {
+    title:'HIPAA Workforce Training Acknowledgment',
+    intro:'Each workforce member who can log in to MLS or handle patient information must read the 10 points below, then sign.',
+    points:[
+      'Patient information (PHI) may be used only for treatment, payment, and operations — minimum necessary.',
+      'Your login is yours alone. Never share accounts or passwords. Keep 2FA enabled.',
+      'Lock or log off any screen showing patient data when you step away (the 15-minute auto-logoff is a backstop, not a habit).',
+      'Never put patient information in email, text, or regular chat. It stays inside MLS.',
+      'Never enter real PHI into consumer AI tools (ChatGPT, etc.) — only MLS’s covered pipeline.',
+      'Only look up patients you are treating. All access is logged and reviewed.',
+      'Use only practice-approved devices with screen lock + disk encryption; no PHI on USB drives.',
+      'Suspect a breach, lost device, or wrong-patient disclosure? Report to the Security Officer immediately — fast reporting reduces harm and is required.',
+      'Violations carry sanctions up to termination (see Sanction Policy).',
+      'Training repeats annually; ask the Security Officer whenever unsure.'
+    ],
+    closing:'I have read and understood the above and the MLS HIPAA policies, and agree to follow them.'
+  },
+  {
+    title:'Confidentiality & Acceptable-Use Agreement',
+    paragraphs:[
+      'I will keep all patient information (PHI) confidential and will use MLS only for legitimate clinical and operational purposes.',
+      'I will comply with all MLS HIPAA policies and safeguards, and I will not make any unauthorized use or disclosure of patient information.',
+      'Upon separation or when access is no longer required, I will stop using MLS and return or relinquish any access and materials.'
+    ]
+  },
+  {
+    title:'Policy Acknowledgment',
+    paragraphs:[
+      'I have received and will follow the MLS HIPAA Policies and the Notice of Privacy Practices.'
+    ]
+  }
+];
+
+function agTodayStr(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function agGateErr(m){
+  const e=document.getElementById('agGateErr');
+  if(e){ e.textContent=m||''; e.style.display=m?'block':'none'; }
+}
+/* Build the three agreement sections + their "I agree" checkboxes (escaped). */
+function agRenderSections(){
+  const host=document.getElementById('agGateSections');
+  if(!host) return;
+  let html='';
+  MLS_AGREEMENTS.forEach((sec,i)=>{
+    html+='<div style="border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:14px">';
+    html+='<h3 style="margin:0 0 8px">'+esc(sec.title)+'</h3>';
+    if(sec.intro) html+='<p class="sub" style="margin:0 0 8px">'+esc(sec.intro)+'</p>';
+    if(sec.points){
+      html+='<ol style="margin:0;padding-left:20px;line-height:1.5">';
+      sec.points.forEach(p=>{ html+='<li style="margin:4px 0">'+esc(p)+'</li>'; });
+      html+='</ol>';
+    }
+    if(sec.paragraphs){
+      sec.paragraphs.forEach(p=>{ html+='<p style="margin:6px 0;line-height:1.5">'+esc(p)+'</p>'; });
+    }
+    if(sec.closing) html+='<p style="margin:10px 0 0;font-style:italic">'+esc(sec.closing)+'</p>';
+    html+='<label style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer;font-weight:600">'+
+            '<input type="checkbox" class="agCheckbox" data-ag="'+i+'" onchange="agSyncSignState()" style="margin-top:3px">'+
+            '<span>I have read and agree to the '+esc(sec.title)+'.</span></label>';
+    html+='</div>';
+  });
+  host.innerHTML=html;
+}
+/* Enable "Sign & continue" only when ALL boxes are checked AND name is non-empty. */
+function agSyncSignState(){
+  const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
+  const allChecked=boxes.length===MLS_AGREEMENTS.length && boxes.every(b=>b.checked);
+  const name=(document.getElementById('agSignName')||{}).value||'';
+  const btn=document.getElementById('agSignBtn');
+  if(btn) btn.disabled=!(allChecked && name.trim().length>0);
+}
+/* Show the full-screen gate (hide app + auth screens). */
+function showAgreementsGate(){
+  const app=document.getElementById('appScreen'); if(app) app.style.display='none';
+  const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
+  agRenderSections();
+  const dateEl=document.getElementById('agSignDate'); if(dateEl) dateEl.textContent=agTodayStr();
+  const nameEl=document.getElementById('agSignName'); if(nameEl) nameEl.value='';
+  agGateErr('');
+  const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
+  agSyncSignState();
+  if(nameEl) try{ nameEl.focus(); }catch(e){}
+}
+function hideAgreementsGate(){
+  const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='none';
+}
+function agGateLogout(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); hideAgreementsGate(); logout(true); }
+
+/* Gate check, called after refreshMe in the post-login path. If the user has NOT
+   signed the current version, show the gate and return true (caller holds the
+   app). On network error we DO NOT lock the user out (return false → app opens). */
+async function checkAgreementsGate(){
+  if(!backendMode()||!bkToken()) return false;
+  // Lawyers and every authenticated role must sign; no role is exempted.
+  try{
+    const r=await fetch(bkBase()+'/api/agreements/me',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return false; }
+    if(!r.ok) return false; // server error — don't trap the user
+    const d=await r.json();
+    if(d && d.signed===false){ showAgreementsGate(); return true; }
+    return false;
+  }catch(e){
+    return false; // offline / fetch error — let them into the clinical tool
+  }
+}
+
+/* Build a PDF receipt of the signed acknowledgment via jsPDF.
+   Returns the jsPDF doc (caller may .save() it) or null if jsPDF can't load. */
+async function agBuildReceiptPdf(name){
+  let ns; try{ ns=await loadJsPdf(); }catch(e){ return null; }
+  const { jsPDF }=ns;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const pageH=doc.internal.pageSize.getHeight();
+  const margin=54, maxW=pageW-margin*2, lineH=14.5;
+  let y=margin;
+  const email=(bkUser&&bkUser.email)||(session&&session.email)||'';
+  const role=(bkUser&&bkUser.role)||'';
+  const dateStr=agTodayStr();
+  const stamp=new Date().toISOString();
+  const ensure=h=>{ if(y+(h||0)>pageH-margin){ doc.addPage(); y=margin; } };
+  const wrap=(txt,fs,bold)=>{
+    doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(fs);
+    const lines=doc.splitTextToSize(String(txt||''),maxW);
+    for(let i=0;i<lines.length;i++){ ensure(lineH); doc.text(lines[i],margin,y); y+=lineH; }
+  };
+  // Header
+  doc.setFont('helvetica','bold'); doc.setFontSize(15);
+  doc.text('MLS — Signed Compliance Acknowledgment',margin,y); y+=20;
+  doc.setDrawColor(31,122,224); doc.setLineWidth(1.2); doc.line(margin,y,pageW-margin,y); y+=20;
+  wrap('Name: '+name,11,true);
+  wrap('Account: '+email,10,false);
+  wrap('Role: '+(role||'user'),10,false);
+  wrap('Date: '+dateStr,10,false);
+  wrap('Version: '+AGREEMENTS_VERSION,10,false);
+  y+=8;
+  MLS_AGREEMENTS.forEach(sec=>{
+    y+=6; ensure(lineH*2);
+    wrap(sec.title+'  —  Accepted',12,true);
+    if(sec.intro) wrap(sec.intro,10,false);
+    if(sec.points) sec.points.forEach((p,i)=>wrap((i+1)+'. '+p,10,false));
+    if(sec.paragraphs) sec.paragraphs.forEach(p=>wrap(p,10,false));
+    if(sec.closing) wrap(sec.closing,10,false);
+  });
+  y+=14; ensure(lineH*3);
+  doc.setDrawColor(180,180,180); doc.setLineWidth(0.6); doc.line(margin,y,pageW-margin,y); y+=18;
+  wrap('Electronically signed by: '+name,11,true);
+  wrap('Signature timestamp: '+stamp,10,false);
+  return doc;
+}
+
+/* Submit the signing: build the PDF, POST to the server, enter the app on success. */
+async function agSubmitSign(){
+  const name=((document.getElementById('agSignName')||{}).value||'').trim();
+  if(!name){ agGateErr('Type your full legal name to sign.'); return; }
+  const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
+  if(!(boxes.length===MLS_AGREEMENTS.length && boxes.every(b=>b.checked))){
+    agGateErr('Please check all three boxes to confirm you have read and agree.'); return;
+  }
+  agGateErr('');
+  const btn=document.getElementById('agSignBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  let doc=null, receiptB64='';
+  try{
+    try{
+      doc=await agBuildReceiptPdf(name);
+      if(doc){
+        const uri=doc.output('datauristring'); // data:application/pdf;base64,XXXX
+        const comma=uri.indexOf(',');
+        receiptB64=comma!==-1?uri.slice(comma+1):'';
+      }
+    }catch(e){ receiptB64=''; } // PDF is best-effort; still record the signing
+    const body={
+      version:AGREEMENTS_VERSION,
+      name:name,
+      agreements:MLS_AGREEMENTS.map(s=>({title:s.title}))
+    };
+    if(receiptB64) body.receiptPdfBase64=receiptB64;
+    let res,data;
+    try{
+      res=await fetch(bkBase()+'/api/agreements/sign',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+        body:JSON.stringify(body)
+      });
+    }catch(netErr){ agGateErr('Could not reach the MLS server. Please try again.'); return; }
+    try{ data=await res.json(); }catch(e){ data={}; }
+    if(res.status===401){ handle401(); return; }
+    if(!res.ok){ agGateErr((data&&(data.error||data.message))||('Could not save your signature ('+res.status+').')); return; }
+    // Success: mark signed locally, hide the gate, enter the app normally.
+    if(bkUser) bkUser.agreements_signed_version=AGREEMENTS_VERSION;
+    hideAgreementsGate();
+    const em=(bkUser&&bkUser.email)||(session&&session.email)||'';
+    startSession(em);
+    toast('Thanks — your signed forms were saved and sent to your administrator.','ok');
+    // Offer the user their own copy of the receipt.
+    try{ if(doc) doc.save('MLS_Signed_Acknowledgment.pdf'); }catch(e){}
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
+  }
+}
+
+/* ---- Admin: signed compliance forms table ---- */
+async function loadAdminAgreements(){
+  if(!backendMode()) return;
+  const empty=document.getElementById('adminAgreementsEmpty');
+  const table=document.getElementById('adminAgreementsTable');
+  const body=document.getElementById('adminAgreementsBody');
+  try{
+    const d=await adminFetch('/api/admin/agreements');
+    const rows=Array.isArray(d.agreements)?d.agreements:[];
+    if(!rows.length){
+      if(body) body.innerHTML='';
+      if(table) table.style.display='none';
+      if(empty){ empty.style.display=''; empty.innerHTML='<span class="big">✍️</span>No signed forms yet.'; }
+      return;
+    }
+    if(empty) empty.style.display='none';
+    if(table) table.style.display='';
+    if(body){
+      body.innerHTML=rows.map(r=>{
+        let when=r.signed_at||'';
+        try{ when=new Date(r.signed_at).toLocaleString(); }catch(e){}
+        const dl=r.has_receipt
+          ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+Number(r.id)+')">⬇ Download</button>'
+          : '<span style="color:var(--muted)">—</span>';
+        return '<tr style="border-bottom:1px solid var(--line)">'+
+          '<td style="padding:8px 6px">'+esc(r.name_signed||'')+'</td>'+
+          '<td style="padding:8px 6px">'+esc(r.role||'')+'</td>'+
+          '<td style="padding:8px 6px">'+esc(r.email||'')+'</td>'+
+          '<td style="padding:8px 6px">'+esc(when)+'</td>'+
+          '<td style="padding:8px 6px">'+esc(r.ip||'')+'</td>'+
+          '<td style="padding:8px 6px">'+esc(r.version||'')+'</td>'+
+          '<td style="padding:8px 6px">'+dl+'</td>'+
+        '</tr>';
+      }).join('');
+    }
+  }catch(e){
+    if(empty){ empty.style.display=''; empty.innerHTML='<span class="big">⚠️</span>Could not load: '+esc(friendlyError(e)); }
+  }
+}
+async function downloadAgreementReceipt(id){
+  try{
+    const d=await adminFetch('/api/admin/agreements/'+encodeURIComponent(id)+'/receipt');
+    const b64=d&&d.receiptPdfBase64;
+    if(!b64){ toast('No receipt on file.','err'); return; }
+    const bytes=atob(b64);
+    const arr=new Uint8Array(bytes.length);
+    for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+    const blob=new Blob([arr],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='MLS_Signed_Acknowledgment_'+id+'.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){ toast('Could not download receipt: '+friendlyError(e),'err'); }
+}
+
 function loadJsPdf(){
   if(window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf);
   if(_jspdfLoading) return _jspdfLoading;
