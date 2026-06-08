@@ -780,7 +780,7 @@
         <button class="btn-primary" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
       </h2>
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
-      <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">💾 Patient records are stored locally on this device only. Secure cross-device records and sharing come with the hosted / HIPAA version. Use de-identified labels until you're HIPAA-compliant.</div>
+      <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
       <div id="ptEmpty" class="empty"><span class="big">👤</span>No patients yet. Press <b>＋ New patient</b> to add one.</div>
       <div class="pt-list" id="ptList"></div>
     </div>
@@ -1348,8 +1348,7 @@
       <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
     </h2>
     <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
-    <div class="disclaim" id="histStorageNote" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Encrypted and synced to your account — your visit history is available on any device you log into, and is included in backups.</div>
-    <script>/* accurate per-role storage note */ (function(){ try{ var n=document.getElementById('histStorageNote'); if(!n) return; var apply=function(){ try{ if(typeof backendMode==='function' && backendMode() && typeof bkUser!=='undefined' && bkUser && (bkUser.role==='admin'||bkUser.isAdmin)){ n.textContent='💾 Owner accounts are walled off from clinical records, so this history is local to this device only. Doctor accounts sync encrypted to the server across devices.'; } }catch(e){} }; setTimeout(apply,1500); }catch(e){} })();</script>
+    <div class="disclaim" id="histStorageNote" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Encrypted and synced to your MLS account — your visit history follows you to any device you sign into, and is included in automatic backups.</div>
 
     <!-- AI chart summary / timeline -->
     <div class="extra-card" id="chartSumCard" style="display:none">
@@ -1795,7 +1794,7 @@
 
 <footer id="appFooter">
   <span class="noprint">⚕️ <b>Always review AI notes before signing.</b> Don't use with real patient data until you're HIPAA-compliant
-  (a signed BAA with OpenAI, encryption, and patient consent). MLS runs entirely in your browser; accounts and notes are stored locally on this device only.</span>
+  (a signed BAA with OpenAI, encryption, and patient consent). Your notes and patient data are encrypted and stored on your MLS account, synced across the devices you sign into.</span>
 </footer>
 </div>
 
