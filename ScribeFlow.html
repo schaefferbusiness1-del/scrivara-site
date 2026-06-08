@@ -743,6 +743,7 @@
     <span class="who" id="whoLabel"></span>
     <button class="btn-white" id="intakeBtn" style="display:none" onclick="openIntake()">Patient intake</button>
     <button class="btn-white" onclick="openTemplates()">Templates</button>
+    <button class="btn-white" id="customWidgetHdrBtn" onclick="openWidgetBuilder()" title="Describe any card you want — MLS builds a real widget that auto-fills on every Generate">＋ Custom widget</button>
     <button class="btn-white" onclick="openSettings()">Settings</button>
     <button class="btn-white" onclick="logout()">Log out</button>
   </div>
@@ -1171,6 +1172,11 @@
         <p class="sub" style="margin:4px 0 10px">Auto-assembled when surgery is discussed: conservative-care gaps for prior-auth, imaging concordance, surgical options, pre-op workup, and informed-consent talking points. Advisory — based only on what is documented.</p>
         <div class="xbody" id="surgPlanBody" style="white-space:normal"></div>
       </div>
+
+      <!-- MLS additive — CUSTOM WIDGETS (doctor-built cards, rendered by renderCustomWidgets()).
+           Each child is a real .extra-card with id "cw_<widgetId>" so the collapsible
+           system, redesign styling, copy/print, and feature flow treat it natively. -->
+      <div id="customWidgetsHost"></div>
 
       <!-- OPIOID MME CALCULATOR -->
       <div class="extra-card" id="mmeCard">
@@ -1668,9 +1674,12 @@
           <h3>📄 Data study
             <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('anaStudyOut')">📑 Copy</button>
             <button class="sec-copy" onclick="printExtra('Practice Data Study','anaStudyOut')">🖨 Print</button>
+            <button class="sec-copy" id="anaStudyPdfBtn" onclick="downloadStudyPdf()">⬇ PDF report</button>
           </h3>
           <div class="xbody" id="anaStudyOut" style="white-space:pre-wrap"></div>
           <div id="anaStudyCharts" style="margin-top:14px"></div>
+          <div id="anaStudyTables" style="margin-top:14px"></div>
+          <div id="anaStudyModel" class="mini" style="display:none;margin-top:8px;color:var(--muted);font-size:11px"></div>
           <div class="code-disclaim">⚠️ Generated from your practice records — verify before clinical, billing, or legal use; publication or external use requires IRB/compliance review.</div>
         </div>
       </div>
@@ -2037,6 +2046,11 @@
         <p class="note" style="margin:4px 0 0 26px">Formats generated notes to match your imported template — manage templates under 🛠 More tools → Templates.</p>
       </div>
 
+      <!-- MLS additive — Custom widgets pointer (built/managed via the header button) -->
+      <div class="field" style="margin-bottom:4px">
+        <p class="note" style="margin:4px 0 0">🧩 <b>Custom widgets</b> — build your own auto-generated cards with the <b>＋ Custom widget</b> button in the header. They fill on every Generate, just like the built-in cards.</p>
+      </div>
+
       <!-- MLS additive — OPTIONAL Legal feature (off by default) -->
       <div class="field" style="margin-bottom:4px">
         <label for="legalEnabled" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
@@ -2213,6 +2227,73 @@
 
     <div class="row" style="margin-top:14px">
       <button class="btn-ghost" onclick="closeTemplates()" style="flex:1">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- MLS additive — CUSTOM WIDGET BUILDER MODAL.
+     The doctor describes any card; AI designs a SPEC (emoji/title/description/
+     per-visit prompt/format) — never code. Saved widgets render as real
+     extra-cards and auto-fill on every Generate. -->
+<div class="modal-bg" id="widgetBuilderModal">
+  <div class="modal" style="max-width:720px">
+    <button class="modal-x" onclick="closeWidgetBuilder()">×</button>
+    <h3>🧩 Custom widget builder <span style="font-weight:400;font-size:14px;color:var(--muted)">(your own auto-generated cards)</span></h3>
+    <p class="note">Describe any card you want on the visit page. MLS designs it, you approve it, and from then on it appears with the other cards and <b>auto-fills on every Generate</b> — built only from what is documented, with [bracketed placeholders] for anything missing. Up to 10 widgets; they follow your account.</p>
+
+    <div class="field" style="margin-top:4px">
+      <label for="cwDescribe">Describe the widget you want</label>
+      <textarea id="cwDescribe" style="min-height:90px" placeholder="e.g. A DME orders card with payer justifications&#10;e.g. A smoking-cessation counseling summary&#10;e.g. A return-to-work status box with restrictions and dates"></textarea>
+    </div>
+    <div class="row tight" style="margin-top:0">
+      <button class="btn-primary" id="cwDesignBtn" onclick="designCustomWidget()">✨ Design my widget</button>
+    </div>
+
+    <!-- Preview / edit step (hidden until a design exists or an edit starts) -->
+    <div id="cwPreview" style="display:none;margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:14px">
+      <h4 style="margin:0 0 8px" id="cwPreviewHead">Preview — tweak anything, then save</h4>
+      <div class="row tight" style="align-items:flex-end">
+        <div style="flex:0 0 80px">
+          <label for="cwEmoji">Emoji</label>
+          <input type="text" id="cwEmoji" maxlength="4" placeholder="🧩">
+        </div>
+        <div style="flex:1;min-width:200px">
+          <label for="cwTitle">Title *</label>
+          <input type="text" id="cwTitle" maxlength="60" placeholder="e.g. DME orders & justification">
+        </div>
+        <div style="flex:0 0 160px">
+          <label for="cwFormat">Output format</label>
+          <select id="cwFormat" class="sf-select">
+            <option value="text">Plain text</option>
+            <option value="bullets">Bulleted list</option>
+            <option value="table">Simple table</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="cwDescription">Short description <span style="font-weight:400;color:var(--muted)">(shown under the card title)</span></label>
+        <input type="text" id="cwDescription" maxlength="200" placeholder="One line explaining what this card shows">
+      </div>
+      <div class="field">
+        <label for="cwPrompt">Per-visit instruction (the widget's prompt) *</label>
+        <textarea id="cwPrompt" style="min-height:110px;font-size:13px" placeholder="What MLS should extract/produce from each visit's note + transcript"></textarea>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:6px 0 2px">
+        <input type="checkbox" id="cwAuto" checked style="width:17px;height:17px;margin:0">
+        <span>Auto-fill on every Generate</span>
+      </label>
+      <div class="row" style="margin-top:10px">
+        <button class="btn-green" onclick="saveCustomWidget()" style="flex:1">💾 Save widget</button>
+        <button class="btn-ghost" onclick="hideWidgetPreview()">Cancel</button>
+      </div>
+    </div>
+
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <h4 style="margin:0 0 8px">My widgets</h4>
+    <div id="cwList"></div>
+
+    <div class="row" style="margin-top:14px">
+      <button class="btn-ghost" onclick="closeWidgetBuilder()" style="flex:1">Close</button>
     </div>
   </div>
 </div>
@@ -2812,6 +2893,7 @@ function startSession(email){
   if(typeof applyAppearance==='function') applyAppearance(); // per-user appearance (MLS)
   if(typeof applyLegalUI==='function') applyLegalUI();       // optional ⚖️ Legal button (off by default)
   if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide (per-user)
+  try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){} // 🧩 doctor-built custom widget cards (per-user)
   renderDots();
   renderHistory();
   newVisit();
@@ -3671,7 +3753,7 @@ const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolC
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
   'providerCred','npi','clinicAddress','clinicPhone','defaultFormat','noteStyle',
   'featMME','featSurgical','featUR','featIME','featCost','legalEnabled',
-  'useTemplates','templateActive','templateAuto','intakeQuestions','templates'];
+  'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets'];
 function syncPrefsToServer(){
   if(!backendMode()||!bkToken()) return;   // hosted mode only
   try{
@@ -3707,6 +3789,7 @@ async function loadPrefsFromServer(){
       try{ applyAppearance(); }catch(e){}
       try{ if(typeof applyFeatureToggles==='function') applyFeatureToggles(); }catch(e){}
       try{ if(typeof applyLegalUI==='function') applyLegalUI(); }catch(e){}
+      try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){}
     }
   }catch(e){ /* offline — local values stand */ }
 }
@@ -4426,24 +4509,51 @@ function loadChartJs(){
   return _chartJsPromise;
 }
 
-/* Parse a fenced ```charts <JSON> ``` block out of the model's reply. Returns
+/* ---- tolerant fenced-block extraction shared by charts + tables ----
+   Accepts ```charts …``` / ```json charts …``` / an unfenced trailing
+   "CHARTS: [...]" label (same for tables). Returns {rest, raw} where raw is
+   the captured JSON text (or null when no block found). */
+function _extractStudyBlock(text,kind){
+  const t=String(text||'');
+  let re=new RegExp('```[ \\t]*(?:json[ \\t]+)?'+kind+'[ \\t]*\\n?([\\s\\S]*?)```','i');
+  let m=t.match(re);
+  if(m) return {rest:(t.slice(0,m.index)+t.slice(m.index+m[0].length)).trim(), raw:m[1]};
+  re=new RegExp('(?:^|\\n)[ \\t]*'+kind+'[ \\t]*:[ \\t]*(\\[[\\s\\S]*?\\])[ \\t]*$','i');
+  m=t.match(re);
+  if(m) return {rest:t.slice(0,m.index).trim(), raw:m[1]};
+  return {rest:t.trim(), raw:null};
+}
+/* Parse a JSON array out of a possibly slightly-malformed block: strict parse
+   first, then with trailing commas trimmed, then the outermost [...] slice.
+   Always returns an array (empty on failure) — never throws. */
+function _parseStudyJsonArray(raw){
+  if(!raw) return [];
+  const s=String(raw).trim();
+  const tries=[s, s.replace(/,\s*([\]}])/g,'$1')];
+  const a=s.indexOf('['), b=s.lastIndexOf(']');
+  if(a>=0&&b>a) tries.push(s.slice(a,b+1).replace(/,\s*([\]}])/g,'$1'));
+  for(let i=0;i<tries.length;i++){
+    try{ const p=JSON.parse(tries[i]); if(Array.isArray(p)) return p; }catch(e){}
+  }
+  return [];
+}
+/* Parse a ```charts <JSON>``` block out of the model's reply. Returns
    {narrative, charts:[...]}. Tolerant of missing/malformed blocks. */
 function parseStudyCharts(text){
-  let narrative=String(text||''); let charts=[];
-  const m=narrative.match(/```charts\s*([\s\S]*?)```/i);
-  if(m){
-    narrative=(narrative.slice(0,m.index)+narrative.slice(m.index+m[0].length)).trim();
-    try{
-      const parsed=JSON.parse(m[1].trim());
-      if(Array.isArray(parsed)) charts=parsed;
-    }catch(e){ /* malformed chart spec — ignore, keep narrative */ }
-  }
-  return {narrative:narrative.trim(), charts:charts};
+  const ex=_extractStudyBlock(text,'charts');
+  return {narrative:ex.rest, charts:_parseStudyJsonArray(ex.raw)};
+}
+/* Parse a ```tables <JSON>``` block (array of {title,columns,rows}) out of the
+   model's reply. Mirrors parseStudyCharts. Returns {narrative, tables:[...]} */
+function parseStudyTables(text){
+  const ex=_extractStudyBlock(text,'tables');
+  return {narrative:ex.rest, tables:_parseStudyJsonArray(ex.raw)};
 }
 
 /* Render parsed chart specs into #anaStudyCharts via Chart.js. Destroys any
    prior chart instances first. Guards malformed specs; caps at 6 charts. */
 let _studyChartInstances=[];
+let _studyChartSpecs=[]; // kept in sync with the rendered charts (for the PDF export titles)
 async function renderStudyCharts(specs){
   const wrap=document.getElementById('anaStudyCharts');
   if(!wrap) return;
@@ -4452,6 +4562,7 @@ async function renderStudyCharts(specs){
   _studyChartInstances=[];
   wrap.innerHTML='';
   const valid=(specs||[]).filter(s=>s&&typeof s==='object'&&Array.isArray(s.labels)&&Array.isArray(s.datasets)&&s.datasets.length).slice(0,6);
+  _studyChartSpecs=valid;
   if(!valid.length) return;
   let Chart;
   try{ Chart=await loadChartJs(); }
@@ -4489,6 +4600,282 @@ async function renderStudyCharts(specs){
   });
 }
 
+/* On-demand SheetJS loader (cdnjs). Cached promise — script injected at most
+   once. Resolves with window.XLSX; rejects on load failure (CSV fallback). */
+let _sheetJsPromise=null;
+function loadSheetJs(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(_sheetJsPromise) return _sheetJsPromise;
+  _sheetJsPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.async=true;
+    s.onload=()=>{ if(window.XLSX) resolve(window.XLSX); else reject(new Error('SheetJS unavailable')); };
+    s.onerror=()=>{ _sheetJsPromise=null; reject(new Error('Failed to load SheetJS')); };
+    document.head.appendChild(s);
+  });
+  return _sheetJsPromise;
+}
+
+/* ---- study-table helpers (shared by the HTML render, Excel and PDF) ---- */
+function _studyTableAoa(spec){
+  const cols=(spec&&Array.isArray(spec.columns)?spec.columns:[]).map(c=>(c==null?'':String(c)));
+  const rows=(spec&&Array.isArray(spec.rows)?spec.rows:[]).map(r=>{
+    const arr=Array.isArray(r)?r.slice(0,cols.length):[r];
+    while(arr.length<cols.length) arr.push('');
+    return arr;
+  });
+  return [cols].concat(rows);
+}
+function _studySafeName(name,fallback){
+  const s=String(name||'').replace(/[^a-z0-9 _-]+/gi,'').trim().replace(/\s+/g,'_').slice(0,60);
+  return s||fallback;
+}
+/* CSV fallback when SheetJS cannot load — still opens in Excel. */
+function _downloadTableCsv(spec){
+  const aoa=_studyTableAoa(spec);
+  const csv=aoa.map(r=>r.map(c=>{
+    const v=(c==null)?'':String(c);
+    return /[",\n\r]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;
+  }).join(',')).join('\r\n');
+  const blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8'}); // leading BOM so Excel opens UTF-8 correctly
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=_studySafeName(spec&&spec.title,'table')+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); }catch(e){} },4000);
+  toast('Excel engine unavailable — downloaded as CSV instead (opens in Excel).','');
+}
+/* Download ONE study table as a real .xlsx workbook (SheetJS), CSV fallback. */
+async function downloadTableXlsx(spec){
+  if(!spec||!Array.isArray(spec.columns)||!spec.columns.length){ toast('Nothing to export.','err'); return; }
+  try{
+    const XLSX=await loadSheetJs();
+    const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.aoa_to_sheet(_studyTableAoa(spec));
+    XLSX.utils.book_append_sheet(wb,ws,_studySafeName(spec.title,'Table').slice(0,31)||'Table');
+    XLSX.writeFile(wb,_studySafeName(spec.title,'table')+'.xlsx');
+    toast('Excel file downloaded.','ok');
+  }catch(err){
+    try{ _downloadTableCsv(spec); }catch(e){ toast('Could not export the table.','err'); }
+  }
+}
+/* Download ALL study tables as one workbook, one sheet per table. */
+async function downloadAllTablesXlsx(){
+  const specs=_studyTableSpecs||[];
+  if(!specs.length){ toast('No tables to export.','err'); return; }
+  try{
+    const XLSX=await loadSheetJs();
+    const wb=XLSX.utils.book_new();
+    const used={};
+    specs.forEach((spec,i)=>{
+      let name=_studySafeName(spec.title,'Table_'+(i+1)).slice(0,28)||('Table_'+(i+1));
+      if(used[name]) name=name.slice(0,25)+'_'+(i+1);
+      used[name]=1;
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_studyTableAoa(spec)),name);
+    });
+    const dateStr=new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb,'MLS_Study_Tables_'+dateStr+'.xlsx');
+    toast('Excel workbook downloaded ('+specs.length+' sheets).','ok');
+  }catch(err){
+    // fallback: one CSV per table
+    let ok=false;
+    specs.forEach(s=>{ try{ _downloadTableCsv(s); ok=true; }catch(e){} });
+    if(!ok) toast('Could not export the tables.','err');
+  }
+}
+
+/* Render parsed table specs into #anaStudyTables as clean HTML tables, each
+   with a per-table "⬇ Excel" button (+ an "All tables" workbook button when
+   there is more than one). Mirrors renderStudyCharts; never throws. */
+let _studyTableSpecs=[];
+function renderStudyTables(specs){
+  const wrap=document.getElementById('anaStudyTables');
+  if(!wrap) return;
+  wrap.innerHTML='';
+  const valid=(specs||[]).filter(s=>s&&typeof s==='object'&&Array.isArray(s.columns)&&s.columns.length&&Array.isArray(s.rows)).slice(0,8);
+  _studyTableSpecs=valid;
+  if(!valid.length) return;
+  if(valid.length>1){
+    const all=document.createElement('button');
+    all.className='sec-copy';
+    all.textContent='⬇ All tables (Excel)';
+    all.style.cssText='margin-bottom:4px';
+    all.onclick=function(){ downloadAllTablesXlsx(); };
+    wrap.appendChild(all);
+  }
+  valid.forEach(function(spec,i){
+    try{
+      const holder=document.createElement('div');
+      holder.style.cssText='margin:10px 0 18px';
+      const head=document.createElement('div');
+      head.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:6px';
+      const t=document.createElement('div');
+      t.style.cssText='font-weight:600;font-size:13px';
+      t.textContent=String(spec.title||('Table '+(i+1)));
+      head.appendChild(t);
+      const dl=document.createElement('button');
+      dl.className='sec-copy';
+      dl.textContent='⬇ Excel';
+      dl.style.marginLeft='auto';
+      dl.onclick=function(){ downloadTableXlsx(spec); };
+      head.appendChild(dl);
+      holder.appendChild(head);
+      const sc=document.createElement('div');
+      sc.style.cssText='overflow:auto;max-width:100%';
+      const tbl=document.createElement('table');
+      tbl.style.cssText='border-collapse:collapse;font-size:12.5px;min-width:280px;width:100%;max-width:640px';
+      const thead=document.createElement('thead');
+      const hr=document.createElement('tr');
+      spec.columns.forEach(function(c){
+        const th=document.createElement('th');
+        th.textContent=(c==null)?'':String(c);
+        th.style.cssText='text-align:left;padding:6px 12px 6px 0;border-bottom:2px solid var(--line);font-weight:700;white-space:nowrap';
+        hr.appendChild(th);
+      });
+      thead.appendChild(hr); tbl.appendChild(thead);
+      const tbody=document.createElement('tbody');
+      (spec.rows||[]).slice(0,200).forEach(function(row){
+        const tr=document.createElement('tr');
+        const cells=Array.isArray(row)?row.slice(0,spec.columns.length):[row];
+        while(cells.length<spec.columns.length) cells.push('');
+        cells.forEach(function(cell){
+          const td=document.createElement('td');
+          td.textContent=(cell==null)?'':String(cell);
+          td.style.cssText='padding:5px 12px 5px 0;border-bottom:1px solid var(--line)';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      sc.appendChild(tbl); holder.appendChild(sc); wrap.appendChild(holder);
+    }catch(e){ /* skip a single malformed table, keep the rest */ }
+  });
+}
+
+/* Fallback charts built CLIENT-SIDE from the server monthly summary, used when
+   the model returned no charts for a clearly quantitative question — the user
+   always gets a graph. Labelled as auto-generated. */
+function _studyFallbackCharts(summary){
+  const months=(summary&&summary.months)||[];
+  if(!Array.isArray(months)||!months.length) return [];
+  const labels=months.map(function(m){ return String(m.month||''); });
+  const out=[{
+    type:'bar',
+    title:'Visits by month (auto-generated from your monthly summary)',
+    labels:labels,
+    datasets:[{label:'Visits',data:months.map(function(m){ return Number(m.visits)||0; })}]
+  }];
+  if(months.some(function(m){ return Number(m.est_charge_total)>0; })){
+    out.push({
+      type:'line',
+      title:'Estimated charges by month, $ (auto-generated from your monthly summary)',
+      labels:labels,
+      datasets:[{label:'Est. charges ($)',data:months.map(function(m){ return Number(m.est_charge_total)||0; })}]
+    });
+  }
+  return out;
+}
+/* Heuristic: did the question clearly ask for something quantitative/visual? */
+function _studyWantsChart(q){
+  return /\b(chart|graph|plot|visuali[sz]e|trend|over time|month|monthly|quarter|year|volume|how many|how much|count|rate|average|mean|median|compare|comparison|distribution|percent|percentage|number of|total|sum|revenue|charge|charges|injections?|outcomes?|odi|pain)\b/i.test(String(q||''));
+}
+
+/* Export the WHOLE study as a real PDF report: practice header (same settings
+   as legalTextToPdf), the question as title, date + model, the narrative
+   (wrapped + paginated), every rendered chart embedded as a PNG image, then
+   every table as simple ruled rows. Graceful if charts/tables are absent. */
+let _studyLastNarrative='';
+let _studyLastQuestion='';
+let _studyLastModel='';
+async function downloadStudyPdf(){
+  const narrative=(_studyLastNarrative||((document.getElementById('anaStudyOut')||{}).textContent||'')).trim();
+  if(!narrative){ toast('Run a study first.','err'); return; }
+  try{
+    const ns=await loadJsPdf();
+    const { jsPDF }=ns;
+    const doc=new jsPDF({unit:'pt',format:'letter'});
+    const pageW=doc.internal.pageSize.getWidth();
+    const pageH=doc.internal.pageSize.getHeight();
+    const margin=54, maxW=pageW-margin*2;
+    let y=margin;
+    const ensure=function(need){ if(y+need>pageH-margin){ doc.addPage(); y=margin; } };
+    // Practice header — same settings source as legalTextToPdf
+    const practice=(typeof getPracticeName==='function'&&getPracticeName())||'MLS';
+    const addr=(typeof getClinicAddress==='function')?getClinicAddress():'';
+    const phone=(typeof getClinicPhone==='function')?getClinicPhone():'';
+    doc.setFont('helvetica','bold'); doc.setFontSize(15);
+    doc.text(String(practice),margin,y); y+=18;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    const hdrBits=[addr,phone].filter(Boolean);
+    if(hdrBits.length){ doc.text(hdrBits.join('  ·  '),margin,y); y+=14; }
+    doc.setDrawColor(123,92,255); doc.setLineWidth(1.2);
+    doc.line(margin,y,pageW-margin,y); y+=22;
+    // Title (the question) + date/model line
+    doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    const title='Practice Data Study — '+(_studyLastQuestion||'practice data analysis');
+    doc.splitTextToSize(title,maxW).forEach(function(l){ ensure(18); doc.text(l,margin,y); y+=18; });
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    const meta='Generated '+new Date().toLocaleString()+(_studyLastModel?('  ·  Powered by '+_studyLastModel):'');
+    ensure(14); doc.text(meta,margin,y); y+=22;
+    // Narrative — wrapped + paginated
+    doc.setFontSize(10.5);
+    const lineH=14.5;
+    doc.splitTextToSize(String(narrative),maxW).forEach(function(l){ ensure(lineH); doc.text(l,margin,y); y+=lineH; });
+    // Charts — each rendered canvas embedded as a PNG, scaled to page width
+    (_studyChartInstances||[]).forEach(function(inst,i){
+      try{
+        const canvas=inst&&inst.canvas;
+        if(!canvas||!canvas.width||!canvas.height) return;
+        const spec=(_studyChartSpecs&&_studyChartSpecs[i])||{};
+        const img=canvas.toDataURL('image/png');
+        const w=Math.min(maxW,460);
+        const h=Math.max(120,w*(canvas.height/Math.max(1,canvas.width)));
+        ensure(h+(spec.title?34:20));
+        y+=10;
+        if(spec.title){ doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(String(spec.title).slice(0,120),margin,y); y+=14; }
+        doc.addImage(img,'PNG',margin,y,w,h);
+        y+=h+12;
+      }catch(e){ /* skip one bad chart, keep the report */ }
+    });
+    // Tables — simple ruled layout: bold headers, a rule under every row
+    (_studyTableSpecs||[]).forEach(function(spec){
+      try{
+        const cols=(spec.columns||[]).map(function(c){ return (c==null)?'':String(c); });
+        if(!cols.length) return;
+        const colW=maxW/cols.length;
+        const rowH=16;
+        ensure(rowH*3+24);
+        y+=12;
+        if(spec.title){ doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(String(spec.title).slice(0,120),margin,y); y+=16; }
+        const drawRow=function(cells,bold){
+          ensure(rowH+6);
+          doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(9);
+          for(let ci=0;ci<cols.length;ci++){
+            let v=(cells[ci]==null)?'':String(cells[ci]);
+            while(v.length>1&&doc.getTextWidth(v)>colW-8) v=v.slice(0,-1);
+            doc.text(v,margin+ci*colW+2,y);
+          }
+          doc.setDrawColor(190,190,190); doc.setLineWidth(0.5);
+          doc.line(margin,y+4,margin+maxW,y+4);
+          y+=rowH;
+        };
+        drawRow(cols,true);
+        (spec.rows||[]).slice(0,500).forEach(function(r){ drawRow(Array.isArray(r)?r:[r],false); });
+        y+=8;
+      }catch(e){ /* skip one bad table, keep the report */ }
+    });
+    const today=new Date();
+    const dateStr=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+    doc.save('MLS_Study_'+dateStr+'.pdf');
+    toast('Study PDF downloaded.','ok');
+  }catch(err){
+    // Fall back to the browser print dialog so "Save as PDF" still works.
+    toast('Could not load the PDF engine — opening the print dialog (choose "Save as PDF").','');
+    try{ printExtra('Practice Data Study','anaStudyOut'); }catch(e){ toast('Could not export the PDF.','err'); }
+  }
+}
+
 async function runDataStudy(){
   if(!effectivePremium()){ toast('The Data Study engine is a premium add-on. Contact your administrator to enable it.','err'); applyPremiumUI(); return; }
   const qEl=document.getElementById('anaAskQ');
@@ -4503,6 +4890,8 @@ async function runDataStudy(){
   card.style.display='block';
   out.innerHTML='<div class="mini" style="color:var(--muted)"><span class="spin"></span> Gathering your data and analyzing…</div>';
   try{ renderStudyCharts([]); }catch(e){} // clear any prior charts
+  try{ renderStudyTables([]); }catch(e){} // clear any prior tables
+  try{ const mc=document.getElementById('anaStudyModel'); if(mc){ mc.style.display='none'; mc.textContent=''; } }catch(e){}
   card.scrollIntoView({behavior:'smooth',block:'nearest'});
   if(btn) btn.disabled=true;
   try{
@@ -4551,10 +4940,11 @@ async function runDataStudy(){
       JSON.stringify({months:(summary&&summary.months)||[],em_distribution:(summary&&summary.em_distribution)||[]})+
       '\n\nRECENT VISIT RECORDS ('+lines.length+' most recent of '+allRows.length+' total; one per line; de-identified):\n'+lines.join('\n');
     if(dataset.length>50000) dataset=dataset.slice(0,50000)+'\n[dataset truncated]';
-    const sys='You are a careful, honest, PREMIUM practice-data analyst for a single medical practice. Answer the user\'s question using ONLY the provided practice dataset (per-month aggregates plus de-identified visit-record lines). Show your math and counts explicitly so the clinician can verify every number. If the user asks for a "study", produce a properly structured, DE-IDENTIFIED retrospective summary with sections: Background, Methods (retrospective chart review of n records — state n from the dataset), Results (real numbers computed from the data), and Limitations — and end by noting that IRB/compliance and legal review are required before any publication or external use. NEVER fabricate numbers, patients, dates, or outcomes. If the dataset cannot answer the question, say so plainly and state what additional data would be needed. The dataset is de-identified — never invent or guess patient identities.\n\nAFTER your narrative, IF (and only if) the dataset contains enough real numbers to chart, append a fenced code block on its own, EXACTLY in this form:\n```charts\n[{"type":"bar|line|pie|doughnut","title":"...","labels":["..."],"datasets":[{"label":"...","data":[1,2,3]}]}]\n```\nRules for charts: the value is a JSON array of 1-6 chart spec objects. Each spec needs a type, a short title, a labels array, and a datasets array where every dataset has a label and a numeric data array the SAME length as labels. Build every number ONLY from real values in the provided dataset (counts, per-month aggregates, distributions, average pain/ODI, charges) — never fabricate or estimate. Omit the charts block entirely if the data is insufficient. Put the charts block LAST; keep the narrative itself plain text (no other code fences).';
+    const sys='You are a careful, honest, PREMIUM practice-data analyst for a single medical practice. Answer the user\'s question using ONLY the provided practice dataset (per-month aggregates plus de-identified visit-record lines). Show your math and counts explicitly so the clinician can verify every number. If the user asks for a "study", produce a properly structured, DE-IDENTIFIED retrospective summary with sections: Background, Methods (retrospective chart review of n records — state n from the dataset), Results (real numbers computed from the data), and Limitations — and end by noting that IRB/compliance and legal review are required before any publication or external use. NEVER fabricate numbers, patients, dates, or outcomes. If the dataset cannot answer the question, say so plainly and state what additional data would be needed. The dataset is de-identified — never invent or guess patient identities.\n\nAFTER your narrative, append OPTIONAL fenced code blocks (each on its own, at the END of the reply, charts before tables), EXACTLY in these forms:\n```charts\n[{"type":"bar|line|pie|doughnut","title":"...","labels":["..."],"datasets":[{"label":"...","data":[1,2,3]}]}]\n```\n```tables\n[{"title":"...","columns":["Month","Visits"],"rows":[["2026-01",12],["2026-02",15]]}]\n```\nRules: each block\'s value is a strict JSON array (no comments, no trailing commas) — 1-6 chart specs, 1-4 table specs. Every chart spec needs a type, a short title, a labels array, and a datasets array where every dataset has a label and a numeric data array the SAME length as labels. Every table spec needs a title, a columns array, and rows as arrays the SAME length as columns. Build every number ONLY from real values in the provided dataset (counts, per-month aggregates, distributions, average pain/ODI, charges) — NEVER fabricate, estimate, or extrapolate. Whenever the question is quantitative (counts, trends, volumes, charges, outcomes, distributions, comparisons), you SHOULD include at least one chart AND one table built from the real data; omit a block only if the data is genuinely insufficient for it. Keep the narrative itself plain text (no other code fences).';
     const user='QUESTION: '+q+'\n\nPRACTICE DATASET (de-identified):\n'+dataset;
     // PREMIUM path: post to the gated /api/study (stronger model) directly.
     let raw='';
+    let studyModel='';
     {
       const r=await fetch(bkBase()+'/api/study',{
         method:'POST',
@@ -4584,11 +4974,29 @@ async function runDataStudy(){
       }
       const d=await r.json();
       raw=String((d&&d.content)||'').trim();
+      studyModel=String((d&&d.model)||'').trim();
     }
-    const parsed=parseStudyCharts(raw);
-    const ans=parsed.narrative.replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    // Tolerant parse: pull the charts block, then the tables block, out of the reply.
+    const pc=parseStudyCharts(raw);
+    const pt=parseStudyTables(pc.narrative);
+    const ans=pt.narrative.replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     out.textContent=ans;
-    if(parsed.charts&&parsed.charts.length){ try{ await renderStudyCharts(parsed.charts); }catch(e){} }
+    // Remember for the PDF export.
+    _studyLastNarrative=ans; _studyLastQuestion=q; _studyLastModel=studyModel;
+    // Charts: model-provided, else an auto-generated fallback from the monthly
+    // summary when the question clearly asked for something quantitative —
+    // the user ALWAYS gets a graph for quantitative asks.
+    let chartSpecs=(pc.charts&&pc.charts.length)?pc.charts:[];
+    if(!chartSpecs.length&&_studyWantsChart(q)){
+      try{ chartSpecs=_studyFallbackCharts(summary); }catch(e){ chartSpecs=[]; }
+    }
+    if(chartSpecs.length){ try{ await renderStudyCharts(chartSpecs); }catch(e){} }
+    try{ renderStudyTables(pt.tables||[]); }catch(e){}
+    // Subtle "Powered by <model>" caption from the /api/study response.
+    try{
+      const mc=document.getElementById('anaStudyModel');
+      if(mc){ if(studyModel){ mc.textContent='Powered by '+studyModel; mc.style.display=''; } else { mc.style.display='none'; mc.textContent=''; } }
+    }catch(e){}
   }catch(err){
     out.innerHTML='<div class="mini" style="color:var(--muted)">⚠️ Could not run the study: '+esc(friendlyError(err))+'</div>';
   }finally{
@@ -6288,6 +6696,11 @@ function autoPopulateExtras(result){
 
   // --- 🧩 Re-apply feature toggles so auto-population never re-reveals a card the user switched off ---
   try{ applyFeatureToggles(); }catch(e){ /* never block the note */ }
+
+  // --- 🧩 Custom widgets (doctor-built cards) — fill each auto widget for this
+  //     visit. Async fire-and-forget with its own per-widget error handling so
+  //     it can NEVER block or break the main note flow. ---
+  try{ autoPopulateCustomWidgets(); }catch(e){ /* never block the note */ }
 }
 
 /* =========================================================
@@ -10891,6 +11304,363 @@ GUARDRAILS: You may reference evidence-based utilization frameworks generally (e
 }
 
 /* =========================================================
+   MLS additive — 🧩 CUSTOM WIDGET BUILDER
+   The doctor DESCRIBES any card ("a DME orders card with payer
+   justifications") → AI designs a SPEC (emoji/title/description/
+   per-visit prompt/format) → doctor reviews/tweaks → saved widgets
+   render as REAL extra-cards (collapsible slivers with Copy/Print)
+   and AUTO-FILL on every Generate like the built-in cards.
+
+   SAFE BY CONSTRUCTION: a widget is a saved TEXT PROMPT, never
+   AI-generated code. Model output is rendered exclusively through
+   textContent / DOM createElement — no eval, no Function, no
+   innerHTML of raw model text. Specs live under uns('customWidgets')
+   ('customWidgets' is in PREF_SYNC_KEYS so they follow the account).
+   Spec shape: {id, emoji, title, description, prompt,
+                format:'text'|'bullets'|'table', auto:true|false, created}
+   ========================================================= */
+const CW_MAX_WIDGETS=10;
+let _cwEditingId=null;          // widget id being edited in the builder (null = creating new)
+const _cwLatest={};             // widgetId -> latest generated text (this session)
+
+/* ---- persistence (per-user via uns(); synced via PREF_SYNC_KEYS) ---- */
+function cwSafeId(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,24); }
+function cwSanitizeSpec(w){
+  if(!w || typeof w!=='object') return null;
+  const id=cwSafeId(w.id);
+  const title=String(w.title||'').trim().slice(0,60);
+  const prompt=String(w.prompt||'').trim().slice(0,2000);
+  if(!id || !title || !prompt) return null;
+  const format=(w.format==='bullets'||w.format==='table')?w.format:'text';
+  return {
+    id:id,
+    emoji:String(w.emoji||'🧩').trim().slice(0,4)||'🧩',
+    title:title,
+    description:String(w.description||'').trim().slice(0,200),
+    prompt:prompt,
+    format:format,
+    auto:w.auto!==false,
+    created:Number(w.created)||Date.now()
+  };
+}
+function getCustomWidgets(){
+  try{
+    const raw=localStorage.getItem(uns('customWidgets'));
+    if(!raw) return [];
+    const arr=JSON.parse(raw);
+    if(!Array.isArray(arr)) return [];
+    return arr.map(cwSanitizeSpec).filter(Boolean).slice(0,CW_MAX_WIDGETS);
+  }catch(e){ return []; }
+}
+function setCustomWidgets(arr){
+  try{ localStorage.setItem(uns('customWidgets'),JSON.stringify((arr||[]).map(cwSanitizeSpec).filter(Boolean).slice(0,CW_MAX_WIDGETS))); }catch(e){}
+  try{ syncPrefsToServer(); }catch(e){ /* offline — next save retries */ }
+}
+
+/* ---- builder modal ---- */
+function openWidgetBuilder(){
+  hideWidgetPreview();
+  renderWidgetBuilderList();
+  document.getElementById('widgetBuilderModal').classList.add('show');
+}
+function closeWidgetBuilder(){
+  document.getElementById('widgetBuilderModal').classList.remove('show');
+  hideWidgetPreview();
+}
+function hideWidgetPreview(){
+  _cwEditingId=null;
+  const p=document.getElementById('cwPreview'); if(p) p.style.display='none';
+  const h=document.getElementById('cwPreviewHead'); if(h) h.textContent='Preview — tweak anything, then save';
+}
+function showWidgetPreview(spec){
+  document.getElementById('cwEmoji').value=spec.emoji||'🧩';
+  document.getElementById('cwTitle').value=spec.title||'';
+  document.getElementById('cwDescription').value=spec.description||'';
+  document.getElementById('cwPrompt').value=spec.prompt||'';
+  document.getElementById('cwFormat').value=(spec.format==='bullets'||spec.format==='table')?spec.format:'text';
+  document.getElementById('cwAuto').checked=spec.auto!==false;
+  document.getElementById('cwPreview').style.display='block';
+}
+
+/* "✨ Design my widget" — AI turns the doctor's description into a SPEC
+   (JSON only — never code). Parsed tolerantly; the doctor reviews/edits
+   every field before anything is saved. */
+async function designCustomWidget(){
+  const descEl=document.getElementById('cwDescribe');
+  const desc=(descEl&&descEl.value||'').trim();
+  if(!desc){ toast('Describe the widget you want first.','err'); return; }
+  if(!hasAI()){ toast('Add your OpenAI key (Settings) to design widgets.','err'); return; }
+  const btn=document.getElementById('cwDesignBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Designing…';
+  try{
+    const sys=`You design a CUSTOM CLINICAL WIDGET SPEC for a medical-scribe app used by physicians. The doctor describes a card they want on the visit page; you return the spec that powers it. Return ONLY valid JSON (no markdown fences, no commentary) with EXACTLY this shape:
+{"emoji":"<one fitting emoji>","title":"<short card title, max 6 words>","description":"<one plain sentence shown under the title explaining what the card shows>","prompt":"<the per-visit instruction>","format":"text"|"bullets"|"table"}
+
+The "prompt" is the instruction executed on EVERY visit against the clinical note + raw transcript + patient background to produce this card's content. Write it as a clear, specific task (what to extract or draft, how to organize it). It MUST bake in these guardrails verbatim in spirit: use ONLY facts actually documented in the note/transcript/background; NEVER fabricate or infer undocumented information; use [bracketed placeholders] for anything missing; the output is an advisory draft the provider reviews. Choose "bullets" for list-like content, "table" only when rows/columns genuinely fit (the table is simple pipe-delimited), otherwise "text". The prompt must describe CONTENT only — never code, scripts, or formatting markup.`;
+    const raw=(await aiCallRaw(sys,'The doctor\'s description of the widget they want:\n\n'+desc.slice(0,2000),getKey(),{freeform:true})).trim();
+    // tolerant parse: strip fences, then take the outermost {...}
+    let s=raw.replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const a=s.indexOf('{'), b=s.lastIndexOf('}');
+    if(a<0||b<=a) throw new Error('The designer returned an unexpected format — try rephrasing your description.');
+    const spec=JSON.parse(s.slice(a,b+1));
+    if(!String(spec.title||'').trim()||!String(spec.prompt||'').trim())
+      throw new Error('The designer returned an incomplete spec — try rephrasing your description.');
+    _cwEditingId=null;
+    showWidgetPreview({emoji:spec.emoji,title:spec.title,description:spec.description,prompt:spec.prompt,format:spec.format,auto:true});
+    document.getElementById('cwPreviewHead').textContent='Preview — tweak anything, then save';
+    toast('Widget designed — review and tweak it, then save.','ok');
+  }catch(err){ toast(friendlyError(err),'err'); }
+  finally{ btn.disabled=false; btn.innerHTML='✨ Design my widget'; }
+}
+
+function saveCustomWidget(){
+  const title=document.getElementById('cwTitle').value.trim();
+  const prompt=document.getElementById('cwPrompt').value.trim();
+  if(!title){ toast('Give the widget a title.','err'); return; }
+  if(!prompt){ toast('The widget needs a per-visit instruction (prompt).','err'); return; }
+  const fields={
+    emoji:document.getElementById('cwEmoji').value.trim()||'🧩',
+    title:title,
+    description:document.getElementById('cwDescription').value.trim(),
+    prompt:prompt,
+    format:document.getElementById('cwFormat').value,
+    auto:document.getElementById('cwAuto').checked
+  };
+  const list=getCustomWidgets();
+  if(_cwEditingId){
+    const i=list.findIndex(w=>w.id===_cwEditingId);
+    if(i<0){ toast('That widget no longer exists.','err'); hideWidgetPreview(); renderWidgetBuilderList(); return; }
+    list[i]=cwSanitizeSpec(Object.assign({},list[i],fields))||list[i];
+    setCustomWidgets(list);
+    toast('Widget updated.','ok');
+  } else {
+    if(list.length>=CW_MAX_WIDGETS){ toast('Widget limit reached ('+CW_MAX_WIDGETS+') — delete one first.','err'); return; }
+    fields.id='w'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+    fields.created=Date.now();
+    const spec=cwSanitizeSpec(fields);
+    if(!spec){ toast('Could not save that widget.','err'); return; }
+    list.push(spec);
+    setCustomWidgets(list);
+    toast('Widget saved — it now appears with the visit cards and fills on every Generate.','ok');
+  }
+  hideWidgetPreview();
+  renderWidgetBuilderList();
+  renderCustomWidgets();
+}
+
+function editCustomWidget(id){
+  const w=getCustomWidgets().find(x=>x.id===id);
+  if(!w){ toast('That widget no longer exists.','err'); renderWidgetBuilderList(); return; }
+  _cwEditingId=id;
+  showWidgetPreview(w);
+  document.getElementById('cwPreviewHead').textContent='Editing "'+w.title+'" — tweak, then save';
+}
+function toggleCustomWidgetAuto(id,on){
+  const list=getCustomWidgets();
+  const w=list.find(x=>x.id===id);
+  if(!w) return;
+  w.auto=!!on;
+  setCustomWidgets(list);
+  toast(w.auto?'"'+w.title+'" will auto-fill on every Generate.':'"'+w.title+'" set to manual (use its ↻ button).','');
+}
+function deleteCustomWidget(id){
+  const list=getCustomWidgets();
+  const w=list.find(x=>x.id===id);
+  if(!w) return;
+  if(!confirm('Delete the widget "'+w.title+'"? This removes the card and its saved prompt.')) return;
+  delete _cwLatest[id];
+  setCustomWidgets(list.filter(x=>x.id!==id));
+  renderWidgetBuilderList();
+  renderCustomWidgets();
+  toast('Widget deleted.','');
+}
+
+/* "My widgets" list inside the builder modal. All user text esc()'d. */
+function renderWidgetBuilderList(){
+  const box=document.getElementById('cwList');
+  if(!box) return;
+  const list=getCustomWidgets();
+  if(!list.length){
+    box.innerHTML='<p class="note" style="margin:0">No widgets yet — describe one above and MLS will design it.</p>';
+    return;
+  }
+  box.innerHTML=list.map(w=>
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:8px">'
+    +'<span style="font-size:18px">'+esc(w.emoji)+'</span>'
+    +'<div style="flex:1;min-width:160px"><b style="font-size:14px">'+esc(w.title)+'</b>'
+    +(w.description?'<div style="font-size:12px;color:var(--muted)">'+esc(w.description)+'</div>':'')
+    +'<div style="font-size:11px;color:var(--muted)">format: '+esc(w.format)+'</div></div>'
+    +'<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;margin:0">'
+    +'<input type="checkbox" '+(w.auto?'checked':'')+' onchange="toggleCustomWidgetAuto(\''+w.id+'\',this.checked)" style="width:15px;height:15px;margin:0">Auto</label>'
+    +'<button class="sec-copy" onclick="editCustomWidget(\''+w.id+'\')">✏️ Edit</button>'
+    +'<button class="sec-copy" onclick="deleteCustomWidget(\''+w.id+'\')">🗑 Delete</button>'
+    +'</div>'
+  ).join('');
+}
+
+/* ---- render the REAL cards (same structure/classes as built-in extras) ---- */
+function renderCustomWidgets(){
+  const host=document.getElementById('customWidgetsHost');
+  if(!host) return;
+  const list=getCustomWidgets();
+  const keep={}; list.forEach(w=>{ keep['cw_'+w.id]=true; });
+  // remove cards for deleted widgets (and prune their collapsible registration)
+  Array.prototype.slice.call(host.children).forEach(el=>{ if(!keep[el.id]) el.remove(); });
+  for(let i=COLLAPSIBLE_EXTRA_IDS.length-1;i>=0;i--){
+    const cid=COLLAPSIBLE_EXTRA_IDS[i];
+    if(/^cw_/.test(cid) && !keep[cid]) COLLAPSIBLE_EXTRA_IDS.splice(i,1);
+  }
+  list.forEach(w=>{
+    const cid='cw_'+w.id;
+    let card=document.getElementById(cid);
+    const wasOpen=!!(card&&card.classList.contains('open'));
+    if(card) card.remove();                 // rebuild fresh (collapsible wrap is one-way)
+    card=document.createElement('div');
+    card.className='extra-card';
+    card.id=cid;
+    // Header + static skeleton: only esc()'d user text, fixed attributes, and
+    // our own [a-z0-9] widget id — never raw model/user HTML.
+    card.innerHTML=
+      '<h3>'+esc(w.emoji)+' '+esc(w.title)+' <span style="font-weight:400;font-size:13px;color:var(--muted)">(custom)</span>'
+      +'<button class="sec-copy" style="margin-left:auto" id="cwRefresh_'+w.id+'" title="Generate this widget for the current visit" onclick="event.stopPropagation();refreshCustomWidget(\''+w.id+'\')">↻ Refresh</button>'
+      +'<button class="sec-copy" onclick="event.stopPropagation();copyExtra(\'cwText_'+w.id+'\')">📑 Copy</button>'
+      +'<button class="sec-copy" onclick="event.stopPropagation();printCustomWidget(\''+w.id+'\')">🖨 Print</button>'
+      +'</h3>'
+      +(w.description?'<p class="sub" style="margin:4px 0 10px">'+esc(w.description)+'</p>':'')
+      +'<div class="xbody" id="cwBody_'+w.id+'" style="white-space:normal"></div>'
+      +'<pre id="cwText_'+w.id+'" style="display:none"></pre>';
+    host.appendChild(card);
+    // restore this session's latest content (or the empty hint)
+    if(_cwLatest[w.id]) cwRenderOutput(w,_cwLatest[w.id]);
+    else {
+      const b=document.getElementById('cwBody_'+w.id);
+      b.textContent=w.auto?'Fills automatically when you generate a note.':'Manual widget — use ↻ Refresh after generating a note.';
+      b.style.color='var(--muted)';
+    }
+    // register in the collapsible system → sliver by default (open state preserved on re-render)
+    if(COLLAPSIBLE_EXTRA_IDS.indexOf(cid)<0) COLLAPSIBLE_EXTRA_IDS.push(cid);
+    makeCardCollapsible(cid);
+    if(wasOpen){
+      card.classList.add('open');
+      const ct=card.querySelector('.collapse-caret'); if(ct) ct.textContent='▾';
+    }
+  });
+}
+
+/* ---- SAFE renderers: model text → DOM via textContent only ---- */
+function cwRenderOutput(w,raw){
+  const body=document.getElementById('cwBody_'+w.id);
+  const mirror=document.getElementById('cwText_'+w.id);
+  if(!body) return;
+  body.style.color='';
+  body.innerHTML='';                       // clear, then build with createElement/textContent
+  const text=String(raw||'').trim();
+  if(mirror) mirror.textContent=text;      // plain-text mirror for Copy / Print
+  if(!text){ body.textContent='Nothing documented this visit for this widget.'; body.style.color='var(--muted)'; return; }
+  if(w.format==='bullets'){
+    const items=text.split('\n').map(l=>l.replace(/^\s*(?:[-•*]|\d+[.)])\s*/,'').trim()).filter(Boolean);
+    if(!items.length){ body.textContent=text; return; }
+    const ul=document.createElement('ul');
+    ul.style.cssText='margin:0;padding-left:20px';
+    items.forEach(t=>{ const li=document.createElement('li'); li.style.margin='3px 0'; li.textContent=t; ul.appendChild(li); });
+    body.appendChild(ul);
+  } else if(w.format==='table'){
+    const rows=text.split('\n').map(l=>l.trim()).filter(l=>l && !/^[\s|:\-–—]+$/.test(l))
+      .map(l=>l.replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim()));
+    if(rows.length<1 || rows[0].length<2){ const pre=document.createElement('div'); pre.style.whiteSpace='pre-wrap'; pre.textContent=text; body.appendChild(pre); return; }
+    const tbl=document.createElement('table');
+    tbl.style.cssText='width:100%;border-collapse:collapse;font-size:13.5px';
+    rows.forEach((cells,ri)=>{
+      const tr=document.createElement('tr');
+      cells.forEach(c=>{
+        const td=document.createElement(ri===0?'th':'td');
+        td.style.cssText='padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top'+(ri===0?';font-weight:700':'');
+        td.textContent=c;
+        tr.appendChild(td);
+      });
+      tbl.appendChild(tr);
+    });
+    body.appendChild(tbl);
+  } else {
+    const pre=document.createElement('div');
+    pre.style.whiteSpace='pre-wrap';
+    pre.textContent=text;
+    body.appendChild(pre);
+  }
+}
+function printCustomWidget(id){
+  const w=getCustomWidgets().find(x=>x.id===id);
+  if(!w) return;
+  printExtra(w.emoji+' '+w.title,'cwText_'+id);
+}
+
+/* ---- per-visit generation (auto on Generate + manual ↻) ---- */
+function cwFormatSpec(format){
+  if(format==='bullets') return 'a list of concise lines, each starting with "- " (a hyphen bullet). No other text.';
+  if(format==='table')   return 'a simple pipe-delimited table: the first line is the column headers separated by " | ", then one row per line with cells separated by " | ". No other text.';
+  return 'clean plain professional text (no markdown, no asterisks).';
+}
+function cwBuildUserPayload(){
+  // mirrors how generateIME builds its payload: note + transcript + chart background
+  const tr=((document.getElementById('transcript')||{}).value||'').trim();
+  let pctx=''; try{ pctx=buildPatientContext(); }catch(e){}
+  return 'CLINICAL NOTE:\n'+currentNoteText()
+    +(tr?('\n\nRAW TRANSCRIPT (for additional context):\n'+tr):'')
+    +(pctx?('\n\nPATIENT BACKGROUND (chart history — context only, do not invent new findings):\n'+pctx):'');
+}
+async function runCustomWidget(id,opts){
+  opts=opts||{};
+  const w=getCustomWidgets().find(x=>x.id===id);
+  if(!w) return;
+  const body=document.getElementById('cwBody_'+id);
+  if(!body) return;
+  if(!currentNoteText().trim()){
+    if(opts.manual) toast('Generate a note first.','err');
+    return;
+  }
+  if(!hasAI()){
+    if(opts.manual) toast('Add your OpenAI key (Settings) to fill this widget.','err');
+    return;
+  }
+  const rbtn=document.getElementById('cwRefresh_'+id);
+  if(rbtn) rbtn.disabled=true;
+  body.style.color='var(--muted)';
+  body.innerHTML='<span class="spin"></span> Generating…';   // static markup only
+  try{
+    const sys='You fill a custom clinical widget titled "'+w.title+'" on a physician\'s visit page. TASK: '+w.prompt
+      +'\n\nCRITICAL GUARDRAILS: Use ONLY what is documented in the clinical note, raw transcript, and patient background provided. NEVER fabricate, infer, or embellish undocumented information. Use [bracketed placeholders] for anything missing. This is an advisory DRAFT the provider reviews — never a directive. If the visit contains nothing relevant to this widget, output exactly: Nothing documented this visit for this widget.'
+      +'\n\nOUTPUT FORMAT: '+cwFormatSpec(w.format)+' Output the content ONLY — no preamble, no headings about the task, no markdown fences.';
+    const raw=(await aiCallRaw(sys,cwBuildUserPayload(),getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    _cwLatest[id]=raw;
+    cwRenderOutput(w,raw);
+  }catch(err){
+    body.innerHTML='';
+    body.textContent='Couldn\'t generate this widget for this visit.';
+    body.style.color='var(--muted)';
+    if(opts.manual) toast(friendlyError(err),'err');
+  }finally{
+    if(rbtn) rbtn.disabled=false;
+  }
+}
+function refreshCustomWidget(id){ runCustomWidget(id,{manual:true}); }
+
+/* Called at the END of autoPopulateExtras(result) after every successful
+   Generate. Sequential (one widget at a time) and fully guarded — an error
+   in any widget shows a muted note in that card and never blocks anything.
+   Cards stay as collapsed slivers; nothing is auto-expanded. */
+async function autoPopulateCustomWidgets(){
+  try{
+    if(!hasAI()) return;
+    const list=getCustomWidgets().filter(w=>w.auto);
+    if(!list.length) return;
+    renderCustomWidgets();                 // make sure every card exists & is registered
+    for(const w of list){
+      try{ await runCustomWidget(w.id,{manual:false}); }catch(e){ /* per-widget — keep going */ }
+    }
+  }catch(e){ /* never block the note flow */ }
+}
+
+/* =========================================================
    INIT
    ========================================================= */
 window.addEventListener('DOMContentLoaded',()=>{
@@ -10906,7 +11676,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   // backdrop closes modals
   document.getElementById('settingsModal').addEventListener('click',e=>{ if(e.target.id==='settingsModal') closeSettings(); });
   document.getElementById('viewModal').addEventListener('click',e=>{ if(e.target.id==='viewModal') closeView(); });
-  [['patientModal',closePatientModal],['docModal',closeDocModal],['shareModal',closeShareModal],['teamPtModal',closeTeamPt],['legalModal',closeLegal]].forEach(([id,fn])=>{
+  [['patientModal',closePatientModal],['docModal',closeDocModal],['shareModal',closeShareModal],['teamPtModal',closeTeamPt],['legalModal',closeLegal],['widgetBuilderModal',closeWidgetBuilder]].forEach(([id,fn])=>{
     const m=document.getElementById(id); if(m) m.addEventListener('click',e=>{ if(e.target.id===id) fn(); });
   });
   const ptNameEl=document.getElementById('ptName');
