@@ -44,6 +44,31 @@
   .extra-card .xbody, .rf-line, .sp-conc, .codechip{ background:var(--surface) }
   .empty{ background:var(--soft2) }
   body.theme-dark .badge.draft{filter:brightness(.85)}
+  /* ===== MLS additive — CUSTOM WIDGET v2 blocks (all colors via theme variables,
+     so light & dark mode both work with zero extra rules) ===== */
+  .cw-blk{margin:0 0 13px}
+  .cw-blk:last-child{margin-bottom:0}
+  .cw-blk-label{font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+  .cw-fields{display:grid;grid-template-columns:minmax(110px,max-content) 1fr;gap:4px 16px;font-size:13.5px}
+  .cw-fields .k{color:var(--muted);font-weight:600}
+  .cw-badge{display:inline-block;padding:3px 13px;border-radius:999px;font-size:13px;font-weight:700;border:1px solid transparent}
+  .cw-badge.green{background:rgba(34,197,94,.13);color:var(--green);border-color:rgba(34,197,94,.35)}
+  .cw-badge.yellow{background:rgba(240,173,60,.14);color:var(--amber);border-color:rgba(240,173,60,.4)}
+  .cw-badge.red{background:rgba(224,96,107,.13);color:var(--red);border-color:rgba(224,96,107,.35)}
+  .cw-badge.gray{background:var(--soft);color:var(--muted);border-color:var(--line)}
+  .cw-score{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .cw-score .num{font-size:27px;font-weight:800;line-height:1}
+  .cw-score .den{font-size:13px;color:var(--muted);font-weight:600}
+  .cw-gauge{flex:1;min-width:120px;max-width:300px;height:10px;background:var(--line);border-radius:999px;overflow:hidden}
+  .cw-gauge>span{display:block;height:100%;border-radius:999px;transition:width .3s}
+  .cw-gauge>span.g-green{background:var(--green)}
+  .cw-gauge>span.g-amber{background:var(--amber)}
+  .cw-gauge>span.g-red{background:var(--red)}
+  .cw-check{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:4px 0;cursor:pointer}
+  .cw-check input{width:16px;height:16px;margin:0;flex:0 0 auto}
+  .cw-sum{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--field-bg)}
+  .cw-sum-row{display:flex;gap:8px;align-items:baseline;font-size:12.5px;padding:3px 0}
+  .cw-sum-tag{flex:0 0 auto;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--brand);background:var(--soft);border-radius:6px;padding:1px 7px}
   /* ===== QoL: TEXT SIZE (MLS) ===== */
   body.text-small{ font-size:15px }
   body.text-large{ font-size:19px }
@@ -2257,7 +2282,7 @@
   <div class="modal" style="max-width:720px">
     <button class="modal-x" onclick="closeWidgetBuilder()">×</button>
     <h3>🧩 Custom widget builder <span style="font-weight:400;font-size:14px;color:var(--muted)">(your own auto-generated cards)</span></h3>
-    <p class="note">Describe any card you want on the visit page. MLS designs it, you approve it, and from then on it appears with the other cards and <b>auto-fills on every Generate</b> — built only from what is documented, with [bracketed placeholders] for anything missing. Up to 10 widgets; they follow your account.</p>
+    <p class="note">Describe any card you want on the visit page. MLS can design <b>dropdowns, checklists, status badges, scores and mini-charts</b> into your widget — you approve the design, and from then on it appears with the other cards and <b>auto-fills on every Generate</b> — built only from what is documented, with [bracketed placeholders] for anything missing. Up to 10 widgets; they follow your account.</p>
 
     <div class="field" style="margin-top:4px">
       <label for="cwDescribe">Describe the widget you want</label>
@@ -2279,7 +2304,7 @@
           <label for="cwTitle">Title *</label>
           <input type="text" id="cwTitle" maxlength="60" placeholder="e.g. DME orders & justification">
         </div>
-        <div style="flex:0 0 160px">
+        <div style="flex:0 0 160px" id="cwFormatWrap">
           <label for="cwFormat">Output format</label>
           <select id="cwFormat" class="sf-select">
             <option value="text">Plain text</option>
@@ -2287,6 +2312,14 @@
             <option value="table">Simple table</option>
           </select>
         </div>
+      </div>
+      <!-- v2: designed block layout (read-only summary; "Design my widget" again to change it) -->
+      <div class="field" id="cwLayoutWrap" style="display:none">
+        <label>Layout — designed by MLS
+          <button type="button" class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="cwRemoveLayout()">Use simple format instead</button>
+        </label>
+        <div id="cwLayoutSummary" class="cw-sum"></div>
+        <p class="note" style="margin:6px 0 0">To change the blocks, adjust your description above and click “✨ Design my widget” again.</p>
       </div>
       <div class="field">
         <label for="cwDescription">Short description <span style="font-weight:400;color:var(--muted)">(shown under the card title)</span></label>
@@ -11329,20 +11362,177 @@ GUARDRAILS: You may reference evidence-based utilization frameworks generally (e
    render as REAL extra-cards (collapsible slivers with Copy/Print)
    and AUTO-FILL on every Generate like the built-in cards.
 
-   SAFE BY CONSTRUCTION: a widget is a saved TEXT PROMPT, never
-   AI-generated code. Model output is rendered exclusively through
-   textContent / DOM createElement — no eval, no Function, no
-   innerHTML of raw model text. Specs live under uns('customWidgets')
-   ('customWidgets' is in PREF_SYNC_KEYS so they follow the account).
-   Spec shape: {id, emoji, title, description, prompt,
-                format:'text'|'bullets'|'table', auto:true|false, created}
+   SAFE BY CONSTRUCTION: a widget is a saved TEXT PROMPT plus a
+   declarative block LAYOUT — never AI-generated code. Model output is
+   rendered exclusively through textContent / DOM createElement — no
+   eval, no Function, no innerHTML of raw model text. Specs live under
+   uns('customWidgets') ('customWidgets' is in PREF_SYNC_KEYS so they
+   follow the account).
+   Spec shape v1: {id, emoji, title, description, prompt,
+                   format:'text'|'bullets'|'table', auto, created}
+   Spec shape v2 adds layout:[BLOCKS] (when present, format is ignored).
+   BLOCK DSL (whitelist — anything else is stripped by the sanitizer):
+     {type:'text',      label?}
+     {type:'bullets',   label?}
+     {type:'table',     label?, columns:[2-8 strings]}
+     {type:'fields',    label?, items:[labels]}            → label/value grid
+     {type:'select',    label,  options:[2-12 strings]}    → real <select>
+     {type:'checklist', label,  items:[1-12 strings]}      → real checkboxes
+     {type:'badge',     label}                             → colored status pill
+     {type:'score',     label,  min, max}                  → number + gauge bar
+     {type:'chart',     label,  kind:'bar'|'line'|'pie'}   → Chart.js (lazy)
+   Per visit the model returns CONTENT JSON ({blocks:[...]}) aligned to
+   the layout; cwSanitizeContent() type-checks/coerces every entry (and
+   pins select/checklist values to the design-time options) BEFORE any
+   DOM is built. v1 widgets (no layout) keep their original path.
    ========================================================= */
 const CW_MAX_WIDGETS=10;
+const CW_MAX_BLOCKS=8;          // blocks per widget layout
+const CW_MAX_OPTS=12;           // options/items per block (select/checklist/fields)
+const CW_BLOCK_TYPES={text:1,bullets:1,table:1,fields:1,select:1,checklist:1,badge:1,score:1,chart:1};
 let _cwEditingId=null;          // widget id being edited in the builder (null = creating new)
-const _cwLatest={};             // widgetId -> latest generated text (this session)
+let _cwPendingLayout=null;      // sanitized layout sitting in the preview (saved with the widget)
+const _cwLatest={};             // widgetId -> latest RAW model reply (this session)
+const _cwState={};              // widgetId -> sanitized per-block content incl. doctor's toggles
+const _cwCharts={};             // widgetId -> [Chart.js instances] (destroyed on re-render)
 
 /* ---- persistence (per-user via uns(); synced via PREF_SYNC_KEYS) ---- */
 function cwSafeId(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,24); }
+function cwStr(s,n){ return (s==null||typeof s==='object')?'':String(s).trim().slice(0,n||120); }
+function cwStrArr(a,maxItems,maxLen){
+  if(!Array.isArray(a)) return [];
+  return a.map(x=>cwStr(x,maxLen||80)).filter(Boolean).slice(0,maxItems||CW_MAX_OPTS);
+}
+/* Deep-validate a designed layout. Whitelist of block types; everything
+   unknown is dropped; every string is length-capped; per-type required
+   pieces (columns/options/items/min-max/kind) are enforced or the block
+   is discarded. Returns a clean array or null (= no layout / v1 widget). */
+function cwSanitizeLayout(layout){
+  if(!Array.isArray(layout)) return null;
+  const out=[];
+  for(const b of layout){
+    if(out.length>=CW_MAX_BLOCKS) break;
+    if(!b || typeof b!=='object' || Array.isArray(b)) continue;
+    const type=String(b.type||'').toLowerCase().trim();
+    if(!CW_BLOCK_TYPES[type]) continue;            // unknown block type → dropped
+    const blk={type:type};
+    const label=cwStr(b.label,60);
+    if(label) blk.label=label;
+    if(type==='table'){
+      blk.columns=cwStrArr(b.columns,8,40);
+      if(blk.columns.length<2) continue;
+    } else if(type==='fields'){
+      const items=Array.isArray(b.items)?b.items:[];
+      blk.items=items.map(it=>cwStr(it&&typeof it==='object'?it.label:it,60)).filter(Boolean).slice(0,CW_MAX_OPTS);
+      if(!blk.items.length) continue;
+    } else if(type==='select'){
+      blk.options=cwStrArr(b.options,CW_MAX_OPTS,60);
+      if(blk.options.length<2) continue;
+      if(!blk.label) blk.label='Selection';
+    } else if(type==='checklist'){
+      blk.items=cwStrArr(b.items,CW_MAX_OPTS,80);
+      if(!blk.items.length) continue;
+      if(!blk.label) blk.label='Checklist';
+    } else if(type==='badge'){
+      if(!blk.label) blk.label='Status';
+    } else if(type==='score'){
+      let mn=Number(b.min), mx=Number(b.max);
+      if(!isFinite(mn)) mn=0;
+      if(!isFinite(mx)||mx<=mn) mx=mn+10;
+      blk.min=mn; blk.max=mx;
+      if(!blk.label) blk.label='Score';
+    } else if(type==='chart'){
+      blk.kind=(b.kind==='line'||b.kind==='pie')?b.kind:'bar';
+      if(!blk.label) blk.label='Chart';
+    }
+    out.push(blk);
+  }
+  return out.length?out:null;
+}
+/* Type-check / coerce the model's per-visit CONTENT against a layout.
+   Accepts {blocks:[...]} or a bare array; returns an array aligned 1:1
+   with the layout (null entries = nothing documented) or null when the
+   payload is unusable. select values must match an option; checklist
+   values must match design-time items; numbers are clamped. */
+function cwSanitizeContent(layout,data){
+  let arr=null;
+  if(Array.isArray(data)) arr=data;
+  else if(data && typeof data==='object' && Array.isArray(data.blocks)) arr=data.blocks;
+  if(!arr) return null;
+  return layout.map((blk,i)=>{
+    const c=arr[i];
+    try{
+      switch(blk.type){
+        case 'text':{
+          const t=(typeof c==='string')?c:(c&&typeof c==='object'&&!Array.isArray(c))?(c.text!=null?c.text:c.content):'';
+          return cwStr(t,4000)||null;
+        }
+        case 'bullets':{
+          const it=Array.isArray(c)?c:(c&&typeof c==='object')?(c.items||c.bullets):null;
+          const v=cwStrArr(it,30,300);
+          return v.length?v:null;
+        }
+        case 'table':{
+          const rows=Array.isArray(c)?c:(c&&typeof c==='object')?c.rows:null;
+          if(!Array.isArray(rows)) return null;
+          const v=rows.filter(Array.isArray)
+            .map(r=>blk.columns.map((_,ci)=>cwStr(r[ci],200)))
+            .filter(r=>r.some(Boolean)).slice(0,30);
+          return v.length?v:null;
+        }
+        case 'fields':{
+          const src=(c&&typeof c==='object'&&!Array.isArray(c))?((c.values&&typeof c.values==='object'&&!Array.isArray(c.values))?c.values:c):null;
+          if(!src) return null;
+          const out={};
+          blk.items.forEach(lbl=>{
+            let v=src[lbl];
+            if(v==null){
+              const k=Object.keys(src).find(kk=>kk.toLowerCase()===lbl.toLowerCase());
+              if(k!=null) v=src[k];
+            }
+            const s=cwStr(v,300);
+            if(s) out[lbl]=s;
+          });
+          return Object.keys(out).length?out:null;
+        }
+        case 'select':{
+          const v=(typeof c==='string')?c:(c&&typeof c==='object')?(c.choice!=null?c.choice:c.value):null;
+          if(v==null) return null;
+          const m=blk.options.find(o=>o.toLowerCase()===String(v).trim().toLowerCase());
+          return m||null;
+        }
+        case 'checklist':{
+          const it=Array.isArray(c)?c:(c&&typeof c==='object')?(c.checked||c.items):null;
+          if(!Array.isArray(it)) return null;
+          const low=it.map(x=>String(x).trim().toLowerCase());
+          return blk.items.filter(item=>low.indexOf(item.toLowerCase())>=0);
+        }
+        case 'badge':{
+          if(typeof c==='string'){ const s=cwStr(c,60); return s?{text:s,level:'gray'}:null; }
+          if(!c||typeof c!=='object') return null;
+          const text=cwStr(c.text!=null?c.text:c.status,60);
+          if(!text) return null;
+          const lv=String(c.level||'').toLowerCase();
+          return {text:text, level:(lv==='green'||lv==='yellow'||lv==='red')?lv:'gray'};
+        }
+        case 'score':{
+          const v=Number((c&&typeof c==='object')?c.value:c);
+          if(!isFinite(v)) return null;
+          return Math.min(blk.max,Math.max(blk.min,Math.round(v*10)/10));
+        }
+        case 'chart':{
+          if(!c||typeof c!=='object'||Array.isArray(c)) return null;
+          const labels=cwStrArr(c.labels,24,40);
+          const nums=(Array.isArray(c.data)?c.data:[]).slice(0,24).map(v=>{const n=Number(v);return isFinite(n)?n:0;});
+          const n=Math.min(labels.length,nums.length);
+          if(n<1) return null;
+          return {labels:labels.slice(0,n), data:nums.slice(0,n)};
+        }
+      }
+    }catch(e){}
+    return null;
+  });
+}
 function cwSanitizeSpec(w){
   if(!w || typeof w!=='object') return null;
   const id=cwSafeId(w.id);
@@ -11350,7 +11540,7 @@ function cwSanitizeSpec(w){
   const prompt=String(w.prompt||'').trim().slice(0,2000);
   if(!id || !title || !prompt) return null;
   const format=(w.format==='bullets'||w.format==='table')?w.format:'text';
-  return {
+  const out={
     id:id,
     emoji:String(w.emoji||'🧩').trim().slice(0,4)||'🧩',
     title:title,
@@ -11360,6 +11550,9 @@ function cwSanitizeSpec(w){
     auto:w.auto!==false,
     created:Number(w.created)||Date.now()
   };
+  const layout=cwSanitizeLayout(w.layout);   // v2: optional block layout
+  if(layout) out.layout=layout;
+  return out;
 }
 function getCustomWidgets(){
   try{
@@ -11387,6 +11580,7 @@ function closeWidgetBuilder(){
 }
 function hideWidgetPreview(){
   _cwEditingId=null;
+  _cwPendingLayout=null;
   const p=document.getElementById('cwPreview'); if(p) p.style.display='none';
   const h=document.getElementById('cwPreviewHead'); if(h) h.textContent='Preview — tweak anything, then save';
 }
@@ -11397,7 +11591,46 @@ function showWidgetPreview(spec){
   document.getElementById('cwPrompt').value=spec.prompt||'';
   document.getElementById('cwFormat').value=(spec.format==='bullets'||spec.format==='table')?spec.format:'text';
   document.getElementById('cwAuto').checked=spec.auto!==false;
+  _cwPendingLayout=cwSanitizeLayout(spec.layout);   // v2 (null for v1/simple widgets)
+  cwRenderLayoutSummary();
   document.getElementById('cwPreview').style.display='block';
+}
+/* Drop the designed layout from the preview → save as a simple v1 widget. */
+function cwRemoveLayout(){
+  _cwPendingLayout=null;
+  cwRenderLayoutSummary();
+  toast('Layout removed — this widget will use the simple output format.','');
+}
+/* One readable line per block (type chip + label + options/items/range).
+   Built with createElement/textContent only — labels come from the model. */
+function cwRenderLayoutSummary(){
+  const wrap=document.getElementById('cwLayoutWrap');
+  const box=document.getElementById('cwLayoutSummary');
+  const fmt=document.getElementById('cwFormatWrap');
+  if(!wrap||!box) return;
+  if(!_cwPendingLayout||!_cwPendingLayout.length){
+    wrap.style.display='none';
+    if(fmt) fmt.style.display='';
+    return;
+  }
+  wrap.style.display='';
+  if(fmt) fmt.style.display='none';     // layout overrides the simple Format
+  box.innerHTML='';
+  _cwPendingLayout.forEach(b=>{
+    const row=document.createElement('div'); row.className='cw-sum-row';
+    const tag=document.createElement('span'); tag.className='cw-sum-tag'; tag.textContent=b.type;
+    const txt=document.createElement('span');
+    let extra='';
+    if(b.type==='select')         extra=' — options: '+b.options.join(' / ');
+    else if(b.type==='checklist') extra=' — items: '+b.items.join(', ');
+    else if(b.type==='fields')    extra=' — '+b.items.join(', ');
+    else if(b.type==='table')     extra=' — columns: '+b.columns.join(', ');
+    else if(b.type==='score')     extra=' — range '+b.min+'–'+b.max;
+    else if(b.type==='chart')     extra=' — '+b.kind;
+    txt.textContent=(b.label||'(unlabeled)')+extra;
+    row.appendChild(tag); row.appendChild(txt);
+    box.appendChild(row);
+  });
 }
 
 /* "✨ Design my widget" — AI turns the doctor's description into a SPEC
@@ -11412,9 +11645,28 @@ async function designCustomWidget(){
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Designing…';
   try{
     const sys=`You design a CUSTOM CLINICAL WIDGET SPEC for a medical-scribe app used by physicians. The doctor describes a card they want on the visit page; you return the spec that powers it. Return ONLY valid JSON (no markdown fences, no commentary) with EXACTLY this shape:
-{"emoji":"<one fitting emoji>","title":"<short card title, max 6 words>","description":"<one plain sentence shown under the title explaining what the card shows>","prompt":"<the per-visit instruction>","format":"text"|"bullets"|"table"}
+{"emoji":"<one fitting emoji>","title":"<short card title, max 6 words>","description":"<one plain sentence shown under the title explaining what the card shows>","prompt":"<the per-visit instruction>","layout":[<1-8 blocks from the DSL below>]}
 
-The "prompt" is the instruction executed on EVERY visit against the clinical note + raw transcript + patient background to produce this card's content. Write it as a clear, specific task (what to extract or draft, how to organize it). It MUST bake in these guardrails verbatim in spirit: use ONLY facts actually documented in the note/transcript/background; NEVER fabricate or infer undocumented information; use [bracketed placeholders] for anything missing; the output is an advisory draft the provider reviews. Choose "bullets" for list-like content, "table" only when rows/columns genuinely fit (the table is simple pipe-delimited), otherwise "text". The prompt must describe CONTENT only — never code, scripts, or formatting markup.`;
+BLOCK DSL — these are the ONLY block types that exist (never invent others):
+- {"type":"text","label":"<optional>"} — a short prose paragraph
+- {"type":"bullets","label":"<optional>"} — a bulleted list
+- {"type":"table","label":"<optional>","columns":["Col1","Col2",...]} — 2-8 columns
+- {"type":"fields","label":"<optional>","items":["Field label",...]} — a label/value grid (up to 12 fields)
+- {"type":"select","label":"<required>","options":["A","B",...]} — a REAL dropdown pre-set to the visit's documented value; the doctor can change it. Use when the description implies ONE choice from a fixed set (laterality, work status, disposition, risk level). 2-12 options; always include the complete sensible option set, including a "Not addressed"-style option when it fits.
+- {"type":"checklist","label":"<required>","items":["item",...]} — REAL checkboxes pre-checked from what the visit documents; the doctor can toggle. Use for fixed criteria/components/restriction lists (up to 12 items).
+- {"type":"badge","label":"<required>"} — a colored status pill (green/yellow/red/gray) for at-a-glance status
+- {"type":"score","label":"<required>","min":<number>,"max":<number>} — a big number with a gauge bar; use for numeric scores (pain 0-10, ODI 0-100, etc.)
+- {"type":"chart","label":"<required>","kind":"bar"|"line"|"pie"} — a small chart of documented numbers (e.g. pain trend across documented visits)
+
+GUIDANCE: choose 2-5 blocks that genuinely fit the doctor's description. Choices → select; fixed criteria → checklist; overall status → badge; numeric score → score; trends/distributions over documented numbers → chart; otherwise text/bullets/table/fields. For a dead-simple prose card a single text or bullets block is fine.
+
+EXAMPLE 1 — doctor says "track my injections with pain trend":
+{"emoji":"💉","title":"Injection tracker","description":"Summarizes any injection performed or planned this visit, with the documented pain trend.","prompt":"From the documented visit, extract any interventional injection performed or planned: procedure name, spinal level or site, medication and dose, laterality, and outcome status. Also collect any documented pain scores (0-10) across the dates mentioned in the record for the pain-trend chart. Use ONLY documented facts; never infer.","layout":[{"type":"badge","label":"Status"},{"type":"fields","label":"Procedure details","items":["Procedure","Level / site","Medication & dose","Date"]},{"type":"select","label":"Laterality","options":["Left","Right","Bilateral","Midline","Not documented"]},{"type":"chart","label":"Pain trend (0-10)","kind":"line"}]}
+
+EXAMPLE 2 — doctor says "a work status box with restrictions":
+{"emoji":"🧰","title":"Work status","description":"The patient's documented work status, restrictions, and dates.","prompt":"Extract the patient's documented work status and any work restrictions, including effective dates and the next re-evaluation date if stated. Use ONLY documented facts; use [bracketed placeholders] for anything missing.","layout":[{"type":"select","label":"Current status","options":["Full duty","Modified duty","Off work","Not addressed"]},{"type":"checklist","label":"Restrictions documented","items":["No lifting >10 lbs","No prolonged standing","No repetitive bending/twisting","Sit/stand option as needed","No driving","No overhead work"]},{"type":"text","label":"Details & dates"}]}
+
+The "prompt" is the instruction executed on EVERY visit against the clinical note + raw transcript + patient background to produce this card's content. Write it as a clear, specific task describing WHAT to extract or draft for each block. It MUST bake in these guardrails verbatim in spirit: use ONLY facts actually documented in the note/transcript/background; NEVER fabricate or infer undocumented information; use [bracketed placeholders] for anything missing; the output is an advisory draft the provider reviews. The prompt must describe CONTENT only — never code, scripts, or formatting markup (the app handles the output format separately).`;
     const raw=(await aiCallRaw(sys,'The doctor\'s description of the widget they want:\n\n'+desc.slice(0,2000),getKey(),{freeform:true})).trim();
     // tolerant parse: strip fences, then take the outermost {...}
     let s=raw.replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
@@ -11424,7 +11676,7 @@ The "prompt" is the instruction executed on EVERY visit against the clinical not
     if(!String(spec.title||'').trim()||!String(spec.prompt||'').trim())
       throw new Error('The designer returned an incomplete spec — try rephrasing your description.');
     _cwEditingId=null;
-    showWidgetPreview({emoji:spec.emoji,title:spec.title,description:spec.description,prompt:spec.prompt,format:spec.format,auto:true});
+    showWidgetPreview({emoji:spec.emoji,title:spec.title,description:spec.description,prompt:spec.prompt,format:spec.format,layout:spec.layout,auto:true});
     document.getElementById('cwPreviewHead').textContent='Preview — tweak anything, then save';
     toast('Widget designed — review and tweak it, then save.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
@@ -11442,6 +11694,7 @@ function saveCustomWidget(){
     description:document.getElementById('cwDescription').value.trim(),
     prompt:prompt,
     format:document.getElementById('cwFormat').value,
+    layout:_cwPendingLayout,          // v2 (null = simple v1 widget; overrides any old layout on edit)
     auto:document.getElementById('cwAuto').checked
   };
   const list=getCustomWidgets();
@@ -11449,6 +11702,8 @@ function saveCustomWidget(){
     const i=list.findIndex(w=>w.id===_cwEditingId);
     if(i<0){ toast('That widget no longer exists.','err'); hideWidgetPreview(); renderWidgetBuilderList(); return; }
     list[i]=cwSanitizeSpec(Object.assign({},list[i],fields))||list[i];
+    delete _cwLatest[_cwEditingId];   // layout may have changed — drop stale content/state
+    delete _cwState[_cwEditingId];
     setCustomWidgets(list);
     toast('Widget updated.','ok');
   } else {
@@ -11487,6 +11742,9 @@ function deleteCustomWidget(id){
   if(!w) return;
   if(!confirm('Delete the widget "'+w.title+'"? This removes the card and its saved prompt.')) return;
   delete _cwLatest[id];
+  delete _cwState[id];
+  cwDestroyCharts(id);
+  delete _cwCharts[id];
   setCustomWidgets(list.filter(x=>x.id!==id));
   renderWidgetBuilderList();
   renderCustomWidgets();
@@ -11507,7 +11765,7 @@ function renderWidgetBuilderList(){
     +'<span style="font-size:18px">'+esc(w.emoji)+'</span>'
     +'<div style="flex:1;min-width:160px"><b style="font-size:14px">'+esc(w.title)+'</b>'
     +(w.description?'<div style="font-size:12px;color:var(--muted)">'+esc(w.description)+'</div>':'')
-    +'<div style="font-size:11px;color:var(--muted)">format: '+esc(w.format)+'</div></div>'
+    +'<div style="font-size:11px;color:var(--muted)">'+(w.layout&&w.layout.length?(w.layout.length+'-block layout: '+esc(w.layout.map(b=>b.type).join(', ')) ):('format: '+esc(w.format)))+'</div></div>'
     +'<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;margin:0">'
     +'<input type="checkbox" '+(w.auto?'checked':'')+' onchange="toggleCustomWidgetAuto(\''+w.id+'\',this.checked)" style="width:15px;height:15px;margin:0">Auto</label>'
     +'<button class="sec-copy" onclick="editCustomWidget(\''+w.id+'\')">✏️ Edit</button>'
@@ -11565,14 +11823,255 @@ function renderCustomWidgets(){
   });
 }
 
-/* ---- SAFE renderers: model text → DOM via textContent only ---- */
+/* ---- SAFE renderers: model output → DOM via createElement/textContent only ---- */
+function cwDestroyCharts(id){
+  (_cwCharts[id]||[]).forEach(ch=>{ try{ ch.destroy(); }catch(e){} });
+  _cwCharts[id]=[];
+}
+/* Tolerant parse of the per-visit CONTENT JSON: strip fences, take the
+   outermost {...} (or [...]), retry with trailing commas trimmed, then
+   sanitize against the layout. Returns the aligned array or null. */
+function cwParseLayoutContent(layout,raw){
+  let s=String(raw||'').trim().replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+  let a=s.indexOf('{'), b=s.lastIndexOf('}'), txt=null;
+  if(a>=0&&b>a) txt=s.slice(a,b+1);
+  else { a=s.indexOf('['); b=s.lastIndexOf(']'); if(a>=0&&b>a) txt=s.slice(a,b+1); }
+  if(!txt) return null;
+  const tries=[txt, txt.replace(/,\s*([\]}])/g,'$1')];
+  for(let i=0;i<tries.length;i++){
+    try{
+      const c=cwSanitizeContent(layout,JSON.parse(tries[i]));
+      if(c) return c;
+    }catch(e){}
+  }
+  return null;
+}
+/* Clean plain-text serialization of the CURRENT block state — feeds the
+   hidden mirror used by Copy / Print (checklists as [x]/[ ], tables as
+   pipe rows, charts as a data list). */
+function cwSerializeLayout(w,content){
+  const out=[];
+  w.layout.forEach((blk,i)=>{
+    const c=content[i];
+    const lbl=blk.label||'';
+    switch(blk.type){
+      case 'text':
+        if(c) out.push((lbl?lbl+':\n':'')+c);
+        break;
+      case 'bullets':
+        if(Array.isArray(c)&&c.length) out.push((lbl?lbl+':\n':'')+c.map(x=>'- '+x).join('\n'));
+        break;
+      case 'table':
+        if(Array.isArray(c)&&c.length) out.push((lbl?lbl+':\n':'')+blk.columns.join(' | ')+'\n'+c.map(r=>r.join(' | ')).join('\n'));
+        break;
+      case 'fields':
+        if(c&&typeof c==='object'){
+          const lines=blk.items.filter(k=>c[k]!=null).map(k=>k+': '+c[k]);
+          if(lines.length) out.push((lbl?lbl+':\n':'')+lines.join('\n'));
+        }
+        break;
+      case 'select':
+        out.push((lbl||'Selection')+': '+(c||'[not documented]'));
+        break;
+      case 'checklist':
+        out.push((lbl||'Checklist')+':\n'+blk.items.map(it=>((Array.isArray(c)&&c.indexOf(it)>=0)?'[x] ':'[ ] ')+it).join('\n'));
+        break;
+      case 'badge':
+        if(c&&c.text) out.push((lbl||'Status')+': '+c.text+' ('+c.level+')');
+        break;
+      case 'score':
+        if(c!=null) out.push((lbl||'Score')+': '+c+' / '+blk.max);
+        break;
+      case 'chart':
+        if(c&&Array.isArray(c.labels)) out.push((lbl||'Chart')+' ('+blk.kind+'): '+c.labels.map((l,k)=>l+'='+c.data[k]).join('; '));
+        break;
+    }
+  });
+  return out.join('\n\n');
+}
+function cwUpdateMirror(w){
+  const mirror=document.getElementById('cwText_'+w.id);
+  if(mirror) mirror.textContent=cwSerializeLayout(w,_cwState[w.id]||[]);
+}
+/* Build the layout blocks into the card body. Every model string lands in
+   textContent; selects/checkboxes are LIVE controls whose changes update
+   _cwState + the text mirror so Copy/Print always reflect what's shown. */
+function cwRenderLayoutBlocks(w,content){
+  const body=document.getElementById('cwBody_'+w.id);
+  if(!body) return;
+  body.innerHTML='';
+  _cwState[w.id]=content;
+  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#a855f7','#84cc16','#ec4899'];
+  let hasInfo=false;
+  w.layout.forEach((blk,i)=>{
+    const c=content[i];
+    const interactive=(blk.type==='select'||blk.type==='checklist');
+    if(c==null && !interactive) return;          // skip empty non-interactive blocks
+    const holder=document.createElement('div');
+    holder.className='cw-blk';
+    if(blk.label){
+      const l=document.createElement('div'); l.className='cw-blk-label'; l.textContent=blk.label;
+      holder.appendChild(l);
+    }
+    switch(blk.type){
+      case 'text':{
+        const d=document.createElement('div'); d.style.whiteSpace='pre-wrap'; d.textContent=c;
+        holder.appendChild(d); hasInfo=true; break;
+      }
+      case 'bullets':{
+        const ul=document.createElement('ul'); ul.style.cssText='margin:0;padding-left:20px';
+        c.forEach(t=>{ const li=document.createElement('li'); li.style.margin='3px 0'; li.textContent=t; ul.appendChild(li); });
+        holder.appendChild(ul); hasInfo=true; break;
+      }
+      case 'table':{
+        const tbl=document.createElement('table'); tbl.style.cssText='width:100%;border-collapse:collapse;font-size:13.5px';
+        const trh=document.createElement('tr');
+        blk.columns.forEach(cn=>{
+          const th=document.createElement('th');
+          th.style.cssText='padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;font-weight:700';
+          th.textContent=cn; trh.appendChild(th);
+        });
+        tbl.appendChild(trh);
+        c.forEach(row=>{
+          const tr=document.createElement('tr');
+          blk.columns.forEach((_,ci)=>{
+            const td=document.createElement('td');
+            td.style.cssText='padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top';
+            td.textContent=row[ci]||''; tr.appendChild(td);
+          });
+          tbl.appendChild(tr);
+        });
+        holder.appendChild(tbl); hasInfo=true; break;
+      }
+      case 'fields':{
+        const g=document.createElement('div'); g.className='cw-fields';
+        blk.items.forEach(lbl=>{
+          if(c[lbl]==null) return;
+          const k=document.createElement('div'); k.className='k'; k.textContent=lbl;
+          const v=document.createElement('div'); v.textContent=c[lbl];
+          g.appendChild(k); g.appendChild(v);
+        });
+        holder.appendChild(g); hasInfo=true; break;
+      }
+      case 'select':{
+        const sel=document.createElement('select'); sel.className='sf-select'; sel.style.maxWidth='280px';
+        const o0=document.createElement('option'); o0.value=''; o0.textContent='— not documented —';
+        sel.appendChild(o0);
+        blk.options.forEach(opt=>{
+          const o=document.createElement('option'); o.value=opt; o.textContent=opt;
+          if(opt===c) o.selected=true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change',()=>{
+          const st=_cwState[w.id]; if(!st) return;
+          st[i]=sel.value||null;
+          cwUpdateMirror(w);
+        });
+        holder.appendChild(sel);
+        if(c!=null) hasInfo=true;
+        break;
+      }
+      case 'checklist':{
+        const checked=Array.isArray(c)?c:[];
+        blk.items.forEach(item=>{
+          const lab=document.createElement('label'); lab.className='cw-check';
+          const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=checked.indexOf(item)>=0;
+          cb.addEventListener('change',()=>{
+            const st=_cwState[w.id]; if(!st) return;
+            const cur=Array.isArray(st[i])?st[i]:[];
+            st[i]=blk.items.filter(it=> it===item ? cb.checked : cur.indexOf(it)>=0 );
+            cwUpdateMirror(w);
+          });
+          const sp=document.createElement('span'); sp.textContent=item;
+          lab.appendChild(cb); lab.appendChild(sp);
+          holder.appendChild(lab);
+        });
+        if(checked.length) hasInfo=true;
+        break;
+      }
+      case 'badge':{
+        const bdg=document.createElement('span'); bdg.className='cw-badge '+c.level; bdg.textContent=c.text;
+        holder.appendChild(bdg); hasInfo=true; break;
+      }
+      case 'score':{
+        const range=(blk.max-blk.min)||1;
+        const pct=Math.max(0,Math.min(100,Math.round(((c-blk.min)/range)*100)));
+        const sc=document.createElement('div'); sc.className='cw-score';
+        const num=document.createElement('span'); num.className='num'; num.textContent=String(c);
+        const den=document.createElement('span'); den.className='den'; den.textContent='/ '+blk.max;
+        const gauge=document.createElement('div'); gauge.className='cw-gauge';
+        const fill=document.createElement('span');
+        fill.className=pct<=33?'g-green':(pct<=66?'g-amber':'g-red');
+        fill.style.width=Math.max(2,pct)+'%';
+        gauge.appendChild(fill);
+        sc.appendChild(num); sc.appendChild(den); sc.appendChild(gauge);
+        holder.appendChild(sc); hasInfo=true; break;
+      }
+      case 'chart':{
+        const cwrap=document.createElement('div'); cwrap.style.cssText='position:relative;height:190px;max-width:520px';
+        const canvas=document.createElement('canvas');
+        cwrap.appendChild(canvas); holder.appendChild(cwrap);
+        const isPie=(blk.kind==='pie');
+        loadChartJs().then(Chart=>{
+          if(!canvas.isConnected) return;          // card was re-rendered meanwhile
+          const inst=new Chart(canvas.getContext('2d'),{
+            type:blk.kind,
+            data:{labels:c.labels.slice(), datasets:[{
+              label:blk.label||'',
+              data:c.data.slice(),
+              backgroundColor:isPie?c.labels.map((_,k)=>palette[k%palette.length]):palette[0],
+              borderColor:palette[0], fill:false, tension:0.25
+            }]},
+            options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:isPie}}}
+          });
+          (_cwCharts[w.id]=_cwCharts[w.id]||[]).push(inst);
+        }).catch(()=>{
+          const m=document.createElement('div');
+          m.style.cssText='color:var(--muted);font-size:12px';
+          m.textContent='Chart unavailable (could not load the chart library). The values are in the Copy text.';
+          cwrap.replaceChild(m,canvas);
+        });
+        hasInfo=true; break;
+      }
+    }
+    body.appendChild(holder);
+  });
+  if(!hasInfo){
+    const note=document.createElement('div');
+    note.style.cssText='color:var(--muted);font-size:13px;margin-bottom:10px';
+    note.textContent='Nothing documented this visit for this widget.';
+    body.insertBefore(note,body.firstChild);
+  }
+  cwUpdateMirror(w);
+}
 function cwRenderOutput(w,raw){
   const body=document.getElementById('cwBody_'+w.id);
   const mirror=document.getElementById('cwText_'+w.id);
   if(!body) return;
   body.style.color='';
   body.innerHTML='';                       // clear, then build with createElement/textContent
+  cwDestroyCharts(w.id);
   const text=String(raw||'').trim();
+  // ---- v2 layout widgets: parse CONTENT JSON, sanitize, build blocks ----
+  if(Array.isArray(w.layout)&&w.layout.length){
+    if(!text || /^nothing documented/i.test(text)){
+      if(mirror) mirror.textContent='Nothing documented this visit for this widget.';
+      body.textContent='Nothing documented this visit for this widget.';
+      body.style.color='var(--muted)';
+      return;
+    }
+    // prefer this session's live state (preserves the doctor's toggles across re-renders)
+    let content=(_cwState[w.id]&&_cwState[w.id].length===w.layout.length)?_cwState[w.id]:cwParseLayoutContent(w.layout,text);
+    if(content){ cwRenderLayoutBlocks(w,content); return; }
+    // parse failed → safe plain-text fallback of the raw reply
+    if(mirror) mirror.textContent=text;
+    const pre=document.createElement('div');
+    pre.style.whiteSpace='pre-wrap';
+    pre.textContent=text;
+    body.appendChild(pre);
+    return;
+  }
+  // ---- v1 widgets (format text/bullets/table) — unchanged ----
   if(mirror) mirror.textContent=text;      // plain-text mirror for Copy / Print
   if(!text){ body.textContent='Nothing documented this visit for this widget.'; body.style.color='var(--muted)'; return; }
   if(w.format==='bullets'){
@@ -11618,6 +12117,26 @@ function cwFormatSpec(format){
   if(format==='table')   return 'a simple pipe-delimited table: the first line is the column headers separated by " | ", then one row per line with cells separated by " | ". No other text.';
   return 'clean plain professional text (no markdown, no asterisks).';
 }
+/* Build the JSON-output instructions for a v2 layout widget: one schema
+   line per block so the model returns {"blocks":[...]} aligned in order. */
+function cwLayoutOutputSpec(layout){
+  const lines=layout.map((b,i)=>{
+    const lbl=b.label?(' ("'+b.label+'")'):'';
+    switch(b.type){
+      case 'text':      return (i+1)+'. text'+lbl+': a string (or null if nothing documented).';
+      case 'bullets':   return (i+1)+'. bullets'+lbl+': an array of short strings (or null).';
+      case 'table':     return (i+1)+'. table'+lbl+': an array of rows, each row an array of '+b.columns.length+' cells for columns ['+b.columns.join(', ')+'] (or null).';
+      case 'fields':    return (i+1)+'. fields'+lbl+': an object mapping each of these labels to its documented value: ['+b.items.join(', ')+'] — omit any label not documented (or null).';
+      case 'select':    return (i+1)+'. select'+lbl+': EXACTLY ONE of ['+b.options.join(' | ')+'] (the documented value), or null if not documented. Never invent a value outside this list.';
+      case 'checklist': return (i+1)+'. checklist'+lbl+': an array containing ONLY the items from ['+b.items.join(' | ')+'] that are documented as present/true. Use [] if none, never add items outside this list.';
+      case 'badge':     return (i+1)+'. badge'+lbl+': an object {"text":"short status","level":"green"|"yellow"|"red"|"gray"} or null.';
+      case 'score':     return (i+1)+'. score'+lbl+': a number between '+b.min+' and '+b.max+' (the documented score) or null.';
+      case 'chart':     return (i+1)+'. chart'+lbl+': an object {"labels":[...],"data":[numbers]} of documented values (e.g. across dated visits), or null if no numbers documented.';
+    }
+    return (i+1)+'. unknown';
+  });
+  return 'Return ONLY a JSON object of this exact shape (no markdown fences, no commentary): {"blocks":[<one entry per block, in this order>]}. The blocks, in order, are:\n'+lines.join('\n')+'\nUse null for any block with nothing documented. Use ONLY facts documented in the note/transcript/background — never fabricate or infer.';
+}
 function cwBuildUserPayload(){
   // mirrors how generateIME builds its payload: note + transcript + chart background
   const tr=((document.getElementById('transcript')||{}).value||'').trim();
@@ -11645,11 +12164,17 @@ async function runCustomWidget(id,opts){
   body.style.color='var(--muted)';
   body.innerHTML='<span class="spin"></span> Generating…';   // static markup only
   try{
+    const hasLayout=Array.isArray(w.layout)&&w.layout.length;
+    const outSpec=hasLayout?cwLayoutOutputSpec(w.layout):('OUTPUT FORMAT: '+cwFormatSpec(w.format)+' Output the content ONLY — no preamble, no headings about the task, no markdown fences.');
     const sys='You fill a custom clinical widget titled "'+w.title+'" on a physician\'s visit page. TASK: '+w.prompt
-      +'\n\nCRITICAL GUARDRAILS: Use ONLY what is documented in the clinical note, raw transcript, and patient background provided. NEVER fabricate, infer, or embellish undocumented information. Use [bracketed placeholders] for anything missing. This is an advisory DRAFT the provider reviews — never a directive. If the visit contains nothing relevant to this widget, output exactly: Nothing documented this visit for this widget.'
-      +'\n\nOUTPUT FORMAT: '+cwFormatSpec(w.format)+' Output the content ONLY — no preamble, no headings about the task, no markdown fences.';
+      +'\n\nCRITICAL GUARDRAILS: Use ONLY what is documented in the clinical note, raw transcript, and patient background provided. NEVER fabricate, infer, or embellish undocumented information. '
+      +(hasLayout?'For any block with nothing documented, use null (do NOT invent placeholders inside JSON values). ':'Use [bracketed placeholders] for anything missing. ')
+      +'This is an advisory DRAFT the provider reviews — never a directive. '
+      +(hasLayout?'':'If the visit contains nothing relevant to this widget, output exactly: Nothing documented this visit for this widget.')
+      +'\n\n'+outSpec;
     const raw=(await aiCallRaw(sys,cwBuildUserPayload(),getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     _cwLatest[id]=raw;
+    delete _cwState[id];           // fresh fill → recompute block state from this reply
     cwRenderOutput(w,raw);
   }catch(err){
     body.innerHTML='';
