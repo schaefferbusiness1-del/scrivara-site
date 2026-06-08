@@ -2674,7 +2674,18 @@
    To make a "send to my dad" build: just fill in BACKEND_URL
    with your deployed URL and ship the file — no key needed.
    ========================================================= */
-const BACKEND_URL = "https://scrivara-backend.onrender.com"; // hosted mode: server holds the OpenAI key; no key needed on this device
+/* DEMO/LOCAL SAFETY: a copy opened from a file:// path (the "Download the app"
+   build) or with ?demo=1 must NOT connect to the production backend — no real
+   accounts, no server, no PHI. We detect that here and blank BACKEND_URL so
+   backendMode() returns false. The hosted site (https origin) is unaffected. */
+const _SF_DEMO = (function(){
+  try{
+    if(location.protocol === 'file:') return true;
+    if(new URLSearchParams(location.search).get('demo') === '1') return true;
+  }catch(e){}
+  return false;
+})();
+const BACKEND_URL = _SF_DEMO ? "" : "https://scrivara-backend.onrender.com"; // hosted mode: server holds the OpenAI key; no key needed on this device
 function backendMode(){ return !!(BACKEND_URL && BACKEND_URL.trim()); }
 function bkBase(){ return BACKEND_URL.replace(/\/$/,''); }
 

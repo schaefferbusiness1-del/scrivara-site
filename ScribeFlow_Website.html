@@ -180,6 +180,7 @@
       <a href="#pricing">Pricing</a>
       <a href="#trust">Security</a>
       <a href="ScribeFlow.html">Sign in</a>
+      <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost">⬇ Download the app</a>
       <a href="#demo" class="btn btn-dark">Book a demo</a>
     </div>
   </div>
@@ -193,8 +194,10 @@
     <p class="lead">Describe any card you want — an injection tracker, a work-status box, a red-flag screen — and <b>MLS designs it and auto-fills it on every visit</b>. Underneath, the ambient scribe turns the conversation into a structured SOAP note with suggested E/M, ICD-10 and CPT coding and an estimated reimbursement. Built with a spine practice, for spine and pain practices.</p>
     <div class="cta">
       <a href="#demo" class="btn btn-dark">📅 Book a demo</a>
+      <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost">⬇ Download the app</a>
       <a href="#widgets" class="btn btn-ghost">See the widget builder</a>
     </div>
+    <p class="reassure">⬇ Downloads a self-contained copy that runs locally in demo mode — explore the full interface; no account, server, or patient data. Add your own AI key to generate notes.</p>
     <p class="reassure">⚕️ HIPAA-ready architecture · Provider reviews &amp; signs every note · Works in your browser — no install</p>
     <div class="hero-shot">
       <div class="shot-frame">
@@ -452,148 +455,4 @@
           <li>Suggested E/M, ICD-10 &amp; CPT coding + estimated reimbursement on every visit</li>
           <li>Custom Widget Builder — unlimited widgets</li>
           <li>Reimbursement optimization &amp; one-click superbill</li>
-          <li>iPad patient intake (ODI, satisfaction, insurance-card OCR)</li>
-          <li>Outcomes tracking · referral, UR, IME &amp; procedure notes</li>
-          <li>Phone mic dictation &amp; encrypted multi-device sync</li>
-          <li>2FA, audit logs, encrypted backups · HIPAA-ready architecture</li>
-        </ul>
-        <a href="#demo" class="btn btn-ghost">Book a demo</a>
-      </div>
-      <div class="price-card featured">
-        <span class="tag">PREMIUM — FOR DATA-DRIVEN PRACTICES</span>
-        <div class="tier">Premium</div>
-        <div class="amt">$80<span> / provider / month</span></div>
-        <ul>
-          <li>Everything in Standard</li>
-          <li class="star"><b>Ask-your-data Study Engine</b> (GPT-5.2-class reasoning model) with charts, Excel and PDF exports</li>
-          <li class="star">Plain-English questions → full studies with graphs</li>
-          <li class="star">Excel-exportable tables &amp; one-click PDF reports</li>
-          <li>Legal / IME lawyer portal</li>
-          <li>Team &amp; head-doctor analytics across providers</li>
-          <li>Priority email support &amp; onboarding</li>
-        </ul>
-        <a href="#demo" class="btn btn-dark">Book a demo</a>
-      </div>
-    </div>
-    <p style="text-align:center;color:var(--muted);font-size:13.5px;margin:18px 0 0">Annual plans available. Multi-provider discounts for clinics.</p>
-    <p class="price-sub">Most providers recover the cost in a single more-accurately-coded visit per month — and get their evenings back on top.</p>
-  </div>
-</section>
-
-<!-- TRUST / HIPAA -->
-<section id="trust" style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
-  <div class="wrap">
-    <div class="sec-head">
-      <h2>Security you can stand behind</h2>
-      <p>We're straight with you about what's true today — no inflated claims.</p>
-    </div>
-    <div class="trust">
-      <div class="t"><h4>🔒 HIPAA-ready architecture</h4><p>Encryption in transit and at rest, two-factor authentication, automatic inactivity log-off, audit logging, and encrypted backups. We say "HIPAA-ready architecture; BAAs in progress" — not "certified" — because there's no such thing as HIPAA certification.</p></div>
-      <div class="t"><h4>✍️ You sign every note</h4><p>AI drafts; the clinician reviews, edits, and signs. The provider is always the final medical and coding authority. Nothing is submitted without your confirmation.</p></div>
-      <div class="t"><h4>🤝 BAA before any PHI</h4><p>Real patient data is only used after Business Associate Agreements are signed with our AI provider and hosting, and a compliance review is complete. Until then, demos use synthetic data.</p></div>
-    </div>
-    <p class="honest">Honest note: MLS is a documentation and coding-support tool. Suggested codes are for the provider to review and confirm — final coding is the provider's responsibility, and MLS never inflates documentation to raise a bill.</p>
-  </div>
-</section>
-
-<!-- DEMO / CTA -->
-<section id="demo">
-  <div class="wrap">
-    <div class="demo">
-      <div>
-        <h2>See it on one of your spine or pain visits</h2>
-        <p>Book a 20-minute demo and we'll run MLS on a sample spine, PM&amp;R or pain visit — note, coding, a custom widget you describe on the spot, and a data study, start to finish.</p>
-        <p style="color:#bcd4f4;font-size:15px">No commitment. No credit card. Just show up and watch the charting disappear.</p>
-      </div>
-      <div class="form">
-        <form id="demoForm" onsubmit="return submitDemo(event)">
-          <label for="name">Your name</label>
-          <input id="name" name="name" type="text" placeholder="Dr. Jane Smith" required>
-          <label for="email">Work email</label>
-          <input id="email" name="email" type="email" placeholder="jane@yourpractice.com" required>
-          <label for="practice">Practice / specialty</label>
-          <input id="practice" name="practice" type="text" placeholder="Interventional Pain — West Chester, PA">
-          <label for="msg">Anything you'd like us to focus on?</label>
-          <textarea id="msg" name="msg" rows="2" placeholder="e.g. I want a widget that tracks injection outcomes"></textarea>
-          <button class="btn btn-dark" type="submit">📅 Request my demo</button>
-          <p class="privacy">We'll only use this to schedule your demo. No spam, ever.</p>
-          <p id="demoStatus" class="privacy" style="display:none"></p>
-        </form>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FAQ -->
-<section style="padding-top:20px">
-  <div class="wrap" style="max-width:780px">
-    <div class="sec-head"><h2>Questions doctors ask us</h2></div>
-    <div class="faq">
-      <details><summary>What exactly is a "custom widget"?</summary><p>Any card you wish your EMR had. You describe it in plain English — "track injection site, relief %, and next step" — and MLS designs the card with the right fields. From then on it appears on every visit and fills itself from the conversation, exactly like the built-in cards. You can edit or remove it anytime.</p></details>
-      <details><summary>Does MLS upcode to inflate my billing?</summary><p>No — and that's a deliberate design choice. It only suggests codes supported by what's actually documented in the visit, and it's instructed never to invent findings to raise a level. It helps you stop <i>under</i>-coding accurately; the provider reviews and confirms every code.</p></details>
-      <details><summary>Is it HIPAA compliant?</summary><p>It's a HIPAA-ready architecture: encryption, two-factor authentication, access controls, audit logging, and encrypted backups by design — with BAAs in progress. We don't claim "certification" (that doesn't exist for HIPAA). We use real patient data only after BAAs are signed with our AI and hosting providers and a compliance review is done. Demos use synthetic data.</p></details>
-      <details><summary>Do I need to install anything or train my staff?</summary><p>No. MLS runs in your web browser, and the patient intake runs on any iPad's browser. Press start, talk, generate, review, sign. Onboarding takes minutes, not an IT project.</p></details>
-      <details><summary>What does Premium add over Standard?</summary><p>The Ask-your-data Study Engine: plain-English questions over your own practice data, answered with full studies — graphs, Excel-exportable tables, and one-click PDF reports — powered by a GPT-5.2-class reasoning model. Premium also includes the legal/IME lawyer portal and team-wide head-doctor analytics.</p></details>
-      <details><summary>Will it replace my judgment?</summary><p>Never. It drafts; you decide. You edit the note, confirm the codes, and electronically sign. You're always the final medical and coding authority.</p></details>
-      <details><summary>How does the price pay off?</summary><p>Two ways: hours of charting time returned to you each week, and fewer accurately-documented visits slipping to a lower code than they should. For most providers, one correctly-coded visit a month covers it.</p></details>
-    </div>
-  </div>
-</section>
-
-<footer>
-  <div class="wrap">
-    <div class="brand" style="color:#fff"><span class="mark" style="background:none;width:32px;height:32px"><svg viewBox="0 0 56 56" width="32" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svFootMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svFootMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</div>
-    <div><a href="#how">How it works</a> · <a href="#pricing">Pricing</a> · <a href="#demo">Book a demo</a> · <a href="mailto:hello@scrivara.ai">Contact</a></div>
-  </div>
-  <div class="wrap" style="margin-top:14px">
-    <p class="disc">MLS is a clinical documentation and coding-support tool. AI-generated notes and suggested codes are for the licensed provider to review, edit, and confirm — final documentation and coding are the provider's responsibility. "HIPAA-ready architecture" describes our design; it is not a claim of certification, and BAAs are in progress. Do not use with real patient data until applicable Business Associate Agreements are signed and a compliance review is complete. © 2026 MLS.</p>
-  </div>
-</footer>
-
-<script>
-// Real email delivery via FormSubmit (no account needed). Submissions are
-// emailed straight to the practice owner's inbox. A one-time confirmation
-// link (sent on the first submission) must be clicked once to activate.
-const DEMO_ENDPOINT="https://formsubmit.co/ajax/leeschaeffer41@gmail.com";
-async function submitDemo(e){
-  e.preventDefault();
-  const f=e.target;
-  const status=document.getElementById('demoStatus');
-  const btn=f.querySelector('button[type=submit]');
-  status.style.display='block';
-  status.style.color='var(--muted)';
-  status.textContent='Sending…';
-  if(btn){btn.disabled=true;}
-  const payload={
-    name:f.name.value,
-    email:f.email.value,
-    practice:f.practice.value||'',
-    focus:f.msg.value||'',
-    _subject:'New MLS demo request',
-    _template:'table'
-  };
-  try{
-    const r=await fetch(DEMO_ENDPOINT,{
-      method:'POST',
-      headers:{'Content-Type':'application/json',Accept:'application/json'},
-      body:JSON.stringify(payload)
-    });
-    const data=await r.json();
-    if(r.ok&&(data.success===true||data.success==='true')){
-      f.reset();
-      status.style.color='var(--green-dk)';
-      status.textContent='✓ Thanks! Your demo request was sent. We\'ll be in touch shortly.';
-    }else{
-      throw new Error(data.message||'Submission failed');
-    }
-  }catch(err){
-    status.style.color='#c0392b';
-    status.textContent='Something went wrong sending the form. Please email hello@scrivara.ai directly.';
-  }finally{
-    if(btn){btn.disabled=false;}
-  }
-  return false;
-}
-</script>
-</body>
-</html>
+          <li>iPad patient intake (ODI, satisfaction, insurance-card
