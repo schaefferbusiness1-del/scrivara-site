@@ -880,7 +880,8 @@
   <div id="patientsView" style="display:none">
     <div class="card">
       <h2><span class="ic">👥</span> Patients
-        <button class="btn-primary" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
+        <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
+        <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
       </h2>
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
@@ -941,6 +942,13 @@
         <h3>📚 Visit timeline</h3>
         <div id="ptTimelineEmpty" class="mini" style="color:var(--muted)">No visits yet for this patient.</div>
         <div class="ptimeline" id="ptTimeline"></div>
+      </div>
+    </div>
+
+    <!-- NEUTRAL "NO PATIENT SELECTED" PANEL (shown when no active patient) -->
+    <div class="card" id="profileNonePanel" style="margin-top:20px;display:none">
+      <div class="empty"><span class="big">🗂️</span>No patient selected — choose one above to view their chart, or start an <b>unassigned visit</b>. Unassigned notes are saved and appear under <b>History</b>.
+        <div class="row" style="justify-content:center;margin-top:12px"><button class="btn-green" style="font-size:14px;padding:9px 15px" onclick="goNewUnassignedVisit()">🎙️ Start unassigned visit</button></div>
       </div>
     </div>
   </div>
@@ -5396,8 +5404,22 @@ function renderPatients(){
   }).join('');
 }
 function selectPatient(id){
+  // Toggle: clicking the already-active patient clears the selection (no forced active patient).
+  if(id && id===getActivePtId()){ deselectPatient(); return; }
   setActivePtId(id);
   renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+}
+function deselectPatient(){
+  setActivePtId('');
+  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  toast('No patient selected. Visits will be unassigned.','');
+}
+function goNewUnassignedVisit(){
+  // Start a fresh visit with no patient attached — saves to History as an unassigned note.
+  setActivePtId('');
+  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+  showView('visit');
+  newVisit();
 }
 function deletePatient(id){
   if(!confirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
@@ -5453,8 +5475,17 @@ function fieldBody(elId,txt,placeholder){
 }
 function renderProfile(){
   const card=document.getElementById('profileCard');
+  const nonePanel=document.getElementById('profileNonePanel');
+  const chip=document.getElementById('ptDeselectChip');
   const p=activePatient();
-  if(!p){ card.style.display='none'; return; }
+  if(!p){
+    card.style.display='none';
+    if(nonePanel) nonePanel.style.display=getPatients().length?'block':'none';
+    if(chip) chip.style.display='none';
+    return;
+  }
+  if(nonePanel) nonePanel.style.display='none';
+  if(chip) chip.style.display='';
   card.style.display='block';
   document.getElementById('profName').textContent=p.name;
   const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
