@@ -35,7 +35,17 @@
   .btn-ghost:hover{background:var(--soft)}
   .btn-dark{background:#0c1521;color:#fff}
   .btn-dark:hover{background:#000;transform:translateY(-1px)}
-  @media(max-width:720px){.navlinks a:not(.btn){display:none}}
+  .navtoggle{display:none;background:none;border:0;font-size:27px;line-height:1;color:var(--ink);cursor:pointer;padding:6px 6px}
+  @media(max-width:720px){
+    nav .wrap{position:relative}
+    .navtoggle{display:inline-flex}
+    .navlinks{position:absolute;top:66px;left:0;right:0;flex-direction:column;align-items:stretch;gap:4px;
+      background:rgba(244,247,251,.98);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+      padding:8px 22px 18px;display:none;box-shadow:0 16px 30px rgba(22,50,79,.12)}
+    .navlinks.open{display:flex}
+    .navlinks a:not(.btn){display:block;padding:12px 2px;font-size:16.5px;border-bottom:1px solid var(--line);color:var(--ink)}
+    .navlinks .btn{width:100%;justify-content:center;margin-top:8px}
+  }
   /* hero */
   .hero{padding:72px 0 56px;text-align:center}
   .eyebrow{display:inline-block;background:var(--soft);color:var(--brand-dk);font-weight:700;
@@ -47,6 +57,17 @@
   .hero .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
   .hero .reassure{margin-top:18px;color:var(--muted);font-size:14.5px}
   @media(max-width:720px){.hero h1{font-size:33px}.hero p.lead{font-size:18px}}
+  @media(max-width:600px){
+    .hero{padding:38px 0 38px}
+    .eyebrow{font-size:12px;padding:5px 11px}
+    .hero h1{font-size:28px}
+    .hero p.lead{font-size:16.5px}
+    .hero .cta{flex-direction:column}
+    .hero .cta .btn{width:100%;justify-content:center}
+    .hero-shot{margin-top:26px}
+    .price-card .btn{width:100%;justify-content:center}
+    .split h2,.sec-head h2{font-size:25px}
+  }
   /* screenshots */
   .shot{display:block;width:100%;max-width:100%;height:auto;border-radius:12px}
   .shot-frame{background:#fff;border:1px solid var(--line);border-radius:18px;padding:10px;
@@ -173,7 +194,8 @@
 <nav>
   <div class="wrap">
     <div class="brand"><span class="mark" style="background:none"><svg viewBox="0 0 56 56" width="36" height="36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svNavMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svNavMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</div>
-    <div class="navlinks">
+    <button class="navtoggle" aria-label="Open menu" aria-expanded="false" onclick="toggleNav(this)">☰</button>
+    <div class="navlinks" id="navlinks">
       <a href="#widgets">Custom widgets</a>
       <a href="#features">Features</a>
       <a href="#studies">Data studies</a>
@@ -565,6 +587,18 @@
 // emailed straight to the practice owner's inbox. A one-time confirmation
 // link (sent on the first submission) must be clicked once to activate.
 const DEMO_ENDPOINT="https://formsubmit.co/ajax/michael@mlsscribe.com";
+
+// ---- Mobile nav (hamburger) ----
+function toggleNav(btn){
+  const nl=document.getElementById('navlinks');
+  const open=nl.classList.toggle('open');
+  if(btn) btn.setAttribute('aria-expanded', open?'true':'false');
+}
+// Close the mobile menu after tapping any link inside it.
+(function(){
+  const nl=document.getElementById('navlinks');
+  if(nl) nl.addEventListener('click',function(e){ if(e.target.closest('a')) nl.classList.remove('open'); });
+})();
 
 // ---- Stripe self-serve subscription checkout ----
 const BACKEND_URL="https://scrivara-backend.onrender.com";
