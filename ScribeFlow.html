@@ -772,7 +772,18 @@
           <label for="agSignName">Type your full legal name to sign</label>
           <input type="text" id="agSignName" autocomplete="name" placeholder="e.g. Jane A. Smith" oninput="agSyncSignState()">
         </div>
-        <p class="sub" style="margin:4px 0 0">Date: <strong id="agSignDate"></strong> · Your typed name + a timestamp form your electronic signature.</p>
+        <div style="margin-top:14px;max-width:480px">
+          <label style="font-weight:600;font-size:14px">Draw your signature</label>
+          <div style="border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:6px;position:relative">
+            <canvas id="agSigPad" style="width:100%;height:150px;display:block;border-radius:10px;touch-action:none;cursor:crosshair"></canvas>
+          </div>
+          <div class="row tight" style="margin-top:6px;align-items:center;gap:12px">
+            <button type="button" class="btn-ghost" style="font-size:13px;padding:6px 12px" onclick="sigPadClear('agSigPad');agSyncSignState()">Clear</button>
+            <span class="sub" style="margin:0">Sign with your mouse or finger.</span>
+          </div>
+        </div>
+        <p class="sub" style="margin:10px 0 0">Date: <strong id="agSignDate"></strong> · Your typed name, drawn signature, and a timestamp/IP form your electronic signature.</p>
+        <p class="sub" style="margin:8px 0 0;font-size:12.5px" id="agEsignConsent"></p>
         <div id="agGateErr" class="auth-err" style="display:none;margin-top:12px"></div>
         <div class="row tight" style="margin-top:16px;align-items:center;gap:14px">
           <button class="btn-primary" id="agSignBtn" disabled onclick="agSubmitSign()">✍️ Sign &amp; continue</button>
@@ -1686,15 +1697,15 @@
       <h2><span class="ic">✍️</span> Admin — Signed compliance forms
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminAgreements()">🔄 Refresh</button>
       </h2>
-      <p class="sub">Every user's first-login HIPAA / confidentiality / policy acknowledgment. Download a user's signed PDF receipt. No patient data is recorded here.</p>
+      <p class="sub">Every user's first-login HIPAA / confidentiality / policy acknowledgment, plus the two-party Practice&ndash;MLS Business Associate Agreement. Acknowledgments show <b>Signed</b>; the BAA shows <b>Awaiting your signature</b> until you countersign as the Business Associate, then <b>Executed</b>. No patient data is recorded here.</p>
       <div id="adminAgreementsEmpty" class="empty" style="margin-top:14px"><span class="big">✍️</span>Press <b>Refresh</b> to load signed forms.</div>
       <div style="overflow-x:auto">
         <table id="adminAgreementsTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
           <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
             <th style="padding:8px 6px">Name</th><th style="padding:8px 6px">Role</th>
             <th style="padding:8px 6px">Email</th><th style="padding:8px 6px">Signed</th>
-            <th style="padding:8px 6px">IP</th><th style="padding:8px 6px">Version</th>
-            <th style="padding:8px 6px">Receipt</th>
+            <th style="padding:8px 6px">Version</th><th style="padding:8px 6px">Status</th>
+            <th style="padding:8px 6px">Document</th>
           </tr></thead>
           <tbody id="adminAgreementsBody"></tbody>
         </table>
@@ -2260,6 +2271,40 @@
     <div class="row">
       <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Reopen in editor</button>
       <button class="btn-ghost" onclick="closeView()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- COUNTERSIGN MODAL (owner countersigns the two-party BAA as Business Associate) -->
+<div class="modal-bg" id="countersignModal">
+  <div class="modal" style="max-width:680px">
+    <button class="modal-x" onclick="closeCountersign()">×</button>
+    <h3>🖋️ Review &amp; countersign — Business Associate Agreement</h3>
+    <p class="note" id="csMeta"></p>
+    <div id="csBaaText" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--bg,#f9fbfe);font-size:13px;line-height:1.5"></div>
+    <div style="margin-top:14px">
+      <div style="font-weight:600;font-size:14px">Covered Entity representative’s signature</div>
+      <div id="csSignerSig" style="border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:6px;min-height:70px;display:flex;align-items:center;padding:8px"></div>
+    </div>
+    <div class="field" style="max-width:420px;margin-top:14px">
+      <label for="csName">Type your full legal name to countersign (Business Associate)</label>
+      <input type="text" id="csName" autocomplete="name" placeholder="e.g. Michael Schaeffer" oninput="csSyncState()">
+    </div>
+    <div style="margin-top:12px;max-width:480px">
+      <label style="font-weight:600;font-size:14px">Draw your countersignature</label>
+      <div style="border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:6px">
+        <canvas id="csSigPad" style="width:100%;height:140px;display:block;border-radius:10px;touch-action:none;cursor:crosshair"></canvas>
+      </div>
+      <div class="row tight" style="margin-top:6px;align-items:center;gap:12px">
+        <button type="button" class="btn-ghost" style="font-size:13px;padding:6px 12px" onclick="sigPadClear('csSigPad');csSyncState()">Clear</button>
+        <span class="sub" style="margin:0">You countersign as the Business Associate (Michael Schaeffer, HIPAA Security &amp; Privacy Officer).</span>
+      </div>
+    </div>
+    <p class="sub" id="csConsent" style="margin:10px 0 0;font-size:12.5px"></p>
+    <div id="csErr" class="auth-err" style="display:none;margin-top:12px"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn-primary" id="csSubmitBtn" disabled onclick="submitCountersign()" style="flex:1">✍️ Countersign &amp; execute</button>
+      <button class="btn-ghost" onclick="closeCountersign()">Cancel</button>
     </div>
   </div>
 </div>
@@ -10797,7 +10842,7 @@ let _jspdfLoading=null;
    is checked after refreshMe; a network error on the check NEVER locks anyone
    out of the clinical tool (re-checked next login).
    ========================================================= */
-const AGREEMENTS_VERSION='2026-06-08'; // MUST match server-side AGREEMENTS_VERSION
+const AGREEMENTS_VERSION='2026-06-09'; // MUST match server-side AGREEMENTS_VERSION
 const MLS_AGREEMENTS=[
   {
     title:'HIPAA Workforce Training Acknowledgment',
@@ -10829,8 +10874,115 @@ const MLS_AGREEMENTS=[
     paragraphs:[
       'I have received and will follow the MLS HIPAA Policies and the Notice of Privacy Practices.'
     ]
+  },
+  {
+    // FOURTH document: the two-party Practice<->MLS Business Associate Agreement.
+    // requiresCountersign flags this signing event as AWAITING the owner's (the
+    // Business Associate's) countersignature; the three acknowledgments above are
+    // one-party and complete on signing. Operative clauses are drafted to satisfy
+    // the required provisions of 45 C.F.R. § 164.504(e).
+    title:'Business Associate Agreement (Practice ↔ MLS)',
+    requiresCountersign:true,
+    role:'On behalf of the Covered Entity, as its authorized representative.',
+    intro:'This is a two-party HIPAA Business Associate Agreement between the Covered Entity (your practice) and MLS as Business Associate. You sign as the Covered Entity’s authorized representative; MLS (Michael Schaeffer, HIPAA Security &amp; Privacy Officer) will countersign as the Business Associate, at which point the Agreement is fully executed.',
+    recitals:'This Business Associate Agreement (“Agreement”) is entered into by and between the Covered Entity and MLS (“Business Associate”), an artificial-intelligence ambient clinical-documentation and mini-EMR service provider. The parties enter into this Agreement to comply with the Health Insurance Portability and Accountability Act of 1996, the HITECH Act, and their implementing regulations at 45 C.F.R. Parts 160 and 164 (collectively, the “HIPAA Rules”). Capitalized terms used but not defined herein have the meanings ascribed to them under the HIPAA Rules. “Protected Health Information” (“PHI”) has the meaning set forth at 45 C.F.R. § 160.103, limited to information Business Associate creates, receives, maintains, or transmits on behalf of Covered Entity; “ePHI” means PHI in electronic form.',
+    clauses:[
+      {h:'1. Permitted Uses and Disclosures', t:'Business Associate may use or disclose PHI only (a) to perform the services described in the underlying services arrangement (AI-assisted clinical documentation, transcription, and mini-EMR record management); (b) as Required by Law; and (c) for the proper management and administration of Business Associate or to carry out its legal responsibilities, provided that any such disclosure is Required by Law or is made under reasonable assurances of confidentiality and breach notification from the recipient. Business Associate shall not use or disclose PHI in any manner that would violate the HIPAA Rules if done by Covered Entity, shall make reasonable efforts to limit PHI to the Minimum Necessary, and shall not sell PHI or use PHI for marketing except as permitted by the HIPAA Rules and authorized by Covered Entity.'},
+      {h:'2. Safeguards', t:'Business Associate shall use appropriate administrative, physical, and technical safeguards, and shall comply with the HIPAA Security Rule (45 C.F.R. Part 164, Subpart C) with respect to ePHI, to prevent use or disclosure of PHI other than as provided by this Agreement. Current safeguards include AES-256-GCM encryption of PHI at rest, TLS/HSTS encryption in transit, role-based access controls, multi-factor authentication, a tamper-evident audit log, and encrypted backups.'},
+      {h:'3. Subcontractors (Flow-Down)', t:'In accordance with 45 C.F.R. §§ 164.502(e)(1)(ii) and 164.308(b)(2), Business Associate shall ensure that any subcontractor that creates, receives, maintains, or transmits PHI on its behalf agrees in writing to restrictions, conditions, and requirements at least as stringent as those that apply to Business Associate under this Agreement. Business Associate’s current PHI subprocessors are OpenAI (model-based note generation and transcription, under a signed BAA with zero data retention) and Render (hosting and database, under a signed BAA in a HIPAA-enabled environment).'},
+      {h:'4. Reporting of Breaches and Security Incidents', t:'Business Associate shall report to Covered Entity any use or disclosure of PHI not permitted by this Agreement of which it becomes aware, any Security Incident, and any Breach of Unsecured PHI, without unreasonable delay and no later than sixty (60) calendar days after discovery, and shall provide the information Covered Entity reasonably needs to meet its obligations under the Breach Notification Rule (45 C.F.R. §§ 164.400–414).'},
+      {h:'5. Individual Rights', t:'At Covered Entity’s request and within a reasonable time, Business Associate shall make PHI in a Designated Record Set available to satisfy an individual’s right of access (§ 164.524), make PHI available for amendment and incorporate amendments (§ 164.526), and make available the information required for an accounting of disclosures (§ 164.528).'},
+      {h:'6. Availability to HHS', t:'Business Associate shall make its internal practices, books, and records relating to the use and disclosure of PHI available to the Secretary of the U.S. Department of Health and Human Services for purposes of determining Covered Entity’s compliance with the HIPAA Rules.'},
+      {h:'7. Term and Termination', t:'This Agreement is effective as of the date of full execution and remains in effect until terminated. Covered Entity may terminate upon Business Associate’s uncured material breach. Upon termination, Business Associate shall, where feasible, return or destroy all PHI and retain no copies; where infeasible, Business Associate shall extend the protections of this Agreement to such PHI and limit further use and disclosure for so long as it is retained. Records and audit logs are retained for six (6) years consistent with HIPAA documentation requirements.'},
+      {h:'8. Miscellaneous', t:'The parties shall take such action as is necessary to amend this Agreement to comply with changes in the HIPAA Rules. Any ambiguity shall be resolved to permit compliance with the HIPAA Rules. This Agreement does not constitute legal advice and should be reviewed by licensed counsel before reliance.'}
+    ]
   }
 ];
+
+// Convenience: does the current agreements set include any two-party document
+// that must await the owner's countersignature?
+function agSetRequiresCountersign(){
+  return MLS_AGREEMENTS.some(s=>s&&s.requiresCountersign===true);
+}
+// Standardized electronic-signature consent (E-SIGN Act / UETA intent-to-sign).
+const AG_ESIGN_CONSENT='By drawing my signature and typing my full legal name below, I consent to sign these documents electronically and agree that my electronic signature has the same legal force and effect as a handwritten signature under the federal E-SIGN Act (15 U.S.C. § 7001 et seq.) and the Uniform Electronic Transactions Act (UETA).';
+
+/* =========================================================
+   REUSABLE DRAWN-SIGNATURE PAD (canvas; mouse + touch; high-DPI)
+   Tracks per-canvas state in _sigPads keyed by element id: whether any stroke
+   was drawn and the bounding box of ink (for trimming on export). Strokes are
+   drawn directly to the canvas 2D context; only PNG dataURLs ever leave here.
+   ========================================================= */
+const _sigPads={};
+function sigPadInit(canvasId){
+  const cv=document.getElementById(canvasId);
+  if(!cv) return;
+  // Size the backing store for the device pixel ratio so strokes stay crisp.
+  const dpr=Math.max(1, window.devicePixelRatio||1);
+  const rect=cv.getBoundingClientRect();
+  const cssW=Math.max(1, Math.round(rect.width||cv.clientWidth||300));
+  const cssH=Math.max(1, Math.round(rect.height||cv.clientHeight||150));
+  cv.width=Math.round(cssW*dpr);
+  cv.height=Math.round(cssH*dpr);
+  const ctx=cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#16324f';
+  const st={ctx,cssW,cssH,empty:true,drawing:false,last:null,minX:cssW,minY:cssH,maxX:0,maxY:0};
+  _sigPads[canvasId]=st;
+  const pos=ev=>{
+    const r=cv.getBoundingClientRect();
+    const src=(ev.touches&&ev.touches[0])||ev;
+    return {x:(src.clientX-r.left), y:(src.clientY-r.top)};
+  };
+  const start=ev=>{ ev.preventDefault(); st.drawing=true; st.last=pos(ev); mark(st.last); };
+  const move=ev=>{
+    if(!st.drawing) return; ev.preventDefault();
+    const p=pos(ev);
+    ctx.beginPath(); ctx.moveTo(st.last.x,st.last.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+    st.last=p; mark(p); st.empty=false;
+  };
+  const end=()=>{ st.drawing=false; st.last=null; if(typeof st.onstroke==='function'){ try{ st.onstroke(); }catch(e){} } };
+  const mark=p=>{
+    st.minX=Math.min(st.minX,p.x); st.minY=Math.min(st.minY,p.y);
+    st.maxX=Math.max(st.maxX,p.x); st.maxY=Math.max(st.maxY,p.y);
+  };
+  cv.addEventListener('mousedown',start);
+  cv.addEventListener('mousemove',move);
+  window.addEventListener('mouseup',end);
+  cv.addEventListener('touchstart',start,{passive:false});
+  cv.addEventListener('touchmove',move,{passive:false});
+  cv.addEventListener('touchend',end);
+  cv.addEventListener('touchcancel',end);
+}
+function sigPadClear(canvasId){
+  const cv=document.getElementById(canvasId); const st=_sigPads[canvasId];
+  if(!cv||!st) return;
+  st.ctx.clearRect(0,0,st.cssW,st.cssH);
+  st.empty=true; st.drawing=false; st.last=null;
+  st.minX=st.cssW; st.minY=st.cssH; st.maxX=0; st.maxY=0;
+}
+function sigPadIsEmpty(canvasId){
+  const st=_sigPads[canvasId];
+  return !st || st.empty;
+}
+/* Export the drawn signature as a trimmed PNG dataURL (tight crop + small pad),
+   transparent background. Returns '' when empty. */
+function sigPadDataUrl(canvasId){
+  const cv=document.getElementById(canvasId); const st=_sigPads[canvasId];
+  if(!cv||!st||st.empty) return '';
+  const dpr=Math.max(1, window.devicePixelRatio||1);
+  const pad=6;
+  let x0=Math.max(0,st.minX-pad), y0=Math.max(0,st.minY-pad);
+  let x1=Math.min(st.cssW,st.maxX+pad), y1=Math.min(st.cssH,st.maxY+pad);
+  let w=Math.max(1,x1-x0), h=Math.max(1,y1-y0);
+  const out=document.createElement('canvas');
+  out.width=Math.round(w*dpr); out.height=Math.round(h*dpr);
+  const octx=out.getContext('2d');
+  // Copy the cropped region from the source backing store (device pixels).
+  octx.drawImage(cv, Math.round(x0*dpr), Math.round(y0*dpr), Math.round(w*dpr), Math.round(h*dpr),
+                     0,0, Math.round(w*dpr), Math.round(h*dpr));
+  try{ return out.toDataURL('image/png'); }catch(e){ return ''; }
+}
 
 function agTodayStr(){
   const d=new Date();
@@ -10857,10 +11009,26 @@ function agRenderSections(){
     if(sec.paragraphs){
       sec.paragraphs.forEach(p=>{ html+='<p style="margin:6px 0;line-height:1.5">'+esc(p)+'</p>'; });
     }
+    // Two-party BAA: render recitals + numbered operative clauses in a scrollable box.
+    if(sec.recitals||sec.clauses){
+      html+='<div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0;background:var(--bg,#f9fbfe);font-size:13.5px;line-height:1.55">';
+      if(sec.recitals) html+='<p style="margin:0 0 8px">'+esc(sec.recitals)+'</p>';
+      if(sec.clauses){
+        sec.clauses.forEach(c=>{
+          html+='<p style="margin:8px 0 2px;font-weight:700">'+esc(c.h)+'</p>';
+          html+='<p style="margin:0 0 6px">'+esc(c.t)+'</p>';
+        });
+      }
+      html+='</div>';
+    }
     if(sec.closing) html+='<p style="margin:10px 0 0;font-style:italic">'+esc(sec.closing)+'</p>';
+    if(sec.role) html+='<p class="sub" style="margin:8px 0 0"><strong>You are signing:</strong> '+esc(sec.role)+'</p>';
+    if(sec.requiresCountersign) html+='<p class="sub" style="margin:6px 0 0;font-style:italic">This document becomes fully executed once MLS countersigns as the Business Associate.</p>';
+    // Lawyerly attestation above the consent for each section.
+    var _attest='By affixing my electronic signature, I, '+(sec.requiresCountersign?'as the Covered Entity’s authorized representative,':'the undersigned,')+' intending to be legally bound, acknowledge and agree to the '+esc(sec.title)+' as set forth above.';
     html+='<label style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer;font-weight:600">'+
             '<input type="checkbox" class="agCheckbox" data-ag="'+i+'" onchange="agSyncSignState()" style="margin-top:3px">'+
-            '<span>I have read and agree to the '+esc(sec.title)+'.</span></label>';
+            '<span>'+_attest+'</span></label>';
     html+='</div>';
   });
   host.innerHTML=html;
@@ -10870,8 +11038,9 @@ function agSyncSignState(){
   const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
   const allChecked=boxes.length===MLS_AGREEMENTS.length && boxes.every(b=>b.checked);
   const name=(document.getElementById('agSignName')||{}).value||'';
+  const hasSig=!sigPadIsEmpty('agSigPad');
   const btn=document.getElementById('agSignBtn');
-  if(btn) btn.disabled=!(allChecked && name.trim().length>0);
+  if(btn) btn.disabled=!(allChecked && name.trim().length>0 && hasSig);
 }
 /* Show the full-screen gate (hide app + auth screens). */
 /* Brief neutral full-screen overlay shown during startSession (backend mode)
@@ -10904,8 +11073,12 @@ function showAgreementsGate(){
   agRenderSections();
   const dateEl=document.getElementById('agSignDate'); if(dateEl) dateEl.textContent=agTodayStr();
   const nameEl=document.getElementById('agSignName'); if(nameEl) nameEl.value='';
+  const consentEl=document.getElementById('agEsignConsent'); if(consentEl) consentEl.textContent=AG_ESIGN_CONSENT;
   agGateErr('');
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
+  // Init the drawn-signature pad AFTER the gate is visible so the canvas has a
+  // measurable size (high-DPI sizing reads getBoundingClientRect()).
+  try{ sigPadClear('agSigPad'); sigPadInit('agSigPad'); if(_sigPads['agSigPad']) _sigPads['agSigPad'].onstroke=agSyncSignState; }catch(e){}
   agSyncSignState();
   if(nameEl) try{ nameEl.focus(); }catch(e){}
 }
@@ -10934,7 +11107,7 @@ async function checkAgreementsGate(){
 
 /* Build a PDF receipt of the signed acknowledgment via jsPDF.
    Returns the jsPDF doc (caller may .save() it) or null if jsPDF can't load. */
-async function agBuildReceiptPdf(name){
+async function agBuildReceiptPdf(name,signatureImg){
   let ns; try{ ns=await loadJsPdf(); }catch(e){ return null; }
   const { jsPDF }=ns;
   const doc=new jsPDF({unit:'pt',format:'letter'});
@@ -10965,13 +11138,30 @@ async function agBuildReceiptPdf(name){
   MLS_AGREEMENTS.forEach(sec=>{
     y+=6; ensure(lineH*2);
     wrap(sec.title+'  —  Accepted',12,true);
-    if(sec.intro) wrap(sec.intro,10,false);
+    if(sec.intro) wrap(sec.intro.replace(/&amp;/g,'&'),10,false);
     if(sec.points) sec.points.forEach((p,i)=>wrap((i+1)+'. '+p,10,false));
     if(sec.paragraphs) sec.paragraphs.forEach(p=>wrap(p,10,false));
+    if(sec.recitals) wrap(sec.recitals,10,false);
+    if(sec.clauses) sec.clauses.forEach(c=>{ wrap(c.h,10,true); wrap(c.t,10,false); });
     if(sec.closing) wrap(sec.closing,10,false);
+    if(sec.role) wrap('Signing capacity: '+sec.role,10,false);
+    if(sec.requiresCountersign) wrap('Status: Awaiting MLS (Business Associate) countersignature to become fully executed.',10,false);
   });
-  y+=14; ensure(lineH*3);
+  y+=12; ensure(lineH*3);
+  wrap(AG_ESIGN_CONSENT,9.5,false);
+  y+=8; ensure(lineH*4+60);
   doc.setDrawColor(180,180,180); doc.setLineWidth(0.6); doc.line(margin,y,pageW-margin,y); y+=18;
+  wrap('By affixing my electronic signature below, I, '+name+', intending to be legally bound, acknowledge and agree to the foregoing.',10,false);
+  // Embed the DRAWN signature image (PNG) above the signature line.
+  if(signatureImg){
+    try{
+      ensure(70);
+      const sigW=180, sigH=54;
+      doc.addImage(signatureImg,'PNG',margin,y,sigW,sigH);
+      y+=sigH+4;
+      doc.setDrawColor(120,120,120); doc.setLineWidth(0.5); doc.line(margin,y,margin+sigW,y); y+=14;
+    }catch(e){}
+  }
   wrap('Electronically signed by: '+name,11,true);
   wrap('Signature timestamp: '+stamp,10,false);
   return doc;
@@ -10983,8 +11173,11 @@ async function agSubmitSign(){
   if(!name){ agGateErr('Type your full legal name to sign.'); return; }
   const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
   if(!(boxes.length===MLS_AGREEMENTS.length && boxes.every(b=>b.checked))){
-    agGateErr('Please check all three boxes to confirm you have read and agree.'); return;
+    agGateErr('Please accept every document above to confirm you have read and agree.'); return;
   }
+  if(sigPadIsEmpty('agSigPad')){ agGateErr('Please draw your signature in the box above.'); return; }
+  const signatureImg=sigPadDataUrl('agSigPad');
+  if(!signatureImg){ agGateErr('Could not capture your drawn signature — please sign again.'); return; }
   agGateErr('');
   const btn=document.getElementById('agSignBtn');
   const orig=btn?btn.textContent:'';
@@ -10992,7 +11185,7 @@ async function agSubmitSign(){
   let doc=null, receiptB64='';
   try{
     try{
-      doc=await agBuildReceiptPdf(name);
+      doc=await agBuildReceiptPdf(name,signatureImg);
       if(doc){
         const uri=doc.output('datauristring'); // data:application/pdf;base64,XXXX
         const comma=uri.indexOf(',');
@@ -11002,6 +11195,8 @@ async function agSubmitSign(){
     const body={
       version:AGREEMENTS_VERSION,
       name:name,
+      signatureImg:signatureImg,
+      requiresCountersign:agSetRequiresCountersign(),
       agreements:MLS_AGREEMENTS.map(s=>({title:s.title}))
     };
     if(receiptB64) body.receiptPdfBase64=receiptB64;
@@ -11050,17 +11245,33 @@ async function loadAdminAgreements(){
       body.innerHTML=rows.map(r=>{
         let when=r.signed_at||'';
         try{ when=new Date(r.signed_at).toLocaleString(); }catch(e){}
-        const dl=r.has_receipt
-          ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+Number(r.id)+')">⬇ Download</button>'
-          : '<span style="color:var(--muted)">—</span>';
+        const id=Number(r.id);
+        // Status cell: acknowledgments => "Signed"; BAA => awaiting / executed.
+        let status, docCell;
+        if(r.requires_countersign){
+          if(r.countersigned){
+            status='<span style="color:#127a4f;font-weight:700">Executed</span>';
+            docCell=r.has_executed
+              ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementExecuted('+id+')">⬇ Executed PDF</button>'
+              : (r.has_receipt?'<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+id+')">⬇ Receipt</button>':'<span style="color:var(--muted)">—</span>');
+          }else{
+            status='<span style="color:#b45309;font-weight:700">Awaiting your signature</span>';
+            docCell='<button class="btn-primary" style="font-size:13px;padding:6px 12px" onclick="openCountersign('+id+',\''+esc(String(r.name_signed||'')).replace(/\x27/g,"\\\x27")+'\')">Review &amp; countersign</button>';
+          }
+        }else{
+          status='<span style="color:#127a7d;font-weight:700">Signed</span>';
+          docCell=r.has_receipt
+            ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+id+')">⬇ Download</button>'
+            : '<span style="color:var(--muted)">—</span>';
+        }
         return '<tr style="border-bottom:1px solid var(--line)">'+
           '<td style="padding:8px 6px">'+esc(r.name_signed||'')+'</td>'+
           '<td style="padding:8px 6px">'+esc(r.role||'')+'</td>'+
           '<td style="padding:8px 6px">'+esc(r.email||'')+'</td>'+
           '<td style="padding:8px 6px">'+esc(when)+'</td>'+
-          '<td style="padding:8px 6px">'+esc(r.ip||'')+'</td>'+
           '<td style="padding:8px 6px">'+esc(r.version||'')+'</td>'+
-          '<td style="padding:8px 6px">'+dl+'</td>'+
+          '<td style="padding:8px 6px">'+status+'</td>'+
+          '<td style="padding:8px 6px">'+docCell+'</td>'+
         '</tr>';
       }).join('');
     }
@@ -11083,6 +11294,161 @@ async function downloadAgreementReceipt(id){
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url),1500);
   }catch(e){ toast('Could not download receipt: '+friendlyError(e),'err'); }
+}
+
+async function downloadAgreementExecuted(id){
+  try{
+    const d=await adminFetch('/api/admin/agreements/'+encodeURIComponent(id)+'/executed');
+    const b64=d&&d.executedPdfBase64;
+    if(!b64){ toast('No executed PDF on file.','err'); return; }
+    const bytes=atob(b64);
+    const arr=new Uint8Array(bytes.length);
+    for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+    const blob=new Blob([arr],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='MLS_Executed_BAA_'+id+'.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){ toast('Could not download executed PDF: '+friendlyError(e),'err'); }
+}
+
+/* ---- Owner COUNTERSIGNATURE workflow (admin-only) ---- */
+let _csCurrentId=null, _csSignerName='', _csSignerSig='';
+function csErr(m){ const e=document.getElementById('csErr'); if(e){ e.textContent=m||''; e.style.display=m?'block':'none'; } }
+// Find the BAA section definition (the one flagged requiresCountersign).
+function agBaaSection(){ return MLS_AGREEMENTS.filter(s=>s&&s.requiresCountersign===true)[0]||null; }
+async function openCountersign(id,signerName){
+  _csCurrentId=Number(id); _csSignerName=String(signerName||''); _csSignerSig='';
+  const modal=document.getElementById('countersignModal'); if(!modal) return;
+  // Render the BAA operative text into the modal (escaped).
+  const baa=agBaaSection();
+  const box=document.getElementById('csBaaText');
+  if(box){
+    let h='';
+    if(baa){
+      if(baa.recitals) h+='<p style="margin:0 0 8px">'+esc(baa.recitals)+'</p>';
+      if(baa.clauses) baa.clauses.forEach(c=>{ h+='<p style="margin:6px 0 1px;font-weight:700">'+esc(c.h)+'</p><p style="margin:0 0 5px">'+esc(c.t)+'</p>'; });
+    }
+    box.innerHTML=h||'<p class="sub">Business Associate Agreement.</p>';
+  }
+  const meta=document.getElementById('csMeta');
+  if(meta) meta.textContent='Covered Entity representative: '+_csSignerName+'. By countersigning, MLS (Business Associate) executes this Agreement under 45 C.F.R. § 164.504(e).';
+  const consent=document.getElementById('csConsent'); if(consent) consent.textContent=AG_ESIGN_CONSENT;
+  const nameEl=document.getElementById('csName'); if(nameEl) nameEl.value=(bkUser&&bkUser.name)||'';
+  csErr('');
+  // Fetch + render the signer's drawn signature as an <img> (never as HTML).
+  const sigHost=document.getElementById('csSignerSig');
+  if(sigHost) sigHost.innerHTML='<span class="sub" style="margin:0">Loading signature…</span>';
+  modal.classList.add('show');
+  try{ sigPadClear('csSigPad'); sigPadInit('csSigPad'); if(_sigPads['csSigPad']) _sigPads['csSigPad'].onstroke=csSyncState; }catch(e){}
+  try{
+    const d=await adminFetch('/api/admin/agreements/'+encodeURIComponent(_csCurrentId)+'/signature');
+    _csSignerSig=(d&&d.signatureImg)||'';
+    if(sigHost){
+      if(_csSignerSig && /^data:image\/png;base64,/.test(_csSignerSig)){
+        const img=document.createElement('img');
+        img.src=_csSignerSig; img.alt='Signer signature'; img.style.maxHeight='56px'; img.style.maxWidth='100%';
+        sigHost.innerHTML=''; sigHost.appendChild(img);
+      }else{
+        sigHost.innerHTML='<span class="sub" style="margin:0">(No drawn signature on file — typed name: '+esc(_csSignerName)+')</span>';
+      }
+    }
+  }catch(e){ if(sigHost) sigHost.innerHTML='<span class="sub" style="margin:0">Could not load signer signature.</span>'; }
+  csSyncState();
+}
+function closeCountersign(){ const m=document.getElementById('countersignModal'); if(m) m.classList.remove('show'); _csCurrentId=null; }
+function csSyncState(){
+  const name=((document.getElementById('csName')||{}).value||'').trim();
+  const hasSig=!sigPadIsEmpty('csSigPad');
+  const btn=document.getElementById('csSubmitBtn');
+  if(btn) btn.disabled=!(name.length>0 && hasSig);
+}
+/* Build the EXECUTED BAA PDF embedding BOTH drawn signatures (signer + owner). */
+async function agBuildExecutedPdf(signerName,signerSig,ownerName,ownerSig){
+  let ns; try{ ns=await loadJsPdf(); }catch(e){ return null; }
+  const { jsPDF }=ns;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const pageH=doc.internal.pageSize.getHeight();
+  const margin=54, maxW=pageW-margin*2, lineH=14.5;
+  let y=margin;
+  const baa=agBaaSection();
+  const stamp=new Date().toISOString();
+  const dateStr=agTodayStr();
+  const ensure=h=>{ if(y+(h||0)>pageH-margin){ doc.addPage(); y=margin; } };
+  const wrap=(txt,fs,bold)=>{
+    doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(fs);
+    const lines=doc.splitTextToSize(String(txt||''),maxW);
+    for(let i=0;i<lines.length;i++){ ensure(lineH); doc.text(lines[i],margin,y); y+=lineH; }
+  };
+  doc.setFont('helvetica','bold'); doc.setFontSize(15);
+  doc.text('Business Associate Agreement — Fully Executed',margin,y); y+=20;
+  doc.setDrawColor(31,122,224); doc.setLineWidth(1.2); doc.line(margin,y,pageW-margin,y); y+=18;
+  wrap('Executed pursuant to 45 C.F.R. § 164.504(e). Date of execution: '+dateStr,10,false);
+  wrap('Version: '+AGREEMENTS_VERSION,10,false);
+  y+=8;
+  if(baa){
+    if(baa.recitals){ wrap('Recitals',12,true); wrap(baa.recitals,10,false); y+=4; }
+    if(baa.clauses) baa.clauses.forEach(c=>{ y+=4; wrap(c.h,11,true); wrap(c.t,10,false); });
+  }
+  y+=10; ensure(lineH*2);
+  wrap(AG_ESIGN_CONSENT,9.5,false);
+  y+=12;
+  // Signature blocks (both drawn signatures embedded).
+  const sigBlock=(role,name,img,attest)=>{
+    ensure(110);
+    wrap(role,11,true);
+    wrap(attest,9.5,false);
+    if(img){ try{ ensure(64); doc.addImage(img,'PNG',margin,y,170,50); y+=52; }catch(e){} }
+    doc.setDrawColor(120,120,120); doc.setLineWidth(0.5); doc.line(margin,y,margin+200,y); y+=13;
+    wrap('Name: '+name,10,false);
+    wrap('Date: '+dateStr,10,false);
+    y+=10;
+  };
+  sigBlock('Covered Entity — by its authorized representative', signerName, signerSig,
+    'By affixing my electronic signature, I, '+signerName+', as the Covered Entity’s authorized representative, intending to be legally bound, agree to the foregoing Business Associate Agreement.');
+  sigBlock('Business Associate — MLS (Michael Schaeffer, HIPAA Security & Privacy Officer)', ownerName, ownerSig,
+    'By affixing my electronic signature, I, '+ownerName+', as the Business Associate, intending to be legally bound, agree to the foregoing Business Associate Agreement.');
+  ensure(lineH*2);
+  wrap('Execution timestamp: '+stamp,9.5,false);
+  wrap('This Agreement does not constitute legal advice and should be reviewed by licensed counsel before reliance.',9,false);
+  return doc;
+}
+async function submitCountersign(){
+  if(_csCurrentId==null) return;
+  const name=((document.getElementById('csName')||{}).value||'').trim();
+  if(!name){ csErr('Type your full legal name to countersign.'); return; }
+  if(sigPadIsEmpty('csSigPad')){ csErr('Please draw your countersignature.'); return; }
+  const ownerSig=sigPadDataUrl('csSigPad');
+  if(!ownerSig){ csErr('Could not capture your drawn countersignature — please sign again.'); return; }
+  csErr('');
+  const btn=document.getElementById('csSubmitBtn');
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Executing…'; }
+  try{
+    let execB64='';
+    try{
+      const doc=await agBuildExecutedPdf(_csSignerName,_csSignerSig,name,ownerSig);
+      if(doc){
+        const uri=doc.output('datauristring');
+        const comma=uri.indexOf(',');
+        execB64=comma!==-1?uri.slice(comma+1):'';
+      }
+    }catch(e){ execB64=''; }
+    const body={ name:name, signatureImg:ownerSig };
+    if(execB64) body.executedPdfBase64=execB64;
+    await adminFetch('/api/admin/agreements/'+encodeURIComponent(_csCurrentId)+'/countersign',{
+      method:'POST', body:JSON.stringify(body)
+    });
+    closeCountersign();
+    toast('Business Associate Agreement fully executed.','ok');
+    loadAdminAgreements();
+  }catch(e){
+    csErr('Could not countersign: '+friendlyError(e));
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
+  }
 }
 
 function loadJsPdf(){
