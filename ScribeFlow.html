@@ -414,6 +414,16 @@
   .set-section>.set-desc{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.5}
   .set-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
   @media(max-width:560px){.set-grid2{grid-template-columns:1fr}}
+  /* ===== Settings tab bar (additive, MLS) — clickable tabs across the top of Settings ===== */
+  #settingsTabBar{display:flex;gap:4px;margin:0 0 16px;background:var(--soft);border:1px solid var(--line);
+    border-radius:10px;padding:5px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .set-tab{flex:0 0 auto;white-space:nowrap;text-align:center;padding:9px 13px;border-radius:7px;font-weight:600;
+    font-size:13.5px;cursor:pointer;color:var(--muted);background:transparent;border:none;
+    display:flex;align-items:center;gap:6px;transition:background .12s,color .12s;font-family:inherit}
+  .set-tab:hover{background:var(--card);color:var(--ink)}
+  .set-tab.on{background:var(--brand);color:#fff;font-weight:650}
+  .set-section.set-tab-hidden{display:none}
+  @media(max-width:560px){#settingsTabBar{flex-wrap:nowrap}}
   /* ===== Refined responsive behaviour for small screens (iPhone) ===== */
   @media(max-width:600px){
     body{font-size:16px}
@@ -801,6 +811,7 @@
     <div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div>
     <div>MLS
       <small>Ambient AI medical scribe</small>
+      <small id="mlsOwnerByline" style="font-size:11.5px;opacity:.55;margin-top:0">Michael L Schaeffer</small>
     </div>
   </div>
   <div class="tools">
@@ -1910,6 +1921,9 @@
     <button class="modal-x" onclick="closeSettings()">×</button>
     <h3>⚙️ Settings</h3>
     <p style="margin:0 0 14px;color:var(--muted);font-size:15px" id="settingsIntro">Enter your OpenAI API key once to enable AI note generation.</p>
+
+    <!-- Settings tab bar (MLS — additive). Built at runtime from the .set-section blocks below. -->
+    <div id="settingsTabBar" role="tablist" aria-label="Settings sections"></div>
 
     <!-- ============ SECTION: Account & access (MLS — additive heading wrapper) ============ -->
     <div class="set-section">
@@ -3820,6 +3834,44 @@ function applyBackendModeUI(){
     ? 'AI note generation is provided by your clinic server — no API key needed here. Add your name and specialty below.'
     : 'Enter your OpenAI API key once to enable AI note generation.';
 }
+/* MLS additive — build clickable tabs across the top of Settings from the live
+   .set-section blocks (robust to sections being added/removed). Reuses each
+   section's .set-head text (incl. emoji) as the tab label. Pure show/hide:
+   no controls/ids/handlers are moved or renamed. The global Save/Close row
+   lives AFTER the sections, so it stays visible across every tab. */
+function mlsSelectSettingsTab(idx){
+  const modal=document.getElementById('settingsModal');
+  if(!modal) return;
+  const secs=modal.querySelectorAll('.modal > .set-section');
+  const tabs=modal.querySelectorAll('#settingsTabBar > .set-tab');
+  secs.forEach((s,i)=>{ s.classList.toggle('set-tab-hidden', i!==idx); });
+  tabs.forEach((t,i)=>{
+    const on=(i===idx);
+    t.classList.toggle('on', on);
+    t.setAttribute('aria-selected', on?'true':'false');
+  });
+}
+function mlsBuildSettingsTabs(){
+  const modal=document.getElementById('settingsModal');
+  const bar=document.getElementById('settingsTabBar');
+  if(!modal||!bar) return;
+  const secs=modal.querySelectorAll('.modal > .set-section');
+  bar.innerHTML='';
+  secs.forEach((sec,i)=>{
+    sec.setAttribute('data-set-tab', String(i));
+    const head=sec.querySelector('.set-head');
+    const label=head?(head.textContent||'').trim():('Section '+(i+1));
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='set-tab';
+    btn.setAttribute('role','tab');
+    btn.setAttribute('data-set-tab-btn', String(i));
+    btn.textContent=label; // textContent → dynamic heading text is escaped
+    btn.addEventListener('click',()=>mlsSelectSettingsTab(i));
+    bar.appendChild(btn);
+  });
+  mlsSelectSettingsTab(0);
+}
 function openSettings(){
   applyBackendModeUI();
   document.getElementById('apiKey').value=getKey();
@@ -3853,6 +3905,7 @@ function openSettings(){
   renderDocPrefs();
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
+  mlsBuildSettingsTabs();
   document.getElementById('settingsModal').classList.add('show');
 }
 function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
@@ -10842,11 +10895,100 @@ let _jspdfLoading=null;
    is checked after refreshMe; a network error on the check NEVER locks anyone
    out of the clinical tool (re-checked next login).
    ========================================================= */
-const AGREEMENTS_VERSION='2026-06-09'; // MUST match server-side AGREEMENTS_VERSION
+const AGREEMENTS_VERSION='2026-06-10'; // MUST match server-side AGREEMENTS_VERSION
 const MLS_AGREEMENTS=[
   {
-    title:'HIPAA Workforce Training Acknowledgment',
-    intro:'Each workforce member who can log in to MLS or handle patient information must read the 10 points below, then sign.',
+    // 1. Master Subscription & Services Agreement (commercial contract MLS<->customer).
+    // One-party: the customer's authorized representative accepts. Carries the
+    // honest "templates — have counsel review; not certified" disclaimer for the set.
+    title:'Master Subscription & Services Agreement',
+    intro:'This is the commercial agreement between MLS (the “Company,” “we,” or “MLS”) and your practice or organization (“Customer,” “you”) governing your subscription to and use of the MLS software-as-a-service platform (the “Services”), comprising AI-assisted ambient clinical documentation, transcription, and mini-EMR record management. By accepting below, you enter into a binding contract on the Customer’s behalf.',
+    recitals:'This Master Subscription & Services Agreement (the “Agreement”) is entered into as of the date of acceptance by and between MLS and the Customer. This Agreement governs the parties’ commercial relationship and incorporates by reference the Business Associate Agreement set forth elsewhere in this document set, which governs the handling of Protected Health Information. In the event of a conflict between this Agreement and the Business Associate Agreement with respect to Protected Health Information, the Business Associate Agreement controls.',
+    clauses:[
+      {h:'1. License Grant', t:'Subject to the Customer’s continued compliance with this Agreement and payment of all applicable fees, MLS grants the Customer a limited, non-exclusive, non-transferable, non-sublicensable, revocable right to access and use the Services during the Term, solely for the Customer’s internal clinical and business operations and only by the Customer’s authorized workforce members. No rights are granted except as expressly set forth herein.'},
+      {h:'2. Fees and Subscription', t:'The Customer shall pay all subscription and usage fees in accordance with the applicable order or published pricing. Unless otherwise agreed in writing, fees are billed in advance on a recurring basis, are non-refundable except as expressly provided, and are exclusive of taxes, which are the Customer’s responsibility. MLS may modify fees prospectively upon reasonable notice effective at the next renewal term.'},
+      {h:'3. Acceptable Use', t:'The Customer and its workforce shall use the Services only for lawful purposes and in compliance with this Agreement, the Acceptable Use & Information Security Policy set forth in this document set, and all applicable laws. The Customer shall not (a) reverse engineer, decompile, or attempt to derive source code; (b) resell, sublicense, or provide the Services to third parties; (c) introduce malicious code or attempt to gain unauthorized access; (d) use the Services to develop a competing product; or (e) input Protected Health Information into any component or third-party tool not designated by MLS as part of the covered pipeline.'},
+      {h:'4. Intellectual Property', t:'As between the parties, MLS and its licensors retain all right, title, and interest in and to the Services, including all software, models, interfaces, and documentation, and all related intellectual property rights. The Customer retains all right, title, and interest in and to the patient data, clinical content, and other data it submits to the Services (“Customer Data”). The Customer grants MLS a limited license to process Customer Data solely to provide and support the Services, subject to the Business Associate Agreement.'},
+      {h:'5. Warranties and Disclaimers', t:'MLS warrants that it will provide the Services in a professional and workmanlike manner. EXCEPT AS EXPRESSLY STATED, THE SERVICES ARE PROVIDED “AS IS” AND “AS AVAILABLE,” AND MLS DISCLAIMS ALL OTHER WARRANTIES, EXPRESS OR IMPLIED, INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. AI-generated output is a clinical aid only; the Customer’s licensed clinicians remain solely responsible for reviewing, correcting, and approving all documentation and for all clinical decisions. MLS does not practice medicine and the Services do not constitute medical advice.'},
+      {h:'6. Limitation of Liability', t:'TO THE MAXIMUM EXTENT PERMITTED BY LAW, NEITHER PARTY SHALL BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS OR DATA, ARISING OUT OF THIS AGREEMENT. EXCEPT FOR A PARTY’S INDEMNIFICATION OBLIGATIONS, BREACH OF CONFIDENTIALITY, OR OBLIGATIONS UNDER THE BUSINESS ASSOCIATE AGREEMENT, EACH PARTY’S AGGREGATE LIABILITY SHALL NOT EXCEED THE FEES PAID OR PAYABLE BY THE CUSTOMER TO MLS IN THE TWELVE (12) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM.'},
+      {h:'7. Term and Termination', t:'This Agreement commences on acceptance and continues for the subscription term, renewing automatically for successive terms unless either party gives notice of non-renewal. Either party may terminate for the other’s uncured material breach upon thirty (30) days’ written notice. Upon termination, the Customer’s right to access the Services ceases, and the return or destruction of Protected Health Information shall be governed by the Business Associate Agreement.'},
+      {h:'8. Governing Law', t:'This Agreement is governed by the laws of the State in which MLS is organized, without regard to its conflict-of-laws principles, and the parties consent to the exclusive jurisdiction of the state and federal courts located therein. The Federal Arbitration Act and applicable federal law govern where they apply.'},
+      {h:'9. Entire Agreement', t:'This Agreement, together with the other agreements in this document set, constitutes the entire agreement between the parties regarding its subject matter and supersedes all prior or contemporaneous understandings. No modification is effective unless in writing. If any provision is held unenforceable, the remainder shall remain in full force.'},
+      {h:'10. Disclaimer of Legal Advice', t:'The documents in this set are templates provided for convenience and do not constitute legal advice. They should be reviewed and, as appropriate, adapted by licensed counsel before reliance. MLS makes no representation that any document, or the Services, is “certified,” accredited, or independently audited for compliance with any law or standard.'}
+    ],
+    role:'On behalf of the Customer, as its authorized representative.',
+    closing:'I have read and understood this Master Subscription & Services Agreement, including the disclaimers of warranty, the limitation of liability, and the disclaimer of legal advice, and I accept its terms on the Customer’s behalf.'
+  },
+  {
+    // 2. The two-party Practice<->MLS Business Associate Agreement.
+    // requiresCountersign flags this signing event as AWAITING the owner's (the
+    // Business Associate's) countersignature; every other document in this set is
+    // one-party and completes on signing. Operative clauses are drafted to satisfy
+    // the required provisions of 45 C.F.R. § 164.504(e).
+    title:'Business Associate Agreement (Practice ↔ MLS)',
+    requiresCountersign:true,
+    role:'On behalf of the Covered Entity, as its authorized representative.',
+    intro:'This is a two-party HIPAA Business Associate Agreement between the Covered Entity (your practice) and MLS as Business Associate. You sign as the Covered Entity’s authorized representative; MLS (Michael Schaeffer, HIPAA Security & Privacy Officer) will countersign as the Business Associate, at which point the Agreement is fully executed.',
+    recitals:'This Business Associate Agreement (“Agreement”) is entered into by and between the Covered Entity and MLS (“Business Associate”), an artificial-intelligence ambient clinical-documentation and mini-EMR service provider. The parties enter into this Agreement to comply with the Health Insurance Portability and Accountability Act of 1996, the HITECH Act, and their implementing regulations at 45 C.F.R. Parts 160 and 164 (collectively, the “HIPAA Rules”). Capitalized terms used but not defined herein have the meanings ascribed to them under the HIPAA Rules. “Protected Health Information” (“PHI”) has the meaning set forth at 45 C.F.R. § 160.103, limited to information Business Associate creates, receives, maintains, or transmits on behalf of Covered Entity; “ePHI” means PHI in electronic form.',
+    clauses:[
+      {h:'1. Permitted Uses and Disclosures', t:'Business Associate may use or disclose PHI only (a) to perform the services described in the underlying services arrangement (AI-assisted clinical documentation, transcription, and mini-EMR record management); (b) as Required by Law; and (c) for the proper management and administration of Business Associate or to carry out its legal responsibilities, provided that any such disclosure is Required by Law or is made under reasonable assurances of confidentiality and breach notification from the recipient. Business Associate shall not use or disclose PHI in any manner that would violate the HIPAA Rules if done by Covered Entity, shall make reasonable efforts to limit PHI to the Minimum Necessary, and shall not sell PHI or use PHI for marketing except as permitted by the HIPAA Rules and authorized by Covered Entity.'},
+      {h:'2. Safeguards', t:'Business Associate shall use appropriate administrative, physical, and technical safeguards, and shall comply with the HIPAA Security Rule (45 C.F.R. Part 164, Subpart C) with respect to ePHI, to prevent use or disclosure of PHI other than as provided by this Agreement. Current safeguards include AES-256-GCM encryption of PHI at rest, TLS/HSTS encryption in transit, role-based access controls, multi-factor authentication, a tamper-evident audit log, and encrypted backups.'},
+      {h:'3. Subcontractors (Flow-Down)', t:'In accordance with 45 C.F.R. §§ 164.502(e)(1)(ii) and 164.308(b)(2), Business Associate shall ensure that any subcontractor that creates, receives, maintains, or transmits PHI on its behalf agrees in writing to restrictions, conditions, and requirements at least as stringent as those that apply to Business Associate under this Agreement. Business Associate’s current PHI subprocessors are OpenAI (model-based note generation and transcription, under a signed BAA with zero data retention) and Render (hosting and database, under a signed BAA in a HIPAA-enabled environment).'},
+      {h:'4. Reporting of Breaches and Security Incidents', t:'Business Associate shall report to Covered Entity any use or disclosure of PHI not permitted by this Agreement of which it becomes aware, any Security Incident, and any Breach of Unsecured PHI, without unreasonable delay and no later than sixty (60) calendar days after discovery, and shall provide the information Covered Entity reasonably needs to meet its obligations under the Breach Notification Rule (45 C.F.R. §§ 164.400–414).'},
+      {h:'5. Individual Rights', t:'At Covered Entity’s request and within a reasonable time, Business Associate shall make PHI in a Designated Record Set available to satisfy an individual’s right of access (§ 164.524), make PHI available for amendment and incorporate amendments (§ 164.526), and make available the information required for an accounting of disclosures (§ 164.528).'},
+      {h:'6. Availability to HHS', t:'Business Associate shall make its internal practices, books, and records relating to the use and disclosure of PHI available to the Secretary of the U.S. Department of Health and Human Services for purposes of determining Covered Entity’s compliance with the HIPAA Rules.'},
+      {h:'7. Term and Termination', t:'This Agreement is effective as of the date of full execution and remains in effect until terminated. Covered Entity may terminate upon Business Associate’s uncured material breach. Upon termination, Business Associate shall, where feasible, return or destroy all PHI and retain no copies; where infeasible, Business Associate shall extend the protections of this Agreement to such PHI and limit further use and disclosure for so long as it is retained. Records and audit logs are retained for six (6) years consistent with HIPAA documentation requirements.'},
+      {h:'8. Miscellaneous', t:'The parties shall take such action as is necessary to amend this Agreement to comply with changes in the HIPAA Rules. Any ambiguity shall be resolved to permit compliance with the HIPAA Rules. This Agreement does not constitute legal advice and should be reviewed by licensed counsel before reliance.'}
+    ]
+  },
+  {
+    // 3. HIPAA Notice of Privacy Practices — Acknowledgment (§ 164.520). One-party.
+    title:'HIPAA Notice of Privacy Practices — Acknowledgment',
+    intro:'This document acknowledges the practice’s obligation to maintain and make available a Notice of Privacy Practices under 45 C.F.R. § 164.520.',
+    recitals:'Pursuant to 45 C.F.R. § 164.520, a covered entity must maintain a Notice of Privacy Practices that describes the uses and disclosures of Protected Health Information it may make, the individual’s rights, and the covered entity’s legal duties with respect to Protected Health Information. This acknowledgment confirms the undersigned’s understanding of that obligation as it operates in connection with the MLS Services.',
+    clauses:[
+      {h:'1. Notice Obligation', t:'I acknowledge that the practice is required to provide individuals with its Notice of Privacy Practices, to make the Notice available upon request, to prominently post the Notice where it is customarily provided, and, where a website is maintained, to make the Notice available electronically, in accordance with 45 C.F.R. § 164.520.'},
+      {h:'2. Good-Faith Acknowledgment Effort', t:'I acknowledge that, where the practice has a direct treatment relationship with an individual, the practice must make a good-faith effort to obtain the individual’s written acknowledgment of receipt of the Notice, and must document any failure to obtain such acknowledgment together with the reason therefor.'},
+      {h:'3. Content and Revisions', t:'I acknowledge that the Notice describes how Protected Health Information may be used and disclosed for treatment, payment, and health care operations and for other permitted or required purposes, sets forth the individual’s rights and how to exercise them, and that the practice reserves the right to revise the Notice and to apply revised terms to Protected Health Information it maintains, consistent with § 164.520.'}
+    ],
+    role:'On behalf of the practice, acknowledging its Notice of Privacy Practices obligations.',
+    closing:'I acknowledge the foregoing obligations under 45 C.F.R. § 164.520 and confirm that the practice maintains a current Notice of Privacy Practices.'
+  },
+  {
+    // 4. Workforce Confidentiality & Non-Disclosure Agreement. One-party.
+    title:'Workforce Confidentiality & Non-Disclosure Agreement',
+    intro:'Each workforce member with access to MLS or to Protected Health Information must execute this confidentiality and non-disclosure agreement.',
+    recitals:'In the course of my duties I may access, create, receive, or transmit Protected Health Information (“PHI”) and other confidential information. In consideration of my access to such information and to the MLS Services, I agree to the following confidentiality obligations, which are in addition to and not in lieu of any obligations imposed by law.',
+    clauses:[
+      {h:'1. Confidentiality of PHI', t:'I will hold all PHI and confidential information in strict confidence and will not access, use, or disclose it except as necessary to perform my authorized job duties and only as permitted by the HIPAA Rules, the practice’s policies, and the applicable Business Associate Agreement.'},
+      {h:'2. Minimum Necessary', t:'I will limit my access to, use of, and disclosure of PHI to the minimum necessary to accomplish the intended purpose, consistent with 45 C.F.R. § 164.502(b), and will access only the records of patients within my care or as otherwise required by my authorized role.'},
+      {h:'3. No Unauthorized Disclosure', t:'I will not disclose PHI to any person, internal or external, who is not authorized to receive it, and I will not remove PHI from approved systems or transmit it through unauthorized channels, including personal email, text messaging, consumer messaging applications, or consumer artificial-intelligence tools.'},
+      {h:'4. Post-Termination Obligations', t:'My confidentiality obligations survive the termination of my employment, engagement, or access for any reason and continue indefinitely. Upon separation or upon request, I will return or relinquish all PHI, devices, credentials, and materials in my possession or control, and I will cease all use of the MLS Services.'},
+      {h:'5. Reporting', t:'I will promptly report to the Security Officer any suspected or actual unauthorized use or disclosure of PHI, any security incident, or any lost or stolen device, recognizing that prompt reporting is required and reduces potential harm.'}
+    ],
+    role:'As a workforce member of the practice.',
+    closing:'I have read, understood, and agree to be bound by this Workforce Confidentiality & Non-Disclosure Agreement.'
+  },
+  {
+    // 5. Acceptable Use & Information Security Policy. One-party.
+    title:'Acceptable Use & Information Security Policy',
+    intro:'This policy governs every workforce member’s use of the MLS Services and of devices, credentials, and networks used to access Protected Health Information.',
+    recitals:'These administrative and technical safeguards implement the practice’s obligations under the HIPAA Security Rule (45 C.F.R. Part 164, Subpart C). I agree to comply with each of the requirements below as a condition of my access to the MLS Services.',
+    clauses:[
+      {h:'1. Unique Credentials; No Sharing', t:'I will use only the unique user identifier and credentials assigned to me. I will not share my account, password, or authentication factors with any other person, and I will not use another person’s credentials. All activity under my credentials is attributable to me.'},
+      {h:'2. Multi-Factor Authentication', t:'I will keep multi-factor authentication (2FA) enabled on my account at all times and will not disable, circumvent, or attempt to bypass authentication or access controls.'},
+      {h:'3. Devices and Encryption', t:'I will access the MLS Services only from practice-approved devices that have an automatic screen lock and full-disk encryption enabled. I will not store PHI on removable media such as USB drives, and I will keep devices, operating systems, and security software current.'},
+      {h:'4. No PHI in Consumer Tools', t:'I will never enter, paste, or transmit real PHI into consumer artificial-intelligence tools (including ChatGPT and similar services), personal email, text messages, or consumer chat or messaging applications. PHI remains within the MLS covered pipeline at all times.'},
+      {h:'5. Minimum-Necessary Access', t:'I will access only the records of patients within my care or as my authorized role requires, consistent with the minimum-necessary standard. I understand that all access is logged in a tamper-evident audit log and is subject to review.'},
+      {h:'6. Session Security', t:'I will lock or log off any screen displaying patient data when I step away, recognizing that the automatic logoff is a backstop and not a substitute for this practice.'}
+    ],
+    role:'As a workforce member subject to this Information Security Policy.',
+    closing:'I have read, understood, and agree to comply with this Acceptable Use & Information Security Policy.'
+  },
+  {
+    // 6. HIPAA Workforce Training Attestation — the 10-point training. One-party.
+    title:'HIPAA Workforce Training Attestation',
+    intro:'Each workforce member who can log in to MLS or handle patient information must read the 10 points below, then attest. Training repeats annually pursuant to 45 C.F.R. § 164.308(a)(5).',
     points:[
       'Patient information (PHI) may be used only for treatment, payment, and operations — minimum necessary.',
       'Your login is yours alone. Never share accounts or passwords. Keep 2FA enabled.',
@@ -10859,43 +11001,34 @@ const MLS_AGREEMENTS=[
       'Violations carry sanctions up to termination (see Sanction Policy).',
       'Training repeats annually; ask the Security Officer whenever unsure.'
     ],
-    closing:'I have read and understood the above and the MLS HIPAA policies, and agree to follow them.'
+    role:'As a workforce member completing required HIPAA training.',
+    closing:'I attest that I have received and understood the foregoing HIPAA workforce training and the MLS HIPAA policies, and I agree to follow them. I understand that this training is repeated at least annually and upon material changes in law or policy.'
   },
   {
-    title:'Confidentiality & Acceptable-Use Agreement',
-    paragraphs:[
-      'I will keep all patient information (PHI) confidential and will use MLS only for legitimate clinical and operational purposes.',
-      'I will comply with all MLS HIPAA policies and safeguards, and I will not make any unauthorized use or disclosure of patient information.',
-      'Upon separation or when access is no longer required, I will stop using MLS and return or relinquish any access and materials.'
-    ]
-  },
-  {
-    title:'Policy Acknowledgment',
-    paragraphs:[
-      'I have received and will follow the MLS HIPAA Policies and the Notice of Privacy Practices.'
-    ]
-  },
-  {
-    // FOURTH document: the two-party Practice<->MLS Business Associate Agreement.
-    // requiresCountersign flags this signing event as AWAITING the owner's (the
-    // Business Associate's) countersignature; the three acknowledgments above are
-    // one-party and complete on signing. Operative clauses are drafted to satisfy
-    // the required provisions of 45 C.F.R. § 164.504(e).
-    title:'Business Associate Agreement (Practice ↔ MLS)',
-    requiresCountersign:true,
-    role:'On behalf of the Covered Entity, as its authorized representative.',
-    intro:'This is a two-party HIPAA Business Associate Agreement between the Covered Entity (your practice) and MLS as Business Associate. You sign as the Covered Entity’s authorized representative; MLS (Michael Schaeffer, HIPAA Security &amp; Privacy Officer) will countersign as the Business Associate, at which point the Agreement is fully executed.',
-    recitals:'This Business Associate Agreement (“Agreement”) is entered into by and between the Covered Entity and MLS (“Business Associate”), an artificial-intelligence ambient clinical-documentation and mini-EMR service provider. The parties enter into this Agreement to comply with the Health Insurance Portability and Accountability Act of 1996, the HITECH Act, and their implementing regulations at 45 C.F.R. Parts 160 and 164 (collectively, the “HIPAA Rules”). Capitalized terms used but not defined herein have the meanings ascribed to them under the HIPAA Rules. “Protected Health Information” (“PHI”) has the meaning set forth at 45 C.F.R. § 160.103, limited to information Business Associate creates, receives, maintains, or transmits on behalf of Covered Entity; “ePHI” means PHI in electronic form.',
+    // 7. Sanction Policy Acknowledgment (§ 164.308(a)(1)(ii)(C)). One-party.
+    title:'Sanction Policy Acknowledgment',
+    intro:'This acknowledgment implements the sanction policy required by 45 C.F.R. § 164.308(a)(1)(ii)(C).',
+    recitals:'The practice maintains and applies appropriate sanctions against workforce members who fail to comply with its security and privacy policies and procedures, as required by 45 C.F.R. § 164.308(a)(1)(ii)(C). I acknowledge my understanding of that sanction policy as set forth below.',
     clauses:[
-      {h:'1. Permitted Uses and Disclosures', t:'Business Associate may use or disclose PHI only (a) to perform the services described in the underlying services arrangement (AI-assisted clinical documentation, transcription, and mini-EMR record management); (b) as Required by Law; and (c) for the proper management and administration of Business Associate or to carry out its legal responsibilities, provided that any such disclosure is Required by Law or is made under reasonable assurances of confidentiality and breach notification from the recipient. Business Associate shall not use or disclose PHI in any manner that would violate the HIPAA Rules if done by Covered Entity, shall make reasonable efforts to limit PHI to the Minimum Necessary, and shall not sell PHI or use PHI for marketing except as permitted by the HIPAA Rules and authorized by Covered Entity.'},
-      {h:'2. Safeguards', t:'Business Associate shall use appropriate administrative, physical, and technical safeguards, and shall comply with the HIPAA Security Rule (45 C.F.R. Part 164, Subpart C) with respect to ePHI, to prevent use or disclosure of PHI other than as provided by this Agreement. Current safeguards include AES-256-GCM encryption of PHI at rest, TLS/HSTS encryption in transit, role-based access controls, multi-factor authentication, a tamper-evident audit log, and encrypted backups.'},
-      {h:'3. Subcontractors (Flow-Down)', t:'In accordance with 45 C.F.R. §§ 164.502(e)(1)(ii) and 164.308(b)(2), Business Associate shall ensure that any subcontractor that creates, receives, maintains, or transmits PHI on its behalf agrees in writing to restrictions, conditions, and requirements at least as stringent as those that apply to Business Associate under this Agreement. Business Associate’s current PHI subprocessors are OpenAI (model-based note generation and transcription, under a signed BAA with zero data retention) and Render (hosting and database, under a signed BAA in a HIPAA-enabled environment).'},
-      {h:'4. Reporting of Breaches and Security Incidents', t:'Business Associate shall report to Covered Entity any use or disclosure of PHI not permitted by this Agreement of which it becomes aware, any Security Incident, and any Breach of Unsecured PHI, without unreasonable delay and no later than sixty (60) calendar days after discovery, and shall provide the information Covered Entity reasonably needs to meet its obligations under the Breach Notification Rule (45 C.F.R. §§ 164.400–414).'},
-      {h:'5. Individual Rights', t:'At Covered Entity’s request and within a reasonable time, Business Associate shall make PHI in a Designated Record Set available to satisfy an individual’s right of access (§ 164.524), make PHI available for amendment and incorporate amendments (§ 164.526), and make available the information required for an accounting of disclosures (§ 164.528).'},
-      {h:'6. Availability to HHS', t:'Business Associate shall make its internal practices, books, and records relating to the use and disclosure of PHI available to the Secretary of the U.S. Department of Health and Human Services for purposes of determining Covered Entity’s compliance with the HIPAA Rules.'},
-      {h:'7. Term and Termination', t:'This Agreement is effective as of the date of full execution and remains in effect until terminated. Covered Entity may terminate upon Business Associate’s uncured material breach. Upon termination, Business Associate shall, where feasible, return or destroy all PHI and retain no copies; where infeasible, Business Associate shall extend the protections of this Agreement to such PHI and limit further use and disclosure for so long as it is retained. Records and audit logs are retained for six (6) years consistent with HIPAA documentation requirements.'},
-      {h:'8. Miscellaneous', t:'The parties shall take such action as is necessary to amend this Agreement to comply with changes in the HIPAA Rules. Any ambiguity shall be resolved to permit compliance with the HIPAA Rules. This Agreement does not constitute legal advice and should be reviewed by licensed counsel before reliance.'}
-    ]
+      {h:'1. Sanctions for Violations', t:'I understand that any failure to comply with the practice’s HIPAA privacy and security policies, including any unauthorized access, use, or disclosure of PHI, may result in disciplinary action up to and including termination of employment, engagement, or access, applied in a manner proportionate to the nature and severity of the violation.'},
+      {h:'2. Potential Legal Liability', t:'I understand that violations of the HIPAA Rules may also expose me and the practice to civil monetary penalties and, in cases of knowing or wrongful conduct, to criminal liability under 42 U.S.C. § 1320d-6, and that such violations may be referred to appropriate authorities.'},
+      {h:'3. Documentation', t:'I understand that the application of sanctions is documented and retained consistent with the practice’s HIPAA documentation requirements.'}
+    ],
+    role:'As a workforce member acknowledging the practice’s sanction policy.',
+    closing:'I acknowledge that I have read and understood the Sanction Policy and the potential consequences of non-compliance, including civil and criminal liability.'
+  },
+  {
+    // 8. Authorized Representative & Electronic Signature Attestation. One-party.
+    title:'Authorized Representative & Electronic Signature Attestation',
+    intro:'This attestation confirms the signer’s authority to bind the practice or entity and the signer’s consent to electronic execution of the agreements in this set.',
+    recitals:'I provide this attestation in connection with my electronic execution of the agreements contained in this document set, including, where applicable, the Business Associate Agreement, which I sign as the Covered Entity’s authorized representative.',
+    clauses:[
+      {h:'1. Authority to Bind', t:'I certify that I am duly authorized to execute these agreements on behalf of the practice or entity identified in connection with my account, that I have the authority to bind that practice or entity to the obligations set forth herein, including those of the Business Associate Agreement, and that the information I have provided is true and accurate.'},
+      {h:'2. Consent to Electronic Signature', t:'I consent to conduct this transaction by electronic means and to sign these agreements electronically. I agree that my electronic signature constitutes my legally binding signature and has the same force and effect as a handwritten signature under the federal Electronic Signatures in Global and National Commerce Act (15 U.S.C. § 7001 et seq.) and the Uniform Electronic Transactions Act (UETA) as adopted in the applicable jurisdiction.'},
+      {h:'3. Access and Retention', t:'I confirm that I am able to access and retain a copy of the executed agreements in electronic form and that I have not been required to use any hardware or software beyond that already in my possession to do so.'}
+    ],
+    role:'As the authorized representative of the practice or entity, attesting to authority and electronic-signature consent.',
+    closing:'I certify that I am authorized to bind the practice or entity and I consent to the electronic execution of these agreements.'
   }
 ];
 
