@@ -462,7 +462,9 @@
           <li>Phone mic dictation &amp; encrypted multi-device sync</li>
           <li>2FA, audit logs, encrypted backups · HIPAA-ready architecture</li>
         </ul>
-        <a href="#demo" class="btn btn-ghost">Book a demo</a>
+        <button class="btn btn-dark" onclick="startCheckout('standard_monthly', this)">Subscribe — $99/mo</button>
+        <div style="margin-top:8px"><a href="#" onclick="startCheckout('standard_annual', this);return false;" style="color:var(--muted);font-size:13px;font-weight:600">or pay annually — $990/yr</a></div>
+        <a href="#demo" class="btn btn-ghost" style="margin-top:10px">Book a demo first</a>
       </div>
       <div class="price-card featured">
         <span class="tag">PREMIUM — FOR DATA-DRIVEN PRACTICES</span>
@@ -478,7 +480,9 @@
           <li>Team &amp; head-doctor analytics across providers</li>
           <li>Priority email support &amp; onboarding</li>
         </ul>
-        <a href="#demo" class="btn btn-dark">Book a demo</a>
+        <button class="btn btn-dark" onclick="startCheckout('premium_monthly', this)">Subscribe — $199/mo</button>
+        <div style="margin-top:8px"><a href="#" onclick="startCheckout('premium_annual', this);return false;" style="color:var(--muted);font-size:13px;font-weight:600">or pay annually — $1,990/yr</a></div>
+        <a href="#demo" class="btn btn-ghost" style="margin-top:10px">Book a demo first</a>
       </div>
     </div>
     <p style="text-align:center;color:var(--muted);font-size:13.5px;margin:18px 0 0">Annual plans available. Multi-provider discounts for clinics.</p>
@@ -561,6 +565,27 @@
 // emailed straight to the practice owner's inbox. A one-time confirmation
 // link (sent on the first submission) must be clicked once to activate.
 const DEMO_ENDPOINT="https://formsubmit.co/ajax/michael@mlsscribe.com";
+
+// ---- Stripe self-serve subscription checkout ----
+const BACKEND_URL="https://scrivara-backend.onrender.com";
+async function startCheckout(plan, el){
+  const original = el ? el.textContent : '';
+  if(el){ el.style.pointerEvents='none'; el.textContent='Loading…'; }
+  try{
+    const r=await fetch(BACKEND_URL+'/api/billing/checkout',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({plan})
+    });
+    const d=await r.json();
+    if(r.ok && d.url){ window.location.href=d.url; return; }
+    alert((d && d.error) ? d.error : 'Sorry — checkout is not available right now. Please book a demo and we’ll get you set up.');
+  }catch(e){
+    alert('Sorry — checkout could not start. Please check your connection or book a demo.');
+  }finally{
+    if(el){ el.style.pointerEvents=''; el.textContent=original; }
+  }
+}
 async function submitDemo(e){
   e.preventDefault();
   const f=e.target;
