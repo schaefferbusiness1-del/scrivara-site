@@ -13408,7 +13408,52 @@ function cwPrintStyleCss(){
   .cw-check{display:block;margin:2px 0}
   @media print{a{color:inherit;text-decoration:none}}`;
 }
-function printCustomWidget(id){
+/* v4 — render ONE chart block to a PNG data URL from its DATA (not from the
+   possibly-0×0 live canvas). Builds a fresh offscreen 640×300 white canvas,
+   paints with Chart.js (animation off so it draws synchronously), grabs the
+   data URL, then tears the temp Chart + canvas down. Returns '' on any failure
+   so callers fall back to the textual note. blk = the layout chart block,
+   c = its content {labels:[],data:[]}. */
+async function cwChartToPrintPng(blk,c){
+  if(!blk || !c || !Array.isArray(c.labels) || !Array.isArray(c.data) || !c.data.length) return '';
+  let Chart=null;
+  try{ Chart=await loadChartJs(); }catch(e){ return ''; }
+  if(!Chart) return '';
+  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#a855f7','#84cc16','#ec4899'];
+  const isPie=(blk.kind==='pie');
+  const cv=document.createElement('canvas');
+  cv.width=640; cv.height=300;
+  // off-document but laid out, white background for clean print
+  cv.style.cssText='position:fixed;left:-10000px;top:0;width:640px;height:300px;background:#fff';
+  document.body.appendChild(cv);
+  let inst=null, url='';
+  try{
+    const ctx=cv.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height);
+    inst=new Chart(ctx,{
+      type:blk.kind,
+      data:{labels:c.labels.slice(), datasets:[{
+        label:blk.label||'',
+        data:c.data.slice(),
+        backgroundColor:isPie?c.labels.map((_,k)=>palette[k%palette.length]):palette[0],
+        borderColor:palette[0], fill:false, tension:0.25
+      }]},
+      options:{responsive:false,maintainAspectRatio:false,animation:false,
+        devicePixelRatio:2,plugins:{legend:{display:isPie}}}
+    });
+    // animation:false draws synchronously, but give one frame as a safety net
+    await new Promise(r=>requestAnimationFrame(()=>r()));
+    url=cv.toDataURL('image/png');
+    if(url==='data:,' || !/^data:image\/png/.test(url)) url='';
+  }catch(e){ url=''; }
+  finally{
+    try{ if(inst) inst.destroy(); }catch(e){}
+    try{ if(cv.parentNode) cv.parentNode.removeChild(cv); }catch(e){}
+  }
+  return url;
+}
+
+async function printCustomWidget(id){
   const w=getCustomWidgets().find(x=>x.id===id);
   if(!w) return;
   const liveBody=document.getElementById('cwBody_'+id);
@@ -13416,24 +13461,41 @@ function printCustomWidget(id){
   const hasBody=liveBody && liveBody.textContent && liveBody.textContent.trim();
   if(!hasBody){ printExtra(w.emoji+' '+w.title,'cwText_'+id); return; }
 
-  // Clone the rendered blocks. Clone canvases are blank, so paint each into an
-  // <img> built from the ORIGINAL live canvas via toDataURL (wrapped — toDataURL
-  // throws on tainted canvases; degrade to a small note in that case).
+  // Clone the rendered blocks. Clone canvases are blank slivers (cards are
+  // collapsed by default → 0×0 → live toDataURL is empty). So instead of reading
+  // the live canvas, re-render EACH chart block offscreen from _cwState data.
   const clone=liveBody.cloneNode(true);
-  const liveCanvases=liveBody.querySelectorAll('canvas');
   const cloneCanvases=clone.querySelectorAll('canvas');
-  cloneCanvases.forEach((cc,k)=>{
-    const src=liveCanvases[k];
-    let replacement=null;
-    try{
-      if(src){
-        const url=src.toDataURL('image/png');
-        const img=document.createElement('img');
-        img.src=url;
-        img.style.cssText='max-width:100%;height:auto;display:block';
-        replacement=img;
+
+  // Walk the layout to find chart blocks IN ORDER; the Nth chart block ↔ the Nth
+  // cloned canvas ↔ the Nth chart entry in _cwState[id]. Pre-render all PNGs
+  // (await) BEFORE opening the print window so popup timing isn't an issue.
+  const state=_cwState[id];
+  const chartBlocks=[];
+  if(Array.isArray(w.layout)){
+    w.layout.forEach((blk,i)=>{
+      if(blk && blk.type==='chart'){
+        const c=(state && state.length>i)?state[i]:null;
+        chartBlocks.push({blk:blk,c:c});
       }
-    }catch(e){ replacement=null; }
+    });
+  }
+  const chartPngs=[];
+  for(let n=0;n<chartBlocks.length;n++){
+    let png='';
+    try{ png=await cwChartToPrintPng(chartBlocks[n].blk,chartBlocks[n].c); }catch(e){ png=''; }
+    chartPngs.push(png);
+  }
+  // Replace each cloned (blank) canvas, by chart-index, with the offscreen PNG.
+  cloneCanvases.forEach((cc,k)=>{
+    const png=chartPngs[k];
+    let replacement=null;
+    if(png){
+      const img=document.createElement('img');
+      img.src=png;
+      img.style.cssText='max-width:100%;height:auto;display:block';
+      replacement=img;
+    }
     if(!replacement){
       replacement=document.createElement('div');
       replacement.style.cssText='color:#7a8aa0;font-size:12px';
