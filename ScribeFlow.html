@@ -1002,6 +1002,9 @@
               <option>Medial branch block</option>
               <option>Trigger point injection</option>
               <option>Sacroiliac (SI) joint injection</option>
+              <option>BVN Ablation — Intracept/Omniblade</option>
+              <option>MILD (minimally invasive lumbar decompression)</option>
+              <option>Iliolumbar ligament injection</option>
               <option value="__other__">Other… (type below)</option>
             </select>
             <input type="text" id="procTypeOther" placeholder="Type the procedure name" style="display:none;margin-top:8px" oninput="syncProcOther()">
@@ -1098,6 +1101,7 @@
   <div class="card" id="emrCard" style="margin-top:20px">
     <h2><span class="ic">🗂️</span> EMR fields <span style="font-weight:400;font-size:14px;color:var(--muted)">(structured data ready to paste)</span></h2>
     <p class="sub">Auto-filled from the note so you can drop it straight into your records system.</p>
+    <p class="mini" style="margin:2px 0 8px">Structured fields pulled from the note — copy each into the matching field of your EMR (or use Copy-for-EMR / FHIR export).</p>
     <div id="emrEmpty" class="empty"><span class="big">🗂️</span>Structured fields populate here after you generate a note.</div>
     <table class="emr-table" id="emrTable" style="display:none">
       <tr><td class="k">Chief complaint</td><td class="v" id="emr_cc">—</td></tr>
@@ -1739,15 +1743,69 @@
       <input type="text" id="qolFollowup" placeholder="e.g. 2 weeks">
     </div>
 
-    <!-- MLS additive — OPTIONAL Legal feature (off by default) -->
-    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label for="legalEnabled" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
-        <input type="checkbox" id="legalEnabled" style="width:17px;height:17px;cursor:pointer">
-        <span>⚖️ Legal reports <span style="font-weight:400;color:var(--muted)">(medical-legal reports — optional)</span></span>
-      </label>
-      <p class="note" style="margin:6px 0 0">When on, a <b>⚖️ Legal</b> button appears in the tools row. It drafts a formal medical-legal report from the active patient's record plus an attorney request, lets you e-sign it, and saves it as a PDF. Off by default — when off, nothing changes.</p>
-    </div>
     </div><!-- /Provider preferences section -->
+
+    <!-- ============ SECTION: Features (MLS — additive feature switches) ============ -->
+    <div class="set-section"><p class="set-head">🧩 Features</p>
+    <p class="set-desc">Turn optional tools on or off for your practice. Off simply hides that tool — nothing else changes.</p>
+
+      <div class="field" style="margin-bottom:4px">
+        <label for="featMME" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="featMME" style="width:17px;height:17px;cursor:pointer">
+          <span>💊 Opioid MME calculator <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">Computes total daily morphine-equivalents with CDC risk bands.</p>
+      </div>
+
+      <div class="field" style="margin-bottom:4px">
+        <label for="featSurgical" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="featSurgical" style="width:17px;height:17px;cursor:pointer">
+          <span>🦴 Surgical planning</span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">Auto-builds operative candidacy, conservative-care, and consent points on surgical visits.</p>
+      </div>
+
+      <div class="field" style="margin-bottom:4px">
+        <label for="featUR" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="featUR" style="width:17px;height:17px;cursor:pointer">
+          <span>📋 Utilization review</span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">Assesses whether a pasted course of care looks medically necessary and reasonable.</p>
+      </div>
+
+      <div class="field" style="margin-bottom:4px">
+        <label for="featIME" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="featIME" style="width:17px;height:17px;cursor:pointer">
+          <span>🧾 IME report</span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">Adds an IME report button to the note tools for independent medical examinations.</p>
+      </div>
+
+      <div class="field" style="margin-bottom:4px">
+        <label for="featCost" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="featCost" style="width:17px;height:17px;cursor:pointer">
+          <span>💲 Cost estimator</span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">Estimates a patient's out-of-pocket cost from their entered insurance benefits.</p>
+      </div>
+
+      <div class="field" style="margin-bottom:4px">
+        <label for="featTplUse" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="featTplUse" style="width:17px;height:17px;cursor:pointer">
+          <span>📄 Templates <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">Formats generated notes to match your imported template — manage templates under 🛠 More tools → Templates.</p>
+      </div>
+
+      <!-- MLS additive — OPTIONAL Legal feature (off by default) -->
+      <div class="field" style="margin-bottom:4px">
+        <label for="legalEnabled" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="legalEnabled" style="width:17px;height:17px;cursor:pointer">
+          <span>⚖️ Legal reports <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">Adds a <b>⚖️ Legal</b> button that drafts a formal medical-legal report from the active patient's record plus an attorney request, lets you e-sign it, and saves it as a PDF.</p>
+      </div>
+    </div><!-- /Features section -->
 
     <!-- ============ SECTION: Security & privacy ============ -->
     <div class="set-section"><p class="set-head">🔒 Security &amp; privacy</p>
@@ -1895,7 +1953,7 @@
       <button class="edit" onclick="document.getElementById('tplFileInput').click()">⬆ Upload template (PDF / image)</button>
       <button class="btn-ghost" onclick="tplPasteText()">📋 Paste text instead</button>
     </div>
-    <input type="file" id="tplFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="onTplFile(event)">
+    <input type="file" id="tplFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf,text/plain" style="display:none" onchange="onTplFile(event)">
     <textarea id="tplText" placeholder="Extracted template text appears here. You can edit it before saving." style="min-height:120px;font-size:13px;margin-top:8px"></textarea>
     <div class="row" style="margin-top:6px">
       <button class="btn-green" onclick="saveTemplateFromForm()" style="flex:1">💾 Save template</button>
@@ -2506,6 +2564,7 @@ function startSession(email){
   loadUserSettingsIntoMemory();
   if(typeof applyAppearance==='function') applyAppearance(); // per-user appearance (MLS)
   if(typeof applyLegalUI==='function') applyLegalUI();       // optional ⚖️ Legal button (off by default)
+  if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide (per-user)
   renderDots();
   renderHistory();
   newVisit();
@@ -3094,6 +3153,36 @@ function applyLegalUI(){
 }
 
 /* =========================================================
+   MLS additive — 🧩 Feature toggles (Settings → Features).
+   Each feature is a per-device uns() key; absence falls back to the
+   default below (MME off, everything else on). applyFeatureToggles()
+   only shows/hides the surfaces — it never alters any handler.
+   Called on session start, after saveSettings, and after each
+   generate (end of autoPopulateExtras) so auto-population can never
+   re-reveal a card the user switched off.
+   ========================================================= */
+const FEATURE_DEFAULTS={featMME:false,featSurgical:true,featUR:true,featIME:true,featCost:true};
+function featOn(key){
+  const v=localStorage.getItem(uns(key));
+  return v===null ? !!FEATURE_DEFAULTS[key] : v==='1';
+}
+function applyFeatureToggles(){
+  try{
+    const mme=document.getElementById('mmeCard');
+    if(mme) mme.style.display=featOn('featMME')?'':'none';
+    if(!featOn('featSurgical')){
+      const sp=document.getElementById('surgPlanCard'); if(sp) sp.style.display='none';
+    } // when ON, renderSurgicalPlan() decides visibility (content-dependent)
+    const ur=document.getElementById('urToolCard');
+    if(ur) ur.style.display=featOn('featUR')?'':'none';
+    const ime=document.getElementById('imeBtn');
+    if(ime) ime.style.display=featOn('featIME')?'':'none';
+    const cb=document.getElementById('costBtn');
+    if(cb) cb.style.display=featOn('featCost')?'':'none';
+  }catch(e){ /* never block the app */ }
+}
+
+/* =========================================================
    MLS — additive Settings getters (Practice/Provider, Note defaults)
    All per-device via uns(). Read on demand; safe defaults when unset.
    ========================================================= */
@@ -3217,6 +3306,9 @@ function openSettings(){
   const qsig=document.getElementById('qolSignature'); if(qsig) qsig.value=getQolSignature();
   const qfu=document.getElementById('qolFollowup'); if(qfu) qfu.value=getQolFollowup();
   const _le=document.getElementById('legalEnabled'); if(_le) _le.checked=legalEnabled();
+  // MLS additive — 🧩 Features section checkboxes
+  Object.keys(FEATURE_DEFAULTS).forEach(k=>{ const el=document.getElementById(k); if(el) el.checked=featOn(k); });
+  const _ftu=document.getElementById('featTplUse'); if(_ftu) _ftu.checked=useTemplatesOn();
   // MLS additive — Practice/Provider + Note defaults
   const _pn=document.getElementById('practiceName'); if(_pn) _pn.value=getPracticeName();
   const _prn=document.getElementById('providerName'); if(_prn) _prn.value=getProviderName();
@@ -3264,6 +3356,9 @@ function saveSettings(){
   const qsig=document.getElementById('qolSignature'); if(qsig) localStorage.setItem(uns('qolSignature'),(qsig.value||'').trim());
   const qfu=document.getElementById('qolFollowup'); if(qfu) localStorage.setItem(uns('qolFollowup'),(qfu.value||'').trim());
   const _le=document.getElementById('legalEnabled'); if(_le) localStorage.setItem(uns('legalEnabled'),_le.checked?'1':'0');
+  // MLS additive — persist 🧩 Features toggles (featTplUse mirrors the Templates-modal toggle key)
+  Object.keys(FEATURE_DEFAULTS).forEach(k=>{ const el=document.getElementById(k); if(el) localStorage.setItem(uns(k),el.checked?'1':'0'); });
+  const _ftu=document.getElementById('featTplUse'); if(_ftu) localStorage.setItem(uns('useTemplates'),_ftu.checked?'1':'0');
   // MLS additive — persist Practice/Provider + Note defaults per-device
   const _pn=document.getElementById('practiceName'); if(_pn) localStorage.setItem(uns('practiceName'),(_pn.value||'').trim());
   const _prn=document.getElementById('providerName'); if(_prn) localStorage.setItem(uns('providerName'),(_prn.value||'').trim());
@@ -3275,6 +3370,7 @@ function saveSettings(){
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
   applyAppearance();                 // apply theme / text size / compact now
   if(typeof applyLegalUI==='function') applyLegalUI(); // show/hide the optional ⚖️ Legal button
+  if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide
   if(typeof applyVisitCommentToNote==='function') applyVisitCommentToNote(); // refresh signature on any open note
   const idleSel=document.getElementById('idleMins');
   if(idleSel){
@@ -4415,18 +4511,24 @@ async function onTplFile(ev){
   ev.target.value='';
   if(!file) return;
   const lower=file.name.toLowerCase();
+  const mime=(file.type||'').toLowerCase();
+  // Detect images by MIME type OR extension so camera photos / scans whose
+  // names lack a typical extension (or use .PNG/.JFIF etc.) still route to OCR.
+  const isImage=/^image\//.test(mime)||/\.(png|jpe?g|webp|gif|bmp|heic|heif|jfif)$/.test(lower);
+  const isPdf=mime==='application/pdf'||lower.endsWith('.pdf');
   const nameEl=document.getElementById('tplName');
   if(nameEl && !nameEl.value.trim()) nameEl.value=file.name.replace(/\.[^.]+$/,'');
   try{
-    if(lower.endsWith('.txt')){
+    if(lower.endsWith('.txt')||mime==='text/plain'){
       document.getElementById('tplText').value=await file.text();
       toast('Text file loaded.','ok');
-    } else if(lower.endsWith('.pdf')){
+    } else if(isPdf){
       toast('Extracting PDF text…','');
       const text=await extractPdfText(file);
       document.getElementById('tplText').value=text;
-      toast(text.trim()?'PDF text extracted.':'PDF added but no extractable text (may be scanned — try an image, or paste text).','ok');
-    } else if(/\.(png|jpe?g|webp)$/.test(lower)){
+      if(text.trim()) toast('PDF text extracted.','ok');
+      else toast('No text layer in this PDF — it looks scanned. Upload it as an image/photo instead (or take a screenshot of the form) and MLS will read it with OCR.','err');
+    } else if(isImage){
       if(!backendMode()||!bkToken()){
         toast('Image OCR needs the hosted version — paste the template text manually instead.','err');
         return;
@@ -4436,12 +4538,13 @@ async function onTplFile(ev){
       const r=await fetch(bkBase()+'/api/vision',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-        body:JSON.stringify({image:dataUrl,mimetype:file.type||'image/png'})
+        body:JSON.stringify({image:dataUrl,mimetype:mime||'image/png'})
       });
       let j={}; try{ j=await r.json(); }catch(e){}
       if(!r.ok){ throw new Error((j&&(j.error||j.message))||('Vision failed ('+r.status+').')); }
-      document.getElementById('tplText').value=(j.text||'').trim();
-      toast((j.text||'').trim()?'Text extracted from image.':'No readable text found in the image.','ok');
+      const txt=(j.text||'').trim();
+      document.getElementById('tplText').value=txt;
+      toast(txt?'Text extracted from image.':'No readable text found in the image — try a sharper, well-lit photo of the form.',txt?'ok':'err');
     } else {
       toast('Unsupported file type. Use .txt, .pdf, an image, or paste text.','err');
     }
@@ -5491,7 +5594,7 @@ function autoPopulateExtras(result){
       const doses=Number(o&&(o.doses_per_day!=null?o.doses_per_day:o.doses))||'';
       return drug?{drug,mg:mg===''?'':String(mg),doses:doses===''?'':String(doses)}:null;
     }).filter(Boolean);
-    if(mapped.length){
+    if(mapped.length && featOn('featMME')){ // 🧩 skip when the MME feature is off
       mmeOpioids=mapped;
       renderMmeRows();
       renderMmeResult();
@@ -5527,6 +5630,9 @@ function autoPopulateExtras(result){
 
   // --- Collapse the situational extra-cards (default closed) ---
   try{ initCollapsibleExtras(); }catch(e){ /* never block the note */ }
+
+  // --- 🧩 Re-apply feature toggles so auto-population never re-reveals a card the user switched off ---
+  try{ applyFeatureToggles(); }catch(e){ /* never block the note */ }
 }
 
 /* =========================================================
@@ -5561,6 +5667,11 @@ function detectInjection(text){
   for(const [re,name] of cptMap){ if(re.test(s)) return name; }
   // Injection nouns/phrases.
   const termMap=[
+    // Specific named procedures (match BEFORE generic injection terms).
+    // "MILD" deliberately requires procedure context — plain "mild pain" never matches.
+    [/\bintracept\b|basivertebral|bvn ablation|\bomniblade\b/,'BVN Ablation — Intracept/Omniblade'],
+    [/\bmild (procedure|decompression)\b|minimally invasive lumbar decompression/,'MILD (minimally invasive lumbar decompression)'],
+    [/iliolumbar (ligament )?injection|iliolumbar ligament/,'Iliolumbar ligament injection'],
     [/\btfesi\b|transforaminal epidural/,'Lumbar epidural steroid injection — transforaminal'],
     [/\besi\b|epidural steroid|interlaminar epidural|caudal epidural/,'Epidural steroid injection'],
     [/\bmedial branch block\b|\bmbb\b/,'Medial branch block'],
@@ -5749,6 +5860,8 @@ function renderSurgicalPlan(result){
   const card=document.getElementById('surgPlanCard');
   const body=document.getElementById('surgPlanBody');
   if(!card||!body) return;
+  // 🧩 Feature toggle: surgical planning off → keep the card hidden, never populate.
+  if(typeof featOn==='function' && !featOn('featSurgical')){ card.style.display='none'; return; }
   const cc=result.conservative_care||{tried:[],still_needed:[]};
   const tried=(Array.isArray(cc.tried)?cc.tried:[]).map(s=>String(s).trim()).filter(Boolean);
   const still=(Array.isArray(cc.still_needed)?cc.still_needed:[]).map(s=>String(s).trim()).filter(Boolean);
@@ -9760,6 +9873,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(ptNameEl) ptNameEl.addEventListener('keydown',e=>{ if(e.key==='Enter') savePatient(); });
   // initialize MME calculator empty state + prior-auth mode toggle
   if(typeof renderMmeRows==='function'){ renderMmeRows(); }
+  if(typeof applyFeatureToggles==='function'){ applyFeatureToggles(); } // 🧩 Features show/hide
   if(typeof setPaMode==='function'){ setPaMode('auth'); }
   // enter to submit auth
   ['authEmail','authPass','authPass2'].forEach(id=>{
