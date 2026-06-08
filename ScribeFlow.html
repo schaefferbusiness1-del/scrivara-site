@@ -2581,8 +2581,24 @@ function backendMode(){ return !!(BACKEND_URL && BACKEND_URL.trim()); }
 function bkBase(){ return BACKEND_URL.replace(/\/$/,''); }
 
 /* ---------- backend token + user (hosted Bearer auth) ---------- */
-function bkToken(){ return localStorage.getItem('sf_bk_token')||''; }
-function setBkToken(t){ if(t) localStorage.setItem('sf_bk_token',t); else localStorage.removeItem('sf_bk_token'); }
+/* PER-TAB SESSIONS: the active session lives in sessionStorage (unique per
+   browser tab) so two accounts can be logged in side-by-side in two tabs
+   without clobbering each other. localStorage keeps a "last login" seed so a
+   brand-new tab (no sessionStorage) auto-enters the last account, and a single
+   tab user still auto-logs-in after closing/reopening the browser.
+   sessionStorage ALWAYS wins on read. All token/session access MUST route
+   through these helpers. */
+function bkToken(){ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }
+function setBkToken(t){
+  if(t){ sessionStorage.setItem('sf_bk_token',t); localStorage.setItem('sf_bk_token',t); }
+  else { sessionStorage.removeItem('sf_bk_token'); localStorage.removeItem('sf_bk_token'); }
+}
+/* Per-tab session email (sessionStorage-first; localStorage is the seed). */
+function getSessionEmail(){ return sessionStorage.getItem('sf_session')||localStorage.getItem('sf_session')||''; }
+function setSessionEmail(e){
+  if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
+  else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
+}
 let bkUser=null; // {email,name,specialty,isAdmin,access,access_expires,hasAccess}
 /* Special marker thrown when the backend says the account lacks access (402). */
 function isNoAccessErr(e){ return !!(e && (e.noAccess || /no_access/i.test((e&&e.message)||''))); }
@@ -2978,9 +2994,15 @@ function regTwofaFinish(){
 
 function startSession(email){
   session={email};
-  localStorage.setItem('sf_session',email);
+  setSessionEmail(email);
   document.getElementById('authScreen').style.display='none';
+  // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
+  // "Loading…" overlay until the agreements decision resolves, so an unsigned
+  // user never sees/touches the app before the gate covers it. In local mode
+  // (no gate) we reveal immediately as before.
+  const _gateMode = backendMode() && bkToken();
   document.getElementById('appScreen').style.display='block';
+  if(_gateMode && typeof sfShowGateLoading==='function') sfShowGateLoading();
   document.getElementById('whoLabel').textContent='👤 '+email;
   document.getElementById('histWho').textContent=email;
   // clear sensitive auth fields
@@ -3001,12 +3023,18 @@ function startSession(email){
   renderDocPrefs();
   attachIdleListeners();
   resetIdle();            // start the inactivity timer for this session
-  if(backendMode() && bkToken()){
+  if(_gateMode){
     // Refresh identity, THEN enforce the first-login compliance signing gate.
-    // If the user hasn't signed the current agreements, the full-screen gate
-    // covers the app until they sign or log out. A network error never traps
-    // them (checkAgreementsGate returns false → the app stays open).
-    Promise.resolve(refreshMe()).then(()=>checkAgreementsGate()).catch(()=>{});
+    // The app is hidden behind the "Loading…" overlay (set above) until this
+    // resolves, so an unsigned user never sees/touches the app first. If the
+    // gate shows, the full-screen (z-9999) gate covers everything until they
+    // sign or log out. On resolve: gate shown → leave app hidden under it;
+    // not gated (signed, or network error) → reveal the app. A network error
+    // never traps the user (checkAgreementsGate returns false → app opens).
+    Promise.resolve(refreshMe())
+      .then(()=>checkAgreementsGate())
+      .then(gated=>{ if(typeof sfHideGateLoading==='function') sfHideGateLoading(!!gated); })
+      .catch(()=>{ if(typeof sfHideGateLoading==='function') sfHideGateLoading(false); });
   }
   if(!hasAI()){
     setTimeout(()=>toast('Add your OpenAI key in Settings to start generating notes.',''),700);
@@ -3022,7 +3050,10 @@ function logout(force){
   if(capturing) stopCapture();
   stopIdle();            // clear the inactivity timer
   session=null;
-  localStorage.removeItem('sf_session');
+  // Clear THIS TAB's session (sessionStorage) AND the localStorage seed. Other
+  // open tabs keep their own sessionStorage session and are unaffected — a
+  // logout/401 here does NOT log out another tab.
+  setSessionEmail('');
   if(backendMode()){
     // best-effort server logout; ignore failures
     try{ fetch(bkBase()+'/api/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()}}).catch(()=>{}); }catch(e){}
@@ -3058,7 +3089,7 @@ async function refreshMe(){
       const em=bkUser&&bkUser.email;
       if(em){
         session={email:em};
-        localStorage.setItem('sf_session',em);
+        setSessionEmail(em); // per-tab session, with localStorage seed
         const whoEl=document.getElementById('whoLabel');
         if(whoEl) whoEl.textContent='👤 '+em;
         const histEl=document.getElementById('histWho');
@@ -10843,8 +10874,32 @@ function agSyncSignState(){
   if(btn) btn.disabled=!(allChecked && name.trim().length>0);
 }
 /* Show the full-screen gate (hide app + auth screens). */
+/* Brief neutral full-screen overlay shown during startSession (backend mode)
+   while the agreements gate decision resolves, so the app underneath is never
+   visible/touchable before we know whether to gate it. z-index sits just below
+   the gate (9999) so the gate can still cover it if shown. */
+function sfShowGateLoading(){
+  let el=document.getElementById('sfGateLoading');
+  if(!el){
+    el=document.createElement('div');
+    el.id='sfGateLoading';
+    el.setAttribute('aria-busy','true');
+    el.style.cssText='position:fixed;inset:0;z-index:9998;background:var(--bg,#f4f7fb);display:flex;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--muted,#5a6b82)';
+    el.textContent='Loading…';
+    document.body.appendChild(el);
+  }
+  el.style.display='flex';
+}
+/* Remove the loading overlay. If gated===true the gate (z-9999) is already
+   covering the screen, so we just drop the overlay and leave the app hidden
+   under the gate; otherwise the app is revealed normally. */
+function sfHideGateLoading(gated){
+  const el=document.getElementById('sfGateLoading');
+  if(el) el.style.display='none';
+}
 function showAgreementsGate(){
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
+  const ld=document.getElementById('sfGateLoading'); if(ld) ld.style.display='none';
   const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
   agRenderSections();
   const dateEl=document.getElementById('agSignDate'); if(dateEl) dateEl.textContent=agTodayStr();
@@ -12594,8 +12649,10 @@ window.addEventListener('DOMContentLoaded',()=>{
     showResetScreen(_resetTok);
     return; // don't auto-enter the app while resetting
   }
-  // restore session if present
-  const saved=localStorage.getItem('sf_session');
+  // restore session if present (sessionStorage-first: a tab with its own
+  // per-tab session restores that account; a fresh tab falls back to the
+  // localStorage seed → auto-enters the last account, unchanged single-tab UX)
+  const saved=getSessionEmail();
   if(backendMode() && bkToken() && saved){
     // hosted mode: a stored Bearer token means we can auto-enter and verify with the server
     startSession(saved); // startSession() calls refreshMe() in backend mode
