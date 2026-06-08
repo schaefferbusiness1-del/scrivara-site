@@ -13354,10 +13354,123 @@ function cwRenderOutput(w,raw){
     body.appendChild(pre);
   }
 }
+/* v4 — RICH WIDGET PRINT. Instead of printing the plain-text mirror only,
+   build a self-contained print document that includes the widget's RENDERED
+   blocks (charts as PNG images, badges, score gauges, ratings, timelines,
+   fields grids, tables) plus a header/details block. Falls back to the old
+   text-mirror print if the live body is missing/empty. Additive — does not
+   touch printExtra (still used by other cards). */
+function cwPrintStyleCss(){
+  // Concrete, non-CSS-var styling for the cw-* block classes so they keep
+  // their look in a fresh print window (where --line/--muted/etc. don't exist).
+  return `
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13.5px;line-height:1.55;background:#fff}
+  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px;margin:0 0 4px}
+  .cwp-desc{font-size:13px;color:#42566b;margin:6px 0 10px}
+  .cwp-meta{font-size:12px;color:#5f7186;margin:0 0 6px}
+  .cwp-foot{font-size:11px;color:#7a8aa0;margin:18px 0 0;border-top:1px solid #e2e9f1;padding-top:8px}
+  .cwp-body{margin-top:14px}
+  .cw-blk{margin:0 0 15px}
+  .cw-blk:last-child{margin-bottom:0}
+  .cw-blk-label{font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#5f7186;margin-bottom:4px}
+  .cw-fields{display:grid;grid-template-columns:minmax(110px,max-content) 1fr;gap:4px 16px;font-size:13.5px}
+  .cw-fields .k{color:#5f7186;font-weight:600}
+  .cw-badge{display:inline-block;padding:3px 13px;border-radius:999px;font-size:13px;font-weight:700;border:1px solid #ccc}
+  .cw-badge.green{background:#e7f7ec;color:#1a7f3c;border-color:#9bd9b0}
+  .cw-badge.yellow{background:#fcf3e0;color:#9a6a12;border-color:#e7c987}
+  .cw-badge.red{background:#fbe8ea;color:#b0303d;border-color:#e6a3aa}
+  .cw-badge.gray{background:#eef1f5;color:#5f7186;border-color:#d6dde6}
+  .cw-score{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .cw-score .num{font-size:27px;font-weight:800;line-height:1}
+  .cw-score .den{font-size:13px;color:#5f7186;font-weight:600}
+  .cw-gauge{flex:1;min-width:120px;max-width:300px;height:10px;background:#dfe5ec;border-radius:999px;overflow:hidden}
+  .cw-gauge>span{display:block;height:100%;border-radius:999px}
+  .cw-gauge>span.g-green{background:#1a7f3c}
+  .cw-gauge>span.g-amber{background:#d28a18}
+  .cw-gauge>span.g-red{background:#c0303d}
+  .cw-timeline{display:flex;flex-direction:column;gap:0;border-left:2px solid #d6dde6;padding-left:0}
+  .cw-tl-row{display:flex;gap:9px;align-items:baseline;font-size:13.5px;padding:5px 0 5px 12px}
+  .cw-tl-date{flex:0 0 auto;font-weight:700;color:#5f7186;font-size:12px;min-width:78px}
+  .cw-tl-text{flex:1}
+  .cw-rating{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .cw-rt-num{font-size:18px;font-weight:800}
+  .cw-rt-dots{display:inline-flex;gap:4px}
+  .cw-rt-dot{width:11px;height:11px;border-radius:50%;background:#dfe5ec;display:inline-block}
+  .cw-rt-dot.on{background:#155fb3}
+  .cw-number{display:flex;align-items:baseline;gap:7px}
+  .cw-num-big{font-size:30px;font-weight:800;line-height:1}
+  .cw-num-unit{font-size:14px;color:#5f7186;font-weight:600}
+  .cwp-body table{width:100%;border-collapse:collapse;font-size:13.5px;margin:0}
+  .cwp-body th{padding:6px 8px;border-bottom:1px solid #cbd5e1;text-align:left;font-weight:700}
+  .cwp-body td{padding:6px 8px;border-bottom:1px solid #e2e9f1;text-align:left;vertical-align:top}
+  .cwp-body img{max-width:100%;height:auto}
+  select,.sf-select{font:inherit;padding:2px 6px;border:1px solid #cbd5e1;border-radius:6px}
+  .cw-check{display:block;margin:2px 0}
+  @media print{a{color:inherit;text-decoration:none}}`;
+}
 function printCustomWidget(id){
   const w=getCustomWidgets().find(x=>x.id===id);
   if(!w) return;
-  printExtra(w.emoji+' '+w.title,'cwText_'+id);
+  const liveBody=document.getElementById('cwBody_'+id);
+  // Fallback to legacy text-mirror print if there's no rendered body to clone.
+  const hasBody=liveBody && liveBody.textContent && liveBody.textContent.trim();
+  if(!hasBody){ printExtra(w.emoji+' '+w.title,'cwText_'+id); return; }
+
+  // Clone the rendered blocks. Clone canvases are blank, so paint each into an
+  // <img> built from the ORIGINAL live canvas via toDataURL (wrapped — toDataURL
+  // throws on tainted canvases; degrade to a small note in that case).
+  const clone=liveBody.cloneNode(true);
+  const liveCanvases=liveBody.querySelectorAll('canvas');
+  const cloneCanvases=clone.querySelectorAll('canvas');
+  cloneCanvases.forEach((cc,k)=>{
+    const src=liveCanvases[k];
+    let replacement=null;
+    try{
+      if(src){
+        const url=src.toDataURL('image/png');
+        const img=document.createElement('img');
+        img.src=url;
+        img.style.cssText='max-width:100%;height:auto;display:block';
+        replacement=img;
+      }
+    }catch(e){ replacement=null; }
+    if(!replacement){
+      replacement=document.createElement('div');
+      replacement.style.cssText='color:#7a8aa0;font-size:12px';
+      replacement.textContent='(Chart not available in print — the values are listed in this widget.)';
+    }
+    if(cc.parentNode) cc.parentNode.replaceChild(replacement,cc);
+  });
+  // Drop interactive form controls' live behaviour but keep their visible value.
+  // (Cloned <select> keeps the selected option; checkboxes keep checked state.)
+
+  const pt=activePatient();
+  const ptName=(pt && (pt.name||pt.label))?String(pt.name||pt.label):'(no patient selected)';
+  const docName=(bkUser&&bkUser.name)||getName()||'Clinician';
+  const today=agTodayStr();
+  const stamp=new Date().toLocaleString();
+  const titleStr=(w.emoji?w.emoji+' ':'')+w.title;
+  const descHtml=w.description?'<div class="cwp-desc">'+esc(w.description)+'</div>':'';
+
+  const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+esc(titleStr)+' — '+esc(ptName)+'</title>'
+    +'<style>'+cwPrintStyleCss()+'</style></head><body>'
+    +'<h1>'+esc(titleStr)+'</h1>'
+    +descHtml
+    +'<div class="cwp-meta">Patient: '+esc(ptName)+' · Date: '+esc(today)+'</div>'
+    +'<div class="cwp-meta">Provider: '+esc(docName)+'</div>'
+    +'<div class="cwp-body">'+clone.innerHTML+'</div>'
+    +'<div class="cwp-foot">Generated by MLS — provider must review. '+esc(stamp)+'</div>'
+    +'</body></html>';
+
+  let win=null; try{ win=window.open('','_blank','width=820,height=1000'); }catch(e){ win=null; }
+  if(win&&win.document){
+    win.document.open(); win.document.write(html); win.document.close(); win.focus();
+    win.onload=()=>setTimeout(()=>{try{win.print();}catch(e){}},150);
+    setTimeout(()=>{try{win.print();}catch(e){}},400);
+  } else {
+    // popup blocked → degrade to the legacy text print so nothing breaks
+    printExtra(w.emoji+' '+w.title,'cwText_'+id);
+  }
 }
 
 /* v3 — PUSH-TO-NOTE. Append this widget's current serialized content into the
