@@ -3478,6 +3478,8 @@ function applyAccessUI(){
   if(intakeBtn) intakeBtn.style.display=(backendMode()&&bkUser&&!isLawyer)?'':'none';
   // Lawyer portal: replaces the entire clinical app for lawyer accounts.
   if(typeof applyLawyerPortal==='function') applyLawyerPortal();
+  // Receptionist front-desk mode: hides all clinical UI, leaves scheduling only.
+  if(typeof applyReceptionistPortal==='function') applyReceptionistPortal();
   const banner=document.getElementById('noAccessBanner');
   if(banner){
     const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin&&!isLawyer;
@@ -5636,7 +5638,7 @@ function showView(v){
   document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq')?'none':'flex';
   renderPatientBar();
   updateNavCounts();
-  if(v==='patients'){ renderPatients(); renderProfile(); if(typeof loadPendingIntakes==='function') loadPendingIntakes(false); }
+  if(v==='patients'){ renderPatients(); renderProfile(); if(typeof loadPendingIntakes==='function') loadPendingIntakes(false); try{ if(typeof hideClinicalForReceptionist==='function') hideClinicalForReceptionist(); }catch(e){} }
   if(v==='history'){
     renderHistory();
     // hosted: refresh from the server so history survives devices; re-renders on change
@@ -12632,6 +12634,37 @@ function applyLawyerPortal(){
     if(footer) footer.style.display='';
   }
   return lawyer;
+}
+
+/* ===== Receptionist front-desk mode (feature #3). A receptionist account is
+   FRONT-DESK ONLY: it can run the check-in board + scheduling + booking link, but
+   gets NO clinical power (no Visit/notes/coding/intake/templates/widgets/analysis).
+   The backend already 403s receptionists on every clinical route; this hides the
+   clinical UI so they never see it. Mirrors the lawyer-portal gating. ===== */
+function isReceptionistUser(){ return !!(bkUser && bkUser.role==='receptionist'); }
+function hideClinicalForReceptionist(){
+  if(!isReceptionistUser()) return;
+  // Clinical controls inside the Patients view — receptionists keep only scheduling.
+  ['ptNewBtn','ptLinkBtn','ptIntakeBtn','ptReceptionBtn','ptDeselectChip','ptSearchRow','ptList','ptEmpty','ptNoMatch','profileCard']
+    .forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
+  // Auto-open the board + booking tools so the front desk lands on something useful.
+  var board=document.getElementById('boardBox');
+  if(board && board.style.display==='none'){ try{ loadBoard(false); }catch(e){} }
+}
+function applyReceptionistPortal(){
+  if(!isReceptionistUser()) return false;
+  // Hide every clinical nav tab.
+  ['nav_visit','nav_recs','nav_orders','nav_history','nav_analysis','nav_legalreq','nav_team','nav_admin']
+    .forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
+  var npt=document.getElementById('nav_patients'); if(npt){ npt.innerHTML='🗓️ Front desk'; }
+  // Hide clinical header buttons (Patient intake, Templates, Custom widget).
+  ['intakeBtn','customWidgetHdrBtn'].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
+  try{ document.querySelectorAll('button[onclick="openTemplates()"]').forEach(function(b){ b.style.display='none'; }); }catch(e){}
+  // Land on the front desk: the Patients view, restricted to the board + scheduling.
+  try{ showView('patients'); }catch(e){}
+  hideClinicalForReceptionist();
+  setTimeout(function(){ try{ loadBoard(true); }catch(e){} }, 150);
+  return true;
 }
 
 /* ---- Lawyer portal: submit a new request ---- */
