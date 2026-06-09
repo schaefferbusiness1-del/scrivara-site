@@ -481,6 +481,7 @@
   .pt-search input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.12)}
   .pt-count{font-size:13px;color:var(--muted);white-space:nowrap;font-weight:600}
   .pt-nomatch{padding:22px 16px;text-align:center;color:var(--muted);background:var(--soft);border:1px dashed var(--line);border-radius:12px;margin-top:6px}
+  .pt-cap-note{text-align:center;color:var(--muted);font-size:13px;padding:12px 4px 2px}
   .pt-item{display:flex;align-items:center;gap:14px;background:#fbfdff;border:1px solid var(--line);
     border-radius:12px;padding:14px 16px;cursor:pointer;transition:.12s}
   .pt-item:hover{border-color:var(--brand);background:#f3f8ff}
@@ -1010,7 +1011,7 @@
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
       <div class="pt-search" id="ptSearchRow" style="display:none">
-        <input type="text" id="ptSearch" placeholder="🔍  Search patients by name…" autocomplete="off" oninput="renderPatients()">
+        <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="renderPatients()">
         <span class="pt-count" id="ptCount"></span>
       </div>
       <div id="ptEmpty" class="empty"><span class="big">👤</span>No patients yet. Press <b>＋ New patient</b> to add one.</div>
@@ -5527,8 +5528,12 @@ function renderPatients(){
   if(searchRow) searchRow.style.display='flex';
   // Alphabetical by name, then filter by the typed query.
   let arr=all.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'}));
-  if(ql) arr=arr.filter(p=>(p.name||'').toLowerCase().includes(ql));
-  if(countEl) countEl.textContent = ql ? `${arr.length} of ${all.length}` : `${all.length} patient${all.length===1?'':'s'}`;
+  // Match against name, date of birth, and MRN / chart #.
+  if(ql) arr=arr.filter(p=>[p.name,p.dob,p.mrn].filter(Boolean).join(' ').toLowerCase().includes(ql));
+  const PT_CAP=150;                 // cap rendered rows so the DOM stays fast on huge rosters
+  const capped=arr.length>PT_CAP;
+  const shown=capped?arr.slice(0,PT_CAP):arr;
+  if(countEl) countEl.textContent = ql ? `${arr.length} of ${all.length}` : (capped ? `${all.length} patients · showing 150` : `${all.length} patient${all.length===1?'':'s'}`);
   // Searched but nothing matched → offer to add that name as a new patient.
   if(ql && !arr.length){
     list.innerHTML='';
@@ -5540,7 +5545,7 @@ function renderPatients(){
   }
   if(noMatch) noMatch.style.display='none';
   const activeId=getActivePtId();
-  list.innerHTML=arr.map(p=>{
+  list.innerHTML=shown.map(p=>{
     const notes=patientNotes(p.id);
     const docs=(p.docs||[]).length;
     let last='No visits yet';
@@ -5557,7 +5562,7 @@ function renderPatients(){
       </div>
       <button class="del" title="Delete patient" onclick="event.stopPropagation();deletePatient('${p.id}')">🗑</button>
     </div>`;
-  }).join('');
+  }).join('') + (capped ? `<div class="pt-cap-note">Showing the first 150 of ${arr.length}. Search by name or date of birth to find anyone else.</div>` : '');
 }
 function selectPatient(id){
   // Toggle: clicking the already-active patient clears the selection (no forced active patient).
