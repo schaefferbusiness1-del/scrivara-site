@@ -1016,9 +1016,17 @@
       <h2><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
+        <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
       </h2>
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
+      <div id="previsitLinkRow" style="display:none;margin-top:10px;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px">
+        <div style="font-size:13px;font-weight:600;color:var(--brand-dk);margin-bottom:6px">📤 Your pre-visit intake link — text or email it to patients to fill out at home:</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="previsitLinkInput" readonly style="flex:1;min-width:200px;border:1px solid #cfdbe8;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
+          <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyPrevisitLinkText()">📋 Copy</button>
+        </div>
+      </div>
       <div class="pt-search" id="ptSearchRow" style="display:none">
         <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="renderPatients()">
         <span class="pt-count" id="ptCount"></span>
@@ -5636,6 +5644,32 @@ function updateNavCounts(){
 }
 
 /* ---------- PATIENTS LIST ---------- */
+/* Pre-visit intake link: fetch this clinician's stable token and build the shareable
+   patient link (/intake.html?token=...). Clinician-only (owner is PHI-walled → 403). */
+async function copyPrevisitLink(btn){
+  try{
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to generate your pre-visit link.','err'); return; }
+    if(btn) btn.disabled=true;
+    const r=await fetch(bkBase()+'/api/intake/token',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(btn) btn.disabled=false;
+    if(r.status===403){ toast('Pre-visit links are for clinician (doctor) accounts.','err'); return; }
+    if(!r.ok){ toast('Could not get your pre-visit link — try again.','err'); return; }
+    const d=await r.json().catch(()=>({}));
+    if(!d.token){ toast('Could not get your pre-visit link — try again.','err'); return; }
+    const link=location.origin+'/intake.html?token='+encodeURIComponent(d.token);
+    const inp=document.getElementById('previsitLinkInput'); if(inp) inp.value=link;
+    const row=document.getElementById('previsitLinkRow'); if(row) row.style.display='block';
+    let copied=false; try{ await navigator.clipboard.writeText(link); copied=true; }catch(e){}
+    toast(copied?'Pre-visit link copied — text or email it to your patient.':'Pre-visit link ready below — tap Copy.','ok');
+  }catch(e){ if(btn) btn.disabled=false; toast('Could not get your pre-visit link.','err'); }
+}
+function copyPrevisitLinkText(){
+  const inp=document.getElementById('previsitLinkInput'); if(!inp||!inp.value) return;
+  inp.select();
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  if(!ok && navigator.clipboard){ navigator.clipboard.writeText(inp.value).then(function(){toast('Copied!','ok');}).catch(function(){}); return; }
+  toast(ok?'Copied!':'Select the link and copy it manually.', ok?'ok':'');
+}
 function renderPatients(){
   updateNavCounts();
   const all=getPatients();
