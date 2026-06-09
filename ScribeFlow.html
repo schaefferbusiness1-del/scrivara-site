@@ -12887,6 +12887,9 @@ const CW_LIBRARY=[
 function installLibraryWidget(idx){
   const tpl=CW_LIBRARY[idx];
   if(!tpl){ toast('That library widget is unavailable.','err'); return; }
+  // The curated ready-made widget library is a Premium feature.
+  // Standard can still build their own custom widgets (up to 5, enforced in saveCustomWidget).
+  if(!effectivePremium()){ toast('The ready-made widget library is a Premium feature. Upgrade to add curated clinical widgets instantly — or build your own (up to 5) on Standard.','err'); return; }
   const list=getCustomWidgets();
   if(list.length>=CW_MAX_WIDGETS){ toast('Widget limit reached ('+CW_MAX_WIDGETS+') — delete one first.','err'); return; }
   const spec=cwSanitizeSpec(Object.assign({},tpl,{
