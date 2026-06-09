@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- build: about-video-animations-v6 2026-06-09 -->
+<!-- build: multipage-router-v7 2026-06-09 -->
 <meta name="robots" content="index,follow">
 <title>MLS — AI Scribe for Spine, PM&amp;R &amp; Pain | Build Your Own AI Widgets</title>
 <meta name="description" content="MLS is the AI ambient scribe + mini-EMR built for every medical practice — spine, pain, primary care, cardiology, psychiatry, and beyond. Build your own AI widgets, get structured SOAP notes with E/M, ICD-10 and CPT coding, iPad patient intake, outcomes tracking, branded white-label notes, referral outcome reports, and a premium ask-your-data Study Engine. From $99/provider/month.">
@@ -29,6 +29,7 @@
   .navlinks{display:flex;gap:24px;align-items:center}
   .navlinks a{color:var(--muted);font-weight:600;font-size:15.5px}
   .navlinks a:hover{color:var(--brand)}
+  .navlinks a.navactive{color:var(--brand)}
   /* Apple-style scroll reveal — content eases in as you scroll */
   .reveal{opacity:0;transform:translateY(28px);transition:opacity .75s cubic-bezier(.2,.65,.2,1),transform .75s cubic-bezier(.2,.65,.2,1)}
   .reveal.in{opacity:1;transform:none}
@@ -200,15 +201,13 @@
 
 <nav>
   <div class="wrap">
-    <div class="brand"><span class="mark" style="background:none"><svg viewBox="0 0 56 56" width="36" height="36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svNavMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svNavMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</div>
+    <div class="brand" style="cursor:pointer" onclick="location.hash='#home'"><span class="mark" style="background:none"><svg viewBox="0 0 56 56" width="36" height="36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svNavMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svNavMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</div>
     <button class="navtoggle" aria-label="Open menu" aria-expanded="false" onclick="toggleNav(this)">☰</button>
     <div class="navlinks" id="navlinks">
-      <a href="#widgets">Custom widgets</a>
-      <a href="#features">Features</a>
-      <a href="#studies">Data studies</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#trust">Security</a>
-      <a href="#about">About</a>
+      <a href="#features" data-nav="features">Features</a>
+      <a href="#pricing" data-nav="pricing">Pricing</a>
+      <a href="#security" data-nav="security">Security</a>
+      <a href="#about" data-nav="about">About</a>
       <a href="ScribeFlow.html">Sign in</a>
       <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost">⬇ Download the app</a>
       <a href="#demo" class="btn btn-dark">Book a demo</a>
@@ -718,6 +717,29 @@ async function submitDemo(e){
   }
   return false;
 }
+</script>
+
+<!-- ===== Multi-page router — each nav item shows its own page; chat bubble + footer persist ===== -->
+<script>
+(function(){
+  var order=['home','features','features','features','features','features','features','features','pricing','security','demo','pricing','about'];
+  var blocks=[];
+  var hero=document.querySelector('header.hero'); if(hero) blocks.push(hero);
+  [].slice.call(document.body.children).forEach(function(el){ if(el.tagName==='SECTION') blocks.push(el); });
+  blocks.forEach(function(el,i){ el.setAttribute('data-pg', order[i]||'features'); });
+  var anchorToPage={home:'home',widgets:'features',how:'features',features:'features',studies:'features',billing:'features',pricing:'pricing',trust:'security',security:'security',demo:'demo',about:'about'};
+  var valid={home:1,features:1,pricing:1,security:1,about:1,demo:1};
+  function route(){
+    var raw=(location.hash||'').replace('#','');
+    var pg=anchorToPage[raw]||(valid[raw]?raw:'home');
+    blocks.forEach(function(el){ el.style.display=(el.getAttribute('data-pg')===pg)?'':'none'; });
+    document.querySelectorAll('.navlinks a[data-nav]').forEach(function(a){ a.classList.toggle('navactive', a.getAttribute('data-nav')===pg); });
+    var nl=document.getElementById('navlinks'); if(nl) nl.classList.remove('open');
+    window.scrollTo(0,0);
+  }
+  window.addEventListener('hashchange', route);
+  route();
+})();
 </script>
 
 <!-- ===== Apple-style scroll reveal ===== -->
