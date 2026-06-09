@@ -2213,6 +2213,14 @@
           </select>
         </div>
       </div>
+      <div class="field">
+        <label for="noteModelSel">AI model for notes <span style="font-size:11px;font-weight:700;color:#155fb3;background:#e8f1fc;border-radius:10px;padding:1px 8px;margin-left:4px">Premium</span></label>
+        <select class="sf-select" id="noteModelSel">
+          <option value="gpt-4o">Balanced — stronger model (recommended)</option>
+          <option value="gpt-4o-mini">Fast — quickest generation</option>
+        </select>
+        <p class="set-desc" id="noteModelHint" style="margin-top:6px">Premium notes run on a priority lane for lower latency. Pick the stronger model for the highest-quality notes, or the fast model for the quickest turnaround. Standard always uses the fast model.</p>
+      </div>
       <p class="note" style="margin:2px 0 0">Tip: your standing follow-up interval lives below under Provider preferences.</p>
     </div>
 
@@ -4026,6 +4034,10 @@ function removeClinicLogo(){
   toast('Logo removed.','ok');
 }
 function getDefaultFormat(){ const v=localStorage.getItem(uns('defaultFormat')); return (v==='insurance')?'insurance':'soap'; }
+/* Premium note-generation model preference. Allowlisted to models that accept the
+   note params (temperature + JSON output). Backend re-validates and ignores this
+   for non-Premium accounts, so it can only ever pick from the safe set. */
+function getNoteModel(){ const v=localStorage.getItem(uns('noteModel')); return (v==='gpt-4o'||v==='gpt-4o-mini')?v:'gpt-4o'; }
 function getMlsNoteStyle(){ const v=localStorage.getItem(uns('noteStyle')); return (v==='concise'||v==='detailed')?v:'balanced'; }
 
 /* Apply the saved appearance prefs to <body>. Safe to call repeatedly and
@@ -4189,6 +4201,7 @@ function openSettings(){
   const _cph=document.getElementById('clinicPhone'); if(_cph) _cph.value=getClinicPhone();
   if(typeof renderLogoSetting==='function') renderLogoSetting();
   const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
+  const _nm=document.getElementById('noteModelSel'); if(_nm){ _nm.value=getNoteModel(); const _nmPrem=(typeof effectivePremium==='function')?effectivePremium():false; _nm.disabled=!_nmPrem; const _nmh=document.getElementById('noteModelHint'); if(_nmh && !_nmPrem) _nmh.textContent='Model selection is a Premium feature — Standard always uses the fast model. Upgrade to choose the stronger model.'; }
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) _nst.value=getMlsNoteStyle();
   // MLS additive — 📋 Patient intake custom questions (one per line)
   const _iq=document.getElementById('intakeQuestions'); if(_iq) _iq.value=localStorage.getItem(uns('intakeQuestions'))||'';
@@ -4242,6 +4255,7 @@ function saveSettings(){
   const _cad=document.getElementById('clinicAddress'); if(_cad) localStorage.setItem(uns('clinicAddress'),(_cad.value||'').trim());
   const _cph=document.getElementById('clinicPhone'); if(_cph) localStorage.setItem(uns('clinicPhone'),(_cph.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
+  const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(_nm.value==='gpt-4o-mini')?'gpt-4o-mini':'gpt-4o');
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
   // MLS additive — persist 📋 Patient intake custom questions
   const _iq=document.getElementById('intakeQuestions'); if(_iq) localStorage.setItem(uns('intakeQuestions'),_iq.value.trim());
@@ -7756,7 +7770,7 @@ async function aiCallRaw(sys,user,key,opts){
     const res=await fetch(bkBase()+'/api/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-      body:JSON.stringify({transcript:user})
+      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():'')})
     });
     if(res.status===401){ handle401(); const e=new Error('401 unauthorized'); throw e; }
     if(res.status===402){
