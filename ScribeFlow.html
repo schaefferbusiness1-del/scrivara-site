@@ -5317,7 +5317,7 @@ async function runDataStudy(){
   try{
     const [sr,rr]=await Promise.all([
       fetch(bkBase()+'/api/records/summary',{headers:{'Authorization':'Bearer '+bkToken()}}),
-      fetch(bkBase()+'/api/records?limit=200',{headers:{'Authorization':'Bearer '+bkToken()}})
+      fetch(bkBase()+'/api/records?limit=1000',{headers:{'Authorization':'Bearer '+bkToken()}})
     ]);
     if(sr.status===401||rr.status===401){ handle401(); return; }
     if(sr.status===403&&rr.status===403){
@@ -5330,7 +5330,7 @@ async function runDataStudy(){
     let summary={}; if(sr.ok){ try{ summary=await sr.json(); }catch(e){ summary={}; } }
     let recsD={}; if(rr.ok){ try{ recsD=await rr.json(); }catch(e){ recsD={}; } }
     const allRows=(recsD&&recsD.records)||[];
-    const rows=allRows.slice().sort((a,b)=>String(b.note_date||'').localeCompare(String(a.note_date||''))).slice(0,200);
+    const rows=allRows.slice().sort((a,b)=>String(b.note_date||'').localeCompare(String(a.note_date||''))).slice(0,1000);
     if(!rows.length&&!((summary&&summary.months)||[]).length){
       out.innerHTML='<div class="mini" style="color:var(--muted)">No visit records yet — records start accruing as notes are saved. Ask again once you have data.</div>';
       return;
@@ -5359,7 +5359,7 @@ async function runDataStudy(){
     let dataset='SUMMARY (per-month aggregates + E/M distribution, computed server-side):\n'+
       JSON.stringify({months:(summary&&summary.months)||[],em_distribution:(summary&&summary.em_distribution)||[]})+
       '\n\nRECENT VISIT RECORDS ('+lines.length+' most recent of '+allRows.length+' total; one per line; de-identified):\n'+lines.join('\n');
-    if(dataset.length>50000) dataset=dataset.slice(0,50000)+'\n[dataset truncated]';
+    if(dataset.length>140000) dataset=dataset.slice(0,140000)+'\n[dataset truncated]';
     const sys='You are a careful, honest, PREMIUM practice-data analyst for a single medical practice. Answer the user\'s question using ONLY the provided practice dataset (per-month aggregates plus de-identified visit-record lines). Show your math and counts explicitly so the clinician can verify every number. If the user asks for a "study", produce a properly structured, DE-IDENTIFIED retrospective summary with sections: Background, Methods (retrospective chart review of n records — state n from the dataset), Results (real numbers computed from the data), and Limitations — and end by noting that IRB/compliance and legal review are required before any publication or external use. NEVER fabricate numbers, patients, dates, or outcomes. If the dataset cannot answer the question, say so plainly and state what additional data would be needed. The dataset is de-identified — never invent or guess patient identities.\n\nAFTER your narrative, append OPTIONAL fenced code blocks (each on its own, at the END of the reply, charts before tables), EXACTLY in these forms:\n```charts\n[{"type":"bar|line|pie|doughnut","title":"...","labels":["..."],"datasets":[{"label":"...","data":[1,2,3]}]}]\n```\n```tables\n[{"title":"...","columns":["Month","Visits"],"rows":[["2026-01",12],["2026-02",15]]}]\n```\nRules: each block\'s value is a strict JSON array (no comments, no trailing commas) — 1-6 chart specs, 1-4 table specs. Every chart spec needs a type, a short title, a labels array, and a datasets array where every dataset has a label and a numeric data array the SAME length as labels. Every table spec needs a title, a columns array, and rows as arrays the SAME length as columns. Build every number ONLY from real values in the provided dataset (counts, per-month aggregates, distributions, average pain/ODI, charges) — NEVER fabricate, estimate, or extrapolate. Whenever the question is quantitative (counts, trends, volumes, charges, outcomes, distributions, comparisons), you SHOULD include at least one chart AND one table built from the real data; omit a block only if the data is genuinely insufficient for it. Keep the narrative itself plain text (no other code fences).';
     const user='QUESTION: '+q+'\n\nPRACTICE DATASET (de-identified):\n'+dataset;
     // PREMIUM path: post to the gated /api/study (stronger model) directly.
