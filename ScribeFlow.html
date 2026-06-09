@@ -13085,7 +13085,14 @@ function saveCustomWidget(){
     setCustomWidgets(list);
     toast('Widget updated.','ok');
   } else {
-    if(list.length>=CW_MAX_WIDGETS){ toast('Widget limit reached ('+CW_MAX_WIDGETS+') — delete one first.','err'); return; }
+    // Per-tier cap: Standard = 5 custom widgets, Premium = unlimited (up to the hard system max).
+    const cap = effectivePremium() ? CW_MAX_WIDGETS : 5;
+    if(list.length>=cap){
+      toast(effectivePremium()
+        ? ('Widget limit reached ('+CW_MAX_WIDGETS+') — delete one first.')
+        : ('Standard includes 5 custom widgets — you have '+list.length+'. Upgrade to Premium for unlimited widgets, or delete one first.'),'err');
+      return;
+    }
     fields.id='w'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
     fields.created=Date.now();
     const spec=cwSanitizeSpec(fields);
