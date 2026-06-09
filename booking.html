@@ -29,6 +29,12 @@
   .hide{display:none}
   .err{background:#fff3f3;border:1px solid #f3c6c6;color:#a12c2c;border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
   .pill{display:inline-block;background:var(--soft);color:var(--brand-dk);border-radius:999px;padding:3px 11px;font-size:12px;font-weight:700}
+  .slotgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:7px;margin-top:6px}
+  .slot{padding:9px 4px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px;text-align:center;cursor:pointer;color:var(--ink);user-select:none}
+  .slot:hover{border-color:var(--brand)}
+  .slot.sel{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .slot.taken{background:#f1f3f6;color:#b9c2cf;cursor:not-allowed;text-decoration:line-through}
+  .slot.taken:hover{border-color:var(--line)}
 </style>
 </head>
 <body>
@@ -51,7 +57,7 @@
     <p class="sub">Fill this out and the office will confirm your time. No account needed.</p>
     <form id="form" onsubmit="return submitBooking(event)">
       <label for="doctor">Provider</label>
-      <select id="doctor"><option value="">No preference</option></select>
+      <select id="doctor" onchange="loadSlots()"><option value="">No preference</option></select>
 
       <div class="row">
         <div>
@@ -75,8 +81,13 @@
         </div>
       </div>
 
-      <label for="when">Preferred date &amp; time</label>
-      <input id="when" type="datetime-local">
+      <label for="bookDate">Pick a date</label>
+      <input id="bookDate" type="date" onchange="loadSlots()">
+      <div id="slotWrap" class="hide" style="margin-top:8px">
+        <label style="margin-top:6px">Available times</label>
+        <div id="slotGrid" class="slotgrid"></div>
+        <p id="slotMsg" class="note" style="margin-top:6px"></p>
+      </div>
 
       <label for="reason">Reason for visit</label>
       <textarea id="reason" placeholder="e.g. follow-up, new back pain, injection follow-up…"></textarea>
@@ -125,12 +136,42 @@ function init(){
     .catch(function(){ show('inactive'); });
 }
 
+var selectedSlot = '';
+function fmt12(hhmm){ var p=hhmm.split(':'); var h=+p[0]; var ap=h>=12?'PM':'AM'; var h12=((h+11)%12)+1; return h12+':'+p[1]+' '+ap; }
+// Show a slot grid for the chosen date/provider, greying out already-booked times.
+function loadSlots(){
+  selectedSlot='';
+  var date=document.getElementById('bookDate').value;
+  var wrap=document.getElementById('slotWrap');
+  if(!date){ wrap.classList.add('hide'); return; }
+  wrap.classList.remove('hide');
+  var grid=document.getElementById('slotGrid'); grid.innerHTML='<p class="note">Loading times…</p>';
+  var doc=document.getElementById('doctor').value;
+  var url=BACKEND_URL+'/api/schedule/public/'+encodeURIComponent(token)+'/busy?date='+date+(doc?('&doctor='+doc):'');
+  fetch(url).then(function(r){ return r.ok?r.json():{busy:[]}; }).then(function(j){
+    var busy=j.busy||[];
+    var slots=[]; for(var h=8;h<18;h++){ slots.push((h<10?'0':'')+h+':00'); slots.push((h<10?'0':'')+h+':30'); }
+    grid.innerHTML='';
+    slots.forEach(function(hhmm){
+      var utc=new Date(date+'T'+hhmm).toISOString().slice(11,16);
+      var taken=busy.indexOf(utc)>-1;
+      var b=document.createElement('div');
+      b.className='slot'+(taken?' taken':'');
+      b.textContent=fmt12(hhmm);
+      if(!taken){ b.onclick=function(){ selectedSlot=hhmm; var cs=grid.children; for(var i=0;i<cs.length;i++) cs[i].classList.remove('sel'); b.classList.add('sel'); }; }
+      grid.appendChild(b);
+    });
+    document.getElementById('slotMsg').textContent=busy.length?'Greyed-out times are already booked — pick an open one.':'All times are open — pick one.';
+  }).catch(function(){ grid.innerHTML='<p class="note">Couldn\'t load times — you can still submit and the office will confirm.</p>'; });
+}
 function submitBooking(ev){
   if(ev && ev.preventDefault) ev.preventDefault();
   var name = document.getElementById('name').value.trim();
   var errBox = document.getElementById('formErr');
   errBox.classList.add('hide');
   if(!name){ errBox.textContent = 'Please enter your name.'; errBox.classList.remove('hide'); return false; }
+  var bDate = document.getElementById('bookDate').value;
+  if(bDate && !selectedSlot){ errBox.textContent = 'Please pick an available time, or clear the date.'; errBox.classList.remove('hide'); return false; }
   var btn = document.getElementById('submitBtn');
   btn.disabled = true; btn.textContent = 'Sending…';
   var payload = {
@@ -140,7 +181,7 @@ function submitBooking(ev){
     email: document.getElementById('email').value || '',
     reason: document.getElementById('reason').value || '',
     doctor_user_id: document.getElementById('doctor').value || null,
-    start_at: document.getElementById('when').value ? new Date(document.getElementById('when').value).toISOString() : null
+    start_at: (bDate && selectedSlot) ? new Date(bDate + 'T' + selectedSlot).toISOString() : null
   };
   fetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token) + '/book', {
     method: 'POST',

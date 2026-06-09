@@ -5763,14 +5763,19 @@ function copyBookingLinkText(){
   toast(ok?'Copied!':'Select the link and copy it manually.', ok?'ok':'');
 }
 var _boardDoctors=[];
+var _boardDate='';
 function _todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _boardDay(){ return _boardDate||_todayStr(); }
+function changeBoardDate(delta){ var d=new Date((_boardDate||_todayStr())+'T12:00'); d.setDate(d.getDate()+delta); _boardDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); loadBoard(true); }
+function jumpBoardDate(v){ if(v){ _boardDate=String(v).slice(0,10); loadBoard(true); } }
 async function loadBoard(showToast){
   const box=document.getElementById('boardBox'); if(!box) return;
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(showToast) toast('Sign in to see the check-in board.','err'); return; }
   if(showToast){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading the board…</div>'; }
   try{
     try{ await syncProfileName(); }catch(e){}
-    const r=await fetch(bkBase()+'/api/appointments?date='+_todayStr(),{headers:{Authorization:'Bearer '+bkToken()}});
+    if(!_boardDate)_boardDate=_todayStr();
+    const r=await fetch(bkBase()+'/api/appointments?date='+_boardDay(),{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.style.display='none'; if(showToast) toast('The schedule is for practice staff accounts.','err'); return; }
     if(!r.ok){ if(showToast){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load the board.</div>'; } return; }
     const d=await r.json().catch(function(){return {appointments:[],doctors:[]};});
@@ -5785,8 +5790,16 @@ function renderBoard(appts){
   const order={checked_in:0,roomed:1,booked:2,completed:3,no_show:4,cancelled:5};
   const sorted=(appts||[]).slice().sort(function(a,b){ return ((order[a.status]||9)-(order[b.status]||9)) || String(a.start_at||'').localeCompare(String(b.start_at||'')); });
   const docOpts='<option value="">No provider</option>'+_boardDoctors.map(function(d){return '<option value="'+d.id+'">'+esc(d.name||('Provider #'+d.id))+'</option>';}).join('');
-  let h='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><b style="font-size:15px">🗓️ Today — '+_todayStr()+'</b><button class="btn-ghost" style="font-size:12px;padding:5px 10px;margin-left:auto" onclick="loadBoard(true)">↻ Refresh</button></div>';
-  if(!sorted.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No appointments yet today. Add one below, or share your booking link.</div>'; }
+  var _bd=_boardDay(); var _isToday=(_bd===_todayStr());
+  var _lbl=_isToday?'Today':new Date(_bd+'T12:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  let h='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<b style="font-size:15px">🗓️ '+esc(_lbl)+'</b>'
+    +'<button class="btn-ghost" style="font-size:13px;padding:4px 10px" onclick="changeBoardDate(-1)" title="Previous day">‹</button>'
+    +'<input type="date" value="'+_bd+'" onchange="jumpBoardDate(this.value)" style="border:1px solid #cfdbe8;border-radius:8px;padding:5px 8px;font-size:13px">'
+    +'<button class="btn-ghost" style="font-size:13px;padding:4px 10px" onclick="changeBoardDate(1)" title="Next day">›</button>'
+    +(_isToday?'':'<button class="btn-ghost" style="font-size:12px;padding:4px 10px" onclick="jumpBoardDate(\''+_todayStr()+'\')">Today</button>')
+    +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px;margin-left:auto" onclick="loadBoard(true)">↻ Refresh</button></div>';
+  if(!sorted.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No appointments on this day. Add one below, or share your booking link.</div>'; }
   sorted.forEach(function(a){
     const t=a.start_at?new Date(a.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';
     const badge={booked:'#5f7186',checked_in:'#127a55',roomed:'#1f7ae0',completed:'#8a8a8a',cancelled:'#c0392b',no_show:'#c0392b'}[a.status]||'#5f7186';
@@ -5836,9 +5849,9 @@ async function addApptFromBoard(){
   const doc=(document.getElementById('bAddDoc')||{}).value||'';
   const reason=(document.getElementById('bAddReason')||{}).value||'';
   let startIso=null;
-  if(time){ try{ startIso=new Date(_todayStr()+'T'+time).toISOString(); }catch(e){} }
+  if(time){ try{ startIso=new Date(_boardDay()+'T'+time).toISOString(); }catch(e){} }
   try{
-    const r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:_todayStr(),start_at:startIso})});
+    const r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:_boardDay(),start_at:startIso})});
     if(!r.ok){ toast('Could not add the appointment.','err'); return; }
     toast('Appointment added.','ok');
     loadBoard(false);
