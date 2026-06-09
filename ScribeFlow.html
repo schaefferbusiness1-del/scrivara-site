@@ -1995,6 +1995,22 @@
         <div class="code-disclaim">⚠️ Outcomes summarized from your stored records — verify before sending. Contains patient identifiers; share only with the referring provider and per your privacy policies.</div>
       </div>
     </div>
+
+    <!-- 📋 OUTCOMES REGISTRY — practice-wide outcomes table + CSV export (PREMIUM) -->
+    <div class="card" id="anaRegistry">
+      <h2><span class="ic">📋</span> Outcomes registry <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <p class="sub">A practice-wide registry of every patient's pain and ODI trajectory, satisfaction, and visit count — for quality reporting and review. Export to CSV for your registry or QI program.</p>
+      <button class="btn-primary" style="margin-top:6px" onclick="generateOutcomesRegistry()">📋 Build registry</button>
+      <button class="btn-ghost" style="margin-top:6px;margin-left:8px" onclick="downloadOutcomesCsv()">⬇ Download CSV</button>
+      <div class="extra-card" id="regOutCard" style="display:none;margin-top:16px">
+        <h3>📋 Outcomes registry
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('regOutBody')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Outcomes Registry','regOutBody')">🖨 Print</button>
+        </h3>
+        <div class="xbody" id="regOutBody"></div>
+        <div class="code-disclaim">⚠️ Contains patient identifiers and clinical outcomes — handle per your privacy and HIPAA policies; de-identify before any external or research use.</div>
+      </div>
+    </div>
   </div><!-- /analysisView -->
 
   <!-- ============ LEGAL REQUESTS INBOX (clinician — incoming attorney requests) ============ -->
@@ -9465,6 +9481,59 @@ function generateReferralOutcomes(){
   const body=document.getElementById('refOutBody'); if(body) body.innerHTML=html;
   const card=document.getElementById('refOutCard'); if(card) card.style.display='block';
   toast('Referral outcomes report ready for '+refs.length+' referring physician'+(refs.length>1?'s':'')+'.','ok');
+}
+
+/* ===== Outcomes registry (Premium) — practice-wide outcomes table + CSV export
+   for quality reporting / QI. Reuses the per-patient delta helper above. ===== */
+function _csvCell(s){ s=String(s==null?'':s); return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; }
+function _buildOutcomesRegistryRows(){
+  const pts=(typeof getPatients==='function')?getPatients():[];
+  const rows=[];
+  pts.forEach(p=>{
+    const d=_refPtDeltas(p);
+    if(d.visits===0 && d.painBase==null && d.odiBase==null) return;  // only patients with recorded outcomes
+    rows.push({
+      name:p.name||'', referrer:getPatientReferrer(p),
+      painBase:d.painBase, painLast:d.painLast,
+      painDelta:(d.painBase!=null&&d.painLast!=null)?(d.painBase-d.painLast):null,
+      odiBase:d.odiBase, odiLast:d.odiLast,
+      odiDelta:(d.odiBase!=null&&d.odiLast!=null)?(d.odiBase-d.odiLast):null,
+      sat:d.sat, rec:d.rec, visits:d.visits
+    });
+  });
+  return rows;
+}
+function generateOutcomesRegistry(){
+  if(!(typeof effectivePremium==='function'&&effectivePremium())){ toast('The outcomes registry is a Premium feature.','err'); return; }
+  const rows=_buildOutcomesRegistryRows();
+  if(!rows.length){ toast('No patient outcomes recorded yet — pain/ODI is captured at intake and on the Outcomes card.','err'); return; }
+  const f1=n=>n==null?'—':(Math.round(n*10)/10);
+  const avg=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length):null;
+  const pd=rows.filter(r=>r.painDelta!=null).map(r=>r.painDelta);
+  const od=rows.filter(r=>r.odiDelta!=null).map(r=>r.odiDelta);
+  const sa=rows.filter(r=>r.sat!=null).map(r=>r.sat);
+  let html='<div style="font-size:13px;color:var(--muted);margin-bottom:10px">'+rows.length+' patients with recorded outcomes · avg pain improvement '+(avg(pd)==null?'—':('▼ '+f1(avg(pd))+' pts'))+' · avg ODI improvement '+(avg(od)==null?'—':('▼ '+f1(avg(od))+'%'))+(avg(sa)!=null?(' · satisfaction '+f1(avg(sa))+'/5'):'')+'</div>';
+  html+='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="text-align:left;color:var(--muted)"><th style="padding:4px 6px">Patient</th><th>Referrer</th><th>Pain (base→last)</th><th>ODI (base→last)</th><th>Sat</th><th>Visits</th></tr>';
+  rows.forEach(r=>{
+    html+='<tr style="border-top:1px solid var(--line)"><td style="padding:4px 6px">'+esc(r.name)+'</td><td>'+esc(r.referrer||'—')+'</td><td>'+(r.painBase==null?'—':(f1(r.painBase)+'→'+f1(r.painLast)+(r.painDelta!=null?(' ▼'+f1(r.painDelta)):'')))+'</td><td>'+(r.odiBase==null?'—':(f1(r.odiBase)+'%→'+f1(r.odiLast)+'%'+(r.odiDelta!=null?(' ▼'+f1(r.odiDelta)):'')))+'</td><td>'+(r.sat==null?'—':(f1(r.sat)+'/5'))+'</td><td>'+r.visits+'</td></tr>';
+  });
+  html+='</table>';
+  const body=document.getElementById('regOutBody'); if(body) body.innerHTML=html;
+  const card=document.getElementById('regOutCard'); if(card) card.style.display='block';
+  toast('Outcomes registry ready — '+rows.length+' patients.','ok');
+}
+function downloadOutcomesCsv(){
+  if(!(typeof effectivePremium==='function'&&effectivePremium())){ toast('The outcomes registry is a Premium feature.','err'); return; }
+  const rows=_buildOutcomesRegistryRows();
+  if(!rows.length){ toast('No patient outcomes recorded yet.','err'); return; }
+  const head=['Patient','Referrer','Pain baseline','Pain latest','Pain improvement','ODI baseline','ODI latest','ODI improvement','Satisfaction','Would recommend','Visits'];
+  const lines=[head.map(_csvCell).join(',')];
+  rows.forEach(r=>{ lines.push([r.name,r.referrer,r.painBase,r.painLast,r.painDelta,r.odiBase,r.odiLast,r.odiDelta,r.sat,(r.rec==null?'':(r.rec?'Yes':'No')),r.visits].map(_csvCell).join(',')); });
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='MLS_Outcomes_Registry_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Registry CSV downloaded.','ok');
 }
 
 function saveOutcome(){
