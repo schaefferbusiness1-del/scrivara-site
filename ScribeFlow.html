@@ -5721,10 +5721,25 @@ function copyPrevisitLinkText(){
 
 /* ===== Scheduling + check-in board (features #3/#4). Staff-only (requireStaff:
    doctor/head/receptionist). Patient identity decrypts server-side on the backend. ===== */
+// Push the clinician's app display name to their user row so they show up BY NAME
+// as a bookable provider on the schedule + public booking page (the name otherwise
+// lives only client-side). Idempotent + cheap; safe to call before scheduling reads.
+async function syncProfileName(){
+  try{
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return;
+    var nm=(typeof getName==='function')?String(getName()||'').trim():'';
+    if(!nm) return;
+    if(bkUser && bkUser.name===nm) return;
+    var sp=(typeof getSpec==='function')?String(getSpec()||'').trim():'';
+    await fetch(bkBase()+'/api/me/profile',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(sp?{name:nm,specialty:sp}:{name:nm})});
+    if(bkUser) bkUser.name=nm;
+  }catch(e){}
+}
 async function copyBookingLink(btn){
   try{
     if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to get your booking link.','err'); return; }
     if(btn) btn.disabled=true;
+    try{ await syncProfileName(); }catch(e){}
     const r=await fetch(bkBase()+'/api/schedule/token',{headers:{Authorization:'Bearer '+bkToken()}});
     if(btn) btn.disabled=false;
     if(r.status===403){ toast('Booking links are for practice staff accounts.','err'); return; }
@@ -5752,6 +5767,7 @@ async function loadBoard(showToast){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(showToast) toast('Sign in to see the check-in board.','err'); return; }
   if(showToast){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading the board…</div>'; }
   try{
+    try{ await syncProfileName(); }catch(e){}
     const r=await fetch(bkBase()+'/api/appointments?date='+_todayStr(),{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.style.display='none'; if(showToast) toast('The schedule is for practice staff accounts.','err'); return; }
     if(!r.ok){ if(showToast){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load the board.</div>'; } return; }
