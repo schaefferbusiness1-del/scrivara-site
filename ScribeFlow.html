@@ -5317,7 +5317,7 @@ async function runDataStudy(){
   try{
     const [sr,rr]=await Promise.all([
       fetch(bkBase()+'/api/records/summary',{headers:{'Authorization':'Bearer '+bkToken()}}),
-      fetch(bkBase()+'/api/records',{headers:{'Authorization':'Bearer '+bkToken()}})
+      fetch(bkBase()+'/api/records?limit=200',{headers:{'Authorization':'Bearer '+bkToken()}})
     ]);
     if(sr.status===401||rr.status===401){ handle401(); return; }
     if(sr.status===403&&rr.status===403){
