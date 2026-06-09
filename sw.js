@@ -10,7 +10,7 @@
    and replayed. Changing this file's bytes makes browsers fetch, install, and
    (via skipWaiting + clients.claim) immediately activate this new worker, so
    existing visitors self-heal on their next load with no manual cache clearing. */
-const CACHE = 'mls-v2';
+const CACHE = 'mls-v3';
 const SHELL = [
   'ScribeFlow.html',
   'index.html',
@@ -42,8 +42,12 @@ self.addEventListener('fetch', (e) => {
   if (url.hostname.indexOf('onrender.com') > -1) return;
   // Only handle same-origin (the app + its assets).
   if (url.origin !== location.origin) return;
+  // For HTML page loads, bypass the browser's ~10-min HTTP cache so a freshly
+  // deployed version is never hidden behind a stale cached page.
+  const isNav = req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') > -1;
+  const fetchReq = isNav ? new Request(req.url, { cache: 'reload', credentials: 'same-origin' }) : req;
   e.respondWith(
-    fetch(req)
+    fetch(fetchReq)
       .then((res) => {
         // Cache ONLY genuine, complete 200 OK responses — never 404s, redirects,
         // or opaque/error responses, so a bad page can't be stored and replayed.
