@@ -785,6 +785,15 @@
           <div class="ik-field"><label for="ikEmName">Emergency contact — name</label><input type="text" id="ikEmName"></div>
           <div class="ik-field"><label for="ikEmPhone">Emergency contact — phone</label><input type="tel" id="ikEmPhone"></div>
         </div>
+        <div class="ik-field" style="margin-bottom:2px">
+          <label>Your photo <span style="font-weight:400;color:#41606d">(optional — helps your care team recognize you)</span></label>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
+            <img id="ikFacePreview" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px;display:none;border:1px solid #cfe0e7;background:#fff">
+            <input type="file" id="ikFaceFile" accept="image/*" capture="user" style="display:none" onchange="onIntakeFacePhoto(event)">
+            <button type="button" class="ik-cardbtn" onclick="document.getElementById('ikFaceFile').click()">📷 Take a photo</button>
+            <button type="button" class="ik-cardbtn" id="ikFaceClear" style="display:none" onclick="clearIntakeFacePhoto()">Remove</button>
+          </div>
+        </div>
         <div class="ik-field" style="margin-bottom:2px"><label for="ikReferrer">Referring physician (who sent you to us?)</label><input type="text" id="ikReferrer"></div>
       </div>
 
@@ -5675,7 +5684,7 @@ function renderPatients(){
     }
     const meta=[p.sex,p.dob,p.mrn].filter(Boolean).join(' · ');
     return `<div class="pt-item ${p.id===activeId?'active':''}" onclick="selectPatient('${p.id}')">
-      <div class="pt-avatar">${esc(ptInitials(p.name))}</div>
+      <div class="pt-avatar"${p.photo?` style="background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent"`:''}>${p.photo?'':esc(ptInitials(p.name))}</div>
       <div class="pt-main">
         <div class="t">${esc(p.name)} ${p.id===activeId?'<span style="font-size:12px;color:var(--brand);font-weight:700">• active</span>':''}</div>
         <div class="s">${meta?esc(meta)+' · ':''}${esc(last)} · ${notes.length} note${notes.length===1?'':'s'} · ${docs} doc${docs===1?'':'s'}</div>
@@ -9666,6 +9675,37 @@ const IK_ODI=[
 let ikPainVal=null;     // 0–10 or null (big-button pain scale)
 let ikSatVal=null;      // 1–5 or null (MLS additive — satisfaction scale, optional)
 let ikCardText='';      // raw OCR text of the insurance-card photo (saved into docs)
+let ikFacePhoto='';     // patient's face photo (small JPEG data URL) captured at intake → p.photo
+function onIntakeFacePhoto(ev){
+  const f=ev.target&&ev.target.files&&ev.target.files[0];
+  if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const im=new Image();
+    im.onload=()=>{
+      try{
+        const max=256;
+        let w=im.naturalWidth||im.width||1, h=im.naturalHeight||im.height||1;
+        const r=Math.min(max/w, max/h, 1);
+        w=Math.max(1,Math.round(w*r)); h=Math.max(1,Math.round(h*r));
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(im,0,0,w,h);
+        ikFacePhoto=cv.toDataURL('image/jpeg',0.82);
+        const fp=document.getElementById('ikFacePreview'); if(fp){ fp.src=ikFacePhoto; fp.style.display='block'; }
+        const fc=document.getElementById('ikFaceClear'); if(fc) fc.style.display='inline-block';
+      }catch(e){ ikFacePhoto=''; }
+    };
+    im.onerror=()=>{ ikFacePhoto=''; };
+    im.src=String(rd.result||'');
+  };
+  rd.readAsDataURL(f);
+}
+function clearIntakeFacePhoto(){
+  ikFacePhoto='';
+  const fp=document.getElementById('ikFacePreview'); if(fp){ fp.removeAttribute('src'); fp.style.display='none'; }
+  const fc=document.getElementById('ikFaceClear'); if(fc) fc.style.display='none';
+  const ff=document.getElementById('ikFaceFile'); if(ff) ff.value='';
+}
 
 function openIntake(){
   if(typeof isLawyerUser==='function' && isLawyerUser()) return; // never for lawyer accounts
@@ -9703,7 +9743,7 @@ function intakeNextPatient(){
   const v=document.getElementById('intakeView'); if(v) v.scrollTop=0;
 }
 function resetIntakeForm(){
-  ikPainVal=null; ikSatVal=null; ikCardText='';
+  ikPainVal=null; ikSatVal=null; ikCardText=''; if(typeof clearIntakeFacePhoto==='function') clearIntakeFacePhoto();
   const form=document.getElementById('ikForm'); if(!form) return;
   form.querySelectorAll('input[type=text],input[type=tel],input[type=email],input[type=date],textarea').forEach(el=>{ el.value=''; });
   form.querySelectorAll('select').forEach(el=>{ el.selectedIndex=0; });
@@ -9905,6 +9945,7 @@ function submitIntake(){
       date:Date.now(), aiSummary:'', aiItems:null });
   }
 
+  if(ikFacePhoto) p.photo=ikFacePhoto;   // attach the intake face photo to the chart
   upsertPatient(p); // local save + best-effort server sync (hosted mode)
 
   // ---- outcomes: one intake record with pain + ODI + satisfaction (renderOutcomes shows "ODI x%" / "Sat x/5")
