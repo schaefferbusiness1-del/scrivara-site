@@ -1018,6 +1018,8 @@
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
         <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
+        <button class="btn-ghost" id="ptBookLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyBookingLink(this)" title="Get a link patients can use to book appointments online">📅 Booking link</button>
+        <button class="btn-ghost" id="ptBoardBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadBoard(true)" title="See today's appointments and who's checked in">🗓️ Check-in board</button>
       </h2>
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
@@ -1029,6 +1031,14 @@
         </div>
       </div>
       <div id="pendingIntakeBox" style="display:none;margin-top:12px;background:#f0f7ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
+      <div id="bookingLinkRow" style="display:none;margin-top:10px;background:#eefaf3;border:1px solid #bfe6d2;border-radius:10px;padding:10px 12px">
+        <div style="font-size:13px;font-weight:600;color:#127a55;margin-bottom:6px">📅 Your online booking link — patients open it to request appointments (no login):</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="bookingLinkInput" readonly style="flex:1;min-width:200px;border:1px solid #bfe6d2;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
+          <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyBookingLinkText()">📋 Copy</button>
+        </div>
+      </div>
+      <div id="boardBox" style="display:none;margin-top:12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
       <div class="pt-search" id="ptSearchRow" style="display:none">
         <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="renderPatients()">
         <span class="pt-count" id="ptCount"></span>
@@ -5672,6 +5682,114 @@ function copyPrevisitLinkText(){
   let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
   if(!ok && navigator.clipboard){ navigator.clipboard.writeText(inp.value).then(function(){toast('Copied!','ok');}).catch(function(){}); return; }
   toast(ok?'Copied!':'Select the link and copy it manually.', ok?'ok':'');
+}
+
+/* ===== Scheduling + check-in board (features #3/#4). Staff-only (requireStaff:
+   doctor/head/receptionist). Patient identity decrypts server-side on the backend. ===== */
+async function copyBookingLink(btn){
+  try{
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to get your booking link.','err'); return; }
+    if(btn) btn.disabled=true;
+    const r=await fetch(bkBase()+'/api/schedule/token',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(btn) btn.disabled=false;
+    if(r.status===403){ toast('Booking links are for practice staff accounts.','err'); return; }
+    if(!r.ok){ toast('Could not get your booking link — try again.','err'); return; }
+    const d=await r.json().catch(()=>({}));
+    if(!d.token){ toast('Could not get your booking link — try again.','err'); return; }
+    const link=location.origin+'/booking.html?token='+encodeURIComponent(d.token);
+    const inp=document.getElementById('bookingLinkInput'); if(inp) inp.value=link;
+    const row=document.getElementById('bookingLinkRow'); if(row) row.style.display='block';
+    let copied=false; try{ await navigator.clipboard.writeText(link); copied=true; }catch(e){}
+    toast(copied?'Booking link copied — share it with patients.':'Booking link ready below — tap Copy.','ok');
+  }catch(e){ if(btn) btn.disabled=false; toast('Could not get your booking link.','err'); }
+}
+function copyBookingLinkText(){
+  const inp=document.getElementById('bookingLinkInput'); if(!inp||!inp.value) return;
+  inp.select();
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+  if(!ok && navigator.clipboard){ navigator.clipboard.writeText(inp.value).then(function(){toast('Copied!','ok');}).catch(function(){}); return; }
+  toast(ok?'Copied!':'Select the link and copy it manually.', ok?'ok':'');
+}
+var _boardDoctors=[];
+function _todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+async function loadBoard(showToast){
+  const box=document.getElementById('boardBox'); if(!box) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(showToast) toast('Sign in to see the check-in board.','err'); return; }
+  if(showToast){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading the board…</div>'; }
+  try{
+    const r=await fetch(bkBase()+'/api/appointments?date='+_todayStr(),{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===403){ box.style.display='none'; if(showToast) toast('The schedule is for practice staff accounts.','err'); return; }
+    if(!r.ok){ if(showToast){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load the board.</div>'; } return; }
+    const d=await r.json().catch(function(){return {appointments:[],doctors:[]};});
+    _boardDoctors=d.doctors||[];
+    renderBoard(d.appointments||[]);
+  }catch(e){ if(showToast){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load the board.</div>'; } }
+}
+function _docName(id){ const x=_boardDoctors.find(function(d){return Number(d.id)===Number(id);}); return x?(x.name||('Provider #'+id)):'Unassigned'; }
+function renderBoard(appts){
+  const box=document.getElementById('boardBox'); if(!box) return;
+  box.style.display='block';
+  const order={checked_in:0,roomed:1,booked:2,completed:3,no_show:4,cancelled:5};
+  const sorted=(appts||[]).slice().sort(function(a,b){ return ((order[a.status]||9)-(order[b.status]||9)) || String(a.start_at||'').localeCompare(String(b.start_at||'')); });
+  const docOpts='<option value="">No provider</option>'+_boardDoctors.map(function(d){return '<option value="'+d.id+'">'+esc(d.name||('Provider #'+d.id))+'</option>';}).join('');
+  let h='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><b style="font-size:15px">🗓️ Today — '+_todayStr()+'</b><button class="btn-ghost" style="font-size:12px;padding:5px 10px;margin-left:auto" onclick="loadBoard(true)">↻ Refresh</button></div>';
+  if(!sorted.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No appointments yet today. Add one below, or share your booking link.</div>'; }
+  sorted.forEach(function(a){
+    const t=a.start_at?new Date(a.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';
+    const badge={booked:'#5f7186',checked_in:'#127a55',roomed:'#1f7ae0',completed:'#8a8a8a',cancelled:'#c0392b',no_show:'#c0392b'}[a.status]||'#5f7186';
+    h+='<div style="border:1px solid #e2e9f1;border-radius:10px;padding:9px 11px;margin-bottom:7px;background:#fff">';
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    h+='<b>'+esc(a.name||'(no name)')+'</b>';
+    if(a.dob) h+='<span style="font-size:12px;color:var(--muted)">'+esc(a.dob)+'</span>';
+    h+='<span style="font-size:12px;color:#fff;background:'+badge+';border-radius:999px;padding:2px 9px">'+esc(String(a.status||'').replace('_',' '))+'</span>';
+    if(a.source==='online') h+='<span style="font-size:11px;color:#127a55;background:#eefaf3;border-radius:999px;padding:2px 8px">online</span>';
+    h+='<span style="margin-left:auto;font-size:12px;color:var(--muted)">'+esc(t)+(a.room?(' · Rm '+esc(a.room)):'')+'</span>';
+    h+='</div>';
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-top:3px">'+esc(_docName(a.doctor_user_id))+(a.reason?(' · '+esc(a.reason)):'')+(a.phone?(' · '+esc(a.phone)):'')+'</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">';
+    if(a.status!=='checked_in'&&a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'checked_in\'})">✔ Check in</button>';
+    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptRoom('+a.id+')">🚪 Room</button>';
+    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'completed\'})">✅ Done</button>';
+    if(a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px;color:#c0392b" onclick="apptUpdate('+a.id+',{status:\'cancelled\'})">✕ Cancel</button>';
+    h+='</div></div>';
+  });
+  h+='<div style="border-top:1px dashed #cfe2f8;margin-top:10px;padding-top:10px">';
+  h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Add appointment</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h+='<input id="bAddName" placeholder="Patient name" style="flex:2;min-width:140px;border:1px solid #cfdbe8;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<input id="bAddTime" type="time" style="border:1px solid #cfdbe8;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<select id="bAddDoc" style="border:1px solid #cfdbe8;border-radius:8px;padding:7px 9px;font-size:13px">'+docOpts+'</select>';
+  h+='<input id="bAddReason" placeholder="Reason (optional)" style="flex:1;min-width:120px;border:1px solid #cfdbe8;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<button class="btn-primary" style="font-size:13px;padding:7px 13px" onclick="addApptFromBoard()">Add</button>';
+  h+='</div></div>';
+  box.innerHTML=h;
+}
+function apptRoom(id){
+  const room=prompt('Room number / name?'); if(room===null) return;
+  apptUpdate(id,{status:'roomed',room:room});
+}
+async function apptUpdate(id,patch){
+  if(!bkToken()) return;
+  try{
+    const r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(patch||{})});
+    if(!r.ok){ toast('Could not update the appointment.','err'); return; }
+    loadBoard(false);
+  }catch(e){ toast('Could not update the appointment.','err'); }
+}
+async function addApptFromBoard(){
+  const name=((document.getElementById('bAddName')||{}).value||'').trim();
+  if(!name){ toast('Enter a patient name.','err'); return; }
+  const time=(document.getElementById('bAddTime')||{}).value||'';
+  const doc=(document.getElementById('bAddDoc')||{}).value||'';
+  const reason=(document.getElementById('bAddReason')||{}).value||'';
+  let startIso=null;
+  if(time){ try{ startIso=new Date(_todayStr()+'T'+time).toISOString(); }catch(e){} }
+  try{
+    const r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:_todayStr(),start_at:startIso})});
+    if(!r.ok){ toast('Could not add the appointment.','err'); return; }
+    toast('Appointment added.','ok');
+    loadBoard(false);
+  }catch(e){ toast('Could not add the appointment.','err'); }
 }
 
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
