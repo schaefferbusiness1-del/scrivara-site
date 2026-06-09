@@ -78,6 +78,15 @@
           <div class="field"><label>Preferred pharmacy</label><input id="pharmacy"></div>
         </div>
         <div class="field"><label>Referring physician (who sent you to us?)</label><input id="referrer"></div>
+        <div class="field">
+          <label>Your photo <span style="font-weight:400;color:var(--muted)">(optional — helps your care team recognize you)</span></label>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
+            <img id="facePreview" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px;display:none;border:1px solid #cfe0e7;background:#fff">
+            <input type="file" id="faceFile" accept="image/*" capture="user" style="display:none" onchange="onFacePhoto(event)">
+            <button type="button" onclick="document.getElementById('faceFile').click()" style="background:var(--brand);color:#fff;border:none;border-radius:9px;padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer">📷 Take a photo</button>
+            <button type="button" id="faceClear" style="display:none;background:none;border:1px solid #cfdbe8;border-radius:9px;padding:9px 12px;cursor:pointer;font-size:14px" onclick="clearFacePhoto()">Remove</button>
+          </div>
+        </div>
       </div>
 
       <div class="card sec">
@@ -140,6 +149,37 @@
 
   function val(id){ var e=$(id); return e?String(e.value||'').trim():''; }
 
+  // Optional face photo — resized small, travels with the submission and lands on the
+  // patient's avatar when the doctor attaches it in the app.
+  var facePhoto='';
+  window.onFacePhoto=function(ev){
+    var f=ev.target&&ev.target.files&&ev.target.files[0]; if(!f) return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var im=new Image();
+      im.onload=function(){
+        try{
+          var max=256, w=im.naturalWidth||im.width||1, h=im.naturalHeight||im.height||1;
+          var r=Math.min(max/w,max/h,1); w=Math.max(1,Math.round(w*r)); h=Math.max(1,Math.round(h*r));
+          var cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+          cv.getContext('2d').drawImage(im,0,0,w,h);
+          facePhoto=cv.toDataURL('image/jpeg',0.82);
+          var p=$('facePreview'); if(p){ p.src=facePhoto; p.style.display='block'; }
+          var c=$('faceClear'); if(c) c.style.display='inline-block';
+        }catch(e){ facePhoto=''; }
+      };
+      im.onerror=function(){ facePhoto=''; };
+      im.src=String(rd.result||'');
+    };
+    rd.readAsDataURL(f);
+  };
+  window.clearFacePhoto=function(){
+    facePhoto='';
+    var p=$('facePreview'); if(p){ p.removeAttribute('src'); p.style.display='none'; }
+    var c=$('faceClear'); if(c) c.style.display='none';
+    var ff=$('faceFile'); if(ff) ff.value='';
+  };
+
   $('ikForm').addEventListener('submit', function(e){
     e.preventDefault();
     var name=val('name'), dob=val('dob'), chief=val('chief');
@@ -156,7 +196,7 @@
       chief:chief, pain:painNum, painLoc:val('painLoc'), onset:val('onset'), odi:odiNum,
       better:val('better'), worse:val('worse'), priorTx:val('priorTx'),
       conditions:val('conditions'), surgeries:val('surgeries'),
-      meds:val('meds'), allergies:val('allergies')
+      meds:val('meds'), allergies:val('allergies'), photo:facePhoto
     };
     var btn=$('submitBtn'); btn.disabled=true; btn.textContent='Sending…';
     fetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token)+'/submit',{
