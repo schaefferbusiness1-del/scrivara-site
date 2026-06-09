@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- build: chat-send-fix 2026-06-09 -->
+<!-- build: chat-send-fix-v3-idcollision 2026-06-09 -->
 <meta name="robots" content="index,follow">
 <title>MLS — AI Scribe for Spine, PM&amp;R &amp; Pain | Build Your Own AI Widgets</title>
 <meta name="description" content="MLS is the AI ambient scribe + mini-EMR built for spine, PM&R and pain. Build your own AI widgets, get structured SOAP notes with E/M, ICD-10 and CPT coding, iPad patient intake, outcomes tracking, branded white-label notes, referral outcome reports, and a premium ask-your-data Study Engine. From $99/provider/month.">
@@ -700,7 +700,7 @@ async function submitDemo(e){
   <div id="mlsChatMsgs"></div>
   <form id="mlsChatForm" onsubmit="mlsChatSend(event);return false;" action="javascript:void(0)">
     <input id="mlsChatInput" autocomplete="off" placeholder="Type your question…">
-    <button id="mlsChatSend" type="submit">Send</button>
+    <button id="mlsChatSendBtn" type="submit">Send</button>
   </form>
 </div>
 <script>
@@ -728,7 +728,7 @@ async function submitDemo(e){
     const inp=el('mlsChatInput'); const text=(inp.value||'').trim();
     if(!text) return false;
     inp.value=''; add('user',text); hist.push({role:'user',content:text});
-    const sendBtn=el('mlsChatSend'); sendBtn.disabled=true;
+    const sendBtn=el('mlsChatSendBtn'); sendBtn.disabled=true;
     const typing=add('bot','…');
     fetch(API+'/api/sales-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:hist.slice(-12)})})
       .then(function(r){return r.json();})
