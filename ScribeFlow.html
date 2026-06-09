@@ -2150,6 +2150,15 @@
         <label for="clinicAddress">Clinic address</label>
         <input type="text" id="clinicAddress" placeholder="Street, City, State ZIP">
       </div>
+      <div class="field">
+        <label for="clinicLogoInput">Practice logo <span style="font-size:11px;font-weight:700;color:#155fb3;background:#e8f1fc;border-radius:10px;padding:1px 8px;margin-left:4px">Premium</span></label>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <img id="clinicLogoPreview" alt="" style="max-height:46px;max-width:170px;display:none;border:1px solid var(--border,#d7dee8);border-radius:6px;padding:4px;background:#fff">
+          <input type="file" id="clinicLogoInput" accept="image/png,image/jpeg,image/svg+xml" onchange="handleClinicLogoUpload(this)" style="flex:1;min-width:160px">
+          <button type="button" class="btn-ghost" id="clinicLogoRemove" onclick="removeClinicLogo()" style="display:none">Remove</button>
+        </div>
+        <p class="set-desc" id="logoHint" style="margin-top:6px">Premium adds your logo to printed/PDF notes and white-labels them.</p>
+      </div>
     </div>
 
     <!-- ============ SECTION: Note defaults (MLS — additive) ============ -->
@@ -3924,6 +3933,67 @@ function getProviderCred(){ return localStorage.getItem(uns('providerCred'))||''
 function getNpi(){ return localStorage.getItem(uns('npi'))||''; }
 function getClinicAddress(){ return localStorage.getItem(uns('clinicAddress'))||''; }
 function getClinicPhone(){ return localStorage.getItem(uns('clinicPhone'))||''; }
+/* Branded exports (Premium): upload + downscale a practice logo to a small
+   data URL, kept device-local (NOT in PREF_SYNC_KEYS, so it can never bloat or
+   break the prefs/widget sync). Rendered on the printed/PDF letterhead. */
+function getClinicLogo(){ return localStorage.getItem(uns('clinicLogo'))||''; }
+function renderLogoSetting(){
+  const prem=(typeof effectivePremium==='function')?effectivePremium():false;
+  const img=document.getElementById('clinicLogoPreview');
+  const inp=document.getElementById('clinicLogoInput');
+  const rm=document.getElementById('clinicLogoRemove');
+  const hint=document.getElementById('logoHint');
+  const logo=getClinicLogo();
+  if(img){ if(logo){ img.src=logo; img.style.display='block'; } else { img.removeAttribute('src'); img.style.display='none'; } }
+  if(rm) rm.style.display=logo?'inline-block':'none';
+  if(inp) inp.disabled=!prem;
+  if(hint){
+    hint.textContent = prem
+      ? 'Your logo appears on the printed/PDF letterhead, and the "Prepared with MLS" line is removed for a clean, white-label note. Stored on this device.'
+      : 'Premium feature — upgrade to add your logo to printed/PDF notes and white-label them.';
+  }
+}
+function handleClinicLogoUpload(input){
+  if(!(typeof effectivePremium==='function'&&effectivePremium())){ toast('Branded exports are a Premium feature.','err'); input.value=''; return; }
+  const f=input.files&&input.files[0];
+  if(!f) return;
+  if(f.size>4*1024*1024){ toast('Logo image is too large (max 4MB).','err'); input.value=''; return; }
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const src=String(rd.result||'');
+    if(/^data:image\/svg/i.test(src)){ _storeClinicLogo(src); return; }   // vector — already small
+    const im=new Image();
+    im.onload=()=>{
+      try{
+        const maxW=320, maxH=110;
+        let w=im.naturalWidth||im.width||1, h=im.naturalHeight||im.height||1;
+        const r=Math.min(maxW/w, maxH/h, 1);
+        w=Math.max(1,Math.round(w*r)); h=Math.max(1,Math.round(h*r));
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(im,0,0,w,h);
+        _storeClinicLogo(cv.toDataURL('image/png'));
+      }catch(e){ toast('Could not process that image.','err'); input.value=''; }
+    };
+    im.onerror=()=>{ toast('Could not read that image.','err'); input.value=''; };
+    im.src=src;
+  };
+  rd.onerror=()=>{ toast('Could not read that file.','err'); input.value=''; };
+  rd.readAsDataURL(f);
+}
+function _storeClinicLogo(dataUrl){
+  if(dataUrl && dataUrl.length>200000){ toast('That logo is too detailed — try a smaller/simpler image.','err'); return; }
+  try{
+    localStorage.setItem(uns('clinicLogo'),dataUrl);
+    renderLogoSetting();
+    toast('Logo saved — it will appear on printed and PDF notes.','ok');
+  }catch(e){ toast('Could not save the logo (device storage full).','err'); }
+}
+function removeClinicLogo(){
+  try{ localStorage.removeItem(uns('clinicLogo')); }catch(e){}
+  const inp=document.getElementById('clinicLogoInput'); if(inp) inp.value='';
+  renderLogoSetting();
+  toast('Logo removed.','ok');
+}
 function getDefaultFormat(){ const v=localStorage.getItem(uns('defaultFormat')); return (v==='insurance')?'insurance':'soap'; }
 function getMlsNoteStyle(){ const v=localStorage.getItem(uns('noteStyle')); return (v==='concise'||v==='detailed')?v:'balanced'; }
 
@@ -4086,6 +4156,7 @@ function openSettings(){
   const _npi=document.getElementById('npi'); if(_npi) _npi.value=getNpi();
   const _cad=document.getElementById('clinicAddress'); if(_cad) _cad.value=getClinicAddress();
   const _cph=document.getElementById('clinicPhone'); if(_cph) _cph.value=getClinicPhone();
+  if(typeof renderLogoSetting==='function') renderLogoSetting();
   const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) _nst.value=getMlsNoteStyle();
   // MLS additive — 📋 Patient intake custom questions (one per line)
@@ -8421,6 +8492,16 @@ function buildPrintHTML(){
   const npiVal=(typeof getNpi==='function')?getNpi():'';
   const clinicAddr=(typeof getClinicAddress==='function')?getClinicAddress():'';
   const clinicPh=(typeof getClinicPhone==='function')?getClinicPhone():'';
+  // Branded exports (Premium): logo on the letterhead + white-label (no "Prepared with MLS").
+  const clinicLogo=(typeof getClinicLogo==='function')?getClinicLogo():'';
+  const brandPrem=(typeof effectivePremium==='function')?effectivePremium():false;
+  const _logoTag=(brandPrem && clinicLogo)?('<img src="'+clinicLogo+'" alt="" style="max-height:46px;max-width:200px;display:block;margin-bottom:6px">'):'';
+  const _addrTags=(clinicAddr?('<small>'+esc(clinicAddr)+'</small>'):'')+(clinicPh?('<small>'+esc(clinicPh)+'</small>'):'');
+  const _nameTag=practiceName?esc(practiceName):(brandPrem?'Clinical Note':'MLS');
+  const _subTag=brandPrem
+    ? _addrTags
+    : ('<small>'+(practiceName?'Prepared with MLS — ambient AI medical scribe':'Ambient AI medical scribe')+'</small>'+_addrTags);
+  const brandHtml=_logoTag+_nameTag+_subTag;
   const now=new Date().toLocaleString();
   const fmtLabel=currentFormat==='insurance'?'Insurance-Ready':'Standard';
   const signLine=document.getElementById('signLine');
@@ -8466,7 +8547,7 @@ function buildPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <div class="brand">${practiceName?esc(practiceName):'MLS'}<small>${practiceName?'Prepared with MLS — ambient AI medical scribe':'Ambient AI medical scribe'}</small>${clinicAddr?('<small>'+esc(clinicAddr)+'</small>'):''}${clinicPh?('<small>'+esc(clinicPh)+'</small>'):''}</div>
+    <div class="brand">${brandHtml}</div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       <div><b>Provider:</b> ${esc(docName)}${providerCred?', '+esc(providerCred):''}${spec?' · '+esc(spec):''}</div>
