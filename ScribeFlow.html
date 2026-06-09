@@ -1980,6 +1980,21 @@
         <div class="code-disclaim">⚠️ Performance analysis based on available activity data — for supervisory/quality use; not a substitute for formal peer review.</div>
       </div>
     </div>
+
+    <!-- 🤝 REFERRAL OUTCOMES — close-the-loop reports for referring physicians (PREMIUM) -->
+    <div class="card" id="anaReferral">
+      <h2><span class="ic">🤝</span> Referral outcomes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <p class="sub">Close the loop with the physicians who refer to you. Summarizes pain and ODI improvement, satisfaction, and visit counts grouped by referring physician — ready to print and send back. Referrers are captured on the patient intake form.</p>
+      <button class="btn-primary" style="margin-top:6px" onclick="generateReferralOutcomes()">🤝 Generate referral report</button>
+      <div class="extra-card" id="refOutCard" style="display:none;margin-top:16px">
+        <h3>📄 Referral outcomes report
+          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('refOutBody')">📑 Copy</button>
+          <button class="sec-copy" onclick="printExtra('Referral Outcomes Report','refOutBody')">🖨 Print</button>
+        </h3>
+        <div class="xbody" id="refOutBody"></div>
+        <div class="code-disclaim">⚠️ Outcomes summarized from your stored records — verify before sending. Contains patient identifiers; share only with the referring provider and per your privacy policies.</div>
+      </div>
+    </div>
   </div><!-- /analysisView -->
 
   <!-- ============ LEGAL REQUESTS INBOX (clinician — incoming attorney requests) ============ -->
@@ -9399,6 +9414,58 @@ function getOutcomes(ptId){
   catch(e){ return []; }
 }
 function saveOutcomesArr(ptId,arr){ if(ptId) localStorage.setItem(outcomesKey(ptId),JSON.stringify(arr)); }
+
+/* ===== Referral outcomes report (Premium) — close-the-loop summaries for the
+   physicians who refer into the practice. The referrer is captured on the intake
+   form and stored in patient.summary; outcomes come from each patient's trend. ===== */
+function getPatientReferrer(p){
+  const s=(p&&p.summary)||'';
+  const m=s.match(/Referring physician:\s*([^\n]+)/i);
+  return m?m[1].trim():'';
+}
+function _refNum(x){ const n=Number(x); return isFinite(n)?n:null; }
+function _refPtDeltas(p){
+  const arr=(typeof getOutcomes==='function')?getOutcomes(p.id):[];
+  const s=arr.slice().sort((a,b)=>(a.date||0)-(b.date||0));
+  const pain=s.map(o=>_refNum(o.pain)).filter(v=>v!=null);
+  const odi=s.map(o=> o.odi!=null?_refNum(o.odi):(o.func!=null?_refNum(o.func):null)).filter(v=>v!=null);
+  let sat=null; for(let i=s.length-1;i>=0;i--){ const v=_refNum(s[i].satisfaction); if(v!=null){ sat=v; break; } }
+  let rec=null; for(let i=s.length-1;i>=0;i--){ if(typeof s[i].recommend==='boolean'){ rec=s[i].recommend; break; } }
+  return { painBase:(pain.length?pain[0]:null), painLast:(pain.length?pain[pain.length-1]:null),
+           odiBase:(odi.length?odi[0]:null), odiLast:(odi.length?odi[odi.length-1]:null),
+           sat:sat, rec:rec, visits:arr.length };
+}
+function generateReferralOutcomes(){
+  if(!(typeof effectivePremium==='function'&&effectivePremium())){ toast('Referral outcome reports are a Premium feature.','err'); return; }
+  const pts=(typeof getPatients==='function')?getPatients():[];
+  const groups={};
+  pts.forEach(p=>{ const r=getPatientReferrer(p); if(r) (groups[r]=groups[r]||[]).push(p); });
+  const refs=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
+  if(!refs.length){ toast('No referring physicians on file yet — they’re captured on the patient intake form.','err'); return; }
+  const avg=a=>a.length?(a.reduce((x,y)=>x+y,0)/a.length):null;
+  const f1=n=>n==null?'—':(Math.round(n*10)/10);
+  let html='<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Outcomes grouped by referring physician, drawn from your stored patient trends. Generated '+esc(new Date().toLocaleDateString())+'.</div>';
+  refs.forEach(ref=>{
+    const ps=groups[ref];
+    const d=ps.map(_refPtDeltas);
+    const painImp=avg(d.filter(x=>x.painBase!=null&&x.painLast!=null).map(x=>x.painBase-x.painLast));
+    const odiImp=avg(d.filter(x=>x.odiBase!=null&&x.odiLast!=null).map(x=>x.odiBase-x.odiLast));
+    const sats=avg(d.filter(x=>x.sat!=null).map(x=>x.sat));
+    const recArr=d.filter(x=>typeof x.rec==='boolean');
+    const recPct=recArr.length?Math.round(100*recArr.filter(x=>x.rec).length/recArr.length):null;
+    html+='<div style="margin:18px 0 8px;border-top:1px solid var(--line);padding-top:14px">';
+    html+='<div style="font-weight:700;font-size:15px">'+esc(ref)+'</div>';
+    html+='<div style="font-size:13px;color:var(--muted);margin:4px 0 8px">'+ps.length+' patient'+(ps.length>1?'s':'')+' referred · avg pain improvement '+(painImp==null?'—':('▼ '+f1(painImp)+' pts'))+' · avg ODI improvement '+(odiImp==null?'—':('▼ '+f1(odiImp)+'%'))+(sats!=null?(' · satisfaction '+f1(sats)+'/5'):'')+(recPct!=null?(' · '+recPct+'% would recommend'):'')+'</div>';
+    html+='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="text-align:left;color:var(--muted)"><th style="padding:4px 6px">Patient</th><th>Pain (base→last)</th><th>ODI (base→last)</th><th>Satisfaction</th><th>Visits</th></tr>';
+    ps.forEach((p,i)=>{ const x=d[i];
+      html+='<tr style="border-top:1px solid var(--line)"><td style="padding:4px 6px">'+esc(p.name||'—')+'</td><td>'+(x.painBase==null?'—':(f1(x.painBase)+' → '+f1(x.painLast)))+'</td><td>'+(x.odiBase==null?'—':(f1(x.odiBase)+'% → '+f1(x.odiLast)+'%'))+'</td><td>'+(x.sat==null?'—':(f1(x.sat)+'/5'))+'</td><td>'+x.visits+'</td></tr>';
+    });
+    html+='</table></div>';
+  });
+  const body=document.getElementById('refOutBody'); if(body) body.innerHTML=html;
+  const card=document.getElementById('refOutCard'); if(card) card.style.display='block';
+  toast('Referral outcomes report ready for '+refs.length+' referring physician'+(refs.length>1?'s':'')+'.','ok');
+}
 
 function saveOutcome(){
   const painRaw=document.getElementById('outPain').value;
