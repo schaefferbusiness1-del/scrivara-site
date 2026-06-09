@@ -673,5 +673,73 @@ async function submitDemo(e){
   return false;
 }
 </script>
+
+<!-- ===== AI sales chat bubble ===== -->
+<style>
+  #mlsChatBtn{position:fixed;right:20px;bottom:20px;z-index:9999;background:linear-gradient(120deg,#1f7ae0,#155fb3);color:#fff;border:none;border-radius:999px;padding:14px 20px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 8px 28px rgba(31,122,224,.4);display:flex;align-items:center;gap:8px}
+  #mlsChatBtn:hover{filter:brightness(1.06)}
+  #mlsChatPanel{position:fixed;right:20px;bottom:20px;z-index:10000;width:370px;max-width:calc(100vw - 32px);height:520px;max-height:calc(100vh - 40px);background:#fff;border:1px solid #e2e9f1;border-radius:16px;box-shadow:0 20px 60px rgba(16,50,79,.28);display:none;flex-direction:column;overflow:hidden}
+  #mlsChatHead{background:linear-gradient(120deg,#1f7ae0,#155fb3);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+  #mlsChatHead b{font-size:15px}
+  #mlsChatHead small{display:block;font-weight:400;opacity:.85;font-size:12px}
+  #mlsChatClose{background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1}
+  #mlsChatMsgs{flex:1;overflow-y:auto;padding:14px;background:#f4f7fb;display:flex;flex-direction:column;gap:10px}
+  .mlsmsg{max-width:84%;padding:9px 12px;border-radius:13px;font-size:14px;line-height:1.45;white-space:pre-wrap}
+  .mlsmsg.bot{background:#fff;border:1px solid #e2e9f1;color:#16324f;align-self:flex-start;border-bottom-left-radius:4px}
+  .mlsmsg.user{background:#1f7ae0;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+  #mlsChatForm{display:flex;gap:8px;padding:10px;border-top:1px solid #e2e9f1;background:#fff}
+  #mlsChatInput{flex:1;border:1px solid #cfdbe8;border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none}
+  #mlsChatSend{background:#1f7ae0;color:#fff;border:none;border-radius:10px;padding:0 16px;font-weight:700;cursor:pointer}
+  #mlsChatSend:disabled{opacity:.5;cursor:default}
+</style>
+<button id="mlsChatBtn" onclick="mlsChatToggle(true)">💬 Ask us anything</button>
+<div id="mlsChatPanel" role="dialog" aria-label="MLS assistant">
+  <div id="mlsChatHead"><div><b>MLS Assistant</b><small>Features, pricing, anything</small></div><button id="mlsChatClose" onclick="mlsChatToggle(false)" aria-label="Close">×</button></div>
+  <div id="mlsChatMsgs"></div>
+  <form id="mlsChatForm" onsubmit="return mlsChatSend(event)">
+    <input id="mlsChatInput" autocomplete="off" placeholder="Type your question…">
+    <button id="mlsChatSend" type="submit">Send</button>
+  </form>
+</div>
+<script>
+(function(){
+  const API=(typeof BACKEND_URL!=='undefined')?BACKEND_URL:'https://scrivara-backend.onrender.com';
+  const hist=[]; let greeted=false;
+  function el(id){return document.getElementById(id);}
+  function add(role,text){
+    const d=document.createElement('div');
+    d.className='mlsmsg '+(role==='user'?'user':'bot');
+    d.textContent=text;
+    const box=el('mlsChatMsgs'); box.appendChild(d); box.scrollTop=box.scrollHeight;
+    return d;
+  }
+  window.mlsChatToggle=function(open){
+    el('mlsChatPanel').style.display=open?'flex':'none';
+    el('mlsChatBtn').style.display=open?'none':'flex';
+    if(open){
+      if(!greeted){greeted=true;add('bot','Hi! I’m the MLS assistant. Ask me anything about how it works, pricing, or how it fits your spine/PM&R/pain practice. 👋');}
+      setTimeout(function(){el('mlsChatInput').focus();},50);
+    }
+  };
+  window.mlsChatSend=function(e){
+    e.preventDefault();
+    const inp=el('mlsChatInput'); const text=(inp.value||'').trim();
+    if(!text) return false;
+    inp.value=''; add('user',text); hist.push({role:'user',content:text});
+    const sendBtn=el('mlsChatSend'); sendBtn.disabled=true;
+    const typing=add('bot','…');
+    fetch(API+'/api/sales-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:hist.slice(-12)})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        const reply=(d&&(d.reply||d.error))||'Sorry, please try again or book a demo.';
+        typing.textContent=reply;
+        if(d&&d.reply) hist.push({role:'assistant',content:d.reply});
+      })
+      .catch(function(){ typing.textContent='Connection issue — please try again, or email michael@mlsscribe.com.'; })
+      .finally(function(){ sendBtn.disabled=false; el('mlsChatInput').focus(); });
+    return false;
+  };
+})();
+</script>
 </body>
 </html>
