@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Pre-Visit Intake — MLS</title>
+<!-- Standalone PUBLIC patient intake page. Reached via a per-doctor link:
+     /intake.html?token=<token>. Validates the token, lets the patient fill the
+     form at home, and POSTs the (de-identified-at-rest) submission to the secure
+     backend, which stores it ENCRYPTED for the doctor to review and attach in-app.
+     This page is intentionally isolated from the authenticated app. -->
+<style>
+  :root{--ink:#16324f;--muted:#5f7186;--line:#e2e9f1;--brand:#1f7ae0;--brand-dk:#155fb3;--green:#19a974;--bg:#f4f7fb}
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',-apple-system,Arial,sans-serif;color:var(--ink);background:var(--bg);margin:0;padding:0;font-size:16px;line-height:1.5}
+  .wrap{max-width:680px;margin:0 auto;padding:18px 16px 64px}
+  .top{display:flex;align-items:center;gap:10px;padding:6px 0 14px}
+  .logo{width:38px;height:38px;border-radius:9px;background:linear-gradient(120deg,var(--brand),var(--brand-dk));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+  .top b{font-size:18px}
+  .top small{display:block;color:var(--muted);font-weight:400;font-size:12.5px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 16px;margin-top:14px;box-shadow:0 8px 30px rgba(31,122,224,.06)}
+  h1{font-size:21px;margin:2px 0 4px}
+  .lead{color:var(--muted);font-size:14.5px;margin:0 0 4px}
+  .sec{margin-top:18px}
+  .sec h3{font-size:16px;margin:0 0 4px;color:var(--brand-dk)}
+  .field{margin:12px 0}
+  label{display:block;font-weight:600;font-size:14px;margin-bottom:5px}
+  .req{color:#c0392b}
+  input,select,textarea{width:100%;border:1px solid #cfdbe8;border-radius:9px;padding:11px 12px;font-size:16px;font-family:inherit;color:var(--ink);background:#fff;outline:none}
+  input:focus,select,textarea:focus{border-color:var(--brand)}
+  textarea{min-height:74px;resize:vertical}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:520px){.grid2{grid-template-columns:1fr}}
+  .pain-row{display:flex;align-items:center;gap:12px}
+  .pain-row input[type=range]{flex:1}
+  .pain-val{font-weight:800;font-size:20px;color:var(--brand-dk);min-width:42px;text-align:center}
+  .btn{display:block;width:100%;background:var(--brand);color:#fff;border:none;border-radius:11px;padding:15px;font-size:17px;font-weight:700;cursor:pointer;margin-top:8px}
+  .btn:disabled{opacity:.55;cursor:default}
+  .note{color:var(--muted);font-size:12.5px;margin-top:10px;text-align:center}
+  .state{text-align:center;padding:48px 18px}
+  .state .big{font-size:46px}
+  .state h2{margin:10px 0 6px}
+  .err{color:#c0392b;font-size:14px;margin-top:8px;text-align:center;min-height:18px}
+  .hide{display:none!important}
+  .lock{color:var(--muted);font-size:12px;text-align:center;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="logo">＋</div>
+    <div><b>MLS</b><small>Secure pre-visit intake</small></div>
+  </div>
+
+  <!-- Loading / invalid states -->
+  <div id="loading" class="state"><div class="big">⏳</div><p class="lead">Loading your intake form…</p></div>
+  <div id="invalid" class="state hide"><div class="big">🔗</div><h2>This link isn't active</h2><p class="lead">This pre-visit link is no longer valid. Please contact the clinic for a new one.</p></div>
+
+  <!-- The form -->
+  <div id="formWrap" class="hide">
+    <div class="card">
+      <h1>Before your visit</h1>
+      <p class="lead">Please fill out what you can — your care team will review everything with you. It only takes a few minutes, and it helps your provider make the most of your appointment.</p>
+    </div>
+
+    <form id="ikForm" autocomplete="off">
+      <div class="card sec">
+        <h3>👤 About you</h3>
+        <div class="grid2">
+          <div class="field"><label>Full name <span class="req">*</span></label><input id="name" required></div>
+          <div class="field"><label>Date of birth <span class="req">*</span></label><input id="dob" type="date" required></div>
+          <div class="field"><label>Sex</label>
+            <select id="sex"><option value=""></option><option>Female</option><option>Male</option><option>Other</option></select>
+          </div>
+          <div class="field"><label>Phone</label><input id="phone" type="tel"></div>
+          <div class="field"><label>Email</label><input id="email" type="email"></div>
+          <div class="field"><label>Preferred pharmacy</label><input id="pharmacy"></div>
+        </div>
+        <div class="field"><label>Referring physician (who sent you to us?)</label><input id="referrer"></div>
+      </div>
+
+      <div class="card sec">
+        <h3>🩺 Why you're coming in</h3>
+        <div class="field"><label>Main reason for your visit <span class="req">*</span></label><textarea id="chief" required placeholder="e.g. low back pain radiating down my right leg"></textarea></div>
+        <div class="field">
+          <label>Current pain level (0 = none, 10 = worst)</label>
+          <div class="pain-row"><input id="pain" type="range" min="0" max="10" step="1" value="0" oninput="document.getElementById('painVal').textContent=this.value"><span class="pain-val" id="painVal">0</span></div>
+        </div>
+        <div class="field"><label>Where is the pain / problem?</label><input id="painLoc" placeholder="e.g. lower back, right leg"></div>
+        <div class="grid2">
+          <div class="field"><label>When did it start?</label><input id="onset" placeholder="e.g. 3 months ago"></div>
+          <div class="field"><label>How disabling is it? (0–100%)</label><input id="odi" type="number" min="0" max="100" placeholder="optional"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>What makes it better?</label><input id="better"></div>
+          <div class="field"><label>What makes it worse?</label><input id="worse"></div>
+        </div>
+        <div class="field"><label>What have you already tried? (PT, injections, medications, surgery…)</label><textarea id="priorTx"></textarea></div>
+      </div>
+
+      <div class="card sec">
+        <h3>📋 Your health</h3>
+        <div class="field"><label>Medical conditions</label><textarea id="conditions" placeholder="e.g. diabetes, high blood pressure"></textarea></div>
+        <div class="field"><label>Prior surgeries</label><textarea id="surgeries"></textarea></div>
+        <div class="grid2">
+          <div class="field"><label>Current medications</label><textarea id="meds"></textarea></div>
+          <div class="field"><label>Allergies</label><textarea id="allergies"></textarea></div>
+        </div>
+      </div>
+
+      <div class="card sec">
+        <button type="submit" class="btn" id="submitBtn">Submit to my care team</button>
+        <div class="err" id="formErr"></div>
+        <p class="note">🔒 Your information is encrypted and sent only to your clinic. It is not stored on this page or this device.</p>
+      </div>
+    </form>
+  </div>
+
+  <!-- Done -->
+  <div id="done" class="state hide"><div class="big">✅</div><h2>All set — thank you!</h2><p class="lead">Your intake has been sent securely to your care team. You're all done — you can close this page. See you at your visit!</p></div>
+
+  <div class="lock">Powered by MLS · This page never stores your information</div>
+</div>
+
+<script>
+(function(){
+  var BACKEND_URL='https://scrivara-backend.onrender.com';
+  function $(id){return document.getElementById(id);}
+  function show(id){['loading','invalid','formWrap','done'].forEach(function(x){$(x).classList.toggle('hide', x!==id);});}
+  var params=new URLSearchParams(location.search);
+  var token=params.get('token')||params.get('intake')||'';
+  if(!token){ show('invalid'); return; }
+
+  // Validate the link token (no PHI returned — just whether it's live).
+  fetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token))
+    .then(function(r){return r.json().catch(function(){return {ok:false};});})
+    .then(function(d){ if(d&&d.ok){ show('formWrap'); } else { show('invalid'); } })
+    .catch(function(){ show('invalid'); });
+
+  function val(id){ var e=$(id); return e?String(e.value||'').trim():''; }
+
+  $('ikForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var name=val('name'), dob=val('dob'), chief=val('chief');
+    if(!name){ $('formErr').textContent='Please enter your full name.'; return; }
+    if(!dob){ $('formErr').textContent='Please enter your date of birth.'; return; }
+    if(!chief){ $('formErr').textContent='Please tell us the main reason for your visit.'; return; }
+    $('formErr').textContent='';
+    var painNum=parseInt(val('pain'),10); if(isNaN(painNum)) painNum=null;
+    var odiNum=val('odi')===''?null:Math.max(0,Math.min(100,parseInt(val('odi'),10)||0));
+    var data={
+      source:'previsit-link', submittedAt:new Date().toISOString(),
+      name:name, dob:dob, sex:val('sex'), phone:val('phone'), email:val('email'),
+      pharmacy:val('pharmacy'), referrer:val('referrer'),
+      chief:chief, pain:painNum, painLoc:val('painLoc'), onset:val('onset'), odi:odiNum,
+      better:val('better'), worse:val('worse'), priorTx:val('priorTx'),
+      conditions:val('conditions'), surgeries:val('surgeries'),
+      meds:val('meds'), allergies:val('allergies')
+    };
+    var btn=$('submitBtn'); btn.disabled=true; btn.textContent='Sending…';
+    fetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token)+'/submit',{
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({data:data})
+    }).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(res){
+        if(res.ok && res.j && res.j.ok){ show('done'); }
+        else { btn.disabled=false; btn.textContent='Submit to my care team'; $('formErr').textContent=(res.j&&res.j.error)||'Something went wrong. Please try again.'; }
+      })
+      .catch(function(){ btn.disabled=false; btn.textContent='Submit to my care team'; $('formErr').textContent='Connection issue — please check your signal and try again.'; });
+  });
+})();
+</script>
+</body>
+</html>
