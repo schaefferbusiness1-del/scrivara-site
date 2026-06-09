@@ -696,7 +696,7 @@ async function submitDemo(e){
 <div id="mlsChatPanel" role="dialog" aria-label="MLS assistant">
   <div id="mlsChatHead"><div><b>MLS Assistant</b><small>Features, pricing, anything</small></div><button id="mlsChatClose" onclick="mlsChatToggle(false)" aria-label="Close">×</button></div>
   <div id="mlsChatMsgs"></div>
-  <form id="mlsChatForm" onsubmit="return mlsChatSend(event)">
+  <form id="mlsChatForm" onsubmit="mlsChatSend(event);return false;" action="javascript:void(0)">
     <input id="mlsChatInput" autocomplete="off" placeholder="Type your question…">
     <button id="mlsChatSend" type="submit">Send</button>
   </form>
@@ -722,7 +722,7 @@ async function submitDemo(e){
     }
   };
   window.mlsChatSend=function(e){
-    e.preventDefault();
+    if(e&&e.preventDefault)e.preventDefault();
     const inp=el('mlsChatInput'); const text=(inp.value||'').trim();
     if(!text) return false;
     inp.value=''; add('user',text); hist.push({role:'user',content:text});
