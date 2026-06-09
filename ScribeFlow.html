@@ -1020,6 +1020,7 @@
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
         <button class="btn-ghost" id="ptBookLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyBookingLink(this)" title="Get a link patients can use to book appointments online">📅 Booking link</button>
         <button class="btn-ghost" id="ptBoardBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadBoard(true)" title="See today's appointments and who's checked in">🗓️ Check-in board</button>
+        <button class="btn-ghost" id="ptReceptionBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
       </h2>
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
@@ -1039,6 +1040,7 @@
         </div>
       </div>
       <div id="boardBox" style="display:none;margin-top:12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
+      <div id="receptionBox" style="display:none;margin-top:12px;background:#fff7ef;border:1px solid #f1d9be;border-radius:12px;padding:14px"></div>
       <div class="pt-search" id="ptSearchRow" style="display:none">
         <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="renderPatients()">
         <span class="pt-count" id="ptCount"></span>
@@ -5790,6 +5792,86 @@ async function addApptFromBoard(){
     toast('Appointment added.','ok');
     loadBoard(false);
   }catch(e){ toast('Could not add the appointment.','err'); }
+}
+
+/* ===== Receptionist accounts (feature #3): a clinician provisions front-desk
+   logins under their practice. Receptionists run the check-in board + scheduling
+   but are walled from clinical notes (server-side requireClinician 403s them). ===== */
+var _lastRecCreds=null;
+function copyRecCreds(){
+  if(!_lastRecCreds) return;
+  var t='Email: '+_lastRecCreds.email+'\nTemporary password: '+_lastRecCreds.tempPassword;
+  if(navigator.clipboard){ navigator.clipboard.writeText(t).then(function(){toast('Login details copied.','ok');}).catch(function(){}); }
+}
+async function loadReceptionists(show){
+  const box=document.getElementById('receptionBox'); if(!box) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage receptionists.','err'); return; }
+  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
+  try{
+    const r=await fetch(bkBase()+'/api/team/receptionists',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===403){ box.style.display='none'; if(show) toast('Receptionist management is for clinician accounts.','err'); return; }
+    if(!r.ok){ if(show){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load receptionists.</div>'; } return; }
+    const d=await r.json().catch(function(){return {receptionists:[]};});
+    renderReceptionists(d.receptionists||[], null);
+  }catch(e){ if(show){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load receptionists.</div>'; } }
+}
+function renderReceptionists(list, justCreated){
+  const box=document.getElementById('receptionBox'); if(!box) return;
+  box.style.display='block';
+  _lastRecCreds=justCreated||null;
+  let h='<div style="font-size:15px;font-weight:700;margin-bottom:4px">👥 Front-desk receptionists</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">Receptionists get their own login to run the check-in board and schedule — but can\'t see clinical notes.</div>';
+  if(justCreated){
+    h+='<div style="background:#eefaf3;border:1px solid #bfe6d2;border-radius:10px;padding:11px 12px;margin-bottom:10px">';
+    h+='<div style="font-weight:700;color:#127a55;margin-bottom:5px">✅ Login created — share these with '+esc(justCreated.name||justCreated.email)+':</div>';
+    h+='<div style="font-size:13px">Email: <b>'+esc(justCreated.email)+'</b></div>';
+    h+='<div style="font-size:13px;margin-top:2px">Temporary password: <b>'+esc(justCreated.tempPassword)+'</b> <button class="btn-ghost" style="font-size:12px;padding:3px 9px;margin-left:6px" onclick="copyRecCreds()">📋 Copy</button></div>';
+    h+='<div class="mini" style="color:var(--muted);margin-top:5px">They sign in at this app and can change the password from Settings.</div>';
+    h+='</div>';
+  }
+  if(list.length){
+    list.forEach(function(u){
+      h+='<div style="display:flex;align-items:center;gap:8px;border:1px solid #f1d9be;border-radius:9px;padding:8px 10px;margin-bottom:6px;background:#fff">';
+      h+='<span><b>'+esc(u.name||'(no name)')+'</b> <span style="font-size:12px;color:var(--muted)">'+esc(u.email)+'</span></span>';
+      h+='<button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:4px 9px;color:#c0392b" onclick="removeReceptionist('+u.id+')">Remove</button>';
+      h+='</div>';
+    });
+  } else if(!justCreated){
+    h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No receptionists yet.</div>';
+  }
+  h+='<div style="border-top:1px dashed #f1d9be;padding-top:10px;margin-top:6px">';
+  h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Add a receptionist</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h+='<input id="recName" placeholder="Name" style="flex:1;min-width:120px;border:1px solid #e6cba8;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<input id="recEmail" type="email" placeholder="Email" style="flex:2;min-width:160px;border:1px solid #e6cba8;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<button class="btn-primary" id="recAddBtn" style="font-size:13px;padding:7px 13px" onclick="addReceptionist()">Create login</button>';
+  h+='</div></div>';
+  box.innerHTML=h;
+}
+async function addReceptionist(){
+  const name=((document.getElementById('recName')||{}).value||'').trim();
+  const email=((document.getElementById('recEmail')||{}).value||'').trim();
+  if(!email){ toast('Enter an email for the receptionist.','err'); return; }
+  const btn=document.getElementById('recAddBtn'); if(btn) btn.disabled=true;
+  try{
+    const r=await fetch(bkBase()+'/api/team/receptionists',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,email:email})});
+    const d=await r.json().catch(function(){return {};});
+    if(btn) btn.disabled=false;
+    if(!r.ok){ toast(d.error||'Could not create the receptionist.','err'); return; }
+    toast('Receptionist login created.','ok');
+    const lr=await fetch(bkBase()+'/api/team/receptionists',{headers:{Authorization:'Bearer '+bkToken()}});
+    const ld=await lr.json().catch(function(){return {receptionists:[]};});
+    renderReceptionists(ld.receptionists||[], {email:email, name:name, tempPassword:d.tempPassword});
+  }catch(e){ if(btn) btn.disabled=false; toast('Could not create the receptionist.','err'); }
+}
+async function removeReceptionist(id){
+  if(!confirm('Remove this receptionist? Their login will stop working.')) return;
+  try{
+    const r=await fetch(bkBase()+'/api/team/receptionists/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}});
+    if(!r.ok){ toast('Could not remove the receptionist.','err'); return; }
+    toast('Receptionist removed.','ok');
+    loadReceptionists(true);
+  }catch(e){ toast('Could not remove the receptionist.','err'); }
 }
 
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
