@@ -2435,6 +2435,7 @@
         <option value="60">1 hour</option>
         <option value="120">2 hours</option>
         <option value="180">3 hours</option>
+        <option value="off">Stay signed in (no auto-logoff)</option>
       </select>
     </div>
 
@@ -4118,7 +4119,9 @@ let idleTimer=null;
 let _idleLastReset=0;
 let _idleListenersAttached=false;
 function getIdleMins(){
-  const v=parseInt(localStorage.getItem(uns('idleMins')),10);
+  const raw=localStorage.getItem(uns('idleMins'));
+  if(raw==='off'||raw==='0') return 0; // 0 = auto-logoff disabled ("stay signed in")
+  const v=parseInt(raw,10);
   return (v && v>0) ? v : 15;
 }
 function idleLogout(){
@@ -4129,8 +4132,9 @@ function idleLogout(){
 function resetIdle(){
   clearTimeout(idleTimer);
   idleTimer=null;
-  if(session){
-    idleTimer=setTimeout(idleLogout, getIdleMins()*60000);
+  const m=getIdleMins();
+  if(session && m>0){
+    idleTimer=setTimeout(idleLogout, m*60000);
   }
 }
 function stopIdle(){
@@ -4214,7 +4218,7 @@ function openSettings(){
   document.getElementById('docName').value=getName();
   document.getElementById('docSpec').value=getSpec();
   document.getElementById('keyOk').className=getKey()?'keyok show':'keyok';
-  const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=String(getIdleMins());
+  const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=(getIdleMins()===0?'off':String(getIdleMins()));
   const dc=document.getElementById('defaultComment'); if(dc) dc.value=getDefaultComment();
   // QoL settings (MLS)
   const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
@@ -4300,8 +4304,8 @@ function saveSettings(){
   if(typeof applyVisitCommentToNote==='function') applyVisitCommentToNote(); // refresh signature on any open note
   const idleSel=document.getElementById('idleMins');
   if(idleSel){
-    const m=parseInt(idleSel.value,10);
-    if(m && m>0) localStorage.setItem(uns('idleMins'),String(m));
+    if(idleSel.value==='off'){ localStorage.setItem(uns('idleMins'),'off'); }
+    else { const m=parseInt(idleSel.value,10); if(m && m>0) localStorage.setItem(uns('idleMins'),String(m)); }
   }
   resetIdle();  // apply the (possibly changed) timeout immediately
   document.getElementById('keyOk').className=k?'keyok show':'keyok';
