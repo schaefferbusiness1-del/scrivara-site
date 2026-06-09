@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- build: hero-firstline-v5 2026-06-09 -->
+<!-- build: about-video-animations-v6 2026-06-09 -->
 <meta name="robots" content="index,follow">
 <title>MLS — AI Scribe for Spine, PM&amp;R &amp; Pain | Build Your Own AI Widgets</title>
 <meta name="description" content="MLS is the AI ambient scribe + mini-EMR built for every medical practice — spine, pain, primary care, cardiology, psychiatry, and beyond. Build your own AI widgets, get structured SOAP notes with E/M, ICD-10 and CPT coding, iPad patient intake, outcomes tracking, branded white-label notes, referral outcome reports, and a premium ask-your-data Study Engine. From $99/provider/month.">
@@ -29,6 +29,11 @@
   .navlinks{display:flex;gap:24px;align-items:center}
   .navlinks a{color:var(--muted);font-weight:600;font-size:15.5px}
   .navlinks a:hover{color:var(--brand)}
+  /* Apple-style scroll reveal — content eases in as you scroll */
+  .reveal{opacity:0;transform:translateY(28px);transition:opacity .75s cubic-bezier(.2,.65,.2,1),transform .75s cubic-bezier(.2,.65,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  .reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}
+  @media(prefers-reduced-motion:reduce){.reveal{opacity:1!important;transform:none!important;transition:none!important}}
   .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;border-radius:11px;
     padding:12px 20px;cursor:pointer;border:none;font-size:16px;transition:.15s;font-family:inherit}
   .btn-primary{background:var(--brand);color:#fff}
@@ -203,6 +208,7 @@
       <a href="#studies">Data studies</a>
       <a href="#pricing">Pricing</a>
       <a href="#trust">Security</a>
+      <a href="#about">About</a>
       <a href="ScribeFlow.html">Sign in</a>
       <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost">⬇ Download the app</a>
       <a href="#demo" class="btn btn-dark">Book a demo</a>
@@ -612,6 +618,19 @@
   </div>
 </section>
 
+<!-- ABOUT — tucked near the bottom, for visitors who explore -->
+<section id="about" style="background:#fff;border-top:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head reveal"><h2>About MLS</h2><p>Built by a team obsessed with giving doctors their evenings back. Here's MLS in action.</p></div>
+    <div class="reveal" style="max-width:840px;margin:0 auto">
+      <div style="position:relative;padding-bottom:56.25%;height:0;border-radius:16px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)">
+        <iframe src="https://www.youtube.com/embed/Tp2crtEundk" title="MLS — AI ambient scribe" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="position:absolute;top:0;left:0;width:100%;height:100%;border:0"></iframe>
+      </div>
+      <p style="text-align:center;color:var(--muted);font-size:14px;margin-top:14px">MLS turns every patient visit into a finished, EMR-ready note almost instantly — built AI-first, for every practice.</p>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <div class="brand" style="color:#fff"><span class="mark" style="background:none;width:32px;height:32px"><svg viewBox="0 0 56 56" width="32" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svFootMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svFootMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</div>
@@ -699,6 +718,25 @@ async function submitDemo(e){
   }
   return false;
 }
+</script>
+
+<!-- ===== Apple-style scroll reveal ===== -->
+<script>
+(function(){
+  function show(el){ el.classList.add('in'); }
+  if(!('IntersectionObserver' in window)){ document.querySelectorAll('.reveal').forEach(show); return; }
+  // Tag below-the-fold content so it eases in on scroll (above-fold stays as-is — no flash)
+  document.querySelectorAll('.sec-head, .card, .price-card, .who > div, blockquote, .shot').forEach(function(el){
+    var r=el.getBoundingClientRect();
+    if(r.top > window.innerHeight*0.9) el.classList.add('reveal');
+  });
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if(e.isIntersecting){ show(e.target); io.unobserve(e.target); } });
+  }, {threshold:0.1, rootMargin:'0px 0px -6% 0px'});
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+  // Safety net — never leave content stuck hidden
+  setTimeout(function(){ document.querySelectorAll('.reveal:not(.in)').forEach(function(el){ if(el.getBoundingClientRect().top < window.innerHeight) show(el); }); }, 2500);
+})();
 </script>
 
 <!-- ===== AI sales chat bubble ===== -->
