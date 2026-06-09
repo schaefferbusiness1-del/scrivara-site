@@ -1043,6 +1043,7 @@
       <h2><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
+        <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
       </h2>
       <p class="sub" id="profDemo">—</p>
 
@@ -8611,6 +8612,24 @@ function downloadShare(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='MLS_Record_'+p.name.replace(/[^A-Za-z0-9]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.txt';
   a.click(); URL.revokeObjectURL(a.href); toast('Record downloaded.','ok');
+}
+/* One-click "export everything for EMR": the full compiled chart + the current
+   in-progress visit (note + coding) if one is open, downloaded as a single file. */
+function downloadFullEMR(){
+  const p=activePatient();
+  if(!p){ toast('Select a patient first to export their chart.','err'); return; }
+  let txt;
+  try{ txt=compilePatientRecord(p); }catch(e){ toast('Could not compile the chart.','err'); return; }
+  if(typeof currentSoap!=='undefined' && currentSoap){
+    try{ txt += '\n\n'+('='.repeat(50))+'\nCURRENT VISIT (in progress — not yet saved to history)\n'+('='.repeat(50))+'\n'+emrReadyText(); }catch(e){}
+  }
+  try{
+    const blob=new Blob([txt],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='MLS_EMR_Export_'+String(p.name||'patient').replace(/[^A-Za-z0-9]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.txt';
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('Full chart exported — note, problems, meds, allergies & coding, ready for your EMR.','ok');
+  }catch(e){ toast('Could not download the export.','err'); }
 }
 function printShare(){
   const p=activePatient(); if(!p) return;
