@@ -2222,14 +2222,6 @@
           </select>
         </div>
       </div>
-      <div class="field">
-        <label for="noteModelSel">AI model for notes <span style="font-size:11px;font-weight:700;color:#155fb3;background:#e8f1fc;border-radius:10px;padding:1px 8px;margin-left:4px">Premium</span></label>
-        <select class="sf-select" id="noteModelSel">
-          <option value="gpt-4o">Balanced — stronger model (recommended)</option>
-          <option value="gpt-4o-mini">Fast — quickest generation</option>
-        </select>
-        <p class="set-desc" id="noteModelHint" style="margin-top:6px">Premium notes run on a priority lane for lower latency. Pick the stronger model for the highest-quality notes, or the fast model for the quickest turnaround. Standard always uses the fast model.</p>
-      </div>
       <p class="note" style="margin:2px 0 0">Tip: your standing follow-up interval lives below under Provider preferences.</p>
     </div>
 
@@ -2237,6 +2229,15 @@
     <div class="set-section">
     <p class="set-head">🎚️ AI personalization</p>
     <p class="set-desc">Standing instructions and defaults MLS applies to every note it writes for you.</p>
+
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label for="noteModelSel" style="font-size:15px">🤖 AI model for notes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);border-radius:999px;padding:2px 8px;margin-left:4px">Premium</span></label>
+      <select class="sf-select" id="noteModelSel" style="margin-top:8px">
+        <option value="gpt-4o">Balanced — stronger model (recommended)</option>
+        <option value="gpt-4o-mini">Fast — quickest generation</option>
+      </select>
+      <p class="set-desc" id="noteModelHint" style="margin-top:6px">Premium notes run on a priority lane for lower latency. Pick the stronger model for the highest-quality notes, or the fast model for the quickest turnaround. Standard always uses the fast model.</p>
+    </div>
 
     <!-- My preferences: "learns your way" -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
