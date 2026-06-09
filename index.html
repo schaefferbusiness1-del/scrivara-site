@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- build: revert-to-scroll-v9 2026-06-09 -->
+<!-- build: pwa-install-v10 2026-06-09 -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f7ae0">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="robots" content="index,follow">
 <title>MLS — AI Scribe for Spine, PM&amp;R &amp; Pain | Build Your Own AI Widgets</title>
 <meta name="description" content="MLS is the AI ambient scribe + mini-EMR built for every medical practice — spine, pain, primary care, cardiology, psychiatry, and beyond. Build your own AI widgets, get structured SOAP notes with E/M, ICD-10 and CPT coding, iPad patient intake, outcomes tracking, branded white-label notes, referral outcome reports, and a premium ask-your-data Study Engine. From $99/provider/month.">
@@ -210,7 +213,7 @@
       <a href="#trust">Security</a>
       <a href="#about">About</a>
       <a href="ScribeFlow.html">Sign in</a>
-      <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost">⬇ Download the app</a>
+      <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost" onclick="return installApp(event)">⬇ Download the app</a>
       <a href="#demo" class="btn btn-dark">Book a demo</a>
     </div>
   </div>
@@ -227,7 +230,7 @@
     <p class="lead">Describe any card you want — an injection tracker, a work-status box, a red-flag screen — and <b>MLS designs it and auto-fills it on every visit</b>. The ambient scribe turns the visit into a structured SOAP note with suggested coding and an estimated reimbursement. Built for every practice — from spine and pain to primary care, cardiology, psychiatry, and beyond.</p>
     <div class="cta">
       <a href="#demo" class="btn btn-dark">📅 Book a demo</a>
-      <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost">⬇ Download the app</a>
+      <a href="ScribeFlow.html" download="MLS-Demo.html" class="btn btn-ghost" onclick="return installApp(event)">⬇ Download the app</a>
       <a href="#widgets" class="btn btn-ghost">See the widget builder</a>
     </div>
     <p class="reassure">⬇ A self-contained copy that runs locally — no account, server, or patient data. Add your AI key to generate notes.</p>
@@ -719,6 +722,37 @@ async function submitDemo(e){
   }
   return false;
 }
+</script>
+
+<!-- ===== PWA install — "Download the app" installs a real desktop app (standalone window), not a Chrome tab ===== -->
+<script>
+(function(){
+  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
+  var deferred=null;
+  window.addEventListener('beforeinstallprompt',function(e){ e.preventDefault(); deferred=e; });
+  window.addEventListener('appinstalled',function(){ deferred=null; });
+  window.installApp=function(ev){
+    if(deferred){
+      if(ev&&ev.preventDefault) ev.preventDefault();
+      deferred.prompt();
+      deferred.userChoice.then(function(){ deferred=null; });
+      return false;
+    }
+    var ua=navigator.userAgent||'';
+    if(/iPad|iPhone|iPod/.test(ua)){
+      if(ev&&ev.preventDefault) ev.preventDefault();
+      alert('To install MLS on your iPhone/iPad: tap the Share button, then "Add to Home Screen."');
+      return false;
+    }
+    if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches){
+      if(ev&&ev.preventDefault) ev.preventDefault();
+      alert('MLS is already installed — open it from your desktop or app menu.');
+      return false;
+    }
+    // Fallback (Safari/Firefox or prompt not yet ready): download a local copy of the app.
+    return true;
+  };
+})();
 </script>
 
 <!-- ===== Apple-style scroll reveal ===== -->
