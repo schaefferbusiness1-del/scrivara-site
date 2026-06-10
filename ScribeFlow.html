@@ -12885,11 +12885,16 @@ function legalReqRowHtml(rq,mode){
   if(mode==='lawyer'){
     actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="toggleAttachPanel(\''+esc(idStr)+'\')">📎 Documents (<span id="attachCount-'+safeId+'">'+initCount+'</span>)</button>';
     if(fulfilled){
-      _lawReports[id]={result_text:rq.result_text||'',doc_type:docType};
-      actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="lawViewReport(\''+esc(String(id))+'\')">📄 View report</button>';
+      const locked=!!rq.locked;
+      _lawReports[id]={result_text:rq.result_text||'',doc_type:docType,locked:locked};
+      actions+='<button class="'+(locked?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="lawViewReport(\''+esc(String(id))+'\')">'+(locked?'🔒 Preview report':'📄 View full report')+'</button>';
     }
   }else{
     actions='<button class="'+(fulfilled?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="openLegalRequest(\''+esc(String(id))+'\')">'+(fulfilled?'⚖️ Re-open':'⚖️ Fulfill')+'</button>';
+    if(fulfilled){
+      if(rq.paid){ actions+='<span style="font-size:12px;color:#1f7a4d;align-self:center;font-weight:600">✅ Released to attorney</span>'; }
+      else { actions+='<button class="btn-primary" style="font-size:13px;padding:7px 12px" onclick="releaseLegalReport(\''+esc(String(id))+'\')" title="Release the full report to the attorney (they only see a preview until you do)">🔓 Release full report</button>'; }
+    }
   }
   // Stash the full request so the clinician inbox can prefill from it.
   if(mode==='clinician') _legalInboxById[String(id)]=rq;
@@ -13174,6 +13179,22 @@ async function lawDownloadReport(){
 
 /* ---- Clinician inbox: load + render incoming requests ---- */
 let _legalInboxById={}; // requestId -> full request object (for prefill)
+/* Clinician/head: RELEASE the full report to the attorney (paywall unlock). The
+   attorney sees only a preview until this is done. For now the practice releases it
+   (e.g. after the lawyer pays); the lawyer's self-serve Stripe payment will trigger
+   the same /unlock once billing is wired. */
+async function releaseLegalReport(id){
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in first.','err'); return; }
+  if(!confirm('Release the FULL report to the attorney? They will be able to read the complete document.')) return;
+  try{
+    const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/unlock',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&(d.error||d.message))||'Could not release the report.','err'); return; }
+    toast('Full report released to the attorney.','ok');
+    if(typeof loadLegalRequests==='function') loadLegalRequests();
+  }catch(e){ toast('Could not release the report.','err'); }
+}
 async function loadLegalRequests(){
   if(!backendMode()||!bkToken()) return;
   const list=document.getElementById('legalReqList');
