@@ -13218,19 +13218,10 @@ function applyLawyerPortal(){
    starts a Stripe Checkout for the lawyer_monthly plan; the webhook marks the account
    active. Reflects current subscription status when known. */
 function lawyerBillingUI(){
-  if(!isLawyerUser()) return;
-  var paid = !!(bkUser && (bkUser.stripe_status==='active' || bkUser.stripe_status==='trialing'));
-  var badge=document.getElementById('lawBillingBadge');
-  var btn=document.getElementById('lawSubscribeBtn');
-  var st=document.getElementById('lawBillingStatus');
-  if(paid){
-    if(badge) badge.style.display='';
-    if(btn) btn.textContent='💳 Manage billing';
-    if(st) st.textContent='Your legal-portal subscription is active ($5/month). Thank you!';
-  } else {
-    if(badge) badge.style.display='none';
-    if(btn) btn.textContent='💳 Subscribe — $5/mo';
-  }
+  // The $5/mo attorney subscription was removed — portal access is free; revenue comes
+  // from the per-report fee the physician sets. Hide the billing card entirely.
+  var card=document.getElementById('lawBillingCard');
+  if(card) card.style.display='none';
 }
 async function lawyerSubscribe(){
   if(typeof backendMode!=='function' || !backendMode()){ toast('Billing is not available right now.','err'); return; }
