@@ -1058,6 +1058,7 @@
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generateLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
       </h2>
       <p class="sub" id="profDemo">—</p>
 
@@ -6021,6 +6022,37 @@ async function removeLawyer(id){
     toast('Lawyer removed.','ok');
     loadLawyers(true);
   }catch(e){ toast('Could not remove the lawyer.','err'); }
+}
+
+/* ===== AI legal-report generation (legal feature headline). Drafts a narrative
+   report / IME / utilization review from the active patient's chart, drops the
+   draft into the chart's documents for the doctor to review, edit, and sign. ===== */
+async function generateLegalReport(){
+  const p=activePatient();
+  if(!p){ toast('Open a patient first.','err'); return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to generate legal reports.','err'); return; }
+  const pick=prompt('Generate which legal report for '+(p.name||'this patient')+'?\n\n  1 = Narrative medical report\n  2 = IME (Independent Medical Exam)\n  3 = Utilization Review\n\nEnter 1, 2, or 3:','1');
+  if(pick===null) return;
+  const types={ '1':'narrative','2':'ime','3':'utilization_review' };
+  const type=types[String(pick).trim()];
+  if(!type){ toast('Enter 1, 2, or 3.','err'); return; }
+  const focus=prompt('Optional — what is the attorney / requesting party focused on?\n(e.g. causation of the lumbar injury, work capacity, necessity of the injections)\nLeave blank to skip:','')||'';
+  let context='';
+  try{ if(typeof compilePatientRecord==='function') context=compilePatientRecord(p)||''; }catch(e){}
+  try{ if(typeof emrReadyText==='function' && typeof currentSoap!=='undefined' && currentSoap){ context+='\n\n===== MOST RECENT VISIT =====\n'+emrReadyText(); } }catch(e){}
+  if(!context.trim()){ toast('No clinical data on this chart to base a report on — add a visit/note first.','err'); return; }
+  const label=({narrative:'Narrative report',ime:'IME report',utilization_review:'Utilization review'})[type];
+  toast('Drafting '+label+'… this takes a few seconds.','');
+  try{
+    const r=await fetch(bkBase()+'/api/legal/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({type:type,context:context,instructions:focus})});
+    const d=await r.json().catch(function(){return {};});
+    if(r.status===403){ toast('Legal reports are for clinician (doctor/head) accounts.','err'); return; }
+    if(!r.ok){ toast(d.error||'Could not generate the report.','err'); return; }
+    const title=label+' (draft) — '+new Date().toLocaleDateString();
+    const doc=(typeof addDocToActive==='function')?addDocToActive(title, d.report||'', 'text'):null;
+    if(doc){ toast('Draft ready — review, edit, and sign it below before sending to the attorney.','ok'); if(typeof openDoc==='function') openDoc(doc.id); }
+    else { toast('Report generated but could not be saved to the chart.','err'); }
+  }catch(e){ toast('Could not generate the report.','err'); }
 }
 
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
