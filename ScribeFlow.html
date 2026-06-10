@@ -139,6 +139,13 @@
   /* ===== MLS additive — DARK MODE for the newer legal / team / follow-up features
      (itemized invoice, secure messaging, AI questions, doctor seats, visit follow-ups,
      doctor-side file upload). All scoped to body.theme-dark so light mode is untouched. */
+  /* Toggled containers: JS flips their display, which re-serializes the inline style
+     (hex → rgb) and breaks [style*=#hex] matching — so target them by ID instead. */
+  body.theme-dark #doctorBox,
+  body.theme-dark #followupBox{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.32)!important; color:var(--ink) }
+  body.theme-dark #lawyerBox{ background:rgba(139,107,224,.15)!important; border-color:rgba(139,107,224,.4)!important; color:var(--ink) }
+  body.theme-dark #receptionBox,
+  body.theme-dark #legalFeeRow{ background:var(--gold-bg)!important; border-color:rgba(217,169,59,.4)!important; color:var(--ink) }
   /* green-tinted surfaces (invoice tools, doctor seats, follow-ups, booking row) */
   body.theme-dark [style*="background:#eefaf3"],
   body.theme-dark [style*="background:#f0fbf4"],
