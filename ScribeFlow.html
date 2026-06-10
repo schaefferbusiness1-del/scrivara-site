@@ -11837,7 +11837,11 @@ Date: [Date]
    ========================================================= */
 function openLegal(){
   if(!legalEnabled()) return;                 // guard — feature is off
-  if(!activePatient()){ toast('Select or create a patient first — the report is built from the active patient’s chart.','err'); showView('patients'); return; }
+  // An attorney request with uploaded records can be drafted WITHOUT an in-house
+  // chart (the examinee may not be the doctor's patient). Only require a chart when
+  // there are neither counsel records nor an active patient to build from.
+  var _haveCounsel = (typeof legalReqFilesText!=='undefined' && legalReqFilesText && legalReqFilesText.trim());
+  if(!activePatient() && !_haveCounsel){ toast('Select or create a patient first — or open an attorney request that has uploaded records.','err'); showView('patients'); return; }
   const m=document.getElementById('legalModal'); if(m) m.classList.add('show');
 }
 function closeLegal(){ const m=document.getElementById('legalModal'); if(m) m.classList.remove('show'); }
@@ -11845,7 +11849,26 @@ function closeLegal(){ const m=document.getElementById('legalModal'); if(m) m.cl
 async function generateLegalReport(){
   if(!legalEnabled()) return;
   const p=activePatient();
-  if(!p){ toast('Select or create a patient first.','err'); showView('patients'); return; }
+  // Resolve the attorney request (if this draft is for one) and decide the SOURCE
+  // of clinical record. The examinee may NOT be one of the doctor's patients, so we
+  // must build from the counsel-uploaded records + the attorney's patient reference,
+  // and only fold in an in-house chart when it plausibly matches that reference —
+  // otherwise an unrelated open chart would contaminate the report (e.g. wrong name).
+  const _rq=(typeof currentLegalRequestId!=='undefined' && currentLegalRequestId && typeof _legalInboxById!=='undefined') ? _legalInboxById[String(currentLegalRequestId)] : null;
+  const patientRef=_rq && _rq.patient_ref ? String(_rq.patient_ref).trim() : '';
+  const haveCounsel=!!(currentLegalRequestId && legalReqFilesText && legalReqFilesText.trim());
+  let useChart=false;
+  if(p){
+    if(!currentLegalRequestId){ useChart=true; }          // manual draft from a chart
+    else if(patientRef){
+      const _nm=String(p.name||'').toLowerCase().trim();
+      useChart=!!(_nm && _nm.length>1 && patientRef.toLowerCase().indexOf(_nm)>=0); // only if the open chart matches the attorney's reference
+    } else { useChart=true; }                              // request with no reference: fall back to the open chart
+  }
+  if(!useChart && !haveCounsel){
+    toast('No matching patient is open and no records were uploaded. Pull up the matching patient, or have the attorney attach the records.','err');
+    return;
+  }
   if(!hasAI()){ toast('Add your OpenAI key (Settings) to draft a medical-legal report.','err'); return; }
   const attorney=(document.getElementById('legalAttorney')||{}).value||'';
   const caseNo=(document.getElementById('legalCase')||{}).value||'';
@@ -11856,8 +11879,8 @@ async function generateLegalReport(){
   const btn=document.getElementById('legalGenBtn');
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…'; }
   try{
-    const pctx=buildPatientContext();
-    const note=(typeof currentNoteText==='function')?currentNoteText():'';
+    const pctx=useChart?buildPatientContext():'';
+    const note=useChart?((typeof currentNoteText==='function')?currentNoteText():''):'';
     const today=new Date().toLocaleDateString();
     const sys=`You are a physician drafting a formal MEDICAL-LEGAL REPORT of type "${docType}" at the request of counsel. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Produce a report appropriate to the chosen document type using the following standard structure, each section header on its own line in UPPERCASE:
 
@@ -11872,9 +11895,12 @@ async function generateLegalReport(){
 9. SIGNATURE BLOCK — a signature/credentials/date block using bracketed placeholders ([Physician signature], [Name, credentials], [NPI], Date: [Date]) and a certification that the opinions are held to a reasonable degree of medical probability/certainty.
 
 CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient record/note/background and the request details provided. NEVER fabricate findings, history, diagnoses, causation, impairment percentages, disability ratings, restrictions, dates, or records. For ANYTHING not present in the record, insert a clearly [bracketed placeholder] for the physician to complete. Do not present uncertain items as established fact. This is a DRAFT the physician must verify, complete, and SIGN before any legal use.`
-      +((currentLegalRequestId&&legalReqFilesText&&legalReqFilesText.trim())?'\nCOUNSEL-PROVIDED RECORDS GUARDRAIL: Counsel has uploaded case records (extracted below). Base the report on BOTH the patient record AND these counsel-provided records — cite findings from them where relevant (especially in RECORDS AND HISTORY REVIEWED) — and NEVER invent anything beyond what either source documents.':'')
+      +(haveCounsel?(useChart
+          ?'\nCOUNSEL-PROVIDED RECORDS GUARDRAIL: Counsel has uploaded case records (extracted below). Base the report on BOTH the patient record AND these counsel-provided records — cite findings from them where relevant (especially in RECORDS AND HISTORY REVIEWED) — and NEVER invent anything beyond what either source documents.'
+          :'\nSOURCE OF RECORD: There is NO in-house chart for this examinee — do not assume any patient on file. Counsel has uploaded the examinee\'s records (extracted below); treat THESE as the complete medical records reviewed and build the ENTIRE report from them plus the attorney case details. Take the examinee name, date of birth, and claim number from the attorney reference / these records. Cite specific findings, dates, providers, and diagnoses from these records (especially in RECORDS AND HISTORY REVIEWED, RELEVANT HISTORY, EXAMINATION / CLINICAL FINDINGS, and DIAGNOSES). NEVER invent anything not in these records; place a [bracketed placeholder] for anything not documented.'):'')
       +(typeof docPrefsBlock==='function'?docPrefsBlock():'');
     const reqLines=[];
+    if(patientRef) reqLines.push('Examinee (per attorney reference — use this for the caption name / date of birth / claim number): '+patientRef);
     if(attorney) reqLines.push('Attorney / requesting firm: '+attorney);
     if(caseNo) reqLines.push('Case / claim number: '+caseNo);
     if(doi) reqLines.push('Date of injury / onset: '+doi);
@@ -13232,6 +13258,11 @@ async function openLegalRequest(id){
     return;
   }
   currentLegalRequestId=id;
+  // Fresh request — clear any prior draft so this request drafts from scratch and a
+  // previous examinee's report can never leak into a different request.
+  const _lbClear=document.getElementById('legalBody'); if(_lbClear) _lbClear.value='';
+  if(typeof currentLegal!=='undefined') currentLegal='';
+  if(typeof legalSetSignedBadge==='function') legalSetSignedBadge(false);
   // Prefill the Legal modal fields from the request.
   const set=(elId,val)=>{ const el=document.getElementById(elId); if(el) el.value=val||''; };
   set('legalAttorney',rq.firm||rq.attorney||'');
@@ -13268,11 +13299,16 @@ async function openLegalRequest(id){
     legalReqFilesText=await loadLegalRequestFilesText(id);
     if(legalReqFilesText) toast('Attorney files read — their content will inform the draft.','ok');
   }catch(e){ legalReqFilesText=''; }
-  // Open the Legal tool. openLegal() requires an active patient; guide the doctor there.
-  if(!activePatient()){
-    toast('Pick the matching patient (see the reference), then click ⚖️ Legal to generate.','');
+  // Open the Legal tool. If the examinee isn't an in-house chart, we can still draft
+  // from the counsel-uploaded records. Only send the doctor to pick a patient when
+  // there are NO uploaded records to work from.
+  if(!activePatient() && !(legalReqFilesText && legalReqFilesText.trim())){
+    toast('No records were uploaded with this request — pull up the matching patient (see the reference), then click ⚖️ Legal to generate.','');
     showView('patients');
     return;
+  }
+  if(!activePatient() && legalReqFilesText && legalReqFilesText.trim()){
+    toast('No in-house chart for this examinee — drafting from the attorney’s uploaded records.','');
   }
   openLegal();
   // MLS additive — AUTO-DRAFT the requested document from the case file.
