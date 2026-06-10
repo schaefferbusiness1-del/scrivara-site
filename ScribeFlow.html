@@ -1020,8 +1020,10 @@
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
         <button class="btn-ghost" id="ptBookLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyBookingLink(this)" title="Get a link patients can use to book appointments online">📅 Booking link</button>
         <button class="btn-ghost" id="ptBoardBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadBoard(true)" title="See today's appointments and who's checked in">🗓️ Check-in board</button>
+        <button class="btn-ghost" id="ptFollowupBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openFollowups()" title="Send privacy-safe post-visit check-in emails to recently seen patients">📨 Visit follow-ups</button>
         <button class="btn-ghost" id="ptReceptionBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptLawyerBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadLawyers(true)" title="Invite and manage lawyer logins for legal/records requests">⚖️ Lawyers</button>
+        <button class="btn-ghost" id="ptDoctorsBtn" style="display:none;margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadDoctorSeats(true)" title="Add and manage additional treating-doctor seats in your practice">🩺 Doctors</button>
       </h2>
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
@@ -1043,6 +1045,8 @@
       <div id="boardBox" style="display:none;margin-top:12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
       <div id="receptionBox" style="display:none;margin-top:12px;background:#fff7ef;border:1px solid #f1d9be;border-radius:12px;padding:14px"></div>
       <div id="lawyerBox" style="display:none;margin-top:12px;background:#f3f0fb;border:1px solid #d9cdf0;border-radius:12px;padding:14px"></div>
+      <div id="doctorBox" style="display:none;margin-top:12px;background:#eefaf3;border:1px solid #bfe6cf;border-radius:12px;padding:14px"></div>
+      <div id="followupBox" style="display:none;margin-top:12px;background:#eefaf3;border:1px solid #bfe6cf;border-radius:12px;padding:14px"></div>
       <div class="pt-search" id="ptSearchRow" style="display:none">
         <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="renderPatients()">
         <span class="pt-count" id="ptCount"></span>
@@ -3547,6 +3551,9 @@ function applyAccessUI(){
   const teamTab=document.getElementById('nav_team');
   const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
   if(teamTab) teamTab.style.display=(backendMode()&&isHead)?'':'none';
+  // 🩺 Add-a-doctor (paid seat) button: head physician only.
+  const docSeatBtn=document.getElementById('ptDoctorsBtn');
+  if(docSeatBtn) docSeatBtn.style.display=(backendMode()&&isHead)?'':'none';
   // 📊 Analysis tab: ANY clinician (doctor or head) + the owner — never lawyers.
   // (The per-doctor review card inside the view stays gated to head/owner below.)
   const analysisTab=document.getElementById('nav_analysis');
@@ -6144,6 +6151,99 @@ function emailLawyerInvite(){
   var subj=encodeURIComponent('Invitation to our secure medical-legal portal');
   var body=encodeURIComponent(lawyerInviteMessage(_lastLawyerCreds));
   window.open('mailto:'+encodeURIComponent(_lastLawyerCreds.email)+'?subject='+subj+'&body='+body,'_blank');
+}
+/* ===== Post-visit patient follow-ups (PHI-free check-in emails). ===== */
+var _fuDays=3;
+function openFollowups(){
+  var box=document.getElementById('followupBox'); if(!box) return;
+  box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Checking who\'s eligible…</div>';
+  renderFollowups(3);
+}
+async function renderFollowups(days){
+  _fuDays=Number(days)||3;
+  var box=document.getElementById('followupBox'); if(!box) return;
+  var elig='…';
+  try{
+    var r=await fetch(bkBase()+'/api/followups/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({days:_fuDays,preview:true})});
+    if(r.status===403){ box.style.display='none'; toast('Follow-ups are for practice staff accounts.','err'); return; }
+    var d=await r.json().catch(function(){return{};}); elig=(r.ok&&d.eligible!=null)?d.eligible:'?';
+  }catch(e){ elig='?'; }
+  var h='<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:#127a55">📨 Post-visit patient follow-ups</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">Send a privacy-safe check-in to recently seen patients — no name and no medical details, just a friendly note and your online booking link so they can request a follow-up if they have any concerns.</div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">Patients seen in the last <select id="fuDays" onchange="renderFollowups(this.value)" style="padding:5px 8px;border-radius:8px;border:1px solid #bfe6cf">';
+  [1,2,3,5,7,14].forEach(function(n){ h+='<option value="'+n+'"'+(n==_fuDays?' selected':'')+'>'+n+' day'+(n>1?'s':'')+'</option>'; });
+  h+='</select> with an email on file: <b>'+esc(String(elig))+'</b> eligible</div>';
+  var canSend=(typeof elig==='number'&&elig>0);
+  h+='<button class="btn-primary" id="fuSendBtn" style="font-size:13px;padding:8px 14px"'+(canSend?'':' disabled')+' onclick="sendFollowups()">📨 Send check-ins now</button>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:6px">Each patient is emailed at most once every two weeks. Emails are sent from your mlsscribe.com address. Patient emails come from online bookings / appointments.</div>';
+  box.innerHTML=h;
+}
+async function sendFollowups(){
+  if(!confirm('Send a privacy-safe check-in email to the eligible patients now?')) return;
+  var btn=document.getElementById('fuSendBtn'); if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/followups/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({days:_fuDays})});
+    var d=await r.json().catch(function(){return{};});
+    if(r.ok){ toast('Sent '+(d.sent||0)+' check-in email'+((d.sent==1)?'':'s')+'.','ok'); renderFollowups(_fuDays); }
+    else { toast(d.error||'Could not send.','err'); }
+  }catch(e){ toast('Could not send.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='📨 Send check-ins now'; } }
+}
+/* ===== Additional treating-doctor seats (paid add-on; head physician only). ===== */
+async function loadDoctorSeats(show){
+  const box=document.getElementById('doctorBox'); if(!box) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage doctors.','err'); return; }
+  if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
+  try{
+    const r=await fetch(bkBase()+'/api/team/doctors',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===403){ box.style.display='none'; if(show) toast('Only the head physician can manage doctor seats.','err'); return; }
+    const d=await r.json().catch(function(){return {doctors:[]};});
+    renderDoctorSeats((d.doctors||d.users||[]));
+  }catch(e){ if(show) box.innerHTML='<div class="mini" style="color:#c0392b">Could not load doctors.</div>'; }
+}
+function renderDoctorSeats(list){
+  const box=document.getElementById('doctorBox'); if(!box) return; box.style.display='block';
+  var myEmail=(bkUser&&bkUser.email)||getSessionEmail();
+  var seats=(list||[]).filter(function(u){ return (u.email||'').toLowerCase()!==(myEmail||'').toLowerCase(); });
+  var h='<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:#1f7a4d">🩺 Doctors in your practice</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">Add another treating physician to your practice. Each added doctor is a paid monthly seat; they get their own login and their patients roll up to you as head.</div>';
+  if(seats.length){
+    seats.forEach(function(u){
+      h+='<div style="display:flex;align-items:center;gap:8px;border:1px solid #bfe6cf;border-radius:9px;padding:8px 10px;margin-bottom:6px;background:#fff">';
+      h+='<span><b>'+esc(u.name||'(no name)')+'</b> <span style="font-size:12px;color:var(--muted)">'+esc(u.email)+'</span>'+(u.specialty?(' · <span style="font-size:12px;color:var(--muted)">'+esc(u.specialty)+'</span>'):'')+'</span>';
+      h+='<button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:4px 9px;color:#c0392b" onclick="removeDoctorSeat('+u.id+')">Remove</button></div>';
+    });
+  } else { h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No additional doctors yet.</div>'; }
+  h+='<div style="border-top:1px dashed #bfe6cf;padding-top:10px;margin-top:6px">';
+  h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Add a doctor (paid monthly seat)</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  h+='<input id="docSeatName" placeholder="Name" style="flex:1;min-width:120px;border:1px solid #bfe6cf;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<input id="docSeatEmail" type="email" placeholder="Email" style="flex:2;min-width:160px;border:1px solid #bfe6cf;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<button class="btn-primary" id="docSeatAddBtn" style="font-size:13px;padding:7px 13px" onclick="addDoctorSeat()">Add doctor</button>';
+  h+='</div><div class="mini" style="color:var(--muted);margin-top:5px">You\'ll be taken to secure checkout. After payment, the new doctor gets an email to set their password and sign in.</div></div>';
+  box.innerHTML=h;
+}
+async function addDoctorSeat(){
+  const name=((document.getElementById('docSeatName')||{}).value||'').trim();
+  const email=((document.getElementById('docSeatEmail')||{}).value||'').trim();
+  if(!email){ toast('Enter the new doctor\'s email.','err'); return; }
+  const btn=document.getElementById('docSeatAddBtn'); if(btn){ btn.disabled=true; btn.textContent='Starting checkout…'; }
+  try{
+    const r=await fetch(bkBase()+'/api/team/doctors/checkout',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,email:email})});
+    const d=await r.json().catch(function(){return {};});
+    if(!r.ok||!d.url){ toast(d.error||'Could not start checkout.','err'); return; }
+    toast('Opening secure checkout…','ok');
+    window.open(d.url,'_blank');
+  }catch(e){ toast('Could not start checkout.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Add doctor'; } }
+}
+async function removeDoctorSeat(id){
+  if(!confirm('Remove this doctor? Their login stops working and the monthly seat is cancelled.')) return;
+  try{
+    const r=await fetch(bkBase()+'/api/team/doctors/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}});
+    if(!r.ok){ const d=await r.json().catch(function(){return{};}); toast(d.error||'Could not remove.','err'); return; }
+    toast('Doctor removed.','ok'); loadDoctorSeats(true);
+  }catch(e){ toast('Could not remove.','err'); }
 }
 async function loadLawyers(show){
   const box=document.getElementById('lawyerBox'); if(!box) return;
@@ -15715,6 +15815,11 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(_inviteTok){
     acceptLawyerInvite(_inviteTok);
     return; // the handler enters the app (or shows login on failure)
+  }
+  // ---- Returned from adding a paid doctor seat — confirm + refresh the list. ----
+  if(_params.get('seat_added')){
+    try{ history.replaceState(null,'',location.pathname); }catch(e){}
+    setTimeout(function(){ try{ toast('Doctor seat added — they\'ll receive an email to set their password and sign in.','ok'); if(typeof loadDoctorSeats==='function') loadDoctorSeats(true); }catch(e){} }, 1800);
   }
   // restore session if present (sessionStorage-first: a tab with its own
   // per-tab session restores that account; a fresh tab falls back to the
