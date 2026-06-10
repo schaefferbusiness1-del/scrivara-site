@@ -2064,6 +2064,13 @@
 
 <!-- ============ LAWYER PORTAL (role === 'lawyer' — replaces the entire clinical app) ============ -->
 <div class="wrap" id="lawyerPortal" style="display:none">
+  <div class="card" id="lawBillingCard" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#f4f8ff;border:1px solid #cfe2f8">
+    <div style="flex:1;min-width:220px">
+      <div style="font-weight:700">⚖️ Legal portal access <span id="lawBillingBadge" style="display:none;font-size:12px;font-weight:600;color:#1f7a4d;background:#e3f5ec;border:1px solid #b9e6cf;border-radius:20px;padding:2px 9px;margin-left:6px">✔ Active</span></div>
+      <div class="sub" id="lawBillingStatus" style="margin:2px 0 0">Attorney access to request medical-legal reports and download signed PDFs — just $5/month.</div>
+    </div>
+    <button class="btn-primary" id="lawSubscribeBtn" onclick="lawyerSubscribe()">💳 Subscribe — $5/mo</button>
+  </div>
   <div class="card">
     <h2><span class="ic">⚖️</span> New legal request</h2>
     <p class="sub">Request a medical-legal report from a treating clinician. They receive your request, prepare the report from their patient's record, sign it, and return it to you here.</p>
@@ -13043,12 +13050,44 @@ function applyLawyerPortal(){
     ['intakeBtn','customWidgetHdrBtn'].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
     try{ document.querySelectorAll('button[onclick="openTemplates()"]').forEach(function(b){ b.style.display='none'; }); }catch(e){}
     loadLawyerRequests();
+    if(typeof lawyerBillingUI==='function') lawyerBillingUI();
   }else{
     if(portal) portal.style.display='none';
     if(wrap) wrap.style.display='';
     if(footer) footer.style.display='';
   }
   return lawyer;
+}
+
+/* Lawyer billing (feature #10): a cheap $5/mo legal-portal subscription. The button
+   starts a Stripe Checkout for the lawyer_monthly plan; the webhook marks the account
+   active. Reflects current subscription status when known. */
+function lawyerBillingUI(){
+  if(!isLawyerUser()) return;
+  var paid = !!(bkUser && (bkUser.stripe_status==='active' || bkUser.stripe_status==='trialing'));
+  var badge=document.getElementById('lawBillingBadge');
+  var btn=document.getElementById('lawSubscribeBtn');
+  var st=document.getElementById('lawBillingStatus');
+  if(paid){
+    if(badge) badge.style.display='';
+    if(btn) btn.textContent='💳 Manage billing';
+    if(st) st.textContent='Your legal-portal subscription is active ($5/month). Thank you!';
+  } else {
+    if(badge) badge.style.display='none';
+    if(btn) btn.textContent='💳 Subscribe — $5/mo';
+  }
+}
+async function lawyerSubscribe(){
+  if(typeof backendMode!=='function' || !backendMode()){ toast('Billing is not available right now.','err'); return; }
+  var btn=document.getElementById('lawSubscribeBtn'); var old=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Opening checkout…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/billing/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:'lawyer_monthly', email:(bkUser&&bkUser.email)||''})});
+    var d={}; try{ d=await r.json(); }catch(e){}
+    if(r.ok && d && d.url){ window.location.href=d.url; return; }
+    toast((d&&(d.error||d.message))||'Could not start checkout. Please try again.','err');
+  }catch(e){ toast('Could not start checkout. Please try again.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=old||'💳 Subscribe — $5/mo'; } }
 }
 
 /* ===== Receptionist front-desk mode (feature #3). A receptionist account is
