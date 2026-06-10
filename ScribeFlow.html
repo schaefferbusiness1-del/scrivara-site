@@ -1338,7 +1338,7 @@
             <button class="sec-copy" onclick="signLegalReport()">✍️ Sign</button>
             <button class="sec-copy" onclick="downloadLegalPdf()">📄 Save as PDF</button>
             <button class="sec-copy" onclick="saveLegalToChart()">🗂 Save to chart</button>
-            <button class="sec-copy" id="legalReturnBtn" style="display:none;background:var(--green);color:#fff;border-color:var(--green)" onclick="returnLegalToAttorney()">↩ Return to attorney</button>
+            <button class="sec-copy" id="legalReturnBtn" style="display:none;background:var(--green);color:#fff;border-color:var(--green)" onclick="signAndReturnLegal()" title="Append your electronic signature + attestation and send the report to the attorney">✍️ Sign &amp; send to attorney</button>
           </span>
         </h3>
         <div id="legalReqRef" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
@@ -13287,6 +13287,24 @@ async function openLegalRequest(id){
   }catch(e){ /* auto-draft is best-effort — the doctor can always generate manually */ }
 }
 
+/* Clinician: ONE-CLICK SIGN-OFF — append an electronic signature + attestation to the
+   reviewed report, then return it to the attorney. The doctor reads the AI draft and,
+   if it's good, signs and sends in a single action. */
+function signAndReturnLegal(){
+  const body=document.getElementById('legalBody');
+  if(!body || !body.value.trim()){ toast('Generate the report first, then sign it.','err'); return; }
+  if(body.value.indexOf('Electronically signed by')===-1){
+    const nm=((typeof getName==='function'?getName():'')||'').trim()||'Treating Physician';
+    const sp=((typeof getSpec==='function'?getSpec():'')||'').trim();
+    const date=new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});
+    body.value=body.value.replace(/\s+$/,'')
+      +'\n\n_____________________________________\n'
+      +'Electronically signed by '+nm+(sp?', '+sp:'')+'\n'
+      +'Date: '+date+'\n'
+      +'I attest that I have reviewed this report and that it accurately reflects my professional medical opinion to a reasonable degree of medical certainty.';
+  }
+  returnLegalToAttorney();
+}
 /* Clinician: return the signed report text to the attorney via fulfill. */
 async function returnLegalToAttorney(){
   if(!currentLegalRequestId){ toast('No attorney request is open.','err'); return; }
@@ -13312,7 +13330,7 @@ async function returnLegalToAttorney(){
     const att=document.getElementById('legalReqAttach'); if(att){ att.style.display='none'; att.innerHTML=''; }
     loadLegalRequests();
   }catch(e){ toast(friendlyError(e),'err'); }
-  finally{ if(btn){ btn.disabled=false; btn.textContent='↩ Return to attorney'; } }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='✍️ Sign & send to attorney'; } }
 }
 
 /* =========================================================
