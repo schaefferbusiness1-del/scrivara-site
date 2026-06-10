@@ -1333,6 +1333,7 @@
       <div class="extra-card" id="legalCard" style="display:none">
         <h3>⚖️ Medical-legal report <span id="legalSignedBadge" style="display:none;font-weight:600;font-size:12px;color:#1f7a4d;background:#e3f5ec;border:1px solid #b9e6cf;border-radius:20px;padding:2px 9px">✔ Signed</span>
           <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="sec-copy" id="legalRegenBtn" style="background:#eef4fc;border-color:#cfe2f8;color:var(--brand-dk);font-weight:600" onclick="regenerateLegalReport()" title="Rebuild the report from scratch on the latest model — includes the patient you selected and any field changes">🔄 Regenerate</button>
             <button class="sec-copy" id="legalFillBtn" style="display:none;background:#fff4e0;border-color:#f0c060;color:#8a5a00;font-weight:600" onclick="openLegalFill()" title="Fill in the details the AI left blank — they'll be inserted into the report">✏️ Fill in blanks</button>
             <button class="sec-copy" onclick="copyExtra('legalBody')">📑 Copy</button>
             <button class="sec-copy" onclick="printExtra('Medical-Legal Report','legalBody')">🖨 Print</button>
@@ -4204,8 +4205,12 @@ function getIdleMins(){
   const v=parseInt(raw,10);
   return (v && v>0) ? v : 5; // default: auto log off after 5 minutes of inactivity
 }
+var _legalGenerating=false; // true while a medical-legal report is being generated
 function idleLogout(){
   if(!session) return;
+  // Don't log the doctor out mid-generation (a gpt-5.2 expert report can run several
+  // minutes with no keyboard/mouse activity) — reschedule instead.
+  if(_legalGenerating){ resetIdle(); return; }
   toast('Logged out due to inactivity.','');
   logout(true);
 }
@@ -12158,6 +12163,16 @@ async function generateExpertReportSections(ctx){
   return outParts.join('\n\n');
 }
 
+/* Rebuild the report from scratch using the CURRENT request fields + the patient the
+   doctor selected. Lets them re-run after picking "my patient" or editing anything. */
+function regenerateLegalReport(){
+  var body=document.getElementById('legalBody');
+  if(body && body.value.trim() && !confirm('Regenerate this report from scratch? This replaces the current draft. Your fee and the patient you selected are kept.')){ return; }
+  var pn=(legalAttachedPatientId && typeof getPatients==='function') ? ((getPatients()||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);})||{}).name : '';
+  toast(pn?('Regenerating on the latest model — including '+pn+'’s chart…'):'Regenerating on the latest model…','');
+  var rb=document.getElementById('legalRegenBtn'); if(rb){ rb.disabled=true; rb.textContent='🔄 Regenerating…'; }
+  Promise.resolve(generateLegalReport()).finally(function(){ if(rb){ rb.disabled=false; rb.textContent='🔄 Regenerate'; } });
+}
 async function generateLegalReport(){
   if(!legalEnabled()) return;
   const p=activePatient();
@@ -12195,6 +12210,7 @@ async function generateLegalReport(){
   const questions=(document.getElementById('legalQuestions')||{}).value||'';
   const btn=document.getElementById('legalGenBtn');
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…'; }
+  _legalGenerating=true; // hold the inactivity auto-logout while this runs
   try{
     // Chart context: the doctor's explicitly-attached own record (chart + visits)
     // takes priority; otherwise a name-matched active chart. The in-progress note is
@@ -12259,7 +12275,7 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     if(typeof legalUpdateFillBtn==='function') legalUpdateFillBtn();
     try{ if(legalUniquePlaceholders(out).length){ setTimeout(openLegalFill, 600); } }catch(e){}
   }catch(err){ toast(friendlyError(err),'err'); }
-  finally{ if(btn){ btn.disabled=false; btn.innerHTML='⚖️ Generate report'; } }
+  finally{ _legalGenerating=false; try{ resetIdle(); }catch(e){} if(btn){ btn.disabled=false; btn.innerHTML='⚖️ Generate report'; } }
 }
 
 /* Strip any prior e-signature block so signing is idempotent. */
@@ -13372,6 +13388,7 @@ function legalReqRowHtml(rq,mode){
         actions+='<button class="btn-primary" style="font-size:13px;padding:7px 12px" onclick="releaseLegalReport(\''+esc(String(id))+'\')" title="Release the full report now without payment (override)">🔓 Release now</button>';
       }
     }
+    actions+='<button class="btn-ghost" style="font-size:12px;padding:7px 10px;color:#c0392b;margin-left:auto" onclick="deleteLegalRequest(\''+esc(String(id))+'\')" title="Delete this request from your inbox (e.g. clear out test entries)">🗑 Delete</button>';
   }
   // Stash the full request so the clinician inbox can prefill from it.
   if(mode==='clinician') _legalInboxById[String(id)]=rq;
@@ -13692,6 +13709,15 @@ let _legalInboxById={}; // requestId -> full request object (for prefill)
    attorney sees only a preview until this is done. For now the practice releases it
    (e.g. after the lawyer pays); the lawyer's self-serve Stripe payment will trigger
    the same /unlock once billing is wired. */
+async function deleteLegalRequest(id){
+  if(!confirm('Delete this request from your inbox? This permanently removes it and any uploaded files — use it to clear out test entries before going live.')) return;
+  try{
+    var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    if(r.ok){ toast('Request deleted.','ok'); loadLegalRequests(); }
+    else { var d={}; try{ d=await r.json(); }catch(e){} toast((d&&(d.error||d.message))||'Could not delete the request.','err'); }
+  }catch(e){ toast('Could not delete the request.','err'); }
+}
 async function releaseLegalReport(id){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in first.','err'); return; }
   if(!confirm('Release the FULL report to the attorney? They will be able to read the complete document.')) return;
