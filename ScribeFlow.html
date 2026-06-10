@@ -2461,9 +2461,9 @@
       <label for="idleMins" style="font-size:15px">🔒 Auto log off after inactivity</label>
       <p class="note" style="margin:2px 0 8px">Protects open charts when you step away (HIPAA technical safeguard). Resets on any activity.</p>
       <select class="sf-select" id="idleMins">
-        <option value="5">5 minutes</option>
+        <option value="5">5 minutes (default)</option>
         <option value="10">10 minutes</option>
-        <option value="15">15 minutes (default)</option>
+        <option value="15">15 minutes</option>
         <option value="30">30 minutes</option>
         <option value="60">1 hour</option>
         <option value="120">2 hours</option>
@@ -4202,7 +4202,7 @@ function getIdleMins(){
   const raw=localStorage.getItem(uns('idleMins'));
   if(raw==='off'||raw==='0') return 0; // 0 = auto-logoff disabled ("stay signed in")
   const v=parseInt(raw,10);
-  return (v && v>0) ? v : 15;
+  return (v && v>0) ? v : 5; // default: auto log off after 5 minutes of inactivity
 }
 function idleLogout(){
   if(!session) return;
