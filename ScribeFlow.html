@@ -1344,6 +1344,13 @@
         </h3>
         <div id="legalReqRef" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
         <div id="legalReqAttach" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
+        <div id="legalMyPatientRow" style="display:none;margin:8px 0 0;background:#f0fff4;border:1px solid #b9e6cf;border-radius:10px;padding:10px 12px;font-size:13.5px">
+          <b>➕ Did you also treat this patient?</b> Add your own chart + visit notes so the report includes your exam and your meeting with the patient.
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+            <select id="legalMyPatientSel" class="sf-select" style="max-width:300px" onchange="setLegalAttachedPatient(this.value)"></select>
+            <span id="legalMyPatientStatus" style="color:#1f7a4d;font-weight:600"></span>
+          </div>
+        </div>
         <p class="sub" style="margin:4px 0 0">Formal medical-legal report drafted from the active patient's record. Built only from what is documented; missing data appears as [bracketed placeholders]. Edit below, then sign and save.</p>
         <textarea class="xbody" id="legalBody" style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
         <div class="code-disclaim">⚠️ DRAFT — the physician must verify, complete, and sign. All diagnoses, opinions, causation, and impairment statements are the physician's responsibility and must be held to a reasonable degree of medical probability/certainty.</div>
@@ -7630,6 +7637,40 @@ let currentAVS='', currentReferral='', currentHandout='', currentChartSummary=''
 let currentLegal=''; // MLS additive — optional Legal report (off by default)
 let currentLegalRequestId=null; // MLS additive — set when a clinician opens an attorney request to fulfill
 let legalReqFilesText='';       // MLS additive — extracted text of the attorney's uploaded files (feeds the legal draft)
+let legalAttachedPatientId=null; // MLS additive — the doctor's OWN patient chart they chose to fold into the report (if they also treated the examinee)
+/* Populate the "add my own patient" dropdown in the Legal tool with the doctor's
+   patients; pre-select one whose name matches the attorney's patient reference. */
+function populateLegalMyPatient(patientRef){
+  var sel=document.getElementById('legalMyPatientSel'); if(!sel) return;
+  var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var opts='<option value="">— None (use the attorney’s records only) —</option>';
+  pts.forEach(function(p){ opts+='<option value="'+esc(String(p.id))+'">'+esc(p.name||'(unnamed)')+(p.dob?(' — '+esc(p.dob)):'')+'</option>'; });
+  sel.innerHTML=opts;
+  // Smart default: if one of my patients' names appears in the attorney reference, preselect it.
+  var match='';
+  if(patientRef){ var rl=String(patientRef).toLowerCase(); pts.forEach(function(p){ var nm=String(p.name||'').toLowerCase().trim(); if(nm && nm.length>1 && rl.indexOf(nm)>=0) match=String(p.id); }); }
+  sel.value=match||'';
+  setLegalAttachedPatient(match||'');
+}
+function setLegalAttachedPatient(id){
+  legalAttachedPatientId=id||null;
+  var st=document.getElementById('legalMyPatientStatus'); if(!st) return;
+  if(legalAttachedPatientId){
+    var p=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);});
+    var nv=p?((typeof patientNotes==='function'?patientNotes(p.id):[])||[]).length:0;
+    st.textContent='✓ Including '+(p?p.name:'patient')+'’s chart + '+nv+' visit'+(nv===1?'':'s');
+  } else { st.textContent=''; }
+}
+/* Build the doctor's own record text for the attached patient (chart + all visits +
+   the in-progress visit if it's for that patient). '' if none attached. */
+function legalMyPatientRecord(){
+  if(!legalAttachedPatientId) return '';
+  var p=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);});
+  if(!p) return '';
+  var txt=''; try{ txt=compilePatientRecord(p); }catch(e){ return ''; }
+  try{ if(typeof currentSoap!=='undefined' && currentSoap && typeof getActivePtId==='function' && String(getActivePtId())===String(p.id)){ txt+='\n\n'+('='.repeat(40))+'\nCURRENT VISIT / OUR MEETING (in progress):\n'+emrReadyText(); } }catch(e){}
+  return txt;
+}
 let _legalAutoDraftedFor=null;  // MLS additive — request id already auto-drafted (guard: fire once per request)
 let _lawReports={}; // MLS additive — lawyer portal: requestId -> {result_text, doc_type} for the report viewer
 let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
@@ -11972,7 +12013,7 @@ async function generateExpertReportSections(ctx){
   if(ctx.questions&&ctx.questions.trim()) cl.push('Legal questions counsel asked the expert to address:\n'+ctx.questions.trim());
   let caseContext='CASE DETAILS:\n'+cl.join('\n');
   if(ctx.note&&ctx.note.trim()) caseContext+='\n\nCLINICAL NOTE FROM THIS VISIT:\n'+ctx.note.trim();
-  if(ctx.chartBlock&&ctx.chartBlock.trim()) caseContext+='\n\nPATIENT RECORD / CHART:\n'+ctx.chartBlock.trim();
+  if(ctx.chartBlock&&ctx.chartBlock.trim()) caseContext+='\n\n'+(ctx.ownRecord?'TREATING PHYSICIAN\'S OWN RECORD FOR THIS EXAMINEE (your chart + your visit / meeting notes — first-hand records you personally created; you may state these findings directly and reference your visit dates as encounters you conducted):':'PATIENT RECORD / CHART:')+'\n'+ctx.chartBlock.trim();
   if(ctx.recordsBlock&&ctx.recordsBlock.trim()) caseContext+='\n\nRECORDS PROVIDED BY COUNSEL (these ARE the records reviewed — cite them by provider and date):\n'+ctx.recordsBlock.trim();
   const sections=[
     ['I. ASSIGNMENT AND SCOPE OF ENGAGEMENT','Identify who retained the expert, the precise questions presented, the scope of the engagement, the materials furnished, and the applicable standard (a reasonable degree of medical probability). 2-3 paragraphs.'],
@@ -12031,8 +12072,13 @@ async function generateLegalReport(){
       useChart=!!(_nm && _nm.length>1 && patientRef.toLowerCase().indexOf(_nm)>=0); // only if the open chart matches the attorney's reference
     } else { useChart=true; }                              // request with no reference: fall back to the open chart
   }
-  if(!useChart && !haveCounsel){
-    toast('No matching patient is open and no records were uploaded. Pull up the matching patient, or have the attorney attach the records.','err');
+  // The doctor may EXPLICITLY attach their OWN chart for this examinee (if they also
+  // treated the patient) — their full record + visit/meeting notes enrich the report.
+  const myRecord=(typeof legalMyPatientRecord==='function')?legalMyPatientRecord():'';
+  const haveMyRecord=!!(myRecord && myRecord.trim());
+  const haveChart=useChart||haveMyRecord;
+  if(!haveChart && !haveCounsel){
+    toast('No records to build from. Add your own patient (if you treated them), pull up the matching chart, or have the attorney attach records.','err');
     return;
   }
   if(!hasAI()){ toast('Add your OpenAI key (Settings) to draft a medical-legal report.','err'); return; }
@@ -12045,8 +12091,11 @@ async function generateLegalReport(){
   const btn=document.getElementById('legalGenBtn');
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…'; }
   try{
-    const pctx=useChart?buildPatientContext():'';
-    const note=useChart?((typeof currentNoteText==='function')?currentNoteText():''):'';
+    // Chart context: the doctor's explicitly-attached own record (chart + visits)
+    // takes priority; otherwise a name-matched active chart. The in-progress note is
+    // added only when no full attached record already contains the visits.
+    const pctx=haveMyRecord?myRecord:(useChart?buildPatientContext():'');
+    const note=(!haveMyRecord&&useChart)?((typeof currentNoteText==='function')?currentNoteText():''):'';
     const today=new Date().toLocaleDateString();
     const sys=`You are a physician drafting a formal MEDICAL-LEGAL REPORT of type "${docType}" at the request of counsel. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Produce a report appropriate to the chosen document type using the following standard structure, each section header on its own line in UPPERCASE:
 
@@ -12061,9 +12110,10 @@ async function generateLegalReport(){
 9. SIGNATURE BLOCK — a signature/credentials/date block using bracketed placeholders ([Physician signature], [Name, credentials], [NPI], Date: [Date]) and a certification that the opinions are held to a reasonable degree of medical probability/certainty.
 
 CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient record/note/background and the request details provided. NEVER fabricate findings, history, diagnoses, causation, impairment percentages, disability ratings, restrictions, dates, or records. For ANYTHING not present in the record, insert a clearly [bracketed placeholder] for the physician to complete. Do not present uncertain items as established fact. This is a DRAFT the physician must verify, complete, and SIGN before any legal use.`
-      +(haveCounsel?(useChart
+      +(haveCounsel?(haveChart
           ?'\nCOUNSEL-PROVIDED RECORDS GUARDRAIL: Counsel has uploaded case records (extracted below). Base the report on BOTH the patient record AND these counsel-provided records — cite findings from them where relevant (especially in RECORDS AND HISTORY REVIEWED) — and NEVER invent anything beyond what either source documents.'
           :'\nSOURCE OF RECORD: There is NO in-house chart for this examinee — do not assume any patient on file. Counsel has uploaded the examinee\'s records (extracted below); treat THESE as the complete medical records reviewed and build the ENTIRE report from them plus the attorney case details. Take the examinee name, date of birth, and claim number from the attorney reference / these records. Cite specific findings, dates, providers, and diagnoses from these records (especially in RECORDS AND HISTORY REVIEWED, RELEVANT HISTORY, EXAMINATION / CLINICAL FINDINGS, and DIAGNOSES). NEVER invent anything not in these records; place a [bracketed placeholder] for anything not documented.'):'')
+      +(haveMyRecord?'\nTREATING-PHYSICIAN RECORD: The patient record below is YOUR OWN chart and visit notes for this examinee — you personally treated this patient. Treat your documented examinations, diagnoses, and your visit/meeting as first-hand findings you may state directly (as the treating physician), and reference your visit dates as encounters you conducted. Combine them with any counsel-provided records. Still never invent anything beyond what your notes and the records document.':'')
       +legalTypeGuidance(docType)
       +(typeof docPrefsBlock==='function'?docPrefsBlock():'');
     const reqLines=[];
@@ -12077,13 +12127,13 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     reqLines.push('Legal questions to address:\n'+(questions.trim()||'[No specific questions were provided — insert a bracketed placeholder.]'));
     const user='ATTORNEY REQUEST / CASE DETAILS:\n'+reqLines.join('\n')
       +(note&&note.trim()?('\n\nCLINICAL NOTE FROM THIS VISIT:\n'+note.trim()):'')
-      +(pctx?('\n\nPATIENT RECORD / CHART (context only — do not invent new findings):\n'+pctx):'')
+      +(pctx?('\n\n'+(haveMyRecord?'YOUR OWN PATIENT RECORD FOR THIS EXAMINEE (your chart + your visit / meeting notes — first-hand records you created as the treating physician):':'PATIENT RECORD / CHART (context only — do not invent new findings):')+'\n'+pctx):'')
       +((currentLegalRequestId&&legalReqFilesText&&legalReqFilesText.trim())?('\n\nRECORDS PROVIDED BY COUNSEL (extracted from the attorney\'s uploaded files — treat as the records reviewed; cite findings from them where relevant):\n'+legalReqFilesText.trim()):'');
     let out;
     if(/expert report/i.test(docType)){
       // Long-form retained-expert report — generated section by section to reach the
       // depth (10-40+ pages) of a real FRCP 26 expert disclosure.
-      out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(useChart?pctx:''),note:(useChart?note:''),today:today,btn:btn});
+      out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(haveChart?pctx:''),ownRecord:haveMyRecord,note:((!haveMyRecord&&useChart)?note:''),today:today,btn:btn});
     } else {
       out=(await aiCallRaw(sys,user,getKey(),{freeform:true,legal:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     }
@@ -13587,6 +13637,12 @@ async function openLegalRequest(id){
   // Show the attorney's attached case files prominently so the doctor can
   // open the records before writing the report.
   renderLegalToolAttachments(id);
+  // Let the doctor fold in THEIR OWN chart for this examinee if they also treated them.
+  legalAttachedPatientId=null;
+  try{
+    var myRow=document.getElementById('legalMyPatientRow');
+    if(myRow){ myRow.style.display='block'; populateLegalMyPatient(rq.patient_ref||''); }
+  }catch(e){}
   // Reveal the Return-to-attorney button on the Legal card.
   const rb=document.getElementById('legalReturnBtn'); if(rb) rb.style.display='';
   // MLS additive — extract the CONTENT of the attorney's uploaded files so the
