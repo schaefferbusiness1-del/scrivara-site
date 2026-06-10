@@ -13865,18 +13865,58 @@ async function renderLegalToolAttachments(id){
   const box=document.getElementById('legalReqAttach');
   if(!box) return;
   box.style.display='block';
-  box.innerHTML='<span class="mini" style="color:var(--muted)">📎 Loading attorney documents…</span>';
+  box.innerHTML='<span class="mini" style="color:var(--muted)">📎 Loading documents…</span>';
   try{
     const items=await fetchLegalAttachments(id);
-    if(!items.length){ box.innerHTML='<span class="mini" style="color:var(--muted)">📎 No documents were attached to this request.</span>'; return; }
-    box.innerHTML='<div style="font-weight:600;margin-bottom:6px">📎 Attorney documents — review before writing</div>'
-      +'<div style="display:flex;flex-direction:column;gap:6px">'
-      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid #cfe2f8;border-radius:8px;padding:6px 10px">'
-        +'<span style="flex:1;min-width:160px"><b>'+esc(a.filename||'file')+'</b> <span style="color:var(--muted)">· '+esc(attachCatLabel(a.category))+' · '+esc(fmtBytes(a.size))+'</span></span>'
-        +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="downloadLegalAttachment(\''+esc(String(id))+'\',\''+esc(String(a.id))+'\')">⬇ Download</button>'
-        +'</div>').join('')
-      +'</div>';
-  }catch(e){ box.innerHTML='<span class="mini" style="color:var(--muted)">📎 Documents unavailable.</span>'; }
+    var h='';
+    if(items.length){
+      h+='<div style="font-weight:600;margin-bottom:6px">📎 Case documents — review before writing</div>'
+        +'<div style="display:flex;flex-direction:column;gap:6px">'
+        +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid #cfe2f8;border-radius:8px;padding:6px 10px">'
+          +'<span style="flex:1;min-width:160px"><b>'+esc(a.filename||'file')+'</b> <span style="color:var(--muted)">· '+esc(attachCatLabel(a.category))+' · '+esc(fmtBytes(a.size))+'</span></span>'
+          +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="downloadLegalAttachment(\''+esc(String(id))+'\',\''+esc(String(a.id))+'\')">⬇ Download</button>'
+          +'</div>').join('')
+        +'</div>';
+    } else {
+      h+='<div class="mini" style="color:var(--muted)">📎 No documents attached to this request yet.</div>';
+    }
+    h+=_docUploadHtml(id);
+    box.innerHTML=h;
+  }catch(e){ box.innerHTML='<span class="mini" style="color:var(--muted)">📎 Documents unavailable.</span>'+_docUploadHtml(id); }
+}
+/* Doctor-side uploader: lets the physician add records counsel emailed over directly
+   into this request (in case the attorney didn't use the portal). */
+function _docUploadHtml(id){
+  var opts=(typeof ATTACH_CATEGORIES!=='undefined'?ATTACH_CATEGORIES:[['medical_records','Medical records'],['other','Other']])
+    .map(function(c){return '<option value="'+esc(c[0])+'">'+esc(c[1])+'</option>';}).join('');
+  return '<div style="margin-top:9px;border-top:1px dashed #cfe2f8;padding-top:9px">'
+    +'<div class="mini" style="color:var(--muted);margin-bottom:5px">📥 Got the records by email instead? Add them to this request yourself:</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+    +'<select id="docAttachCat" style="font-size:12px;padding:5px 7px;border-radius:7px;border:1px solid #cfe2f8">'+opts+'</select>'
+    +'<input type="file" id="docAttachFile" style="font-size:12px;max-width:200px">'
+    +'<button class="btn-ghost" id="docAttachBtn" style="font-size:12px;padding:5px 11px" onclick="uploadDoctorAttachment(\''+esc(String(id))+'\')">⬆ Upload</button>'
+    +'</div></div>';
+}
+async function uploadDoctorAttachment(id){
+  if(!backendMode()||!bkToken()){ toast('Sign in first.','err'); return; }
+  var fileEl=document.getElementById('docAttachFile');
+  var catEl=document.getElementById('docAttachCat');
+  var btn=document.getElementById('docAttachBtn');
+  var file=fileEl&&fileEl.files&&fileEl.files[0];
+  if(!file){ toast('Choose a file to upload first.','err'); return; }
+  if(file.size>ATTACH_MAX_BYTES){ toast('That file is '+fmtBytes(file.size)+' — the limit is 20MB.','err'); return; }
+  var category=(catEl&&catEl.value)||'other';
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Uploading…'; }
+  try{
+    var data=await readFileAsDataUrl(file);
+    var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/attachments',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({filename:file.name,mimetype:file.type||'application/octet-stream',category:category,data:data})});
+    if(r.status===401){ handle401(); return; }
+    var d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&(d.error||d.message))||'Upload failed.','err'); return; }
+    toast('Added “'+esc(file.name)+'” to the request.','ok');
+    renderLegalToolAttachments(id);
+  }catch(e){ toast(friendlyError(e),'err'); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='⬆ Upload'; } }
 }
 
 /* Lawyer portal: show a returned signed report in the viewer card. */
