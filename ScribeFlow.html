@@ -136,6 +136,47 @@
   /* widget custom-builder library cards already use vars; ensure add btn text
      and lib desc stay readable (handled by var(--ink) fix above) */
 
+  /* ===== MLS additive — DARK MODE for the newer legal / team / follow-up features
+     (itemized invoice, secure messaging, AI questions, doctor seats, visit follow-ups,
+     doctor-side file upload). All scoped to body.theme-dark so light mode is untouched. */
+  /* green-tinted surfaces (invoice tools, doctor seats, follow-ups, booking row) */
+  body.theme-dark [style*="background:#eefaf3"],
+  body.theme-dark [style*="background:#f0fbf4"],
+  body.theme-dark [style*="background:#eefbf4"]{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.32)!important; color:var(--ink) }
+  /* purple-tinted surfaces (messaging panels + buttons + lawyer box) */
+  body.theme-dark [style*="background:#f6f1fb"],
+  body.theme-dark [style*="background:#f3f0fb"]{ background:rgba(139,107,224,.15)!important; border-color:rgba(139,107,224,.4)!important; color:var(--ink) }
+  /* amber engagement-fee box */
+  body.theme-dark [style*="background:#fff8e8"]{ background:var(--gold-bg)!important; border-color:rgba(217,169,59,.4)!important; color:var(--ink) }
+  /* white inner cards/rows inside the new panels → themeable surface */
+  body.theme-dark #legalInvoicePanel [style*="background:#fff"],
+  body.theme-dark #legalMsgPanel [style*="background:#fff"],
+  body.theme-dark #legalMsgPanel [style*="background:#eef4fc"],
+  body.theme-dark #doctorBox [style*="background:#fff"],
+  body.theme-dark #followupBox [style*="background:#fff"],
+  body.theme-dark #lawyerBox [style*="background:#fff"],
+  body.theme-dark #receptionBox [style*="background:#fff"],
+  body.theme-dark #legalReqAttach [style*="background:#fff"]{ background:var(--surface)!important }
+  /* light green/purple/blue/amber hard-coded borders → theme line */
+  body.theme-dark [style*="border:1px solid #bfe6cf"],
+  body.theme-dark [style*="border:1px solid #d9cdf0"],
+  body.theme-dark [style*="border:1px solid #cfe2f8"],
+  body.theme-dark [style*="border:1px solid #cdbce8"],
+  body.theme-dark [style*="border:1px solid #bfe6d2"],
+  body.theme-dark [style*="border:1px solid #f0d9a0"]{ border-color:var(--line)!important }
+  /* dark-on-light accent text → lighten for contrast on dark */
+  body.theme-dark [style*="color:#1f7a4d"],
+  body.theme-dark [style*="color:#127a55"]{ color:var(--green)!important }
+  body.theme-dark [style*="color:#6b3fa0"]{ color:#b89cf0!important }
+  /* inputs / selects / textareas inside the new panels (number + type-less inputs
+     aren't caught by the global input rule) */
+  body.theme-dark #legalInvoicePanel input,
+  body.theme-dark #legalInvoicePanel textarea,
+  body.theme-dark #legalMsgPanel textarea,
+  body.theme-dark #doctorBox input,
+  body.theme-dark #followupBox select,
+  body.theme-dark #legalReqAttach select,
+  body.theme-dark #legalReqAttach input[type=file]{ background:var(--field-bg)!important; color:var(--ink)!important; border-color:var(--line)!important }
   /* ---- intake kiosk (patient-facing) dark mode ---- */
   body.theme-dark #intakeView{ background:var(--bg); color:var(--ink) }
   body.theme-dark .ik-wrap{ color:var(--ink) }
