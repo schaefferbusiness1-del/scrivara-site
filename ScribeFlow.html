@@ -2071,6 +2071,7 @@
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadLegalRequests()">🔄 Refresh</button>
       </h2>
       <p class="sub">Incoming medical-legal report requests sent to you by attorneys. Click a pending request to open the Legal tool prefilled with the request — then pull up the matching patient, generate, sign, and return the report to the attorney.</p>
+      <div id="legalDashboard" style="display:none;gap:10px;flex-wrap:wrap;margin:4px 0 14px"></div>
       <div id="legalReqEmpty" class="empty"><span class="big">⚖️</span>No legal requests yet.</div>
       <div id="legalReqList"></div>
     </div>
@@ -2520,6 +2521,31 @@
       <button class="btn-red" style="font-size:14px;padding:9px 15px" onclick="clearDeviceData()">Clear saved data</button>
     </div>
     </div><!-- /Security & privacy section -->
+
+    <!-- ============ SECTION: Legal expert profile (medical-legal feature) ============ -->
+    <div class="set-section">
+    <p class="set-head">⚖️ Legal expert profile</p>
+    <p class="set-desc">Your details for medical-legal reports: your CV (used in expert reports), an invoice/billing footer, and your deposition / trial appearance rates shown to attorneys.</p>
+    <div class="field">
+      <label for="legalCvText">Curriculum vitae (CV) <span style="font-weight:400;color:var(--muted)">— paste your CV; expert reports use it for the Qualifications section</span></label>
+      <textarea id="legalCvText" style="min-height:120px;font-size:13px" placeholder="Board certifications, training, fellowships, years in practice, NPI, publications, prior testimony… Paste your CV here."></textarea>
+    </div>
+    <div class="field">
+      <label for="legalBillFooter">Invoice / billing footer <span style="font-weight:400;color:var(--muted)">— appears on receipts sent to attorneys (e.g. W-9 / tax name, EIN, remittance address)</span></label>
+      <textarea id="legalBillFooter" style="min-height:70px;font-size:13px" placeholder="e.g. Pay to: M.L.S. PLLC · Tax ID on file (W-9 available on request) · Remit to: 1709 E Centerton Blvd, Centerton, AR 72719"></textarea>
+    </div>
+    <div class="row tight">
+      <div class="field" style="flex:1">
+        <label for="legalDepoRate">Deposition rate ($/hour)</label>
+        <input id="legalDepoRate" type="number" min="0" step="50" placeholder="e.g. 1500">
+      </div>
+      <div class="field" style="flex:1">
+        <label for="legalTrialRate">Trial / court appearance rate ($/day)</label>
+        <input id="legalTrialRate" type="number" min="0" step="100" placeholder="e.g. 5000">
+      </div>
+    </div>
+    <button class="btn-green" style="font-size:14px;padding:9px 15px" onclick="saveLegalProfile()">💾 Save legal profile</button>
+    </div>
 
     <!-- ============ SECTION: Integrations (MLS — additive heading wrapper) ============ -->
     <div class="set-section">
@@ -4320,6 +4346,7 @@ function openSettings(){
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
   mlsBuildSettingsTabs();
+  if(typeof loadLegalProfile==='function') loadLegalProfile();
   document.getElementById('settingsModal').classList.add('show');
 }
 function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
@@ -7702,6 +7729,33 @@ function legalMyPatientRecord(){
   var txt=''; try{ txt=compilePatientRecord(p); }catch(e){ return ''; }
   try{ if(typeof currentSoap!=='undefined' && currentSoap && typeof getActivePtId==='function' && String(getActivePtId())===String(p.id)){ txt+='\n\n'+('='.repeat(40))+'\nCURRENT VISIT / OUR MEETING (in progress):\n'+emrReadyText(); } }catch(e){}
   return txt;
+}
+/* ---- Physician legal-expert profile (CV, billing footer, appearance rates) ---- */
+var _legalCvText='';
+async function loadLegalProfile(){
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return;
+  if(typeof isLawyerUser==='function'&&isLawyerUser()) return;
+  try{
+    var r=await fetch(bkBase()+'/api/legal/profile',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(!r.ok) return;
+    var d=await r.json();
+    _legalCvText=d.cv_text||'';
+    var cv=document.getElementById('legalCvText'); if(cv) cv.value=d.cv_text||'';
+    var bf=document.getElementById('legalBillFooter'); if(bf) bf.value=d.legal_bill_footer||'';
+    var dr=document.getElementById('legalDepoRate'); if(dr) dr.value=d.depo_rate_cents?Math.round(d.depo_rate_cents/100):'';
+    var tr=document.getElementById('legalTrialRate'); if(tr) tr.value=d.trial_rate_cents?Math.round(d.trial_rate_cents/100):'';
+  }catch(e){}
+}
+async function saveLegalProfile(){
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to save your legal profile.','err'); return; }
+  var cv=(document.getElementById('legalCvText')||{}).value||'';
+  var bf=(document.getElementById('legalBillFooter')||{}).value||'';
+  var dr=Math.max(0,Math.round(Number((document.getElementById('legalDepoRate')||{}).value)||0));
+  var tr=Math.max(0,Math.round(Number((document.getElementById('legalTrialRate')||{}).value)||0));
+  try{
+    var r=await fetch(bkBase()+'/api/legal/profile',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({cv_text:cv,legal_bill_footer:bf,depo_rate_cents:dr*100,trial_rate_cents:tr*100})});
+    if(r.ok){ _legalCvText=cv; toast('Legal profile saved.','ok'); } else { toast('Could not save the legal profile.','err'); }
+  }catch(e){ toast('Could not save the legal profile.','err'); }
 }
 /* Market-informed SUGGESTED fee (USD) by document type — a starting point the physician
    edits to their own rate. Not advice; the physician sets the actual price. */
@@ -12064,6 +12118,7 @@ async function generateExpertReportSections(ctx){
   let caseContext='CASE DETAILS:\n'+cl.join('\n');
   if(ctx.note&&ctx.note.trim()) caseContext+='\n\nCLINICAL NOTE FROM THIS VISIT:\n'+ctx.note.trim();
   if(ctx.chartBlock&&ctx.chartBlock.trim()) caseContext+='\n\n'+(ctx.ownRecord?'TREATING PHYSICIAN\'S OWN RECORD FOR THIS EXAMINEE (your chart + your visit / meeting notes — first-hand records you personally created; you may state these findings directly and reference your visit dates as encounters you conducted):':'PATIENT RECORD / CHART:')+'\n'+ctx.chartBlock.trim();
+  if(ctx.cv&&ctx.cv.trim()) caseContext+='\n\nEXPERT\'S CURRICULUM VITAE (use this for the QUALIFICATIONS section — state the real credentials, training, board certification, NPI, and experience below instead of bracketed placeholders):\n'+ctx.cv.trim();
   if(ctx.recordsBlock&&ctx.recordsBlock.trim()) caseContext+='\n\nRECORDS PROVIDED BY COUNSEL (these ARE the records reviewed — cite them by provider and date):\n'+ctx.recordsBlock.trim();
   const sections=[
     ['I. ASSIGNMENT AND SCOPE OF ENGAGEMENT','Identify who retained the expert, the precise questions presented, the scope of the engagement, the materials furnished, and the applicable standard (a reasonable degree of medical probability). 2-3 paragraphs.'],
@@ -12183,7 +12238,7 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     if(/expert report/i.test(docType)){
       // Long-form retained-expert report — generated section by section to reach the
       // depth (10-40+ pages) of a real FRCP 26 expert disclosure.
-      out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(haveChart?pctx:''),ownRecord:haveMyRecord,note:((!haveMyRecord&&useChart)?note:''),today:today,btn:btn});
+      out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(haveChart?pctx:''),ownRecord:haveMyRecord,cv:(typeof _legalCvText!=='undefined'?_legalCvText:''),note:((!haveMyRecord&&useChart)?note:''),today:today,btn:btn});
     } else {
       out=(await aiCallRaw(sys,user,getKey(),{freeform:true,legal:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     }
@@ -13313,6 +13368,9 @@ function legalReqRowHtml(rq,mode){
       } else if(locked){
         actions+='<span style="font-size:12px;color:var(--muted);align-self:center">Awaiting the physician’s fee</span>';
       }
+      var _dr=rq.depo_rate_cents||0, _tr=rq.trial_rate_cents||0;
+      var _rateTitle=(_dr||_tr)?('Rates — '+(_dr?('deposition $'+Math.round(_dr/100).toLocaleString()+'/hr'):'')+(_dr&&_tr?', ':'')+(_tr?('trial $'+Math.round(_tr/100).toLocaleString()+'/day'):'')):'Request the physician\'s deposition or trial testimony';
+      actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="lawRequestAppearance(\''+esc(String(id))+'\')" title="'+esc(_rateTitle)+'">📅 Request testimony</button>';
     }
   }else{
     actions='<button class="'+(fulfilled?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="openLegalRequest(\''+esc(String(id))+'\')">'+(fulfilled?'⚖️ Re-open':'⚖️ Fulfill')+'</button>';
@@ -13592,6 +13650,16 @@ async function renderLegalToolAttachments(id){
 }
 
 /* Lawyer portal: show a returned signed report in the viewer card. */
+/* Attorney requests the physician's deposition / trial testimony — emails the physician. */
+async function lawRequestAppearance(id){
+  var note=window.prompt('Request the physician’s testimony / court appearance.\n\nAdd proposed date(s), whether it\'s a deposition or trial, location or video link, and any details. This is emailed to the physician to confirm dates and fee:','');
+  if(note===null) return;
+  try{
+    var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/appearance',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({note:note})});
+    if(r.ok){ toast('Your testimony request was sent to the physician.','ok'); }
+    else { var d={}; try{ d=await r.json(); }catch(e){} toast((d&&(d.error||d.message))||'Could not send the request.','err'); }
+  }catch(e){ toast('Could not send the request.','err'); }
+}
 /* Attorney pays the physician's fee → one-time Stripe Checkout → on success the
    webhook unlocks the full report for them. */
 async function lawPayReport(id, feeCents){
@@ -13645,8 +13713,25 @@ async function releaseLegalReport(id){
     if(typeof loadLegalRequests==='function') loadLegalRequests();
   }catch(e){ toast('Could not release the report.','err'); }
 }
+function renderLegalDashboard(reqs){
+  var dash=document.getElementById('legalDashboard'); if(!dash) return;
+  var pending=0, fulfilled=0, earnedC=0, outstandingC=0;
+  (reqs||[]).forEach(function(r){
+    var s=String(r.status||'pending').toLowerCase();
+    var done=(s==='fulfilled'||s==='done'||s==='complete'||r.result_text);
+    if(done){ fulfilled++; if(r.paid) earnedC+=(r.fee_cents||0); else outstandingC+=(r.fee_cents||0); }
+    else pending++;
+  });
+  function card(label,val,color){ return '<div style="flex:1;min-width:130px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div style="font-size:22px;font-weight:800;color:'+(color||'var(--ink)')+'">'+val+'</div><div style="font-size:12px;color:var(--muted)">'+label+'</div></div>'; }
+  dash.style.display='flex';
+  dash.innerHTML=card('Pending requests',pending)
+    +card('Reports delivered',fulfilled)
+    +card('Earned (paid)','$'+Math.round(earnedC/100).toLocaleString(),'#1f7a4d')
+    +card('Outstanding','$'+Math.round(outstandingC/100).toLocaleString(),(outstandingC>0?'#b9770a':'var(--muted)'));
+}
 async function loadLegalRequests(){
   if(!backendMode()||!bkToken()) return;
+  if(typeof loadLegalProfile==='function') loadLegalProfile();
   const list=document.getElementById('legalReqList');
   const empty=document.getElementById('legalReqEmpty');
   try{
@@ -13658,6 +13743,7 @@ async function loadLegalRequests(){
     _legalInboxById={};
     const pending=reqs.filter(rq=>{ const s=String(rq.status||'pending').toLowerCase(); return !(s==='fulfilled'||s==='done'||s==='complete'||rq.result_text); }).length;
     updateLegalReqCount(pending);
+    renderLegalDashboard(reqs);
     if(!reqs.length){ if(list) list.innerHTML=''; if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">⚖️</span>No legal requests yet.'; } return; }
     if(empty) empty.style.display='none';
     if(list) list.innerHTML=reqs.map(rq=>legalReqRowHtml(rq,'clinician')).join('');
