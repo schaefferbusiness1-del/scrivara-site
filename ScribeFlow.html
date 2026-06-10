@@ -2130,9 +2130,11 @@
   <div id="legalReqView" style="display:none">
     <div class="card">
       <h2><span class="ic">⚖️</span> Legal requests
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadLegalRequests()">🔄 Refresh</button>
+        <button class="btn-primary" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="toggleSelfRequestForm()">➕ New request</button>
+        <button class="btn-ghost" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadLegalRequests()">🔄 Refresh</button>
       </h2>
-      <p class="sub">Incoming medical-legal report requests sent to you by attorneys. Click a pending request to open the Legal tool prefilled with the request — then pull up the matching patient, generate, sign, and return the report to the attorney.</p>
+      <p class="sub">Incoming medical-legal report requests sent to you by attorneys. Click a pending request to open the Legal tool prefilled with the request — then pull up the matching patient, generate, sign, and return the report. Use <b>➕ New request</b> to open one yourself when the attorney isn't on MLS and just emailed you the case.</p>
+      <div id="legalSelfReqForm" style="display:none;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:12px;padding:14px;margin:4px 0 14px"></div>
       <div id="legalDashboard" style="display:none;gap:10px;flex-wrap:wrap;margin:4px 0 14px"></div>
       <div id="legalReqEmpty" class="empty"><span class="big">⚖️</span>No legal requests yet.</div>
       <div id="legalReqList"></div>
@@ -14055,6 +14057,54 @@ function renderLegalDashboard(reqs){
     +card('Reports delivered',fulfilled)
     +card('Earned (paid)','$'+Math.round(earnedC/100).toLocaleString(),'#1f7a4d')
     +card('Outstanding','$'+Math.round(outstandingC/100).toLocaleString(),(outstandingC>0?'#b9770a':'var(--muted)'));
+}
+/* Clinician opens their OWN request (attorney not on MLS). */
+var _LEGAL_DOC_TYPES=['Narrative medical report','Causation opinion','Diagnosis & prognosis report','Impairment / disability rating','Future medical care report','Bill review / medical necessity','Independent Medical Exam (IME)','Expert report','Affidavit / declaration','Disability / work-status report','Records review','Deposition summary'];
+function toggleSelfRequestForm(){
+  var box=document.getElementById('legalSelfReqForm'); if(!box) return;
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  var opts=_LEGAL_DOC_TYPES.map(function(t){return '<option value="'+esc(t)+'">'+esc(t)+'</option>';}).join('');
+  box.style.display='block';
+  box.innerHTML='<div style="font-weight:700;margin-bottom:8px">➕ New legal request (attorney not on MLS)</div>'
+    +'<div class="mini" style="color:var(--muted);margin-bottom:10px">Fill in what the attorney sent you. This opens a request in your inbox so you can attach the records, generate the report, sign it, and download the PDF to send back.</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +'<label class="mini" style="flex:1;min-width:160px">Attorney / firm<input id="srFirm" style="width:100%"></label>'
+    +'<label class="mini" style="flex:1;min-width:160px">Attorney email (optional)<input id="srAttyEmail" type="email" style="width:100%"></label></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+    +'<label class="mini" style="flex:1;min-width:140px">Case / claim #<input id="srCase" style="width:100%"></label>'
+    +'<label class="mini" style="flex:1;min-width:120px">Date of injury<input id="srDoi" type="date" style="width:100%"></label>'
+    +'<label class="mini" style="flex:1;min-width:140px">Jurisdiction<input id="srJur" style="width:100%"></label></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+    +'<label class="mini" style="flex:1;min-width:160px">Patient (name / DOB / ref)<input id="srPatient" style="width:100%"></label>'
+    +'<label class="mini" style="flex:1;min-width:160px">Document type<select id="srDocType" class="sf-select" style="width:100%">'+opts+'</select></label></div>'
+    +'<label class="mini" style="display:block;margin-top:8px">What does the attorney want addressed?<textarea id="srQuestions" rows="3" style="width:100%"></textarea></label>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'
+    +'<button class="btn-primary" id="srSubmit" style="font-size:13px;padding:8px 14px" onclick="submitSelfRequest()">Create &amp; open</button>'
+    +'<button class="btn-ghost" style="font-size:13px;padding:8px 14px" onclick="toggleSelfRequestForm()">Cancel</button></div>';
+}
+async function submitSelfRequest(){
+  var body={
+    firm:(document.getElementById('srFirm')||{}).value||'',
+    attorney_email:(document.getElementById('srAttyEmail')||{}).value||'',
+    case_number:(document.getElementById('srCase')||{}).value||'',
+    doi:(document.getElementById('srDoi')||{}).value||'',
+    jurisdiction:(document.getElementById('srJur')||{}).value||'',
+    patient_ref:(document.getElementById('srPatient')||{}).value||'',
+    doc_type:(document.getElementById('srDocType')||{}).value||'',
+    questions:(document.getElementById('srQuestions')||{}).value||''
+  };
+  if(!body.firm && !body.patient_ref){ toast('Add at least the attorney/firm or the patient.','err'); return; }
+  var btn=document.getElementById('srSubmit'); if(btn){ btn.disabled=true; btn.textContent='Creating…'; }
+  try{
+    var r=await _legalFetchRetry(bkBase()+'/api/legal/self-request',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify(body)},3);
+    var d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok||!d.id){ toast((d&&d.error)||'Could not create the request.','err'); return; }
+    toast('Request created — opening it now.','ok');
+    var box=document.getElementById('legalSelfReqForm'); if(box){ box.style.display='none'; }
+    await loadLegalRequests();
+    try{ openLegalRequest(String(d.id)); }catch(e){}
+  }catch(e){ toast('Could not create the request.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Create & open'; } }
 }
 async function loadLegalRequests(){
   if(!backendMode()||!bkToken()) return;
