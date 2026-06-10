@@ -5997,6 +5997,7 @@ function copyRecCreds(){
 }
 async function loadReceptionists(show){
   const box=document.getElementById('receptionBox'); if(!box) return;
+  if(show && box.style.display==='block'){ box.style.display='none'; return; } // click again to close
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage receptionists.','err'); return; }
   if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
   try{
@@ -6156,6 +6157,7 @@ function emailLawyerInvite(){
 var _fuDays=3, _fuAuto=false;
 function openFollowups(){
   var box=document.getElementById('followupBox'); if(!box) return;
+  if(box.style.display==='block'){ box.style.display='none'; return; } // click again to close
   box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
   renderFollowups(null);
 }
@@ -6213,6 +6215,7 @@ async function sendFollowups(){
 /* ===== Additional treating-doctor seats (paid add-on; head physician only). ===== */
 async function loadDoctorSeats(show){
   const box=document.getElementById('doctorBox'); if(!box) return;
+  if(show && box.style.display==='block'){ box.style.display='none'; return; } // click again to close
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage doctors.','err'); return; }
   if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
   try{
@@ -6268,6 +6271,7 @@ async function removeDoctorSeat(id){
 }
 async function loadLawyers(show){
   const box=document.getElementById('lawyerBox'); if(!box) return;
+  if(show && box.style.display==='block'){ box.style.display='none'; return; } // click again to close
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(show) toast('Sign in to manage lawyers.','err'); return; }
   if(show){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>'; }
   try{
