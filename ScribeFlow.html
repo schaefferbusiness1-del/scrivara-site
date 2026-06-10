@@ -1360,6 +1360,15 @@
           </div>
           <div class="mini" style="color:var(--muted);margin-top:4px">Set it before you sign &amp; send. You can charge separately for deposition or trial time as agreed.</div>
         </div>
+        <div id="legalToolsRow" style="display:none;margin:8px 0 0">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="sec-copy" id="legalInvoiceBtn" style="background:#f0fbf4;border-color:#bfe6cf;color:#1f7a4d;font-weight:600" onclick="toggleLegalInvoice()" title="Build and download an itemized expert invoice for this matter">🧾 Itemized invoice</button>
+            <button class="sec-copy" id="legalAskBtn" style="background:#eef4fc;border-color:#cfe2f8;color:var(--brand-dk);font-weight:600" onclick="askAiQuestions()" title="Have the AI list what it still needs from counsel and post it to the attorney thread">❓ Ask counsel what's missing</button>
+            <button class="sec-copy" id="legalMsgBtn" style="background:#f6f1fb;border-color:#d9cdf0;color:#6b3fa0;font-weight:600" onclick="toggleLegalMessages()" title="Secure messages with the attorney for this request">💬 Messages</button>
+          </div>
+          <div id="legalInvoicePanel" style="display:none;margin-top:8px"></div>
+          <div id="legalMsgPanel" style="display:none;margin-top:8px"></div>
+        </div>
         <p class="sub" style="margin:4px 0 0">Formal medical-legal report drafted from the active patient's record. Built only from what is documented; missing data appears as [bracketed placeholders]. Edit below, then sign and save.</p>
         <textarea class="xbody" id="legalBody" style="min-height:340px;font-family:'Segoe UI',Arial,sans-serif;width:100%;resize:vertical"></textarea>
         <div class="code-disclaim">⚠️ DRAFT — the physician must verify, complete, and sign. All diagnoses, opinions, causation, and impairment statements are the physician's responsibility and must be held to a reasonable degree of medical probability/certainty.</div>
@@ -13452,6 +13461,7 @@ function legalReqRowHtml(rq,mode){
   let actions='';
   if(mode==='lawyer'){
     actions+='<button class="'+(initCount?'btn-ghost':'btn-primary')+'" style="font-size:13px;padding:7px 12px" onclick="toggleAttachPanel(\''+esc(idStr)+'\')" title="Upload the cover letter, signed patient authorization/release, and medical records for the doctor">📎 '+(initCount?'Case files':'Upload case files')+' (<span id="attachCount-'+safeId+'">'+initCount+'</span>)</button>';
+    actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="toggleLawMessages(\''+esc(idStr)+'\',\''+safeId+'\')" title="Secure messages with the physician about this matter">💬 Messages</button>';
     if(fulfilled){
       const locked=!!rq.locked;
       _lawReports[id]={result_text:rq.result_text||'',doc_type:docType,locked:locked};
@@ -13481,7 +13491,8 @@ function legalReqRowHtml(rq,mode){
   // Per-mode attachments affordance shown below the row.
   let attachBlock='';
   if(mode==='lawyer'){
-    attachBlock='<div id="attachPanel-'+safeId+'" data-reqid="'+esc(idStr)+'" style="display:none;flex-basis:100%;width:100%;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"></div>';
+    attachBlock='<div id="attachPanel-'+safeId+'" data-reqid="'+esc(idStr)+'" style="display:none;flex-basis:100%;width:100%;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"></div>'
+      +'<div id="lawMsgPanel-'+safeId+'" data-reqid="'+esc(idStr)+'" style="display:none;flex-basis:100%;width:100%;margin-top:10px;border-top:1px solid var(--line);padding-top:10px"></div>';
   }else{
     attachBlock='<div style="flex-basis:100%;width:100%"><div id="clinAttach-'+safeId+'" class="mini" style="color:var(--muted);margin-top:6px">📎 Loading documents…</div></div>';
   }
@@ -13918,6 +13929,14 @@ async function openLegalRequest(id){
       if(sug) sug.innerHTML=(offer>0?('<b style="color:#1f7a4d">Attorney offered $'+offer.toLocaleString()+'</b> · '):'')+'Suggested for a '+(rq.doc_type||'report')+': ~$'+suggest+' — set your rate';
     }
   }catch(e){}
+  // Reveal the per-request tools (invoice / AI questions / messages) + reset panels.
+  try{
+    _legalCurrentReq=rq;
+    var _tr=document.getElementById('legalToolsRow'); if(_tr) _tr.style.display='block';
+    var _ip=document.getElementById('legalInvoicePanel'); if(_ip){ _ip.style.display='none'; _ip.innerHTML=''; }
+    var _mp=document.getElementById('legalMsgPanel'); if(_mp){ _mp.style.display='none'; _mp.innerHTML=''; }
+    _legalInvoiceShown=false; _legalMsgShown=false; _legalInvItems=[];
+  }catch(e){}
   // Reveal the Return-to-attorney button on the Legal card.
   const rb=document.getElementById('legalReturnBtn'); if(rb) rb.style.display='';
   // MLS additive — extract the CONTENT of the attorney's uploaded files so the
@@ -14022,6 +14041,195 @@ async function returnLegalToAttorney(){
     loadLegalRequests();
   }catch(e){ toast(friendlyError(e),'err'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='✍️ Sign & send to attorney'; } }
+}
+
+/* ============ Per-request: itemized invoice, AI questions, secure messaging ============ */
+var _legalCurrentReq=null, _legalInvoiceShown=false, _legalMsgShown=false, _legalInvItems=[];
+function _legalReqId(){ return (typeof currentLegalRequestId!=='undefined' && currentLegalRequestId) ? currentLegalRequestId : null; }
+function _todayStr(){ try{ return new Date().toLocaleDateString(); }catch(e){ return ''; } }
+function _money2(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* ----- Itemized expert invoice ----- */
+function toggleLegalInvoice(){
+  var p=document.getElementById('legalInvoicePanel'); if(!p) return;
+  _legalInvoiceShown=!_legalInvoiceShown; p.style.display=_legalInvoiceShown?'block':'none';
+  if(_legalInvoiceShown) renderLegalInvoice();
+}
+function renderLegalInvoice(){
+  var p=document.getElementById('legalInvoicePanel'); if(!p) return;
+  var rq=_legalCurrentReq||{};
+  if(!_legalInvItems.length){
+    var saved=rq.invoice&&rq.invoice.items;
+    if(saved&&saved.length){ _legalInvItems=saved.map(function(it){return {date:it.date||'',desc:it.desc||'',hours:it.hours||'',rate:it.rate||'',flat:it.flat||''};}); }
+    else { _legalInvItems=[{date:_todayStr(),desc:'Medical record review',hours:'',rate:'',flat:''}]; }
+  }
+  var billTo=(rq.invoice&&rq.invoice.bill_to)||rq.firm||'';
+  var invNo=(rq.invoice&&rq.invoice.invoice_no)||('MLS-'+(rq.id||'')+'-'+String(new Date().getFullYear()));
+  var notes=(rq.invoice&&rq.invoice.notes)||'Payment due within 30 days. Tax ID on file.';
+  var h='<div style="background:#fff;border:1px solid #bfe6cf;border-radius:10px;padding:12px">';
+  h+='<div style="font-weight:700;color:#1f7a4d;margin-bottom:8px">🧾 Itemized expert invoice</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">';
+  h+='<label class="mini" style="flex:2;min-width:160px">Bill to (attorney / firm)<input id="invBillTo" value="'+esc(billTo)+'" style="width:100%"></label>';
+  h+='<label class="mini" style="flex:1;min-width:110px">Invoice #<input id="invNo" value="'+esc(invNo)+'" style="width:100%"></label></div>';
+  h+='<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="text-align:left;color:var(--muted)">'
+    +'<th style="padding:3px">Date</th><th style="padding:3px">Description</th><th style="padding:3px;width:54px">Hrs</th><th style="padding:3px;width:74px">Rate/hr</th><th style="padding:3px;width:84px">Flat $</th><th style="padding:3px;width:80px;text-align:right">Amount</th><th></th></tr></thead><tbody id="invRows"></tbody></table></div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="legalInvAddRow()">+ Add line</button>';
+  h+='<div style="font-weight:700;font-size:15px">Total: <span id="invTotal">$0.00</span></div></div>';
+  h+='<label class="mini" style="display:block;margin-top:8px">Notes / payment terms<textarea id="invNotes" rows="2" style="width:100%">'+esc(notes)+'</textarea></label>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
+  h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 13px" onclick="saveLegalInvoice()">💾 Save invoice</button>';
+  h+='<button class="btn-ghost" style="font-size:12.5px;padding:7px 13px" onclick="downloadLegalInvoicePDF()">⬇️ Download PDF</button></div></div>';
+  p.innerHTML=h; legalInvRenderRows();
+}
+function _legalLineAmt(it){ var flat=Number(it.flat)||0; if(flat>0) return flat; return (Number(it.hours)||0)*(Number(it.rate)||0); }
+function _legalInvTotal(){ var t=0; _legalInvItems.forEach(function(it){ t+=_legalLineAmt(it); }); return t; }
+function legalInvRenderRows(){
+  var tb=document.getElementById('invRows'); if(!tb) return; var h='';
+  _legalInvItems.forEach(function(it,i){
+    h+='<tr>'
+      +'<td style="padding:2px"><input data-i="'+i+'" data-k="date" value="'+esc(it.date||'')+'" oninput="legalInvEdit(this)" style="width:84px"></td>'
+      +'<td style="padding:2px"><input data-i="'+i+'" data-k="desc" value="'+esc(it.desc||'')+'" oninput="legalInvEdit(this)" style="width:100%;min-width:140px"></td>'
+      +'<td style="padding:2px"><input data-i="'+i+'" data-k="hours" type="number" step="0.1" value="'+esc(it.hours||'')+'" oninput="legalInvEdit(this)" style="width:50px"></td>'
+      +'<td style="padding:2px"><input data-i="'+i+'" data-k="rate" type="number" step="10" value="'+esc(it.rate||'')+'" oninput="legalInvEdit(this)" style="width:70px"></td>'
+      +'<td style="padding:2px"><input data-i="'+i+'" data-k="flat" type="number" step="10" value="'+esc(it.flat||'')+'" oninput="legalInvEdit(this)" style="width:80px"></td>'
+      +'<td style="padding:2px;text-align:right">'+_money2(_legalLineAmt(it))+'</td>'
+      +'<td style="padding:2px"><button class="btn-ghost" style="font-size:11px;padding:2px 7px;color:#c0392b" onclick="legalInvDel('+i+')">✕</button></td></tr>';
+  });
+  tb.innerHTML=h; var tot=document.getElementById('invTotal'); if(tot) tot.textContent=_money2(_legalInvTotal());
+}
+function legalInvEdit(el){ var i=+el.getAttribute('data-i'), k=el.getAttribute('data-k'); if(_legalInvItems[i]){ _legalInvItems[i][k]=el.value; if(k==='hours'||k==='rate'||k==='flat') legalInvRenderRows(); } }
+function legalInvAddRow(){ _legalInvItems.push({date:_todayStr(),desc:'',hours:'',rate:'',flat:''}); legalInvRenderRows(); }
+function legalInvDel(i){ _legalInvItems.splice(i,1); if(!_legalInvItems.length) _legalInvItems.push({date:_todayStr(),desc:'',hours:'',rate:'',flat:''}); legalInvRenderRows(); }
+function legalInvCollect(){
+  return { bill_to:(document.getElementById('invBillTo')||{}).value||'', invoice_no:(document.getElementById('invNo')||{}).value||'', date:_todayStr(),
+    items:_legalInvItems.map(function(it){return {date:it.date||'',desc:it.desc||'',hours:it.hours||'',rate:it.rate||'',flat:it.flat||'',amount:_legalLineAmt(it)};}),
+    total:_legalInvTotal(), notes:(document.getElementById('invNotes')||{}).value||'' };
+}
+async function saveLegalInvoice(){
+  var id=_legalReqId(); if(!id){ toast('Open a request first.','err'); return; }
+  try{
+    var r=await _legalFetchRetry(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/invoice',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({invoice:legalInvCollect()})},3);
+    if(r.ok){ toast('Invoice saved.','ok'); if(_legalCurrentReq) _legalCurrentReq.invoice=legalInvCollect(); }
+    else { toast('Could not save the invoice.','err'); }
+  }catch(e){ toast('Could not save the invoice.','err'); }
+}
+async function downloadLegalInvoicePDF(){
+  var inv=legalInvCollect();
+  var prof={}; try{ var pr=await fetch(bkBase()+'/api/legal/profile',{headers:{Authorization:'Bearer '+bkToken()}}); if(pr.ok) prof=await pr.json(); }catch(e){}
+  var ns; try{ ns=await loadJsPdf(); }catch(e){ toast('Could not load the PDF tool.','err'); return; }
+  var jsPDF=ns.jsPDF; var doc=new jsPDF({unit:'pt',format:'letter'});
+  var M=54, y=58, W=612;
+  var name=((typeof getName==='function'&&getName())||'Treating Physician');
+  var practice=((typeof getPracticeName==='function'&&getPracticeName())||'');
+  doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.text('INVOICE', M, y);
+  doc.setFontSize(12); doc.text(String(name), W-M, y, {align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); y+=16;
+  if(practice){ doc.text(String(practice), W-M, y, {align:'right'}); }
+  y+=26; doc.setFontSize(10);
+  doc.text('Invoice #: '+(inv.invoice_no||''), M, y); doc.text('Date: '+(inv.date||''), W-M, y, {align:'right'}); y+=15;
+  if(inv.bill_to){ doc.setFont('helvetica','bold'); doc.text('Bill to:', M, y); doc.setFont('helvetica','normal'); doc.text(String(inv.bill_to), M+48, y); y+=15; }
+  y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
+  doc.text('Date', M, y); doc.text('Description', M+72, y); doc.text('Hrs', W-M-176, y, {align:'right'}); doc.text('Rate', W-M-112, y, {align:'right'}); doc.text('Amount', W-M, y, {align:'right'});
+  y+=6; doc.setDrawColor(180); doc.line(M, y, W-M, y); y+=14; doc.setFont('helvetica','normal');
+  inv.items.forEach(function(it){
+    if(y>720){ doc.addPage(); y=58; }
+    var desc=doc.splitTextToSize(String(it.desc||''), W-M-72-200);
+    doc.text(String(it.date||''), M, y); doc.text(desc, M+72, y);
+    if(Number(it.hours)) doc.text(String(it.hours), W-M-176, y, {align:'right'});
+    if(Number(it.rate)) doc.text('$'+Number(it.rate).toLocaleString(), W-M-112, y, {align:'right'});
+    doc.text(_money2(it.amount), W-M, y, {align:'right'});
+    y+=Math.max(14, desc.length*12);
+  });
+  y+=4; doc.setDrawColor(180); doc.line(M, y, W-M, y); y+=18;
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('Total: '+_money2(inv.total), W-M, y, {align:'right'}); y+=24;
+  if(inv.notes){ doc.setFont('helvetica','normal'); doc.setFontSize(9.5); var nn=doc.splitTextToSize(String(inv.notes), W-2*M); doc.text(nn, M, y); y+=nn.length*12+8; }
+  if(prof&&prof.legal_bill_footer){ doc.setFontSize(8.5); doc.setTextColor(120); var ff=doc.splitTextToSize(String(prof.legal_bill_footer), W-2*M); doc.text(ff, M, Math.min(y, 752)); }
+  doc.save('Invoice_'+((inv.invoice_no||'expert').replace(/[^a-zA-Z0-9_-]/g,'_'))+'.pdf');
+  toast('Invoice PDF downloaded.','ok');
+}
+
+/* ----- AI: ask counsel what's still missing, post it to the attorney thread ----- */
+async function askAiQuestions(){
+  var id=_legalReqId(); if(!id){ toast('Open a request first.','err'); return; }
+  var btn=document.getElementById('legalAskBtn'); if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
+  try{
+    var draft=((document.getElementById('legalBody')||{}).value)||'';
+    var r=await _legalFetchRetry(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/ai-questions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({draft:draft})},3);
+    var d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ toast((d&&d.error)||'Could not check right now.','err'); return; }
+    if(d.posted){ toast('Sent the outstanding questions to the attorney.','ok'); if(_legalMsgShown) loadLegalMessages(); }
+    else { toast('Nothing material missing — the materials look sufficient.','ok'); }
+    if(d.questions) alert(d.questions);
+  }catch(e){ toast('Could not check right now.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='❓ Ask counsel what\'s missing'; } }
+}
+
+/* ----- Secure messaging (doctor side) ----- */
+function toggleLegalMessages(){
+  var p=document.getElementById('legalMsgPanel'); if(!p) return;
+  _legalMsgShown=!_legalMsgShown; p.style.display=_legalMsgShown?'block':'none';
+  if(_legalMsgShown){ p.innerHTML='<div class="mini" style="color:var(--muted)">Loading messages…</div>'; loadLegalMessages(); }
+}
+async function loadLegalMessages(){
+  var id=_legalReqId(); if(!id) return; var p=document.getElementById('legalMsgPanel'); if(!p) return;
+  try{
+    var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/messages',{headers:{Authorization:'Bearer '+bkToken()}});
+    var d=await r.json().catch(function(){return {messages:[]};});
+    renderLegalMessages(p, d.messages||[], 'clinician', 'loadLegalMessages', 'sendLegalMessageDoctor');
+  }catch(e){ p.innerHTML='<div class="mini" style="color:#c0392b">Could not load messages.</div>'; }
+}
+async function sendLegalMessageDoctor(){
+  var id=_legalReqId(); if(!id) return;
+  var ta=document.getElementById('legalMsgInput'); var body=((ta&&ta.value)||'').trim(); if(!body) return;
+  try{
+    var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/messages',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({body:body})});
+    if(r.ok){ if(ta) ta.value=''; loadLegalMessages(); } else { toast('Could not send.','err'); }
+  }catch(e){ toast('Could not send.','err'); }
+}
+/* Shared thread renderer (doctor + lawyer). reloadFnName/sendFnName are global fn names. */
+function renderLegalMessages(container, msgs, myRole, reloadFnName, sendFnName){
+  var h='<div style="background:#fff;border:1px solid #d9cdf0;border-radius:10px;padding:10px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:#6b3fa0">💬 Secure messages</div><button class="btn-ghost" style="font-size:11px;padding:3px 8px" onclick="'+reloadFnName+'()">↻ Refresh</button></div>';
+  if(!msgs.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:6px">No messages yet — ask for missing records or clarify the case here. It stays inside the encrypted portal.</div>'; }
+  else {
+    h+='<div style="max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:8px">';
+    msgs.forEach(function(m){
+      var mine=m.sender_role===myRole, ai=m.sender_role==='ai';
+      var bg=ai?'#fff7e6':(mine?'#eef4fc':'#f6f1fb'), al=mine?'flex-end':'flex-start';
+      h+='<div style="align-self:'+al+';max-width:85%;background:'+bg+';border-radius:9px;padding:7px 10px;font-size:12.5px">'
+        +'<div style="font-weight:600;font-size:11px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||(m.sender_role==='lawyer'?'Attorney':m.sender_role==='ai'?'MLS AI':'Physician'))+'</div>'
+        +esc(m.body||'').replace(/\n/g,'<br>')+'</div>';
+    });
+    h+='</div>';
+  }
+  h+='<div style="display:flex;gap:6px"><textarea id="legalMsgInput" rows="2" placeholder="Write a message…" style="flex:1;border:1px solid #cdbce8;border-radius:8px;padding:7px;font-size:13px"></textarea>'
+    +'<button class="btn-primary" style="font-size:12.5px;padding:7px 13px" onclick="'+sendFnName+'()">Send</button></div></div>';
+  container.innerHTML=h;
+}
+/* ----- Secure messaging (attorney side, per request row) ----- */
+var _lawMsgReqId=null, _lawMsgSafe=null;
+function toggleLawMessages(id, safeId){
+  var p=document.getElementById('lawMsgPanel-'+safeId); if(!p) return;
+  var show=(p.style.display==='none'||!p.style.display);
+  p.style.display=show?'block':'none';
+  if(show){ _lawMsgReqId=id; _lawMsgSafe=safeId; p.innerHTML='<div class="mini" style="color:var(--muted)">Loading messages…</div>'; loadLawMessages(); }
+}
+async function loadLawMessages(){
+  if(!_lawMsgReqId) return; var p=document.getElementById('lawMsgPanel-'+_lawMsgSafe); if(!p) return;
+  try{
+    var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(_lawMsgReqId)+'/messages',{headers:{Authorization:'Bearer '+bkToken()}});
+    var d=await r.json().catch(function(){return {messages:[]};});
+    renderLegalMessages(p, d.messages||[], 'lawyer', 'loadLawMessages', 'sendLawMessageLawyer');
+  }catch(e){ p.innerHTML='<div class="mini" style="color:#c0392b">Could not load messages.</div>'; }
+}
+async function sendLawMessageLawyer(){
+  if(!_lawMsgReqId) return; var ta=document.getElementById('legalMsgInput'); var body=((ta&&ta.value)||'').trim(); if(!body) return;
+  try{
+    var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(_lawMsgReqId)+'/messages',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({body:body})});
+    if(r.ok){ if(ta) ta.value=''; loadLawMessages(); } else { toast('Could not send.','err'); }
+  }catch(e){ toast('Could not send.','err'); }
 }
 
 /* =========================================================
