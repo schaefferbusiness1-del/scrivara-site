@@ -8330,7 +8330,7 @@ async function aiCallRaw(sys,user,key,opts){
       const r=await fetch(bkBase()+'/api/complete',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-        body:JSON.stringify({system:sys,user:user})
+        body:JSON.stringify({system:sys,user:user, legal:!!opts.legal, maxTokens:opts.maxTokens||undefined})
       });
       if(r.status===401){ handle401(); throw new Error('401 unauthorized'); }
       if(r.status===402){
@@ -12003,7 +12003,7 @@ async function generateExpertReportSections(ctx){
     if(btn) btn.innerHTML='<span class="spin"></span> Drafting expert report… '+(i+1)+'/'+sections.length;
     let part='';
     try{
-      part=(await aiCallRaw(sysFor(header,instr), caseContext+'\n\nNow write the "'+header+'" section in full.', getKey(), {freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+      part=(await aiCallRaw(sysFor(header,instr), caseContext+'\n\nNow write the "'+header+'" section in full.', getKey(), {freeform:true,legal:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
       // Strip a duplicated leading title if the model emitted one.
       part=part.replace(new RegExp('^'+header.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*[:\\-]?\\s*','i'),'').trim();
     }catch(e){ part='[This section could not be generated automatically — please complete. ('+((e&&e.message)||'error')+')]'; }
@@ -12085,7 +12085,7 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
       // depth (10-40+ pages) of a real FRCP 26 expert disclosure.
       out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(useChart?pctx:''),note:(useChart?note:''),today:today,btn:btn});
     } else {
-      out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+      out=(await aiCallRaw(sys,user,getKey(),{freeform:true,legal:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     }
     currentLegal=out;
     const card=document.getElementById('legalCard');
