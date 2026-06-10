@@ -1058,7 +1058,7 @@
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
-        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generateLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generatePatientLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
       </h2>
       <p class="sub" id="profDemo">—</p>
 
@@ -6026,8 +6026,9 @@ async function removeLawyer(id){
 
 /* ===== AI legal-report generation (legal feature headline). Drafts a narrative
    report / IME / utilization review from the active patient's chart, drops the
-   draft into the chart's documents for the doctor to review, edit, and sign. ===== */
-async function generateLegalReport(){
+   draft into the chart's documents for the doctor to review, edit, and sign.
+   NOTE: named distinctly from the legal-portal's own generateLegalReport(). ===== */
+async function generatePatientLegalReport(){
   const p=activePatient();
   if(!p){ toast('Open a patient first.','err'); return; }
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to generate legal reports.','err'); return; }
