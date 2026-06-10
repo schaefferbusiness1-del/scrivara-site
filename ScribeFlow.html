@@ -2095,8 +2095,14 @@
         <label for="lawDocType">Document type</label>
         <select id="lawDocType" class="sf-select">
           <option value="Narrative medical report">Narrative medical report</option>
-          <option value="Independent Medical Exam (IME)">Independent Medical Exam (IME)</option>
           <option value="Causation opinion">Causation opinion</option>
+          <option value="Diagnosis &amp; prognosis report">Diagnosis &amp; prognosis report</option>
+          <option value="Impairment / disability rating">Impairment / disability rating</option>
+          <option value="Future medical care report">Future medical care report</option>
+          <option value="Bill review / medical necessity">Bill review / medical necessity</option>
+          <option value="Independent Medical Exam (IME)">Independent Medical Exam (IME)</option>
+          <option value="Expert report">Expert report (retained expert)</option>
+          <option value="Affidavit / declaration">Affidavit / declaration</option>
           <option value="Disability / work-status report">Disability / work-status report</option>
           <option value="Records review">Records review</option>
           <option value="Deposition summary">Deposition summary</option>
@@ -2747,8 +2753,14 @@
       <label for="legalDocType">Document type</label>
       <select id="legalDocType" class="sf-select">
         <option value="Narrative medical report">Narrative medical report</option>
-        <option value="Independent Medical Exam (IME)">Independent Medical Exam (IME)</option>
         <option value="Causation opinion">Causation opinion</option>
+        <option value="Diagnosis &amp; prognosis report">Diagnosis &amp; prognosis report</option>
+        <option value="Impairment / disability rating">Impairment / disability rating</option>
+        <option value="Future medical care report">Future medical care report</option>
+        <option value="Bill review / medical necessity">Bill review / medical necessity</option>
+        <option value="Independent Medical Exam (IME)">Independent Medical Exam (IME)</option>
+        <option value="Expert report">Expert report (retained expert)</option>
+        <option value="Affidavit / declaration">Affidavit / declaration</option>
         <option value="Disability / work-status report">Disability / work-status report</option>
         <option value="Records review">Records review</option>
         <option value="Deposition summary">Deposition summary</option>
@@ -11846,6 +11858,49 @@ function openLegal(){
 }
 function closeLegal(){ const m=document.getElementById('legalModal'); if(m) m.classList.remove('show'); }
 
+/* Per-type professional format guidance for medical-legal documents. Returns the
+   correct section structure + required wording for the chosen document type so each
+   output matches accepted medico-legal practice (IME, expert report under FRCP 26,
+   affidavit, impairment rating, causation, etc.). */
+function legalTypeGuidance(docType){
+  const t=String(docType||'').toLowerCase();
+  const HIPAA='\nHIPAA / AUTHORITY: Only address PHI that the materials show is authorized for disclosure. If no valid HIPAA authorization (45 CFR §164.508) or court order is among the records, add a line noting the report is provided on the understanding that a valid authorization or court order is on file. Do NOT include specially protected records (psychotherapy notes, substance-use, HIV, reproductive, or genetic information) unless an authorization specifically covers them.';
+  if(/ime|independent medical/.test(t)){
+    return '\n\nFORMAT — INDEPENDENT MEDICAL EXAMINATION (IME): Use these sections: Who requested the IME; Examinee identifiers; Date/time/location of examination [bracket if not documented]; Records reviewed; History as related by the examinee; Past medical history; Physical examination findings; Imaging reviewed (state whether you personally reviewed images or relied on the radiology report only); Diagnoses; Causation opinion; Maximum medical improvement (MMI) status; Work restrictions; Need for further treatment; Point-by-point Answers to the attorney\'s questions; Signature block. INCLUDE VERBATIM: "This was an independent medical examination. No treating physician-patient relationship was established beyond the purpose of this evaluation."'+HIPAA;
+  }
+  if(/expert report|retained expert/.test(t)){
+    return '\n\nFORMAT — RETAINED EXPERT REPORT (model on Fed. R. Civ. P. 26(a)(2)(B)): Use numbered sections: 1 Assignment; 2 Qualifications [bracket — attach CV]; 3 Materials Reviewed; 4 Summary of Relevant Facts; 5 Medical History; 6 Examination Findings (if applicable); 7 Opinions; 8 Basis and Reasoning for Each Opinion; 9 Differential Diagnosis / Alternative Causes; 10 Future Medical Care; 11 Limitations; 12 Exhibits; 13 Compensation [bracket]; 14 Prior Testimony in the prior 4 years [bracket]; 15 Publications in the prior 10 years [bracket]; 16 Signature. State each opinion to a reasonable degree of medical probability with its complete basis.'+HIPAA;
+  }
+  if(/affidavit|declaration/.test(t)){
+    return '\n\nFORMAT — AFFIDAVIT / DECLARATION: Use: Affiant identity and credentials; Patient / case identification; Facts and records reviewed; Numbered Opinions; a sworn statement. CLOSE VERBATIM with: "I declare under penalty of perjury that the foregoing is true and correct to the best of my knowledge and belief. Executed on [Date]." followed by a signature line ([Physician signature] / [Name, credentials]) and, for an affidavit, a [Notary acknowledgment] block.'+HIPAA;
+  }
+  if(/impairment|disability rating/.test(t)){
+    return '\n\nFORMAT — IMPAIRMENT / DISABILITY RATING: Use: Date of maximum medical improvement (MMI); Diagnoses; Examination findings; Rating method used — NOTE that the correct method is jurisdiction-specific (e.g., AMA Guides edition or the applicable state workers\'-comp schedule); if the method is not specified in the materials, insert a [bracketed placeholder] and do NOT assume one; Whole-person impairment percentage [bracket if not determinable from the record]; Work restrictions; Permanent restrictions; Need for future care; Signature. Never fabricate a percentage or rating.'+HIPAA;
+  }
+  if(/causation/.test(t)){
+    return '\n\nFORMAT — CAUSATION OPINION: Identify the injury/condition; the claimed cause (the incident and its date); and the medical reasoning (mechanism of injury, temporal relationship of symptoms, imaging, and examination correlation). Expressly address any pre-existing condition and whether the incident caused or aggravated it. State the opinion to a reasonable degree of medical probability. Use the standard form: "Based on the history, the records reviewed, the examination findings, the diagnostic studies, the mechanism and timing, and my training and experience, it is my opinion to a reasonable degree of medical probability that [condition] was [caused by / aggravated by / not caused by] the incident of [date]," then list the supporting reasons.'+HIPAA;
+  }
+  if(/diagnosis|prognosis/.test(t)){
+    return '\n\nFORMAT — DIAGNOSIS & PROGNOSIS REPORT: Use: Diagnoses; Current symptoms; Objective findings; Treatment response to date; Prognosis (good / guarded / poor / uncertain, with reasoning); Future care that is medically reasonable. State whether the examinee has reached MMI if determinable.'+HIPAA;
+  }
+  if(/future medical|future care/.test(t)){
+    return '\n\nFORMAT — FUTURE MEDICAL CARE REPORT: List medically reasonable future care with frequency/duration: follow-up visits; medications; therapy; injections; possible surgery; repeat imaging; assistive devices; and time horizon (e.g., annual, 5-year, lifetime). Hedge appropriately using "likely," "possible," "medically reasonable," or "not currently indicated." Do NOT state false certainty; bracket anything the record does not support.'+HIPAA;
+  }
+  if(/bill review|medical necessity/.test(t)){
+    return '\n\nFORMAT — BILL REVIEW / MEDICAL NECESSITY: Use: Records reviewed; Diagnoses; Treatment provided; Whether the treatment was medically necessary; Whether the frequency and duration were reasonable; Whether the charges appear reasonable and customary (ONLY if you are qualified to opine on billing in this market — otherwise state that billing-reasonableness is outside the scope of this report); Any care that appears unrelated or excessive. Tie each conclusion to the record.'+HIPAA;
+  }
+  if(/disability|work-status/.test(t)){
+    return '\n\nFORMAT — DISABILITY / WORK-STATUS REPORT: Address current work capacity and specific, medically-appropriate restrictions (lifting, standing, sitting, driving, repetitive activity), whether restrictions are temporary or permanent, and any accommodation needs. Tie restrictions to the documented findings.'+HIPAA;
+  }
+  if(/records review/.test(t)){
+    return '\n\nFORMAT — RECORDS REVIEW: Summarize the records reviewed in chronological order, identify the pertinent findings and treatment, and offer a measured critique (consistency, gaps, records still needed). Do not opine beyond what the records support.'+HIPAA;
+  }
+  if(/deposition/.test(t)){
+    return '\n\nFORMAT — DEPOSITION SUMMARY: Summarize the testimony/record by topic, noting the key admissions, opinions, and any inconsistencies, with citations to the page/line or record where available [bracket if not provided].'+HIPAA;
+  }
+  return HIPAA; // Narrative and any other type use the standard structure above + HIPAA.
+}
+
 async function generateLegalReport(){
   if(!legalEnabled()) return;
   const p=activePatient();
@@ -11898,6 +11953,7 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
       +(haveCounsel?(useChart
           ?'\nCOUNSEL-PROVIDED RECORDS GUARDRAIL: Counsel has uploaded case records (extracted below). Base the report on BOTH the patient record AND these counsel-provided records — cite findings from them where relevant (especially in RECORDS AND HISTORY REVIEWED) — and NEVER invent anything beyond what either source documents.'
           :'\nSOURCE OF RECORD: There is NO in-house chart for this examinee — do not assume any patient on file. Counsel has uploaded the examinee\'s records (extracted below); treat THESE as the complete medical records reviewed and build the ENTIRE report from them plus the attorney case details. Take the examinee name, date of birth, and claim number from the attorney reference / these records. Cite specific findings, dates, providers, and diagnoses from these records (especially in RECORDS AND HISTORY REVIEWED, RELEVANT HISTORY, EXAMINATION / CLINICAL FINDINGS, and DIAGNOSES). NEVER invent anything not in these records; place a [bracketed placeholder] for anything not documented.'):'')
+      +legalTypeGuidance(docType)
       +(typeof docPrefsBlock==='function'?docPrefsBlock():'');
     const reqLines=[];
     if(patientRef) reqLines.push('Examinee (per attorney reference — use this for the caption name / date of birth / claim number): '+patientRef);
@@ -12956,11 +13012,20 @@ function legalReqRowHtml(rq,mode){
 let currentAttachReqId=null;            // request id whose lawyer panel is open
 const ATTACH_MAX_BYTES=20*1024*1024;    // client-side ~20MB guard
 const ATTACH_CATEGORIES=[
-  ['cover_letter','Cover letter'],
-  ['authorization','Authorization / release'],
+  ['cover_letter','Attorney cover letter / work order'],
+  ['authorization','HIPAA authorization / release'],
+  ['court_order','Subpoena / court order'],
+  ['demographics','Patient demographics'],
+  ['case_summary','Case / incident summary'],
   ['medical_records','Medical records'],
-  ['imaging','Imaging report'],
-  ['therapy','Therapy / PT'],
+  ['imaging','Imaging report / radiology'],
+  ['therapy','Therapy / PT records'],
+  ['billing','Billing records'],
+  ['prior_history','Prior medical history'],
+  ['accident','Accident / incident report'],
+  ['pleadings','Legal pleadings'],
+  ['questions','Questions for the doctor'],
+  ['fee_agreement','Fee agreement'],
   ['other','Other']
 ];
 function attachCatLabel(v){
