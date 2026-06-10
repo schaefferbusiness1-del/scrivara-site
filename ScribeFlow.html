@@ -6060,14 +6060,69 @@ function copyLawyerCreds(){
 }
 /* Compose a full, ready-to-send invite for the attorney — the portal link plus their
    sign-in details — so the doctor can paste it straight into an email or text. */
+/* Build the one-click magic link for an attorney invite. */
+function lawyerInviteLink(creds){
+  var base=(location.origin||'https://mlsscribe.com')+'/ScribeFlow.html';
+  return (creds&&creds.inviteToken)?(base+'?invite='+encodeURIComponent(creds.inviteToken)):base;
+}
 function lawyerInviteMessage(creds){
   var practice=(typeof getPracticeName==='function'&&getPracticeName())||(typeof getName==='function'&&getName())||'our practice';
+  if(creds&&creds.inviteToken){
+    var link=lawyerInviteLink(creds);
+    return 'You\'ve been invited to '+practice+'’s secure medical-legal portal to request reports from the treating physician.\n\n'
+      +'Open your portal — one click, no password needed the first time:\n'+link+'\n\n'
+      +'You\'ll be signed in automatically and asked to set a password. Then you can submit a request, upload your case file (cover letter, signed authorization, medical records), and receive the signed report back as a downloadable PDF.\n\n'
+      +'This portal is encrypted and limited to legal requests only. The link is private to you — please don\'t forward it.';
+  }
+  // Fallback for older accounts created before one-click links: email + temp password.
   var url=(location.origin||'https://mlsscribe.com')+'/ScribeFlow.html';
   return 'You\'ve been invited to '+practice+'’s secure medical-legal portal to request reports from the treating physician.\n\n'
     +'1) Open the portal: '+url+'\n'
     +'2) Sign in with:\n     Email: '+creds.email+'\n     Temporary password: '+creds.tempPassword+'\n'
     +'3) Submit a request and upload your case file (cover letter, signed authorization, medical records). You\'ll receive the signed report back in the portal and can download it as a PDF.\n\n'
     +'Please change your password from Settings after your first sign-in. This portal is encrypted and limited to legal requests only.';
+}
+/* Copy just the one-click link (handy when the doctor wants to paste only the URL). */
+function copyLawyerLink(){
+  if(!_lastLawyerCreds) return;
+  var link=lawyerInviteLink(_lastLawyerCreds);
+  if(navigator.clipboard){ navigator.clipboard.writeText(link).then(function(){toast('One-click portal link copied.','ok');}).catch(function(){ window.prompt('Copy the attorney’s portal link:', link); }); }
+  else { window.prompt('Copy the attorney’s portal link:', link); }
+}
+/* ===== Attorney side: consume a ?invite=<token> magic link → sign in → portal. ===== */
+function _cleanInviteUrl(){ try{ history.replaceState(null,'',location.pathname); }catch(e){} }
+async function acceptLawyerInvite(tok){
+  try{
+    var r=await _legalFetchRetry(bkBase()+'/api/auth/lawyer-invite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})},4);
+    var d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok || !d.token){
+      _cleanInviteUrl();
+      try{ switchAuth('login'); }catch(e){}
+      toast((d&&d.error)||'This invite link is no longer valid — please ask the practice to resend it.','err');
+      return;
+    }
+    setBkToken(d.token);
+    if(d.user&&d.user.email) setSessionEmail(d.user.email);
+    _cleanInviteUrl();
+    // Enter the app as the attorney (routes to the lawyer portal via refreshMe()).
+    try{ await startSession((d.user&&d.user.email)||getSessionEmail()); }catch(e){}
+    if(d.mustSetPassword){ setTimeout(promptSetLawyerPassword, 700); }
+  }catch(e){
+    _cleanInviteUrl();
+    try{ switchAuth('login'); }catch(_e){}
+    toast('Could not open the invite — the server may be waking up. Reload the link in a few seconds.','err');
+  }
+}
+async function promptSetLawyerPassword(){
+  var pw=window.prompt('Welcome to your secure portal! Set a password (at least 8 characters) so you can sign back in later. You can change it anytime in Settings.');
+  if(pw===null) return; // they can set it later from Settings
+  pw=(pw||'').trim();
+  if(pw.length<8){ toast('Password needs at least 8 characters — you can set one anytime from Settings.','err'); return; }
+  try{
+    var r=await fetch(bkBase()+'/api/auth/set-password',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({password:pw})});
+    if(r.ok){ toast('Password set. Next time, sign in with your email and this password.','ok'); }
+    else { var d={}; try{ d=await r.json(); }catch(e){} toast((d&&d.error)||'Could not set the password — you can set it later from Settings.','err'); }
+  }catch(e){ toast('Could not set the password right now — set it later from Settings.','err'); }
 }
 function copyLawyerInvite(){
   if(!_lastLawyerCreds) return;
@@ -6101,11 +6156,13 @@ function renderLawyers(list, justCreated){
   h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">Invite a lawyer to request records and reports. They get a login that uses only the legal request portal — no access to clinical charts.</div>';
   if(justCreated){
     h+='<div style="background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:11px 12px;margin-bottom:10px">';
-    h+='<div style="font-weight:700;color:var(--brand-dk);margin-bottom:5px">✅ Lawyer login created — share these with '+esc(justCreated.name||justCreated.email)+':</div>';
-    h+='<div style="font-size:13px">Email: <b>'+esc(justCreated.email)+'</b></div>';
-    h+='<div style="font-size:13px;margin-top:2px">Temporary password: <b>'+esc(justCreated.tempPassword)+'</b> <button class="btn-ghost" style="font-size:12px;padding:3px 9px;margin-left:6px" onclick="copyLawyerCreds()">📋 Copy</button></div>';
-    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn-primary" style="font-size:12.5px;padding:6px 11px" onclick="copyLawyerInvite()">🔗 Copy invite link to send</button><button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="emailLawyerInvite()">✉️ Email the invite</button></div>';
-    h+='<div class="mini" style="color:var(--muted);margin-top:5px">Send the attorney the invite — it includes the portal link and their sign-in. They can change the password from Settings.</div>';
+    h+='<div style="font-weight:700;color:var(--brand-dk);margin-bottom:5px">✅ Attorney portal created for '+esc(justCreated.name||justCreated.email)+'</div>';
+    if(justCreated.inviteToken){
+      h+='<div style="font-size:13px;margin-bottom:6px">Send them this <b>one-click link</b> — it opens their portal and signs them in automatically (no password to type the first time):</div>';
+      h+='<div style="font-size:12px;background:#fff;border:1px solid #cfe2f8;border-radius:7px;padding:7px 9px;word-break:break-all;color:var(--brand-dk)">'+esc(lawyerInviteLink(justCreated))+'</div>';
+    }
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn-primary" style="font-size:12.5px;padding:6px 11px" onclick="copyLawyerInvite()">📋 Copy full invite</button><button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="copyLawyerLink()">🔗 Copy link only</button><button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="emailLawyerInvite()">✉️ Email the invite</button></div>';
+    h+='<div class="mini" style="color:var(--muted);margin-top:6px">The link is private to this attorney and works for 21 days. They\'ll set their own password on first entry; after that they sign in with their email + password (<b>'+esc(justCreated.email)+'</b>, temp password <b>'+esc(justCreated.tempPassword)+'</b> as a backup).</div>';
     h+='</div>';
   }
   if(list.length){
@@ -6140,7 +6197,7 @@ async function addLawyer(){
     toast('Lawyer login created.','ok');
     const lr=await fetch(bkBase()+'/api/team/lawyers',{headers:{Authorization:'Bearer '+bkToken()}});
     const ld=await lr.json().catch(function(){return {lawyers:[]};});
-    renderLawyers(ld.lawyers||[], {email:email, name:name, tempPassword:d.tempPassword});
+    renderLawyers(ld.lawyers||[], {email:email, name:name, tempPassword:d.tempPassword, inviteToken:d.inviteToken});
   }catch(e){ if(btn) btn.disabled=false; toast('Could not create the lawyer.','err'); }
 }
 async function removeLawyer(id){
@@ -15443,6 +15500,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(_resetTok){
     showResetScreen(_resetTok);
     return; // don't auto-enter the app while resetting
+  }
+  // ---- One-click attorney invite: if ?invite=<token>, exchange it for a session
+  //      and land the attorney straight in their portal. ----
+  const _inviteTok=_params.get('invite');
+  if(_inviteTok){
+    acceptLawyerInvite(_inviteTok);
+    return; // the handler enters the app (or shows login on failure)
   }
   // restore session if present (sessionStorage-first: a tab with its own
   // per-tab session restores that account; a fresh tab falls back to the
