@@ -1093,7 +1093,7 @@
           <button class="edit" onclick="addDocPaste()">＋ Paste text</button>
           <button class="edit" onclick="document.getElementById('docFileInput').click()">📷 Upload photo / file</button>
         </h3>
-        <input type="file" id="docFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="onDocFile(event)">
+        <input type="file" id="docFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" multiple style="display:none" onchange="onDocFile(event)">
         <p class="mini" style="margin:0 0 4px">Add labs, prior records, discharge summaries — or snap a <b>photo of a document</b>. Photos &amp; scans are read automatically with OCR; .txt and PDF text are extracted too. Then press <b>Analyze with AI</b> to summarize and pull key items into the profile. <span style="color:var(--muted)">(Select a patient first.)</span></p>
         <div id="docEmpty" class="mini" style="color:var(--muted)">No documents yet.</div>
         <div class="doc-list" id="docList"></div>
@@ -6409,31 +6409,41 @@ function readFileAsDataUrl(file){
     reader.readAsDataURL(file);
   });
 }
+// Accepts ONE or MANY files at once. Each is processed (text/PDF/image-OCR) and
+// added to the active patient's documents; on a multi-upload we suppress the
+// per-file chatter and show a single summary, opening the last one.
 async function onDocFile(ev){
-  const file=ev.target.files&&ev.target.files[0];
+  const files = ev.target.files ? Array.prototype.slice.call(ev.target.files) : [];
   ev.target.value='';
-  if(!file) return;
+  if(!files.length) return;
   if(!activePatient()){ toast('Select a patient first.','err'); return; }
+  const multi = files.length>1;
+  if(multi) toast('Adding '+files.length+' files…','');
+  let added=0, lastDoc=null;
+  for(const file of files){
+    try{ const d=await processDocFile(file, multi); if(d){ added++; lastDoc=d; } }catch(e){}
+  }
+  if(multi){ toast(added+' of '+files.length+' file'+(files.length===1?'':'s')+' added.', added?'ok':'err'); if(lastDoc) openDoc(lastDoc.id); }
+}
+async function processDocFile(file, quiet){
+  if(!file) return null;
   const lower=file.name.toLowerCase();
+  function done(d, okMsg){ if(d && !quiet){ if(okMsg) toast(okMsg,'ok'); openDoc(d.id); } return d||null; }
   try{
     if(lower.endsWith('.txt')){
       const text=await file.text();
-      const d=addDocToActive(file.name,text,'text');
-      if(d){ toast('Text file added.','ok'); openDoc(d.id); }
+      return done(addDocToActive(file.name,text,'text'),'Text file added.');
     } else if(lower.endsWith('.pdf')){
-      toast('Extracting PDF text…','');
+      if(!quiet) toast('Extracting PDF text…','');
       const text=await extractPdfText(file);
-      const d=addDocToActive(file.name,text,'text');
-      if(d){ toast(text.trim()?'PDF text extracted.':'PDF added but no extractable text (may be scanned).','ok'); openDoc(d.id); }
+      return done(addDocToActive(file.name,text,'text'), text.trim()?'PDF text extracted.':'PDF added but no extractable text (may be scanned).');
     } else if(/\.(png|jpe?g|webp)$/.test(lower)){
       // Image OCR runs server-side (OpenAI vision) and needs the hosted backend.
       if(!backendMode()||!bkToken()){
-        const d=addDocToActive(file.name,'','image');
-        if(d){ toast('Image stored. Photo/scan text extraction needs the hosted version — paste any text manually to analyze it.',''); openDoc(d.id); }
-        return;
+        return done(addDocToActive(file.name,'','image'),'Image stored. Text extraction needs the hosted version — paste any text manually to analyze it.');
       }
       const dataUrl=await readFileAsDataUrl(file);
-      toast('Reading image…','');
+      if(!quiet) toast('Reading image…','');
       let text='';
       try{
         const r=await fetch(bkBase()+'/api/vision',{
@@ -6445,22 +6455,15 @@ async function onDocFile(ev){
         if(!r.ok){ throw new Error((j&&(j.error||j.message))||('Vision failed ('+r.status+').')); }
         text=(j.text||'').trim();
       }catch(e){
-        toast('Could not read image: '+friendlyError(e),'err');
-        // Still store the image so nothing is lost.
-        const d=addDocToActive(file.name,'','image');
-        if(d) openDoc(d.id);
-        return;
+        if(!quiet) toast('Could not read image: '+friendlyError(e),'err');
+        return done(addDocToActive(file.name,'','image'),''); // store image so nothing is lost
       }
-      // Feed the extracted text into the SAME downstream path as a text document.
-      const d=addDocToActive(file.name,text,'text');
-      if(d){
-        toast(text?'Text extracted.':'No readable text found in the image.','ok');
-        openDoc(d.id);
-      }
+      return done(addDocToActive(file.name,text,'text'), text?'Text extracted.':'No readable text found in the image.');
     } else {
-      toast('Unsupported file type. Use .txt, .pdf, an image, or paste text.','err');
+      if(!quiet) toast('Unsupported file type. Use .txt, .pdf, an image, or paste text.','err');
+      return null;
     }
-  }catch(e){ toast('Could not read file: '+(e.message||e),'err'); }
+  }catch(e){ if(!quiet) toast('Could not read file: '+(e.message||e),'err'); return null; }
 }
 async function extractPdfText(file){
   if(!window.pdfjsLib){ throw new Error('PDF reader not loaded (check internet connection).'); }
