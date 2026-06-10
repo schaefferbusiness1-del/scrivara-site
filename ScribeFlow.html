@@ -13918,6 +13918,21 @@ function signAndReturnLegal(){
   }
   returnLegalToAttorney();
 }
+/* Resilient POST that retries transient failures — network blips and, importantly,
+   the cold-start delay on a sleeping (Starter-plan) backend that makes the first
+   request after a quiet period fail. Retries on network error + 429/502/503/504. */
+async function _legalFetchRetry(url, opts, tries, onAttempt){
+  tries=tries||4; var lastErr;
+  for(var i=0;i<tries;i++){
+    if(onAttempt && i>0) try{ onAttempt(i); }catch(e){}
+    try{
+      var r=await fetch(url, opts);
+      if((r.status===429||r.status===502||r.status===503||r.status===504) && i<tries-1){ await new Promise(function(res){setTimeout(res,1500*(i+1));}); continue; }
+      return r;
+    }catch(e){ lastErr=e; if(i<tries-1){ await new Promise(function(res){setTimeout(res,1500*(i+1));}); continue; } throw e; }
+  }
+  throw lastErr;
+}
 /* Clinician: return the signed report text to the attorney via fulfill. */
 async function returnLegalToAttorney(){
   if(!currentLegalRequestId){ toast('No attorney request is open.','err'); return; }
@@ -13927,14 +13942,14 @@ async function returnLegalToAttorney(){
   const btn=document.getElementById('legalReturnBtn');
   if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
   try{
-    const r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(rid)+'/fulfill',{
+    const r=await _legalFetchRetry(bkBase()+'/api/legal/requests/'+encodeURIComponent(rid)+'/fulfill',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
       body:JSON.stringify({result_text:body.value})
-    });
+    }, 4, function(n){ if(btn) btn.textContent='Sending… (retry '+n+')'; });
     if(r.status===401){ handle401(); return; }
     let d={}; try{ d=await r.json(); }catch(e){}
-    if(!r.ok){ toast((d&&(d.error||d.message))||'Could not return the report.','err'); return; }
+    if(!r.ok){ toast((d&&(d.error||d.message))||'Could not send — the server may be waking up. Wait a few seconds and click Sign & send again (your report is saved here).','err'); return; }
     // Save the engagement fee so the attorney can pay to unlock the full report.
     try{
       var feeIn=document.getElementById('legalFeeInput');
