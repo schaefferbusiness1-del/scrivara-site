@@ -11974,9 +11974,13 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     const body=document.getElementById('legalBody');
     if(body) body.value=out;
     legalSetSignedBadge(false);
-    if(card){ card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'nearest'}); }
     closeLegal();
-    toast('Medical-legal report drafted. DRAFT — verify, complete, and sign before use.','ok');
+    // When fulfilling an attorney request, the review card lives in the Visit view —
+    // take the doctor there so they actually SEE the draft to review BEFORE anything is
+    // sent. Nothing goes back to the attorney until they click "Sign & send".
+    if(currentLegalRequestId && typeof showView==='function'){ showView('visit'); }
+    if(card){ card.style.display='block'; setTimeout(function(){ try{ card.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} }, 80); }
+    toast(currentLegalRequestId?'Draft ready — review it below. Nothing is sent until you click “Sign & send to attorney.”':'Medical-legal report drafted. DRAFT — verify, complete, and sign before use.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ if(btn){ btn.disabled=false; btn.innerHTML='⚖️ Generate report'; } }
 }
