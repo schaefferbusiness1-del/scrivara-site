@@ -12761,6 +12761,10 @@ function applyLawyerPortal(){
     if(wrap) wrap.style.display='none';
     if(footer) footer.style.display='none';
     if(portal) portal.style.display='block';
+    // Hide clinical header buttons (Patient intake, Templates, Custom widget) —
+    // a lawyer account has no use for them.
+    ['intakeBtn','customWidgetHdrBtn'].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
+    try{ document.querySelectorAll('button[onclick="openTemplates()"]').forEach(function(b){ b.style.display='none'; }); }catch(e){}
     loadLawyerRequests();
   }else{
     if(portal) portal.style.display='none';
@@ -12883,7 +12887,7 @@ function legalReqRowHtml(rq,mode){
   const initCount=Number((rq.attachments_count!=null?rq.attachments_count:(Array.isArray(rq.attachments)?rq.attachments.length:0)))||0;
   let actions='';
   if(mode==='lawyer'){
-    actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="toggleAttachPanel(\''+esc(idStr)+'\')">📎 Documents (<span id="attachCount-'+safeId+'">'+initCount+'</span>)</button>';
+    actions+='<button class="'+(initCount?'btn-ghost':'btn-primary')+'" style="font-size:13px;padding:7px 12px" onclick="toggleAttachPanel(\''+esc(idStr)+'\')" title="Upload the cover letter, signed patient authorization/release, and medical records for the doctor">📎 '+(initCount?'Case files':'Upload case files')+' (<span id="attachCount-'+safeId+'">'+initCount+'</span>)</button>';
     if(fulfilled){
       const locked=!!rq.locked;
       _lawReports[id]={result_text:rq.result_text||'',doc_type:docType,locked:locked};
