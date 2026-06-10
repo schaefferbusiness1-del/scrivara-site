@@ -4194,11 +4194,16 @@ function applyBackendModeUI(){
    section's .set-head text (incl. emoji) as the tab label. Pure show/hide:
    no controls/ids/handlers are moved or renamed. The global Save/Close row
    lives AFTER the sections, so it stays visible across every tab. */
-function mlsSelectSettingsTab(idx){
+/* Visible (non-gated) settings sections, in order. */
+function _setVisibleSections(){
   const modal=document.getElementById('settingsModal');
-  if(!modal) return;
-  const secs=modal.querySelectorAll('.modal > .set-section');
-  const tabs=modal.querySelectorAll('#settingsTabBar > .set-tab');
+  if(!modal) return [];
+  return Array.prototype.filter.call(modal.querySelectorAll('.modal > .set-section'), function(s){ return s.getAttribute('data-set-hidden')!=='1'; });
+}
+function mlsSelectSettingsTab(idx){
+  const secs=_setVisibleSections();
+  const bar=document.getElementById('settingsTabBar');
+  const tabs=bar?bar.querySelectorAll('.set-tab'):[];
   secs.forEach((s,i)=>{ s.classList.toggle('set-tab-hidden', i!==idx); });
   tabs.forEach((t,i)=>{
     const on=(i===idx);
@@ -4210,7 +4215,20 @@ function mlsBuildSettingsTabs(){
   const modal=document.getElementById('settingsModal');
   const bar=document.getElementById('settingsTabBar');
   if(!modal||!bar) return;
-  const secs=modal.querySelectorAll('.modal > .set-section');
+  // LAWYER GATING: a lawyer account is NOT a clinician — it must not see clinical
+  // settings (OpenAI API key, practice/provider/NPI, note defaults, AI personalization,
+  // provider preferences, clinical Features, EMR integrations). Show only appearance
+  // (Display) and account security (Security & privacy: password / 2FA / logout).
+  const lawyer=(typeof isLawyerUser==='function'&&isLawyerUser());
+  const allSecs=modal.querySelectorAll('.modal > .set-section');
+  allSecs.forEach(function(sec){
+    const head=sec.querySelector('.set-head');
+    const label=head?(head.textContent||''):'';
+    const show = lawyer ? /Display|Security/i.test(label) : true;
+    sec.setAttribute('data-set-hidden', show?'0':'1');
+    sec.style.display = show?'':'none';
+  });
+  const secs=_setVisibleSections();
   bar.innerHTML='';
   secs.forEach((sec,i)=>{
     sec.setAttribute('data-set-tab', String(i));
