@@ -6153,30 +6153,51 @@ function emailLawyerInvite(){
   window.open('mailto:'+encodeURIComponent(_lastLawyerCreds.email)+'?subject='+subj+'&body='+body,'_blank');
 }
 /* ===== Post-visit patient follow-ups (PHI-free check-in emails). ===== */
-var _fuDays=3;
+var _fuDays=3, _fuAuto=false;
 function openFollowups(){
   var box=document.getElementById('followupBox'); if(!box) return;
-  box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Checking who\'s eligible…</div>';
-  renderFollowups(3);
+  box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  renderFollowups(null);
 }
 async function renderFollowups(days){
-  _fuDays=Number(days)||3;
   var box=document.getElementById('followupBox'); if(!box) return;
+  // Load the saved automatic setting first (so we can reflect on/off + default days).
+  try{
+    var sr=await fetch(bkBase()+'/api/followups/settings',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(sr.status===403){ box.style.display='none'; toast('Follow-ups are for practice staff accounts.','err'); return; }
+    if(sr.ok){ var s=await sr.json(); _fuAuto=!!s.enabled; if(days==null) _fuDays=Number(s.days)||3; }
+  }catch(e){}
+  if(days!=null) _fuDays=Number(days)||3;
   var elig='…';
   try{
     var r=await fetch(bkBase()+'/api/followups/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({days:_fuDays,preview:true})});
-    if(r.status===403){ box.style.display='none'; toast('Follow-ups are for practice staff accounts.','err'); return; }
     var d=await r.json().catch(function(){return{};}); elig=(r.ok&&d.eligible!=null)?d.eligible:'?';
   }catch(e){ elig='?'; }
   var h='<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:#127a55">📨 Post-visit patient follow-ups</div>';
-  h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">Send a privacy-safe check-in to recently seen patients — no name and no medical details, just a friendly note and your online booking link so they can request a follow-up if they have any concerns.</div>';
-  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">Patients seen in the last <select id="fuDays" onchange="renderFollowups(this.value)" style="padding:5px 8px;border-radius:8px;border:1px solid #bfe6cf">';
+  h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">A privacy-safe check-in to recently seen patients — no name and no medical details, just a friendly note and your online booking link so they can request a follow-up if they have any concerns. Sent from <b>yourdoctor@mlsscribe.com</b>.</div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">Patients seen in the last <select id="fuDays" onchange="changeFollowupDays(this.value)" style="padding:5px 8px;border-radius:8px;border:1px solid #bfe6cf">';
   [1,2,3,5,7,14].forEach(function(n){ h+='<option value="'+n+'"'+(n==_fuDays?' selected':'')+'>'+n+' day'+(n>1?'s':'')+'</option>'; });
   h+='</select> with an email on file: <b>'+esc(String(elig))+'</b> eligible</div>';
+  // Opt-in automatic toggle.
+  h+='<label style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #bfe6cf;border-radius:9px;padding:9px 11px;margin-bottom:8px;cursor:pointer">';
+  h+='<input type="checkbox" id="fuAuto" '+(_fuAuto?'checked':'')+' onchange="toggleAutoFollowups(this.checked)" style="width:17px;height:17px">';
+  h+='<span style="font-size:13.5px"><b>Send these automatically every morning.</b> '+(_fuAuto?'<span style="color:#127a55">On — patients seen in the last '+_fuDays+' day'+(_fuDays>1?'s':'')+' get a check-in each day.</span>':'Off — you\'re sending manually.')+'</span></label>';
   var canSend=(typeof elig==='number'&&elig>0);
   h+='<button class="btn-primary" id="fuSendBtn" style="font-size:13px;padding:8px 14px"'+(canSend?'':' disabled')+' onclick="sendFollowups()">📨 Send check-ins now</button>';
-  h+='<div class="mini" style="color:var(--muted);margin-top:6px">Each patient is emailed at most once every two weeks. Emails are sent from your mlsscribe.com address. Patient emails come from online bookings / appointments.</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:6px">Each patient is emailed at most once every two weeks. Patient emails come from online bookings / appointments.</div>';
   box.innerHTML=h;
+}
+async function changeFollowupDays(v){
+  _fuDays=Number(v)||3;
+  if(_fuAuto){ try{ await fetch(bkBase()+'/api/followups/settings',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({enabled:true,days:_fuDays})}); }catch(e){} }
+  renderFollowups(_fuDays);
+}
+async function toggleAutoFollowups(on){
+  try{
+    var r=await fetch(bkBase()+'/api/followups/settings',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({enabled:!!on,days:_fuDays})});
+    if(r.ok){ _fuAuto=!!on; toast(on?'Automatic follow-ups turned on.':'Automatic follow-ups turned off.','ok'); renderFollowups(_fuDays); }
+    else { toast('Could not save the setting.','err'); }
+  }catch(e){ toast('Could not save the setting.','err'); }
 }
 async function sendFollowups(){
   if(!confirm('Send a privacy-safe check-in email to the eligible patients now?')) return;
