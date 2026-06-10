@@ -11901,6 +11901,75 @@ function legalTypeGuidance(docType){
   return HIPAA; // Narrative and any other type use the standard structure above + HIPAA.
 }
 
+/* LONG-FORM RETAINED-EXPERT REPORT (Fed. R. Civ. P. 26(a)(2)(B)).
+   A real expert disclosure runs 10-40+ pages, far beyond a single completion. So we
+   generate it SECTION BY SECTION — each section is its own grounded AI call instructed
+   to be exhaustive — then assemble. Every section is built ONLY from the records/case
+   details provided; anything absent is a [bracketed placeholder]. Returns the full text. */
+async function generateExpertReportSections(ctx){
+  const examinee=(ctx.patientRef||'').split(',')[0].trim()||'[Examinee name]';
+  const caption=
+    'EXPERT WITNESS REPORT\n'+
+    'Pursuant to Federal Rule of Civil Procedure 26(a)(2)(B)\n\n'+
+    'Examinee / Plaintiff: '+examinee+'\n'+
+    (/(dob|d\.o\.b|\d{4})/i.test(ctx.patientRef||'')?('Identifiers (per counsel): '+ctx.patientRef+'\n'):'')+
+    'Attorney / Requesting Firm: '+(ctx.attorney||'[Requesting firm]')+'\n'+
+    'Case / Claim Number: '+(ctx.caseNo||'[Case number]')+'\n'+
+    'Date of Injury / Onset: '+(ctx.doi||'[Date of injury]')+'\n'+
+    'Jurisdiction: '+(ctx.jurisdiction||'[Jurisdiction]')+'\n'+
+    'Date of Report: '+ctx.today+'\n'+
+    'Expert: [Name], [credentials]; [NPI]';
+  // Shared case context handed to every section call.
+  const cl=[];
+  if(ctx.patientRef) cl.push('Examinee (per attorney reference — use for caption name / DOB / claim): '+ctx.patientRef);
+  if(ctx.attorney) cl.push('Attorney / requesting firm: '+ctx.attorney);
+  if(ctx.caseNo) cl.push('Case / claim number: '+ctx.caseNo);
+  if(ctx.doi) cl.push('Date of injury / onset: '+ctx.doi);
+  if(ctx.jurisdiction) cl.push('Jurisdiction: '+ctx.jurisdiction);
+  cl.push('Date of this report: '+ctx.today);
+  if(ctx.questions&&ctx.questions.trim()) cl.push('Legal questions counsel asked the expert to address:\n'+ctx.questions.trim());
+  let caseContext='CASE DETAILS:\n'+cl.join('\n');
+  if(ctx.note&&ctx.note.trim()) caseContext+='\n\nCLINICAL NOTE FROM THIS VISIT:\n'+ctx.note.trim();
+  if(ctx.chartBlock&&ctx.chartBlock.trim()) caseContext+='\n\nPATIENT RECORD / CHART:\n'+ctx.chartBlock.trim();
+  if(ctx.recordsBlock&&ctx.recordsBlock.trim()) caseContext+='\n\nRECORDS PROVIDED BY COUNSEL (these ARE the records reviewed — cite them by provider and date):\n'+ctx.recordsBlock.trim();
+  const sections=[
+    ['I. ASSIGNMENT AND SCOPE OF ENGAGEMENT','Identify who retained the expert, the precise questions presented, the scope of the engagement, the materials furnished, and the applicable standard (a reasonable degree of medical probability). 2-3 paragraphs.'],
+    ['II. EXPERT QUALIFICATIONS','Summarize the expert\'s training, board certification, clinical experience, and the basis for qualification to render these opinions, in general professional terms; reference the curriculum vitae attached as an exhibit. Use [bracketed placeholders] for any specific credential, board, NPI, fellowship, or year-count not provided. 2-3 paragraphs.'],
+    ['III. MATERIALS REVIEWED','Provide a detailed, itemized list of every record reviewed — provider, document type, and date range — drawn from the records furnished. If any expected category (imaging films, billing, prior records) is absent, list it as [not provided].'],
+    ['IV. SUMMARY OF RELEVANT FACTS AND INCIDENT','Give a thorough chronological narrative of the incident and the complete course of care, citing each encounter by date and provider, with the mechanism of injury described in detail. Multiple paragraphs.'],
+    ['V. PAST MEDICAL HISTORY AND PERTINENT BACKGROUND','Detail the relevant prior medical history, prior injuries to the same body region, surgeries, and medications if documented — or state expressly that none are documented in the records reviewed. Address pertinent negatives. Multiple paragraphs.'],
+    ['VI. PHYSICAL EXAMINATION AND DIAGNOSTIC FINDINGS','Detail every objective examination finding and every diagnostic study (X-ray, MRI, CT, EMG) by date, reciting the specific measurements, positive and negative findings, and radiologic impressions documented. State whether imaging films were personally reviewed or whether reliance was on the radiology report. Multiple paragraphs.'],
+    ['VII. DIAGNOSES','Enumerate each diagnosis, with the ICD-10 code where documented, and the specific clinical and radiographic findings that support each diagnosis.'],
+    ['VIII. EXPERT OPINIONS','State each opinion as a separately numbered paragraph, each expressly held "to a reasonable degree of medical probability." Cover, as supported by the record: diagnosis, causation, the medical necessity and reasonableness of the treatment rendered, maximum medical improvement status, permanent impairment, work restrictions, and the need for future care.'],
+    ['IX. BASIS AND REASONING FOR EACH OPINION','This is the central and LONGEST section. For EACH numbered opinion above, provide a detailed, multi-paragraph explanation of the basis and reasoning — tied to specific records, the mechanism and timing of injury, clinical-radiographic correlation, and accepted medical principles. Do not be conclusory; show the reasoning.'],
+    ['X. CAUSATION ANALYSIS','Provide a dedicated, rigorous causation analysis: mechanism of injury, temporal relationship between the incident and symptom onset, biological plausibility, internal consistency of the record, and the exclusion of alternative causes. Address aggravation of any pre-existing condition expressly.'],
+    ['XI. DIFFERENTIAL DIAGNOSIS AND ALTERNATIVE CAUSES','Identify the alternative diagnoses and alternative causes that were considered, and explain, with reference to the record, why each was accepted or excluded. Multiple paragraphs.'],
+    ['XII. PROGNOSIS AND FUTURE MEDICAL CARE','State the prognosis with reasoning, then provide an itemized future-care plan (office visits, therapy, injections, possible surgery, repeat imaging, medications, durable equipment) with frequency and time horizon. Hedge appropriately using "likely," "possible," "medically reasonable," or "not currently indicated." Multiple paragraphs.'],
+    ['XIII. IMPAIRMENT AND WORK RESTRICTIONS','Address permanent impairment and work capacity. NOTE expressly that the applicable impairment-rating method is jurisdiction-specific (e.g., the applicable AMA Guides edition or state workers\'-compensation schedule); if the method or a whole-person percentage is not determinable from the record, insert a [bracketed placeholder] and do NOT assume one. Detail specific permanent restrictions.'],
+    ['XIV. LIMITATIONS AND RESERVATION OF OPINIONS','State the limitations of these opinions given the materials available and reserve the right to supplement or amend upon receipt of additional records, imaging, or testimony. 1-2 paragraphs.'],
+    ['XV. COMPENSATION (FRCP 26(a)(2)(B)(vi))','State the compensation for the study and testimony using [bracketed placeholders] (e.g., hourly rate for review, report, deposition, and trial).'],
+    ['XVI. PRIOR TESTIMONY AND PUBLICATIONS (FRCP 26(a)(2)(B)(iv)-(v))','Reference, as [bracketed placeholders] pointing to attached exhibits, the list of all cases in which the expert testified as an expert at trial or by deposition during the previous 4 years, and a list of all publications authored in the previous 10 years.'],
+    ['XVII. CERTIFICATION AND SIGNATURE','Provide a certification that the opinions are held to a reasonable degree of medical probability and are complete, followed by a signature block with [bracketed placeholders] ([Physician signature], [Name, credentials], [NPI], Date: [Date]).']
+  ];
+  const sysFor=function(header,instruction){
+    return 'You are a board-certified physician retained as an independent EXPERT WITNESS, drafting ONE SECTION of a formal expert report under Federal Rule of Civil Procedure 26(a)(2)(B). Output CLEAN PROFESSIONAL PROSE ONLY — no markdown, no asterisks, no code fences, and do NOT restate the section title. Write ONLY the body of the section "'+header+'". '+instruction+' Be thorough, specific, and detailed; cite records by provider and date. CRITICAL: never fabricate facts, findings, diagnoses, dates, credentials, impairment percentages, restrictions, testimony, or publications — for anything not in the materials provided, insert a clearly marked [bracketed placeholder]. This is a DRAFT the physician must verify and sign.';
+  };
+  const btn=ctx.btn;
+  let outParts=[caption];
+  for(let i=0;i<sections.length;i++){
+    const header=sections[i][0], instr=sections[i][1];
+    if(btn) btn.innerHTML='<span class="spin"></span> Drafting expert report… '+(i+1)+'/'+sections.length;
+    let part='';
+    try{
+      part=(await aiCallRaw(sysFor(header,instr), caseContext+'\n\nNow write the "'+header+'" section in full.', getKey(), {freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+      // Strip a duplicated leading title if the model emitted one.
+      part=part.replace(new RegExp('^'+header.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*[:\\-]?\\s*','i'),'').trim();
+    }catch(e){ part='[This section could not be generated automatically — please complete. ('+((e&&e.message)||'error')+')]'; }
+    outParts.push(header+'\n'+part);
+  }
+  return outParts.join('\n\n');
+}
+
 async function generateLegalReport(){
   if(!legalEnabled()) return;
   const p=activePatient();
@@ -11968,7 +12037,14 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
       +(note&&note.trim()?('\n\nCLINICAL NOTE FROM THIS VISIT:\n'+note.trim()):'')
       +(pctx?('\n\nPATIENT RECORD / CHART (context only — do not invent new findings):\n'+pctx):'')
       +((currentLegalRequestId&&legalReqFilesText&&legalReqFilesText.trim())?('\n\nRECORDS PROVIDED BY COUNSEL (extracted from the attorney\'s uploaded files — treat as the records reviewed; cite findings from them where relevant):\n'+legalReqFilesText.trim()):'');
-    const out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let out;
+    if(/expert report/i.test(docType)){
+      // Long-form retained-expert report — generated section by section to reach the
+      // depth (10-40+ pages) of a real FRCP 26 expert disclosure.
+      out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(useChart?pctx:''),note:(useChart?note:''),today:today,btn:btn});
+    } else {
+      out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    }
     currentLegal=out;
     const card=document.getElementById('legalCard');
     const body=document.getElementById('legalBody');
