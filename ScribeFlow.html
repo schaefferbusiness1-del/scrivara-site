@@ -2142,6 +2142,10 @@
       <label for="lawQuestions">Legal questions to address</label>
       <textarea id="lawQuestions" style="min-height:120px;font-size:13.5px" placeholder="The specific questions you want answered, e.g.&#10;1. Is the lumbar injury causally related to the 3/14/2025 accident?&#10;2. What are the patient's current work restrictions?&#10;3. Has the patient reached maximum medical improvement?"></textarea>
     </div>
+    <div class="field">
+      <label for="lawOffer">Your budget / offered fee <span style="font-weight:400;color:var(--muted)">(optional — what you're willing to pay; the physician sees this when pricing the report)</span></label>
+      <div style="display:flex;align-items:center;gap:6px"><span style="font-weight:700">$</span><input type="number" id="lawOffer" min="0" step="50" placeholder="e.g. 1500" style="max-width:160px"></div>
+    </div>
     <div class="row">
       <button class="btn-green" id="lawSubmitBtn" onclick="submitLegalRequest()" style="flex:1">⚖️ Submit request</button>
     </div>
@@ -7710,19 +7714,43 @@ function populateLegalMyPatient(patientRef){
   var opts='<option value="">— None (use the attorney’s records only) —</option>';
   pts.forEach(function(p){ opts+='<option value="'+esc(String(p.id))+'">'+esc(p.name||'(unnamed)')+(p.dob?(' — '+esc(p.dob)):'')+'</option>'; });
   sel.innerHTML=opts;
-  // Smart default: if one of my patients' names appears in the attorney reference, preselect it.
-  var match='';
-  if(patientRef){ var rl=String(patientRef).toLowerCase(); pts.forEach(function(p){ var nm=String(p.name||'').toLowerCase().trim(); if(nm && nm.length>1 && rl.indexOf(nm)>=0) match=String(p.id); }); }
+  // AUTO-DETECT whether the examinee is already one of the doctor's patients (by name
+  // and/or date of birth) and preselect them so their history + visits are folded into
+  // the report automatically — before it's even generated.
+  var match=_legalMatchPatient(patientRef, pts);
   sel.value=match||'';
-  setLegalAttachedPatient(match||'');
+  setLegalAttachedPatient(match||'', !!match);
 }
-function setLegalAttachedPatient(id){
+/* Find the doctor's patient that best matches the attorney's reference (full name, both
+   name parts, or DOB). Returns the patient id, or '' if no confident match. */
+function _legalMatchPatient(patientRef, pts){
+  if(!patientRef) return '';
+  var rl=String(patientRef).toLowerCase();
+  var dobM=rl.match(/(\d{4}-\d{1,2}-\d{1,2})/)||rl.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  var refDobN=dobM?dobM[1].replace(/[^0-9]/g,''):'';
+  var best='', bestScore=0;
+  (pts||[]).forEach(function(p){
+    var nm=String(p.name||'').toLowerCase().trim();
+    var score=0;
+    if(nm && nm.length>1 && rl.indexOf(nm)>=0){ score+=3; }
+    else {
+      var parts=nm.split(/\s+/).filter(function(x){return x.length>1;});
+      var hits=parts.filter(function(x){return rl.indexOf(x)>=0;}).length;
+      if(parts.length>=2 && hits>=2) score+=2;
+      else if(parts.length>=1 && hits>=1) score+=1;
+    }
+    if(refDobN && p.dob && String(p.dob).replace(/[^0-9]/g,'')===refDobN) score+=2;
+    if(score>bestScore){ bestScore=score; best=String(p.id); }
+  });
+  return bestScore>=2 ? best : '';
+}
+function setLegalAttachedPatient(id, auto){
   legalAttachedPatientId=id||null;
   var st=document.getElementById('legalMyPatientStatus'); if(!st) return;
   if(legalAttachedPatientId){
     var p=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);});
     var nv=p?((typeof patientNotes==='function'?patientNotes(p.id):[])||[]).length:0;
-    st.textContent='✓ Including '+(p?p.name:'patient')+'’s chart + '+nv+' visit'+(nv===1?'':'s');
+    st.textContent=(auto?'🔎 Auto-matched — you treated this patient. Including ':'✓ Including ')+(p?p.name:'patient')+'’s chart + '+nv+' visit'+(nv===1?'':'s');
   } else { st.textContent=''; }
 }
 /* Build the doctor's own record text for the attached patient (chart + all visits +
@@ -13299,7 +13327,8 @@ async function submitLegalRequest(){
     jurisdiction:v('lawJurisdiction'),
     patient_ref:v('lawPatientRef'),
     doc_type,
-    questions
+    questions,
+    offer_cents:Math.max(0,Math.round(Number((document.getElementById('lawOffer')||{}).value)||0))*100
   };
   const btn=document.getElementById('lawSubmitBtn');
   if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Submitting…'; }
@@ -13314,7 +13343,7 @@ async function submitLegalRequest(){
     if(!r.ok){ toast((d&&(d.error||d.message))||'Could not submit the request.','err'); return; }
     toast('Request submitted to '+esc(target_email)+'.','ok');
     // clear the form
-    ['lawDoctorEmail','lawFirm','lawCase','lawDoi','lawJurisdiction','lawPatientRef','lawQuestions'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+    ['lawDoctorEmail','lawFirm','lawCase','lawDoi','lawJurisdiction','lawPatientRef','lawQuestions','lawOffer'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
     const dt=document.getElementById('lawDocType'); if(dt) dt.selectedIndex=0;
     loadLawyerRequests();
   }catch(e){ toast(friendlyError(e),'err'); }
@@ -13824,10 +13853,12 @@ async function openLegalRequest(id){
       feeRow.style.display='block';
       var feeIn=document.getElementById('legalFeeInput');
       var existing=Math.round((rq.fee_cents||0)/100);
+      var offer=Math.round((rq.offer_cents||0)/100);
       var suggest=legalSuggestFee(rq.doc_type);
-      if(feeIn) feeIn.value=existing>0?existing:suggest;
+      // Prefill with your existing fee, else the attorney's offer, else the suggestion.
+      if(feeIn) feeIn.value=existing>0?existing:(offer>0?offer:suggest);
       var sug=document.getElementById('legalFeeSuggest');
-      if(sug) sug.textContent='Suggested for a '+(rq.doc_type||'report')+': ~$'+suggest+' — edit to your rate';
+      if(sug) sug.innerHTML=(offer>0?('<b style="color:#1f7a4d">Attorney offered $'+offer.toLocaleString()+'</b> · '):'')+'Suggested for a '+(rq.doc_type||'report')+': ~$'+suggest+' — set your rate';
     }
   }catch(e){}
   // Reveal the Return-to-attorney button on the Legal card.
