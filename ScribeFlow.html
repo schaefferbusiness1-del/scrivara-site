@@ -1333,6 +1333,7 @@
       <div class="extra-card" id="legalCard" style="display:none">
         <h3>⚖️ Medical-legal report <span id="legalSignedBadge" style="display:none;font-weight:600;font-size:12px;color:#1f7a4d;background:#e3f5ec;border:1px solid #b9e6cf;border-radius:20px;padding:2px 9px">✔ Signed</span>
           <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="sec-copy" id="legalFillBtn" style="display:none;background:#fff4e0;border-color:#f0c060;color:#8a5a00;font-weight:600" onclick="openLegalFill()" title="Fill in the details the AI left blank — they'll be inserted into the report">✏️ Fill in blanks</button>
             <button class="sec-copy" onclick="copyExtra('legalBody')">📑 Copy</button>
             <button class="sec-copy" onclick="printExtra('Medical-Legal Report','legalBody')">🖨 Print</button>
             <button class="sec-copy" onclick="signLegalReport()">✍️ Sign</button>
@@ -2776,6 +2777,22 @@
       <button class="btn-ghost" onclick="closeLegal()">Close</button>
     </div>
     <p class="note" style="margin-top:10px;color:var(--muted)">Uses the active patient's chart and any note for clinical content. The report is a DRAFT to verify, complete, and sign.</p>
+  </div>
+</div>
+
+<!-- MLS additive — FILL-IN-THE-BLANKS for a medical-legal report. Instead of leaving
+     [bracketed placeholders], the doctor is asked for each piece of missing info and it
+     is substituted into the report. -->
+<div class="modal-bg" id="legalFillModal">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-x" onclick="closeLegalFill()">×</button>
+    <h3>✏️ Complete the report</h3>
+    <p class="note">This report has blanks the AI couldn't fill from the records. Enter the information below and it will be inserted into the report — nothing is left in brackets. Leave a field empty to keep its bracket for now.</p>
+    <div id="legalFillList" style="margin-top:10px;max-height:52vh;overflow:auto"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn-green" onclick="applyLegalFill()" style="flex:1">✓ Insert into report</button>
+      <button class="btn-ghost" onclick="closeLegalFill()">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -12075,6 +12092,10 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     if(currentLegalRequestId && typeof showView==='function'){ showView('visit'); }
     if(card){ card.style.display='block'; setTimeout(function(){ try{ card.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} }, 80); }
     toast(currentLegalRequestId?'Draft ready — review it below. Nothing is sent until you click “Sign & send to attorney.”':'Medical-legal report drafted. DRAFT — verify, complete, and sign before use.','ok');
+    // Ask the doctor to complete any blanks the records couldn't fill, rather than
+    // leaving brackets. The button always reflects the count; auto-open if any remain.
+    if(typeof legalUpdateFillBtn==='function') legalUpdateFillBtn();
+    try{ if(legalUniquePlaceholders(out).length){ setTimeout(openLegalFill, 600); } }catch(e){}
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ if(btn){ btn.disabled=false; btn.innerHTML='⚖️ Generate report'; } }
 }
@@ -12912,6 +12933,82 @@ function saveLegalToChart(){
   const name='Legal report — '+docType+' ('+new Date().toLocaleDateString()+')';
   const d=addDocToActive(name,body.value,'text');
   if(d) toast('Report saved to the patient’s chart.','ok');
+}
+
+/* =========================================================
+   FILL-IN-THE-BLANKS (MLS additive)
+   A medical-legal draft brackets anything the records don't contain (NPI, the expert's
+   credentials, hourly rates, prior testimony, an impairment %, etc.). Rather than leave
+   brackets, we ASK THE DOCTOR for each one and substitute it in. Placeholders we can
+   derive from the doctor's saved settings are pre-filled.
+   ========================================================= */
+/* Unique [bracketed placeholders] in the given text, in first-seen order. */
+function legalUniquePlaceholders(text){
+  const out=[]; const re=/\[[^\]\n]{1,90}\]/g; let m;
+  while((m=re.exec(String(text||'')))){ if(out.indexOf(m[0])<0) out.push(m[0]); }
+  return out;
+}
+/* Best guess for a placeholder from saved settings (empty string if unknown). */
+function legalGuessFill(ph){
+  const p=String(ph).toLowerCase();
+  const nm=(typeof getName==='function'?getName():'')||'';
+  const sp=(typeof getSpec==='function'?getSpec():'')||'';
+  const pName=(typeof getProviderName==='function'?getProviderName():'')||nm;
+  const pCred=(typeof getProviderCred==='function'?getProviderCred():'')||'';
+  const npi=(typeof getNpi==='function'?getNpi():'')||'';
+  const today=new Date().toLocaleDateString();
+  if(/physician signature/.test(p)) return ''; // a signature line — leave blank
+  if(/name.*credential|name, *cred/.test(p)) return (pName+(pCred?(', '+pCred):(sp?(', '+sp):''))).trim().replace(/^,\s*/,'');
+  if(/^\[\s*name\s*\]$/.test(p)) return pName;
+  if(/\bnpi\b/.test(p)) return npi;
+  if(/^\[\s*date\s*\]$/.test(p)||/date of (this )?report|date:/.test(p)) return today;
+  if(/specialt/.test(p)) return sp;
+  if(/credential/.test(p)) return pCred||sp;
+  if(/medical license|license number|\bstate\b/.test(p)) return '';
+  return '';
+}
+function openLegalFill(){
+  const body=document.getElementById('legalBody');
+  if(!body || !body.value.trim()){ toast('Generate a report first.','err'); return; }
+  const phs=legalUniquePlaceholders(body.value);
+  const list=document.getElementById('legalFillList');
+  if(!phs.length){ if(list) list.innerHTML=''; toast('No blanks to fill — the report is complete.','ok'); return; }
+  list.innerHTML=phs.map(function(ph,i){
+    const guess=legalGuessFill(ph);
+    const label=ph.replace(/^\[|\]$/g,'');
+    const multi=ph.length>34||/list|describe|insert|summary|titles/.test(ph.toLowerCase());
+    const inp = multi
+      ? '<textarea id="legalFillIn'+i+'" data-ph="'+esc(ph)+'" style="width:100%;min-height:54px;font-size:13px" placeholder="Enter '+esc(label.toLowerCase())+'…">'+esc(guess)+'</textarea>'
+      : '<input id="legalFillIn'+i+'" data-ph="'+esc(ph)+'" type="text" value="'+esc(guess)+'" placeholder="Enter '+esc(label.toLowerCase())+'…" style="width:100%;font-size:13px">';
+    return '<div class="field" style="margin-bottom:8px"><label style="font-size:12.5px;color:var(--muted)">'+esc(label)+'</label>'+inp+'</div>';
+  }).join('');
+  document.getElementById('legalFillModal').classList.add('show');
+}
+function closeLegalFill(){ const m=document.getElementById('legalFillModal'); if(m) m.classList.remove('show'); }
+function applyLegalFill(){
+  const body=document.getElementById('legalBody');
+  if(!body){ closeLegalFill(); return; }
+  let txt=body.value; let n=0;
+  document.querySelectorAll('#legalFillList [data-ph]').forEach(function(el){
+    const ph=el.getAttribute('data-ph'); const val=(el.value||'').trim();
+    if(!ph || !val) return;
+    const parts=txt.split(ph);
+    if(parts.length>1){ n+=parts.length-1; txt=parts.join(val); }
+  });
+  body.value=txt;
+  if(typeof currentLegal!=='undefined') currentLegal=txt;
+  closeLegalFill();
+  legalUpdateFillBtn();
+  toast(n?('Inserted '+n+' value'+(n===1?'':'s')+' into the report.'):'No values entered.', n?'ok':'');
+}
+/* Show/label the "Fill in blanks" button based on how many placeholders remain. */
+function legalUpdateFillBtn(){
+  const btn=document.getElementById('legalFillBtn');
+  const body=document.getElementById('legalBody');
+  if(!btn) return;
+  const n=body?legalUniquePlaceholders(body.value).length:0;
+  if(n>0){ btn.style.display=''; btn.textContent='✏️ Fill in '+n+' blank'+(n===1?'':'s'); }
+  else { btn.style.display='none'; }
 }
 
 /* =========================================================
