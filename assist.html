@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install MLS Assist — browser companion</title>
+<style>
+  :root { --ink:#13283d; --muted:#5b7186; --blue:#2563eb; --line:#dbe6f2; --bg:#f6f9fc; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); }
+  .wrap { max-width:760px; margin:0 auto; padding:40px 22px 80px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:26px 26px; margin:18px 0; box-shadow:0 1px 3px rgba(20,40,60,.05); }
+  h1 { font-size:30px; margin:.2em 0 .1em; letter-spacing:-.4px; }
+  h2 { font-size:20px; margin:0 0 6px; }
+  .sub { color:var(--muted); font-size:17px; margin-top:4px; }
+  .dl { display:inline-flex; align-items:center; gap:9px; background:var(--blue); color:#fff; text-decoration:none; font-weight:600; font-size:18px; padding:14px 26px; border-radius:12px; }
+  .dl:hover { background:#1d4fd0; }
+  ol { margin:6px 0 0; padding-left:22px; }
+  ol li { margin:9px 0; }
+  code { background:#eef4fb; border:1px solid #dde8f4; border-radius:6px; padding:1px 7px; font-size:14px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .step-n { display:inline-block; min-width:24px; }
+  .pill { display:inline-block; background:#eaf2ff; color:#1d4fd0; border-radius:999px; padding:2px 11px; font-size:13px; font-weight:600; }
+  .safe { background:#f0faf4; border:1px solid #cdeed9; border-radius:12px; padding:14px 16px; font-size:14.5px; color:#1c6b3f; }
+  .toplink { color:var(--muted); text-decoration:none; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="toplink" href="/">← MLS home</a>
+  <h1>🩺 MLS Assist</h1>
+  <p class="sub">A small browser companion that turns your dictation into a finished note and drops it into any web EMR — and can pull a whole chart into MLS in one click.</p>
+
+  <div class="card" style="text-align:center">
+    <span class="pill">Step 1 · Download</span>
+    <h2 style="margin-top:12px">Get the extension</h2>
+    <p class="muted" style="margin:2px 0 18px">No Chrome Web Store needed. ~10&nbsp;KB.</p>
+    <a class="dl" href="mls-assist-extension.zip" download>⬇ Download MLS Assist (.zip)</a>
+    <p class="muted" style="margin-top:14px">After it downloads, <b>unzip it</b> and remember the folder.</p>
+  </div>
+
+  <div class="card">
+    <span class="pill">Step 2 · Load it into Chrome</span>
+    <h2 style="margin-top:12px">One-time, takes about a minute</h2>
+    <ol>
+      <li>Open a new tab and go to <code>chrome://extensions</code></li>
+      <li>Turn on <b>Developer mode</b> (toggle, top-right corner)</li>
+      <li>Click <b>Load unpacked</b> (top-left) and select the unzipped <code>mls-assist-extension</code> folder</li>
+      <li>MLS Assist now appears in your extensions. Pin it if you like.</li>
+    </ol>
+    <p class="muted" style="margin-top:12px">Works in Chrome and Edge. It stays loaded after this — you only do Step 2 once.</p>
+  </div>
+
+  <div class="card">
+    <span class="pill">Step 3 · Add your key</span>
+    <h2 style="margin-top:12px">Connect it to your MLS account</h2>
+    <ol>
+      <li>In MLS, go to <b>Settings → Integrations</b> and click <b>Generate</b> to create an API key (copy it).</li>
+      <li>Click the <b>MLS Assist</b> icon in your Chrome toolbar.</li>
+      <li>Paste the key, click <b>Save</b>. Done.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <span class="pill">How to use it</span>
+    <h2 style="margin-top:12px">On any EMR page</h2>
+    <ol>
+      <li>Click the floating <b>🩺 badge</b> (bottom-right of the page).</li>
+      <li><b>Dictate</b> the visit (or select text from the chart), then <b>Generate note</b>.</li>
+      <li>Review the draft, click <b>Insert into chart</b> — it finds the note field for you.</li>
+      <li>Or click <b>📋 Capture whole chart → MLS</b> to pull the patient and their prior visits into MLS.</li>
+    </ol>
+    <p class="safe" style="margin-top:14px">🔒 Your safety rail: MLS Assist <b>never</b> clicks Save, Sign, or Submit in the chart on its own. You review every note and approve every commit. The Autopilot pauses and asks you before anything is finalized.</p>
+  </div>
+
+  <p class="muted" style="text-align:center">Questions? Email <a href="mailto:michael@mlsscribe.com">michael@mlsscribe.com</a></p>
+</div>
+</body>
+</html>
