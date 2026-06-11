@@ -14110,14 +14110,21 @@ async function importPatients(){
 function captureFromEMR(btn){
   const st=document.getElementById('emrPullStatus');
   const set=(m,c)=>{ if(st){ st.textContent=m; st.style.color=c||'var(--muted)'; } };
-  // First confirm the extension is present (ping → pong within 700ms).
-  let ponged=false;
-  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'){ ponged=true; window.removeEventListener('message',onPong); } }
+  set('Looking for MLS Assist…');
+  // Detect the extension by pinging repeatedly (it may still be initializing).
+  let ponged=false, tries=0, iv=null;
+  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
   window.addEventListener('message',onPong);
-  window.postMessage({source:'mls-app',type:'mlsPing'},'*');
-  setTimeout(()=>{
-    window.removeEventListener('message',onPong);
-    if(!ponged){ set('MLS Assist isn’t detected in this browser. Install it (button above), then reload this page.','#b4690e'); return; }
+  const ping=()=>window.postMessage({source:'mls-app',type:'mlsPing'},'*');
+  ping();
+  iv=setInterval(()=>{
+    tries++;
+    if(ponged){ clearInterval(iv); return; }
+    if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong);
+      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4690e'); return; }
+    ping();
+  }, 350);
+  function proceed(){
     if(btn){ btn.disabled=true; btn.textContent='… reading your EMR'; }
     set('Reading the patient open in your EMR…');
     let got=false;
@@ -14134,7 +14141,7 @@ function captureFromEMR(btn){
     window.addEventListener('message',onResult);
     window.postMessage({source:'mls-app',type:'mlsAppCapture'},'*');
     setTimeout(()=>{ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.textContent='📥 Pull current EMR patient into MLS'; } set('No response from the extension. Make sure your EMR tab is open and try again.','#b4231e'); } }, 30000);
-  }, 750);
+  }
 }
 
 /* ---- Lawyer portal: submit a new request ---- */
