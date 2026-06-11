@@ -8329,7 +8329,7 @@ function runDecisionSupport(){
 function togglePtMore(){
   var m=document.getElementById('ptMore'); if(!m) return;
   var show=(m.style.display==='none'||!m.style.display);
-  m.style.display=show?'':'none';
+  m.style.display=show?'inline':'none';
   var b=document.getElementById('ptMoreBtn'); if(b) b.textContent=show?'⋯ Less':'⋯ More';
 }
 function toggleMoreTools(){
