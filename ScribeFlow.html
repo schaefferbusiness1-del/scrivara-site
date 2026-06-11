@@ -2184,6 +2184,11 @@
       <p class="sub">Opt in to be discoverable by attorneys searching for a treating-physician expert. They find you by specialty and jurisdiction, and their requests land right in this inbox — a new referral stream that runs itself.</p>
       <div id="expertBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
     </div>
+    <div class="card" id="connectCard">
+      <h2><span class="ic">💳</span> Direct payouts</h2>
+      <p class="sub">Connect your bank through Stripe so attorney payments for your reports land in your account automatically. You keep 95% of every report; MLS's 5% platform fee is taken at the time of payment — nothing to invoice or chase.</p>
+      <div id="connectBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+    </div>
   </div><!-- /legalReqView -->
 </div>
 
@@ -14330,10 +14335,43 @@ async function saveExpertProfile(){
     else { toast('Could not save listing.','err'); }
   }catch(e){ toast('Could not save listing.','err'); }
 }
+/* ===== Stripe Connect — direct payouts for the doctor ===== */
+async function loadConnectStatus(){
+  var box=document.getElementById('connectBody'); if(!box) return;
+  try{
+    var r=await fetch(bkBase()+'/api/connect/status',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(!r.ok){ box.innerHTML='<div class="mini" style="color:var(--muted)">Available to clinician accounts.</div>'; return; }
+    var d=await r.json(); renderConnectStatus(d);
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load.</div>'; }
+}
+function renderConnectStatus(d){
+  var box=document.getElementById('connectBody'); if(!box) return;
+  if(d.ready){
+    box.innerHTML='<div style="display:flex;align-items:center;gap:8px;background:#eafaf2;border:1px solid #bfe6cf;border-radius:10px;padding:11px 13px;font-size:14px"><span style="font-size:18px">✅</span><span><b>Direct payouts are on.</b> Report payments deposit to your bank automatically — you keep 95%, MLS’s 5% is taken at payment.</span></div>'
+      +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px;margin-top:8px" onclick="startConnectOnboard(this)">Manage payout account</button>';
+  } else if(d.connected){
+    box.innerHTML='<div style="background:#fff7e6;border:1px solid #f0d9a0;border-radius:10px;padding:11px 13px;font-size:14px">⏳ Setup started but not finished — Stripe still needs a few details before you can receive payouts.</div>'
+      +'<button class="btn-primary" style="font-size:13px;padding:8px 14px;margin-top:8px" onclick="startConnectOnboard(this)">Finish payout setup</button>';
+  } else {
+    box.innerHTML='<button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="startConnectOnboard(this)">💳 Set up direct payouts</button>'
+      +'<div class="mini" style="color:var(--muted);margin-top:6px">~2 minutes with Stripe. Until this is set up, report payments collect to MLS and are settled with you separately.</div>';
+  }
+}
+async function startConnectOnboard(btn){
+  var orig=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Opening Stripe…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/connect/onboard',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()}});
+    var d=await r.json().catch(function(){return{};});
+    if(r.ok&&d.url){ window.location.href=d.url; return; }
+    toast(d.error||'Could not start payout setup.','err');
+  }catch(e){ toast('Could not start payout setup.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=orig||'💳 Set up direct payouts'; } }
+}
 async function loadLegalRequests(){
   if(!backendMode()||!bkToken()) return;
   if(typeof loadLegalProfile==='function') loadLegalProfile();
   try{ loadExpertProfile(); }catch(e){}
+  try{ loadConnectStatus(); }catch(e){}
   const list=document.getElementById('legalReqList');
   const empty=document.getElementById('legalReqEmpty');
   try{
@@ -16209,6 +16247,12 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(_params.get('seat_added')){
     try{ history.replaceState(null,'',location.pathname); }catch(e){}
     setTimeout(function(){ try{ toast('Doctor seat added — they\'ll receive an email to set their password and sign in.','ok'); if(typeof loadDoctorSeats==='function') loadDoctorSeats(true); }catch(e){} }, 1800);
+  }
+  // ---- Returned from Stripe Connect payout onboarding. ----
+  if(_params.get('connect')){
+    var _cv=_params.get('connect');
+    try{ history.replaceState(null,'',location.pathname); }catch(e){}
+    setTimeout(function(){ try{ toast(_cv==='done'?'Payout setup saved — verifying with Stripe…':'Payout setup not finished — you can resume it anytime.', _cv==='done'?'ok':''); if(typeof loadConnectStatus==='function') loadConnectStatus(); }catch(e){} }, 1800);
   }
   // restore session if present (sessionStorage-first: a tab with its own
   // per-tab session restores that account; a fresh tab falls back to the
