@@ -1137,6 +1137,7 @@
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generatePatientLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openPriorAuth()" title="AI-draft a payer-ready prior-authorization request — or a denial appeal — from this chart, with medical necessity and conservative care documented. You review and sign.">📋 Prior auth</button>
       </h2>
       <p class="sub" id="profDemo">—</p>
 
@@ -2988,6 +2989,52 @@
     <div class="row" style="margin-top:14px">
       <button class="btn-ghost" onclick="closeWidgetBuilder()" style="flex:1">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- MLS — PRIOR AUTHORIZATION modal (medical-necessity request / denial appeal) -->
+<div class="modal-bg" id="paModal">
+  <div class="modal" style="max-width:660px">
+    <button class="modal-x" onclick="closePriorAuth()">×</button>
+    <h3>📋 Prior authorization <span style="font-weight:400;font-size:14px;color:var(--muted)">(medical-necessity request or denial appeal)</span></h3>
+    <p class="note">Drafts a payer-ready prior-authorization letter for the <b>active patient</b>, built only from their documented chart — diagnosis, conservative care tried/failed, objective findings, and the medical-necessity argument. Anything missing appears as a [bracketed placeholder] for you to complete. A DRAFT you review and sign before submitting.</p>
+    <div class="row" style="gap:8px;margin:4px 0 10px">
+      <button type="button" id="paModeReqBtn" class="btn-green" style="flex:1" onclick="paSetMode('request')">📝 New request</button>
+      <button type="button" id="paModeAppBtn" class="btn-ghost" style="flex:1" onclick="paSetMode('appeal')">↩️ Appeal a denial</button>
+    </div>
+    <div class="field">
+      <label for="paService">Service requested</label>
+      <input type="text" id="paService" list="paServiceList" placeholder="e.g. Lumbar transforaminal epidural steroid injection">
+      <datalist id="paServiceList">
+        <option value="Lumbar epidural steroid injection (ESI)"></option>
+        <option value="Cervical epidural steroid injection"></option>
+        <option value="Lumbar facet joint injection / medial branch block"></option>
+        <option value="Radiofrequency ablation (RFA) — lumbar facets"></option>
+        <option value="Sacroiliac joint injection"></option>
+        <option value="MRI lumbar spine without contrast"></option>
+        <option value="MRI cervical spine without contrast"></option>
+        <option value="EMG / nerve conduction study"></option>
+        <option value="Spinal cord stimulator trial"></option>
+        <option value="Physical therapy (extended course)"></option>
+      </datalist>
+    </div>
+    <div class="row tight">
+      <div class="field" style="flex:1"><label for="paCpt">CPT / HCPCS code(s) <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input type="text" id="paCpt" placeholder="e.g. 64483"></div>
+      <div class="field" style="flex:1"><label for="paIcd">ICD-10 code(s) <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input type="text" id="paIcd" placeholder="e.g. M54.16"></div>
+    </div>
+    <div class="row tight">
+      <div class="field" style="flex:1"><label for="paPayer">Payer / health plan</label><input type="text" id="paPayer" placeholder="e.g. Blue Cross Blue Shield"></div>
+      <div class="field" style="flex:1"><label for="paUrgency">Urgency</label><select id="paUrgency" class="sf-select"><option value="Routine / standard">Routine / standard</option><option value="Urgent / expedited">Urgent / expedited</option></select></div>
+    </div>
+    <div class="field" id="paDenialField" style="display:none">
+      <label for="paDenial">Payer's stated denial reason</label>
+      <textarea id="paDenial" style="min-height:90px;font-size:13.5px" placeholder="Paste the reason from the payer's denial letter — e.g. 'Conservative therapy not documented' or 'Does not meet medical-necessity criteria per policy.'"></textarea>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn-green" id="paGenBtn" onclick="generatePriorAuth()" style="flex:1">📋 Generate letter</button>
+      <button class="btn-ghost" onclick="closePriorAuth()">Close</button>
+    </div>
+    <p class="note" style="margin-top:8px">⚠️ Draft only — the ordering provider must review, complete any [placeholders], and sign before submitting to the payer. Built only from documented facts; nothing is invented.</p>
   </div>
 </div>
 
@@ -6690,6 +6737,56 @@ async function generatePatientLegalReport(){
     if(doc){ toast('Draft ready — review, edit, and sign it below before sending to the attorney.','ok'); if(typeof openDoc==='function') openDoc(doc.id); }
     else { toast('Report generated but could not be saved to the chart.','err'); }
   }catch(e){ toast('Could not generate the report.','err'); }
+}
+
+/* ===== PRIOR AUTHORIZATION — draft a payer-ready medical-necessity request, or a
+   denial appeal, from the active patient's chart. Mirrors the legal-report flow:
+   builds context from the record, calls the backend, drops the draft into the
+   patient's Documents and opens it for review + signature + clean PDF export. ===== */
+let paMode='request';
+function openPriorAuth(){
+  if(typeof activePatient==='function' && !activePatient()){ toast('Open a patient first.','err'); if(typeof showView==='function') showView('patients'); return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to generate prior-auth letters.','err'); return; }
+  paSetMode('request');
+  var m=document.getElementById('paModal'); if(m) m.classList.add('show');
+}
+function closePriorAuth(){ var m=document.getElementById('paModal'); if(m) m.classList.remove('show'); }
+function paSetMode(mode){
+  paMode=(mode==='appeal')?'appeal':'request';
+  var rq=document.getElementById('paModeReqBtn'), ap=document.getElementById('paModeAppBtn'),
+      df=document.getElementById('paDenialField'), gb=document.getElementById('paGenBtn');
+  if(rq&&ap){ rq.className=(paMode==='request'?'btn-green':'btn-ghost'); ap.className=(paMode==='appeal'?'btn-green':'btn-ghost'); rq.style.flex='1'; ap.style.flex='1'; }
+  if(df) df.style.display=(paMode==='appeal'?'block':'none');
+  if(gb) gb.textContent=(paMode==='appeal'?'↩️ Generate appeal':'📋 Generate letter');
+}
+async function generatePriorAuth(){
+  const p=(typeof activePatient==='function')?activePatient():null;
+  if(!p){ toast('Open a patient first.','err'); return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in to generate prior-auth letters.','err'); return; }
+  const v=id=>((document.getElementById(id)||{}).value||'').trim();
+  const service=v('paService');
+  if(!service){ toast('Enter the service you are requesting.','err'); return; }
+  if(paMode==='appeal' && !v('paDenial')){ toast('Paste the payer’s denial reason to draft the appeal.','err'); return; }
+  let context='';
+  try{ if(typeof compilePatientRecord==='function') context=compilePatientRecord(p)||''; }catch(e){}
+  try{ if(typeof emrReadyText==='function' && typeof currentSoap!=='undefined' && currentSoap){ context+='\n\n===== MOST RECENT VISIT =====\n'+emrReadyText(); } }catch(e){}
+  if(!context.trim()){ toast('No clinical data on this chart yet — add a visit or note first.','err'); return; }
+  const body={ mode:paMode, service:service, cpt:v('paCpt'), icd:v('paIcd'), payer:v('paPayer'),
+    urgency:(document.getElementById('paUrgency')||{}).value||'', denialReason:v('paDenial'), context:context };
+  const btn=document.getElementById('paGenBtn'); const prev=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…'; }
+  try{
+    const r=await fetch(bkBase()+'/api/priorauth/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(body)});
+    const d=await r.json().catch(function(){return {};});
+    if(r.status===403){ toast('Prior-auth is for clinician (doctor/head) accounts.','err'); return; }
+    if(!r.ok){ toast(d.error||'Could not generate the letter.','err'); return; }
+    const title=(paMode==='appeal'?'PA appeal — ':'Prior auth — ')+service+' ('+new Date().toLocaleDateString()+')';
+    const doc=(typeof addDocToActive==='function')?addDocToActive(title, d.letter||'', 'text'):null;
+    closePriorAuth();
+    if(doc){ toast('Draft ready — review, complete any [placeholders], and sign before submitting.','ok'); if(typeof openDoc==='function') openDoc(doc.id); }
+    else { toast('Letter generated but could not be saved to the chart.','err'); }
+  }catch(e){ toast('Could not generate the letter.','err'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=prev||'📋 Generate letter'; } }
 }
 
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
