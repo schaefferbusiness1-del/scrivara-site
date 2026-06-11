@@ -1428,10 +1428,11 @@
         <div id="legalFeeRow" style="display:none;margin:8px 0 0;background:#fff8e8;border:1px solid #f0d9a0;border-radius:10px;padding:10px 12px;font-size:13.5px">
           <b>💲 Your fee for this report + court availability.</b> The attorney pays this to unlock the full signed report and engage you for testimony / court appearance.
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-            <span style="font-weight:700">$</span><input id="legalFeeInput" type="number" min="0" step="50" style="max-width:140px" placeholder="e.g. 1500">
+            <span style="font-weight:700">$</span><input id="legalFeeInput" type="number" min="0" step="50" style="max-width:140px" placeholder="e.g. 1500" oninput="updateLegalFeeNet()">
             <span id="legalFeeSuggest" class="mini" style="color:var(--muted)"></span>
           </div>
-          <div class="mini" style="color:var(--muted);margin-top:4px">Set it before you sign &amp; send. You can charge separately for deposition or trial time as agreed.</div>
+          <div id="legalFeeNet" class="mini" style="color:#1f7a4d;font-weight:600;margin-top:5px"></div>
+          <div class="mini" style="color:var(--muted);margin-top:4px">Set it before you sign &amp; send. Legal is included with your plan — MLS keeps a 5% platform fee on what you collect; you keep 95%. Charge separately for deposition or trial time as agreed.</div>
         </div>
         <div id="legalToolsRow" style="display:none;margin:8px 0 0">
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -14234,12 +14235,23 @@ function renderLegalDashboard(reqs){
     if(done){ fulfilled++; if(r.paid) earnedC+=(r.fee_cents||0); else outstandingC+=(r.fee_cents||0); }
     else pending++;
   });
-  function card(label,val,color){ return '<div style="flex:1;min-width:130px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div style="font-size:22px;font-weight:800;color:'+(color||'var(--ink)')+'">'+val+'</div><div style="font-size:12px;color:var(--muted)">'+label+'</div></div>'; }
+  function card(label,val,color){ return '<div style="flex:1;min-width:120px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div style="font-size:22px;font-weight:800;color:'+(color||'var(--ink)')+'">'+val+'</div><div style="font-size:12px;color:var(--muted)">'+label+'</div></div>'; }
+  var feeC=Math.round(earnedC*LEGAL_PLATFORM_FEE_PCT/100), netC=earnedC-feeC;
   dash.style.display='flex';
   dash.innerHTML=card('Pending requests',pending)
     +card('Reports delivered',fulfilled)
-    +card('Earned (paid)','$'+Math.round(earnedC/100).toLocaleString(),'#1f7a4d')
+    +card('Collected (paid)','$'+Math.round(earnedC/100).toLocaleString(),'#1f7a4d')
+    +card('Your net (95%)','$'+Math.round(netC/100).toLocaleString(),'#1f7a4d')
+    +card('MLS platform fee (5%)','$'+Math.round(feeC/100).toLocaleString(),'var(--muted)')
     +card('Outstanding','$'+Math.round(outstandingC/100).toLocaleString(),(outstandingC>0?'#b9770a':'var(--muted)'));
+}
+var LEGAL_PLATFORM_FEE_PCT=5;
+function updateLegalFeeNet(){
+  var el=document.getElementById('legalFeeNet'); var inp=document.getElementById('legalFeeInput'); if(!el||!inp) return;
+  var fee=Math.max(0,Math.round(Number(inp.value)||0));
+  if(!fee){ el.textContent=''; return; }
+  var mls=Math.round(fee*LEGAL_PLATFORM_FEE_PCT/100), net=fee-mls;
+  el.innerHTML='You keep <b>$'+net.toLocaleString()+'</b> (95%) · MLS platform fee (5%): $'+mls.toLocaleString();
 }
 /* Clinician opens their OWN request (attorney not on MLS). */
 var _LEGAL_DOC_TYPES=['Narrative medical report','Causation opinion','Diagnosis & prognosis report','Impairment / disability rating','Future medical care report','Bill review / medical necessity','Independent Medical Exam (IME)','Expert report','Affidavit / declaration','Disability / work-status report','Records review','Deposition summary'];
@@ -14403,6 +14415,7 @@ async function openLegalRequest(id){
       if(feeIn) feeIn.value=existing>0?existing:(offer>0?offer:suggest);
       var sug=document.getElementById('legalFeeSuggest');
       if(sug) sug.innerHTML=(offer>0?('<b style="color:#1f7a4d">Attorney offered $'+offer.toLocaleString()+'</b> · '):'')+'Suggested for a '+(rq.doc_type||'report')+': ~$'+suggest+' — set your rate';
+      try{ updateLegalFeeNet(); }catch(e){}
     }
   }catch(e){}
   // Reveal the per-request tools (invoice / AI questions / messages) + reset panels.
