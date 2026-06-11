@@ -2726,6 +2726,26 @@
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="pushToAthena()" title="Pending API access" disabled>⤴ Push to Athena</button>
       </div>
     </div>
+
+    <!-- Developer API key + MLS Assist (browser extension) -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">🔌 Developer API key &amp; MLS Assist</label>
+      <p class="note" style="margin:2px 0 10px">A key lets the MLS FHIR API and the MLS Assist browser extension talk to your account. It's shown once — store it safely.</p>
+      <div class="row tight">
+        <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="genApiKey()">＋ Generate API key</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()">↻ Refresh</button>
+      </div>
+      <div id="newApiKeyBox" style="display:none;margin-top:10px">
+        <label>Your new key — copy it now</label>
+        <div class="row tight" style="gap:8px">
+          <input type="text" id="newApiKey" readonly style="flex:1;font-family:monospace;font-size:12px">
+          <button class="btn-ghost" style="font-size:14px;padding:9px 12px" onclick="copyApiKey()">Copy</button>
+        </div>
+        <p class="note">Paste this into the MLS Assist extension (toolbar icon → key field).</p>
+      </div>
+      <div id="apiKeyList" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
+      <p class="note">API docs: <a href="https://scrivara-backend.onrender.com/fhir/docs" target="_blank">scrivara-backend.onrender.com/fhir/docs</a></p>
+    </div>
     </div><!-- /Integrations section -->
 
     <div class="row">
@@ -13813,6 +13833,33 @@ function applyLitePortal(){
   try{ showView('visit'); }catch(e){}
   return true;
 }
+
+/* ---- Developer API keys (for the FHIR API + MLS Assist extension) ---- */
+async function genApiKey(){
+  if(!bkToken()){ toast('Sign in to your MLS account first.','err'); return; }
+  try{
+    const r=await fetch(BACKEND_URL+'/api/fhir/keys',{method:'POST',headers:{'Authorization':'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify({label:'MLS Assist'})});
+    const d=await r.json();
+    if(!r.ok){ toast(d.error||'Could not generate a key.','err'); return; }
+    const box=document.getElementById('newApiKeyBox'), inp=document.getElementById('newApiKey');
+    if(inp) inp.value=d.key; if(box) box.style.display='block';
+    toast('API key generated — copy it now.','ok'); loadApiKeys();
+  }catch(e){ toast('Network error generating key.','err'); }
+}
+async function loadApiKeys(){
+  if(!bkToken()) return;
+  try{
+    const r=await fetch(BACKEND_URL+'/api/fhir/keys',{headers:{'Authorization':'Bearer '+bkToken()}});
+    const d=await r.json(); const el=document.getElementById('apiKeyList'); if(!el) return;
+    const keys=(d.keys||[]).filter(k=>!k.revoked);
+    el.innerHTML = keys.length ? keys.map(k=>'<div style="padding:5px 0;border-top:1px solid var(--line)">🔑 <code>'+(k.prefix||'')+'…</code> <span style="color:var(--muted)">'+(k.label||'')+'</span> <a href="#" onclick="revokeApiKey('+k.id+');return false" style="color:#c0392b;margin-left:8px">revoke</a></div>').join('') : '<div style="padding:5px 0">No active keys yet.</div>';
+  }catch(e){}
+}
+async function revokeApiKey(id){
+  if(!confirm('Revoke this key? Anything using it (including MLS Assist) will stop working.')) return;
+  try{ await fetch(BACKEND_URL+'/api/fhir/keys/'+id,{method:'DELETE',headers:{'Authorization':'Bearer '+bkToken()}}); loadApiKeys(); }catch(e){}
+}
+function copyApiKey(){ const i=document.getElementById('newApiKey'); if(i&&i.value){ navigator.clipboard.writeText(i.value).then(function(){toast('Copied.','ok');},function(){}); } }
 
 /* ---- Lawyer portal: submit a new request ---- */
 async function submitLegalRequest(){
