@@ -2058,7 +2058,7 @@
     </div>
 
     <!-- 🔬 RESEARCH / RWE REGISTRY -->
-    <div class="card" id="anaRegistry">
+    <div class="card" id="anaRwe">
       <h2><span class="ic">🔬</span> Research registry (de-identified)
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="exportRegistryCsv()">⬇ Export de-identified CSV</button>
       </h2>
@@ -2177,6 +2177,11 @@
       <div id="legalDashboard" style="display:none;gap:10px;flex-wrap:wrap;margin:4px 0 14px"></div>
       <div id="legalReqEmpty" class="empty"><span class="big">⚖️</span>No legal requests yet.</div>
       <div id="legalReqList"></div>
+    </div>
+    <div class="card" id="expertCard">
+      <h2><span class="ic">🧑‍⚖️</span> Expert marketplace listing</h2>
+      <p class="sub">Opt in to be discoverable by attorneys searching for a treating-physician expert. They find you by specialty and jurisdiction, and their requests land right in this inbox — a new referral stream that runs itself.</p>
+      <div id="expertBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
     </div>
   </div><!-- /legalReqView -->
 </div>
@@ -14284,9 +14289,39 @@ async function submitSelfRequest(){
   }catch(e){ toast('Could not create the request.','err'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='Create & open'; } }
 }
+/* ===== Expert marketplace — doctor opt-in ===== */
+async function loadExpertProfile(){
+  var box=document.getElementById('expertBody'); if(!box) return;
+  try{
+    var r=await fetch(bkBase()+'/api/experts/profile',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(!r.ok){ box.innerHTML='<div class="mini" style="color:var(--muted)">Available to clinician accounts.</div>'; return; }
+    var d=await r.json(); renderExpertProfile(d);
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load.</div>'; }
+}
+function renderExpertProfile(d){
+  var box=document.getElementById('expertBody'); if(!box) return;
+  var statusTxt=d.listed?'<span style="color:#1f7a4d">Discoverable to attorneys now.</span>':'Currently not listed.';
+  var h='<label style="display:flex;align-items:center;gap:9px;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer;margin-bottom:10px">';
+  h+='<input type="checkbox" id="expListed" '+(d.listed?'checked':'')+' style="width:17px;height:17px"><span style="font-size:14px"><b>List me in the expert marketplace.</b> '+statusTxt+'</span></label>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  h+='<label class="mini" style="flex:1;min-width:160px">Specialty<input id="expSpec" value="'+esc(d.specialty||'')+'" placeholder="e.g. Interventional Pain / PM&R" style="width:100%"></label>';
+  h+='<label class="mini" style="flex:1;min-width:160px">Jurisdiction(s)<input id="expJur" value="'+esc(d.jurisdiction||'')+'" placeholder="e.g. Arkansas; Missouri" style="width:100%"></label></div>';
+  h+='<label class="mini" style="display:block;margin-top:8px">Short bio for attorneys<textarea id="expBio" rows="3" style="width:100%" placeholder="Board certifications, years in practice, experience with PI / workers-comp cases.">'+esc(d.bio||'')+'</textarea></label>';
+  h+='<button class="btn-primary" style="font-size:13px;padding:8px 14px;margin-top:8px" onclick="saveExpertProfile()">💾 Save listing</button>';
+  box.innerHTML=h;
+}
+async function saveExpertProfile(){
+  var body={ listed:!!(document.getElementById('expListed')||{}).checked, specialty:(document.getElementById('expSpec')||{}).value||'', jurisdiction:(document.getElementById('expJur')||{}).value||'', bio:(document.getElementById('expBio')||{}).value||'' };
+  try{
+    var r=await fetch(bkBase()+'/api/experts/profile',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(body)});
+    if(r.ok){ toast(body.listed?'Listed in the expert marketplace.':'Listing saved.','ok'); loadExpertProfile(); }
+    else { toast('Could not save listing.','err'); }
+  }catch(e){ toast('Could not save listing.','err'); }
+}
 async function loadLegalRequests(){
   if(!backendMode()||!bkToken()) return;
   if(typeof loadLegalProfile==='function') loadLegalProfile();
+  try{ loadExpertProfile(); }catch(e){}
   const list=document.getElementById('legalReqList');
   const empty=document.getElementById('legalReqEmpty');
   try{
