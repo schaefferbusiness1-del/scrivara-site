@@ -635,6 +635,25 @@
     .code-grid{grid-template-columns:108px 1fr;font-size:14px}
     header{flex-wrap:wrap;row-gap:8px}
   }
+  /* ============================================================
+     MLS — APPLE-INSPIRED CLARITY PASS (additive layer)
+     Content first, calmer chrome, more breathing room. Pure styling —
+     softer/larger cards, gentler shadows, rounder controls, SF typography.
+     ============================================================ */
+  body{ font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+  .wrap{ padding-bottom:60px; }
+  .card{ border-radius:18px; padding:24px; box-shadow:0 1px 2px rgba(20,40,70,.04),0 10px 30px rgba(20,40,70,.05); }
+  .card + .card{ margin-top:20px; }
+  .card h2{ font-size:18px; letter-spacing:-.4px; font-weight:700; }
+  .card .sub{ line-height:1.55; }
+  button{ border-radius:11px; }
+  .btn-primary,.btn-ghost,.btn-green,.btn-red,.btn-gold,.btn-white{ border-radius:11px; }
+  .btn-primary{ box-shadow:0 1px 2px rgba(20,40,70,.12),0 2px 8px rgba(37,99,201,.18); }
+  .sec-copy{ border-radius:9px; }
+  input,select,textarea,.sf-select{ border-radius:11px; }
+  .extra-card{ border-radius:16px; }
+  .navtab{ border-radius:10px; font-weight:600; }
+  .empty{ border-radius:16px; }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -1064,14 +1083,15 @@
       <h2><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
-        <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
+        <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, the front desk, team logins and more">⋯ More</button>
+        <span id="ptMore" style="display:none"><button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
         <button class="btn-ghost" id="ptBookLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyBookingLink(this)" title="Get a link patients can use to book appointments online">📅 Booking link</button>
         <button class="btn-ghost" id="ptBoardBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadBoard(true)" title="See today's appointments and who's checked in">🗓️ Check-in board</button>
         <button class="btn-ghost" id="ptFollowupBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openFollowups()" title="Send privacy-safe post-visit check-in emails to recently seen patients">📨 Visit follow-ups</button>
         <button class="btn-ghost" id="ptReceptionBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptLawyerBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadLawyers(true)" title="Invite and manage lawyer logins for legal/records requests">⚖️ Lawyers</button>
-        <button class="btn-ghost" id="ptDoctorsBtn" style="display:none;margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadDoctorSeats(true)" title="Add and manage additional treating-doctor seats in your practice">🩺 Doctors</button>
+        <button class="btn-ghost" id="ptDoctorsBtn" style="display:none;margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadDoctorSeats(true)" title="Add and manage additional treating-doctor seats in your practice">🩺 Doctors</button></span>
       </h2>
       <p class="sub">Create a patient, then select one to make them active. Visits and documents attach to the active patient.</p>
       <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Patient records are encrypted and synced to your MLS account across every device you sign into. Use de-identified labels until your BAAs are signed and you're cleared for real PHI.</div>
@@ -2263,6 +2283,15 @@
       <button class="btn-green" id="lawSubmitBtn" onclick="submitLegalRequest()" style="flex:1">⚖️ Submit request</button>
     </div>
     <p class="sub" style="margin:10px 0 0;color:var(--muted)">📎 After submitting, open the request below to attach case files — the cover letter, signed patient authorization / release, and medical records — so the clinician can review them before writing the report.</p>
+  </div>
+
+  <div class="card" style="margin-top:20px" id="lawExpertCard">
+    <h2><span class="ic">🧑‍⚖️</span> Find an expert
+      <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadExpertsBrowse()">🔄 Refresh</button>
+    </h2>
+    <p class="sub">Browse treating-physician experts who take medical-legal work. Search by specialty or jurisdiction, then send your request straight to them.</p>
+    <input id="expSearch" placeholder="Search specialty, jurisdiction, or name…" oninput="renderExpertsBrowse()" style="width:100%;margin-bottom:10px">
+    <div id="expBrowseBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
   </div>
 
   <div class="card" style="margin-top:20px">
@@ -8296,6 +8325,13 @@ function runDecisionSupport(){
   _aiToOut(sys,'CLINICAL NOTE:\n'+note, document.querySelector('#dsCard button'), 'dsOut');
 }
 /* Show/hide the secondary "More tools" button cluster on the Visit tab. */
+/* Patients toolbar: keep only "New patient" up front; tuck the rest behind "More". */
+function togglePtMore(){
+  var m=document.getElementById('ptMore'); if(!m) return;
+  var show=(m.style.display==='none'||!m.style.display);
+  m.style.display=show?'':'none';
+  var b=document.getElementById('ptMoreBtn'); if(b) b.textContent=show?'⋯ Less':'⋯ More';
+}
 function toggleMoreTools(){
   const box=document.getElementById('moreTools');
   const btn=document.getElementById('moreToolsBtn');
@@ -13781,8 +13817,51 @@ async function submitLegalRequest(){
 }
 
 /* ---- Lawyer portal: load + render "My requests" ---- */
+/* ===== Attorney side: browse the expert marketplace ===== */
+var _expertsCache=[];
+async function loadExpertsBrowse(){
+  var box=document.getElementById('expBrowseBody'); if(!box) return;
+  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  try{
+    var r=await fetch(bkBase()+'/api/experts',{headers:{Authorization:'Bearer '+bkToken()}});
+    var d=await r.json().catch(function(){return {experts:[]};});
+    _expertsCache=d.experts||[]; renderExpertsBrowse();
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load experts.</div>'; }
+}
+function renderExpertsBrowse(){
+  var box=document.getElementById('expBrowseBody'); if(!box) return;
+  var q=((document.getElementById('expSearch')||{}).value||'').toLowerCase().trim();
+  var list=_expertsCache.filter(function(e){ return !q || (e.name+' '+e.specialty+' '+e.jurisdiction+' '+e.bio).toLowerCase().indexOf(q)>=0; });
+  if(!list.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">'+(_expertsCache.length?'No experts match that search.':'No listed experts yet — check back soon.')+'</div>'; return; }
+  box.innerHTML=list.map(function(e){
+    var rates=[]; if(e.depo_rate_cents) rates.push('Deposition $'+Math.round(e.depo_rate_cents/100).toLocaleString()+'/hr'); if(e.trial_rate_cents) rates.push('Trial $'+Math.round(e.trial_rate_cents/100).toLocaleString()+'/day');
+    var safeName=esc((e.name||'expert').replace(/['"\\]/g,''));
+    return '<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px">'
+      +'<div style="font-weight:700;font-size:15px">'+esc(e.name)+'</div>'
+      +(e.specialty?'<div style="font-size:13px;color:var(--brand-dk);font-weight:600">'+esc(e.specialty)+'</div>':'')
+      +(e.jurisdiction?'<div class="mini" style="color:var(--muted)">📍 '+esc(e.jurisdiction)+'</div>':'')
+      +(e.bio?'<div style="font-size:13px;margin-top:6px">'+esc(e.bio)+'</div>':'')
+      +(rates.length?'<div class="mini" style="color:var(--muted);margin-top:5px">'+rates.join(' · ')+'</div>':'')
+      +'<button class="btn-primary" style="font-size:13px;padding:8px 13px;margin-top:10px" onclick="requestFromExpert('+e.id+',\''+safeName+'\')">⚖️ Request a report</button>'
+      +'</div>';
+  }).join('');
+}
+async function requestFromExpert(id,name){
+  var docType=window.prompt('Request a report from '+name+'.\n\nWhat type of report? (e.g. Causation opinion, IME, Narrative report)','Causation opinion');
+  if(docType===null) return;
+  var patient=window.prompt('Patient reference (name / DOB / claim #):','');
+  if(patient===null) return;
+  var questions=window.prompt('What should the report address?','');
+  try{
+    var r=await fetch(bkBase()+'/api/experts/'+id+'/request',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({doc_type:docType,patient_ref:patient,questions:questions||''})});
+    var d=await r.json().catch(function(){return{};});
+    if(r.ok&&d.id){ toast('Request sent to '+name+'.','ok'); if(typeof loadLawyerRequests==='function') loadLawyerRequests(); }
+    else { toast((d&&d.error)||'Could not send the request.','err'); }
+  }catch(e){ toast('Could not send the request.','err'); }
+}
 async function loadLawyerRequests(){
   if(!backendMode()||!bkToken()) return;
+  try{ loadExpertsBrowse(); }catch(e){}
   const list=document.getElementById('lawReqList');
   const empty=document.getElementById('lawReqEmpty');
   try{
