@@ -13618,12 +13618,68 @@ async function submitCountersign(){
   }
 }
 
+/* Make any string safe for jsPDF's standard (WinAnsi) fonts so it prints clean
+   text instead of empty boxes. Maps the typography that shows up in our notes
+   and reports — em/en dashes, curly quotes, bullets, arrows, checks, warning
+   signs, ellipses, non-breaking/zero-width spaces — to plain equivalents, and
+   strips any remaining emoji/symbols outside Latin-1. */
+function pdfSafe(s){
+  return String(s==null?'':s)
+    .replace(/[‘’‚‛′]/g,"'")
+    .replace(/[“”„‟″]/g,'"')
+    .replace(/[‐‑‒–—―]/g,'-')
+    .replace(/…/g,'...')
+    .replace(/[•●▪◦‣⁃∙·]/g,'-')
+    .replace(/→/g,'->').replace(/←/g,'<-').replace(/↔/g,'<->')
+    .replace(/[✅✔✓]/g,'(done)')
+    .replace(/[❌✖]/g,'(x)')
+    .replace(/[⚠‼❗❕]/g,'!')
+    .replace(/ /g,' ')
+    .replace(/[ -​  　﻿]/g,' ')
+    .replace(/️/g,'')
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g,'');
+}
+/* Globally wrap jsPDF's text() so every PDF the app makes is sanitized — no
+   boxes, no matter which export path called it. Idempotent + defensive. */
+// Clean, escape-based override (declared last, so this is the active pdfSafe).
+function pdfSafe(s){
+  return String(s==null?'':s)
+    .replace(/[‘’‚‛′]/g,"'")
+    .replace(/[“”„‟″]/g,'"')
+    .replace(/[‐‑‒–—―]/g,'-')
+    .replace(/…/g,'...')
+    .replace(/[•●▪◦‣⁃∙]/g,'-')
+    .replace(/→/g,'->').replace(/←/g,'<-').replace(/↔/g,'<->')
+    .replace(/[✅✔✓]/g,'(done)')
+    .replace(/[❌✖]/g,'(x)')
+    .replace(/[⚠‼❗❕]/g,'!')
+    .replace(/ /g,' ')
+    .replace(/[    ​ 　﻿]/g,' ')
+    .replace(/️/g,'')
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g,'');
+}
+function _patchJsPdfText(ns){
+  try{
+    var J=ns&&ns.jsPDF; if(!J||J.__mlsTextPatched) return;
+    var proto=(J.prototype&&J.prototype.text)?J.prototype:((J.API&&J.API.text)?J.API:null);
+    if(!proto) return;
+    var orig=proto.text;
+    proto.text=function(text){
+      try{
+        arguments[0]=(typeof text==='string')?pdfSafe(text)
+          :(Array.isArray(text)?text.map(function(t){return typeof t==='string'?pdfSafe(t):t;}):text);
+      }catch(e){}
+      return orig.apply(this,arguments);
+    };
+    J.__mlsTextPatched=true;
+  }catch(e){}
+}
 function loadJsPdf(){
-  if(window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf);
+  if(window.jspdf && window.jspdf.jsPDF){ _patchJsPdfText(window.jspdf); return Promise.resolve(window.jspdf); }
   if(_jspdfLoading) return _jspdfLoading;
   _jspdfLoading=new Promise((resolve,reject)=>{
     const existing=document.getElementById('jspdfScript');
-    const onok=()=>{ (window.jspdf&&window.jspdf.jsPDF)?resolve(window.jspdf):reject(new Error('jsPDF unavailable')); };
+    const onok=()=>{ if(window.jspdf&&window.jspdf.jsPDF){ _patchJsPdfText(window.jspdf); resolve(window.jspdf); } else { reject(new Error('jsPDF unavailable')); } };
     if(existing){ existing.addEventListener('load',onok); existing.addEventListener('error',()=>reject(new Error('jsPDF failed to load'))); return; }
     const s=document.createElement('script');
     s.id='jspdfScript';
@@ -13668,7 +13724,7 @@ async function legalTextToPdf(docType,text,fallbackBodyId){
     // Body with word-wrap + pagination
     doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
     const lineH=14.5;
-    const lines=doc.splitTextToSize(String(text||''),maxW);
+    const lines=doc.splitTextToSize(pdfSafe(String(text||'')),maxW);
     for(let i=0;i<lines.length;i++){
       if(y>pageH-margin){ doc.addPage(); y=margin; }
       doc.text(lines[i],margin,y);
