@@ -1474,6 +1474,11 @@
         <div class="code-disclaim">⚠️ DRAFT — the physician must verify, complete, and sign. All diagnoses, opinions, causation, and impairment statements are the physician's responsibility and must be held to a reasonable degree of medical probability/certainty.</div>
       </div>
 
+      <!-- 🧰 Advanced clinical tools — tucked behind one reveal so the note + coding lead -->
+      <div id="visitToolsToggleRow" style="margin:14px 0 0">
+        <button class="btn-ghost" id="visitToolsBtn" onclick="toggleVisitTools()" title="Show extra clinical tools: utilization review, red-flag scan, differential diagnosis, opioid MME calculator, and the injection procedure note">🧰 Clinical tools ▾</button>
+      </div>
+      <div id="visitToolsGroup" style="display:none">
       <!-- Utilization review (paste a course of notes → reasonableness) -->
       <div class="extra-card" id="urToolCard">
         <h3>📋 Utilization review <span style="font-weight:400;font-size:13px;color:var(--muted)">(medical-necessity decision support)</span></h3>
@@ -1657,6 +1662,7 @@
           </div>
         </div>
       </div>
+      </div><!-- /visitToolsGroup -->
 
       <div class="sign-line" id="signLine" style="display:none"></div>
 
@@ -8331,6 +8337,13 @@ function runDecisionSupport(){
   _aiToOut(sys,'CLINICAL NOTE:\n'+note, document.querySelector('#dsCard button'), 'dsOut');
 }
 /* Show/hide the secondary "More tools" button cluster on the Visit tab. */
+/* Visit screen: keep the note + coding front; tuck advanced tools behind one reveal. */
+function toggleVisitTools(){
+  var g=document.getElementById('visitToolsGroup'); if(!g) return;
+  var show=(g.style.display==='none'||!g.style.display);
+  g.style.display=show?'block':'none';
+  var b=document.getElementById('visitToolsBtn'); if(b) b.innerHTML=show?'🧰 Clinical tools ▴':'🧰 Clinical tools ▾';
+}
 /* Patients toolbar: keep only "New patient" up front; tuck the rest behind "More". */
 function togglePtMore(){
   var m=document.getElementById('ptMore'); if(!m) return;
