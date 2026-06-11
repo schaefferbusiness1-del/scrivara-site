@@ -2418,6 +2418,15 @@
       <label for="docSpec">Specialty <span style="font-weight:400;color:var(--muted)">(optional — tailors the note)</span></label>
       <input type="text" id="docSpec" placeholder="e.g. Family Medicine, Cardiology, Pediatrics">
     </div>
+    <div class="field" id="changePwField" style="display:none;border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">🔒 Change your password</label>
+      <p class="note" style="margin:2px 0 8px">Update the password you use to sign in to MLS.</p>
+      <input type="password" id="pwCurrent" placeholder="Current password" autocomplete="current-password" style="margin-bottom:8px">
+      <input type="password" id="pwNew" placeholder="New password (at least 8 characters)" autocomplete="new-password" style="margin-bottom:8px">
+      <input type="password" id="pwConfirm" placeholder="Confirm new password" autocomplete="new-password" style="margin-bottom:8px" onkeydown="if(event.key==='Enter'){event.preventDefault();changeMyPassword(document.getElementById('pwSaveBtn'));}">
+      <button class="btn-primary" id="pwSaveBtn" style="font-size:14px;padding:9px 15px" onclick="changeMyPassword(this)">Update password</button>
+      <div id="pwMsg" style="margin-top:8px;font-size:13px"></div>
+    </div>
     </div><!-- /Account & access section -->
 
     <!-- ============ SECTION: Practice / Provider (MLS — additive) ============ -->
@@ -4573,6 +4582,7 @@ function mlsBuildSettingsTabs(){
 }
 function openSettings(){
   applyBackendModeUI();
+  try{ var _cpw=document.getElementById('changePwField'); if(_cpw) _cpw.style.display=(typeof backendMode==='function'&&backendMode()&&bkToken())?'block':'none'; }catch(e){}
   document.getElementById('apiKey').value=getKey();
   document.getElementById('docName').value=getName();
   document.getElementById('docSpec').value=getSpec();
@@ -6215,6 +6225,28 @@ async function syncProfileName(){
     await fetch(bkBase()+'/api/me/profile',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(sp?{name:nm,specialty:sp}:{name:nm})});
     if(bkUser) bkUser.name=nm;
   }catch(e){}
+}
+/* Self-service password change from Settings → Account & access. */
+async function changeMyPassword(btn){
+  const msg=document.getElementById('pwMsg');
+  const set=(m,c)=>{ if(msg){ msg.textContent=m; msg.style.color=c||'var(--muted)'; } };
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ set('Sign in to your MLS account to change your password.','#b4231e'); return; }
+  const cur=(document.getElementById('pwCurrent')||{}).value||'';
+  const nw=(document.getElementById('pwNew')||{}).value||'';
+  const cf=(document.getElementById('pwConfirm')||{}).value||'';
+  if(!cur){ set('Enter your current password.','#b4231e'); return; }
+  if(nw.length<8){ set('Your new password must be at least 8 characters.','#b4231e'); return; }
+  if(nw!==cf){ set('The new passwords don’t match.','#b4231e'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Updating…'; }
+  try{
+    const r=await fetch(bkBase()+'/api/me/password',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({currentPassword:cur,newPassword:nw})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ set(d.error||'Could not update your password.','#b4231e'); return; }
+    set('✓ Password updated. Use your new password next time you sign in.','#1c7a43');
+    ['pwCurrent','pwNew','pwConfirm'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+    try{ toast('Password updated.','ok'); }catch(e){}
+  }catch(e){ set('Network error — try again.','#b4231e'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Update password'; } }
 }
 async function copyBookingLink(btn){
   try{
