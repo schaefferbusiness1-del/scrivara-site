@@ -8281,7 +8281,7 @@ function revenuePriorAuth(){
 }
 function runDecisionSupport(){
   var note=_currentNoteText(); if(!note){ toast('Generate a note first.','err'); return; }
-  var sys='You are a point-of-care clinical decision-support assistant for a treating physician (spine / pain / PM&R). From the visit note, surface in short bullets: (1) RED FLAGS / safety issues worth a second look (e.g., escalating opioid MME, findings needing imaging or referral, contraindications); (2) evidence-informed NEXT-STEP OPTIONS (conservative vs procedural vs surgical) framed as options, not directives; (3) any OUTCOME MEASURE or follow-up to capture. Stay within what the note supports; do not invent findings. End with: "For the treating physician's judgment."';
+  var sys='You are a point-of-care clinical decision-support assistant for a treating physician (spine / pain / PM&R). From the visit note, surface in short bullets: (1) RED FLAGS / safety issues worth a second look (e.g., escalating opioid MME, findings needing imaging or referral, contraindications); (2) evidence-informed NEXT-STEP OPTIONS (conservative vs procedural vs surgical) framed as options, not directives; (3) any OUTCOME MEASURE or follow-up to capture. Stay within what the note supports; do not invent findings. End with: "For the treating physician to weigh."';
   _aiToOut(sys,'CLINICAL NOTE:\n'+note, document.querySelector('#dsCard button'), 'dsOut');
 }
 /* Show/hide the secondary "More tools" button cluster on the Visit tab. */
