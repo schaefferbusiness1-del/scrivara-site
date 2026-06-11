@@ -1334,6 +1334,27 @@
         <div class="opt-disclaim">✅ Suggested codes — provider reviews and confirms; document only what actually occurred. This tool flags real work you may have left undocumented and confirms correct coding. It never invents findings, problems, time, or complexity, and never instructs you to bill for anything that did not happen.</div>
       </div>
 
+      <!-- 💵 Revenue tools — denial-risk check + prior-auth letter -->
+      <div class="extra-card" id="revToolsCard" style="display:none">
+        <h3>💵 Revenue tools</h3>
+        <p class="sub" style="margin:2px 0 8px">Protect the claim and cut prior-auth busywork — drafted from this note.</p>
+        <div class="row tight" style="gap:8px;flex-wrap:wrap">
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="revenueDenialCheck()">🛡 Denial-risk check</button>
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="revenuePriorAuth()">📄 Draft prior-auth letter</button>
+        </div>
+        <div class="xbody" id="revToolsOut" style="white-space:pre-wrap;margin-top:10px;display:none"></div>
+        <div class="code-disclaim">Draft assistance only — confirm payer policy and clinical accuracy before submitting.</div>
+      </div>
+
+      <!-- 🧠 Point-of-care decision support -->
+      <div class="extra-card" id="dsCard" style="display:none">
+        <h3>🧠 Decision support</h3>
+        <p class="sub" style="margin:2px 0 8px">Evidence-informed flags and next-step options from this visit and the chart — for your judgment, not a directive.</p>
+        <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="runDecisionSupport()">🧠 Analyze this visit</button>
+        <div class="xbody" id="dsOut" style="white-space:pre-wrap;margin-top:10px;display:none"></div>
+        <div class="code-disclaim">Decision support only — the treating physician's clinical judgment governs. Not a substitute for guidelines or individualized care.</div>
+      </div>
+
       <!-- per-section copy -->
       <div class="row tight" id="secCopyRow" style="display:none">
         <span style="font-size:13px;color:var(--muted);font-weight:600;align-self:center">Copy section:</span>
@@ -2026,6 +2047,24 @@
 
   <!-- ============ ANALYSIS VIEW (clinicians + head + owner; never lawyers) ============ -->
   <div id="analysisView" style="display:none">
+
+    <!-- 📣 OUTCOMES → MARKETING — turn real outcomes into shareable proof -->
+    <div class="card" id="anaOutcomes">
+      <h2><span class="ic">📣</span> Outcomes &amp; marketing
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadOutcomesMarketing(true)">🔄 Refresh</button>
+      </h2>
+      <p class="sub">Your real results, turned into proof you can publish. Measured from first vs. latest visit per patient — fully de-identified, no names ever leave your practice. Use it on your website, in referral packets, and with patients.</p>
+      <div id="anaOutcomesBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+    </div>
+
+    <!-- 🔬 RESEARCH / RWE REGISTRY -->
+    <div class="card" id="anaRegistry">
+      <h2><span class="ic">🔬</span> Research registry (de-identified)
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="exportRegistryCsv()">⬇ Export de-identified CSV</button>
+      </h2>
+      <p class="sub">A de-identified, aggregate registry of your outcomes by procedure — the foundation for real-world-evidence studies, MIPS/quality reporting, and device/pharma data partnerships. No patient names or PHI are included.</p>
+      <div id="anaRegistryBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+    </div>
 
     <!-- 🔎 FREE-TEXT DATA STUDY BOX — ask anything of your practice records (PREMIUM) -->
     <div class="card" id="anaAsk">
@@ -5142,6 +5181,116 @@ function _anaCard(label,value,sub){
     (sub?'<div class="mini" style="color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+
   '</div>';
 }
+/* ===== Outcomes → marketing + RWE registry ===== */
+var _outcomesData=null, _analyticsData=null;
+async function loadOutcomesMarketing(force){
+  var box=document.getElementById('anaOutcomesBody'); if(!box) return;
+  if(_outcomesData && !force){ renderOutcomesMarketing(_outcomesData); return; }
+  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  try{
+    var r=await fetch(bkBase()+'/api/outcomes/marketing',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===403){ box.innerHTML='<div class="mini" style="color:var(--muted)">Available to clinician accounts.</div>'; return; }
+    var d=await r.json().catch(function(){return null;});
+    if(!r.ok||!d){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load outcomes.</div>'; return; }
+    _outcomesData=d; renderOutcomesMarketing(d);
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load outcomes.</div>'; }
+}
+function _omCard(big,lab,sub,col){
+  return '<div style="flex:1;min-width:150px;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:12px;padding:14px 16px">'
+    +'<div style="font-size:30px;font-weight:800;letter-spacing:-1px;color:'+(col||'var(--ink)')+'">'+esc(big)+'</div>'
+    +'<div style="font-weight:600;font-size:13px;margin-top:2px">'+esc(lab)+'</div>'
+    +(sub?'<div class="mini" style="color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+'</div>';
+}
+function renderOutcomesMarketing(d){
+  var box=document.getElementById('anaOutcomesBody'); if(!box) return;
+  var pain=d.pain||{}, odi=d.odi||{};
+  var hasData=(pain.patients||0)>0||(odi.patients||0)>0||d.satisfaction!=null;
+  if(!hasData){ box.innerHTML='<div class="mini" style="color:var(--muted)">No outcome scores recorded yet. As you log pain (0–10) and ODI on visits, your improvement stats build here automatically.</div>'; return; }
+  var cards='';
+  if((pain.patients||0)>0) cards+=_omCard((pain.avg_pct_improvement!=null?pain.avg_pct_improvement+'%':'—'),'Average pain reduction','from '+pain.baseline+' to '+pain.latest+' (0–10) · '+pain.patients+' patients','#0f8a63');
+  if((pain.patients||0)>0) cards+=_omCard((pain.pct_improved!=null?pain.pct_improved+'%':'—'),'Patients who improved','reported less pain than baseline','#2563c9');
+  if((odi.patients||0)>0) cards+=_omCard((odi.improvement_pts!=null?odi.improvement_pts+' pts':'—'),'Average ODI improvement','Oswestry disability · '+odi.patients+' patients','#0f8a63');
+  if(d.satisfaction!=null) cards+=_omCard((Math.round(d.satisfaction*20)+'%'),'Patient satisfaction',d.satisfaction+'/5 across '+(d.satisfaction_n||0)+' ratings','#c47d09');
+  var h='<div style="display:flex;gap:12px;flex-wrap:wrap">'+cards+'</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:10px">Based on '+(d.n_patients||0)+' patients · '+(d.n_visits||0)+' visits'+(d.date_range&&d.date_range.first?(' · '+d.date_range.first+' to '+d.date_range.last):'')+'.</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">';
+  h+='<button class="btn-primary" style="font-size:13px;padding:9px 15px" onclick="downloadOutcomesOnePager()">⬇ Download marketing one-pager (PDF)</button>';
+  h+='<button class="btn-ghost" style="font-size:13px;padding:9px 15px" onclick="copyOutcomesStat()">📋 Copy headline stat</button></div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:8px">⚠️ De-identified aggregate. Confirm sample size and your own advertising/compliance rules before publishing.</div>';
+  box.innerHTML=h;
+}
+function _outcomesHeadline(d){
+  var pain=d.pain||{};
+  if((pain.patients||0)>0 && pain.avg_pct_improvement!=null) return 'Our patients report an average '+pain.avg_pct_improvement+'% reduction in pain — with '+(pain.pct_improved||0)+'% improving from their first visit.';
+  if(d.satisfaction!=null) return Math.round(d.satisfaction*20)+'% patient satisfaction across '+(d.satisfaction_n||0)+' ratings.';
+  return 'Proven, measured outcomes for our patients.';
+}
+function copyOutcomesStat(){
+  if(!_outcomesData) return; var t=_outcomesHeadline(_outcomesData);
+  if(navigator.clipboard){ navigator.clipboard.writeText(t).then(function(){toast('Headline stat copied.','ok');}).catch(function(){}); }
+}
+async function downloadOutcomesOnePager(){
+  if(!_outcomesData){ toast('Outcomes still loading.','err'); return; }
+  var d=_outcomesData, pain=d.pain||{}, odi=d.odi||{};
+  var ns; try{ ns=await loadJsPdf(); }catch(e){ toast('Could not load the PDF tool.','err'); return; }
+  var jsPDF=ns.jsPDF; var doc=new jsPDF({unit:'pt',format:'letter'}); var W=612;
+  var practice=((typeof getPracticeName==='function'&&getPracticeName())||(typeof getName==='function'&&getName())||'Our Practice');
+  doc.setFillColor(21,41,74); doc.rect(0,0,W,120,'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(22); doc.text(String(practice),54,60);
+  doc.setFont('helvetica','normal'); doc.setFontSize(13); doc.setTextColor(180,200,230); doc.text('Patient outcomes that speak for themselves',54,84);
+  var y=178;
+  function stat(big,lab,sub,cx){ doc.setTextColor(15,138,99); doc.setFont('helvetica','bold'); doc.setFontSize(34); doc.text(String(big),cx,y,{align:'center'}); doc.setTextColor(30,40,60); doc.setFontSize(12); doc.text(String(lab),cx,y+22,{align:'center'}); if(sub){ doc.setTextColor(120,130,145); doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(String(sub),cx,y+38,{align:'center'}); } }
+  var cols=[];
+  if((pain.patients||0)>0&&pain.avg_pct_improvement!=null) cols.push([pain.avg_pct_improvement+'%','Average pain reduction','first vs. latest visit']);
+  if((pain.patients||0)>0) cols.push([(pain.pct_improved||0)+'%','Patients who improved','reported less pain']);
+  if((odi.patients||0)>0&&odi.improvement_pts!=null) cols.push([odi.improvement_pts+' pts','ODI improvement','Oswestry disability']);
+  if(d.satisfaction!=null) cols.push([Math.round(d.satisfaction*20)+'%','Patient satisfaction',(d.satisfaction_n||0)+' ratings']);
+  cols=cols.slice(0,3); var cw=(W-108)/Math.max(cols.length,1);
+  cols.forEach(function(c,i){ stat(c[0],c[1],c[2],54+cw*(i+0.5)); });
+  y+=84;
+  doc.setTextColor(30,40,60); doc.setFont('helvetica','bold'); doc.setFontSize(15);
+  var hl=doc.splitTextToSize('"'+_outcomesHeadline(d)+'"', W-108); doc.text(hl,54,y); y+=hl.length*20+10;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(80,90,105);
+  var body='These results are measured from real patient-reported scores at the first and most recent visit, across '+(d.n_patients||0)+' patients and '+(d.n_visits||0)+' visits'+(d.date_range&&d.date_range.first?(' between '+d.date_range.first+' and '+d.date_range.last):'')+'. Every number is de-identified and aggregate — no individual patient information is shown.';
+  var bl=doc.splitTextToSize(body,W-108); doc.text(bl,54,y);
+  doc.setDrawColor(220); doc.line(54,720,W-54,720);
+  doc.setFontSize(8.5); doc.setTextColor(140);
+  doc.text('Generated by MLS · de-identified aggregate outcomes · verify sample size and advertising compliance before publication.',54,738);
+  doc.save('Outcomes_'+String(practice).replace(/[^a-zA-Z0-9]+/g,'_')+'.pdf');
+  toast('Marketing one-pager downloaded.','ok');
+}
+async function loadRegistry(force){
+  var box=document.getElementById('anaRegistryBody'); if(!box) return;
+  if(_analyticsData && !force){ renderRegistry(_analyticsData); return; }
+  try{
+    var r=await fetch(bkBase()+'/api/records/analytics',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===403){ box.innerHTML='<div class="mini" style="color:var(--muted)">Available to clinician accounts.</div>'; return; }
+    var d=await r.json().catch(function(){return null;});
+    if(!r.ok||!d){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load registry.</div>'; return; }
+    _analyticsData=d; renderRegistry(d);
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load registry.</div>'; }
+}
+function renderRegistry(d){
+  var box=document.getElementById('anaRegistryBody'); if(!box) return;
+  var procs=(d.by_procedure||[]).filter(function(p){return p.avg_pain!=null||p.avg_odi!=null;});
+  var h='<div class="mini" style="color:var(--muted);margin-bottom:8px">'+(d.n_visits||0)+' visits · pain scores on '+(d.pain_n||0)+' · ODI on '+(d.odi_n||0)+'.</div>';
+  if(procs.length){
+    h+='<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)"><th style="padding:6px 4px">Procedure / cohort</th><th style="padding:6px 4px">n</th><th style="padding:6px 4px">Avg pain</th><th style="padding:6px 4px">Avg ODI</th></tr></thead><tbody>';
+    procs.slice(0,12).forEach(function(p){ h+='<tr style="border-top:1px solid var(--line)"><td style="padding:5px 4px"><b>'+esc(p.procedure)+'</b></td><td style="padding:5px 4px">'+p.n+'</td><td style="padding:5px 4px">'+(p.avg_pain!=null?p.avg_pain:'—')+'</td><td style="padding:5px 4px">'+(p.avg_odi!=null?p.avg_odi:'—')+'</td></tr>'; });
+    h+='</tbody></table></div>';
+  } else { h+='<div class="mini" style="color:var(--muted)">No procedure-level outcome cohorts yet. They appear here as you record procedures with pain/ODI scores.</div>'; }
+  box.innerHTML=h;
+}
+function exportRegistryCsv(){
+  var d=_analyticsData; if(!d){ toast('Registry still loading.','err'); return; }
+  var rows=[['procedure','n','avg_pain','avg_odi']];
+  (d.by_procedure||[]).forEach(function(p){ rows.push([p.procedure,p.n,p.avg_pain==null?'':p.avg_pain,p.avg_odi==null?'':p.avg_odi]); });
+  rows.push([]); rows.push(['SUMMARY','','','']);
+  rows.push(['total_visits',d.n_visits||0,'','']); rows.push(['avg_pain_all',d.avg_pain==null?'':d.avg_pain,'','']); rows.push(['avg_odi_all',d.avg_odi==null?'':d.avg_odi,'','']);
+  var csv=rows.map(function(r){return r.map(function(cc){var s=String(cc==null?'':cc);return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s;}).join(',');}).join('\n');
+  var blob=new Blob([csv],{type:'text/csv'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download='MLS_registry_deidentified.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(url);},1500);
+  toast('De-identified registry CSV exported.','ok');
+}
 async function loadAnalysisBaseline(force){
   const box=document.getElementById('anaBaselineBody');
   if(!box) return;
@@ -5830,6 +5979,8 @@ function showView(v){
   if(v==='analysis'){
     applyPremiumUI();                             // 🔒 wall/unlock the premium Data Study box
     loadAnalysisBaseline();                       // 📈 baseline metrics (any clinician + owner)
+    try{ loadOutcomesMarketing(); }catch(e){}     // 📣 outcomes → marketing
+    try{ loadRegistry(); }catch(e){}              // 🔬 RWE registry
     const _isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
     const _isAdmin=!!(bkUser&&bkUser.isAdmin);
     if(_isHead||_isAdmin){                        // per-doctor review stays head/owner-only
@@ -8105,6 +8256,33 @@ function enableOutputs(on){
     const el=document.getElementById(id); if(el) el.disabled=!on;
   });
   const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
+  const rv=document.getElementById('revToolsCard'); if(rv) rv.style.display=on?'block':'none';
+  const ds=document.getElementById('dsCard'); if(ds) ds.style.display=on?'block':'none';
+}
+/* ===== Revenue tools (denial-risk + prior-auth) and decision support ===== */
+function _currentNoteText(){ var n=document.getElementById('noteBox'); return (n&&n.value||'').trim(); }
+async function _aiToOut(sys,user,btn,outId){
+  var out=document.getElementById(outId); if(out){ out.style.display='block'; out.textContent='Working…'; }
+  if(btn){ btn.disabled=true; }
+  try{ var t=await aiCallRaw(sys,user,null,{freeform:true}); if(out) out.textContent=String(t||'').trim()||'(no output)'; }
+  catch(e){ if(out) out.textContent='Could not complete — '+((e&&e.message)||'try again'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+function revenueDenialCheck(){
+  var note=_currentNoteText(); if(!note){ toast('Generate a note first.','err'); return; }
+  var em=((document.getElementById('code_em')||{}).textContent||'').trim();
+  var sys='You are a medical billing & coding compliance reviewer. Given a clinical note and its E/M level, assess CLAIM DENIAL RISK. Output exactly: (1) Denial risk: Low/Medium/High with a one-line reason; (2) the top specific documentation/coding issues a payer could deny on (medical necessity, missing elements, modifier/NCCI edits, dx-to-procedure linkage); (3) concrete fixes. Be concise and specific. Do NOT invent clinical facts; only flag what is or is not documented.';
+  _aiToOut(sys,'E/M level: '+em+'\n\nCLINICAL NOTE:\n'+note, document.querySelector('#revToolsCard button'), 'revToolsOut');
+}
+function revenuePriorAuth(){
+  var note=_currentNoteText(); if(!note){ toast('Generate a note first.','err'); return; }
+  var sys='You are assisting a physician by drafting a PRIOR AUTHORIZATION / medical-necessity letter to an insurer, based ONLY on the clinical note provided. Include: addressee (To: Utilization Review / Medical Director), [Patient] and date placeholders, the requested service/medication (infer from the note plan), a concise medical-necessity argument citing the documented history, exam, prior conservative care, and diagnosis, reference applicable evidence-based criteria by name where appropriate (do not cite specifics you were not given), and a closing request for approval with a physician signature block. Use ONLY facts in the note; mark anything missing as [to be completed]. Professional and ready to edit.';
+  _aiToOut(sys,'CLINICAL NOTE:\n'+note, document.querySelectorAll('#revToolsCard button')[1], 'revToolsOut');
+}
+function runDecisionSupport(){
+  var note=_currentNoteText(); if(!note){ toast('Generate a note first.','err'); return; }
+  var sys='You are a point-of-care clinical decision-support assistant for a treating physician (spine / pain / PM&R). From the visit note, surface in short bullets: (1) RED FLAGS / safety issues worth a second look (e.g., escalating opioid MME, findings needing imaging or referral, contraindications); (2) evidence-informed NEXT-STEP OPTIONS (conservative vs procedural vs surgical) framed as options, not directives; (3) any OUTCOME MEASURE or follow-up to capture. Stay within what the note supports; do not invent findings. End with: "For the treating physician's judgment."';
+  _aiToOut(sys,'CLINICAL NOTE:\n'+note, document.querySelector('#dsCard button'), 'dsOut');
 }
 /* Show/hide the secondary "More tools" button cluster on the Visit tab. */
 function toggleMoreTools(){
