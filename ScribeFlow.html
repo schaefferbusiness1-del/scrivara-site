@@ -3723,6 +3723,8 @@ function applyAccessUI(){
   if(typeof applyLawyerPortal==='function') applyLawyerPortal();
   // Receptionist front-desk mode: hides all clinical UI, leaves scheduling only.
   if(typeof applyReceptionistPortal==='function') applyReceptionistPortal();
+  // Lite tier: note generation only — hide every other tab/tool.
+  if(typeof applyLitePortal==='function') applyLitePortal();
   const banner=document.getElementById('noAccessBanner');
   if(banner){
     const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin&&!isLawyer;
@@ -13793,6 +13795,22 @@ function applyReceptionistPortal(){
   try{ showView('patients'); }catch(e){}
   hideClinicalForReceptionist();
   setTimeout(function(){ try{ loadBoard(true); }catch(e){} }, 150);
+  return true;
+}
+
+/* ---- Lite portal: cheapest tier, ambient NOTE GENERATION ONLY ---- */
+function isLiteUser(){ return !!(bkUser && bkUser.lite); }
+function applyLitePortal(){
+  if(!isLiteUser()) return false;
+  // Hide every tab except the Visit (note generation). No scheduling / records /
+  // orders / history / analysis / legal / team / patients on Lite.
+  ['nav_recs','nav_orders','nav_history','nav_analysis','nav_legalreq','nav_team','nav_admin','nav_patients']
+    .forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
+  // Hide non-note header tools (intake link, custom widgets, templates).
+  ['intakeBtn','customWidgetHdrBtn'].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
+  try{ document.querySelectorAll('button[onclick="openTemplates()"]').forEach(function(b){ b.style.display='none'; }); }catch(e){}
+  // Land on the visit so a Lite user opens straight into recording → note.
+  try{ showView('visit'); }catch(e){}
   return true;
 }
 
