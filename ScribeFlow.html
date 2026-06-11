@@ -1067,6 +1067,7 @@
     <div class="navtab" id="nav_team" style="display:none" onclick="showView('team')">👥 Team</div>
     <div class="navtab" id="nav_analysis" style="display:none" onclick="showView('analysis')">📊 Analysis</div>
     <div class="navtab" id="nav_studio" onclick="showView('studio')">✨ Create your own</div>
+    <div class="navtab" id="nav_help" onclick="openMlsHelp()" title="Ask how to do anything in MLS — where buttons are, how features work">❓ Help</div>
     <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
   </div>
 
@@ -3029,6 +3030,24 @@
     <div class="row" style="margin-top:14px">
       <button class="btn-ghost" onclick="closeWidgetBuilder()" style="flex:1">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- MLS HELP — in-app "how do I / where is" assistant -->
+<div class="modal-bg" id="helpModal">
+  <div class="modal" style="max-width:620px">
+    <button class="modal-x" onclick="closeMlsHelp()">×</button>
+    <h3>❓ MLS Help <span style="font-weight:400;font-size:14px;color:var(--muted)">— ask how to do anything</span></h3>
+    <p class="note">Ask where a button is or how to do something in MLS — answers are specific to this app, step by step.</p>
+    <textarea id="helpQ" rows="2" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:14px" placeholder="e.g. How do I change my password? · Where is the booking link? · How do I make a legal report?" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askMlsHelp();}"></textarea>
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn-green" id="helpAskBtn" onclick="askMlsHelp()">Ask</button></div>
+    <div style="margin-top:8px;font-size:12.5px;color:var(--muted)">Try:
+      <a href="#" onclick="helpEx('How do I change my password?');return false">change password</a> ·
+      <a href="#" onclick="helpEx('Where is the booking link?');return false">booking link</a> ·
+      <a href="#" onclick="helpEx('How do I generate a note?');return false">generate a note</a> ·
+      <a href="#" onclick="helpEx('How do I make a legal report?');return false">legal report</a>
+    </div>
+    <div id="helpAnswer" style="margin-top:12px;white-space:pre-wrap;font-size:14px;line-height:1.55"></div>
   </div>
 </div>
 
@@ -6226,6 +6245,27 @@ async function syncProfileName(){
     if(bkUser) bkUser.name=nm;
   }catch(e){}
 }
+/* ===== MLS Help — in-app "how do I / where is" assistant ===== */
+function openMlsHelp(){ var m=document.getElementById('helpModal'); if(m) m.classList.add('show'); var q=document.getElementById('helpQ'); if(q) q.focus(); }
+function closeMlsHelp(){ var m=document.getElementById('helpModal'); if(m) m.classList.remove('show'); }
+function helpEx(t){ var q=document.getElementById('helpQ'); if(q) q.value=t; askMlsHelp(); }
+async function askMlsHelp(){
+  var q=((document.getElementById('helpQ')||{}).value||'').trim();
+  var a=document.getElementById('helpAnswer');
+  var setA=(m,c)=>{ if(a){ a.textContent=m; a.style.color=c||'var(--ink,#16324f)'; } };
+  if(!q){ setA('Type a question first.','#b4231e'); return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ setA('Sign in to your MLS account to use Help.','#b4231e'); return; }
+  var btn=document.getElementById('helpAskBtn'); if(btn){ btn.disabled=true; btn.textContent='…'; }
+  setA('Thinking…','var(--muted)');
+  try{
+    var r=await fetch(bkBase()+'/api/assist/help',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({question:q})});
+    var d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.answer){ setA((d&&d.error)||'Could not get an answer — try again.','#b4231e'); return; }
+    setA(d.answer);
+  }catch(e){ setA('Network error — try again.','#b4231e'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Ask'; } }
+}
+
 /* Self-service password change from Settings → Account & access. */
 async function changeMyPassword(btn){
   const msg=document.getElementById('pwMsg');
@@ -14740,10 +14780,20 @@ function updateLegalFeeNet(){
 }
 /* Clinician opens their OWN request (attorney not on MLS). */
 var _LEGAL_DOC_TYPES=['Narrative medical report','Causation opinion','Diagnosis & prognosis report','Impairment / disability rating','Future medical care report','Bill review / medical necessity','Independent Medical Exam (IME)','Expert report','Affidavit / declaration','Disability / work-status report','Records review','Deposition summary'];
+/* Fill the patient-ref text when the doctor picks one of their patients. */
+function srPickPatient(id){
+  if(!id) return;
+  var p=((typeof getPatients==='function')?getPatients():[]).find(function(x){return String(x.id)===String(id);});
+  if(!p) return;
+  var ref=[p.name,(p.dob?('DOB '+p.dob):''),(p.mrn?('MRN '+p.mrn):'')].filter(Boolean).join(' · ');
+  var t=document.getElementById('srPatient'); if(t) t.value=ref;
+}
 function toggleSelfRequestForm(){
   var box=document.getElementById('legalSelfReqForm'); if(!box) return;
   if(box.style.display==='block'){ box.style.display='none'; return; }
   var opts=_LEGAL_DOC_TYPES.map(function(t){return '<option value="'+esc(t)+'">'+esc(t)+'</option>';}).join('');
+  var _pts=((typeof getPatients==='function')?getPatients():[])||[];
+  var ptOpts='<option value="">— pick from your patients (optional) —</option>'+_pts.map(function(p){return '<option value="'+esc(String(p.id))+'">'+esc((p.name||'Unnamed')+(p.dob?(' · '+p.dob):''))+'</option>';}).join('');
   box.style.display='block';
   box.innerHTML='<div style="font-weight:700;margin-bottom:8px">➕ New legal request (attorney not on MLS)</div>'
     +'<div class="mini" style="color:var(--muted);margin-bottom:10px">Fill in what the attorney sent you. This opens a request in your inbox so you can attach the records, generate the report, sign it, and download the PDF to send back.</div>'
@@ -14755,9 +14805,13 @@ function toggleSelfRequestForm(){
     +'<label class="mini" style="flex:1;min-width:120px">Date of injury<input id="srDoi" type="date" style="width:100%"></label>'
     +'<label class="mini" style="flex:1;min-width:140px">Jurisdiction<input id="srJur" style="width:100%"></label></div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
-    +'<label class="mini" style="flex:1;min-width:160px">Patient (name / DOB / ref)<input id="srPatient" style="width:100%"></label>'
+    +'<label class="mini" style="flex:1;min-width:200px">Pick a patient first<select id="srPatientSel" class="sf-select" style="width:100%" onchange="srPickPatient(this.value)">'+ptOpts+'</select></label>'
+    +'<label class="mini" style="flex:1;min-width:160px">…or type the patient (name / DOB / ref)<input id="srPatient" style="width:100%"></label></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
     +'<label class="mini" style="flex:1;min-width:160px">Document type<select id="srDocType" class="sf-select" style="width:100%">'+opts+'</select></label></div>'
     +'<label class="mini" style="display:block;margin-top:8px">What does the attorney want addressed?<textarea id="srQuestions" rows="3" style="width:100%"></textarea></label>'
+    +'<label class="mini" style="display:block;margin-top:10px">📎 Attach case files now <span style="color:var(--muted);font-weight:400">(optional — cover letter, records, signed authorization)</span><input type="file" id="srFiles" multiple style="width:100%;margin-top:4px"></label>'
+    +'<div class="mini" style="color:var(--muted);margin-top:4px">PDFs, images, or docs up to 20MB each — they upload to the request when you create it.</div>'
     +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'
     +'<button class="btn-primary" id="srSubmit" style="font-size:13px;padding:8px 14px" onclick="submitSelfRequest()">Create &amp; open</button>'
     +'<button class="btn-ghost" style="font-size:13px;padding:8px 14px" onclick="toggleSelfRequestForm()">Cancel</button></div>';
@@ -14780,6 +14834,23 @@ async function submitSelfRequest(){
     var d={}; try{ d=await r.json(); }catch(e){}
     if(!r.ok||!d.id){ toast((d&&d.error)||'Could not create the request.','err'); return; }
     toast('Request created — opening it now.','ok');
+    // Upload any attached case files to the new request.
+    try{
+      var fEl=document.getElementById('srFiles');
+      var files=(fEl&&fEl.files)?Array.prototype.slice.call(fEl.files):[];
+      var maxB=(typeof ATTACH_MAX_BYTES!=='undefined')?ATTACH_MAX_BYTES:(20*1024*1024);
+      var okN=0;
+      for(var i=0;i<files.length;i++){
+        var f=files[i];
+        if(f.size>maxB){ toast('“'+f.name+'” is over 20MB — skipped.','err'); continue; }
+        try{
+          var data=await readFileAsDataUrl(f);
+          var ur=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(d.id)+'/attachments',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({filename:f.name,mimetype:f.type||'application/octet-stream',category:'records',data:data})});
+          if(ur.ok) okN++;
+        }catch(e){}
+      }
+      if(okN) toast('Attached '+okN+' file'+(okN===1?'':'s')+' to the request.','ok');
+    }catch(e){}
     var box=document.getElementById('legalSelfReqForm'); if(box){ box.style.display='none'; }
     await loadLegalRequests();
     try{ openLegalRequest(String(d.id)); }catch(e){}
