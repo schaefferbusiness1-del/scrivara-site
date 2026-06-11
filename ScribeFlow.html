@@ -14256,7 +14256,9 @@ function updateLegalFeeNet(){
   var fee=Math.max(0,Math.round(Number(inp.value)||0));
   if(!fee){ el.textContent=''; return; }
   var mls=Math.round(fee*LEGAL_PLATFORM_FEE_PCT/100), net=fee-mls;
-  el.innerHTML='You keep <b>$'+net.toLocaleString()+'</b> (95%) · MLS platform fee (5%): $'+mls.toLocaleString();
+  var msg='You keep <b>$'+net.toLocaleString()+'</b> (95%) · MLS platform fee (5%): $'+mls.toLocaleString();
+  if(_connectReady===false){ msg+=' · <a href="#" onclick="startConnectOnboard();return false;" style="color:#b9770a;font-weight:700;text-decoration:underline">💳 Set up direct payouts to receive this →</a>'; }
+  el.innerHTML=msg;
 }
 /* Clinician opens their OWN request (attorney not on MLS). */
 var _LEGAL_DOC_TYPES=['Narrative medical report','Causation opinion','Diagnosis & prognosis report','Impairment / disability rating','Future medical care report','Bill review / medical necessity','Independent Medical Exam (IME)','Expert report','Affidavit / declaration','Disability / work-status report','Records review','Deposition summary'];
@@ -14336,6 +14338,7 @@ async function saveExpertProfile(){
   }catch(e){ toast('Could not save listing.','err'); }
 }
 /* ===== Stripe Connect — direct payouts for the doctor ===== */
+var _connectReady=null;
 async function loadConnectStatus(){
   var box=document.getElementById('connectBody'); if(!box) return;
   try{
@@ -14346,6 +14349,7 @@ async function loadConnectStatus(){
 }
 function renderConnectStatus(d){
   var box=document.getElementById('connectBody'); if(!box) return;
+  _connectReady=!!d.ready; try{ updateLegalFeeNet(); }catch(e){}
   if(d.ready){
     box.innerHTML='<div style="display:flex;align-items:center;gap:8px;background:#eafaf2;border:1px solid #bfe6cf;border-radius:10px;padding:11px 13px;font-size:14px"><span style="font-size:18px">✅</span><span><b>Direct payouts are on.</b> Report payments deposit to your bank automatically — you keep 95%, MLS’s 5% is taken at payment.</span></div>'
       +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px;margin-top:8px" onclick="startConnectOnboard(this)">Manage payout account</button>';
