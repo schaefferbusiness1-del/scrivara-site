@@ -148,8 +148,8 @@
   .who div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-weight:600;
     display:flex;align-items:center;gap:10px;font-size:15.5px}
   /* pricing */
-  .price-grid{display:grid;grid-template-columns:1fr 1fr;gap:26px;max-width:920px;margin:0 auto;align-items:stretch}
-  @media(max-width:820px){.price-grid{grid-template-columns:1fr;max-width:480px}}
+  .price-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1160px;margin:0 auto;align-items:stretch}
+  @media(max-width:1000px){.price-grid{grid-template-columns:1fr;max-width:480px}}
   .price-card{background:#fff;border:1px solid var(--line);border-radius:22px;
     padding:40px;text-align:center;box-shadow:var(--shadow);position:relative;display:flex;flex-direction:column}
   .price-card.featured{border:2px solid var(--brand)}
@@ -603,6 +603,21 @@
       <p>Flat per-provider pricing. No per-note fees, no surprise overages.</p>
     </div>
     <div class="price-grid">
+      <div class="price-card">
+        <div class="tier">Lite</div>
+        <div class="amt">$19<span> / provider / month</span></div>
+        <div style="color:var(--muted);font-size:14px;font-weight:600;margin-top:4px">Just the scribe — note generation only · or $190/yr</div>
+        <ul>
+          <li>Unlimited visits &amp; AI-generated notes</li>
+          <li>Ambient capture — talk naturally, walk out with a finished note</li>
+          <li>Phone-mic dictation</li>
+          <li>Copy / export your note into any EMR</li>
+          <li>Encrypted, HIPAA-ready architecture</li>
+        </ul>
+        <button class="btn btn-dark" onclick="startCheckout('lite_monthly', this)">Subscribe — $19/mo</button>
+        <div style="margin-top:8px"><a href="#" onclick="startCheckout('lite_annual', this);return false;" style="color:var(--muted);font-size:13px;font-weight:600">or pay annually — $190/yr</a></div>
+        <a href="#demo" class="btn btn-ghost" style="margin-top:10px">Book a demo first</a>
+      </div>
       <div class="price-card">
         <div class="tier">Standard</div>
         <div class="amt">$30<span> / provider / month</span></div>
