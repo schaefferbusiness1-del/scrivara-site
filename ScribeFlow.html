@@ -1066,6 +1066,7 @@
     <div class="navtab" id="nav_legalreq" style="display:none" onclick="showView('legalreq')">⚖️ Legal requests <span class="nbadge" id="navLegalReqCount">0</span></div>
     <div class="navtab" id="nav_team" style="display:none" onclick="showView('team')">👥 Team</div>
     <div class="navtab" id="nav_analysis" style="display:none" onclick="showView('analysis')">📊 Analysis</div>
+    <div class="navtab" id="nav_studio" onclick="showView('studio')">✨ Create your own</div>
     <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
   </div>
 
@@ -2223,6 +2224,37 @@
       <div id="connectBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
     </div>
   </div><!-- /legalReqView -->
+
+  <!-- ============ CREATE YOUR OWN — AI widget/tab studio ============ -->
+  <div id="studioView" style="display:none">
+    <div class="card">
+      <h2><span class="ic">✨</span> Create your own</h2>
+      <p class="sub">Describe a tab, tool, dashboard, or calculator you wish you had — and MLS builds it for you. It runs in a secure sandbox and can read a <b>read-only snapshot</b> of your practice data. Your saved creations stay here.</p>
+      <textarea id="studioPrompt" style="min-height:90px;width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px" placeholder="e.g. A dashboard of my patients with the most visits, as a sorted table with their last visit date.&#10;Or: an opioid MME calculator.&#10;Or: a bar chart of visits per month over the last 12 months."></textarea>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-green" id="studioGenBtn" onclick="generateStudioWidget()">✨ Build it</button>
+        <button class="btn-ghost" onclick="var p=document.getElementById('studioPrompt');if(p){p.value='';p.focus();}">Clear</button>
+      </div>
+      <div style="margin-top:8px;font-size:12.5px;color:var(--muted)">Try:
+        <a href="#" onclick="studioEx('A bar chart of visits per month over the last 12 months');return false">visits per month</a> ·
+        <a href="#" onclick="studioEx('A sorted table of my patients by number of visits, showing first and last visit date');return false">busiest patients</a> ·
+        <a href="#" onclick="studioEx('An opioid MME calculator with inputs for drug, dose in mg, and number of doses per day');return false">MME calculator</a>
+      </div>
+      <div id="studioStatus" style="margin-top:8px;font-size:13px;color:var(--muted)"></div>
+    </div>
+    <div class="card" id="studioResultCard" style="display:none">
+      <h2 style="display:flex;align-items:center;gap:8px"><span class="ic">🧩</span> <span id="studioResultTitle" style="flex:1">Your widget</span>
+        <button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="saveStudioWidget()">💾 Save it</button>
+        <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="closeStudioResult()">✕ Close</button>
+      </h2>
+      <iframe id="studioFrame" sandbox="allow-scripts" style="width:100%;height:540px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+      <p class="note" style="margin-top:6px">Runs sandboxed — it can read your data snapshot but cannot send it anywhere. Review before relying on it.</p>
+    </div>
+    <div class="card">
+      <h2><span class="ic">📁</span> My creations</h2>
+      <div id="studioSaved" style="display:flex;gap:10px;flex-wrap:wrap"><div class="mini" style="color:var(--muted)">Nothing saved yet — build something above.</div></div>
+    </div>
+  </div>
 </div>
 
 <!-- ============ LAWYER PORTAL (role === 'lawyer' — replaces the entire clinical app) ============ -->
@@ -6067,6 +6099,8 @@ function showView(v){
   const teamV=document.getElementById('teamView'); if(teamV) teamV.style.display = v==='team'?'block':'none';
   const analysisV=document.getElementById('analysisView'); if(analysisV) analysisV.style.display = v==='analysis'?'block':'none';
   const legalReqV=document.getElementById('legalReqView'); if(legalReqV) legalReqV.style.display = v==='legalreq'?'block':'none';
+  const studioV=document.getElementById('studioView'); if(studioV) studioV.style.display = v==='studio'?'block':'none';
+  const studioTab=document.getElementById('nav_studio'); if(studioTab) studioTab.classList.toggle('on',v==='studio');
   document.getElementById('nav_patients').classList.toggle('on',v==='patients');
   document.getElementById('nav_visit').classList.toggle('on',v==='visit');
   document.getElementById('nav_recs').classList.toggle('on',v==='recs');
@@ -6077,7 +6111,8 @@ function showView(v){
   const analysisTab=document.getElementById('nav_analysis'); if(analysisTab) analysisTab.classList.toggle('on',v==='analysis');
   const legalReqTab=document.getElementById('nav_legalreq'); if(legalReqTab) legalReqTab.classList.toggle('on',v==='legalreq');
   // active-patient bar appears on every view except the patients list / admin / team / analysis / legal requests
-  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq')?'none':'flex';
+  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq'||v==='studio')?'none':'flex';
+  if(v==='studio' && typeof renderStudio==='function') renderStudio();
   renderPatientBar();
   updateNavCounts();
   if(v==='patients'){ renderPatients(); renderProfile(); if(typeof loadPendingIntakes==='function') loadPendingIntakes(false); try{ if(typeof hideClinicalForReceptionist==='function') hideClinicalForReceptionist(); }catch(e){} }
@@ -6691,6 +6726,86 @@ async function generatePatientLegalReport(){
     else { toast('Report generated but could not be saved to the chart.','err'); }
   }catch(e){ toast('Could not generate the report.','err'); }
 }
+
+/* ===== CREATE YOUR OWN — AI widget/tab studio. The user describes a tab/tool;
+   the backend AI returns a self-contained HTML widget, which we render in a
+   SANDBOXED iframe (allow-scripts only — no same-origin, no network), with a
+   read-only snapshot of the practice data injected as window.MLS_DATA. Saved
+   creations persist in localStorage. ===== */
+let studioLastHtml='', studioLastPrompt='';
+function studioEx(t){ var p=document.getElementById('studioPrompt'); if(p){ p.value=t; p.focus(); } }
+function studioStatus(m,c){ var s=document.getElementById('studioStatus'); if(s){ s.textContent=m||''; s.style.color=c||'var(--muted)'; } }
+/* Read-only, defensively-built snapshot of the user's own patients for widgets. */
+function studioDataSnapshot(){
+  var pts=[];
+  try{
+    var list=(typeof getPatients==='function'?getPatients():[])||[];
+    pts=list.slice(0,800).map(function(p){
+      var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
+      var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
+      var pains=notes.map(function(n){ var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return (v==null||v==='')?null:Number(v); }).filter(function(x){return x!=null&&!isNaN(x);});
+      return {
+        name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), mrn:String(p.mrn||''),
+        visitCount:notes.length, firstVisit:dates[0]||'', lastVisit:dates[dates.length-1]||'',
+        maxPain: pains.length?Math.max.apply(null,pains):null, lastPain: pains.length?pains[pains.length-1]:null
+      };
+    });
+  }catch(e){}
+  return { generatedAt:new Date().toISOString(), patientCount:pts.length, patients:pts };
+}
+async function generateStudioWidget(){
+  var prompt=((document.getElementById('studioPrompt')||{}).value||'').trim();
+  if(!prompt){ studioStatus('Describe what you want to build first.','#b4231e'); return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ studioStatus('Sign in to build widgets.','#b4231e'); return; }
+  var btn=document.getElementById('studioGenBtn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Building…'; }
+  studioStatus('Building your widget… this takes a few seconds.');
+  try{
+    var r=await fetch(bkBase()+'/api/widget/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:prompt})});
+    var d=await r.json().catch(function(){return {};});
+    if(r.status===403){ studioStatus('Widget builder is for clinician accounts.','#b4231e'); return; }
+    if(!r.ok||!d.html){ studioStatus(d.error||'Could not build the widget. Try rephrasing.','#b4231e'); return; }
+    renderStudioWidget(d.html, prompt);
+    studioStatus('Done. Review it below, then Save it to keep it.','#1c7a43');
+  }catch(e){ studioStatus('Network error while building.','#b4231e'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='✨ Build it'; } }
+}
+function renderStudioWidget(html, title){
+  var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[],patientCount:0}; }
+  var json=JSON.stringify(snap).replace(/</g,'\\u003c');
+  var inject='<script>window.MLS_DATA='+json+';<\/script>';
+  var frame=document.getElementById('studioFrame');
+  if(frame) frame.srcdoc=inject+String(html||'');
+  var tt=document.getElementById('studioResultTitle'); if(tt) tt.textContent=(title||'Your widget').slice(0,80);
+  var card=document.getElementById('studioResultCard'); if(card){ card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'start'}); }
+  studioLastHtml=String(html||''); studioLastPrompt=title||'Your widget';
+}
+function closeStudioResult(){ var c=document.getElementById('studioResultCard'); if(c) c.style.display='none'; }
+function studioGetSaved(){ try{ return JSON.parse(localStorage.getItem('sf_studio_widgets')||'[]')||[]; }catch(e){ return []; } }
+function studioSetSaved(a){ try{ localStorage.setItem('sf_studio_widgets', JSON.stringify(a.slice(0,40))); }catch(e){} }
+function saveStudioWidget(){
+  if(!studioLastHtml){ studioStatus('Build a widget first.','#b4231e'); return; }
+  var arr=studioGetSaved();
+  arr.unshift({ title:(studioLastPrompt||'Widget').slice(0,80), html:studioLastHtml, ts:Date.now() });
+  studioSetSaved(arr); renderStudioSaved();
+  try{ toast('Saved to “My creations”.','ok'); }catch(e){}
+}
+function renderStudioSaved(){
+  var box=document.getElementById('studioSaved'); if(!box) return;
+  var arr=studioGetSaved();
+  if(!arr.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">Nothing saved yet — build something above.</div>'; return; }
+  box.innerHTML=arr.map(function(w,i){
+    var t=String(w.title||'Widget').replace(/[<>&]/g,'');
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:11px 13px;min-width:200px;max-width:260px;background:#fff">'
+      +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px;line-height:1.35">🧩 '+t+'</div>'
+      +'<div class="row" style="gap:6px">'
+      +'<button class="btn-green" style="font-size:12px;padding:6px 10px" onclick="openStudioSaved('+i+')">Open</button>'
+      +'<button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="deleteStudioSaved('+i+')">Delete</button>'
+      +'</div></div>';
+  }).join('');
+}
+function openStudioSaved(i){ var w=studioGetSaved()[i]; if(w) renderStudioWidget(w.html, w.title); }
+function deleteStudioSaved(i){ var a=studioGetSaved(); a.splice(i,1); studioSetSaved(a); renderStudioSaved(); }
+function renderStudio(){ renderStudioSaved(); }
 
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
    attach (merge into existing or create new), drop the face photo onto the avatar. ===== */
