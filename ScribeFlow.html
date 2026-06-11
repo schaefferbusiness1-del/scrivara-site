@@ -1434,14 +1434,15 @@
           <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
             <button class="sec-copy" id="legalRegenBtn" style="background:#eef4fc;border-color:#cfe2f8;color:var(--brand-dk);font-weight:600" onclick="regenerateLegalReport()" title="Rebuild the report from scratch on the latest model — includes the patient you selected and any field changes">🔄 Regenerate</button>
             <button class="sec-copy" id="legalFillBtn" style="display:none;background:#fff4e0;border-color:#f0c060;color:#8a5a00;font-weight:600" onclick="openLegalFill()" title="Fill in the details the AI left blank — they'll be inserted into the report">✏️ Fill in blanks</button>
-            <button class="sec-copy" onclick="copyExtra('legalBody')">📑 Copy</button>
-            <button class="sec-copy" onclick="printExtra('Medical-Legal Report','legalBody')">🖨 Print</button>
-            <button class="sec-copy" onclick="signLegalReport()">✍️ Sign</button>
-            <button class="sec-copy" onclick="downloadLegalPdf()">📄 Save as PDF</button>
-            <button class="sec-copy" onclick="saveLegalToChart()">🗂 Save to chart</button>
-            <button class="sec-copy" id="legalReturnBtn" style="display:none;background:var(--green);color:#fff;border-color:var(--green)" onclick="signAndReturnLegal()" title="Append your electronic signature + attestation and send the report to the attorney">✍️ Sign &amp; send to attorney</button>
+            <button class="sec-copy" onclick="copyExtra('legalBody')" title="Copy the report text to your clipboard">📑 Copy</button>
+            <button class="sec-copy" onclick="printExtra('Medical-Legal Report','legalBody')" title="Open a print-ready version of the report">🖨 Print</button>
+            <button class="sec-copy" onclick="downloadLegalPdf()" title="Download the report as a formatted PDF">📄 Save as PDF</button>
+            <button class="sec-copy" onclick="saveLegalToChart()" title="File a copy of this report in the patient's chart inside MLS">🗂 Save to chart</button>
+            <button class="sec-copy" onclick="signLegalReport()" title="Add your electronic signature + attestation to the report (without sending it)">✍️ Sign</button>
+            <button class="sec-copy" id="legalReturnBtn" style="display:none;background:var(--green);color:#fff;border-color:var(--green)" onclick="signAndReturnLegal()" title="Add your signature + attestation and send the finished report to the attorney">✍️ Sign &amp; send to attorney</button>
           </span>
         </h3>
+        <div id="legalPatientBanner" style="display:none;margin:8px 0 0;background:#fff6e5;border:1px solid #f0d9a0;border-radius:10px;padding:9px 12px;font-size:13px;font-weight:600;color:#8a5a00">⚠️ No patient chart attached yet — this report uses only the attorney's request details. If you treated this patient, attach your chart below to include your exam and visits.</div>
         <div id="legalReqRef" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
         <div id="legalReqAttach" style="display:none;margin:8px 0 0;background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-size:13.5px"></div>
         <div id="legalMyPatientRow" style="display:none;margin:8px 0 0;background:#f0fff4;border:1px solid #b9e6cf;border-radius:10px;padding:10px 12px;font-size:13.5px">
@@ -8252,12 +8253,27 @@ function _legalMatchPatient(patientRef, pts){
 }
 function setLegalAttachedPatient(id, auto){
   legalAttachedPatientId=id||null;
-  var st=document.getElementById('legalMyPatientStatus'); if(!st) return;
+  var p=null, nv=0;
   if(legalAttachedPatientId){
-    var p=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);});
-    var nv=p?((typeof patientNotes==='function'?patientNotes(p.id):[])||[]).length:0;
-    st.textContent=(auto?'🔎 Auto-matched — you treated this patient. Including ':'✓ Including ')+(p?p.name:'patient')+'’s chart + '+nv+' visit'+(nv===1?'':'s');
-  } else { st.textContent=''; }
+    p=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);});
+    nv=p?((typeof patientNotes==='function'?patientNotes(p.id):[])||[]).length:0;
+  }
+  var st=document.getElementById('legalMyPatientStatus');
+  if(st){
+    st.textContent=legalAttachedPatientId
+      ? ((auto?'🔎 Auto-matched — you treated this patient. Including ':'✓ Including ')+(p?p.name:'patient')+'’s chart + '+nv+' visit'+(nv===1?'':'s'))
+      : '';
+  }
+  var bn=document.getElementById('legalPatientBanner');
+  if(bn){
+    if(legalAttachedPatientId){
+      bn.style.background='#eaf7ef'; bn.style.borderColor='#bfe6cf'; bn.style.color='#1c7a43';
+      bn.textContent='✅ Patient chart attached: '+(p?p.name:'patient')+' — '+nv+' visit'+(nv===1?'':'s')+' from your records are included in this report.';
+    } else {
+      bn.style.background='#fff6e5'; bn.style.borderColor='#f0d9a0'; bn.style.color='#8a5a00';
+      bn.textContent='⚠️ No patient chart attached yet — this report uses only the attorney’s request details. If you treated this patient, attach your chart below to include your exam and visits.';
+    }
+  }
 }
 /* Build the doctor's own record text for the attached patient (chart + all visits +
    the in-progress visit if it's for that patient). '' if none attached. */
@@ -14694,7 +14710,7 @@ async function openLegalRequest(id){
   legalAttachedPatientId=null;
   try{
     var myRow=document.getElementById('legalMyPatientRow');
-    if(myRow){ myRow.style.display='block'; populateLegalMyPatient(rq.patient_ref||''); }
+    if(myRow){ myRow.style.display='block'; var _bn=document.getElementById('legalPatientBanner'); if(_bn) _bn.style.display='block'; setLegalAttachedPatient(null); populateLegalMyPatient(rq.patient_ref||''); }
   }catch(e){}
   // Show + prefill the engagement-fee field (existing fee, else a suggestion by type).
   try{
