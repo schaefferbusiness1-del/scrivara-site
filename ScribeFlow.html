@@ -2746,6 +2746,15 @@
       <div id="apiKeyList" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
       <p class="note">API docs: <a href="https://scrivara-backend.onrender.com/fhir/docs" target="_blank">scrivara-backend.onrender.com/fhir/docs</a></p>
     </div>
+
+    <!-- Bulk patient import / migration -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">📥 Import patients &amp; history</label>
+      <p class="note" style="margin:2px 0 8px">Move many patients and their visit history into MLS at once. Paste a JSON export below — shape: <code>{"patients":[{"name":"Jane Doe","dob":"1980-05-01","mrn":"12345","history":[{"date":"2026-03-10","note":"..."}]}]}</code>. Stored encrypted, same as in-app charts.</p>
+      <textarea id="importJson" rows="5" placeholder='{"patients":[ ... ]}' style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:8px;font:12px monospace"></textarea>
+      <div class="row tight"><button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="importPatients()">📥 Import patients</button></div>
+      <p class="note" id="importResult"></p>
+    </div>
     </div><!-- /Integrations section -->
 
     <div class="row">
@@ -13860,6 +13869,24 @@ async function revokeApiKey(id){
   try{ await fetch(BACKEND_URL+'/api/fhir/keys/'+id,{method:'DELETE',headers:{'Authorization':'Bearer '+bkToken()}}); loadApiKeys(); }catch(e){}
 }
 function copyApiKey(){ const i=document.getElementById('newApiKey'); if(i&&i.value){ navigator.clipboard.writeText(i.value).then(function(){toast('Copied.','ok');},function(){}); } }
+
+/* ---- Bulk import patients + history into MLS ---- */
+async function importPatients(){
+  if(!bkToken()){ toast('Sign in to your MLS account first.','err'); return; }
+  const raw=((document.getElementById('importJson')||{}).value||'').trim();
+  if(!raw){ toast('Paste a patient JSON export first.','err'); return; }
+  let data; try{ data=JSON.parse(raw); }catch(e){ toast('That is not valid JSON.','err'); return; }
+  if(!data||!Array.isArray(data.patients)){ toast('Expected {"patients":[ ... ]}','err'); return; }
+  const out=document.getElementById('importResult'); if(out) out.textContent='Importing…';
+  try{
+    const r=await fetch(BACKEND_URL+'/api/import/patients',{method:'POST',headers:{'Authorization':'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const d=await r.json();
+    if(!r.ok){ toast(d.error||'Import failed.','err'); if(out) out.textContent=''; return; }
+    toast('Imported '+d.patients+' patients · '+d.visits+' visits.','ok');
+    if(out) out.textContent='✓ Imported '+d.patients+' patients and '+d.visits+' visit records. Open the Patients tab to see them.';
+    try{ if(typeof loadPatients==='function') loadPatients(); else if(typeof syncDown==='function') syncDown(); }catch(e){}
+  }catch(e){ toast('Network error during import.','err'); if(out) out.textContent=''; }
+}
 
 /* ---- Lawyer portal: submit a new request ---- */
 async function submitLegalRequest(){
