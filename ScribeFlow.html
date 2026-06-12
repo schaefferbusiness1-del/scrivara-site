@@ -6891,6 +6891,27 @@ async function calToggleCheckin(btn){
     else if(e.key==='Escape'){ var ov2=_qfEl(); if(ov2&&ov2.style.display!=='none'){ mlsQuickFindClose(); } }
   }, true);
 })();
+/* ===== LIVE PHONE — make it obvious when a patient is calling right now, and who. ===== */
+function _normPhone(s){ return String(s||'').replace(/\D/g,'').slice(-10); }
+function _matchPatientByPhone(num){ var n=_normPhone(num); if(n.length<7) return null; try{ var list=(typeof getPatients==='function'?getPatients():[])||[]; return list.find(function(p){ return _normPhone(p.phone)===n; })||null; }catch(e){ return null; } }
+function _renderLiveCall(call){
+  var bar=document.getElementById('_liveCallBar');
+  if(!call){ if(bar) bar.remove(); return; }
+  if(!bar){ bar=document.createElement('div'); bar.id='_liveCallBar'; bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:99990;background:#127a55;color:#fff;border-radius:999px;padding:10px 20px;box-shadow:0 8px 28px rgba(18,122,85,.55);font-size:14px;font-weight:600;display:flex;align-items:center;gap:11px;cursor:pointer'; bar.title='A call is in progress with your AI front desk'; bar.onclick=function(){ try{ if(typeof recTab==='function') recTab('messages'); }catch(e){} }; document.body.appendChild(bar); }
+  var pt=_matchPatientByPhone(call.from);
+  var who = pt ? esc(pt.name) : (call.from?esc(call.from):'Unknown caller');
+  bar.innerHTML='<span class="live-dot" style="background:#fff"></span> 📞 Patient calling now — <b>'+who+'</b>'+(pt?' <span style="font-weight:400;opacity:.88">· patient on file</span>':' <span style="font-weight:400;opacity:.85">· not in your charts</span>')+' <span style="font-weight:400;opacity:.8">'+(call.seconds||0)+'s</span>';
+}
+async function _pollLiveCalls(){
+  try{
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ _renderLiveCall(null); return; }
+    var r=await fetch(bkBase()+'/api/calls/active',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(!r.ok){ _renderLiveCall(null); return; }
+    var d=await r.json();
+    _renderLiveCall((d.active&&d.active[0])||null);
+  }catch(e){ _renderLiveCall(null); }
+}
+try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch(e){}
 function showView(v){
   currentView=v;
   // Global motion polish (injected once): smooth tab transitions + a subtle press
@@ -15261,11 +15282,13 @@ async function loadRecMessages(){
     if(!msgs.length){ box.innerHTML=h+'<div class="mini" style="color:var(--muted)">No messages yet. When the phone assistant takes a message, it shows up here.</div>'; return; }
     msgs.forEach(function(m){
       var nw=m.status==='new';
-      h+='<div style="border:1px solid '+(nw?'#f1c0c0':'var(--line)')+';background:'+(nw?'#fff6f6':'#fff')+';border-radius:10px;padding:11px 13px;margin-bottom:8px">';
-      h+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-weight:600">'+esc(m.name||'Caller')+(nw?' <span style="color:#e23b3b;font-size:12px">• NEW</span>':'')+'</div><div class="mini" style="color:var(--muted)">'+esc(recTime(m.created_at))+'</div></div>';
+      var _pt=(typeof _matchPatientByPhone==='function')?_matchPatientByPhone(m.from):null;
+      h+='<div style="border:1px solid '+(nw?'#f1c0c0':'var(--line)')+';background:'+(nw?'#fff6f6':'var(--card)')+';border-radius:10px;padding:11px 13px;margin-bottom:8px">';
+      h+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-weight:600">'+esc(m.name||'Caller')+(_pt?(' <span style="background:#e7f6ee;color:#127a55;font-size:11px;border-radius:999px;padding:2px 9px;font-weight:700">👤 '+esc(_pt.name)+' · patient on file</span>'):(m.from?' <span style="background:#fff4e0;color:#9a6a08;font-size:11px;border-radius:999px;padding:2px 9px;font-weight:600">new caller</span>':''))+(nw?' <span style="color:#e23b3b;font-size:12px">• NEW</span>':'')+'</div><div class="mini" style="color:var(--muted)">'+esc(recTime(m.created_at))+'</div></div>';
       h+='<div style="margin:5px 0;font-size:14px">'+esc(m.body||'')+'</div>';
       if(m.from) h+='<div class="mini" style="color:var(--muted)">📞 '+esc(m.from)+'</div>';
       h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">';
+      if(_pt){ h+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="selectPatient(\''+_pt.id+'\');showView(\'patients\')">📋 Open chart</button>'; }
       if(m.from){ h+='<a class="btn-ghost" style="font-size:12.5px;padding:6px 11px;text-decoration:none" href="tel:'+esc(m.from)+'">📞 Call back</a>'; h+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="recComposeText(\''+esc(m.from)+'\')">💬 Text</button>'; }
       if(nw) h+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="recResolveMsg('+m.id+')">✓ Mark done</button>';
       h+='</div></div>';
