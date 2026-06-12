@@ -2106,7 +2106,15 @@
         <button class="btn-ghost" onclick="calToday()" style="font-size:14px;padding:7px 15px">Today</button>
         <button class="btn-ghost" onclick="calNext()" style="font-size:15px;padding:7px 13px" title="Next month">▶</button>
         <div id="calMonthLabel" style="font-weight:800;font-size:19px;margin-left:8px"></div>
+        <input type="month" id="calJump" onchange="calJump(this.value)" style="margin-left:10px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px" title="Jump to a month">
+        <select id="calProvFilter" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px"><option value="">All providers</option></select>
         <button class="btn-ghost" onclick="loadCalendar()" style="font-size:13px;padding:6px 11px;margin-left:auto">↻ Refresh</button>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:11.5px;color:var(--muted)">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#eef4fc;border:1px solid #cfe2f8;vertical-align:middle"></span> Booked</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#fff4e0;vertical-align:middle"></span> Arrived</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#e8eefc;vertical-align:middle"></span> Roomed</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#e7f6ee;vertical-align:middle"></span> Completed</span>
       </div>
       <div id="calGrid"><div class="mini" style="color:var(--muted)">Loading…</div></div>
       <div id="calDayPanel" style="display:none;margin-top:14px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
@@ -6291,8 +6299,11 @@ function renderCalendar(){
   _calInit();
   var months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent=months[_calMonth]+' '+_calYear;
+  var jump=document.getElementById('calJump'); if(jump && document.activeElement!==jump) jump.value=_calYear+'-'+_calPad(_calMonth+1);
+  var pf=document.getElementById('calProvFilter'); var pfVal=pf?pf.value:'';
+  if(pf){ if(_calProviders && _calProviders.length){ pf.style.display=''; if(pf.options.length<=1){ pf.innerHTML='<option value="">All providers</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join(''); pf.value=pfVal; } } else { pf.style.display='none'; } }
   var grid=document.getElementById('calGrid'); if(!grid) return;
-  var byDate={}; (_calAppts||[]).forEach(function(a){ var k=_calDateOf(a); if(k){ (byDate[k]=byDate[k]||[]).push(a); } });
+  var byDate={}; (_calAppts||[]).filter(function(a){ return !pfVal || String(a.doctor_user_id||'')===String(pfVal); }).forEach(function(a){ var k=_calDateOf(a); if(k){ (byDate[k]=byDate[k]||[]).push(a); } });
   var startDow=new Date(_calYear,_calMonth,1).getDay();
   var daysIn=new Date(_calYear,_calMonth+1,0).getDate();
   var tn=new Date(); var todayKey=tn.getFullYear()+'-'+_calPad(tn.getMonth()+1)+'-'+_calPad(tn.getDate());
@@ -6304,10 +6315,10 @@ function renderCalendar(){
     var key=_calYear+'-'+_calPad(_calMonth+1)+'-'+_calPad(day);
     var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
     var isToday=key===todayKey;
-    h+='<div onclick="calOpenDay(\''+key+'\')" style="min-height:86px;border:1px solid '+(isToday?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:5px 6px;cursor:pointer;background:'+(isToday?'#eef5ff':'#fff')+'">';
-    h+='<div style="font-weight:'+(isToday?'800':'600')+';font-size:13px;color:'+(isToday?'#1f7ae0':'var(--ink)')+'">'+day+'</div>';
-    ap.slice(0,3).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="font-size:11px;margin-top:2px;padding:1px 5px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
-    if(ap.length>3) h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">+'+(ap.length-3)+' more</div>';
+    h+='<div onclick="calOpenDay(\''+key+'\')" style="min-height:122px;border:1px solid '+(isToday?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(isToday?'#eef5ff':'#fff')+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+(isToday?'800':'600')+';font-size:13px;color:'+(isToday?'#1f7ae0':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
+    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
+    if(ap.length>5) h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">+'+(ap.length-5)+' more</div>';
     h+='</div>';
   }
   h+='</div>';
@@ -6320,7 +6331,35 @@ function calOpenDay(key){
   var h='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:700">'+esc(lbl)+'</div><button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="document.getElementById(\'calDayPanel\').style.display=\'none\'">✕ Close</button></div>';
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
   else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-top:6px;background:#fff"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span></div>'; }); }
+  // Add an appointment directly on this day.
+  h+='<div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:10px">';
+  h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Add an appointment</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+  h+='<input id="calAddName" placeholder="Patient name" style="flex:2;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<input id="calAddTime" type="time" style="border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px">';
+  if((_calProviders||[]).length>1){ h+='<select id="calAddDoc" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px"><option value="">No preference</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+'</select>'; }
+  h+='<input id="calAddReason" placeholder="Reason (optional)" style="flex:1;min-width:110px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<button class="btn-primary" style="font-size:13px;padding:7px 13px" onclick="calAddAppt(\''+key+'\',this)">Add</button>';
+  h+='</div><div id="calAddMsg" class="mini" style="color:var(--muted);margin-top:6px"></div></div>';
   panel.innerHTML=h; panel.style.display='block';
+}
+function calJump(v){ if(!v) return; var p=String(v).split('-'); var y=parseInt(p[0],10), m=parseInt(p[1],10); if(y&&m){ _calYear=y; _calMonth=m-1; var pn=document.getElementById('calDayPanel'); if(pn) pn.style.display='none'; renderCalendar(); } }
+async function calAddAppt(key, btn){
+  var name=((document.getElementById('calAddName')||{}).value||'').trim();
+  var msg=document.getElementById('calAddMsg');
+  if(!name){ if(msg){ msg.style.color='#c0392b'; msg.textContent='Enter a patient name.'; } return; }
+  var time=(document.getElementById('calAddTime')||{}).value||'';
+  var doc=(document.getElementById('calAddDoc')||{}).value||'';
+  var reason=(document.getElementById('calAddReason')||{}).value||'';
+  var startIso=null; if(time){ try{ startIso=new Date(key+'T'+time).toISOString(); }catch(e){} }
+  if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Adding…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:key,start_at:startIso})});
+    if(btn) btn.disabled=false;
+    if(!r.ok){ if(msg){ msg.style.color='#c0392b'; msg.textContent='Could not add the appointment.'; } return; }
+    try{ toast('Appointment added.','ok'); }catch(e){}
+    await loadCalendar(); calOpenDay(key);
+  }catch(e){ if(btn) btn.disabled=false; if(msg){ msg.style.color='#c0392b'; msg.textContent='Network error.'; } }
 }
 function renderCalCheckin(){
   var wrap=document.getElementById('calCheckinWrap'); if(!wrap) return;
