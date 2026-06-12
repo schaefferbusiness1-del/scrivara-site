@@ -6800,6 +6800,10 @@ async function calToggleCheckin(btn){
 }
 function showView(v){
   currentView=v;
+  // Global motion polish (injected once): smooth tab transitions + a subtle press
+  // response on every button, so the whole app feels responsive and alive.
+  if(!window._mlsPolishCss){ window._mlsPolishCss=1; try{ var _s=document.createElement('style'); _s.textContent='@keyframes mlsViewIn{from{opacity:.35;transform:translateY(6px)}to{opacity:1;transform:none}} button{transition:transform .07s ease} button:active{transform:scale(.97)}'; document.head.appendChild(_s); }catch(e){} }
+  try{ var _vm={patients:'patientsView',visit:'visitView',history:'historyView',recs:'recsView',orders:'ordersView',admin:'adminView',team:'teamView',analysis:'analysisView',legalreq:'legalReqView',studio:'studioView',calendar:'calendarView'}; var _ve=document.getElementById(_vm[v]); if(_ve){ setTimeout(function(){ try{ _ve.style.animation='none'; void _ve.offsetWidth; _ve.style.animation='mlsViewIn .22s ease'; }catch(e){} },0); } }catch(e){}
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
   if(v==='visit'){ try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
