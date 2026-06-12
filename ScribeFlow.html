@@ -6315,9 +6315,9 @@ function renderCalendar(){
     var key=_calYear+'-'+_calPad(_calMonth+1)+'-'+_calPad(day);
     var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
     var isToday=key===todayKey;
-    h+='<div onclick="calOpenDay(\''+key+'\')" style="min-height:122px;border:1px solid '+(isToday?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(isToday?'#eef5ff':'#fff')+'">';
+    h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:122px;border:1px solid '+(isToday?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(isToday?'#eef5ff':'#fff')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+(isToday?'800':'600')+';font-size:13px;color:'+(isToday?'#1f7ae0':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
-    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
+    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div draggable="true" ondragstart="calDragStart(event,'+a.id+')" title="Drag to another day to reschedule" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:grab">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
     if(ap.length>5) h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">+'+(ap.length-5)+' more</div>';
     h+='</div>';
   }
@@ -6410,6 +6410,24 @@ async function calCancelAppt(id){
   var day=((_calAppts||[]).find(function(x){ return String(x.id)===String(id); })||{}).appt_date;
   try{ await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'cancelled'})}); try{ toast('Appointment cancelled.','ok'); }catch(e){} }catch(e){}
   await loadCalendar(); if(day) calOpenDay(day);
+}
+// Drag an appointment chip onto another day to reschedule it (keeps the time).
+var _calDragId=null;
+function calAllowDrop(e){ if(e&&e.preventDefault) e.preventDefault(); }
+function calDragStart(e,id){ _calDragId=id; try{ e.dataTransfer.setData('text/plain',String(id)); e.dataTransfer.effectAllowed='move'; }catch(_){} if(e&&e.stopPropagation) e.stopPropagation(); }
+async function calDrop(e,dateKey){
+  if(e&&e.preventDefault) e.preventDefault(); if(e&&e.stopPropagation) e.stopPropagation();
+  var id=_calDragId; try{ if(!id&&e&&e.dataTransfer) id=e.dataTransfer.getData('text/plain'); }catch(_){} _calDragId=null;
+  if(!id) return;
+  var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
+  if((a.appt_date||'')===dateKey) return;
+  var tm=String(a.start_at||'').slice(11,16); var iso=null; if(tm){ try{ iso=new Date(dateKey+'T'+tm).toISOString(); }catch(_){} }
+  try{
+    var r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({appt_date:dateKey,start_at:iso})});
+    if(r.ok){ try{ var dt=new Date(dateKey+'T12:00'); toast('Moved to '+dt.toLocaleDateString([], {month:'short',day:'numeric'}),'ok'); }catch(_){} }
+    else { try{ toast('Could not move the appointment.','err'); }catch(_){} }
+  }catch(_){ try{ toast('Could not move the appointment.','err'); }catch(e){} }
+  loadCalendar();
 }
 function renderCalCheckin(){
   var wrap=document.getElementById('calCheckinWrap'); if(!wrap) return;
