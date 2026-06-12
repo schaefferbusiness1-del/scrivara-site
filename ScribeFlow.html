@@ -1088,6 +1088,7 @@
   </div>
   <div class="tools">
     <span class="who" id="whoLabel"></span>
+    <button class="btn-white" onclick="mlsQuickFind()" title="Jump to any patient or screen — or just press /">🔍 Find</button>
     <button class="btn-white" id="intakeBtn" style="display:none" onclick="openIntake()">Patient intake</button>
     <button class="btn-white" onclick="openTemplates()">Templates</button>
     <button class="btn-white" id="customWidgetHdrBtn" onclick="openWidgetBuilder()" title="Describe any card you want — MLS builds a real widget that auto-fills on every Generate">＋ Custom widget</button>
@@ -6839,6 +6840,57 @@ async function calToggleCheckin(btn){
   try{ await fetch(bkBase()+'/api/me/checkin',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({in:newState})}); }catch(e){}
   loadCalendar();
 }
+/* ===== QUICK FIND — a command palette to jump to any patient or screen from
+   anywhere (header 🔍 Find button, or press "/"). Theme-aware. ===== */
+(function(){
+  var VIEWS=[{k:'calendar',label:'📅 Calendar'},{k:'patients',label:'👥 Patients'},{k:'visit',label:'🎙️ Visit'},{k:'orders',label:'📋 Orders'},{k:'recs',label:'💡 Recommendations'},{k:'history',label:'📚 History'},{k:'analysis',label:'📊 Analysis'},{k:'studio',label:'✨ Create your own'},{k:'legalreq',label:'⚖️ Legal requests'}];
+  var _qfSel=0, _qfItems=[];
+  function _qfEl(){ return document.getElementById('mlsQuickFindOv'); }
+  function _qfInit(){
+    if(_qfEl()) return;
+    var ov=document.createElement('div'); ov.id='mlsQuickFindOv';
+    ov.style.cssText='position:fixed;inset:0;z-index:99998;background:rgba(15,25,40,.45);display:none;align-items:flex-start;justify-content:center;padding-top:12vh';
+    ov.innerHTML='<div style="width:560px;max-width:92vw;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 70px rgba(15,25,40,.5);overflow:hidden"><div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)"><span style="font-size:18px">🔍</span><input id="mlsQfInput" placeholder="Find a patient or jump to a screen…" style="flex:1;border:none;outline:none;background:transparent;font-size:16px;color:var(--ink)"><span style="font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 6px">esc</span></div><div id="mlsQfResults" style="max-height:52vh;overflow:auto;padding:6px"></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){ if(e.target===ov) mlsQuickFindClose(); });
+    var inp=document.getElementById('mlsQfInput');
+    inp.addEventListener('input', function(){ _qfRender(inp.value); });
+    inp.addEventListener('keydown', function(e){
+      if(e.key==='Escape'){ mlsQuickFindClose(); }
+      else if(e.key==='ArrowDown'){ e.preventDefault(); _qfSel=Math.min(_qfSel+1,_qfItems.length-1); _qfHighlight(); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); _qfSel=Math.max(_qfSel-1,0); _qfHighlight(); }
+      else if(e.key==='Enter'){ e.preventDefault(); _qfChoose(_qfSel); }
+    });
+  }
+  function _qfInitials(name){ var p=String(name||'').trim().split(/\s+/); var a=(p[0]||'')[0]||''; var b=p.length>1?((p[p.length-1]||'')[0]||''):''; return (a+b).toUpperCase()||'?'; }
+  function _qfRender(q){
+    q=String(q||'').toLowerCase().trim();
+    var res=document.getElementById('mlsQfResults'); if(!res) return;
+    var items=[];
+    VIEWS.forEach(function(v){ if(!q || v.label.toLowerCase().indexOf(q)>=0 || v.k.indexOf(q)>=0){ items.push({type:'view',k:v.k,label:v.label}); } });
+    var pts=[]; try{ pts=(typeof getPatients==='function'?getPatients():[])||[]; }catch(e){}
+    pts.forEach(function(p){ var hay=(String(p.name||'')+' '+String(p.mrn||'')+' '+String(p.dob||'')).toLowerCase(); if(!q || hay.indexOf(q)>=0){ items.push({type:'patient',p:p}); } });
+    items=items.slice(0,40); _qfItems=items; _qfSel=0;
+    if(!items.length){ res.innerHTML='<div style="padding:18px;text-align:center;color:var(--muted);font-size:14px">No matches.</div>'; return; }
+    res.innerHTML=items.map(function(it,i){
+      if(it.type==='view'){ return '<div class="mlsQfRow" data-i="'+i+'" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;font-size:14px"><span style="width:30px;text-align:center;font-size:16px">'+it.label.split(' ')[0]+'</span><span style="flex:1">Go to '+esc(it.label.replace(/^\S+\s/,''))+'</span><span style="font-size:11px;color:var(--muted)">screen</span></div>'; }
+      var p=it.p; var sub=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
+      return '<div class="mlsQfRow" data-i="'+i+'" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer"><span style="width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">'+_qfInitials(p.name)+'</span><span style="flex:1"><div style="font-weight:600;font-size:14px">'+esc(p.name||'Patient')+'</div>'+(sub?('<div style="font-size:12px;color:var(--muted)">'+esc(sub)+'</div>'):'')+'</span><span style="font-size:11px;color:var(--muted)">open chart →</span></div>';
+    }).join('');
+    [].forEach.call(res.querySelectorAll('.mlsQfRow'), function(row){ row.addEventListener('click', function(){ _qfChoose(parseInt(row.getAttribute('data-i'),10)); }); row.addEventListener('mousemove', function(){ var ni=parseInt(row.getAttribute('data-i'),10); if(ni!==_qfSel){ _qfSel=ni; _qfHighlight(); } }); });
+    _qfHighlight();
+  }
+  function _qfHighlight(){ var res=document.getElementById('mlsQfResults'); if(!res) return; [].forEach.call(res.querySelectorAll('.mlsQfRow'), function(row){ var on=parseInt(row.getAttribute('data-i'),10)===_qfSel; row.style.background=on?'var(--soft)':'transparent'; if(on){ try{ row.scrollIntoView({block:'nearest'}); }catch(e){} } }); }
+  function _qfChoose(i){ var it=_qfItems[i]; if(!it) return; mlsQuickFindClose(); try{ if(it.type==='view'){ if(typeof showView==='function') showView(it.k); } else { if(typeof selectPatient==='function') selectPatient(it.p.id); if(typeof showView==='function') showView('patients'); } }catch(e){} }
+  window.mlsQuickFind=function(){ _qfInit(); var ov=_qfEl(); if(!ov) return; ov.style.display='flex'; var inp=document.getElementById('mlsQfInput'); if(inp){ inp.value=''; inp.focus(); } _qfRender(''); };
+  window.mlsQuickFindClose=function(){ var ov=_qfEl(); if(ov) ov.style.display='none'; };
+  document.addEventListener('keydown', function(e){
+    var t=e.target, tag=(t&&t.tagName||'').toUpperCase(), editable=t&&t.isContentEditable;
+    var typing=(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||editable);
+    if(e.key==='/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey){ var ov=_qfEl(); if(!ov||ov.style.display==='none'){ e.preventDefault(); mlsQuickFind(); } }
+    else if(e.key==='Escape'){ var ov2=_qfEl(); if(ov2&&ov2.style.display!=='none'){ mlsQuickFindClose(); } }
+  }, true);
+})();
 function showView(v){
   currentView=v;
   // Global motion polish (injected once): smooth tab transitions + a subtle press
