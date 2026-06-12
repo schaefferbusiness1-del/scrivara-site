@@ -1750,6 +1750,7 @@
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
         <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
+        <button class="btn-green" onclick="sendToEMRviaAssist(this)" id="sendEmrBtn" title="MLS Assist drops this note + diagnosis & CPT codes straight into the patient open in your EMR — no copy/paste">📤 Send to EMR (Assist)</button>
         <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
         <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
@@ -2696,6 +2697,13 @@
         <label for="qolGroupProc" style="display:flex;align-items:center;gap:9px;cursor:pointer">
           <input type="checkbox" id="qolGroupProc" style="width:17px;height:17px;cursor:pointer" onchange="applyGroupProcPreview(this.checked)">
           <span>Group patients by procedure <span style="font-weight:400;color:var(--muted)">(by their most recent procedure)</span></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="autoSendEMR" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+          <input type="checkbox" id="autoSendEMR" style="width:17px;height:17px;cursor:pointer" onchange="applyAutoSendPreview(this.checked)">
+          <span>Auto-send signed notes to the EMR <span style="font-weight:400;color:var(--muted)">(via MLS Assist — drops the note + Dx/CPT codes into your EMR the moment you sign)</span></span>
         </label>
       </div>
     </div>
@@ -4895,6 +4903,7 @@ function openSettings(){
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) qcl.checked=getQolConfirmLogout();
   const _qpl=document.getElementById('qolPtLayout'); if(_qpl) _qpl.value=getQolPtLayout();
   const _qgp=document.getElementById('qolGroupProc'); if(_qgp) _qgp.checked=getQolGroupProc();
+  const _ase=document.getElementById('autoSendEMR'); if(_ase) _ase.checked=getAutoSendEMR();
   const qsig=document.getElementById('qolSignature'); if(qsig) qsig.value=getQolSignature();
   const qfu=document.getElementById('qolFollowup'); if(qfu) qfu.value=getQolFollowup();
   const _le=document.getElementById('legalEnabled'); if(_le) _le.checked=legalEnabled();
@@ -4954,6 +4963,7 @@ function saveSettings(){
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) localStorage.setItem(uns('qolConfirmLogout'),qcl.checked?'1':'0');
   const _qpl=document.getElementById('qolPtLayout'); if(_qpl) localStorage.setItem(uns('qolPtLayout'),_qpl.value);
   const _qgp=document.getElementById('qolGroupProc'); if(_qgp) localStorage.setItem(uns('qolGroupProc'),_qgp.checked?'1':'0');
+  const _ase=document.getElementById('autoSendEMR'); if(_ase) localStorage.setItem(uns('autoSendEMR'),_ase.checked?'1':'0');
   try{ if(typeof applyPtLayout==='function') applyPtLayout(); if(typeof renderPatients==='function') renderPatients(); }catch(e){}
   const qsig=document.getElementById('qolSignature'); if(qsig) localStorage.setItem(uns('qolSignature'),(qsig.value||'').trim());
   const qfu=document.getElementById('qolFollowup'); if(qfu) localStorage.setItem(uns('qolFollowup'),(qfu.value||'').trim());
@@ -9125,6 +9135,7 @@ function saveCurrentNote(announce){
     if(ap) toast((rec.signed?'Signed note':'Note')+' saved to '+ap.name+'’s history.','ok');
     else toast('Note saved to history (no active patient — it shows as “Unassigned”; open History to attach it to a chart).','ok');
     try{ if(typeof _showNextActions==='function') _showNextActions(rec.signed?'signed':'saved'); }catch(e){}
+    try{ if(rec.signed && typeof getAutoSendEMR==='function' && getAutoSendEMR() && typeof sendToEMRviaAssist==='function'){ setTimeout(function(){ sendToEMRviaAssist(null,{silent:true}); }, 600); } }catch(e){}
   }
   // Backend write-through happens inside upsertNote (hosted mode, best-effort).
 }
@@ -11212,6 +11223,34 @@ function copyForEMR(){
     .then(()=>toast('Clean note + Dx + CPT + Orders copied — paste straight into Athena / your EMR.','ok'))
     .catch(()=>toast('Could not copy — use Copy or Download instead.','err'));
 }
+/* ===== Send the finished note (incl. diagnosis + CPT codes for billing) straight
+   into the EMR via MLS Assist — no copy/paste. Pings the extension, then asks it
+   to drop the text into the patient open in the EMR tab. ===== */
+function sendToEMRviaAssist(btn, opts){
+  opts=opts||{};
+  if(!currentSoap){ if(!opts.silent) toast('Generate a note first.','err'); return; }
+  var emr=''; try{ emr=emrReadyText(); }catch(e){}
+  if(!emr.trim()){ if(!opts.silent) toast('Nothing to send yet.','err'); return; }
+  var orig = btn?btn.innerHTML:'';
+  if(btn){ btn.disabled=true; btn.innerHTML='… connecting'; }
+  var ponged=false, tries=0, iv=null;
+  function done(msg, ok){ if(btn){ btn.disabled=false; btn.innerHTML=orig||'📤 Send to EMR (Assist)'; } try{ toast(msg, ok?'ok':'err'); }catch(_){} }
+  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
+  window.addEventListener('message',onPong);
+  var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
+  ping();
+  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); done('MLS Assist isn’t responding here. Make sure it’s installed, enabled, and on the latest version (chrome://extensions → reload), then refresh this page.', false); } else ping(); }, 350);
+  function proceed(){
+    if(btn) btn.innerHTML='… sending to your EMR';
+    var got=false;
+    function onResult(e){ if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppPasteResult')) return; got=true; window.removeEventListener('message',onResult); var r=e.data.resp||{}; if(r.ok){ done('✓ Note + codes sent into your EMR'+(r.into?(' ('+r.into+')'):'')+'. Review and sign/submit there.', true); } else { done(r.error||'Could not find a note field in your EMR. Open the patient and click into the note area, then try again.', false); } }
+    window.addEventListener('message',onResult);
+    try{ window.postMessage({source:'mls-app',type:'mlsAppPasteNote', note:emr},'*'); }catch(e){}
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); done('No response from MLS Assist. Make sure your EMR tab is open, then try again.', false); } }, 30000);
+  }
+}
+function getAutoSendEMR(){ return localStorage.getItem(uns('autoSendEMR'))==='1'; }
+function applyAutoSendPreview(c){ try{ localStorage.setItem(uns('autoSendEMR'), c?'1':'0'); }catch(e){} try{ toast(c?'On — signed notes will auto-send to your EMR via MLS Assist.':'Off — notes won’t auto-send.', 'ok'); }catch(e){} }
 
 /* =========================================================
    SHARE / EXPORT PATIENT RECORD
