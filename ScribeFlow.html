@@ -8040,6 +8040,7 @@ function renderProfile(){
   document.getElementById('profName').textContent=p.name;
   const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
   document.getElementById('profDemo').textContent=demo||'No demographics on file (optional).';
+  try{ if(typeof _renderProfAtGlance==='function') _renderProfAtGlance(p); }catch(e){}
   fieldBody('profProblems',p.problems,'No problems recorded. Generate a visit or analyze a document to populate, or edit.');
   fieldBody('profMeds',p.meds,'No medications recorded.');
   fieldBody('profAllergies',p.allergies,'No allergies recorded.');
@@ -8047,6 +8048,23 @@ function renderProfile(){
   renderInsurance(p);
   renderDocs(p);
   renderPtTimeline(p);
+}
+/* "At a glance" chips on a patient chart — visits, last visit, last pain — so the
+   doctor reads the patient's status in a second when the chart opens. */
+function _renderProfAtGlance(p){
+  var host=document.getElementById('profDemo'); if(!host||!host.parentNode) return;
+  var el=document.getElementById('profAtGlance');
+  if(!el){ el=document.createElement('div'); el.id='profAtGlance'; el.style.cssText='display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:9px 0 2px'; host.parentNode.insertBefore(el, host.nextSibling); }
+  var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
+  if(!notes.length){ el.innerHTML='<span style="font-size:12.5px;color:var(--muted)">✨ New patient — start their first visit to begin building their history.</span>'; return; }
+  var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
+  var last=dates[dates.length-1]||'';
+  var pains=notes.map(function(n){ var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return (v==null||v==='')?null:Number(v); }).filter(function(x){return x!=null&&!isNaN(x);});
+  function chip(label,val){ return '<span style="background:#eef4fc;border:1px solid #d7e6fb;border-radius:999px;padding:3px 11px;font-size:12px;color:#2a5a86"><b>'+val+'</b> '+label+'</span>'; }
+  var h=chip('visit'+(notes.length===1?'':'s'), notes.length);
+  if(last){ var dd=new Date(last+'T12:00'); if(!isNaN(dd.getTime())) h+=chip('last seen', dd.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})); }
+  if(pains.length){ h+=chip('last pain', pains[pains.length-1]+'/10'); }
+  el.innerHTML=h;
 }
 /* ---------- INLINE PROFILE FIELD EDITOR ----------
    Replaces the old prompt() flow: clicking ✎ Edit swaps the field's display
