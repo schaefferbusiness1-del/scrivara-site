@@ -1091,6 +1091,7 @@
       <h2><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
+        <button class="btn-ghost" id="ptReceptionBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, the front desk, team logins and more">⋯ More</button>
         <span id="ptMore" style="display:none"><button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
@@ -1099,7 +1100,6 @@
         <button class="btn-ghost" id="ptBoardBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadBoard(true)" title="See today's appointments and who's checked in">🗓️ Check-in board</button>
         <button class="btn-ghost" id="ptAvailBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openAvailability()" title="Set the days and hours patients can book online and by phone">🕘 Availability</button>
         <button class="btn-ghost" id="ptFollowupBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openFollowups()" title="Send privacy-safe post-visit check-in emails to recently seen patients">📨 Visit follow-ups</button>
-        <button class="btn-ghost" id="ptReceptionBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptLawyerBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadLawyers(true)" title="Invite and manage lawyer logins for legal/records requests">⚖️ Lawyers</button>
         <button class="btn-ghost" id="ptDoctorsBtn" style="display:none;margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadDoctorSeats(true)" title="Add and manage additional treating-doctor seats in your practice">🩺 Doctors</button></span>
       </h2>
@@ -3117,6 +3117,11 @@
       <p style="font-weight:700;margin:0 0 2px">⚙️ A few key settings</p>
       <p class="note" style="margin:0 0 10px">Optional, but handy. Everything else lives in <b>Settings</b> (gear icon) anytime.</p>
       <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="background:#fff7ef;border:1px solid #f1d9be;border-radius:10px;padding:11px 13px">
+          <div style="font-weight:600;font-size:14px">👥 Front-desk / receptionist logins</div>
+          <div class="note" style="margin:2px 0 7px">Give your front desk their own login — they run the check-in board, scheduling, phone messages, and texts/calls, but can't see clinical notes.</div>
+          <button class="btn-primary" style="font-size:13px;padding:7px 12px" onclick="su_openReceptionists()">➕ Create a receptionist login</button>
+        </div>
         <div style="background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:11px 13px">
           <div style="font-weight:600;font-size:14px">📅 Your online booking link</div>
           <div class="note" style="margin:2px 0 7px">Share this so patients can self-book into your open times.</div>
@@ -6430,6 +6435,7 @@ function su_autoSig(){
   document.getElementById('su_sig').value=sig;
 }
 function su_openFollowups(){ closeSetup(); if(typeof openFollowups==='function') openFollowups(); }
+function su_openReceptionists(){ closeSetup(); try{ var pm=document.getElementById('ptMore'); if(pm) pm.style.display='inline'; }catch(e){} if(typeof showView==='function'){ try{ showView('patients'); }catch(e){} } setTimeout(function(){ try{ loadReceptionists(true); var rb=document.getElementById('receptionBox'); if(rb) rb.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }, 120); }
 function su_openSettings(){ closeSetup(); if(typeof openSettings==='function') openSettings(); }
 async function suChangePassword(btn){
   var msg=document.getElementById('suPwMsg');
