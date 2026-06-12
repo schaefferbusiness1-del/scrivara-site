@@ -701,6 +701,14 @@
   body.theme-dark [style*="background:#fafcff"]{ background:var(--surface)!important; color:var(--ink); }
   body.theme-dark [style*="background:#eefaf3"]{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.30)!important; color:var(--ink); }
   body.theme-dark [style*="background:#eef6ff"], body.theme-dark [style*="background:#f0f6ff"]{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
+  /* Split patient view — chart on the RIGHT when a patient is active (opt-in setting). */
+  body.pt-split.pt-has-active #patientsView{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
+  body.pt-split.pt-has-active #profileCard{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 84px); overflow:auto; }
+  body.pt-split.pt-has-active #profileNonePanel{ margin-top:0; }
+  @media(max-width:980px){ body.pt-split.pt-has-active #patientsView{ display:block; } body.pt-split.pt-has-active #profileCard{ position:static; max-height:none; margin-top:20px; } }
+  /* Procedure group headers in the patient list. */
+  .pt-group-hdr{ font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin:14px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--line); }
+  .pt-list > .pt-group-hdr:first-child{ margin-top:2px; }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -2665,6 +2673,22 @@
         <label for="qolConfirmLogout" style="display:flex;align-items:center;gap:9px;cursor:pointer">
           <input type="checkbox" id="qolConfirmLogout" style="width:17px;height:17px;cursor:pointer">
           <span>Confirm before logging out</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="qolPtLayout">Patient profile position</label>
+        <select class="sf-select" id="qolPtLayout" onchange="applyPtLayoutPreview(this.value)">
+          <option value="split">Right side (split view)</option>
+          <option value="stack">Below the list</option>
+        </select>
+        <p class="note" style="margin:4px 0 0">When you pick a patient, show their chart beside the list instead of below it (wide screens).</p>
+      </div>
+
+      <div class="field">
+        <label for="qolGroupProc" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+          <input type="checkbox" id="qolGroupProc" style="width:17px;height:17px;cursor:pointer" onchange="applyGroupProcPreview(this.checked)">
+          <span>Group patients by procedure <span style="font-weight:400;color:var(--muted)">(by their most recent procedure)</span></span>
         </label>
       </div>
     </div>
@@ -4688,6 +4712,7 @@ function getMlsNoteStyle(){ const v=localStorage.getItem(uns('noteStyle')); retu
 function applyAppearance(){
   const b=document.body; if(!b) return;
   b.classList.toggle('theme-dark', getQolTheme()==='dark');
+  try{ if(typeof applyPtLayout==='function') applyPtLayout(); }catch(e){}
   const ts=getQolTextSize();
   b.classList.remove('text-small','text-large');
   if(ts==='small') b.classList.add('text-small');
@@ -4696,6 +4721,12 @@ function applyAppearance(){
 }
 /* Live preview helpers wired to the Settings selects/checkbox. */
 function applyThemePreview(v){ document.body.classList.toggle('theme-dark', v==='dark'); }
+/* Patient profile position (split/stack) + group-by-procedure — per-device prefs. */
+function getQolPtLayout(){ return localStorage.getItem(uns('qolPtLayout'))||'split'; }
+function getQolGroupProc(){ return localStorage.getItem(uns('qolGroupProc'))==='1'; }
+function applyPtLayout(){ try{ document.body.classList.toggle('pt-split', getQolPtLayout()==='split'); }catch(e){} }
+function applyPtLayoutPreview(v){ try{ localStorage.setItem(uns('qolPtLayout'), v); }catch(e){} applyPtLayout(); }
+function applyGroupProcPreview(c){ try{ localStorage.setItem(uns('qolGroupProc'), c?'1':'0'); }catch(e){} try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){} }
 function applyTextSizePreview(v){
   const b=document.body; b.classList.remove('text-small','text-large');
   if(v==='small') b.classList.add('text-small'); else if(v==='large') b.classList.add('text-large');
@@ -4855,6 +4886,8 @@ function openSettings(){
   const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
   const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) qcl.checked=getQolConfirmLogout();
+  const _qpl=document.getElementById('qolPtLayout'); if(_qpl) _qpl.value=getQolPtLayout();
+  const _qgp=document.getElementById('qolGroupProc'); if(_qgp) _qgp.checked=getQolGroupProc();
   const qsig=document.getElementById('qolSignature'); if(qsig) qsig.value=getQolSignature();
   const qfu=document.getElementById('qolFollowup'); if(qfu) qfu.value=getQolFollowup();
   const _le=document.getElementById('legalEnabled'); if(_le) _le.checked=legalEnabled();
@@ -4912,6 +4945,9 @@ function saveSettings(){
   const qts=document.getElementById('qolTextSize'); if(qts) localStorage.setItem(uns('qolTextSize'),qts.value);
   const qc=document.getElementById('qolCompact'); if(qc) localStorage.setItem(uns('qolCompact'),qc.checked?'1':'0');
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) localStorage.setItem(uns('qolConfirmLogout'),qcl.checked?'1':'0');
+  const _qpl=document.getElementById('qolPtLayout'); if(_qpl) localStorage.setItem(uns('qolPtLayout'),_qpl.value);
+  const _qgp=document.getElementById('qolGroupProc'); if(_qgp) localStorage.setItem(uns('qolGroupProc'),_qgp.checked?'1':'0');
+  try{ if(typeof applyPtLayout==='function') applyPtLayout(); if(typeof renderPatients==='function') renderPatients(); }catch(e){}
   const qsig=document.getElementById('qolSignature'); if(qsig) localStorage.setItem(uns('qolSignature'),(qsig.value||'').trim());
   const qfu=document.getElementById('qolFollowup'); if(qfu) localStorage.setItem(uns('qolFollowup'),(qfu.value||'').trim());
   const _le=document.getElementById('legalEnabled'); if(_le) localStorage.setItem(uns('legalEnabled'),_le.checked?'1':'0');
@@ -8106,16 +8142,25 @@ function renderPatients(){
   }
   if(noMatch) noMatch.style.display='none';
   const activeId=getActivePtId();
-  list.innerHTML=shown.map(p=>{
-    const notes=patientNotes(p.id);
-    const docs=(p.docs||[]).length;
-    let last='No visits yet';
-    if(notes.length){
-      notes.sort((a,b)=>(b.updated||0)-(a.updated||0));
-      last='Last visit '+new Date(notes[0].updated||notes[0].created).toLocaleDateString();
-    }
-    const meta=[p.sex,p.dob,p.mrn].filter(Boolean).join(' · ');
-    return `<div class="pt-item ${p.id===activeId?'active':''}" onclick="selectPatient('${p.id}')">
+  const capNote = capped ? `<div class="pt-cap-note">Showing the first 150 of ${arr.length}. Search by name or date of birth to find anyone else.</div>` : '';
+  if(typeof getQolGroupProc==='function' && getQolGroupProc()){
+    var groups={};
+    shown.forEach(function(p){ var g=_ptProcedure(p); (groups[g]=groups[g]||[]).push(p); });
+    var keys=Object.keys(groups).sort(function(a,b){ if(a==='No procedure yet') return 1; if(b==='No procedure yet') return -1; return a.localeCompare(b); });
+    var ghtml='';
+    keys.forEach(function(g){ ghtml+='<div class="pt-group-hdr">'+esc(g)+' <span style="color:var(--muted);font-weight:600">('+groups[g].length+')</span></div>'; ghtml+=groups[g].map(function(p){ return _ptItemHtml(p,activeId); }).join(''); });
+    list.innerHTML=ghtml + capNote;
+  } else {
+    list.innerHTML=shown.map(function(p){ return _ptItemHtml(p,activeId); }).join('') + capNote;
+  }
+}
+function _ptItemHtml(p, activeId){
+  const notes=patientNotes(p.id);
+  const docs=(p.docs||[]).length;
+  let last='No visits yet';
+  if(notes.length){ notes.sort((a,b)=>(b.updated||0)-(a.updated||0)); last='Last visit '+new Date(notes[0].updated||notes[0].created).toLocaleDateString(); }
+  const meta=[p.sex,p.dob,p.mrn].filter(Boolean).join(' · ');
+  return `<div class="pt-item ${p.id===activeId?'active':''}" onclick="selectPatient('${p.id}')">
       <div class="pt-avatar"${p.photo?` style="background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent"`:''}>${p.photo?'':esc(ptInitials(p.name))}</div>
       <div class="pt-main">
         <div class="t">${esc(p.name)} ${p.id===activeId?'<span style="font-size:12px;color:var(--brand);font-weight:700">• active</span>':''}</div>
@@ -8123,7 +8168,22 @@ function renderPatients(){
       </div>
       <button class="del" title="Delete patient" onclick="event.stopPropagation();deletePatient('${p.id}')">🗑</button>
     </div>`;
-  }).join('') + (capped ? `<div class="pt-cap-note">Showing the first 150 of ${arr.length}. Search by name or date of birth to find anyone else.</div>` : '');
+}
+var PROC_MAP={ '64483':'Epidural injection (TFESI)','64484':'Epidural injection (TFESI)','62321':'Epidural injection (ILESI)','62322':'Epidural injection (ILESI)','62323':'Epidural injection (ILESI)','62311':'Epidural injection','64490':'Facet joint injection','64491':'Facet joint injection','64492':'Facet joint injection','64493':'Facet joint injection','64494':'Facet joint injection','64495':'Facet joint injection','64633':'Radiofrequency ablation','64634':'Radiofrequency ablation','64635':'Radiofrequency ablation','64636':'Radiofrequency ablation','20610':'Joint injection (major)','20611':'Joint injection (major)','20605':'Joint injection (intermediate)','20600':'Joint injection (small)','27096':'Sacroiliac joint injection','64451':'Sacroiliac nerve injection','20552':'Trigger point injection','20553':'Trigger point injection','64405':'Occipital nerve block','64640':'Nerve block / ablation','63650':'Spinal cord stimulator trial','63685':'Spinal cord stimulator implant','62380':'Endoscopic decompression' };
+function _ptProcedure(p){
+  try{
+    var notes=patientNotes(p.id)||[];
+    notes.sort(function(a,b){ return (b.updated||0)-(a.updated||0); });
+    for(var i=0;i<notes.length;i++){
+      var n=notes[i]; var cpts=[];
+      if(n.coding&&n.coding.cpt&&n.coding.cpt.length) cpts=n.coding.cpt;
+      else if(n.cpt) cpts=String(n.cpt).split(/[^0-9A-Za-z]+/);
+      else if(n.cpt_codes) cpts=String(n.cpt_codes).split(/[^0-9A-Za-z]+/);
+      for(var j=0;j<cpts.length;j++){ var code=String(cpts[j]).replace(/\D/g,'').slice(0,5); if(code && PROC_MAP[code]) return PROC_MAP[code]; }
+      for(var k=0;k<cpts.length;k++){ var c2=String(cpts[k]).replace(/\D/g,''); if(c2 && c2.length>=4) return 'CPT '+c2.slice(0,5); }
+    }
+  }catch(e){}
+  return 'No procedure yet';
 }
 function selectPatient(id){
   // Toggle: clicking the already-active patient clears the selection (no forced active patient).
@@ -8206,6 +8266,7 @@ function renderProfile(){
   const nonePanel=document.getElementById('profileNonePanel');
   const chip=document.getElementById('ptDeselectChip');
   const p=activePatient();
+  try{ document.body.classList.toggle('pt-has-active', !!p); }catch(e){}
   if(!p){
     card.style.display='none';
     if(nonePanel) nonePanel.style.display=getPatients().length?'block':'none';
