@@ -2104,7 +2104,12 @@
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
         <button class="btn-ghost" onclick="calPrev()" style="font-size:15px;padding:7px 13px" title="Previous month">◀</button>
         <button class="btn-ghost" onclick="calToday()" style="font-size:14px;padding:7px 15px">Today</button>
-        <button class="btn-ghost" onclick="calNext()" style="font-size:15px;padding:7px 13px" title="Next month">▶</button>
+        <button class="btn-ghost" onclick="calNext()" style="font-size:15px;padding:7px 13px" title="Next">▶</button>
+        <span style="display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:6px">
+          <button id="calMode_month" onclick="calSetMode('month')" style="font-size:12.5px;padding:6px 13px;border:0;background:#fff;cursor:pointer">Month</button>
+          <button id="calMode_week" onclick="calSetMode('week')" style="font-size:12.5px;padding:6px 13px;border:0;border-left:1px solid var(--line);background:#fff;cursor:pointer">Week</button>
+          <button id="calMode_day" onclick="calSetMode('day')" style="font-size:12.5px;padding:6px 13px;border:0;border-left:1px solid var(--line);background:#fff;cursor:pointer">Day</button>
+        </span>
         <div id="calMonthLabel" style="font-weight:800;font-size:19px;margin-left:8px"></div>
         <input type="month" id="calJump" onchange="calJump(this.value)" style="margin-left:10px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px" title="Jump to a month">
         <select id="calProvFilter" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px"><option value="">All providers</option></select>
@@ -6274,12 +6279,14 @@ async function runDataStudy(){
 /* ---------- VIEW SWITCHING ---------- */
 let currentView='patients';
 /* ===== Month calendar (shared tab) + provider check-in ===== */
-var _calYear=null, _calMonth=null, _calAppts=[], _calMe={}, _calProviders=[];
+var _calYear=null, _calMonth=null, _calAppts=[], _calMe={}, _calProviders=[], _calMode='month', _calRefDate=null;
 function _calPad(n){ return (n<10?'0':'')+n; }
+function _calShiftRef(deltaDays){ var d=new Date(_calRefDate+'T12:00'); d.setDate(d.getDate()+deltaDays); _calRefDate=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); }
 function _calInit(){ if(_calYear==null){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.getMonth(); } }
-function calToday(){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.getMonth(); var p=document.getElementById('calDayPanel'); if(p) p.style.display='none'; renderCalendar(); }
-function calPrev(){ _calInit(); _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } renderCalendar(); }
-function calNext(){ _calInit(); _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } renderCalendar(); }
+function calToday(){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.getMonth(); _calRefDate=n.getFullYear()+'-'+_calPad(n.getMonth()+1)+'-'+_calPad(n.getDate()); var p=document.getElementById('calDayPanel'); if(p) p.style.display='none'; renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
+function calPrev(){ _calInit(); if(_calMode==='month'){ _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } } else if(_calMode==='week'){ _calShiftRef(-7); } else { _calShiftRef(-1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
+function calNext(){ _calInit(); if(_calMode==='month'){ _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } } else if(_calMode==='week'){ _calShiftRef(7); } else { _calShiftRef(1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
+function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump'); if(jump) jump.style.display=(m==='month')?'':'none'; var pn=document.getElementById('calDayPanel'); if(pn&&m!=='day') pn.style.display='none'; renderCalendar(); if(m==='day') calOpenDay(_calRefDate); }
 function _calStatusColor(s){ s=s||''; if(s==='completed') return {bg:'#e7f6ee',fg:'#11643f'}; if(s==='cancelled'||s==='no_show') return {bg:'#fdeaea',fg:'#a12c2c'}; if(s==='checked_in'||s==='arrived') return {bg:'#fff4e0',fg:'#9a6b00'}; if(s==='roomed') return {bg:'#e8eefc',fg:'#2a4bbd'}; return {bg:'#eef4fc',fg:'#155fb3'}; }
 function _calLabelOf(a){ return a.name||a.label||a.patient||a.title||'Appointment'; }
 function _calDateOf(a){ return a.appt_date || String(a.start_at||'').slice(0,10); }
@@ -6295,8 +6302,57 @@ async function loadCalendar(){
   try{ var pr=await fetch(bkBase()+'/api/providers',{headers:{Authorization:'Bearer '+bkToken()}}); if(pr.ok){ var pd=await pr.json(); _calProviders=pd.providers||[]; } }catch(e){ _calProviders=[]; }
   renderCalendar(); renderCalCheckin();
 }
+function _calFilterVal(){
+  var pf=document.getElementById('calProvFilter'); var pfVal=pf?pf.value:'';
+  if(pf){ if(_calProviders && _calProviders.length){ pf.style.display=''; if(pf.options.length<=1){ pf.innerHTML='<option value="">All providers</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join(''); pf.value=pfVal; } } else { pf.style.display='none'; } }
+  return pfVal;
+}
 function renderCalendar(){
   _calInit();
+  if(!_calRefDate){ var _n=new Date(); _calRefDate=_n.getFullYear()+'-'+_calPad(_n.getMonth()+1)+'-'+_calPad(_n.getDate()); }
+  ['month','week','day'].forEach(function(m){ var b=document.getElementById('calMode_'+m); if(b){ var on=_calMode===m; b.style.background=on?'var(--brand,#1f7ae0)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; } });
+  if(_calMode==='week') return _calRenderWeek();
+  if(_calMode==='day') return _calRenderDay();
+  return _calRenderMonth();
+}
+function _calRenderWeek(){
+  var pfVal=_calFilterVal();
+  var jmp=document.getElementById('calJump'); if(jmp) jmp.style.display='none';
+  var ref=new Date(_calRefDate+'T12:00'); var start=new Date(ref.getFullYear(),ref.getMonth(),ref.getDate()-ref.getDay());
+  var days=[]; for(var i=0;i<7;i++){ days.push(new Date(start.getFullYear(),start.getMonth(),start.getDate()+i)); }
+  var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent='Week of '+start.toLocaleDateString([], {month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
+  var byDate={}; (_calAppts||[]).filter(function(a){ return !pfVal||String(a.doctor_user_id||'')===String(pfVal); }).forEach(function(a){ var k=_calDateOf(a); if(k){ (byDate[k]=byDate[k]||[]).push(a); } });
+  var tn=new Date(); var todayKey=tn.getFullYear()+'-'+_calPad(tn.getMonth()+1)+'-'+_calPad(tn.getDate());
+  var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var grid=document.getElementById('calGrid'); if(!grid) return;
+  var h='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">';
+  days.forEach(function(d,idx){ var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); var it=key===todayKey; h+='<div style="text-align:center;font-weight:700;font-size:12px;color:'+(it?'#1f7ae0':'var(--muted)')+';padding:4px 0">'+dn[idx]+' '+d.getDate()+'</div>'; });
+  days.forEach(function(d){
+    var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate());
+    var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+    var it=key===todayKey;
+    h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:330px;border:1px solid '+(it?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(it?'#eef5ff':'#fff')+'">';
+    if(!ap.length) h+='<div style="font-size:11px;color:#c4cdd8;margin-top:6px;text-align:center">—</div>';
+    ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div draggable="true" ondragstart="calDragStart(event,'+a.id+')" style="font-size:11px;margin-top:3px;padding:3px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:grab">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
+    h+='</div>';
+  });
+  h+='</div>'; grid.innerHTML=h;
+}
+function _calRenderDay(){
+  var pfVal=_calFilterVal();
+  var jmp=document.getElementById('calJump'); if(jmp) jmp.style.display='none';
+  var ref=new Date(_calRefDate+'T12:00'); var key=ref.getFullYear()+'-'+_calPad(ref.getMonth()+1)+'-'+_calPad(ref.getDate());
+  var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent=ref.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  var ap=(_calAppts||[]).filter(function(a){ return _calDateOf(a)===key && (!pfVal||String(a.doctor_user_id||'')===String(pfVal)); }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+  var grid=document.getElementById('calGrid'); if(!grid) return;
+  var h='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;min-height:280px">';
+  if(!ap.length) h+='<div class="mini" style="color:var(--muted)">No appointments this day. Use the panel below to add one.</div>';
+  ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin-bottom:7px;background:#fff"><span style="font-weight:700;min-width:60px;font-size:16px">'+(tm||'—')+'</span><span style="flex:1;font-size:15px">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:2px 9px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><button class="btn-ghost" style="font-size:11px;padding:4px 11px" onclick="calOpenDay(\''+key+'\');calEditAppt('+a.id+')">✎ Edit</button></div>'; });
+  h+='</div>'; grid.innerHTML=h;
+}
+function _calRenderMonth(){
+  _calInit();
+  var _jmp2=document.getElementById('calJump'); if(_jmp2) _jmp2.style.display='';
   var months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent=months[_calMonth]+' '+_calYear;
   var jump=document.getElementById('calJump'); if(jump && document.activeElement!==jump) jump.value=_calYear+'-'+_calPad(_calMonth+1);
