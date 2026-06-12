@@ -1,1 +1,1 @@
-{ "version": "1.11", "url": "https://mlsscribe.com/assist.html", "notes": "Autopilot now works INSIDE iframes (reads and clicks Athena's iframe-based screens, not just the top frame) — a big reliability gain for real EMRs. Plus calendar improvements in the app. Reload at chrome://extensions to update." }
+{ "version": "1.12", "url": "https://mlsscribe.com/assist.html", "notes": "Fixes the hover tooltips so they appear ON TOP of the assistant panel instead of hidden behind it. Also includes the iframe-aware autopilot from 1.11. Reload at chrome://extensions to update." }
