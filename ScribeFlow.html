@@ -6699,6 +6699,27 @@ async function _renderWaitingRoom(){
 }
 // Keep the waiting room live: refresh every ~40s while the Visit tab is open.
 try{ setInterval(function(){ try{ if(typeof currentView!=='undefined' && currentView==='visit' && typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }catch(e){} }, 40000); }catch(e){}
+// Daily brief on the Patients (home) view — today's schedule at a glance the
+// moment the doctor opens the app: "Good morning — N today, X in the waiting room".
+async function _renderDailyBrief(){
+  var host=document.getElementById('patientsView'); if(!host) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ var ex0=document.getElementById('dailyBriefBar'); if(ex0) ex0.style.display='none'; return; }
+  var bar=document.getElementById('dailyBriefBar');
+  if(!bar){ bar=document.createElement('div'); bar.id='dailyBriefBar'; bar.style.cssText='margin:0 0 12px'; host.insertBefore(bar, host.firstChild); }
+  var today=(new Date()).toISOString().slice(0,10); var appts=[];
+  try{ var r=await fetch(bkBase()+'/api/appointments?date='+today,{headers:{Authorization:'Bearer '+bkToken()}}); if(r.ok){ var d=await r.json(); appts=d.appointments||[]; } }catch(e){}
+  if(!appts.length){ bar.style.display='none'; bar.innerHTML=''; return; }
+  var checkedIn=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).length;
+  var done=appts.filter(function(a){ return a.status==='completed'; }).length;
+  var hh=new Date().getHours(); var greet=hh<12?'Good morning':hh<17?'Good afternoon':'Good evening';
+  var who=''; try{ who=(typeof getProviderName==='function'&&getProviderName())||(typeof getName==='function'&&getName())||''; }catch(e){}
+  var msg='☀️ '+greet+(who?(', '+esc(who)):'')+' — <b>'+appts.length+'</b> appointment'+(appts.length===1?'':'s')+' today'+(checkedIn?(', <b>'+checkedIn+'</b> in your waiting room'):'')+(done?(', '+done+' done'):'')+'.';
+  var btns='';
+  if(checkedIn){ btns+='<button class="btn-green" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'visit\')">🟢 Waiting room</button>'; }
+  btns+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'calendar\')">📅 See schedule</button>';
+  bar.innerHTML='<div style="background:linear-gradient(90deg,#eef6ff,#f3fbf6);border:1px solid #d7e6fb;border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-size:13.5px;flex:1;min-width:200px">'+msg+'</span>'+btns+'</div>';
+  bar.style.display='block';
+}
 function calOpenPatientFor(id){
   var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
   try{ if(a.patient_external_id && typeof selectPatient==='function'){ selectPatient(a.patient_external_id); showView('patients'); return; } }catch(e){}
@@ -6783,6 +6804,7 @@ function showView(v){
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
   if(v==='visit'){ try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
   if(v==='orders'){ try{ if((typeof ordersDx==='undefined' || !ordersDx || (!ordersDx.text && !(ordersDx.icd&&ordersDx.icd.length))) && typeof noteDiagnosisText==='function'){ var _od=noteDiagnosisText(); if(_od && (_od.text || (_od.icd&&_od.icd.length)) && typeof pullDxFromNote==='function') pullDxFromNote(); } }catch(e){} }
+  if(v==='patients'){ try{ if(typeof _renderDailyBrief==='function') _renderDailyBrief(); }catch(e){} }
   document.getElementById('historyView').style.display  = v==='history'?'block':'none';
   document.getElementById('recsView').style.display     = v==='recs'?'block':'none';
   const ordersV=document.getElementById('ordersView'); if(ordersV) ordersV.style.display = v==='orders'?'block':'none';
