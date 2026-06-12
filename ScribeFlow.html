@@ -1302,7 +1302,7 @@
       <div class="row tight">
         <button class="btn-ghost" onclick="clearTranscript()">Clear</button>
         <button id="draftBtn" class="btn-ghost" onclick="saveDraft()">Save draft</button>
-        <button id="genBtn" class="btn-green" style="margin-left:auto" onclick="generateNote()">Generate Note</button>
+        <button id="genBtn" class="btn-green" style="margin-left:auto" onclick="generateNote()">✨ Generate Note</button>
       </div>
       <p class="mini">Tip: works best in Chrome or Edge. Your transcript never leaves this page until you press Generate Note.</p>
     </div>
@@ -3919,6 +3919,11 @@ function logout(force){
   }
   if(capturing) stopCapture();
   stopIdle();            // clear the inactivity timer
+  // HIPAA: never leave patient data in this browser after logout (shared
+  // clinic workstations). Scrub the on-device patient cache + any unsaved
+  // visit draft while we still know whose namespace it is.
+  try{ ['patients','notes','activePt'].forEach(function(k){ try{ localStorage.removeItem(uns(k)); }catch(e){} }); }catch(e){}
+  try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){}
   session=null;
   // Clear THIS TAB's session (sessionStorage) AND the localStorage seed. Other
   // open tabs keep their own sessionStorage session and are unaffected — a
@@ -5053,6 +5058,76 @@ function twofaDismissRecovery(){
    ========================================================= */
 function getNotes(){ try{return JSON.parse(localStorage.getItem(uns('notes')))||[];}catch(e){return [];} }
 function saveNotes(arr){ localStorage.setItem(uns('notes'),JSON.stringify(arr)); }
+
+/* ============================================================
+   UNSAVED-VISIT PROTECTION — autosave the live visit to this
+   tab's sessionStorage, offer to restore it after a refresh /
+   idle-logout, and warn before leaving with unsaved work.
+   ============================================================ */
+var _visitDirty=false, _visitDraftTimer=null;
+function _visitDraftKey(){ return uns('visitDraft'); }
+function _saveVisitDraft(){
+  try{
+    var t=(document.getElementById('transcript')||{}).value||'';
+    var soap=(typeof currentSoap!=='undefined'?currentSoap:'')||'';
+    var ins=(typeof currentInsurance!=='undefined'?currentInsurance:'')||'';
+    if(!String(t).trim() && !String(soap).trim() && !String(ins).trim()) return;
+    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), pt:(document.getElementById('patientLabel')||{}).value||'', ts:Date.now() }));
+  }catch(e){}
+}
+function _wipeVisitDraft(){ _visitDirty=false; try{ sessionStorage.removeItem(_visitDraftKey()); }catch(e){} var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); }
+function _markVisitDirty(){ _visitDirty=true; if(_visitDraftTimer) clearTimeout(_visitDraftTimer); _visitDraftTimer=setTimeout(_saveVisitDraft, 800); }
+function _maybeRestoreVisitDraft(){
+  try{
+    if((document.getElementById('transcript')||{}).value) return; // don't clobber current work
+    if(document.getElementById('_visitRestoreBar')) return;
+    var raw=sessionStorage.getItem(_visitDraftKey()); if(!raw) return;
+    var d=JSON.parse(raw); if(!d || (!String(d.t||'').trim() && !String(d.soap||'').trim())) return;
+    var when=d.ts?(' from '+new Date(d.ts).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})):'';
+    var bar=document.createElement('div'); bar.id='_visitRestoreBar';
+    bar.style.cssText='background:#fff7e6;border:1px solid #f0d9a0;border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:13px;color:#8a5a00;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    bar.innerHTML='💾 You have an unsaved visit'+when+'. <button class="btn-primary" style="font-size:12px;padding:5px 11px" onclick="_restoreVisitDraft()">Restore it</button> <button class="btn-ghost" style="font-size:12px;padding:5px 11px" onclick="_dismissVisitRestore()">Discard</button>';
+    var host=document.getElementById('transcript'); if(host && host.parentNode){ host.parentNode.insertBefore(bar, host); }
+  }catch(e){}
+}
+function _restoreVisitDraft(){
+  try{
+    var d=JSON.parse(sessionStorage.getItem(_visitDraftKey())||'{}');
+    var tx=document.getElementById('transcript'); if(tx) tx.value=d.t||'';
+    if(typeof finalText!=='undefined') finalText=d.t||'';
+    if(typeof currentSoap!=='undefined') currentSoap=d.soap||'';
+    if(typeof currentInsurance!=='undefined') currentInsurance=d.ins||'';
+    if(typeof currentFormat!=='undefined' && d.fmt) currentFormat=d.fmt;
+    var pl=document.getElementById('patientLabel'); if(pl && d.pt) pl.value=d.pt;
+    var nb=document.getElementById('noteBox'); if(nb){ nb.value=((typeof currentFormat!=='undefined'&&currentFormat==='insurance')?(d.ins||''):(d.soap||'')); }
+    var b=document.getElementById('_visitRestoreBar'); if(b) b.remove();
+    _visitDirty=true;
+    try{ toast('Restored your unsaved visit.','ok'); }catch(e){}
+  }catch(e){ try{ toast('Could not restore the draft.','err'); }catch(_){} }
+}
+function _dismissVisitRestore(){ _wipeVisitDraft(); }
+/* Lightweight in-app info dialog (replaces raw alert() popups). */
+function _infoDialog(title, text){
+  try{
+    var prev=document.getElementById('_mlsInfoDialog'); if(prev) prev.remove();
+    var ov=document.createElement('div'); ov.id='_mlsInfoDialog';
+    ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(18,32,48,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+    var card=document.createElement('div');
+    card.style.cssText='background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(20,40,70,.35);overflow:hidden';
+    var head='<div style="background:#1f7ae0;color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center"><span>'+esc(title||'')+'</span><span style="cursor:pointer;font-size:20px;opacity:.85" onclick="var d=document.getElementById(\'_mlsInfoDialog\');if(d)d.remove()">×</span></div>';
+    var body='<div style="padding:16px;overflow:auto;white-space:pre-wrap;font-size:14px;line-height:1.5;color:#1a2b3c">'+esc(text||'')+'</div>';
+    var foot='<div style="padding:10px 16px;border-top:1px solid var(--line);text-align:right"><button class="btn-primary" style="font-size:13px;padding:8px 16px" onclick="var d=document.getElementById(\'_mlsInfoDialog\');if(d)d.remove()">Got it</button></div>';
+    card.innerHTML=head+body+foot;
+    ov.appendChild(card); ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }catch(e){ try{ toast(String(text||'').slice(0,140),''); }catch(_){} }
+}
+(function(){
+  try{
+    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); } }, true);
+    window.addEventListener('beforeunload', function(e){ if(_visitDirty || (typeof capturing!=='undefined' && capturing)){ e.preventDefault(); e.returnValue=''; return ''; } });
+  }catch(e){}
+})();
 
 /* =========================================================
    PATIENTS  (per-user list; each patient has profile + docs)
@@ -6640,6 +6715,7 @@ function showView(v){
   currentView=v;
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
+  if(v==='visit'){ try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); }, 30); }catch(e){} }
   document.getElementById('historyView').style.display  = v==='history'?'block':'none';
   document.getElementById('recsView').style.display     = v==='recs'?'block':'none';
   const ordersV=document.getElementById('ordersView'); if(ordersV) ordersV.style.display = v==='orders'?'block':'none';
@@ -8480,6 +8556,7 @@ let currentNoteId=null; // id of the history record being edited (null = brand n
 
 function newVisit(){
   if(capturing) stopCapture();
+  try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){}
   currentNoteId=null;
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
@@ -8602,6 +8679,7 @@ function saveCurrentNote(announce){
     toast('Could not save this visit: '+((err&&err.message)||err),'err');
     return;
   }
+  try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){}
   if(announce){
     const ap=activePatient();
     if(ap) toast((rec.signed?'Signed note':'Note')+' saved to '+ap.name+'’s history.','ok');
@@ -16141,7 +16219,7 @@ async function askAiQuestions(){
     if(!r.ok){ toast((d&&d.error)||'Could not check right now.','err'); return; }
     if(d.posted){ toast('Sent the outstanding questions to the attorney.','ok'); if(_legalMsgShown) loadLegalMessages(); }
     else { toast('Nothing material missing — the materials look sufficient.','ok'); }
-    if(d.questions) alert(d.questions);
+    if(d.questions) _infoDialog("What counsel still needs", d.questions);
   }catch(e){ toast('Could not check right now.','err'); }
   finally{ if(btn){ btn.disabled=false; btn.innerHTML='❓ Ask counsel what\'s missing'; } }
 }
