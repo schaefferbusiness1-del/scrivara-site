@@ -1,1 +1,1 @@
-{ "version": "1.5", "url": "https://mlsscribe.com/assist.html", "notes": "Smart adaptive replay (recordings self-heal when the page changes), record-and-replay, undo, voice, playbooks, Athena pack." }
+{ "version": "1.6", "url": "https://mlsscribe.com/assist.html", "notes": "Autopilot can take a chart into MLS and put a note into the EMR in one fast step each; adaptive replay; record-and-replay; undo; voice; playbooks." }
