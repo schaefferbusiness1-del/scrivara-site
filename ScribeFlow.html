@@ -6977,6 +6977,44 @@ async function _pollLiveCalls(){
   }catch(e){ _renderLiveCall(null); }
 }
 try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch(e){}
+/* ===== Movable floating "+" quick-action button. Drag to reposition (saved);
+   tap to open quick actions. Theme-aware. ===== */
+(function(){
+  var KEY='mls_fab_pos';
+  function getPos(){ try{ var p=JSON.parse(localStorage.getItem(KEY)||'null'); if(p&&typeof p.right==='number'&&typeof p.bottom==='number') return p; }catch(e){} return {right:24, bottom:96}; }
+  function savePos(p){ try{ localStorage.setItem(KEY, JSON.stringify(p)); }catch(e){} }
+  var fab, menu, dragging=false, moved=false, sx, sy, sr, sb;
+  function positionMenu(){ if(!fab||!menu) return; var r=fab.getBoundingClientRect(); menu.style.right=Math.max(8,(window.innerWidth-r.right))+'px'; menu.style.bottom=Math.max(8,(window.innerHeight-r.top+10))+'px'; }
+  function hideMenu(){ if(!menu) return; menu.style.display='none'; if(fab) fab.style.transform='none'; }
+  function renderMenu(){
+    var acts=[
+      ['➕ New patient', function(){ try{ if(typeof showView==='function') showView('patients'); if(typeof newPatient==='function') setTimeout(newPatient,40); }catch(e){} }],
+      ['🎙️ New visit', function(){ try{ if(typeof showView==='function') showView('visit'); if(typeof newVisit==='function') newVisit(); }catch(e){} }],
+      ['📅 New appointment', function(){ try{ if(typeof calScheduleForPatient==='function') calScheduleForPatient(); }catch(e){} }],
+      ['🔍 Find anything', function(){ try{ if(typeof mlsQuickFind==='function') mlsQuickFind(); }catch(e){} }],
+      ['🟢 Waiting room', function(){ try{ if(typeof showView==='function') showView('visit'); }catch(e){} }]
+    ];
+    menu.innerHTML='';
+    acts.forEach(function(a){ var b=document.createElement('button'); b.type='button'; b.textContent=a[0]; b.style.cssText='background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(20,40,70,.18);white-space:nowrap'; b.addEventListener('click', function(ev){ ev.stopPropagation(); hideMenu(); a[1](); }); menu.appendChild(b); });
+  }
+  function toggleMenu(){ if(!menu) return; if(menu.style.display==='none'||!menu.style.display){ renderMenu(); menu.style.display='flex'; positionMenu(); if(fab) fab.style.transform='rotate(45deg)'; } else { hideMenu(); } }
+  function build(){
+    if(document.getElementById('mlsFab')||!document.body) return;
+    var pos=getPos();
+    fab=document.createElement('button'); fab.id='mlsFab'; fab.type='button'; fab.title='Quick actions — drag to move me';
+    fab.textContent='+';
+    fab.style.cssText='position:fixed;right:'+pos.right+'px;bottom:'+pos.bottom+'px;z-index:99980;width:54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;border:none;font-size:30px;line-height:1;cursor:grab;box-shadow:0 8px 24px rgba(31,99,201,.45);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;transition:transform .14s ease,box-shadow .14s ease';
+    menu=document.createElement('div'); menu.id='mlsFabMenu';
+    menu.style.cssText='position:fixed;z-index:99981;display:none;flex-direction:column;gap:8px;align-items:flex-end';
+    document.body.appendChild(fab); document.body.appendChild(menu);
+    fab.addEventListener('pointerdown', function(e){ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; var p=getPos(); sr=p.right; sb=p.bottom; try{ fab.setPointerCapture(e.pointerId); }catch(_){} fab.style.cursor='grabbing'; });
+    window.addEventListener('pointermove', function(e){ if(!dragging) return; var dx=e.clientX-sx, dy=e.clientY-sy; if(Math.abs(dx)>4||Math.abs(dy)>4) moved=true; var nr=Math.min(Math.max(8, sr-dx), window.innerWidth-62); var nb=Math.min(Math.max(8, sb-dy), window.innerHeight-62); fab.style.right=nr+'px'; fab.style.bottom=nb+'px'; if(menu.style.display!=='none') positionMenu(); });
+    window.addEventListener('pointerup', function(e){ if(!dragging) return; dragging=false; fab.style.cursor='grab'; savePos({right:parseInt(fab.style.right,10)||24, bottom:parseInt(fab.style.bottom,10)||96}); if(!moved) toggleMenu(); });
+    document.addEventListener('click', function(e){ if(menu && menu.style.display!=='none' && e.target!==fab && !menu.contains(e.target)) hideMenu(); }, true);
+    window.addEventListener('resize', function(){ if(menu&&menu.style.display!=='none') positionMenu(); });
+  }
+  if(document.body) build(); else document.addEventListener('DOMContentLoaded', build);
+})();
 function showView(v){
   currentView=v;
   // Global motion polish (injected once): smooth tab transitions + a subtle press
