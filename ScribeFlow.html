@@ -1856,6 +1856,8 @@
   <div class="card" id="recsCard">
     <h2><span class="ic">💡</span> Recommendations for the provider
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="genRecsBtn" onclick="generateRecommendations()">✨ Generate Recommendations</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="showView('orders')" title="Turn these into orders">📋 Orders</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="showView('visit')" title="Back to the visit">🎙️ Visit</button>
     </h2>
     <p class="sub">AI looks at this visit plus the active patient's chart (problem list, meds, allergies, history) and suggests items for <b>you</b> to consider — care gaps, interaction flags, follow-up/monitoring, and documentation tips.</p>
     <div class="disclaim">🤝 AI suggestions for the provider to consider — use clinical judgment; not medical advice or directives.</div>
@@ -6898,7 +6900,7 @@ async function calToggleCheckin(btn){
 /* ===== QUICK FIND — a command palette to jump to any patient or screen from
    anywhere (header 🔍 Find button, or press "/"). Theme-aware. ===== */
 (function(){
-  var VIEWS=[{k:'calendar',label:'📅 Calendar'},{k:'patients',label:'👥 Patients'},{k:'visit',label:'🎙️ Visit'},{k:'orders',label:'📋 Orders'},{k:'recs',label:'💡 Recommendations'},{k:'history',label:'📚 History'},{k:'analysis',label:'📊 Analysis'},{k:'studio',label:'✨ Create your own'},{k:'legalreq',label:'⚖️ Legal requests'}];
+  var VIEWS=[{k:'calendar',label:'📅 Calendar'},{k:'patients',label:'👥 Patients'},{k:'visit',label:'🎙️ Visit'},{k:'orders',label:'📋 Orders'},{k:'recs',label:'💡 Recommendations'},{k:'history',label:'📚 History'},{k:'analysis',label:'📊 Analysis'},{k:'studio',label:'✨ Create your own'},{k:'legalreq',label:'⚖️ Legal requests'},{k:'__settings',label:'⚙️ Settings'},{k:'__help',label:'❓ Help'},{k:'__newpt',label:'➕ New patient'},{k:'__newappt',label:'📅 New appointment'}];
   var _qfSel=0, _qfItems=[];
   function _qfEl(){ return document.getElementById('mlsQuickFindOv'); }
   function _qfInit(){
@@ -6936,7 +6938,15 @@ async function calToggleCheckin(btn){
     _qfHighlight();
   }
   function _qfHighlight(){ var res=document.getElementById('mlsQfResults'); if(!res) return; [].forEach.call(res.querySelectorAll('.mlsQfRow'), function(row){ var on=parseInt(row.getAttribute('data-i'),10)===_qfSel; row.style.background=on?'var(--soft)':'transparent'; if(on){ try{ row.scrollIntoView({block:'nearest'}); }catch(e){} } }); }
-  function _qfChoose(i){ var it=_qfItems[i]; if(!it) return; mlsQuickFindClose(); try{ if(it.type==='view'){ if(typeof showView==='function') showView(it.k); } else { if(typeof selectPatient==='function') selectPatient(it.p.id); if(typeof showView==='function') showView('patients'); } }catch(e){} }
+  function _qfChoose(i){ var it=_qfItems[i]; if(!it) return; mlsQuickFindClose(); try{
+    if(it.type==='view'){
+      if(it.k==='__settings'){ if(typeof openSettings==='function') openSettings(); }
+      else if(it.k==='__help'){ if(typeof openMlsHelp==='function') openMlsHelp(); }
+      else if(it.k==='__newpt'){ if(typeof showView==='function') showView('patients'); if(typeof newPatient==='function') setTimeout(newPatient,40); }
+      else if(it.k==='__newappt'){ if(typeof calScheduleForPatient==='function') calScheduleForPatient(); }
+      else if(typeof showView==='function'){ showView(it.k); }
+    } else { if(typeof selectPatient==='function') selectPatient(it.p.id); if(typeof showView==='function') showView('patients'); }
+  }catch(e){} }
   window.mlsQuickFind=function(){ _qfInit(); var ov=_qfEl(); if(!ov) return; ov.style.display='flex'; var inp=document.getElementById('mlsQfInput'); if(inp){ inp.value=''; inp.focus(); } _qfRender(''); };
   window.mlsQuickFindClose=function(){ var ov=_qfEl(); if(ov) ov.style.display='none'; };
   document.addEventListener('keydown', function(e){
