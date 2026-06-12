@@ -10,7 +10,7 @@
    and replayed. Changing this file's bytes makes browsers fetch, install, and
    (via skipWaiting + clients.claim) immediately activate this new worker, so
    existing visitors self-heal on their next load with no manual cache clearing. */
-const CACHE = 'mls-v3';
+const CACHE = 'mls-v4';
 const SHELL = [
   'ScribeFlow.html',
   'index.html',
