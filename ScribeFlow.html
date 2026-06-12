@@ -9132,6 +9132,7 @@ function initRecog(){
       else interim+=r[0].transcript;
     }
     document.getElementById('transcript').value=(finalText+interim).trim();
+    try{ if(capturing){ var _w=(finalText+interim).trim().split(/\s+/).filter(Boolean).length; _updateLiveCapture(_w); } }catch(e){}
   };
   recog.onerror=e=>{
     if(e.error==='not-allowed'||e.error==='service-not-allowed'){
@@ -9158,6 +9159,7 @@ function startCapture(){
   const b=document.getElementById('captureBtn');
   b.classList.remove('btn-primary'); b.classList.add('recording');
   b.innerHTML='<span class="live-dot"></span> Recording… Stop Visit';
+  try{ var _w0=(document.getElementById('transcript').value||'').trim().split(/\s+/).filter(Boolean).length; _updateLiveCapture(_w0); }catch(e){}
 }
 function stopCapture(){
   capturing=false;
@@ -9165,10 +9167,20 @@ function stopCapture(){
   const b=document.getElementById('captureBtn');
   b.classList.remove('recording'); b.classList.add('btn-primary');
   b.innerHTML='▶ Start Visit';
+  try{ _hideLiveCapture(); }catch(e){}
 }
 function clearTranscript(){
   document.getElementById('transcript').value=''; finalText='';
+  try{ _hideLiveCapture(); }catch(e){}
 }
+/* Live "it's listening" reassurance — shows a pulsing word count as the doctor talks. */
+function _liveCaptureEl(){
+  var el=document.getElementById('liveCaptureInfo');
+  if(!el){ el=document.createElement('div'); el.id='liveCaptureInfo'; el.style.cssText='display:none;align-items:center;gap:8px;font-size:12.5px;color:#c0392b;font-weight:600;margin:0 0 8px'; var tx=document.getElementById('transcript'); if(tx&&tx.parentNode){ tx.parentNode.insertBefore(el, tx); } else { return null; } }
+  return el;
+}
+function _updateLiveCapture(words){ var el=_liveCaptureEl(); if(!el) return; el.innerHTML='<span class="live-dot"></span> Listening… '+words+' word'+(words===1?'':'s')+' captured'; el.style.display='flex'; }
+function _hideLiveCapture(){ var el=document.getElementById('liveCaptureInfo'); if(el) el.style.display='none'; }
 
 /* =========================================================
    PHONE MICROPHONE  (desktop side)
