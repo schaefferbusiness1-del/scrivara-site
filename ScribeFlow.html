@@ -688,6 +688,19 @@
   .navtab:active{ transform:scale(.97); }
   /* Active-patient bar — match the softer radius */
   #patientBar{ border-radius:14px; }
+  /* Dark-mode fixes for the new magic-pass surfaces (they use light tints by default,
+     so re-skin them to theme variables under dark mode for proper contrast). */
+  body.theme-dark #dailyBriefBar > div{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
+  body.theme-dark #waitingRoomBar > div{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.30)!important; color:var(--ink); }
+  body.theme-dark #nextActionsBar{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.30)!important; color:var(--ink); }
+  body.theme-dark #profAtGlance span{ background:var(--soft)!important; border-color:var(--line)!important; color:var(--ink)!important; }
+  body.theme-dark #calNewApptBox{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
+  body.theme-dark #calAvailBox{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
+  body.theme-dark #_backupBadge{ background:var(--gold-bg)!important; border-color:rgba(217,169,59,.4)!important; color:var(--gold)!important; }
+  body.theme-dark #calDayPanel{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
+  body.theme-dark [style*="background:#fafcff"]{ background:var(--surface)!important; color:var(--ink); }
+  body.theme-dark [style*="background:#eefaf3"]{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.30)!important; color:var(--ink); }
+  body.theme-dark [style*="background:#eef6ff"], body.theme-dark [style*="background:#f0f6ff"]{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
