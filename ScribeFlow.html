@@ -15841,7 +15841,7 @@ async function returnLegalToAttorney(){
 /* ============ Per-request: itemized invoice, AI questions, secure messaging ============ */
 var _legalCurrentReq=null, _legalInvoiceShown=false, _legalMsgShown=false, _legalInvItems=[];
 function _legalReqId(){ return (typeof currentLegalRequestId!=='undefined' && currentLegalRequestId) ? currentLegalRequestId : null; }
-function _todayStr(){ try{ return new Date().toLocaleDateString(); }catch(e){ return ''; } }
+function _invToday(){ try{ return new Date().toLocaleDateString(); }catch(e){ return ''; } }
 function _money2(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 /* ----- Itemized expert invoice ----- */
@@ -15856,7 +15856,7 @@ function renderLegalInvoice(){
   if(!_legalInvItems.length){
     var saved=rq.invoice&&rq.invoice.items;
     if(saved&&saved.length){ _legalInvItems=saved.map(function(it){return {date:it.date||'',desc:it.desc||'',hours:it.hours||'',rate:it.rate||'',flat:it.flat||''};}); }
-    else { _legalInvItems=[{date:_todayStr(),desc:'Medical record review',hours:'',rate:'',flat:''}]; }
+    else { _legalInvItems=[{date:_invToday(),desc:'Medical record review',hours:'',rate:'',flat:''}]; }
   }
   var billTo=(rq.invoice&&rq.invoice.bill_to)||rq.firm||'';
   var invNo=(rq.invoice&&rq.invoice.invoice_no)||('MLS-'+(rq.id||'')+'-'+String(new Date().getFullYear()));
@@ -15894,10 +15894,10 @@ function legalInvRenderRows(){
   tb.innerHTML=h; var tot=document.getElementById('invTotal'); if(tot) tot.textContent=_money2(_legalInvTotal());
 }
 function legalInvEdit(el){ var i=+el.getAttribute('data-i'), k=el.getAttribute('data-k'); if(_legalInvItems[i]){ _legalInvItems[i][k]=el.value; if(k==='hours'||k==='rate'||k==='flat') legalInvRenderRows(); } }
-function legalInvAddRow(){ _legalInvItems.push({date:_todayStr(),desc:'',hours:'',rate:'',flat:''}); legalInvRenderRows(); }
-function legalInvDel(i){ _legalInvItems.splice(i,1); if(!_legalInvItems.length) _legalInvItems.push({date:_todayStr(),desc:'',hours:'',rate:'',flat:''}); legalInvRenderRows(); }
+function legalInvAddRow(){ _legalInvItems.push({date:_invToday(),desc:'',hours:'',rate:'',flat:''}); legalInvRenderRows(); }
+function legalInvDel(i){ _legalInvItems.splice(i,1); if(!_legalInvItems.length) _legalInvItems.push({date:_invToday(),desc:'',hours:'',rate:'',flat:''}); legalInvRenderRows(); }
 function legalInvCollect(){
-  return { bill_to:(document.getElementById('invBillTo')||{}).value||'', invoice_no:(document.getElementById('invNo')||{}).value||'', date:_todayStr(),
+  return { bill_to:(document.getElementById('invBillTo')||{}).value||'', invoice_no:(document.getElementById('invNo')||{}).value||'', date:_invToday(),
     items:_legalInvItems.map(function(it){return {date:it.date||'',desc:it.desc||'',hours:it.hours||'',rate:it.rate||'',flat:it.flat||'',amount:_legalLineAmt(it)};}),
     total:_legalInvTotal(), notes:(document.getElementById('invNotes')||{}).value||'' };
 }
