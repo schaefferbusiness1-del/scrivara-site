@@ -1094,6 +1094,7 @@
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, the front desk, team logins and more">⋯ More</button>
         <span id="ptMore" style="display:none"><button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
+        <button class="btn-ghost" id="ptSetupBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openSetup()" title="Set up your name, practice details, and schedule">🚀 Set up your practice</button>
         <button class="btn-ghost" id="ptBookLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyBookingLink(this)" title="Get a link patients can use to book appointments online">📅 Booking link</button>
         <button class="btn-ghost" id="ptBoardBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadBoard(true)" title="See today's appointments and who's checked in">🗓️ Check-in board</button>
         <button class="btn-ghost" id="ptAvailBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openAvailability()" title="Set the days and hours patients can book online and by phone">🕘 Availability</button>
@@ -3053,6 +3054,60 @@
   </div>
 </div>
 
+<!-- SET UP YOUR PRACTICE — self-service onboarding for the doctor -->
+<div class="modal-bg" id="setupModal">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-x" onclick="closeSetup()">×</button>
+    <h3>🚀 Set up your practice</h3>
+    <p class="note">This is all yours. Your name and details flow onto your notes, your online booking page, your appointment emails, and your AI phone assistant. You can change any of it later in Settings.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div style="grid-column:1/3">
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Your full name <span style="color:#c0392b">*</span></label>
+        <input id="su_name" placeholder="e.g. Jane A. Smith" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Credentials</label>
+        <input id="su_cred" placeholder="MD, DO, NP…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Specialty</label>
+        <input id="su_spec" placeholder="e.g. Pain Management, PM&amp;R" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      </div>
+      <div style="grid-column:1/3">
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic / practice name</label>
+        <input id="su_practice" placeholder="e.g. Chester County Spine Care" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">NPI number</label>
+        <input id="su_npi" inputmode="numeric" placeholder="10-digit NPI" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic phone</label>
+        <input id="su_phone" placeholder="(555) 123-4567" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      </div>
+      <div style="grid-column:1/3">
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic address</label>
+        <input id="su_addr" placeholder="Street, City, State ZIP" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+      </div>
+      <div style="grid-column:1/3">
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Note signature block <button type="button" class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="su_autoSig()">Auto-fill from above</button></label>
+        <textarea id="su_sig" rows="2" placeholder="Your name, credentials, practice…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></textarea>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:#f5fbf7;border:1px solid #bfe6cf;border-radius:10px;padding:12px">
+      <div style="font-weight:600;font-size:14px;margin-bottom:2px">🕘 Your weekly schedule</div>
+      <div class="note" style="margin:0 0 8px">Set the days and hours you take appointments. Patients (online and by phone) can only book inside these times.</div>
+      <button type="button" class="btn-ghost" onclick="su_openSchedule()">Set my availability →</button>
+      <span id="su_schedState" style="font-size:12.5px;color:#127a55;margin-left:8px"></span>
+    </div>
+    <div class="row" style="gap:8px;margin-top:16px;align-items:center">
+      <button class="btn-green" id="su_saveBtn" onclick="saveSetup(this)">💾 Save my setup</button>
+      <button class="btn-ghost" onclick="closeSetup()">Close</button>
+      <span id="setupMsg" style="font-size:13px;color:var(--muted)"></span>
+    </div>
+  </div>
+</div>
+
 <!-- MLS additive — OPTIONAL LEGAL MODAL (medical-legal report builder) -->
 <div class="modal-bg" id="legalModal">
   <div class="modal" style="max-width:680px">
@@ -3853,6 +3908,10 @@ function applyAccessUI(){
     const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin&&!isLawyer;
     banner.style.display=show?'flex':'none';
   }
+  // 🚀 Set-up button: practice staff only (not lawyers/owner-admin); offer it once on first run.
+  const setupBtn=document.getElementById('ptSetupBtn');
+  if(setupBtn) setupBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer)?'':'none';
+  try{ if(typeof maybePromptSetup==='function') maybePromptSetup(); }catch(e){}
 }
 
 async function redeemCode(value,inputEl){
@@ -6245,6 +6304,73 @@ async function syncProfileName(){
     var sp=(typeof getSpec==='function')?String(getSpec()||'').trim():'';
     await fetch(bkBase()+'/api/me/profile',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(sp?{name:nm,specialty:sp}:{name:nm})});
     if(bkUser) bkUser.name=nm;
+  }catch(e){}
+}
+/* ===== SET UP YOUR PRACTICE — doctor self-service onboarding ===== */
+function openSetup(){
+  var m=document.getElementById('setupModal'); if(!m) return;
+  function gv(fn){ try{ return (typeof window[fn]==='function')?(window[fn]()||''):''; }catch(e){ return ''; } }
+  document.getElementById('su_name').value = gv('getName') || gv('getProviderName');
+  document.getElementById('su_cred').value = localStorage.getItem(uns('providerCred'))||'';
+  document.getElementById('su_spec').value = gv('getSpec');
+  document.getElementById('su_practice').value = gv('getPracticeName');
+  document.getElementById('su_npi').value = gv('getNpi');
+  document.getElementById('su_phone').value = localStorage.getItem(uns('clinicPhone'))||'';
+  document.getElementById('su_addr').value = localStorage.getItem(uns('clinicAddress'))||'';
+  document.getElementById('su_sig').value = (typeof getQolSignature==='function')?getQolSignature():'';
+  su_refreshSchedState();
+  m.classList.add('show');
+}
+function closeSetup(){ var m=document.getElementById('setupModal'); if(m) m.classList.remove('show'); }
+function su_autoSig(){
+  var nm=document.getElementById('su_name').value.trim();
+  var cr=document.getElementById('su_cred').value.trim();
+  var pr=document.getElementById('su_practice').value.trim();
+  var sig=nm+(cr?', '+cr:''); if(pr) sig+='\n'+pr;
+  document.getElementById('su_sig').value=sig;
+}
+function su_openSchedule(){ closeSetup(); if(typeof openAvailability==='function') openAvailability(); }
+async function su_refreshSchedState(){
+  var el=document.getElementById('su_schedState'); if(!el) return;
+  try{
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ el.textContent=''; return; }
+    var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(!r.ok){ el.textContent=''; return; }
+    var d=await r.json(); var days=(d.availability&&d.availability.days)?Object.keys(d.availability.days).length:0;
+    el.textContent = days? ('✓ '+days+' day'+(days>1?'s':'')+' set') : 'Not set yet';
+    el.style.color = days? '#127a55' : '#9a6b00';
+  }catch(e){ el.textContent=''; }
+}
+async function saveSetup(btn){
+  var nm=document.getElementById('su_name').value.trim();
+  var msg=document.getElementById('setupMsg');
+  if(!nm){ if(msg){msg.style.color='#c0392b'; msg.textContent='Please enter your name first.';} return; }
+  localStorage.setItem(uns('docname'), nm);
+  localStorage.setItem(uns('providerName'), nm);
+  localStorage.setItem(uns('docspec'), document.getElementById('su_spec').value.trim());
+  localStorage.setItem(uns('providerCred'), document.getElementById('su_cred').value.trim());
+  localStorage.setItem(uns('practiceName'), document.getElementById('su_practice').value.trim());
+  localStorage.setItem(uns('npi'), document.getElementById('su_npi').value.trim());
+  localStorage.setItem(uns('clinicPhone'), document.getElementById('su_phone').value.trim());
+  localStorage.setItem(uns('clinicAddress'), document.getElementById('su_addr').value.trim());
+  localStorage.setItem(uns('qolSignature'), document.getElementById('su_sig').value.trim());
+  localStorage.setItem(uns('setupDone'), '1');
+  if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Saving…'; }
+  try{ if(typeof syncProfileName==='function') await syncProfileName(); }catch(e){}
+  if(btn) btn.disabled=false;
+  if(msg){ msg.style.color='#127a55'; msg.textContent='✓ Saved — this now appears on your notes, booking page, appointment emails, and phone assistant.'; }
+  try{ if(typeof toast==='function') toast('Practice setup saved.','ok'); }catch(e){}
+}
+// Gently surface setup once for a brand-new staff account that hasn't set a name yet.
+function maybePromptSetup(){
+  try{
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return;
+    if(bkUser && !(bkUser.role==='head'||bkUser.role==='user'||bkUser.role==='receptionist'||bkUser.isHead)) return;
+    var hasName=(typeof getName==='function'&&getName())||(typeof getProviderName==='function'&&getProviderName());
+    if(hasName) return;
+    if(localStorage.getItem(uns('setupDone'))==='1'||localStorage.getItem(uns('setupPrompted'))==='1') return;
+    localStorage.setItem(uns('setupPrompted'),'1');
+    setTimeout(function(){ try{ openSetup(); }catch(e){} }, 900);
   }catch(e){}
 }
 /* ===== MLS Help — in-app "how do I / where is" assistant ===== */
