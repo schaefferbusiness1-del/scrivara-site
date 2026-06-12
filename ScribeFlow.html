@@ -2281,7 +2281,7 @@
   <div id="studioView" style="display:none">
     <div class="card">
       <h2><span class="ic">✨</span> Create your own</h2>
-      <p class="sub">Describe a tab, tool, dashboard, or calculator you wish you had — and MLS builds it for you. It runs in a secure sandbox and can read a <b>read-only snapshot</b> of your practice data. Your saved creations stay here.</p>
+      <p class="sub">Describe a tab, tool, dashboard, or calculator you wish you had — and MLS builds it for you. It reads a rich snapshot of your real practice data (patients, pain trends, diagnoses, the schedule) and can <b>connect to the rest of MLS</b> — its buttons can open a patient, start a visit, or jump to any tab. Runs in a secure sandbox; your saved creations stay here.</p>
       <textarea id="studioPrompt" style="min-height:90px;width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px" placeholder="e.g. A dashboard of my patients with the most visits, as a sorted table with their last visit date.&#10;Or: an opioid MME calculator.&#10;Or: a bar chart of visits per month over the last 12 months."></textarea>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="btn-green" id="studioGenBtn" onclick="generateStudioWidget()">✨ Build it</button>
@@ -7644,23 +7644,67 @@ async function generatePatientLegalReport(){
 let studioLastHtml='', studioLastPrompt='';
 function studioEx(t){ var p=document.getElementById('studioPrompt'); if(p){ p.value=t; p.focus(); } }
 function studioStatus(m,c){ var s=document.getElementById('studioStatus'); if(s){ s.textContent=m||''; s.style.color=c||'var(--muted)'; } }
-/* Read-only, defensively-built snapshot of the user's own patients for widgets. */
+/* Read-only, defensively-built RICH snapshot of the user's own practice for
+   widgets: per-patient detail + pain trends, the upcoming schedule, and
+   practice-wide aggregates. All best-effort; never throws. */
+function _studioSplit(s){ return String(s||'').split(/\n|;|,/).map(function(x){return x.trim();}).filter(Boolean); }
 function studioDataSnapshot(){
-  var pts=[];
+  var pts=[], allPains=[], visitDates=[], dx={};
   try{
     var list=(typeof getPatients==='function'?getPatients():[])||[];
     pts=list.slice(0,800).map(function(p){
       var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
-      var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
-      var pains=notes.map(function(n){ var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return (v==null||v==='')?null:Number(v); }).filter(function(x){return x!=null&&!isNaN(x);});
+      var series=notes.map(function(n){ var d=String(n.date||n.note_date||n.created_at||'').slice(0,10); var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return {date:d, pain:(v==null||v===''||isNaN(Number(v)))?null:Number(v)}; }).filter(function(x){return x.date;}).sort(function(a,b){return a.date<b.date?-1:1;});
+      var dates=series.map(function(s){return s.date;});
+      var pains=series.map(function(s){return s.pain;}).filter(function(x){return x!=null;});
+      pains.forEach(function(x){allPains.push(x);}); dates.forEach(function(d){visitDates.push(d);});
+      var age=null; try{ if(p.dob){ var dd=new Date(p.dob); if(!isNaN(dd.getTime())) age=Math.floor((Date.now()-dd.getTime())/31557600000); } }catch(e){}
+      var probs=_studioSplit(p.problems);
+      probs.forEach(function(pr){ var k=pr.toLowerCase().slice(0,40); if(k) dx[k]=(dx[k]||0)+1; });
       return {
-        name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), mrn:String(p.mrn||''),
+        name:String(p.name||''), dob:String(p.dob||''), age:age, sex:String(p.sex||p.gender||''), mrn:String(p.mrn||''),
+        problems:probs.slice(0,12), meds:_studioSplit(p.meds).slice(0,20), allergies:_studioSplit(p.allergies).slice(0,12),
         visitCount:notes.length, firstVisit:dates[0]||'', lastVisit:dates[dates.length-1]||'',
-        maxPain: pains.length?Math.max.apply(null,pains):null, lastPain: pains.length?pains[pains.length-1]:null
+        visitDates:dates.slice(-40),
+        painSeries:series.filter(function(s){return s.pain!=null;}).slice(-40),
+        maxPain: pains.length?Math.max.apply(null,pains):null, lastPain: pains.length?pains[pains.length-1]:null,
+        avgPain: pains.length?Math.round(pains.reduce(function(a,b){return a+b;},0)/pains.length*10)/10:null
       };
     });
   }catch(e){}
-  return { generatedAt:new Date().toISOString(), patientCount:pts.length, patients:pts };
+  var appts=[]; try{ appts=(_calAppts||[]).slice(0,400).map(function(a){ return { name:(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'')), date:String(a.appt_date||(a.start_at||'').slice(0,10)), time:String(a.start_at||'').slice(11,16), status:String(a.status||'booked'), reason:String(a.reason||''), provider:(typeof _docName==='function'?_docName(a.doctor_user_id):'') }; }); }catch(e){}
+  var byMonth={}; visitDates.forEach(function(d){ var m=d.slice(0,7); if(m) byMonth[m]=(byMonth[m]||0)+1; });
+  var topDx=Object.keys(dx).map(function(k){return {problem:k,count:dx[k]};}).sort(function(a,b){return b.count-a.count;}).slice(0,12);
+  return {
+    generatedAt:new Date().toISOString(),
+    practice:{ provider:((typeof getProviderName==='function'&&getProviderName())||(typeof getName==='function'&&getName())||''), name:(typeof getPracticeName==='function'?getPracticeName():'') },
+    patientCount:pts.length, totalVisits:visitDates.length,
+    avgPainAcrossPractice: allPains.length?Math.round(allPains.reduce(function(a,b){return a+b;},0)/allPains.length*10)/10:null,
+    visitsByMonth:byMonth, topProblems:topDx,
+    appointments:appts, upcomingCount:appts.length,
+    patients:pts
+  };
+}
+/* Handle connectivity actions a widget asks for (open a patient, start a visit,
+   jump to a tab). Strictly whitelisted — a widget can only navigate the user's
+   OWN app; it can never read or send data anywhere. */
+function _studioHandleAction(a){
+  try{
+    if(!a||!a.type) return;
+    if(a.type==='navigate' && a.view){ if(typeof showView==='function') showView(String(a.view)); return; }
+    if(a.type==='openPatient' || a.type==='startVisit'){
+      var q=String(a.query||'').toLowerCase().trim(); if(!q){ if(typeof showView==='function') showView('patients'); return; }
+      var list=(typeof getPatients==='function'?getPatients():[])||[];
+      var p=list.find(function(x){ return (String(x.name||'').toLowerCase()===q)||(String(x.mrn||'').toLowerCase()===q); }) || list.find(function(x){ return String(x.name||'').toLowerCase().indexOf(q)>=0; });
+      if(p && typeof selectPatient==='function'){
+        selectPatient(p.id);
+        if(a.type==='startVisit' && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); }
+        else if(typeof showView==='function'){ showView('patients'); }
+        try{ toast('Opened '+(p.name||'patient')+' from your widget.','ok'); }catch(e){}
+      } else { if(typeof showView==='function') showView('patients'); try{ toast('Couldn’t find a patient matching “'+(a.query||'')+'”.',''); }catch(e){} }
+      return;
+    }
+  }catch(e){}
 }
 async function generateStudioWidget(){
   var prompt=((document.getElementById('studioPrompt')||{}).value||'').trim();
@@ -7673,6 +7717,7 @@ async function generateStudioWidget(){
     var d=await r.json().catch(function(){return {};});
     if(r.status===403){ studioStatus('Widget builder is for clinician accounts.','#b4231e'); return; }
     if(!r.ok||!d.html){ studioStatus(d.error||'Could not build the widget. Try rephrasing.','#b4231e'); return; }
+    try{ if(typeof loadCalendar==='function' && (typeof _calAppts==='undefined' || !_calAppts || !_calAppts.length)) await loadCalendar(); }catch(e){}
     renderStudioWidget(d.html, prompt);
     studioStatus('Done. Review it below, then Save it to keep it.','#1c7a43');
   }catch(e){ studioStatus('Network error while building.','#b4231e'); }
@@ -7683,8 +7728,11 @@ function renderStudioWidget(html, title){
   var json=JSON.stringify(snap).replace(/</g,'\\u003c');
   // Inject the data snapshot + an error catcher so a broken widget reports back
   // instead of silently showing a blank frame.
-  var inject='<scr'+'ipt>window.MLS_DATA='+json+';window.onerror=function(m,s,l,c,e){try{parent.postMessage({__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){try{parent.postMessage({__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});<\/scr'+'ipt>';
-  if(!window._studioMsgBound){ window._studioMsgBound=true; window.addEventListener('message', function(ev){ try{ if(ev&&ev.data&&ev.data.__mlsWidgetError){ var n=document.getElementById('studioErrNote'); if(n){ n.style.display='block'; n.textContent='⚠️ The widget hit an error while running: '+String(ev.data.__mlsWidgetError).slice(0,180)+'. Try a more specific description, or press Build it again.'; } } }catch(e){} }); }
+  // Inject the read-only data snapshot, a connectivity bridge (window.MLS) the
+  // widget can use to open patients / start visits / navigate, and an error catcher.
+  var bridge='window.MLS={openPatient:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"openPatient",query:String(q||"")}},"*");}catch(_){}},startVisit:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"startVisit",query:String(q||"")}},"*");}catch(_){}},navigate:function(v){try{parent.postMessage({__mlsWidgetAction:{type:"navigate",view:String(v||"")}},"*");}catch(_){}}};';
+  var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+bridge+'window.onerror=function(m,s,l,c,e){try{parent.postMessage({__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){try{parent.postMessage({__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});<\/scr'+'ipt>';
+  if(!window._studioMsgBound){ window._studioMsgBound=true; window.addEventListener('message', function(ev){ try{ if(!ev||!ev.data) return; if(ev.data.__mlsWidgetError){ var n=document.getElementById('studioErrNote'); if(n){ n.style.display='block'; n.textContent='⚠️ The widget hit an error while running: '+String(ev.data.__mlsWidgetError).slice(0,180)+'. Try a more specific description, or press Build it again.'; } } else if(ev.data.__mlsWidgetAction){ _studioHandleAction(ev.data.__mlsWidgetAction); } }catch(e){} }); }
   var note=document.getElementById('studioErrNote'); if(note){ note.style.display='none'; note.textContent=''; }
   var frame=document.getElementById('studioFrame');
   if(frame) frame.srcdoc=inject+String(html||'');
