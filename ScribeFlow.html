@@ -1063,6 +1063,7 @@
     <div class="navtab" id="nav_orders" onclick="showView('orders')">📋 Orders <span class="nbadge" id="navOrdCount">0</span></div>
     <div class="navtab" id="nav_recs" onclick="showView('recs')">💡 Recommendations</div>
     <div class="navtab" id="nav_history" onclick="showView('history')">📚 History <span class="nbadge" id="navHistCount">0</span></div>
+    <div class="navtab" id="nav_calendar" style="display:none" onclick="showView('calendar')">📅 Calendar</div>
     <div class="navtab" id="nav_legalreq" style="display:none" onclick="showView('legalreq')">⚖️ Legal requests <span class="nbadge" id="navLegalReqCount">0</span></div>
     <div class="navtab" id="nav_team" style="display:none" onclick="showView('team')">👥 Team</div>
     <div class="navtab" id="nav_analysis" style="display:none" onclick="showView('analysis')">📊 Analysis</div>
@@ -2094,6 +2095,25 @@
   </div><!-- /teamView -->
 
   <!-- ============ ANALYSIS VIEW (clinicians + head + owner; never lawyers) ============ -->
+  <!-- ============ CALENDAR VIEW ============ -->
+  <div id="calendarView" style="display:none">
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ic">📅</span> Calendar
+        <span id="calCheckinWrap" style="margin-left:auto;display:none;align-items:center;gap:8px;flex-wrap:wrap"></span>
+      </h2>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
+        <button class="btn-ghost" onclick="calPrev()" style="font-size:15px;padding:7px 13px" title="Previous month">◀</button>
+        <button class="btn-ghost" onclick="calToday()" style="font-size:14px;padding:7px 15px">Today</button>
+        <button class="btn-ghost" onclick="calNext()" style="font-size:15px;padding:7px 13px" title="Next month">▶</button>
+        <div id="calMonthLabel" style="font-weight:800;font-size:19px;margin-left:8px"></div>
+        <button class="btn-ghost" onclick="loadCalendar()" style="font-size:13px;padding:6px 11px;margin-left:auto">↻ Refresh</button>
+      </div>
+      <div id="calGrid"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+      <div id="calDayPanel" style="display:none;margin-top:14px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
+      <p class="mini" style="color:var(--muted);margin-top:10px">Appointments across your whole practice. Click a day to see details. Green chips above show which providers are in the office today.</p>
+    </div>
+  </div>
+
   <div id="analysisView" style="display:none">
 
     <!-- 📣 OUTCOMES → MARKETING — turn real outcomes into shareable proof -->
@@ -3891,6 +3911,7 @@ async function refreshMe(){
     if(r.ok){
       const d=await r.json();
       bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
+      try{ window._calendarOn = d.calendarEnabled!==false; }catch(e){}
       // Canonical identity comes from the server (the Bearer token), not a stale
       // localStorage value. Sync session + header UI so they always match the
       // actually-authenticated user. (backend mode only — guarded above.)
@@ -3974,6 +3995,9 @@ function applyAccessUI(){
   const _isRecept=(typeof isReceptionistUser==='function')&&isReceptionistUser();
   const setupBtn=document.getElementById('ptSetupBtn');
   if(setupBtn) setupBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer&&!_isRecept)?'':'none';
+  // 📅 Calendar tab: visible to everyone in the practice (not lawyers) when the practice setting is on.
+  const calNavTab=document.getElementById('nav_calendar');
+  if(calNavTab) calNavTab.style.display=(backendMode()&&bkUser&&!isLawyer&&(window._calendarOn!==false))?'':'none';
   try{ if(typeof maybePromptSetup==='function') maybePromptSetup(); }catch(e){}
 }
 
@@ -6241,6 +6265,79 @@ async function runDataStudy(){
 
 /* ---------- VIEW SWITCHING ---------- */
 let currentView='patients';
+/* ===== Month calendar (shared tab) + provider check-in ===== */
+var _calYear=null, _calMonth=null, _calAppts=[], _calMe={}, _calProviders=[];
+function _calPad(n){ return (n<10?'0':'')+n; }
+function _calInit(){ if(_calYear==null){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.getMonth(); } }
+function calToday(){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.getMonth(); var p=document.getElementById('calDayPanel'); if(p) p.style.display='none'; renderCalendar(); }
+function calPrev(){ _calInit(); _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } renderCalendar(); }
+function calNext(){ _calInit(); _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } renderCalendar(); }
+function _calStatusColor(s){ s=s||''; if(s==='completed') return {bg:'#e7f6ee',fg:'#11643f'}; if(s==='cancelled'||s==='no_show') return {bg:'#fdeaea',fg:'#a12c2c'}; if(s==='checked_in'||s==='arrived') return {bg:'#fff4e0',fg:'#9a6b00'}; if(s==='roomed') return {bg:'#e8eefc',fg:'#2a4bbd'}; return {bg:'#eef4fc',fg:'#155fb3'}; }
+function _calLabelOf(a){ return a.name||a.label||a.patient||a.title||'Appointment'; }
+function _calDateOf(a){ return a.appt_date || String(a.start_at||'').slice(0,10); }
+async function loadCalendar(){
+  _calInit();
+  var grid=document.getElementById('calGrid');
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Sign in to see the calendar.</div>'; return; }
+  try{
+    var r=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===401){ if(typeof handle401==='function') handle401(); return; }
+    var d=await r.json(); _calAppts=d.appointments||[]; _calMe=d.me||{};
+  }catch(e){ _calAppts=[]; }
+  try{ var pr=await fetch(bkBase()+'/api/providers',{headers:{Authorization:'Bearer '+bkToken()}}); if(pr.ok){ var pd=await pr.json(); _calProviders=pd.providers||[]; } }catch(e){ _calProviders=[]; }
+  renderCalendar(); renderCalCheckin();
+}
+function renderCalendar(){
+  _calInit();
+  var months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent=months[_calMonth]+' '+_calYear;
+  var grid=document.getElementById('calGrid'); if(!grid) return;
+  var byDate={}; (_calAppts||[]).forEach(function(a){ var k=_calDateOf(a); if(k){ (byDate[k]=byDate[k]||[]).push(a); } });
+  var startDow=new Date(_calYear,_calMonth,1).getDay();
+  var daysIn=new Date(_calYear,_calMonth+1,0).getDate();
+  var tn=new Date(); var todayKey=tn.getFullYear()+'-'+_calPad(tn.getMonth()+1)+'-'+_calPad(tn.getDate());
+  var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var h='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+  dn.forEach(function(d){ h+='<div style="text-align:center;font-weight:700;font-size:12px;color:var(--muted);padding:4px 0">'+d+'</div>'; });
+  for(var i=0;i<startDow;i++){ h+='<div></div>'; }
+  for(var day=1;day<=daysIn;day++){
+    var key=_calYear+'-'+_calPad(_calMonth+1)+'-'+_calPad(day);
+    var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+    var isToday=key===todayKey;
+    h+='<div onclick="calOpenDay(\''+key+'\')" style="min-height:86px;border:1px solid '+(isToday?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:5px 6px;cursor:pointer;background:'+(isToday?'#eef5ff':'#fff')+'">';
+    h+='<div style="font-weight:'+(isToday?'800':'600')+';font-size:13px;color:'+(isToday?'#1f7ae0':'var(--ink)')+'">'+day+'</div>';
+    ap.slice(0,3).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="font-size:11px;margin-top:2px;padding:1px 5px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
+    if(ap.length>3) h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">+'+(ap.length-3)+' more</div>';
+    h+='</div>';
+  }
+  h+='</div>';
+  grid.innerHTML=h;
+}
+function calOpenDay(key){
+  var panel=document.getElementById('calDayPanel'); if(!panel) return;
+  var ap=(_calAppts||[]).filter(function(a){ return _calDateOf(a)===key; }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+  var dt=new Date(key+'T12:00'); var lbl=dt.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  var h='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:700">'+esc(lbl)+'</div><button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="document.getElementById(\'calDayPanel\').style.display=\'none\'">✕ Close</button></div>';
+  if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
+  else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-top:6px;background:#fff"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span></div>'; }); }
+  panel.innerHTML=h; panel.style.display='block';
+}
+function renderCalCheckin(){
+  var wrap=document.getElementById('calCheckinWrap'); if(!wrap) return;
+  var isClin = bkUser && (bkUser.role==='head'||bkUser.role==='user'||bkUser.isHead);
+  var chips=(_calProviders||[]).filter(function(p){ return p.checked_in; }).map(function(p){ return '<span style="font-size:12px;background:#eefaf3;color:#127a55;border-radius:999px;padding:2px 10px">🟢 '+esc(p.name||'Provider')+'</span>'; }).join(' ');
+  var me=(_calProviders||[]).find(function(p){ return _calMe && p.id===_calMe.id; });
+  var html=chips;
+  if(isClin){ var inOffice=!!(me&&me.checked_in); html+=' <button class="btn-ghost" onclick="calToggleCheckin(this)" style="font-size:13px;padding:7px 13px;'+(inOffice?'background:#eefaf3;color:#127a55;border-color:#bfe6cf':'')+'">'+(inOffice?"✅ I'm in the office":'Check in to the office')+'</button>'; }
+  wrap.innerHTML=html; wrap.style.display=(html?'inline-flex':'none');
+}
+async function calToggleCheckin(btn){
+  var me=(_calProviders||[]).find(function(p){ return _calMe && p.id===_calMe.id; });
+  var newState=!(me&&me.checked_in);
+  if(btn) btn.disabled=true;
+  try{ await fetch(bkBase()+'/api/me/checkin',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({in:newState})}); }catch(e){}
+  loadCalendar();
+}
 function showView(v){
   currentView=v;
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
@@ -6254,6 +6351,8 @@ function showView(v){
   const legalReqV=document.getElementById('legalReqView'); if(legalReqV) legalReqV.style.display = v==='legalreq'?'block':'none';
   const studioV=document.getElementById('studioView'); if(studioV) studioV.style.display = v==='studio'?'block':'none';
   const studioTab=document.getElementById('nav_studio'); if(studioTab) studioTab.classList.toggle('on',v==='studio');
+  const calendarV=document.getElementById('calendarView'); if(calendarV) calendarV.style.display = v==='calendar'?'block':'none';
+  const calendarTab=document.getElementById('nav_calendar'); if(calendarTab) calendarTab.classList.toggle('on',v==='calendar');
   document.getElementById('nav_patients').classList.toggle('on',v==='patients');
   document.getElementById('nav_visit').classList.toggle('on',v==='visit');
   document.getElementById('nav_recs').classList.toggle('on',v==='recs');
@@ -6264,7 +6363,8 @@ function showView(v){
   const analysisTab=document.getElementById('nav_analysis'); if(analysisTab) analysisTab.classList.toggle('on',v==='analysis');
   const legalReqTab=document.getElementById('nav_legalreq'); if(legalReqTab) legalReqTab.classList.toggle('on',v==='legalreq');
   // active-patient bar appears on every view except the patients list / admin / team / analysis / legal requests
-  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq'||v==='studio')?'none':'flex';
+  document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq'||v==='studio'||v==='calendar')?'none':'flex';
+  if(v==='calendar' && typeof loadCalendar==='function') loadCalendar();
   if(v==='studio' && typeof renderStudio==='function') renderStudio();
   renderPatientBar();
   updateNavCounts();
@@ -14509,6 +14609,7 @@ async function loadRecSettings(){
     var d=await r.json(); var c=d.comms||{}; window._recComms=c;
     var h='<div style="font-weight:700;font-size:15px;margin-bottom:6px">⚙️ Communication settings</div>';
     if(!d.twilioReady) h+='<div class="mini" style="background:#fff7e6;border:1px solid #f0d9a0;border-radius:8px;padding:8px 11px;margin-bottom:10px;color:#7a5b00">Texts &amp; calls won\'t actually send until your Twilio credentials (and A2P 10DLC for texts) are set in the backend. Configure everything now — it starts working the moment that\'s done.</div>';
+    h+=recSettingCard('📅 Calendar tab','Show the shared month Calendar tab to everyone in your practice (doctors and front desk).','<label style="display:flex;align-items:center;gap:7px;font-size:14px"><input type="checkbox" id="rc_calendar" '+(c.calendarEnabled!==false?'checked':'')+'> Show the Calendar tab</label>');
     h+=recSettingCard('🔀 Live call transfer','When a caller wants a real person, the phone assistant rings this number.','<label style="display:flex;align-items:center;gap:7px;font-size:14px"><input type="checkbox" id="rcTransfer" '+(c.transferEnabled?'checked':'')+'> Enable live transfer to a person</label><input id="rcPhone" placeholder="Front-desk phone to ring, e.g. (555) 123-4567" value="'+esc(c.frontDeskPhone||'')+'" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-top:7px">');
     h+=recFeatureCard('reminders','⏰ Appointment reminders','Auto text/call before each appointment.',c.reminders,true);
     h+=recFeatureCard('confirmations','✅ Booking confirmations','Sent the moment a patient books online or by phone.',c.confirmations,false);
@@ -14523,6 +14624,7 @@ async function saveRecSettings(btn){
   function chk(id){ var e=document.getElementById(id); return !!(e&&e.checked); }
   function channels(key){ var a=[]; if(chk('rc_'+key+'_sms'))a.push('sms'); if(chk('rc_'+key+'_voice'))a.push('voice'); return a.length?a:['sms']; }
   var payload={
+    calendarEnabled:chk('rc_calendar'),
     transferEnabled:chk('rcTransfer'), frontDeskPhone:(document.getElementById('rcPhone')||{}).value||'',
     reminders:{enabled:chk('rc_reminders_en'),channels:channels('reminders'),dayBefore:chk('rc_reminders_day'),hoursOf:chk('rc_reminders_soon')},
     confirmations:{enabled:chk('rc_confirmations_en'),channels:channels('confirmations')},
