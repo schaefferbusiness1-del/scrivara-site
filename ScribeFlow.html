@@ -3119,9 +3119,13 @@
           <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="su_openFollowups()">Open follow-up settings</button>
         </div>
         <div style="background:#fbf7ff;border:1px solid #e0d4f2;border-radius:10px;padding:11px 13px">
-          <div style="font-weight:600;font-size:14px">🔐 Security &amp; password</div>
-          <div class="note" style="margin:2px 0 7px">Change your password and turn on two-factor login from Settings.</div>
-          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="su_openSettings()">Open Settings</button>
+          <div style="font-weight:600;font-size:14px">🔐 Change your password</div>
+          <div class="note" style="margin:2px 0 8px">Set a password only you know. (Two-factor login lives in Settings.)</div>
+          <input id="suPwCurrent" type="password" autocomplete="current-password" placeholder="Current password" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:6px">
+          <input id="suPwNew" type="password" autocomplete="new-password" placeholder="New password (min 8 characters)" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:6px">
+          <input id="suPwConfirm" type="password" autocomplete="new-password" placeholder="Confirm new password" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="btn-primary" style="font-size:13px;padding:7px 12px" onclick="suChangePassword(this)">Update password</button><span id="suPwMsg" style="font-size:12.5px;color:var(--muted)"></span></div>
+          <button class="btn-ghost" style="font-size:12px;padding:4px 8px;margin-top:7px" onclick="su_openSettings()">More security options →</button>
         </div>
       </div>
     </div>
@@ -3951,9 +3955,10 @@ function applyAccessUI(){
     const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin&&!isLawyer;
     banner.style.display=show?'flex':'none';
   }
-  // 🚀 Set-up button: practice staff only (not lawyers/owner-admin); offer it once on first run.
+  // 🚀 Set-up wizard: doctors/head only — NOT lawyers, receptionists, or owner-admin.
+  const _isRecept=(typeof isReceptionistUser==='function')&&isReceptionistUser();
   const setupBtn=document.getElementById('ptSetupBtn');
-  if(setupBtn) setupBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer)?'':'none';
+  if(setupBtn) setupBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer&&!_isRecept)?'':'none';
   try{ if(typeof maybePromptSetup==='function') maybePromptSetup(); }catch(e){}
 }
 
@@ -6417,6 +6422,27 @@ function su_autoSig(){
 }
 function su_openFollowups(){ closeSetup(); if(typeof openFollowups==='function') openFollowups(); }
 function su_openSettings(){ closeSetup(); if(typeof openSettings==='function') openSettings(); }
+async function suChangePassword(btn){
+  var msg=document.getElementById('suPwMsg');
+  var set=function(m,c){ if(msg){ msg.textContent=m; msg.style.color=c||'var(--muted)'; } };
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ set('Sign in to change your password.','#b4231e'); return; }
+  var cur=(document.getElementById('suPwCurrent')||{}).value||'';
+  var nw=(document.getElementById('suPwNew')||{}).value||'';
+  var cf=(document.getElementById('suPwConfirm')||{}).value||'';
+  if(!cur){ set('Enter your current password.','#b4231e'); return; }
+  if(nw.length<8){ set('New password must be at least 8 characters.','#b4231e'); return; }
+  if(nw!==cf){ set('The new passwords don’t match.','#b4231e'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Updating…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/me/password',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({currentPassword:cur,newPassword:nw})});
+    var d=await r.json().catch(function(){return{};});
+    if(!r.ok){ set(d.error||'Could not update your password.','#b4231e'); return; }
+    set('✓ Password updated. Use it next time you sign in.','#1c7a43');
+    ['suPwCurrent','suPwNew','suPwConfirm'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    try{ toast('Password updated.','ok'); }catch(e){}
+  }catch(e){ set('Network error — try again.','#b4231e'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Update password'; } }
+}
 async function suRenderSchedule(){
   var box=document.getElementById('su_schedBox'); if(!box) return;
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ box.innerHTML='<div class="note">Sign in to set your schedule.</div>'; return; }
@@ -6445,7 +6471,10 @@ async function suRenderPayments(){
 function maybePromptSetup(){
   try{
     if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return;
-    if(bkUser && !(bkUser.role==='head'||bkUser.role==='user'||bkUser.role==='receptionist'||bkUser.isHead)) return;
+    // Doctors / head physicians only — never lawyers or receptionists.
+    if(typeof isLawyerUser==='function'&&isLawyerUser()) return;
+    if(typeof isReceptionistUser==='function'&&isReceptionistUser()) return;
+    if(bkUser && !(bkUser.role==='head'||bkUser.role==='user'||bkUser.isHead)) return;
     var hasName=(typeof getName==='function'&&getName())||(typeof getProviderName==='function'&&getProviderName());
     if(hasName) return;
     if(localStorage.getItem(uns('setupDone'))==='1'||localStorage.getItem(uns('setupPrompted'))==='1') return;
