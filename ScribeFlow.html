@@ -6330,7 +6330,11 @@ function calOpenDay(key){
   var dt=new Date(key+'T12:00'); var lbl=dt.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'});
   var h='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:700">'+esc(lbl)+'</div><button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="document.getElementById(\'calDayPanel\').style.display=\'none\'">✕ Close</button></div>';
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
-  else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div style="display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-top:6px;background:#fff"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span></div>'; }); }
+  else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16);
+    h+='<div style="border:1px solid var(--line);border-radius:8px;margin-top:6px;background:#fff">';
+    h+='<div style="display:flex;gap:8px;align-items:center;padding:7px 10px"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><button class="btn-ghost" style="font-size:11px;padding:3px 10px" onclick="calEditAppt('+a.id+')">✎ Edit</button></div>';
+    h+='<div id="calApptEdit_'+a.id+'"></div></div>';
+  }); }
   // Add an appointment directly on this day.
   h+='<div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:10px">';
   h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Add an appointment</div>';
@@ -6360,6 +6364,52 @@ async function calAddAppt(key, btn){
     try{ toast('Appointment added.','ok'); }catch(e){}
     await loadCalendar(); calOpenDay(key);
   }catch(e){ if(btn) btn.disabled=false; if(msg){ msg.style.color='#c0392b'; msg.textContent='Network error.'; } }
+}
+function calEditAppt(id){
+  var box=document.getElementById('calApptEdit_'+id); if(!box) return;
+  if(box.innerHTML){ box.innerHTML=''; return; } // toggle closed
+  var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
+  var date=a.appt_date||String(a.start_at||'').slice(0,10);
+  var tm=String(a.start_at||'').slice(11,16);
+  var provOpts='<option value="">No preference</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'"'+(String(a.doctor_user_id)===String(p.id)?' selected':'')+'>'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('');
+  var statuses=['booked','checked_in','roomed','completed','no_show','cancelled'];
+  var stOpts=statuses.map(function(s){ return '<option value="'+s+'"'+(a.status===s?' selected':'')+'>'+s.replace(/_/g,' ')+'</option>'; }).join('');
+  var h='<div style="border-top:1px dashed var(--line);padding:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+  h+='<input id="calE_name_'+id+'" value="'+esc(_calLabelOf(a))+'" placeholder="Name" style="flex:2;min-width:130px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px">';
+  h+='<input id="calE_date_'+id+'" type="date" value="'+esc(date)+'" style="border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:13px">';
+  h+='<input id="calE_time_'+id+'" type="time" value="'+esc(tm)+'" style="border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:13px">';
+  if((_calProviders||[]).length>1) h+='<select id="calE_doc_'+id+'" style="border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px">'+provOpts+'</select>';
+  h+='<select id="calE_status_'+id+'" style="border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px">'+stOpts+'</select>';
+  h+='<button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="calSaveAppt('+id+')">Save</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#a12c2c" onclick="calCancelAppt('+id+')">Cancel appt</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calEditAppt('+id+')">Close</button>';
+  h+='<span id="calE_msg_'+id+'" class="mini" style="color:var(--muted);width:100%"></span></div>';
+  box.innerHTML=h;
+}
+async function calSaveAppt(id){
+  var name=((document.getElementById('calE_name_'+id)||{}).value||'').trim();
+  var date=(document.getElementById('calE_date_'+id)||{}).value||'';
+  var time=(document.getElementById('calE_time_'+id)||{}).value||'';
+  var status=(document.getElementById('calE_status_'+id)||{}).value||'booked';
+  var msg=document.getElementById('calE_msg_'+id);
+  var patch={ status:status };
+  if(name) patch.name=name;
+  if(date){ patch.appt_date=date; var iso=null; if(time){ try{ iso=new Date(date+'T'+time).toISOString(); }catch(e){} } patch.start_at=iso; }
+  var docEl=document.getElementById('calE_doc_'+id); if(docEl) patch.doctor_user_id=docEl.value||null;
+  if(msg){ msg.style.color='var(--muted)'; msg.textContent='Saving…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(patch)});
+    if(!r.ok){ if(msg){ msg.style.color='#c0392b'; msg.textContent='Could not save.'; } return; }
+    try{ toast('Appointment updated.','ok'); }catch(e){}
+    var reopen=date||((_calAppts||[]).find(function(x){ return String(x.id)===String(id); })||{}).appt_date;
+    await loadCalendar(); if(reopen) calOpenDay(reopen);
+  }catch(e){ if(msg){ msg.style.color='#c0392b'; msg.textContent='Network error.'; } }
+}
+async function calCancelAppt(id){
+  if(!confirm('Cancel this appointment? It will be marked cancelled and the slot frees up.')) return;
+  var day=((_calAppts||[]).find(function(x){ return String(x.id)===String(id); })||{}).appt_date;
+  try{ await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({status:'cancelled'})}); try{ toast('Appointment cancelled.','ok'); }catch(e){} }catch(e){}
+  await loadCalendar(); if(day) calOpenDay(day);
 }
 function renderCalCheckin(){
   var wrap=document.getElementById('calCheckinWrap'); if(!wrap) return;
