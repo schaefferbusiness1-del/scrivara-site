@@ -3054,55 +3054,98 @@
   </div>
 </div>
 
-<!-- SET UP YOUR PRACTICE — self-service onboarding for the doctor -->
+<!-- SET UP YOUR PRACTICE — first-run guided onboarding wizard -->
 <div class="modal-bg" id="setupModal">
-  <div class="modal" style="max-width:640px">
+  <div class="modal" style="max-width:660px">
     <button class="modal-x" onclick="closeSetup()">×</button>
-    <h3>🚀 Set up your practice</h3>
-    <p class="note">This is all yours. Your name and details flow onto your notes, your online booking page, your appointment emails, and your AI phone assistant. You can change any of it later in Settings.</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-      <div style="grid-column:1/3">
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Your full name <span style="color:#c0392b">*</span></label>
-        <input id="su_name" placeholder="e.g. Jane A. Smith" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      </div>
-      <div>
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Credentials</label>
-        <input id="su_cred" placeholder="MD, DO, NP…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      </div>
-      <div>
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Specialty</label>
-        <input id="su_spec" placeholder="e.g. Pain Management, PM&amp;R" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      </div>
-      <div style="grid-column:1/3">
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic / practice name</label>
-        <input id="su_practice" placeholder="e.g. Chester County Spine Care" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      </div>
-      <div>
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">NPI number</label>
-        <input id="su_npi" inputmode="numeric" placeholder="10-digit NPI" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      </div>
-      <div>
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic phone</label>
-        <input id="su_phone" placeholder="(555) 123-4567" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      </div>
-      <div style="grid-column:1/3">
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic address</label>
-        <input id="su_addr" placeholder="Street, City, State ZIP" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px">
-      </div>
-      <div style="grid-column:1/3">
-        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Note signature block <button type="button" class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="su_autoSig()">Auto-fill from above</button></label>
-        <textarea id="su_sig" rows="2" placeholder="Your name, credentials, practice…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <h3 style="margin:0">🚀 Set up your practice</h3>
+      <span id="su_progress" style="font-size:12.5px;color:var(--muted);font-weight:600"></span>
+    </div>
+    <div style="height:6px;background:#eef2f7;border-radius:6px;margin:10px 0 14px;overflow:hidden"><div id="su_bar" style="height:100%;width:0;background:linear-gradient(90deg,#1f9ad6,#127a55);transition:width .25s"></div></div>
+
+    <!-- STEP 0: welcome -->
+    <div class="su_step" id="su_step0">
+      <div style="text-align:center;padding:6px 4px 2px">
+        <div style="font-size:40px">👋</div>
+        <h2 style="margin:6px 0 4px;font-size:21px">Welcome to MLS</h2>
+        <p class="note" style="max-width:460px;margin:0 auto">Let's get your practice ready in a few quick steps — your details, your schedule, getting paid, and key settings. Then a short guide on how to use everything. Takes about 3 minutes; you can change anything later in Settings.</p>
       </div>
     </div>
-    <div style="margin-top:14px;background:#f5fbf7;border:1px solid #bfe6cf;border-radius:10px;padding:12px">
-      <div style="font-weight:600;font-size:14px;margin-bottom:2px">🕘 Your weekly schedule</div>
-      <div class="note" style="margin:0 0 8px">Set the days and hours you take appointments. Patients (online and by phone) can only book inside these times.</div>
-      <button type="button" class="btn-ghost" onclick="su_openSchedule()">Set my availability →</button>
-      <span id="su_schedState" style="font-size:12.5px;color:#127a55;margin-left:8px"></span>
+
+    <!-- STEP 1: you & your practice -->
+    <div class="su_step" id="su_step1" style="display:none">
+      <p style="font-weight:700;margin:0 0 2px">You &amp; your practice</p>
+      <p class="note" style="margin:0 0 10px">This flows onto your notes, your booking page, appointment emails, and your phone assistant.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Your full name <span style="color:#c0392b">*</span></label><input id="su_name" placeholder="e.g. Jane A. Smith" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></div>
+        <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Credentials</label><input id="su_cred" placeholder="MD, DO, NP…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></div>
+        <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Specialty</label><input id="su_spec" placeholder="e.g. Pain Management, PM&amp;R" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></div>
+        <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic / practice name</label><input id="su_practice" placeholder="e.g. Chester County Spine Care" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></div>
+        <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">NPI number</label><input id="su_npi" inputmode="numeric" placeholder="10-digit NPI" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></div>
+        <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic phone</label><input id="su_phone" placeholder="(555) 123-4567" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></div>
+        <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic address</label><input id="su_addr" placeholder="Street, City, State ZIP" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></div>
+        <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Note signature block <button type="button" class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="su_autoSig()">Auto-fill from above</button></label><textarea id="su_sig" rows="2" placeholder="Your name, credentials, practice…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px"></textarea></div>
+      </div>
     </div>
+
+    <!-- STEP 2: schedule -->
+    <div class="su_step" id="su_step2" style="display:none">
+      <p style="font-weight:700;margin:0 0 2px">🕘 Your weekly schedule</p>
+      <p class="note" style="margin:0 0 10px">Pick the days and hours you take appointments. Patients booking online <b>and</b> your AI phone assistant can only offer these open times. Use the quick buttons or set each day.</p>
+      <div id="su_schedBox"><div class="note">Loading…</div></div>
+    </div>
+
+    <!-- STEP 3: payments -->
+    <div class="su_step" id="su_step3" style="display:none">
+      <p style="font-weight:700;margin:0 0 2px">💳 Payments</p>
+      <p class="note" style="margin:0 0 10px">Two parts: your own MLS subscription, and (optional) direct payouts so money from attorney report payments lands in your bank automatically.</p>
+      <div id="su_payBox"><div class="note">Loading…</div></div>
+    </div>
+
+    <!-- STEP 4: key settings -->
+    <div class="su_step" id="su_step4" style="display:none">
+      <p style="font-weight:700;margin:0 0 2px">⚙️ A few key settings</p>
+      <p class="note" style="margin:0 0 10px">Optional, but handy. Everything else lives in <b>Settings</b> (gear icon) anytime.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:11px 13px">
+          <div style="font-weight:600;font-size:14px">📅 Your online booking link</div>
+          <div class="note" style="margin:2px 0 7px">Share this so patients can self-book into your open times.</div>
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="copyBookingLink(this)">Get my booking link</button>
+        </div>
+        <div style="background:#f5fbf7;border:1px solid #bfe6cf;border-radius:10px;padding:11px 13px">
+          <div style="font-weight:600;font-size:14px">📨 Automatic visit follow-ups</div>
+          <div class="note" style="margin:2px 0 7px">Privacy-safe check-in emails to recently seen patients (no names, no medical details). Turn on/off and set timing here.</div>
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="su_openFollowups()">Open follow-up settings</button>
+        </div>
+        <div style="background:#fbf7ff;border:1px solid #e0d4f2;border-radius:10px;padding:11px 13px">
+          <div style="font-weight:600;font-size:14px">🔐 Security &amp; password</div>
+          <div class="note" style="margin:2px 0 7px">Change your password and turn on two-factor login from Settings.</div>
+          <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="su_openSettings()">Open Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 5: quick guide -->
+    <div class="su_step" id="su_step5" style="display:none">
+      <p style="font-weight:700;margin:0 0 2px">📖 Quick guide — how to use MLS</p>
+      <p class="note" style="margin:0 0 10px">The essentials. You can reopen this anytime from <b>❓ Help</b> or the 🚀 button.</p>
+      <div style="max-height:340px;overflow:auto;padding-right:6px;display:flex;flex-direction:column;gap:10px">
+        <div class="su_guide"><b>🎙️ Record a visit → instant note.</b> Open a patient (or “New visit”), press record, and talk through the visit normally. MLS transcribes and writes a structured note. Review, edit, then <b>Sign</b> — your signature block is appended automatically.</div>
+        <div class="su_guide"><b>👤 Patients.</b> Add patients with “＋ New patient.” Each chart keeps the problem list, meds, allergies, prior visits, and notes. Search by name or DOB up top.</div>
+        <div class="su_guide"><b>⚖️ Legal reports &amp; 📋 prior-auth.</b> From a patient, generate a narrative/IME/utilization-review report or a payer-ready prior-authorization request and denial appeal — all built only from that chart. Copy or save as a clean PDF.</div>
+        <div class="su_guide"><b>🗓️ Scheduling &amp; booking.</b> Set your hours in <b>🕘 Availability</b>. Share your booking link; patients pick only open slots and get a confirmation email with a link to confirm or cancel. See everyone on the <b>🗓️ Check-in board</b>.</div>
+        <div class="su_guide"><b>📞 Phone assistant.</b> Your AI phone line answers calls, quotes your hours, books real open slots, and takes a message (reschedule/cancel/billing) that's emailed to you.</div>
+        <div class="su_guide"><b>🧩 MLS Assist (browser extension).</b> Install it to let MLS work inside your real EMR (e.g. Athena): capture a chart into MLS in one click, and drop the finished note back into the EMR. Reload to the latest version at chrome://extensions.</div>
+        <div class="su_guide"><b>✨ Create your own + 🔗 connectors.</b> Build custom tabs/widgets by describing them, and connect via the FHIR API. All under the tools menu.</div>
+        <div class="su_guide"><b>❓ Stuck?</b> Hit <b>❓ Help</b> anytime and ask “where is…” or “how do I…”. Answers are specific to this app.</div>
+      </div>
+    </div>
+
     <div class="row" style="gap:8px;margin-top:16px;align-items:center">
-      <button class="btn-green" id="su_saveBtn" onclick="saveSetup(this)">💾 Save my setup</button>
-      <button class="btn-ghost" onclick="closeSetup()">Close</button>
+      <button class="btn-ghost" id="su_backBtn" onclick="suBack()" style="display:none">← Back</button>
+      <button class="btn-green" id="su_nextBtn" onclick="suNext(this)">Get started →</button>
+      <button class="btn-ghost" id="su_skipBtn" onclick="closeSetup()" style="font-size:13px">Skip for now</button>
       <span id="setupMsg" style="font-size:13px;color:var(--muted)"></span>
     </div>
   </div>
@@ -6306,7 +6349,8 @@ async function syncProfileName(){
     if(bkUser) bkUser.name=nm;
   }catch(e){}
 }
-/* ===== SET UP YOUR PRACTICE — doctor self-service onboarding ===== */
+/* ===== SET UP YOUR PRACTICE — first-run guided onboarding wizard ===== */
+var SU_STEP=0, SU_MAX=5;
 function openSetup(){
   var m=document.getElementById('setupModal'); if(!m) return;
   function gv(fn){ try{ return (typeof window[fn]==='function')?(window[fn]()||''):''; }catch(e){ return ''; } }
@@ -6318,33 +6362,35 @@ function openSetup(){
   document.getElementById('su_phone').value = localStorage.getItem(uns('clinicPhone'))||'';
   document.getElementById('su_addr').value = localStorage.getItem(uns('clinicAddress'))||'';
   document.getElementById('su_sig').value = (typeof getQolSignature==='function')?getQolSignature():'';
-  su_refreshSchedState();
+  SU_STEP=0; suShow();
   m.classList.add('show');
 }
 function closeSetup(){ var m=document.getElementById('setupModal'); if(m) m.classList.remove('show'); }
-function su_autoSig(){
-  var nm=document.getElementById('su_name').value.trim();
-  var cr=document.getElementById('su_cred').value.trim();
-  var pr=document.getElementById('su_practice').value.trim();
-  var sig=nm+(cr?', '+cr:''); if(pr) sig+='\n'+pr;
-  document.getElementById('su_sig').value=sig;
+function suShow(){
+  for(var i=0;i<=SU_MAX;i++){ var s=document.getElementById('su_step'+i); if(s) s.style.display=(i===SU_STEP?'':'none'); }
+  var titles=['Welcome','Step 1 of 4 · Your practice','Step 2 of 4 · Schedule','Step 3 of 4 · Payments','Step 4 of 4 · Settings','All set · Quick guide'];
+  var pg=document.getElementById('su_progress'); if(pg) pg.textContent=titles[SU_STEP]||'';
+  var bar=document.getElementById('su_bar'); if(bar) bar.style.width=Math.round(SU_STEP/SU_MAX*100)+'%';
+  var back=document.getElementById('su_backBtn'); if(back) back.style.display=(SU_STEP>0?'':'none');
+  var skip=document.getElementById('su_skipBtn'); if(skip) skip.style.display=(SU_STEP>=SU_MAX?'none':'');
+  var next=document.getElementById('su_nextBtn'); if(next){ next.textContent = SU_STEP===0?'Get started →' : (SU_STEP>=SU_MAX?'✓ Finish' : 'Next →'); }
+  var msg=document.getElementById('setupMsg'); if(msg) msg.textContent='';
+  if(SU_STEP===2) suRenderSchedule();
+  if(SU_STEP===3) suRenderPayments();
 }
-function su_openSchedule(){ closeSetup(); if(typeof openAvailability==='function') openAvailability(); }
-async function su_refreshSchedState(){
-  var el=document.getElementById('su_schedState'); if(!el) return;
-  try{
-    if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ el.textContent=''; return; }
-    var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
-    if(!r.ok){ el.textContent=''; return; }
-    var d=await r.json(); var days=(d.availability&&d.availability.days)?Object.keys(d.availability.days).length:0;
-    el.textContent = days? ('✓ '+days+' day'+(days>1?'s':'')+' set') : 'Not set yet';
-    el.style.color = days? '#127a55' : '#9a6b00';
-  }catch(e){ el.textContent=''; }
+function suBack(){ if(SU_STEP>0){ SU_STEP--; suShow(); } }
+async function suNext(btn){
+  if(SU_STEP===1){
+    var nm=document.getElementById('su_name').value.trim();
+    if(!nm){ var msg=document.getElementById('setupMsg'); if(msg){msg.style.color='#c0392b'; msg.textContent='Please enter your name first.';} return; }
+    suPersistIdentity();
+  }
+  if(SU_STEP===2 && document.getElementById('avDay0') && typeof saveAvailability==='function'){ try{ await saveAvailability(null); }catch(e){} }
+  if(SU_STEP>=SU_MAX){ suFinish(); return; }
+  SU_STEP++; suShow();
 }
-async function saveSetup(btn){
+function suPersistIdentity(){
   var nm=document.getElementById('su_name').value.trim();
-  var msg=document.getElementById('setupMsg');
-  if(!nm){ if(msg){msg.style.color='#c0392b'; msg.textContent='Please enter your name first.';} return; }
   localStorage.setItem(uns('docname'), nm);
   localStorage.setItem(uns('providerName'), nm);
   localStorage.setItem(uns('docspec'), document.getElementById('su_spec').value.trim());
@@ -6354,14 +6400,48 @@ async function saveSetup(btn){
   localStorage.setItem(uns('clinicPhone'), document.getElementById('su_phone').value.trim());
   localStorage.setItem(uns('clinicAddress'), document.getElementById('su_addr').value.trim());
   localStorage.setItem(uns('qolSignature'), document.getElementById('su_sig').value.trim());
-  localStorage.setItem(uns('setupDone'), '1');
-  if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Saving…'; }
-  try{ if(typeof syncProfileName==='function') await syncProfileName(); }catch(e){}
-  if(btn) btn.disabled=false;
-  if(msg){ msg.style.color='#127a55'; msg.textContent='✓ Saved — this now appears on your notes, booking page, appointment emails, and phone assistant.'; }
-  try{ if(typeof toast==='function') toast('Practice setup saved.','ok'); }catch(e){}
+  try{ if(typeof syncProfileName==='function') syncProfileName(); }catch(e){}
 }
-// Gently surface setup once for a brand-new staff account that hasn't set a name yet.
+function suFinish(){
+  suPersistIdentity();
+  localStorage.setItem(uns('setupDone'),'1');
+  closeSetup();
+  try{ if(typeof toast==='function') toast('You are all set! 🎉','ok'); }catch(e){}
+}
+function su_autoSig(){
+  var nm=document.getElementById('su_name').value.trim();
+  var cr=document.getElementById('su_cred').value.trim();
+  var pr=document.getElementById('su_practice').value.trim();
+  var sig=nm+(cr?', '+cr:''); if(pr) sig+='\n'+pr;
+  document.getElementById('su_sig').value=sig;
+}
+function su_openFollowups(){ closeSetup(); if(typeof openFollowups==='function') openFollowups(); }
+function su_openSettings(){ closeSetup(); if(typeof openSettings==='function') openSettings(); }
+async function suRenderSchedule(){
+  var box=document.getElementById('su_schedBox'); if(!box) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ box.innerHTML='<div class="note">Sign in to set your schedule.</div>'; return; }
+  box.innerHTML='<div class="note">Loading…</div>';
+  try{
+    var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
+    var d=await r.json();
+    box.innerHTML=(typeof _avRenderEditor==='function')?_avRenderEditor((d&&d.availability)||{}):'<div class="note">Schedule editor unavailable.</div>';
+  }catch(e){ box.innerHTML='<div class="note" style="color:#c0392b">Could not load your schedule.</div>'; }
+}
+async function suRenderPayments(){
+  var box=document.getElementById('su_payBox'); if(!box) return;
+  var planTxt = (bkUser&&(bkUser.plan||bkUser.premium))? ('Your plan: <b>'+(bkUser.premium?'Premium':(bkUser.plan||'active'))+'</b>.') : 'Manage your subscription anytime in Settings.';
+  var h='<div style="background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:11px 13px;margin-bottom:10px"><div style="font-weight:600;font-size:14px">Your MLS subscription</div><div class="note" style="margin-top:3px">'+planTxt+'</div></div>';
+  h+='<div style="background:#f5fbf7;border:1px solid #bfe6cf;border-radius:10px;padding:11px 13px"><div style="font-weight:600;font-size:14px">💳 Direct payouts (optional)</div><div class="note" style="margin:3px 0 8px">Connect a bank so attorney report payments deposit automatically (you keep 95%). About 2 minutes with Stripe.</div><div id="su_payStatus"><button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="startConnectOnboard(this)">Set up direct payouts</button></div></div>';
+  box.innerHTML=h;
+  try{
+    if(backendMode()&&bkToken()){
+      var r=await fetch(bkBase()+'/api/connect/status',{headers:{Authorization:'Bearer '+bkToken()}});
+      var d=await r.json(); var st=document.getElementById('su_payStatus');
+      if(st&&d){ if(d.ready){ st.innerHTML='<div style="color:#127a55;font-weight:600;font-size:14px">✅ Direct payouts are on.</div>'; } else if(d.connected){ st.innerHTML='<button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="startConnectOnboard(this)">Finish payout setup</button>'; } }
+    }
+  }catch(e){}
+}
+// Offer the wizard once for a brand-new staff account that hasn't set a name yet.
 function maybePromptSetup(){
   try{
     if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return;
