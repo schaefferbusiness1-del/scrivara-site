@@ -1213,6 +1213,8 @@
 
   <!-- ============ VISIT VIEW ============ -->
   <div id="visitView" style="display:none">
+  <!-- "Now in your waiting room" — checked-in patients, one tap to document them -->
+  <div id="waitingRoomBar" style="display:none;margin-bottom:12px"></div>
   <div class="howto">
     <b>How it works:</b>
     <span class="step"><span class="num">1</span> Start visit</span>
@@ -6673,6 +6675,26 @@ function calStartVisit(id){
   try{ var cb=document.getElementById('contextBox'); if(cb && a.reason) cb.value=(cb.value?cb.value+'\n':'')+'Reason for visit: '+a.reason; }catch(e){}
   try{ toast('Started a visit for '+_calLabelOf(a)+' — dictate or paste, then Generate.','ok'); }catch(e){}
 }
+// "Now in your waiting room" — surfaces checked-in/roomed patients on the Visit
+// screen with one-tap Start visit, so the doctor never hunts for who's next.
+async function _renderWaitingRoom(){
+  var bar=document.getElementById('waitingRoomBar'); if(!bar) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ bar.style.display='none'; return; }
+  var today=(new Date()).toISOString().slice(0,10);
+  var appts=[];
+  try{ var r=await fetch(bkBase()+'/api/appointments?date='+today,{headers:{Authorization:'Bearer '+bkToken()}}); if(r.ok){ var d=await r.json(); appts=d.appointments||[]; } }catch(e){}
+  var waiting=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+  if(!waiting.length){ bar.style.display='none'; bar.innerHTML=''; return; }
+  try{ _calAppts=appts; }catch(e){}
+  var rows=waiting.map(function(a){
+    var nm=(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'Patient'));
+    var tm=String(a.start_at||'').slice(11,16);
+    var st=(a.status==='roomed')?'in a room':'checked in';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #cdeed9;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:120px">🟢 '+esc(nm)+'</span><span style="font-size:12px;color:#127a55">'+st+(tm?(' · '+tm):'')+(a.reason?(' · '+esc(String(a.reason).slice(0,40))):'')+'</span><button class="btn-green" style="font-size:13px;padding:7px 13px" onclick="calStartVisit('+a.id+')">🎙️ Start visit</button></div>';
+  }).join('');
+  bar.innerHTML='<div style="background:#eefaf3;border:1px solid #cdeed9;border-radius:12px;padding:12px 14px"><div style="font-weight:700;color:#127a55;font-size:14px;margin-bottom:2px">🟢 In your waiting room ('+waiting.length+')</div>'+rows+'</div>';
+  bar.style.display='block';
+}
 function calOpenPatientFor(id){
   var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
   try{ if(a.patient_external_id && typeof selectPatient==='function'){ selectPatient(a.patient_external_id); showView('patients'); return; } }catch(e){}
@@ -6749,7 +6771,7 @@ function showView(v){
   currentView=v;
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
-  if(v==='visit'){ try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); }, 30); }catch(e){} }
+  if(v==='visit'){ try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
   document.getElementById('historyView').style.display  = v==='history'?'block':'none';
   document.getElementById('recsView').style.display     = v==='recs'?'block':'none';
   const ordersV=document.getElementById('ordersView'); if(ordersV) ordersV.style.display = v==='orders'?'block':'none';
