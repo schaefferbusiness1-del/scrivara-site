@@ -1200,6 +1200,7 @@
     <div class="card" id="profileCard" style="margin-top:20px;display:none">
       <h2><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book an appointment for this patient">📅 Schedule</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generatePatientLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
@@ -1830,6 +1831,7 @@
   <div class="card" id="historyCard">
     <h2><span class="ic">📚</span> Visit history
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
     </h2>
     <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
@@ -1879,7 +1881,8 @@
   <!-- ============ ORDERS VIEW ============ -->
   <div id="ordersView" style="display:none">
   <div class="card" id="ordersCard">
-    <h2><span class="ic">📋</span> Orders <span style="font-weight:400;font-size:14px;color:var(--muted)">(scripts, referrals, DME, imaging, injections)</span></h2>
+    <h2><span class="ic">📋</span> Orders <span style="font-weight:400;font-size:14px;color:var(--muted)">(scripts, referrals, DME, imaging, injections)</span>
+      <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="showView('visit')" title="Return to the visit you're documenting">🎙️ Back to visit</button></h2>
     <p class="sub">Build orders for the active patient. Pull the diagnosis from the current note, accept AI-style suggestions, then print or copy a clean order sheet to hand to the patient.</p>
     <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🖊 Orders are drafted for the provider to review and sign. Final orders are the provider's responsibility.</div>
 
@@ -5200,6 +5203,7 @@ function _showNextActions(kind){
     var btns='';
     btns+='<button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="var b=document.getElementById(\'nextActionsBar\');if(b)b.style.display=\'none\';newVisit();">➕ Next patient</button>';
     btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'orders\')">📋 Create orders</button>';
+    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="calScheduleForPatient()">📅 Book follow-up</button>';
     if(typeof activePatient==='function' && activePatient()){ btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'patients\')">👤 Back to chart</button>'; }
     btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'calendar\')">📅 Calendar</button>';
     bar.innerHTML='<span style="font-weight:600;color:#127a55;margin-right:4px">'+msg+'</span>'+btns;
@@ -6610,16 +6614,28 @@ function calOpenDay(key){
   panel.innerHTML=h; panel.style.display='block';
 }
 function calJump(v){ if(!v) return; var p=String(v).split('-'); var y=parseInt(p[0],10), m=parseInt(p[1],10); if(y&&m){ _calYear=y; _calMonth=m-1; var pn=document.getElementById('calDayPanel'); if(pn) pn.style.display='none'; renderCalendar(); } }
+// Jump to the calendar and open the new-appointment form, prefilled with a
+// patient's name — connects Patients / History / Profile straight to scheduling.
+function calScheduleForPatient(name){
+  try{ if(typeof showView==='function') showView('calendar'); }catch(e){}
+  setTimeout(function(){ try{
+    var box=document.getElementById('calNewApptBox');
+    if(box && box.style.display==='none'){ calNewAppt(); }
+    var f=document.getElementById('calNewName');
+    if(f){ var nm=name||((typeof activePatient==='function'&&activePatient())?activePatient().name:'')||''; if(nm) f.value=nm; f.focus(); }
+  }catch(e){} }, 90);
+}
 // ---- Schedule a new appointment from the calendar toolbar ----
 function calNewAppt(){
   var box=document.getElementById('calNewApptBox'); if(!box) return;
   var av=document.getElementById('calAvailBox'); if(av) av.style.display='none';
   if(box.style.display!=='none'){ box.style.display='none'; return; }
   var today=_calRefDate||(new Date()).toISOString().slice(0,10);
+  var _apn=''; try{ if(typeof activePatient==='function'&&activePatient()) _apn=activePatient().name||''; }catch(e){}
   var provSel=''; if((_calProviders||[]).length>1){ provSel='<select id="calNewDoc" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px"><option value="">Any provider</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+'</select>'; }
-  var h='<div style="font-weight:700;font-size:15px;margin-bottom:8px">➕ Schedule a new appointment</div>';
+  var h='<div style="font-weight:700;font-size:15px;margin-bottom:8px">➕ Schedule a new appointment'+(_apn?(' <span style="font-weight:400;color:var(--muted);font-size:13px">for '+esc(_apn)+'</span>'):'')+'</div>';
   h+='<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
-  h+='<input id="calNewName" placeholder="Patient name *" style="flex:2;min-width:160px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
+  h+='<input id="calNewName" value="'+esc(_apn)+'" placeholder="Patient name *" style="flex:2;min-width:160px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
   h+='<input id="calNewDate" type="date" value="'+esc(today)+'" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">';
   h+='<input id="calNewTime" type="time" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">';
   h+=provSel;
@@ -6797,6 +6813,7 @@ async function _renderDailyBrief(){
   var btns='';
   if(checkedIn){ btns+='<button class="btn-green" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'visit\')">🟢 Waiting room</button>'; }
   btns+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'calendar\')">📅 See schedule</button>';
+  btns+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="calScheduleForPatient()">➕ New appointment</button>';
   bar.innerHTML='<div style="background:linear-gradient(90deg,#eef6ff,#f3fbf6);border:1px solid #d7e6fb;border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-size:13.5px;flex:1;min-width:200px">'+msg+'</span>'+btns+'</div>';
   bar.style.display='block';
 }
@@ -8168,9 +8185,11 @@ function _ptItemHtml(p, activeId){
         <div class="t">${esc(p.name)} ${p.id===activeId?'<span style="font-size:12px;color:var(--brand);font-weight:700">• active</span>':''}</div>
         <div class="s">${meta?esc(meta)+' · ':''}${esc(last)} · ${notes.length} note${notes.length===1?'':'s'} · ${docs} doc${docs===1?'':'s'}</div>
       </div>
+      <button class="pt-quick" title="Start a visit for this patient" onclick="event.stopPropagation();ptQuickVisit('${p.id}')" style="background:none;border:none;cursor:pointer;font-size:15px;opacity:.55;padding:4px 7px">🎙️</button>
       <button class="del" title="Delete patient" onclick="event.stopPropagation();deletePatient('${p.id}')">🗑</button>
     </div>`;
 }
+function ptQuickVisit(id){ try{ setActivePtId(id); renderProfile(); renderPatients(); renderPatientBar(); updateNavCounts(); if(typeof goNewVisitForPatient==='function') goNewVisitForPatient(); }catch(e){} }
 var PROC_MAP={ '64483':'Epidural injection (TFESI)','64484':'Epidural injection (TFESI)','62321':'Epidural injection (ILESI)','62322':'Epidural injection (ILESI)','62323':'Epidural injection (ILESI)','62311':'Epidural injection','64490':'Facet joint injection','64491':'Facet joint injection','64492':'Facet joint injection','64493':'Facet joint injection','64494':'Facet joint injection','64495':'Facet joint injection','64633':'Radiofrequency ablation','64634':'Radiofrequency ablation','64635':'Radiofrequency ablation','64636':'Radiofrequency ablation','20610':'Joint injection (major)','20611':'Joint injection (major)','20605':'Joint injection (intermediate)','20600':'Joint injection (small)','27096':'Sacroiliac joint injection','64451':'Sacroiliac nerve injection','20552':'Trigger point injection','20553':'Trigger point injection','64405':'Occipital nerve block','64640':'Nerve block / ablation','63650':'Spinal cord stimulator trial','63685':'Spinal cord stimulator implant','62380':'Endoscopic decompression' };
 function _ptProcedure(p){
   try{
