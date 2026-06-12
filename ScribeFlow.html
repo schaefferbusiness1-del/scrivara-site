@@ -6844,6 +6844,42 @@ function renderPatientBar(){
   } else {
     inner.innerHTML='<span class="pnone">No active patient — visits won\'t attach to a chart. Pick one in Patients.</span>';
   }
+  try{ if(typeof _renderPatientFace==='function') _renderPatientFace(); }catch(e){}
+}
+/* Persistent patient "face" pinned bottom-left whenever a chart is active —
+   hover for a quick history, click to jump back to the chart. Intentionally
+   redundant with the top patient bar, so the active patient is always one move away. */
+function _patientInitials(name){ var parts=String(name||'').trim().split(/\s+/); if(!parts.length||!parts[0]) return '?'; var a=parts[0][0]||''; var b=parts.length>1?(parts[parts.length-1][0]||''):''; return (a+b).toUpperCase(); }
+function _patientQuickHistory(p){
+  var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
+  var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
+  var last=dates[dates.length-1]||'';
+  var pains=notes.map(function(n){ var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return (v==null||v==='')?null:Number(v); }).filter(function(x){return x!=null&&!isNaN(x);});
+  var lines=['<b style="font-size:13px">'+esc(p.name||'Patient')+'</b>'];
+  var demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · '); if(demo) lines.push('<span style="color:#9fb2c6">'+esc(demo)+'</span>');
+  var lastTxt=''; if(last){ var d=new Date(last+'T12:00'); lastTxt=isNaN(d.getTime())?last:d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}); }
+  lines.push((notes.length||0)+' visit'+(notes.length===1?'':'s')+(lastTxt?(' · last seen '+lastTxt):''));
+  if(pains.length) lines.push('Last pain: '+pains[pains.length-1]+'/10');
+  if(p.problems){ var pr=String(p.problems).split(/\n|;/).map(function(s){return s.trim();}).filter(Boolean).slice(0,3).join(', '); if(pr) lines.push('<span style="color:#cdd9e6">'+esc(pr.slice(0,120))+'</span>'); }
+  if(!notes.length) lines.push('<span style="color:#9fb2c6">New patient — no visits yet.</span>');
+  lines.push('<span style="color:#7fb0e0;font-size:11px">Click to open this chart →</span>');
+  return lines.join('<br>');
+}
+function _renderPatientFace(){
+  var p=(typeof activePatient==='function')?activePatient():null;
+  var wrap=document.getElementById('_patientFace');
+  if(!p){ if(wrap) wrap.style.display='none'; return; }
+  if(!wrap){
+    wrap=document.createElement('div'); wrap.id='_patientFace';
+    wrap.style.cssText='position:fixed;left:18px;bottom:18px;z-index:9500;cursor:pointer';
+    wrap.innerHTML='<div id="_pfAvatar" style="width:50px;height:50px;border-radius:50%;background:#1f7ae0;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;box-shadow:0 4px 14px rgba(20,40,70,.32);border:2px solid #fff"></div><div id="_pfPop" style="display:none;position:absolute;left:0;bottom:62px;background:#13283d;color:#fff;border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.55;width:236px;box-shadow:0 10px 28px rgba(0,0,0,.34)"></div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', function(){ try{ if(typeof showView==='function') showView('patients'); }catch(e){} });
+    wrap.addEventListener('mouseenter', function(){ var pop=document.getElementById('_pfPop'); var cur=(typeof activePatient==='function')?activePatient():null; if(pop&&cur){ pop.innerHTML=_patientQuickHistory(cur); pop.style.display='block'; } });
+    wrap.addEventListener('mouseleave', function(){ var pop=document.getElementById('_pfPop'); if(pop) pop.style.display='none'; });
+  }
+  wrap.style.display='block';
+  var av=document.getElementById('_pfAvatar'); if(av){ av.textContent=_patientInitials(p.name); av.title=(p.name||'Patient')+' — click to open chart'; }
 }
 function updateNavCounts(){
   const pc=document.getElementById('navPtCount'); if(pc) pc.textContent=getPatients().length;
@@ -8876,7 +8912,7 @@ function _renderBackupBadge(){
   var n=_pendingBackupGet().length;
   var el=document.getElementById('_backupBadge');
   if(!n){ if(el) el.remove(); return; }
-  if(!el){ el=document.createElement('div'); el.id='_backupBadge'; el.title='Click to retry the server backup now'; el.style.cssText='position:fixed;left:16px;bottom:16px;z-index:9000;background:#fff7e6;border:1px solid #f0d9a0;color:#8a5a00;border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer'; el.onclick=function(){ _retryPendingBackups(true); }; document.body.appendChild(el); }
+  if(!el){ el=document.createElement('div'); el.id='_backupBadge'; el.title='Click to retry the server backup now'; el.style.cssText='position:fixed;left:16px;bottom:84px;z-index:9000;background:#fff7e6;border:1px solid #f0d9a0;color:#8a5a00;border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer'; el.onclick=function(){ _retryPendingBackups(true); }; document.body.appendChild(el); }
   el.textContent='⏳ '+n+' note'+(n===1?'':'s')+' syncing to server…';
 }
 async function _retryPendingBackups(manual){
