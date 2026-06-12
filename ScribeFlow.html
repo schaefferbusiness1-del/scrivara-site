@@ -6498,7 +6498,7 @@ function _calRenderWeek(){
     var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate());
     var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
     var it=key===todayKey;
-    h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:330px;border:1px solid '+(it?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(it?'#eef5ff':'#fff')+'">';
+    h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:330px;border:1px solid '+(it?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(it?'var(--soft)':'var(--card)')+'">';
     if(!ap.length) h+='<div style="font-size:11px;color:#c4cdd8;margin-top:6px;text-align:center">—</div>';
     ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="Click for details · drag to another day to reschedule" style="font-size:11px;margin-top:3px;padding:3px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
     h+='</div>';
@@ -6514,7 +6514,7 @@ function _calRenderDay(){
   var grid=document.getElementById('calGrid'); if(!grid) return;
   var h='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;min-height:280px">';
   if(!ap.length) h+='<div class="mini" style="color:var(--muted)">No appointments this day. Use the panel below to add one.</div>';
-  ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" title="Click for patient details + reschedule" style="display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin-bottom:7px;background:#fff;cursor:pointer"><span style="font-weight:700;min-width:60px;font-size:16px">'+(tm||'—')+'</span><span style="flex:1;font-size:15px">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:2px 9px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:12px;color:#1f7ae0;font-weight:600">Details ›</span></div>'; });
+  ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" title="Click for patient details + reschedule" style="display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin-bottom:7px;background:var(--card);cursor:pointer"><span style="font-weight:700;min-width:60px;font-size:16px">'+(tm||'—')+'</span><span style="flex:1;font-size:15px">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:2px 9px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:12px;color:#1f7ae0;font-weight:600">Details ›</span></div>'; });
   h+='</div>'; grid.innerHTML=h;
 }
 function _calRenderMonth(){
@@ -6538,7 +6538,7 @@ function _calRenderMonth(){
     var key=_calYear+'-'+_calPad(_calMonth+1)+'-'+_calPad(day);
     var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
     var isToday=key===todayKey;
-    h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:122px;border:1px solid '+(isToday?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(isToday?'#eef5ff':'#fff')+'">';
+    h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:122px;border:1px solid '+(isToday?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(isToday?'var(--soft)':'var(--card)')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+(isToday?'800':'600')+';font-size:13px;color:'+(isToday?'#1f7ae0':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
     ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div draggable="true" ondragstart="calDragStart(event,'+a.id+')" title="Drag to another day to reschedule" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:grab">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
     if(ap.length>5) h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">+'+(ap.length-5)+' more</div>';
@@ -6554,7 +6554,7 @@ function calOpenDay(key){
   var h='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:700">'+esc(lbl)+'</div><button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="document.getElementById(\'calDayPanel\').style.display=\'none\'">✕ Close</button></div>';
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
   else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16);
-    h+='<div style="border:1px solid var(--line);border-radius:8px;margin-top:6px;background:#fff">';
+    h+='<div style="border:1px solid var(--line);border-radius:8px;margin-top:6px;background:var(--card)">';
     h+='<div onclick="calApptInfo('+a.id+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#1f7ae0;font-weight:600">Details ›</span></div>';
     h+='<div id="calApptEdit_'+a.id+'"></div></div>';
   }); }
