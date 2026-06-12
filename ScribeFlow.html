@@ -702,10 +702,10 @@
   body.theme-dark [style*="background:#eefaf3"]{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.30)!important; color:var(--ink); }
   body.theme-dark [style*="background:#eef6ff"], body.theme-dark [style*="background:#f0f6ff"]{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
   /* Split patient view — chart on the RIGHT when a patient is active (opt-in setting). */
-  body.pt-split.pt-has-active #patientsView{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
+  body.pt-split.pt-has-active #ptSplitWrap{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
   body.pt-split.pt-has-active #profileCard{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 84px); overflow:auto; }
   body.pt-split.pt-has-active #profileNonePanel{ margin-top:0; }
-  @media(max-width:980px){ body.pt-split.pt-has-active #patientsView{ display:block; } body.pt-split.pt-has-active #profileCard{ position:static; max-height:none; margin-top:20px; } }
+  @media(max-width:980px){ body.pt-split.pt-has-active #ptSplitWrap{ display:block; } body.pt-split.pt-has-active #profileCard{ position:static; max-height:none; margin-top:20px; } }
   /* Procedure group headers in the patient list. */
   .pt-group-hdr{ font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin:14px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--line); }
   .pt-list > .pt-group-hdr:first-child{ margin-top:2px; }
@@ -1138,6 +1138,7 @@
 
   <!-- ============ PATIENTS VIEW ============ -->
   <div id="patientsView" style="display:none">
+    <div id="ptSplitWrap">
     <div class="card">
       <h2><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
@@ -1259,6 +1260,7 @@
         <div class="row" style="justify-content:center;margin-top:12px"><button class="btn-green" style="font-size:14px;padding:9px 15px" onclick="goNewUnassignedVisit()">🎙️ Start unassigned visit</button></div>
       </div>
     </div>
+    </div><!-- /ptSplitWrap -->
   </div>
 
   <!-- ============ VISIT VIEW ============ -->
