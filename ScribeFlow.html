@@ -2875,6 +2875,31 @@
       <div class="row tight"><button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="importPatients()">📥 Import patients</button></div>
       <p class="note" id="importResult"></p>
     </div>
+
+    <!-- Nightly EMR → MLS automatic backup -->
+    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">🌙 Nightly EMR backup (automatic)</label>
+      <p class="note" style="margin:2px 0 10px">Once your EMR is connected, MLS can automatically pull <b>every patient</b> (and their visit history) out of your EMR each night and back them up here — running on our server, so your office computer doesn't need to be on. Stored encrypted, same as in-app charts.</p>
+      <div id="emrSyncBox" style="background:#f0f6ff;border:1px solid #d7e6fb;border-radius:10px;padding:12px 14px">
+        <div id="emrSyncConn" style="font-size:13px;margin-bottom:10px;color:var(--muted)">Checking EMR connection…</div>
+        <label class="row tight" style="gap:8px;align-items:center;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="emrSyncEnabled" style="width:auto"> Run an automatic backup every night
+        </label>
+        <div class="row tight" style="gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <span style="font-size:14px">Run at</span>
+          <select id="emrSyncHour" style="font-size:14px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></select>
+          <span style="font-size:12px;color:var(--muted)">(server time, UTC)</span>
+        </div>
+        <label class="row tight" style="gap:8px;align-items:center;font-size:13px;margin-top:10px;cursor:pointer">
+          <input type="checkbox" id="emrSyncHistory" checked style="width:auto"> Also back up each patient's visit history (slower)
+        </label>
+        <div class="row tight" style="gap:8px;margin-top:12px">
+          <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="saveEmrSync(this)">Save schedule</button>
+          <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="runEmrSyncNow(this)">▶ Run backup now</button>
+        </div>
+        <div id="emrSyncStatus" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
+      </div>
+    </div>
     </div><!-- /Integrations section -->
 
     <div class="row">
@@ -4798,6 +4823,7 @@ function openSettings(){
   renderTwofaSettings();
   mlsBuildSettingsTabs();
   if(typeof loadLegalProfile==='function') loadLegalProfile();
+  try{ if(typeof backendMode==='function'&&backendMode()&&bkToken()){ if(typeof loadApiKeys==='function') loadApiKeys(); if(typeof loadEmrSync==='function') loadEmrSync(); } }catch(e){}
   document.getElementById('settingsModal').classList.add('show');
 }
 function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
@@ -14874,6 +14900,56 @@ async function revokeApiKey(id){
   try{ await fetch(BACKEND_URL+'/api/fhir/keys/'+id,{method:'DELETE',headers:{'Authorization':'Bearer '+bkToken()}}); loadApiKeys(); }catch(e){}
 }
 function copyApiKey(){ const i=document.getElementById('newApiKey'); if(i&&i.value){ navigator.clipboard.writeText(i.value).then(function(){toast('Copied.','ok');},function(){}); } }
+
+/* ---- Nightly EMR → MLS automatic backup ---- */
+function _emrSyncFmtResult(r){
+  if(!r) return '';
+  if(r.ok) return '✓ Last backup: '+(r.patients||0)+' patient'+((r.patients===1)?'':'s')+', '+(r.visits||0)+' visit record'+((r.visits===1)?'':'s')+(r.truncated?' (more remain — will continue next run)':'')+'.';
+  return '⚠ Last attempt: '+(r.error||'failed')+(r.patients?(' (got '+r.patients+' before stopping)'):'');
+}
+async function loadEmrSync(){
+  if(!bkToken()) return;
+  const hourSel=document.getElementById('emrSyncHour');
+  if(hourSel && !hourSel.options.length){ for(let h=0;h<24;h++){ const o=document.createElement('option'); o.value=h; const ampm=h===0?'12 AM':h<12?(h+' AM'):h===12?'12 PM':((h-12)+' PM'); o.textContent=('0'+h).slice(-2)+':00  ('+ampm+')'; hourSel.appendChild(o); } }
+  try{
+    const r=await fetch(BACKEND_URL+'/api/emr-sync/settings',{headers:{'Authorization':'Bearer '+bkToken()}});
+    const d=await r.json(); if(!r.ok) return;
+    const en=document.getElementById('emrSyncEnabled'); if(en) en.checked=!!d.enabled;
+    if(hourSel) hourSel.value=(d.hour!=null?d.hour:2);
+    const hist=document.getElementById('emrSyncHistory'); if(hist) hist.checked=(d.includeHistory!==false);
+    const conn=document.getElementById('emrSyncConn');
+    if(conn) conn.innerHTML = d.connected
+      ? '🟢 EMR connected'+(d.vendor?(' ('+d.vendor+')'):'')+' — nightly backup is available.'
+      : '🟡 No EMR connected yet. Connect your EMR first (this needs Athena API/developer access for your practice). The schedule below will save and start working the moment the EMR is connected.';
+    const st=document.getElementById('emrSyncStatus');
+    if(st) st.innerHTML = (d.lastRun? ('Last run '+new Date(d.lastRun).toLocaleString()+'. '+_emrSyncFmtResult(d.lastResult)) : 'Has not run yet.');
+  }catch(e){}
+}
+async function saveEmrSync(btn){
+  if(!bkToken()){ toast('Sign in first.','err'); return; }
+  const body={ enabled:document.getElementById('emrSyncEnabled').checked, hour:parseInt(document.getElementById('emrSyncHour').value,10)||2, includeHistory:document.getElementById('emrSyncHistory').checked };
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  try{
+    const r=await fetch(BACKEND_URL+'/api/emr-sync/settings',{method:'POST',headers:{'Authorization':'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(r.ok){ toast(body.enabled?('Nightly backup ON — runs daily at '+('0'+body.hour).slice(-2)+':00 UTC.'):'Nightly backup turned off.','ok'); }
+    else toast(d.error||'Could not save.','err');
+  }catch(e){ toast('Network error.','err'); }
+  if(btn){ btn.disabled=false; btn.textContent='Save schedule'; }
+}
+async function runEmrSyncNow(btn){
+  if(!bkToken()){ toast('Sign in first.','err'); return; }
+  const st=document.getElementById('emrSyncStatus');
+  if(btn){ btn.disabled=true; btn.textContent='Backing up…'; }
+  if(st) st.textContent='Pulling patients from your EMR… this can take a while for large practices.';
+  try{
+    const r=await fetch(BACKEND_URL+'/api/emr-sync/run-now',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()}});
+    const d=await r.json();
+    if(st) st.innerHTML=_emrSyncFmtResult(d);
+    toast(d.ok?('Backed up '+(d.patients||0)+' patients.'):(d.error||'Backup could not run.'), d.ok?'ok':'err');
+  }catch(e){ if(st) st.textContent='Network error running the backup.'; toast('Network error.','err'); }
+  if(btn){ btn.disabled=false; btn.textContent='▶ Run backup now'; }
+}
 
 /* ---- Bulk import patients + history into MLS ---- */
 async function importPatients(){
