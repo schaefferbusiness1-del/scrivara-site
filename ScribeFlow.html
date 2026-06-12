@@ -1699,6 +1699,8 @@
         <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
+      <!-- Contextual "what's next" — appears after a note is saved/signed -->
+      <div id="nextActionsBar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;background:#eefaf3;border:1px solid #cdeed9;border-radius:10px;padding:9px 12px"></div>
 
       <!-- Secondary / manual tools — hidden by default, one click away. All
            handlers unchanged; only relocated under this collapsible container. -->
@@ -5106,6 +5108,22 @@ function _restoreVisitDraft(){
   }catch(e){ try{ toast('Could not restore the draft.','err'); }catch(_){} }
 }
 function _dismissVisitRestore(){ _wipeVisitDraft(); }
+/* "What's next" — a connected next-step prompt after a note is saved/signed,
+   so finishing a visit flows straight into the next action instead of a dead end. */
+function _showNextActions(kind){
+  try{
+    var bar=document.getElementById('nextActionsBar'); if(!bar) return;
+    var msg = (kind==='signed') ? '✅ Signed & filed to the chart. What next?' : '💾 Saved to history. What next?';
+    var btns='';
+    btns+='<button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="var b=document.getElementById(\'nextActionsBar\');if(b)b.style.display=\'none\';newVisit();">➕ Next patient</button>';
+    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'orders\')">📋 Create orders</button>';
+    if(typeof activePatient==='function' && activePatient()){ btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'patients\')">👤 Back to chart</button>'; }
+    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'calendar\')">📅 Calendar</button>';
+    bar.innerHTML='<span style="font-weight:600;color:#127a55;margin-right:4px">'+msg+'</span>'+btns;
+    bar.style.display='flex';
+  }catch(e){}
+}
+function _hideNextActions(){ try{ var b=document.getElementById('nextActionsBar'); if(b) b.style.display='none'; }catch(e){} }
 /* Lightweight in-app info dialog (replaces raw alert() popups). */
 function _infoDialog(title, text){
   try{
@@ -6628,6 +6646,7 @@ function calApptInfo(id){
   h+='</div>';
   h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">';
   h+='<button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="calSaveAppt('+id+')">💾 Save changes</button>';
+  h+='<button class="btn-green" style="font-size:12px;padding:6px 12px" onclick="calStartVisit('+id+')">🎙️ Start visit</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calOpenPatientFor('+id+')">👤 Open patient</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#a12c2c" onclick="calCancelAppt('+id+')">Cancel appt</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#fff;background:#c0392b;border-color:#c0392b" onclick="calDeleteAppt('+id+')">🗑 Delete</button>';
@@ -6639,6 +6658,21 @@ function calEditAppt(id){ return calApptInfo(id); } // back-compat alias
 // Open the day panel and expand a specific appointment's details (used by month/week chips).
 function calChipOpen(id, key){ if(key) calOpenDay(key); setTimeout(function(){ var box=document.getElementById('calApptEdit_'+id); if(box && !box.innerHTML){ calApptInfo(id); } var el=document.getElementById('calApptEdit_'+id); if(el && el.scrollIntoView){ try{ el.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} } }, 60); }
 // Jump from an appointment to that patient's profile (best-effort link by id, else search by name).
+// Calendar → Visit: start documenting this appointment's patient in one tap.
+function calStartVisit(id){
+  var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
+  try{
+    if(a.patient_external_id && typeof selectPatient==='function' && (typeof findPatient!=='function' || findPatient(a.patient_external_id))){
+      selectPatient(a.patient_external_id);
+      if(typeof activePatient==='function' && activePatient() && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); try{ toast('Started a visit for '+_calLabelOf(a)+'.','ok'); }catch(e){} return; }
+    }
+  }catch(e){}
+  // No linked chart yet — start an unassigned visit prefilled with the name + reason.
+  try{ if(typeof showView==='function') showView('visit'); if(typeof newVisit==='function') newVisit(); }catch(e){}
+  try{ var pl=document.getElementById('patientLabel'); if(pl) pl.value=_calLabelOf(a); }catch(e){}
+  try{ var cb=document.getElementById('contextBox'); if(cb && a.reason) cb.value=(cb.value?cb.value+'\n':'')+'Reason for visit: '+a.reason; }catch(e){}
+  try{ toast('Started a visit for '+_calLabelOf(a)+' — dictate or paste, then Generate.','ok'); }catch(e){}
+}
 function calOpenPatientFor(id){
   var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
   try{ if(a.patient_external_id && typeof selectPatient==='function'){ selectPatient(a.patient_external_id); showView('patients'); return; } }catch(e){}
@@ -8557,6 +8591,7 @@ let currentNoteId=null; // id of the history record being edited (null = brand n
 function newVisit(){
   if(capturing) stopCapture();
   try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){}
+  try{ if(typeof _hideNextActions==='function') _hideNextActions(); }catch(e){}
   currentNoteId=null;
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
@@ -8684,6 +8719,7 @@ function saveCurrentNote(announce){
     const ap=activePatient();
     if(ap) toast((rec.signed?'Signed note':'Note')+' saved to '+ap.name+'’s history.','ok');
     else toast('Note saved to history (no active patient — it shows as “Unassigned”; open History to attach it to a chart).','ok');
+    try{ if(typeof _showNextActions==='function') _showNextActions(rec.signed?'signed':'saved'); }catch(e){}
   }
   // Backend write-through happens inside upsertNote (hosted mode, best-effort).
 }
