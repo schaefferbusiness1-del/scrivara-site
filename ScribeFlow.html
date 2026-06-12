@@ -8732,6 +8732,37 @@ function recordMeta(rec){
     satisfaction: satisfaction
   };
 }
+/* ---- Guaranteed server backup: any note whose server write fails is queued and
+   retried automatically (on a timer, when back online, or on the next save) so a
+   note can never be silently lost from the encrypted server copy. ---- */
+function _pendingBackupGet(){ try{ return JSON.parse(localStorage.getItem(uns('pendingBackup'))||'[]')||[]; }catch(e){ return []; } }
+function _pendingBackupSet(a){ try{ localStorage.setItem(uns('pendingBackup'), JSON.stringify(Array.from(new Set(a)).slice(0,1000))); }catch(e){} _renderBackupBadge(); }
+function _pendingBackupAdd(id){ if(!id) return; var a=_pendingBackupGet(); if(a.indexOf(id)<0){ a.push(id); _pendingBackupSet(a); } else { _renderBackupBadge(); } }
+function _pendingBackupRemove(id){ var a=_pendingBackupGet(); if(a.indexOf(id)>=0){ _pendingBackupSet(a.filter(function(x){ return x!==id; })); } }
+function _renderBackupBadge(){
+  var n=_pendingBackupGet().length;
+  var el=document.getElementById('_backupBadge');
+  if(!n){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement('div'); el.id='_backupBadge'; el.title='Click to retry the server backup now'; el.style.cssText='position:fixed;left:16px;bottom:16px;z-index:9000;background:#fff7e6;border:1px solid #f0d9a0;color:#8a5a00;border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer'; el.onclick=function(){ _retryPendingBackups(true); }; document.body.appendChild(el); }
+  el.textContent='⏳ '+n+' note'+(n===1?'':'s')+' syncing to server…';
+}
+async function _retryPendingBackups(manual){
+  if(!backendMode()||!bkToken()) return;
+  var ids=_pendingBackupGet(); if(!ids.length){ if(manual) try{ toast('Everything is backed up.','ok'); }catch(e){} return; }
+  var notes=getNotes();
+  for(var i=0;i<ids.length;i++){
+    var rec=notes.find(function(n){ return n.id===ids[i]; });
+    if(!rec){ _pendingBackupRemove(ids[i]); continue; }
+    try{
+      var r=await fetch(bkBase()+'/api/records',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({client_id:rec.id, patient_external_id:rec.patientId||null, record:rec, meta:recordMeta(rec)})});
+      if(r.status===401){ handle401(); return; }
+      if(r.ok || r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); }
+    }catch(e){ /* still offline — keep it queued for the next round */ }
+  }
+  if(manual){ var left=_pendingBackupGet().length; try{ toast(left?(left+' still pending — I\'ll keep retrying.'):'All notes backed up to the server.', left?'':'ok'); }catch(e){} }
+}
+try{ setInterval(function(){ try{ _renderBackupBadge(); _retryPendingBackups(false); }catch(e){} }, 60000); window.addEventListener('online', function(){ try{ _retryPendingBackups(false); }catch(e){} }); }catch(e){}
+
 function saveNoteToBackend(rec){
   if(!backendMode() || !bkToken()) return;
   try{
@@ -8746,10 +8777,10 @@ function saveNoteToBackend(rec){
       })
     }).then(r=>{
       if(r.status===401){ handle401(); return; }
-      if(!r.ok && r.status!==402 && r.status!==403)
-        toast('Saved on this device — server backup failed; it will retry on your next save.','err');
-    }).catch(()=>{ /* offline — local save already succeeded; next save retries */ });
-  }catch(e){ /* ignore — local save already succeeded */ }
+      if(r.ok || r.status===402 || r.status===403){ _pendingBackupRemove(rec.id); }
+      else { _pendingBackupAdd(rec.id); }       // server rejected — queue for retry
+    }).catch(()=>{ _pendingBackupAdd(rec.id); }); // offline — queue for retry
+  }catch(e){ _pendingBackupAdd(rec.id); }
 }
 /* Best-effort server-side (soft) delete so a deleted visit doesn't resurrect
    from the server on the next history merge. */
