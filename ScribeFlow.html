@@ -1120,12 +1120,21 @@
           <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyBookingLinkText()">📋 Copy</button>
         </div>
       </div>
+      <div id="recTabBar" style="display:none;gap:7px;flex-wrap:wrap;margin:2px 0 4px">
+        <button class="rectab" id="rectab_frontdesk" onclick="recTab('frontdesk')" style="font-size:14px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer">🗓️ Front desk</button>
+        <button class="rectab" id="rectab_messages" onclick="recTab('messages')" style="font-size:14px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer">💬 Messages<span id="recMsgBadge" style="display:none;background:#e23b3b;color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;margin-left:6px">0</span></button>
+        <button class="rectab" id="rectab_comms" onclick="recTab('comms')" style="font-size:14px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer">📞 Communication</button>
+        <button class="rectab" id="rectab_settings" onclick="recTab('settings')" style="font-size:14px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer">⚙️ Settings</button>
+      </div>
       <div id="availBox" style="display:none;margin-top:12px;background:#f5fbf7;border:1px solid #bfe6cf;border-radius:12px;padding:14px"></div>
       <div id="boardBox" style="display:none;margin-top:12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
       <div id="receptionBox" style="display:none;margin-top:12px;background:#fff7ef;border:1px solid #f1d9be;border-radius:12px;padding:14px"></div>
       <div id="lawyerBox" style="display:none;margin-top:12px;background:#f3f0fb;border:1px solid #d9cdf0;border-radius:12px;padding:14px"></div>
       <div id="doctorBox" style="display:none;margin-top:12px;background:#eefaf3;border:1px solid #bfe6cf;border-radius:12px;padding:14px"></div>
       <div id="followupBox" style="display:none;margin-top:12px;background:#eefaf3;border:1px solid #bfe6cf;border-radius:12px;padding:14px"></div>
+      <div id="recMessages" style="display:none;margin-top:12px"></div>
+      <div id="recComms" style="display:none;margin-top:12px"></div>
+      <div id="recSettings" style="display:none;margin-top:12px"></div>
       <div class="pt-search" id="ptSearchRow" style="display:none">
         <input type="text" id="ptSearch" placeholder="🔍  Search by name or date of birth…" autocomplete="off" oninput="renderPatients()">
         <span class="pt-count" id="ptCount"></span>
@@ -14404,6 +14413,120 @@ async function lawyerSubscribe(){
    gets NO clinical power (no Visit/notes/coding/intake/templates/widgets/analysis).
    The backend already 403s receptionists on every clinical route; this hides the
    clinical UI so they never see it. Mirrors the lawyer-portal gating. ===== */
+/* ===== Front-desk workspace tabs (Messages / Communication / Settings) ===== */
+function recTab(name){
+  ['frontdesk','messages','comms','settings'].forEach(function(t){
+    var b=document.getElementById('rectab_'+t);
+    if(b){ var on=(t===name); b.style.background=on?'var(--brand,#1f7ae0)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; b.style.borderColor=on?'var(--brand,#1f7ae0)':'var(--line)'; }
+  });
+  var board=document.getElementById('boardBox');
+  ['recMessages','recComms','recSettings'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
+  if(name==='frontdesk'){ if(board) board.style.display='block'; try{ loadBoard(false); }catch(e){} }
+  else if(board){ board.style.display='none'; }
+  if(name==='messages'){ document.getElementById('recMessages').style.display='block'; loadRecMessages(); }
+  if(name==='comms'){ document.getElementById('recComms').style.display='block'; renderRecComms(); }
+  if(name==='settings'){ document.getElementById('recSettings').style.display='block'; loadRecSettings(); }
+}
+function recTime(s){ try{ var t=String(s||''); var d=new Date(t.replace(' ','T')+(/[zZ]|[+-]\d\d:?\d\d$/.test(t)?'':'Z')); return d.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return s||''; } }
+function recUpdateBadge(n){ var b=document.getElementById('recMsgBadge'); if(b){ b.textContent=n; b.style.display=n>0?'inline-block':'none'; } }
+async function recPollBadge(){ try{ if(typeof bkToken!=='function'||!bkToken()) return; var r=await fetch(bkBase()+'/api/messages',{headers:{Authorization:'Bearer '+bkToken()}}); if(!r.ok) return; var d=await r.json(); recUpdateBadge(d.unread||0); }catch(e){} }
+async function loadRecMessages(){
+  var box=document.getElementById('recMessages'); if(!box) return;
+  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading messages…</div>';
+  try{
+    var r=await fetch(bkBase()+'/api/messages',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    var d=await r.json(); var msgs=d.messages||[]; recUpdateBadge(d.unread||0);
+    var h='<div style="font-weight:700;font-size:15px;margin-bottom:8px">💬 Phone messages <span class="mini" style="color:var(--muted);font-weight:400">— taken by your AI phone assistant</span></div>';
+    if(!msgs.length){ box.innerHTML=h+'<div class="mini" style="color:var(--muted)">No messages yet. When the phone assistant takes a message, it shows up here.</div>'; return; }
+    msgs.forEach(function(m){
+      var nw=m.status==='new';
+      h+='<div style="border:1px solid '+(nw?'#f1c0c0':'var(--line)')+';background:'+(nw?'#fff6f6':'#fff')+';border-radius:10px;padding:11px 13px;margin-bottom:8px">';
+      h+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-weight:600">'+esc(m.name||'Caller')+(nw?' <span style="color:#e23b3b;font-size:12px">• NEW</span>':'')+'</div><div class="mini" style="color:var(--muted)">'+esc(recTime(m.created_at))+'</div></div>';
+      h+='<div style="margin:5px 0;font-size:14px">'+esc(m.body||'')+'</div>';
+      if(m.from) h+='<div class="mini" style="color:var(--muted)">📞 '+esc(m.from)+'</div>';
+      h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">';
+      if(m.from){ h+='<a class="btn-ghost" style="font-size:12.5px;padding:6px 11px;text-decoration:none" href="tel:'+esc(m.from)+'">📞 Call back</a>'; h+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="recComposeText(\''+esc(m.from)+'\')">💬 Text</button>'; }
+      if(nw) h+='<button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="recResolveMsg('+m.id+')">✓ Mark done</button>';
+      h+='</div></div>';
+    });
+    box.innerHTML=h;
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load messages.</div>'; }
+}
+async function recResolveMsg(id){ try{ await fetch(bkBase()+'/api/messages/'+id+'/resolve',{method:'POST',headers:{Authorization:'Bearer '+bkToken()}}); }catch(e){} loadRecMessages(); }
+function recComposeText(num){ window._recPrefill={to:num||'',body:''}; recTab('comms'); }
+function renderRecComms(){
+  var box=document.getElementById('recComms'); if(!box) return;
+  var pf=window._recPrefill||{};
+  var h='<div style="font-weight:700;font-size:15px;margin-bottom:8px">📞 Communication</div>';
+  h+='<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px">';
+  h+='<div style="font-weight:600;margin-bottom:6px">Text or call a patient</div>';
+  h+='<input id="recToNum" placeholder="Patient phone, e.g. (555) 123-4567" value="'+esc(pf.to||'')+'" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:7px">';
+  h+='<textarea id="recBody" rows="3" placeholder="Message…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:7px">'+esc(pf.body||'')+'</textarea>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="recSend(\'sms\',this)">💬 Send text</button><button class="btn-ghost" style="font-size:13px;padding:8px 14px" onclick="recSend(\'voice\',this)">📞 Call &amp; read it aloud</button><span id="recSendMsg" class="mini" style="color:var(--muted)"></span></div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:7px">Auto reminders &amp; confirmations are set in the ⚙️ Settings tab. Sending needs your Twilio setup (texts also need A2P approval).</div>';
+  h+='</div>';
+  box.innerHTML=h; window._recPrefill=null;
+}
+async function recSend(channel,btn){
+  var to=(document.getElementById('recToNum')||{}).value||'';
+  var body=(document.getElementById('recBody')||{}).value||'';
+  var msg=document.getElementById('recSendMsg');
+  if(!to.trim()||!body.trim()){ if(msg){msg.style.color='#c0392b';msg.textContent='Enter a number and a message.';} return; }
+  if(btn) btn.disabled=true; if(msg){msg.style.color='var(--muted)';msg.textContent='Sending…';}
+  try{
+    var r=await fetch(bkBase()+'/api/comms/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({to:to,channel:channel,body:body})});
+    var d=await r.json().catch(function(){return{};}); if(btn) btn.disabled=false;
+    if(r.ok){ if(msg){msg.style.color='#127a55';msg.textContent=(channel==='voice'?'✓ Calling now.':'✓ Sent.');} }
+    else { if(msg){msg.style.color='#c0392b';msg.textContent=d.error||'Could not send.';} }
+  }catch(e){ if(btn) btn.disabled=false; if(msg){msg.style.color='#c0392b';msg.textContent='Network error.';} }
+}
+function recSettingCard(title,desc,inner){ return '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:9px"><div style="font-weight:600;font-size:14px">'+title+'</div><div class="mini" style="color:var(--muted);margin:1px 0 8px">'+desc+'</div>'+inner+'</div>'; }
+function recFeatureCard(key,title,desc,cfg,hasTiming){
+  cfg=cfg||{}; var ch=cfg.channels||['sms'];
+  var inner='<label style="display:flex;align-items:center;gap:7px;font-size:14px"><input type="checkbox" id="rc_'+key+'_en" '+(cfg.enabled?'checked':'')+'> Enabled</label>';
+  inner+='<div style="margin-top:7px;font-size:13px;color:var(--muted)">Send by: <label style="margin-left:6px"><input type="checkbox" id="rc_'+key+'_sms" '+(ch.indexOf('sms')>-1?'checked':'')+'> Text</label> <label style="margin-left:10px"><input type="checkbox" id="rc_'+key+'_voice" '+(ch.indexOf('voice')>-1?'checked':'')+'> Call</label></div>';
+  if(hasTiming){ inner+='<div style="margin-top:7px;font-size:13px"><label style="margin-right:12px"><input type="checkbox" id="rc_'+key+'_day" '+(cfg.dayBefore?'checked':'')+'> Day before</label><label><input type="checkbox" id="rc_'+key+'_soon" '+(cfg.hoursOf?'checked':'')+'> A few hours before</label></div>'; }
+  return recSettingCard(title,desc,inner);
+}
+async function loadRecSettings(){
+  var box=document.getElementById('recSettings'); if(!box) return;
+  box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  try{
+    var r=await fetch(bkBase()+'/api/comms/settings',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return; }
+    var d=await r.json(); var c=d.comms||{}; window._recComms=c;
+    var h='<div style="font-weight:700;font-size:15px;margin-bottom:6px">⚙️ Communication settings</div>';
+    if(!d.twilioReady) h+='<div class="mini" style="background:#fff7e6;border:1px solid #f0d9a0;border-radius:8px;padding:8px 11px;margin-bottom:10px;color:#7a5b00">Texts &amp; calls won\'t actually send until your Twilio credentials (and A2P 10DLC for texts) are set in the backend. Configure everything now — it starts working the moment that\'s done.</div>';
+    h+=recSettingCard('🔀 Live call transfer','When a caller wants a real person, the phone assistant rings this number.','<label style="display:flex;align-items:center;gap:7px;font-size:14px"><input type="checkbox" id="rcTransfer" '+(c.transferEnabled?'checked':'')+'> Enable live transfer to a person</label><input id="rcPhone" placeholder="Front-desk phone to ring, e.g. (555) 123-4567" value="'+esc(c.frontDeskPhone||'')+'" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-top:7px">');
+    h+=recFeatureCard('reminders','⏰ Appointment reminders','Auto text/call before each appointment.',c.reminders,true);
+    h+=recFeatureCard('confirmations','✅ Booking confirmations','Sent the moment a patient books online or by phone.',c.confirmations,false);
+    h+=recFeatureCard('missedCall','📵 Missed-call follow-up','Reach a caller you could not help live.',c.missedCall,false);
+    h+=recFeatureCard('waitlist','📋 Waitlist alerts','Notify waitlisted patients when a slot opens.',c.waitlist,false);
+    h+=recFeatureCard('noShow','🔁 No-show follow-up','Reach out after a missed appointment.',c.noShow,false);
+    h+='<div style="margin-top:12px"><button class="btn-primary" onclick="saveRecSettings(this)">💾 Save settings</button> <span id="recSetMsg" class="mini" style="color:var(--muted)"></span></div>';
+    box.innerHTML=h;
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load settings.</div>'; }
+}
+async function saveRecSettings(btn){
+  function chk(id){ var e=document.getElementById(id); return !!(e&&e.checked); }
+  function channels(key){ var a=[]; if(chk('rc_'+key+'_sms'))a.push('sms'); if(chk('rc_'+key+'_voice'))a.push('voice'); return a.length?a:['sms']; }
+  var payload={
+    transferEnabled:chk('rcTransfer'), frontDeskPhone:(document.getElementById('rcPhone')||{}).value||'',
+    reminders:{enabled:chk('rc_reminders_en'),channels:channels('reminders'),dayBefore:chk('rc_reminders_day'),hoursOf:chk('rc_reminders_soon')},
+    confirmations:{enabled:chk('rc_confirmations_en'),channels:channels('confirmations')},
+    missedCall:{enabled:chk('rc_missedCall_en'),channels:channels('missedCall')},
+    waitlist:{enabled:chk('rc_waitlist_en'),channels:channels('waitlist')},
+    noShow:{enabled:chk('rc_noShow_en'),channels:channels('noShow')}
+  };
+  var msg=document.getElementById('recSetMsg'); if(btn) btn.disabled=true; if(msg){msg.style.color='var(--muted)';msg.textContent='Saving…';}
+  try{
+    var r=await fetch(bkBase()+'/api/comms/settings',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({comms:payload})});
+    if(btn) btn.disabled=false;
+    if(r.ok){ if(msg){msg.style.color='#127a55';msg.textContent='✓ Saved.';} try{toast('Communication settings saved.','ok');}catch(e){} }
+    else { if(msg){msg.style.color='#c0392b';msg.textContent='Could not save.';} }
+  }catch(e){ if(btn) btn.disabled=false; if(msg){msg.style.color='#c0392b';msg.textContent='Network error.';} }
+}
 function isReceptionistUser(){ return !!(bkUser && bkUser.role==='receptionist'); }
 function hideClinicalForReceptionist(){
   if(!isReceptionistUser()) return;
@@ -14426,7 +14549,10 @@ function applyReceptionistPortal(){
   // Land on the front desk: the Patients view, restricted to the board + scheduling.
   try{ showView('patients'); }catch(e){}
   hideClinicalForReceptionist();
-  setTimeout(function(){ try{ loadBoard(true); }catch(e){} }, 150);
+  // Show the front-desk workspace tabs (Front desk / Messages / Communication / Settings).
+  var rtb=document.getElementById('recTabBar'); if(rtb) rtb.style.display='flex';
+  setTimeout(function(){ try{ recTab('frontdesk'); }catch(e){ try{ loadBoard(true); }catch(_){} } }, 150);
+  try{ recPollBadge(); if(!window._recBadgeTimer) window._recBadgeTimer=setInterval(recPollBadge, 60000); }catch(e){}
   return true;
 }
 
