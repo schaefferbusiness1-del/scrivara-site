@@ -1777,7 +1777,8 @@
   <!-- HISTORY -->
   <div class="card" id="historyCard">
     <h2><span class="ic">📚</span> Visit history
-      <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
+      <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
     </h2>
     <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
     <div class="disclaim" id="histStorageNote" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Encrypted and synced to your MLS account — your visit history follows you to any device you sign into, and is included in automatic backups.</div>
@@ -6781,6 +6782,7 @@ function showView(v){
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
   if(v==='visit'){ try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
+  if(v==='orders'){ try{ if((typeof ordersDx==='undefined' || !ordersDx || (!ordersDx.text && !(ordersDx.icd&&ordersDx.icd.length))) && typeof noteDiagnosisText==='function'){ var _od=noteDiagnosisText(); if(_od && (_od.text || (_od.icd&&_od.icd.length)) && typeof pullDxFromNote==='function') pullDxFromNote(); } }catch(e){} }
   document.getElementById('historyView').style.display  = v==='history'?'block':'none';
   document.getElementById('recsView').style.display     = v==='recs'?'block':'none';
   const ordersV=document.getElementById('ordersView'); if(ordersV) ordersV.style.display = v==='orders'?'block':'none';
