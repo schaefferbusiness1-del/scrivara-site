@@ -1096,6 +1096,7 @@
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
         <button class="btn-ghost" id="ptBookLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyBookingLink(this)" title="Get a link patients can use to book appointments online">📅 Booking link</button>
         <button class="btn-ghost" id="ptBoardBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadBoard(true)" title="See today's appointments and who's checked in">🗓️ Check-in board</button>
+        <button class="btn-ghost" id="ptAvailBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openAvailability()" title="Set the days and hours patients can book online and by phone">🕘 Availability</button>
         <button class="btn-ghost" id="ptFollowupBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openFollowups()" title="Send privacy-safe post-visit check-in emails to recently seen patients">📨 Visit follow-ups</button>
         <button class="btn-ghost" id="ptReceptionBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptLawyerBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadLawyers(true)" title="Invite and manage lawyer logins for legal/records requests">⚖️ Lawyers</button>
@@ -1118,6 +1119,7 @@
           <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="copyBookingLinkText()">📋 Copy</button>
         </div>
       </div>
+      <div id="availBox" style="display:none;margin-top:12px;background:#f5fbf7;border:1px solid #bfe6cf;border-radius:12px;padding:14px"></div>
       <div id="boardBox" style="display:none;margin-top:12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
       <div id="receptionBox" style="display:none;margin-top:12px;background:#fff7ef;border:1px solid #f1d9be;border-radius:12px;padding:14px"></div>
       <div id="lawyerBox" style="display:none;margin-top:12px;background:#f3f0fb;border:1px solid #d9cdf0;border-radius:12px;padding:14px"></div>
@@ -6578,6 +6580,82 @@ function emailLawyerInvite(){
 }
 /* ===== Post-visit patient follow-ups (PHI-free check-in emails). ===== */
 var _fuDays=3, _fuAuto=false;
+// ===== BOOKING AVAILABILITY (doctor sets the days/hours patients can book) =====
+var _AVDN=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function _avRenderEditor(av){
+  av=av||{}; var days=av.days||{}; var tz=av.tz||'America/Chicago'; var slot=av.slotMin||30;
+  var tzs=['America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'];
+  var h='<div style="font-weight:700;font-size:15px;margin-bottom:4px">🕘 Booking availability</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">Patients booking online <b>and</b> your AI phone assistant can only be offered these open hours. Closed days are never offered.</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<button type="button" class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="avQuick(\'weekdays\')">Mon–Fri 9–5</button>'
+    +'<button type="button" class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="avQuick(\'all\')">Every day 8–6</button>'
+    +'<button type="button" class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="avQuick(\'clear\')">Clear all</button></div>';
+  h+='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">';
+  h+='<label style="font-size:13px">Time zone <select id="avTz" style="padding:5px;border:1px solid var(--line);border-radius:7px">'+tzs.map(function(t){return '<option value="'+t+'"'+(tz===t?' selected':'')+'>'+t.replace('America/','').replace('Pacific/','').replace('_',' ')+'</option>';}).join('')+'</select></label>';
+  h+='<label style="font-size:13px">Appointment length <select id="avSlot" style="padding:5px;border:1px solid var(--line);border-radius:7px">'+[15,20,30,45,60].map(function(n){return '<option value="'+n+'"'+(slot===n?' selected':'')+'>'+n+' min</option>';}).join('')+'</select></label>';
+  h+='</div><div id="avDays">';
+  for(var d=0; d<7; d++){
+    var win=days[d]||days[String(d)]||[]; var on=win.length>0; var s=on?win[0][0]:'09:00'; var e=on?win[0][1]:'17:00';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin:5px 0;flex-wrap:wrap">'
+      +'<button type="button" id="avDay'+d+'" data-on="'+(on?1:0)+'" onclick="toggleAvDay('+d+')" style="width:120px;text-align:left;padding:7px 10px;border-radius:8px;border:1px solid var(--line);cursor:pointer;font-weight:600;'+(on?'background:#eefaf3;color:#127a55':'background:#f4f6f9;color:#9aa6b3')+'">'+(on?'● ':'○ ')+_AVDN[d]+'</button>'
+      +'<input type="time" id="avStart'+d+'" value="'+s+'" '+(on?'':'disabled')+' style="padding:6px;border:1px solid var(--line);border-radius:7px">'
+      +'<span style="color:var(--muted)">to</span>'
+      +'<input type="time" id="avEnd'+d+'" value="'+e+'" '+(on?'':'disabled')+' style="padding:6px;border:1px solid var(--line);border-radius:7px">'
+      +'</div>';
+  }
+  h+='</div><div style="margin-top:12px"><button class="btn-primary" onclick="saveAvailability(this)">💾 Save availability</button> '
+    +'<button class="btn-ghost" onclick="document.getElementById(\'availBox\').style.display=\'none\'">Close</button></div>';
+  h+='<div id="availMsg" class="mini" style="margin-top:8px;color:var(--muted)"></div>';
+  return h;
+}
+function toggleAvDay(d){
+  var btn=document.getElementById('avDay'+d); var on=btn.getAttribute('data-on')==='1'; on=!on;
+  btn.setAttribute('data-on',on?1:0);
+  btn.style.background=on?'#eefaf3':'#f4f6f9'; btn.style.color=on?'#127a55':'#9aa6b3';
+  btn.textContent=(on?'● ':'○ ')+_AVDN[d];
+  document.getElementById('avStart'+d).disabled=!on; document.getElementById('avEnd'+d).disabled=!on;
+}
+function avQuick(kind){
+  for(var d=0; d<7; d++){
+    var weekday=(d>=1&&d<=5);
+    var on = kind==='weekdays'?weekday : kind==='all'?true : false;
+    var btn=document.getElementById('avDay'+d); btn.setAttribute('data-on',on?1:0);
+    btn.style.background=on?'#eefaf3':'#f4f6f9'; btn.style.color=on?'#127a55':'#9aa6b3'; btn.textContent=(on?'● ':'○ ')+_AVDN[d];
+    var st=document.getElementById('avStart'+d), en=document.getElementById('avEnd'+d);
+    st.disabled=!on; en.disabled=!on;
+    if(kind==='all'){ st.value='08:00'; en.value='18:00'; } else if(kind==='weekdays'&&on){ st.value='09:00'; en.value='17:00'; }
+  }
+}
+async function openAvailability(){
+  var box=document.getElementById('availBox'); if(!box) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ toast('Sign in as practice staff to set availability.','err'); return; }
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading your hours…</div>';
+  try{
+    var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
+    if(r.status===403){ box.innerHTML='<div class="mini" style="color:#a12c2c">Availability is for practice staff accounts.</div>'; return; }
+    var d=await r.json();
+    box.innerHTML=_avRenderEditor((d&&d.availability)||{});
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#a12c2c">Could not load availability. Try again.</div>'; }
+}
+async function saveAvailability(btn){
+  var days={};
+  for(var d=0; d<7; d++){
+    var on=document.getElementById('avDay'+d).getAttribute('data-on')==='1';
+    if(!on) continue;
+    var s=document.getElementById('avStart'+d).value, e=document.getElementById('avEnd'+d).value;
+    if(s&&e&&s<e){ days[d]=[[s,e]]; }
+  }
+  var av={ tz:document.getElementById('avTz').value, slotMin:parseInt(document.getElementById('avSlot').value,10)||30, days:days };
+  var msg=document.getElementById('availMsg'); if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Saving…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/schedule/availability',{method:'POST',headers:{Authorization:'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify({availability:av})});
+    if(btn) btn.disabled=false;
+    if(r.ok){ if(msg){ msg.style.color='#127a55'; msg.textContent='✓ Saved. Patients can now only book during these hours.'; } toast('Availability saved.','ok'); }
+    else { if(msg){ msg.style.color='#a12c2c'; msg.textContent='Could not save — try again.'; } }
+  }catch(e){ if(btn) btn.disabled=false; if(msg){ msg.style.color='#a12c2c'; msg.textContent='Network error — try again.'; } }
+}
 function openFollowups(){
   var box=document.getElementById('followupBox'); if(!box) return;
   if(box.style.display==='block'){ box.style.display='none'; return; } // click again to close

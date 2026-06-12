@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your appointment · MLS</title>
+<!-- build: appointment-v1 2026-06-12 -->
+<style>
+  :root{--ink:#16324f;--muted:#5f7186;--line:#e2e9f1;--brand:#1f7ae0;--brand-dk:#155fb3;--bg:#f4f7fb;--soft:#eef4fc;--green:#127a55}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  .wrap{max-width:520px;margin:0 auto;padding:24px 18px 56px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 40px rgba(31,122,224,.08);padding:24px 22px;margin-top:18px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px}
+  .mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1f9ad6,#127a7d);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+  h1{font-size:22px;margin:6px 0 2px}
+  .when{font-size:21px;font-weight:800;margin:14px 0 2px;color:var(--ink)}
+  .sub{color:var(--muted);margin:2px 0}
+  .pill{display:inline-block;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700}
+  .pill.req{background:#fff6e6;color:#9a6b00}
+  .pill.conf{background:#e7f6ee;color:#11643f}
+  .pill.cancel{background:#fdeaea;color:#a12c2c}
+  .row{margin:12px 0;padding:12px 0;border-top:1px solid var(--line)}
+  .k{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .v{font-size:16px;font-weight:600}
+  .btn{display:inline-block;width:100%;margin-top:12px;padding:13px 18px;border:0;border-radius:11px;background:var(--green);color:#fff;font-weight:700;font-size:16px;cursor:pointer}
+  .btn:hover{filter:brightness(.95)}
+  .btn:disabled{opacity:.55;cursor:default}
+  .btn.ghost{background:#fff;color:#a12c2c;border:1px solid #f0cccc}
+  .note{font-size:12.5px;color:var(--muted);margin-top:14px}
+  .hide{display:none}
+  .err{background:#fff3f3;border:1px solid #f3c6c6;color:#a12c2c;border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px}
+  .center{text-align:center}
+  .big{font-size:44px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="mark">+</span> MLS</div>
+
+  <div id="loading" class="card">Loading your appointment…</div>
+
+  <div id="notfound" class="card hide">
+    <h1>We couldn't find that appointment</h1>
+    <p class="sub">This link may have expired or already been used. Please contact the office if you need help.</p>
+  </div>
+
+  <div id="view" class="card hide">
+    <span id="statusPill" class="pill req">Requested</span>
+    <h1 id="hello">Your appointment</h1>
+    <div class="when" id="whenText">—</div>
+    <p class="sub" id="providerText"></p>
+
+    <div class="row"><div class="k">Practice</div><div class="v" id="practiceText">—</div></div>
+    <div class="row" id="reasonRow"><div class="k">Reason for visit</div><div class="v" id="reasonText">—</div></div>
+
+    <div id="confirmWrap">
+      <button id="confirmBtn" class="btn" onclick="confirmAppt()">Confirm I'll be there</button>
+      <button class="btn ghost" onclick="cancelAppt()">Cancel this appointment</button>
+    </div>
+    <div id="confirmedMsg" class="hide center" style="margin-top:14px">
+      <div class="big">✅</div>
+      <p class="sub">You're confirmed. We look forward to seeing you. You can close this page.</p>
+      <button class="btn ghost" onclick="cancelAppt()" style="margin-top:6px">Need to cancel?</button>
+    </div>
+
+    <div id="apptErr" class="err hide"></div>
+    <p class="note">🔒 This secure page is just for you — no password needed. Please don't include medical details. For anything urgent, call the office or 911.</p>
+  </div>
+
+  <div id="cancelled" class="card hide">
+    <div class="center"><div class="big">🗓️</div>
+      <h1>Appointment cancelled</h1>
+      <p class="sub">We've let the office know. If this was a mistake, please book again or call the office.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+var BACKEND_URL = 'https://scrivara-backend.onrender.com';
+var ptoken = new URLSearchParams(location.search).get('t') || '';
+function show(id){ ['loading','notfound','view','cancelled'].forEach(function(x){ document.getElementById(x).classList.toggle('hide', x !== id); }); }
+
+function render(a){
+  document.getElementById('whenText').textContent = a.when || a.date || 'Time to be confirmed';
+  document.getElementById('providerText').textContent = a.provider ? ('with ' + a.provider) : '';
+  document.getElementById('practiceText').textContent = a.practice || 'your care team';
+  if(a.name){ document.getElementById('hello').textContent = 'Hi ' + a.name.split(' ')[0] + ', your appointment'; }
+  if(a.reason){ document.getElementById('reasonText').textContent = a.reason; } else { document.getElementById('reasonRow').classList.add('hide'); }
+  var pill = document.getElementById('statusPill');
+  if(a.status === 'cancelled'){ show('cancelled'); return; }
+  if(a.confirmed){
+    pill.className='pill conf'; pill.textContent='Confirmed';
+    document.getElementById('confirmWrap').classList.add('hide');
+    document.getElementById('confirmedMsg').classList.remove('hide');
+  } else {
+    pill.className='pill req'; pill.textContent='Requested';
+  }
+  show('view');
+}
+
+function init(){
+  if(!ptoken){ show('notfound'); return; }
+  fetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken))
+    .then(function(r){ return r.ok ? r.json() : Promise.reject(); })
+    .then(function(j){ if(j && j.ok && j.appointment){ render(j.appointment); } else { show('notfound'); } })
+    .catch(function(){ show('notfound'); });
+}
+
+function confirmAppt(){
+  var btn=document.getElementById('confirmBtn'); btn.disabled=true; btn.textContent='Confirming…';
+  fetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/confirm', { method:'POST' })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if(j && j.ok){ document.getElementById('confirmWrap').classList.add('hide'); document.getElementById('confirmedMsg').classList.remove('hide'); var p=document.getElementById('statusPill'); p.className='pill conf'; p.textContent='Confirmed'; }
+      else { showErr('Could not confirm. Please try again.'); btn.disabled=false; btn.textContent="Confirm I'll be there"; }
+    })
+    .catch(function(){ showErr('Network error. Please try again.'); btn.disabled=false; btn.textContent="Confirm I'll be there"; });
+}
+
+function cancelAppt(){
+  if(!confirm('Cancel this appointment? The office will be notified.')) return;
+  fetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/cancel', { method:'POST' })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please call the office.'); } })
+    .catch(function(){ showErr('Network error. Please try again.'); });
+}
+
+function showErr(t){ var e=document.getElementById('apptErr'); e.textContent=t; e.classList.remove('hide'); }
+
+init();
+</script>
+</body>
+</html>

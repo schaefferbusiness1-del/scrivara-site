@@ -83,6 +83,7 @@
 
       <label for="bookDate">Pick a date</label>
       <input id="bookDate" type="date" onchange="loadSlots()">
+      <p id="openDaysHint" class="note" style="margin-top:4px"></p>
       <div id="slotWrap" class="hide" style="margin-top:8px">
         <label style="margin-top:6px">Available times</label>
         <div id="slotGrid" class="slotgrid"></div>
@@ -103,7 +104,7 @@
     <div class="ok">
       <div class="big">✅</div>
       <h1>Request sent!</h1>
-      <p class="sub">The office has your request and will confirm your appointment time. You can close this page.</p>
+      <p class="sub">The office has your request and will confirm your appointment time. If you gave us your email, check your inbox for a confirmation link where you can view and confirm your appointment.</p>
     </div>
   </div>
 </div>
@@ -131,6 +132,11 @@ function init(){
         o.textContent = (d.name || 'Provider') + (d.specialty ? ' — ' + d.specialty : '');
         sel.appendChild(o);
       });
+      window.AVAIL = j.availability || { days: [], tz: '', slotMin: 30 };
+      // Only let people pick today or later, and hint which days are open.
+      try { document.getElementById('bookDate').min = new Date().toISOString().slice(0,10); } catch(e){}
+      var hint = document.getElementById('openDaysHint');
+      if(hint){ hint.textContent = openDaysMsg(true); }
       show('formCard');
     })
     .catch(function(){ show('inactive'); });
@@ -138,7 +144,14 @@ function init(){
 
 var selectedSlot = '';
 function fmt12(hhmm){ var p=hhmm.split(':'); var h=+p[0]; var ap=h>=12?'PM':'AM'; var h12=((h+11)%12)+1; return h12+':'+p[1]+' '+ap; }
-// Show a slot grid for the chosen date/provider, greying out already-booked times.
+function openDaysMsg(asHint){
+  var names=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var days=(window.AVAIL&&window.AVAIL.days)||[];
+  if(!days.length) return asHint ? '' : 'No online booking times are set up yet — please call the office.';
+  var list = days.slice().sort(function(a,b){return a-b;}).map(function(d){return names[d];}).join(', ');
+  return (asHint?'Open for booking: ':'The office isn\'t open for online booking that day. Open days: ')+list+'.';
+}
+// Show available appointment slots for the chosen date/provider (availability minus taken).
 function loadSlots(){
   selectedSlot='';
   var date=document.getElementById('bookDate').value;
@@ -146,23 +159,23 @@ function loadSlots(){
   if(!date){ wrap.classList.add('hide'); return; }
   wrap.classList.remove('hide');
   var grid=document.getElementById('slotGrid'); grid.innerHTML='<p class="note">Loading times…</p>';
+  document.getElementById('slotMsg').textContent='';
   var doc=document.getElementById('doctor').value;
-  var url=BACKEND_URL+'/api/schedule/public/'+encodeURIComponent(token)+'/busy?date='+date+(doc?('&doctor='+doc):'');
-  fetch(url).then(function(r){ return r.ok?r.json():{busy:[]}; }).then(function(j){
-    var busy=j.busy||[];
-    var slots=[]; for(var h=8;h<18;h++){ slots.push((h<10?'0':'')+h+':00'); slots.push((h<10?'0':'')+h+':30'); }
+  var url=BACKEND_URL+'/api/schedule/public/'+encodeURIComponent(token)+'/slots?date='+date+(doc?('&doctor='+doc):'');
+  fetch(url).then(function(r){ return r.ok?r.json():{slots:[]}; }).then(function(j){
+    var slots=j.slots||[];
     grid.innerHTML='';
-    slots.forEach(function(hhmm){
-      var utc=new Date(date+'T'+hhmm).toISOString().slice(11,16);
-      var taken=busy.indexOf(utc)>-1;
+    if(!slots.length){ document.getElementById('slotMsg').textContent=openDaysMsg(false); return; }
+    slots.forEach(function(s){
       var b=document.createElement('div');
-      b.className='slot'+(taken?' taken':'');
-      b.textContent=fmt12(hhmm);
-      if(!taken){ b.onclick=function(){ selectedSlot=hhmm; var cs=grid.children; for(var i=0;i<cs.length;i++) cs[i].classList.remove('sel'); b.classList.add('sel'); }; }
+      b.className='slot'+(s.taken?' taken':'');
+      b.textContent=fmt12(s.time);
+      if(!s.taken){ b.onclick=function(){ selectedSlot=s.time; var cs=grid.children; for(var i=0;i<cs.length;i++) cs[i].classList.remove('sel'); b.classList.add('sel'); }; }
       grid.appendChild(b);
     });
-    document.getElementById('slotMsg').textContent=busy.length?'Greyed-out times are already booked — pick an open one.':'All times are open — pick one.';
-  }).catch(function(){ grid.innerHTML='<p class="note">Couldn\'t load times — you can still submit and the office will confirm.</p>'; });
+    var anyOpen=slots.some(function(s){return !s.taken;});
+    document.getElementById('slotMsg').textContent = anyOpen ? 'Tap an open time to select it.' : 'Every time that day is booked — please try another date.';
+  }).catch(function(){ grid.innerHTML='<p class="note">Couldn\'t load times — please try another date.</p>'; });
 }
 function submitBooking(ev){
   if(ev && ev.preventDefault) ev.preventDefault();
@@ -181,7 +194,8 @@ function submitBooking(ev){
     email: document.getElementById('email').value || '',
     reason: document.getElementById('reason').value || '',
     doctor_user_id: document.getElementById('doctor').value || null,
-    start_at: (bDate && selectedSlot) ? new Date(bDate + 'T' + selectedSlot).toISOString() : null
+    date: (bDate && selectedSlot) ? bDate : null,
+    time: (bDate && selectedSlot) ? selectedSlot : null
   };
   fetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token) + '/book', {
     method: 'POST',
