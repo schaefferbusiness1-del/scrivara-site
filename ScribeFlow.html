@@ -2528,7 +2528,7 @@
       </div>
       <iframe id="studioFrame" sandbox="allow-scripts" style="width:100%;height:540px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
       <p id="studioErrNote" style="display:none;margin-top:6px;color:#b4231e;font-size:13px"></p>
-      <p class="note" style="margin-top:6px">Runs sandboxed — it can read your data snapshot but cannot send it anywhere. Review before relying on it.</p>
+      <p class="note" style="margin-top:6px">Runs sandboxed — it reads your data snapshot, and can export, email, or send to your EMR only with your confirmation. Review before relying on it.</p>
     </div>
     <div class="card">
       <h2><span class="ic">📁</span> My creations</h2>
@@ -8384,10 +8384,12 @@ function renderStudioWidget(html, title){
   var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS()+'window.onerror=function(m,s,l,c,e){try{parent.postMessage({__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){try{parent.postMessage({__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});<\/scr'+'ipt>';
   _ensureStudioMsgBound();
   var note=document.getElementById('studioErrNote'); if(note){ note.style.display='none'; note.textContent=''; }
-  var frame=document.getElementById('studioFrame');
-  if(frame) frame.srcdoc=inject+String(html||'');
   var tt=document.getElementById('studioResultTitle'); if(tt) tt.textContent=(title||'Your widget').slice(0,80);
+  // Show the result card FIRST so the iframe is visible, THEN set srcdoc — otherwise
+  // the browser doesn't paint an iframe whose srcdoc was assigned while it was display:none.
   var card=document.getElementById('studioResultCard'); if(card){ card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'start'}); }
+  var frame=document.getElementById('studioFrame');
+  if(frame){ frame.srcdoc=inject+String(html||''); }
   studioLastHtml=String(html||''); studioLastPrompt=title||'Your widget';
 }
 function closeStudioResult(){ var c=document.getElementById('studioResultCard'); if(c) c.style.display='none'; }
