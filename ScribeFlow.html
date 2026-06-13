@@ -8617,10 +8617,18 @@ function _copilotArtifactHtml(m, i){
     +'<div class="c-art-head"><span>'+_copilotArtIcon(ar.kind)+'</span><span class="c-art-title">'+_ce(ar.title||'Draft')+'</span><span class="c-art-kind">'+_ce(ar.kind||'text')+'</span></div>'
     +'<textarea id="cArt_'+i+'" class="c-art-text" spellcheck="true" oninput="_copilotSyncArtifact('+i+',this.value);_copilotAutogrowArtifact(this)">'+_ce(ar.content)+'</textarea>'
     +'<div class="c-art-tweak"><input id="cTw_'+i+'" placeholder="Tweak it — “shorter”, “warmer tone”, “add the next-steps line”…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();copilotTweak('+i+');}"><button class="btn-primary" id="cTwBtn_'+i+'" style="font-size:12.5px;padding:8px 13px" onclick="copilotTweak('+i+')">✦ Tweak</button></div>'
-    +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'<button class="cact-btn" onclick="copilotArtifactToTool('+i+')">🧩 Build a tool</button></div>'
+    +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'<button class="cact-btn" onclick="copilotArtifactToEMR('+i+',this)">📤 Send to EMR</button><button class="cact-btn" onclick="copilotArtifactToTool('+i+')">🧩 Build a tool</button></div>'
     +'</div>';
 }
 function _copilotSyncArtifact(i,val){ var m=_copilotHistory[i]; if(m&&m.artifact) m.artifact.content=val; }
+/* Push a Copilot-drafted document (prior-auth, referral, letter, summary) straight
+   into the EMR's note field via MLS Assist — same cross-frame paste as the visit note. */
+function copilotArtifactToEMR(i,btn){
+  var ta=document.getElementById('cArt_'+i); var t=(ta&&ta.value||'').trim();
+  if(!t){ try{ toast('Nothing to send yet.','err'); }catch(e){} return; }
+  try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(btn||null,{text:t}); return; } }catch(e){}
+  try{ copilotCopyArtifact(i); }catch(e){}
+}
 function _copilotAutogrowArtifact(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=Math.min(420, Math.max(120, ta.scrollHeight))+'px'; }
 async function copilotTweak(i){
   var ta=document.getElementById('cArt_'+i), tw=document.getElementById('cTw_'+i); if(!ta||!tw) return;
