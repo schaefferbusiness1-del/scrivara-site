@@ -784,7 +784,6 @@
   @keyframes micPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(232,69,60,.5) } 50%{ box-shadow:0 0 0 7px rgba(232,69,60,0) } }
   .copilot-chip-ctx{ border-color:var(--brand,#3f7bff)!important;color:var(--brand,#2a5fd0);font-weight:700; }
   .navtab.pinned-tab{ position:relative; }
-  #copilotSpeakBtn.on{ background:var(--brand,#3f7bff);color:#fff;border-color:var(--brand,#3f7bff); }
   /* Omnipresent Copilot dock */
   #copilotDockScrim{ position:fixed;inset:0;background:rgba(12,20,38,.34);z-index:9300;opacity:0;pointer-events:none;transition:opacity .2s ease; }
   #copilotDockScrim.open{ opacity:1;pointer-events:auto; }
@@ -2485,7 +2484,6 @@
             <h2 style="margin:0;border:0;padding:0">MLS Copilot</h2>
             <p class="sub" style="margin:2px 0 0">Ask anything about your practice — who's overdue, how busy tomorrow is, who's trending worse — and I can open the chart, start the visit, or build you a tool on the spot.</p>
           </div>
-          <button class="btn-ghost" id="copilotSpeakBtn" style="font-size:12.5px;padding:7px 11px" onclick="copilotToggleSpeak()" title="Read answers aloud">🔈</button>
           <button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="copilotReset()" title="Start a fresh conversation">↺ New chat</button>
         </div>
       </div>
@@ -3241,6 +3239,16 @@
     </div>
 
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+
+    <!-- Multi-template PDF splitter -->
+    <div style="background:linear-gradient(135deg,#eef4ff,#f3ecff);border:1px solid #e2e6ff;border-radius:12px;padding:13px 14px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px">✨ Have several forms in one PDF?</div>
+      <div style="font-size:12.5px;color:var(--muted);margin:3px 0 9px">Upload a single PDF (or image) that contains multiple templates and MLS will recognize each one and split them into separate templates for your dropdown.</div>
+      <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="document.getElementById('tplMultiFileInput').click()">📑 Upload a multi-template PDF</button>
+      <input type="file" id="tplMultiFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf,text/plain" style="display:none" onchange="tplMultiFile(event)">
+      <div id="tplMultiStatus" class="mini" style="color:var(--muted);margin-top:8px"></div>
+      <div id="tplMultiResult" style="margin-top:8px"></div>
+    </div>
 
     <h4 style="margin:0 0 8px">Add a template</h4>
     <div class="field">
@@ -7168,7 +7176,13 @@ try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch
   function getPos(){ try{ var p=JSON.parse(localStorage.getItem(KEY)||'null'); if(p&&typeof p.right==='number'&&typeof p.bottom==='number') return p; }catch(e){} return {right:24, bottom:96}; }
   function savePos(p){ try{ localStorage.setItem(KEY, JSON.stringify(p)); }catch(e){} }
   var fab, menu, dragging=false, moved=false, sx, sy, sr, sb;
-  function positionMenu(){ if(!fab||!menu) return; var r=fab.getBoundingClientRect(); menu.style.right=Math.max(8,(window.innerWidth-r.right))+'px'; menu.style.bottom=Math.max(8,(window.innerHeight-r.top+10))+'px'; }
+  function positionMenu(){ if(!fab||!menu) return; var r=fab.getBoundingClientRect();
+    // If the button sits on the LEFT half of the screen, expand the menu toward the
+    // RIGHT (anchored to the button's left edge) so the items never run off-screen.
+    var onLeft = r.left < (window.innerWidth*0.42);
+    if(onLeft){ menu.style.left=Math.max(8,r.left)+'px'; menu.style.right='auto'; menu.style.alignItems='flex-start'; }
+    else { menu.style.right=Math.max(8,(window.innerWidth-r.right))+'px'; menu.style.left='auto'; menu.style.alignItems='flex-end'; }
+    menu.style.bottom=Math.max(8,(window.innerHeight-r.top+10))+'px'; }
   function hideMenu(){ if(!menu) return; menu.style.display='none'; if(fab) fab.style.transform='none'; }
   function renderMenu(){
     var acts=[
@@ -8455,7 +8469,6 @@ function _copilotInit(){
   if(!_copilotHistory.length) _copilotLoadHist();
   _copilotRenderThread();
   _copilotRenderChips();
-  try{ var b=document.getElementById('copilotSpeakBtn'); if(b){ var on=_copilotGetSpeak(); b.textContent=on?'🔊':'🔈'; b.classList.toggle('on',on); } }catch(e){}
 }
 /* Slash commands: a fast way to direct the Copilot. Returns an expanded prompt,
    or runs a side-effect and returns null to swallow the message. */
@@ -8609,7 +8622,7 @@ async function copilotAsk(){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     if(r.status===403){ _copilotHistory.push({role:'ai',text:'Copilot is available on clinician accounts.'}); }
     else if(!r.ok){ _copilotHistory.push({role:'ai',text:(d.error||'Copilot had trouble answering. Try again.')}); }
-    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:d.actions||[],followups:d.followups||[],artifact:d.artifact||null}); try{ _copilotSpeak(d.reply); }catch(e){} }
+    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:d.actions||[],followups:d.followups||[],artifact:d.artifact||null}); }
   }catch(e){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     _copilotHistory.push({role:'ai',text:'Network error reaching Copilot. Try again.'});
@@ -8719,19 +8732,6 @@ function closeCopilotDock(){
   if(d) d.classList.remove('open'); if(s) s.classList.remove('open');
   _copilotDockOpen=false;
 }
-/* Read answers aloud (toggle). */
-function _copilotGetSpeak(){ return localStorage.getItem(uns('copilotSpeak'))==='1'; }
-function copilotToggleSpeak(){
-  var on=!_copilotGetSpeak(); try{ localStorage.setItem(uns('copilotSpeak'), on?'1':'0'); }catch(e){}
-  var b=document.getElementById('copilotSpeakBtn'); if(b){ b.textContent=on?'🔊':'🔈'; b.classList.toggle('on',on); }
-  if(!on){ try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){} }
-  try{ toast(on?'Copilot will read answers aloud.':'Read-aloud off.','ok'); }catch(e){}
-}
-function _copilotSpeak(text){
-  if(!_copilotGetSpeak() || !window.speechSynthesis || !text) return;
-  try{ window.speechSynthesis.cancel(); var u=new SpeechSynthesisUtterance(String(text).slice(0,600)); u.rate=1.02; window.speechSynthesis.speak(u); }catch(e){}
-}
-
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
    attach (merge into existing or create new), drop the face photo onto the avatar. ===== */
 function _normName(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
@@ -9459,6 +9459,69 @@ function saveTemplateFromForm(){
   renderTemplateList();
   renderTemplateActiveSelect();
   toast('Template saved on this device.','ok');
+}
+
+/* ===== MULTI-TEMPLATE PDF SPLIT — one upload with several forms → AI detects each
+   and splits them into separate templates the user can keep. ===== */
+var _tplPendingSplit=[];
+function _tplMultiStatus(m,c){ var s=document.getElementById('tplMultiStatus'); if(s){ s.textContent=m||''; s.style.color=c||'var(--muted)'; } }
+async function tplMultiFile(ev){
+  var file=ev.target.files&&ev.target.files[0]; ev.target.value='';
+  if(!file) return;
+  document.getElementById('tplMultiResult').innerHTML='';
+  var lower=file.name.toLowerCase(), mime=(file.type||'').toLowerCase();
+  var isImage=/^image\//.test(mime)||/\.(png|jpe?g|webp|gif|bmp|heic|heif|jfif)$/.test(lower);
+  var isPdf=mime==='application/pdf'||lower.endsWith('.pdf');
+  var text='';
+  try{
+    _tplMultiStatus('Reading the file…');
+    if(lower.endsWith('.txt')||mime==='text/plain'){ text=await file.text(); }
+    else if(isPdf){ text=await extractPdfText(file); if(!text.trim()){ _tplMultiStatus('No text layer in this PDF — it looks scanned. Upload it as an image/photo and MLS will OCR it.','#b4231e'); return; } }
+    else if(isImage){
+      if(!backendMode()||!bkToken()){ _tplMultiStatus('Image OCR needs the hosted version.','#b4231e'); return; }
+      var dataUrl=await readFileAsDataUrl(file);
+      var rv=await fetch(bkBase()+'/api/vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({image:dataUrl,mimetype:mime||'image/png'})});
+      var jv={}; try{ jv=await rv.json(); }catch(e){} if(!rv.ok){ _tplMultiStatus((jv&&jv.error)||'Could not read the image.','#b4231e'); return; }
+      text=(jv.text||'').trim();
+    } else { _tplMultiStatus('Unsupported file — use a PDF, image, or .txt.','#b4231e'); return; }
+  }catch(e){ _tplMultiStatus('Could not read the file: '+(e.message||e),'#b4231e'); return; }
+  if(!text.trim()){ _tplMultiStatus('No text found in that file.','#b4231e'); return; }
+  await tplAiSplit(text);
+}
+async function tplAiSplit(text){
+  if(!backendMode()||!bkToken()){ _tplMultiStatus('Sign in to split templates with AI.','#b4231e'); return; }
+  _tplMultiStatus('✨ Recognizing the templates in your document…');
+  try{
+    var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:text})});
+    var d=await r.json().catch(function(){return {};});
+    if(r.status===403){ _tplMultiStatus('Template splitting is available on clinician accounts.','#b4231e'); return; }
+    if(!r.ok||!d.templates||!d.templates.length){ _tplMultiStatus((d&&d.error)||'Couldn’t detect separate templates — try the single-template upload below.','#b4231e'); return; }
+    _tplPendingSplit=d.templates.map(function(t,i){ return { name:String(t.name||('Template '+(i+1))), text:String(t.text||''), keep:true }; });
+    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length>1?'s':'')+'. Review and add the ones you want:','#1c7a43');
+    _renderTplSplitPreview();
+  }catch(e){ _tplMultiStatus('Network error while splitting.','#b4231e'); }
+}
+function _renderTplSplitPreview(){
+  var box=document.getElementById('tplMultiResult'); if(!box) return;
+  if(!_tplPendingSplit.length){ box.innerHTML=''; return; }
+  var rows=_tplPendingSplit.map(function(t,i){
+    return '<label style="display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-bottom:7px;background:var(--card,#fff);cursor:pointer">'
+      +'<input type="checkbox" '+(t.keep?'checked':'')+' onchange="_tplPendingSplit['+i+'].keep=this.checked" style="width:auto;margin:3px 0 0">'
+      +'<span style="flex:1"><span style="font-weight:600;font-size:13.5px">'+esc(t.name)+'</span> <span style="font-size:11px;color:var(--muted)">('+(t.text||'').length+' chars)</span>'
+      +'<div style="font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px;margin-top:2px">'+esc((t.text||'').replace(/\s+/g,' ').slice(0,90))+'…</div></span></label>';
+  }).join('');
+  box.innerHTML=rows+'<button class="btn-green" style="font-size:13px;padding:8px 14px;margin-top:4px" onclick="tplAddSplit()">➕ Add selected to my templates</button>';
+}
+function tplAddSplit(){
+  var keep=_tplPendingSplit.filter(function(t){return t.keep && (t.text||'').trim();});
+  if(!keep.length){ toast('Select at least one template.','err'); return; }
+  var list=getTemplates();
+  keep.forEach(function(t){ list.unshift({ id:'tpl'+Date.now()+Math.random().toString(36).slice(2,5), name:t.name.slice(0,120), keywords:[], text:t.text, created:Date.now() }); });
+  setTemplates(list);
+  if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[list.length-1].id);
+  _tplPendingSplit=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
+  renderTemplateList(); renderTemplateActiveSelect();
+  try{ toast('Added '+keep.length+' templates.','ok'); }catch(e){}
 }
 
 /* Auto-choose: score saved templates against the visit text by simple
