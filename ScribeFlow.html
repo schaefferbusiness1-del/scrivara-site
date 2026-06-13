@@ -778,6 +778,12 @@
   .c-mail-in:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
   .c-mail-note{ font-size:12px;color:var(--muted);margin:10px 0 4px; }
   .c-mail-btns{ display:flex;gap:9px;justify-content:flex-end;margin-top:16px; }
+  /* Copilot mic + context chip + pinned tabs */
+  #copilotMicBtn{ flex:0 0 auto;width:46px;height:46px;border-radius:13px;font-size:18px;padding:0;display:flex;align-items:center;justify-content:center; }
+  #copilotMicBtn.mic-live{ background:#e8453c;color:#fff;border-color:#e8453c;animation:micPulse 1s infinite; }
+  @keyframes micPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(232,69,60,.5) } 50%{ box-shadow:0 0 0 7px rgba(232,69,60,0) } }
+  .copilot-chip-ctx{ border-color:var(--brand,#3f7bff)!important;color:var(--brand,#2a5fd0);font-weight:700; }
+  .navtab.pinned-tab{ position:relative; }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -2425,6 +2431,7 @@
       <div id="copilotChips" class="copilot-chips"></div>
       <div id="copilotInputRow">
         <textarea id="copilotInput" rows="1" placeholder="Ask your practice anything…  (e.g. Who hasn't been seen in 90 days?)" oninput="_copilotAutogrow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();copilotAsk();}"></textarea>
+        <button class="btn-ghost" id="copilotMicBtn" onclick="copilotMic()" title="Speak your question">🎤</button>
         <button class="btn-primary" id="copilotSendBtn" onclick="copilotAsk()" title="Ask (Enter)">➤</button>
       </div>
       <div class="note" style="margin:8px 2px 0">Copilot reads a private snapshot of your own data to answer. It suggests; you decide. Not a substitute for clinical judgment.</div>
@@ -7142,6 +7149,9 @@ function showView(v){
   const legalReqV=document.getElementById('legalReqView'); if(legalReqV) legalReqV.style.display = v==='legalreq'?'block':'none';
   const studioV=document.getElementById('studioView'); if(studioV) studioV.style.display = v==='studio'?'block':'none';
   const studioTab=document.getElementById('nav_studio'); if(studioTab) studioTab.classList.toggle('on',v==='studio');
+  // Pinned widget tabs: hide the pinned view + clear their active state on any normal nav; render the tabs once.
+  try{ var _pv=document.getElementById('pinnedView'); if(_pv) _pv.style.display='none'; document.querySelectorAll('.navtab.pinned-tab').forEach(function(t){ t.classList.remove('on'); }); }catch(e){}
+  if(!window._pinnedTabsInit){ window._pinnedTabsInit=1; try{ _renderPinnedTabs(); }catch(e){} }
   const calendarV=document.getElementById('calendarView'); if(calendarV) calendarV.style.display = v==='calendar'?'block':'none';
   const calendarTab=document.getElementById('nav_calendar'); if(calendarTab) calendarTab.classList.toggle('on',v==='calendar');
   document.getElementById('nav_patients').classList.toggle('on',v==='patients');
@@ -8142,11 +8152,82 @@ function _mlsWidgetBridgeJS(){
     +'ai:function(prompt,system){return rpc("ai",{prompt:String(prompt||""),system:system?String(system):undefined});},'
     +'email:function(to,subject,body){return rpc("email",{to:String(to||""),subject:String(subject||""),body:String(body||"")});},'
     +'createAppointment:function(o){return rpc("createAppointment",o||{});},'
+    +'getPatient:function(q){return rpc("getPatient",{q:String(q||"")});},'
+    +'print:function(){try{window.print();}catch(_){}}, '
     +'save:function(k,v){return rpc("save",{key:String(k||""),value:v});},'
     +'load:function(k){return rpc("load",{key:String(k||"")});}};})();';
 }
-/* Parent-side handler for widget RPC calls. Side-effectful calls (email,
-   appointment) ask the user to confirm before they run. */
+/* Bind the widget<->app message bridge exactly once, so widgets work whether
+   they're rendered in the Studio preview, fullscreen, OR a pinned tab. */
+function _ensureStudioMsgBound(){
+  if(window._studioMsgBound) return; window._studioMsgBound=true;
+  window.addEventListener('message', function(ev){ try{ if(!ev||!ev.data) return;
+    if(ev.data.__mlsWidgetError){ var n=document.getElementById('studioErrNote'); if(n){ n.style.display='block'; n.textContent='⚠️ The widget hit an error while running: '+String(ev.data.__mlsWidgetError).slice(0,180)+'. Try a more specific description, or press Build it again.'; } }
+    else if(ev.data.__mlsWidgetAction){ _studioHandleAction(ev.data.__mlsWidgetAction); }
+    else if(ev.data.__mlsReq){ _studioHandleRpc(ev.data.__mlsReq, ev.source); }
+  }catch(e){} });
+}
+/* ===================== PINNED WIDGET TABS =====================
+   Any saved Studio creation can be "pinned" to become a real top-nav tab with
+   its own full view — making a custom tool a first-class part of the app. */
+function _hideAllStandardViews(){
+  ['patientsView','visitView','historyView','recsView','ordersView','adminView','teamView','analysisView','legalReqView','studioView','calendarView'].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display='none'; });
+  var pb=document.getElementById('patientBar'); if(pb) pb.style.display='none';
+}
+function _ensurePinnedView(){
+  var pv=document.getElementById('pinnedView'); if(pv) return pv;
+  pv=document.createElement('div'); pv.id='pinnedView'; pv.style.display='none';
+  pv.innerHTML='<div class="card"><h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ic">🧩</span><span id="pinnedTitle" style="flex:1;min-width:120px">Tool</span>'
+    +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="pinnedRefresh()" title="Reload with the latest data">↻ Refresh</button>'
+    +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="pinnedFullscreen()">⛶ Fullscreen</button>'
+    +'<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'studio\')">✦ Studio</button></h2>'
+    +'<iframe id="pinnedFrame" sandbox="allow-scripts" style="width:100%;height:660px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe></div>';
+  var wrap=document.getElementById('appWrap'); if(wrap) wrap.appendChild(pv); else document.body.appendChild(pv);
+  return pv;
+}
+function _renderWidgetInto(frameId, html){
+  _ensureStudioMsgBound();
+  var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[]}; }
+  var json=JSON.stringify(snap).replace(/</g,'\\u003c');
+  var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS()+'window.onerror=function(m,s,l,c,e){try{parent.postMessage({__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};<\/scr'+'ipt>';
+  var f=document.getElementById(frameId); if(f) f.srcdoc=inject+String(html||'');
+}
+var _pinnedCur=null;
+function _pinnedFindById(id){ return studioGetSaved().find(function(x){ return (x.id&&x.id===id)||('w'+x.ts)===id; }); }
+function openPinnedWidget(id){
+  var w=_pinnedFindById(id); if(!w){ try{ toast('That tool was removed.',''); }catch(e){} _renderPinnedTabs(); return; }
+  _pinnedCur=w; currentView='__pinned';
+  _hideAllStandardViews();
+  var pv=_ensurePinnedView(); pv.style.display='block';
+  document.querySelectorAll('.mainnav .navtab').forEach(function(t){ t.classList.remove('on'); });
+  var tab=document.getElementById('nav_pin_'+(w.id||('w'+w.ts))); if(tab) tab.classList.add('on');
+  var tt=document.getElementById('pinnedTitle'); if(tt) tt.textContent=w.title||'Tool';
+  _renderWidgetInto('pinnedFrame', w.html);
+  try{ pv.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
+}
+function pinnedRefresh(){ if(_pinnedCur) _renderWidgetInto('pinnedFrame', _pinnedCur.html); }
+function pinnedFullscreen(){ if(_pinnedCur) _openFullscreenWidget(_pinnedCur.html, _pinnedCur.title); }
+function _renderPinnedTabs(){
+  try{
+    var nav=document.querySelector('.mainnav'); if(!nav) return;
+    nav.querySelectorAll('.navtab.pinned-tab').forEach(function(t){ t.remove(); });
+    var arr=studioGetSaved().filter(function(w){ return w.pinned; });
+    var anchor=document.getElementById('nav_help')||document.getElementById('nav_admin');
+    arr.forEach(function(w){ if(!w.id) w.id='w'+(w.ts||Date.now());
+      var tab=document.createElement('div'); tab.className='navtab pinned-tab'; tab.id='nav_pin_'+w.id;
+      tab.textContent='🧩 '+String(w.title||'Tool').slice(0,20); tab.title=w.title||'Tool';
+      tab.onclick=(function(id){ return function(){ openPinnedWidget(id); }; })(w.id);
+      if(anchor) nav.insertBefore(tab, anchor); else nav.appendChild(tab);
+    });
+  }catch(e){}
+}
+function togglePinWidget(i){
+  var a=studioGetSaved(); if(!a[i]) return;
+  if(!a[i].id) a[i].id='w'+(a[i].ts||Date.now());
+  if(!a[i].pinned){ var cnt=a.filter(function(x){return x.pinned;}).length; if(cnt>=6){ try{ toast('You can pin up to 6 tabs.',''); }catch(e){} return; } }
+  a[i].pinned=!a[i].pinned; studioSetSaved(a); renderStudioSaved(); _renderPinnedTabs();
+  try{ toast(a[i].pinned?('📌 Pinned “'+(a[i].title||'tool')+'” as a tab.'):'Unpinned.','ok'); }catch(e){}
+}
 async function _studioHandleRpc(req, source){
   function reply(ok, data, error){ try{ source && source.postMessage({__mlsRes:{id:req.id, ok:ok, data:data, error:error}}, '*'); }catch(e){} }
   try{
@@ -8175,6 +8256,7 @@ async function _studioHandleRpc(req, source){
     }
     if(m==='save'){ try{ localStorage.setItem(uns('wdg_'+(a.key||'')), JSON.stringify(a.value)); }catch(e){ return reply(false,null,'Could not save.'); } return reply(true,{saved:true}); }
     if(m==='load'){ try{ var v=localStorage.getItem(uns('wdg_'+(a.key||''))); return reply(true, v==null?null:JSON.parse(v)); }catch(e){ return reply(true,null); } }
+    if(m==='getPatient'){ var q=String(a.q||'').toLowerCase().trim(); var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[]}; } var ps=snap.patients||[]; var p=ps.find(function(x){return String(x.id).toLowerCase()===q;})||ps.find(function(x){return String(x.name||'').toLowerCase()===q;})||ps.find(function(x){return String(x.name||'').toLowerCase().indexOf(q)>=0;}); return reply(true, p||null); }
     return reply(false,null,'Unknown method.');
   }catch(e){ reply(false,null,'Bridge error.'); }
 }
@@ -8203,7 +8285,7 @@ function renderStudioWidget(html, title){
   // Inject the read-only data snapshot, a connectivity bridge (window.MLS) the
   // widget can use to open patients / start visits / navigate, and an error catcher.
   var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS()+'window.onerror=function(m,s,l,c,e){try{parent.postMessage({__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){try{parent.postMessage({__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});<\/scr'+'ipt>';
-  if(!window._studioMsgBound){ window._studioMsgBound=true; window.addEventListener('message', function(ev){ try{ if(!ev||!ev.data) return; if(ev.data.__mlsWidgetError){ var n=document.getElementById('studioErrNote'); if(n){ n.style.display='block'; n.textContent='⚠️ The widget hit an error while running: '+String(ev.data.__mlsWidgetError).slice(0,180)+'. Try a more specific description, or press Build it again.'; } } else if(ev.data.__mlsWidgetAction){ _studioHandleAction(ev.data.__mlsWidgetAction); } else if(ev.data.__mlsReq){ _studioHandleRpc(ev.data.__mlsReq, ev.source); } }catch(e){} }); }
+  _ensureStudioMsgBound();
   var note=document.getElementById('studioErrNote'); if(note){ note.style.display='none'; note.textContent=''; }
   var frame=document.getElementById('studioFrame');
   if(frame) frame.srcdoc=inject+String(html||'');
@@ -8227,16 +8309,18 @@ function renderStudioSaved(){
   if(!arr.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">Nothing saved yet — build something above.</div>'; return; }
   box.innerHTML=arr.map(function(w,i){
     var t=String(w.title||'Widget').replace(/[<>&]/g,'');
-    return '<div style="border:1px solid var(--line);border-radius:10px;padding:11px 13px;min-width:200px;max-width:260px;background:#fff">'
-      +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px;line-height:1.35">🧩 '+t+'</div>'
-      +'<div class="row" style="gap:6px">'
+    var pinned=!!w.pinned;
+    return '<div style="border:1px solid '+(pinned?'var(--brand)':'var(--line)')+';border-radius:10px;padding:11px 13px;min-width:210px;max-width:270px;background:var(--card,#fff)">'
+      +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px;line-height:1.35">🧩 '+t+(pinned?' <span style="font-size:11px;font-weight:700;color:var(--brand)">📌 tab</span>':'')+'</div>'
+      +'<div class="row" style="gap:6px;flex-wrap:wrap">'
       +'<button class="btn-green" style="font-size:12px;padding:6px 10px" onclick="openStudioSaved('+i+')">Open</button>'
+      +'<button class="'+(pinned?'btn-primary':'btn-ghost')+'" style="font-size:12px;padding:6px 10px" onclick="togglePinWidget('+i+')">'+(pinned?'📌 Unpin':'📌 Pin as tab')+'</button>'
       +'<button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="deleteStudioSaved('+i+')">Delete</button>'
       +'</div></div>';
   }).join('');
 }
 function openStudioSaved(i){ var w=studioGetSaved()[i]; if(w) renderStudioWidget(w.html, w.title); }
-function deleteStudioSaved(i){ var a=studioGetSaved(); a.splice(i,1); studioSetSaved(a); renderStudioSaved(); }
+function deleteStudioSaved(i){ var a=studioGetSaved(); a.splice(i,1); studioSetSaved(a); renderStudioSaved(); _renderPinnedTabs(); }
 function renderStudio(){ renderStudioSaved(); _copilotInit(); }
 
 /* ===================== MLS COPILOT ===================== */
@@ -8256,10 +8340,13 @@ function copilotSnapshot(){
       daysSinceLastVisit:daysSince(p.lastVisit), lastPain:p.lastPain, avgPain:p.avgPain, maxPain:p.maxPain,
       painTrend:(function(){ try{ var s=p.painSeries||[]; if(s.length<2) return null; var a=s[s.length-2].pain, b=s[s.length-1].pain; if(a==null||b==null) return null; return b>a?'up':(b<a?'down':'flat'); }catch(e){ return null; } })() };
   });
-  return { today:todayStr, practice:snap.practice||{}, patientCount:snap.patientCount,
+  var res={ today:todayStr, practice:snap.practice||{}, patientCount:snap.patientCount,
     totalVisits:snap.totalVisits, avgPainAcrossPractice:snap.avgPainAcrossPractice,
     visitsByMonth:snap.visitsByMonth, topProblems:snap.topProblems,
     appointments:(snap.appointments||[]).slice(0,120), patients:pts };
+  // The chart the user currently has open — so "draft a follow-up for this patient" just works.
+  try{ var ap=(typeof activePatient==='function')?activePatient():null; if(ap){ res.activePatient = pts.find(function(x){return String(x.id)===String(ap.id);}) || {id:ap.id, name:String(ap.name||'')}; } }catch(e){}
+  return res;
 }
 var COPILOT_STARTERS = [
   "Who hasn't been seen in 90+ days?",
@@ -8270,18 +8357,44 @@ var COPILOT_STARTERS = [
   "Build me a worklist of patients overdue for follow-up"
 ];
 function _copilotInit(){
-  if(!_copilotHistory.length) _copilotRenderThread();
+  if(!_copilotHistory.length) _copilotLoadHist();
+  _copilotRenderThread();
   _copilotRenderChips();
 }
-function copilotReset(){ _copilotHistory=[]; _copilotRenderThread(); _copilotRenderChips(); var i=document.getElementById('copilotInput'); if(i){ i.value=''; i.focus(); } }
+/* Persist the Copilot conversation so it survives a reload (per signed-in user). */
+function _copilotSaveHist(){ try{ var keep=_copilotHistory.filter(function(m){return m.role!=='pending';}).slice(-30); localStorage.setItem(uns('copilotHist'), JSON.stringify(keep)); }catch(e){} }
+function _copilotLoadHist(){ try{ var raw=localStorage.getItem(uns('copilotHist')); if(raw){ var a=JSON.parse(raw); if(Array.isArray(a)) _copilotHistory=a; } }catch(e){} }
+function copilotReset(){ _copilotHistory=[]; try{ localStorage.removeItem(uns('copilotHist')); }catch(e){} _copilotRenderThread(); _copilotRenderChips(); var i=document.getElementById('copilotInput'); if(i){ i.value=''; i.focus(); } }
+/* Voice input — dictate your question. Uses the browser's speech recognition;
+   its own instance so it never clashes with visit dictation. */
+var _copilotRecog=null, _copilotListening=false;
+function copilotMic(){
+  var SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SRC){ try{ toast('Voice input isn’t supported in this browser.',''); }catch(e){} return; }
+  if(_copilotListening){ try{ _copilotRecog&&_copilotRecog.stop(); }catch(e){} return; }
+  try{
+    _copilotRecog=new SRC(); _copilotRecog.continuous=true; _copilotRecog.interimResults=true; _copilotRecog.lang='en-US';
+    var inp=document.getElementById('copilotInput'); var base=(inp&&inp.value)||'';
+    _copilotRecog.onresult=function(e){ var fin=''; for(var i=e.resultIndex;i<e.results.length;i++){ if(e.results[i].isFinal) fin+=e.results[i][0].transcript; } if(fin){ var x=document.getElementById('copilotInput'); if(x){ x.value=(base?base.replace(/\s*$/,'')+' ':'')+fin.trim(); base=x.value; _copilotAutogrow(x); } } };
+    _copilotRecog.onend=function(){ _copilotListening=false; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.remove('mic-live'); b.textContent='🎤'; } };
+    _copilotRecog.onerror=function(){ _copilotListening=false; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.remove('mic-live'); b.textContent='🎤'; } };
+    _copilotRecog.start(); _copilotListening=true; var b=document.getElementById('copilotMicBtn'); if(b){ b.classList.add('mic-live'); b.textContent='⏹'; }
+    try{ toast('Listening… tap the mic again to stop.','ok'); }catch(e){}
+  }catch(e){ try{ toast('Could not start voice input.','err'); }catch(_){} }
+}
 function _copilotRenderChips(){
   var box=document.getElementById('copilotChips'); if(!box) return;
   // when a conversation exists, show the latest ai's followups; else show starters
-  var chips=COPILOT_STARTERS;
-  for(var i=_copilotHistory.length-1;i>=0;i--){ if(_copilotHistory[i].role==='ai' && _copilotHistory[i].followups && _copilotHistory[i].followups.length){ chips=_copilotHistory[i].followups; break; } }
-  box.innerHTML=chips.map(function(c){ return '<button class="copilot-chip" onclick="copilotChip(this)">'+_ce(c)+'</button>'; }).join('');
+  var chips=COPILOT_STARTERS.slice();
+  for(var i=_copilotHistory.length-1;i>=0;i--){ if(_copilotHistory[i].role==='ai' && _copilotHistory[i].followups && _copilotHistory[i].followups.length){ chips=_copilotHistory[i].followups.slice(); break; } }
+  var html='';
+  // Context chip for the patient currently open — feels like the Copilot knows where you are.
+  try{ var ap=(typeof activePatient==='function')?activePatient():null; if(ap && ap.name){ var nm=String(ap.name).split(' ')[0]; html+='<button class="copilot-chip copilot-chip-ctx" onclick="copilotChipText(\'Give me a quick rundown on '+_ce(String(ap.name).replace(/\x27/g,"")) +' — recent visits, pain trend, and what to consider next.\')">💬 About '+_ce(nm)+'</button>'; } }catch(e){}
+  html+=chips.map(function(c){ return '<button class="copilot-chip" onclick="copilotChip(this)">'+_ce(c)+'</button>'; }).join('');
+  box.innerHTML=html;
 }
 function copilotChip(btn){ var i=document.getElementById('copilotInput'); if(i){ i.value=btn.textContent; } copilotAsk(); }
+function copilotChipText(t){ var i=document.getElementById('copilotInput'); if(i){ i.value=t; } copilotAsk(); }
 function _copilotRenderThread(){
   var box=document.getElementById('copilotThread'); if(!box) return;
   if(!_copilotHistory.length){
@@ -8307,7 +8420,7 @@ function _copilotArtifactHtml(m, i){
     +'<div class="c-art-head"><span>'+_copilotArtIcon(ar.kind)+'</span><span class="c-art-title">'+_ce(ar.title||'Draft')+'</span><span class="c-art-kind">'+_ce(ar.kind||'text')+'</span></div>'
     +'<textarea id="cArt_'+i+'" class="c-art-text" spellcheck="true" oninput="_copilotSyncArtifact('+i+',this.value);_copilotAutogrowArtifact(this)">'+_ce(ar.content)+'</textarea>'
     +'<div class="c-art-tweak"><input id="cTw_'+i+'" placeholder="Tweak it — “shorter”, “warmer tone”, “add the next-steps line”…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();copilotTweak('+i+');}"><button class="btn-primary" id="cTwBtn_'+i+'" style="font-size:12.5px;padding:8px 13px" onclick="copilotTweak('+i+')">✦ Tweak</button></div>'
-    +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'</div>'
+    +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'<button class="cact-btn" onclick="copilotArtifactToTool('+i+')">🧩 Build a tool</button></div>'
     +'</div>';
 }
 function _copilotSyncArtifact(i,val){ var m=_copilotHistory[i]; if(m&&m.artifact) m.artifact.content=val; }
@@ -8322,12 +8435,14 @@ async function copilotTweak(i){
     var r=await fetch(bkBase()+'/api/copilot/edit',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({artifact:cur,instruction:instruction,kind:kind})});
     var d=await r.json().catch(function(){return {};});
     if(!r.ok||!d.text){ try{ toast(d.error||'Could not revise.','err'); }catch(e){} }
-    else { ta.value=d.text; if(m&&m.artifact) m.artifact.content=d.text; tw.value=''; _copilotAutogrowArtifact(ta); try{ toast('Updated.','ok'); }catch(e){} }
+    else { ta.value=d.text; if(m&&m.artifact) m.artifact.content=d.text; tw.value=''; _copilotAutogrowArtifact(ta); _copilotSaveHist(); try{ toast('Updated.','ok'); }catch(e){} }
   }catch(e){ try{ toast('Network error.','err'); }catch(e){} }
   finally{ if(btn){ btn.disabled=false; btn.textContent='✦ Tweak'; } }
 }
 function copilotCopyArtifact(i){ var ta=document.getElementById('cArt_'+i); if(!ta) return; try{ navigator.clipboard.writeText(ta.value||''); toast('Copied.','ok'); }catch(e){ try{ ta.select(); document.execCommand('copy'); toast('Copied.','ok'); }catch(_){} } }
 function copilotArtifactEmail(i){ var m=_copilotHistory[i]; var ta=document.getElementById('cArt_'+i); var body=ta?ta.value:(m&&m.artifact?m.artifact.content:''); var to=(m&&m.artifact&&m.artifact.to)||''; var subj=(m&&m.artifact&&m.artifact.subject)||(m&&m.artifact&&m.artifact.title)||''; _copilotOpenEmail(to,subj,body); }
+/* Turn a Copilot draft into an interactive tool in the Studio builder. */
+function copilotArtifactToTool(i){ var m=_copilotHistory[i]; var ta=document.getElementById('cArt_'+i); var content=ta?ta.value:(m&&m.artifact?m.artifact.content:''); var title=(m&&m.artifact&&m.artifact.title)||'this'; var p=document.getElementById('studioPrompt'); if(p){ p.value='Build an interactive tool around this content (make it useful and editable). Title: '+title+'\n\nCONTENT:\n'+content; } try{ if(typeof generateStudioWidget==='function') generateStudioWidget(); var pp=document.getElementById('studioPrompt'); if(pp) pp.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }
 /* Email composer modal — review-then-send. Never sends silently. */
 function _copilotOpenEmail(to,subject,body){
   var ov=document.getElementById('cMailOv');
@@ -8386,7 +8501,7 @@ async function copilotAsk(){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     _copilotHistory.push({role:'ai',text:'Network error reaching Copilot. Try again.'});
   }
-  finally{ _copilotBusy=false; var s=document.getElementById('copilotSendBtn'); if(s) s.disabled=false; _copilotRenderThread(); _copilotRenderChips(); }
+  finally{ _copilotBusy=false; var s=document.getElementById('copilotSendBtn'); if(s) s.disabled=false; _copilotRenderThread(); _copilotRenderChips(); _copilotSaveHist(); }
 }
 function _copilotDoAction(kind, arg, btn){
   try{
@@ -8435,18 +8550,22 @@ async function refineStudioWidget(){
 }
 function studioFullscreen(){
   if(!studioLastHtml){ try{ toast('Build a tool first.',''); }catch(e){} return; }
+  _openFullscreenWidget(studioLastHtml, studioLastPrompt);
+}
+function _openFullscreenWidget(html, title){
+  if(!html){ try{ toast('Nothing to open.',''); }catch(e){} return; }
   var ov=document.getElementById('studioFsOverlay');
   if(!ov){
     ov=document.createElement('div'); ov.id='studioFsOverlay';
     ov.innerHTML='<div id="studioFsBar"><span id="studioFsTitle">Your tool</span><button class="btn-ghost" style="font-size:13px;padding:7px 13px" onclick="closeStudioFullscreen()">✕ Close</button></div><iframe id="studioFsFrame" sandbox="allow-scripts"></iframe>';
     document.body.appendChild(ov);
   }
-  document.getElementById('studioFsTitle').textContent=(studioLastPrompt||'Your tool').slice(0,90);
-  // reuse the same injected snapshot+bridge as the inline frame
+  document.getElementById('studioFsTitle').textContent=(title||'Your tool').slice(0,90);
+  _ensureStudioMsgBound();
   var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[]}; }
   var json=JSON.stringify(snap).replace(/</g,'\\u003c');
   var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS()+'<\/scr'+'ipt>';
-  document.getElementById('studioFsFrame').srcdoc=inject+String(studioLastHtml||'');
+  document.getElementById('studioFsFrame').srcdoc=inject+String(html||'');
   ov.style.display='flex';
 }
 function closeStudioFullscreen(){ var ov=document.getElementById('studioFsOverlay'); if(ov) ov.style.display='none'; }
