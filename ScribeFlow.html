@@ -1247,12 +1247,12 @@
   <div id="patientsView" style="display:none">
     <div id="ptSplitWrap">
     <div class="card">
-      <h2><span class="ic">👥</span> Patients
+      <h2 style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
         <button class="btn-ghost" id="ptReceptionBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, the front desk, team logins and more">⋯ More</button>
-        <span id="ptMore" style="display:none"><button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
+        <span id="ptMore" style="display:none;flex-basis:100%;flex-wrap:wrap;gap:8px;margin-top:2px"><button class="btn-ghost" id="ptLinkBtn" style="font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
         <button class="btn-ghost" id="ptIntakeBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadPendingIntakes(true)" title="See pre-visit intakes patients have submitted">📥 Check intakes</button>
         <button class="btn-ghost" id="ptSetupBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="openSetup()" title="Set up your name, practice details, and schedule">🚀 Set up your practice</button>
         <button class="btn-ghost" id="ptBookLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyBookingLink(this)" title="Get a link patients can use to book appointments online">📅 Booking link</button>
@@ -7460,7 +7460,7 @@ function su_autoSig(){
   document.getElementById('su_sig').value=sig;
 }
 function su_openFollowups(){ closeSetup(); if(typeof openFollowups==='function') openFollowups(); }
-function su_openReceptionists(){ closeSetup(); try{ var pm=document.getElementById('ptMore'); if(pm) pm.style.display='inline'; }catch(e){} if(typeof showView==='function'){ try{ showView('patients'); }catch(e){} } setTimeout(function(){ try{ loadReceptionists(true); var rb=document.getElementById('receptionBox'); if(rb) rb.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }, 120); }
+function su_openReceptionists(){ closeSetup(); try{ var pm=document.getElementById('ptMore'); if(pm) pm.style.display='flex'; var mb=document.getElementById('ptMoreBtn'); if(mb) mb.textContent='⋯ Less'; }catch(e){} if(typeof showView==='function'){ try{ showView('patients'); }catch(e){} } setTimeout(function(){ try{ loadReceptionists(true); var rb=document.getElementById('receptionBox'); if(rb) rb.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }, 120); }
 function su_openSettings(){ closeSetup(); if(typeof openSettings==='function') openSettings(); }
 async function suChangePassword(btn){
   var msg=document.getElementById('suPwMsg');
@@ -10669,7 +10669,7 @@ function toggleVisitTools(){
 function togglePtMore(){
   var m=document.getElementById('ptMore'); if(!m) return;
   var show=(m.style.display==='none'||!m.style.display);
-  m.style.display=show?'inline':'none';
+  m.style.display=show?'flex':'none';  // full-width wrapping toolbar row, never overflows the header
   var b=document.getElementById('ptMoreBtn'); if(b) b.textContent=show?'⋯ Less':'⋯ More';
 }
 function toggleMoreTools(){
