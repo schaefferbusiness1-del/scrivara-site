@@ -527,6 +527,20 @@
   .navtab.on{background:var(--brand);color:#fff;font-weight:650}
   .navtab .nbadge{background:rgba(255,255,255,.22);border-radius:10px;font-size:11.5px;padding:1px 7px;font-weight:700}
   .navtab:not(.on) .nbadge{background:var(--soft);color:var(--brand-dk)}
+  /* ===== MLS UI polish 2026-06-13 — additive refinements for a cleaner, calmer feel ===== */
+  .mainnav{ position:sticky; top:8px; z-index:60; backdrop-filter:saturate(1.1); }
+  .navtab{ letter-spacing:.1px; }
+  .navtab.on{ box-shadow:0 2px 9px rgba(31,99,201,.30); }
+  .navtab:active{ transform:translateY(1px); }
+  .card{ transition:box-shadow .18s ease, border-color .18s ease; }
+  .extra-card{ border-radius:12px; }
+  .btn-primary,.btn-green,.btn-ghost,.btn-red-ghost{ transition:transform .07s ease, box-shadow .12s ease, background .12s ease, filter .12s ease; }
+  .btn-primary:hover,.btn-green:hover{ filter:brightness(1.04); }
+  .btn-primary:active,.btn-green:active,.btn-ghost:active,.btn-red-ghost:active{ transform:translateY(1px); }
+  .card>h2,.card>h3{ letter-spacing:-.2px; }
+  #patientBar{ box-shadow:0 1px 5px rgba(20,40,70,.06); }
+  .sf-select,input[type=text],input[type=password],input[type=email],textarea{ transition:border-color .12s ease, box-shadow .12s ease; }
+  .sf-select:focus,input[type=text]:focus,input[type=password]:focus,input[type=email]:focus,textarea:focus{ border-color:var(--brand); box-shadow:0 0 0 3px rgba(31,99,201,.12); outline:none; }
   /* ---- active patient bar ---- */
   #patientBar{display:flex;align-items:center;gap:12px;background:#eef6ff;border:1px solid #cfe2f8;
     border-radius:12px;padding:11px 16px;margin-bottom:16px;flex-wrap:wrap}
@@ -2078,6 +2092,7 @@
         <div id="ordList" class="hist-list"></div>
         <div class="row" id="ordActionsRow" style="display:none">
           <button class="btn-primary" onclick="printOrders()">🖨 Print orders</button>
+          <button class="btn-ghost" onclick="sendOrdersToEMR(this)" title="Drop the order sheet straight into your EMR via MLS Assist">📤 Send to EMR</button>
           <button class="btn-ghost" onclick="copyOrders()">📑 Copy orders</button>
           <button class="btn-ghost" onclick="saveOrdersToHistory()">💾 Save with visit</button>
           <button class="btn-ghost btn-red-ghost" onclick="clearAllOrders()" style="margin-left:auto">🗑 Clear all</button>
@@ -2129,6 +2144,7 @@
           <label>Draft letter <span style="font-weight:400;color:var(--muted)">(editable — review and complete any [bracketed] items before sending)</span></label>
           <textarea id="paLetter" style="min-height:300px"></textarea>
           <div class="row tight">
+            <button class="btn-ghost" onclick="sendPaToEMR(this)" title="Drop this letter into your EMR via MLS Assist">📤 Send to EMR</button>
             <button class="btn-ghost" onclick="copyPriorAuth()">📑 Copy</button>
             <button class="btn-ghost" onclick="printPriorAuth()">🖨 Print</button>
           </div>
@@ -12760,6 +12776,13 @@ function copyOrders(){
     .then(()=>toast('Orders copied.','ok'))
     .catch(()=>toast('Could not copy.','err'));
 }
+/* Push the order sheet straight into the EMR's note/order field via MLS Assist
+   — same one-shot, cross-frame paste the visit note uses (no Athena API needed). */
+function sendOrdersToEMR(btn){
+  if(!currentOrders.length){ toast('No orders to send.','err'); return; }
+  try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(btn||null,{text:ordersAsText()}); return; } }catch(e){}
+  copyOrders();
+}
 
 /* ---- printable order sheet (mirrors buildPrintHTML) ---- */
 function buildOrdersPrintHTML(){
@@ -13031,6 +13054,12 @@ Return ONLY the letter text, no preamble, no markdown fences.`;
     toast((isAppeal?'Appeal letter':'Prior-auth letter')+' drafted. Review and complete any [bracketed] items.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML=(isAppeal?'✨ Generate appeal letter':'✨ Generate prior-auth letter'); }
+}
+function sendPaToEMR(btn){
+  var ta=document.getElementById('paLetter'); var t=(ta&&ta.value||'').trim();
+  if(!t){ toast('Nothing to send yet.','err'); return; }
+  try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(btn||null,{text:t}); return; } }catch(e){}
+  try{ copyPriorAuth(); }catch(e){}
 }
 function copyPriorAuth(){
   const ta=document.getElementById('paLetter');
