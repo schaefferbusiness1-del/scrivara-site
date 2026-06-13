@@ -3088,32 +3088,38 @@
 
     <!-- Developer API key + MLS Assist (browser extension) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label style="font-size:15px">🔌 Developer API key &amp; MLS Assist</label>
-      <p class="note" style="margin:2px 0 10px">A key lets the MLS FHIR API and the MLS Assist browser extension talk to your account. It's shown once — store it safely.</p>
-      <div class="row tight">
-        <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="genApiKey()">＋ Generate API key</button>
-        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()">↻ Refresh</button>
-      </div>
-      <div id="newApiKeyBox" style="display:none;margin-top:10px">
-        <label>Your new key — copy it now</label>
-        <div class="row tight" style="gap:8px">
-          <input type="text" id="newApiKey" readonly style="flex:1;font-family:monospace;font-size:12px">
-          <button class="btn-ghost" style="font-size:14px;padding:9px 12px" onclick="copyApiKey()">Copy</button>
-        </div>
-        <p class="note">Paste this into the MLS Assist extension (toolbar icon → key field).</p>
-      </div>
-      <div id="apiKeyList" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
-      <div style="margin-top:12px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
+      <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
+      <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
+      <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
         <b style="font-size:14px">🩺 MLS Assist browser extension</b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR — and Autopilot can take the steps for you, with your approval on anything it saves.</p>
         <a href="https://mlsscribe.com/mls-assist-extension.zip" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px" download>⬇ Download MLS Assist (.zip)</a>
+        <span class="note" style="display:inline-block;margin-left:8px">🧩 One-click Chrome Web Store install — coming soon</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#3a5a78;line-height:1.6">
-          <li>Unzip it, then open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
-          <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder.</li>
-          <li>Click the MLS Assist toolbar icon → paste the API key you generated above → Save.</li>
-          <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → Generate → Insert.</li>
+          <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
+          <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder. (To update later, replace the folder and click ↻ Reload.)</li>
+          <li>Make sure you're <b>signed in to MLS in a tab</b> — the extension uses that login automatically. <b>No key to paste.</b></li>
+          <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
         </ol>
       </div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--muted)">Advanced: Developer API key (FHIR API / server use)</summary>
+        <div style="margin-top:8px">
+          <div class="row tight">
+            <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="genApiKey()">＋ Generate API key</button>
+            <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()">↻ Refresh</button>
+          </div>
+          <div id="newApiKeyBox" style="display:none;margin-top:10px">
+            <label>Your new key — copy it now</label>
+            <div class="row tight" style="gap:8px">
+              <input type="text" id="newApiKey" readonly style="flex:1;font-family:monospace;font-size:12px">
+              <button class="btn-ghost" style="font-size:14px;padding:9px 12px" onclick="copyApiKey()">Copy</button>
+            </div>
+            <p class="note">Use this for the FHIR API or to authenticate the extension on a machine where you won't be signed in to MLS.</p>
+          </div>
+          <div id="apiKeyList" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
+        </div>
+      </details>
       <div id="emrPullBox" style="margin-top:12px;background:#f0faf4;border:1px solid #cdeed9;border-radius:10px;padding:12px 14px">
         <b style="font-size:14px">📥 Pull a patient from my EMR</b>
         <p class="note" style="margin:6px 0 10px">With MLS Assist installed, open a patient in your EMR (another tab), then click below — MLS reads that chart and pulls the patient + prior visits in here. No copy-paste.</p>
@@ -8575,7 +8581,7 @@ function _copilotRenderThread(){
   box.innerHTML=_copilotHistory.map(function(m,i){
     if(m.role==='user') return '<div class="cmsg cmsg-user"><div class="cbubble">'+_ce(m.text)+'</div></div>';
     if(m.role==='pending') return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai"><span class="cdots"><i></i><i></i><i></i></span></div></div>';
-    var acts=(m.actions&&m.actions.length)? '<div class="cactions">'+m.actions.map(function(a,ix){ return '<button class="cact-btn" onclick="_copilotDoAction('+JSON.stringify(a.kind)+','+JSON.stringify(a.arg)+',this)">'+_ce(a.label)+'</button>'; }).join('')+'</div>' : '';
+    var acts=(m.actions&&m.actions.length)? '<div class="cactions">'+m.actions.map(function(a,ix){ return '<button class="cact-btn" onclick="_copilotDoAction('+_ce(JSON.stringify(a.kind))+','+_ce(JSON.stringify(a.arg))+',this)">'+_ce(a.label)+'</button>'; }).join('')+'</div>' : '';
     return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai">'+_ce(m.text).replace(/\n/g,'<br>')+acts+'</div></div>'+_copilotArtifactHtml(m,i);
   }).join('');
   box.scrollTop=box.scrollHeight;
