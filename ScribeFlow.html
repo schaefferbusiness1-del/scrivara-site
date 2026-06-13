@@ -709,6 +709,52 @@
   /* Procedure group headers in the patient list. */
   .pt-group-hdr{ font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin:14px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--line); }
   .pt-list > .pt-group-hdr:first-child{ margin-top:2px; }
+
+  /* ================= MLS COPILOT ================= */
+  #copilotCard{ overflow:hidden; }
+  #copilotHero{ margin:-4px -2px 14px; padding:16px 16px 14px; border-radius:14px;
+    background:linear-gradient(135deg, #eef4ff 0%, #f3ecff 55%, #eafaf3 100%);
+    border:1px solid #e2e6ff; }
+  #copilotOrb{ width:42px;height:42px;flex:0 0 42px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+    font-size:21px;color:#fff;background:linear-gradient(135deg,#6d5efc,#3aa0ff);box-shadow:0 6px 16px rgba(80,90,230,.35);
+    animation:copilotPulse 3.4s ease-in-out infinite; }
+  @keyframes copilotPulse{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-3px) } }
+  #copilotThread{ display:flex;flex-direction:column;gap:11px;max-height:460px;overflow-y:auto;padding:4px 2px 2px; }
+  .copilot-empty{ text-align:center;color:var(--muted);font-size:14px;padding:26px 14px;line-height:1.55; }
+  .cmsg{ display:flex; }
+  .cmsg-user{ justify-content:flex-end; }
+  .cmsg-ai{ justify-content:flex-start; }
+  .cbubble{ max-width:82%;padding:11px 14px;border-radius:15px;font-size:14px;line-height:1.5;
+    background:linear-gradient(135deg,#3f7bff,#5a6cff);color:#fff;border-bottom-right-radius:5px;box-shadow:0 2px 8px rgba(60,90,220,.22); }
+  .cbubble-ai{ background:var(--soft,#f1f5fb);color:var(--ink);border:1px solid var(--line);border-bottom-right-radius:15px;border-bottom-left-radius:5px;box-shadow:none; }
+  .cactions{ display:flex;flex-wrap:wrap;gap:7px;margin-top:10px; }
+  .cact-btn{ font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:9px;border:1px solid var(--brand,#3f7bff);
+    color:var(--brand,#2a5fd0);background:var(--card,#fff);cursor:pointer;transition:.15s; }
+  .cact-btn:hover{ background:var(--brand,#3f7bff);color:#fff;transform:translateY(-1px); }
+  .cact-done{ opacity:.55; }
+  .cdots{ display:inline-flex;gap:4px;align-items:center;padding:2px 0; }
+  .cdots i{ width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;animation:cblink 1.1s infinite; }
+  .cdots i:nth-child(2){ animation-delay:.2s } .cdots i:nth-child(3){ animation-delay:.4s }
+  @keyframes cblink{ 0%,80%,100%{ opacity:.25;transform:scale(.85) } 40%{ opacity:1;transform:scale(1) } }
+  .copilot-chips{ display:flex;flex-wrap:wrap;gap:7px;margin:13px 2px 4px; }
+  .copilot-chip{ font-size:12.5px;padding:7px 13px;border-radius:20px;border:1px solid var(--line);
+    background:var(--soft,#f3f6fb);color:var(--ink);cursor:pointer;transition:.15s; }
+  .copilot-chip:hover{ border-color:var(--brand,#3f7bff);color:var(--brand,#2a5fd0);transform:translateY(-1px); }
+  #copilotInputRow{ display:flex;gap:9px;align-items:flex-end;margin-top:6px; }
+  #copilotInput{ flex:1;resize:none;min-height:46px;max-height:150px;padding:12px 14px;border:1.5px solid var(--line);
+    border-radius:13px;font-size:14px;font-family:inherit;background:var(--field-bg,#fff);color:var(--ink);transition:.15s; }
+  #copilotInput:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.16); }
+  #copilotSendBtn{ flex:0 0 auto;width:46px;height:46px;border-radius:13px;font-size:18px;padding:0;display:flex;align-items:center;justify-content:center; }
+  /* Studio fullscreen overlay */
+  #studioFsOverlay{ display:none;position:fixed;inset:0;z-index:9000;background:var(--bg,#fff);flex-direction:column; }
+  #studioFsBar{ display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card,#fff); }
+  #studioFsTitle{ flex:1;font-weight:700;font-size:15px;color:var(--ink); }
+  #studioFsFrame{ flex:1;width:100%;border:0;background:#fff; }
+  /* Dark-mode tuning */
+  body.theme-dark #copilotHero{ background:linear-gradient(135deg,#1c2540 0%,#241d3f 55%,#16302a 100%);border-color:#2c3358; }
+  body.theme-dark .cbubble-ai{ background:#1c2333;border-color:var(--line); }
+  body.theme-dark .cact-btn{ background:var(--card);color:#9db8ff;border-color:#3a4a78; }
+  body.theme-dark .copilot-chip{ background:#1b2230; }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -1117,7 +1163,7 @@
     <div class="navtab" id="nav_legalreq" style="display:none" onclick="showView('legalreq')">⚖️ Legal requests <span class="nbadge" id="navLegalReqCount">0</span></div>
     <div class="navtab" id="nav_team" style="display:none" onclick="showView('team')">👥 Team</div>
     <div class="navtab" id="nav_analysis" style="display:none" onclick="showView('analysis')">📊 Analysis</div>
-    <div class="navtab" id="nav_studio" onclick="showView('studio')">✨ Create your own</div>
+    <div class="navtab" id="nav_studio" onclick="showView('studio')">✨ AI Studio</div>
     <div class="navtab" id="nav_help" onclick="openMlsHelp()" title="Ask how to do anything in MLS — where buttons are, how features work">❓ Help</div>
     <div class="navtab" id="nav_admin" style="display:none" onclick="showView('admin')">🛡️ Admin</div>
   </div>
@@ -2340,8 +2386,29 @@
 
   <!-- ============ CREATE YOUR OWN — AI widget/tab studio ============ -->
   <div id="studioView" style="display:none">
+    <!-- ===== AI COPILOT ===== -->
+    <div class="card" id="copilotCard">
+      <div id="copilotHero">
+        <div style="display:flex;align-items:center;gap:11px">
+          <div id="copilotOrb">✦</div>
+          <div style="flex:1">
+            <h2 style="margin:0;border:0;padding:0">MLS Copilot</h2>
+            <p class="sub" style="margin:2px 0 0">Ask anything about your practice — who's overdue, how busy tomorrow is, who's trending worse — and I can open the chart, start the visit, or build you a tool on the spot.</p>
+          </div>
+          <button class="btn-ghost" style="font-size:12.5px;padding:7px 12px" onclick="copilotReset()" title="Start a fresh conversation">↺ New chat</button>
+        </div>
+      </div>
+      <div id="copilotThread"></div>
+      <div id="copilotChips" class="copilot-chips"></div>
+      <div id="copilotInputRow">
+        <textarea id="copilotInput" rows="1" placeholder="Ask your practice anything…  (e.g. Who hasn't been seen in 90 days?)" oninput="_copilotAutogrow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();copilotAsk();}"></textarea>
+        <button class="btn-primary" id="copilotSendBtn" onclick="copilotAsk()" title="Ask (Enter)">➤</button>
+      </div>
+      <div class="note" style="margin:8px 2px 0">Copilot reads a private snapshot of your own data to answer. It suggests; you decide. Not a substitute for clinical judgment.</div>
+    </div>
+
     <div class="card">
-      <h2><span class="ic">✨</span> Create your own</h2>
+      <h2><span class="ic">🛠️</span> Build a custom tool</h2>
       <p class="sub">Describe a tab, tool, dashboard, or calculator you wish you had — and MLS builds it for you. It reads a rich snapshot of your real practice data (patients, pain trends, diagnoses, the schedule) and can <b>connect to the rest of MLS</b> — its buttons can open a patient, start a visit, or jump to any tab. Runs in a secure sandbox; your saved creations stay here.</p>
       <textarea id="studioPrompt" style="min-height:90px;width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px" placeholder="e.g. A dashboard of my patients with the most visits, as a sorted table with their last visit date.&#10;Or: an opioid MME calculator.&#10;Or: a bar chart of visits per month over the last 12 months."></textarea>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
@@ -2356,10 +2423,15 @@
       <div id="studioStatus" style="margin-top:8px;font-size:13px;color:var(--muted)"></div>
     </div>
     <div class="card" id="studioResultCard" style="display:none">
-      <h2 style="display:flex;align-items:center;gap:8px"><span class="ic">🧩</span> <span id="studioResultTitle" style="flex:1">Your widget</span>
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ic">🧩</span> <span id="studioResultTitle" style="flex:1;min-width:140px">Your widget</span>
+        <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="studioFullscreen()" title="Open this tool full-screen">⛶ Fullscreen</button>
         <button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="saveStudioWidget()">💾 Save it</button>
         <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="closeStudioResult()">✕ Close</button>
       </h2>
+      <div id="studioRefineRow" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap">
+        <input id="studioRefineInput" placeholder="Tweak it — e.g. “sort by last visit”, “add a bar chart”, “make it dark”" style="flex:1;min-width:220px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:var(--field-bg,#fff);color:var(--ink)" onkeydown="if(event.key==='Enter'){event.preventDefault();refineStudioWidget();}">
+        <button class="btn-primary" id="studioRefineBtn" style="font-size:13px;padding:9px 14px" onclick="refineStudioWidget()">🔁 Refine</button>
+      </div>
       <iframe id="studioFrame" sandbox="allow-scripts" style="width:100%;height:540px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
       <p id="studioErrNote" style="display:none;margin-top:6px;color:#b4231e;font-size:13px"></p>
       <p class="note" style="margin-top:6px">Runs sandboxed — it can read your data snapshot but cannot send it anywhere. Review before relying on it.</p>
@@ -6910,7 +6982,7 @@ async function calToggleCheckin(btn){
 /* ===== QUICK FIND — a command palette to jump to any patient or screen from
    anywhere (header 🔍 Find button, or press "/"). Theme-aware. ===== */
 (function(){
-  var VIEWS=[{k:'calendar',label:'📅 Calendar'},{k:'patients',label:'👥 Patients'},{k:'visit',label:'🎙️ Visit'},{k:'orders',label:'📋 Orders'},{k:'recs',label:'💡 Recommendations'},{k:'history',label:'📚 History'},{k:'analysis',label:'📊 Analysis'},{k:'studio',label:'✨ Create your own'},{k:'legalreq',label:'⚖️ Legal requests'},{k:'__settings',label:'⚙️ Settings'},{k:'__help',label:'❓ Help'},{k:'__newpt',label:'➕ New patient'},{k:'__newappt',label:'📅 New appointment'}];
+  var VIEWS=[{k:'__copilot',label:'✦ Ask MLS Copilot'},{k:'calendar',label:'📅 Calendar'},{k:'patients',label:'👥 Patients'},{k:'visit',label:'🎙️ Visit'},{k:'orders',label:'📋 Orders'},{k:'recs',label:'💡 Recommendations'},{k:'history',label:'📚 History'},{k:'analysis',label:'📊 Analysis'},{k:'studio',label:'✨ AI Studio'},{k:'legalreq',label:'⚖️ Legal requests'},{k:'__settings',label:'⚙️ Settings'},{k:'__help',label:'❓ Help'},{k:'__newpt',label:'➕ New patient'},{k:'__newappt',label:'📅 New appointment'}];
   var _qfSel=0, _qfItems=[];
   function _qfEl(){ return document.getElementById('mlsQuickFindOv'); }
   function _qfInit(){
@@ -6950,7 +7022,8 @@ async function calToggleCheckin(btn){
   function _qfHighlight(){ var res=document.getElementById('mlsQfResults'); if(!res) return; [].forEach.call(res.querySelectorAll('.mlsQfRow'), function(row){ var on=parseInt(row.getAttribute('data-i'),10)===_qfSel; row.style.background=on?'var(--soft)':'transparent'; if(on){ try{ row.scrollIntoView({block:'nearest'}); }catch(e){} } }); }
   function _qfChoose(i){ var it=_qfItems[i]; if(!it) return; mlsQuickFindClose(); try{
     if(it.type==='view'){
-      if(it.k==='__settings'){ if(typeof openSettings==='function') openSettings(); }
+      if(it.k==='__copilot'){ if(typeof openCopilot==='function') openCopilot(); }
+      else if(it.k==='__settings'){ if(typeof openSettings==='function') openSettings(); }
       else if(it.k==='__help'){ if(typeof openMlsHelp==='function') openMlsHelp(); }
       else if(it.k==='__newpt'){ if(typeof showView==='function') showView('patients'); if(typeof newPatient==='function') setTimeout(newPatient,40); }
       else if(it.k==='__newappt'){ if(typeof calScheduleForPatient==='function') calScheduleForPatient(); }
@@ -6998,6 +7071,7 @@ try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch
   function hideMenu(){ if(!menu) return; menu.style.display='none'; if(fab) fab.style.transform='none'; }
   function renderMenu(){
     var acts=[
+      ['✦ Ask Copilot', function(){ try{ if(typeof openCopilot==='function') openCopilot(); }catch(e){} }],
       ['➕ New patient', function(){ try{ if(typeof showView==='function') showView('patients'); if(typeof newPatient==='function') setTimeout(newPatient,40); }catch(e){} }],
       ['🎙️ New visit', function(){ try{ if(typeof showView==='function') showView('visit'); if(typeof newVisit==='function') newVisit(); }catch(e){} }],
       ['📅 New appointment', function(){ try{ if(typeof calScheduleForPatient==='function') calScheduleForPatient(); }catch(e){} }],
@@ -7984,7 +8058,7 @@ function studioDataSnapshot(){
       var probs=_studioSplit(p.problems);
       probs.forEach(function(pr){ var k=pr.toLowerCase().slice(0,40); if(k) dx[k]=(dx[k]||0)+1; });
       return {
-        name:String(p.name||''), dob:String(p.dob||''), age:age, sex:String(p.sex||p.gender||''), mrn:String(p.mrn||''),
+        id:p.id, name:String(p.name||''), dob:String(p.dob||''), age:age, sex:String(p.sex||p.gender||''), mrn:String(p.mrn||''),
         problems:probs.slice(0,12), meds:_studioSplit(p.meds).slice(0,20), allergies:_studioSplit(p.allergies).slice(0,12),
         visitCount:notes.length, firstVisit:dates[0]||'', lastVisit:dates[dates.length-1]||'',
         visitDates:dates.slice(-40),
@@ -8088,7 +8162,162 @@ function renderStudioSaved(){
 }
 function openStudioSaved(i){ var w=studioGetSaved()[i]; if(w) renderStudioWidget(w.html, w.title); }
 function deleteStudioSaved(i){ var a=studioGetSaved(); a.splice(i,1); studioSetSaved(a); renderStudioSaved(); }
-function renderStudio(){ renderStudioSaved(); }
+function renderStudio(){ renderStudioSaved(); _copilotInit(); }
+
+/* ===================== MLS COPILOT ===================== */
+var _copilotHistory = [];   // {role:'user'|'ai', text, actions, followups}
+var _copilotBusy = false;
+function _ce(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function _copilotAutogrow(el){ if(!el) return; el.style.height='auto'; el.style.height=Math.min(150, el.height||0||el.scrollHeight)+'px'; el.style.height=Math.min(150, el.scrollHeight)+'px'; }
+/* Lean, id-carrying snapshot for the copilot — derived from the rich studio
+   snapshot but trimmed so the payload stays small and fast. */
+function copilotSnapshot(){
+  var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[],appointments:[]}; }
+  var today=new Date(); var todayStr=today.toISOString().slice(0,10);
+  function daysSince(d){ try{ if(!d) return null; var t=new Date(d); if(isNaN(t.getTime())) return null; return Math.max(0, Math.round((today-t)/86400000)); }catch(e){ return null; } }
+  var pts=(snap.patients||[]).map(function(p){
+    return { id:p.id, name:p.name, age:p.age, sex:p.sex, problems:(p.problems||[]).slice(0,6),
+      visitCount:p.visitCount, firstVisit:p.firstVisit, lastVisit:p.lastVisit,
+      daysSinceLastVisit:daysSince(p.lastVisit), lastPain:p.lastPain, avgPain:p.avgPain, maxPain:p.maxPain,
+      painTrend:(function(){ try{ var s=p.painSeries||[]; if(s.length<2) return null; var a=s[s.length-2].pain, b=s[s.length-1].pain; if(a==null||b==null) return null; return b>a?'up':(b<a?'down':'flat'); }catch(e){ return null; } })() };
+  });
+  return { today:todayStr, practice:snap.practice||{}, patientCount:snap.patientCount,
+    totalVisits:snap.totalVisits, avgPainAcrossPractice:snap.avgPainAcrossPractice,
+    visitsByMonth:snap.visitsByMonth, topProblems:snap.topProblems,
+    appointments:(snap.appointments||[]).slice(0,120), patients:pts };
+}
+var COPILOT_STARTERS = [
+  "Who hasn't been seen in 90+ days?",
+  "Which patients have rising pain?",
+  "Summarize my panel",
+  "How busy is my schedule?",
+  "Who are my highest-pain patients?",
+  "Build me a worklist of patients overdue for follow-up"
+];
+function _copilotInit(){
+  if(!_copilotHistory.length) _copilotRenderThread();
+  _copilotRenderChips();
+}
+function copilotReset(){ _copilotHistory=[]; _copilotRenderThread(); _copilotRenderChips(); var i=document.getElementById('copilotInput'); if(i){ i.value=''; i.focus(); } }
+function _copilotRenderChips(){
+  var box=document.getElementById('copilotChips'); if(!box) return;
+  // when a conversation exists, show the latest ai's followups; else show starters
+  var chips=COPILOT_STARTERS;
+  for(var i=_copilotHistory.length-1;i>=0;i--){ if(_copilotHistory[i].role==='ai' && _copilotHistory[i].followups && _copilotHistory[i].followups.length){ chips=_copilotHistory[i].followups; break; } }
+  box.innerHTML=chips.map(function(c){ return '<button class="copilot-chip" onclick="copilotChip(this)">'+_ce(c)+'</button>'; }).join('');
+}
+function copilotChip(btn){ var i=document.getElementById('copilotInput'); if(i){ i.value=btn.textContent; } copilotAsk(); }
+function _copilotRenderThread(){
+  var box=document.getElementById('copilotThread'); if(!box) return;
+  if(!_copilotHistory.length){
+    box.innerHTML='<div class="copilot-empty">👋 Ask me about your patients, your schedule, or have me build you a tool. Tap a suggestion below to start.</div>';
+    return;
+  }
+  box.innerHTML=_copilotHistory.map(function(m){
+    if(m.role==='user') return '<div class="cmsg cmsg-user"><div class="cbubble">'+_ce(m.text)+'</div></div>';
+    if(m.role==='pending') return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai"><span class="cdots"><i></i><i></i><i></i></span></div></div>';
+    var acts=(m.actions&&m.actions.length)? '<div class="cactions">'+m.actions.map(function(a,ix){ return '<button class="cact-btn" onclick="_copilotDoAction('+JSON.stringify(a.kind)+','+JSON.stringify(a.arg)+',this)">'+_ce(a.label)+'</button>'; }).join('')+'</div>' : '';
+    return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai">'+_ce(m.text).replace(/\n/g,'<br>')+acts+'</div></div>';
+  }).join('');
+  box.scrollTop=box.scrollHeight;
+}
+async function copilotAsk(){
+  if(_copilotBusy) return;
+  var inp=document.getElementById('copilotInput'); var q=((inp&&inp.value)||'').trim();
+  if(!q) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ _copilotHistory.push({role:'ai',text:'Sign in to use Copilot — it needs your account to read your practice data.'}); _copilotRenderThread(); return; }
+  if(inp){ inp.value=''; inp.style.height='auto'; }
+  _copilotHistory.push({role:'user',text:q});
+  _copilotHistory.push({role:'pending'});
+  _copilotRenderThread();
+  var box=document.getElementById('copilotChips'); if(box) box.innerHTML='';
+  _copilotBusy=true; var sb=document.getElementById('copilotSendBtn'); if(sb) sb.disabled=true;
+  try{
+    try{ if(typeof loadCalendar==='function' && (typeof _calAppts==='undefined' || !_calAppts || !_calAppts.length)) await loadCalendar(); }catch(e){}
+    var hist=_copilotHistory.filter(function(m){return m.role==='user'||m.role==='ai';}).map(function(m){return {role:m.role==='user'?'user':'ai',text:m.text};});
+    var r=await fetch(bkBase()+'/api/copilot',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({question:q, context:copilotSnapshot(), history:hist.slice(0,-1)})});
+    var d=await r.json().catch(function(){return {};});
+    _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
+    if(r.status===403){ _copilotHistory.push({role:'ai',text:'Copilot is available on clinician accounts.'}); }
+    else if(!r.ok){ _copilotHistory.push({role:'ai',text:(d.error||'Copilot had trouble answering. Try again.')}); }
+    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:d.actions||[],followups:d.followups||[]}); }
+  }catch(e){
+    _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
+    _copilotHistory.push({role:'ai',text:'Network error reaching Copilot. Try again.'});
+  }
+  finally{ _copilotBusy=false; var s=document.getElementById('copilotSendBtn'); if(s) s.disabled=false; _copilotRenderThread(); _copilotRenderChips(); }
+}
+function _copilotDoAction(kind, arg, btn){
+  try{
+    if(btn){ btn.classList.add('cact-done'); }
+    if(kind==='navigate'){ if(typeof showView==='function') showView(String(arg||'patients')); return; }
+    if(kind==='build'){
+      var p=document.getElementById('studioPrompt'); if(p){ p.value=String(arg||''); }
+      if(typeof generateStudioWidget==='function') generateStudioWidget();
+      try{ document.getElementById('studioPrompt').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+      return;
+    }
+    if(kind==='openPatient'||kind==='startVisit'){
+      var id=arg; var list=(typeof getPatients==='function'?getPatients():[])||[];
+      var p2=list.find(function(x){ return String(x.id)===String(id); });
+      if(!p2){ var q=String(arg||'').toLowerCase(); p2=list.find(function(x){ return String(x.name||'').toLowerCase()===q; })||list.find(function(x){ return String(x.name||'').toLowerCase().indexOf(q)>=0; }); }
+      if(p2 && typeof selectPatient==='function'){
+        selectPatient(p2.id);
+        if(kind==='startVisit' && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); }
+        else if(typeof showView==='function'){ showView('patients'); }
+        try{ toast((kind==='startVisit'?'Starting a visit for ':'Opened ')+(p2.name||'patient'),'ok'); }catch(e){}
+      } else { if(typeof showView==='function') showView('patients'); try{ toast('Couldn’t find that patient.',''); }catch(e){} }
+      return;
+    }
+  }catch(e){}
+}
+
+/* ===== Builder: refine the last widget with a follow-up instruction, and a
+   true full-screen view of the generated tool. ===== */
+async function refineStudioWidget(){
+  var ri=document.getElementById('studioRefineInput'); var tweak=((ri&&ri.value)||'').trim();
+  if(!tweak){ studioStatus('Type a tweak first — e.g. “sort by last visit”.','#b4231e'); return; }
+  if(!studioLastHtml){ studioStatus('Build something first, then refine it.','#b4231e'); return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ studioStatus('Sign in to refine widgets.','#b4231e'); return; }
+  var btn=document.getElementById('studioRefineBtn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Refining…'; }
+  studioStatus('Refining your tool…');
+  try{
+    var prompt='Here is an existing HTML widget. Apply this change and return the COMPLETE updated HTML document only:\n\nCHANGE: '+tweak+'\n\nEXISTING WIDGET HTML:\n'+String(studioLastHtml).slice(0,12000);
+    var r=await fetch(bkBase()+'/api/widget/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:prompt})});
+    var d=await r.json().catch(function(){return {};});
+    if(!r.ok||!d.html){ studioStatus(d.error||'Could not refine. Try a different wording.','#b4231e'); return; }
+    renderStudioWidget(d.html, (studioLastPrompt||'Your widget'));
+    if(ri) ri.value='';
+    studioStatus('Updated. Refine again or Save it.','#1c7a43');
+  }catch(e){ studioStatus('Network error while refining.','#b4231e'); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='🔁 Refine'; } }
+}
+function studioFullscreen(){
+  if(!studioLastHtml){ try{ toast('Build a tool first.',''); }catch(e){} return; }
+  var ov=document.getElementById('studioFsOverlay');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='studioFsOverlay';
+    ov.innerHTML='<div id="studioFsBar"><span id="studioFsTitle">Your tool</span><button class="btn-ghost" style="font-size:13px;padding:7px 13px" onclick="closeStudioFullscreen()">✕ Close</button></div><iframe id="studioFsFrame" sandbox="allow-scripts"></iframe>';
+    document.body.appendChild(ov);
+  }
+  document.getElementById('studioFsTitle').textContent=(studioLastPrompt||'Your tool').slice(0,90);
+  // reuse the same injected snapshot+bridge as the inline frame
+  var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[]}; }
+  var json=JSON.stringify(snap).replace(/</g,'\\u003c');
+  var bridge='window.MLS={openPatient:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"openPatient",query:String(q||"")}},"*");}catch(_){}},startVisit:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"startVisit",query:String(q||"")}},"*");}catch(_){}},navigate:function(v){try{parent.postMessage({__mlsWidgetAction:{type:"navigate",view:String(v||"")}},"*");}catch(_){}}};';
+  var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+bridge+'<\/scr'+'ipt>';
+  document.getElementById('studioFsFrame').srcdoc=inject+String(studioLastHtml||'');
+  ov.style.display='flex';
+}
+function closeStudioFullscreen(){ var ov=document.getElementById('studioFsOverlay'); if(ov) ov.style.display='none'; }
+/* Jump straight to the Copilot from anywhere (quick-find, FAB, header). */
+function openCopilot(seed){
+  try{ if(typeof showView==='function') showView('studio'); }catch(e){}
+  setTimeout(function(){
+    var card=document.getElementById('copilotCard'); if(card){ try{ card.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} }
+    var inp=document.getElementById('copilotInput'); if(inp){ if(seed) inp.value=seed; inp.focus(); }
+  }, 60);
+}
 
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
    attach (merge into existing or create new), drop the face photo onto the avatar. ===== */
