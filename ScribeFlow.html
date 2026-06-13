@@ -10575,7 +10575,7 @@ async function generateNote(){
 
   if(!hasAI()){
     if(transcript.trim()===EXAMPLE.trim()){
-      currentSoap=offlineExampleNote();
+      currentSoap=_reorderNoteForStyle(offlineExampleNote(), getGenStyle());
       lastAIDraft=currentSoap; // baseline for "Teach Scrivara"
       currentInsurance=offlineExampleInsuranceNote();
       currentCoding=offlineExampleCoding();
@@ -10605,7 +10605,7 @@ async function generateNote(){
   gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
   try{
     const result=await callOpenAI(transcript,key);
-    currentSoap=result.note;
+    currentSoap=_reorderNoteForStyle(result.note, getGenStyle());
     lastAIDraft=currentSoap; // baseline snapshot for "Teach Scrivara" before edits
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
@@ -11117,6 +11117,29 @@ var GEN_LENGTH_LINE={
   standard:'',
   detailed:'LENGTH: Make the note THOROUGH and DETAILED — fuller sentences and complete ROS/exam/reasoning where the transcript supports it. Never invent findings to add length.'
 };
+/* Deterministic APSO reorder: regardless of how the model orders the sections,
+   physically move Assessment & Plan to the FRONT for the APSO style. Pure
+   reorder of the SAME content — never edits clinical text. Safely returns the
+   original note if it can't confidently find the S/O/A/P sections. */
+function _reorderNoteForStyle(note, style){
+  try{
+    if(!note || style!=='apso') return note;
+    var hdrRe=/^\s{0,6}(?:[-*•]\s*)?(subjective|objective|assessment(?:\s*(?:and|&|\/)\s*plan)?|plan|assessment)\b[^\n]*?:/i;
+    function classify(h){ h=String(h).toLowerCase(); if(/assessment/.test(h)&&/plan/.test(h)) return 'AP'; if(/assessment/.test(h)) return 'A'; if(/\bplan\b/.test(h)) return 'P'; if(/subjective/.test(h)) return 'S'; if(/objective/.test(h)) return 'O'; return 'other'; }
+    var lines=note.split('\n'); var segs=[]; var cur={cls:'pre',lines:[]};
+    lines.forEach(function(ln){ if(hdrRe.test(ln)){ segs.push(cur); cur={cls:classify(ln),lines:[ln]}; } else cur.lines.push(ln); });
+    segs.push(cur);
+    var hasA=segs.some(function(s){return s.cls==='A'||s.cls==='AP';});
+    var hasS=segs.some(function(s){return s.cls==='S';});
+    if(!hasA||!hasS) return note; // not a recognizable SOAP note — leave untouched
+    var pre=segs.filter(function(s){return s.cls==='pre';});
+    var order=['AP','A','P','S','O','other'];
+    var body=[];
+    order.forEach(function(c){ segs.forEach(function(s){ if(s.cls!=='pre' && s.cls===c) body.push(s); }); });
+    var out=pre.concat(body).map(function(s){ return s.lines.join('\n').replace(/\s+$/,''); }).filter(function(x){return x.length;}).join('\n\n');
+    return out.replace(/\n{3,}/g,'\n\n').trim();
+  }catch(e){ return note; }
+}
 function getContext(){ const el=document.getElementById('contextBox'); return el?el.value.trim():''; }
 
 /* Build a background-context block from the ACTIVE patient's saved chart
