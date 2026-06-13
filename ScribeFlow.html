@@ -430,9 +430,18 @@
     display:none;align-items:center;justify-content:center;padding:20px;z-index:9400}
   .modal-bg.show{display:flex}
   .modal{background:#fff;border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.32);max-height:90vh;overflow:auto}
-  /* Settings: keep it scrollable but hide the scrollbar (user preference). */
-  #settingsModal .modal{ scrollbar-width:none; -ms-overflow-style:none; }
+  /* Settings — WIDE layout: section nav pinned to the RIGHT, content on the left,
+     sized so a single section fits with no visible scrollbar (user preference). */
+  #settingsModal .modal{ max-width:1060px; width:96vw; max-height:94vh; padding-right:268px; position:relative; scrollbar-width:none; -ms-overflow-style:none; }
   #settingsModal .modal::-webkit-scrollbar{ width:0;height:0;display:none; }
+  #settingsModal .modal-x{ position:absolute; top:16px; right:18px; z-index:3; }
+  #settingsModal #settingsTabBar{ position:absolute; top:54px; right:18px; width:230px; display:flex; flex-direction:column; gap:5px; align-items:stretch; max-height:calc(94vh - 74px); overflow-y:auto; scrollbar-width:none; padding-left:14px; border-left:1px solid var(--line); }
+  #settingsModal #settingsTabBar::-webkit-scrollbar{ display:none; }
+  #settingsModal #settingsTabBar .set-tab{ text-align:left; width:100%; box-sizing:border-box; }
+  @media (max-width:820px){
+    #settingsModal .modal{ padding-right:24px; max-width:600px; }
+    #settingsModal #settingsTabBar{ position:static; width:auto; flex-direction:row; flex-wrap:wrap; max-height:none; margin-bottom:10px; border-left:none; padding-left:0; }
+  }
   .modal h3{margin:0 0 6px;font-size:20px;font-weight:650;letter-spacing:-.2px;display:flex;align-items:center;gap:9px}
   .modal p.note{font-size:13.5px;color:var(--muted);background:var(--soft);padding:10px 13px;border-radius:9px;margin:6px 0 16px}
   .modal-x{float:right;background:none;color:var(--muted);font-size:22px;padding:0;line-height:1}
@@ -3135,6 +3144,7 @@
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
       <label style="font-size:15px">🌙 Nightly EMR backup (automatic)</label>
       <p class="note" style="margin:2px 0 10px">Once your EMR is connected, MLS can automatically pull <b>every patient</b> (and their visit history) out of your EMR each night and back them up here — running on our server, so your office computer doesn't need to be on. Stored encrypted, same as in-app charts.</p>
+      <div style="background:#eafaf0;border:1px solid #bfe6cf;border-radius:10px;padding:10px 13px;margin:0 0 10px;font-size:13px;color:#1c7a43">🩺 <b>No Athena developer API? You don't need it.</b> MLS Assist (the browser extension) runs this exact nightly backup straight from your signed-in EMR tab — no API access required. Click the MLS Assist toolbar icon → set the <b>Nightly EMR backup</b> time there. (Leave Chrome open and the EMR signed in overnight.) The server-side version below is only for practices that have full Athena API access.</div>
       <div id="emrSyncBox" style="background:#f0f6ff;border:1px solid #d7e6fb;border-radius:10px;padding:12px 14px">
         <div id="emrSyncConn" style="font-size:13px;margin-bottom:10px;color:var(--muted)">Checking EMR connection…</div>
         <label class="row tight" style="gap:8px;align-items:center;font-size:14px;cursor:pointer">
@@ -5002,9 +5012,10 @@ function applyBackendModeUI(){
   const redeem=document.getElementById('redeemField');
   if(redeem) redeem.style.display=on?'block':'none';
   if(keyHint) keyHint.style.display=on?'none':'block';
-  if(intro) intro.textContent=on
-    ? 'AI note generation is provided by your clinic server — no API key needed here. Add your name and specialty below.'
-    : 'Enter your OpenAI API key once to enable AI note generation.';
+  if(intro){
+    if(on){ intro.textContent=''; intro.style.display='none'; }
+    else { intro.textContent='Enter your OpenAI API key once to enable AI note generation.'; intro.style.display=''; }
+  }
 }
 /* MLS additive — build clickable tabs across the top of Settings from the live
    .set-section blocks (robust to sections being added/removed). Reuses each
