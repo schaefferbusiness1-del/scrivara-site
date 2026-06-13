@@ -755,6 +755,29 @@
   body.theme-dark .cbubble-ai{ background:#1c2333;border-color:var(--line); }
   body.theme-dark .cact-btn{ background:var(--card);color:#9db8ff;border-color:#3a4a78; }
   body.theme-dark .copilot-chip{ background:#1b2230; }
+
+  /* Copilot artifact canvas */
+  .c-artifact{ margin:9px 0 2px;border:1px solid var(--line);border-radius:13px;background:var(--card,#fff);box-shadow:0 4px 16px rgba(30,50,90,.07);overflow:hidden; }
+  .c-art-head{ display:flex;align-items:center;gap:8px;padding:10px 13px;background:linear-gradient(135deg,#eef4ff,#f4f0ff);border-bottom:1px solid var(--line);font-size:14px; }
+  .c-art-title{ font-weight:700;color:var(--ink);flex:1; }
+  .c-art-kind{ font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:var(--soft,#eef2f8);border-radius:20px;padding:2px 9px; }
+  .c-art-text{ width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--line);padding:13px;font-size:13.5px;line-height:1.55;font-family:inherit;min-height:140px;resize:vertical;background:var(--field-bg,#fff);color:var(--ink); }
+  .c-art-text:focus{ outline:none;background:var(--card,#fff); }
+  .c-art-tweak{ display:flex;gap:7px;padding:10px 11px;align-items:center;background:var(--soft,#f7f9fc); }
+  .c-art-tweak input{ flex:1;padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:var(--field-bg,#fff);color:var(--ink); }
+  .c-art-tweak input:focus{ outline:none;border-color:var(--brand,#3f7bff); }
+  .cactions{ padding:0 11px 11px; }
+  .c-artifact .cactions{ padding:0 11px 11px; }
+  body.theme-dark .c-art-head{ background:linear-gradient(135deg,#1c2540,#241d3f); }
+  /* Email composer modal */
+  #cMailOv{ display:none;position:fixed;inset:0;z-index:9200;background:rgba(15,23,40,.5);align-items:center;justify-content:center;padding:18px; }
+  #cMailCard{ width:560px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 24px 60px rgba(10,20,40,.35); }
+  .c-mail-head{ font-size:17px;font-weight:800;color:var(--ink);margin-bottom:14px; }
+  .c-mail-lbl{ display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 4px; }
+  .c-mail-in{ width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;background:var(--field-bg,#fff);color:var(--ink); }
+  .c-mail-in:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
+  .c-mail-note{ font-size:12px;color:var(--muted);margin:10px 0 4px; }
+  .c-mail-btns{ display:flex;gap:9px;justify-content:flex-end;margin-top:16px; }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -8087,6 +8110,7 @@ function studioDataSnapshot(){
 function _studioHandleAction(a){
   try{
     if(!a||!a.type) return;
+    if(a.type==='toast'){ try{ toast(String(a.msg||'').slice(0,160),'ok'); }catch(e){} return; }
     if(a.type==='navigate' && a.view){ if(typeof showView==='function') showView(String(a.view)); return; }
     if(a.type==='openPatient' || a.type==='startVisit'){
       var q=String(a.query||'').toLowerCase().trim(); if(!q){ if(typeof showView==='function') showView('patients'); return; }
@@ -8101,6 +8125,58 @@ function _studioHandleAction(a){
       return;
     }
   }catch(e){}
+}
+/* The window.MLS bridge injected into every widget iframe. Beyond navigation it
+   exposes an async RPC layer so a widget can be genuinely powerful: call the AI,
+   send an email (with the user's confirmation), book an appointment, show a
+   toast, and persist its own little data. Returns Promises the widget can await. */
+function _mlsWidgetBridgeJS(){
+  return 'window.MLS=(function(){var _s=0,_w={};window.addEventListener("message",function(ev){var d=ev.data;if(!d||!d.__mlsRes)return;var k=d.__mlsRes.id;if(_w[k]){var x=_w[k];delete _w[k];if(d.__mlsRes.ok)x.res(d.__mlsRes.data);else x.rej(new Error(d.__mlsRes.error||"failed"));}});'
+    +'function rpc(m,a){return new Promise(function(res,rej){var id=(++_s)+"_"+Date.now();_w[id]={res:res,rej:rej};parent.postMessage({__mlsReq:{id:id,method:m,args:a}},"*");setTimeout(function(){if(_w[id]){delete _w[id];rej(new Error("timed out"));}},60000);});}'
+    +'function act(t,o){try{parent.postMessage({__mlsWidgetAction:Object.assign({type:t},o||{})},"*");}catch(_){}}'
+    +'return {data:window.MLS_DATA,'
+    +'openPatient:function(q){act("openPatient",{query:String(q||"")});},'
+    +'startVisit:function(q){act("startVisit",{query:String(q||"")});},'
+    +'navigate:function(v){act("navigate",{view:String(v||"")});},'
+    +'toast:function(m){act("toast",{msg:String(m||"")});},'
+    +'ai:function(prompt,system){return rpc("ai",{prompt:String(prompt||""),system:system?String(system):undefined});},'
+    +'email:function(to,subject,body){return rpc("email",{to:String(to||""),subject:String(subject||""),body:String(body||"")});},'
+    +'createAppointment:function(o){return rpc("createAppointment",o||{});},'
+    +'save:function(k,v){return rpc("save",{key:String(k||""),value:v});},'
+    +'load:function(k){return rpc("load",{key:String(k||"")});}};})();';
+}
+/* Parent-side handler for widget RPC calls. Side-effectful calls (email,
+   appointment) ask the user to confirm before they run. */
+async function _studioHandleRpc(req, source){
+  function reply(ok, data, error){ try{ source && source.postMessage({__mlsRes:{id:req.id, ok:ok, data:data, error:error}}, '*'); }catch(e){} }
+  try{
+    var m=req.method, a=req.args||{};
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ return reply(false,null,'Sign in first.'); }
+    if(m==='ai'){
+      var r=await fetch(bkBase()+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:a.prompt,system:a.system})});
+      var d=await r.json().catch(function(){return {};});
+      if(!r.ok) return reply(false,null,d.error||'AI error'); return reply(true, d.text||'');
+    }
+    if(m==='email'){
+      var to=String(a.to||''), subj=String(a.subject||'(no subject)');
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return reply(false,null,'Invalid recipient.');
+      if(!window.confirm('This widget wants to send an email:\n\nTo: '+to+'\nSubject: '+subj+'\n\nSend it?')) return reply(false,null,'Cancelled.');
+      var r2=await fetch(bkBase()+'/api/copilot/email',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({to:to,subject:subj,body:String(a.body||'')})});
+      var d2=await r2.json().catch(function(){return {};});
+      if(!r2.ok) return reply(false,null,d2.error||'Send failed'); try{ toast('Email sent.','ok'); }catch(e){} return reply(true,{sent:true});
+    }
+    if(m==='createAppointment'){
+      var name=String(a.name||'').trim(); if(!name) return reply(false,null,'Appointment needs a patient name.');
+      if(!window.confirm('Book an appointment for '+name+(a.appt_date?(' on '+a.appt_date):'')+'?')) return reply(false,null,'Cancelled.');
+      var body={name:name, dob:a.dob||'', phone:a.phone||'', email:a.email||'', reason:a.reason||'', appt_date:a.appt_date||'', start_at:a.start_at||'', status:a.status||'booked'};
+      var r3=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(body)});
+      var d3=await r3.json().catch(function(){return {};});
+      if(!r3.ok) return reply(false,null,d3.error||'Could not book'); try{ if(typeof loadCalendar==='function') loadCalendar(); toast('Appointment booked.','ok'); }catch(e){} return reply(true,{id:d3.id});
+    }
+    if(m==='save'){ try{ localStorage.setItem(uns('wdg_'+(a.key||'')), JSON.stringify(a.value)); }catch(e){ return reply(false,null,'Could not save.'); } return reply(true,{saved:true}); }
+    if(m==='load'){ try{ var v=localStorage.getItem(uns('wdg_'+(a.key||''))); return reply(true, v==null?null:JSON.parse(v)); }catch(e){ return reply(true,null); } }
+    return reply(false,null,'Unknown method.');
+  }catch(e){ reply(false,null,'Bridge error.'); }
 }
 async function generateStudioWidget(){
   var prompt=((document.getElementById('studioPrompt')||{}).value||'').trim();
@@ -8126,9 +8202,8 @@ function renderStudioWidget(html, title){
   // instead of silently showing a blank frame.
   // Inject the read-only data snapshot, a connectivity bridge (window.MLS) the
   // widget can use to open patients / start visits / navigate, and an error catcher.
-  var bridge='window.MLS={openPatient:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"openPatient",query:String(q||"")}},"*");}catch(_){}},startVisit:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"startVisit",query:String(q||"")}},"*");}catch(_){}},navigate:function(v){try{parent.postMessage({__mlsWidgetAction:{type:"navigate",view:String(v||"")}},"*");}catch(_){}}};';
-  var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+bridge+'window.onerror=function(m,s,l,c,e){try{parent.postMessage({__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){try{parent.postMessage({__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});<\/scr'+'ipt>';
-  if(!window._studioMsgBound){ window._studioMsgBound=true; window.addEventListener('message', function(ev){ try{ if(!ev||!ev.data) return; if(ev.data.__mlsWidgetError){ var n=document.getElementById('studioErrNote'); if(n){ n.style.display='block'; n.textContent='⚠️ The widget hit an error while running: '+String(ev.data.__mlsWidgetError).slice(0,180)+'. Try a more specific description, or press Build it again.'; } } else if(ev.data.__mlsWidgetAction){ _studioHandleAction(ev.data.__mlsWidgetAction); } }catch(e){} }); }
+  var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS()+'window.onerror=function(m,s,l,c,e){try{parent.postMessage({__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){try{parent.postMessage({__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});<\/scr'+'ipt>';
+  if(!window._studioMsgBound){ window._studioMsgBound=true; window.addEventListener('message', function(ev){ try{ if(!ev||!ev.data) return; if(ev.data.__mlsWidgetError){ var n=document.getElementById('studioErrNote'); if(n){ n.style.display='block'; n.textContent='⚠️ The widget hit an error while running: '+String(ev.data.__mlsWidgetError).slice(0,180)+'. Try a more specific description, or press Build it again.'; } } else if(ev.data.__mlsWidgetAction){ _studioHandleAction(ev.data.__mlsWidgetAction); } else if(ev.data.__mlsReq){ _studioHandleRpc(ev.data.__mlsReq, ev.source); } }catch(e){} }); }
   var note=document.getElementById('studioErrNote'); if(note){ note.style.display='none'; note.textContent=''; }
   var frame=document.getElementById('studioFrame');
   if(frame) frame.srcdoc=inject+String(html||'');
@@ -8213,13 +8288,79 @@ function _copilotRenderThread(){
     box.innerHTML='<div class="copilot-empty">👋 Ask me about your patients, your schedule, or have me build you a tool. Tap a suggestion below to start.</div>';
     return;
   }
-  box.innerHTML=_copilotHistory.map(function(m){
+  box.innerHTML=_copilotHistory.map(function(m,i){
     if(m.role==='user') return '<div class="cmsg cmsg-user"><div class="cbubble">'+_ce(m.text)+'</div></div>';
     if(m.role==='pending') return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai"><span class="cdots"><i></i><i></i><i></i></span></div></div>';
     var acts=(m.actions&&m.actions.length)? '<div class="cactions">'+m.actions.map(function(a,ix){ return '<button class="cact-btn" onclick="_copilotDoAction('+JSON.stringify(a.kind)+','+JSON.stringify(a.arg)+',this)">'+_ce(a.label)+'</button>'; }).join('')+'</div>' : '';
-    return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai">'+_ce(m.text).replace(/\n/g,'<br>')+acts+'</div></div>';
+    return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai">'+_ce(m.text).replace(/\n/g,'<br>')+acts+'</div></div>'+_copilotArtifactHtml(m,i);
   }).join('');
   box.scrollTop=box.scrollHeight;
+}
+/* ===== Copilot ARTIFACT canvas: an editable draft (email/letter/summary/plan)
+   the user can tweak in place — no full regenerate — then copy or send. ===== */
+function _copilotArtIcon(k){ return {email:'📧',letter:'✉️',summary:'📝',plan:'🗂️',note:'🩺',text:'📄'}[k]||'📄'; }
+function _copilotArtifactHtml(m, i){
+  if(!m || !m.artifact || !m.artifact.content) return '';
+  var ar=m.artifact; var isEmail=(ar.kind==='email');
+  var emailBtn = '<button class="cact-btn" onclick="copilotArtifactEmail('+i+')">📧 '+(isEmail?'Send as email':'Email this')+'</button>';
+  return '<div class="c-artifact" id="cArtBox_'+i+'">'
+    +'<div class="c-art-head"><span>'+_copilotArtIcon(ar.kind)+'</span><span class="c-art-title">'+_ce(ar.title||'Draft')+'</span><span class="c-art-kind">'+_ce(ar.kind||'text')+'</span></div>'
+    +'<textarea id="cArt_'+i+'" class="c-art-text" spellcheck="true" oninput="_copilotSyncArtifact('+i+',this.value);_copilotAutogrowArtifact(this)">'+_ce(ar.content)+'</textarea>'
+    +'<div class="c-art-tweak"><input id="cTw_'+i+'" placeholder="Tweak it — “shorter”, “warmer tone”, “add the next-steps line”…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();copilotTweak('+i+');}"><button class="btn-primary" id="cTwBtn_'+i+'" style="font-size:12.5px;padding:8px 13px" onclick="copilotTweak('+i+')">✦ Tweak</button></div>'
+    +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'</div>'
+    +'</div>';
+}
+function _copilotSyncArtifact(i,val){ var m=_copilotHistory[i]; if(m&&m.artifact) m.artifact.content=val; }
+function _copilotAutogrowArtifact(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=Math.min(420, Math.max(120, ta.scrollHeight))+'px'; }
+async function copilotTweak(i){
+  var ta=document.getElementById('cArt_'+i), tw=document.getElementById('cTw_'+i); if(!ta||!tw) return;
+  var instruction=(tw.value||'').trim(); if(!instruction){ try{ toast('Type a change first.',''); }catch(e){} return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in first.','err'); }catch(e){} return; }
+  var cur=ta.value||''; var m=_copilotHistory[i]; var kind=(m&&m.artifact&&m.artifact.kind)||'text';
+  var btn=document.getElementById('cTwBtn_'+i); if(btn){ btn.disabled=true; btn.textContent='…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/copilot/edit',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({artifact:cur,instruction:instruction,kind:kind})});
+    var d=await r.json().catch(function(){return {};});
+    if(!r.ok||!d.text){ try{ toast(d.error||'Could not revise.','err'); }catch(e){} }
+    else { ta.value=d.text; if(m&&m.artifact) m.artifact.content=d.text; tw.value=''; _copilotAutogrowArtifact(ta); try{ toast('Updated.','ok'); }catch(e){} }
+  }catch(e){ try{ toast('Network error.','err'); }catch(e){} }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='✦ Tweak'; } }
+}
+function copilotCopyArtifact(i){ var ta=document.getElementById('cArt_'+i); if(!ta) return; try{ navigator.clipboard.writeText(ta.value||''); toast('Copied.','ok'); }catch(e){ try{ ta.select(); document.execCommand('copy'); toast('Copied.','ok'); }catch(_){} } }
+function copilotArtifactEmail(i){ var m=_copilotHistory[i]; var ta=document.getElementById('cArt_'+i); var body=ta?ta.value:(m&&m.artifact?m.artifact.content:''); var to=(m&&m.artifact&&m.artifact.to)||''; var subj=(m&&m.artifact&&m.artifact.subject)||(m&&m.artifact&&m.artifact.title)||''; _copilotOpenEmail(to,subj,body); }
+/* Email composer modal — review-then-send. Never sends silently. */
+function _copilotOpenEmail(to,subject,body){
+  var ov=document.getElementById('cMailOv');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='cMailOv';
+    ov.innerHTML='<div id="cMailCard"><div class="c-mail-head">📧 Send email</div>'
+      +'<label class="c-mail-lbl">To</label><input id="cMailTo" class="c-mail-in" placeholder="patient@email.com">'
+      +'<label class="c-mail-lbl">Subject</label><input id="cMailSubj" class="c-mail-in">'
+      +'<label class="c-mail-lbl">Message</label><textarea id="cMailBody" class="c-mail-in" style="min-height:200px;resize:vertical"></textarea>'
+      +'<div class="c-mail-note">Sends from your practice address; replies come back to you. Review before sending.</div>'
+      +'<div class="c-mail-btns"><button class="btn-ghost" onclick="_copilotCloseEmail()">Cancel</button><button class="btn-green" id="cMailSend" onclick="copilotSendEmail()">Send email</button></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){ if(e.target===ov) _copilotCloseEmail(); });
+  }
+  document.getElementById('cMailTo').value=to||'';
+  document.getElementById('cMailSubj').value=subject||'';
+  document.getElementById('cMailBody').value=body||'';
+  ov.style.display='flex';
+  setTimeout(function(){ var t=document.getElementById('cMailTo'); if(t&&!t.value) t.focus(); }, 40);
+}
+function _copilotCloseEmail(){ var ov=document.getElementById('cMailOv'); if(ov) ov.style.display='none'; }
+async function copilotSendEmail(){
+  var to=(document.getElementById('cMailTo')||{}).value||''; var subject=(document.getElementById('cMailSubj')||{}).value||''; var body=(document.getElementById('cMailBody')||{}).value||'';
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to.trim())){ try{ toast('Enter a valid recipient email.','err'); }catch(e){} return; }
+  if(!body.trim()){ try{ toast('The message is empty.','err'); }catch(e){} return; }
+  var b=document.getElementById('cMailSend'); if(b){ b.disabled=true; b.textContent='Sending…'; }
+  try{
+    var r=await fetch(bkBase()+'/api/copilot/email',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({to:to.trim(),subject:subject,body:body})});
+    var d=await r.json().catch(function(){return {};});
+    if(!r.ok){ try{ toast(d.error||'Could not send.','err'); }catch(e){} }
+    else { try{ toast('✓ Email sent.','ok'); }catch(e){} _copilotCloseEmail(); }
+  }catch(e){ try{ toast('Network error sending email.','err'); }catch(e){} }
+  finally{ var bb=document.getElementById('cMailSend'); if(bb){ bb.disabled=false; bb.textContent='Send email'; } }
 }
 async function copilotAsk(){
   if(_copilotBusy) return;
@@ -8240,7 +8381,7 @@ async function copilotAsk(){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     if(r.status===403){ _copilotHistory.push({role:'ai',text:'Copilot is available on clinician accounts.'}); }
     else if(!r.ok){ _copilotHistory.push({role:'ai',text:(d.error||'Copilot had trouble answering. Try again.')}); }
-    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:d.actions||[],followups:d.followups||[]}); }
+    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:d.actions||[],followups:d.followups||[],artifact:d.artifact||null}); }
   }catch(e){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     _copilotHistory.push({role:'ai',text:'Network error reaching Copilot. Try again.'});
@@ -8304,8 +8445,7 @@ function studioFullscreen(){
   // reuse the same injected snapshot+bridge as the inline frame
   var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[]}; }
   var json=JSON.stringify(snap).replace(/</g,'\\u003c');
-  var bridge='window.MLS={openPatient:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"openPatient",query:String(q||"")}},"*");}catch(_){}},startVisit:function(q){try{parent.postMessage({__mlsWidgetAction:{type:"startVisit",query:String(q||"")}},"*");}catch(_){}},navigate:function(v){try{parent.postMessage({__mlsWidgetAction:{type:"navigate",view:String(v||"")}},"*");}catch(_){}}};';
-  var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+bridge+'<\/scr'+'ipt>';
+  var inject='<scr'+'ipt>window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS()+'<\/scr'+'ipt>';
   document.getElementById('studioFsFrame').srcdoc=inject+String(studioLastHtml||'');
   ov.style.display='flex';
 }
