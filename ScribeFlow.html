@@ -2512,7 +2512,7 @@
       </div>
       <div id="studioStatus" style="margin-top:8px;font-size:13px;color:var(--muted)"></div>
       <div style="margin-top:16px">
-        <div style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:9px">✨ One-tap starters</div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:9px">✨ Starters tailored to your practice <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted)">— the highlighted ones use your real data</span></div>
         <div id="studioTemplates" class="copilot-chips" style="margin:0"></div>
       </div>
     </div>
@@ -8242,6 +8242,9 @@ function _mlsWidgetBridgeJS(){
     +'getPatient:function(q){return rpc("getPatient",{q:String(q||"")});},'
     +'getSchedule:function(d){return rpc("getSchedule",{date:String(d||"")});},'
     +'aiJSON:function(p){return rpc("aiJSON",{prompt:String(p||"")});},'
+    +'download:function(name,content,mime){return rpc("download",{name:String(name||"export.csv"),content:String(content==null?"":content),mime:String(mime||"text/csv")});},'
+    +'copy:function(t){return rpc("copy",{text:String(t==null?"":t)});},'
+    +'sendToEMR:function(t){return rpc("sendToEMR",{text:String(t==null?"":t)});},'
     +'print:function(){try{window.print();}catch(_){}}, '
     +'save:function(k,v){return rpc("save",{key:String(k||""),value:v});},'
     +'load:function(k){return rpc("load",{key:String(k||"")});}};})();';
@@ -8348,6 +8351,9 @@ async function _studioHandleRpc(req, source){
     if(m==='getPatient'){ var q=String(a.q||'').toLowerCase().trim(); var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[]}; } var ps=snap.patients||[]; var p=ps.find(function(x){return String(x.id).toLowerCase()===q;})||ps.find(function(x){return String(x.name||'').toLowerCase()===q;})||ps.find(function(x){return String(x.name||'').toLowerCase().indexOf(q)>=0;}); return reply(true, p||null); }
     if(m==='getSchedule'){ var snap2; try{ snap2=studioDataSnapshot(); }catch(e){ snap2={appointments:[]}; } var ds=String(a.date||'').slice(0,10); var ap=(snap2.appointments||[]); if(ds) ap=ap.filter(function(x){ return String(x.date||'').slice(0,10)===ds; }); return reply(true, ap); }
     if(m==='aiJSON'){ var rj=await fetch(bkBase()+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:a.prompt,system:'You output ONLY valid minified JSON — no prose, no markdown, no code fences.'})}); var dj=await rj.json().catch(function(){return {};}); if(!rj.ok) return reply(false,null,dj.error||'AI error'); var tj=String(dj.text||'').replace(/^```[a-z]*\s*/i,'').replace(/```\s*$/i,'').trim(); var obj=null; try{ obj=JSON.parse(tj); }catch(e){ var mm=tj.match(/[\{\[][\s\S]*[\}\]]/); if(mm){ try{ obj=JSON.parse(mm[0]); }catch(_){} } } return reply(true, obj); }
+    if(m==='download'){ try{ var blob=new Blob([String(a.content||'')],{type:String(a.mime||'text/plain')}); var url=URL.createObjectURL(blob); var aEl=document.createElement('a'); aEl.href=url; aEl.download=String(a.name||'export.csv').replace(/[\/\\<>:"|?*]/g,'_').slice(0,120); document.body.appendChild(aEl); aEl.click(); setTimeout(function(){ try{ URL.revokeObjectURL(url); aEl.remove(); }catch(e){} },200); try{ toast('Downloaded '+aEl.download,'ok'); }catch(e){} return reply(true,{downloaded:true}); }catch(e){ return reply(false,null,'Download failed.'); } }
+    if(m==='copy'){ try{ navigator.clipboard.writeText(String(a.text||'')); }catch(e){ try{ var ta=document.createElement('textarea'); ta.value=String(a.text||''); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }catch(_){} } try{ toast('Copied to clipboard.','ok'); }catch(e){} return reply(true,{copied:true}); }
+    if(m==='sendToEMR'){ var txt=String(a.text||''); if(!txt.trim()) return reply(false,null,'Nothing to send.'); try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(null,{silent:false,text:txt}); return reply(true,{sent:true}); } }catch(e){} return reply(false,null,'MLS Assist isn’t available to send to your EMR.'); }
     return reply(false,null,'Unknown method.');
   }catch(e){ reply(false,null,'Bridge error.'); }
 }
@@ -8425,11 +8431,50 @@ var STUDIO_TEMPLATES=[
   ['📊 Top diagnoses','A horizontal bar chart of my most common problems/diagnoses across the panel, with counts.'],
   ['✉️ Reminder drafter','Pick a patient from a dropdown, then a button that uses MLS.ai to draft a friendly appointment-reminder email and MLS.email to send it after I confirm.']
 ];
+/* Pull a few real facts from the practice snapshot so suggestions reference YOUR data. */
+function _practiceFacts(){
+  var f={ panel:0, topDx:'', topDxN:0, overdue:0, mostOverdue:'', mostOverdueDays:0, highPainName:'', highPain:null, rising:0 };
+  try{
+    var snap=copilotSnapshot();
+    f.panel=snap.patientCount||((snap.patients||[]).length)||0;
+    if(snap.topProblems && snap.topProblems[0] && snap.topProblems[0].problem){ f.topDx=snap.topProblems[0].problem; f.topDxN=snap.topProblems[0].count||0; }
+    (snap.patients||[]).forEach(function(p){
+      if(p.daysSinceLastVisit!=null && p.daysSinceLastVisit>=90){ f.overdue++; if(p.daysSinceLastVisit>f.mostOverdueDays){ f.mostOverdueDays=p.daysSinceLastVisit; f.mostOverdue=p.name||''; } }
+      if(p.lastPain!=null && (f.highPain==null || p.lastPain>f.highPain)){ f.highPain=p.lastPain; f.highPainName=p.name||''; }
+      if(p.painTrend==='up') f.rising++;
+    });
+  }catch(e){}
+  return f;
+}
+function _cap(s){ s=String(s||''); return s.charAt(0).toUpperCase()+s.slice(1); }
+function _first(n){ return String(n||'').split(' ')[0]; }
+/* Suggestions built from the real practice — shown ahead of the evergreen ones. */
+function personalizedStudioTemplates(){
+  var f=_practiceFacts(); var out=[];
+  if(f.overdue>0) out.push(['📋 '+f.overdue+' overdue patient'+(f.overdue>1?'s':''),'A worklist of my '+f.overdue+' patients not seen in 90+ days, sorted by how overdue, each row with Open chart + Start visit + a "draft follow-up email" button using MLS.ai, and a "Download CSV" button using MLS.download.']);
+  if(f.topDx) out.push(['🩺 '+_cap(f.topDx)+' cohort','A board of my patients whose problems include "'+f.topDx+'", showing each one\'s latest pain score and last visit, sorted by pain, with a Start visit button on each row.']);
+  if(f.highPainName) out.push(['📈 Highest-pain watchlist','A watchlist of my patients sorted by latest pain (highest first) with a small inline-SVG sparkline of each one\'s pain trend and a Start visit button. Flag '+_first(f.highPainName)+' and anyone trending up.']);
+  if(f.panel) out.push(['🎙️ Start-a-visit board ('+f.panel+')','A clean grid of my '+f.panel+' patients, each a card with name + last visit and a big Start visit button (MLS.startVisit) plus Open chart, with a search box to filter.']);
+  return out;
+}
+function personalizedCopilotStarters(){
+  var f=_practiceFacts(); var out=[];
+  if(f.overdue>0) out.push('Who are my '+f.overdue+' patients overdue for follow-up?');
+  if(f.mostOverdue) out.push('Why hasn’t '+_first(f.mostOverdue)+' been back in '+f.mostOverdueDays+' days?');
+  if(f.rising>0) out.push('Which patients have rising pain?');
+  if(f.topDx) out.push('Which of my patients have '+f.topDx+'?');
+  if(f.panel) out.push('Summarize my '+f.panel+'-patient panel');
+  if(f.highPainName) out.push('Who has the highest pain right now?');
+  return out.length?out:COPILOT_STARTERS.slice();
+}
+var _studioTplActive=STUDIO_TEMPLATES.slice();
 function renderStudioTemplates(){
   var box=document.getElementById('studioTemplates'); if(!box) return;
-  box.innerHTML=STUDIO_TEMPLATES.map(function(t,i){ return '<button class="copilot-chip" onclick="studioTemplate('+i+')">'+_ce(t[0])+'</button>'; }).join('');
+  var pers=[]; try{ pers=personalizedStudioTemplates(); }catch(e){}
+  _studioTplActive=pers.concat(STUDIO_TEMPLATES);
+  box.innerHTML=_studioTplActive.map(function(t,i){ var isP=(i<pers.length); return '<button class="copilot-chip'+(isP?' copilot-chip-ctx':'')+'" onclick="studioTemplate('+i+')">'+_ce(t[0])+'</button>'; }).join('');
 }
-function studioTemplate(i){ var t=STUDIO_TEMPLATES[i]; if(!t) return; var p=document.getElementById('studioPrompt'); if(p){ p.value=t[1]; } try{ generateStudioWidget(); }catch(e){} }
+function studioTemplate(i){ var t=_studioTplActive[i]||STUDIO_TEMPLATES[i]; if(!t) return; var p=document.getElementById('studioPrompt'); if(p){ p.value=t[1]; } try{ generateStudioWidget(); }catch(e){} }
 function renderStudio(){ renderStudioSaved(); renderStudioTemplates(); _copilotInit(); }
 
 /* ===================== MLS COPILOT ===================== */
@@ -8508,8 +8553,8 @@ function copilotMic(){
 }
 function _copilotRenderChips(){
   var box=document.getElementById('copilotChips'); if(!box) return;
-  // when a conversation exists, show the latest ai's followups; else show starters
-  var chips=COPILOT_STARTERS.slice();
+  // when a conversation exists, show the latest ai's followups; else personalized starters from your data
+  var chips; try{ chips=personalizedCopilotStarters(); }catch(e){ chips=COPILOT_STARTERS.slice(); }
   for(var i=_copilotHistory.length-1;i>=0;i--){ if(_copilotHistory[i].role==='ai' && _copilotHistory[i].followups && _copilotHistory[i].followups.length){ chips=_copilotHistory[i].followups.slice(); break; } }
   var html='';
   // Context chip for the patient currently open — feels like the Copilot knows where you are.
@@ -11985,8 +12030,9 @@ function copyForEMR(){
    to drop the text into the patient open in the EMR tab. ===== */
 function sendToEMRviaAssist(btn, opts){
   opts=opts||{};
-  if(!currentSoap){ if(!opts.silent) toast('Generate a note first.','err'); return; }
-  var emr=''; try{ emr=emrReadyText(); }catch(e){}
+  var emr='';
+  if(opts.text){ emr=String(opts.text); }            // a widget (or caller) can send arbitrary text
+  else { if(!currentSoap){ if(!opts.silent) toast('Generate a note first.','err'); return; } try{ emr=emrReadyText(); }catch(e){} }
   if(!emr.trim()){ if(!opts.silent) toast('Nothing to send yet.','err'); return; }
   var orig = btn?btn.innerHTML:'';
   if(btn){ btn.disabled=true; btn.innerHTML='… connecting'; }
