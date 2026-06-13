@@ -1913,8 +1913,10 @@
         <button class="btn-green" onclick="sendToEMRviaAssist(this)" id="sendEmrBtn" title="MLS Assist drops this note + diagnosis & CPT codes straight into the patient open in your EMR — no copy/paste">📤 Send to EMR (Assist)</button>
         <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
         <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
+        <button class="btn-ghost" onclick="gradeVisitExperience(this)" id="gradeExpBtn" title="AI rates how good the patient's experience was during this visit (bedside manner / communication), from the transcript — a coaching score that rolls into your Analysis">🌟 Grade experience</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
+      <div id="visitGradeBox" style="display:none;margin-top:12px;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:12px;padding:13px 15px"></div>
       <!-- Contextual "what's next" — appears after a note is saved/signed -->
       <div id="nextActionsBar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;background:#eefaf3;border:1px solid #cdeed9;border-radius:10px;padding:9px 12px"></div>
 
@@ -2452,6 +2454,15 @@
         <div class="xbody" id="analysisBody" style="white-space:normal"></div>
         <div class="code-disclaim">⚠️ Performance analysis based on available activity data — for supervisory/quality use; not a substitute for formal peer review.</div>
       </div>
+    </div>
+
+    <!-- 🌟 TEAM PATIENT-EXPERIENCE — head doctor sees each doctor's AI grade per visit -->
+    <div class="card" id="anaTeamGrades" style="display:none">
+      <h2><span class="ic">🌟</span> Team patient-experience ratings
+        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="renderTeamGrades(true)">🔄 Refresh</button>
+      </h2>
+      <p class="sub">How your doctors are doing with patients — an AI grade (1–5) of the patient experience on each visit, from the visit conversation. Averages and the most recent visits per doctor. No patient data — dates and scores only.</p>
+      <div id="anaTeamGradesBody"><div class="mini" style="color:var(--muted)">Loading…</div></div>
     </div>
 
     <!-- 🤝 REFERRAL OUTCOMES — close-the-loop reports for referring physicians (PREMIUM) -->
@@ -7315,6 +7326,7 @@ function showView(v){
   if(v==='team') loadTeamPatients();
   if(v==='analysis'){
     try{ renderAnaKeyTrends(); }catch(e){}        // 📌 instant key-trends headline (no AI)
+    try{ renderTeamGrades(); }catch(e){}          // 🌟 head-doctor: team patient-experience ratings
     applyPremiumUI();                             // 🔒 wall/unlock the premium Data Study box
     loadAnalysisBaseline();                       // 📈 baseline metrics (any clinician + owner)
     try{ loadOutcomesMarketing(); }catch(e){}     // 📣 outcomes → marketing
@@ -8519,6 +8531,33 @@ function renderAnaKeyTrends(){
   box.innerHTML=html;
 }
 /* Suggestions built from the real practice — shown ahead of the evergreen ones. */
+/* HEAD DOCTOR: each doctor's AI patient-experience grade (1–5) per visit. Hidden
+   for non-heads (the endpoint returns head:false). No PHI — names, dates, scores. */
+async function renderTeamGrades(force){
+  var card=document.getElementById('anaTeamGrades'), box=document.getElementById('anaTeamGradesBody'); if(!card||!box) return;
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ card.style.display='none'; return; }
+  if(force) box.innerHTML='<div class="mini" style="color:var(--muted)">Loading…</div>';
+  try{
+    var r=await fetch(bkBase()+'/api/grades/team',{headers:{Authorization:'Bearer '+bkToken()}});
+    var d=await r.json().catch(function(){return {};});
+    if(!d || !d.head){ card.style.display='none'; return; }
+    card.style.display='block';
+    var docs=d.doctors||[];
+    if(!docs.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">No graded visits yet. As your team grades visits (Visit tab → 🌟 Grade experience), each doctor’s ratings appear here.</div>'; return; }
+    box.innerHTML=docs.map(function(doc){
+      var avg=doc.avg; var col=avg>=4?'#0f8a63':(avg>=3?'#c47d09':'#d24447');
+      var rounded=Math.round(avg||0); var stars=''; for(var i=1;i<=5;i++){ stars+=(i<=rounded?'★':'☆'); }
+      var recent=(doc.recent||[]).map(function(v){ var c=v.score>=4?'#0f8a63':(v.score>=3?'#c47d09':'#d24447'); return '<span title="'+_ce(String(v.date||''))+'" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:'+c+';color:#fff;font-weight:700;font-size:12.5px">'+v.score+'</span>'; }).join('');
+      return '<div style="border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-top:10px;background:var(--soft2,#f5f8fc)">'
+        +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-weight:700;font-size:15px;flex:1;min-width:140px">'+_ce(doc.name||'Doctor')+'</span>'
+        +'<span style="font-size:18px;color:'+col+';letter-spacing:1px">'+stars+'</span>'
+        +'<span style="font-weight:700;color:'+col+'">'+(avg!=null?avg+'/5':'—')+'</span>'
+        +'<span class="mini" style="color:var(--muted)">'+doc.count+' graded visit'+(doc.count===1?'':'s')+'</span></div>'
+        +(recent?('<div style="margin-top:9px;display:flex;gap:5px;flex-wrap:wrap;align-items:center"><span class="mini" style="color:var(--muted);margin-right:4px">recent →</span>'+recent+'</div>'):'')
+        +'</div>';
+    }).join('');
+  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load team ratings.</div>'; }
+}
 function personalizedStudioTemplates(){
   var f=_practiceFacts(); var out=[];
   if(f.overdue>0) out.push(['📋 '+f.overdue+' overdue patient'+(f.overdue>1?'s':''),'A worklist of my '+f.overdue+' patients not seen in 90+ days, sorted by how overdue, each row with Open chart + Start visit + a "draft follow-up email" button using MLS.ai, and a "Download CSV" button using MLS.download.']);
@@ -13299,6 +13338,45 @@ function downloadOutcomesCsv(){
   toast('Registry CSV downloaded.','ok');
 }
 
+/* ===== PATIENT-EXPERIENCE GRADE — AI rates how good the visit was for the
+   patient (bedside manner / communication), 1–5, from the transcript. Stored as
+   the visit's satisfaction so it rolls into Analysis (and the head-doctor view). ===== */
+async function gradeVisitExperience(btn){
+  var ta=document.getElementById('transcript'); var tx=((ta&&ta.value)||'').trim();
+  if(tx.length<40){ try{ toast('Capture the visit conversation first, then grade.','err'); }catch(e){} return; }
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to grade visits.','err'); }catch(e){} return; }
+  if(btn){ btn.disabled=true; btn.dataset._t=btn.innerHTML; btn.innerHTML='… grading'; }
+  try{
+    var r=await fetch(bkBase()+'/api/visit/grade',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({transcript:tx.slice(0,24000)})});
+    var d=await r.json().catch(function(){return {};});
+    if(!r.ok){ try{ toast(d.error||'Could not grade this visit.','err'); }catch(e){} return; }
+    _renderVisitGrade(d);
+    if(d.score!=null){
+      var ap=(typeof activePatient==='function')?activePatient():null;
+      if(ap){
+        var arr=getOutcomes(ap.id); var key=currentNoteId||lastOutcomeEntryId;
+        var i=key?arr.findIndex(function(x){return x.id===key||(x.noteId&&x.noteId===currentNoteId);}):-1;
+        if(i>=0){ arr[i].satisfaction=d.score; }
+        else { var rec={id:'o'+Date.now(),noteId:currentNoteId||'',satisfaction:d.score,date:Date.now()}; arr.push(rec); lastOutcomeEntryId=rec.id; }
+        saveOutcomesArr(ap.id,arr); try{ renderOutcomes(); }catch(e){}
+      }
+      try{ currentOutcome=currentOutcome||{}; currentOutcome.satisfaction=d.score; }catch(e){}
+      try{ toast('Patient-experience grade: '+d.score+'/5 — saved with this visit.','ok'); }catch(e){}
+    }
+  }catch(e){ try{ toast('Network error while grading.','err'); }catch(e){} }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'🌟 Grade experience'; } }
+}
+function _renderVisitGrade(d){
+  var box=document.getElementById('visitGradeBox'); if(!box) return; box.style.display='block';
+  if(d.score==null){ box.innerHTML='<div class="mini" style="color:var(--muted)">There wasn’t enough conversation in the transcript to fairly grade the patient experience.</div>'; return; }
+  var stars=''; for(var i=1;i<=5;i++){ stars+=(i<=d.score?'★':'☆'); }
+  var col=d.score>=4?'#0f8a63':(d.score>=3?'#c47d09':'#d24447');
+  var html='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:22px;color:'+col+';letter-spacing:2px">'+stars+'</span><span style="font-weight:700;font-size:16px;color:'+col+'">'+d.score+'/5</span><span style="color:var(--muted)">'+_ce(d.summary||'')+'</span></div>';
+  function lst(t,a,c){ if(!a||!a.length) return ''; return '<div style="margin-top:8px"><div style="font-size:12px;font-weight:700;color:'+c+'">'+t+'</div><ul style="margin:4px 0 0 18px;padding:0;font-size:13.5px">'+a.map(function(x){return '<li>'+_ce(x)+'</li>';}).join('')+'</ul></div>'; }
+  html+=lst('What went well',d.strengths,'#0f8a63')+lst('To improve',d.improve,'#c47d09');
+  html+='<div class="mini" style="color:var(--muted);margin-top:8px">AI estimate of the patient’s experience from the conversation — a coaching aid, not a formal evaluation. Saved with this visit and rolled into your Analysis tab.</div>';
+  box.innerHTML=html;
+}
 function saveOutcome(){
   const painRaw=document.getElementById('outPain').value;
   const funcRaw=(document.getElementById('outFunc').value||'').trim();
