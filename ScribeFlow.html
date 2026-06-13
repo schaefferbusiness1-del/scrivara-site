@@ -796,6 +796,21 @@
   #copilotDockBody #copilotCard{ box-shadow:none;border:0;padding:0;margin:0;background:transparent; }
   #copilotDockBody #copilotThread{ max-height:none; }
   @media(max-width:560px){ #copilotDock{ width:100vw;max-width:100vw; } }
+  /* Note-generation options */
+  #genOptionsBar{ display:flex;flex-direction:column;gap:9px;margin:14px 0 10px;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--soft,#f6f9fc); }
+  .genopt-row{ display:flex;align-items:center;gap:10px;flex-wrap:wrap; }
+  .genopt-lbl{ font-size:11.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);min-width:46px; }
+  .genseg{ display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--card,#fff);flex-wrap:wrap; }
+  .genseg button{ border:0;background:transparent;color:var(--ink);font-size:12.5px;font-weight:600;padding:7px 12px;cursor:pointer;border-right:1px solid var(--line);transition:.12s; }
+  .genseg button:last-child{ border-right:0; }
+  .genseg button:hover{ background:var(--soft,#eef3f9); }
+  .genseg button.on{ background:var(--brand,#3f7bff);color:#fff; }
+  .genopt-extra{ border:1px solid var(--line);background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:9px;cursor:pointer; }
+  .genopt-extra.on,.genopt-extra:hover{ border-color:var(--brand,#3f7bff);color:var(--brand,#2a5fd0); }
+  .genopt-chk{ display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink);cursor:pointer; }
+  #genInstr{ width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:var(--field-bg,#fff);color:var(--ink); }
+  #genInstr:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
+  body.theme-dark #genOptionsBar{ background:#161d2b; }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -1442,6 +1457,30 @@
       </div>
       <textarea id="transcript" class="transcript" placeholder="The conversation will show up here as you speak. No microphone? Type or paste the visit conversation here."></textarea>
 
+      <!-- ===== NOTE GENERATION OPTIONS ===== -->
+      <div id="genOptionsBar">
+        <div class="genopt-row">
+          <span class="genopt-lbl">Style</span>
+          <div class="genseg" id="genStyleSeg">
+            <button type="button" data-v="soap" class="on" onclick="setGenStyle('soap')" title="Classic Subjective/Objective/Assessment/Plan">SOAP</button>
+            <button type="button" data-v="apso" onclick="setGenStyle('apso')" title="Assessment &amp; Plan first">APSO</button>
+            <button type="button" data-v="narrative" onclick="setGenStyle('narrative')" title="Flowing prose">Narrative</button>
+            <button type="button" data-v="problem" onclick="setGenStyle('problem')" title="Assessment &amp; Plan organized by problem">Problem-based</button>
+            <button type="button" data-v="hp" onclick="setGenStyle('hp')" title="Comprehensive History &amp; Physical">H&amp;P</button>
+          </div>
+        </div>
+        <div class="genopt-row">
+          <span class="genopt-lbl">Length</span>
+          <div class="genseg" id="genLenSeg">
+            <button type="button" data-v="concise" onclick="setGenLength('concise')">Concise</button>
+            <button type="button" data-v="standard" class="on" onclick="setGenLength('standard')">Standard</button>
+            <button type="button" data-v="detailed" onclick="setGenLength('detailed')">Detailed</button>
+          </div>
+          <button type="button" class="genopt-extra" id="genFocusToggle" onclick="toggleGenFocus()" title="Add a one-off instruction for this note">＋ Focus</button>
+          <label class="genopt-chk" title="Also write a plain-language summary the patient can read"><input type="checkbox" id="genPatientSummary"> Patient summary</label>
+        </div>
+        <input id="genInstr" placeholder="Focus this note — e.g. “emphasize the injection plan”, “add return-to-work status”, “warmer tone”…" style="display:none">
+      </div>
       <div class="row tight">
         <button class="btn-ghost" onclick="clearTranscript()">Clear</button>
         <button id="draftBtn" class="btn-ghost" onclick="saveDraft()">Save draft</button>
@@ -7195,7 +7234,7 @@ function showView(v){
     // hosted: refresh from the server so history survives devices; re-renders on change
     if(backendMode()&&bkToken()){ try{ loadRecordsFromServer(); }catch(e){} }
   }
-  if(v==='visit') renderOutcomes();
+  if(v==='visit'){ renderOutcomes(); try{ if(typeof initGenOptions==='function') initGenOptions(); }catch(e){} }
   if(v==='orders') renderOrdersView();
   if(v==='recs') renderRecommendations();
   if(v==='admin'){ loadAdminUsers(); loadAdminCodes(); loadAdminBackups(); loadAdminAudit(); loadAdminAgreements(); }
@@ -10582,7 +10621,9 @@ async function generateNote(){
     populateEMR(result.emr,currentCoding);
     // AUTO-POPULATE the new AI extras (red flags, differentials, MME, orders, recommendations).
     autoPopulateExtras(result);
-    toast('Note generated. Optimize coding or sign when ready.','ok');
+    // If a patient-friendly summary was requested, drop it into the handout / after-visit summary.
+    try{ if(result.patient_summary){ currentHandout=result.patient_summary; var hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; } var hc=document.getElementById('handoutCard'); if(hc){ hc.style.display='block'; } } }catch(e){}
+    toast(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.','ok');
     // OPTIONAL: if templates are enabled, reformat the note to the chosen
     // template. This is a guarded no-op when the toggle is OFF (default).
     try{ await maybeApplyTemplate(transcript); }catch(e){}
@@ -11053,6 +11094,29 @@ const STANDARDS=`CLINICAL FORMAT & CODING STANDARDS (follow precisely):
 /* Read the chosen specialty preset, note style, and pasted context. */
 function getPreset(){ const el=document.getElementById('specialtyPreset'); return el?el.value:''; }
 function getNoteStyle(){ const el=document.getElementById('noteStyle'); return el?el.value:'SOAP'; }
+/* ===== NOTE GENERATION OPTIONS — per-visit style / length / focus that feed the
+   main Generate Note call. Style & length persist; focus is per-visit. ===== */
+function getGenStyle(){ var v=localStorage.getItem(uns('genStyle')); if(v) return v; var ns=(getNoteStyle()||'SOAP').toLowerCase(); return ns==='apso'?'apso':(ns==='narrative'?'narrative':'soap'); }
+function getGenLength(){ return localStorage.getItem(uns('genLength'))||'standard'; }
+function getGenInstr(){ var el=document.getElementById('genInstr'); return el?el.value.trim():''; }
+function getGenPatientSummary(){ var el=document.getElementById('genPatientSummary'); return !!(el&&el.checked); }
+function _genSegSet(segId, v){ var seg=document.getElementById(segId); if(!seg) return; var btns=seg.querySelectorAll('button'); for(var i=0;i<btns.length;i++){ btns[i].classList.toggle('on', btns[i].getAttribute('data-v')===v); } }
+function setGenStyle(v){ try{ localStorage.setItem(uns('genStyle'), v); }catch(e){} _genSegSet('genStyleSeg', v); }
+function setGenLength(v){ try{ localStorage.setItem(uns('genLength'), v); }catch(e){} _genSegSet('genLenSeg', v); }
+function toggleGenFocus(){ var el=document.getElementById('genInstr'); var b=document.getElementById('genFocusToggle'); if(!el) return; var show=el.style.display==='none'; el.style.display=show?'block':'none'; if(b) b.classList.toggle('on',show); if(show) el.focus(); }
+function initGenOptions(){ _genSegSet('genStyleSeg', getGenStyle()); _genSegSet('genLenSeg', getGenLength()); }
+var GEN_STYLE_LINE={
+  soap:'FORMAT THE NOTE AS STANDARD SOAP with the section headers below.',
+  apso:'FORMAT THE NOTE AS APSO: put ASSESSMENT and PLAN FIRST, then SUBJECTIVE and OBJECTIVE (same content, reordered) — clinicians scan A/P first.',
+  narrative:'FORMAT THE NOTE AS A NARRATIVE paragraph-style clinical note (flowing prose with brief headers), not rigid SOAP bullets, while still covering subjective, objective, assessment and plan.',
+  problem:'FORMAT THE NOTE AS A PROBLEM-ORIENTED note: organize the ASSESSMENT & PLAN BY PROBLEM (each problem numbered with its own brief assessment and plan), after a short combined subjective/objective section.',
+  hp:'FORMAT THE NOTE AS A COMPREHENSIVE H&P: Chief Complaint, full HPI, pertinent ROS, PMH/PSH/FH/SH, medications, allergies, a detailed physical exam, then Assessment and Plan — a thorough history-and-physical structure (document only what the transcript supports; write "not documented" where data is missing).'
+};
+var GEN_LENGTH_LINE={
+  concise:'LENGTH: Keep the note CONCISE and high-yield — short clinical phrases, no filler, only clinically necessary detail.',
+  standard:'',
+  detailed:'LENGTH: Make the note THOROUGH and DETAILED — fuller sentences and complete ROS/exam/reasoning where the transcript supports it. Never invent findings to add length.'
+};
 function getContext(){ const el=document.getElementById('contextBox'); return el?el.value.trim():''; }
 
 /* Build a background-context block from the ACTIVE patient's saved chart
@@ -11080,20 +11144,23 @@ function buildPatientContext(){
 async function callOpenAI(transcript,key){
   const preset=getPreset();
   const spec=preset||getSpec();
-  const style=getNoteStyle();
   const ctx=buildPatientContext();
   const specLine=spec?`The clinician's specialty / note template is ${spec}; tailor terminology, relevant ROS/exam, and plan to that specialty.`:'';
-  const styleLine = style==='APSO'
-    ? 'FORMAT THE NOTE AS APSO: put ASSESSMENT and PLAN FIRST, then SUBJECTIVE and OBJECTIVE (same content, reordered) — clinicians scan A/P first.'
-    : style==='Narrative'
-    ? 'FORMAT THE NOTE AS A NARRATIVE paragraph-style clinical note (flowing prose with brief headers), not rigid SOAP bullets, while still covering subjective, objective, assessment and plan.'
-    : 'FORMAT THE NOTE AS STANDARD SOAP with the section headers below.';
+  // Per-visit generation options (Style / Length / Focus / Patient summary).
+  const genStyle=(typeof getGenStyle==='function'?getGenStyle():'soap');
+  const genLen=(typeof getGenLength==='function'?getGenLength():'standard');
+  const genInstr=(typeof getGenInstr==='function'?getGenInstr():'');
+  const wantPtSummary=(typeof getGenPatientSummary==='function'?getGenPatientSummary():false);
+  const styleLine = (GEN_STYLE_LINE[genStyle]||GEN_STYLE_LINE.soap);
+  const lengthLine = (GEN_LENGTH_LINE[genLen]||'');
+  const instrLine = genInstr ? `\n\nADDITIONAL INSTRUCTION FOR THIS NOTE (honor it, but never invent clinical facts to satisfy it): ${genInstr}` : '';
+  const ptSummaryLine = wantPtSummary ? '\n\nALSO include a "patient_summary" field: a warm, plain-language summary (about 4-7 short sentences, ~6th-grade reading level, no jargon) the patient can read — what was found, what the plan is, and what to do next.' : '';
   const ctxLine = ctx?`\n\nACTIVE PATIENT CHART / BACKGROUND (the patient's saved problem list, current medications, allergies, and prior-visit history). Use this as BACKGROUND so the note correctly reflects known problems, home meds, and allergies in the PMH, problem list, medication reconciliation, and plan. CRITICAL: this is history, NOT today's encounter — do NOT invent exam findings, vitals, ROS, or new diagnoses from it. Document NEW findings/assessment/plan ONLY from what is actually said in today's transcript:\n"""${ctx}"""`:'';
   const sys=`You are an expert clinical documentation and medical-coding assistant for physicians. Convert the raw doctor-patient visit transcript into a clean, professional medical note AND suggest accurate billing codes. ${specLine}
 
 TRANSCRIPT FORMAT — IMPORTANT: The transcript is a NATURAL conversation, usually from live ambient microphone transcription. It typically has NO speaker labels — no "Doctor:" or "Patient:" prefixes — and may be one continuous run of unpunctuated or loosely punctuated speech where the clinician's questions and the patient's answers are interleaved. INFER from context who is speaking (clinician = asks history questions, states exam findings/vitals, gives the assessment and plan; patient = describes symptoms, history, and answers). Do NOT require or expect speaker labels. If labels happen to be present, use them; if not, work entirely from context. Produce the same high-quality note either way.
 
-NOTE STYLE: ${styleLine}
+NOTE STYLE: ${styleLine}${lengthLine?('\n'+lengthLine):''}
 
 CRITICAL CODING ETHICS — read carefully:
 - Document and code ONLY what is actually supported by the transcript. NEVER invent symptoms, exam findings, history, time spent, or complexity to raise the E/M level or the bill. This is about accurately capturing what really happened, not upcoding.
@@ -11128,7 +11195,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
  "consent_points": {"benefits":["<expected benefit to discuss in informed consent>"],"risks":["<material risk to disclose, e.g. 'infection', 'nerve injury', 'dural tear'>"],"alternatives":["<reasonable alternative, e.g. 'continued conservative care', 'injection'>"]}
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
-For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.`+docPrefsBlock();
+For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
   return await postChat(sys,'Visit transcript:\n\n'+transcript+ctxLine,key);
 }
 
@@ -11253,6 +11320,7 @@ function parseGenJSON(content){
   return {
     note:parsed.note||content,
     insuranceNote:parsed.insurance_note||'',
+    patient_summary:(typeof parsed.patient_summary==='string'?parsed.patient_summary:''),
     coding:{
       em:parsed.em_level||'',
       emJust:parsed.em_justification||'',
