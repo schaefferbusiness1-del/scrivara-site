@@ -811,6 +811,11 @@
   #genInstr{ width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:var(--field-bg,#fff);color:var(--ink); }
   #genInstr:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
   body.theme-dark #genOptionsBar{ background:#161d2b; }
+  /* Calendar: day details open on the RIGHT (split) when a day is selected. */
+  @media(min-width:981px){
+    #calSplitWrap:has(#calDayPanel[style*="block"]){ display:grid; grid-template-columns:minmax(0,1.45fr) minmax(0,1fr); gap:18px; align-items:start; }
+    #calSplitWrap:has(#calDayPanel[style*="block"]) #calDayPanel{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 96px); overflow:auto; }
+  }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -2264,6 +2269,8 @@
     <div class="card">
       <h2><span class="ic">👥</span> Team — your doctors' patients
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="generateEfficiencyReport()">📊 Efficiency report</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="teamToStudio()" title="Build a team dashboard or analytics tool in AI Studio">✨ Build a team tool</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openCopilotDock('Summarize my team — who is busiest and where the documentation gaps are.')" title="Ask the Copilot about your team">✦ Ask Copilot</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadTeamPatients()">🔄 Refresh</button>
       </h2>
       <p class="sub">Pick a doctor below to browse their patients. Includes every doctor assigned to you (plus yourself). Read-only — only the owning doctor can edit a chart.</p>
@@ -2315,9 +2322,11 @@
       </div>
       <div id="calNewApptBox" style="display:none;margin:0 0 12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:14px"></div>
       <div id="calAvailBox" data-availbox style="display:none;margin:0 0 12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
-      <div id="calGrid"><div class="mini" style="color:var(--muted)">Loading…</div></div>
-      <div id="calDayPanel" style="display:none;margin-top:14px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
-      <p class="mini" style="color:var(--muted);margin-top:10px">Appointments across your whole practice. Click a day to see details. Green chips above show which providers are in the office today.</p>
+      <div id="calSplitWrap">
+        <div id="calGrid"><div class="mini" style="color:var(--muted)">Loading…</div></div>
+        <div id="calDayPanel" style="display:none;margin-top:14px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:12px;padding:14px"></div>
+      </div>
+      <p class="mini" style="color:var(--muted);margin-top:10px">Appointments across your whole practice. Click a day to see details on the right. Green chips above show which providers are in the office today.</p>
     </div>
   </div>
 
@@ -6796,6 +6805,11 @@ function calScheduleForPatient(name){
     if(f){ var nm=name||((typeof activePatient==='function'&&activePatient())?activePatient().name:'')||''; if(nm) f.value=nm; f.focus(); }
   }catch(e){} }, 90);
 }
+/* ===== Cross-feature connectors (one connected app) ===== */
+function legalOpenPatient(id){ try{ if(typeof selectPatient==='function') selectPatient(id); if(typeof showView==='function') showView('patients'); }catch(e){} }
+function legalSchedulePatient(id){ try{ var list=(typeof getPatients==='function'?getPatients():[])||[]; var p=list.find(function(x){return String(x.id)===String(id);}); if(typeof selectPatient==='function') selectPatient(id); if(typeof calScheduleForPatient==='function') calScheduleForPatient(p?p.name:''); }catch(e){} }
+/* Team → AI Studio: open the builder seeded with a team-dashboard idea. */
+function teamToStudio(){ try{ if(typeof showView==='function') showView('studio'); setTimeout(function(){ var p=document.getElementById('studioPrompt'); if(p){ p.value='A team dashboard: each of my doctors with their patient count and recent documentation volume, as a sorted table, with a button to open each.'; p.focus(); p.scrollIntoView({behavior:'smooth',block:'center'}); } }, 90); }catch(e){} }
 // ---- Schedule a new appointment from the calendar toolbar ----
 function calNewAppt(){
   var box=document.getElementById('calNewApptBox'); if(!box) return;
@@ -8385,7 +8399,10 @@ function renderStudioSaved(){
 function openStudioSaved(i){ var w=studioGetSaved()[i]; if(w) renderStudioWidget(w.html, w.title); }
 function deleteStudioSaved(i){ var a=studioGetSaved(); a.splice(i,1); studioSetSaved(a); renderStudioSaved(); _renderPinnedTabs(); }
 var STUDIO_TEMPLATES=[
-  ['📋 Overdue worklist','A worklist of patients not seen in 60+ days, sorted by how overdue, each row with a button to open the chart and a button to draft a follow-up email using MLS.ai.'],
+  ['🎙️ Start-a-visit launcher','A clean grid of my patients (from MLS.data.patients), each as a card showing name + last visit, with a big "🎙️ Start visit" button that calls MLS.startVisit(patient.id) to jump straight into the visit form for that patient, and a small "Open chart" button calling MLS.openPatient(patient.id). Include a search box to filter the patients.'],
+  ['🟢 Today\'s visit board','A board of today\'s scheduled patients from MLS.getSchedule() (today\'s date), grouped by status, each row with a "🎙️ Start visit" button that calls MLS.startVisit(name) to open the visit form and an "Open chart" button (MLS.openPatient).'],
+  ['⚡ Quick new visit','A simple launcher card: a big "🎙️ New visit" button that calls MLS.navigate("visit") to go to the visit form, plus a patient search box where picking a patient calls MLS.startVisit(name) to begin documenting them. Make the buttons large and friendly.'],
+  ['📋 Overdue worklist','A worklist of patients not seen in 60+ days, sorted by how overdue, each row with a button to open the chart, a "🎙️ Start visit" button (MLS.startVisit) to document them now, and a button to draft a follow-up email using MLS.ai.'],
   ['📈 Pain trend board','A dashboard showing each patient’s latest pain score with a sparkline of their pain over time, flagging anyone trending worse, with a button to open each chart.'],
   ['🗓️ Today at a glance','A clean view of today’s schedule from MLS.getSchedule(), grouped by status, with check-in counts and a one-tap Start visit on each appointment.'],
   ['💊 Opioid MME calculator','An opioid MME calculator with inputs for drug, dose in mg, and doses per day, showing total daily MME with a color-coded risk level.'],
@@ -16539,6 +16556,16 @@ function legalReqRowHtml(rq,mode){
     }
   }else{
     actions='<button class="'+(fulfilled?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="openLegalRequest(\''+esc(String(id))+'\')">'+(fulfilled?'⚖️ Re-open':'⚖️ Fulfill')+'</button>';
+    // Connect the legal request to the actual chart + scheduling: if the attorney's
+    // patient reference matches one of the doctor's patients, surface one-tap links.
+    try{
+      var _pref=rq.patient_ref||rq.patientRef||rq.patient||'';
+      var _pmatch=(_pref && typeof _legalMatchPatient==='function')? _legalMatchPatient(_pref,(typeof getPatients==='function'?getPatients():[])||[]) : '';
+      if(_pmatch){
+        actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="legalOpenPatient(\''+esc(_pmatch)+'\')" title="Open this client\'s chart in MLS">👤 Open chart</button>';
+        actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="legalSchedulePatient(\''+esc(_pmatch)+'\')" title="Schedule an appointment / IME for this client">📅 Schedule</button>';
+      }
+    }catch(e){}
     if(fulfilled){
       if(rq.paid){ actions+='<span style="font-size:12px;color:#1f7a4d;align-self:center;font-weight:600">✅ Released to attorney'+((rq.fee_cents||0)>0?(' · paid $'+Math.round(rq.fee_cents/100).toLocaleString()):'')+'</span>'; }
       else {
