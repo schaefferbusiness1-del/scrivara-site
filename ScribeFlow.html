@@ -11172,7 +11172,7 @@ ${STANDARDS}
 
 Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
- "note": "<full SOAP note as plain text with the section headers above. Use concise clinical language. If vitals/details are missing, write 'not documented' rather than inventing them.>",
+ "note": "<the full clinical note as plain text, formatted EXACTLY per the NOTE STYLE specified above (SOAP, APSO, narrative, problem-based, or H&P) and the requested length. Use the appropriate section headers for that style. Use concise clinical language. If vitals/details are missing, write 'not documented' rather than inventing them.>",
  "insurance_note": "<the SAME visit reformatted as payer-facing documentation that makes medical necessity explicit. Include: (1) DATE/ENCOUNTER TYPE (new vs established), (2) CHIEF COMPLAINT & MEDICAL NECESSITY, (3) HISTORY (HPI elements, pertinent ROS, relevant PMH/meds/allergies), (4) EXAMINATION findings, (5) ASSESSMENT — each diagnosis explicitly stated and addressed with ICD-10, (6) MEDICAL DECISION MAKING — explicitly walk the 3 MDM elements (problems addressed; data reviewed/ordered; risk) and state the resulting MDM level; include total time only if documented, (7) PLAN per diagnosis, (8) E/M LEVEL RATIONALE tying the chosen level to the documented MDM (or time). Use ONLY information present in the transcript.>",
  "chief_complaint": "<short phrase>",
  "diagnoses": "<comma or semicolon separated diagnoses>",
