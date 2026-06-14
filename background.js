@@ -151,7 +151,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             };
             if (clickName()) return 'clicked';
             const inputs = Array.from(document.querySelectorAll('input[type="text"],input[type="search"],input:not([type])'));
-            const box = inputs.find((i) => { const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '')).toLowerCase(); const r = i.getBoundingClientRect(); return r.width > 0 && /search|patient|name|find|lookup|mrn|chart/.test(h); });
+            const box = inputs.find((i) => {
+              const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '')).toLowerCase();
+              const r = i.getBoundingClientRect(); const t = (i.type || '').toLowerCase();
+              if (r.width <= 0 || r.height <= 0) return false;
+              // NEVER type a patient NAME into a numeric / ID field — that's what throws Athena's
+              // "Patient ID must be numeric" error. Skip number/tel/date fields and any ID-ish label.
+              if (t === 'number' || t === 'tel' || t === 'date' || t === 'email' || t === 'password') return false;
+              if ((i.inputMode || '').toLowerCase() === 'numeric') return false;
+              if (/patient\s*id|patientid|\bid\b|\bmrn\b|chart\s*(id|no|num)|\bnpi\b|account|claim|invoice|\bnumber\b|ssn|\bdob\b/.test(h)) return false;
+              return /search|name|find|look\s*up|lookup|filter|patient/.test(h);
+            });
             if (box) {
               box.focus(); box.value = name;
               box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true }));
