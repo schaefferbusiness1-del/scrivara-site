@@ -1349,7 +1349,7 @@
       <h2><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book an appointment for this patient">📅 Schedule</button>
-        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">🔪 Draft op note</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generatePatientLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
@@ -1429,7 +1429,7 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="pullScheduleViaAssist(this)" title="Pulls the day's patients from Athena AND auto-pulls each patient's chart history, saving everything to your account" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📥 Pull today’s patients &amp; their history</button>
         <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
-        <button onclick="openOpPrep()" title="Auto-draft tomorrow's operative notes from your uploaded op-note templates — one ready report per scheduled procedure" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔪 Prep tomorrow’s op notes</button>
+        <button onclick="openOpPrep()" title="Auto-draft tomorrow's operative notes from your uploaded op-note templates — one ready report per scheduled procedure" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">💉 Prep tomorrow’s op notes</button>
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
@@ -2036,7 +2036,7 @@
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" title="Open this patient's chart in your Athena tab, then tap to import their problems, meds, allergies and history into MLS">📥 Pull chart from Athena</button>
-      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">🔪 Draft op note</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
     </h2>
     <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
@@ -3394,8 +3394,8 @@
 <div class="modal-bg" id="opPrepModal">
   <div class="modal" style="max-width:920px">
     <button class="modal-x" onclick="closeOpPrep()">×</button>
-    <h3 id="opPrepHdr">🔪 Tomorrow’s procedure notes</h3>
-    <p class="note">MLS matches the procedure to one of your uploaded operative-note templates and drafts a ready op report — patient, date and procedure filled in. Edit the procedure if it’s wrong or missing and tap 🔎 to re-match the template. Anything that varies case-to-case (needle size, doses, contrast…) it asks you for, with a dropdown of what you’ve used before. Fill the blanks, then save to the chart. Use the hero button for a whole day at once, or 🔪 Draft op note on any patient.</p>
+    <h3 id="opPrepHdr">💉 Tomorrow’s procedure notes</h3>
+    <p class="note">MLS matches the procedure to one of your uploaded operative-note templates and drafts a ready op report — patient, date and procedure filled in. Edit the procedure if it’s wrong or missing and tap 🔎 to re-match the template. Anything that varies case-to-case (needle size, doses, contrast…) it asks you for, with a dropdown of what you’ve used before. Fill the blanks, then save to the chart. Use the hero button for a whole day at once, or 💉 Draft op note on any patient.</p>
     <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
       <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all tomorrow’s op notes</button>
       <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
@@ -9802,7 +9802,7 @@ function _opPreviewHtml(proc, name, dateStr){
   var title=String(proc||'').trim()||'No procedure entered yet — type it below';
   var faded=!String(proc||'').trim();
   return '<div style="border-radius:13px;padding:14px 16px;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;box-shadow:0 4px 16px rgba(20,60,120,.22)">'+
-    '<div style="font-size:10.5px;font-weight:800;letter-spacing:.6px;opacity:.8">🔪 PROCEDURE</div>'+
+    '<div style="font-size:10.5px;font-weight:800;letter-spacing:.6px;opacity:.8">💉 PROCEDURE</div>'+
     '<div style="font-size:17px;font-weight:850;margin:4px 0 4px;line-height:1.25;opacity:'+(faded?'.6':'1')+'">'+esc(title)+'</div>'+
     '<div style="font-size:12.5px;opacity:.92">🧑 '+esc(name||'Patient')+(dateStr?(' &nbsp;·&nbsp; 📅 '+esc(dateStr)):'')+'</div>'+
     (chips?('<div style="margin-top:6px">'+chips+'</div>'):'')+
@@ -9829,7 +9829,7 @@ function _opAutoTpl(i){ var row=(window._opPrep||[])[i]; if(!row) return; var ra
 function opPrepRender(){
   var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
   var rows=window._opPrep||[];
-  var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('🔪 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '🔪 Tomorrow’s procedure notes';
+  var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Tomorrow’s procedure notes';
   if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
   if(!rows.length){ if(empty) empty.style.display='block'; box.innerHTML=''; return; }
   if(empty) empty.style.display='none';
