@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14i qa-fixes -->
+<!-- MLS-DEPLOY-MARKER part14j qa-round2-tz-toggle -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -6974,6 +6974,21 @@ function _fmtApptTime(v){
   if(/T/.test(v)){ try{ var d=new Date(v); if(!isNaN(d.getTime())) return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:_acctTz()}); }catch(e){} }
   var m=v.match(/(\d{1,2}):(\d{2})/); if(!m) return v; var hh=parseInt(m[1],10); var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12; return h12+':'+m[2]+' '+ap;
 }
+/* Convert a wall-clock time (YYYY-MM-DD + "HH:MM") in the ACCOUNT time zone to a correct UTC ISO
+   string — so saving/rescheduling an appointment stores the right instant regardless of the
+   doctor's browser zone. */
+function _acctWallToUtcIso(dateKey, hhmm){
+  try{
+    var m=String(hhmm||'').match(/(\d{1,2}):(\d{2})/); if(!m||!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey||''))) return null;
+    var Y=+dateKey.slice(0,4), Mo=+dateKey.slice(5,7), D=+dateKey.slice(8,10), H=+m[1], Mi=+m[2];
+    var asUTC=Date.UTC(Y,Mo-1,D,H,Mi);
+    var dtf=new Intl.DateTimeFormat('en-US',{timeZone:_acctTz(),hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    var o={}; dtf.formatToParts(new Date(asUTC)).forEach(function(p){ o[p.type]=p.value; });
+    var shown=Date.UTC(+o.year,+o.month-1,+o.day,(o.hour==='24'?0:+o.hour),+o.minute);
+    var offset=shown-asUTC;             // how far the account TZ is ahead of UTC at that instant
+    return new Date(asUTC-offset).toISOString();
+  }catch(e){ try{ return new Date(dateKey+'T'+hhmm).toISOString(); }catch(_){ return null; } }
+}
 /* Time helpers for the hourly Week/Day agenda grids. */
 function _calFmtHr(mins){ var h=Math.floor(mins/60), m=mins%60; var ap=h<12?'AM':'PM'; var h12=h%12; if(h12===0) h12=12; return h12+(m?(':'+_calPad(m)):'')+' '+ap; }
 function _calApptTimeBlock(a){ var mins=_apptMinsTz((a&&a.start_at)||''); if(mins==null) return null; var dur=30; if(a.end_at){ try{ var d=Math.round((new Date(a.end_at).getTime()-new Date(a.start_at).getTime())/60000); if(d>0) dur=d; }catch(e){} } return {mins:mins, dur:dur}; }
@@ -7024,7 +7039,7 @@ function _calRenderWeek(){
     ap.forEach(function(a){ var b=_calApptTimeBlock(a); if(b) timed.push([a,b]); else untimed.push(a); });
     h+='<div onclick="_calGridClick(event,\''+key+'\','+rng.startMin+','+pxPerMin+')" title="Click an empty time to book here" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="position:relative;height:'+totalH+'px;border-left:1px solid var(--line);background:'+(it?'var(--soft)':'transparent')+';cursor:pointer">';
     for(var tl=rng.startMin;tl<=rng.endMin;tl+=60){ var topl=(tl-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:0;right:0;top:'+topl+'px;border-top:1px solid #eef2f7"></div>'; }
-    timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); h+='<div data-appt="1" draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="Click for details · drag to reschedule" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:4px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;cursor:pointer">'+esc(String(a.start_at||'').slice(11,16))+' '+esc(_calLabelOf(a))+'</div>'; });
+    timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); h+='<div data-appt="1" draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="Click for details · drag to reschedule" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:4px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;cursor:pointer">'+esc(_calFmtHr(b.mins))+' '+esc(_calLabelOf(a))+'</div>'; });
     if(untimed.length){ h+='<div onclick="calOpenDay(\''+key+'\')" title="'+untimed.length+' with no set time" style="position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;color:#1f7ae0;background:#eef4fc;border-radius:4px;padding:1px 4px;cursor:pointer;text-align:center">'+untimed.length+' no-time</div>'; }
     h+='</div>';
   });
@@ -7362,7 +7377,7 @@ async function _renderWaitingRoom(){
   try{ _calAppts=appts; }catch(e){}
   var rows=waiting.map(function(a){
     var nm=(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'Patient'));
-    var tm=String(a.start_at||'').slice(11,16);
+    var tm=_fmtApptTime(a.start_at);
     var st=(a.status==='roomed')?'in a room':'checked in';
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #cdeed9;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:120px">🟢 '+esc(nm)+'</span><span style="font-size:12px;color:#127a55">'+st+(tm?(' · '+tm):'')+(a.reason?(' · '+esc(String(a.reason).slice(0,40))):'')+'</span><button class="btn-green" style="font-size:13px;padding:7px 13px" onclick="calStartVisit('+a.id+')">🎙️ Start visit</button></div>';
   }).join('');
@@ -7412,7 +7427,7 @@ async function calSaveAppt(id){
   var msg=document.getElementById('calE_msg_'+id);
   var patch={ status:status };
   if(name) patch.name=name;
-  if(date){ patch.appt_date=date; var iso=null; if(time){ try{ iso=new Date(date+'T'+time).toISOString(); }catch(e){} } patch.start_at=iso; }
+  if(date){ patch.appt_date=date; var iso=null; if(time){ iso=_acctWallToUtcIso(date,time); } patch.start_at=iso; }
   var docEl=document.getElementById('calE_doc_'+id); if(docEl) patch.doctor_user_id=docEl.value||null;
   var roomEl=document.getElementById('calE_room_'+id); if(roomEl) patch.room=roomEl.value||'';
   var reasonEl=document.getElementById('calE_reason_'+id); if(reasonEl) patch.reason=reasonEl.value||'';
@@ -7447,7 +7462,7 @@ async function calDrop(e,dateKey){
   if(!id) return;
   var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
   if((a.appt_date||'')===dateKey) return;
-  var tm=String(a.start_at||'').slice(11,16); var iso=null; if(tm){ try{ iso=new Date(dateKey+'T'+tm).toISOString(); }catch(_){} }
+  var tm=_apptHHMMTz(a.start_at); var iso=tm?_acctWallToUtcIso(dateKey,tm):null;   // keep the SAME wall-clock time on the new day (account TZ), stored correctly as UTC
   try{
     var r=await fetch(bkBase()+'/api/appointments/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({appt_date:dateKey,start_at:iso})});
     if(r.ok){ try{ var dt=new Date(dateKey+'T12:00'); toast('Moved to '+dt.toLocaleDateString([], {month:'short',day:'numeric'}),'ok'); }catch(_){} }
@@ -8575,7 +8590,7 @@ function studioDataSnapshot(){
       };
     });
   }catch(e){}
-  var appts=[]; try{ appts=(_calAppts||[]).slice(0,400).map(function(a){ return { name:(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'')), date:String(a.appt_date||(a.start_at||'').slice(0,10)), time:String(a.start_at||'').slice(11,16), status:String(a.status||'booked'), reason:String(a.reason||''), provider:(typeof _docName==='function'?_docName(a.doctor_user_id):'') }; }); }catch(e){}
+  var appts=[]; try{ appts=(_calAppts||[]).slice(0,400).map(function(a){ return { name:(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'')), date:String(a.appt_date||(a.start_at||'').slice(0,10)), time:_apptHHMMTz(a.start_at), status:String(a.status||'booked'), reason:String(a.reason||''), provider:(typeof _docName==='function'?_docName(a.doctor_user_id):'') }; }); }catch(e){}
   var byMonth={}; visitDates.forEach(function(d){ var m=d.slice(0,7); if(m) byMonth[m]=(byMonth[m]||0)+1; });
   var topDx=Object.keys(dx).map(function(k){return {problem:k,count:dx[k]};}).sort(function(a,b){return b.count-a.count;}).slice(0,12);
   return {
@@ -9414,8 +9429,16 @@ function _ptProcedure(p){
   return 'No procedure yet';
 }
 function selectPatient(id){
-  // Toggle: clicking the already-active patient clears the selection (no forced active patient).
-  if(id && id===getActivePtId()){ deselectPatient(); return; }
+  // Always OPEN the patient (re-clicking the active one just re-opens — never silently deselects,
+  // which surprised users and broke Copilot/Studio "open patient" actions). Clear via the ✕ Deselect button.
+  if(!id) return;
+  setActivePtId(id);
+  renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
+}
+/* Always OPEN a patient (never toggle off) — for "open patient X" intents from Copilot,
+   AI Studio widgets, and the calendar, where deselecting on a re-click would be surprising. */
+function openPatient(id){
+  if(!id) return;
   setActivePtId(id);
   renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
 }
@@ -9853,7 +9876,7 @@ function getTemplateById(id){ return getTemplates().find(t=>t.id===id)||null; }
 function _opTomorrowAppts(){
   try{ var d=new Date(); d.setDate(d.getDate()+1); var key=d.toISOString().slice(0,10);
     return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
-      .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:String(a.start_at||'').slice(11,16)}; })
+      .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at)}; })
       .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
 function _opTomorrowDateStr(){ var d=new Date(); d.setDate(d.getDate()+1); return d.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }
@@ -9897,7 +9920,7 @@ function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMo
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
 function _opApptsForDay(key){
   try{ return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
-    .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:String(a.start_at||'').slice(11,16)}; })
+    .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at)}; })
     .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
 function openOpPrep(dayKey){
@@ -11609,7 +11632,7 @@ async function _importPulledSchedule(appts){
       var np={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:name, dob:String(a.dob||''), reason:String(a.reason||''), source:'athena-schedule', created:Date.now() };
       try{ upsertPatient(np); pts.push(np); ext=np.id; }catch(e){}
     } else if(existing && a.dob && !existing.dob){ existing.dob=String(a.dob); try{ upsertPatient(existing); }catch(e){} }
-    var startIso=null; if(/^\d\d?:\d\d$/.test(String(a.time||''))){ try{ startIso=new Date(date+'T'+(('0'+a.time).slice(-5))).toISOString(); }catch(e){} }
+    var startIso=null; if(/^\d\d?:\d\d$/.test(String(a.time||''))){ startIso=_acctWallToUtcIso(date, ('0'+a.time).slice(-5)); }
     try{
       var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name, dob:String(a.dob||''), reason:String(a.reason||''), patient_external_id:ext||null, appt_date:date, start_at:startIso})});
       if(r.ok){ created++; days[date]=(days[date]||0)+1; }
@@ -11640,7 +11663,7 @@ function _seenToday(name){
 function _tomorrowAppts(){
   try{ var d=new Date(); d.setDate(d.getDate()+1); var key=d.toISOString().slice(0,10);
     return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
-      .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), time:String(a.start_at||'').slice(11,16), reason:a.reason||'', dob:a.dob||''}; })
+      .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), time:_apptHHMMTz(a.start_at), reason:a.reason||'', dob:a.dob||''}; })
       .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
 function _heroPatChip(a,onclick,opts){
@@ -11664,7 +11687,7 @@ function _heroAutoPos(pending){
 }
 function _heroNextChip(a, origIdx, isCur, manual){
   var nm=String(a.name||'').trim();
-  var meta=[a.time||'', a.reason||''].filter(Boolean).join(' · ');
+  var meta=[_fmtApptTime(a.time||''), a.reason||''].filter(Boolean).join(' · ');
   var bg=isCur?'#fff':'rgba(255,255,255,.15)'; var fg=isCur?'#1456a8':'#fff';
   return '<button onclick="_heroPickPatient('+origIdx+')" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:'+bg+';border:2px solid '+(isCur?'#fff':'rgba(255,255,255,.30)')+';border-radius:9px;padding:7px 11px;color:'+fg+';cursor:pointer;text-align:left;min-width:122px;box-shadow:'+(isCur?'0 2px 12px rgba(0,0,0,.20)':'none')+'">'+
     (isCur?'<span style="font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px">'+(manual?'● SELECTED':'● UP NOW')+'</span>':'')+
@@ -15531,8 +15554,9 @@ function onPresetChange(){
     // The user picked one of THEIR uploaded templates from this dropdown → turn it on as the active template.
     var id=raw.slice(4); var t=(typeof getTemplateById==='function')?getTemplateById(id):null;
     try{ localStorage.setItem(uns('useTemplates'),'1'); }catch(e){}
-    try{ if(typeof setActiveTemplateId==='function') setActiveTemplateId(id); else localStorage.setItem(uns('templateActive'),id); }catch(e){}
-    try{ var ut=document.getElementById('useTemplatesToggle'); if(ut) ut.checked=true; }catch(e){}
+    try{ localStorage.setItem(uns('templateActive'),id); }catch(e){}   // set directly (avoids setActiveTemplateId's own toast → no double toast)
+    try{ if(typeof renderTemplateList==='function') renderTemplateList(); if(typeof renderTemplateActiveSelect==='function') renderTemplateActiveSelect(); }catch(e){}
+    try{ var ut=document.getElementById('tplUseToggle'); if(ut) ut.checked=true; }catch(e){}
     try{ toast('Using your template "'+((t&&t.name)||'Template')+'" — notes will match its format.','ok'); }catch(e){}
     return;
   }
