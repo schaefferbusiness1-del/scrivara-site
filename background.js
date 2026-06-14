@@ -74,8 +74,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
         const all = await chrome.tabs.query({});
-        // Prefer an Athena tab; else the most-recently-active non-MLS http(s) tab.
-        let tab = all.find((t) => /athenahealth|athenanet|athena\.io|\.px\.athena/i.test(t.url || ''));
+        // Find the EMR tab by KNOWN domains, else by EMR-looking host keywords, else the
+        // most-recently-active non-MLS http(s) tab. Kept broad so an Athena domain/URL change
+        // doesn't break us — the real work is content-based below.
+        let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
+               || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''));
         if (!tab) {
           const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || ''));
           cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
@@ -94,10 +97,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 22000) }) });
         }
         const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
-        const sched = frames.filter((f) => /schedul|calendar|appointment|booking|frontoffice|dashboard/i.test(f.u || ''));
-        let pick;
-        if (sched.length) { sched.sort((a, b) => b.t.length - a.t.length); pick = sched[0]; }
-        else { const s2 = frames.slice().sort((a, b) => b.t.length - a.t.length); pick = s2[0] || { u: tab.url, t: '' }; }
+        // CONTENT-SCORE each frame for "looks like a schedule" — appointment times, day/date
+        // labels, scheduling words. This is what makes us resilient to Athena changing their
+        // frame names / URLs: we find the schedule by what's IN it, not where it lives.
+        const scoreSched = (f) => {
+          const u = (f.u || '').toLowerCase(), t = (f.t || ''), tl = t.toLowerCase();
+          let s = 0;
+          if (/schedul|calendar|appointment|booking|frontoffice|dashboard/.test(u)) s += 25;     // URL hint = bonus, not required
+          s += Math.min((t.match(/\b\d{1,2}:\d{2}\s*(a\.?m\.?|p\.?m\.?)?/gi) || []).length, 60) * 2; // clock times = strongest signal
+          ['appointment', 'schedul', 'provider', 'booking', 'arrived', 'checked in', 'check-in', 'exam room', 'no show', 'walk-in'].forEach((k) => { if (tl.indexOf(k) >= 0) s += 6; });
+          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].forEach((d) => { if (tl.indexOf(d) >= 0) s += 2; });
+          s -= /conversation|colleague|inbox|message/.test(tl) ? 20 : 0;                            // de-rank the messaging frame
+          s += Math.min(t.length, 14000) / 500;                                                     // size as a minor tiebreaker
+          return s;
+        };
+        let pick = null, best = -1;
+        frames.forEach((f) => { const s = scoreSched(f); if (s > best) { best = s; pick = f; } });
+        pick = pick || { u: tab.url, t: '' };
         // Include the page title so the parser can anchor the date range of a multi-day view.
         sendResponse({ ok: true, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
