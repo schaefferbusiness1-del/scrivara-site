@@ -2031,6 +2031,7 @@
     <h2><span class="ic">📚</span> Visit history
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" title="Open this patient's chart in your Athena tab, then tap to import their problems, meds, allergies and history into MLS">📥 Pull chart from Athena</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
     </h2>
     <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
@@ -7161,6 +7162,7 @@ function calApptInfo(id){
   if(a.status!=='checked_in' && a.status!=='completed' && a.status!=='cancelled'){ h+='<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#127a55;border-color:#bfe6cf;background:#eefaf3" onclick="calCheckIn('+id+')">✅ Check in</button>'; }
   h+='<button class="btn-green" style="font-size:12px;padding:6px 12px" onclick="calStartVisit('+id+')">🎙️ Start visit</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calOpenPatientFor('+id+')">👤 Open patient</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calPullChartFor('+id+')" title="Open this patient and import their chart/history from your Athena tab">📥 Pull chart</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#a12c2c" onclick="calCancelAppt('+id+')">Cancel appt</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#fff;background:#c0392b;border-color:#c0392b" onclick="calDeleteAppt('+id+')">🗑 Delete</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calApptInfo('+id+')">Close</button>';
@@ -7168,6 +7170,12 @@ function calApptInfo(id){
   box.innerHTML=h;
 }
 function calEditAppt(id){ return calApptInfo(id); } // back-compat alias
+/* From a calendar appointment: open that patient, then pull their Athena chart into MLS. */
+function calPullChartFor(id){
+  try{ if(typeof calOpenPatientFor==='function') calOpenPatientFor(id); }catch(e){}
+  try{ toast('Make sure this patient’s chart is open in your Athena tab…',''); }catch(e){}
+  setTimeout(function(){ try{ if(typeof pullPatientChartViaAssist==='function') pullPatientChartViaAssist(); }catch(e){} }, 500);
+}
 // Open the day panel and expand a specific appointment's details (used by month/week chips).
 function calChipOpen(id, key){ if(key) calOpenDay(key); setTimeout(function(){ var box=document.getElementById('calApptEdit_'+id); if(box && !box.innerHTML){ calApptInfo(id); } var el=document.getElementById('calApptEdit_'+id); if(el && el.scrollIntoView){ try{ el.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} } }, 60); }
 // Jump from an appointment to that patient's profile (best-effort link by id, else search by name).
@@ -10629,6 +10637,86 @@ function pullScheduleViaAssist(btn){
     try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
     setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull schedule'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (it should say v1.17). Then reload this page and try again.','err'); } }, 30000);
   }
+}
+/* Reusable: ping MLS Assist, ask it to read the open Athena tab, resolve with {text,url}.
+   Shared by the schedule pull AND the patient-chart pull so we never duplicate the bridge. */
+function _assistReadAthenaTab(onStatus){
+  return new Promise(function(resolve,reject){
+    var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
+    var ponged=false, tries=0, iv=null, got=false;
+    function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
+    window.addEventListener('message',onPong);
+    var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
+    say('Looking for MLS Assist…'); ping();
+    iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); reject(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled (v1.17+) and your Athena tab is open, then try again.')); } else ping(); }, 350);
+    function onResult(e){
+      if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppScheduleResult')) return;
+      got=true; window.removeEventListener('message',onResult);
+      var r=e.data.resp||{};
+      if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read your Athena tab. Open it in another tab and try again.')); return; }
+      resolve({text:r.text||'', url:r.url||''});
+    }
+    function proceed(){
+      say('Reading from your Athena tab…');
+      window.addEventListener('message',onResult);
+      try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
+      setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); reject(new Error('Your MLS Assist is an OLDER version. Update it from Settings → Download MLS Assist v1.17, then reload this page.')); } }, 30000);
+    }
+  });
+}
+/* ===== Pull a PATIENT'S CHART/HISTORY from Athena via MLS Assist and SAVE it into the
+   patient's MLS record (problems, meds, allergies, running summary) + a history entry.
+   Reuses the same Assist read as the schedule pull — no extension change needed.
+   The doctor opens the patient's chart in Athena, then taps this. ===== */
+async function pullPatientChartViaAssist(btn){
+  var p=(typeof activePatient==='function')?activePatient():null;
+  if(!p){ try{ toast('Open a patient first, then pull their chart.','err'); }catch(e){} return; }
+  var orig = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled=true; btn.innerHTML='… reading Athena'; }
+  var setT=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
+  try{
+    var rd=await _assistReadAthenaTab(setT);
+    setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
+    var chart=await _parsePatientChart(rd.text);
+    if(!chart || (!chart.problems && !chart.meds && !chart.allergies && !(chart.history&&chart.history.length) && !chart.summary)){
+      setT('Read the page but couldn’t find a patient chart. Open the patient’s CHART in Athena (problems / meds / history), then pull again.','err');
+      if(btn){ btn.disabled=false; btn.innerHTML=orig; } return;
+    }
+    // Merge into the patient record (don't clobber existing — append/fill).
+    var merge=function(cur,add){ add=(add||'').trim(); if(!add) return cur||''; cur=(cur||'').trim(); if(!cur) return add; if(cur.toLowerCase().indexOf(add.toLowerCase())>=0) return cur; return cur+'; '+add; };
+    if(chart.problems)  p.problems  = merge(p.problems,  chart.problems);
+    if(chart.meds)      p.meds      = merge(p.meds,      chart.meds);
+    if(chart.allergies) p.allergies = merge(p.allergies, chart.allergies);
+    if(chart.dob && !p.dob) p.dob = chart.dob;
+    var stamp='— Pulled from Athena '+(new Date()).toLocaleDateString()+' —';
+    var block=stamp+'\n'+(chart.summary||'');
+    if(chart.history && chart.history.length){ block+='\n\nPrior history:\n• '+chart.history.join('\n• '); }
+    if(chart.visits && chart.visits.length){ block+='\n\nRecent visits:\n• '+chart.visits.join('\n• '); }
+    if(!(p.summary||'').includes(stamp)){ p.summary=((p.summary||'').trim()+'\n\n'+block).trim(); }
+    if(typeof upsertPatient==='function') upsertPatient(p);
+    // Also drop a permanent, dated "Athena chart import" entry into Visit History.
+    try{
+      if(typeof saveNoteObject==='function'){
+        saveNoteObject({ patient:p.name, patientId:p.id, cc:'Athena chart import', text:block, signed:false, isDraft:false });
+      } else if(typeof getNotes==='function' && typeof saveNotes==='function'){
+        var ns=getNotes(); ns.unshift({ id:'n'+Date.now()+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:'Athena chart import', text:block, created:Date.now(), updated:Date.now(), signed:false, isDraft:false }); saveNotes(ns);
+      }
+    }catch(e){}
+    try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
+    try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
+    setT('✅ Saved '+p.name+'’s Athena history to their MLS chart.','ok');
+  }catch(err){
+    setT((err&&err.message)?err.message:'Couldn’t pull the chart. Open the patient’s chart in Athena and try again.','err');
+  }
+  if(btn){ btn.disabled=false; btn.innerHTML=orig; }
+}
+async function _parsePatientChart(text){
+  var sys='You extract ONE patient’s clinical chart from raw EMR/Athena page text (messy, with menus/UI noise). Return ONLY JSON (no prose, no code fence): {"dob":"<MM/DD/YYYY or empty>","problems":"<active problem list, comma-separated, or empty>","meds":"<current medications w/ doses, comma-separated, or empty>","allergies":"<allergies, comma-separated, or NKDA/empty>","summary":"<2-4 sentence clinical summary of who this patient is and their main issues>","history":["<relevant PMH/PSH/social item>", "..."],"visits":["<MM/DD/YYYY — brief reason/dx of a prior visit>", "..."]}. RULES: extract only THIS patient’s clinical data. IGNORE navigation, buttons, column headers, provider/department names, billing codes lists, and other patients. If a field is not present, use "" or []. Keep arrays short (max ~10).';
+  var raw=await aiCallRaw(sys, 'EMR CHART PAGE TEXT:\n'+String(text||'').slice(0,16000), (typeof getKey==='function'?getKey():''), {freeform:true});
+  var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
+  try{ var o=JSON.parse(s); if(o&&typeof o==='object') return o; }catch(e){}
+  try{ var m=s.match(/\{[\s\S]*\}/); if(m) return JSON.parse(m[0]); }catch(e){}
+  return null;
 }
 async function _parseScheduleText(text){
   var sys='You extract a clinic’s appointment schedule from raw EMR/Athena page text. It is messy: it often has a mini month-calendar (lists of day numbers — IGNORE those), a time grid like "07:00 AM 08:00 AM …" (IGNORE the empty grid labels), and provider rows like "Benner_John_MD: 3 appointments". The PATIENT appointments appear as a patient NAME next to a time and sometimes a visit reason/type. Return ONLY a JSON array (no prose, no code fence): [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. RULES: include ONLY real PATIENT appointments (a person being seen). EXCLUDE: provider/clinician names (e.g. anything like Lastname_Firstname_MD/PA-C/DO, or "Dr. X"), department/location names (e.g. "POSM CL WEST CHESTER", "PHSC OT …"), menu/button/column-header/UI text, message-inbox sender names, and the bare day-number lists from the mini calendar. A provider row that says "0 appointments" means that provider has none — do not invent patients. If there are genuinely no patient appointments in the text, return [].';
