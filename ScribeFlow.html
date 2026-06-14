@@ -10638,22 +10638,55 @@ async function _importPulledSchedule(appts){
     }catch(e){}
   }
   try{ if(typeof loadCalendar==='function') await loadCalendar(); }catch(e){}
+  window._heroNowIdx=-1;
   _renderTodayPatients(appts);
-  var el=document.getElementById('heroPullStatus'); if(el){ el.textContent='✓ Imported '+created+' of today’s '+appts.length+' patient'+(appts.length===1?'':'s')+' from Athena. Tap one below to load & record.'; el.style.color='#d8ffe8'; }
   try{ toast('Imported '+created+' appointment'+(created===1?'':'s')+' from Athena.','ok'); }catch(e){}
+  try{ _calLoadNextUp(); }catch(e){}   // know the time → load whoever is up right now
 }
 function _renderTodayPatients(appts){
   var box=document.getElementById('heroToday'); if(!box) return;
   window._heroTodayList=appts||[];
   if(!appts||!appts.length){ box.style.display='none'; box.innerHTML=''; return; }
+  var nowIdx=(typeof window._heroNowIdx==='number')?window._heroNowIdx:-1;
   var rows=appts.map(function(a,i){
     var nm=String(a.name||'').trim(); if(!nm) return '';
     var meta=[a.time||'', a.reason||''].filter(Boolean).join(' · ');
-    return '<button onclick="_heroPickPatient('+i+')" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.32);border-radius:9px;padding:7px 11px;color:#fff;cursor:pointer;text-align:left;min-width:120px">'+
-      '<span style="font-weight:700;font-size:13px">'+esc(nm)+'</span>'+(meta?'<span style="font-size:11px;opacity:.85">'+esc(meta)+'</span>':'')+'</button>';
+    var up=(i===nowIdx);
+    return '<button onclick="_heroPickPatient('+i+')" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:'+(up?'#fff':'rgba(255,255,255,.15)')+';border:1px solid '+(up?'#fff':'rgba(255,255,255,.32)')+';border-radius:9px;padding:7px 11px;color:'+(up?'#1456a8':'#fff')+';cursor:pointer;text-align:left;min-width:120px">'+
+      (up?'<span style="font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px">● UP NOW</span>':'')+
+      '<span style="font-weight:700;font-size:13px">'+esc(nm)+'</span>'+(meta?'<span style="font-size:11px;opacity:'+(up?'.78':'.85')+'">'+esc(meta)+'</span>':'')+'</button>';
   }).filter(Boolean).join('');
   box.innerHTML='<div style="font-size:12px;font-weight:700;opacity:.9;margin:2px 0 6px;letter-spacing:.3px">📋 TODAY’S PATIENTS — tap to load &amp; record</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+rows+'</div>';
   box.style.display='block';
+}
+/* Based on the pulled Athena schedule + the current clock time, pick who's "up now"
+   (the appt that just started, else the next upcoming, else the last of the day) and
+   load them into the hero so the doctor just hits record. */
+function _calApptMins(a){ var t=String((a&&a.time)||''); if(/^\d\d?:\d\d$/.test(t)){ var p=t.split(':'); return parseInt(p[0],10)*60+parseInt(p[1],10); } return null; }
+function _calPickNowIdx(appts){
+  if(!appts||!appts.length) return -1;
+  var now=new Date(); var nowMin=now.getHours()*60+now.getMinutes();
+  var timed=[]; appts.forEach(function(a,i){ var m=_calApptMins(a); if(m!=null) timed.push({i:i,m:m}); });
+  if(!timed.length) return 0;                                  // no times → just take the first
+  timed.sort(function(a,b){ return a.m-b.m; });
+  var current=null;                                            // started within the last 30 min → in the room now
+  for(var k=0;k<timed.length;k++){ if(timed[k].m<=nowMin && timed[k].m>=nowMin-30) current=timed[k]; }
+  if(current) return current.i;
+  for(var j=0;j<timed.length;j++){ if(timed[j].m>=nowMin) return timed[j].i; }   // else next upcoming
+  return timed[timed.length-1].i;                              // else the day's last
+}
+function _calLoadNextUp(){
+  try{
+    var appts=window._heroTodayList||[]; if(!appts.length) return;
+    var idx=_calPickNowIdx(appts); if(idx<0) return;
+    window._heroNowIdx=idx;
+    var a=appts[idx]||{};
+    var nm=document.getElementById('heroPtName'); if(nm) nm.value=a.name||'';
+    var db=document.getElementById('heroPtDob'); if(db) db.value=a.dob||'';
+    try{ _heroSyncName(); }catch(e){}
+    _renderTodayPatients(appts);
+    var el=document.getElementById('heroPullStatus'); if(el){ el.innerHTML='⏰ Up now: <b>'+esc(a.name||'patient')+'</b>'+(a.time?(' at '+esc(a.time)):'')+' — loaded &amp; ready. Hit 🎙️ Start recording.'; el.style.color='#d8ffe8'; el.style.display='block'; }
+  }catch(e){}
 }
 function _heroPickPatient(i){
   try{
