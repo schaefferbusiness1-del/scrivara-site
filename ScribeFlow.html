@@ -1349,6 +1349,7 @@
       <h2><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book an appointment for this patient">📅 Schedule</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">🔪 Draft op note</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generatePatientLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
@@ -2035,6 +2036,7 @@
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" title="Open this patient's chart in your Athena tab, then tap to import their problems, meds, allergies and history into MLS">📥 Pull chart from Athena</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">🔪 Draft op note</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
     </h2>
     <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
@@ -3392,8 +3394,8 @@
 <div class="modal-bg" id="opPrepModal">
   <div class="modal" style="max-width:920px">
     <button class="modal-x" onclick="closeOpPrep()">×</button>
-    <h3>🔪 Tomorrow’s procedure notes</h3>
-    <p class="note">For each patient on tomorrow’s schedule, MLS matches the scheduled procedure to one of your uploaded operative-note templates and drafts a ready-to-go op report — name, date, and procedure filled in. Anything that varies case-to-case (needle size, doses, etc.) it asks you for, with a dropdown of what you’ve used before. Review, fill the blanks, save to the chart.</p>
+    <h3 id="opPrepHdr">🔪 Tomorrow’s procedure notes</h3>
+    <p class="note">MLS matches the procedure to one of your uploaded operative-note templates and drafts a ready op report — patient, date and procedure filled in. Edit the procedure if it’s wrong or missing and tap 🔎 to re-match the template. Anything that varies case-to-case (needle size, doses, contrast…) it asks you for, with a dropdown of what you’ve used before. Fill the blanks, then save to the chart. Use the hero button for a whole day at once, or 🔪 Draft op note on any patient.</p>
     <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
       <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all tomorrow’s op notes</button>
       <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
@@ -9762,22 +9764,44 @@ function _opRankTemplates(procedure){
 }
 function getOpFieldVals(key){ try{ var m=JSON.parse(localStorage.getItem(uns('opFieldVals'))||'{}'); return (m&&m[key])||[]; }catch(e){ return []; } }
 function addOpFieldVal(key,val){ val=String(val||'').trim(); if(!val) return; try{ var m=JSON.parse(localStorage.getItem(uns('opFieldVals'))||'{}'); var arr=(m[key]||[]).filter(function(x){ return x!==val; }); arr.unshift(val); m[key]=arr.slice(0,12); localStorage.setItem(uns('opFieldVals'),JSON.stringify(m)); }catch(e){} }
-function openOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender(); }
+function _opNewRow(name, reason, dob, dateStr){
+  var rank=_opRankTemplates(reason||'');
+  return { appt:{name:name, reason:reason||'', dob:dob||''}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
+}
+function openOpPrep(){
+  window._opPrepMode='tomorrow';
+  window._opPrep=_opTomorrowAppts().map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opTomorrowDateStr()); });
+  var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
+}
+/* Draft an op note for ONE specific patient (active or by id) — reachable from the chart. */
+function openOpPrepForPatient(pid){
+  var p=null; try{ var pts=(typeof getPatients==='function'?getPatients():[])||[]; p=pid?pts.find(function(x){return x.id===pid;}):(typeof activePatient==='function'?activePatient():null); }catch(e){}
+  if(!p){ try{ toast('Open a patient first, then draft their op note.','err'); }catch(e){} return; }
+  var reason=''; try{ var ap=((window._calAppts||[])||[]).filter(function(a){ return String(a.patient_external_id||'')===p.id || String(a.name||'').trim().toLowerCase()===String(p.name||'').trim().toLowerCase(); }).sort(function(a,b){ return String(b.start_at||'').localeCompare(String(a.start_at||'')); })[0]; if(ap) reason=ap.reason||p.reason||''; else reason=p.reason||''; }catch(e){}
+  window._opPrepMode='patient';
+  window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})) ];
+  var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
+}
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
+function _opProcChanged(i,v){ var row=(window._opPrep||[])[i]; if(row) row.proc=v; }
+function _opAutoTpl(i){ var row=(window._opPrep||[])[i]; if(!row) return; var rank=_opRankTemplates(row.proc||''); if(rank[0]&&rank[0].tpl&&rank[0].score>0){ row.tplId=rank[0].tpl.id; opPrepRender(); try{ toast('Matched: '+(rank[0].tpl.name||'template'),'ok'); }catch(e){} } else { try{ toast('No clear match — pick a template from the dropdown.','err'); }catch(e){} } }
 function opPrepRender(){
-  var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); if(!box) return;
-  var appts=_opTomorrowAppts();
-  if(!window._opPrep || window._opPrep._k!==appts.length){ window._opPrep=appts.map(function(a){ return {appt:a, tplId:(_opRankTemplates(a.reason)[0]||{}).tpl&&_opRankTemplates(a.reason)[0].tpl.id||'', note:'', missing:[], values:{}, gen:false}; }); window._opPrep._k=appts.length; }
-  if(!appts.length){ if(empty) empty.style.display='block'; box.innerHTML=''; return; }
+  var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
+  var rows=window._opPrep||[];
+  var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('🔪 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '🔪 Tomorrow’s procedure notes';
+  if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
+  if(!rows.length){ if(empty) empty.style.display='block'; box.innerHTML=''; return; }
   if(empty) empty.style.display='none';
-  if(!getTemplates().length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates first (📄 Templates) — then come back here to auto-draft tomorrow’s op notes.</div>'; return; }
+  if(!getTemplates().length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates first (📄 Templates) — then draft op notes here. The templates are what MLS adapts into each patient’s report.</div>'; return; }
   var tplOpts=function(sel){ return '<option value="">— pick a template —</option>'+getTemplates().map(function(t){ return '<option value="'+t.id+'"'+(t.id===sel?' selected':'')+'>'+esc(t.name||'Template')+'</option>'; }).join(''); };
-  box.innerHTML=window._opPrep.map(function(row,i){
+  box.innerHTML=rows.map(function(row,i){
     var a=row.appt;
     var h='<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--card)">';
-    h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="font-weight:800;font-size:15px">'+esc(a.name)+'</span>'+(a.reason?'<span style="font-size:13px;color:var(--brand-dk)">'+esc(a.reason)+'</span>':'<span style="font-size:12px;color:#b4231e">no procedure on the schedule</span>')+'</div>';
+    h+='<div style="font-weight:800;font-size:15px">'+esc(a.name)+'</div>';
+    h+='<label class="mini" style="color:var(--muted);display:block;margin:8px 0 3px">Procedure (edit if it’s wrong or missing)</label>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template:</span><select onchange="window._opPrep['+i+'].tplId=this.value" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
-    h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px" onclick="opPrepGenerateOne('+i+')">✨ Draft op note</button></div>';
+    h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px" onclick="opPrepGenerateOne('+i+')">'+(row.gen?'↻ Re-draft':'✨ Draft op note')+'</button></div>';
     if(row.gen){
       if(row.missing&&row.missing.length){
         h+='<div style="margin-top:10px;background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 11px"><div style="font-weight:700;font-size:12.5px;color:#7a5a16;margin-bottom:6px">Fill these in:</div>';
@@ -9795,10 +9819,10 @@ function opPrepRender(){
 async function opPrepGenerateOne(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var tpl=getTemplateById(row.tplId);
-  if(!tpl){ try{ toast('Pick a matching template for this patient first.','err'); }catch(e){} return; }
+  if(!tpl){ try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
   var st=document.getElementById('opPrepStatus'); if(st) st.textContent='Drafting '+row.appt.name+'’s op note…';
   try{
-    var out=await _genOpNote(row.appt.name, _opTomorrowDateStr(), row.appt.reason||tpl.name, tpl.text||'');
+    var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'');
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true;
     opPrepRender();
     if(st) st.textContent='Drafted '+row.appt.name+'’s op note'+(row.missing.length?(' — '+row.missing.length+' blank'+(row.missing.length===1?'':'s')+' to fill'):'')+'.';
