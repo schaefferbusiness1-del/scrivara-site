@@ -1,0 +1,34 @@
+#mls-assist-badge{position:fixed;right:18px;bottom:18px;z-index:2147483645;background:#1f7ae0;color:#fff;
+  font:600 13px -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:9px 13px;border-radius:22px;cursor:pointer;
+  box-shadow:0 4px 14px rgba(31,122,224,.4);user-select:none;display:flex;align-items:center;gap:7px;border:none}
+#mls-assist-badge:hover{background:#1769c4}
+#mls-assist-badge .dot{width:8px;height:8px;border-radius:50%;background:#9bd0ff}
+#mls-assist-badge.active .dot{background:#19e06a;box-shadow:0 0 0 3px rgba(25,224,106,.3)}
+#mls-assist-panel{position:fixed;right:18px;bottom:64px;z-index:2147483646;width:360px;max-height:78vh;display:none;
+  flex-direction:column;background:#fff;color:#1a2b3c;border:1px solid #d8e6f7;border-radius:14px;overflow:hidden;
+  box-shadow:0 14px 44px rgba(20,40,70,.28);font:13px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif}
+#mls-assist-panel.open{display:flex}
+#mls-assist-panel header{background:#1f7ae0;color:#fff;padding:11px 14px;display:flex;align-items:center;justify-content:space-between}
+#mls-assist-panel header b{font-size:14px}
+#mls-assist-panel header .x{cursor:pointer;font-size:18px;opacity:.85}
+#mls-assist-panel .body{padding:12px 14px;overflow:auto}
+#mls-assist-panel .consent{background:#f2f8ff;border:1px solid #dcebfb;border-radius:8px;padding:8px 10px;color:#3a5a78;font-size:11.5px;margin-bottom:10px}
+#mls-assist-panel label{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5a6a7a;display:block;margin:10px 0 4px}
+#mls-assist-panel textarea{width:100%;border:1px solid #cfe0f3;border-radius:8px;padding:8px;font:13px/1.4 inherit;resize:vertical;box-sizing:border-box}
+#mls-assist-panel .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+#mls-assist-panel button.b{border:none;border-radius:8px;padding:8px 12px;font:600 12.5px inherit;cursor:pointer}
+#mls-assist-panel .b-primary{background:#1f7ae0;color:#fff}
+#mls-assist-panel .b-go{background:#16924e;color:#fff}
+#mls-assist-panel .b-rec{background:#c0392b;color:#fff}
+#mls-assist-panel .b-ghost{background:#eef4fb;color:#1f4e7a}
+#mls-assist-panel .b:disabled{opacity:.5;cursor:default}
+#mls-assist-panel .log{margin-top:10px;font-size:11px;color:#6a7a8a;max-height:90px;overflow:auto;border-top:1px dashed #e0e8f2;padding-top:7px}
+#mls-assist-panel .log div{padding:1px 0}
+
+#mls-tip {
+  position: fixed; z-index: 2147483647; background: #13283d; color: #fff;
+  font: 12px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: 6px 10px; border-radius: 7px; max-width: 240px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.28); pointer-events: none; display: none;
+  transition: opacity .12s ease; white-space: normal;
+}
