@@ -6919,7 +6919,7 @@ function _calRenderDay(){
   ap.forEach(function(a){ var b=_calApptTimeBlock(a); if(b) timed.push([a,b]); else untimed.push(a); });
   var rng=_calHourRange(ap); var pxPerMin=0.95; var totalH=(rng.endMin-rng.startMin)*pxPerMin;
   var h='';
-  if(!ap.length){ h+='<div style="border:1px solid var(--line);border-radius:10px;padding:16px;min-height:120px"><div class="mini" style="color:var(--muted)">No appointments this day. Use “➕ New appointment” to add one.</div></div>'; grid.innerHTML=h; return; }
+  if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:8px">No appointments yet — click any time below to book one.</div>'; }
   if(untimed.length){ h+='<div style="margin-bottom:8px"><span class="mini" style="color:var(--muted);margin-right:6px">No set time:</span>'; untimed.forEach(function(a){ var c=_calStatusColor(a.status); h+='<span onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" style="display:inline-block;margin:0 6px 6px 0;border-radius:6px;padding:5px 10px;background:'+c.bg+';color:'+c.fg+';font-size:12px;cursor:pointer">'+esc(_calLabelOf(a))+'</span>'; }); h+='</div>'; }
   h+='<div onclick="_calGridClick(event,\''+key+'\','+rng.startMin+','+pxPerMin+')" title="Click an empty time to book an appointment here" style="position:relative;height:'+totalH+'px;border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden;cursor:pointer">';
   for(var t=rng.startMin; t<=rng.endMin; t+=60){ var top=(t-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top+'px;border-top:1px solid var(--line)"></div><div style="position:absolute;left:6px;top:'+(top-7)+'px;font-size:11px;color:var(--muted)">'+_calFmtHr(t)+'</div>'; }
