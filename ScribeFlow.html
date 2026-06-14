@@ -9783,7 +9783,32 @@ function openOpPrepForPatient(pid){
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
-function _opProcChanged(i,v){ var row=(window._opPrep||[])[i]; if(row) row.proc=v; }
+/* Parse a free-text procedure into its pieces (side / spinal levels / procedure type) for a nice preview. */
+function _opParseProc(proc){
+  var p=String(proc||'');
+  var side=((p.match(/\bbilateral\b|\bb\/l\b/i)?'Bilateral':'')||(p.match(/\bleft\b/i)?'Left':'')||(p.match(/\bright\b/i)?'Right':''));
+  var levels=(p.match(/\b([CTLS]\d{1,2}(?:\s*(?:[-–]|to)\s*[CTLS]?\d{1,2})?)\b/gi)||[]).map(function(x){ return x.toUpperCase().replace(/\s*(?:TO|-)\s*/i,'–').replace(/\s+/g,''); });
+  var T=[['transforaminal','Transforaminal'],['interlaminar','Interlaminar'],['caudal','Caudal'],['epidural','Epidural'],['medial branch','Medial branch'],['facet','Facet'],['rhizotomy','Rhizotomy'],['radiofrequency|\\brfa\\b|ablation','RFA / ablation'],['sacroiliac|\\bsi joint\\b|\\bsi\\b','SI joint'],['kyphoplasty','Kyphoplasty'],['vertebroplasty','Vertebroplasty'],['discogram|discography','Discogram'],['stimulator|\\bscs\\b','Spinal cord stim'],['intracept|basivertebral|\\bbvn\\b','Intracept (BVN)'],['\\bmild\\b','MILD'],['bursa','Bursa'],['trigger point','Trigger point'],['nerve block|\\bblock\\b','Block'],['steroid','Steroid'],['injection','Injection']];
+  var types=[]; T.forEach(function(pair){ try{ if(new RegExp(pair[0],'i').test(p) && types.indexOf(pair[1])<0) types.push(pair[1]); }catch(e){} });
+  return {side:side, levels:levels, types:types};
+}
+function _opPreviewHtml(proc, name, dateStr){
+  var d=_opParseProc(proc);
+  var badge=function(txt,bg){ return '<span style="display:inline-block;background:'+bg+';border-radius:999px;padding:3px 11px;font-size:11.5px;font-weight:800;margin:3px 6px 0 0;color:#fff">'+esc(txt)+'</span>'; };
+  var chips='';
+  if(d.side) chips+=badge(d.side,'rgba(255,255,255,.28)');
+  d.levels.forEach(function(l){ chips+=badge(l,'rgba(80,220,150,.4)'); });
+  d.types.forEach(function(t){ chips+=badge(t,'rgba(160,120,255,.42)'); });
+  var title=String(proc||'').trim()||'No procedure entered yet — type it below';
+  var faded=!String(proc||'').trim();
+  return '<div style="border-radius:13px;padding:14px 16px;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;box-shadow:0 4px 16px rgba(20,60,120,.22)">'+
+    '<div style="font-size:10.5px;font-weight:800;letter-spacing:.6px;opacity:.8">🔪 PROCEDURE</div>'+
+    '<div style="font-size:17px;font-weight:850;margin:4px 0 4px;line-height:1.25;opacity:'+(faded?'.6':'1')+'">'+esc(title)+'</div>'+
+    '<div style="font-size:12.5px;opacity:.92">🧑 '+esc(name||'Patient')+(dateStr?(' &nbsp;·&nbsp; 📅 '+esc(dateStr)):'')+'</div>'+
+    (chips?('<div style="margin-top:6px">'+chips+'</div>'):'')+
+  '</div>';
+}
+function _opProcChanged(i,v){ var row=(window._opPrep||[])[i]; if(!row) return; row.proc=v; var el=document.getElementById('opPrepPrev_'+i); if(el) el.innerHTML=_opPreviewHtml(v, row.appt.name, row.dateStr); }
 function _opAutoTpl(i){ var row=(window._opPrep||[])[i]; if(!row) return; var rank=_opRankTemplates(row.proc||''); if(rank[0]&&rank[0].tpl&&rank[0].score>0){ row.tplId=rank[0].tpl.id; opPrepRender(); try{ toast('Matched: '+(rank[0].tpl.name||'template'),'ok'); }catch(e){} } else { try{ toast('No clear match — pick a template from the dropdown.','err'); }catch(e){} } }
 function opPrepRender(){
   var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
@@ -9797,8 +9822,8 @@ function opPrepRender(){
   box.innerHTML=rows.map(function(row,i){
     var a=row.appt;
     var h='<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--card)">';
-    h+='<div style="font-weight:800;font-size:15px">'+esc(a.name)+'</div>';
-    h+='<label class="mini" style="color:var(--muted);display:block;margin:8px 0 3px">Procedure (edit if it’s wrong or missing)</label>';
+    h+='<div id="opPrepPrev_'+i+'">'+_opPreviewHtml(row.proc, a.name, row.dateStr)+'</div>';
+    h+='<label class="mini" style="color:var(--muted);display:block;margin:10px 0 3px">Procedure (edit if it’s wrong or missing — the preview updates as you type)</label>';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template:</span><select onchange="window._opPrep['+i+'].tplId=this.value" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px" onclick="opPrepGenerateOne('+i+')">'+(row.gen?'↻ Re-draft':'✨ Draft op note')+'</button></div>';
