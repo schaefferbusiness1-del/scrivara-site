@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14e opnote-blank-stepper-prep-label -->
+<!-- MLS-DEPLOY-MARKER part14f athena-receipt-modeswitch-clearbtns -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -1947,13 +1947,14 @@
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
         <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
-        <button class="btn-ghost" onclick="sendToEMRviaAssist(this)" id="sendEmrBtn" style="font-size:14px;padding:10px 16px" title="Quick option: drops the note + codes + orders as text into the note field open in Athena. Good when you just want the text in fast.">📋 Quick-paste into Athena</button>
-        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="The full round-trip: MLS Assist enters the WHOLE visit into the patient's open Athena encounter — note, each diagnosis, E/M + CPT, and every order, each into its proper field. Stops before Save/Sign so you review and sign.">🚀 Push whole visit to Athena</button>
+        <button class="btn-ghost" onclick="sendToEMRviaAssist(this)" id="sendEmrBtn" style="font-size:14px;padding:10px 16px" title="Quick &amp; simple: drops just the note text into whatever field is open in Athena. No diagnoses/charges/orders placed separately — it's a plain text paste.">📋 Paste note text only</button>
+        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="The full round-trip: MLS Assist enters the WHOLE visit into the patient's open Athena encounter — note, each diagnosis, E/M + CPT, and every order, each into its proper field. Shows a confirm before, a receipt after, and stops before Save/Sign so you review and sign.">🚀 Send full visit to Athena</button>
         <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
         <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
         <button class="btn-ghost" onclick="gradeVisitExperience(this)" id="gradeExpBtn" title="AI rates how good the patient's experience was during this visit (bedside manner / communication), from the transcript — a coaching score that rolls into your Analysis">🌟 Grade experience</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
+      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6">🚀 <b>Send full visit</b> places each part in its own athenaOne section: <b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders. You'll see a confirm before and a receipt of exactly what was entered after.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:11px 14px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
@@ -3412,6 +3413,10 @@
     <button class="modal-x" onclick="closeOpPrep()">×</button>
     <h3 id="opPrepHdr">💉 Prep op notes</h3>
     <p class="note">MLS matches the procedure to one of your uploaded operative-note templates and drafts a ready op report — patient, date and procedure filled in. Edit the procedure if it’s wrong or missing and tap 🔎 to re-match the template. Anything that varies case-to-case (needle size, doses, contrast…) it asks you for, with a dropdown of what you’ve used before. Fill the blanks, then save to the chart. Use the hero button for a whole day at once, or 💉 Draft op note on any patient.</p>
+    <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
+      <button id="opPrepModePatient" onclick="opPrepSetMode('patient')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👤 This patient</button>
+      <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
+    </div>
     <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
       <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all op notes</button>
       <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
@@ -9897,6 +9902,14 @@ function openOpPrepSmart(){
   var ap=null; try{ ap=(typeof activePatient==='function')?activePatient():null; }catch(e){}
   if(ap && ap.id){ openOpPrepForPatient(ap.id); } else { openOpPrep(); }
 }
+/* Switch the op-prep modal between "this patient" and "all scheduled patients" without closing it. */
+function opPrepSetMode(mode){
+  if(mode==='patient'){
+    var ap=null; try{ ap=(typeof activePatient==='function')?activePatient():null; }catch(e){}
+    if(!ap || !ap.id){ try{ toast('Pick a patient first (Patients tab), then prep just their op note.','err'); }catch(e){} return; }
+    openOpPrepForPatient(ap.id);
+  } else { openOpPrep(); }
+}
 /* Parse a free-text procedure into its pieces (side / spinal levels / procedure type) for a nice preview. */
 function _opParseProc(proc){
   var p=String(proc||'');
@@ -9944,6 +9957,11 @@ function opPrepRender(){
   var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
   var rows=window._opPrep||[];
   var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Prep op notes';
+  // Reflect which mode is active in the switcher (blue = on).
+  try{ var _mp=document.getElementById('opPrepModePatient'), _ma=document.getElementById('opPrepModeAll'); var _on='background:#1456a8;color:#fff;border-color:#1456a8;font-weight:700', _off='background:var(--card);color:var(--ink);border-color:var(--line);font-weight:600';
+    if(_mp) _mp.style.cssText='font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid;cursor:pointer;'+(window._opPrepMode==='patient'?_on:_off);
+    if(_ma) _ma.style.cssText='font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid;cursor:pointer;'+(window._opPrepMode!=='patient'?_on:_off);
+  }catch(e){}
   if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
   if(!rows.length){ if(empty) empty.style.display='block'; box.innerHTML=''; return; }
   if(empty) empty.style.display='none';
@@ -13577,20 +13595,51 @@ var _ATHENA_RULES=' RULES: only use controls actually on screen; if that athenaO
 function _athenaSectionGoal(kind, body){ var s=ATHENA_SECTIONS[kind]; if(!s) return ''; return 'GOAL ('+s.dest+'): '+s.goalHead+_ATHENA_RULES+'\n\n'+String(body||''); }
 /* Run a PLAN — a list of {kind, body} sections — one after another, each into its own
    athenaOne section, with the destination shown on screen as it goes. */
+/* Pull the human-readable items out of a section body (the "• ..." lines) for the receipt. */
+function _athenaItemsOf(s){
+  if(s.kind==='note') return ['Full clinical note text'];
+  var out=[]; String(s.body||'').split('\n').forEach(function(ln){ ln=ln.trim(); if(ln.indexOf('•')===0) out.push(ln.replace(/^•\s*/,'')); else if(/^E\/M level:/i.test(ln)) out.push(ln); }); return out;
+}
 function _athenaPushPlan(sections, who){
   sections=(sections||[]).filter(function(s){ return s && s.body && String(s.body).trim(); });
   if(!sections.length){ try{ toast('Nothing to push.',''); }catch(e){} return; }
-  var i=0, done=[];
+  var i=0, results=[];
   function step(){
-    if(i>=sections.length){ try{ toast('🚀 Done — entered into Athena: '+done.join(', ')+'. Review & sign in athenaOne.','ok'); }catch(e){} return; }
+    if(i>=sections.length){ _athenaShowReceipt(who, results); return; }
     var s=sections[i]; var meta=ATHENA_SECTIONS[s.kind]||{label:s.kind,dest:''};
     _athenaPushRun(_athenaSectionGoal(s.kind, s.body), '→ Sending to '+meta.dest+' …', function(ok, reason){
-      if(!ok && reason==='noext'){ try{ toast('MLS Assist isn’t responding — install/enable the latest version and open your Athena tab, then try again.','err'); }catch(e){} return; } // stop the whole plan if the extension is missing
-      done.push((ok?'✓ ':'⚠ ')+meta.label);
+      if(!ok && reason==='noext'){ try{ toast('MLS Assist isn’t responding — install/enable the latest version and open your Athena tab, then try again.','err'); }catch(e){} if(results.length) _athenaShowReceipt(who, results, true); return; } // stop the plan if the extension is missing
+      results.push({ kind:s.kind, label:meta.label, dest:meta.dest, icon:(meta.icon||'•'), ok:ok, items:_athenaItemsOf(s) });
       i++; setTimeout(step, 500);
     });
   }
   step();
+}
+/* RECEIPT — a clear after-the-fact confirmation of EXACTLY what was sent to Athena and where. */
+function _athenaShowReceipt(who, results, partial){
+  try{
+    var old=document.getElementById('athenaReceipt'); if(old) old.remove();
+    var when=new Date().toLocaleString();
+    var rows=results.map(function(r){
+      var itemsHtml=(r.items&&r.items.length)?('<ul style="margin:4px 0 0 0;padding-left:18px;font-size:12.5px;color:#33536f">'+r.items.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('')+'</ul>'):'';
+      return '<div style="border:1px solid #e2e8f2;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:'+(r.ok?'#f3fbf6':'#fff6f6')+'">'
+        +'<div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px">'+(r.ok?'✅':'⚠️')+'</span><b style="font-size:13.5px">'+r.icon+' '+esc(r.label)+'</b></div>'
+        +'<div style="font-size:11.5px;color:#5b7186;margin-top:2px">→ '+esc(r.dest)+'</div>'+itemsHtml+'</div>';
+    }).join('');
+    var anyFail=results.some(function(r){ return !r.ok; });
+    var card=document.createElement('div'); card.id='athenaReceipt';
+    card.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(10,25,50,.45);display:flex;align-items:center;justify-content:center;padding:18px';
+    card.innerHTML='<div style="background:#fff;border-radius:16px;max-width:540px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 24px 70px rgba(10,30,70,.4);padding:20px 22px">'
+      +'<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:17px;font-weight:800;color:#0d3c78">🚀 Sent to Athena — '+esc(who||'patient')+'</div><div style="font-size:12px;color:#5b7186;margin-top:2px">'+esc(when)+(partial?' · stopped early':'')+'</div></div><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="background:none;border:none;font-size:22px;color:#9aa7b4;cursor:pointer;line-height:1">×</button></div>'
+      +'<div style="font-size:12.5px;color:#33536f;margin:10px 0 12px">Exactly what MLS Assist entered, each into its own athenaOne section:</div>'
+      +rows
+      +'<div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#7a5a16;margin-top:4px">⚠ MLS Assist <b>stopped before Save / Sign</b> — open Athena and confirm each item looks right, then save & sign there.'+(anyFail?' One or more items are marked ⚠ — double-check those in Athena.':'')+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:14px"><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="flex:1;background:#1456a8;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer">Got it — I’ll review in Athena</button></div>'
+      +'</div>';
+    document.body.appendChild(card);
+    card.addEventListener('click', function(e){ if(e.target===card) card.remove(); });
+    try{ toast('🚀 Sent to Athena — review the receipt, then sign in athenaOne.','ok'); }catch(e){}
+  }catch(e){ try{ toast('Sent to Athena — review & sign there.','ok'); }catch(_){} }
 }
 /* Push ONLY the superbill / charges (E/M + CPT + ICD) into Athena billing. */
 function pushSuperbillToAthena(){
