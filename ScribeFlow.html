@@ -10607,22 +10607,28 @@ function pullScheduleViaAssist(btn){
       var r=e.data.resp||{};
       (async function(){
         try{
-          if(!r.ok || !r.text){ setS(r.error||'Could not read the EMR tab. Open your Athena schedule and try again.','err'); return; }
-          setS('Found the page — pulling out today’s patients…');
+          window.__schedRaw={text:r.text||'',url:r.url||'',frames:r.frames};   // kept for diagnostics
+          if(!r.ok || !r.text){ setS(r.error||'Couldn’t read your EMR tab. Open your Athena Day schedule in another tab and try again.','err'); return; }
+          setS('Read your Athena schedule ('+Math.round((r.text||'').length/100)/10+'k chars) — finding today’s patients…');
           var appts=await _parseScheduleText(r.text);
-          if(!appts.length){ setS('No appointments found on that page. Open your Athena day/schedule view and try again.','err'); return; }
+          if(!appts.length){
+            var noneToday=/0\s*appointments|no\s*appointments/i.test(r.text||'');
+            if(noneToday){ setS('Athena shows 0 appointments for the day currently in view. Open a clinic day that has patients in Athena’s Day view, then pull again.','err'); }
+            else { setS('Read the page but found no patient appointments. Make sure Athena’s DAY schedule (not the dashboard) is open with patients on it, then pull again.','err'); }
+            return;
+          }
           await _importPulledSchedule(appts);
-        }catch(err){ setS('Could not parse the schedule. Try again with the Athena day view open.','err'); }
+        }catch(err){ setS('Couldn’t parse the schedule. Open Athena’s Day schedule view and try again.','err'); }
         finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull today’s schedule'; } }
       })();
     }
     window.addEventListener('message',onResult);
     try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
-    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull today’s schedule'; } setS('No response from MLS Assist. Make sure your EMR tab is open.','err'); } }, 35000);
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull today’s schedule'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (it should say v1.17). Then reload this page and try again.','err'); } }, 30000);
   }
 }
 async function _parseScheduleText(text){
-  var sys='You extract a clinic’s appointment schedule from raw EMR page text (often messy, from Athena). Return ONLY a JSON array (no prose, no code fence) of TODAY’S patient appointments: [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. Include ONLY real patient appointments. EXCLUDE menus, buttons, column headers, the provider/clinic name, and UI text. If nothing looks like a schedule, return [].';
+  var sys='You extract a clinic’s appointment schedule from raw EMR/Athena page text. It is messy: it often has a mini month-calendar (lists of day numbers — IGNORE those), a time grid like "07:00 AM 08:00 AM …" (IGNORE the empty grid labels), and provider rows like "Benner_John_MD: 3 appointments". The PATIENT appointments appear as a patient NAME next to a time and sometimes a visit reason/type. Return ONLY a JSON array (no prose, no code fence): [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. RULES: include ONLY real PATIENT appointments (a person being seen). EXCLUDE: provider/clinician names (e.g. anything like Lastname_Firstname_MD/PA-C/DO, or "Dr. X"), department/location names (e.g. "POSM CL WEST CHESTER", "PHSC OT …"), menu/button/column-header/UI text, message-inbox sender names, and the bare day-number lists from the mini calendar. A provider row that says "0 appointments" means that provider has none — do not invent patients. If there are genuinely no patient appointments in the text, return [].';
   var raw=await aiCallRaw(sys, 'EMR PAGE TEXT:\n'+String(text||'').slice(0,16000), (typeof getKey==='function'?getKey():''), {freeform:true});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   try{ var arr=JSON.parse(s); if(Array.isArray(arr)) return arr; }catch(e){}
