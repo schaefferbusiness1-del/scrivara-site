@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14b athena-section-targeting -->
+<!-- MLS-DEPLOY-MARKER part14d opnote-viewer-fix -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -2041,7 +2041,9 @@
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" title="Open this patient's chart in your Athena tab, then tap to import their problems, meds, allergies and history into MLS">📥 Pull chart from Athena</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
+      <button class="btn-ghost" id="histDedupeBtn" style="display:none;font-size:14px;padding:9px 15px;color:#a12c2c;border-color:#e8b7b7" onclick="cleanupDuplicateNotes(this)" title="Remove duplicate notes — same patient, same note, same day — keeping one of each">🧹 Remove duplicate notes</button>
     </h2>
+    <div id="histDupBanner" style="display:none;background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 12px;margin:4px 0 0;font-size:13px;color:#7a5a16"></div>
     <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
     <div class="disclaim" id="histStorageNote" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Encrypted and synced to your MLS account — your visit history follows you to any device you sign into, and is included in automatic backups.</div>
 
@@ -10829,6 +10831,11 @@ async function loadRecordsFromServer(){
 function renderHistory(){
   const all=getNotes();
   const ap=activePatient();
+  // Surface duplicate notes (e.g. an op note saved several times) so they can be cleaned in one tap.
+  try{ var _dups=(typeof _dupNoteList==='function')?_dupNoteList():[]; var _db=document.getElementById('histDedupeBtn'); var _bn=document.getElementById('histDupBanner');
+    if(_db) _db.style.display=_dups.length?'':'none';
+    if(_bn){ if(_dups.length){ _bn.style.display='block'; _bn.innerHTML='⚠ Found <b>'+_dups.length+'</b> duplicate note'+(_dups.length===1?'':'s')+' (same patient, same note, same day). <a href="#" onclick="cleanupDuplicateNotes();return false;" style="color:#a12c2c;font-weight:700">Remove the extras →</a>'; } else { _bn.style.display='none'; } }
+  }catch(e){}
   // Clear any stale chart summary so it never bleeds across patients/views.
   { const cs=document.getElementById('chartSumCard'); if(cs) cs.style.display='none'; const csb=document.getElementById('chartSumBody'); if(csb) csb.textContent=''; }
   // When a patient is active, History shows that patient's visits (per-patient
@@ -10911,6 +10918,25 @@ function attachNoteToActive(id){
   toast('Visit filed to '+ap.name+'’s chart.','ok');
 }
 
+/* How many duplicate notes exist (same patient + same note title + same day). */
+function _dupNoteList(){
+  var ns=(typeof getNotes==='function'?getNotes():[])||[]; var byKey={};
+  ns.forEach(function(n){ var d=new Date(n.updated||n.created||0); var day=isNaN(d.getTime())?'':d.toISOString().slice(0,10); var k=String(n.patient||'').trim().toLowerCase()+'|'+String(n.cc||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+day; (byKey[k]=byKey[k]||[]).push(n); });
+  var remove=[];
+  Object.keys(byKey).forEach(function(k){ var arr=byKey[k]; if(arr.length<2) return; arr.sort(function(a,b){ var u=(b.updated||b.created||0)-(a.updated||a.created||0); if(u) return u; return String(b.text||b.soap||'').length-String(a.text||a.soap||'').length; }); arr.slice(1).forEach(function(n){ remove.push(n); }); });
+  return remove;
+}
+/* Collapse duplicate notes — same patient, same note title, same day — keeping the most
+   complete/most-recent one. Cleans up over-saves (e.g. an op note saved several times). */
+function cleanupDuplicateNotes(btn){
+  var remove=_dupNoteList();
+  if(!remove.length){ try{ toast('No duplicate notes found — your history is clean.','ok'); }catch(e){} return; }
+  if(!confirm('Found '+remove.length+' duplicate note'+(remove.length===1?'':'s')+' (same patient, same note, same day). Keep one of each and remove the extras? This cannot be undone.')) return;
+  var ids={}; remove.forEach(function(n){ ids[n.id]=1; try{ deleteNoteOnServer(n.id); }catch(e){} });
+  saveNotes(getNotes().filter(function(n){ return !ids[n.id]; }));
+  try{ renderHistory(); }catch(e){} try{ updateNavCounts(); }catch(e){}
+  try{ toast('Removed '+remove.length+' duplicate note'+(remove.length===1?'':'s')+'. Kept one of each.','ok'); }catch(e){}
+}
 function deleteNote(id){
   if(!confirm('Delete this saved visit from this device? This cannot be undone.')) return;
   saveNotes(getNotes().filter(n=>n.id!==id));
@@ -10928,14 +10954,18 @@ function openNoteFromHistory(id){
   viewingId=id;
   document.getElementById('viewTitle').textContent='📄 '+ (n.patient||'Saved visit');
   const d=new Date(n.updated||n.created);
+  const isOp = (n.kind==='opnote') || (n.text && !n.soap && !n.insurance && !n.coding);
   document.getElementById('viewMeta').textContent=
     (n.cc&&n.cc!=='—'?('CC: '+n.cc+' · '):'') + d.toLocaleString() + ' · ' +
-    (n.isDraft?'Draft (transcript only)':(n.signed?'Signed':'Unsigned note'));
+    (isOp ? ('Operative note'+(n.isDraft?' (draft)':'')) : (n.isDraft?'Draft (transcript only)':(n.signed?'Signed':'Unsigned note')));
   let body='';
-  if(n.isDraft){
-    body='[TRANSCRIPT DRAFT — no note generated yet]\n\n'+(n.transcript||'');
+  if(isOp){
+    // Op notes (and any note whose content lives in .text) — show the actual note text.
+    body=n.text||n.soap||'';
+  } else if(n.isDraft){
+    body='[TRANSCRIPT DRAFT — no note generated yet]\n\n'+(n.transcript||n.text||'');
   } else {
-    body=(n.soap||'')+'\n\n'+('— — — INSURANCE-READY — — —\n'+(n.insurance||'(none)'))+codingText(n.coding);
+    body=(n.soap||n.text||'')+'\n\n'+('— — — INSURANCE-READY — — —\n'+(n.insurance||'(none)'))+codingText(n.coding);
     if(n.signLine) body+='\n\n'+n.signLine;
   }
   if(Array.isArray(n.orders) && n.orders.length){
