@@ -1424,7 +1424,10 @@
         <div style="font-size:23px;font-weight:800;margin:5px 0 3px">🎙️ Just talk — MLS writes the note.</div>
         <div style="font-size:13.5px;opacity:.92">Enter the patient's name &amp; DOB, hit record, and have a natural visit. No typing, no clicks.</div>
       </div>
-      <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="pullScheduleViaAssist(this)" title="Read today's appointments from your open Athena tab via MLS Assist" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📅 Pull today’s schedule</button>
+        <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
+      </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
       <div style="flex:1;min-width:170px">
@@ -1438,6 +1441,8 @@
       </div>
       <button id="heroRecBtn" onclick="heroStartVisit()" style="background:#fff;color:#1456a8;border:0;border-radius:10px;padding:12px 22px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.18)">🎙️ Start recording</button>
     </div>
+    <div id="heroPullStatus" style="display:none;font-size:12.5px;margin-top:10px;font-weight:600"></div>
+    <div id="heroToday" style="display:none;margin-top:10px"></div>
   </div>
 
   <div class="howto" style="display:none">
@@ -10512,6 +10517,91 @@ function heroStartVisit(){
 function emrConnectFromHero(){
   try{ if(typeof openSettings==='function') openSettings(); }catch(e){}
   try{ toast('Connect your EMR in Settings → integrations, or install MLS Assist for the Athena round-trip.',''); }catch(e){}
+}
+/* ===== PULL TODAY'S SCHEDULE from the EMR (Athena) via MLS Assist — no Athena API needed.
+   MLS Assist reads the open Athena schedule tab, MLS AI parses it into appointments, and
+   they pre-load as today's patients so the doctor just taps one and records. ===== */
+function pullScheduleViaAssist(btn){
+  var setS=function(m,kind){ var el=document.getElementById('heroPullStatus'); if(el){ el.textContent=m; el.style.color=(kind==='err')?'#ffe0e0':(kind==='ok'?'#d8ffe8':'rgba(255,255,255,.95)'); el.style.display='block'; } else { try{ toast(m, kind==='err'?'err':''); }catch(e){} } };
+  var ponged=false, tries=0, iv=null;
+  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
+  window.addEventListener('message',onPong);
+  var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
+  setS('Looking for MLS Assist…'); ping();
+  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); setS('MLS Assist isn’t responding. Install/enable it and open your Athena tab, then try again.','err'); } else ping(); }, 350);
+  function proceed(){
+    if(btn){ btn.disabled=true; btn.dataset._t=btn.innerHTML; btn.innerHTML='… reading Athena'; }
+    setS('Reading today’s schedule from your EMR tab…');
+    var got=false;
+    function onResult(e){
+      if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppScheduleResult')) return;
+      got=true; window.removeEventListener('message',onResult);
+      var r=e.data.resp||{};
+      (async function(){
+        try{
+          if(!r.ok || !r.text){ setS(r.error||'Could not read the EMR tab. Open your Athena schedule and try again.','err'); return; }
+          setS('Found the page — pulling out today’s patients…');
+          var appts=await _parseScheduleText(r.text);
+          if(!appts.length){ setS('No appointments found on that page. Open your Athena day/schedule view and try again.','err'); return; }
+          await _importPulledSchedule(appts);
+        }catch(err){ setS('Could not parse the schedule. Try again with the Athena day view open.','err'); }
+        finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull today’s schedule'; } }
+      })();
+    }
+    window.addEventListener('message',onResult);
+    try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull today’s schedule'; } setS('No response from MLS Assist. Make sure your EMR tab is open.','err'); } }, 35000);
+  }
+}
+async function _parseScheduleText(text){
+  var sys='You extract a clinic’s appointment schedule from raw EMR page text (often messy, from Athena). Return ONLY a JSON array (no prose, no code fence) of TODAY’S patient appointments: [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. Include ONLY real patient appointments. EXCLUDE menus, buttons, column headers, the provider/clinic name, and UI text. If nothing looks like a schedule, return [].';
+  var raw=await aiCallRaw(sys, 'EMR PAGE TEXT:\n'+String(text||'').slice(0,16000), (typeof getKey==='function'?getKey():''), {freeform:true});
+  var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
+  try{ var arr=JSON.parse(s); if(Array.isArray(arr)) return arr; }catch(e){}
+  try{ var m=s.match(/\[[\s\S]*\]/); if(m) return JSON.parse(m[0]); }catch(e){}
+  return [];
+}
+async function _importPulledSchedule(appts){
+  if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to import the schedule.','err'); }catch(e){} return; }
+  var today=(new Date()).toISOString().slice(0,10);
+  var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var created=0;
+  for(var i=0;i<appts.length;i++){
+    var a=appts[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
+    var ext=''; try{ var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(p) ext=p.id; }catch(e){}
+    var startIso=null; if(/^\d\d:\d\d$/.test(String(a.time||''))){ try{ startIso=new Date(today+'T'+a.time).toISOString(); }catch(e){} }
+    try{
+      var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name, dob:String(a.dob||''), reason:String(a.reason||''), patient_external_id:ext||null, appt_date:today, start_at:startIso})});
+      if(r.ok) created++;
+    }catch(e){}
+  }
+  try{ if(typeof loadCalendar==='function') await loadCalendar(); }catch(e){}
+  _renderTodayPatients(appts);
+  var el=document.getElementById('heroPullStatus'); if(el){ el.textContent='✓ Imported '+created+' of today’s '+appts.length+' patient'+(appts.length===1?'':'s')+' from Athena. Tap one below to load & record.'; el.style.color='#d8ffe8'; }
+  try{ toast('Imported '+created+' appointment'+(created===1?'':'s')+' from Athena.','ok'); }catch(e){}
+}
+function _renderTodayPatients(appts){
+  var box=document.getElementById('heroToday'); if(!box) return;
+  window._heroTodayList=appts||[];
+  if(!appts||!appts.length){ box.style.display='none'; box.innerHTML=''; return; }
+  var rows=appts.map(function(a,i){
+    var nm=String(a.name||'').trim(); if(!nm) return '';
+    var meta=[a.time||'', a.reason||''].filter(Boolean).join(' · ');
+    return '<button onclick="_heroPickPatient('+i+')" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.32);border-radius:9px;padding:7px 11px;color:#fff;cursor:pointer;text-align:left;min-width:120px">'+
+      '<span style="font-weight:700;font-size:13px">'+esc(nm)+'</span>'+(meta?'<span style="font-size:11px;opacity:.85">'+esc(meta)+'</span>':'')+'</button>';
+  }).filter(Boolean).join('');
+  box.innerHTML='<div style="font-size:12px;font-weight:700;opacity:.9;margin:2px 0 6px;letter-spacing:.3px">📋 TODAY’S PATIENTS — tap to load &amp; record</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+rows+'</div>';
+  box.style.display='block';
+}
+function _heroPickPatient(i){
+  try{
+    var a=(window._heroTodayList||[])[i]||{};
+    var nm=document.getElementById('heroPtName'); if(nm) nm.value=a.name||'';
+    var db=document.getElementById('heroPtDob'); if(db) db.value=a.dob||'';
+    _heroSyncName();
+    try{ var rc=document.getElementById('heroRecBtn'); if(rc&&rc.scrollIntoView) rc.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+    try{ toast('Loaded '+(a.name||'patient')+' — hit 🎙️ Start recording.',''); }catch(e){}
+  }catch(e){}
 }
 function toggleCapture(){ capturing?stopCapture():startCapture(); }
 function startCapture(){
