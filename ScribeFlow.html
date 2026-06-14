@@ -6822,6 +6822,10 @@ function renderCalendar(){
   if(_calMode==='day') return _calRenderDay();
   return _calRenderMonth();
 }
+/* Time helpers for the hourly Week/Day agenda grids. */
+function _calFmtHr(mins){ var h=Math.floor(mins/60), m=mins%60; var ap=h<12?'a':'p'; var h12=h%12; if(h12===0) h12=12; return h12+(m?(':'+_calPad(m)):'')+ap; }
+function _calApptTimeBlock(a){ var s=String((a&&a.start_at)||''); if(s.length<16) return null; var mm=s.slice(11,16); if(!/^\d\d:\d\d$/.test(mm)) return null; var mins=parseInt(mm.slice(0,2),10)*60+parseInt(mm.slice(3,5),10); var dur=30; if(a.end_at){ try{ var d=Math.round((new Date(a.end_at).getTime()-new Date(a.start_at).getTime())/60000); if(d>0) dur=d; }catch(e){} } return {mins:mins, dur:dur}; }
+function _calHourRange(appts){ var startMin=7*60, endMin=19*60; (appts||[]).forEach(function(a){ var b=_calApptTimeBlock(a); if(b){ if(b.mins<startMin) startMin=Math.floor(b.mins/60)*60; if(b.mins+b.dur>endMin) endMin=Math.ceil((b.mins+b.dur)/60)*60; } }); return {startMin:startMin, endMin:endMin}; }
 function _calRenderWeek(){
   var pfVal=_calFilterVal();
   var jmp=document.getElementById('calJump'); if(jmp) jmp.style.display='none';
@@ -6832,15 +6836,23 @@ function _calRenderWeek(){
   var tn=new Date(); var todayKey=tn.getFullYear()+'-'+_calPad(tn.getMonth()+1)+'-'+_calPad(tn.getDate());
   var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var grid=document.getElementById('calGrid'); if(!grid) return;
-  var h='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">';
-  days.forEach(function(d,idx){ var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); var it=key===todayKey; h+='<div style="text-align:center;font-weight:700;font-size:12px;color:'+(it?'#1f7ae0':'var(--muted)')+';padding:4px 0">'+dn[idx]+' '+d.getDate()+'</div>'; });
+  var rng=_calHourRange(_calAppts||[]); var pxPerMin=0.8; var totalH=(rng.endMin-rng.startMin)*pxPerMin;
+  // Header row — click a day to open its Day agenda.
+  var h='<div style="display:grid;grid-template-columns:44px repeat(7,1fr)">';
+  h+='<div></div>';
+  days.forEach(function(d,idx){ var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); var it=key===todayKey; h+='<div onclick="_calRefDate=\''+key+'\';calSetMode(\'day\')" title="Open this day" style="text-align:center;font-weight:700;font-size:12px;color:'+(it?'#1f7ae0':'var(--muted)')+';padding:4px 0;cursor:pointer">'+dn[idx]+' '+d.getDate()+'</div>'; });
+  h+='</div>';
+  // Body — hour gutter + 7 day lanes, appointments as duration-sized blocks.
+  h+='<div style="display:grid;grid-template-columns:44px repeat(7,1fr);margin-top:2px">';
+  h+='<div style="position:relative;height:'+totalH+'px">'; for(var tg=rng.startMin;tg<=rng.endMin;tg+=60){ var topg=(tg-rng.startMin)*pxPerMin; h+='<div style="position:absolute;top:'+(topg-6)+'px;right:5px;font-size:10px;color:var(--muted)">'+_calFmtHr(tg)+'</div>'; } h+='</div>';
   days.forEach(function(d){
     var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate());
-    var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
-    var it=key===todayKey;
-    h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:330px;border:1px solid '+(it?'#1f7ae0':'var(--line)')+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+(it?'var(--soft)':'var(--card)')+'">';
-    if(!ap.length) h+='<div style="font-size:11px;color:#c4cdd8;margin-top:6px;text-align:center">—</div>';
-    ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="Click for details · drag to another day to reschedule" style="font-size:11px;margin-top:3px;padding:3px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
+    var it=key===todayKey; var ap=(byDate[key]||[]); var timed=[], untimed=[];
+    ap.forEach(function(a){ var b=_calApptTimeBlock(a); if(b) timed.push([a,b]); else untimed.push(a); });
+    h+='<div ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="position:relative;height:'+totalH+'px;border-left:1px solid var(--line);background:'+(it?'var(--soft)':'transparent')+'">';
+    for(var tl=rng.startMin;tl<=rng.endMin;tl+=60){ var topl=(tl-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:0;right:0;top:'+topl+'px;border-top:1px solid #eef2f7"></div>'; }
+    timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); h+='<div draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="Click for details · drag to reschedule" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:4px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;cursor:pointer">'+esc(String(a.start_at||'').slice(11,16))+' '+esc(_calLabelOf(a))+'</div>'; });
+    if(untimed.length){ h+='<div onclick="calOpenDay(\''+key+'\')" title="'+untimed.length+' with no set time" style="position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;color:#1f7ae0;background:#eef4fc;border-radius:4px;padding:1px 4px;cursor:pointer;text-align:center">'+untimed.length+' no-time</div>'; }
     h+='</div>';
   });
   h+='</div>'; grid.innerHTML=h;
@@ -6852,9 +6864,17 @@ function _calRenderDay(){
   var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent=ref.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'});
   var ap=(_calAppts||[]).filter(function(a){ return _calDateOf(a)===key && (!pfVal||String(a.doctor_user_id||'')===String(pfVal)); }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
   var grid=document.getElementById('calGrid'); if(!grid) return;
-  var h='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;min-height:280px">';
-  if(!ap.length) h+='<div class="mini" style="color:var(--muted)">No appointments this day. Use the panel below to add one.</div>';
-  ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" title="Click for patient details + reschedule" style="display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin-bottom:7px;background:var(--card);cursor:pointer"><span style="font-weight:700;min-width:60px;font-size:16px">'+(tm||'—')+'</span><span style="flex:1;font-size:15px">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:2px 9px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:12px;color:#1f7ae0;font-weight:600">Details ›</span></div>'; });
+  // Split timed vs untimed; build an hourly agenda grid with duration-sized blocks.
+  var timed=[], untimed=[];
+  ap.forEach(function(a){ var b=_calApptTimeBlock(a); if(b) timed.push([a,b]); else untimed.push(a); });
+  var rng=_calHourRange(ap); var pxPerMin=0.95; var totalH=(rng.endMin-rng.startMin)*pxPerMin;
+  var h='';
+  if(!ap.length){ h+='<div style="border:1px solid var(--line);border-radius:10px;padding:16px;min-height:120px"><div class="mini" style="color:var(--muted)">No appointments this day. Use “➕ New appointment” to add one.</div></div>'; grid.innerHTML=h; return; }
+  if(untimed.length){ h+='<div style="margin-bottom:8px"><span class="mini" style="color:var(--muted);margin-right:6px">No set time:</span>'; untimed.forEach(function(a){ var c=_calStatusColor(a.status); h+='<span onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" style="display:inline-block;margin:0 6px 6px 0;border-radius:6px;padding:5px 10px;background:'+c.bg+';color:'+c.fg+';font-size:12px;cursor:pointer">'+esc(_calLabelOf(a))+'</span>'; }); h+='</div>'; }
+  h+='<div style="position:relative;height:'+totalH+'px;border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden">';
+  for(var t=rng.startMin; t<=rng.endMin; t+=60){ var top=(t-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top+'px;border-top:1px solid var(--line)"></div><div style="position:absolute;left:6px;top:'+(top-7)+'px;font-size:11px;color:var(--muted)">'+_calFmtHr(t)+'</div>'; }
+  for(var t2=rng.startMin+30; t2<rng.endMin; t2+=60){ var top2=(t2-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top2+'px;border-top:1px dashed #eef2f7"></div>'; }
+  timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(24, b.dur*pxPerMin-3); var c=_calStatusColor(a.status); h+='<div onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" title="Click for details + reschedule" style="position:absolute;left:54px;right:8px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:3px solid '+c.fg+';border-radius:6px;padding:3px 9px;font-size:12.5px;overflow:hidden;cursor:pointer;box-shadow:0 1px 3px rgba(20,40,70,.08)"><b>'+_calFmtHr(b.mins)+'</b> '+esc(_calLabelOf(a))+(a.reason?' <span style="opacity:.82">· '+esc(a.reason)+'</span>':'')+'</div>'; });
   h+='</div>'; grid.innerHTML=h;
 }
 function _calRenderMonth(){
