@@ -135,29 +135,33 @@
 
   const panel = document.createElement('div');
   panel.id = 'mls-assist-panel';
+  var SECH = 'font-weight:800;font-size:11.5px;color:#15528f;letter-spacing:.2px;margin:15px 0 7px;display:flex;align-items:center;gap:7px';
+  var NUM = 'display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#1f7ae0;color:#fff;font-size:11px;font-weight:800;flex:none';
   panel.innerHTML = [
     '<header><b>🩺 MLS Assist</b><span class="x" data-tip="Close MLS Assist">×</span></header>',
     '<div class="body">',
-    '  <div class="consent">Runs only when you open this panel. It captures what you dictate or select, drafts a note, and inserts it <b>only when you click</b>. You review everything first.</div>',
-    '  <label>Visit transcript / context</label>',
-    '  <textarea id="mls-tx" rows="5" placeholder="Press Dictate and talk through the visit, or paste/select text from the chart…"></textarea>',
+    '  <div class="consent">Dictate or select the visit → MLS drafts the note → it goes into the chart <b>only when you click</b>. You review everything.</div>',
+
+    '  <div style="' + SECH + '"><span style="' + NUM + '">1</span> Capture the visit</div>',
+    '  <textarea id="mls-tx" rows="4" placeholder="Press 🎙 Dictate and talk through the visit — or paste / highlight text from the chart."></textarea>',
     '  <div class="row">',
     '    <button class="b b-rec" id="mls-rec" data-tip="Dictate the visit out loud — MLS transcribes as you talk">🎙 Dictate</button>',
-    '    <button class="b b-ghost" id="mls-sel" data-tip="Use the text you have highlighted on the chart as the visit context">Use page selection</button>',
+    '    <button class="b b-ghost" id="mls-sel" data-tip="Use the text you have highlighted on the chart as the visit context">Use selection</button>',
     '    <button class="b b-ghost" id="mls-clr" data-tip="Clear the transcript and the drafted note">Clear</button>',
     '  </div>',
+
+    '  <div style="' + SECH + '"><span style="' + NUM + '">2</span> Write &amp; insert the note</div>',
     '  <div class="row"><button class="b b-go" id="mls-gen" data-tip="Turn the transcript into a structured clinical note" style="flex:1">✨ Generate note</button></div>',
-    '  <label>Drafted note (review before inserting)</label>',
-    '  <textarea id="mls-note" rows="7" placeholder="Your generated note appears here for review."></textarea>',
+    '  <textarea id="mls-note" rows="6" placeholder="Your drafted note appears here — review it before inserting." style="margin-top:7px"></textarea>',
     '  <div class="row">',
-    '    <button class="b b-primary" id="mls-ins" data-tip="Paste the drafted note straight into your EMR note field - it finds the field for you (a one-shot paste, not keystroke typing)" style="flex:1">⤵ Paste note into chart</button>',
+    '    <button class="b b-primary" id="mls-ins" data-tip="Drops the drafted note straight into your EMR note field — it finds the field for you (one-shot paste)" style="flex:1">⤵ Insert into chart</button>',
     '    <button class="b b-ghost" id="mls-cpy" data-tip="Copy the drafted note to your clipboard">Copy</button>',
     '  </div>',
-    '  <div style="border-top:1px dashed #e0e8f2;margin-top:12px;padding-top:10px">',
-    '    <label>Pull the whole chart into MLS</label>',
-    '    <div class="row"><button class="b b-ghost" id="mls-cap" data-tip="Read this patient and their prior visits into MLS — nothing is written back to the EMR" style="flex:1">📋 Capture whole chart → MLS</button></div>',
-    '    <div class="consent" style="margin-top:6px">Reads the patient + their prior visits off this page and saves them into MLS (encrypted). Nothing is written back to the EMR.</div>',
-    '  </div>',
+
+    '  <div style="' + SECH + '"><span style="' + NUM + '">3</span> Pull the chart into MLS</div>',
+    '  <div class="row"><button class="b b-ghost" id="mls-cap" data-tip="Read this patient and their prior visits into MLS — nothing is written back to the EMR" style="flex:1">📋 Capture chart → MLS</button></div>',
+    '  <div class="consent" style="margin-top:6px">Reads the patient + prior visits off this page into MLS (encrypted). Nothing is written back to the EMR.</div>',
+
     '  <div class="log" id="mls-log"></div>',
     '</div>'
   ].join('');
@@ -320,19 +324,34 @@
     const body = panel.querySelector('.body'); if (!body || panel.__apInit) return; panel.__apInit = true;
     const log = panel.querySelector('#mls-log'); const L = m => { const d = document.createElement('div'); d.textContent = '⤷ ' + m; log.prepend(d); };
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'border-top:1px dashed #e0e8f2;margin-top:12px;padding-top:10px';
+    wrap.style.cssText = 'border-top:1px solid #e8eef6;margin-top:14px;padding-top:4px';
     wrap.innerHTML =
-      '<label>Autopilot (beta) — the agent does the steps</label>' +
-      '<input id="mls-ap-goal" placeholder="e.g. find the note field and insert the visit note" style="width:100%;box-sizing:border-box;border:1px solid #cfe0f3;border-radius:8px;padding:7px;font:13px inherit">' +
-      '<div class="row"><button class="b b-go" id="mls-ap-run" data-tip="Let the agent take the steps toward your goal — it pauses before any Save or Sign" style="flex:1">▶ Run autopilot</button><button class="b b-rec" id="mls-ap-stop" data-tip="Stop the autopilot right now" style="display:none">⏹ Stop</button></div>' +
-      '<div id="mls-ap-status" style="font-size:12px;color:#5a6a7a;margin:6px 0 0;min-height:15px"></div>' +
-      '<div class="row" style="gap:6px;margin-top:6px"><button class="b b-ghost" id="mls-ap-mic" data-tip="Speak your goal instead of typing it">🎤 Speak</button><button class="b b-ghost" id="mls-ap-savepb" data-tip="Save this goal as a one-tap playbook">💾 Save as playbook</button></div>' +
-      '<div id="mls-ap-pbs" style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0 0"></div>' +
-      '<div class="row" style="gap:6px;margin-top:8px"><button class="b b-ghost" id="mls-ap-rec" data-tip="Record the clicks and typing you do, then replay it anytime">⏺ Record a task</button><button class="b b-ghost" id="mls-ap-undo" data-tip="Undo the last text the agent typed into a field">↩ Undo last</button></div>' +
-      '<div id="mls-ap-recs" style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0 0"></div>' +
-      '<label class="row" style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;color:#8a5a00"><input type="checkbox" id="mls-ap-save" style="width:auto;flex:none"> Let it click Save / Sign on its own (use with care)</label>' +
-      '<div class="consent" style="margin-top:8px">Autopilot reads the screen and acts step-by-step while you watch. By default it <b>pauses</b> before any Save/Sign and asks you. Tick the box above to let it commit on its own — only do that while watching. Hit Stop anytime.</div>';
+      // Collapsible header — autopilot is advanced, so it stays tucked away until opened.
+      '<div id="mls-ap-toggle" style="cursor:pointer;user-select:none;font-weight:800;font-size:11.5px;color:#15528f;letter-spacing:.2px;display:flex;align-items:center;gap:7px;padding:9px 0">' +
+        '<span id="mls-ap-caret" style="display:inline-block;transition:transform .15s">▸</span> 🤖 Autopilot <span style="font-weight:500;color:#9aa7b4;font-size:11px">— advanced, optional</span>' +
+      '</div>' +
+      '<div id="mls-ap-wrap" style="display:none">' +
+        '<div class="consent" style="margin:0 0 8px">Tell the agent what to do and it takes the steps on screen while you watch. It <b>pauses before any Save/Sign</b> unless you allow it below.</div>' +
+        '<input id="mls-ap-goal" placeholder="e.g. find the note field and insert the visit note" style="width:100%;box-sizing:border-box;border:1px solid #cfe0f3;border-radius:8px;padding:8px;font:13px inherit">' +
+        '<div class="row" style="margin-top:6px"><button class="b b-go" id="mls-ap-run" data-tip="Let the agent take the steps toward your goal — it pauses before any Save or Sign" style="flex:1">▶ Run</button><button class="b b-rec" id="mls-ap-stop" data-tip="Stop the autopilot right now" style="display:none">⏹ Stop</button><button class="b b-ghost" id="mls-ap-mic" data-tip="Speak your goal instead of typing it">🎤</button></div>' +
+        '<div id="mls-ap-status" style="font-size:12px;color:#5a6a7a;margin:7px 0 0;min-height:15px"></div>' +
+        '<div id="mls-ap-pbs" style="display:flex;gap:5px;flex-wrap:wrap;margin:7px 0 0"></div>' +
+        '<div id="mls-ap-recs" style="display:flex;gap:5px;flex-wrap:wrap;margin:5px 0 0"></div>' +
+        // The rarely-used controls go under a second "More" fold so the menu stays clean.
+        '<div id="mls-ap-more-toggle" style="cursor:pointer;user-select:none;font-size:11.5px;color:#6a7a8a;margin-top:9px">＋ More options</div>' +
+        '<div id="mls-ap-more" style="display:none;margin-top:7px">' +
+          '<div class="row" style="gap:6px"><button class="b b-ghost" id="mls-ap-savepb" data-tip="Save this goal as a one-tap playbook">💾 Save as playbook</button><button class="b b-ghost" id="mls-ap-rec" data-tip="Record the clicks and typing you do, then replay it anytime">⏺ Record a task</button><button class="b b-ghost" id="mls-ap-undo" data-tip="Undo the last text the agent typed into a field">↩ Undo</button></div>' +
+          '<label class="row" style="display:flex;align-items:center;gap:6px;margin-top:9px;font-size:12px;color:#8a5a00"><input type="checkbox" id="mls-ap-save" style="width:auto;flex:none"> Let it click Save / Sign on its own (only while watching)</label>' +
+        '</div>' +
+      '</div>';
     body.appendChild(wrap);
+    // toggles for the two collapsibles
+    (function () {
+      var tg = wrap.querySelector('#mls-ap-toggle'), apw = wrap.querySelector('#mls-ap-wrap'), car = wrap.querySelector('#mls-ap-caret');
+      if (tg) tg.addEventListener('click', function () { var open = apw.style.display === 'none'; apw.style.display = open ? 'block' : 'none'; if (car) car.style.transform = open ? 'rotate(90deg)' : 'none'; });
+      var mt = wrap.querySelector('#mls-ap-more-toggle'), mm = wrap.querySelector('#mls-ap-more');
+      if (mt) mt.addEventListener('click', function () { var open = mm.style.display === 'none'; mm.style.display = open ? 'block' : 'none'; mt.textContent = open ? '－ Fewer options' : '＋ More options'; });
+    })();
     const goalI = wrap.querySelector('#mls-ap-goal'), runB = wrap.querySelector('#mls-ap-run'), stopB = wrap.querySelector('#mls-ap-stop');
     const send = (type, extra) => new Promise(res => chrome.runtime.sendMessage(Object.assign({ type }, extra || {}), res));
     let running = false;

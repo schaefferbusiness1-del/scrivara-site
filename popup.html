@@ -8,22 +8,21 @@
   button{margin-top:14px;width:100%;background:#1f7ae0;color:#fff;border:none;border-radius:8px;padding:10px;font:600 13px inherit;cursor:pointer}
   .ok{color:#16924e;font-size:12px;margin-top:8px;min-height:16px}
   .note{color:#6a7a8a;font-size:11.5px;margin-top:10px}
+  details{margin-top:14px;border-top:1px solid #e3edf7;padding-top:6px}
+  summary{cursor:pointer;font-weight:700;font-size:12px;color:#15528f;padding:6px 0;list-style:none;user-select:none}
+  summary::-webkit-details-marker{display:none}
+  summary:before{content:"▸ ";color:#9aa7b4}
+  details[open] summary:before{content:"▾ "}
 </style></head><body>
 <div class="h">MLS Assist</div>
 <div class="b">
-  <button id="openTab" style="margin-top:0;background:#0e9f6e">🩺 Open MLS Assist on this tab</button>
+  <button id="openTab" style="margin-top:0;background:#0e9f6e;font-size:14px;padding:12px">🩺 Open MLS Assist on this tab</button>
   <div id="conn" style="margin-top:12px;border-radius:8px;padding:9px 11px;font-size:12.5px;background:#eef6ff;border:1px solid #cfe0f3;color:#1a4e80">Checking connection…</div>
-  <label>MLS API key <span style="text-transform:none;letter-spacing:0;color:#9aa7b4;font-weight:500">(optional)</span></label>
-  <input id="key" type="password" placeholder="leave blank to use your MLS login" autocomplete="off">
-  <label>Backend URL</label>
-  <input id="backend" type="text" value="https://scrivara-backend.onrender.com">
-  <button id="save">Save</button>
-  <div class="ok" id="ok"></div>
-  <div class="note">No key needed — just stay signed in to MLS (mlsscribe.com) in a tab and MLS Assist uses that login automatically. An API key is only for advanced / server use; if set, it's stored only in this browser and sent straight to your MLS backend, never to the EMR page.</div>
+  <div class="note" style="margin-top:10px">✓ No setup needed — just stay signed in to MLS (mlsscribe.com) in a tab and MLS Assist uses that login automatically. Click the green button above to start.</div>
 
-  <div style="border-top:1px solid #e3edf7;margin-top:14px;padding-top:10px">
-    <label style="margin-top:0">🌙 Nightly EMR backup</label>
-    <div style="font-size:11.5px;color:#6a7a8a;margin-bottom:8px">At the time below, capture patients from your open, signed-in EMR tab into MLS. Needs this computer on, Chrome open, and the EMR still logged in.</div>
+  <details>
+    <summary>🌙 Nightly EMR backup</summary>
+    <div style="font-size:11.5px;color:#6a7a8a;margin:6px 0 8px">At the time below, capture patients from your open, signed-in EMR tab into MLS. Needs this computer on, Chrome open, and the EMR still logged in.</div>
     <label style="display:flex;align-items:center;gap:7px;text-transform:none;font-size:13px;font-weight:600;color:#1a2b3c;margin:0">
       <input id="bkEnabled" type="checkbox" style="width:auto;margin:0"> Run a backup every night
     </label>
@@ -34,6 +33,17 @@
     <button id="bkSave" style="background:#0e9f6e">Save schedule</button>
     <button id="bkRun" style="background:#1f7ae0">▶ Run backup now</button>
     <div class="ok" id="bkStatus" style="color:#5a6a7a"></div>
-  </div>
+  </details>
+
+  <details>
+    <summary>⚙ Advanced — API key &amp; backend</summary>
+    <label>MLS API key <span style="text-transform:none;letter-spacing:0;color:#9aa7b4;font-weight:500">(optional)</span></label>
+    <input id="key" type="password" placeholder="leave blank to use your MLS login" autocomplete="off">
+    <label>Backend URL</label>
+    <input id="backend" type="text" value="https://scrivara-backend.onrender.com">
+    <button id="save">Save</button>
+    <div class="ok" id="ok"></div>
+    <div class="note">An API key is only for advanced / server use; if set, it's stored only in this browser and sent straight to your MLS backend, never to the EMR page.</div>
+  </details>
 </div>
 <script src="popup.js"></script></body></html>
