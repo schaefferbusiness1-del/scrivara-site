@@ -4895,11 +4895,8 @@ function applyFeatureToggles(){
    ========================================================= */
 const NAV_FEATURES=[
   {key:'calendar', label:'📅 Calendar',        desc:'Appointment scheduling, waiting room, and daily brief.'},
-  {key:'orders',   label:'📋 Orders',          desc:'Build scripts, referrals, DME, imaging, and injection orders.'},
-  {key:'recs',     label:'💡 Recommendations', desc:'AI care-gap, monitoring, and follow-up suggestions for the provider.'},
   {key:'legalreq', label:'⚖️ Legal requests',  desc:'Inbox for attorney record / report requests (clinician accounts).'},
-  {key:'team',     label:'👥 Team',            desc:'Head-doctor read-only view of your assigned doctors’ patients. (Head accounts only.)'},
-  {key:'analysis', label:'📊 Analysis',        desc:'Practice analytics, outcomes, and patient-experience ratings.'}
+  {key:'team',     label:'👥 Team',            desc:'Head-doctor read-only view of your assigned doctors’ patients. (Head accounts only.)'}
 ];
 function navFeatOn(key){ try{ return localStorage.getItem(uns('navfeat_'+key))==='1'; }catch(e){ return false; } } // default OFF
 function setNavFeat(key,on){
@@ -6936,21 +6933,45 @@ function calNewAppt(){
   var av=document.getElementById('calAvailBox'); if(av) av.style.display='none';
   if(box.style.display!=='none'){ box.style.display='none'; return; }
   var today=_calRefDate||(new Date()).toISOString().slice(0,10);
-  var _apn=''; try{ if(typeof activePatient==='function'&&activePatient()) _apn=activePatient().name||''; }catch(e){}
-  var provSel=''; if((_calProviders||[]).length>1){ provSel='<select id="calNewDoc" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px"><option value="">Any provider</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+'</select>'; }
-  var h='<div style="font-weight:700;font-size:15px;margin-bottom:8px">➕ Schedule a new appointment'+(_apn?(' <span style="font-weight:400;color:var(--muted);font-size:13px">for '+esc(_apn)+'</span>'):'')+'</div>';
+  var _apn=''; var _apExt=''; try{ if(typeof activePatient==='function'&&activePatient()){ _apn=activePatient().name||''; _apExt=activePatient().id||''; } }catch(e){}
+  var provSel=''; if((_calProviders||[]).length){ provSel='<select id="calNewDoc" title="Provider" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px"><option value="">Any provider</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+'</select>'; }
+  // Link the appointment to a REAL patient chart: datalist of existing patients.
+  var _pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var ptOpts=_pts.map(function(p){ return '<option value="'+esc(p.name||'')+'">'; }).join('');
+  var durOpts=[['','Duration'],['15','15 min'],['20','20 min'],['30','30 min'],['45','45 min'],['60','60 min'],['90','90 min']].map(function(o){ return '<option value="'+o[0]+'"'+(o[0]==='30'?' selected':'')+'>'+o[1]+'</option>'; }).join('');
+  var typeOpts=[['','Type / reason…'],['New patient','New patient'],['Follow-up','Follow-up'],['Injection / procedure','Injection / procedure'],['Post-op','Post-op'],['Telehealth','Telehealth'],['Imaging review','Imaging review'],['Other','Other']].map(function(o){ return '<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>'; }).join('');
+  var h='<div style="font-weight:700;font-size:15px;margin-bottom:8px">➕ Schedule a new appointment <span id="calNewLinkInd" class="mini" style="font-weight:600;margin-left:6px"></span></div>';
+  h+='<datalist id="calNewPtList">'+ptOpts+'</datalist>';
+  h+='<input type="hidden" id="calNewExtId" value="'+esc(_apExt)+'">';
   h+='<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
-  h+='<input id="calNewName" value="'+esc(_apn)+'" placeholder="Patient name *" style="flex:2;min-width:160px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
+  h+='<input id="calNewName" list="calNewPtList" autocomplete="off" oninput="_calLinkPt()" value="'+esc(_apn)+'" placeholder="Patient name * — type to link a chart" style="flex:2;min-width:210px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
   h+='<input id="calNewDate" type="date" value="'+esc(today)+'" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">';
   h+='<input id="calNewTime" type="time" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<select id="calNewDur" title="Duration" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">'+durOpts+'</select>';
   h+=provSel;
+  h+='</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px">';
+  h+='<select id="calNewType" title="Appointment type" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">'+typeOpts+'</select>';
   h+='<input id="calNewPhone" placeholder="Phone (optional)" style="min-width:130px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
-  h+='<input id="calNewReason" placeholder="Reason (optional)" style="flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
+  h+='<input id="calNewReason" placeholder="Notes (optional)" style="flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
   h+='<input id="calNewRoom" placeholder="Room" style="width:84px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">';
   h+='</div>';
   h+='<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-primary" style="font-size:13px;padding:8px 16px" onclick="calCreateAppt(this)">📅 Schedule it</button><button class="btn-ghost" style="font-size:13px;padding:8px 13px" onclick="calNewAppt()">Close</button><span id="calNewMsg" class="mini" style="color:var(--muted)"></span></div>';
   box.innerHTML=h; box.style.display='block';
   var f=document.getElementById('calNewName'); if(f) f.focus();
+  try{ _calLinkPt(); }catch(e){}
+}
+/* Link the New-appointment name field to a real patient chart as the user types.
+   Exact name match → store the patient's external id (so Start-visit/Open-patient
+   load the real chart) and autofill phone; otherwise mark it a new (unlinked) name. */
+function _calLinkPt(){
+  var nmEl=document.getElementById('calNewName'); if(!nmEl) return;
+  var nm=String(nmEl.value||'').trim().toLowerCase();
+  var ext=document.getElementById('calNewExtId'), ph=document.getElementById('calNewPhone'), ind=document.getElementById('calNewLinkInd');
+  var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+  if(p){ if(ext) ext.value=p.id; if(ph && !ph.value && p.phone) ph.value=p.phone; if(ind){ ind.textContent='🔗 linked to '+(p.name||'chart'); ind.style.color='#127a55'; } }
+  else { if(ext) ext.value=''; if(ind){ ind.textContent=nm?'＋ new name (no chart linked)':''; ind.style.color='var(--muted)'; } }
 }
 async function calCreateAppt(btn){
   var name=((document.getElementById('calNewName')||{}).value||'').trim();
@@ -6960,12 +6981,19 @@ async function calCreateAppt(btn){
   var time=(document.getElementById('calNewTime')||{}).value||'';
   var doc=(document.getElementById('calNewDoc')||{}).value||'';
   var phone=(document.getElementById('calNewPhone')||{}).value||'';
-  var reason=(document.getElementById('calNewReason')||{}).value||'';
+  var notes=(document.getElementById('calNewReason')||{}).value||'';
   var room=(document.getElementById('calNewRoom')||{}).value||'';
-  var startIso=null; if(time){ try{ startIso=new Date(date+'T'+time).toISOString(); }catch(e){} }
+  var ext=(document.getElementById('calNewExtId')||{}).value||'';
+  var type=(document.getElementById('calNewType')||{}).value||'';
+  var dur=parseInt((document.getElementById('calNewDur')||{}).value||'0',10)||0;
+  // Re-resolve the chart link in case the name was typed without firing input.
+  try{ if(!ext){ var pts=(typeof getPatients==='function'?getPatients():[])||[]; var mp=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(mp) ext=mp.id; } }catch(e){}
+  var reason=[type, notes].filter(Boolean).join(' — ');
+  var startIso=null, endIso=null;
+  if(time){ try{ startIso=new Date(date+'T'+time).toISOString(); if(dur){ endIso=new Date(new Date(startIso).getTime()+dur*60000).toISOString(); } }catch(e){} }
   if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Scheduling…'; }
   try{
-    var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,phone:phone,room:room,doctor_user_id:doc||null,appt_date:date,start_at:startIso})});
+    var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,phone:phone,room:room,doctor_user_id:doc||null,patient_external_id:ext||null,appt_date:date,start_at:startIso,end_at:endIso})});
     if(btn) btn.disabled=false;
     if(!r.ok){ var e={}; try{ e=await r.json(); }catch(_){} if(msg){ msg.style.color='#c0392b'; msg.textContent=(e.error||'Could not schedule.'); } return; }
     try{ toast('Appointment scheduled.','ok'); }catch(e){}
