@@ -10637,6 +10637,9 @@ function renderHistory(){
     const status = n.isDraft ? '<span class="badge draft">● Draft (no note)</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
     const cc = esc(n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Transcript only':'No chief complaint'));
+    // Fall back to the patient on the chart (or a generic label) so a missing name never renders "undefined".
+    let _pn = n.patient; if(!_pn || _pn==='undefined'){ try{ const _mp=(typeof getPatients==='function'?getPatients():[]).find(x=>x.id===n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } }
+    const patName = esc(_pn);
     const isOrphan = ap && !n.patientId;
     const orphanTag = isOrphan ? ' <span class="badge draft" style="background:#fdf6e3;color:#b8860b;border-color:#f0e0b0">⚠ Unassigned</span>' : '';
     const attachBtn = isOrphan
@@ -10645,7 +10648,7 @@ function renderHistory(){
     return `<div class="hist-item" onclick="openNoteFromHistory('${n.id}')">
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
-        <div class="t">${esc(n.patient)} — ${cc}${orphanTag}</div>
+        <div class="t">${patName} — ${cc}${orphanTag}</div>
         <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}</div>
       </div>
       ${attachBtn}
