@@ -3186,7 +3186,7 @@
       <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
       <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
-        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.21</span></b>
+        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.22</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
           <b>Already installed it before?</b> You just need to update to v1.17 to get schedule-pull: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still says it can't read the schedule, remove it and <b>Load unpacked</b> the latest <code>mls-assist-extension</code> folder.
@@ -11017,13 +11017,26 @@ function _savePatientChart(name, appt, chart){
 }
 /* Bulk: after pulling the schedule, auto-pull EACH patient's chart/history from Athena
    (the extension finds + opens each chart — no manual clicking) and save it durably. */
+/* True if this patient already has an Athena chart imported (so we don't re-pull it). */
+function _hasImportedHistory(name){
+  try{ var nm=String(name||'').trim().toLowerCase(); if(!nm) return false;
+    var pts=(typeof getPatients==='function'?getPatients():[])||[];
+    var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+    if(p && /Pulled from Athena/i.test(p.summary||'')) return true;
+    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patient||'').trim().toLowerCase()===nm && n.cc==='Athena chart import'; });
+  }catch(e){ return false; }
+}
 async function _pullAllHistories(appts){
   if(!appts||!appts.length) return;
   var setT=function(m,k){ var el=document.getElementById('heroPullStatus'); if(el){ el.textContent=m; el.style.color=(k==='err')?'#ffe0e0':(k==='ok'?'#d8ffe8':'rgba(255,255,255,.95)'); el.style.display='block'; } };
+  // Only pull history for patients we DON'T already have it for — dedup by name.
+  var seen={}, todo=[];
+  appts.forEach(function(a){ var nm=String((a&&a.name)||'').trim(); if(!nm) return; var k=nm.toLowerCase(); if(seen[k]) return; seen[k]=1; if(!_hasImportedHistory(nm)) todo.push(a); });
+  if(!todo.length){ setT('✅ All pulled patients already have their chart history saved — nothing new to fetch.','ok'); return; }
   var saved=0, oldExt=false;
-  for(var i=0;i<appts.length;i++){
-    var a=appts[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
-    setT('📥 Pulling histories from Athena… '+(i+1)+'/'+appts.length+' — '+name);
+  for(var i=0;i<todo.length;i++){
+    var a=todo[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
+    setT('📥 Pulling new histories from Athena… '+(i+1)+'/'+todo.length+' — '+name);
     try{
       var rd=await _assistReadChart(name, function(){});
       var chart=await _parsePatientChart(rd.text);
@@ -11031,8 +11044,8 @@ async function _pullAllHistories(appts){
     }catch(e){ if((e&&e.message)==='OLDEXT'){ oldExt=true; break; } }
     await new Promise(function(r){ setTimeout(r, 350); });
   }
-  if(oldExt){ setT('Imported today’s patients. To also auto-pull each chart, update MLS Assist to v1.18+ (Settings → Download).','err'); return; }
-  setT('✅ Pulled today’s patients + '+saved+' chart histor'+(saved===1?'y':'ies')+' from Athena — all saved to your account.','ok');
+  if(oldExt){ setT('Imported the schedule. To also auto-pull each chart, update MLS Assist to v1.22 (Settings → Download).','err'); return; }
+  setT('✅ Pulled '+saved+' new chart histor'+(saved===1?'y':'ies')+' from Athena — saved to your account.','ok');
   try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
   try{ if(typeof loadPatients==='function') loadPatients(); }catch(e){}
 }
@@ -11045,8 +11058,8 @@ async function _parsePatientChart(text){
   return null;
 }
 async function _parseScheduleText(text){
-  var sys='You extract a clinic’s appointment schedule from raw EMR/Athena page text. It is messy: it often has a mini month-calendar (lists of day numbers — IGNORE those), a time grid like "07:00 AM 08:00 AM …" (IGNORE the empty grid labels), and provider rows like "Benner_John_MD: 3 appointments". The PATIENT appointments appear as a patient NAME next to a time and sometimes a visit reason/type. Return ONLY a JSON array (no prose, no code fence): [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. RULES: include ONLY real PATIENT appointments (a person being seen). EXCLUDE: provider/clinician names (e.g. anything like Lastname_Firstname_MD/PA-C/DO, or "Dr. X"), department/location names (e.g. "POSM CL WEST CHESTER", "PHSC OT …"), menu/button/column-header/UI text, message-inbox sender names, and the bare day-number lists from the mini calendar. A provider row that says "0 appointments" means that provider has none — do not invent patients. If there are genuinely no patient appointments in the text, return [].';
-  var raw=await aiCallRaw(sys, 'EMR PAGE TEXT:\n'+String(text||'').slice(0,16000), (typeof getKey==='function'?getKey():''), {freeform:true});
+  var sys='You extract a clinic’s appointment schedule from raw EMR/Athena page text. It is messy: it often has a mini month-calendar (lists of day numbers — IGNORE those), a time grid like "07:00 AM 08:00 AM …" (IGNORE the empty grid labels), and provider rows like "Benner_John_MD: 3 appointments". The PATIENT appointments appear as a patient NAME next to a time and sometimes a visit reason/type. The view may span MULTIPLE DAYS (a week or multi-day view) — capture the DATE each appointment falls on whenever the text makes it determinable (column header, day label, or a date near the appointment). Return ONLY a JSON array (no prose, no code fence): [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","date":"<the appointment'+"'"+'s date as YYYY-MM-DD or MM/DD/YYYY, or empty if only one day is shown>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. RULES: include ONLY real PATIENT appointments (a person being seen). EXCLUDE: provider/clinician names (e.g. anything like Lastname_Firstname_MD/PA-C/DO, or "Dr. X"), department/location names (e.g. "POSM CL WEST CHESTER", "PHSC OT …"), menu/button/column-header/UI text, message-inbox sender names, and the bare day-number lists from the mini calendar. A provider row that says "0 appointments" means that provider has none — do not invent patients. If there are genuinely no patient appointments in the text, return [].';
+  var raw=await aiCallRaw(sys, 'EMR PAGE TEXT:\n'+String(text||'').slice(0,22000), (typeof getKey==='function'?getKey():''), {freeform:true});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   try{ var arr=JSON.parse(s); if(Array.isArray(arr)) return arr; }catch(e){}
   try{ var m=s.match(/\[[\s\S]*\]/); if(m) return JSON.parse(m[0]); }catch(e){}
@@ -11070,32 +11083,60 @@ function _detectSchedDate(text){
   }catch(e){}
   return '';
 }
+/* Normalize a date string (ISO, MM/DD/YYYY, or "Month DD, YYYY") to YYYY-MM-DD. */
+function _normDate(d){
+  d=String(d||'').trim(); if(!d) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  var m=d.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if(m){ var y=m[3].length===2?('20'+m[3]):m[3]; return y+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2); }
+  var M={january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+  var m2=d.match(/([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+  if(m2){ var mo=M[m2[1].toLowerCase()]; if(mo!=null){ var dd=new Date(Date.UTC(+m2[3],mo,+m2[2])); if(!isNaN(dd)) return dd.toISOString().slice(0,10); } }
+  return '';
+}
+function _apptKey(name,date){ return String(name||'').trim().toLowerCase()+'|'+String(date||''); }
 async function _importPulledSchedule(appts){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to import the schedule.','err'); }catch(e){} return; }
-  var today=_detectSchedDate(window.__schedRaw&&window.__schedRaw.text)||_nextClinicDay();
+  var todayKey=(new Date()).toISOString().slice(0,10);
+  var fallbackDate=_detectSchedDate(window.__schedRaw&&window.__schedRaw.text)||_nextClinicDay();
+  // Pull existing appointments ONCE so we NEVER re-add one already on the calendar (name + date).
+  var existingKeys={};
+  try{ var er=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}); if(er.ok){ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){ existingKeys[_apptKey(x.name, x.appt_date||String(x.start_at||'').slice(0,10))]=1; }); } }catch(e){}
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
-  var created=0;
+  var created=0, skipped=0, days={};
   for(var i=0;i<appts.length;i++){
     var a=appts[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
+    var date=_normDate(a.date)||fallbackDate;            // file EACH appt on ITS OWN day
+    var key=_apptKey(name, date);
+    if(existingKeys[key]){ skipped++; continue; }          // already there → skip (no doubling up)
+    existingKeys[key]=1;
     var ext=''; var existing=null;
     try{ existing=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(existing) ext=existing.id; }catch(e){}
-    // Make every pulled patient a DURABLE, server-synced record so they persist on refresh
-    // and show up in Patients + the calendar (connected everywhere).
+    // Durable, server-synced patient record (dedup by name → reused on re-sync, never duplicated).
     if(!existing && typeof upsertPatient==='function'){
       var np={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:name, dob:String(a.dob||''), reason:String(a.reason||''), source:'athena-schedule', created:Date.now() };
       try{ upsertPatient(np); pts.push(np); ext=np.id; }catch(e){}
     } else if(existing && a.dob && !existing.dob){ existing.dob=String(a.dob); try{ upsertPatient(existing); }catch(e){} }
-    var startIso=null; if(/^\d\d:\d\d$/.test(String(a.time||''))){ try{ startIso=new Date(today+'T'+a.time).toISOString(); }catch(e){} }
+    var startIso=null; if(/^\d\d?:\d\d$/.test(String(a.time||''))){ try{ startIso=new Date(date+'T'+(('0'+a.time).slice(-5))).toISOString(); }catch(e){} }
     try{
-      var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name, dob:String(a.dob||''), reason:String(a.reason||''), patient_external_id:ext||null, appt_date:today, start_at:startIso})});
-      if(r.ok) created++;
+      var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name, dob:String(a.dob||''), reason:String(a.reason||''), patient_external_id:ext||null, appt_date:date, start_at:startIso})});
+      if(r.ok){ created++; days[date]=(days[date]||0)+1; }
     }catch(e){}
   }
   try{ if(typeof loadCalendar==='function') await loadCalendar(); }catch(e){}
   window._heroNowIdx=-1;
-  _renderTodayPatients(appts);
-  try{ var _dl=''; try{ _dl=new Date(today+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}); }catch(_e){ _dl=today; } toast('Imported '+created+' appointment'+(created===1?'':'s')+' from Athena for '+_dl+'.','ok'); var _ps=document.getElementById('heroPullStatus'); if(_ps&&created){ _ps.textContent='✅ Pulled '+created+' patient'+(created===1?'':'s')+' for '+_dl+'. Tap a name below to start recording.'; _ps.style.color='#d8ffe8'; _ps.style.display='block'; } }catch(e){}
-  try{ _calLoadNextUp(); }catch(e){}   // know the time → load whoever is up right now
+  // Hero shows only TODAY's patients (each appt now carries its own date).
+  var todays=appts.filter(function(a){ return (_normDate(a.date)||fallbackDate)===todayKey && String(a.name||'').trim(); });
+  _renderTodayPatients(todays);
+  try{
+    var nDays=Object.keys(days).length;
+    var msg = created
+      ? ('✅ Added '+created+' new appointment'+(created===1?'':'s')+(nDays>1?(' across '+nDays+' days'):'')+(skipped?(' · skipped '+skipped+' already on your calendar'):'')+'.')
+      : (skipped?('Everything pulled was already on your calendar ('+skipped+' appointment'+(skipped===1?'':'s')+') — nothing to add.'):'No new appointments found.');
+    toast(msg, created?'ok':'');
+    var _ps=document.getElementById('heroPullStatus'); if(_ps){ _ps.textContent=msg; _ps.style.color=created?'#d8ffe8':'rgba(255,255,255,.95)'; _ps.style.display='block'; }
+  }catch(e){}
+  try{ _calLoadNextUp(); }catch(e){}
 }
 /* A patient counts as "seen" today once they have a real (non-draft) saved note dated today. */
 function _seenToday(name){

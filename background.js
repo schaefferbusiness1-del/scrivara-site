@@ -88,17 +88,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           results = await chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
-            func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 13000) }; } catch (e) { return { u: '', t: '' }; } }
+            func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 22000) }; } catch (e) { return { u: '', t: '' }; } }
           });
         } catch (e) {
-          results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 14000) }) });
+          results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 22000) }) });
         }
         const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
         const sched = frames.filter((f) => /schedul|calendar|appointment|booking|frontoffice|dashboard/i.test(f.u || ''));
         let pick;
         if (sched.length) { sched.sort((a, b) => b.t.length - a.t.length); pick = sched[0]; }
         else { const s2 = frames.slice().sort((a, b) => b.t.length - a.t.length); pick = s2[0] || { u: tab.url, t: '' }; }
-        sendResponse({ ok: true, text: (pick.t || '').slice(0, 16000), url: pick.u || tab.url, title: tab.title, frames: frames.length });
+        // Include the page title so the parser can anchor the date range of a multi-day view.
+        sendResponse({ ok: true, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
