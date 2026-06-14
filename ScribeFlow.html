@@ -9875,16 +9875,34 @@ function renderTemplateList(){
   const box=document.getElementById('tplList'); if(!box) return;
   const list=getTemplates();
   if(!list.length){ box.innerHTML='<p style="color:var(--muted);font-size:13px">No templates yet. Add one above.</p>'; return; }
+  const activeId=getActiveTemplateId();
   box.innerHTML=list.map(t=>{
     const kw=(t.keywords&&t.keywords.length)?'<div style="font-size:12px;color:var(--muted)">Keywords: '+esc(t.keywords.join(', '))+'</div>':'';
     const len=(t.text||'').length;
-    return '<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px">'+
-      '<div style="display:flex;align-items:center;gap:8px">'+
-      '<div style="flex:1"><strong>'+esc(t.name)+'</strong> <span style="font-size:11px;color:var(--muted)">('+len+' chars)</span>'+kw+'</div>'+
-      '<button class="btn-ghost" style="padding:4px 10px" onclick="deleteTemplate(\''+esc(t.id)+'\')">🗑 Delete</button>'+
+    const isActive=t.id===activeId;
+    return '<div style="border:1px solid '+(isActive?'#bcd6f5':'var(--line)')+';border-radius:8px;padding:8px 10px;margin-bottom:8px;background:'+(isActive?'#f4f9ff':'transparent')+'">'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:160px"><strong>'+esc(t.name)+'</strong> '+(isActive?'<span style="font-size:10.5px;color:#127a55;font-weight:700">● ACTIVE</span> ':'')+'<span style="font-size:11px;color:var(--muted)">('+len+' chars)</span>'+kw+'</div>'+
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="useTemplateNow(\''+esc(t.id)+'\')" title="Reformat the note you have open right now to match this template">⚡ Use on current note</button>'+
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="setActiveTemplateId(\''+esc(t.id)+'\')" title="Make this the default template for new notes">'+(isActive?'✓ Default':'Set default')+'</button>'+
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="previewTemplate(\''+esc(t.id)+'\')">👁 Preview</button>'+
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="editTemplate(\''+esc(t.id)+'\')">✏️ Edit</button>'+
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="duplicateTemplate(\''+esc(t.id)+'\')">⧉ Duplicate</button>'+
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px;color:#a12c2c" onclick="deleteTemplate(\''+esc(t.id)+'\')">🗑</button>'+
       '</div></div>';
   }).join('');
 }
+/* MORE WAYS TO USE A TEMPLATE: */
+function setActiveTemplateId(id){ try{ localStorage.setItem(uns('templateActive'),id); }catch(e){} try{ renderTemplateList(); renderTemplateActiveSelect(); }catch(e){} try{ toast('Set as the default template for new notes.','ok'); }catch(e){} }
+async function useTemplateNow(id){
+  var t=getTemplateById(id); if(!t){ toast('Template not found.','err'); return; }
+  if(!currentSoap && !(typeof currentInsurance!=='undefined'&&currentInsurance)){ toast('Generate or open a note first, then apply a template to it.','err'); return; }
+  toast('Reformatting the current note to “'+(t.name||'template')+'”…','');
+  try{ await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||''); }catch(e){ toast('Couldn’t apply that template.','err'); }
+}
+function previewTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ alert('TEMPLATE: '+(t.name||'')+'\n\n'+String(t.text||'').slice(0,4000)+((t.text||'').length>4000?'\n\n…(truncated)':'')); }catch(e){} }
+function editTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ document.getElementById('tplName').value=t.name||''; document.getElementById('tplKeywords').value=(t.keywords||[]).join(', '); document.getElementById('tplText').value=t.text||''; document.getElementById('tplName').scrollIntoView({behavior:'smooth',block:'center'}); toast('Loaded into the form — edit and Save (it adds a copy; delete the old one if replacing).',''); }catch(e){} }
+function duplicateTemplate(id){ var t=getTemplateById(id); if(!t) return; var list=getTemplates(); list.unshift({ id:'tpl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:(t.name||'Template')+' (copy)', keywords:(t.keywords||[]).slice(), text:t.text||'', created:Date.now() }); setTemplates(list); renderTemplateList(); renderTemplateActiveSelect(); toast('Duplicated.','ok'); }
 function deleteTemplate(id){
   setTemplates(getTemplates().filter(t=>t.id!==id));
   renderTemplateList();
