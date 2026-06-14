@@ -11059,7 +11059,9 @@ async function _parsePatientChart(text){
 }
 async function _parseScheduleText(text){
   var sys='You extract a clinic’s appointment schedule from raw EMR/Athena page text. It is messy: it often has a mini month-calendar (lists of day numbers — IGNORE those), a time grid like "07:00 AM 08:00 AM …" (IGNORE the empty grid labels), and provider rows like "Benner_John_MD: 3 appointments". The PATIENT appointments appear as a patient NAME next to a time and sometimes a visit reason/type. The view may span MULTIPLE DAYS (a week or multi-day view) — capture the DATE each appointment falls on whenever the text makes it determinable (column header, day label, or a date near the appointment). Return ONLY a JSON array (no prose, no code fence): [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","date":"<the appointment'+"'"+'s date as YYYY-MM-DD or MM/DD/YYYY, or empty if only one day is shown>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. RULES: include ONLY real PATIENT appointments (a person being seen). EXCLUDE: provider/clinician names (e.g. anything like Lastname_Firstname_MD/PA-C/DO, or "Dr. X"), department/location names (e.g. "POSM CL WEST CHESTER", "PHSC OT …"), menu/button/column-header/UI text, message-inbox sender names, and the bare day-number lists from the mini calendar. A provider row that says "0 appointments" means that provider has none — do not invent patients. If there are genuinely no patient appointments in the text, return [].';
-  var raw=await aiCallRaw(sys, 'EMR PAGE TEXT:\n'+String(text||'').slice(0,22000), (typeof getKey==='function'?getKey():''), {freeform:true});
+  sys+=' DATES ARE CRITICAL — they decide which calendar day each patient lands on. If the view is a WEEK or MULTI-DAY grid, each day has a header (a weekday and/or a date like "Mon 6/15", "Tuesday", "Jun 16"); assign EVERY appointment the date of the column/section it sits under. If only weekday NAMES appear (no full date), resolve them to the ACTUAL calendar dates of the week being shown, using the anchor date below and any date range in the title/header. Always output a full YYYY-MM-DD date when you can determine it; only leave "date" empty if the page truly shows a single unlabeled day. Never put two different days’ patients on the same date.';
+  var anchor=(function(){ var d=new Date(); return d.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' (ISO '+d.toISOString().slice(0,10)+')'; })();
+  var raw=await aiCallRaw(sys, 'ANCHOR — today is '+anchor+'. Use it to resolve weekday-only labels to real dates.\n\nEMR PAGE TEXT:\n'+String(text||'').slice(0,22000), (typeof getKey==='function'?getKey():''), {freeform:true});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   try{ var arr=JSON.parse(s); if(Array.isArray(arr)) return arr; }catch(e){}
   try{ var m=s.match(/\[[\s\S]*\]/); if(m) return JSON.parse(m[0]); }catch(e){}
@@ -11094,20 +11096,28 @@ function _normDate(d){
   if(m2){ var mo=M[m2[1].toLowerCase()]; if(mo!=null){ var dd=new Date(Date.UTC(+m2[3],mo,+m2[2])); if(!isNaN(dd)) return dd.toISOString().slice(0,10); } }
   return '';
 }
-function _apptKey(name,date){ return String(name||'').trim().toLowerCase()+'|'+String(date||''); }
+function _normTime(t){ t=String(t||'').trim(); var m=t.match(/(\d{1,2}):(\d{2})/); if(!m) return ''; var h=('0'+m[1]).slice(-2); if(/p/i.test(t)&&+m[1]<12) h=String(+m[1]+12); if(/a/i.test(t)&&+m[1]===12) h='00'; return ('0'+h).slice(-2)+':'+m[2]; }
+/* Stable identity for an appointment = patient + day + time. Including the time lets a
+   patient have two legit appts the same day, while an identical re-pull still dedups. */
+function _apptKey(name,date,time){ return String(name||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+String(date||'')+'|'+_normTime(time); }
 async function _importPulledSchedule(appts){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to import the schedule.','err'); }catch(e){} return; }
   var todayKey=(new Date()).toISOString().slice(0,10);
   var fallbackDate=_detectSchedDate(window.__schedRaw&&window.__schedRaw.text)||_nextClinicDay();
-  // Pull existing appointments ONCE so we NEVER re-add one already on the calendar (name + date).
+  // Pull existing appointments ONCE so we NEVER re-add one already on the calendar (name+day+time).
   var existingKeys={};
-  try{ var er=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}); if(er.ok){ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){ existingKeys[_apptKey(x.name, x.appt_date||String(x.start_at||'').slice(0,10))]=1; }); } }catch(e){}
+  try{ var er=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}); if(er.ok){ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){
+    // Compare in LOCAL clock time (start_at is stored UTC) so keys match the parsed times.
+    var lt=''; try{ if(x.start_at) lt=new Date(x.start_at).toTimeString().slice(0,5); }catch(_){}
+    var ld=x.appt_date||''; if(!ld){ try{ if(x.start_at) ld=new Date(x.start_at).getFullYear()+'-'+('0'+(new Date(x.start_at).getMonth()+1)).slice(-2)+'-'+('0'+new Date(x.start_at).getDate()).slice(-2); }catch(_){} }
+    existingKeys[_apptKey(x.name, ld, lt)]=1;
+  }); } }catch(e){}
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var created=0, skipped=0, days={};
   for(var i=0;i<appts.length;i++){
     var a=appts[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
     var date=_normDate(a.date)||fallbackDate;            // file EACH appt on ITS OWN day
-    var key=_apptKey(name, date);
+    var key=_apptKey(name, date, a.time);
     if(existingKeys[key]){ skipped++; continue; }          // already there → skip (no doubling up)
     existingKeys[key]=1;
     var ext=''; var existing=null;
