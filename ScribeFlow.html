@@ -4248,6 +4248,7 @@ function startSession(email){
   renderDocPrefs();
   attachIdleListeners();
   resetIdle();            // start the inactivity timer for this session
+  try{ setTimeout(maybePromptInstallAssist, 1600); }catch(e){}   // first-run nudge to install MLS Assist (skips if already installed/dismissed)
   if(_gateMode){
     // Refresh identity, THEN enforce the first-login compliance signing gate.
     // The app is hidden behind the "Loading…" overlay (set above) until this
@@ -10545,6 +10546,39 @@ function heroStartVisit(){
 function emrConnectFromHero(){
   try{ if(typeof openSettings==='function') openSettings(); }catch(e){}
   try{ toast('Connect your EMR in Settings → integrations, or install MLS Assist for the Athena round-trip.',''); }catch(e){}
+}
+/* ===== FIRST-RUN nudge to install MLS Assist (the EMR companion). Shows once per
+   user, only if the extension isn't already responding and they haven't dismissed it. ===== */
+function maybePromptInstallAssist(){
+  try{
+    if(typeof backendMode!=='function' || !backendMode()) return;           // hosted users only
+    if(localStorage.getItem(uns('assistPromptSeen'))==='1') return;          // already installed or dismissed
+    var ponged=false;
+    function onPong(e){ if(e&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'){ ponged=true; window.removeEventListener('message',onPong); try{ localStorage.setItem(uns('assistPromptSeen'),'1'); }catch(_){} } }
+    window.addEventListener('message',onPong);
+    try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){}
+    setTimeout(function(){
+      window.removeEventListener('message',onPong);
+      if(ponged) return;                                                     // extension present → no nudge
+      _showAssistInstallBanner();
+    }, 1300);
+  }catch(e){}
+}
+function _dismissAssistPrompt(){ try{ localStorage.setItem(uns('assistPromptSeen'),'1'); }catch(e){} var b=document.getElementById('assistInstallBanner'); if(b) b.remove(); }
+function _showAssistInstallBanner(){
+  try{
+    if(document.getElementById('assistInstallBanner')) return;
+    var bar=document.createElement('div'); bar.id='assistInstallBanner';
+    bar.style.cssText='background:linear-gradient(135deg,#1f7ae0,#1456a8);color:#fff;border-radius:12px;padding:12px 16px;margin:0 0 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(20,60,120,.22)';
+    bar.innerHTML='<div style="flex:1;min-width:230px"><div style="font-weight:800;font-size:14.5px">🧩 Install MLS Assist to connect your EMR</div><div style="font-size:13px;opacity:.93">It lets MLS pull your day’s schedule from Athena and push finished notes back into the chart — no copy/paste. Takes about a minute.</div></div>'+
+      '<a href="https://mlsscribe.com/assist.html" target="_blank" rel="noopener" style="background:#fff;color:#1456a8;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:800;text-decoration:none;white-space:nowrap">⬇ Get MLS Assist</a>'+
+      '<button onclick="_dismissAssistPrompt()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer;white-space:nowrap">Maybe later</button>';
+    var vv=document.getElementById('visitView');
+    var hero=document.getElementById('visitHero');
+    if(vv && hero && hero.parentNode===vv){ vv.insertBefore(bar, hero); }
+    else if(vv && vv.firstChild){ vv.insertBefore(bar, vv.firstChild); }
+    else { var host=document.getElementById('appScreen')||document.body; if(host&&host.firstChild) host.insertBefore(bar, host.firstChild); }
+  }catch(e){}
 }
 /* ===== PULL TODAY'S SCHEDULE from the EMR (Athena) via MLS Assist — no Athena API needed.
    MLS Assist reads the open Athena schedule tab, MLS AI parses it into appointments, and
