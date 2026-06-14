@@ -3192,9 +3192,9 @@
         <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.24</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
-          <b>Already installed it before?</b> You just need to update to v1.17 to get schedule-pull: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still says it can't read the schedule, remove it and <b>Load unpacked</b> the latest <code>mls-assist-extension</code> folder.
+          <b>Already installed it before?</b> Update to the latest version: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still can't read your EMR, remove it and <b>Load unpacked</b> the freshly-downloaded <code>mls-assist-extension</code> folder.
         </div>
-        <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist v1.17 (.zip)</a>
+        <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
         <span class="note" style="display:inline-block;margin-left:8px">🧩 One-click Chrome Web Store install — coming soon</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#3a5a78;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
@@ -11026,7 +11026,7 @@ function pullScheduleViaAssist(btn){
     }
     window.addEventListener('message',onResult);
     try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
-    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (it should say v1.17). Then reload this page and try again.','err'); } }, 30000);
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (the newest version). Then reload this page and try again.','err'); } }, 30000);
   }
 }
 /* Reusable: ping MLS Assist, ask it to read the open Athena tab, resolve with {text,url}.
@@ -11039,7 +11039,7 @@ function _assistReadAthenaTab(onStatus){
     window.addEventListener('message',onPong);
     var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
     say('Looking for MLS Assist…'); ping();
-    iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); reject(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled (v1.17+) and your Athena tab is open, then try again.')); } else ping(); }, 350);
+    iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); reject(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open, then try again.')); } else ping(); }, 350);
     function onResult(e){
       if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppScheduleResult')) return;
       got=true; window.removeEventListener('message',onResult);
@@ -11051,7 +11051,7 @@ function _assistReadAthenaTab(onStatus){
       say('Reading from your Athena tab…');
       window.addEventListener('message',onResult);
       try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
-      setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); reject(new Error('Your MLS Assist is an OLDER version. Update it from Settings → Download MLS Assist v1.17, then reload this page.')); } }, 30000);
+      setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); reject(new Error('Your MLS Assist is an OLDER version. Update it from Settings → Download MLS Assist (latest), then reload this page.')); } }, 30000);
     }
   });
 }
@@ -11109,7 +11109,7 @@ async function pullPatientChartViaAssist(btn, opts){
   try{
     var rd;
     try{ rd=await _assistReadChart(p.name, setT); }
-    catch(e0){ if((e0&&e0.message)==='OLDEXT'){ setT('Tip: update MLS Assist to v1.18 (Settings → Download) so it can open the chart for you. Reading the open tab…',''); rd=await _assistReadAthenaTab(setT); } else { throw e0; } }
+    catch(e0){ if((e0&&e0.message)==='OLDEXT'){ setT('Tip: update MLS Assist to the latest version (Settings → Download) so it can open the chart for you. Reading the open tab…',''); rd=await _assistReadAthenaTab(setT); } else { throw e0; } }
     if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
     setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
     var chart=await _parsePatientChart(rd.text);
@@ -11177,7 +11177,7 @@ async function _pullAllHistories(appts){
     }catch(e){ if((e&&e.message)==='OLDEXT'){ oldExt=true; break; } }
     await new Promise(function(r){ setTimeout(r, 350); });
   }
-  if(oldExt){ setT('Imported the schedule. To also auto-pull each chart, update MLS Assist to v1.22 (Settings → Download).','err'); return; }
+  if(oldExt){ setT('Imported the schedule. To also auto-pull each chart, update MLS Assist to the latest version (Settings → Download).','err'); return; }
   setT('✅ Pulled '+saved+' new chart histor'+(saved===1?'y':'ies')+' from Athena — saved to your account.','ok');
   try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
   try{ if(typeof loadPatients==='function') loadPatients(); }catch(e){}
@@ -13332,7 +13332,7 @@ function pushEntireVisitToAthena(btn){
   window.addEventListener('message',onPong);
   var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
   statusToast('Looking for MLS Assist…',''); ping();
-  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (v1.20+) and your Athena tab is open.','err'); } else ping(); }, 350);
+  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open.','err'); } else ping(); }, 350);
   function proceed(){
     window.addEventListener('message',onMsg);
     var goal='GOAL: enter this FINISHED visit into the patient encounter CURRENTLY OPEN in athenaOne, placing each part in its correct native field (not one big text dump). Work through these in order, and after each one re-read the screen to confirm it took:\n'
@@ -13343,7 +13343,7 @@ function pushEntireVisitToAthena(btn){
       +'RULES: only use fields/controls actually on screen; if a section isn’t visible, open its tab/section first. If one item won’t go, skip it and continue with the rest rather than getting stuck. Do NOT click Save, Sign, Submit, e-Sign, or Close — STOP once everything is entered so the doctor reviews & signs. THE VISIT TO ENTER:\n\n'+bundle;
     try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){}
     if(btn) btn.innerHTML='… entering into Athena';
-    setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to v1.21 (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 210000);
+    setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to the latest version (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 210000);
   }
 }
 function getAutoSendEMR(){ return localStorage.getItem(uns('autoSendEMR'))==='1'; }
