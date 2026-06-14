@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- MLS-DEPLOY-MARKER part13b athena-fullpush -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -1290,6 +1291,7 @@
       <h2 style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
+        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#bcd5f3;color:#1456a8" onclick="pullPatientFromAthenaPrompt(this)" title="Missing a patient, or a chart came up empty? Pull them straight from Athena.">📥 Pull from Athena</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, the front desk, team logins and more">⋯ More</button>
         <span id="ptMore" style="display:none;flex-basis:100%;flex-wrap:wrap;gap:8px;margin-top:2px"><button class="btn-ghost" id="ptReceptionBtn" style="font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
@@ -1766,7 +1768,8 @@
       <!-- Superbill -->
       <div class="extra-card" id="billCard" style="display:none">
         <h3>🧾 Superbill <span style="font-weight:400;font-size:13px;color:var(--muted)">(dx + CPT for billing)</span>
-          <button class="sec-copy" style="margin-left:auto" onclick="copyExtra('billBodyText')">📑 Copy</button>
+          <button class="sec-copy" style="margin-left:auto;background:#16a34a;color:#fff;border-color:#16a34a;font-weight:700" onclick="pushSuperbillToAthena()" title="Push these charges (E/M, CPT and diagnoses) into Athena's billing for the open encounter">🚀 Push to Athena</button>
+          <button class="sec-copy" onclick="copyExtra('billBodyText')">📑 Copy</button>
           <button class="sec-copy" onclick="printExtra('Superbill','billBody')">🖨 Print</button>
         </h3>
         <table class="superbill" style="width:100%;border-collapse:collapse;margin-top:10px" id="billBody"></table>
@@ -7023,7 +7026,7 @@ function _calRenderMonth(){
     h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:122px;border:'+cellBorder+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+cellBg+(isSel?';box-shadow:0 3px 12px rgba(31,122,224,.28)':'')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+((isToday||isSel)?'800':'600')+';font-size:13px;color:'+((isToday||isSel)?'#1f7ae0':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
     ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div draggable="true" onclick="calApptPeek('+a.id+',event)" ondragstart="calDragStart(event,'+a.id+')" title="Click for a quick preview · drag to reschedule" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
-    if(ap.length>5) h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">+'+(ap.length-5)+' more</div>';
+    if(ap.length>5) h+='<div onclick="event.stopPropagation();calOpenDay(\''+key+'\')" title="See all '+ap.length+' appointments this day" style="font-size:11px;color:#1f7ae0;font-weight:700;margin-top:2px;cursor:pointer">+'+(ap.length-5)+' more →</div>';
     h+='</div>';
   }
   h+='</div>';
@@ -8511,6 +8514,8 @@ function studioDataSnapshot(){
       probs.forEach(function(pr){ var k=pr.toLowerCase().slice(0,40); if(k) dx[k]=(dx[k]||0)+1; });
       return {
         id:p.id, name:String(p.name||''), dob:String(p.dob||''), age:age, sex:String(p.sex||p.gender||''), mrn:String(p.mrn||''),
+        source:String(p.source||''), fromAthena:(String(p.source||'').indexOf('athena')>=0),
+        summary:String(p.summary||'').slice(0,1200),
         problems:probs.slice(0,12), meds:_studioSplit(p.meds).slice(0,20), allergies:_studioSplit(p.allergies).slice(0,12),
         visitCount:notes.length, firstVisit:dates[0]||'', lastVisit:dates[dates.length-1]||'',
         visitDates:dates.slice(-40),
@@ -8874,6 +8879,7 @@ function copilotSnapshot(){
   function daysSince(d){ try{ if(!d) return null; var t=new Date(d); if(isNaN(t.getTime())) return null; return Math.max(0, Math.round((today-t)/86400000)); }catch(e){ return null; } }
   var pts=(snap.patients||[]).map(function(p){
     return { id:p.id, name:p.name, age:p.age, sex:p.sex, problems:(p.problems||[]).slice(0,6),
+      fromAthena:!!p.fromAthena, summary:String(p.summary||'').slice(0,700), meds:(p.meds||[]).slice(0,10), allergies:(p.allergies||[]).slice(0,8),
       visitCount:p.visitCount, firstVisit:p.firstVisit, lastVisit:p.lastVisit,
       daysSinceLastVisit:daysSince(p.lastVisit), lastPain:p.lastPain, avgPain:p.avgPain, maxPain:p.maxPain,
       painTrend:(function(){ try{ var s=p.painSeries||[]; if(s.length<2) return null; var a=s[s.length-2].pain, b=s[s.length-1].pain; if(a==null||b==null) return null; return b>a?'up':(b<a?'down':'flat'); }catch(e){ return null; } })() };
@@ -9783,6 +9789,7 @@ function setTemplates(arr){
   localStorage.setItem(uns('templates'),JSON.stringify(arr||[]));
   // MLS additive — template edits also follow the account (hosted, fire-and-forget)
   try{ if(typeof syncPrefsToServer==='function') syncPrefsToServer(); }catch(e){}
+  try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
 }
 function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
 function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
@@ -11089,6 +11096,14 @@ function _assistReadChart(patientName, onStatus){
    patient's MLS record (problems, meds, allergies, running summary) + a history entry.
    Reuses the same Assist read as the schedule pull — no extension change needed.
    The doctor opens the patient's chart in Athena, then taps this. ===== */
+/* Patients-tab "Pull from Athena": ask who, then pull that patient's chart straight from
+   the open Athena tab — for when the schedule missed them or a chart came up empty. */
+function pullPatientFromAthenaPrompt(btn){
+  var nm=''; try{ nm=window.prompt('Pull a patient from Athena\n\nType the patient name exactly as it appears in Athena (and DOB helps if you have it). MLS Assist will open their chart in your Athena tab and pull it in.','')||''; }catch(e){}
+  nm=String(nm).trim(); if(!nm) return;
+  var dob=''; try{ dob=window.prompt('Date of birth for '+nm+' (optional — MM/DD/YYYY). Leave blank to skip.','')||''; }catch(e){}
+  try{ pullPatientChartViaAssist(btn,{name:nm, dob:String(dob||'').trim()}); }catch(e){ try{ toast('Couldn’t start the pull — make sure your Athena tab is open.','err'); }catch(_){} }
+}
 async function pullPatientChartViaAssist(btn, opts){
   opts=opts||{};
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
@@ -11243,14 +11258,15 @@ async function cleanupDuplicateAppointments(btn){
   try{ var r=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}); if(r.ok){ var d=await r.json(); all=d.appointments||[]; } }catch(e){}
   if(!all.length){ try{ toast('No appointments to scan.','ok'); }catch(e){} return; }
   var seen={}, dupes=[];
-  all.forEach(function(x){
-    var lt=''; try{ if(x.start_at) lt=new Date(x.start_at).toTimeString().slice(0,5); }catch(_){}
+  // Sort so the earliest-timed appt per patient/day is the keeper.
+  all.slice().sort(function(p,q){ return String(p.start_at||'').localeCompare(String(q.start_at||'')); }).forEach(function(x){
     var ld=x.appt_date||''; if(!ld){ try{ if(x.start_at){ var dd=new Date(x.start_at); ld=dd.getFullYear()+'-'+('0'+(dd.getMonth()+1)).slice(-2)+'-'+('0'+dd.getDate()).slice(-2); } }catch(_){} }
-    var k=_apptKey(x.name, ld, lt);
+    // Collapse to ONE appointment per patient per day (kills repeated-pull stacking).
+    var k=String(x.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+ld;
     if(seen[k]){ dupes.push(x); } else { seen[k]=1; }
   });
   if(!dupes.length){ try{ toast('No duplicate appointments found — your calendar is clean.','ok'); }catch(e){} return; }
-  if(!window.confirm('Found '+dupes.length+' duplicate appointment'+(dupes.length===1?'':'s')+' (same patient, same day & time). Remove the extras and keep one of each? This cannot be undone.')) return;
+  if(!window.confirm('Found '+dupes.length+' duplicate appointment'+(dupes.length===1?'':'s')+' (same patient appearing more than once on the same day). Remove the extras and keep one per patient per day? This cannot be undone.')) return;
   var orig=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.innerHTML='… cleaning'; }
   var removed=0;
   for(var i=0;i<dupes.length;i++){
@@ -11265,6 +11281,16 @@ async function _importPulledSchedule(appts){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to import the schedule.','err'); }catch(e){} return; }
   var todayKey=(new Date()).toISOString().slice(0,10);
   var fallbackDate=_detectSchedDate(window.__schedRaw&&window.__schedRaw.text)||_nextClinicDay();
+  // Sanity guard: if a huge number of appts would all land on ONE day, that's almost always a
+  // whole-clinic or multi-day view being collapsed — warn rather than silently dumping 100+ on Monday.
+  try{
+    var dayTally={}; (appts||[]).forEach(function(a){ if(!a||!String(a.name||'').trim()) return; var d=_normDate(a.date)||fallbackDate; dayTally[d]=(dayTally[d]||0)+1; });
+    var worst=Object.keys(dayTally).reduce(function(m,k){ return dayTally[k]>(dayTally[m]||0)?k:m; },Object.keys(dayTally)[0]||'');
+    if(worst && dayTally[worst]>40){
+      var dlbl=''; try{ dlbl=new Date(worst+'T12:00').toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'}); }catch(_){ dlbl=worst; }
+      if(!window.confirm('Heads up: '+dayTally[worst]+' appointments would land on '+dlbl+' — that usually means Athena was showing a whole-clinic or multi-day view, not one provider’s day.\n\nTip: in Athena, open ONE provider’s single-day schedule, then pull again.\n\nImport all '+dayTally[worst]+' onto '+dlbl+' anyway?')) { try{ toast('Import cancelled — open one provider’s single day in Athena and pull again.',''); }catch(e){} return; }
+    }
+  }catch(e){}
   // Pull existing appointments ONCE so we NEVER re-add one already on the calendar (name+day+time).
   var existingKeys={};
   try{ var er=await fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+bkToken()}}); if(er.ok){ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){
@@ -11272,6 +11298,7 @@ async function _importPulledSchedule(appts){
     var lt=''; try{ if(x.start_at) lt=new Date(x.start_at).toTimeString().slice(0,5); }catch(_){}
     var ld=x.appt_date||''; if(!ld){ try{ if(x.start_at) ld=new Date(x.start_at).getFullYear()+'-'+('0'+(new Date(x.start_at).getMonth()+1)).slice(-2)+'-'+('0'+new Date(x.start_at).getDate()).slice(-2); }catch(_){} }
     existingKeys[_apptKey(x.name, ld, lt)]=1;
+    existingKeys['D:'+String(x.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+ld]=1; // also block same patient + same day (any time)
   }); } }catch(e){}
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var created=0, skipped=0, days={};
@@ -11279,8 +11306,9 @@ async function _importPulledSchedule(appts){
     var a=appts[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
     var date=_normDate(a.date)||fallbackDate;            // file EACH appt on ITS OWN day
     var key=_apptKey(name, date, a.time);
-    if(existingKeys[key]){ skipped++; continue; }          // already there → skip (no doubling up)
-    existingKeys[key]=1;
+    var dayKey='D:'+name.toLowerCase().replace(/\s+/g,' ')+'|'+date;  // one visit per patient per day
+    if(existingKeys[key]||existingKeys[dayKey]){ skipped++; continue; }  // already there → skip (no doubling up)
+    existingKeys[key]=1; existingKeys[dayKey]=1;
     var ext=''; var existing=null;
     try{ existing=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(existing) ext=existing.id; }catch(e){}
     // Durable, server-synced patient record (dedup by name → reused on re-sync, never duplicated).
@@ -11439,6 +11467,13 @@ function _heroPickPatient(i){
     var nm=document.getElementById('heroPtName'); if(nm) nm.value=a.name||'';
     var db=document.getElementById('heroPtDob'); if(db) db.value=dob||'';
     _heroSyncName();
+    // Make this person the ACTIVE patient (find their record, or create one) so the whole app — chart, history, AI Studio, Copilot — is now about them.
+    try{
+      var nmL=String(a.name||'').trim().toLowerCase();
+      var rec=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){ return String(x.name||'').trim().toLowerCase()===nmL; });
+      if(!rec && a.name && typeof upsertPatient==='function'){ rec={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:a.name, dob:dob||'', reason:a.reason||'', source:'athena-schedule', created:Date.now() }; try{ upsertPatient(rec); }catch(_){} }
+      if(rec){ if(dob&&!rec.dob){ rec.dob=dob; try{ upsertPatient(rec); }catch(_){} } setActivePtId(rec.id); try{ if(typeof renderProfile==='function') renderProfile(); }catch(_){} try{ if(typeof renderPatientBar==='function') renderPatientBar(); }catch(_){} try{ if(typeof renderPatients==='function') renderPatients(); }catch(_){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(_){} }
+    }catch(e){}
     try{ _renderTodayPatients(window._heroTodayList||[]); }catch(e){}
     try{ var rc=document.getElementById('heroRecBtn'); if(rc&&rc.scrollIntoView) rc.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
     try{ toast('Loaded '+(a.name||'patient')+' — hit 🎙️ Start recording.',''); }catch(e){}
@@ -12465,7 +12500,7 @@ const STANDARDS=`CLINICAL FORMAT & CODING STANDARDS (follow precisely):
   Time thresholds (date of encounter, may be used instead of MDM): New 99202≥15,99203≥30,99204≥45,99205≥60 min; Established 99212≥10,99213≥20,99214≥30,99215≥40 min. Only use time if a total time is documented in the transcript.`;
 
 /* Read the chosen specialty preset, note style, and pasted context. */
-function getPreset(){ const el=document.getElementById('specialtyPreset'); return el?el.value:''; }
+function getPreset(){ const el=document.getElementById('specialtyPreset'); var v=el?el.value:''; return /^tpl:/.test(v)?'':v; } // an uploaded-template pick isn't a "specialty" string — the template engine handles it
 function getNoteStyle(){ const el=document.getElementById('noteStyle'); return el?el.value:'SOAP'; }
 /* ===== NOTE GENERATION OPTIONS — per-visit style / length / focus that feed the
    main Generate Note call. Style & length persist; focus is per-visit. ===== */
@@ -13310,15 +13345,16 @@ function pushEntireVisitToAthena(btn){
   if(!bundle.trim()){ try{ toast('Nothing to push yet.','err'); }catch(e){} return; }
   var p=(typeof activePatient==='function')?activePatient():null;
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
-  // Build a short human summary of WHAT will be written, for the confirm gate.
-  var items=['• Clinical note (assessment & plan)'];
-  if(c&&c.icd&&c.icd.length) items.push('• '+c.icd.length+' ICD-10 diagnosis code'+(c.icd.length===1?'':'s'));
-  if(c&&c.em) items.push('• E/M level '+c.em);
-  if(c&&c.cpt&&c.cpt.length) items.push('• '+c.cpt.length+' CPT procedure'+(c.cpt.length===1?'':'s'));
-  if(typeof currentOrders!=='undefined'&&currentOrders&&currentOrders.length) items.push('• '+currentOrders.length+' order'+(currentOrders.length===1?'':'s'));
   var who=p?p.name:'this patient';
+  // Build a CLEAR, itemized list of exactly what gets pushed and WHERE in Athena.
+  var lines=[];
+  lines.push('📝 NOTE  →  Athena clinical note / encounter');
+  if(c&&c.icd&&c.icd.length){ lines.push(''); lines.push('🩺 DIAGNOSES  →  Athena assessment / diagnoses  ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
+  var hasBill=(c&&c.em)||(c&&c.cpt&&c.cpt.length);
+  if(hasBill){ lines.push(''); lines.push('💲 SUPERBILL / CHARGES  →  Athena billing:'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
+  if(typeof currentOrders!=='undefined'&&currentOrders&&currentOrders.length){ lines.push(''); lines.push('📋 ORDERS  →  Athena orders  ('+currentOrders.length+'):'); currentOrders.forEach(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; var lbl=o._src||(def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''); lines.push('      • '+String(lbl).slice(0,60)); }); }
   var ok=false;
-  try{ ok=window.confirm('Push the ENTIRE visit for '+who+' into the patient open in your Athena tab?\n\nMLS Assist will enter, each into its proper Athena field:\n'+items.join('\n')+'\n\nIt will STOP before Save/Sign — you review and sign in Athena. Make sure the right patient’s encounter is open in Athena.\n\nProceed?'); }catch(e){ ok=true; }
+  try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nExactly what will be entered into the open Athena encounter, each into its proper field:\n\n'+lines.join('\n')+'\n\n⚠ It STOPS before Save/Sign — you review & sign in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush it now?'); }catch(e){ ok=true; }
   if(!ok) return;
   var orig=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.innerHTML='… connecting'; }
   var statusToast=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
@@ -13347,6 +13383,31 @@ function pushEntireVisitToAthena(btn){
     if(btn) btn.innerHTML='… entering into Athena';
     setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to the latest version (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 210000);
   }
+}
+/* Shared Athena push runner — pings MLS Assist, hands the autopilot a goal, reports progress. */
+function _athenaPushRun(goal, startMsg){
+  var statusToast=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
+  var ponged=false, tries=0, iv=null, finished=false;
+  function cleanup(){ try{ window.removeEventListener('message',onPong); }catch(e){} try{ window.removeEventListener('message',onMsg); }catch(e){} if(iv) clearInterval(iv); }
+  function finish(msg,kind){ finished=true; statusToast(msg,kind); cleanup(); }
+  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
+  function onMsg(e){ if(!(e.data&&e.data.source==='mls-ext')) return; if(e.data.type==='mlsAppPushProgress'){ statusToast(e.data.msg||'Working…',''); return; } if(e.data.type==='mlsAppPushResult'){ var r=e.data.resp||{}; finish(r.ok?('🚀 '+(r.msg||'Entered into Athena — review and sign there.')):(r.error||'Couldn’t enter into Athena. Open the encounter and try again.'), r.ok?'ok':'err'); } }
+  window.addEventListener('message',onPong);
+  var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
+  statusToast(startMsg||'Looking for MLS Assist…',''); ping();
+  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open.','err'); } else ping(); }, 350);
+  function proceed(){ window.addEventListener('message',onMsg); try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){} setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to the latest version (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 180000); }
+}
+/* Push ONLY the superbill / charges (E/M + CPT + ICD) into Athena billing. */
+function pushSuperbillToAthena(){
+  var c=(typeof currentCoding!=='undefined')?currentCoding:null;
+  if(!c || (!c.em && !(c.cpt&&c.cpt.length) && !(c.icd&&c.icd.length))){ try{ toast('Generate the note + coding first — there are no charges to push yet.','err'); }catch(e){} return; }
+  var p=(typeof activePatient==='function')?activePatient():null; var who=p?p.name:'this patient';
+  var lines=[]; if(c.em) lines.push('• E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('• CPT  '+x); }); if(c.icd&&c.icd.length) c.icd.forEach(function(x){ lines.push('• Dx  '+x); });
+  var ok=false; try{ ok=window.confirm('PUSH SUPERBILL TO ATHENA — '+who+'\n\nThese charges go into Athena’s billing for the open encounter:\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save — you review & submit the claim in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush the charges now?'); }catch(e){ ok=true; }
+  if(!ok) return;
+  var goal='GOAL: enter ONLY the BILLING CHARGES (superbill) for this visit into the patient encounter CURRENTLY OPEN in athenaOne. Do NOT touch the clinical note. In Athena’s charge / billing / E&M area: set the E/M level, and add each CPT procedure code and each ICD-10 diagnosis (use the charge / "Add code" / diagnosis search and pick the matching result for each). RULES: only use on-screen controls; if the billing/charge section isn’t visible, open it first; skip any single code that won’t go and continue. Do NOT click Save, Sign, Submit, or Close — STOP once the charges are entered so the doctor reviews. THE CHARGES:\n\n'+lines.join('\n')+(p&&p.name?('\n\nPatient: '+p.name):'');
+  _athenaPushRun(goal, 'Pushing the superbill into Athena…');
 }
 function getAutoSendEMR(){ return localStorage.getItem(uns('autoSendEMR'))==='1'; }
 function applyAutoSendPreview(c){ try{ localStorage.setItem(uns('autoSendEMR'), c?'1':'0'); }catch(e){} try{ toast(c?'On — signed notes will auto-send to your EMR via MLS Assist.':'Off — notes won’t auto-send.', 'ok'); }catch(e){} }
@@ -15111,8 +15172,32 @@ function manageDotPhrases(){
 
 /* When a specialty preset is picked, prefill the Settings specialty too. */
 function onPresetChange(){
+  var el=document.getElementById('specialtyPreset'); var raw=el?el.value:'';
+  if(/^tpl:/.test(raw)){
+    // The user picked one of THEIR uploaded templates from this dropdown → turn it on as the active template.
+    var id=raw.slice(4); var t=(typeof getTemplateById==='function')?getTemplateById(id):null;
+    try{ localStorage.setItem(uns('useTemplates'),'1'); }catch(e){}
+    try{ if(typeof setActiveTemplateId==='function') setActiveTemplateId(id); else localStorage.setItem(uns('templateActive'),id); }catch(e){}
+    try{ var ut=document.getElementById('useTemplatesToggle'); if(ut) ut.checked=true; }catch(e){}
+    try{ toast('Using your template "'+((t&&t.name)||'Template')+'" — notes will match its format.','ok'); }catch(e){}
+    return;
+  }
   const p=getPreset();
   if(p) toast(p+' template selected — note will be tailored.','');
+}
+/* Mirror the doctor's UPLOADED templates into the "Specialty template" dropdown so they can
+   be picked right where notes are generated (not only inside the Templates manager). */
+function _syncSpecialtyPresetTemplates(){
+  try{
+    var el=document.getElementById('specialtyPreset'); if(!el) return;
+    var old=el.querySelector('optgroup[data-mine]'); if(old) old.remove();
+    var list=(typeof getTemplates==='function'?getTemplates():[])||[]; if(!list.length) return;
+    var og=document.createElement('optgroup'); og.label='⭐ Your uploaded templates'; og.setAttribute('data-mine','1');
+    var act=(typeof getActiveTemplateId==='function'?getActiveTemplateId():'');
+    var usingT=(typeof useTemplatesOn==='function'&&useTemplatesOn());
+    list.forEach(function(t){ var o=document.createElement('option'); o.value='tpl:'+t.id; o.textContent=(t.name||'Template'); if(usingT&&act===t.id) o.selected=true; og.appendChild(o); });
+    el.appendChild(og);
+  }catch(e){}
 }
 
 /* =========================================================
@@ -20477,6 +20562,10 @@ function initTooltips(){
     nav_admin:'Owner admin and billing',
     ptNewBtn:'Add a new patient', ptMoreBtn:'More patient and practice tools' };
   Object.keys(tips).forEach(function(id){ var el=document.getElementById(id); if(el && !el.getAttribute('title') && !el.getAttribute('data-tip')) el.setAttribute('data-tip',tips[id]); });
+  // Convert EVERY title→data-tip so the browser's native tooltip never ALSO shows (no double/stacked tooltips).
+  function _stripTitles(root){ try{ (root||document).querySelectorAll('[title]').forEach(function(el){ var t=el.getAttribute('title'); if(t){ if(!el.getAttribute('data-tip')) el.setAttribute('data-tip',t); el.removeAttribute('title'); } }); }catch(e){} }
+  _stripTitles(document);
+  try{ var _mo=new MutationObserver(function(muts){ var hit=false; for(var i=0;i<muts.length;i++){ var m=muts[i]; if((m.addedNodes&&m.addedNodes.length) || (m.type==='attributes'&&m.attributeName==='title')){ hit=true; break; } } if(hit){ clearTimeout(window.__stripTo); window.__stripTo=setTimeout(function(){ _stripTitles(document); },120); } }); _mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['title']}); }catch(e){}
   function find(t){ var hops=0; while(t && t.nodeType===1 && t!==document.body && hops<6){ var tx=(t.getAttribute('data-tip')||t.getAttribute('title')); if(tx && tx.trim()) return [t,tx.trim()]; t=t.parentNode; hops++; } return null; }
   function place(el){ var r=el.getBoundingClientRect(); var tw=tip.offsetWidth, th=tip.offsetHeight; var x=r.left+r.width/2-tw/2; var y=r.top-th-8; if(y<6) y=r.bottom+8; x=Math.max(6,Math.min(x,window.innerWidth-tw-6)); tip.style.left=Math.round(x)+'px'; tip.style.top=Math.round(y)+'px'; }
   document.addEventListener('mouseover',function(e){
@@ -20509,6 +20598,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(ptNameEl) ptNameEl.addEventListener('keydown',e=>{ if(e.key==='Enter') savePatient(); });
   // initialize MME calculator empty state + prior-auth mode toggle
   if(typeof renderMmeRows==='function'){ renderMmeRows(); }
+  try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){} // show uploaded templates in the Specialty-template dropdown
   if(typeof applyFeatureToggles==='function'){ applyFeatureToggles(); } // 🧩 Features show/hide
   if(typeof setPaMode==='function'){ setPaMode('auth'); }
   // enter to submit auth
