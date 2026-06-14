@@ -103,6 +103,55 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  // Open + read ONE PATIENT'S CHART from Athena. If a patient name is given, try to
+  // click that patient (in the schedule/search) to open their chart, then read the
+  // frame that scores highest on clinical-chart keywords (so we never grab the schedule).
+  if (msg.type === 'mlsAppChartRequest') {
+    (async () => {
+      try {
+        const all = await chrome.tabs.query({});
+        let tab = all.find((t) => /athenahealth|athenanet|athena\.io|\.px\.athena/i.test(t.url || ''));
+        if (!tab) { const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || '')); cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); tab = cand[0]; }
+        if (!tab) return sendResponse({ ok: false, error: 'Open the patient in your Athena tab, then try again.' });
+        const want = String(msg.patient || '').trim();
+        let opened = false;
+        if (want) {
+          try {
+            const clickRes = await chrome.scripting.executeScript({
+              target: { tabId: tab.id, allFrames: true },
+              func: (name) => {
+                try {
+                  const parts = name.toLowerCase().replace(/[^a-z\s,]/g, '').split(/[\s,]+/).filter(Boolean);
+                  if (!parts.length) return false;
+                  const last = parts[parts.length - 1], first = parts[0];
+                  const els = Array.from(document.querySelectorAll('a,button,[role="link"],[onclick],td,li,span'));
+                  for (const el of els) {
+                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                    if (t && t.length < 70 && t.indexOf(last) >= 0 && (parts.length < 2 || t.indexOf(first) >= 0)) {
+                      const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) { el.click(); return true; }
+                    }
+                  }
+                } catch (e) {} return false;
+              },
+              args: [want]
+            });
+            opened = clickRes.some((r) => r && r.result === true);
+          } catch (e) {}
+          if (opened) { await new Promise((r) => setTimeout(r, 1900)); }
+        }
+        let results = [];
+        try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 14000) }; } catch (e) { return { u: '', t: '' }; } } }); }
+        catch (e) { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 14000) }) }); }
+        const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
+        const score = (txt) => { const s = (txt || '').toLowerCase(); let n = 0; ['problem', 'medication', 'allerg', 'history', 'vital', 'diagnos', 'assessment', 'date of birth', 'dob', 'surg', 'imaging', 'mri', 'immuniz'].forEach((k) => { if (s.indexOf(k) >= 0) n++; }); return n; };
+        let pick = null, best = -1;
+        frames.forEach((f) => { const sc = score(f.t) * 1000 + Math.min(f.t.length, 13000) / 100; if (sc > best) { best = sc; pick = f; } });
+        pick = pick || { u: tab.url, t: '' };
+        sendResponse({ ok: true, text: (pick.t || '').slice(0, 16000), url: pick.u || tab.url, title: tab.title, opened: opened, frames: frames.length });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
   // Read the innerText of whatever tab is ACTIVE right now (so the agent sees the
   // tab it is currently on, even after a tab switch).
   if (msg.type === 'mlsAssistPageText') {

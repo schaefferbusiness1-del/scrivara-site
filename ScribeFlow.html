@@ -3183,7 +3183,7 @@
       <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
       <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
-        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.17</span></b>
+        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.18</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
           <b>Already installed it before?</b> You just need to update to v1.17 to get schedule-pull: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still says it can't read the schedule, remove it and <b>Load unpacked</b> the latest <code>mls-assist-extension</code> folder.
@@ -3362,10 +3362,11 @@
       <input type="text" id="tplKeywords" placeholder="e.g. ortho, knee, consult, MRI">
     </div>
     <div class="row tight" style="margin-top:0">
-      <button class="edit" onclick="document.getElementById('tplFileInput').click()">⬆ Upload template (PDF / image)</button>
+      <button class="edit" onclick="document.getElementById('tplFileInput').click()">⬆ Upload template (Word / PDF / image / text)</button>
       <button class="btn-ghost" onclick="tplPasteText()">📋 Paste text instead</button>
     </div>
-    <input type="file" id="tplFileInput" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf,text/plain" style="display:none" onchange="onTplFile(event)">
+    <input type="file" id="tplFileInput" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" style="display:none" onchange="onTplFile(event)">
+    <div id="tplDropZone" ondragover="_tplDragOver(event,true)" ondragleave="_tplDragOver(event,false)" ondrop="_tplDrop(event)" onclick="document.getElementById('tplFileInput').click()" style="margin-top:8px;border:2px dashed #cfe0f5;border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:13px;background:#fafcff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop a template file here — Word (.doc/.docx), PDF, image, text, or any file — or click to browse</div>
     <textarea id="tplText" placeholder="Extracted template text appears here. You can edit it before saving." style="min-height:120px;font-size:13px;margin-top:8px"></textarea>
     <div class="row" style="margin-top:6px">
       <button class="btn-green" onclick="saveTemplateFromForm()" style="flex:1">💾 Save template</button>
@@ -9740,6 +9741,9 @@ function tplPasteText(){
   if(t===null) return;
   document.getElementById('tplText').value=t;
 }
+/* Drag & drop onto the template form. */
+function _tplDragOver(ev,on){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='copy'; }catch(e){} var z=document.getElementById('tplDropZone'); if(z){ z.style.borderColor=on?'#1f7ae0':'#cfe0f5'; z.style.background=on?'#eef5ff':'#fafcff'; } }
+function _tplDrop(ev){ ev.preventDefault(); _tplDragOver(ev,false); var f=ev.dataTransfer&&ev.dataTransfer.files&&ev.dataTransfer.files[0]; if(!f){ try{ toast('No file detected in that drop.','err'); }catch(e){} return; } onTplFile({target:{files:[f],value:''}}); }
 async function onTplFile(ev){
   const file=ev.target.files&&ev.target.files[0];
   ev.target.value='';
@@ -9779,10 +9783,46 @@ async function onTplFile(ev){
       const txt=(j.text||'').trim();
       document.getElementById('tplText').value=txt;
       toast(txt?'Text extracted from image.':'No readable text found in the image — try a sharper, well-lit photo of the form.',txt?'ok':'err');
+    } else if(lower.endsWith('.docx')||mime.indexOf('officedocument.wordprocessingml')>=0){
+      toast('Reading Word document…','');
+      const text=await _extractDocxText(file);
+      document.getElementById('tplText').value=text;
+      toast(text.trim()?'Word document text extracted.':'No readable text in that .docx.', text.trim()?'ok':'err');
+    } else if(/\.(rtf|md|markdown|csv|tsv|json|html?|text|odt)$/.test(lower)||/^text\//.test(mime)){
+      let text=_cleanExtractedText(await file.text(), lower);
+      document.getElementById('tplText').value=text;
+      toast(text.trim()?'Document text loaded.':'Could not find readable text in that file.', text.trim()?'ok':'err');
+    } else if(lower.endsWith('.doc')||mime==='application/msword'){
+      // Old binary .doc: no clean client-side parser — pull the readable text runs out.
+      let text=_cleanExtractedText(await file.text(), lower);
+      if(text.replace(/\s/g,'').length>30){ document.getElementById('tplText').value=text; toast('Read the .doc (older Word format — review the text, some formatting may be lost). Tip: re-saving as .docx reads cleaner.','ok'); }
+      else { toast('This .doc is the old binary Word format and didn’t read cleanly. Open it in Word → Save As → .docx (or PDF), then upload that.','err'); }
     } else {
-      toast('Unsupported file type. Use .txt, .pdf, an image, or paste text.','err');
+      // Last resort: try to read ANY remaining file type as text.
+      let text=''; try{ text=_cleanExtractedText(await file.text(), lower); }catch(_){}
+      if(text.replace(/\s/g,'').length>20){ document.getElementById('tplText').value=text; toast('Loaded text from '+(file.name||'file')+' — review before saving.','ok'); }
+      else { toast('That file type isn’t text-readable. Save the form as .docx, PDF, or upload a photo/scan, or paste the text.','err'); }
     }
   }catch(e){ toast('Could not read template: '+(e.message||e),'err'); }
+}
+/* Clean text pulled from rich/markup/binary formats into plain template text. */
+function _cleanExtractedText(t, lower){
+  t=String(t||'');
+  if(/\.html?$/.test(lower)){ try{ var d=document.createElement('div'); d.innerHTML=t; t=(d.textContent||d.innerText||t); }catch(e){} }
+  if(/\.rtf$/.test(lower)){ t=t.replace(/\\par[d]?\b/g,'\n').replace(/\\'[0-9a-fA-F]{2}/g,'').replace(/\{\\\*[^{}]*\}/g,'').replace(/\\[a-zA-Z]+-?\d*\s?/g,'').replace(/[{}]/g,''); }
+  if(/\.doc$/.test(lower)){ t=t.replace(/[^\x09\x0A\x0D\x20-\x7E]+/g,' '); }
+  return t.replace(/ /g,'').replace(/[ \t]{3,}/g,'  ').replace(/\n{3,}/g,'\n\n').trim();
+}
+/* Lazy-load mammoth.js (Word .docx reader) from CDN, once. */
+function _ensureMammoth(){
+  if(window.mammoth) return Promise.resolve(window.mammoth);
+  return new Promise(function(res,rej){ var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'; s.onload=function(){ res(window.mammoth); }; s.onerror=function(){ rej(new Error('Could not load the Word reader. Check your connection or save the file as PDF/.txt.')); }; document.head.appendChild(s); });
+}
+async function _extractDocxText(file){
+  const m=await _ensureMammoth();
+  const buf=await file.arrayBuffer();
+  const out=await m.extractRawText({arrayBuffer:buf});
+  return ((out&&out.value)||'').trim();
 }
 function saveTemplateFromForm(){
   const name=document.getElementById('tplName').value.trim();
@@ -10664,6 +10704,34 @@ function _assistReadAthenaTab(onStatus){
     }
   });
 }
+/* Like _assistReadAthenaTab but for ONE patient's chart: passes the patient name so the
+   extension (v1.18+) can click them open in Athena, and listens for mlsAppChartResult.
+   Rejects with Error('OLDEXT') if no chart result arrives (older extension) so the caller
+   can fall back to reading whatever tab is open. */
+function _assistReadChart(patientName, onStatus){
+  return new Promise(function(resolve,reject){
+    var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
+    var ponged=false, tries=0, iv=null, got=false;
+    function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
+    window.addEventListener('message',onPong);
+    var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
+    say('Looking for MLS Assist…'); ping();
+    iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); reject(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled and your Athena tab is open.')); } else ping(); }, 350);
+    function onResult(e){
+      if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppChartResult')) return;
+      got=true; window.removeEventListener('message',onResult);
+      var r=e.data.resp||{};
+      if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read the chart from your Athena tab.')); return; }
+      resolve({text:r.text||'', url:r.url||'', opened:!!r.opened});
+    }
+    function proceed(){
+      say(patientName?('Opening '+patientName+'’s chart in Athena…'):'Reading the chart from Athena…');
+      window.addEventListener('message',onResult);
+      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||''},'*'); }catch(e){}
+      setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); reject(new Error('OLDEXT')); } }, 30000);
+    }
+  });
+}
 /* ===== Pull a PATIENT'S CHART/HISTORY from Athena via MLS Assist and SAVE it into the
    patient's MLS record (problems, meds, allergies, running summary) + a history entry.
    Reuses the same Assist read as the schedule pull — no extension change needed.
@@ -10675,7 +10743,10 @@ async function pullPatientChartViaAssist(btn){
   if(btn){ btn.disabled=true; btn.innerHTML='… reading Athena'; }
   var setT=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
   try{
-    var rd=await _assistReadAthenaTab(setT);
+    var rd;
+    try{ rd=await _assistReadChart(p.name, setT); }
+    catch(e0){ if((e0&&e0.message)==='OLDEXT'){ setT('Tip: update MLS Assist to v1.18 (Settings → Download) so it can open the chart for you. Reading the open tab…',''); rd=await _assistReadAthenaTab(setT); } else { throw e0; } }
+    if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
     setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
     var chart=await _parsePatientChart(rd.text);
     if(!chart || (!chart.problems && !chart.meds && !chart.allergies && !(chart.history&&chart.history.length) && !chart.summary)){
@@ -10764,21 +10835,52 @@ async function _importPulledSchedule(appts){
   try{ var _dl=''; try{ _dl=new Date(today+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}); }catch(_e){ _dl=today; } toast('Imported '+created+' appointment'+(created===1?'':'s')+' from Athena for '+_dl+'.','ok'); var _ps=document.getElementById('heroPullStatus'); if(_ps&&created){ _ps.textContent='✅ Pulled '+created+' patient'+(created===1?'':'s')+' for '+_dl+'. Tap a name below to start recording.'; _ps.style.color='#d8ffe8'; _ps.style.display='block'; } }catch(e){}
   try{ _calLoadNextUp(); }catch(e){}   // know the time → load whoever is up right now
 }
+/* A patient counts as "seen" today once they have a real (non-draft) saved note dated today. */
+function _seenToday(name){
+  try{ var nm=String(name||'').trim().toLowerCase(); if(!nm) return false; var today=(new Date()).toISOString().slice(0,10);
+    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patient||'').trim().toLowerCase()===nm && !n.isDraft && (new Date(n.updated||n.created||0)).toISOString().slice(0,10)===today; });
+  }catch(e){ return false; }
+}
+/* Tomorrow's appointments pulled from the calendar (so they file into a Tomorrow folder). */
+function _tomorrowAppts(){
+  try{ var d=new Date(); d.setDate(d.getDate()+1); var key=d.toISOString().slice(0,10);
+    return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
+      .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), time:String(a.start_at||'').slice(11,16), reason:a.reason||'', dob:a.dob||''}; })
+      .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
+}
+function _heroPatChip(a,onclick,opts){
+  opts=opts||{}; var up=!!opts.up, seen=!!opts.seen, dashed=!!opts.dashed;
+  var nm=String(a.name||'').trim(); if(!nm) return '';
+  var meta=[a.time||'', a.reason||''].filter(Boolean).join(' · ');
+  var bg=up?'#fff':(seen?'rgba(255,255,255,.10)':'rgba(255,255,255,.15)'); var fg=up?'#1456a8':'#fff';
+  return '<button onclick="'+onclick+'" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:'+bg+';border:1px '+(dashed?'dashed':'solid')+' '+(up?'#fff':'rgba(255,255,255,.34)')+';border-radius:9px;padding:7px 11px;color:'+fg+';cursor:pointer;text-align:left;min-width:120px;opacity:'+(seen?'.72':'1')+'">'+
+    (up?'<span style="font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px">● UP NOW</span>':'')+
+    (seen?'<span style="font-size:9.5px;font-weight:800;letter-spacing:.4px">✅ SEEN</span>':'')+
+    '<span style="font-weight:700;font-size:13px">'+esc(nm)+'</span>'+(meta?'<span style="font-size:11px;opacity:.85">'+esc(meta)+'</span>':'')+'</button>';
+}
 function _renderTodayPatients(appts){
   var box=document.getElementById('heroToday'); if(!box) return;
   window._heroTodayList=appts||[];
-  if(!appts||!appts.length){ box.style.display='none'; box.innerHTML=''; return; }
+  var tom=_tomorrowAppts(); window._heroTomorrowList=tom;
+  if((!appts||!appts.length) && !tom.length){ box.style.display='none'; box.innerHTML=''; return; }
   var nowIdx=(typeof window._heroNowIdx==='number')?window._heroNowIdx:-1;
-  var rows=appts.map(function(a,i){
-    var nm=String(a.name||'').trim(); if(!nm) return '';
-    var meta=[a.time||'', a.reason||''].filter(Boolean).join(' · ');
-    var up=(i===nowIdx);
-    return '<button onclick="_heroPickPatient('+i+')" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:'+(up?'#fff':'rgba(255,255,255,.15)')+';border:1px solid '+(up?'#fff':'rgba(255,255,255,.32)')+';border-radius:9px;padding:7px 11px;color:'+(up?'#1456a8':'#fff')+';cursor:pointer;text-align:left;min-width:120px">'+
-      (up?'<span style="font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px">● UP NOW</span>':'')+
-      '<span style="font-weight:700;font-size:13px">'+esc(nm)+'</span>'+(meta?'<span style="font-size:11px;opacity:'+(up?'.78':'.85')+'">'+esc(meta)+'</span>':'')+'</button>';
-  }).filter(Boolean).join('');
-  box.innerHTML='<div style="font-size:12px;font-weight:700;opacity:.9;margin:2px 0 6px;letter-spacing:.3px">📋 TODAY’S PATIENTS — tap to load &amp; record</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+rows+'</div>';
-  box.style.display='block';
+  var toSee=[], seen=[];
+  (appts||[]).forEach(function(a,i){ if(!String(a.name||'').trim()) return; (_seenToday(a.name)?seen:toSee).push([a,i]); });
+  function sect(label,arr,asSeen){ if(!arr.length) return ''; var chips=arr.map(function(pr){ return _heroPatChip(pr[0],'_heroPickPatient('+pr[1]+')',{up:(pr[1]===nowIdx&&!asSeen),seen:asSeen}); }).join(''); return '<div style="font-size:12px;font-weight:700;opacity:.92;margin:9px 0 6px;letter-spacing:.3px">'+label+'</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+chips+'</div>'; }
+  var html=sect('📋 TO BE SEEN — tap to load &amp; record',toSee,false)+sect('✅ SEEN TODAY ('+seen.length+')',seen,true);
+  if(tom.length){
+    var tchips=tom.map(function(a,j){ return _heroPatChip(a,'_heroPickTomorrow('+j+')',{dashed:true}); }).join('');
+    html+='<div style="font-size:12px;font-weight:700;opacity:.92;margin:11px 0 6px;letter-spacing:.3px">📅 TOMORROW ('+tom.length+')</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+tchips+'</div>';
+  }
+  box.innerHTML=html; box.style.display='block';
+}
+function _heroPickTomorrow(j){
+  try{ var a=(window._heroTomorrowList||[])[j]||{};
+    var nm=document.getElementById('heroPtName'); if(nm) nm.value=a.name||'';
+    var db=document.getElementById('heroPtDob'); if(db) db.value=a.dob||'';
+    if(typeof _heroSyncName==='function') _heroSyncName();
+    try{ toast('Loaded '+(a.name||'patient')+' (tomorrow’s schedule).',''); }catch(e){}
+  }catch(e){}
 }
 /* Based on the pulled Athena schedule + the current clock time, pick who's "up now"
    (the appt that just started, else the next upcoming, else the last of the day) and

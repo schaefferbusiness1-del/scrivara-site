@@ -32,6 +32,16 @@
         });
       } catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: { error: 'extension error' } }, '*'); }
     }
+    // Open + read ONE PATIENT'S CHART from Athena. If a patient name is passed, the
+    // background tries to click that patient (e.g. in the schedule) to open the chart,
+    // then reads the frame that looks most like a clinical chart (not the schedule).
+    if (d.type === 'mlsAppReadChart') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: d.patient || '' }, function (resp) {
+          window.postMessage({ source: 'mls-ext', type: 'mlsAppChartResult', resp: resp || { error: 'no response' } }, '*');
+        });
+      } catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'extension error' } }, '*'); }
+    }
   });
 
   // --- custom hover tooltips: appear only after the cursor rests ~2s on a button ---
