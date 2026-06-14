@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>MLS Recorder</title>
+<meta name="theme-color" content="#1456a8">
+<!-- Add-to-Home-Screen / PWA (iOS + Android) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MLS Recorder">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="phone-manifest.json">
+<style>
+  :root{ --blue:#1f7ae0; --blue-dk:#1456a8; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; }
+  body{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+    background:linear-gradient(160deg,#1f7ae0,#1456a8); color:#fff;
+    min-height:100dvh; display:flex; flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + 18px) 20px calc(env(safe-area-inset-bottom) + 22px); }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:800; font-size:18px; letter-spacing:.2px; }
+  .brand .dot{ width:30px; height:30px; border-radius:9px; background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; font-size:17px; }
+  .sub{ font-size:13.5px; opacity:.9; margin-top:4px; }
+  .screen{ flex:1; display:flex; flex-direction:column; }
+  .center{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:18px; }
+  .hidden{ display:none !important; }
+  /* connect screen */
+  .codebox{ width:100%; max-width:340px; }
+  .codebox label{ display:block; font-size:13.5px; opacity:.9; margin-bottom:8px; }
+  #codeInput{ width:100%; text-align:center; font-size:30px; font-weight:800; letter-spacing:8px;
+    text-transform:uppercase; border:0; border-radius:14px; padding:16px 10px; color:var(--blue-dk);
+    font-family:ui-monospace,Menlo,monospace; }
+  .btn{ width:100%; max-width:340px; border:0; border-radius:14px; padding:15px 18px; font-size:16px; font-weight:800; cursor:pointer; }
+  .btn-white{ background:#fff; color:var(--blue-dk); box-shadow:0 6px 18px rgba(0,0,0,.18); }
+  .btn-ghost{ background:rgba(255,255,255,.16); color:#fff; border:1px solid rgba(255,255,255,.4); }
+  .hint{ font-size:12.5px; opacity:.85; max-width:320px; line-height:1.5; }
+  /* recorder screen */
+  .recBtn{ width:200px; height:200px; border-radius:50%; border:0; cursor:pointer;
+    background:#fff; color:var(--blue-dk); font-size:21px; font-weight:800;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+    box-shadow:0 10px 34px rgba(0,0,0,.25); transition:transform .12s ease; }
+  .recBtn:active{ transform:scale(.97); }
+  .recBtn .ic{ font-size:46px; line-height:1; }
+  .recBtn.on{ background:#ffe3e3; color:#b00020; animation:pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,80,80,.0);} 50%{ box-shadow:0 0 0 14px rgba(255,120,120,.25);} }
+  .status{ font-size:15px; font-weight:700; min-height:20px; }
+  .meta{ font-size:13px; opacity:.85; }
+  .err{ color:#ffd9d9; font-size:13.5px; min-height:18px; max-width:320px; }
+  .pill{ display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,.16); border-radius:999px; padding:6px 13px; font-size:13px; font-weight:600; }
+  .foot{ text-align:center; font-size:11.5px; opacity:.7; margin-top:14px; }
+  a{ color:#fff; }
+</style>
+</head>
+<body>
+  <div class="brand"><span class="dot">🎙️</span> MLS Recorder</div>
+  <div class="sub" id="subline">Record a visit from your phone — it streams to your computer.</div>
+
+  <!-- CONNECT SCREEN -->
+  <div class="screen" id="connectScreen">
+    <div class="center">
+      <div class="codebox">
+        <label>Enter the code shown on your computer</label>
+        <input id="codeInput" inputmode="text" autocomplete="one-time-code" maxlength="8" placeholder="------">
+      </div>
+      <button class="btn btn-white" id="connectBtn" onclick="doConnect()">Connect</button>
+      <div class="hint">On your computer, open MLS → Visit → <b>📱 Phone mic</b>. A 6-character code (and a QR) appears there. Type it above, or scan the QR to open this with the code already filled in.</div>
+      <div class="err" id="connectErr"></div>
+    </div>
+  </div>
+
+  <!-- RECORDER SCREEN -->
+  <div class="screen hidden" id="recScreen">
+    <div class="center">
+      <div class="pill">🔗 Linked to computer · code <b id="codeShown">----</b></div>
+      <button class="recBtn" id="recBtn" onclick="toggleRec()"><span class="ic" id="recIc">●</span><span id="recLabel">Record</span></button>
+      <div class="status" id="status">Tap to start recording</div>
+      <div class="meta" id="sent"></div>
+      <div class="err" id="recErr"></div>
+      <button class="btn btn-ghost" id="doneBtn" onclick="finishRec()" style="display:none;max-width:260px">✓ Done — back to computer</button>
+    </div>
+    <div class="foot">Audio streams to the MLS app open on your computer, where it becomes the visit note. Nothing is stored on this phone.</div>
+  </div>
+
+<script>
+  var BK='https://scrivara-backend.onrender.com';
+  var code='', rec=null, stream=null, sentCount=0, active=false;
+
+  function qp(name){ try{ return new URLSearchParams(location.search).get(name)||''; }catch(e){ return ''; } }
+  function show(id){ document.getElementById('connectScreen').classList.toggle('hidden', id!=='connect'); document.getElementById('recScreen').classList.toggle('hidden', id!=='rec'); }
+
+  function doConnect(){
+    var v=(document.getElementById('codeInput').value||'').trim().toUpperCase();
+    var err=document.getElementById('connectErr');
+    if(v.length<4){ err.textContent='Enter the code from your computer (about 6 characters).'; return; }
+    err.textContent='';
+    enterRecorder(v);
+  }
+  function enterRecorder(c){
+    code=c;
+    document.getElementById('codeShown').textContent=c;
+    show('rec');
+    if(typeof MediaRecorder==='undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      document.getElementById('recErr').textContent='Recording isn’t supported in this browser. Use a recent Safari or Chrome.';
+      document.getElementById('recBtn').disabled=true;
+    }
+  }
+  function toggleRec(){ active?stopRec():startRec(); }
+  async function startRec(){
+    var err=document.getElementById('recErr'); err.textContent='';
+    if(typeof MediaRecorder==='undefined'){ err.textContent='Use a recent Safari or Chrome.'; return; }
+    try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ err.textContent='Microphone access was blocked. Allow the mic in your browser settings, then tap Record again.'; return; }
+    var r;
+    try{ r=new MediaRecorder(stream); }
+    catch(e){ try{ r=new MediaRecorder(stream,{mimeType:'audio/webm'}); }catch(e2){ err.textContent='Could not start recording on this device.'; return; } }
+    rec=r; active=true;
+    r.ondataavailable=function(ev){ if(ev.data && ev.data.size>0) uploadChunk(ev.data, r.mimeType||ev.data.type); };
+    try{ r.start(8000); }catch(e){ try{ r.start(); }catch(e2){} }
+    var btn=document.getElementById('recBtn'); btn.classList.add('on');
+    document.getElementById('recIc').textContent='■'; document.getElementById('recLabel').textContent='Stop';
+    document.getElementById('status').textContent='● Recording… talk normally';
+    document.getElementById('doneBtn').style.display='inline-block';
+  }
+  function uploadChunk(blob, mimetype){
+    var reader=new FileReader();
+    reader.onloadend=async function(){
+      try{
+        var rr=await fetch(BK+'/api/mic/'+encodeURIComponent(code)+'/audio',{
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({audio:reader.result, mimetype:mimetype||blob.type||'audio/webm'})
+        });
+        if(rr.ok){ sentCount++; document.getElementById('sent').textContent=sentCount+' clip'+(sentCount===1?'':'s')+' sent to your computer'; }
+        else if(rr.status===404){ document.getElementById('recErr').textContent='That code isn’t active. Re-open 📱 Phone mic on your computer for a fresh code.'; }
+      }catch(e){ /* transient — next chunk retries */ }
+    };
+    reader.readAsDataURL(blob);
+  }
+  function stopRec(){
+    active=false;
+    if(rec){ try{ rec.stop(); }catch(e){} rec=null; }
+    if(stream){ try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} stream=null; }
+    var btn=document.getElementById('recBtn'); btn.classList.remove('on');
+    document.getElementById('recIc').textContent='●'; document.getElementById('recLabel').textContent='Record';
+    document.getElementById('status').textContent=sentCount?'Stopped — your computer has the audio.':'Stopped.';
+  }
+  function finishRec(){ stopRec(); document.getElementById('status').textContent='Done. You can switch back to your computer.'; }
+
+  // Auto-fill the code from the QR/link (?code= or ?mic=), and skip straight to the recorder.
+  (function(){
+    var c=(qp('code')||qp('mic')||'').trim().toUpperCase();
+    if(c){ enterRecorder(c); } else { show('connect'); var i=document.getElementById('codeInput'); if(i) setTimeout(function(){ try{ i.focus(); }catch(e){} }, 200); }
+  })();
+</script>
+</body>
+</html>

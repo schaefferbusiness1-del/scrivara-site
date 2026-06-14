@@ -10764,8 +10764,8 @@ async function startPhoneMic(){
     // how much of the server transcript we've already pulled in — start from
     // whatever the doctor has typed so far is NOT counted; server starts empty.
     phoneMicSeen=0;
-    const appUrl=location.origin+location.pathname;
-    const link=appUrl+'?mic='+encodeURIComponent(phoneMicCode);
+    // Open the lightweight phone-recorder app (fast load, installable) instead of the full app.
+    const link=location.origin+'/phone.html?code='+encodeURIComponent(phoneMicCode);
     document.getElementById('phoneMicCode').textContent=phoneMicCode;
     const linkEl=document.getElementById('phoneMicLink');
     linkEl.textContent=link; linkEl.href=link;
