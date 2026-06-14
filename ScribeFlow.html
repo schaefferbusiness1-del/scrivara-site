@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14f athena-receipt-modeswitch-clearbtns -->
+<!-- MLS-DEPLOY-MARKER part14g tpl-typename-daypicker -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -3398,7 +3398,10 @@
     </div>
 
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
-    <h4 style="margin:0 0 8px">Saved templates</h4>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px"><h4 style="margin:0">Saved templates</h4>
+      <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;padding:6px 11px" onclick="fixTemplateNames()" title="Rename your saved templates by NOTE TYPE (the procedure) instead of patient name — fixes op notes you already uploaded">🏷 Rename by note type</button>
+      <button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="dedupeSavedTemplates(true)" title="Remove duplicate templates (same name + same text)">🧹 Remove duplicates</button>
+    </div>
     <div id="tplList"></div>
 
     <div class="row" style="margin-top:14px">
@@ -3416,6 +3419,13 @@
     <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
       <button id="opPrepModePatient" onclick="opPrepSetMode('patient')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👤 This patient</button>
       <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
+    </div>
+    <div id="opPrepDayRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px">
+      <span class="mini" style="color:var(--muted)">Procedures for:</span>
+      <button onclick="opPrepSetDayToday()" style="font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer">Today</button>
+      <button onclick="opPrepSetDayTomorrow()" style="font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer">Tomorrow</button>
+      <input type="date" id="opPrepDayInput" onchange="opPrepSetDay(this.value)" style="font-size:12.5px;padding:5px 9px;border:1px solid var(--line);border-radius:8px">
+      <span id="opPrepDayLbl" class="mini" style="color:var(--brand-dk);font-weight:700"></span>
     </div>
     <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
       <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all op notes</button>
@@ -9882,11 +9892,25 @@ function _opNewRow(name, reason, dob, dateStr){
   var rank=_opRankTemplates(reason||'');
   return { appt:{name:name, reason:reason||'', dob:dob||''}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
 }
-function openOpPrep(){
-  window._opPrepMode='tomorrow';
-  window._opPrep=_opTomorrowAppts().map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opTomorrowDateStr()); });
+/* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
+function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
+function _opApptsForDay(key){
+  try{ return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
+    .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:String(a.start_at||'').slice(11,16)}; })
+    .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
+}
+function openOpPrep(dayKey){
+  window._opPrepMode='all';
+  if(!dayKey){ var d=new Date(); d.setDate(d.getDate()+1); dayKey=_opDayKey(d); }   // default = tomorrow
+  window._opPrepDay=dayKey;
+  window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey)); });
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
+/* Re-load the all-patients list for a different day without closing the modal. */
+function opPrepSetDay(key){ if(!key) return; openOpPrep(key); }
+function opPrepSetDayToday(){ openOpPrep(_opDayKey(new Date())); }
+function opPrepSetDayTomorrow(){ var d=new Date(); d.setDate(d.getDate()+1); openOpPrep(_opDayKey(d)); }
 /* Draft an op note for ONE specific patient (active or by id) — reachable from the chart. */
 function openOpPrepForPatient(pid){
   var p=null; try{ var pts=(typeof getPatients==='function'?getPatients():[])||[]; p=pid?pts.find(function(x){return x.id===pid;}):(typeof activePatient==='function'?activePatient():null); }catch(e){}
@@ -9962,8 +9986,13 @@ function opPrepRender(){
     if(_mp) _mp.style.cssText='font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid;cursor:pointer;'+(window._opPrepMode==='patient'?_on:_off);
     if(_ma) _ma.style.cssText='font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid;cursor:pointer;'+(window._opPrepMode!=='patient'?_on:_off);
   }catch(e){}
+  // Day picker — only when prepping ALL patients; reflects the chosen day.
+  try{ var _dr=document.getElementById('opPrepDayRow'); if(_dr) _dr.style.display=(window._opPrepMode==='patient')?'none':'flex';
+    var _di=document.getElementById('opPrepDayInput'); if(_di && window._opPrepDay) _di.value=window._opPrepDay;
+    var _dl=document.getElementById('opPrepDayLbl'); if(_dl) _dl.textContent=window._opPrepDay?_opDayStr(window._opPrepDay):'';
+  }catch(e){}
   if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
-  if(!rows.length){ if(empty) empty.style.display='block'; box.innerHTML=''; return; }
+  if(!rows.length){ if(empty){ empty.style.display='block'; if(window._opPrepMode!=='patient'){ empty.innerHTML='No procedures scheduled for <b>'+esc(window._opPrepDay?_opDayStr(window._opPrepDay):'that day')+'</b>. Pick a different day above, or pull that day’s schedule from Athena (📥 on the Visit tab).'; } } box.innerHTML=''; return; }
   if(empty) empty.style.display='none';
   try{ dedupeSavedTemplates(); }catch(e){}   // keep the template list clean — no duplicates in the dropdown
   if(!getTemplates().length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates first (📄 Templates) — then draft op notes here. The templates are what MLS adapts into each patient’s report.</div>'; return; }
@@ -10326,28 +10355,51 @@ async function _tplReadAnyFile(file){
   }
   try{ return _cleanExtractedText(await file.text(), lower); }catch(e){ return ''; }
 }
+/* Count operative-note form headers in a blob — tells a single op note from a file holding many. */
+function _tplFormHeaderCount(text){ try{ var m=String(text||'').match(/operative\s+report|operative\s+note|operation\s+performed|procedures?\s+performed|pre-?operative\s+diagnos[ei]s|post-?operative\s+diagnos[ei]s/gi); return m?m.length:0; }catch(e){ return 0; } }
+function _looksMultiForm(text){ return _tplFormHeaderCount(text)>=4 || String(text||'').length>9000; }
+/* NAME A TEMPLATE BY THE TYPE OF NOTE (the procedure), NOT the patient. Pulls the procedure /
+   operation line and tidies it into a clean label (side · levels · type). Strips patient names. */
+function _tplTypeName(text, fallback){
+  var s=String(text||''); var proc='';
+  var m=s.match(/(?:OPERATIONS?\s+PERFORMED|PROCEDURES?\s+PERFORMED|OPERATIVE\s+PROCEDURE|PROCEDURE\s*\(S\)|NAME\s+OF\s+(?:PROCEDURE|OPERATION)|TITLE\s+OF\s+(?:PROCEDURE|OPERATION)|PROCEDURE|OPERATION)\s*[:\-–]\s*(.+)/i);
+  if(m) proc=m[1];
+  if(!proc){ var m2=s.match(/(?:POST-?OPERATIVE\s+DIAGNOS[EI]S|PRE-?OPERATIVE\s+DIAGNOS[EI]S)\s*[:\-–]\s*(.+)/i); if(m2) proc=m2[1]; }
+  proc=String(proc||'').split(/\n/)[0].replace(/\s+/g,' ').replace(/\b(patient|name|dob|mrn|date)\b.*$/i,'').trim();
+  if(proc && typeof _opParseProc==='function'){ var d=_opParseProc(proc); var bits=[]; if(d.side) bits.push(d.side); if(d.levels&&d.levels.length) bits.push(d.levels.join('/')); if(d.types&&d.types.length) bits.push(d.types.join(' ')); if(bits.length>=1 && (d.types.length||d.levels.length)) return bits.join(' ').slice(0,80); }
+  if(proc) return proc.slice(0,80);
+  // Fall back: scrub an obvious "Lastname, Firstname" patient name out of the filename.
+  var fb=String(fallback||'').replace(/^\s*operative\s*report\s*[-–:]?\s*/i,'').replace(/[A-Z][a-z]+,\s*[A-Z][a-z]+/g,'').replace(/[-–_]+/g,' ').replace(/\s+/g,' ').trim();
+  return (fb||'Operative note template').slice(0,80);
+}
 async function tplMultiFile(ev){
   var files=ev.target&&ev.target.files?Array.prototype.slice.call(ev.target.files):[]; try{ ev.target.value=''; }catch(e){}
   if(!files.length) return;
   document.getElementById('tplMultiResult').innerHTML='';
-  // If MANY separate files were dropped, treat EACH file as (at least) one template directly,
-  // and also AI-split any that themselves contain multiple forms. One big PDF → AI-split it.
-  var perFileText=[];
+  var perFileText=[], unreadable=0;
   for(var fi=0; fi<files.length; fi++){
     _tplMultiStatus('Reading files… '+(fi+1)+'/'+files.length+' ('+(files[fi].name||'file')+')');
     var t=''; try{ t=await _tplReadAnyFile(files[fi]); }catch(e){}
-    if(t && t.trim()) perFileText.push({ name:(files[fi].name||('Template '+(fi+1))).replace(/\.[^.]+$/,''), text:t.trim() });
+    // Guard against binary garbage (e.g. an old .doc that didn't extract) — needs real letters.
+    var letters=(String(t).match(/[A-Za-z]/g)||[]).length;
+    if(t && t.trim() && letters>=40){ perFileText.push({ name:(files[fi].name||('Template '+(fi+1))).replace(/\.[^.]+$/,''), text:t.trim() }); }
+    else if(files[fi]) unreadable++;
   }
-  if(!perFileText.length){ _tplMultiStatus('No readable text found in those files.','#b4231e'); return; }
+  if(!perFileText.length){ _tplMultiStatus('No readable text found'+(unreadable?(' ('+unreadable+' file'+(unreadable===1?'':'s')+' couldn’t be read — if they’re old .doc files, re-save as .docx or PDF)'):'')+'.','#b4231e'); return; }
   if(perFileText.length>=3){
-    // A batch of files → each file is a template (and AI-split any multi-form file).
+    // BATCH of files → EACH file is ONE template (named by note TYPE). Only AI-split a file that
+    // genuinely holds multiple forms — so 50 op-note files reliably become up to 50 templates.
     _tplPendingSplit=[];
-    for(var i=0;i<perFileText.length;i++){ await _tplSplitOneInto(perFileText[i].text, perFileText[i].name); }
+    for(var i=0;i<perFileText.length;i++){
+      var p=perFileText[i];
+      if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name); }
+      else { _tplPendingSplit.push({ name:_tplTypeName(p.text, p.name), text:p.text, keep:true }); }
+    }
+    _tplPendingSplit.forEach(function(t){ t.name=_tplTypeName(t.text, t.name); });   // name everything by type
     _tplPendingSplit=_tplDedupeTemplates(_tplPendingSplit);
-    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' files. Review and add:','#1c7a43');
+    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(unreadable?(' · '+unreadable+' unreadable skipped'):'')+'. Review and add:','#1c7a43');
     _renderTplSplitPreview();
   } else {
-    // One or two files → AI-split the combined text (handles a single big multi-form PDF).
     await tplAiSplit(perFileText.map(function(p){ return p.text; }).join('\n\f\n'));
   }
 }
@@ -10395,6 +10447,7 @@ async function tplAiSplit(text){
       if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
     }catch(e){}
   }
+  _tplPendingSplit.forEach(function(t){ t.name=_tplTypeName(t.text, t.name); });   // name by note TYPE, not patient
   _tplPendingSplit=_tplDedupeTemplates(_tplPendingSplit);
   if(!_tplPendingSplit.length){ _tplMultiStatus('Couldn’t detect separate templates — try the single-template upload below.','#b4231e'); return; }
   _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+'. Review and add the ones you want:','#1c7a43');
@@ -10415,12 +10468,25 @@ function tplAddSplit(){
   var keep=_tplPendingSplit.filter(function(t){return t.keep && (t.text||'').trim();});
   if(!keep.length){ toast('Select at least one template.','err'); return; }
   var list=getTemplates();
-  keep.forEach(function(t){ list.unshift({ id:'tpl'+Date.now()+Math.random().toString(36).slice(2,5), name:t.name.slice(0,120), keywords:[], text:t.text, created:Date.now() }); });
+  keep.forEach(function(t,ki){ list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:String(t.name||'Template').slice(0,120), keywords:[], text:t.text, created:Date.now() }); });
   setTemplates(list);
   if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[list.length-1].id);
   _tplPendingSplit=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
   renderTemplateList(); renderTemplateActiveSelect();
+  try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
   try{ toast('Added '+keep.length+' templates.','ok'); }catch(e){}
+}
+/* Retroactively rename ALREADY-saved templates from patient-name to NOTE TYPE (the procedure).
+   For the doctor who already uploaded op notes named "Operative Report - Lastname, First". */
+function fixTemplateNames(){
+  var list=getTemplates(); if(!list.length){ try{ toast('No templates to rename yet.',''); }catch(e){} return; }
+  var renamed=0, changes=[];
+  list.forEach(function(t){ var nn=_tplTypeName(t.text, t.name); if(nn && nn!==t.name){ changes.push((t.name||'?')+'  →  '+nn); t.name=nn; renamed++; } });
+  if(!renamed){ try{ toast('Template names already look like note types — nothing to fix.','ok'); }catch(e){} return; }
+  if(!window.confirm('Rename '+renamed+' template'+(renamed===1?'':'s')+' by NOTE TYPE (procedure) instead of patient name?\n\n'+changes.slice(0,12).join('\n')+(changes.length>12?('\n…and '+(changes.length-12)+' more'):'')+'\n\nProceed?')) return;
+  setTemplates(list); renderTemplateList(); renderTemplateActiveSelect();
+  try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
+  try{ toast('Renamed '+renamed+' template'+(renamed===1?'':'s')+' by note type.','ok'); }catch(e){}
 }
 
 /* Auto-choose: score saved templates against the visit text by simple
