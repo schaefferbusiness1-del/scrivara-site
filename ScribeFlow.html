@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part13c templates-dropdown-timing -->
+<!-- MLS-DEPLOY-MARKER part13d times-12h-eastern -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -6926,9 +6926,29 @@ function renderCalendar(){
   if(_calMode==='day') return _calRenderDay();
   return _calRenderMonth();
 }
+/* ===== TIME ZONE + 12-HOUR DISPLAY =====
+   Appointment start_at is stored in UTC. Show every time in the ACCOUNT's time zone
+   (default US Eastern — change by setting the 'acctTz' pref) and in 12-hour AM/PM. ===== */
+function _acctTz(){ try{ var t=localStorage.getItem(uns('acctTz')); return (t&&t.trim())?t.trim():'America/New_York'; }catch(e){ return 'America/New_York'; } }
+/* Minutes-since-midnight of an appointment IN the account time zone (from a UTC ISO start_at). */
+function _apptMinsTz(iso){
+  try{ var d=new Date(iso); if(isNaN(d.getTime())) return null;
+    var ps=new Intl.DateTimeFormat('en-US',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:_acctTz()}).formatToParts(d);
+    var hh=0,mm=0; ps.forEach(function(p){ if(p.type==='hour')hh=parseInt(p.value,10); if(p.type==='minute')mm=parseInt(p.value,10); });
+    if(hh===24) hh=0; return hh*60+mm;
+  }catch(e){ return null; }
+}
+/* 24-hour "HH:MM" in the account TZ — for <input type=time> + internal logic. */
+function _apptHHMMTz(v){ v=String(v||''); if(!v) return ''; if(/T/.test(v)){ var m=_apptMinsTz(v); if(m==null) return ''; return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2); } var x=v.match(/(\d{1,2}):(\d{2})/); return x?(('0'+x[1]).slice(-2)+':'+x[2]):''; }
+/* Friendly 12-hour "9:00 AM" — accepts a UTC ISO start_at (→account TZ) OR a bare local "HH:MM". */
+function _fmtApptTime(v){
+  v=String(v||''); if(!v) return '';
+  if(/T/.test(v)){ try{ var d=new Date(v); if(!isNaN(d.getTime())) return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:_acctTz()}); }catch(e){} }
+  var m=v.match(/(\d{1,2}):(\d{2})/); if(!m) return v; var hh=parseInt(m[1],10); var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12; return h12+':'+m[2]+' '+ap;
+}
 /* Time helpers for the hourly Week/Day agenda grids. */
-function _calFmtHr(mins){ var h=Math.floor(mins/60), m=mins%60; var ap=h<12?'a':'p'; var h12=h%12; if(h12===0) h12=12; return h12+(m?(':'+_calPad(m)):'')+ap; }
-function _calApptTimeBlock(a){ var s=String((a&&a.start_at)||''); if(s.length<16) return null; var mm=s.slice(11,16); if(!/^\d\d:\d\d$/.test(mm)) return null; var mins=parseInt(mm.slice(0,2),10)*60+parseInt(mm.slice(3,5),10); var dur=30; if(a.end_at){ try{ var d=Math.round((new Date(a.end_at).getTime()-new Date(a.start_at).getTime())/60000); if(d>0) dur=d; }catch(e){} } return {mins:mins, dur:dur}; }
+function _calFmtHr(mins){ var h=Math.floor(mins/60), m=mins%60; var ap=h<12?'AM':'PM'; var h12=h%12; if(h12===0) h12=12; return h12+(m?(':'+_calPad(m)):'')+' '+ap; }
+function _calApptTimeBlock(a){ var mins=_apptMinsTz((a&&a.start_at)||''); if(mins==null) return null; var dur=30; if(a.end_at){ try{ var d=Math.round((new Date(a.end_at).getTime()-new Date(a.start_at).getTime())/60000); if(d>0) dur=d; }catch(e){} } return {mins:mins, dur:dur}; }
 function _calHourRange(appts){ var startMin=7*60, endMin=19*60; (appts||[]).forEach(function(a){ var b=_calApptTimeBlock(a); if(b){ if(b.mins<startMin) startMin=Math.floor(b.mins/60)*60; if(b.mins+b.dur>endMin) endMin=Math.ceil((b.mins+b.dur)/60)*60; } }); return {startMin:startMin, endMin:endMin}; }
 /* Click an empty time slot on the Day/Week grid to book there (like every other calendar). */
 function _calSlotNew(key, mins){
@@ -7027,7 +7047,7 @@ function _calRenderMonth(){
     var cellBg=isSel?'#dbeafe':(isToday?'var(--soft)':'var(--card)');
     h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:122px;border:'+cellBorder+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+cellBg+(isSel?';box-shadow:0 3px 12px rgba(31,122,224,.28)':'')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+((isToday||isSel)?'800':'600')+';font-size:13px;color:'+((isToday||isSel)?'#1f7ae0':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
-    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16); h+='<div draggable="true" onclick="calApptPeek('+a.id+',event)" ondragstart="calDragStart(event,'+a.id+')" title="Click for a quick preview · drag to reschedule" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
+    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=_fmtApptTime(a.start_at); h+='<div draggable="true" onclick="calApptPeek('+a.id+',event)" ondragstart="calDragStart(event,'+a.id+')" title="Click for a quick preview · drag to reschedule" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
     if(ap.length>5) h+='<div onclick="event.stopPropagation();calOpenDay(\''+key+'\')" title="See all '+ap.length+' appointments this day" style="font-size:11px;color:#1f7ae0;font-weight:700;margin-top:2px;cursor:pointer">+'+(ap.length-5)+' more →</div>';
     h+='</div>';
   }
@@ -7040,7 +7060,7 @@ function calApptPeek(id, ev){
   try{ if(ev){ ev.stopPropagation(); ev.preventDefault&&ev.preventDefault(); } }catch(e){}
   var old=document.getElementById('calApptPeek'); if(old) old.remove();
   var a=((window._calAppts||_calAppts||[])||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
-  var tm=String(a.start_at||'').slice(11,16);
+  var tm=_fmtApptTime(a.start_at);
   var date=a.appt_date||String(a.start_at||'').slice(0,10);
   var when=''; try{ when=(date?new Date(date+'T12:00').toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'}):'')+(tm?(' · '+tm):''); }catch(e){ when=(date||'')+' '+tm; }
   var c=_calStatusColor(a.status);
@@ -7075,7 +7095,7 @@ function calOpenDay(key){
   var dt=new Date(key+'T12:00'); var lbl=dt.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'});
   var h='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:700">'+esc(lbl)+'</div><button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="document.getElementById(\'calDayPanel\').style.display=\'none\'">✕ Close</button></div>';
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
-  else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=String(a.start_at||'').slice(11,16);
+  else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=_fmtApptTime(a.start_at);
     h+='<div style="border:1px solid var(--line);border-radius:8px;margin-top:6px;background:var(--card)">';
     h+='<div onclick="calApptInfo('+a.id+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#1f7ae0;font-weight:600">Details ›</span></div>';
     h+='<div id="calApptEdit_'+a.id+'"></div></div>';
@@ -7231,12 +7251,12 @@ function calApptInfo(id){
   if(box.innerHTML){ box.innerHTML=''; return; } // toggle closed
   var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
   var date=a.appt_date||String(a.start_at||'').slice(0,10);
-  var tm=String(a.start_at||'').slice(11,16);
+  var tm=_apptHHMMTz(a.start_at);
   function infoRow(lbl,val){ return val?('<div style="display:flex;gap:8px;font-size:12.5px;margin-top:3px"><span style="color:var(--muted);min-width:70px">'+lbl+'</span><span style="flex:1">'+esc(String(val))+'</span></div>'):''; }
   var provOpts='<option value="">No preference</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'"'+(String(a.doctor_user_id)===String(p.id)?' selected':'')+'>'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('');
   var statuses=['booked','checked_in','roomed','completed','no_show','cancelled'];
   var stOpts=statuses.map(function(s){ return '<option value="'+s+'"'+(a.status===s?' selected':'')+'>'+s.replace(/_/g,' ')+'</option>'; }).join('');
-  var whenTxt=(date?new Date(date+'T12:00').toLocaleDateString([], {weekday:'short',month:'short',day:'numeric',year:'numeric'}):'')+(tm?(' · '+tm):'');
+  var _whenTm=_fmtApptTime(a.start_at); var whenTxt=(date?new Date(date+'T12:00').toLocaleDateString([], {weekday:'short',month:'short',day:'numeric',year:'numeric'}):'')+(_whenTm?(' · '+_whenTm):'');
   var h='<div style="border-top:1px dashed var(--line);padding:11px 12px;background:#fafcff">';
   // WHO you're treating + key details
   h+='<div style="font-weight:700;font-size:14px">🧑 '+esc(_calLabelOf(a))+'</div>';
@@ -11355,7 +11375,7 @@ function _tomorrowAppts(){
 function _heroPatChip(a,onclick,opts){
   opts=opts||{}; var up=!!opts.up, seen=!!opts.seen, dashed=!!opts.dashed;
   var nm=String(a.name||'').trim(); if(!nm) return '';
-  var meta=[a.time||'', a.reason||''].filter(Boolean).join(' · ');
+  var meta=[_fmtApptTime(a.time||''), a.reason||''].filter(Boolean).join(' · ');
   var bg=up?'#fff':(seen?'rgba(255,255,255,.10)':'rgba(255,255,255,.15)'); var fg=up?'#1456a8':'#fff';
   return '<button onclick="'+onclick+'" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:'+bg+';border:1px '+(dashed?'dashed':'solid')+' '+(up?'#fff':'rgba(255,255,255,.34)')+';border-radius:9px;padding:7px 11px;color:'+fg+';cursor:pointer;text-align:left;min-width:120px;opacity:'+(seen?'.72':'1')+'">'+
     (up?'<span style="font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px">● UP NOW</span>':'')+
@@ -11455,7 +11475,7 @@ function _calLoadNextUp(){
     var db=document.getElementById('heroPtDob'); if(db) db.value=a.dob||'';
     try{ _heroSyncName(); }catch(e){}
     _renderTodayPatients(appts);
-    var el=document.getElementById('heroPullStatus'); if(el){ el.innerHTML='⏰ Up now: <b>'+esc(a.name||'patient')+'</b>'+(a.time?(' at '+esc(a.time)):'')+' — loaded &amp; ready. Hit 🎙️ Start recording.'; el.style.color='#d8ffe8'; el.style.display='block'; }
+    var el=document.getElementById('heroPullStatus'); if(el){ var _ut=_fmtApptTime(a.time||''); el.innerHTML='⏰ Up now: <b>'+esc(a.name||'patient')+'</b>'+(_ut?(' at '+esc(_ut)):'')+' — loaded &amp; ready. Hit 🎙️ Start recording.'; el.style.color='#d8ffe8'; el.style.display='block'; }
   }catch(e){}
 }
 function _heroPickPatient(i){
