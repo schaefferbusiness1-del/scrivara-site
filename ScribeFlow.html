@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14g tpl-typename-daypicker -->
+<!-- MLS-DEPLOY-MARKER part14h tpl-typename-leveldedupe -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -10366,7 +10366,10 @@ function _tplTypeName(text, fallback){
   if(m) proc=m[1];
   if(!proc){ var m2=s.match(/(?:POST-?OPERATIVE\s+DIAGNOS[EI]S|PRE-?OPERATIVE\s+DIAGNOS[EI]S)\s*[:\-–]\s*(.+)/i); if(m2) proc=m2[1]; }
   proc=String(proc||'').split(/\n/)[0].replace(/\s+/g,' ').replace(/\b(patient|name|dob|mrn|date)\b.*$/i,'').trim();
-  if(proc && typeof _opParseProc==='function'){ var d=_opParseProc(proc); var bits=[]; if(d.side) bits.push(d.side); if(d.levels&&d.levels.length) bits.push(d.levels.join('/')); if(d.types&&d.types.length) bits.push(d.types.join(' ')); if(bits.length>=1 && (d.types.length||d.levels.length)) return bits.join(' ').slice(0,80); }
+  if(proc && typeof _opParseProc==='function'){ var d=_opParseProc(proc); var bits=[]; if(d.side) bits.push(d.side);
+    var lv=(d.levels||[]).filter(function(x,ix,arr){ return arr.indexOf(x)===ix; }).slice(0,4); if(lv.length) bits.push(lv.join('/'));
+    var ty=(d.types||[]).filter(function(x,ix,arr){ return arr.indexOf(x)===ix; }).slice(0,3); if(ty.length) bits.push(ty.join(' '));
+    if(bits.length>=1 && (ty.length||lv.length)) return bits.join(' ').slice(0,80); }
   if(proc) return proc.slice(0,80);
   // Fall back: scrub an obvious "Lastname, Firstname" patient name out of the filename.
   var fb=String(fallback||'').replace(/^\s*operative\s*report\s*[-–:]?\s*/i,'').replace(/[A-Z][a-z]+,\s*[A-Z][a-z]+/g,'').replace(/[-–_]+/g,' ').replace(/\s+/g,' ').trim();
