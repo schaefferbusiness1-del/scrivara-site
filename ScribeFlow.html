@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14j qa-round2-tz-toggle -->
+<!-- MLS-DEPLOY-MARKER part14k tier-gating-lockdown -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -6397,6 +6397,8 @@ function applyPremiumUI(){
   if(badge) badge.style.display=prem?'':'none';
   const btn=document.getElementById('anaAskBtn');
   if(btn) btn.disabled=!prem;
+  // Also hide the other Premium-only Analysis cards for non-premium (they were always visible — upsell-inconsistent).
+  ['anaReferral','anaRegistry'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display=prem?'':'none'; });
 }
 
 /* On-demand Chart.js loader (cdnjs). Cached promise so we inject the script at
@@ -7613,6 +7615,9 @@ try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch
   if(document.body) build(); else document.addEventListener('DOMContentLoaded', build);
 })();
 function showView(v){
+  // TIER GUARD: Lite is note-generation ONLY — any other view bounces back to the Visit screen.
+  // This is real access control, not just hidden tabs (a stray button/quick-find can't sneak a Lite user in).
+  try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){ try{ toast('That’s a Standard feature — your Lite plan covers note generation. Upgrade in Settings to unlock the full app.','err'); }catch(e){} v='visit'; } }catch(e){}
   currentView=v;
   // Global motion polish (injected once): smooth tab transitions + a subtle press
   // response on every button, so the whole app feels responsive and alive.
@@ -18232,13 +18237,14 @@ function applyReceptionistPortal(){
 function isLiteUser(){ return !!(bkUser && bkUser.lite); }
 function applyLitePortal(){
   if(!isLiteUser()) return false;
-  // Hide every tab except the Visit (note generation). No scheduling / records /
-  // orders / history / analysis / legal / team / patients on Lite.
-  ['nav_recs','nav_orders','nav_history','nav_analysis','nav_legalreq','nav_team','nav_admin','nav_patients']
+  // Hide every tab except the Visit (note generation). No scheduling / records / orders /
+  // history / analysis / legal / team / patients / AI Studio on Lite.
+  ['nav_recs','nav_orders','nav_history','nav_analysis','nav_legalreq','nav_team','nav_admin','nav_patients','nav_studio','nav_calendar']
     .forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
-  // Hide non-note header tools (intake link, custom widgets, templates).
-  ['intakeBtn','customWidgetHdrBtn'].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
-  try{ document.querySelectorAll('button[onclick="openTemplates()"]').forEach(function(b){ b.style.display='none'; }); }catch(e){}
+  // Hide non-note header tools (intake link, custom widgets, templates, Copilot "Ask").
+  ['intakeBtn','customWidgetHdrBtn','askCopilotHdrBtn'].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
+  // Hide the paid Athena/EMR + op-note actions wherever they appear (Visit hero + elsewhere) — Lite is note-gen only.
+  try{ document.querySelectorAll('button[onclick="openTemplates()"], button[onclick*="pullScheduleViaAssist"], button[onclick*="emrConnectFromHero"], button[onclick*="openOpPrep"], button[onclick*="pushEntireVisitToAthena"], button[onclick*="sendToEMRviaAssist"], button[onclick*="pullPatientChartViaAssist"], #copilotFab, #copilotDock').forEach(function(b){ b.style.display='none'; }); }catch(e){}
   // Land on the visit so a Lite user opens straight into recording → note.
   try{ showView('visit'); }catch(e){}
   return true;
