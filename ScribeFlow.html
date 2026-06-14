@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14h tpl-typename-leveldedupe -->
+<!-- MLS-DEPLOY-MARKER part14i qa-fixes -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -3415,7 +3415,7 @@
   <div class="modal" style="max-width:920px">
     <button class="modal-x" onclick="closeOpPrep()">×</button>
     <h3 id="opPrepHdr">💉 Prep op notes</h3>
-    <p class="note">MLS matches the procedure to one of your uploaded operative-note templates and drafts a ready op report — patient, date and procedure filled in. Edit the procedure if it’s wrong or missing and tap 🔎 to re-match the template. Anything that varies case-to-case (needle size, doses, contrast…) it asks you for, with a dropdown of what you’ve used before. Fill the blanks, then save to the chart. Use the hero button for a whole day at once, or 💉 Draft op note on any patient.</p>
+    <p class="note">Choose <b>This patient</b> for the selected patient, or <b>All scheduled patients</b> and pick a day (today, tomorrow, or any date). MLS matches each procedure to one of your uploaded op-note templates and drafts a ready report — patient, date and procedure filled in, pulling name/DOB/sex/BMI from the chart. It then walks you through any case-specific blanks (needle size, doses…) one at a time, with dropdowns of what you’ve used before. Each draft auto-saves to History; press 💾 to finalize.</p>
     <div id="opPrepModeRow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
       <button id="opPrepModePatient" onclick="opPrepSetMode('patient')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👤 This patient</button>
       <button id="opPrepModeAll" onclick="opPrepSetMode('all')" style="font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600">👥 All scheduled patients</button>
@@ -9916,7 +9916,7 @@ function openOpPrepForPatient(pid){
   var p=null; try{ var pts=(typeof getPatients==='function'?getPatients():[])||[]; p=pid?pts.find(function(x){return x.id===pid;}):(typeof activePatient==='function'?activePatient():null); }catch(e){}
   if(!p){ try{ toast('Open a patient first, then draft their op note.','err'); }catch(e){} return; }
   var reason=''; try{ var ap=((window._calAppts||[])||[]).filter(function(a){ return String(a.patient_external_id||'')===p.id || String(a.name||'').trim().toLowerCase()===String(p.name||'').trim().toLowerCase(); }).sort(function(a,b){ return String(b.start_at||'').localeCompare(String(a.start_at||'')); })[0]; if(ap) reason=ap.reason||p.reason||''; else reason=p.reason||''; }catch(e){}
-  window._opPrepMode='patient';
+  window._opPrepMode='patient'; window._opPrepPatientId=p.id; window._opPrepPatientName=p.name;
   window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})) ];
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
@@ -9929,10 +9929,11 @@ function openOpPrepSmart(){
 /* Switch the op-prep modal between "this patient" and "all scheduled patients" without closing it. */
 function opPrepSetMode(mode){
   if(mode==='patient'){
-    var ap=null; try{ ap=(typeof activePatient==='function')?activePatient():null; }catch(e){}
-    if(!ap || !ap.id){ try{ toast('Pick a patient first (Patients tab), then prep just their op note.','err'); }catch(e){} return; }
-    openOpPrepForPatient(ap.id);
-  } else { openOpPrep(); }
+    // Prefer the patient this op-note window is already about; else the active patient.
+    var pid=window._opPrepPatientId||''; if(!pid){ try{ var ap=(typeof activePatient==='function')?activePatient():null; if(ap) pid=ap.id; }catch(e){} }
+    if(!pid){ try{ toast('Pick a patient first (Patients tab), then prep just their op note.','err'); }catch(e){} return; }
+    openOpPrepForPatient(pid);
+  } else { openOpPrep(window._opPrepDay); }
 }
 /* Parse a free-text procedure into its pieces (side / spinal levels / procedure type) for a nice preview. */
 function _opParseProc(proc){
@@ -10039,6 +10040,7 @@ async function opPrepGenerateOne(i){
     var ctx=_opPatientCtx(row.appt.name); row._ctx=ctx;     // name/DOB/sex/age/BMI we already have → auto-filled, never re-asked
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
+    _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
     opPrepAutosaveDraft(i);                                  // land a draft in History right away — never lost
@@ -10069,6 +10071,16 @@ async function opPrepGenerateAll(){
 }
 /* ===== GUIDED BLANK FILLER — walk DOWN the op note, prompting for each missing detail one at
    a time (in document order), until none are left. ===== */
+/* Make row.missing cover EVERY [[key]] actually in the note — adds an entry for any stray
+   placeholder the AI emitted without listing, so the stepper can always fill it. */
+function _opReconcileBlanks(row){
+  try{ var note=row.note||''; var have={}; (row.missing||[]).forEach(function(m){ if(m&&m.key) have[m.key]=1; });
+    var re=/\[\[([a-z0-9_]+)\]\]/gi, m; var seen={};
+    while((m=re.exec(note))){ var k=m[1].toLowerCase(); if(!have[k]&&!seen[k]){ seen[k]=1; row.missing.push({ key:k, label:k.replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();}) }); } }
+    // Drop any missing entry whose placeholder isn't in the note at all (already filled / never used).
+    row.missing=(row.missing||[]).filter(function(mf){ return note.indexOf('[['+mf.key+']]')>=0; });
+  }catch(e){}
+}
 function _opBlankOrder(row){ var note=row.note||''; return (row.missing||[]).slice().sort(function(a,b){ var ia=note.indexOf('[['+a.key+']]'); var ib=note.indexOf('[['+b.key+']]'); ia=ia<0?1e9:ia; ib=ib<0?1e9:ib; return ia-ib; }); }
 function _opBlankDone(row, mf){ return (row.note||'').indexOf('[['+mf.key+']]')<0; }
 function _opBlankRemaining(row){ return _opBlankOrder(row).filter(function(mf){ return !_opBlankDone(row,mf); }); }
@@ -10355,9 +10367,18 @@ async function _tplReadAnyFile(file){
   }
   try{ return _cleanExtractedText(await file.text(), lower); }catch(e){ return ''; }
 }
-/* Count operative-note form headers in a blob — tells a single op note from a file holding many. */
-function _tplFormHeaderCount(text){ try{ var m=String(text||'').match(/operative\s+report|operative\s+note|operation\s+performed|procedures?\s+performed|pre-?operative\s+diagnos[ei]s|post-?operative\s+diagnos[ei]s/gi); return m?m.length:0; }catch(e){ return 0; } }
-function _looksMultiForm(text){ return _tplFormHeaderCount(text)>=4 || String(text||'').length>9000; }
+/* Count how many SEPARATE notes a blob holds — by counting note TITLES / per-note "Patient:" lines,
+   NOT section headers (a single op note has many section headers but is still one form). */
+function _tplFormHeaderCount(text){
+  try{ var s=String(text||'');
+    var titles=(s.match(/\boperative\s+(report|note)\b/gi)||[]).length;
+    var patients=(s.match(/\bpatient(\s*name)?\s*[:#]/gi)||[]).length;
+    var dop=(s.match(/\bdate\s+of\s+(procedure|surgery|operation)\s*[:#]/gi)||[]).length;
+    return Math.max(titles, patients, dop);
+  }catch(e){ return 0; }
+}
+/* Only treat a file as multi-form if it clearly holds 2+ separate notes (and is long enough). */
+function _looksMultiForm(text){ return _tplFormHeaderCount(text)>=2 && String(text||'').length>4000; }
 /* NAME A TEMPLATE BY THE TYPE OF NOTE (the procedure), NOT the patient. Pulls the procedure /
    operation line and tidies it into a clean label (side · levels · type). Strips patient names. */
 function _tplTypeName(text, fallback){
@@ -10473,7 +10494,7 @@ function tplAddSplit(){
   var list=getTemplates();
   keep.forEach(function(t,ki){ list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:String(t.name||'Template').slice(0,120), keywords:[], text:t.text, created:Date.now() }); });
   setTemplates(list);
-  if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[list.length-1].id);
+  if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
   _tplPendingSplit=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
   renderTemplateList(); renderTemplateActiveSelect();
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
@@ -11051,7 +11072,7 @@ function attachNoteToActive(id){
 /* How many duplicate notes exist (same patient + same note title + same day). */
 function _dupNoteList(){
   var ns=(typeof getNotes==='function'?getNotes():[])||[]; var byKey={};
-  ns.forEach(function(n){ var d=new Date(n.updated||n.created||0); var day=isNaN(d.getTime())?'':d.toISOString().slice(0,10); var k=String(n.patient||'').trim().toLowerCase()+'|'+String(n.cc||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+day; (byKey[k]=byKey[k]||[]).push(n); });
+  ns.forEach(function(n){ var d=new Date(n.updated||n.created||0); var day=isNaN(d.getTime())?'':(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)); var k=String(n.patient||'').trim().toLowerCase()+'|'+String(n.cc||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+day; (byKey[k]=byKey[k]||[]).push(n); });
   var remove=[];
   Object.keys(byKey).forEach(function(k){ var arr=byKey[k]; if(arr.length<2) return; arr.sort(function(a,b){ var u=(b.updated||b.created||0)-(a.updated||a.created||0); if(u) return u; return String(b.text||b.soap||'').length-String(a.text||a.soap||'').length; }); arr.slice(1).forEach(function(n){ remove.push(n); }); });
   return remove;
@@ -11084,7 +11105,7 @@ function openNoteFromHistory(id){
   viewingId=id;
   document.getElementById('viewTitle').textContent='📄 '+ (n.patient||'Saved visit');
   const d=new Date(n.updated||n.created);
-  const isOp = (n.kind==='opnote') || (n.text && !n.soap && !n.insurance && !n.coding);
+  const isOp = (n.kind==='opnote') || (n.text && !n.soap && !n.insurance && !n.coding && /operative|op[\s-]?note|procedure performed|operation performed/i.test(String(n.cc||'')+' '+String(n.text||'').slice(0,250)));
   document.getElementById('viewMeta').textContent=
     (n.cc&&n.cc!=='—'?('CC: '+n.cc+' · '):'') + d.toLocaleString() + ' · ' +
     (isOp ? ('Operative note'+(n.isDraft?' (draft)':'')) : (n.isDraft?'Draft (transcript only)':(n.signed?'Signed':'Unsigned note')));
@@ -13667,7 +13688,7 @@ function _athenaSectionGoal(kind, body){ var s=ATHENA_SECTIONS[kind]; if(!s) ret
 /* Pull the human-readable items out of a section body (the "• ..." lines) for the receipt. */
 function _athenaItemsOf(s){
   if(s.kind==='note') return ['Full clinical note text'];
-  var out=[]; String(s.body||'').split('\n').forEach(function(ln){ ln=ln.trim(); if(ln.indexOf('•')===0) out.push(ln.replace(/^•\s*/,'')); else if(/^E\/M level:/i.test(ln)) out.push(ln); }); return out;
+  var out=[]; String(s.body||'').split('\n').forEach(function(ln){ ln=ln.trim(); if(ln.indexOf('•')===0) out.push(ln.replace(/^•\s*/,'')); else if(/^E\/M level:/i.test(ln)) out.push(ln); else if(/^Attach these (diagnoses|ICD)/i.test(ln)) out.push(ln); }); return out;
 }
 function _athenaPushPlan(sections, who){
   sections=(sections||[]).filter(function(s){ return s && s.body && String(s.body).trim(); });
@@ -13677,7 +13698,13 @@ function _athenaPushPlan(sections, who){
     if(i>=sections.length){ _athenaShowReceipt(who, results); return; }
     var s=sections[i]; var meta=ATHENA_SECTIONS[s.kind]||{label:s.kind,dest:''};
     _athenaPushRun(_athenaSectionGoal(s.kind, s.body), '→ Sending to '+meta.dest+' …', function(ok, reason){
-      if(!ok && reason==='noext'){ try{ toast('MLS Assist isn’t responding — install/enable the latest version and open your Athena tab, then try again.','err'); }catch(e){} if(results.length) _athenaShowReceipt(who, results, true); return; } // stop the plan if the extension is missing
+      // Stop the WHOLE plan if the extension is missing OR a section timed out (it's stuck) —
+      // don't keep firing the next section onto Athena while a prior one may still be running.
+      if(!ok && (reason==='noext' || reason==='timeout')){
+        try{ toast(reason==='noext' ? 'MLS Assist isn’t responding — install/enable the latest version and open your Athena tab, then try again.' : 'MLS Assist didn’t finish the “'+meta.label+'” section in time — stopped so nothing piles up. Check Athena, then retry.', 'err'); }catch(e){}
+        results.push({ kind:s.kind, label:meta.label, dest:meta.dest, icon:(meta.icon||'•'), ok:false, items:_athenaItemsOf(s) });
+        _athenaShowReceipt(who, results, true); return;
+      }
       results.push({ kind:s.kind, label:meta.label, dest:meta.dest, icon:(meta.icon||'•'), ok:ok, items:_athenaItemsOf(s) });
       i++; setTimeout(step, 500);
     });
