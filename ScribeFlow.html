@@ -3186,7 +3186,7 @@
       <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
       <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
-        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.20</span></b>
+        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.21</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
           <b>Already installed it before?</b> You just need to update to v1.17 to get schedule-pull: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still says it can't read the schedule, remove it and <b>Load unpacked</b> the latest <code>mls-assist-extension</code> folder.
@@ -13125,10 +13125,15 @@ function pushEntireVisitToAthena(btn){
   iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (v1.20+) and your Athena tab is open.','err'); } else ping(); }, 350);
   function proceed(){
     window.addEventListener('message',onMsg);
-    var goal='Enter this FINISHED patient visit into the encounter that is CURRENTLY OPEN in Athena, putting each part into its proper place: put the assessment & plan / note text into the clinical note area; add the ICD-10 diagnoses into the diagnosis/assessment section; set the E/M level and enter the CPT procedure codes in the billing/charges area; and enter each order (labs, imaging, medications, referrals, DME, injections) into Athena’s orders. Use the fields and controls already on screen. IMPORTANT: do NOT click Save, Sign, Submit, or Close the encounter — stop once everything is entered so the doctor can review and sign. THE VISIT:\n\n'+bundle;
+    var goal='GOAL: enter this FINISHED visit into the patient encounter CURRENTLY OPEN in athenaOne, placing each part in its correct native field (not one big text dump). Work through these in order, and after each one re-read the screen to confirm it took:\n'
+      +'1) NOTE: find the encounter’s clinical note / HPI / Assessment & Plan area and put the note text there.\n'
+      +'2) DIAGNOSES: for EACH ICD-10 diagnosis, use Athena’s Assessment/Diagnosis "Add" or diagnosis search box — type the ICD-10 code or its description, pick the matching result, and add it. Repeat per diagnosis.\n'
+      +'3) BILLING: in the charge/billing/E&M area, set the E/M level and add each CPT procedure code (use the charge/"Add code" search if present).\n'
+      +'4) ORDERS: for each order (labs, imaging, medications, referrals, DME, injections) use Athena’s Orders/"Add order" search, pick the matching order, and add it.\n'
+      +'RULES: only use fields/controls actually on screen; if a section isn’t visible, open its tab/section first. If one item won’t go, skip it and continue with the rest rather than getting stuck. Do NOT click Save, Sign, Submit, e-Sign, or Close — STOP once everything is entered so the doctor reviews & signs. THE VISIT TO ENTER:\n\n'+bundle;
     try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){}
     if(btn) btn.innerHTML='… entering into Athena';
-    setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to v1.20 (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 120000);
+    setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to v1.21 (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 210000);
   }
 }
 function getAutoSendEMR(){ return localStorage.getItem(uns('autoSendEMR'))==='1'; }

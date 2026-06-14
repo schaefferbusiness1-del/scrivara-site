@@ -58,7 +58,7 @@
     var history = [], lastSig = '', sameN = 0;
     post('mlsAppPushProgress', { msg: 'Starting — reading the Athena encounter…' });
     try {
-      for (var step = 0; step < 40; step++) {
+      for (var step = 0; step < 60; step++) {
         post('mlsAppPushProgress', { msg: 'Entering the visit into Athena… step ' + (step + 1) });
         var cap = await _bg('mlsAssistCapture');
         var pt = await _bg('mlsAssistPageText'); var pageText = (pt && pt.text) || '';
@@ -68,8 +68,11 @@
         if (!resp || resp.error) { post('mlsAppPushResult', { resp: { ok: false, error: (resp && resp.error) || 'no response from the AI' } }); return; }
         var a = resp.action || {}; if (resp.reasoning) post('mlsAppPushProgress', { msg: '(' + (step + 1) + ') ' + String(resp.reasoning).slice(0, 110) });
         history.push({ type: a.type, target: a.target });
-        var sig = (a.type || '') + '|' + (a.target || ''); if (sig === lastSig) sameN++; else { sameN = 0; lastSig = sig; }
-        if (sameN >= 3) { post('mlsAppPushResult', { resp: { ok: true, partial: true, msg: 'Got stuck repeating a step — paused. Review Athena and finish the rest manually.' } }); return; }
+        // Loop-guard keyed on type+target+a coarse page signature, so legitimately repeating
+        // the SAME control on a CHANGED screen (e.g. adding several diagnoses) isn't blocked.
+        var sig = (a.type || '') + '|' + (a.target || '') + '|' + pageText.length;
+        if (sig === lastSig) sameN++; else { sameN = 0; lastSig = sig; }
+        if (sameN >= 4) { post('mlsAppPushResult', { resp: { ok: true, partial: true, msg: 'Got stuck repeating a step — paused. Review Athena and finish the rest manually.' } }); return; }
         if (a.type === 'done') { post('mlsAppPushResult', { resp: { ok: true, msg: 'Entered the visit into Athena. Review everything and sign it there.' } }); return; }
         if (a.type === 'confirm') { post('mlsAppPushResult', { resp: { ok: true, paused: true, msg: 'Everything is entered. Athena is asking to Save/Sign — review it and click Sign yourself.' } }); return; }
         if (a.type === 'ask') { post('mlsAppPushResult', { resp: { ok: true, paused: true, msg: 'Athena needs a choice from you: ' + (a.target || a.reasoning || '') + '. Handle that, then re-run.' } }); return; }
