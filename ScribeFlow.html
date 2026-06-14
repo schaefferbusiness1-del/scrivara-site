@@ -8790,7 +8790,9 @@ function renderAnaKeyTrends(){
   if(!f || !f.panel){ box.innerHTML='<div class="mini" style="color:var(--muted)">No patient data yet — once you have patients and visits, your trends show up here automatically.</div>'; return; }
   function tile(label,val,sub,accent){ return '<div style="flex:1;min-width:150px;background:'+(accent||'#f5f9ff')+';border:1px solid #e1ebf7;border-radius:12px;padding:13px 15px"><div style="font-size:12px;color:var(--muted);font-weight:600">'+_ce(label)+'</div><div style="font-size:24px;font-weight:700;color:var(--ink);letter-spacing:-.5px;margin-top:2px">'+_ce(String(val))+'</div>'+(sub?('<div style="font-size:12px;color:var(--muted);margin-top:3px">'+_ce(sub)+'</div>'):'')+'</div>'; }
   var tiles=[];
-  tiles.push(tile('Active patients', f.panel, (snap.totalVisits!=null?(snap.totalVisits+' visits all-time'):'')));
+  // Count real visits directly from saved (non-draft) notes so it never shows a stale 0.
+  var _tv=0; try{ _tv=((typeof getNotes==='function'?getNotes():[])||[]).filter(function(n){ return n && !n.isDraft; }).length; }catch(e){ _tv=(snap.totalVisits||0); }
+  tiles.push(tile('Active patients', f.panel, (_tv?(_tv+' visit'+(_tv===1?'':'s')+' recorded'):'no visits recorded yet')));
   try{ var vb=snap.visitsByMonth||{}; var keys=Object.keys(vb); if(keys.length){ keys.sort(); var last=keys[keys.length-1]; var busiest=keys.reduce(function(a,b){ return vb[b]>=vb[a]?b:a; }, keys[0]); tiles.push(tile('Latest month', (vb[last]||0)+' visits', 'busiest: '+busiest+' ('+vb[busiest]+')')); } }catch(e){}
   if(snap.avgPainAcrossPractice!=null) tiles.push(tile('Avg pain (panel)', (Math.round(snap.avgPainAcrossPractice*10)/10)+'/10', (f.rising>0?(f.rising+' trending up'):'across your panel')));
   if(f.topDx) tiles.push(tile('Top diagnosis', _cap(f.topDx), f.topDxN+' patient'+(f.topDxN===1?'':'s')));
