@@ -115,29 +115,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!tab) return sendResponse({ ok: false, error: 'Open the patient in your Athena tab, then try again.' });
         const want = String(msg.patient || '').trim();
         let opened = false;
-        if (want) {
+        // Click a visible patient name, OR type the name into an Athena search box, so we
+        // can OPEN the chart without the doctor having to click it themselves.
+        const openFn = (name) => {
           try {
-            const clickRes = await chrome.scripting.executeScript({
-              target: { tabId: tab.id, allFrames: true },
-              func: (name) => {
-                try {
-                  const parts = name.toLowerCase().replace(/[^a-z\s,]/g, '').split(/[\s,]+/).filter(Boolean);
-                  if (!parts.length) return false;
-                  const last = parts[parts.length - 1], first = parts[0];
-                  const els = Array.from(document.querySelectorAll('a,button,[role="link"],[onclick],td,li,span'));
-                  for (const el of els) {
-                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-                    if (t && t.length < 70 && t.indexOf(last) >= 0 && (parts.length < 2 || t.indexOf(first) >= 0)) {
-                      const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) { el.click(); return true; }
-                    }
-                  }
-                } catch (e) {} return false;
-              },
-              args: [want]
-            });
-            opened = clickRes.some((r) => r && r.result === true);
-          } catch (e) {}
-          if (opened) { await new Promise((r) => setTimeout(r, 1900)); }
+            const parts = name.toLowerCase().replace(/[^a-z\s,]/g, '').split(/[\s,]+/).filter(Boolean);
+            if (!parts.length) return 'no';
+            const last = parts[parts.length - 1], first = parts[0];
+            const clickName = () => {
+              const els = Array.from(document.querySelectorAll('a,button,[role="link"],[role="button"],[onclick],td,li,span,div'));
+              for (const el of els) {
+                const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                if (t && t.length < 70 && t.indexOf(last) >= 0 && (parts.length < 2 || t.indexOf(first) >= 0)) {
+                  const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) { el.click(); return true; }
+                }
+              }
+              return false;
+            };
+            if (clickName()) return 'clicked';
+            const inputs = Array.from(document.querySelectorAll('input[type="text"],input[type="search"],input:not([type])'));
+            const box = inputs.find((i) => { const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '')).toLowerCase(); const r = i.getBoundingClientRect(); return r.width > 0 && /search|patient|name|find|lookup|mrn|chart/.test(h); });
+            if (box) {
+              box.focus(); box.value = name;
+              box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true }));
+              ['keydown', 'keypress', 'keyup'].forEach((tp) => box.dispatchEvent(new KeyboardEvent(tp, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })));
+              return 'searched';
+            }
+            return 'no';
+          } catch (e) { return 'no'; }
+        };
+        if (want) {
+          let statuses = [];
+          try { const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: openFn, args: [want] }); statuses = res.map((r) => r && r.result); } catch (e) {}
+          if (statuses.indexOf('clicked') >= 0) { opened = true; await new Promise((r) => setTimeout(r, 1900)); }
+          else if (statuses.indexOf('searched') >= 0) {
+            // gave Athena the name — wait for results, then click the matching result.
+            await new Promise((r) => setTimeout(r, 2600));
+            try { const res2 = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: openFn, args: [want] }); if (res2.map((r) => r && r.result).indexOf('clicked') >= 0) { opened = true; await new Promise((r) => setTimeout(r, 1900)); } } catch (e) {}
+          }
         }
         let results = [];
         try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 14000) }; } catch (e) { return { u: '', t: '' }; } } }); }

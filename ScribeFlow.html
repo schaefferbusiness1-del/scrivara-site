@@ -1425,7 +1425,7 @@
         <div style="font-size:13.5px;opacity:.92">Enter the patient's name &amp; DOB, hit record, and have a natural visit. No typing, no clicks.</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="pullScheduleViaAssist(this)" title="Read the appointments from whatever day you have open in your Athena tab (today, Monday, any day) via MLS Assist" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📅 Pull schedule</button>
+        <button onclick="pullScheduleViaAssist(this)" title="Pulls the day's patients from Athena AND auto-pulls each patient's chart history, saving everything to your account" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📥 Pull today’s patients &amp; their history</button>
         <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
       </div>
     </div>
@@ -3183,7 +3183,7 @@
       <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
       <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
-        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.18</span></b>
+        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.19</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
           <b>Already installed it before?</b> You just need to update to v1.17 to get schedule-pull: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still says it can't read the schedule, remove it and <b>Load unpacked</b> the latest <code>mls-assist-extension</code> folder.
@@ -10669,13 +10669,15 @@ function pullScheduleViaAssist(btn){
             return;
           }
           await _importPulledSchedule(appts);
+          // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
+          try{ await _pullAllHistories(appts); }catch(_h){}
         }catch(err){ setS('Couldn’t parse the schedule. Open Athena’s Day schedule view and try again.','err'); }
-        finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull schedule'; } }
+        finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } }
       })();
     }
     window.addEventListener('message',onResult);
     try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
-    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull schedule'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (it should say v1.17). Then reload this page and try again.','err'); } }, 30000);
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (it should say v1.17). Then reload this page and try again.','err'); } }, 30000);
   }
 }
 /* Reusable: ping MLS Assist, ask it to read the open Athena tab, resolve with {text,url}.
@@ -10753,33 +10755,57 @@ async function pullPatientChartViaAssist(btn){
       setT('Read the page but couldn’t find a patient chart. Open the patient’s CHART in Athena (problems / meds / history), then pull again.','err');
       if(btn){ btn.disabled=false; btn.innerHTML=orig; } return;
     }
-    // Merge into the patient record (don't clobber existing — append/fill).
-    var merge=function(cur,add){ add=(add||'').trim(); if(!add) return cur||''; cur=(cur||'').trim(); if(!cur) return add; if(cur.toLowerCase().indexOf(add.toLowerCase())>=0) return cur; return cur+'; '+add; };
-    if(chart.problems)  p.problems  = merge(p.problems,  chart.problems);
-    if(chart.meds)      p.meds      = merge(p.meds,      chart.meds);
-    if(chart.allergies) p.allergies = merge(p.allergies, chart.allergies);
-    if(chart.dob && !p.dob) p.dob = chart.dob;
-    var stamp='— Pulled from Athena '+(new Date()).toLocaleDateString()+' —';
-    var block=stamp+'\n'+(chart.summary||'');
-    if(chart.history && chart.history.length){ block+='\n\nPrior history:\n• '+chart.history.join('\n• '); }
-    if(chart.visits && chart.visits.length){ block+='\n\nRecent visits:\n• '+chart.visits.join('\n• '); }
-    if(!(p.summary||'').includes(stamp)){ p.summary=((p.summary||'').trim()+'\n\n'+block).trim(); }
-    if(typeof upsertPatient==='function') upsertPatient(p);
-    // Also drop a permanent, dated "Athena chart import" entry into Visit History.
-    try{
-      if(typeof saveNoteObject==='function'){
-        saveNoteObject({ patient:p.name, patientId:p.id, cc:'Athena chart import', text:block, signed:false, isDraft:false });
-      } else if(typeof getNotes==='function' && typeof saveNotes==='function'){
-        var ns=getNotes(); ns.unshift({ id:'n'+Date.now()+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:'Athena chart import', text:block, created:Date.now(), updated:Date.now(), signed:false, isDraft:false }); saveNotes(ns);
-      }
-    }catch(e){}
+    _savePatientChart(p.name, null, chart);
     try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
-    setT('✅ Saved '+p.name+'’s Athena history to their MLS chart.','ok');
+    setT('✅ Saved '+p.name+'’s Athena history to their MLS chart — it’s on your account now.','ok');
   }catch(err){
     setT((err&&err.message)?err.message:'Couldn’t pull the chart. Open the patient’s chart in Athena and try again.','err');
   }
   if(btn){ btn.disabled=false; btn.innerHTML=orig; }
+}
+/* Save a parsed Athena chart into the patient record (find-or-create by name), durably
+   (server-synced via upsertPatient) + a dated history note. Used by single + bulk pulls. */
+function _savePatientChart(name, appt, chart){
+  if(!chart) return false;
+  var nm=String(name||'').trim(); if(!nm) return false;
+  var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm.toLowerCase(); });
+  if(!p){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:(chart.dob||(appt&&appt.dob)||''), created:Date.now(), source:'athena-schedule' }; }
+  var merge=function(cur,add){ add=(add||'').trim(); if(!add) return cur||''; cur=(cur||'').trim(); if(!cur) return add; if(cur.toLowerCase().indexOf(add.toLowerCase())>=0) return cur; return cur+'; '+add; };
+  if(chart.problems)  p.problems  = merge(p.problems,  chart.problems);
+  if(chart.meds)      p.meds      = merge(p.meds,      chart.meds);
+  if(chart.allergies) p.allergies = merge(p.allergies, chart.allergies);
+  if(chart.dob && !p.dob) p.dob = chart.dob;
+  var stamp='— Pulled from Athena '+(new Date()).toLocaleDateString()+' —';
+  var block=stamp+'\n'+(chart.summary||'');
+  if(chart.history && chart.history.length){ block+='\n\nPrior history:\n• '+chart.history.join('\n• '); }
+  if(chart.visits && chart.visits.length){ block+='\n\nRecent visits:\n• '+chart.visits.join('\n• '); }
+  if(!(p.summary||'').includes(stamp)){ p.summary=((p.summary||'').trim()+'\n\n'+block).trim(); }
+  if(typeof upsertPatient==='function') upsertPatient(p);
+  try{ if(typeof getNotes==='function' && typeof saveNotes==='function'){ var ns=getNotes(); if(!ns.some(function(n){ return n.patientId===p.id && n.cc==='Athena chart import'; })){ ns.unshift({ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:'Athena chart import', text:block, created:Date.now(), updated:Date.now(), signed:false, isDraft:false }); saveNotes(ns); } } }catch(e){}
+  return true;
+}
+/* Bulk: after pulling the schedule, auto-pull EACH patient's chart/history from Athena
+   (the extension finds + opens each chart — no manual clicking) and save it durably. */
+async function _pullAllHistories(appts){
+  if(!appts||!appts.length) return;
+  var setT=function(m,k){ var el=document.getElementById('heroPullStatus'); if(el){ el.textContent=m; el.style.color=(k==='err')?'#ffe0e0':(k==='ok'?'#d8ffe8':'rgba(255,255,255,.95)'); el.style.display='block'; } };
+  var saved=0, oldExt=false;
+  for(var i=0;i<appts.length;i++){
+    var a=appts[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
+    setT('📥 Pulling histories from Athena… '+(i+1)+'/'+appts.length+' — '+name);
+    try{
+      var rd=await _assistReadChart(name, function(){});
+      var chart=await _parsePatientChart(rd.text);
+      if(chart && (chart.problems||chart.meds||chart.allergies||chart.summary||(chart.history&&chart.history.length))){ _savePatientChart(name, a, chart); saved++; }
+    }catch(e){ if((e&&e.message)==='OLDEXT'){ oldExt=true; break; } }
+    await new Promise(function(r){ setTimeout(r, 350); });
+  }
+  if(oldExt){ setT('Imported today’s patients. To also auto-pull each chart, update MLS Assist to v1.18+ (Settings → Download).','err'); return; }
+  setT('✅ Pulled today’s patients + '+saved+' chart histor'+(saved===1?'y':'ies')+' from Athena — all saved to your account.','ok');
+  try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
+  try{ if(typeof loadPatients==='function') loadPatients(); }catch(e){}
 }
 async function _parsePatientChart(text){
   var sys='You extract ONE patient’s clinical chart from raw EMR/Athena page text (messy, with menus/UI noise). Return ONLY JSON (no prose, no code fence): {"dob":"<MM/DD/YYYY or empty>","problems":"<active problem list, comma-separated, or empty>","meds":"<current medications w/ doses, comma-separated, or empty>","allergies":"<allergies, comma-separated, or NKDA/empty>","summary":"<2-4 sentence clinical summary of who this patient is and their main issues>","history":["<relevant PMH/PSH/social item>", "..."],"visits":["<MM/DD/YYYY — brief reason/dx of a prior visit>", "..."]}. RULES: extract only THIS patient’s clinical data. IGNORE navigation, buttons, column headers, provider/department names, billing codes lists, and other patients. If a field is not present, use "" or []. Keep arrays short (max ~10).';
@@ -10822,7 +10848,14 @@ async function _importPulledSchedule(appts){
   var created=0;
   for(var i=0;i<appts.length;i++){
     var a=appts[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
-    var ext=''; try{ var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(p) ext=p.id; }catch(e){}
+    var ext=''; var existing=null;
+    try{ existing=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(existing) ext=existing.id; }catch(e){}
+    // Make every pulled patient a DURABLE, server-synced record so they persist on refresh
+    // and show up in Patients + the calendar (connected everywhere).
+    if(!existing && typeof upsertPatient==='function'){
+      var np={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:name, dob:String(a.dob||''), reason:String(a.reason||''), source:'athena-schedule', created:Date.now() };
+      try{ upsertPatient(np); pts.push(np); ext=np.id; }catch(e){}
+    } else if(existing && a.dob && !existing.dob){ existing.dob=String(a.dob); try{ upsertPatient(existing); }catch(e){} }
     var startIso=null; if(/^\d\d:\d\d$/.test(String(a.time||''))){ try{ startIso=new Date(today+'T'+a.time).toISOString(); }catch(e){} }
     try{
       var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name, dob:String(a.dob||''), reason:String(a.reason||''), patient_external_id:ext||null, appt_date:today, start_at:startIso})});
