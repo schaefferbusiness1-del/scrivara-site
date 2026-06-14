@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14d opnote-viewer-fix -->
+<!-- MLS-DEPLOY-MARKER part14e opnote-blank-stepper-prep-label -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -1431,7 +1431,7 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="pullScheduleViaAssist(this)" title="Pulls the day's patients from Athena AND auto-pulls each patient's chart history, saving everything to your account" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📥 Pull today’s patients &amp; their history</button>
         <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
-        <button onclick="openOpPrep()" title="Auto-draft tomorrow's operative notes from your uploaded op-note templates — one ready report per scheduled procedure" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">💉 Prep tomorrow’s op notes</button>
+        <button onclick="openOpPrepSmart()" title="Draft an operative note from your uploaded op-note templates. If a patient is selected, it preps that patient; otherwise you can prep all scheduled procedures." style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">💉 Prep op note</button>
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
@@ -3410,10 +3410,10 @@
 <div class="modal-bg" id="opPrepModal">
   <div class="modal" style="max-width:920px">
     <button class="modal-x" onclick="closeOpPrep()">×</button>
-    <h3 id="opPrepHdr">💉 Tomorrow’s procedure notes</h3>
+    <h3 id="opPrepHdr">💉 Prep op notes</h3>
     <p class="note">MLS matches the procedure to one of your uploaded operative-note templates and drafts a ready op report — patient, date and procedure filled in. Edit the procedure if it’s wrong or missing and tap 🔎 to re-match the template. Anything that varies case-to-case (needle size, doses, contrast…) it asks you for, with a dropdown of what you’ve used before. Fill the blanks, then save to the chart. Use the hero button for a whole day at once, or 💉 Draft op note on any patient.</p>
     <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
-      <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all tomorrow’s op notes</button>
+      <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all op notes</button>
       <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
     </div>
     <div id="opPrepEmpty" class="mini" style="color:var(--muted);display:none">No patients on tomorrow’s schedule yet. Pull tomorrow’s schedule from Athena first (📥 on the Visit tab), or book appointments on the Calendar.</div>
@@ -9892,6 +9892,11 @@ function openOpPrepForPatient(pid){
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
+/* Smart entry: a patient is selected → prep THAT patient's op note; otherwise prep all scheduled procedures. */
+function openOpPrepSmart(){
+  var ap=null; try{ ap=(typeof activePatient==='function')?activePatient():null; }catch(e){}
+  if(ap && ap.id){ openOpPrepForPatient(ap.id); } else { openOpPrep(); }
+}
 /* Parse a free-text procedure into its pieces (side / spinal levels / procedure type) for a nice preview. */
 function _opParseProc(proc){
   var p=String(proc||'');
@@ -9938,7 +9943,7 @@ function _opAutoTpl(i){ var row=(window._opPrep||[])[i]; if(!row) return; var ra
 function opPrepRender(){
   var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
   var rows=window._opPrep||[];
-  var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Tomorrow’s procedure notes';
+  var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Prep op notes';
   if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
   if(!rows.length){ if(empty) empty.style.display='block'; box.innerHTML=''; return; }
   if(empty) empty.style.display='none';
@@ -9955,12 +9960,7 @@ function opPrepRender(){
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px" onclick="opPrepGenerateOne('+i+')">'+(row.gen?'↻ Re-draft':'✨ Draft op note')+'</button></div>';
     if(row.gen){
       if(row.missing&&row.missing.length){
-        h+='<div style="margin-top:10px;background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 11px"><div style="font-weight:700;font-size:12.5px;color:#7a5a16;margin-bottom:6px">Fill these in:</div>';
-        h+=row.missing.map(function(mf){
-          if(_isNeedleField(mf)) return _opNeedleHtml(i, mf, row);   // needle size → dropdown (3.5 / 5.0 / learned / Other)
-          var dl='opdl_'+mf.key; var prev=getOpFieldVals(mf.key);
-          return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:150px">'+esc(mf.label||mf.key)+'</label><input list="'+dl+'" value="'+esc(row.values[mf.key]||'')+'" placeholder="'+esc(mf.example||'')+'" oninput="window._opPrep['+i+'].values[\''+mf.key+'\']=this.value" style="flex:1;min-width:150px;font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:7px"><datalist id="'+dl+'">'+prev.map(function(v){ return '<option value="'+esc(v)+'">'; }).join('')+'</datalist></div>'; }).join('');
-        h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;margin-top:6px" onclick="opPrepApply('+i+')">↧ Fill blanks into the note</button></div>';
+        h+=_opBlanksHtml(i, row);   // guided: walks DOWN the document, prompting one blank at a time until none remain
       }
       h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value">'+esc(row.note||'')+'</textarea>';
       h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
@@ -9991,7 +9991,7 @@ async function opPrepGenerateOne(i){
   try{
     var ctx=_opPatientCtx(row.appt.name); row._ctx=ctx;     // name/DOB/sex/age/BMI we already have → auto-filled, never re-asked
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
-    row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true;
+    row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
     opPrepAutosaveDraft(i);                                  // land a draft in History right away — never lost
@@ -10020,6 +10020,48 @@ async function opPrepGenerateAll(){
   for(var i=0;i<rows.length;i++){ if(st) st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…'; try{ await opPrepGenerateOne(i); }catch(e){} }
   if(st) st.textContent='✅ Drafted all '+rows.length+' op note'+(rows.length===1?'':'s')+'. Fill any blanks, then save each to the chart.';
 }
+/* ===== GUIDED BLANK FILLER — walk DOWN the op note, prompting for each missing detail one at
+   a time (in document order), until none are left. ===== */
+function _opBlankOrder(row){ var note=row.note||''; return (row.missing||[]).slice().sort(function(a,b){ var ia=note.indexOf('[['+a.key+']]'); var ib=note.indexOf('[['+b.key+']]'); ia=ia<0?1e9:ia; ib=ib<0?1e9:ib; return ia-ib; }); }
+function _opBlankDone(row, mf){ return (row.note||'').indexOf('[['+mf.key+']]')<0; }
+function _opBlankRemaining(row){ return _opBlankOrder(row).filter(function(mf){ return !_opBlankDone(row,mf); }); }
+function _opBlanksHtml(i, row){
+  var ordered=_opBlankOrder(row); var remaining=ordered.filter(function(mf){ return !_opBlankDone(row,mf); });
+  var totalN=ordered.length, doneN=totalN-remaining.length;
+  if(!remaining.length){ return '<div style="margin-top:10px;background:#eefaf3;border:1px solid #bfe6cf;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#16924e;font-weight:700">✅ All '+totalN+' blank'+(totalN===1?'':'s')+' filled in — review the note below, then save.</div>'; }
+  var idx=row._blankIdx||0; if(idx>=remaining.length) idx=0; if(idx<0) idx=0; row._blankIdx=idx;
+  var mf=remaining[idx];
+  // Show a little surrounding context so the doctor sees WHERE in the note this blank sits.
+  var note=row.note||''; var pos=note.indexOf('[['+mf.key+']]'); var ctx='';
+  if(pos>=0){ var s=Math.max(0,pos-55), e=Math.min(note.length, pos+mf.key.length+4+55); ctx=esc((s>0?'…':'')+note.slice(s,pos).replace(/\s+/g,' ')+' ⟦'+(mf.label||mf.key)+'⟧ '+note.slice(pos+mf.key.length+4,e).replace(/\s+/g,' ')+(e<note.length?'…':'')); }
+  var input;
+  if(_isNeedleField(mf)) input=_opNeedleHtml(i, mf, row);
+  else { var dl='opdl_'+mf.key; var prev=getOpFieldVals(mf.key); input='<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:140px">'+esc(mf.label||mf.key)+'</label><input id="opblank_'+i+'" list="'+dl+'" value="'+esc(row.values[mf.key]||'')+'" placeholder="'+esc(mf.example||'')+'" oninput="window._opPrep['+i+'].values[\''+mf.key+'\']=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();opPrepBlankNext('+i+');}" style="flex:1;min-width:150px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:7px"><datalist id="'+dl+'">'+prev.map(function(v){ return '<option value="'+esc(v)+'">'; }).join('')+'</datalist></div>'; }
+  var pct=Math.round(doneN/Math.max(1,totalN)*100);
+  var h='<div style="margin-top:10px;background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:11px 13px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px"><span style="font-weight:800;font-size:12.5px;color:#7a5a16;white-space:nowrap">Fill in the blanks — '+doneN+'/'+totalN+'</span><div style="flex:1;height:6px;background:#f0e0b0;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:#16a34a;transition:width .2s"></div></div></div>';
+  h+='<div style="font-size:11.5px;color:#9a7b2a;margin-bottom:5px">Blank '+(idx+1)+' of '+remaining.length+' remaining'+(ctx?(' · <i style="color:#7a5a16">'+ctx+'</i>'):'')+'</div>';
+  h+=input;
+  h+='<div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap">';
+  h+='<button class="btn-primary" style="font-size:12px;padding:6px 14px" onclick="opPrepBlankNext('+i+')">'+(remaining.length>1?'Fill &amp; next →':'Fill it in ✓')+'</button>';
+  if(remaining.length>1) h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="opPrepBlankSkip('+i+')">Skip</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="opPrepApplyAll('+i+')" title="Fill every remaining blank with whatever you’ve typed so far">Fill all at once</button>';
+  h+='</div></div>';
+  return h;
+}
+/* Apply the CURRENT blank's value into the note, remember it, and advance to the next blank. */
+function opPrepBlankNext(i){
+  var row=(window._opPrep||[])[i]; if(!row) return;
+  var remaining=_opBlankRemaining(row); if(!remaining.length){ opPrepRender(); return; }
+  var idx=row._blankIdx||0; if(idx>=remaining.length) idx=0; var mf=remaining[idx];
+  var v=String(row.values[mf.key]||'').trim();
+  if(v){ row.note=(row.note||'').split('[['+mf.key+']]').join(v); addOpFieldVal(mf.key, v); row._blankIdx=0; try{ opPrepAutosaveDraft(i); }catch(e){} }
+  else { row._blankIdx=(idx+1)%remaining.length; }   // nothing typed → just move to the next one
+  opPrepRender();
+  setTimeout(function(){ try{ var el=document.getElementById('opblank_'+i); if(el) el.focus(); }catch(e){} }, 40);
+}
+function opPrepBlankSkip(i){ var row=(window._opPrep||[])[i]; if(!row) return; var remaining=_opBlankRemaining(row); if(remaining.length<2) return; row._blankIdx=((row._blankIdx||0)+1)%remaining.length; opPrepRender(); }
+function opPrepApplyAll(i){ var row=(window._opPrep||[])[i]; if(!row) return; (row.missing||[]).forEach(function(mf){ var v=String(row.values[mf.key]||'').trim(); if(v){ row.note=(row.note||'').split('[['+mf.key+']]').join(v); addOpFieldVal(mf.key, v); } }); row._blankIdx=0; try{ opPrepAutosaveDraft(i); }catch(e){} opPrepRender(); }
 async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   ctx=ctx||{};
   var known=[]; if(name) known.push('name: '+name); if(ctx.sex) known.push('sex: '+ctx.sex); if(ctx.dob) known.push('date of birth: '+ctx.dob); if(ctx.age!=null) known.push('age: '+ctx.age); if(ctx.bmi!=null) known.push('BMI: '+ctx.bmi); if(ctx.mrn) known.push('MRN: '+ctx.mrn);
@@ -10027,6 +10069,7 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
     +'CRITICAL — the KNOWN PATIENT FACTS below are already in our chart: fill each one DIRECTLY into the note wherever the template needs it, and NEVER list any known fact in "missing". '
     +'NEVER ask for patient name, sex/gender, age, date of birth, MRN, or BMI — treat those as known or as boilerplate that needs no input. '
     +'ONLY put a [[key]] placeholder (and a "missing" entry) for a detail that genuinely VARIES per case AND is not known — e.g. needle gauge/size, medication name/dose/volume, contrast amount, fluoroscopy time, sedation, or an ambiguous level. '
+    +'BE CONSERVATIVE — use the FEWEST placeholders possible. If the TEMPLATE already states a standard value for something (a routine dose, a standard volume, default contrast), KEEP the template’s value rather than blanking it; only blank a detail that truly changes patient-to-patient and is not derivable. Each placeholder key must be UNIQUE and appear exactly once. '
     +'Use snake_case keys (e.g. needle_size, contrast_volume, sedation). Return ONLY JSON, no prose, no code fence: {"note":"<full operative note text, with [[key]] placeholders where needed>","missing":[{"key":"needle_size","label":"Needle size / gauge","example":"22g 3.5in"}]}.';
   var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure
     +(known.length?('\n\nKNOWN PATIENT FACTS (already in our chart — fill these in, do NOT ask for them):\n- '+known.join('\n- ')):'')
