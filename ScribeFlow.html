@@ -1947,6 +1947,11 @@
         <button class="btn-ghost" onclick="gradeVisitExperience(this)" id="gradeExpBtn" title="AI rates how good the patient's experience was during this visit (bedside manner / communication), from the transcript — a coaching score that rolls into your Analysis">🌟 Grade experience</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
+      <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
+      <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:11px 14px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
+        <div id="visitOrdersBody"></div>
+      </div>
       <div id="visitGradeBox" style="display:none;margin-top:12px;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:12px;padding:13px 15px"></div>
       <!-- Contextual "what's next" — appears after a note is saved/signed -->
       <div id="nextActionsBar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;background:#eefaf3;border:1px solid #cdeed9;border-radius:10px;padding:9px 12px"></div>
@@ -4925,6 +4930,7 @@ function applyFeatureToggles(){
    the .nav-feat-off class (display:none !important) wins whenever OFF.
    ========================================================= */
 const NAV_FEATURES=[
+  {key:'orders',   label:'📋 Orders (separate tab)', desc:'Orders are now built right into the Visit page. Turn this on only if you also want the standalone full Orders workspace.'},
   {key:'legalreq', label:'⚖️ Legal requests',  desc:'Inbox for attorney record / report requests (clinician accounts).'},
   {key:'team',     label:'👥 Team',            desc:'Head-doctor read-only view of your assigned doctors’ patients. (Head accounts only.)'}
 ];
@@ -13059,6 +13065,31 @@ function _autoSaveAiOrders(){
         currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:p.type, fields, _ai:1, _src:s });
       });
     }
+    try{ renderOrderList(); }catch(e){}
+    try{ renderVisitOrders(); }catch(e){}
+    try{ updateNavCounts(); }catch(e){}
+  }catch(e){}
+}
+/* Compact orders list shown ON the Visit page (Orders combined into Visit). */
+function renderVisitOrders(){
+  try{
+    var card=document.getElementById('visitOrdersCard'); var box=document.getElementById('visitOrdersBody'); if(!card||!box) return;
+    var ords=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
+    if(!ords.length){ card.style.display='none'; box.innerHTML=''; return; }
+    card.style.display='block';
+    box.innerHTML=ords.map(function(o){
+      var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{};
+      var label=o._src||((def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''));
+      var icon=def.icon||'•';
+      return '<span style="display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #d2e4fb;border-radius:999px;padding:5px 7px 5px 12px;margin:0 7px 7px 0;font-size:12.5px">'+icon+' '+esc(label)+(o._ai?' <span style="font-size:9.5px;color:var(--brand);font-weight:800;letter-spacing:.3px">AI</span>':'')+' <button onclick="removeVisitOrder(\''+o.id+'\')" title="Remove this order" aria-label="Remove order" style="background:none;border:0;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px;line-height:1">✕</button></span>';
+    }).join('');
+  }catch(e){}
+}
+function removeVisitOrder(id){
+  try{
+    if(!Array.isArray(currentOrders)) return;
+    for(var i=currentOrders.length-1;i>=0;i--){ if(currentOrders[i] && currentOrders[i].id===id) currentOrders.splice(i,1); }
+    renderVisitOrders();
     try{ renderOrderList(); }catch(e){}
     try{ updateNavCounts(); }catch(e){}
   }catch(e){}
