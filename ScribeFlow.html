@@ -525,6 +525,7 @@
     transition:background .12s,color .12s}
   .navtab:hover{background:var(--soft);color:var(--ink)}
   .navtab.on{background:var(--brand);color:#fff;font-weight:650}
+  .navtab.nav-feat-off{display:none !important}
   .navtab .nbadge{background:rgba(255,255,255,.22);border-radius:10px;font-size:11.5px;padding:1px 7px;font-weight:700}
   .navtab:not(.on) .nbadge{background:var(--soft);color:var(--brand-dk)}
   /* ===== MLS UI polish 2026-06-13 — additive refinements for a cleaner, calmer feel ===== */
@@ -3019,6 +3020,12 @@
       </div>
     </div><!-- /Features section -->
 
+    <!-- ============ SECTION: App tabs (hide advanced tabs until switched on) ============ -->
+    <div class="set-section"><p class="set-head">🧰 App tabs</p>
+    <p class="set-desc">Keep MLS simple. The advanced tabs below are <b>hidden until you switch them on</b>, so a new doctor sees a clean app. <b>Patients, Visit, History, Copilot (AI Studio), and Help are always available.</b></p>
+      <div id="navFeatToggles"></div>
+    </div><!-- /App tabs section -->
+
     <!-- ============ SECTION: Security & privacy ============ -->
     <div class="set-section"><p class="set-head">🔒 Security &amp; privacy</p>
     <p class="set-desc">Protect access on this device. Clearing saved data only affects this browser — it never touches server data.</p>
@@ -4363,6 +4370,8 @@ function applyAccessUI(){
   // 📅 Calendar tab: visible to everyone in the practice (not lawyers) when the practice setting is on.
   const calNavTab=document.getElementById('nav_calendar');
   if(calNavTab) calNavTab.style.display=(backendMode()&&bkUser&&!isLawyer&&(window._calendarOn!==false))?'':'none';
+  // 🧰 App-tab gating: hide advanced tabs the doctor hasn't switched on (runs LAST so it wins).
+  try{ applyNavFeatureGates(); }catch(e){}
   try{ if(typeof maybePromptSetup==='function') maybePromptSetup(); }catch(e){}
 }
 
@@ -4877,6 +4886,50 @@ function applyFeatureToggles(){
 }
 
 /* =========================================================
+   APP-TAB GATING — hide advanced nav tabs until the doctor switches
+   them on in Settings → App tabs. Default OFF so a new doctor sees a
+   clean app. Patients, Visit, History, AI Studio (Copilot) and Help are
+   NEVER gated. Composes with role logic in applyAccessUI: a gated-ON tab
+   still only shows if the user's role permits it (handled by inline display);
+   the .nav-feat-off class (display:none !important) wins whenever OFF.
+   ========================================================= */
+const NAV_FEATURES=[
+  {key:'calendar', label:'📅 Calendar',        desc:'Appointment scheduling, waiting room, and daily brief.'},
+  {key:'orders',   label:'📋 Orders',          desc:'Build scripts, referrals, DME, imaging, and injection orders.'},
+  {key:'recs',     label:'💡 Recommendations', desc:'AI care-gap, monitoring, and follow-up suggestions for the provider.'},
+  {key:'legalreq', label:'⚖️ Legal requests',  desc:'Inbox for attorney record / report requests (clinician accounts).'},
+  {key:'team',     label:'👥 Team',            desc:'Head-doctor read-only view of your assigned doctors’ patients. (Head accounts only.)'},
+  {key:'analysis', label:'📊 Analysis',        desc:'Practice analytics, outcomes, and patient-experience ratings.'}
+];
+function navFeatOn(key){ try{ return localStorage.getItem(uns('navfeat_'+key))==='1'; }catch(e){ return false; } } // default OFF
+function setNavFeat(key,on){
+  try{ localStorage.setItem(uns('navfeat_'+key), on?'1':'0'); }catch(e){}
+  try{ applyAccessUI(); }catch(e){ try{ applyNavFeatureGates(); }catch(_){} }
+  try{ updateNavCounts(); }catch(e){}
+  try{ toast((on?'Enabled':'Hid')+' the '+(key==='legalreq'?'Legal requests':key.charAt(0).toUpperCase()+key.slice(1))+' tab.',''); }catch(e){}
+}
+function applyNavFeatureGates(){
+  try{
+    NAV_FEATURES.forEach(function(f){
+      var tab=document.getElementById('nav_'+f.key);
+      if(tab) tab.classList.toggle('nav-feat-off', !navFeatOn(f.key));
+    });
+  }catch(e){ /* never block the app */ }
+}
+function renderNavFeatToggles(){
+  var host=document.getElementById('navFeatToggles'); if(!host) return;
+  host.innerHTML=NAV_FEATURES.map(function(f){
+    return '<div class="field" style="margin-bottom:4px">'+
+      '<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">'+
+      '<input type="checkbox" '+(navFeatOn(f.key)?'checked':'')+' onchange="setNavFeat(\''+f.key+'\',this.checked)" style="width:17px;height:17px;cursor:pointer">'+
+      '<span>'+f.label+' <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>'+
+      '</label>'+
+      '<p class="note" style="margin:4px 0 0 26px">'+f.desc+'</p>'+
+    '</div>';
+  }).join('');
+}
+
+/* =========================================================
    MLS — additive Settings getters (Practice/Provider, Note defaults)
    All per-device via uns(). Read on demand; safe defaults when unset.
    ========================================================= */
@@ -5143,6 +5196,8 @@ function openSettings(){
   // MLS additive — 🧩 Features section checkboxes
   Object.keys(FEATURE_DEFAULTS).forEach(k=>{ const el=document.getElementById(k); if(el) el.checked=featOn(k); });
   const _ftu=document.getElementById('featTplUse'); if(_ftu) _ftu.checked=useTemplatesOn();
+  // MLS additive — 🧰 App tabs section (advanced nav tabs, off by default)
+  try{ renderNavFeatToggles(); }catch(e){}
   // MLS additive — Practice/Provider + Note defaults
   const _pn=document.getElementById('practiceName'); if(_pn) _pn.value=getPracticeName();
   const _prn=document.getElementById('providerName'); if(_prn) _prn.value=getProviderName();
@@ -5447,10 +5502,10 @@ function _showNextActions(kind){
     var msg = (kind==='signed') ? '✅ Signed & filed to the chart. What next?' : '💾 Saved to history. What next?';
     var btns='';
     btns+='<button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="var b=document.getElementById(\'nextActionsBar\');if(b)b.style.display=\'none\';newVisit();">➕ Next patient</button>';
-    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'orders\')">📋 Create orders</button>';
-    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="calScheduleForPatient()">📅 Book follow-up</button>';
+    if(navFeatOn('orders')) btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'orders\')">📋 Create orders</button>';
+    if(navFeatOn('calendar')) btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="calScheduleForPatient()">📅 Book follow-up</button>';
     if(typeof activePatient==='function' && activePatient()){ btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'patients\')">👤 Back to chart</button>'; }
-    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'calendar\')">📅 Calendar</button>';
+    if(navFeatOn('calendar')) btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'calendar\')">📅 Calendar</button>';
     bar.innerHTML='<span style="font-weight:600;color:#127a55;margin-right:4px">'+msg+'</span>'+btns;
     bar.style.display='flex';
   }catch(e){}
