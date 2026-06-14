@@ -7051,7 +7051,8 @@ function calApptPeek(id, ev){
     +(prov?'<div style="font-size:12.5px;margin-top:3px"><span style="color:#8a98a8">Provider:</span> '+esc(prov)+'</div>':'')
     +'<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">'
       +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#16a34a;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
-      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#eef3fb;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details / edit ›</button>'
+      +'<button onclick="calPullChartFor('+id+')" style="background:#eef3fb;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📥 Pull chart</button>'
+      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#eef3fb;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
     +'</div>';
   document.body.appendChild(pop);
   var x=window.innerWidth/2, y=160; try{ if(ev){ x=ev.clientX; y=ev.clientY; } }catch(e){}
@@ -7266,10 +7267,16 @@ function calApptInfo(id){
 }
 function calEditAppt(id){ return calApptInfo(id); } // back-compat alias
 /* From a calendar appointment: open that patient, then pull their Athena chart into MLS. */
+/* From a calendar appointment: auto-open THAT patient and pull their Athena chart —
+   no need to manually select a patient first. */
 function calPullChartFor(id){
-  try{ if(typeof calOpenPatientFor==='function') calOpenPatientFor(id); }catch(e){}
-  try{ toast('Make sure this patient’s chart is open in your Athena tab…',''); }catch(e){}
-  setTimeout(function(){ try{ if(typeof pullPatientChartViaAssist==='function') pullPatientChartViaAssist(); }catch(e){} }, 500);
+  var a=((window._calAppts||(typeof _calAppts!=='undefined'?_calAppts:[]))||[]).find(function(x){ return String(x.id)===String(id); });
+  if(!a){ try{ toast('Could not find that appointment.','err'); }catch(e){} return; }
+  try{ var pk=document.getElementById('calApptPeek'); if(pk) pk.remove(); }catch(e){}
+  var nm=(typeof _calLabelOf==='function'?_calLabelOf(a):'')||a.name||'';
+  try{ toast('Opening '+(nm||'patient')+' and reading their Athena chart…',''); }catch(e){}
+  // Resolve/create the patient + pull — pullPatientChartViaAssist sets them active for us.
+  try{ pullPatientChartViaAssist(null, { patientId:(a.patient_external_id||''), name:nm, dob:(a.dob||''), reason:(a.reason||'') }); }catch(e){}
 }
 // Open the day panel and expand a specific appointment's details (used by month/week chips).
 function calChipOpen(id, key){ if(key) calOpenDay(key); setTimeout(function(){ var box=document.getElementById('calApptEdit_'+id); if(box && !box.innerHTML){ calApptInfo(id); } var el=document.getElementById('calApptEdit_'+id); if(el && el.scrollIntoView){ try{ el.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} } }, 60); }
@@ -9304,12 +9311,17 @@ function renderPatients(){
 function _ptItemHtml(p, activeId){
   const notes=patientNotes(p.id);
   const docs=(p.docs||[]).length;
-  let lastTxt='No visits yet';
-  if(notes.length){ notes.sort((a,b)=>(b.updated||0)-(a.updated||0)); lastTxt='Last visit '+new Date(notes[0].updated||notes[0].created).toLocaleDateString(); }
+  let lastTxt='New patient';
+  if(notes.length){ notes.sort((a,b)=>(b.updated||0)-(a.updated||0)); lastTxt='Seen '+new Date(notes[0].updated||notes[0].created).toLocaleDateString(); }
   const isActive=p.id===activeId;
   const demo=[p.sex, p.dob, (p.mrn?('#'+p.mrn):'')].filter(Boolean).join(' · ');
-  const chip='font-size:11.5px;color:var(--muted);background:var(--soft);border-radius:999px;padding:1px 9px;white-space:nowrap';
-  let chips='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
+  // Clinical context: top problem from the (pulled) chart, else the scheduled reason.
+  let ctx=''; try{ var prob=String(p.problems||'').split(/[;\n]/)[0].trim(); ctx=prob||String(p.reason||'').trim(); }catch(e){}
+  const fromAthena=(p.source==='athena-schedule');
+  const chip='font-size:11px;color:var(--muted);background:var(--soft);border-radius:999px;padding:2px 9px;white-space:nowrap';
+  let chips='';
+  if(fromAthena) chips+='<span style="font-size:11px;color:#1456a8;background:#eaf2ff;border:1px solid #d3e4fb;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap">📥 Athena</span>';
+  chips+='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
   if(notes.length) chips+='<span style="'+chip+'">'+notes.length+' note'+(notes.length===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
   return `<div class="pt-item ${isActive?'active':''}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart">
@@ -9317,6 +9329,7 @@ function _ptItemHtml(p, activeId){
       <div class="pt-main" style="min-width:0">
         <div class="t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(p.name)}${isActive?'<span style="font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px">ACTIVE</span>':''}</div>
         ${demo?`<div class="s" style="margin-top:1px">${esc(demo)}</div>`:''}
+        ${ctx?`<div style="margin-top:3px;font-size:12px;color:#3f5a7d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px">🩺 ${esc(ctx)}</div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${chips}</div>
       </div>
       <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
@@ -11074,9 +11087,22 @@ function _assistReadChart(patientName, onStatus){
    patient's MLS record (problems, meds, allergies, running summary) + a history entry.
    Reuses the same Assist read as the schedule pull — no extension change needed.
    The doctor opens the patient's chart in Athena, then taps this. ===== */
-async function pullPatientChartViaAssist(btn){
-  var p=(typeof activePatient==='function')?activePatient():null;
+async function pullPatientChartViaAssist(btn, opts){
+  opts=opts||{};
+  var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var p=null;
+  // Resolve the patient from the caller (e.g. a calendar appointment) so it auto-opens —
+  // by id, else by name (find or CREATE), else fall back to the active patient.
+  if(opts.patientId){ p=pts.find(function(x){ return x.id===opts.patientId; })||null; }
+  if(!p && opts.name){
+    var nm=String(opts.name).trim();
+    p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm.toLowerCase(); })||null;
+    if(!p && nm && typeof upsertPatient==='function'){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:opts.dob||'', reason:opts.reason||'', source:'athena-schedule', created:Date.now() }; try{ upsertPatient(p); }catch(e){} }
+  }
+  if(!p) p=(typeof activePatient==='function')?activePatient():null;
   if(!p){ try{ toast('Open a patient first, then pull their chart.','err'); }catch(e){} return; }
+  // Make this patient the active one so the pulled chart attaches to them + the UI follows.
+  try{ if(typeof setActivePtId==='function' && (typeof getActivePtId!=='function' || getActivePtId()!==p.id)){ setActivePtId(p.id); if(typeof renderProfile==='function') renderProfile(); if(typeof renderPatientBar==='function') renderPatientBar(); if(typeof renderPatients==='function') renderPatients(); } }catch(e){}
   var orig = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled=true; btn.innerHTML='… reading Athena'; }
   var setT=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
