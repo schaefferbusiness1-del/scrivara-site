@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MLS-DEPLOY-MARKER part14a opnote-history-overhaul -->
+<!-- MLS-DEPLOY-MARKER part14b athena-section-targeting -->
 <!--
   MLS — AI Ambient Medical Scribe + Mini-EMR
   © 2026 Michael Schaeffer. All rights reserved.
@@ -13453,73 +13453,82 @@ function sendToEMRviaAssist(btn, opts){
    (it stops so the doctor reviews + signs in Athena). ===== */
 function pushEntireVisitToAthena(btn){
   if(!currentSoap){ try{ toast('Generate the note first, then push the visit to Athena.','err'); }catch(e){} return; }
-  var bundle=''; try{ bundle=emrReadyText(); }catch(e){}
-  if(!bundle.trim()){ try{ toast('Nothing to push yet.','err'); }catch(e){} return; }
+  var noteText=''; try{ noteText=emrReadyText(); }catch(e){}
+  if(!noteText.trim()){ try{ toast('Nothing to push yet.','err'); }catch(e){} return; }
   var p=(typeof activePatient==='function')?activePatient():null;
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
+  var orders=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
   var who=p?p.name:'this patient';
-  // Build a CLEAR, itemized list of exactly what gets pushed and WHERE in Athena.
-  var lines=[];
-  lines.push('📝 NOTE  →  Athena clinical note / encounter');
-  if(c&&c.icd&&c.icd.length){ lines.push(''); lines.push('🩺 DIAGNOSES  →  Athena assessment / diagnoses  ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
+  // ONE plan: each piece → its own athenaOne section. The labels here are the SAME destinations the autopilot targets.
+  var plan=[]; var lines=[];
+  plan.push({kind:'note', body:'NOTE TEXT:\n'+noteText});
+  lines.push(ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest);
+  if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+'  ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   var hasBill=(c&&c.em)||(c&&c.cpt&&c.cpt.length);
-  if(hasBill){ lines.push(''); lines.push('💲 SUPERBILL / CHARGES  →  Athena billing:'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
-  if(typeof currentOrders!=='undefined'&&currentOrders&&currentOrders.length){ lines.push(''); lines.push('📋 ORDERS  →  Athena orders  ('+currentOrders.length+'):'); currentOrders.forEach(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; var lbl=o._src||(def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''); lines.push('      • '+String(lbl).slice(0,60)); }); }
+  if(hasBill){ var bb='BILLING:\n'+(c&&c.em?('E/M level: '+c.em+'\n'):'')+((c&&c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c&&c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
+  if(orders&&orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+'  ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
   var ok=false;
-  try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nExactly what will be entered into the open Athena encounter, each into its proper field:\n\n'+lines.join('\n')+'\n\n⚠ It STOPS before Save/Sign — you review & sign in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush it now?'); }catch(e){ ok=true; }
+  try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nMLS Assist will enter each piece into its OWN athenaOne section, one at a time:\n\n'+lines.join('\n')+'\n\n⚠ It STOPS before Save/Sign — you review & sign in Athena.\nOpen '+who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; }
   if(!ok) return;
-  var orig=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.innerHTML='… connecting'; }
-  var statusToast=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
-  var ponged=false, tries=0, iv=null, finished=false;
-  function finish(msg, kind){ finished=true; if(btn){ btn.disabled=false; btn.innerHTML=orig||'🚀 Push entire visit to Athena'; } statusToast(msg, kind); cleanup(); }
-  function cleanup(){ try{ window.removeEventListener('message',onPong); }catch(e){} try{ window.removeEventListener('message',onMsg); }catch(e){} if(iv) clearInterval(iv); }
-  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
-  function onMsg(e){
-    if(!(e.data&&e.data.source==='mls-ext')) return;
-    if(e.data.type==='mlsAppPushProgress'){ if(btn) btn.innerHTML='… '+String(e.data.msg||'working').slice(0,28); statusToast(e.data.msg||'Working…',''); return; }
-    if(e.data.type==='mlsAppPushResult'){ var r=e.data.resp||{}; if(r.ok){ finish('🚀 '+(r.msg||'Visit entered into Athena — review and sign there.'), 'ok'); } else { finish(r.error||'Couldn’t enter the visit. Open the patient’s encounter in Athena and try again.', 'err'); } }
-  }
-  window.addEventListener('message',onPong);
-  var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
-  statusToast('Looking for MLS Assist…',''); ping();
-  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open.','err'); } else ping(); }, 350);
-  function proceed(){
-    window.addEventListener('message',onMsg);
-    var goal='GOAL: enter this FINISHED visit into the patient encounter CURRENTLY OPEN in athenaOne, placing each part in its correct native field (not one big text dump). Work through these in order, and after each one re-read the screen to confirm it took:\n'
-      +'1) NOTE: find the encounter’s clinical note / HPI / Assessment & Plan area and put the note text there.\n'
-      +'2) DIAGNOSES: for EACH ICD-10 diagnosis, use Athena’s Assessment/Diagnosis "Add" or diagnosis search box — type the ICD-10 code or its description, pick the matching result, and add it. Repeat per diagnosis.\n'
-      +'3) BILLING: in the charge/billing/E&M area, set the E/M level and add each CPT procedure code (use the charge/"Add code" search if present).\n'
-      +'4) ORDERS: for each order (labs, imaging, medications, referrals, DME, injections) use Athena’s Orders/"Add order" search, pick the matching order, and add it.\n'
-      +'RULES: only use fields/controls actually on screen; if a section isn’t visible, open its tab/section first. If one item won’t go, skip it and continue with the rest rather than getting stuck. Do NOT click Save, Sign, Submit, e-Sign, or Close — STOP once everything is entered so the doctor reviews & signs. THE VISIT TO ENTER:\n\n'+bundle;
-    try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){}
-    if(btn) btn.innerHTML='… entering into Athena';
-    setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to the latest version (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 210000);
-  }
+  _athenaPushPlan(plan, who);
 }
 /* Shared Athena push runner — pings MLS Assist, hands the autopilot a goal, reports progress. */
-function _athenaPushRun(goal, startMsg){
+function _athenaPushRun(goal, startMsg, onDone){
   var statusToast=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
   var ponged=false, tries=0, iv=null, finished=false;
   function cleanup(){ try{ window.removeEventListener('message',onPong); }catch(e){} try{ window.removeEventListener('message',onMsg); }catch(e){} if(iv) clearInterval(iv); }
-  function finish(msg,kind){ finished=true; statusToast(msg,kind); cleanup(); }
+  function finish(msg,kind,reason){ finished=true; statusToast(msg,kind); cleanup(); if(typeof onDone==='function'){ try{ onDone(kind==='ok', reason||'', msg); }catch(e){} } }
   function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
   function onMsg(e){ if(!(e.data&&e.data.source==='mls-ext')) return; if(e.data.type==='mlsAppPushProgress'){ statusToast(e.data.msg||'Working…',''); return; } if(e.data.type==='mlsAppPushResult'){ var r=e.data.resp||{}; finish(r.ok?('🚀 '+(r.msg||'Entered into Athena — review and sign there.')):(r.error||'Couldn’t enter into Athena. Open the encounter and try again.'), r.ok?'ok':'err'); } }
   window.addEventListener('message',onPong);
   var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
   statusToast(startMsg||'Looking for MLS Assist…',''); ping();
-  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open.','err'); } else ping(); }, 350);
-  function proceed(){ window.addEventListener('message',onMsg); try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){} setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to the latest version (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 180000); }
+  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open.','err','noext'); } else ping(); }, 350);
+  function proceed(){ window.addEventListener('message',onMsg); try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){} setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to the latest version (Settings → Download) and make sure the encounter is open, then try again.','err','timeout'); } }, 180000); }
+}
+/* ===== ATHENA DESTINATION MAP — every piece of the visit has a SPECIFIC athenaOne home.
+   One source of truth for (a) the on-screen "send to ___" labels and (b) the autopilot's
+   section-by-section goals, so each thing lands in the right athenaOne section. ===== */
+var ATHENA_SECTIONS={
+  note:{ icon:'📝', label:'NOTE', dest:'Athena » Encounter note (HPI / Assessment & Plan)',
+    goalHead:'In the patient encounter CURRENTLY OPEN in athenaOne, go to the CLINICAL DOCUMENTATION area — the encounter note: the Intake/Exam or the "Assessment & Plan" / HPI text fields (athenaOne lays out the encounter as Chief Complaint, HPI, ROS, Exam, Assessment & Plan). Click into the main note / Assessment & Plan text area and enter the note text below. Announce "athenaOne: Encounter note" when you start.' },
+  dx:{ icon:'🩺', label:'DIAGNOSES', dest:'Athena » Assessment & Plan — Diagnosis search (Add assessment)',
+    goalHead:'In the OPEN athenaOne encounter, go to the ASSESSMENT & PLAN / DIAGNOSES area. Use athenaOne’s diagnosis search (often "Add assessment" or a Dx / problem search box). For EACH ICD-10 below, type the code or its description, pick the matching result, and add it to the encounter’s diagnosis list. Announce "athenaOne: Assessment/Diagnoses" when you start.' },
+  billing:{ icon:'💲', label:'CHARGES / BILLING', dest:'Athena » Billing slate — E/M level + CPT charges (attach Dx)',
+    goalHead:'In the OPEN athenaOne encounter, open the BILLING / CHARGES slate (the "Billing" tab or the E&M / "Add Charge" / Superbill area). Set the E/M level and add each CPT procedure code via the charge search ("Add Charge" / "Add CPT"). If athenaOne asks, attach the matching ICD-10 diagnosis pointer to each charge. Announce "athenaOne: Billing" when you start.' },
+  orders:{ icon:'📋', label:'ORDERS', dest:'Athena » Orders — Add order (labs / imaging / Rx / referral)',
+    goalHead:'In the OPEN athenaOne encounter, open the ORDERS area ("Add order" / order entry). For each order below use the right order type — labs, imaging, medication/Rx, referral, or DME — search for it and add it. Announce "athenaOne: Orders" when you start.' }
+};
+var _ATHENA_RULES=' RULES: only use controls actually on screen; if that athenaOne section isn’t open yet, navigate to it FIRST via the encounter’s tabs/section headers, and verify you can see it before typing; skip any single item that won’t go and continue; do NOT click Save, Sign, Submit, e-Sign, or Close — STOP when this section is entered so the doctor reviews.';
+/* Build one focused, athenaOne-specific goal for a section. */
+function _athenaSectionGoal(kind, body){ var s=ATHENA_SECTIONS[kind]; if(!s) return ''; return 'GOAL ('+s.dest+'): '+s.goalHead+_ATHENA_RULES+'\n\n'+String(body||''); }
+/* Run a PLAN — a list of {kind, body} sections — one after another, each into its own
+   athenaOne section, with the destination shown on screen as it goes. */
+function _athenaPushPlan(sections, who){
+  sections=(sections||[]).filter(function(s){ return s && s.body && String(s.body).trim(); });
+  if(!sections.length){ try{ toast('Nothing to push.',''); }catch(e){} return; }
+  var i=0, done=[];
+  function step(){
+    if(i>=sections.length){ try{ toast('🚀 Done — entered into Athena: '+done.join(', ')+'. Review & sign in athenaOne.','ok'); }catch(e){} return; }
+    var s=sections[i]; var meta=ATHENA_SECTIONS[s.kind]||{label:s.kind,dest:''};
+    _athenaPushRun(_athenaSectionGoal(s.kind, s.body), '→ Sending to '+meta.dest+' …', function(ok, reason){
+      if(!ok && reason==='noext'){ try{ toast('MLS Assist isn’t responding — install/enable the latest version and open your Athena tab, then try again.','err'); }catch(e){} return; } // stop the whole plan if the extension is missing
+      done.push((ok?'✓ ':'⚠ ')+meta.label);
+      i++; setTimeout(step, 500);
+    });
+  }
+  step();
 }
 /* Push ONLY the superbill / charges (E/M + CPT + ICD) into Athena billing. */
 function pushSuperbillToAthena(){
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
   if(!c || (!c.em && !(c.cpt&&c.cpt.length) && !(c.icd&&c.icd.length))){ try{ toast('Generate the note + coding first — there are no charges to push yet.','err'); }catch(e){} return; }
   var p=(typeof activePatient==='function')?activePatient():null; var who=p?p.name:'this patient';
-  var lines=[]; if(c.em) lines.push('• E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('• CPT  '+x); }); if(c.icd&&c.icd.length) c.icd.forEach(function(x){ lines.push('• Dx  '+x); });
-  var ok=false; try{ ok=window.confirm('PUSH SUPERBILL TO ATHENA — '+who+'\n\nThese charges go into Athena’s billing for the open encounter:\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save — you review & submit the claim in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush the charges now?'); }catch(e){ ok=true; }
+  var lines=[]; if(c.em) lines.push('• E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('• CPT  '+x); }); if(c.icd&&c.icd.length) c.icd.forEach(function(x){ lines.push('• Dx (attach)  '+x); });
+  var ok=false; try{ ok=window.confirm('PUSH SUPERBILL TO ATHENA — '+who+'\n\nSEND TO: '+ATHENA_SECTIONS.billing.dest+'\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save — you review & submit the claim in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush the charges now?'); }catch(e){ ok=true; }
   if(!ok) return;
-  var goal='GOAL: enter ONLY the BILLING CHARGES (superbill) for this visit into the patient encounter CURRENTLY OPEN in athenaOne. Do NOT touch the clinical note. In Athena’s charge / billing / E&M area: set the E/M level, and add each CPT procedure code and each ICD-10 diagnosis (use the charge / "Add code" / diagnosis search and pick the matching result for each). RULES: only use on-screen controls; if the billing/charge section isn’t visible, open it first; skip any single code that won’t go and continue. Do NOT click Save, Sign, Submit, or Close — STOP once the charges are entered so the doctor reviews. THE CHARGES:\n\n'+lines.join('\n')+(p&&p.name?('\n\nPatient: '+p.name):'');
-  _athenaPushRun(goal, 'Pushing the superbill into Athena…');
+  var body='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these ICD-10 diagnoses to the charges: '+c.icd.join('; ')):'')+(p&&p.name?('\n\nPatient: '+p.name):'');
+  _athenaPushPlan([{kind:'billing', body:body}], who);
 }
 /* Push a SAVED history note (its text + stored codes + orders) into Athena, right from History. */
 function pushHistoryNoteToAthena(id){
@@ -13528,18 +13537,13 @@ function pushHistoryNoteToAthena(id){
   var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ try{ toast('This visit has no note text to push.','err'); }catch(e){} return; }
   var c=n.coding||null; var orders=Array.isArray(n.orders)?n.orders:[];
   var who=n.patient||'this patient';
-  var lines=['📝 NOTE  →  Athena clinical note / encounter'];
-  if(c&&c.icd&&c.icd.length){ lines.push(''); lines.push('🩺 DIAGNOSES  →  Athena diagnoses ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
-  if(c&&(c.em||(c.cpt&&c.cpt.length))){ lines.push(''); lines.push('💲 CHARGES  →  Athena billing:'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
-  if(orders.length){ lines.push(''); lines.push('📋 ORDERS  →  Athena orders ('+orders.length+'):'); orders.forEach(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; var lbl=o._src||(def.label||o.type); lines.push('      • '+String(lbl).slice(0,60)); }); }
-  var ok=false; try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nFrom this saved visit, each into its proper Athena field:\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save/Sign — you review & sign in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush it now?'); }catch(e){ ok=true; }
+  var plan=[{kind:'note', body:'NOTE TEXT:\n'+bundle}]; var lines=[ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest];
+  if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+' ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
+  if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
+  if(orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+' ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
+  var ok=false; try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nMLS Assist enters each piece into its OWN athenaOne section, one at a time:\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save/Sign — you review & sign in Athena.\nOpen '+who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; }
   if(!ok) return;
-  var goal='GOAL: enter this saved visit into the patient encounter CURRENTLY OPEN in athenaOne, each part into its proper native field. 1) NOTE → put the note text in the clinical note / HPI / Assessment & Plan area. ';
-  if(c&&c.icd&&c.icd.length) goal+='2) DIAGNOSES → add EACH ICD-10 via Athena’s diagnosis "Add"/search: '+c.icd.join('; ')+'. ';
-  if(c&&(c.em||(c.cpt&&c.cpt.length))) goal+='3) BILLING → set the E/M level '+(c.em||'')+' and add each CPT'+((c.cpt&&c.cpt.length)?(': '+c.cpt.join('; ')):'')+' in the charge/billing area. ';
-  if(orders.length) goal+='4) ORDERS → add each order via Athena’s Orders "Add" search. ';
-  goal+='RULES: only use controls actually on screen; if a section isn’t visible, open it first; skip any single item that won’t go and continue. Do NOT click Save, Sign, Submit, or Close — STOP once everything is entered so the doctor reviews. THE NOTE:\n\n'+bundle;
-  if(typeof _athenaPushRun==='function') _athenaPushRun(goal, 'Pushing '+who+'’s visit into Athena…'); else { try{ toast('Update MLS to the latest version to push from History.','err'); }catch(e){} }
+  if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who); else { try{ toast('Update MLS to the latest version to push from History.','err'); }catch(e){} }
 }
 function getAutoSendEMR(){ return localStorage.getItem(uns('autoSendEMR'))==='1'; }
 function applyAutoSendPreview(c){ try{ localStorage.setItem(uns('autoSendEMR'), c?'1':'0'); }catch(e){} try{ toast(c?'On — signed notes will auto-send to your EMR via MLS Assist.':'Off — notes won’t auto-send.', 'ok'); }catch(e){} }
