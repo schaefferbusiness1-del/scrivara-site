@@ -1942,6 +1942,7 @@
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
         <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
         <button class="btn-green" onclick="sendToEMRviaAssist(this)" id="sendEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="One click: MLS Assist drops the whole package — note + diagnoses + ICD-10 + CPT/E-M codes + orders — straight into the patient open in Athena. No copy/paste.">✅ Submit to Athena</button>
+        <button class="btn-gold" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="MLS Assist enters the WHOLE visit into the patient's open Athena encounter — note, diagnoses, ICD-10, E/M + CPT, and orders, each into its proper field. It stops before Save/Sign so you review and sign in Athena.">🚀 Push entire visit to Athena</button>
         <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
         <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
         <button class="btn-ghost" onclick="gradeVisitExperience(this)" id="gradeExpBtn" title="AI rates how good the patient's experience was during this visit (bedside manner / communication), from the transcript — a coaching score that rolls into your Analysis">🌟 Grade experience</button>
@@ -3183,7 +3184,7 @@
       <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
       <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
-        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.19</span></b>
+        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.20</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
           <b>Already installed it before?</b> You just need to update to v1.17 to get schedule-pull: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still says it can't read the schedule, remove it and <b>Load unpacked</b> the latest <code>mls-assist-extension</code> folder.
@@ -12808,6 +12809,49 @@ function sendToEMRviaAssist(btn, opts){
     window.addEventListener('message',onResult);
     try{ window.postMessage({source:'mls-app',type:'mlsAppPasteNote', note:emr},'*'); }catch(e){}
     setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); done('No response from MLS Assist. Make sure your EMR tab is open, then try again.', false); } }, 30000);
+  }
+}
+/* ===== PUSH THE ENTIRE VISIT BACK INTO ATHENA — note + diagnoses + ICD-10 + E/M + CPT
+   + orders, each into its proper Athena field, via the MLS Assist AI autopilot. Shows a
+   confirm of exactly what will be written first, and the autopilot NEVER clicks Save/Sign
+   (it stops so the doctor reviews + signs in Athena). ===== */
+function pushEntireVisitToAthena(btn){
+  if(!currentSoap){ try{ toast('Generate the note first, then push the visit to Athena.','err'); }catch(e){} return; }
+  var bundle=''; try{ bundle=emrReadyText(); }catch(e){}
+  if(!bundle.trim()){ try{ toast('Nothing to push yet.','err'); }catch(e){} return; }
+  var p=(typeof activePatient==='function')?activePatient():null;
+  var c=(typeof currentCoding!=='undefined')?currentCoding:null;
+  // Build a short human summary of WHAT will be written, for the confirm gate.
+  var items=['• Clinical note (assessment & plan)'];
+  if(c&&c.icd&&c.icd.length) items.push('• '+c.icd.length+' ICD-10 diagnosis code'+(c.icd.length===1?'':'s'));
+  if(c&&c.em) items.push('• E/M level '+c.em);
+  if(c&&c.cpt&&c.cpt.length) items.push('• '+c.cpt.length+' CPT procedure'+(c.cpt.length===1?'':'s'));
+  if(typeof currentOrders!=='undefined'&&currentOrders&&currentOrders.length) items.push('• '+currentOrders.length+' order'+(currentOrders.length===1?'':'s'));
+  var who=p?p.name:'this patient';
+  var ok=false;
+  try{ ok=window.confirm('Push the ENTIRE visit for '+who+' into the patient open in your Athena tab?\n\nMLS Assist will enter, each into its proper Athena field:\n'+items.join('\n')+'\n\nIt will STOP before Save/Sign — you review and sign in Athena. Make sure the right patient’s encounter is open in Athena.\n\nProceed?'); }catch(e){ ok=true; }
+  if(!ok) return;
+  var orig=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.innerHTML='… connecting'; }
+  var statusToast=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
+  var ponged=false, tries=0, iv=null, finished=false;
+  function finish(msg, kind){ finished=true; if(btn){ btn.disabled=false; btn.innerHTML=orig||'🚀 Push entire visit to Athena'; } statusToast(msg, kind); cleanup(); }
+  function cleanup(){ try{ window.removeEventListener('message',onPong); }catch(e){} try{ window.removeEventListener('message',onMsg); }catch(e){} if(iv) clearInterval(iv); }
+  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
+  function onMsg(e){
+    if(!(e.data&&e.data.source==='mls-ext')) return;
+    if(e.data.type==='mlsAppPushProgress'){ if(btn) btn.innerHTML='… '+String(e.data.msg||'working').slice(0,28); statusToast(e.data.msg||'Working…',''); return; }
+    if(e.data.type==='mlsAppPushResult'){ var r=e.data.resp||{}; if(r.ok){ finish('🚀 '+(r.msg||'Visit entered into Athena — review and sign there.'), 'ok'); } else { finish(r.error||'Couldn’t enter the visit. Open the patient’s encounter in Athena and try again.', 'err'); } }
+  }
+  window.addEventListener('message',onPong);
+  var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
+  statusToast('Looking for MLS Assist…',''); ping();
+  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (v1.20+) and your Athena tab is open.','err'); } else ping(); }, 350);
+  function proceed(){
+    window.addEventListener('message',onMsg);
+    var goal='Enter this FINISHED patient visit into the encounter that is CURRENTLY OPEN in Athena, putting each part into its proper place: put the assessment & plan / note text into the clinical note area; add the ICD-10 diagnoses into the diagnosis/assessment section; set the E/M level and enter the CPT procedure codes in the billing/charges area; and enter each order (labs, imaging, medications, referrals, DME, injections) into Athena’s orders. Use the fields and controls already on screen. IMPORTANT: do NOT click Save, Sign, Submit, or Close the encounter — stop once everything is entered so the doctor can review and sign. THE VISIT:\n\n'+bundle;
+    try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){}
+    if(btn) btn.innerHTML='… entering into Athena';
+    setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to v1.20 (Settings → Download) and make sure the encounter is open, then try again.','err'); } }, 120000);
   }
 }
 function getAutoSendEMR(){ return localStorage.getItem(uns('autoSendEMR'))==='1'; }

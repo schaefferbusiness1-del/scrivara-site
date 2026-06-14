@@ -42,7 +42,44 @@
         });
       } catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'extension error' } }, '*'); }
     }
+    // Push the ENTIRE finished visit into the open Athena encounter (note, diagnoses,
+    // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign —
+    // it stops and hands off to the doctor to review + sign in Athena.
+    if (d.type === 'mlsAppPushVisit') {
+      try { _mlsPushVisit(String(d.goal || '')); }
+      catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppPushResult', resp: { error: 'extension error' } }, '*'); }
+    }
   });
+  // Headless autopilot loop that enters a finished visit into the EMR encounter.
+  function _bg(type, payload) { return new Promise(function (res) { try { chrome.runtime.sendMessage(Object.assign({ type: type }, payload || {}), function (r) { res(r || {}); }); } catch (e) { res({}); } }); }
+  async function _mlsPushVisit(goal) {
+    var post = function (type, payload) { try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), '*'); } catch (e) {} };
+    if (!goal) { post('mlsAppPushResult', { resp: { error: 'Nothing to push.' } }); return; }
+    var history = [], lastSig = '', sameN = 0;
+    post('mlsAppPushProgress', { msg: 'Starting — reading the Athena encounter…' });
+    try {
+      for (var step = 0; step < 40; step++) {
+        post('mlsAppPushProgress', { msg: 'Entering the visit into Athena… step ' + (step + 1) });
+        var cap = await _bg('mlsAssistCapture');
+        var pt = await _bg('mlsAssistPageText'); var pageText = (pt && pt.text) || '';
+        if (pageText.replace(/\s/g, '').length < 40) { await new Promise(function (r) { setTimeout(r, 1300); }); pt = await _bg('mlsAssistPageText'); pageText = (pt && pt.text) || ''; }
+        var els = await _bg('mlsAssistElements'); var elements = (els && els.list) || [];
+        var resp = await _bg('mlsAssistAgentStep', { goal: goal, pageText: pageText, screenshot: (cap && cap.dataUrl) || '', history: history, elements: elements });
+        if (!resp || resp.error) { post('mlsAppPushResult', { resp: { ok: false, error: (resp && resp.error) || 'no response from the AI' } }); return; }
+        var a = resp.action || {}; if (resp.reasoning) post('mlsAppPushProgress', { msg: '(' + (step + 1) + ') ' + String(resp.reasoning).slice(0, 110) });
+        history.push({ type: a.type, target: a.target });
+        var sig = (a.type || '') + '|' + (a.target || ''); if (sig === lastSig) sameN++; else { sameN = 0; lastSig = sig; }
+        if (sameN >= 3) { post('mlsAppPushResult', { resp: { ok: true, partial: true, msg: 'Got stuck repeating a step — paused. Review Athena and finish the rest manually.' } }); return; }
+        if (a.type === 'done') { post('mlsAppPushResult', { resp: { ok: true, msg: 'Entered the visit into Athena. Review everything and sign it there.' } }); return; }
+        if (a.type === 'confirm') { post('mlsAppPushResult', { resp: { ok: true, paused: true, msg: 'Everything is entered. Athena is asking to Save/Sign — review it and click Sign yourself.' } }); return; }
+        if (a.type === 'ask') { post('mlsAppPushResult', { resp: { ok: true, paused: true, msg: 'Athena needs a choice from you: ' + (a.target || a.reasoning || '') + '. Handle that, then re-run.' } }); return; }
+        if (a.type === 'switchtab') { await _bg('mlsAssistExec', { action: a }); await new Promise(function (r) { setTimeout(r, 1200); }); continue; }
+        await _bg('mlsAssistExec', { action: a });
+        await new Promise(function (r) { setTimeout(r, 850); });
+      }
+      post('mlsAppPushResult', { resp: { ok: true, partial: true, msg: 'Entered as much as I could — review Athena and finish any remaining fields, then sign.' } });
+    } catch (e) { post('mlsAppPushResult', { resp: { ok: false, error: String((e && e.message) || e) } }); }
+  }
 
   // --- custom hover tooltips: appear only after the cursor rests ~2s on a button ---
   (function () {
