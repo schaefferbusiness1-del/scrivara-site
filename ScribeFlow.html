@@ -1425,7 +1425,7 @@
         <div style="font-size:13.5px;opacity:.92">Enter the patient's name &amp; DOB, hit record, and have a natural visit. No typing, no clicks.</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="pullScheduleViaAssist(this)" title="Read today's appointments from your open Athena tab via MLS Assist" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📅 Pull today’s schedule</button>
+        <button onclick="pullScheduleViaAssist(this)" title="Read the appointments from whatever day you have open in your Athena tab (today, Monday, any day) via MLS Assist" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📅 Pull schedule</button>
         <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
       </div>
     </div>
@@ -3182,8 +3182,11 @@
       <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
       <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
-        <b style="font-size:14px">🩺 MLS Assist browser extension</b>
-        <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR — and Autopilot can take the steps for you, with your approval on anything it saves.</p>
+        <b style="font-size:14px">🩺 MLS Assist browser extension <span style="font-size:11.5px;background:#127a55;color:#fff;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Latest: v1.17</span></b>
+        <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
+        <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
+          <b>Already installed it before?</b> You just need to update to v1.17 to get schedule-pull: open <code>chrome://extensions</code> → find <b>MLS Assist</b> → click <b>↻ Reload</b>. If it still says it can't read the schedule, remove it and <b>Load unpacked</b> the latest <code>mls-assist-extension</code> folder.
+        </div>
         <a href="https://mlsscribe.com/mls-assist-extension.zip" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px" download>⬇ Download MLS Assist (.zip)</a>
         <span class="note" style="display:inline-block;margin-left:8px">🧩 One-click Chrome Web Store install — coming soon</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#3a5a78;line-height:1.6">
@@ -7439,7 +7442,7 @@ function showView(v){
   try{ var _vm={patients:'patientsView',visit:'visitView',history:'historyView',recs:'recsView',orders:'ordersView',admin:'adminView',team:'teamView',analysis:'analysisView',legalreq:'legalReqView',studio:'studioView',calendar:'calendarView'}; var _ve=document.getElementById(_vm[v]); if(_ve){ setTimeout(function(){ try{ _ve.style.animation='none'; void _ve.offsetWidth; _ve.style.animation='mlsViewIn .22s ease'; }catch(e){} },0); } }catch(e){}
   document.getElementById('patientsView').style.display = v==='patients'?'block':'none';
   document.getElementById('visitView').style.display    = v==='visit'?'block':'none';
-  if(v==='visit'){ try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
+  if(v==='visit'){ try{ if(typeof renderVisitOrders==='function') renderVisitOrders(); }catch(e){} try{ setTimeout(function(){ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); if(typeof _renderWaitingRoom==='function') _renderWaitingRoom(); }, 30); }catch(e){} }
   if(v==='orders'){ try{ if((typeof ordersDx==='undefined' || !ordersDx || (!ordersDx.text && !(ordersDx.icd&&ordersDx.icd.length))) && typeof noteDiagnosisText==='function'){ var _od=noteDiagnosisText(); if(_od && (_od.text || (_od.icd&&_od.icd.length)) && typeof pullDxFromNote==='function') pullDxFromNote(); } }catch(e){} }
   if(v==='patients'){ try{ if(typeof _renderDailyBrief==='function') _renderDailyBrief(); }catch(e){} }
   document.getElementById('historyView').style.display  = v==='history'?'block':'none';
@@ -10619,12 +10622,12 @@ function pullScheduleViaAssist(btn){
           }
           await _importPulledSchedule(appts);
         }catch(err){ setS('Couldn’t parse the schedule. Open Athena’s Day schedule view and try again.','err'); }
-        finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull today’s schedule'; } }
+        finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull schedule'; } }
       })();
     }
     window.addEventListener('message',onResult);
     try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
-    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull today’s schedule'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (it should say v1.17). Then reload this page and try again.','err'); } }, 30000);
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📅 Pull schedule'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (it should say v1.17). Then reload this page and try again.','err'); } }, 30000);
   }
 }
 async function _parseScheduleText(text){
@@ -10635,9 +10638,27 @@ async function _parseScheduleText(text){
   try{ var m=s.match(/\[[\s\S]*\]/); if(m) return JSON.parse(m[0]); }catch(e){}
   return [];
 }
+/* Figure out which day this pulled schedule belongs to:
+   1) a date printed in the Athena text (e.g. "Monday, June 15, 2026"), else
+   2) the next clinic day (today if it's a weekday, otherwise the upcoming Monday). */
+function _nextClinicDay(){
+  var d=new Date();
+  while(d.getDay()===0||d.getDay()===6){ d.setDate(d.getDate()+1); } // skip Sun(0)/Sat(6)
+  return d.toISOString().slice(0,10);
+}
+function _detectSchedDate(text){
+  try{
+    if(!text) return '';
+    var M={january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+    var m=String(text).match(/([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+    if(m){ var mo=M[m[1].toLowerCase()]; if(mo!=null){ var dd=new Date(Date.UTC(+m[3],mo,+m[2])); if(!isNaN(dd)) return dd.toISOString().slice(0,10); } }
+    var iso=String(text).match(/\b(20\d\d)-(\d{2})-(\d{2})\b/); if(iso) return iso[1]+'-'+iso[2]+'-'+iso[3];
+  }catch(e){}
+  return '';
+}
 async function _importPulledSchedule(appts){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to import the schedule.','err'); }catch(e){} return; }
-  var today=(new Date()).toISOString().slice(0,10);
+  var today=_detectSchedDate(window.__schedRaw&&window.__schedRaw.text)||_nextClinicDay();
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var created=0;
   for(var i=0;i<appts.length;i++){
@@ -10652,7 +10673,7 @@ async function _importPulledSchedule(appts){
   try{ if(typeof loadCalendar==='function') await loadCalendar(); }catch(e){}
   window._heroNowIdx=-1;
   _renderTodayPatients(appts);
-  try{ toast('Imported '+created+' appointment'+(created===1?'':'s')+' from Athena.','ok'); }catch(e){}
+  try{ var _dl=''; try{ _dl=new Date(today+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}); }catch(_e){ _dl=today; } toast('Imported '+created+' appointment'+(created===1?'':'s')+' from Athena for '+_dl+'.','ok'); var _ps=document.getElementById('heroPullStatus'); if(_ps&&created){ _ps.textContent='✅ Pulled '+created+' patient'+(created===1?'':'s')+' for '+_dl+'. Tap a name below to start recording.'; _ps.style.color='#d8ffe8'; _ps.style.display='block'; } }catch(e){}
   try{ _calLoadNextUp(); }catch(e){}   // know the time → load whoever is up right now
 }
 function _renderTodayPatients(appts){
@@ -13081,8 +13102,8 @@ function renderVisitOrders(){
   try{
     var card=document.getElementById('visitOrdersCard'); var box=document.getElementById('visitOrdersBody'); if(!card||!box) return;
     var ords=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
-    if(!ords.length){ card.style.display='none'; box.innerHTML=''; return; }
     card.style.display='block';
+    if(!ords.length){ box.innerHTML='<span style="font-size:12.5px;color:var(--muted)">No orders yet — the AI adds these from your note, or tap ＋ Add. They ride along to Athena when you hit Submit.</span>'; return; }
     box.innerHTML=ords.map(function(o){
       var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{};
       var label=o._src||((def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''));
