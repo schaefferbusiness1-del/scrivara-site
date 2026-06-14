@@ -10778,7 +10778,38 @@ function toggleVisitTools(){
   var g=document.getElementById('visitToolsGroup'); if(!g) return;
   var show=(g.style.display==='none'||!g.style.display);
   g.style.display=show?'block':'none';
-  var b=document.getElementById('visitToolsBtn'); if(b) b.innerHTML=show?'🧰 Clinical tools ▴':'🧰 Clinical tools ▾';
+  try{ _reflectVisitTools(); }
+  catch(e){ var b=document.getElementById('visitToolsBtn'); if(b) b.innerHTML=show?'🧰 Clinical tools ▴':'🧰 Clinical tools ▾'; }
+}
+/* After a note generates, the AI may have populated insight cards (red flags,
+   differentials, surgical plan, procedure note) that live INSIDE the collapsed
+   "Clinical tools" group. Without a signal the doctor never knows they're there.
+   This badges the toggle with a count, highlights it, and — for safety — AUTO-OPENS
+   the group whenever a RED FLAG is present so a safety finding can't stay hidden. */
+function _reflectVisitTools(){
+  try{
+    var g=document.getElementById('visitToolsGroup'); if(!g) return;
+    var btn=document.getElementById('visitToolsBtn'); if(!btn) return;
+    if(!document.getElementById('_vtCss')){
+      var st=document.createElement('style'); st.id='_vtCss';
+      st.textContent='#visitToolsBtn.vt-has{background:#eef4ff;border-color:#9cc0ff;color:#1b4fa0;font-weight:600}'+
+        '#visitToolsBtn.vt-alert{background:#fdecec;border-color:#f1a9a9;color:#b4231e;font-weight:700;animation:vtPulse 1.6s ease-in-out 3}'+
+        '@keyframes vtPulse{0%,100%{box-shadow:0 0 0 0 rgba(180,35,30,0)}50%{box-shadow:0 0 0 4px rgba(180,35,30,.18)}}';
+      document.head.appendChild(st);
+    }
+    var open = g.style.display!=='none' && g.style.display!=='';
+    var ids=['redflagCard','ddxCard','surgPlanCard','procResultWrap'];
+    var n=0;
+    ids.forEach(function(id){ var el=document.getElementById(id); if(el && getComputedStyle(el).display!=='none' && (el.textContent||'').replace(/\s+/g,'').length>0) n++; });
+    var rf=document.getElementById('redflagCard');
+    var hasRedFlag = !!(rf && getComputedStyle(rf).display!=='none');
+    if(hasRedFlag && !open){ g.style.display='block'; open=true; }   // never bury a red flag
+    var caret=open?'▴':'▾';
+    btn.classList.remove('vt-alert','vt-has');
+    if(hasRedFlag){ btn.innerHTML='⚠️ Clinical tools — RED FLAG'+(n>1?(' (+'+(n-1)+' more)'):'')+' '+caret; btn.classList.add('vt-alert'); }
+    else if(n>0){ btn.innerHTML='🧰 Clinical tools ('+n+') '+caret; btn.classList.add('vt-has'); }
+    else { btn.innerHTML='🧰 Clinical tools '+caret; }
+  }catch(e){}
 }
 /* Patients toolbar: keep only "New patient" up front; tuck the rest behind "More". */
 function togglePtMore(){
@@ -10979,6 +11010,9 @@ function autoPopulateExtras(result){
   //     visit. Async fire-and-forget with its own per-widget error handling so
   //     it can NEVER block or break the main note flow. ---
   try{ autoPopulateCustomWidgets(); }catch(e){ /* never block the note */ }
+
+  // --- Surface the buried AI insights: badge/auto-open the Clinical tools group ---
+  try{ _reflectVisitTools(); }catch(e){ /* never block the note */ }
 }
 
 /* =========================================================
@@ -11316,7 +11350,10 @@ function friendlyError(err){
     return 'Your OpenAI account needs billing/credits — add a payment method at platform.openai.com → Billing. The API is billed separately from ChatGPT.';
   if(/429|rate.?limit/i.test(m))
     return 'OpenAI is rate-limiting (too many requests) or your account is out of credit. Wait a moment, or add billing/credits at platform.openai.com — the API is billed separately from ChatGPT.';
-  if(/401|invalid|incorrect api key/i.test(m)) return 'That API key looks invalid. Check it in Settings.';
+  // A 401 in hosted/backend mode means the doctor's LOGIN SESSION expired — it has
+  // nothing to do with an API key. Don't send them to Settings; tell them to log back in.
+  if(/401|unauthorized|session expired|not authenticated/i.test(m)) return backendMode() ? 'Your session expired — please log in again to keep working.' : 'That API key looks invalid. Check it in Settings.';
+  if(/invalid|incorrect api key/i.test(m)) return 'That API key looks invalid. Check it in Settings.';
   if(/network|failed to fetch|load failed/i.test(m)) return 'Network problem reaching OpenAI. Check your internet connection.';
   return 'Could not generate the note: '+m;
 }
