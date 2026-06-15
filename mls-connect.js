@@ -1922,3 +1922,82 @@
     constrainOn:constrainOn, getState:function(){ return state; }, _seed:seed, _scan:scanCodes
   };
 })();
+
+
+/* ============================================================
+   MLS — single-tooltip fix + dynamic extension-version badge
+   Appended to mls-connect.js on 2026-06-15.
+
+   FIX 1 (double tooltip): The MLS Assist browser extension's
+   content.js injects its OWN custom hover tooltip element
+   <div id="mls-tip"> on every page (reads data-tip, 2s delay).
+   On the MLS web app that collides with the app's own
+   <div id="mlsTip"> tooltip, so hovering a data-tip element
+   (e.g. "Send full visit to Athena") renders TWO stacked boxes.
+   The app's #mlsTip is the single source of truth (it works with
+   OR without the extension and also handles native title), so we
+   suppress the extension's duplicate ONLY on this app. The
+   extension's tooltip still works on other pages (Athena, etc.)
+   where this bundle is not loaded — the extension is untouched.
+
+   FIX 2 (stale badge): the Settings "MLS Assist browser extension"
+   card had a hardcoded "Latest: v1.25" badge. Read it live from
+   /extension-version.json so it shows the deployed version (1.27
+   now) and can never go stale again.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__mlsTipBadgeFix) return; window.__mlsTipBadgeFix = true;
+
+  /* ---- FIX 1: hide the extension's duplicate #mls-tip on this app ---- */
+  try {
+    if (!document.getElementById('mlsHideExtTip')) {
+      var st = document.createElement('style');
+      st.id = 'mlsHideExtTip';
+      // !important beats the extension's inline display:block (non-important),
+      // so only the app's own #mlsTip tooltip ever shows.
+      st.textContent = 'html body #mls-tip{display:none!important;opacity:0!important;}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    var ex = document.getElementById('mls-tip');
+    if (ex) ex.style.setProperty('display', 'none', 'important');
+  } catch (e) { try { console.warn('[MLS] tooltip de-dup failed', e); } catch (_) {} }
+
+  /* ---- FIX 2: dynamic extension-version badge in Settings ---- */
+  try {
+    var VER = null;
+    function applyBadge(){
+      if (!VER) return false;
+      var spans = document.getElementsByTagName('span'), did = false, want = 'Latest: v' + VER;
+      for (var i = 0; i < spans.length; i++) {
+        var s = spans[i], t = (s.textContent || '').trim();
+        if (!/^Latest:\s*v?\d/i.test(t)) continue;        // looks like a "Latest: vX.Y" badge
+        var p = s, ok = false;                            // confirm it's the MLS Assist extension card
+        for (var j = 0; j < 4 && p && p !== document.body && p !== document.documentElement; j++) {
+          if (/MLS Assist browser extension/i.test(p.textContent || '')) { ok = true; break; }
+          p = p.parentElement;
+        }
+        if (!ok) continue;
+        if (s.textContent !== want) s.textContent = want;
+        did = true;
+      }
+      return did;
+    }
+    function fetchVer(){
+      return fetch('/extension-version.json?_=' + Date.now(), { cache: 'no-store' })
+        .then(function(r){ return r.json(); })
+        .then(function(j){ if (j && j.version) { VER = String(j.version).replace(/^v/i, ''); applyBadge(); } })
+        .catch(function(){ /* offline: leave the static text as-is */ });
+    }
+    function start(){
+      fetchVer();
+      // The badge is in static markup inside the Settings modal; re-apply a few
+      // times in case VER arrives before the node is ready, then stop.
+      var tries = 0, iv = setInterval(function(){ tries++; if (applyBadge() || tries > 40) clearInterval(iv); }, 500);
+      // Refresh periodically so a newly published version appears without a reload.
+      setInterval(fetchVer, 5 * 60 * 1000);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+  } catch (e) { try { console.warn('[MLS] version badge failed', e); } catch (_) {} }
+})();
