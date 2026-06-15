@@ -380,3 +380,142 @@
   window.__mlsCalLaunch={ enhancePeek:enhancePeek, _findPt:findPt };
 })();
 
+
+/* ---- module: feat_athena_sync.js ---- */
+
+/* ===== MLS Global Athena Sync Indicator — connectedness feature #4 =====
+   Adds a compact Athena sync status chip into the unified card's existing sync slot
+   (window.__mlsCard.setSyncSlot): last synced / pending / errors, with a details popover.
+   HONEST + ADDITIVE: it OBSERVES the app's own Athena actions (push visit / superbill /
+   history note / copy-for-EMR / pull chart) via a passive capture-phase click listener — it
+   never wraps or alters those handlers — and records a per-user sync log in localStorage.
+   It reflects app-initiated sends via the DOM/Assist path (Path A); it does NOT claim
+   server-confirmed FHIR write-back (Path B), which is gated until athenahealth API access is
+   live. Degrades to a silent no-op if the card or globals are missing. Exposes window.__mlsSync
+   and registers a timeline provider so sync events also appear in the patient timeline. */
+(function(){
+  'use strict';
+  if (window.__mlsSync) return;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function email(){ return safe(function(){ return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]; }, null); }
+  function key(){ var e=email(); return e?('sf_u::'+e+'::mlsSyncLog'):null; }
+  function getLog(){ var k=key(); if(!k) return []; return safe(function(){ var v=JSON.parse(localStorage.getItem(k)||'[]'); return Array.isArray(v)?v:[]; }, []); }
+  function setLog(l){ var k=key(); if(!k) return; safe(function(){ localStorage.setItem(k, JSON.stringify(l.slice(-50))); }); }
+  function activeName(){ return safe(function(){ var id=window.getActivePtId&&window.getActivePtId(); var p=id&&window.findPatient&&window.findPatient(id); return p?(p.name||''):''; }, ''); }
+  function activeId(){ return safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null); }
+  function mark(ev){ ev=ev||{}; ev.ts=ev.ts||Date.now(); if(!ev.patient) ev.patient=activeName(); if(ev.patientId==null) ev.patientId=activeId(); var l=getLog(); l.push(ev); setLog(l); render(); }
+  function connMode(){
+    return safe(function(){
+      var assist = typeof window.sendToEMRviaAssist==='function' || typeof window._assistReadAthenaTab==='function';
+      var be = (typeof window.backendMode==='function' && window.backendMode());
+      if (assist) return 'Assist (browser)';
+      if (be) return 'MLS server';
+      return 'not connected';
+    }, 'unknown');
+  }
+  function timeAgo(ts){ var s=Math.floor((Date.now()-ts)/1000); if(s<60) return 'just now'; var m=Math.floor(s/60); if(m<60) return m+'m ago'; var h=Math.floor(m/60); if(h<24) return h+'h ago'; var d=Math.floor(h/24); return d+'d ago'; }
+  function fmtTime(ts){ return safe(function(){ return new Date(ts).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }, ''); }
+
+  function state(){
+    var log=getLog();
+    var errors=log.filter(function(e){return e.status==='error';}).length;
+    var sends=log.filter(function(e){return e.dir!=='pull';});
+    var last=log.length?log[log.length-1]:null;
+    return { errors:errors, count:sends.length, last:last, total:log.length };
+  }
+  function chipHtml(){
+    var st=state();
+    var cls='ok', txt;
+    if(st.errors>0){ cls='err'; txt='Athena · '+st.errors+' error'+(st.errors>1?'s':''); }
+    else if(st.last){ cls='ok'; txt='Athena · '+(st.last.dir==='pull'?'pulled ':'synced ')+timeAgo(st.last.ts); }
+    else { cls='idle'; txt='Athena · idle'; }
+    return '<span class="mls-sync mls-sync-'+cls+'" title="Athena sync status — click for details">'
+      +'<span class="mls-sync-dot"></span>'+esc(txt)+'</span>';
+  }
+  function render(){
+    if(!window.__mlsCard || typeof window.__mlsCard.setSyncSlot!=='function') return;
+    safe(function(){ window.__mlsCard.setSyncSlot(chipHtml()); bindChip(); });
+  }
+  function bindChip(){
+    var chip=document.querySelector('#mlsCardSlot .mls-sync'); if(!chip||chip.__b) return; chip.__b=1;
+    chip.style.cursor='pointer';
+    chip.addEventListener('click', function(e){ e.stopPropagation(); togglePop(chip); });
+  }
+  function togglePop(anchor){
+    var ex=document.getElementById('mlsSyncPop'); if(ex){ ex.remove(); return; }
+    var log=getLog().slice().reverse().slice(0,6);
+    var st=state();
+    var rows=log.length? log.map(function(e){
+        return '<div class="mls-sp-row"><span class="mls-sp-ic">'+(e.status==='error'?'⚠':(e.dir==='pull'?'📥':'🚀'))+'</span>'
+          +'<span class="mls-sp-main"><b>'+esc(e.label||e.target||'sync')+'</b>'+(e.patient?(' · '+esc(e.patient)):'')
+          +'<span class="mls-sp-t">'+esc(fmtTime(e.ts))+'</span></span></div>';
+      }).join('') : '<div class="mls-sp-empty">No Athena sync activity yet.</div>';
+    var pop=document.createElement('div'); pop.id='mlsSyncPop';
+    pop.innerHTML='<div class="mls-sp-head"><b>Athena sync</b><span class="mls-sp-mode">'+esc(connMode())+'</span></div>'
+      +'<div class="mls-sp-stat"><span>'+st.count+' sent</span><span>'+(st.errors)+' error'+(st.errors===1?'':'s')+'</span>'
+      +'<span>'+(st.last?('last '+timeAgo(st.last.ts)):'—')+'</span></div>'
+      +'<div class="mls-sp-list">'+rows+'</div>'
+      +'<div class="mls-sp-note">Reflects sends initiated in the app (DOM / MLS Assist path). Server-confirmed FHIR write-back activates once athenahealth API access is live.</div>';
+    document.body.appendChild(pop);
+    var r=anchor.getBoundingClientRect();
+    pop.style.top=(r.bottom+6+window.scrollY)+'px';
+    pop.style.left=Math.max(8,Math.min(r.left+window.scrollX, window.innerWidth-330))+'px';
+    setTimeout(function(){ document.addEventListener('mousedown', function h(ev){ if(!pop.contains(ev.target)){ pop.remove(); document.removeEventListener('mousedown',h); } }); },0);
+  }
+
+  /* observe app Athena actions (passive — does not alter handlers) */
+  var ACTIONS=[
+    {re:/pushEntireVisitToAthena/, label:'Visit → Athena', target:'visit', dir:'push'},
+    {re:/pushSuperbillToAthena/, label:'Superbill → Athena', target:'superbill', dir:'push'},
+    {re:/pushHistoryNoteToAthena/, label:'Note → Athena', target:'note', dir:'push'},
+    {re:/copyForEMR/, label:'Copied for EMR/Athena', target:'copy', dir:'push'},
+    {re:/pushToAthena|pushSuperbill/, label:'Push → Athena', target:'push', dir:'push'},
+    {re:/pullPatientChartViaAssist|pullPatientFromAthena/, label:'Pulled chart', target:'chart', dir:'pull'}
+  ];
+  function onClickCapture(e){
+    safe(function(){
+      var el=e.target; var hops=0;
+      while(el && hops<5){
+        var oc=el.getAttribute&&el.getAttribute('onclick');
+        if(oc){ for(var i=0;i<ACTIONS.length;i++){ if(ACTIONS[i].re.test(oc)){ mark({label:ACTIONS[i].label, target:ACTIONS[i].target, dir:ACTIONS[i].dir, status:'sent'}); return; } } }
+        el=el.parentElement; hops++;
+      }
+    });
+  }
+  function syncProvider(id){
+    return getLog().filter(function(e){ return e.patientId!=null && String(e.patientId)===String(id); }).map(function(e){
+      return { date:e.ts, type:'sync', icon:(e.status==='error'?'⚠':(e.dir==='pull'?'📥':'🚀')), title:e.label||'Athena sync', sub:connMode(), onClick:function(){} };
+    });
+  }
+  function init(){
+    document.addEventListener('click', onClickCapture, true);
+    render();
+    setInterval(render, 4000);
+    safe(function(){ if(window.__mlsTimeline && window.__mlsTimeline.addProvider) window.__mlsTimeline.addProvider(syncProvider); });
+    injectCss();
+  }
+  function injectCss(){
+    if(document.getElementById('mlsSyncCss')) return;
+    var s=document.createElement('style'); s.id='mlsSyncCss';
+    s.textContent=
+      '.mls-sync{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border-radius:20px;border:1px solid var(--line,#e6e9ef);background:var(--surface,#f6f8fb);color:var(--muted,#5b6b7c);white-space:nowrap;}'
+      +'.mls-sync-dot{width:7px;height:7px;border-radius:50%;background:#9aa7b4;flex:0 0 auto;}'
+      +'.mls-sync-ok .mls-sync-dot{background:#16a34a;} .mls-sync-ok{color:#127a55;border-color:#bfe6cf;background:#f0fbf4;}'
+      +'.mls-sync-err .mls-sync-dot{background:#dc2626;} .mls-sync-err{color:#b91c1c;border-color:#f3c9c9;background:#fdf2f2;}'
+      +'#mlsSyncPop{position:absolute;z-index:100000;width:320px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:12px;box-shadow:0 16px 40px rgba(15,28,46,.22);font-size:13px;overflow:hidden;}'
+      +'#mlsSyncPop .mls-sp-head{display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'#mlsSyncPop .mls-sp-mode{font-size:11px;color:var(--muted,#7c8aa0);border:1px solid var(--line,#e6e9ef);border-radius:6px;padding:1px 7px;}'
+      +'#mlsSyncPop .mls-sp-stat{display:flex;gap:14px;padding:8px 13px;color:var(--muted,#5b6b7c);font-size:12px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'#mlsSyncPop .mls-sp-list{max-height:200px;overflow:auto;padding:4px 0;}'
+      +'#mlsSyncPop .mls-sp-row{display:flex;gap:9px;padding:7px 13px;align-items:flex-start;}'
+      +'#mlsSyncPop .mls-sp-main{display:flex;flex-direction:column;min-width:0;}'
+      +'#mlsSyncPop .mls-sp-t{font-size:11px;color:var(--muted,#9aa7b4);}'
+      +'#mlsSyncPop .mls-sp-empty{padding:18px 13px;text-align:center;color:var(--muted,#7c8aa0);}'
+      +'#mlsSyncPop .mls-sp-note{padding:9px 13px;font-size:10.5px;color:var(--muted,#8b97a8);border-top:1px solid var(--line,#e6e9ef);background:var(--surface,#f8fafc);}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
+  window.__mlsSync={ mark:mark, getLog:getLog, state:state, render:render };
+})();
+
