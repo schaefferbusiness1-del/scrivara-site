@@ -21095,6 +21095,133 @@ function _ptGroupSort(mode){
 }
 
 </script>
+<script>
+/* ===== MLS Active-Patient Context Bar - connectedness feature (added by overnight QA pass, 2026-06-14) =====
+   Self-contained progressive enhancement. Renders a slim bar under the main nav,
+   on EVERY view, showing the active patient + one-click cross-links
+   (Chart / Visit / History / Schedule). Hidden when no patient is active, so it
+   never duplicates the existing per-tab "no active patient" banners.
+   Purely additive: OBSERVES state (light 1.5s poll on the active-patient id +
+   storage events) and never modifies any existing app function. Every external
+   call is guarded; any error or missing global degrades to a silent no-op. */
+(function(){
+  'use strict';
+  if (window.__mlsCtxBar) return;
+  var BAR_ID = 'mlsCtxBar';
+  function $(id){ return document.getElementById(id); }
+  function safe(fn, dflt){ try { return fn(); } catch(e){ return dflt; } }
+  function activeId(){ return safe(function(){ return window.getActivePtId && window.getActivePtId(); }, null); }
+  function activePt(){
+    return safe(function(){
+      if (window.activePatient) { var p = window.activePatient(); if (p) return p; }
+      var id = activeId();
+      if (id && window.findPatient) return window.findPatient(id);
+      return null;
+    }, null);
+  }
+  function initials(name){
+    name = String(name||'').trim();
+    if (!name) return '-';
+    var parts = name.split(/\s+/).filter(Boolean);
+    return ((parts[0]||'')[0]||'').concat((parts.length>1?(parts[parts.length-1][0]||''):'')).toUpperCase() || '-';
+  }
+  function ageFromDob(dob){
+    if (!dob) return '';
+    var d = new Date(dob); if (isNaN(d.getTime())) return '';
+    var t = new Date(), a = t.getFullYear()-d.getFullYear();
+    var m = t.getMonth()-d.getMonth(); if (m<0 || (m===0 && t.getDate()<d.getDate())) a--;
+    return (a>=0 && a<140) ? (a+'y') : '';
+  }
+  function visitStats(p){
+    var notes = safe(function(){ return (window.patientNotes && window.patientNotes(p.id)) || []; }, []);
+    notes = Array.isArray(notes) ? notes : [];
+    var n = notes.length, last = '';
+    if (n){
+      var times = notes.map(function(x){ return new Date(x.date||x.created||x.updated||x.when||0).getTime(); }).filter(function(t){ return t>0; });
+      if (times.length){ last = new Date(Math.max.apply(null, times)).toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'}); }
+    }
+    return { count:n, last:last };
+  }
+  function go(view){ safe(function(){ if (window.showView) window.showView(view); }); }
+  function openChart(id){ safe(function(){ if (window.openPatient) window.openPatient(id); else go('patients'); }); }
+  function openSchedule(id){
+    safe(function(){
+      if (window.calScheduleForPatient) { window.calScheduleForPatient(id); }
+      else if (window.calOpenPatientFor) { window.calOpenPatientFor(id); }
+      else { go('calendar'); }
+    });
+  }
+  function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+  function renderInto(bar, p){
+    var st = visitStats(p);
+    var age = ageFromDob(p.dob), sex = p.sex ? String(p.sex)[0].toUpperCase() : '';
+    var meta = [ [age,sex].filter(Boolean).join(' '), p.mrn ? ('MRN '+p.mrn) : '',
+                 st.count ? (st.count+' visit'+(st.count===1?'':'s')) : 'no visits',
+                 st.last ? ('last '+st.last) : '' ].filter(Boolean).join('  \u00b7  ');
+    bar.style.display='flex';
+    bar.innerHTML =
+      '<div class="mlsctx-id">'
+      +   '<span class="mlsctx-av">'+escapeHtml(initials(p.name))+'</span>'
+      +   '<span class="mlsctx-name">'+escapeHtml(p.name||'Patient')+'</span>'
+      +   '<span class="mlsctx-meta">'+escapeHtml(meta)+'</span>'
+      + '</div>'
+      + '<div class="mlsctx-actions">'
+      +   '<button type="button" data-act="chart">Chart</button>'
+      +   '<button type="button" data-act="visit">Visit</button>'
+      +   '<button type="button" data-act="history">History</button>'
+      +   '<button type="button" data-act="schedule">Schedule</button>'
+      + '</div>';
+    var id = p.id;
+    bar.querySelectorAll('button[data-act]').forEach(function(b){
+      b.onclick = function(){
+        var a = b.getAttribute('data-act');
+        if (a==='chart') openChart(id);
+        else if (a==='visit') go('visit');
+        else if (a==='history') go('history');
+        else if (a==='schedule') openSchedule(id);
+      };
+    });
+  }
+  function build(){
+    var bar = $(BAR_ID);
+    var p = activePt();
+    if (!p){ if (bar) bar.style.display='none'; return; }
+    if (!bar){
+      var nav = document.querySelector('.mainnav');
+      if (!nav || !nav.parentElement) return;
+      bar = document.createElement('div'); bar.id = BAR_ID;
+      nav.parentElement.insertBefore(bar, nav.nextSibling);
+    }
+    renderInto(bar, p);
+  }
+  function injectCss(){
+    if ($('mlsCtxBarCss')) return;
+    var css = document.createElement('style'); css.id='mlsCtxBarCss';
+    css.textContent =
+      '#'+BAR_ID+'{display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px auto 0;max-width:1180px;padding:7px 14px;border-radius:12px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);box-shadow:0 1px 3px rgba(20,40,70,.05);font-size:13px;}'
+      +'#'+BAR_ID+' .mlsctx-id{display:flex;align-items:center;gap:9px;min-width:0;}'
+      +'#'+BAR_ID+' .mlsctx-av{width:26px;height:26px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff;background:var(--brand,#2563c9);}'
+      +'#'+BAR_ID+' .mlsctx-name{font-weight:700;color:var(--ink,#15293f);white-space:nowrap;}'
+      +'#'+BAR_ID+' .mlsctx-meta{color:var(--muted,#5b6b7c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+      +'#'+BAR_ID+' .mlsctx-actions{display:flex;gap:6px;flex:0 0 auto;}'
+      +'#'+BAR_ID+' .mlsctx-actions button{font:inherit;cursor:pointer;padding:4px 11px;border-radius:8px;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#15293f);}'
+      +'#'+BAR_ID+' .mlsctx-actions button:hover{border-color:var(--brand,#2563c9);color:var(--brand,#2563c9);}';
+    (document.head||document.documentElement).appendChild(css);
+  }
+  function refresh(){ safe(build); }
+  function init(){
+    injectCss();
+    var lastId = activeId();
+    refresh();
+    setInterval(function(){ var id = activeId(); if (id !== lastId){ lastId = id; refresh(); } }, 1500);
+    window.addEventListener('storage', refresh);
+  }
+  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+  window.__mlsCtxBar = { refresh:refresh, _renderInto:renderInto };
+})();
+</script>
 </body>
 </html>
 
