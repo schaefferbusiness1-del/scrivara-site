@@ -21083,13 +21083,13 @@ function _ptGroupKey(p, mode){
   try{
     if(mode==='procedure'){ return (typeof _ptProcedure==='function')?_ptProcedure(p):'No procedure yet'; }
     var n=0; try{ n=(typeof patientNotes==='function'?(patientNotes(p.id)||[]):[]).length; }catch(e){}
-    if(mode==='upcoming'){ if(p && (p.source==='athena-schedule' || p.appt)) return '\U0001F4C5 On today’s schedule'; return n>0 ? '\U0001F552 Recently seen' : '\U0001F195 New / not yet seen'; }
-    if(mode==='type'){ if(p && p.source==='athena-schedule') return '\U0001F4E5 From Athena schedule'; return n>0 ? '\U0001F501 Returning patients' : '\U0001F195 New patients'; }
+    if(mode==='upcoming'){ if(p && (p.source==='athena-schedule' || p.appt)) return '📅 On today’s schedule'; return n>0 ? '🕒 Recently seen' : '🆕 New / not yet seen'; }
+    if(mode==='type'){ if(p && p.source==='athena-schedule') return '📥 From Athena schedule'; return n>0 ? '🔁 Returning patients' : '🆕 New patients'; }
   }catch(e){}
   return 'Other';
 }
 function _ptGroupSort(mode){
-  var ORDER={'\U0001F4C5 On today’s schedule':0,'\U0001F552 Recently seen':1,'\U0001F195 New / not yet seen':2,'\U0001F4E5 From Athena schedule':0,'\U0001F501 Returning patients':1,'\U0001F195 New patients':2};
+  var ORDER={'📅 On today’s schedule':0,'🕒 Recently seen':1,'🆕 New / not yet seen':2,'📥 From Athena schedule':0,'🔁 Returning patients':1,'🆕 New patients':2};
   return function(a,b){ if(a==='No procedure yet') return 1; if(b==='No procedure yet') return -1; var oa=(a in ORDER)?ORDER[a]:50, ob=(b in ORDER)?ORDER[b]:50; if(oa!==ob) return oa-ob; return a.localeCompare(b); };
 }
 
