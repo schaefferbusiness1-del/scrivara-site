@@ -39,6 +39,8 @@
       {label:'Supervision queue', hint:'Drafts awaiting review / cosign', icon:'👥', run:function(){ safe(function(){ window.__mlsSupervision && window.__mlsSupervision.open(); }); }},
       {label:'Check Athena chart match', hint:'Is the open Athena chart this patient?', icon:'🔎', run:function(){ safe(function(){ window.__mlsAthenaMatch && window.__mlsAthenaMatch.check(); }); }},
       {label:'Flag legal / IME case', hint:'Assemble notes for a legal report', icon:'⚖️', run:function(){ safe(function(){ window.__mlsLegalChain && window.__mlsLegalChain.flagCase(); }); }},
+      {label:'Billing code sheet', hint:'Edit your practice’s curated code list', icon:'🧾', run:function(){ safe(function(){ window.__mlsCodeSheet && window.__mlsCodeSheet.open(); }); }},
+      {label:'Pick visit codes (superbill)', hint:'Quick-select billing codes for this visit', icon:'☑️', run:function(){ safe(function(){ window.__mlsCodeSheet && window.__mlsCodeSheet.pick(); }); }},
       {label:'Legal requests', hint:'IME / legal', icon:'⚖️', run:function(){go('legalreq');}},
       {label:'Team', hint:'Team', icon:'👥', run:function(){go('team');}},
       {label:'Analysis', hint:'Trends & outcomes', icon:'📊', run:function(){go('analysis');}},
@@ -435,7 +437,7 @@
     if(st.errors>0){ cls='err'; txt='Athena · '+st.errors+' error'+(st.errors>1?'s':''); }
     else if(st.last){ cls='ok'; txt='Athena · '+(st.last.dir==='pull'?'pulled ':'synced ')+timeAgo(st.last.ts); }
     else { cls='idle'; txt='Athena · idle'; }
-    return '<span class="mls-sync mls-sync-'+cls+'" title="Athena sync status — click for details">'
+    return '<span class="mls-sync mls-sync-'+cls+'" data-tip="Athena sync status — click for details">'
       +'<span class="mls-sync-dot"></span>'+esc(txt)+'</span>';
   }
   function render(){
@@ -757,13 +759,23 @@
     var recs=extract(latestNoteText(id));
     var ov=document.createElement('div'); ov.id=OV;
     ov.innerHTML='<div class="mlsrec-panel" role="dialog" aria-label="Recommendations from note">'
-      +'<div class="mlsrec-head"><span class="mlsrec-h">Recommendations — '+esc(activeName()||'patient')+'</span><button type="button" id="mlsRecClose" class="mlsrec-x">✕</button></div>'
+      +'<div class="mlsrec-head"><span class="mlsrec-h">Recommendations — '+esc(activeName()||'patient')+'</span><span style="display:flex;gap:2px"><button type="button" id="mlsRecValidate" class="mlsrec-x" data-tip="Check these codes against your code sheet">🛡️</button><button type="button" id="mlsRecClose" class="mlsrec-x">✕</button></span></div>'
       +'<div class="mlsrec-hint">Auto-drawn from the latest note. One-click to act.</div>'
       +'<div id="mlsRecBody" class="mlsrec-body"></div></div>';
     document.body.appendChild(ov);
     ov.addEventListener('mousedown', function(e){ if(e.target===ov) close(); });
     document.getElementById('mlsRecClose').addEventListener('click', close);
     render(recs);
+    var vb=document.getElementById('mlsRecValidate');
+    if(vb){ if(window.__mlsCodeSheet&&window.__mlsCodeSheet.showValidation){ vb.addEventListener('click', function(){ window.__mlsCodeSheet.showValidation(latestNoteText(id), activeName()); }); } else { vb.style.display='none'; } }
+    // Optional guardrail: when 'validate AI codes' is on, flag off-sheet/retired codes inline.
+    safe(function(){ if(window.__mlsCodeSheet&&window.__mlsCodeSheet.constrainOn&&window.__mlsCodeSheet.constrainOn()){
+      var res=window.__mlsCodeSheet.validate(latestNoteText(id))||[]; var bad=res.filter(function(r){return r.status!=='approved';});
+      var body=document.getElementById('mlsRecBody');
+      if(body){ var d=document.createElement('div'); d.style.cssText='margin:0 0 12px;padding:9px 11px;border-radius:10px;font-size:12.5px;border:1px solid '+(bad.length?'#f0d6a8':'#bfe3cd')+';background:'+(bad.length?'#fdf6e7':'#eefaf1')+';color:'+(bad.length?'#7a5a00':'#1f6b3f')+'';
+        d.innerHTML=(bad.length? ('⚠ '+bad.length+' code(s) not on your approved sheet: '+bad.map(function(r){return esc(r.code);}).join(', ')+' — <b>click to review</b>') : '🛡️ All codes match your approved sheet.');
+        if(bad.length){ d.style.cursor='pointer'; d.addEventListener('click', function(){ window.__mlsCodeSheet.showValidation(latestNoteText(id), activeName()); }); }
+        body.insertBefore(d, body.firstChild); } } });
   }
   function close(){ var ov=document.getElementById(OV); if(ov) ov.remove(); }
   function injectCss(){
@@ -1208,7 +1220,7 @@
       if(!actions || !st){ if(existing) existing.remove(); return; }
       if(existing){ if(existing.getAttribute('data-st')===st) return; existing.remove(); }
       var span=document.createElement('span'); span.id='mlsSupCardChip'; span.setAttribute('data-st',st);
-      span.className='mls-sup-cardchip'; span.title='Supervision status'; span.innerHTML=badgeHtml(st);
+      span.className='mls-sup-cardchip'; span.setAttribute('data-tip','Supervision status'); span.innerHTML=badgeHtml(st);
       span.style.cssText='display:inline-flex;align-items:center;cursor:pointer';
       span.onclick=function(){ open(); };
       actions.insertBefore(span, actions.firstChild);
@@ -1463,3 +1475,450 @@
   window.__mlsLegalChain={ flagCase:flagCase, unflag:unflag, isFlagged:isFlagged, getFlags:getFlags, fee:feeHook };
 })();
 
+
+/* ---- module: feat_code_sheet.js ---- */
+
+/* ===== MLS Billing Code Sheet — optional prefilled/curated code set =====
+   A practice-maintained, editable billing code sheet (CPT procedures, ICD-10 diagnoses,
+   E/M levels, spinal levels, injectables), seeded from the practice's paper superbill.
+   Three jobs, all OPTIONAL and additive (the pure-AI path is untouched when unused):
+     1) MANAGE — open()  : edit/add/delete codes, import/export JSON, reset to seed,
+                            and toggle "validate AI codes against this sheet".
+     2) PICK    — pick()  : superbill-style checkbox quick-select for a visit; the picked
+                            codes copy as a clean block and/or insert into the note field.
+     3) GUARD   — validate(text) / when constrainAI is on: checks the codes that appear in a
+                  note against the approved set + a small retired-code map, flagging anything
+                  out-of-set, retired, or malformed so it never gets billed blind.
+   Pure parse/read/localStorage; never patches an app function. Exposes window.__mlsCodeSheet.
+   Storage: per-user localStorage key  sf_u::<email>::mlsCodeSheet  (mirrors other modules). */
+(function(){
+  'use strict';
+  if (window.__mlsCodeSheet) return;
+  var LSVER=1;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function email(){ return safe(function(){ if(window.bkUser&&window.bkUser.email) return window.bkUser.email; return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]||null; }, null); }
+  function lsKey(){ var e=email(); return e?('sf_u::'+e+'::mlsCodeSheet'):'sf_u::_local::mlsCodeSheet'; }
+  function toast(msg){ safe(function(){ if(window.toast){ window.toast(msg,'ok'); return; } var d=document.createElement('div'); d.textContent=msg; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1500); }); }
+  function copyTxt(txt){ safe(function(){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt); } else { var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } toast('Copied'); }); }
+
+  /* ---------- SEED (from the practice charge sheet: spine / pain / PM&R) ---------- */
+  function seed(){
+    return {
+      version:LSVER, constrainAI:false,
+      cpt:[
+        // Epidural steroid injections
+        {code:'64479',desc:'TFESI / transforaminal ESI — cervical or thoracic, single level',group:'Epidural steroid injection'},
+        {code:'64480',desc:'TFESI cervical/thoracic — each additional level (add-on)',group:'Epidural steroid injection'},
+        {code:'64483',desc:'TFESI / transforaminal ESI — lumbar or sacral, single level',group:'Epidural steroid injection'},
+        {code:'64484',desc:'TFESI lumbar/sacral — each additional level (add-on)',group:'Epidural steroid injection'},
+        {code:'62321',desc:'Interlaminar/caudal ESI — cervical or thoracic (with imaging)',group:'Epidural steroid injection'},
+        {code:'62323',desc:'Interlaminar/caudal ESI — lumbar or sacral (with imaging)',group:'Epidural steroid injection'},
+        // Facet / medial branch blocks
+        {code:'64490',desc:'Facet (medial branch) block — cervical or thoracic, 1st level',group:'Facet / medial branch block'},
+        {code:'64491',desc:'Facet block cervical/thoracic — 2nd level (add-on)',group:'Facet / medial branch block'},
+        {code:'64492',desc:'Facet block cervical/thoracic — 3rd+ level (add-on)',group:'Facet / medial branch block'},
+        {code:'64493',desc:'Facet (medial branch) block — lumbar or sacral, 1st level',group:'Facet / medial branch block'},
+        {code:'64494',desc:'Facet block lumbar/sacral — 2nd level (add-on)',group:'Facet / medial branch block'},
+        {code:'64495',desc:'Facet block lumbar/sacral — 3rd+ level (add-on)',group:'Facet / medial branch block'},
+        // Sacroiliac
+        {code:'27096',desc:'Sacroiliac joint injection (with imaging guidance)',group:'Sacroiliac injection'},
+        // Neurotomy / RF ablation
+        {code:'64633',desc:'RF ablation, facet joint nerve — cervical or thoracic, 1st joint',group:'Neurotomy (RF ablation)'},
+        {code:'64634',desc:'RF ablation cervical/thoracic — each additional joint (add-on)',group:'Neurotomy (RF ablation)'},
+        {code:'64635',desc:'RF ablation, facet joint nerve — lumbar or sacral, 1st joint',group:'Neurotomy (RF ablation)'},
+        {code:'64636',desc:'RF ablation lumbar/sacral — each additional joint (add-on)',group:'Neurotomy (RF ablation)'},
+        {code:'64640',desc:'Destruction of other peripheral nerve or branch',group:'Neurotomy (RF ablation)'},
+        // Tendon / joint / other
+        {code:'20610',desc:'Major joint or bursa injection (or supratrochanteric)',group:'Tendon / joint / other'},
+        {code:'20605',desc:'Intermediate joint/bursa injection (e.g., coccyx)',group:'Tendon / joint / other'},
+        {code:'20550',desc:'Tendon sheath / ligament injection',group:'Tendon / joint / other'},
+        {code:'77002',desc:'Fluoroscopic guidance for needle placement',group:'Tendon / joint / other'},
+        {code:'63650',desc:'Percutaneous implantation, neurostimulator electrode array',group:'Tendon / joint / other'}
+      ],
+      icd:[
+        // Disc disorder WITH MYELOPATHY
+        {code:'M50.01',desc:'Cervical disc disorder w/ myelopathy — C2–C4 (high cervical)',group:'Disc disorder — myelopathy'},
+        {code:'M50.021',desc:'Cervical disc disorder w/ myelopathy — C4–C5',group:'Disc disorder — myelopathy'},
+        {code:'M50.022',desc:'Cervical disc disorder w/ myelopathy — C5–C6',group:'Disc disorder — myelopathy'},
+        {code:'M50.023',desc:'Cervical disc disorder w/ myelopathy — C6–C7',group:'Disc disorder — myelopathy'},
+        {code:'M50.03',desc:'Cervical disc disorder w/ myelopathy — C7–T1 (cervicothoracic)',group:'Disc disorder — myelopathy'},
+        {code:'M51.04',desc:'Thoracic disc disorder w/ myelopathy',group:'Disc disorder — myelopathy'},
+        {code:'M51.05',desc:'Thoracolumbar disc disorder w/ myelopathy',group:'Disc disorder — myelopathy'},
+        {code:'M51.06',desc:'Lumbar disc disorder w/ myelopathy',group:'Disc disorder — myelopathy'},
+        {code:'M51.07',desc:'Lumbosacral disc disorder w/ myelopathy',group:'Disc disorder — myelopathy'},
+        // Disc disorder WITH RADICULOPATHY
+        {code:'M50.11',desc:'Cervical disc disorder w/ radiculopathy — C2–C4',group:'Disc disorder — radiculopathy'},
+        {code:'M50.121',desc:'Cervical disc disorder w/ radiculopathy — C4–C5',group:'Disc disorder — radiculopathy'},
+        {code:'M50.122',desc:'Cervical disc disorder w/ radiculopathy — C5–C6',group:'Disc disorder — radiculopathy'},
+        {code:'M50.123',desc:'Cervical disc disorder w/ radiculopathy — C6–C7',group:'Disc disorder — radiculopathy'},
+        {code:'M50.13',desc:'Cervical disc disorder w/ radiculopathy — C7–T1',group:'Disc disorder — radiculopathy'},
+        {code:'M51.14',desc:'Thoracic disc disorder w/ radiculopathy',group:'Disc disorder — radiculopathy'},
+        {code:'M51.15',desc:'Thoracolumbar disc disorder w/ radiculopathy',group:'Disc disorder — radiculopathy'},
+        {code:'M51.16',desc:'Lumbar disc disorder w/ radiculopathy',group:'Disc disorder — radiculopathy'},
+        {code:'M51.17',desc:'Lumbosacral disc disorder w/ radiculopathy',group:'Disc disorder — radiculopathy'},
+        // Spondylosis WITH MYELOPATHY
+        {code:'M47.12',desc:'Spondylosis w/ myelopathy — cervical',group:'Spondylosis — myelopathy'},
+        {code:'M47.13',desc:'Spondylosis w/ myelopathy — cervicothoracic',group:'Spondylosis — myelopathy'},
+        {code:'M47.14',desc:'Spondylosis w/ myelopathy — thoracic',group:'Spondylosis — myelopathy'},
+        {code:'M47.15',desc:'Spondylosis w/ myelopathy — thoracolumbar',group:'Spondylosis — myelopathy'},
+        {code:'M47.16',desc:'Spondylosis w/ myelopathy — lumbar',group:'Spondylosis — myelopathy'},
+        {code:'M47.17',desc:'Spondylosis w/ myelopathy — lumbosacral',group:'Spondylosis — myelopathy'},
+        {code:'M47.18',desc:'Spondylosis w/ myelopathy — sacral / sacrococcygeal',group:'Spondylosis — myelopathy'},
+        // Spondylosis WITH RADICULOPATHY
+        {code:'M47.22',desc:'Spondylosis w/ radiculopathy — cervical',group:'Spondylosis — radiculopathy'},
+        {code:'M47.23',desc:'Spondylosis w/ radiculopathy — cervicothoracic',group:'Spondylosis — radiculopathy'},
+        {code:'M47.24',desc:'Spondylosis w/ radiculopathy — thoracic',group:'Spondylosis — radiculopathy'},
+        {code:'M47.25',desc:'Spondylosis w/ radiculopathy — thoracolumbar',group:'Spondylosis — radiculopathy'},
+        {code:'M47.26',desc:'Spondylosis w/ radiculopathy — lumbar',group:'Spondylosis — radiculopathy'},
+        {code:'M47.27',desc:'Spondylosis w/ radiculopathy — lumbosacral',group:'Spondylosis — radiculopathy'},
+        {code:'M47.28',desc:'Spondylosis w/ radiculopathy — sacral / sacrococcygeal',group:'Spondylosis — radiculopathy'},
+        // Spondylosis WITHOUT myelopathy/radiculopathy = facet syndrome
+        {code:'M47.812',desc:'Spondylosis w/o myelo/radiculopathy (facet) — cervical',group:'Facet syndrome (M47.81-)'},
+        {code:'M47.813',desc:'Spondylosis w/o myelo/radiculopathy (facet) — cervicothoracic',group:'Facet syndrome (M47.81-)'},
+        {code:'M47.814',desc:'Spondylosis w/o myelo/radiculopathy (facet) — thoracic',group:'Facet syndrome (M47.81-)'},
+        {code:'M47.815',desc:'Spondylosis w/o myelo/radiculopathy (facet) — thoracolumbar',group:'Facet syndrome (M47.81-)'},
+        {code:'M47.816',desc:'Spondylosis w/o myelo/radiculopathy (facet) — lumbar',group:'Facet syndrome (M47.81-)'},
+        {code:'M47.817',desc:'Spondylosis w/o myelo/radiculopathy (facet) — lumbosacral',group:'Facet syndrome (M47.81-)'},
+        {code:'M47.818',desc:'Spondylosis w/o myelo/radiculopathy (facet) — sacral / sacrococcygeal',group:'Facet syndrome (M47.81-)'},
+        // Spondylolisthesis
+        {code:'M43.12',desc:'Spondylolisthesis — cervical',group:'Spondylolisthesis'},
+        {code:'M43.13',desc:'Spondylolisthesis — cervicothoracic',group:'Spondylolisthesis'},
+        {code:'M43.14',desc:'Spondylolisthesis — thoracic',group:'Spondylolisthesis'},
+        {code:'M43.15',desc:'Spondylolisthesis — thoracolumbar',group:'Spondylolisthesis'},
+        {code:'M43.16',desc:'Spondylolisthesis — lumbar',group:'Spondylolisthesis'},
+        {code:'M43.17',desc:'Spondylolisthesis — lumbosacral',group:'Spondylolisthesis'},
+        // Spinal stenosis
+        {code:'M48.02',desc:'Spinal stenosis — cervical',group:'Spinal stenosis'},
+        {code:'M48.03',desc:'Spinal stenosis — cervicothoracic',group:'Spinal stenosis'},
+        {code:'M48.04',desc:'Spinal stenosis — thoracic',group:'Spinal stenosis'},
+        {code:'M48.05',desc:'Spinal stenosis — thoracolumbar',group:'Spinal stenosis'},
+        {code:'M48.061',desc:'Spinal stenosis — lumbar, w/o neurogenic claudication',group:'Spinal stenosis'},
+        {code:'M48.062',desc:'Spinal stenosis — lumbar, w/ neurogenic claudication',group:'Spinal stenosis'},
+        {code:'M48.07',desc:'Spinal stenosis — lumbosacral',group:'Spinal stenosis'},
+        {code:'M48.08',desc:'Spinal stenosis — sacral / sacrococcygeal',group:'Spinal stenosis'},
+        // Symptoms & misc
+        {code:'M54.2',desc:'Cervicalgia',group:'Symptoms & misc'},
+        {code:'M54.6',desc:'Pain in thoracic spine',group:'Symptoms & misc'},
+        {code:'M54.41',desc:'Lumbago with sciatica, right side',group:'Symptoms & misc'},
+        {code:'M54.42',desc:'Lumbago with sciatica, left side',group:'Symptoms & misc'},
+        {code:'M79.1',desc:'Myalgia / myofascial pain',group:'Symptoms & misc'},
+        {code:'M96.1',desc:'Postlaminectomy syndrome, NEC',group:'Symptoms & misc'},
+        {code:'M53.3',desc:'Sacrococcygeal disorders, NEC (coccygodynia; SI dysfunction per sheet)',group:'Symptoms & misc'},
+        {code:'M46.1',desc:'Sacroiliitis, NEC',group:'Symptoms & misc'},
+        {code:'S33.6XXA',desc:'Sprain of sacroiliac joint, initial encounter',group:'Symptoms & misc'},
+        {code:'M53.2X8',desc:'Spinal instabilities, sacral and sacrococcygeal region',group:'Symptoms & misc'},
+        {code:'G89.4',desc:'Chronic pain syndrome',group:'Symptoms & misc'},
+        // Hip
+        {code:'M16.11',desc:'Unilateral primary osteoarthritis, right hip',group:'Hip'},
+        {code:'M16.12',desc:'Unilateral primary osteoarthritis, left hip',group:'Hip'},
+        {code:'M16.0',desc:'Bilateral primary osteoarthritis of hip',group:'Hip'},
+        {code:'M70.71',desc:'Other bursitis of hip (iliopsoas), right',group:'Hip'},
+        {code:'M70.72',desc:'Other bursitis of hip (iliopsoas), left',group:'Hip'},
+        {code:'M25.551',desc:'Pain in right hip',group:'Hip'},
+        {code:'M25.552',desc:'Pain in left hip',group:'Hip'}
+      ],
+      em:[
+        {code:'99202',desc:'New patient — straightforward MDM (15–29 min)'},
+        {code:'99203',desc:'New patient — low MDM (30–44 min)'},
+        {code:'99204',desc:'New patient — moderate MDM (45–59 min)'},
+        {code:'99205',desc:'New patient — high MDM (60–74 min)'},
+        {code:'99211',desc:'Established — minimal (may not require physician)'},
+        {code:'99212',desc:'Established — straightforward MDM (10–19 min)'},
+        {code:'99213',desc:'Established — low MDM (20–29 min)'},
+        {code:'99214',desc:'Established — moderate MDM (30–39 min)'},
+        {code:'99215',desc:'Established — high MDM (40–54 min)'}
+      ],
+      levels:['Cervical','Cervicothoracic','Thoracic','Thoracolumbar','Lumbar','Lumbosacral','Sacral / sacrococcygeal',
+              'C2–C3','C3–C4','C4–C5','C5–C6','C6–C7','C7–T1','T11–T12','T12–L1','L1–L2','L2–L3','L3–L4','L4–L5','L5–S1','S1–S2'],
+      meds:[
+        {name:'Celestone (betamethasone)',detail:'3 mg / 0.5 cc per unit'},
+        {name:'Marcaine (bupivacaine)',detail:'max 1 unit'},
+        {name:'Kenalog (triamcinolone)',detail:'1 mg per unit'},
+        {name:'Decadron (dexamethasone)',detail:'1 mg per unit'},
+        {name:'Depo-Medrol (methylprednisolone)',detail:'40 mg per unit / cc'}
+      ]
+    };
+  }
+  /* Retired / superseded codes — flagged by the guardrail with replacement guidance. */
+  var RETIRED={
+    'M54.5':'Deleted 1 Oct 2021 — use M54.50 (LBP, unspecified), M54.51 (vertebrogenic LBP), or M54.59 (other LBP). M54.5 now denies.',
+    '99201':'Deleted 2021 — report 99202 for a level-1 new-patient visit.',
+    '64622':'Legacy facet RF code — current codes are 64633–64636.',
+    '64623':'Legacy facet RF add-on — current codes are 64633–64636.',
+    '64626':'Legacy facet RF code — current codes are 64633–64636.',
+    '64627':'Legacy facet RF add-on — current codes are 64633–64636.'
+  };
+
+  /* ---------- state ---------- */
+  function load(){
+    var raw=safe(function(){ return localStorage.getItem(lsKey()); }, null);
+    if(!raw) return seed();
+    var v=safe(function(){ return JSON.parse(raw); }, null);
+    if(!v || typeof v!=='object' || !Array.isArray(v.cpt) || !Array.isArray(v.icd)) return seed();
+    if(typeof v.constrainAI!=='boolean') v.constrainAI=false;
+    ['em','levels','meds'].forEach(function(k){ if(!Array.isArray(v[k])) v[k]=seed()[k]; });
+    return v;
+  }
+  function save(v){ safe(function(){ localStorage.setItem(lsKey(), JSON.stringify(v)); }); }
+  var state=load();
+  function constrainOn(){ return !!(state&&state.constrainAI); }
+
+  /* approved-code lookup (CPT+ICD+EM), normalized */
+  function norm(c){ return String(c||'').toUpperCase().replace(/\s+/g,''); }
+  function approvedSet(){
+    var s={};
+    (state.cpt||[]).forEach(function(r){ if(r&&r.code) s[norm(r.code)]={kind:'CPT',desc:r.desc}; });
+    (state.em||[]).forEach(function(r){ if(r&&r.code) s[norm(r.code)]={kind:'E/M',desc:r.desc}; });
+    (state.icd||[]).forEach(function(r){ if(r&&r.code) s[norm(r.code)]={kind:'ICD-10',desc:r.desc}; });
+    return s;
+  }
+
+  /* ---------- guardrail: validate codes that appear in a note/text ---------- */
+  function scanCodes(text){
+    text=String(text||'');
+    var icd=(text.match(/\b[A-TV-Z]\d\d(?:\.[A-Z0-9]{1,4})?\b/g)||[]).filter(function(c){ return /\.[A-Z0-9]/.test(c) || /^[A-TV-Z]\d\d$/.test(c); });
+    var cpt=(text.match(/\b\d{5}\b/g)||[]).filter(function(c){ var n=+c; return n>=10000&&n<=99499; });
+    var all=[], seen={};
+    icd.concat(cpt).forEach(function(c){ var k=norm(c); if(!seen[k]){ seen[k]=1; all.push(c); } });
+    return all;
+  }
+  function validate(text){
+    var codes=scanCodes(text), set=approvedSet(), out=[];
+    codes.forEach(function(c){
+      var k=norm(c), r;
+      if(RETIRED[k]) r={code:c,status:'retired',note:RETIRED[k]};
+      else if(set[k]) r={code:c,status:'approved',note:set[k].kind+' · '+set[k].desc};
+      else r={code:c,status:'unknown',note:'Not in your approved code sheet — verify before billing.'};
+      out.push(r);
+    });
+    return out;
+  }
+
+  /* ---------- shared overlay scaffold ---------- */
+  function injectCss(){
+    if(document.getElementById('mlsCsCss')) return;
+    var s=document.createElement('style'); s.id='mlsCsCss';
+    s.textContent=
+      '.mlscs-ov{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.42);display:flex;align-items:flex-start;justify-content:center;padding:7vh 16px 16px;backdrop-filter:blur(2px);}'
+      +'.mlscs-panel{width:100%;max-width:760px;max-height:84vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
+      +'.mlscs-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px 10px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'.mlscs-h{font-weight:700;font-size:15.5px;color:var(--ink,#15293f);display:flex;align-items:center;gap:8px;}'
+      +'.mlscs-x{border:0;background:transparent;font-size:17px;cursor:pointer;color:var(--muted,#7c8aa0);padding:4px 7px;border-radius:8px;}'
+      +'.mlscs-x:hover{background:var(--surface,#f1f4f9);}'
+      +'.mlscs-tools{display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'.mlscs-search{flex:1;min-width:140px;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line,#e6e9ef);border-radius:9px;background:var(--surface,#fafcff);color:var(--ink,#15293f);}'
+      +'.mlscs-btn{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--brand,#2563c9);border-radius:9px;padding:7px 12px;}'
+      +'.mlscs-btn:hover{filter:brightness(.98);background:var(--surface,#f1f4f9);}'
+      +'.mlscs-btn.pri{background:var(--brand,#2563c9);color:#fff;border-color:var(--brand,#2563c9);}'
+      +'.mlscs-btn.danger{color:#b42318;border-color:#f0c5c0;}'
+      +'.mlscs-toggle{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:12.5px;color:var(--ink,#15293f);}'
+      +'.mlscs-body{overflow:auto;padding:8px 16px 16px;}'
+      +'.mlscs-sec{margin-top:14px;}'
+      +'.mlscs-sectitle{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#7c8aa0);margin:6px 0 6px;display:flex;align-items:center;gap:8px;}'
+      +'.mlscs-row{display:flex;align-items:center;gap:9px;padding:6px 6px;border-radius:9px;}'
+      +'.mlscs-row:hover{background:var(--surface,#f7f9fc);}'
+      +'.mlscs-code{font-weight:700;font-size:13px;color:var(--ink,#15293f);min-width:74px;font-variant-numeric:tabular-nums;}'
+      +'.mlscs-desc{font-size:12.7px;color:var(--muted,#56657a);flex:1;min-width:0;}'
+      +'.mlscs-rowact{display:flex;gap:4px;flex:0 0 auto;opacity:.55;}'
+      +'.mlscs-row:hover .mlscs-rowact{opacity:1;}'
+      +'.mlscs-mini{border:0;background:transparent;cursor:pointer;font-size:12px;color:var(--muted,#7c8aa0);padding:3px 6px;border-radius:7px;}'
+      +'.mlscs-mini:hover{background:var(--line,#e6e9ef);color:var(--ink,#15293f);}'
+      +'.mlscs-chk{width:16px;height:16px;flex:0 0 auto;accent-color:var(--brand,#2563c9);cursor:pointer;}'
+      +'.mlscs-foot{display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);}'
+      +'.mlscs-tray{flex:1;min-width:0;font-size:12.5px;color:var(--ink,#15293f);}'
+      +'.mlscs-empty{padding:24px 12px;text-align:center;color:var(--muted,#7c8aa0);font-size:13.5px;}'
+      +'.mlscs-vrow{display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid var(--line,#e6e9ef);border-radius:10px;margin-bottom:7px;}'
+      +'.mlscs-vdot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}'
+      +'.mlscs-vok .mlscs-vdot{background:#1f9d57;} .mlscs-vunk .mlscs-vdot{background:#d98a00;} .mlscs-vret .mlscs-vdot{background:#d64545;}'
+      +'.mlscs-vcode{font-weight:700;font-size:13px;min-width:72px;color:var(--ink,#15293f);}'
+      +'.mlscs-vnote{font-size:12.3px;color:var(--muted,#56657a);flex:1;min-width:0;}'
+      +'.mlscs-badge{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:999px;flex:0 0 auto;}'
+      +'.mlscs-vok .mlscs-badge{background:#e7f6ee;color:#1f7a45;} .mlscs-vunk .mlscs-badge{background:#fdf3e0;color:#9a6700;} .mlscs-vret .mlscs-badge{background:#fbe9e9;color:#b42318;}'
+      +'@media (max-width:680px){.mlscs-panel{max-height:92vh;}}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+  var OV=null;
+  function shell(titleHtml){
+    injectCss(); close();
+    OV=document.createElement('div'); OV.className='mlscs-ov';
+    OV.innerHTML='<div class="mlscs-panel" role="dialog" aria-label="Billing code sheet">'
+      +'<div class="mlscs-head"><span class="mlscs-h">'+titleHtml+'</span><button type="button" class="mlscs-x" id="mlsCsX">✕</button></div>'
+      +'<div id="mlsCsTop"></div><div class="mlscs-body" id="mlsCsBody"></div><div id="mlsCsFoot"></div></div>';
+    document.body.appendChild(OV);
+    OV.addEventListener('mousedown',function(e){ if(e.target===OV) close(); });
+    document.getElementById('mlsCsX').addEventListener('click', close);
+    return OV;
+  }
+  function close(){ if(OV&&OV.parentNode) OV.parentNode.removeChild(OV); OV=null; }
+  function groupBy(arr){ var g={},order=[]; (arr||[]).forEach(function(r){ var k=r.group||'Other'; if(!g[k]){g[k]=[];order.push(k);} g[k].push(r); }); return {g:g,order:order}; }
+
+  /* ============================ MANAGER ============================ */
+  function open(){
+    var ov=shell('🧾 Billing code sheet');
+    document.getElementById('mlsCsTop').innerHTML=
+      '<div class="mlscs-tools">'
+      +'<input id="mlsCsSearch" class="mlscs-search" placeholder="Filter codes or descriptions…">'
+      +'<button type="button" class="mlscs-btn" id="mlsCsAdd">+ Add code</button>'
+      +'<button type="button" class="mlscs-btn" id="mlsCsExport">Export</button>'
+      +'<button type="button" class="mlscs-btn" id="mlsCsImport">Import</button>'
+      +'<button type="button" class="mlscs-btn danger" id="mlsCsReset">Reset to sheet</button>'
+      +'<label class="mlscs-toggle"><input type="checkbox" id="mlsCsConstrain" '+(constrainOn()?'checked':'')+'> Validate AI codes against this sheet</label>'
+      +'</div>';
+    var foot=document.getElementById('mlsCsFoot');
+    foot.innerHTML='<div class="mlscs-foot"><span class="mlscs-tray" id="mlsCsCount"></span>'
+      +'<button type="button" class="mlscs-btn pri" id="mlsCsPickFromMgr">Pick codes for a visit →</button></div>';
+    renderManager('');
+    var sc=document.getElementById('mlsCsSearch'); if(sc) sc.addEventListener('input', function(){ renderManager(sc.value); });
+    document.getElementById('mlsCsAdd').addEventListener('click', addCodePrompt);
+    document.getElementById('mlsCsExport').addEventListener('click', exportSheet);
+    document.getElementById('mlsCsImport').addEventListener('click', importSheet);
+    document.getElementById('mlsCsReset').addEventListener('click', function(){ if(confirm('Reset the code sheet to the practice defaults? Your edits will be replaced.')){ state=seed(); save(state); renderManager(''); toast('Reset to defaults'); } });
+    document.getElementById('mlsCsConstrain').addEventListener('change', function(e){ state.constrainAI=!!e.target.checked; save(state); toast(state.constrainAI?'AI codes will be validated':'Validation off'); });
+    document.getElementById('mlsCsPickFromMgr').addEventListener('click', pick);
+  }
+  function renderManager(filter){
+    var body=document.getElementById('mlsCsBody'); if(!body) return;
+    var q=(filter||'').toLowerCase().trim();
+    function match(r){ if(!q) return true; return (String(r.code||r.name||'')+' '+String(r.desc||r.detail||'')).toLowerCase().indexOf(q)>=0; }
+    var total=(state.cpt.length+state.icd.length+state.em.length);
+    var cnt=document.getElementById('mlsCsCount'); if(cnt) cnt.textContent=total+' billable codes · '+state.cpt.length+' CPT · '+state.icd.length+' ICD-10 · '+state.em.length+' E/M';
+    var html='';
+    html+=sectionHtml('CPT — procedures','cpt',state.cpt.filter(match),true);
+    html+=sectionHtml('E/M levels','em',state.em.filter(match),false);
+    html+=sectionHtml('ICD-10 — diagnoses','icd',state.icd.filter(match),true);
+    // levels + meds (reference lists)
+    html+='<div class="mlscs-sec"><div class="mlscs-sectitle">Spinal levels</div><div class="mlscs-desc" style="padding:0 6px">'+ (state.levels||[]).map(esc).join(' · ') +'</div></div>';
+    html+='<div class="mlscs-sec"><div class="mlscs-sectitle">Injectables</div>'+ (state.meds||[]).map(function(m){ return '<div class="mlscs-row"><span class="mlscs-desc">'+esc(m.name)+' — '+esc(m.detail||'')+'</span></div>'; }).join('') +'</div>';
+    body.innerHTML=html||'<div class="mlscs-empty">No codes match “'+esc(filter)+'”.</div>';
+    bindManagerRows();
+  }
+  function sectionHtml(title,kind,rows,grouped){
+    if(!rows.length) return '';
+    var html='<div class="mlscs-sec"><div class="mlscs-sectitle">'+esc(title)+' ('+rows.length+')</div>';
+    if(grouped){ var gb=groupBy(rows); gb.order.forEach(function(gname){
+      html+='<div class="mlscs-sectitle" style="font-weight:700;text-transform:none;letter-spacing:0;color:var(--ink,#15293f);opacity:.7;margin-top:8px">'+esc(gname)+'</div>';
+      gb.g[gname].forEach(function(r){ html+=mgrRow(kind,r); });
+    }); }
+    else rows.forEach(function(r){ html+=mgrRow(kind,r); });
+    return html+'</div>';
+  }
+  function mgrRow(kind,r){
+    return '<div class="mlscs-row" data-kind="'+kind+'" data-code="'+esc(r.code)+'">'
+      +'<span class="mlscs-code">'+esc(r.code)+'</span><span class="mlscs-desc">'+esc(r.desc||'')+'</span>'
+      +'<span class="mlscs-rowact"><button type="button" class="mlscs-mini" data-act="edit">Edit</button><button type="button" class="mlscs-mini" data-act="del">✕</button></span></div>';
+  }
+  function bindManagerRows(){
+    var body=document.getElementById('mlsCsBody'); if(!body) return;
+    body.querySelectorAll('.mlscs-mini').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var row=btn.closest('.mlscs-row'); var kind=row.getAttribute('data-kind'), code=row.getAttribute('data-code');
+        var arr=state[kind]; var idx=arr.findIndex(function(x){ return String(x.code)===code; });
+        if(idx<0) return;
+        if(btn.getAttribute('data-act')==='del'){ if(confirm('Remove '+code+'?')){ arr.splice(idx,1); save(state); renderManager(document.getElementById('mlsCsSearch').value); } }
+        else { var nd=prompt('Edit description for '+code+':', arr[idx].desc||''); if(nd!=null){ arr[idx].desc=nd; save(state); renderManager(document.getElementById('mlsCsSearch').value); } }
+      });
+    });
+  }
+  function addCodePrompt(){
+    var kind=prompt('Add to which list? Type: cpt, icd, or em','cpt'); if(!kind) return; kind=kind.toLowerCase().trim();
+    if(['cpt','icd','em'].indexOf(kind)<0){ toast('Use cpt, icd, or em'); return; }
+    var code=prompt('Code (e.g. 64483 or M54.51):',''); if(!code) return; code=code.trim();
+    if(state[kind].some(function(x){ return norm(x.code)===norm(code); })){ toast('Already on the sheet'); return; }
+    var desc=prompt('Description:','')||'';
+    var rec={code:code,desc:desc}; if(kind!=='em') rec.group=(prompt('Group/category (optional):','')||'Other');
+    state[kind].push(rec); save(state); renderManager(''); toast('Added '+code);
+  }
+  function exportSheet(){
+    var blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='mls-code-sheet.json'; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },300); toast('Exported');
+  }
+  function importSheet(){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='application/json,.json';
+    inp.addEventListener('change', function(){ var f=inp.files&&inp.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=function(){ var v=safe(function(){ return JSON.parse(rd.result); },null); if(!v||!Array.isArray(v.cpt)||!Array.isArray(v.icd)){ toast('Not a valid code sheet'); return; } if(typeof v.constrainAI!=='boolean') v.constrainAI=state.constrainAI; ['em','levels','meds'].forEach(function(k){ if(!Array.isArray(v[k])) v[k]=state[k]; }); state=v; save(state); renderManager(''); toast('Imported'); }; rd.readAsText(f); });
+    inp.click();
+  }
+
+  /* ============================ SUPERBILL PICKER ============================ */
+  var picked={};
+  function pick(){
+    picked={};
+    var ov=shell('☑️ Pick visit codes');
+    document.getElementById('mlsCsTop').innerHTML='<div class="mlscs-tools"><input id="mlsCsPSearch" class="mlscs-search" placeholder="Filter…"><span class="mlscs-toggle" style="margin-left:auto;color:var(--muted,#7c8aa0);font-size:12px">Tick codes like a paper superbill</span></div>';
+    document.getElementById('mlsCsFoot').innerHTML='<div class="mlscs-foot"><span class="mlscs-tray" id="mlsCsPicked">No codes selected.</span>'
+      +'<button type="button" class="mlscs-btn" id="mlsCsCopy">Copy selected</button>'
+      +'<button type="button" class="mlscs-btn pri" id="mlsCsInsert">Insert into note</button></div>';
+    renderPicker('');
+    var sc=document.getElementById('mlsCsPSearch'); if(sc) sc.addEventListener('input', function(){ renderPicker(sc.value); });
+    document.getElementById('mlsCsCopy').addEventListener('click', function(){ copyTxt(selectedBlock()); });
+    document.getElementById('mlsCsInsert').addEventListener('click', insertIntoNote);
+  }
+  function renderPicker(filter){
+    var body=document.getElementById('mlsCsBody'); if(!body) return;
+    var q=(filter||'').toLowerCase().trim();
+    function match(r){ if(!q) return true; return (String(r.code||'')+' '+String(r.desc||'')).toLowerCase().indexOf(q)>=0; }
+    function pickSec(title,kind,rows,grouped){
+      rows=rows.filter(match); if(!rows.length) return '';
+      var html='<div class="mlscs-sec"><div class="mlscs-sectitle">'+esc(title)+'</div>';
+      function rowHtml(r){ var id=kind+'::'+r.code; return '<label class="mlscs-row"><input type="checkbox" class="mlscs-chk" data-id="'+esc(id)+'" data-kind="'+kind+'" data-code="'+esc(r.code)+'" '+(picked[id]?'checked':'')+'><span class="mlscs-code">'+esc(r.code)+'</span><span class="mlscs-desc">'+esc(r.desc||'')+'</span></label>'; }
+      if(grouped){ var gb=groupBy(rows); gb.order.forEach(function(g){ html+='<div class="mlscs-sectitle" style="font-weight:700;text-transform:none;letter-spacing:0;opacity:.65;color:var(--ink,#15293f);margin-top:6px">'+esc(g)+'</div>'; gb.g[g].forEach(function(r){ html+=rowHtml(r); }); }); }
+      else rows.forEach(function(r){ html+=rowHtml(r); });
+      return html+'</div>';
+    }
+    body.innerHTML=pickSec('E/M level','em',state.em,false)+pickSec('CPT — procedures','cpt',state.cpt,true)+pickSec('ICD-10 — diagnoses','icd',state.icd,true) || '<div class="mlscs-empty">No matches.</div>';
+    body.querySelectorAll('.mlscs-chk').forEach(function(ch){ ch.addEventListener('change', function(){ var id=ch.getAttribute('data-id'); if(ch.checked) picked[id]={kind:ch.getAttribute('data-kind'),code:ch.getAttribute('data-code')}; else delete picked[id]; updateTray(); }); });
+    updateTray();
+  }
+  function selectedList(){
+    var arr=[]; Object.keys(picked).forEach(function(id){ var p=picked[id]; var rec=(state[p.kind]||[]).find(function(x){ return String(x.code)===String(p.code); }); if(rec) arr.push({kind:p.kind,code:rec.code,desc:rec.desc}); });
+    var rank={em:0,cpt:1,icd:2}; arr.sort(function(a,b){ return (rank[a.kind]-rank[b.kind]); });
+    return arr;
+  }
+  function selectedBlock(){
+    var arr=selectedList(); if(!arr.length) return '';
+    var em=arr.filter(function(x){return x.kind==='em';}), cpt=arr.filter(function(x){return x.kind==='cpt';}), icd=arr.filter(function(x){return x.kind==='icd';});
+    var lines=['BILLING CODES'];
+    if(em.length) lines.push('E/M: '+em.map(function(x){return x.code;}).join(', '));
+    if(cpt.length){ lines.push('CPT:'); cpt.forEach(function(x){ lines.push('  '+x.code+' — '+x.desc); }); }
+    if(icd.length){ lines.push('ICD-10:'); icd.forEach(function(x){ lines.push('  '+x.code+' — '+x.desc); }); }
+    return lines.join('\n');
+  }
+  function updateTray(){
+    var t=document.getElementById('mlsCsPicked'); if(!t) return; var arr=selectedList();
+    t.textContent=arr.length?(arr.length+' selected: '+arr.map(function(x){return x.code;}).join(', ')):'No codes selected.';
+  }
+  function insertIntoNote(){
+    var block=selectedBlock(); if(!block){ toast('Select some codes first'); return; }
+    var field=safe(function(){ return document.getElementById('noteText')||document.getElementById('clinicalNote')||document.querySelector('textarea[data-note-body], textarea.note, #visitNote'); }, null);
+    if(field && ('value' in field)){
+      var cur=field.value||''; field.value=cur+(cur && !/\n$/.test(cur)?'\n\n':'')+block+'\n';
+      safe(function(){ field.dispatchEvent(new Event('input',{bubbles:true})); field.dispatchEvent(new Event('change',{bubbles:true})); });
+      field.focus(); toast('Inserted into note'); close();
+    } else { copyTxt(block); toast('No note field open — copied instead'); }
+  }
+
+  /* ============================ GUARDRAIL VIEW ============================ */
+  function showValidation(text, ctx){
+    var results=validate(text);
+    var ov=shell('🛡️ Code check'+(ctx?' — '+esc(ctx):''));
+    document.getElementById('mlsCsTop').innerHTML='';
+    var body=document.getElementById('mlsCsBody');
+    if(!results.length){ body.innerHTML='<div class="mlscs-empty">No ICD-10 or CPT codes found in the note to check.</div>'; document.getElementById('mlsCsFoot').innerHTML=''; return; }
+    var bad=results.filter(function(r){return r.status!=='approved';}).length;
+    var summary=bad? ('<div class="mlscs-sectitle" style="color:#9a6700">'+bad+' of '+results.length+' code(s) need a look — not on your approved sheet or retired.</div>')
+                   : ('<div class="mlscs-sectitle" style="color:#1f7a45">All '+results.length+' codes match your approved sheet. ✓</div>');
+    var rows=results.map(function(r){
+      var cls=r.status==='approved'?'mlscs-vok':(r.status==='retired'?'mlscs-vret':'mlscs-vunk');
+      var badge=r.status==='approved'?'Approved':(r.status==='retired'?'Retired':'Off-sheet');
+      return '<div class="mlscs-vrow '+cls+'"><span class="mlscs-vdot"></span><span class="mlscs-vcode">'+esc(r.code)+'</span><span class="mlscs-vnote">'+esc(r.note)+'</span><span class="mlscs-badge">'+badge+'</span></div>';
+    }).join('');
+    body.innerHTML=summary+rows;
+    document.getElementById('mlsCsFoot').innerHTML='<div class="mlscs-foot"><span class="mlscs-tray">Validation is advisory — the provider confirms all codes.</span><button type="button" class="mlscs-btn" id="mlsCsOpenMgr">Open code sheet</button></div>';
+    var b=document.getElementById('mlsCsOpenMgr'); if(b) b.addEventListener('click', open);
+  }
+
+  window.__mlsCodeSheet={
+    open:open, pick:pick, validate:validate, showValidation:showValidation,
+    constrainOn:constrainOn, getState:function(){ return state; }, _seed:seed, _scan:scanCodes
+  };
+})();
