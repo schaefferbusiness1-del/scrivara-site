@@ -309,46 +309,46 @@
     });
   });
 
-  // --- insert into the focused EMR field (v1.27: patient-gated, section-routed) ---
-  // v1.27 — robust, VERIFIED text entry (same logic as background mlsRobustType):
-  // native setter/execCommand -> simulated paste -> per-character keystrokes, re-reading
-  // after each so we never claim success when a controlled input rejected the write.
-  function _robustType(el, txt) {
+  // --- insert into the focused EMR field (v1.28: patient-gated, section-routed) ---
+  // v1.28 — hardened, VERIFIED text entry (same logic as background mlsRobustType):
+  // resolves a real editable field from a label/wrapper, clicks+focuses, native-setter ->
+  // simulated paste -> per-character keystrokes (mask-aware), then selects a matching
+  // typeahead suggestion, and re-reads after a settle + blur to confirm. Returns a boolean.
+  async function _robustType(el, txt) {
     txt = String(txt == null ? '' : txt);
-    function rd() { return el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || ''); }
-    function landed() { var cur = rd(); if (!cur) return false; var pb = txt.replace(/\s+/g, ' ').trim().slice(0, 30); return cur.replace(/\s+/g, ' ').indexOf(pb) >= 0 || cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
-    function setNative(v) { if (el.isContentEditable) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+    var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+    function _isEd(e) { if (!e || !e.tagName) return false; if (e.isContentEditable) return true; var tg = e.tagName.toUpperCase(); if (tg === 'TEXTAREA') return true; if (tg === 'INPUT') { var t = (e.getAttribute('type') || 'text').toLowerCase(); return /^(text|search|email|url|tel|number|password|date|month|week|time|datetime-local|)$/.test(t); } return false; }
+    function _resolve(e) { if (_isEd(e)) return e; if (!e || !e.tagName) return e; try { if (e.tagName.toUpperCase() === 'LABEL') { var f = e.getAttribute('for'); if (f) { var byId = document.getElementById(f); if (_isEd(byId)) return byId; } var within = e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(within)) return within; } } catch (e2) {} try { var n = e.querySelector && e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(n)) return n; } catch (e3) {} try { var p = e.parentElement, d = 0; while (p && d < 3) { var inp = p.querySelector && p.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(inp)) return inp; p = p.parentElement; d++; } } catch (e5) {} return e; }
+    el = _resolve(el);
+    if (!el || !_isEd(el) || el.readOnly || el.disabled) return false;
+    var CE = !!el.isContentEditable;
+    function rd() { return CE ? (el.innerText || el.textContent || '') : (el.value || ''); }
+    function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+    function digits(s) { return String(s || '').replace(/\D/g, ''); }
+    function isMasked() { try { if (CE) return false; var t = (el.getAttribute('type') || '').toLowerCase(); if (t === 'date' || t === 'tel') return true; var ph = el.getAttribute('placeholder') || ''; if (/[\/\-.]/.test(ph) && /[mdyhMDYH#0_]/.test(ph)) return true; if (el.getAttribute('inputmode') === 'numeric') return true; if (el.getAttribute('data-mask') || el.getAttribute('pattern')) return true; var ml = el.maxLength; if (ml && ml > 0 && ml <= 12 && /[\/\-.]/.test(ph)) return true; } catch (e) {} return false; }
+    var masked = isMasked();
+    function landed() { var cur = rd(); if (!cur && txt) return false; var a = norm(cur), b = norm(txt); if (!b) return true; if (a.indexOf(b.slice(0, Math.min(b.length, 40))) >= 0) return true; if (masked) { var dc = digits(cur), dt = digits(txt); if (dt && dc.indexOf(dt) >= 0) return true; } return cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
+    function setNative(v) { if (CE) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+    function fireInput(data, type) { try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: type || 'insertText', data: data })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} } }
+    function clearField() { try { if (!CE && el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length); } catch (e) {} setNative(''); fireInput('', 'deleteContentBackward'); }
+    function _vis(e) { try { var r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (e2) { return true; } }
     try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
     try { el.click(); } catch (e) {}
     try { el.focus(); } catch (e) {}
-    try {
-      try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
-      if (el.isContentEditable) {
-        try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
-        try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {}
-        var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) { setNative(txt); }
-      } else { setNative(txt); }
-      try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: txt })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
-      try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-      try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
-    } catch (e) {}
-    if (landed()) return true;
-    try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: txt })); } catch (e) {} try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {}
-    if (landed()) return true;
-    try {
-      if (txt.length <= 200) {
-        setNative('');
-        for (var i = 0; i < txt.length; i++) {
-          var ch = txt.charAt(i), cur = txt.slice(0, i + 1);
-          try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {}
-          try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {}
-          if (el.isContentEditable) { var _ec2; try { _ec2 = document.execCommand('insertText', false, ch); } catch (e) { _ec2 = false; } if (!_ec2) { setNative(cur); } } else { setNative(cur); }
-          try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
-          try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {}
-        }
-        try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-      }
-    } catch (e) {}
+    await sleep(0);
+    async function keystroke() { clearField(); for (var i = 0; i < txt.length; i++) { var ch = txt.charAt(i); try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {} if (CE) { var ok; try { ok = document.execCommand('insertText', false, ch); } catch (e) { ok = false; } if (!ok) setNative(rd() + ch); } else { var base = (el.value != null) ? el.value : ''; setNative(base + ch); } fireInput(ch, 'insertText'); try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {} await sleep(masked ? 18 : 6); } try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
+    async function pickSuggestion() { await sleep(320); var opts = []; var ac = el.getAttribute && (el.getAttribute('aria-controls') || el.getAttribute('aria-owns')); if (ac) { var box = document.getElementById(ac); if (box) opts = [].slice.call(box.querySelectorAll('[role=option],li,.option,.item')).filter(_vis); } if (!opts.length) opts = [].slice.call(document.querySelectorAll('[role=option],[role=listbox] li,.autocomplete-item,.suggestion,.typeahead-option,ul[class*=auto] li,ul[class*=suggest] li,li[class*=option]')).filter(_vis); if (!opts.length) { var lists = [].slice.call(document.querySelectorAll('ul,ol,[role=listbox],[role=menu]')).filter(_vis); for (var L = 0; L < lists.length && !opts.length; L++) { var items = [].slice.call(lists[L].querySelectorAll('li,[role=option],[role=menuitem]')).filter(_vis); if (items.length && items.length <= 25) opts = items; } } if (!opts.length) return false; var want = norm(txt), pick = null; for (var i = 0; i < opts.length; i++) { if (norm(opts[i].textContent).indexOf(want) >= 0) { pick = opts[i]; break; } } if (!pick) pick = opts[0]; if (!pick) return false; try { pick.scrollIntoView({ block: 'center' }); } catch (e) {} var r = pick.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }; ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) { try { pick.dispatchEvent(new (tp.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(tp, o)); } catch (e) {} }); try { pick.click(); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })); } catch (e) {} await sleep(150); return true; }
+    var method = '';
+    if (!masked) {
+      try { try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {} if (CE) { try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {} try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {} var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) setNative(txt); } else { clearField(); setNative(txt); } fireInput(txt, 'insertText'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {} } catch (e) {}
+      await sleep(0); if (landed()) method = 'native';
+      if (!method) { try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); fireInput(txt, 'insertFromPaste'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {} await sleep(0); if (landed()) method = 'paste'; }
+    }
+    if (!method && txt.length <= 4000) { try { await keystroke(); } catch (e) {} if (landed()) method = 'keystroke'; }
+    var picked = false; try { picked = await pickSuggestion(); } catch (e) {}
+    if (picked) await sleep(60);
+    await sleep(120);
+    if (!landed()) { try { el.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {} await sleep(80); }
     return landed();
   }
   function localPaste(target, note) { return _robustType(target, note); }
@@ -529,8 +529,17 @@
           await new Promise(function (r) { setTimeout(r, 1000); }); continue;
         }
         let er = await send('mlsAssistExec', { action: a });
-        if (er && er.ok === false && /^(click|select|type)$/.test(a.type || '')) { await send('mlsAssistExec', { action: { type: 'scroll' } }); await new Promise(r => setTimeout(r, 650)); er = await send('mlsAssistExec', { action: a }); }
+        // Retry only when the control wasn't FOUND yet (async render) — scroll + retry once.
+        // Do NOT retry a "stuck" type (field found but rejected the text): re-typing into a
+        // typeahead/masked field never helps.
+        if (er && er.ok === false && er.notfound && /^(click|select|type)$/.test(a.type || '')) { await send('mlsAssistExec', { action: { type: 'scroll' } }); await new Promise(r => setTimeout(r, 650)); er = await send('mlsAssistExec', { action: a }); }
         if (a.type === 'type' && er && er.ok) lastTypeTarget = a.target;
+        // STOP (don't loop) when typing/pasting genuinely won't stick — clear failure, hand back to the doctor.
+        if (/^(type|pastenote)$/.test(a.type || '') && er && er.ok === false && er.stuck) {
+          L('⛔ ' + ((er && er.msg) || 'Could not type into the field — it would not accept the text.') + ' Stopping here so I don’t loop. Type it yourself, then press Run to continue.');
+          setStatus('Couldn’t type into ' + (a.target || 'a field') + ' — please type it manually, then Run.', 'err');
+          break;
+        }
         L((er && er.msg) ? er.msg : ('Did: ' + (a.type || '')));
         await new Promise(r => setTimeout(r, /^(click|select|switchtab)$/.test(a.type || '') ? 1500 : 800));
       }

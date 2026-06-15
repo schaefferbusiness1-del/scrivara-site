@@ -128,61 +128,51 @@ function mlsSegmentNote(text) {
 }
 
 // ---- Robust, VERIFIED text entry primitive (injected). Single source of truth. ----
-function mlsRobustType(el, txt) {
+// v1.28 — hardened against the modes the autopilot log flagged ("read-only, masked, or a
+// typeahead that needs a selection"): resolves a real EDITABLE field from a label/wrapper,
+// clicks+focuses first, native-setter + bubbling input/change (execCommand insertText for
+// contenteditable), simulated paste, per-character keystrokes that drive MASKED inputs,
+// then SELECTS the matching item from any TYPEAHEAD list, and re-reads to CONFIRM after a
+// settle + blur. Returns confirmed:false + stuck:true with a reason when nothing sticks.
+async function mlsRobustType(el, txt) {
   txt = String(txt == null ? '' : txt);
-  function rd() { return el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || ''); }
-  function landed() {
-    var cur = rd(); if (!cur) return false;
-    var pb = txt.replace(/\s+/g, ' ').trim().slice(0, 30);
-    return cur.replace(/\s+/g, ' ').indexOf(pb) >= 0 || cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15);
-  }
-  function setNative(v) {
-    if (el.isContentEditable) { try { el.textContent = v; } catch (e) {} return; }
-    var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    var d = Object.getOwnPropertyDescriptor(pr, 'value');
-    if (d && d.set) d.set.call(el, v); else el.value = v;
-  }
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  function _isEd(e) { if (!e || !e.tagName) return false; if (e.isContentEditable) return true; var tg = e.tagName.toUpperCase(); if (tg === 'TEXTAREA') return true; if (tg === 'INPUT') { var t = (e.getAttribute('type') || 'text').toLowerCase(); return /^(text|search|email|url|tel|number|password|date|month|week|time|datetime-local|)$/.test(t); } return false; }
+  function _resolve(e) { if (_isEd(e)) return e; if (!e || !e.tagName) return e; try { if (e.tagName.toUpperCase() === 'LABEL') { var f = e.getAttribute('for'); if (f) { var byId = document.getElementById(f); if (_isEd(byId)) return byId; } var within = e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(within)) return within; } } catch (e2) {} try { var n = e.querySelector && e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(n)) return n; } catch (e3) {} try { var sib = e.nextElementSibling, k = 0; while (sib && k < 3) { if (_isEd(sib)) return sib; var inS = sib.querySelector && sib.querySelector('input:not([type=hidden]),textarea,[contenteditable]'); if (_isEd(inS)) return inS; sib = sib.nextElementSibling; k++; } } catch (e4) {} try { var p = e.parentElement, d = 0; while (p && d < 3) { var inp = p.querySelector && p.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(inp)) return inp; p = p.parentElement; d++; } } catch (e5) {} return e; }
+  el = _resolve(el);
+  if (!el || !_isEd(el)) return { ok: false, confirmed: false, stuck: true, method: 'none', reason: 'no-field', into: 0 };
+  if (el.readOnly || el.disabled) return { ok: false, confirmed: false, stuck: true, method: 'none', reason: 'readonly', into: 0 };
+  var CE = !!el.isContentEditable;
+  function rd() { return CE ? (el.innerText || el.textContent || '') : (el.value || ''); }
+  function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function digits(s) { return String(s || '').replace(/\D/g, ''); }
+  function isMasked() { try { if (CE) return false; var t = (el.getAttribute('type') || '').toLowerCase(); if (t === 'date' || t === 'tel') return true; var ph = el.getAttribute('placeholder') || ''; if (/[\/\-.]/.test(ph) && /[mdyhMDYH#0_]/.test(ph)) return true; if (el.getAttribute('inputmode') === 'numeric') return true; if (el.getAttribute('data-mask') || el.getAttribute('pattern')) return true; var ml = el.maxLength; if (ml && ml > 0 && ml <= 12 && /[\/\-.]/.test(ph)) return true; } catch (e) {} return false; }
+  var masked = isMasked();
+  function landed() { var cur = rd(); if (!cur && txt) return false; var a = norm(cur), b = norm(txt); if (!b) return true; if (a.indexOf(b.slice(0, Math.min(b.length, 40))) >= 0) return true; if (masked) { var dc = digits(cur), dt = digits(txt); if (dt && dc.indexOf(dt) >= 0) return true; } return cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
+  function setNative(v) { if (CE) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+  function fireInput(data, type) { try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: type || 'insertText', data: data })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} } }
+  function clearField() { try { if (!CE && el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length); } catch (e) {} setNative(''); fireInput('', 'deleteContentBackward'); }
+  function _vis(e) { try { var r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (e2) { return true; } }
   try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
   try { el.click(); } catch (e) {}
   try { el.focus(); } catch (e) {}
-  // METHOD 1 — native setter / execCommand + full framework event sequence
-  try {
-    try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
-    if (el.isContentEditable) {
-      try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
-      try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {}
-      var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) { setNative(txt); }
-    } else { setNative(txt); }
-    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: txt })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
-    try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-    try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
-  } catch (e) {}
-  if (landed()) return { ok: true, confirmed: true, method: 'native', into: rd().length };
-  // METHOD 2 — simulated paste (controlled editors that accept paste when value= is ignored)
-  try {
-    var dt = new DataTransfer(); dt.setData('text/plain', txt);
-    el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
-    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: txt })); } catch (e) {}
-    try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-  } catch (e) {}
-  if (landed()) return { ok: true, confirmed: true, method: 'paste', into: rd().length };
-  // METHOD 3 — per-character keystrokes (typeahead / autocomplete fields)
-  try {
-    if (txt.length <= 200) {
-      setNative('');
-      for (var i = 0; i < txt.length; i++) {
-        var ch = txt.charAt(i), cur = txt.slice(0, i + 1);
-        try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {}
-        try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {}
-        if (el.isContentEditable) { var _ec2; try { _ec2 = document.execCommand('insertText', false, ch); } catch (e) { _ec2 = false; } if (!_ec2) { setNative(cur); } } else { setNative(cur); }
-        try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
-        try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {}
-      }
-      try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-    }
-  } catch (e) {}
-  if (landed()) return { ok: true, confirmed: true, method: 'keystroke', into: rd().length };
-  return { ok: true, confirmed: false, method: 'unconfirmed', into: rd().length };
+  await sleep(0);
+  async function keystroke() { clearField(); for (var i = 0; i < txt.length; i++) { var ch = txt.charAt(i); try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {} if (CE) { var ok; try { ok = document.execCommand('insertText', false, ch); } catch (e) { ok = false; } if (!ok) setNative(rd() + ch); } else { var base = (el.value != null) ? el.value : ''; setNative(base + ch); } fireInput(ch, 'insertText'); try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {} await sleep(masked ? 18 : 6); } try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
+  async function pickSuggestion() { await sleep(320); var opts = []; var ac = el.getAttribute && (el.getAttribute('aria-controls') || el.getAttribute('aria-owns')); if (ac) { var box = document.getElementById(ac); if (box) opts = [].slice.call(box.querySelectorAll('[role=option],li,.option,.item')).filter(_vis); } if (!opts.length) opts = [].slice.call(document.querySelectorAll('[role=option],[role=listbox] li,.autocomplete-item,.suggestion,.typeahead-option,ul[class*=auto] li,ul[class*=suggest] li,li[class*=option]')).filter(_vis); if (!opts.length) { var lists = [].slice.call(document.querySelectorAll('ul,ol,[role=listbox],[role=menu]')).filter(_vis); for (var L = 0; L < lists.length && !opts.length; L++) { var items = [].slice.call(lists[L].querySelectorAll('li,[role=option],[role=menuitem]')).filter(_vis); if (items.length && items.length <= 25) opts = items; } } if (!opts.length) return { picked: false }; var want = norm(txt), pick = null; for (var i = 0; i < opts.length; i++) { if (norm(opts[i].textContent).indexOf(want) >= 0) { pick = opts[i]; break; } } if (!pick) pick = opts[0]; if (!pick) return { picked: false }; try { pick.scrollIntoView({ block: 'center' }); } catch (e) {} var r = pick.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }; ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) { try { pick.dispatchEvent(new (tp.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(tp, o)); } catch (e) {} }); try { pick.click(); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })); } catch (e) {} await sleep(150); return { picked: true, label: (pick.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60) }; }
+  var method = '';
+  if (!masked) {
+    try { try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {} if (CE) { try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {} try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {} var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) setNative(txt); } else { clearField(); setNative(txt); } fireInput(txt, 'insertText'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {} } catch (e) {}
+    await sleep(0); if (landed()) method = 'native';
+    if (!method) { try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); fireInput(txt, 'insertFromPaste'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {} await sleep(0); if (landed()) method = 'paste'; }
+  }
+  if (!method && txt.length <= 4000) { try { await keystroke(); } catch (e) {} if (landed()) method = masked ? 'mask' : 'keystroke'; }
+  var sug = { picked: false }; try { sug = await pickSuggestion(); } catch (e) {}
+  if (sug.picked) { await sleep(60); method = method || (landed() ? 'typeahead' : 'typeahead-selected'); }
+  await sleep(120);
+  if (!landed()) { try { el.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {} await sleep(80); }
+  if (landed()) return { ok: true, confirmed: true, stuck: false, method: method || 'native', into: rd().length, picked: !!sug.picked, pickedLabel: sug.label || '' };
+  if (sug.picked) return { ok: true, confirmed: false, stuck: false, method: 'typeahead-selected', into: rd().length, picked: true, pickedLabel: sug.label || '', reason: 'selected-suggestion-unconfirmed' };
+  return { ok: false, confirmed: false, stuck: true, method: 'unconfirmed', into: rd().length, reason: masked ? 'masked-rejected' : 'not-stuck' };
 }
 
 // ---- Field scanner (injected, read-only): score editable fields for a target section ----
@@ -234,14 +224,56 @@ function mlsFieldScanner(noteText, forcedSection) {
 }
 
 // ---- Field paster (injected): find best field for the target section, write+confirm ----
-function mlsNotePaster(text, forcedSection) {
-  var scan = mlsFieldScanner(text, forcedSection);
-  if (!scan.has) return { ok: false, notfound: true, target: scan.target, targetLabel: scan.targetLabel, candidates: scan.candidates };
-  // re-resolve the chosen element in THIS frame (scanner returns metadata, not the node)
+// v1.28 — self-contained for injection: the caller passes the precomputed `scan` (from
+// mlsFieldScanner run across frames) so this function does NOT depend on out-of-scope
+// helpers, and it routes the write through a NESTED copy of the hardened mlsRobustType.
+// Async (executeScript awaits the result).
+async function mlsNotePaster(text, forcedSection, scan) {
+  if (!scan) { try { scan = mlsFieldScanner(text, forcedSection); } catch (e) { scan = { has: false }; } }
+  if (!scan || !scan.has) return { ok: false, notfound: true, target: scan && scan.target, targetLabel: scan && scan.targetLabel, candidates: scan && scan.candidates };
   function vis(el) { try { if (el.disabled || el.readOnly) return false; var s = getComputedStyle(el); if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < .05) return false; var r = el.getBoundingClientRect(); return r.width > 110 && r.height > 18; } catch (e) { return false; } }
   function ownLabel(el) { try { var l = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('name'))) || ''; if (!l && el.id) { var lb = document.querySelector('label[for="' + el.id + '"]'); if (lb) l = (lb.textContent || '').trim(); } return String(l).replace(/\s+/g, ' ').trim().slice(0, 48); } catch (e) { return ''; } }
   function sectionHeading(el) { try { var n = el, hops = 0; while (n && hops < 5) { n = n.parentElement; hops++; if (!n) break; var hd = n.querySelector && n.querySelector('h1,h2,h3,h4,h5,h6,legend,[role="heading"]'); if (hd) { var ht = (hd.textContent || '').trim(); if (ht && ht.length <= 64) return ht.replace(/\s+/g, ' '); } } } catch (e) {} return ''; }
-  // rebuild ranking identically and pick the top element
+  async function _robustType(el, txt) {
+    txt = String(txt == null ? '' : txt);
+    var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+    function _isEd(e) { if (!e || !e.tagName) return false; if (e.isContentEditable) return true; var tg = e.tagName.toUpperCase(); if (tg === 'TEXTAREA') return true; if (tg === 'INPUT') { var t = (e.getAttribute('type') || 'text').toLowerCase(); return /^(text|search|email|url|tel|number|password|date|month|week|time|datetime-local|)$/.test(t); } return false; }
+    function _resolve(e) { if (_isEd(e)) return e; if (!e || !e.tagName) return e; try { if (e.tagName.toUpperCase() === 'LABEL') { var f = e.getAttribute('for'); if (f) { var byId = document.getElementById(f); if (_isEd(byId)) return byId; } var within = e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(within)) return within; } } catch (e2) {} try { var n = e.querySelector && e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(n)) return n; } catch (e3) {} try { var p = e.parentElement, d = 0; while (p && d < 3) { var inp = p.querySelector && p.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(inp)) return inp; p = p.parentElement; d++; } } catch (e5) {} return e; }
+    el = _resolve(el);
+    if (!el || !_isEd(el)) return { ok: false, confirmed: false, stuck: true, method: 'none', reason: 'no-field', into: 0 };
+    if (el.readOnly || el.disabled) return { ok: false, confirmed: false, stuck: true, method: 'none', reason: 'readonly', into: 0 };
+    var CE = !!el.isContentEditable;
+    function rd() { return CE ? (el.innerText || el.textContent || '') : (el.value || ''); }
+    function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+    function digits(s) { return String(s || '').replace(/\D/g, ''); }
+    function isMasked() { try { if (CE) return false; var t = (el.getAttribute('type') || '').toLowerCase(); if (t === 'date' || t === 'tel') return true; var ph = el.getAttribute('placeholder') || ''; if (/[\/\-.]/.test(ph) && /[mdyhMDYH#0_]/.test(ph)) return true; if (el.getAttribute('inputmode') === 'numeric') return true; if (el.getAttribute('data-mask') || el.getAttribute('pattern')) return true; var ml = el.maxLength; if (ml && ml > 0 && ml <= 12 && /[\/\-.]/.test(ph)) return true; } catch (e) {} return false; }
+    var masked = isMasked();
+    function landed() { var cur = rd(); if (!cur && txt) return false; var a = norm(cur), b = norm(txt); if (!b) return true; if (a.indexOf(b.slice(0, Math.min(b.length, 40))) >= 0) return true; if (masked) { var dc = digits(cur), dt = digits(txt); if (dt && dc.indexOf(dt) >= 0) return true; } return cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
+    function setNative(v) { if (CE) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+    function fireInput(data, type) { try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: type || 'insertText', data: data })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} } }
+    function clearField() { try { if (!CE && el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length); } catch (e) {} setNative(''); fireInput('', 'deleteContentBackward'); }
+    function _vis(e) { try { var r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (e2) { return true; } }
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    try { el.click(); } catch (e) {}
+    try { el.focus(); } catch (e) {}
+    await sleep(0);
+    async function keystroke() { clearField(); for (var i = 0; i < txt.length; i++) { var ch = txt.charAt(i); try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {} if (CE) { var ok; try { ok = document.execCommand('insertText', false, ch); } catch (e) { ok = false; } if (!ok) setNative(rd() + ch); } else { var base = (el.value != null) ? el.value : ''; setNative(base + ch); } fireInput(ch, 'insertText'); try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {} await sleep(masked ? 18 : 6); } try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
+    async function pickSuggestion() { await sleep(320); var opts = []; var ac = el.getAttribute && (el.getAttribute('aria-controls') || el.getAttribute('aria-owns')); if (ac) { var box = document.getElementById(ac); if (box) opts = [].slice.call(box.querySelectorAll('[role=option],li,.option,.item')).filter(_vis); } if (!opts.length) opts = [].slice.call(document.querySelectorAll('[role=option],[role=listbox] li,.autocomplete-item,.suggestion,.typeahead-option,ul[class*=auto] li,ul[class*=suggest] li,li[class*=option]')).filter(_vis); if (!opts.length) { var lists = [].slice.call(document.querySelectorAll('ul,ol,[role=listbox],[role=menu]')).filter(_vis); for (var L = 0; L < lists.length && !opts.length; L++) { var items = [].slice.call(lists[L].querySelectorAll('li,[role=option],[role=menuitem]')).filter(_vis); if (items.length && items.length <= 25) opts = items; } } if (!opts.length) return { picked: false }; var want = norm(txt), pick = null; for (var i = 0; i < opts.length; i++) { if (norm(opts[i].textContent).indexOf(want) >= 0) { pick = opts[i]; break; } } if (!pick) pick = opts[0]; if (!pick) return { picked: false }; try { pick.scrollIntoView({ block: 'center' }); } catch (e) {} var r = pick.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }; ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) { try { pick.dispatchEvent(new (tp.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(tp, o)); } catch (e) {} }); try { pick.click(); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })); } catch (e) {} await sleep(150); return { picked: true }; }
+    var method = '';
+    if (!masked) {
+      try { try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {} if (CE) { try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {} try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {} var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) setNative(txt); } else { clearField(); setNative(txt); } fireInput(txt, 'insertText'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {} } catch (e) {}
+      await sleep(0); if (landed()) method = 'native';
+      if (!method) { try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); fireInput(txt, 'insertFromPaste'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {} await sleep(0); if (landed()) method = 'paste'; }
+    }
+    if (!method && txt.length <= 4000) { try { await keystroke(); } catch (e) {} if (landed()) method = masked ? 'mask' : 'keystroke'; }
+    var sug = { picked: false }; try { sug = await pickSuggestion(); } catch (e) {}
+    if (sug.picked) { await sleep(60); method = method || (landed() ? 'typeahead' : 'typeahead-selected'); }
+    await sleep(120);
+    if (!landed()) { try { el.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {} await sleep(80); }
+    if (landed()) return { ok: true, confirmed: true, stuck: false, method: method || 'native', into: rd().length };
+    if (sug.picked) return { ok: true, confirmed: false, stuck: false, method: 'typeahead-selected', into: rd().length };
+    return { ok: false, confirmed: false, stuck: true, method: 'unconfirmed', into: rd().length, reason: masked ? 'masked-rejected' : 'not-stuck' };
+  }
   var probeLabel = scan.chosenLabel;
   var cs = [].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"],input[type="text"],input:not([type])')).filter(vis);
   try { var act = document.activeElement; if (act && (act.tagName === 'TEXTAREA' || act.isContentEditable || act.tagName === 'INPUT') && cs.indexOf(act) < 0) cs.push(act); } catch (e) {}
@@ -249,9 +281,9 @@ function mlsNotePaster(text, forcedSection) {
   if (!best) { try { if (document.activeElement && vis(document.activeElement)) best = document.activeElement; } catch (e) {} }
   if (!best) best = cs[0] || null;
   if (!best) return { ok: false, notfound: true, target: scan.target, targetLabel: scan.targetLabel, candidates: scan.candidates };
-  var wr = mlsRobustType(best, text);
+  var wr = await _robustType(best, text);
   try { best.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {}
-  return { ok: true, confirmed: !!wr.confirmed, method: wr.method, into: scan.chosenLabel || (best.tagName || '').toLowerCase(), len: wr.into, target: scan.target, targetLabel: scan.targetLabel, chosenSection: scan.chosenSection, chosenLabel: scan.chosenLabel, targetMatched: scan.targetMatched, candidates: scan.candidates };
+  return { ok: !!wr.ok, confirmed: !!wr.confirmed, stuck: !!wr.stuck, method: wr.method, into: scan.chosenLabel || (best.tagName || '').toLowerCase(), len: wr.into, target: scan.target, targetLabel: scan.targetLabel, chosenSection: scan.chosenSection, chosenLabel: scan.chosenLabel, targetMatched: scan.targetMatched, candidates: scan.candidates };
 }
 
 // ---- Patient identity reader: open Athena chart (injected, runs per frame) ----
@@ -600,7 +632,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           [r] = await chrome.scripting.executeScript({
           target: _execTarget,
           args: [_act],
-          func: (act) => {
+          func: async (act) => {
             function visible(el) {
               if (!el) return false;
               try {
@@ -664,49 +696,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               try { el.click(); } catch (e) {}
             }
-            // v1.27 — robust, VERIFIED text entry (same logic as top-level mlsRobustType).
-            // native setter/execCommand -> simulated paste -> per-character keystrokes,
-            // re-reading after each so the agent learns whether the text ACTUALLY landed
-            // (this is why "open a patient and name it Adam" now confirms or fails loudly
-            // instead of silently reporting success when nothing was entered).
-            function typeInto(el, text) {
+            // v1.28 — hardened, VERIFIED text entry (same logic as top-level mlsRobustType):
+            // resolves a real editable field from a label/wrapper, clicks+focuses, native
+            // setter -> simulated paste -> per-character keystrokes that drive MASKED inputs,
+            // then SELECTS a matching TYPEAHEAD suggestion, and re-reads after settle + blur.
+            // Returns {ok, confirmed, stuck, picked, method, reason} so the loop can stop.
+            async function typeInto(el, text) {
               var txt = String(text == null ? '' : text);
-              function rd() { return el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || ''); }
-              function landed() { var cur = rd(); if (!cur) return false; var pb = txt.replace(/\s+/g, ' ').trim().slice(0, 30); return cur.replace(/\s+/g, ' ').indexOf(pb) >= 0 || cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
-              function setNative(v) { if (el.isContentEditable) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+              var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+              function _isEd(e) { if (!e || !e.tagName) return false; if (e.isContentEditable) return true; var tg = e.tagName.toUpperCase(); if (tg === 'TEXTAREA') return true; if (tg === 'INPUT') { var t = (e.getAttribute('type') || 'text').toLowerCase(); return /^(text|search|email|url|tel|number|password|date|month|week|time|datetime-local|)$/.test(t); } return false; }
+              function _resolve(e) { if (_isEd(e)) return e; if (!e || !e.tagName) return e; try { if (e.tagName.toUpperCase() === 'LABEL') { var f = e.getAttribute('for'); if (f) { var byId = document.getElementById(f); if (_isEd(byId)) return byId; } var within = e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(within)) return within; } } catch (e2) {} try { var n = e.querySelector && e.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(n)) return n; } catch (e3) {} try { var sib = e.nextElementSibling, k = 0; while (sib && k < 3) { if (_isEd(sib)) return sib; var inS = sib.querySelector && sib.querySelector('input:not([type=hidden]),textarea,[contenteditable]'); if (_isEd(inS)) return inS; sib = sib.nextElementSibling; k++; } } catch (e4) {} try { var p = e.parentElement, d = 0; while (p && d < 3) { var inp = p.querySelector && p.querySelector('input:not([type=hidden]),textarea,[contenteditable=""],[contenteditable="true"]'); if (_isEd(inp)) return inp; p = p.parentElement; d++; } } catch (e5) {} return e; }
+              el = _resolve(el);
+              if (!el || !_isEd(el)) return { ok: false, confirmed: false, stuck: true, method: 'none', reason: 'no-field', into: 0 };
+              if (el.readOnly || el.disabled) return { ok: false, confirmed: false, stuck: true, method: 'none', reason: 'readonly', into: 0 };
+              var CE = !!el.isContentEditable;
+              function rd() { return CE ? (el.innerText || el.textContent || '') : (el.value || ''); }
+              function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+              function digits(s) { return String(s || '').replace(/\D/g, ''); }
+              function isMasked() { try { if (CE) return false; var t = (el.getAttribute('type') || '').toLowerCase(); if (t === 'date' || t === 'tel') return true; var ph = el.getAttribute('placeholder') || ''; if (/[\/\-.]/.test(ph) && /[mdyhMDYH#0_]/.test(ph)) return true; if (el.getAttribute('inputmode') === 'numeric') return true; if (el.getAttribute('data-mask') || el.getAttribute('pattern')) return true; var ml = el.maxLength; if (ml && ml > 0 && ml <= 12 && /[\/\-.]/.test(ph)) return true; } catch (e) {} return false; }
+              var masked = isMasked();
+              function landed() { var cur = rd(); if (!cur && txt) return false; var a = norm(cur), b = norm(txt); if (!b) return true; if (a.indexOf(b.slice(0, Math.min(b.length, 40))) >= 0) return true; if (masked) { var dc = digits(cur), dt = digits(txt); if (dt && dc.indexOf(dt) >= 0) return true; } return cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
+              function setNative(v) { if (CE) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+              function fireInput(data, type) { try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: type || 'insertText', data: data })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} } }
+              function clearField() { try { if (!CE && el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length); } catch (e) {} setNative(''); fireInput('', 'deleteContentBackward'); }
+              function _vis(e) { try { var r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (e2) { return true; } }
               try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
               try { el.click(); } catch (e) {}
               try { el.focus(); } catch (e) {}
-              try {
-                try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
-                if (el.isContentEditable) {
-                  try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
-                  try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {}
-                  var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) { setNative(txt); }
-                } else { setNative(txt); }
-                try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: txt })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
-                try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-                try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
-              } catch (e) {}
-              if (landed()) return { ok: true, confirmed: true, method: 'native', into: rd().length };
-              try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: txt })); } catch (e) {} try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {}
-              if (landed()) return { ok: true, confirmed: true, method: 'paste', into: rd().length };
-              try {
-                if (txt.length <= 200) {
-                  setNative('');
-                  for (var i = 0; i < txt.length; i++) {
-                    var ch = txt.charAt(i), cur = txt.slice(0, i + 1);
-                    try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {}
-                    try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {}
-                    if (el.isContentEditable) { var _ec2; try { _ec2 = document.execCommand('insertText', false, ch); } catch (e) { _ec2 = false; } if (!_ec2) { setNative(cur); } } else { setNative(cur); }
-                    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
-                    try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {}
-                  }
-                  try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-                }
-              } catch (e) {}
-              if (landed()) return { ok: true, confirmed: true, method: 'keystroke', into: rd().length };
-              return { ok: true, confirmed: false, method: 'unconfirmed', into: rd().length };
+              await sleep(0);
+              async function keystroke() { clearField(); for (var i = 0; i < txt.length; i++) { var ch = txt.charAt(i); try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {} if (CE) { var ok; try { ok = document.execCommand('insertText', false, ch); } catch (e) { ok = false; } if (!ok) setNative(rd() + ch); } else { var base = (el.value != null) ? el.value : ''; setNative(base + ch); } fireInput(ch, 'insertText'); try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {} await sleep(masked ? 18 : 6); } try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
+              async function pickSuggestion() { await sleep(320); var opts = []; var ac = el.getAttribute && (el.getAttribute('aria-controls') || el.getAttribute('aria-owns')); if (ac) { var box = document.getElementById(ac); if (box) opts = [].slice.call(box.querySelectorAll('[role=option],li,.option,.item')).filter(_vis); } if (!opts.length) opts = [].slice.call(document.querySelectorAll('[role=option],[role=listbox] li,.autocomplete-item,.suggestion,.typeahead-option,ul[class*=auto] li,ul[class*=suggest] li,li[class*=option]')).filter(_vis); if (!opts.length) { var lists = [].slice.call(document.querySelectorAll('ul,ol,[role=listbox],[role=menu]')).filter(_vis); for (var L = 0; L < lists.length && !opts.length; L++) { var items = [].slice.call(lists[L].querySelectorAll('li,[role=option],[role=menuitem]')).filter(_vis); if (items.length && items.length <= 25) opts = items; } } if (!opts.length) return { picked: false }; var want = norm(txt), pick = null; for (var i = 0; i < opts.length; i++) { if (norm(opts[i].textContent).indexOf(want) >= 0) { pick = opts[i]; break; } } if (!pick) pick = opts[0]; if (!pick) return { picked: false }; try { pick.scrollIntoView({ block: 'center' }); } catch (e) {} var r = pick.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }; ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) { try { pick.dispatchEvent(new (tp.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(tp, o)); } catch (e) {} }); try { pick.click(); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })); } catch (e) {} await sleep(150); return { picked: true, label: (pick.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60) }; }
+              var method = '';
+              if (!masked) {
+                try { try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {} if (CE) { try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {} try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {} var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) setNative(txt); } else { clearField(); setNative(txt); } fireInput(txt, 'insertText'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {} } catch (e) {}
+                await sleep(0); if (landed()) method = 'native';
+                if (!method) { try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); fireInput(txt, 'insertFromPaste'); try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {} await sleep(0); if (landed()) method = 'paste'; }
+              }
+              if (!method && txt.length <= 4000) { try { await keystroke(); } catch (e) {} if (landed()) method = masked ? 'mask' : 'keystroke'; }
+              var sug = { picked: false }; try { sug = await pickSuggestion(); } catch (e) {}
+              if (sug.picked) { await sleep(60); method = method || (landed() ? 'typeahead' : 'typeahead-selected'); }
+              await sleep(120);
+              if (!landed()) { try { el.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {} await sleep(80); }
+              if (landed()) return { ok: true, confirmed: true, stuck: false, method: method || 'native', into: rd().length, picked: !!sug.picked, pickedLabel: sug.label || '' };
+              if (sug.picked) return { ok: true, confirmed: false, stuck: false, method: 'typeahead-selected', into: rd().length, picked: true, pickedLabel: sug.label || '', reason: 'selected-suggestion-unconfirmed' };
+              return { ok: false, confirmed: false, stuck: true, method: 'unconfirmed', into: rd().length, reason: masked ? 'masked-rejected' : 'not-stuck' };
             }
             function setSelectByText(sel, text) {
               const t = String(text || '').toLowerCase().trim();
@@ -736,12 +769,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               fireClick(el); return { ok: true, msg: 'Clicked: ' + (a.target || '') };
             }
             if (a.type === 'type') {
+              // findEl may return a <label>/wrapper for a label-style target like
+              // "Name / label *"; typeInto._resolve() climbs to the real <input>.
               const el = _local() || _byIdx(a.target) || findEl(a.target) || (visible(document.activeElement) ? document.activeElement : null);
               if (!el) return { ok: false, notfound: true, msg: 'No field to type into.' };
-              if (el.tagName === 'SELECT') return setSelectByText(el, a.text) ? { ok: true, msg: 'Selected ' + (a.text || '') + ' in ' + (a.target || 'dropdown') } : { ok: false, msg: 'Option not found in dropdown.' };
-              var _tr = typeInto(el, a.text || '');
-              if (_tr && _tr.confirmed) return { ok: true, msg: 'Typed "' + String(a.text || '').slice(0, 40) + '" into ' + (a.target || 'field') + ' — verified (' + _tr.method + ').' };
-              return { ok: false, msg: 'Tried to type into ' + (a.target || 'field') + ' but the text did not stick — the field may be read-only, masked, or a typeahead that needs a selection. Try clicking the field first, or pick it from a list.' };
+              if (el.tagName === 'SELECT') return setSelectByText(el, a.text) ? { ok: true, confirmed: true, msg: 'Selected ' + (a.text || '') + ' in ' + (a.target || 'dropdown') } : { ok: false, msg: 'Option not found in dropdown.' };
+              var _tr = await typeInto(el, a.text || '');
+              if (_tr && _tr.confirmed) return { ok: true, confirmed: true, msg: 'Typed "' + String(a.text || '').slice(0, 40) + '" into ' + (a.target || 'field') + ' — verified (' + _tr.method + ').' };
+              if (_tr && _tr.picked) return { ok: true, confirmed: false, picked: true, msg: 'Selected "' + (_tr.pickedLabel || a.text || '') + '" from the suggestion list for ' + (a.target || 'field') + ' — please confirm it shows in the field.' };
+              return { ok: false, stuck: true, reason: (_tr && _tr.reason) || 'not-stuck', msg: 'Tried to type into ' + (a.target || 'the field') + ' every way (clicked it, native set, simulated paste, key-by-key, and looked for a suggestion list)' + ((_tr && _tr.reason === 'readonly') ? ', but it is read-only/disabled' : (_tr && _tr.reason === 'no-field') ? ', but it is not an editable field' : '') + ' and the text did not stick. Please click the field and type ' + (a.text ? '"' + String(a.text).slice(0, 40) + '"' : 'the value') + ' yourself.' };
             }
             if (a.type === 'pastenote') {
               function isEd(el2) { if (!el2) return false; var tg = (el2.tagName || '').toUpperCase(); if (tg === 'TEXTAREA') return true; if (tg === 'INPUT') return /^(text|search|email|url|tel|)$/i.test(el2.type || ''); return !!el2.isContentEditable; }
@@ -749,9 +785,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               cs.sort(function (x, y) { var rx = x.getBoundingClientRect(), ry = y.getBoundingClientRect(); return (ry.width * ry.height) - (rx.width * rx.height); });
               var pe = cs[0] || (isEd(document.activeElement) ? document.activeElement : null);
               if (!pe) return { ok: false, notfound: true, msg: 'No note field found to paste into.' };
-              pe.scrollIntoView({ block: 'center' }); var _pr = typeInto(pe, a.text || '');
-              if (_pr && _pr.confirmed) return { ok: true, msg: 'Pasted the note into the chart field (' + ((a.text || '').length) + ' chars) — verified.' };
-              return { ok: false, msg: 'Tried to paste the note but could not confirm it landed — check the EMR note area, or use the panel Insert/Copy.' };
+              pe.scrollIntoView({ block: 'center' }); var _pr = await typeInto(pe, a.text || '');
+              if (_pr && _pr.confirmed) return { ok: true, confirmed: true, msg: 'Pasted the note into the chart field (' + ((a.text || '').length) + ' chars) — verified.' };
+              return { ok: false, stuck: true, msg: 'Tried to paste the note every way but could not confirm it landed — click the note field in the EMR, or use the panel Insert/Copy.' };
             }
             if (a.type === 'scroll') { window.scrollBy(0, a.dir === 'up' ? -600 : 600); return { ok: true, msg: 'Scrolled.' }; }
             if (a.type === 'read') { return { ok: true, msg: 'Read the screen.' }; }
@@ -784,10 +820,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           let measure = [];
           try { measure = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, args: [note], func: mlsFieldScanner }); }
           catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId }, args: [note], func: mlsFieldScanner }); }
-          let winnerFrame = null, bestScore = -1e12;
-          (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
+          let winnerFrame = null, bestScore = -1e12, winnerScan = null;
+          (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); winnerScan = m.result; } });
           if (winnerFrame === null) { last = { ok: false, notfound: true }; await new Promise(r => setTimeout(r, 450)); continue; }
-          const [r] = await chrome.scripting.executeScript({ target: { tabId, frameIds: [winnerFrame] }, args: [note], func: mlsNotePaster });
+          const [r] = await chrome.scripting.executeScript({ target: { tabId, frameIds: [winnerFrame] }, args: [note, null, winnerScan], func: mlsNotePaster });
           last = (r && r.result) || { ok: false };
           if (last.ok && last.confirmed) break;
           await new Promise(res2 => setTimeout(res2, 450));
@@ -841,10 +877,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             let measure = [];
             try { measure = await chrome.scripting.executeScript({ target: { tabId: emrTab.id, allFrames: true }, args: [seg.text, seg.section], func: mlsFieldScanner }); }
             catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId: emrTab.id }, args: [seg.text, seg.section], func: mlsFieldScanner }); }
-            let wf = null, bs = -1e12;
-            (measure || []).forEach(m => { if (m && m.result && m.result.has && m.result.score > bs) { bs = m.result.score; wf = (m.frameId != null ? m.frameId : 0); } });
+            let wf = null, bs = -1e12, wfScan = null;
+            (measure || []).forEach(m => { if (m && m.result && m.result.has && m.result.score > bs) { bs = m.result.score; wf = (m.frameId != null ? m.frameId : 0); wfScan = m.result; } });
             if (wf === null) { last = { ok: false, notfound: true, targetLabel: (measure[0] && measure[0].result && measure[0].result.targetLabel) || seg.section }; await new Promise(r => setTimeout(r, 400)); continue; }
-            const [r] = await chrome.scripting.executeScript({ target: { tabId: emrTab.id, frameIds: [wf] }, args: [seg.text, seg.section], func: mlsNotePaster });
+            const [r] = await chrome.scripting.executeScript({ target: { tabId: emrTab.id, frameIds: [wf] }, args: [seg.text, seg.section, wfScan], func: mlsNotePaster });
             last = (r && r.result) || { ok: false };
             if (last.ok && last.confirmed) break;
             await new Promise(r => setTimeout(r, 400));
@@ -896,11 +932,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           let measure = [];
           try { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [note], func: mlsFieldScanner }); }
           catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id }, args: [note], func: mlsFieldScanner }); }
-          let winnerFrame = null, bestScore = -1e12;
-          (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
+          let winnerFrame = null, bestScore = -1e12, winnerScan = null;
+          (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); winnerScan = m.result; } });
           if (winnerFrame === null) { await new Promise(r => setTimeout(r, 450)); continue; }
           foundField = true;
-          const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [winnerFrame] }, args: [note], func: mlsNotePaster });
+          const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [winnerFrame] }, args: [note, null, winnerScan], func: mlsNotePaster });
           last = (r && r.result) || { ok: false };
           if (last.ok && last.confirmed) break;
           await new Promise(res2 => setTimeout(res2, 450));
