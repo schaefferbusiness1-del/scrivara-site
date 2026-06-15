@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — MLS</title>
+<meta name="description" content="Privacy Policy for MLS and the MLS Assist browser extension — how MLS Scribe LLC collects, uses, protects, and shares data.">
+<style>
+  :root{
+    --ink:#0e2238; --ink2:#3a5575; --muted:#6a829c; --line:#e7edf4;
+    --bg:#ffffff; --soft:#f6f9fc; --soft2:#eef4fb;
+    --brand:#2563eb; --brand-dk:#1b4fd1; --teal:#0d9488; --green:#127a4d; --gold:#b4842a;
+    --radius:16px; --shadow:0 1px 2px rgba(16,40,70,.04), 0 10px 30px rgba(16,40,70,.05);
+    --maxw:1080px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+  a{color:var(--brand);text-decoration:none}
+  a:hover{text-decoration:underline}
+  h1,h2,h3{letter-spacing:-.02em;line-height:1.15;margin:0}
+
+  /* Header */
+  header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);
+    backdrop-filter:saturate(150%) blur(12px);border-bottom:1px solid var(--line)}
+  header nav{display:flex;align-items:center;gap:18px;padding:14px 0}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;color:var(--ink)}
+  .brand:hover{text-decoration:none}
+  .mk{width:30px;height:30px;border-radius:9px;
+    background:linear-gradient(135deg,#1f6fe0,#0d9488);display:flex;align-items:center;
+    justify-content:center;color:#fff;font-size:16px}
+  header .links{display:flex;gap:22px;margin-left:8px}
+  header .links a{color:var(--ink2);font-weight:600;font-size:15px}
+  header .links a:hover{color:var(--ink);text-decoration:none}
+  .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+  .signin{color:var(--ink);font-weight:700;font-size:15px;padding:9px 14px;border-radius:10px}
+  .signin:hover{background:var(--soft);text-decoration:none}
+
+  /* Hero */
+  .hero{padding:54px 0 18px}
+  .hero h1{font-size:clamp(30px,4.6vw,46px);font-weight:850;letter-spacing:-.03em}
+  .lede{color:var(--ink2);font-size:18px;margin-top:14px;max-width:760px}
+  .meta{color:var(--muted);font-size:14px;margin-top:18px}
+
+  /* Document */
+  .doc{padding:14px 0 70px;max-width:820px}
+  .doc h2{font-size:clamp(21px,2.4vw,27px);font-weight:800;margin:42px 0 6px}
+  .doc h3{font-size:18px;font-weight:750;color:var(--ink);margin:24px 0 4px}
+  .doc p{margin:12px 0;color:var(--ink2)}
+  .doc ul{margin:12px 0;padding-left:22px;color:var(--ink2)}
+  .doc li{margin:7px 0}
+  .doc strong{color:var(--ink)}
+
+  .callout{background:var(--soft);border:1px solid var(--line);border-left:4px solid var(--gold);
+    border-radius:12px;padding:16px 18px;margin:22px 0;color:var(--ink2);font-size:15.5px}
+  .callout strong{color:var(--ink)}
+
+  .toc{background:var(--soft);border:1px solid var(--line);border-radius:14px;
+    padding:18px 22px;margin:28px 0 8px}
+  .toc h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+    margin:0 0 10px;font-weight:700}
+  .toc ol{margin:0;padding-left:20px;columns:2;column-gap:36px}
+  .toc li{margin:5px 0;color:var(--ink2);font-size:15px}
+  @media(max-width:640px){.toc ol{columns:1}}
+
+  table.sub{width:100%;border-collapse:collapse;margin:14px 0;font-size:15px}
+  table.sub th,table.sub td{text-align:left;padding:10px 12px;border:1px solid var(--line);
+    vertical-align:top;color:var(--ink2)}
+  table.sub th{background:var(--soft);color:var(--ink);font-weight:700}
+
+  /* Footer */
+  footer{background:var(--soft);border-top:1px solid var(--line);padding:46px 0 36px;margin-top:10px}
+  .foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .muted{color:var(--muted);font-size:14px;max-width:360px;margin-top:10px}
+  .flinks{display:flex;gap:24px;flex-wrap:wrap;margin-left:18px}
+  .flinks a{color:var(--ink2);font-weight:600;font-size:15px}
+  .fineprint{color:var(--muted);font-size:12.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:20px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="/"><span class="mk">&#10022;</span>MLS</a>
+      <div class="links">
+        <a href="/#how">How it works</a>
+        <a href="/#features">Features</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/#security">Security</a>
+      </div>
+      <div class="right">
+        <a class="signin" href="/ScribeFlow.html">Sign in</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <h1>Privacy Policy</h1>
+    <p class="lede">This policy explains what information MLS collects through the MLS web application and the
+      <strong>MLS Assist</strong> browser extension, how we use and protect it, and the choices available to the
+      clinicians and practices who use our service.</p>
+    <p class="meta">Last updated: June 14, 2026 &nbsp;&middot;&nbsp; Provided by MLS Scribe LLC</p>
+  </section>
+
+  <section class="doc">
+
+    <div class="callout">
+      <strong>Who this is for.</strong> MLS is a business-to-business tool used by licensed clinicians and their
+      practices. It is not a consumer product, and patients do not sign up for MLS directly. Where MLS processes
+      patient health information, it does so on behalf of a clinician or practice (our customer), who is the entity
+      responsible for that information under applicable health-privacy law.
+    </div>
+
+    <div class="toc">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#who">Who we are</a></li>
+        <li><a href="#what">Information we collect</a></li>
+        <li><a href="#how">How we use information</a></li>
+        <li><a href="#single">Single purpose &amp; limited use</a></li>
+        <li><a href="#share">How information is shared</a></li>
+        <li><a href="#subprocessors">Service providers / subprocessors</a></li>
+        <li><a href="#hipaa">HIPAA &amp; Business Associate context</a></li>
+        <li><a href="#retention">Data retention</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#extension">The MLS Assist extension</a></li>
+        <li><a href="#rights">Your rights &amp; choices</a></li>
+        <li><a href="#children">Children's privacy</a></li>
+        <li><a href="#changes">Changes to this policy</a></li>
+        <li><a href="#contact">Contact us</a></li>
+      </ol>
+    </div>
+
+    <h2 id="who">1. Who we are</h2>
+    <p>MLS is an ambient AI medical-scribe service operated by <strong>MLS Scribe LLC</strong> ("MLS," "we," "us,"
+      or "our"). MLS is built for spine, pain-management, and physical-medicine &amp; rehabilitation (PM&amp;R)
+      practices. The service consists of the MLS web application (at <strong>mlsscribe.com</strong>) and the
+      <strong>MLS Assist</strong> browser extension. Together they help a clinician capture a visit, draft a
+      structured clinical note, suggest coding for the clinician's review, and place the finished note into the
+      clinician's electronic medical record (EMR) only after the clinician explicitly approves it.</p>
+
+    <h2 id="what">2. Information we collect</h2>
+    <p>The information MLS processes depends on which parts of the service a clinician uses. It falls into the
+      following categories.</p>
+
+    <h3>Health and visit information</h3>
+    <p>To draft clinical documentation, MLS processes the content a clinician chooses to capture during or about a
+      patient visit. This may include <strong>visit audio and its transcript</strong>, dictation, text the clinician
+      highlights or enters, and the <strong>protected health information</strong> contained in that material &mdash;
+      for example symptoms, history, examination findings, assessments, plans, medications, diagnoses, and
+      suggested procedure or diagnosis codes. When the clinician uses MLS to read an existing chart, MLS may process
+      the patient and prior-visit information shown on that page so it can structure it into the clinician's MLS
+      record.</p>
+
+    <h3>Patient and clinician identifiers</h3>
+    <p>MLS may process identifying details that appear in captured material or that a practice enters into MLS, such
+      as patient names and identifiers, and clinician account details (name, email address, practice or specialty,
+      and role). Account holders are clinicians and practice staff, not patients.</p>
+
+    <h3>Authentication information</h3>
+    <p>To connect securely to the MLS backend, the service uses your MLS login session. The MLS Assist extension
+      reads your existing MLS authentication token (a session token) from an open, signed-in MLS browser tab and
+      sends it to the MLS backend as a bearer credential so the backend can confirm the request is yours. A practice
+      may instead configure an MLS API key. These credentials authenticate you to MLS only; they are not shared with
+      your EMR vendor or any other third party.</p>
+
+    <h3>Website and session content</h3>
+    <p>When you actively use the MLS Assist panel on a web page (for example, your EMR), the extension reads content
+      from that page &mdash; such as visible text, the structure of on-screen fields, and, for the supervised
+      "autopilot" feature, a screenshot of the page &mdash; so it can place a note in the correct field or help you
+      navigate. This content is processed to perform the action you requested. The extension stays dormant until you
+      open its panel; it does not silently read pages in the background outside the features you invoke.</p>
+
+    <h3>Account, billing, and support information</h3>
+    <p>When a practice subscribes, we process account and billing information needed to manage the subscription
+      (such as contact details and payment status). Card payments are handled by our payment processor; MLS does not
+      store full card numbers. If you contact us for support or request a demo, we keep the information you provide
+      so we can respond.</p>
+
+    <h3>Limited technical and security information</h3>
+    <p>We process basic technical information necessary to operate and secure the service, such as server logs,
+      error reports, and records needed for security, auditing, and backups.</p>
+
+    <h2 id="how">3. How we use information</h2>
+    <p>We use the information described above only to provide and support the MLS service. Specifically, we use it
+      to:</p>
+    <ul>
+      <li>transcribe captured audio and generate draft clinical notes, suggested coding, and related documentation
+        for the clinician to review, edit, and sign;</li>
+      <li>place an approved note into the clinician's EMR and, when requested, read chart information into the
+        clinician's MLS record;</li>
+      <li>authenticate users, maintain sessions, and keep the service secure;</li>
+      <li>operate billing and provide customer support; and</li>
+      <li>maintain, troubleshoot, back up, and improve the reliability of the service.</li>
+    </ul>
+    <p>MLS produces draft documentation and coding suggestions for a clinician's independent review. It does not
+      practice medicine, and the clinician remains responsible for the content of the medical record.</p>
+
+    <h2 id="single">4. Single purpose &amp; limited use</h2>
+    <p>The single purpose of MLS and the MLS Assist extension is <strong>clinical documentation and coding
+      support</strong> &mdash; helping a clinician create, review, and file medical notes. We do not use the data we
+      process for any unrelated purpose. In particular:</p>
+    <ul>
+      <li>We do <strong>not</strong> sell or rent personal information or health information to anyone.</li>
+      <li>We do <strong>not</strong> use or transfer the information for advertising, and we do not build advertising
+        or marketing profiles from it.</li>
+      <li>We do <strong>not</strong> use or transfer the information to determine creditworthiness or for lending
+        purposes.</li>
+      <li>We do <strong>not</strong> allow humans to read your health or visit content except in the limited ways
+        described in this policy (for example, to provide support you request, or where required for security or by
+        law).</li>
+    </ul>
+
+    <h2 id="share">5. How information is shared</h2>
+    <p>We share information only as needed to run the service and as described here:</p>
+    <ul>
+      <li><strong>With your practice.</strong> Information you create or capture in MLS is available to your own
+        practice and authorized users within it, according to the roles your practice configures.</li>
+      <li><strong>With service providers (subprocessors).</strong> We use a small set of vendors to provide core
+        functions such as AI generation, hosting, email, and payments. They may process information only to perform
+        services for us, under contract. See the next section.</li>
+      <li><strong>For legal and safety reasons.</strong> We may disclose information if required by law, to respond
+        to lawful requests, to enforce our agreements, or to protect the rights, safety, and security of users, the
+        public, or MLS.</li>
+      <li><strong>In a business transfer.</strong> If MLS is involved in a merger, acquisition, or sale of assets,
+        information may be transferred as part of that transaction, subject to this policy.</li>
+    </ul>
+    <p>We do not share your information with EMR vendors except to carry out the action you direct &mdash; for
+      example, when you approve placing a note into your own EMR session.</p>
+
+    <h2 id="subprocessors">6. Service providers / subprocessors</h2>
+    <p>MLS relies on the following categories of providers. We work to put appropriate data-protection terms,
+      including Business Associate Agreements where applicable, in place with providers that process health
+      information on our behalf.</p>
+    <table class="sub">
+      <tr><th>Provider</th><th>Role</th><th>What it processes</th></tr>
+      <tr><td>OpenAI</td><td>AI model provider used to transcribe audio and generate draft notes and coding
+        suggestions</td><td>The transcript / text the clinician submits for a given generation request</td></tr>
+      <tr><td>Render</td><td>Cloud hosting for the MLS backend</td><td>Data stored and processed by the MLS
+        application</td></tr>
+      <tr><td>Stripe</td><td>Payment processing for subscriptions</td><td>Billing and payment information (not
+        health content)</td></tr>
+      <tr><td>Resend</td><td>Transactional email delivery</td><td>Email address and message content for service
+        emails</td></tr>
+      <tr><td>Twilio</td><td>Optional voice / phone dictation</td><td>Audio you choose to dictate by phone</td></tr>
+    </table>
+    <p>OpenAI processes the transcript or text submitted for a generation request in order to return the drafted
+      output. The OpenAI API key is held only on the MLS backend and is never exposed to the browser or the
+      extension. We are finalizing our data-processing and Business Associate arrangements with OpenAI; see the
+      compliance note below.</p>
+
+    <h2 id="hipaa">7. HIPAA &amp; Business Associate context</h2>
+    <p>When MLS processes protected health information on behalf of a clinician or practice (a HIPAA "covered
+      entity"), MLS acts as a <strong>Business Associate</strong>. In that role, MLS enters into a Business
+      Associate Agreement (BAA) with the practice that governs how MLS may use and safeguard that information.</p>
+    <div class="callout">
+      <strong>Honest compliance status.</strong> MLS is built with a HIPAA-ready architecture, but MLS is
+      <strong>not certified</strong> as HIPAA compliant, and certification is not something any vendor can claim
+      unilaterally. Business Associate Agreements with our practices and with certain subprocessors are
+      <strong>in progress and being finalized</strong>. Until the relevant agreements are fully executed, our
+      operating policy is to use <strong>synthetic (non-real) data only</strong>, and practices should not enter
+      real protected health information into MLS until their own BAA with MLS is in place. Our hosting provider's
+      workspace is HIPAA-enabled under a signed BAA; our agreement with our AI provider is still being finalized.
+      This section is intended to describe our status truthfully and will be updated as these agreements are
+      completed.
+    </div>
+
+    <h2 id="retention">8. Data retention</h2>
+    <p>We retain information for as long as needed to provide the service to your practice and for legitimate
+      business, legal, and security purposes. Clinical records that your practice creates in MLS are retained while
+      your account is active and are subject to your practice's instructions. Encrypted backups are retained on a
+      rolling basis so the service can be restored. When information is no longer needed, or upon a valid deletion
+      request from the responsible practice, we delete or de-identify it in accordance with our obligations and
+      applicable law. We do not retain data for longer than necessary for the single purpose described above.</p>
+
+    <h2 id="security">9. Security</h2>
+    <p>We take reasonable and appropriate technical and organizational measures to protect the information MLS
+      processes, including:</p>
+    <ul>
+      <li><strong>Encryption in transit</strong> using HTTPS/TLS for connections between the web app, the extension,
+        and the MLS backend.</li>
+      <li><strong>Encryption at rest</strong> of stored application data using AES-256-GCM.</li>
+      <li><strong>Encrypted backups</strong> protected with AES-256 encryption.</li>
+      <li><strong>Authentication controls</strong> including hashed passwords, signed session tokens, and optional
+        two-factor authentication (2FA).</li>
+      <li><strong>Server-held secrets:</strong> third-party API keys (including the AI provider key) reside only on
+        the MLS backend and are never exposed to the browser or extension.</li>
+      <li><strong>Administrative safeguards</strong> such as access controls and the ability to generate auditable
+        records of administrative actions.</li>
+    </ul>
+    <p>No method of transmission or storage is perfectly secure, and we cannot guarantee absolute security. We
+      encourage practices to keep their own credentials confidential and to use available security features.</p>
+
+    <h2 id="extension">10. The MLS Assist browser extension</h2>
+    <p>MLS Assist is a companion browser extension that helps a clinician move a drafted note into their EMR. A few
+      points specific to the extension:</p>
+    <ul>
+      <li><strong>Consent-first.</strong> The extension stays dormant as a small badge until the clinician opens its
+        panel. It acts only on features the clinician invokes.</li>
+      <li><strong>What it reads.</strong> When invoked, it may read the content and structure of the current page
+        (and, for supervised autopilot, a screenshot) to capture a visit, structure chart information, or place a
+        note in the correct field.</li>
+      <li><strong>Where data goes.</strong> The extension's only authenticated network calls go to the MLS backend.
+        It does not send your data to your EMR vendor's servers; its interaction with the EMR happens within your
+        own already-signed-in EMR browser session, under your direction.</li>
+      <li><strong>You stay in control of the record.</strong> The extension is designed not to finalize the medical
+        record on its own &mdash; it pauses before steps such as Save or Sign and hands those decisions back to the
+        clinician unless the clinician explicitly chooses to supervise such a step.</li>
+      <li><strong>Permissions.</strong> The extension requests browser permissions (such as access to page content
+        and tabs) solely to perform the documentation features described above, consistent with its single
+        purpose.</li>
+    </ul>
+
+    <h2 id="rights">11. Your rights &amp; choices</h2>
+    <p>Because MLS processes most personal and health information on behalf of a practice, patients who wish to
+      access, correct, or delete their health information should contact the clinician or practice that maintains
+      their record; that practice directs how the information in MLS is handled. Clinicians and practices can
+      access, update, export, or request deletion of information in their MLS account, and can contact us for
+      assistance. Depending on where you live, you may have additional rights under applicable privacy laws; we will
+      honor valid requests as required by law. You can stop the extension's processing at any time by closing its
+      panel, signing out, or removing the extension.</p>
+
+    <h2 id="children">12. Children's privacy</h2>
+    <p>MLS is a professional tool for clinicians and is not directed to children, and we do not knowingly allow
+      children to create accounts. To the extent a clinician documents care for a minor patient, that information is
+      handled the same way as other patient health information described in this policy and remains under the
+      responsible practice's control.</p>
+
+    <h2 id="changes">13. Changes to this policy</h2>
+    <p>We may update this Privacy Policy from time to time. When we do, we will revise the "Last updated" date above
+      and, where appropriate, provide additional notice. Continued use of MLS after an update means you accept the
+      revised policy.</p>
+
+    <h2 id="contact">14. Contact us</h2>
+    <p>If you have questions about this policy or about how MLS handles information, contact:</p>
+    <p><strong>MLS Scribe LLC</strong><br>
+      Email: <a href="mailto:michael@mlsscribe.com">michael@mlsscribe.com</a><br>
+      Web: <a href="https://mlsscribe.com">mlsscribe.com</a></p>
+
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="brand" href="/"><span class="mk">&#10022;</span>MLS</a>
+        <p class="muted">The ambient AI scribe built for spine, pain &amp; PM&amp;R. You review and sign every
+          note.</p>
+      </div>
+      <div class="flinks">
+        <a href="/#how">How it works</a>
+        <a href="/#features">Features</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/#security">Security</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/ScribeFlow.html">Sign in</a>
+        <a href="mailto:michael@mlsscribe.com">Contact</a>
+      </div>
+    </div>
+    <p class="fineprint">&copy; 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical
+      device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation.
+      HIPAA-ready architecture; Business Associate Agreements in progress &mdash; synthetic data only until
+      compliance review is complete.</p>
+  </div>
+</footer>
+
+</body>
+</html>
