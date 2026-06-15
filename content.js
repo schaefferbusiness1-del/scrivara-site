@@ -309,62 +309,104 @@
     });
   });
 
-  // --- insert into the focused EMR field (React/Angular-safe) ---
-  // Framework-safe value setter: drive the native setter, then fire the full
-  // event sequence (keydown → beforeinput → input → change → keyup) so React,
-  // Angular, Ember and athenaOne's controlled inputs actually register the text.
-  function setNativeValue(el, value) {
-    const proto = (el.tagName === 'TEXTAREA') ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value');
-    try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
-    if (setter && setter.set) setter.set.call(el, value); else el.value = value;
-    try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: value })); } catch (e) {}
-    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })); } catch (e) { el.dispatchEvent(new Event('input', { bubbles: true })); }
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
-  }
-  // v1.26: after writing, re-read the field to confirm the text actually landed
-  // (athenaOne's controlled inputs can silently reject a programmatic write).
-  function _confirmLanded(el, note) {
+  // --- insert into the focused EMR field (v1.27: patient-gated, section-routed) ---
+  // v1.27 — robust, VERIFIED text entry (same logic as background mlsRobustType):
+  // native setter/execCommand -> simulated paste -> per-character keystrokes, re-reading
+  // after each so we never claim success when a controlled input rejected the write.
+  function _robustType(el, txt) {
+    txt = String(txt == null ? '' : txt);
+    function rd() { return el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || ''); }
+    function landed() { var cur = rd(); if (!cur) return false; var pb = txt.replace(/\s+/g, ' ').trim().slice(0, 30); return cur.replace(/\s+/g, ' ').indexOf(pb) >= 0 || cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
+    function setNative(v) { if (el.isContentEditable) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    try { el.click(); } catch (e) {}
+    try { el.focus(); } catch (e) {}
     try {
-      var cur = el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || '');
-      if (!cur) return false;
-      var probe = String(note).replace(/\s+/g, ' ').trim().slice(0, 30);
-      return String(cur).replace(/\s+/g, ' ').indexOf(probe) >= 0 || String(cur).replace(/\s+/g, '').length >= Math.min(String(note).replace(/\s+/g, '').length, 15);
-    } catch (e) { return false; }
+      try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
+      if (el.isContentEditable) {
+        try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
+        try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {}
+        var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) { setNative(txt); }
+      } else { setNative(txt); }
+      try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: txt })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
+      try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+      try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
+    } catch (e) {}
+    if (landed()) return true;
+    try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: txt })); } catch (e) {} try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {}
+    if (landed()) return true;
+    try {
+      if (txt.length <= 200) {
+        setNative('');
+        for (var i = 0; i < txt.length; i++) {
+          var ch = txt.charAt(i), cur = txt.slice(0, i + 1);
+          try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {}
+          try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {}
+          if (el.isContentEditable) { var _ec2; try { _ec2 = document.execCommand('insertText', false, ch); } catch (e) { _ec2 = false; } if (!_ec2) { setNative(cur); } } else { setNative(cur); }
+          try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
+          try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {}
+        }
+        try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+      }
+    } catch (e) {}
+    return landed();
   }
-  function localPaste(target, note) {
-    target.focus();
-    if (target.isContentEditable) {
-      try { target.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: note })); } catch (e) {}
-      if (!document.execCommand('insertText', false, note)) { target.textContent = note; }
-      try { target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: note })); } catch (e) { target.dispatchEvent(new Event('input', { bubbles: true })); }
-    } else { setNativeValue(target, note); }
-    return _confirmLanded(target, note);
-  }
+  function localPaste(target, note) { return _robustType(target, note); }
   function clipFallback(note) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(note).then(function () { log('Couldn’t reach the note field — copied the note instead. Click into the chart’s note box and press Ctrl/Cmd + V.'); }, function () { log('Couldn’t reach the note field, and copy was blocked. Click into the note box, then try again.'); });
-    } else { log('Couldn’t reach the note field. Click into the note box and try again.'); }
+      navigator.clipboard.writeText(note).then(function () { log('Couldn’t reach the field — copied the note instead. Click into the right field and press Ctrl/Cmd + V.'); }, function () { log('Couldn’t reach the field, and copy was blocked. Click into the field, then try again.'); });
+    } else { log('Couldn’t reach the field. Click into the field and try again.'); }
+  }
+  // remove any leftover override button from a previous attempt
+  function _clearOverride() { try { var b = panel.querySelector('#mls-ins-override'); if (b) b.remove(); } catch (e) {} }
+  // dob shown only in the doctor's own browser; nothing is logged off-device
+  function _short(name, dob) { var s = (name || '').trim(); if (dob) s += (s ? ' ' : '') + '(' + dob + ')'; return s || 'unknown'; }
+  function _renderWrite(resp) {
+    _clearOverride();
+    if (!resp) { clipFallback(noteBox.value.trim()); return; }
+    if (resp.error) { log('⚠ ' + resp.error); return; }
+    // PATIENT GATE blocked the write
+    if (resp.blocked) {
+      var p = resp.patient || {};
+      if (resp.patientStatus === 'mismatch') {
+        log('⛔ PATIENT MISMATCH — nothing was written. MLS active patient: ' + _short(p.mlsName, p.mlsDob) + ' · Athena chart shows: ' + _short(p.athName, p.athDob) + '. Open the correct chart (or switch the MLS patient) so they match, then Insert again.');
+      } else {
+        log('⛔ Could not verify the patient — nothing was written. MLS: ' + _short(p.mlsName, p.mlsDob) + ' · Athena chart read: ' + _short(p.athName, p.athDob) + '. Make sure the patient chart is open in Athena and the right patient is active in MLS.');
+      }
+      // offer an explicit, consent-based override
+      try {
+        var btn = document.createElement('button'); btn.id = 'mls-ins-override'; btn.className = 'b';
+        btn.style.cssText = 'margin-top:6px;width:100%;border:1px solid #c0392b;color:#c0392b;background:#fff5f4;font-weight:700';
+        btn.textContent = '⚠ Insert anyway — I confirmed this is the right patient';
+        btn.addEventListener('click', function () { _clearOverride(); log('Override confirmed — writing…'); _doVerifiedWrite(noteBox.value.trim(), true); });
+        var host = panel.querySelector('#mls-log'); if (host && host.parentNode) host.parentNode.insertBefore(btn, host);
+      } catch (e) {}
+      return;
+    }
+    // MATCH (or override): show who, then each field that was written
+    var pt = resp.patient || {};
+    log('✓ Found patient: ' + _short(pt.athName || pt.mlsName, pt.athDob || pt.mlsDob) + (resp.forced ? ' (override)' : '') + ' — writing to this chart.');
+    var wr = resp.wrote || [];
+    if (!wr.length) { log('⚠ Patient verified, but I found no matching field to write into. Open the section you want and click its field, then Insert.'); return; }
+    var okN = 0, badN = 0;
+    wr.forEach(function (w) {
+      if (w.confirmed) { okN++; log('   ✓ ' + (w.targetLabel || w.section) + (w.chosenLabel && w.chosenLabel !== w.targetLabel ? ' (' + w.chosenLabel + ')' : '') + ' — verified.'); }
+      else if (w.notfound) { badN++; log('   ⚠ ' + (w.targetLabel || w.section) + ' — no matching field found here (not written).'); }
+      else { badN++; log('   ⚠ ' + (w.targetLabel || w.section) + ' — wrote but could not confirm; check before signing.'); }
+    });
+    log((badN === 0 ? '✓ All sections placed and verified.' : '⚠ ' + okN + ' verified, ' + badN + ' need a check.') + ' Review and sign in your EMR — MLS never saves or signs for you.');
+  }
+  function _doVerifiedWrite(note, force) {
+    if (!note) { log('Nothing to insert yet.'); return; }
+    log(force ? 'Writing (override)…' : 'Finding and verifying the patient…');
+    try { chrome.runtime.sendMessage({ type: 'mlsVerifiedWrite', note: note, force: !!force }, function (resp) { _renderWrite(resp); }); }
+    catch (e) { clipFallback(note); }
   }
   $('#mls-ins').addEventListener('click', () => {
     const note = noteBox.value.trim();
     if (!note) { log('Nothing to paste yet.'); return; }
-    // 1) Fast path: a note field in THIS (top) frame — paste AND confirm it landed.
-    const target = bestNoteField();
-    if (target && isEditable(target)) {
-      try { if (localPaste(target, note)) { log('✓ Inserted the note into the chart field — verified. Review and sign in your EMR.'); return; } } catch (e) {}
-    }
-    // 2) athenaOne / Epic put the note box inside an IFRAME the panel can't see — ask the
-    //    background worker to score, paste, and CONFIRM across ALL frames of this tab.
-    log('Finding the note field across the page…');
-    try {
-      chrome.runtime.sendMessage({ type: 'mlsPasteHere', note }, (resp) => {
-        if (resp && resp.ok && resp.confirmed) { log('✓ Inserted the note into the chart (' + (resp.into || 'note field') + ') — verified. Review and sign in your EMR.'); return; }
-        if (resp && resp.ok) { log('⚠ Inserted into ' + (resp.into || 'a field') + ', but could not verify it stuck. Check the EMR note field before signing — if it’s empty, use Copy and paste manually.'); return; }
-        clipFallback(note);
-      });
-    } catch (e) { clipFallback(note); }
+    // EVERY write goes through the patient-match gate first (no silent top-frame bypass).
+    _doVerifiedWrite(note, false);
   });
   $('#mls-cpy').addEventListener('click', () => {
     const txt = noteBox.value || '';

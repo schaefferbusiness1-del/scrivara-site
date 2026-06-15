@@ -6,47 +6,318 @@ const DEFAULT_BACKEND = 'https://scrivara-backend.onrender.com';
 const _mlsFrameMap = {};
 
 // ===========================================================================
-// NOTE WRITE-BACK ENGINE (v1.26). Shared, injected page-context helpers used by
-// both the panel's "Insert into chart" path (mlsPasteHere) and the app-driven
-// paste (mlsAppPasteRequest). Improvements over v1.25:
-//   - Field IDENTITY scoring (label/aria/placeholder/name/id + associated <label>)
-//     prefers real note fields (note/HPI/assessment/plan/SOAP/narrative/...) and
-//     penalizes search/chat/ID/login fields, layered on top of the size heuristic
-//     so the largest field still wins when identity is ambiguous (no regression).
-//   - POST-PASTE CONFIRMATION: after writing, the field is re-read to verify the
-//     text actually landed (athenaOne's controlled inputs can silently reject a
-//     programmatic write) so we never report success when nothing was inserted.
-// These NEVER click Save/Sign — they only fill a text field.
+// MLS Assist NOTE WRITE-BACK ENGINE (v1.27 — "section router + verified typing
+// + patient-match gate"). Injected page-context helpers + worker-scope pure
+// helpers used by the panel "Insert into chart" path and the app-driven paste.
+//
+// Three pillars (per Michael):
+//   1) RELIABLE TYPING — one verified primitive (mlsRobustType): native value
+//      setter / execCommand + framework events, then simulated paste, then
+//      per-character keystrokes, RE-READING the field after each so we never
+//      claim success on a controlled input that silently rejected the write.
+//   2) SMART FIELD ROUTING — classify the MLS content into an athenaOne section
+//      (insurance / diagnoses[ICD-10] / orders[CPT] / procedure / assessment&plan
+//      / hpi / physical exam / ros / note) and find the field whose LABEL + SECTION
+//      HEADING context matches — insurance never lands in the note body, codes
+//      never land in free-text. Reports exactly which field each piece went to.
+//   3) PATIENT SAFETY GATE — before ANY write, read the MLS active patient and the
+//      open Athena chart identity (name/DOB/MRN) and MATCH. Write only on a
+//      confident match; otherwise refuse and warn. (mlsReadChartIdentity /
+//      mlsReadActivePatient / mlsMatchPatients.)
+// NOTHING here ever clicks Save/Sign — these only fill fields.
 // ===========================================================================
-function mlsFieldScanner() {
-  function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>30; }catch(e){ return false; } }
-  function hay(el){ var h=((el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('placeholder')||el.getAttribute('name')||el.getAttribute('title')||el.id))||''); try{ if(el.id){ var lb=document.querySelector('label[for="'+el.id+'"]'); if(lb) h+=' '+(lb.textContent||''); } }catch(e){} return String(h).toLowerCase(); }
-  function score(el){ var r=el.getBoundingClientRect(); var area=Math.min(r.width*r.height,400000); var h=hay(el); var s=area/1000; if(/note|hpi|assess|plan|soap|progress|narrative|subjective|objective|chief|complaint|document|free.?text|encounter|impression|history of present/.test(h)) s+=1000; if(/search|find|lookup|filter|chat|messag|comment|reason for|address|e-?mail|phone|\bnpi\b|\bmrn\b|patient.?id|claim|invoice|login|password|user.?name|\bzip\b|\bcity\b|\bstate\b/.test(h)) s-=1500; if((el.tagName||'')==='TEXTAREA') s+=120; if(el.isContentEditable) s+=100; return s; }
-  var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
-  var best=null, bestScore=-1e12; cs.forEach(function(el){ var sc=score(el); if(sc>bestScore){ bestScore=sc; best=el; } });
-  return { has: !!best, score: best?bestScore:-1e12, count: cs.length };
+
+// ---- Section label patterns (how a field's section context is recognized) ----
+// Duplicated inside injected functions because injected funcs must be self-contained.
+function _mlsSectDefs() {
+  return [
+    { key:'insurance',       label:'Insurance',
+      fieldRe:/insuranc|payer|payor|subscriber|policy|member\s*id|group\s*(number|no|#)|coverage|guarantor|plan\s*name/,
+      sigs:['insurance:','primary insurance','secondary insurance','payer:','payor:','policy number','policy #','policy no','member id','group number','group #','subscriber','copay','co-pay','deductible','medicare','medicaid','bcbs','blue cross','aetna','cigna','unitedhealth','united health','umr','humana','tricare'] },
+    { key:'diagnoses',       label:'Diagnoses (ICD-10)',
+      fieldRe:/diagnos|\bicd\b|icd-?10|problem\s*list/,
+      sigs:['icd-10','icd10','icd-10-cm','diagnosis:','diagnoses:','dx:','problem list','assessment codes'] },
+    { key:'orders',          label:'Orders / Procedure codes (CPT)',
+      fieldRe:/orders?\b|\bcpt\b|procedure\s*code|hcpcs|billing|charge|superbill|e&m|e\/m/,
+      sigs:['cpt:','cpt code','cpt-','hcpcs','procedure code','billing code','charge:','superbill','e/m level','e&m level','order:','orders:'] },
+    { key:'procedure',       label:'Procedure Documentation',
+      fieldRe:/procedur|operativ|op.?note|injection|fluoro|epidural|nerve\s*block|\bblock\b|aspiration|biopsy|arthrocentesis|implant|anesthesia|\btemplate\b|\besi\b|\bmbb\b|\brfa\b|surg|document/,
+      sigs:['preoperative diagnos','pre-operative diagnos','postoperative diagnos','post-operative diagnos','description of procedure','procedure performed','date of operation','indications for the procedure','indications for procedure','estimated blood loss','operative note','op note','fluorosc','needle','epidural steroid','transforaminal','medial branch','radiofrequency','local anesth','under anesthesia','informed consent was obtained','time out','sterile prep','type of anesthesia'] },
+    { key:'assessment_plan', label:'Assessment & Plan',
+      fieldRe:/assess|\bplan\b|impression|a&p|a\/p|decision\s*making/,
+      sigs:['assessment:','impression:','plan:','differential','we will','recommend','refer to','follow up in','follow-up in','medical decision'] },
+    { key:'hpi',             label:'HPI',
+      fieldRe:/\bhpi\b|history of present|present illness|subjective|chief complaint|interval history/,
+      sigs:['chief complaint','history of present illness','hpi:','presents with','complains of','since the last visit','interval history'] },
+    { key:'physical_exam',   label:'Physical Exam',
+      fieldRe:/physical exam|\bpe\b|\bexam\b|objective|findings/,
+      sigs:['physical exam','on exam','inspection:','palpation','range of motion','tenderness','motor strength','reflexes','straight leg raise','gait','5/5'] },
+    { key:'ros',             label:'Review of Systems',
+      fieldRe:/review of systems|\bros\b/,
+      sigs:['review of systems','ros:','denies fever','denies chest pain','constitutional:'] },
+    { key:'progress',        label:'Note',
+      fieldRe:/note|progress|narrative|free.?text|encounter|impression|document|hpi|assess|plan/,
+      sigs:[] }
+  ];
 }
-function mlsNotePaster(text) {
-  function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>30; }catch(e){ return false; } }
-  function hay(el){ var h=((el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('placeholder')||el.getAttribute('name')||el.getAttribute('title')||el.id))||''); try{ if(el.id){ var lb=document.querySelector('label[for="'+el.id+'"]'); if(lb) h+=' '+(lb.textContent||''); } }catch(e){} return String(h).toLowerCase(); }
-  function score(el){ var r=el.getBoundingClientRect(); var area=Math.min(r.width*r.height,400000); var h=hay(el); var s=area/1000; if(/note|hpi|assess|plan|soap|progress|narrative|subjective|objective|chief|complaint|document|free.?text|encounter|impression|history of present/.test(h)) s+=1000; if(/search|find|lookup|filter|chat|messag|comment|reason for|address|e-?mail|phone|\bnpi\b|\bmrn\b|patient.?id|claim|invoice|login|password|user.?name|\bzip\b|\bcity\b|\bstate\b/.test(h)) s-=1500; if((el.tagName||'')==='TEXTAREA') s+=120; if(el.isContentEditable) s+=100; return s; }
-  var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
-  var best=null, bestScore=-1e12; cs.forEach(function(el){ var sc=score(el); if(sc>bestScore){ bestScore=sc; best=el; } });
-  if(!best) return { ok:false, notfound:true };
-  try{ best.scrollIntoView({block:'center'}); best.focus(); }catch(e){}
-  try{ best.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true})); }catch(e){}
-  if(best.isContentEditable){ try{ best.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:text})); }catch(e){} if(!document.execCommand('insertText',false,text)){ try{ best.textContent=text; }catch(e){} } }
-  else { var p=(best.tagName==='TEXTAREA')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; var st=Object.getOwnPropertyDescriptor(p,'value'); if(st&&st.set) st.set.call(best,text); else best.value=text; }
-  try{ best.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text})); }catch(e){ best.dispatchEvent(new Event('input',{bubbles:true})); }
-  best.dispatchEvent(new Event('change',{bubbles:true}));
-  try{ best.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true})); }catch(e){}
-  // Confirm the text actually landed (controlled inputs may reject a programmatic write).
-  var cur = best.isContentEditable ? (best.innerText||best.textContent||'') : (best.value||'');
-  var probe = String(text).replace(/\s+/g,' ').trim().slice(0,30);
-  var curN = String(cur).replace(/\s+/g,' ');
-  var confirmed = !!cur && (curN.indexOf(probe)>=0 || String(cur).replace(/\s+/g,'').length >= Math.min(String(text).replace(/\s+/g,'').length,15));
-  return { ok:true, confirmed:confirmed, into:(best.getAttribute&&(best.getAttribute('aria-label')||best.getAttribute('name')))||(best.tagName||'').toLowerCase(), len:String(cur).length };
+
+// Classify note text -> best target section key. Priority order makes a whole
+// op/procedure note win when present; pure code/insurance blocks route to their field.
+function mlsRouteSection(text) {
+  var t = String(text || '').toLowerCase();
+  var defs = _mlsSectDefs();
+  var order = ['procedure','insurance','orders','diagnoses','assessment_plan','hpi','physical_exam','ros'];
+  var scores = {};
+  defs.forEach(function (d) { var n = 0; d.sigs.forEach(function (s) { if (t.indexOf(s) >= 0) n++; }); scores[d.key] = n; });
+  // bare ICD-10 codes (e.g. M54.16) boost diagnoses; 5-digit CPT (e.g. 64483) boost orders
+  if (/\b[a-tv-z][0-9][0-9ab](\.[0-9a-z]{1,4})?\b/i.test(text || '')) scores.diagnoses += 1;
+  if (/\b(99[0-2]\d{2}|6[24]\d{3}|20\d{3}|72\d{3})\b/.test(text || '')) scores.orders += 1;
+  var bestK = 'progress', bestN = 0;
+  order.forEach(function (k) { if (scores[k] > bestN) { bestN = scores[k]; bestK = k; } });
+  if (bestN < 2) bestK = 'progress';
+  return { section: bestK, strength: bestN, scores: scores };
 }
+
+// Split a structured MLS note into labeled segments so each part is routed to the
+// matching Athena field (insurance->insurance, ICD-10->diagnoses, CPT->orders,
+// op-note narrative->Procedure Documentation, etc.). If no headers are recognized,
+// returns a single segment routed by mlsRouteSection. Pure/worker-scope (testable).
+function mlsSegmentNote(text) {
+  var src = String(text || '');
+  if (!src.trim()) return [];
+  // An op/procedure note is ONE document — keep it whole, route to Procedure Documentation.
+  if (mlsRouteSection(src).section === 'procedure') return [{ section: 'procedure', text: src }];
+  var headerMap = [
+    { re:/^\s*(insurance|primary insurance|payer|payor|coverage)\s*[:\-]/i, section:'insurance' },
+    { re:/^\s*(icd-?10|icd-?10-cm|diagnos(is|es)|dx)\s*[:\-]/i, section:'diagnoses' },
+    { re:/^\s*(cpt|cpt codes?|procedure codes?|hcpcs|orders?|billing|charges?)\s*[:\-]/i, section:'orders' },
+    { re:/^\s*(procedure|operative note|op note|procedure note|procedure documentation|description of procedure)\s*[:\-]/i, section:'procedure' },
+    { re:/^\s*(assessment( and plan| ?& ?plan)?|impression|a\/p|a&p)\s*[:\-]/i, section:'assessment_plan' },
+    { re:/^\s*(plan)\s*[:\-]/i, section:'assessment_plan' },
+    { re:/^\s*(hpi|history of present illness|subjective|chief complaint|cc)\s*[:\-]/i, section:'hpi' },
+    { re:/^\s*(physical exam(ination)?|objective|exam)\s*[:\-]/i, section:'physical_exam' },
+    { re:/^\s*(review of systems|ros)\s*[:\-]/i, section:'ros' }
+  ];
+  var lines = src.split(/\r?\n/);
+  var segs = [], cur = null;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var matchedSection = null;
+    for (var h = 0; h < headerMap.length; h++) { if (headerMap[h].re.test(line)) { matchedSection = headerMap[h].section; break; } }
+    if (matchedSection) {
+      if (cur) segs.push(cur);
+      cur = { section: matchedSection, text: line };
+    } else if (cur) {
+      cur.text += '\n' + line;
+    } else {
+      cur = { section: null, text: line };
+    }
+  }
+  if (cur) segs.push(cur);
+  // collapse: if 0 or 1 recognized header, treat whole note as one routed segment
+  var recognized = segs.filter(function (s) { return s.section; }).length;
+  if (recognized <= 1) {
+    var r = mlsRouteSection(src);
+    return [{ section: r.section, text: src }];
+  }
+  // any leading unlabeled chunk -> route by its own content
+  segs = segs.map(function (s) { if (!s.section) { s.section = mlsRouteSection(s.text).section; } s.text = s.text.replace(/\s+$/,''); return s; }).filter(function (s) { return s.text.trim(); });
+  var merged = [];
+  segs.forEach(function (s) { var last = merged[merged.length - 1]; if (last && last.section === s.section) { last.text += '\n' + s.text; } else { merged.push({ section: s.section, text: s.text }); } });
+  return merged;
+}
+
+// ---- Robust, VERIFIED text entry primitive (injected). Single source of truth. ----
+function mlsRobustType(el, txt) {
+  txt = String(txt == null ? '' : txt);
+  function rd() { return el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || ''); }
+  function landed() {
+    var cur = rd(); if (!cur) return false;
+    var pb = txt.replace(/\s+/g, ' ').trim().slice(0, 30);
+    return cur.replace(/\s+/g, ' ').indexOf(pb) >= 0 || cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15);
+  }
+  function setNative(v) {
+    if (el.isContentEditable) { try { el.textContent = v; } catch (e) {} return; }
+    var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    var d = Object.getOwnPropertyDescriptor(pr, 'value');
+    if (d && d.set) d.set.call(el, v); else el.value = v;
+  }
+  try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+  try { el.click(); } catch (e) {}
+  try { el.focus(); } catch (e) {}
+  // METHOD 1 — native setter / execCommand + full framework event sequence
+  try {
+    try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
+    if (el.isContentEditable) {
+      try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
+      try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {}
+      var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) { setNative(txt); }
+    } else { setNative(txt); }
+    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: txt })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
+    try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
+  } catch (e) {}
+  if (landed()) return { ok: true, confirmed: true, method: 'native', into: rd().length };
+  // METHOD 2 — simulated paste (controlled editors that accept paste when value= is ignored)
+  try {
+    var dt = new DataTransfer(); dt.setData('text/plain', txt);
+    el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: txt })); } catch (e) {}
+    try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+  } catch (e) {}
+  if (landed()) return { ok: true, confirmed: true, method: 'paste', into: rd().length };
+  // METHOD 3 — per-character keystrokes (typeahead / autocomplete fields)
+  try {
+    if (txt.length <= 200) {
+      setNative('');
+      for (var i = 0; i < txt.length; i++) {
+        var ch = txt.charAt(i), cur = txt.slice(0, i + 1);
+        try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {}
+        try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {}
+        if (el.isContentEditable) { var _ec2; try { _ec2 = document.execCommand('insertText', false, ch); } catch (e) { _ec2 = false; } if (!_ec2) { setNative(cur); } } else { setNative(cur); }
+        try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
+        try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {}
+      }
+      try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    }
+  } catch (e) {}
+  if (landed()) return { ok: true, confirmed: true, method: 'keystroke', into: rd().length };
+  return { ok: true, confirmed: false, method: 'unconfirmed', into: rd().length };
+}
+
+// ---- Field scanner (injected, read-only): score editable fields for a target section ----
+function mlsFieldScanner(noteText, forcedSection) {
+  function vis(el) { try { if (el.disabled || el.readOnly) return false; var s = getComputedStyle(el); if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < .05) return false; var r = el.getBoundingClientRect(); return r.width > 110 && r.height > 18; } catch (e) { return false; } }
+  function ownLabel(el) { try { var l = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('name'))) || ''; if (!l && el.id) { var lb = document.querySelector('label[for="' + el.id + '"]'); if (lb) l = (lb.textContent || '').trim(); } return String(l).replace(/\s+/g, ' ').trim().slice(0, 48); } catch (e) { return ''; } }
+  function sectionHeading(el) { try { var n = el, hops = 0; while (n && hops < 5) { n = n.parentElement; hops++; if (!n) break; var hd = n.querySelector && n.querySelector('h1,h2,h3,h4,h5,h6,legend,[role="heading"]'); if (hd) { var ht = (hd.textContent || '').trim(); if (ht && ht.length <= 64) return ht.replace(/\s+/g, ' '); } var al = n.getAttribute && (n.getAttribute('aria-label') || n.getAttribute('data-section') || n.getAttribute('data-sectionname')); if (al && al.length <= 64) return String(al).replace(/\s+/g, ' '); } } catch (e) {} return ''; }
+  function hay(el) { var h = ownLabel(el) + ' ' + sectionHeading(el); try { var n = el, hops = 0; while (n && hops < 4) { n = n.parentElement; hops++; if (!n) break; var al = n.getAttribute && (n.getAttribute('aria-label') || n.getAttribute('data-section') || n.getAttribute('data-sectionname') || n.getAttribute('title')); if (al) h += ' ' + al; } } catch (e) {} return String(h).toLowerCase(); }
+  var DEFS = (function () { return [
+    { key:'insurance', label:'Insurance', fieldRe:/insuranc|payer|payor|subscriber|policy|member\s*id|group\s*(number|no|#)|coverage|guarantor|plan\s*name/ },
+    { key:'diagnoses', label:'Diagnoses (ICD-10)', fieldRe:/diagnos|\bicd\b|icd-?10|problem\s*list/ },
+    { key:'orders', label:'Orders / Procedure codes (CPT)', fieldRe:/orders?\b|\bcpt\b|procedure\s*code|hcpcs|billing|charge|superbill|e&m|e\/m/ },
+    { key:'procedure', label:'Procedure Documentation', fieldRe:/procedur|operativ|op.?note|injection|fluoro|epidural|nerve\s*block|\bblock\b|aspiration|biopsy|arthrocentesis|implant|anesthesia|\btemplate\b|\besi\b|\bmbb\b|\brfa\b|surg|document/ },
+    { key:'assessment_plan', label:'Assessment & Plan', fieldRe:/assess|\bplan\b|impression|a&p|a\/p|decision\s*making/ },
+    { key:'hpi', label:'HPI', fieldRe:/\bhpi\b|history of present|present illness|subjective|chief complaint|interval history/ },
+    { key:'physical_exam', label:'Physical Exam', fieldRe:/physical exam|\bpe\b|\bexam\b|objective|findings/ },
+    { key:'ros', label:'Review of Systems', fieldRe:/review of systems|\bros\b/ },
+    { key:'progress', label:'Note', fieldRe:/note|progress|narrative|free.?text|encounter|impression|document|hpi|assess|plan/ }
+  ]; })();
+  var BAD = /search|find|lookup|filter|chat|messag|comment|reason for|\baddress\b|e-?mail|phone|\bnpi\b|\bmrn\b|patient.?id|claim|login|password|user.?name|\bzip\b|\bcity\b|\bstate\b/;
+  function route(t) { t = String(t || '').toLowerCase(); var order = ['procedure','insurance','orders','diagnoses','assessment_plan','hpi','physical_exam','ros']; var SIG = {
+      procedure:['preoperative diagnos','postoperative diagnos','description of procedure','date of operation','indications for procedure','estimated blood loss','operative note','op note','fluorosc','epidural steroid','medial branch','radiofrequency','under anesthesia','informed consent was obtained','type of anesthesia'],
+      insurance:['insurance:','primary insurance','payer:','policy number','member id','group number','subscriber','copay','deductible','medicare','medicaid','aetna','cigna','umr'],
+      orders:['cpt:','cpt code','hcpcs','procedure code','billing code','e/m level','orders:'],
+      diagnoses:['icd-10','icd10','diagnosis:','diagnoses:','problem list','dx:'],
+      assessment_plan:['assessment:','impression:','plan:','differential','follow up in','follow-up in','recommend'],
+      hpi:['chief complaint','history of present illness','hpi:','presents with','complains of','interval history'],
+      physical_exam:['physical exam','on exam','palpation','range of motion','tenderness','reflexes','straight leg raise'],
+      ros:['review of systems','ros:','denies fever','constitutional:'] };
+    var bestK = 'progress', bestN = 0; order.forEach(function (k) { var n = 0; (SIG[k]||[]).forEach(function (s) { if (t.indexOf(s) >= 0) n++; }); if (n > bestN) { bestN = n; bestK = k; } });
+    if (bestN < 2) bestK = 'progress'; return bestK; }
+  function fieldSection(h) { for (var i = 0; i < DEFS.length; i++) { if (DEFS[i].fieldRe.test(h)) return DEFS[i].key; } return 'other'; }
+  var target = forcedSection || route(noteText);
+  var tdef = null; for (var d = 0; d < DEFS.length; d++) { if (DEFS[d].key === target) { tdef = DEFS[d]; break; } } if (!tdef) tdef = DEFS[DEFS.length - 1];
+  function score(el) { var r = el.getBoundingClientRect(); var area = Math.min(r.width * r.height, 400000); var h = hay(el); var s = area / 1000;
+    if (tdef.fieldRe.test(h)) s += 2000;
+    if (/note|hpi|assess|plan|soap|progress|narrative|subjective|objective|impression|free.?text|document|history of present/.test(h)) s += 400;
+    if (BAD.test(h)) s -= 1800;
+    if ((el.tagName || '') === 'TEXTAREA') s += 120;
+    if (el.isContentEditable) s += 100;
+    try { if (el === document.activeElement) s += 9000; } catch (e) {}
+    return s; }
+  var cs = [].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"],input[type="text"],input:not([type])')).filter(vis);
+  try { var act = document.activeElement; if (act && (act.tagName === 'TEXTAREA' || act.isContentEditable || act.tagName === 'INPUT') && cs.indexOf(act) < 0) { var ar = act.getBoundingClientRect(); if (ar.width > 40 && ar.height > 12) cs.push(act); } } catch (e) {}
+  var ranked = cs.map(function (el) { var h = hay(el); return { el: el, sc: score(el), sec: fieldSection(h), label: (ownLabel(el) || sectionHeading(el) || (el.tagName || '').toLowerCase()) }; }).sort(function (a, b) { return b.sc - a.sc; });
+  var best = ranked[0] || null;
+  var cands = [], seen = {}; ranked.forEach(function (o) { var key = (o.label || '').toLowerCase(); if (o.label && !seen[key] && cands.length < 6) { seen[key] = 1; cands.push({ label: o.label, section: o.sec }); } });
+  return { has: !!best, score: best ? best.sc : -1e12, count: cs.length, target: target, targetLabel: tdef.label, chosenSection: best ? best.sec : 'other', chosenLabel: best ? best.label : '', targetMatched: best ? tdef.fieldRe.test(hay(best.el)) : false, candidates: cands };
+}
+
+// ---- Field paster (injected): find best field for the target section, write+confirm ----
+function mlsNotePaster(text, forcedSection) {
+  var scan = mlsFieldScanner(text, forcedSection);
+  if (!scan.has) return { ok: false, notfound: true, target: scan.target, targetLabel: scan.targetLabel, candidates: scan.candidates };
+  // re-resolve the chosen element in THIS frame (scanner returns metadata, not the node)
+  function vis(el) { try { if (el.disabled || el.readOnly) return false; var s = getComputedStyle(el); if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < .05) return false; var r = el.getBoundingClientRect(); return r.width > 110 && r.height > 18; } catch (e) { return false; } }
+  function ownLabel(el) { try { var l = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('name'))) || ''; if (!l && el.id) { var lb = document.querySelector('label[for="' + el.id + '"]'); if (lb) l = (lb.textContent || '').trim(); } return String(l).replace(/\s+/g, ' ').trim().slice(0, 48); } catch (e) { return ''; } }
+  function sectionHeading(el) { try { var n = el, hops = 0; while (n && hops < 5) { n = n.parentElement; hops++; if (!n) break; var hd = n.querySelector && n.querySelector('h1,h2,h3,h4,h5,h6,legend,[role="heading"]'); if (hd) { var ht = (hd.textContent || '').trim(); if (ht && ht.length <= 64) return ht.replace(/\s+/g, ' '); } } } catch (e) {} return ''; }
+  // rebuild ranking identically and pick the top element
+  var probeLabel = scan.chosenLabel;
+  var cs = [].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"],input[type="text"],input:not([type])')).filter(vis);
+  try { var act = document.activeElement; if (act && (act.tagName === 'TEXTAREA' || act.isContentEditable || act.tagName === 'INPUT') && cs.indexOf(act) < 0) cs.push(act); } catch (e) {}
+  var best = null; for (var i = 0; i < cs.length; i++) { var lab = (ownLabel(cs[i]) || sectionHeading(cs[i]) || (cs[i].tagName || '').toLowerCase()); if (lab === probeLabel) { best = cs[i]; break; } }
+  if (!best) { try { if (document.activeElement && vis(document.activeElement)) best = document.activeElement; } catch (e) {} }
+  if (!best) best = cs[0] || null;
+  if (!best) return { ok: false, notfound: true, target: scan.target, targetLabel: scan.targetLabel, candidates: scan.candidates };
+  var wr = mlsRobustType(best, text);
+  try { best.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {}
+  return { ok: true, confirmed: !!wr.confirmed, method: wr.method, into: scan.chosenLabel || (best.tagName || '').toLowerCase(), len: wr.into, target: scan.target, targetLabel: scan.targetLabel, chosenSection: scan.chosenSection, chosenLabel: scan.chosenLabel, targetMatched: scan.targetMatched, candidates: scan.candidates };
+}
+
+// ---- Patient identity reader: open Athena chart (injected, runs per frame) ----
+function mlsReadChartIdentity() {
+  var txt = (document.body && document.body.innerText || '').replace(/ /g, ' ');
+  var lo = txt.toLowerCase();
+  function near(reLabel) { var m = reLabel.exec(txt); return m ? m : null; }
+  var dob = '';
+  var dm = /(?:dob|d\.o\.b\.|date of birth|birth date)\s*[:\-]?\s*([01]?\d[\/\-\.][0-3]?\d[\/\-\.]\d{2,4})/i.exec(txt);
+  if (dm) dob = dm[1];
+  var mrn = '';
+  var mm = /(?:mrn|medical record(?:\s*(?:no|number|#))?|chart\s*#|patient\s*id)\s*[:\-#]?\s*([a-z]?\d[a-z0-9\-]{2,})/i.exec(txt);
+  if (mm) mrn = mm[1];
+  var name = '';
+  var nm = /(?:patient(?:\s*name)?|name)\s*[:\-]\s*([A-Z][A-Za-z'\-]+,\s*[A-Z][A-Za-z'\-]+(?:\s+[A-Z])?)/.exec(txt);
+  if (nm) name = nm[1];
+  if (!name) { var nm2 = /\b([A-Z][a-z'\-]+,\s+[A-Z][a-z'\-]+)\b/.exec(txt); if (nm2) name = nm2[1]; }
+  var score = (dob ? 2 : 0) + (mrn ? 2 : 0) + (name ? 1 : 0);
+  // clinical-ness so we pick the chart frame, not a nav frame
+  ['problem','medication','allerg','vital','diagnos','assessment','encounter'].forEach(function (k) { if (lo.indexOf(k) >= 0) score += 0.2; });
+  return { name: name, dob: dob, mrn: mrn, score: score };
+}
+
+// ---- Patient identity reader: MLS active patient (injected, runs on mlsscribe.com tab) ----
+function mlsReadActivePatient() {
+  function pick(o, keys) { for (var i = 0; i < keys.length; i++) { if (o && o[keys[i]] != null && String(o[keys[i]]).trim()) return String(o[keys[i]]).trim(); } return ''; }
+  var p = null;
+  try { if (window.activePatient && typeof window.activePatient === 'object') p = window.activePatient; } catch (e) {}
+  try { if (!p && typeof window.getActivePtId === 'function' && typeof window.getPatients === 'function') { var id = window.getActivePtId(); var list = window.getPatients() || []; p = list.filter(function (x) { return x && (x.id === id || x.client_id === id || x.external_id === id); })[0] || null; } } catch (e) {}
+  var name = '', dob = '', mrn = '';
+  if (p) { name = pick(p, ['name','fullName','patientName']); if (!name) { var fn = pick(p, ['firstName','first','givenName']); var ln = pick(p, ['lastName','last','familyName']); if (ln || fn) name = (ln ? ln + ', ' : '') + fn; } dob = pick(p, ['dob','dateOfBirth','birthDate','DOB']); mrn = pick(p, ['mrn','MRN','medicalRecordNumber','chartId']); }
+  if (!name || !dob) {
+    // fall back to the visible unified patient card / patient bar
+    try { var bar = document.querySelector('#mlsPatientCard, #patientBar, [data-mls-patient-card]') || document.body; var bt = (bar.innerText || ''); if (!dob) { var dm = /([01]?\d[\/\-\.][0-3]?\d[\/\-\.]\d{2,4})/.exec(bt); if (dm) dob = dm[1]; } if (!mrn) { var mm = /(?:mrn|a-?\d|chart)\s*[:#\-]?\s*([a-z]?\d[a-z0-9\-]{2,})/i.exec(bt); if (mm) mrn = mm[1]; } if (!name) { var nm = /\b([A-Z][a-z'\-]+,?\s+[A-Z][a-z'\-]+)\b/.exec(bt); if (nm) name = nm[1]; } } catch (e) {}
+  }
+  return { name: name, dob: dob, mrn: mrn };
+}
+
+// ---- Patient matcher (pure/worker-scope, testable). Conservative: default refuse. ----
+function mlsMatchPatients(mls, ath) {
+  function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }).sort(); }
+  function normDob(s) { var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (parseInt(y, 10) > 30 ? '19' : '20') + y; return ('0' + m[1]).slice(-2) + '/' + ('0' + m[2]).slice(-2) + '/' + y; }
+  function normMrn(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  var mDob = normDob(mls && mls.dob), aDob = normDob(ath && ath.dob);
+  var mMrn = normMrn(mls && mls.mrn), aMrn = normMrn(ath && ath.mrn);
+  var mName = normName(mls && mls.name), aName = normName(ath && ath.name);
+  var dobBoth = mDob && aDob, mrnBoth = mMrn && aMrn, nameBoth = mName.length && aName.length;
+  var dobMatch = dobBoth && mDob === aDob;
+  var mrnMatch = mrnBoth && mMrn === aMrn;
+  function nameOverlap() { if (!nameBoth) return 0; var setA = {}; aName.forEach(function (w) { setA[w] = 1; }); var hit = 0; mName.forEach(function (w) { if (setA[w]) hit++; }); return hit; }
+  var nameHits = nameOverlap();
+  var nameMatch = nameBoth && nameHits >= 2;
+  var nameContradict = nameBoth && nameHits === 0;
+  // contradiction on any strong identifier => mismatch
+  if ((dobBoth && !dobMatch) || (mrnBoth && !mrnMatch) || nameContradict) return { status: 'mismatch', dobMatch: dobMatch, mrnMatch: mrnMatch, nameMatch: nameMatch };
+  // confident match needs a strong identifier (DOB or MRN), or a full name + one weak signal
+  if (dobMatch || mrnMatch || (nameMatch && (mDob || mMrn ? false : true) && nameHits >= 2 && (mName.length >= 2))) {
+    if (dobMatch || mrnMatch) return { status: 'match', dobMatch: dobMatch, mrnMatch: mrnMatch, nameMatch: nameMatch };
+  }
+  return { status: 'uncertain', dobMatch: dobMatch, mrnMatch: mrnMatch, nameMatch: nameMatch };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { mlsRobustType: mlsRobustType, mlsFieldScanner: mlsFieldScanner, mlsNotePaster: mlsNotePaster, mlsRouteSection: mlsRouteSection, mlsSegmentNote: mlsSegmentNote, mlsMatchPatients: mlsMatchPatients, mlsReadChartIdentity: mlsReadChartIdentity, mlsReadActivePatient: mlsReadActivePatient };
+}
+
 function getCfg() { return new Promise(r => chrome.storage.local.get(['mlsBackend', 'mlsKey'], r)); }
 
 // NO-API-KEY MODE: read the doctor's LIVE MLS login token straight out of an open,
@@ -393,13 +664,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               try { el.click(); } catch (e) {}
             }
+            // v1.27 — robust, VERIFIED text entry (same logic as top-level mlsRobustType).
+            // native setter/execCommand -> simulated paste -> per-character keystrokes,
+            // re-reading after each so the agent learns whether the text ACTUALLY landed
+            // (this is why "open a patient and name it Adam" now confirms or fails loudly
+            // instead of silently reporting success when nothing was entered).
             function typeInto(el, text) {
+              var txt = String(text == null ? '' : text);
+              function rd() { return el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || ''); }
+              function landed() { var cur = rd(); if (!cur) return false; var pb = txt.replace(/\s+/g, ' ').trim().slice(0, 30); return cur.replace(/\s+/g, ' ').indexOf(pb) >= 0 || cur.replace(/\s+/g, '').length >= Math.min(txt.replace(/\s+/g, '').length, 15); }
+              function setNative(v) { if (el.isContentEditable) { try { el.textContent = v; } catch (e) {} return; } var pr = (el.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(el, v); else el.value = v; }
+              try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+              try { el.click(); } catch (e) {}
               try { el.focus(); } catch (e) {}
-              try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
-              if (el.isContentEditable) { try { el.textContent = ''; } catch (e) {} try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text })); } catch (e) {} if (!document.execCommand('insertText', false, text)) { el.textContent = text; } }
-              else { const p = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; const s = Object.getOwnPropertyDescriptor(p, 'value'); if (s && s.set) s.set.call(el, text); else el.value = text; }
-              try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text })); } catch (e) { el.dispatchEvent(new Event('input', { bubbles: true })); }
-              el.dispatchEvent(new Event('change', { bubbles: true })); try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
+              try {
+                try { el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); } catch (e) {}
+                if (el.isContentEditable) {
+                  try { var rg = document.createRange(); rg.selectNodeContents(el); var se = window.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
+                  try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: txt })); } catch (e) {}
+                  var _ec; try { _ec = document.execCommand('insertText', false, txt); } catch (e) { _ec = false; } if (!_ec) { setNative(txt); }
+                } else { setNative(txt); }
+                try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: txt })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
+                try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+                try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
+              } catch (e) {}
+              if (landed()) return { ok: true, confirmed: true, method: 'native', into: rd().length };
+              try { var dt = new DataTransfer(); dt.setData('text/plain', txt); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })); try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: txt })); } catch (e) {} try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} } catch (e) {}
+              if (landed()) return { ok: true, confirmed: true, method: 'paste', into: rd().length };
+              try {
+                if (txt.length <= 200) {
+                  setNative('');
+                  for (var i = 0; i < txt.length; i++) {
+                    var ch = txt.charAt(i), cur = txt.slice(0, i + 1);
+                    try { el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true })); } catch (e) {}
+                    try { el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true })); } catch (e) {}
+                    if (el.isContentEditable) { var _ec2; try { _ec2 = document.execCommand('insertText', false, ch); } catch (e) { _ec2 = false; } if (!_ec2) { setNative(cur); } } else { setNative(cur); }
+                    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })); } catch (e) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
+                    try { el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true })); } catch (e) {}
+                  }
+                  try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+                }
+              } catch (e) {}
+              if (landed()) return { ok: true, confirmed: true, method: 'keystroke', into: rd().length };
+              return { ok: true, confirmed: false, method: 'unconfirmed', into: rd().length };
             }
             function setSelectByText(sel, text) {
               const t = String(text || '').toLowerCase().trim();
@@ -432,7 +739,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               const el = _local() || _byIdx(a.target) || findEl(a.target) || (visible(document.activeElement) ? document.activeElement : null);
               if (!el) return { ok: false, notfound: true, msg: 'No field to type into.' };
               if (el.tagName === 'SELECT') return setSelectByText(el, a.text) ? { ok: true, msg: 'Selected ' + (a.text || '') + ' in ' + (a.target || 'dropdown') } : { ok: false, msg: 'Option not found in dropdown.' };
-              typeInto(el, a.text || ''); return { ok: true, msg: 'Typed into: ' + (a.target || 'field') };
+              var _tr = typeInto(el, a.text || '');
+              if (_tr && _tr.confirmed) return { ok: true, msg: 'Typed "' + String(a.text || '').slice(0, 40) + '" into ' + (a.target || 'field') + ' — verified (' + _tr.method + ').' };
+              return { ok: false, msg: 'Tried to type into ' + (a.target || 'field') + ' but the text did not stick — the field may be read-only, masked, or a typeahead that needs a selection. Try clicking the field first, or pick it from a list.' };
             }
             if (a.type === 'pastenote') {
               function isEd(el2) { if (!el2) return false; var tg = (el2.tagName || '').toUpperCase(); if (tg === 'TEXTAREA') return true; if (tg === 'INPUT') return /^(text|search|email|url|tel|)$/i.test(el2.type || ''); return !!el2.isContentEditable; }
@@ -440,8 +749,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               cs.sort(function (x, y) { var rx = x.getBoundingClientRect(), ry = y.getBoundingClientRect(); return (ry.width * ry.height) - (rx.width * rx.height); });
               var pe = cs[0] || (isEd(document.activeElement) ? document.activeElement : null);
               if (!pe) return { ok: false, notfound: true, msg: 'No note field found to paste into.' };
-              pe.scrollIntoView({ block: 'center' }); typeInto(pe, a.text || '');
-              return { ok: true, msg: 'Pasted the note into the chart field (' + ((a.text || '').length) + ' chars).' };
+              pe.scrollIntoView({ block: 'center' }); var _pr = typeInto(pe, a.text || '');
+              if (_pr && _pr.confirmed) return { ok: true, msg: 'Pasted the note into the chart field (' + ((a.text || '').length) + ' chars) — verified.' };
+              return { ok: false, msg: 'Tried to paste the note but could not confirm it landed — check the EMR note area, or use the panel Insert/Copy.' };
             }
             if (a.type === 'scroll') { window.scrollBy(0, a.dir === 'up' ? -600 : 600); return { ok: true, msg: 'Scrolled.' }; }
             if (a.type === 'read') { return { ok: true, msg: 'Read the screen.' }; }
@@ -472,8 +782,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         let last = { ok: false };
         for (let attempt = 0; attempt < 2; attempt++) {
           let measure = [];
-          try { measure = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: mlsFieldScanner }); }
-          catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId }, func: mlsFieldScanner }); }
+          try { measure = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, args: [note], func: mlsFieldScanner }); }
+          catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId }, args: [note], func: mlsFieldScanner }); }
           let winnerFrame = null, bestScore = -1e12;
           (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
           if (winnerFrame === null) { last = { ok: false, notfound: true }; await new Promise(r => setTimeout(r, 450)); continue; }
@@ -482,13 +792,71 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (last.ok && last.confirmed) break;
           await new Promise(res2 => setTimeout(res2, 450));
         }
-        if (last.ok && last.confirmed) sendResponse({ ok: true, confirmed: true, into: last.into });
-        else if (last.ok) sendResponse({ ok: true, confirmed: false, into: last.into });
+        if (last.ok) sendResponse({ ok: true, confirmed: !!last.confirmed, into: last.into, method: last.method, target: last.target, targetLabel: last.targetLabel, chosenSection: last.chosenSection, chosenLabel: last.chosenLabel, targetMatched: !!last.targetMatched, candidates: last.candidates });
         else sendResponse({ ok: false });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;
   }
+  // VERIFIED WRITE (v1.27) — the patient-safety gate + smart multi-field routing +
+  // reliable typing, tied together. Flow: identify the open Athena chart's patient and
+  // the MLS active patient, MATCH them, and ONLY write on a confident match (unless the
+  // doctor explicitly overrides after seeing the mismatch). Then segment the note and
+  // route each part to its matching Athena field (insurance->insurance, ICD-10->diagnoses,
+  // CPT->orders, op-note->Procedure Documentation, ...), confirming each. Never Save/Sign.
+  if (msg.type === 'mlsVerifiedWrite') {
+    (async () => {
+      try {
+        const note = String(msg.note || '');
+        const force = !!msg.force;
+        if (!note.trim()) return sendResponse({ ok: false, error: 'Nothing to insert yet.' });
+        const isMls = (u) => /mlsscribe\.com/.test(u || '');
+        // 1) Find the EMR (Athena) tab — prefer the tab the panel is on, else newest non-MLS tab.
+        let emrTab = null;
+        const su = (sender && sender.tab && sender.tab.url) || '';
+        if (sender && sender.tab && /^https?:/.test(su) && !isMls(su)) emrTab = sender.tab;
+        if (!emrTab) { const tabs = await chrome.tabs.query({}); const c = tabs.filter(t => /^https?:/.test(t.url || '') && !isMls(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); emrTab = c[0]; }
+        if (!emrTab) return sendResponse({ ok: false, error: 'No EMR/chart tab is open. Open the patient chart in your EMR, then try again.' });
+        // 2) Read the open chart's patient identity (best-scoring frame).
+        let chartId = { name: '', dob: '', mrn: '', score: 0 };
+        try { const idr = await chrome.scripting.executeScript({ target: { tabId: emrTab.id, allFrames: true }, func: mlsReadChartIdentity }); (idr || []).forEach(m => { if (m && m.result && m.result.score > chartId.score) chartId = m.result; }); }
+        catch (e) { try { const [ir] = await chrome.scripting.executeScript({ target: { tabId: emrTab.id }, func: mlsReadChartIdentity }); if (ir && ir.result) chartId = ir.result; } catch (e2) {} }
+        // 3) Read the MLS active patient from a signed-in mlsscribe.com tab.
+        let mlsPt = { name: '', dob: '', mrn: '' };
+        try { const mt = await chrome.tabs.query({ url: ['https://mlsscribe.com/*', 'https://*.mlsscribe.com/*'] }); mt.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); for (const t of mt) { try { const [mr] = await chrome.scripting.executeScript({ target: { tabId: t.id }, func: mlsReadActivePatient }); if (mr && mr.result && (mr.result.name || mr.result.dob || mr.result.mrn)) { mlsPt = mr.result; break; } } catch (e) {} } } catch (e) {}
+        // 4) Match (conservative — default refuse). Names appear only in the doctor's own browser.
+        const match = mlsMatchPatients(mlsPt, chartId);
+        const patient = { mlsName: mlsPt.name || '', mlsDob: mlsPt.dob || '', mlsMrn: mlsPt.mrn || '', athName: chartId.name || '', athDob: chartId.dob || '', athMrn: chartId.mrn || '' };
+        // 5) HARD GATE.
+        if (match.status !== 'match' && !force) {
+          return sendResponse({ ok: false, blocked: true, patientStatus: match.status, match: match, patient: patient,
+            reason: match.status === 'mismatch' ? 'Patient mismatch — refusing to write into this chart.' : 'Could not confidently verify the patient — refusing to write.' });
+        }
+        // 6) Segment + route each piece to its matching field, confirming each.
+        const segs = mlsSegmentNote(note);
+        const wrote = [];
+        for (const seg of segs) {
+          let last = { ok: false };
+          for (let attempt = 0; attempt < 2; attempt++) {
+            let measure = [];
+            try { measure = await chrome.scripting.executeScript({ target: { tabId: emrTab.id, allFrames: true }, args: [seg.text, seg.section], func: mlsFieldScanner }); }
+            catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId: emrTab.id }, args: [seg.text, seg.section], func: mlsFieldScanner }); }
+            let wf = null, bs = -1e12;
+            (measure || []).forEach(m => { if (m && m.result && m.result.has && m.result.score > bs) { bs = m.result.score; wf = (m.frameId != null ? m.frameId : 0); } });
+            if (wf === null) { last = { ok: false, notfound: true, targetLabel: (measure[0] && measure[0].result && measure[0].result.targetLabel) || seg.section }; await new Promise(r => setTimeout(r, 400)); continue; }
+            const [r] = await chrome.scripting.executeScript({ target: { tabId: emrTab.id, frameIds: [wf] }, args: [seg.text, seg.section], func: mlsNotePaster });
+            last = (r && r.result) || { ok: false };
+            if (last.ok && last.confirmed) break;
+            await new Promise(r => setTimeout(r, 400));
+          }
+          wrote.push({ section: seg.section, targetLabel: last.targetLabel || seg.section, chosenLabel: last.chosenLabel || '', confirmed: !!last.confirmed, written: !!last.ok, notfound: !!last.notfound, method: last.method || '' });
+        }
+        sendResponse({ ok: true, forced: force, patientStatus: match.status, match: match, patient: patient, wrote: wrote });
+      } catch (e) { sendResponse({ ok: false, error: 'Verified write failed: ' + e.message }); }
+    })();
+    return true;
+  }
+
   if (msg.type === 'mlsAppCaptureRequest') {
     (async () => {
       try {
@@ -526,8 +894,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         let last = { ok: false }, foundField = false;
         for (let attempt = 0; attempt < 2; attempt++) {
           let measure = [];
-          try { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsFieldScanner }); }
-          catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: mlsFieldScanner }); }
+          try { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [note], func: mlsFieldScanner }); }
+          catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id }, args: [note], func: mlsFieldScanner }); }
           let winnerFrame = null, bestScore = -1e12;
           (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
           if (winnerFrame === null) { await new Promise(r => setTimeout(r, 450)); continue; }
@@ -537,8 +905,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (last.ok && last.confirmed) break;
           await new Promise(res2 => setTimeout(res2, 450));
         }
-        if (last.ok && last.confirmed) sendResponse({ ok: true, confirmed: true, into: last.into });
-        else if (last.ok) sendResponse({ ok: true, confirmed: false, into: last.into, warn: 'Pasted, but could not confirm the text landed — please check the EMR note field before signing.' });
+        if (last.ok && last.confirmed) sendResponse({ ok: true, confirmed: true, into: last.into, method: last.method, target: last.target, targetLabel: last.targetLabel, chosenSection: last.chosenSection, chosenLabel: last.chosenLabel, targetMatched: !!last.targetMatched, candidates: last.candidates });
+        else if (last.ok) sendResponse({ ok: true, confirmed: false, into: last.into, method: last.method, target: last.target, targetLabel: last.targetLabel, chosenSection: last.chosenSection, chosenLabel: last.chosenLabel, targetMatched: !!last.targetMatched, candidates: last.candidates, warn: 'Wrote to the field but could not confirm the text landed — please check the EMR before signing.' });
         else if (foundField) sendResponse({ error: 'Found a note field but could not paste. Click into the EMR note area, then try again.' });
         else sendResponse({ error: 'Could not find a note field on the EMR page. Open the patient and click into the note area, then try again.' });
       } catch (e) { sendResponse({ error: 'Send failed: ' + e.message }); }
