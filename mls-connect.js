@@ -216,15 +216,15 @@
     });
     var pt=findPt(id); var pname=pt?(pt.name||'').toLowerCase():'';
     return list.filter(function(a){ if(!a) return false;
-        var aid=a.patientId||a.ptId||a.pid||a.patient_id; if(aid) return aid===id;
-        var an=(a.patient||a.name||a.patientName||'').toLowerCase(); return an && pname && an===pname;
+        if(a.patient_external_id!=null && String(a.patient_external_id)===String(id)) return true;
+        var an=(a.name||a.patient||a.patientName||'').toLowerCase(); return an && pname && an===pname;
       }).map(function(a){
-        var t=parseTime(a.date||a.start||a.when||a.datetime||a.startTime);
+        var t=parseTime(a.start_at||a.appt_date||a.date||a.start||a.when);
         var status=a.status||a.state||'';
         return { date:t, type:'appointment', icon:'📅',
-          title:'Appointment'+(a.reason||a.type||a.title?(' · '+(a.reason||a.type||a.title)):''),
+          title:'Appointment'+(a.reason?(' · '+String(a.reason).slice(0,50)):''),
           sub:[fmtTimeOnly(a), status].filter(Boolean).join(' · '),
-          onClick:function(){ safe(function(){ if(window.calApptPeek) window.calApptPeek(a); else if(window.calJump&&t) window.calJump(new Date(t)); else if(window.showView) window.showView('calendar'); }); } };
+          onClick:function(){ safe(function(){ if(window.calOpenDay && a.appt_date) window.calOpenDay(a.appt_date); else if(window.showView) window.showView('calendar'); }); } };
       });
   }
   function fmtTimeOnly(a){ return safe(function(){ if(window._fmtApptTime) return window._fmtApptTime(a); var t=parseTime(a.date||a.start||a.when||a.datetime); return t?new Date(t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):''; }, ''); }
@@ -325,25 +325,58 @@
     (document.head||document.documentElement).appendChild(s);
   }
 
-  /* ---------- entry point: inject a Timeline button into the unified card (observed, not patched) ---------- */
-  function ensureCardButton(){
-    var actions=document.querySelector('#mlsCtxBar .mlsctx-actions');
-    if(!actions || actions.querySelector('[data-act="timeline"]')) return;
-    var sw=actions.querySelector('.mlsctx-switch');
-    var b=document.createElement('button'); b.type='button'; b.setAttribute('data-act','timeline'); b.textContent='Timeline';
-    b.addEventListener('click', function(){ open(activeId()); });
-    if(sw) actions.insertBefore(b, sw); else actions.appendChild(b);
+  /* ---------- entry points: Cmd-K action + calendar appointment peek (NOT the unified card,
+     which is kept to exactly Chart/Visit/History/Schedule/Switch patient per design) ---------- */
+  window.__mlsTimeline={ open:open, close:close, addProvider:addProvider, _gather:gather };
+})();
+
+
+/* ---- module: feat_calendar_launchpad.js ---- */
+
+/* ===== MLS Calendar Launchpad — connectedness feature #3 =====
+   ADDITIVE ONLY. Does NOT modify any existing calendar function or its click behavior.
+   The app already turns an appointment into a visit via the peek popup's "Start visit"
+   (calStartVisit, which resolves patient_external_id -> selectPatient + goNewVisitForPatient,
+   or a prefilled unassigned visit). This feature augments the appointment peek popup with two
+   extra launch actions — "Open chart" and "Timeline" — so an appointment becomes a launchpad
+   into the patient's chart / visit / timeline. It reads the appointment id from the existing
+   Start-visit handler in the popup (read-only parse; no wrapping/patching), looks the patient up,
+   and appends buttons. If anything is missing it silently does nothing. Calendar untouched. */
+(function(){
+  'use strict';
+  if (window.__mlsCalLaunch) return;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function apptById(id){ return safe(function(){ var arr=Array.isArray(window._calAppts)?window._calAppts:[]; return arr.filter(function(a){return String(a.id)===String(id);})[0]||null; }, null); }
+  function findPt(extId){ if(extId==null) return null; return safe(function(){ if(window.findPatient){ var p=window.findPatient(extId); if(p) return p; } var ps=(window.getPatients&&window.getPatients())||[]; return ps.filter(function(p){return String(p.id)===String(extId);})[0]||null; }, null); }
+  function mkBtn(t){ var b=document.createElement('button'); b.type='button'; b.textContent=t; b.setAttribute('data-mls-launch','1');
+    b.style.cssText='background:#eef3fb;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;'; return b; }
+  function enhancePeek(peek){
+    if(!peek || peek.__mlsEnhanced) return;
+    // derive appt id from the existing "Start visit" handler (calStartVisit(<id>)) — read only
+    var apptId=null;
+    peek.querySelectorAll('[onclick]').forEach(function(el){ var m=(el.getAttribute('onclick')||'').match(/calStartVisit\((\d+)\)/); if(m) apptId=m[1]; });
+    if(apptId==null) return;           // not an appointment peek we recognise — leave untouched
+    peek.__mlsEnhanced=true;
+    var appt=apptById(apptId); if(!appt) return;
+    var pt=findPt(appt.patient_external_id);
+    if(!pt) return;                    // unlinked appt: existing "Start visit" already prefills; nothing to add
+    var startBtn=[].slice.call(peek.querySelectorAll('button')).filter(function(b){return /Start visit/i.test(b.textContent||'');})[0];
+    var row=startBtn?startBtn.parentElement:peek;
+    if(row.querySelector('[data-mls-launch]')) return;
+    var bChart=mkBtn('📋 Open chart');
+    bChart.onclick=function(){ safe(function(){ if(window.setActivePtId) window.setActivePtId(pt.id); if(window.openPatient) window.openPatient(pt.id); else if(window.showView) window.showView('patients'); peek.remove(); }); };
+    var bTl=mkBtn('🕒 Timeline');
+    bTl.onclick=function(){ safe(function(){ if(window.__mlsTimeline) window.__mlsTimeline.open(pt.id); peek.remove(); }); };
+    row.appendChild(bChart); row.appendChild(bTl);
   }
   function startObserver(){
     safe(function(){
-      var mo=new MutationObserver(function(){ ensureCardButton(); });
+      var mo=new MutationObserver(function(){ var p=document.getElementById('calApptPeek'); if(p) enhancePeek(p); });
       mo.observe(document.body, {childList:true, subtree:true});
-      ensureCardButton();
-      setInterval(ensureCardButton, 1500);
+      var p=document.getElementById('calApptPeek'); if(p) enhancePeek(p);
     });
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', startObserver); else startObserver();
-
-  window.__mlsTimeline={ open:open, close:close, addProvider:addProvider, _gather:gather };
+  window.__mlsCalLaunch={ enhancePeek:enhancePeek, _findPt:findPt };
 })();
 
