@@ -1030,157 +1030,113 @@
 </style>
 <style id="mls-visit-redesign">
 /* =====================================================================
-   MLS — VISIT PAGE UI OVERHAUL  (added 2026-06)
+   MLS — VISIT PAGE UI OVERHAUL  v2  (added 2026-06, bold pass)
    ---------------------------------------------------------------------
-   Purely a visual / UX layer, scoped to #visitView. It does NOT add,
-   remove, rename, or hide any element, ID, class, handler, or behavior.
-   No `display` is set on any JS-toggled element, so every show/hide,
-   generate, extract, autopilot, save, and "Just Talk" flow is untouched.
-   The blue "Just Talk" hero (#visitHero) is deliberately EXCLUDED so it
-   stays exactly as-is. Colors use the app's existing CSS variables, so
-   light AND dark themes both work.
+   Visual / UX layer only. Scoped to #visitView and, for anything that
+   could touch the beloved blue "Just Talk" hero, scoped to
+   `.card:not(#visitHero)` so the hero (#visitHero) is 100% untouched.
+   No element, ID, class, handler, or DOM is added/removed/renamed, and
+   no `display` is set on any JS-toggled element — so every flow (Just
+   Talk, capture, generate, optimize, sign, save, copy/paste-to-EMR,
+   autopilot, FHIR, legal, etc.) behaves exactly as before.
+   Colors use the app's CSS variables, so light AND dark themes work.
    ===================================================================== */
 
-/* ---- 1. Cards: crisper, calmer, more breathing room -------------------- */
+/* ---- Layout rhythm: more air between the stacked cards ---------------- */
+#visitView .grid{ gap:26px !important; align-items:start; }
+#visitView .card:not(#visitHero){ margin-bottom:24px; }
+@media (max-width:1040px){ #visitView .grid{ grid-template-columns:1fr !important; } }
+
+/* ---- Cards: bigger radius, real depth, colored top accent ------------- */
 #visitView .card:not(#visitHero){
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:18px;
-  padding:26px 26px 24px;
-  box-shadow:var(--shadow-soft);
-  transition:box-shadow .2s ease, border-color .2s ease;
+  background:var(--card) !important;
+  border:1px solid var(--line) !important;
+  border-radius:20px !important;
+  padding:30px 30px 26px !important;
+  box-shadow:0 1px 3px rgba(20,40,80,.05), 0 22px 48px -26px rgba(20,40,80,.45) !important;
+  position:relative;
 }
-#visitView #emrCard, #visitView #outcomesCard{ margin-top:18px; }
+#visitView #captureCard{ border-top:4px solid var(--brand) !important; }
+#visitView #noteCard{ border-top:4px solid var(--green) !important; }
+#visitView #emrCard{ border-top:4px solid var(--brand-dk) !important; }
+#visitView #outcomesCard{ border-top:4px solid var(--amber, #c47d09) !important; }
 
-/* ---- 2. Section headers: clearer hierarchy + soft icon chips ----------- */
-#visitView h2{
-  font-size:18.5px; font-weight:700; letter-spacing:-.3px;
-  color:var(--ink); align-items:center; margin:0 0 4px;
+/* ---- Headers: larger, bolder, prominent colored icon chips ----------- */
+#visitView .card:not(#visitHero) h2{
+  font-size:22px !important; font-weight:800 !important; letter-spacing:-.5px !important;
+  color:var(--ink) !important; gap:13px !important; margin:0 0 6px !important; align-items:center;
 }
-#visitView h2 .ic{
-  display:inline-flex; align-items:center; justify-content:center;
-  width:34px; height:34px; min-width:34px; border-radius:11px;
-  background:linear-gradient(135deg, rgba(37,99,201,.15), rgba(37,99,201,.06));
-  font-size:17px; line-height:1;
+#visitView .card:not(#visitHero) h2 .ic{
+  width:44px !important; height:44px !important; min-width:44px !important;
+  border-radius:13px !important; font-size:22px !important;
+  display:inline-flex !important; align-items:center !important; justify-content:center !important;
+  background:rgba(37,99,201,.14) !important; box-shadow:inset 0 0 0 1px rgba(37,99,201,.16) !important;
 }
-#visitView h3{ font-size:15px; font-weight:700; letter-spacing:-.2px; color:var(--ink); }
-#visitView .sub{ color:var(--muted); font-size:13.5px; line-height:1.55; margin:2px 0 18px; }
-#visitView .mini{ color:var(--muted); font-size:12.5px; line-height:1.55; }
+#visitView #noteCard h2 .ic{ background:rgba(15,138,99,.15) !important; box-shadow:inset 0 0 0 1px rgba(15,138,99,.20) !important; }
+#visitView .card:not(#visitHero) h3{ font-size:16px !important; font-weight:750 !important; letter-spacing:-.2px; color:var(--ink) !important; }
+#visitView .card:not(#visitHero) .sub{ font-size:14.5px !important; line-height:1.6 !important; color:var(--muted) !important; margin:4px 0 20px !important; }
 
-/* ---- 3. Form fields: bigger targets, soft fill, clear focus ring ------- */
-#visitView label{
-  font-size:11.5px; font-weight:700; letter-spacing:.4px;
-  text-transform:uppercase; color:var(--muted); margin-bottom:5px;
+/* ---- Form fields: chunkier, rounder, clear focus ring ---------------- */
+#visitView .card:not(#visitHero) label{
+  font-size:12px !important; font-weight:800 !important; letter-spacing:.3px !important;
+  text-transform:uppercase !important; color:var(--muted) !important; margin-bottom:7px !important;
 }
-#visitView input[type=text],
-#visitView input[type=password],
-#visitView input[type=email],
-#visitView input[type=number],
-#visitView textarea,
-#visitView select,
-#visitView .sf-select{
-  border:1px solid var(--line);
-  border-radius:11px;
-  background:var(--field-bg);
-  padding:11px 13px;
-  font-size:14px;
-  transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
+#visitView .card:not(#visitHero) input[type=text],
+#visitView .card:not(#visitHero) input[type=password],
+#visitView .card:not(#visitHero) input[type=email],
+#visitView .card:not(#visitHero) input[type=number],
+#visitView .card:not(#visitHero) textarea,
+#visitView .card:not(#visitHero) select,
+#visitView .card:not(#visitHero) .sf-select{
+  border:1.5px solid var(--line) !important;
+  border-radius:13px !important;
+  background:var(--field-bg) !important;
+  padding:13px 15px !important;
+  font-size:15px !important;
+  transition:border-color .15s ease, box-shadow .15s ease, background .15s ease !important;
 }
-#visitView input[type=text]:focus,
-#visitView input[type=password]:focus,
-#visitView input[type=email]:focus,
-#visitView input[type=number]:focus,
-#visitView textarea:focus,
-#visitView select:focus,
-#visitView .sf-select:focus{
-  outline:none; border-color:var(--brand);
-  box-shadow:0 0 0 3px rgba(37,99,201,.16); background:var(--surface);
+#visitView .card:not(#visitHero) input:focus,
+#visitView .card:not(#visitHero) textarea:focus,
+#visitView .card:not(#visitHero) select:focus,
+#visitView .card:not(#visitHero) .sf-select:focus{
+  outline:none !important; border-color:var(--brand) !important;
+  box-shadow:0 0 0 4px rgba(37,99,201,.15) !important; background:var(--surface) !important;
 }
+#visitView .transcript{ min-height:220px !important; border-radius:14px !important; line-height:1.55 !important; }
+#visitView #noteBox{ min-height:360px !important; border-radius:14px !important; font-size:15px !important; line-height:1.65 !important; }
 
-/* ---- 4. Transcript + note: the two focal text surfaces ----------------- */
-#visitView .transcript{
-  border:1px solid var(--line); border-radius:13px;
-  background:var(--field-bg); line-height:1.55; font-size:14px; padding:14px;
+/* ---- Buttons: modern gradients for primary CTAs, clean pills for rest - */
+#visitView .card:not(#visitHero) button{ border-radius:12px !important; font-weight:700 !important; letter-spacing:.1px; }
+#visitView .card:not(#visitHero) .btn-green{
+  background:linear-gradient(135deg, var(--green), var(--green-dk)) !important;
+  border:0 !important; color:#fff !important;
+  box-shadow:0 8px 18px -8px rgba(12,110,79,.7) !important;
 }
-#visitView #noteBox{
-  border:1px solid var(--line); border-radius:13px;
-  background:var(--surface); line-height:1.6; font-size:14.5px; padding:16px;
+#visitView .card:not(#visitHero) .btn-primary{
+  background:linear-gradient(135deg, var(--brand), var(--brand-dk)) !important;
+  border:0 !important; color:#fff !important;
+  box-shadow:0 8px 18px -8px rgba(27,79,166,.7) !important;
 }
+#visitView .card:not(#visitHero) .btn-green:hover,
+#visitView .card:not(#visitHero) .btn-primary:hover{ filter:brightness(1.06); }
+#visitView .card:not(#visitHero) .btn-ghost{
+  background:var(--surface) !important; border:1.5px solid var(--line) !important;
+  color:var(--brand-dk) !important; font-weight:700 !important; border-radius:11px !important;
+}
+#visitView .card:not(#visitHero) .btn-ghost:hover{ background:var(--soft) !important; border-color:var(--brand) !important; }
+#visitView .card:not(#visitHero) .big-capture{ font-size:16px !important; padding:15px 22px !important; border-radius:13px !important; }
+#visitView .card:not(#visitHero) button:disabled{ opacity:.5 !important; box-shadow:none !important; filter:none !important; cursor:not-allowed; }
+#visitView .card:not(#visitHero) .sec-copy{ border-radius:9px !important; font-weight:700 !important; }
 
-/* ---- 5. Buttons: tighter radius + a clear primary/secondary hierarchy -- */
-#visitView button{ border-radius:10px; font-weight:600; }
-#visitView .btn-green{ box-shadow:0 1px 2px rgba(15,138,99,.20); }
-#visitView .btn-green:hover{ box-shadow:0 3px 10px rgba(15,138,99,.22); }
-#visitView .btn-primary{ box-shadow:0 1px 2px rgba(37,99,201,.20); }
-#visitView .btn-primary:hover{ box-shadow:0 3px 10px rgba(37,99,201,.22); }
-#visitView .btn-ghost{
-  background:var(--surface); border:1px solid var(--line);
-  color:var(--brand-dk); font-weight:600;
-}
-#visitView .btn-ghost:hover{ background:var(--soft); border-color:var(--brand); }
-#visitView .big-capture{ border-radius:12px; font-size:15.5px; padding:14px 20px; }
-#visitView .sec-copy{ border-radius:8px; font-weight:600; }
-
-/* ---- 6. Note generation options bar: clean segmented controls ---------- */
+/* ---- Note-generation options: distinct panel ------------------------- */
 #visitView #genOptionsBar{
-  background:var(--soft2); border:1px solid var(--line);
-  border-radius:13px; padding:13px 14px; margin-top:14px;
+  background:var(--soft2) !important; border:1px solid var(--line) !important;
+  border-radius:14px !important; padding:15px 16px !important; margin-top:16px !important;
 }
-#visitView .genseg{ border-radius:10px; overflow:hidden; }
-#visitView .pill-toggle{ border-radius:20px; }
+#visitView .genseg{ border-radius:12px !important; overflow:hidden; }
+#visitView .pill-toggle{ border-radius:30px !important; }
 
-/* ---- 7. Primary action toolbar: divided + grouped --------------------- */
-#visitView .note-actions{
-  display:flex; gap:9px; flex-wrap:wrap; align-items:center;
-  margin-top:20px; padding-top:18px; border-top:1px solid var(--line);
-}
-#visitView #moreTools{
-  margin-top:12px; padding:14px; border-top:0;
-  background:var(--soft2); border:1px solid var(--line); border-radius:13px;
-}
-#visitView #visitToolsBtn, #visitView #moreToolsBtn{
-  background:var(--soft); border:1px dashed var(--line);
-  color:var(--brand-dk); font-weight:600;
-}
-
-/* ---- 8. Coding / optimization / extra tool cards: one calm system ------ */
-#visitView .extra-card,
-#visitView .code-card,
-#visitView .opt-card{
-  background:var(--soft2); border:1px solid var(--line);
-  border-radius:14px; padding:18px 18px 16px; margin-top:14px;
-  box-shadow:none;
-}
-#visitView .extra-card .xbody{
-  background:var(--surface); border-radius:11px;
-}
-#visitView .code-grid{ gap:10px 16px; }
-#visitView .badge{ border-radius:20px; font-weight:700; letter-spacing:.2px; }
-#visitView .em-pill{ border-radius:8px; font-weight:700; }
-
-/* ---- 9. EMR + superbill tables: tidy rows --------------------------- */
-#visitView .emr-table{ border-radius:12px; overflow:hidden; }
-#visitView .emr-table td{ padding:11px 13px; }
-#visitView .emr-table tr + tr td{ border-top:1px solid var(--line); }
-#visitView .superbill td, #visitView .superbill th{ padding:10px 12px; }
-
-/* ---- 10. Empty states + disclaimers: quieter, friendlier ------------- */
-#visitView .empty{
-  background:var(--soft2); border:1px dashed var(--line);
-  border-radius:14px; color:var(--muted); padding:30px 22px;
-}
-#visitView .disclaim,
-#visitView .code-disclaim,
-#visitView .opt-disclaim{ border-radius:10px; font-size:12px; line-height:1.5; }
-
-/* ---- 11. Layout: comfortable two-column, graceful stacking ------------ */
-#visitView .grid{ gap:20px; align-items:start; }
-@media (max-width:1040px){ #visitView .grid{ grid-template-columns:1fr; } }
-
-/* ---- 12. Dot-phrase + comment niceties -------------------------------- */
-#visitView .dotbar{ border-radius:11px; }
-#visitView #visitComment{ border-radius:11px; }
-</style>
+/* ---- Primary action bar: a clear, elevated panel ----------------
 <div id="intakeView">
   <div class="ik-wrap">
     <div class="ik-top">
@@ -21197,6 +21153,188 @@ window.addEventListener('DOMContentLoaded',()=>{
     }
   }
 });
+</script>
+<script id="mls-visit-enhancer">
+/* =====================================================================
+   MLS — VISIT + PATIENTS UX ENHANCER  (added 2026-06)
+   ---------------------------------------------------------------------
+   ADDITIVE ONLY. This script never removes or renames any element, ID,
+   class, or handler. It only (a) MOVES existing nodes into collapsible
+   "More options" sections for progressive disclosure on the visit page,
+   and (b) regroups the EXISTING patient list nodes under section headers
+   with a grouping toggle. Every original onclick/handler travels with
+   its node, so all behavior (Just Talk, generate, sign, copy/paste to
+   EMR, send full visit, autopilot, patient select/record/delete, etc.)
+   is preserved. Everything is wrapped in try/catch so a failure here can
+   never break the underlying app. Remove this <script> to fully revert.
+   ===================================================================== */
+(function(){
+  'use strict';
+  function $(id){ return document.getElementById(id); }
+
+  /* ---------- VISIT PAGE: progressive disclosure ---------------------- */
+  function enhanceVisit(){
+    try{
+      var cap=$('captureCard');
+      if(cap && !$('mlsCaptureMore')){
+        var anchor=$('captureBtn');                 // primary CTA (Start Visit)
+        if(anchor){
+          var toggle=document.createElement('button');
+          toggle.type='button'; toggle.id='mlsCaptureMoreBtn'; toggle.className='mls-more-toggle';
+          toggle.setAttribute('aria-expanded','false');
+          toggle.innerHTML='<span>⚙ More options</span><span id="mlsCapArrow">▾</span>';
+          var panel=document.createElement('div');
+          panel.id='mlsCaptureMore'; panel.className='mls-more-panel collapsed';
+          // collect the SECONDARY controls (move, don't recreate)
+          var movers=[];
+          var sp=$('specialtyPreset'); if(sp && sp.closest('.field')) movers.push(sp.closest('.field'));
+          var cb=$('contextBox'); if(cb && cb.closest('.field')) movers.push(cb.closest('.field'));
+          var pm=$('phoneMicBtn'); if(pm && pm.closest('.row')) movers.push(pm.closest('.row'));
+          var pmp=$('phoneMicPanel'); if(pmp) movers.push(pmp);
+          // insert toggle + panel right before the Start Visit button
+          anchor.parentNode.insertBefore(toggle, anchor);
+          anchor.parentNode.insertBefore(panel, anchor);
+          movers.forEach(function(el){ try{ panel.appendChild(el); }catch(e){} });
+          toggle.addEventListener('click', function(){
+            var open=panel.classList.toggle('collapsed')===false;
+            toggle.setAttribute('aria-expanded', open?'true':'false');
+            var ar=$('mlsCapArrow'); if(ar) ar.textContent=open?'▴':'▾';
+          });
+        }
+      }
+      // Note actions: move rarely-used buttons into the existing "More tools" expander
+      var more=$('moreTools');
+      if(more && !more.getAttribute('data-mls-tucked')){
+        ['sendEmrBtn','copyBtn','printBtn','gradeExpBtn'].forEach(function(id){
+          var b=$(id); if(b && b.parentNode && b.parentNode!==more){ try{ more.insertBefore(b, more.firstChild); }catch(e){} }
+        });
+        more.setAttribute('data-mls-tucked','1');
+      }
+    }catch(e){ /* never break the app */ }
+  }
+
+  /* ---------- PATIENTS TAB: grouping toolbar + regrouping ------------- */
+  var GROUP_KEY='mls_pt_group_mode';
+  function getMode(){ try{ return localStorage.getItem(GROUP_KEY)||'all'; }catch(e){ return 'all'; } }
+  function setMode(m){ try{ localStorage.setItem(GROUP_KEY,m); }catch(e){} }
+
+  function injectPtToolbar(){
+    try{
+      var list=$('ptList');
+      if(!list || $('mlsPtGroupBar')) return;
+      var bar=document.createElement('div');
+      bar.id='mlsPtGroupBar'; bar.className='mls-ptseg';
+      var modes=[['all','All'],['upcoming','📅 Upcoming'],['procedure','💉 Procedure'],['type','👤 Patient type']];
+      bar.innerHTML='<span class="mls-ptseg-lbl">Group by</span>'+modes.map(function(m){
+        return '<button type="button" data-mode="'+m[0]+'">'+m[1]+'</button>';
+      }).join('');
+      list.parentNode.insertBefore(bar, list);
+      bar.addEventListener('click', function(ev){
+        var btn=ev.target.closest('button[data-mode]'); if(!btn) return;
+        setMode(btn.getAttribute('data-mode'));
+        syncToolbar();
+        try{ if(typeof window.renderPatients==='function') window.renderPatients(); }catch(e){}
+      });
+      syncToolbar();
+    }catch(e){}
+  }
+  function syncToolbar(){
+    try{
+      var m=getMode();
+      document.querySelectorAll('#mlsPtGroupBar button[data-mode]').forEach(function(b){
+        b.classList.toggle('on', b.getAttribute('data-mode')===m);
+      });
+    }catch(e){}
+  }
+
+  function patientById(id){
+    try{ var all=(typeof getPatients==='function')?getPatients():[]; for(var i=0;i<all.length;i++){ if(String(all[i].id)===String(id)) return all[i]; } }catch(e){}
+    return null;
+  }
+  function notesCount(p){ try{ return (typeof patientNotes==='function'?(patientNotes(p.id)||[]):[]).length; }catch(e){ return 0; } }
+
+  function groupOf(p, mode){
+    if(!p) return 'Other';
+    try{
+      if(mode==='upcoming'){
+        if(p.source==='athena-schedule' || p.appt) return '📅 On today’s schedule';
+        return notesCount(p)>0 ? '🕒 Recently seen' : '🆕 New / not yet seen';
+      }
+      if(mode==='procedure'){
+        return (typeof _ptProcedure==='function') ? _ptProcedure(p) : 'No procedure yet';
+      }
+      if(mode==='type'){
+        var t = notesCount(p)>0 ? '🔁 Returning patients' : '🆕 New patients';
+        if(p.source==='athena-schedule') t='📥 From Athena schedule';
+        return t;
+      }
+    }catch(e){}
+    return 'Other';
+  }
+  var GROUP_ORDER={
+    '📅 On today’s schedule':0,'🕒 Recently seen':1,'🆕 New / not yet seen':2,
+    '📥 From Athena schedule':0,'🔁 Returning patients':1,'🆕 New patients':2
+  };
+
+  function regroupPatients(){
+    try{
+      var mode=getMode();
+      if(mode==='all') return;                       // leave the app's native ordering
+      var list=$('ptList'); if(!list) return;
+      var items=Array.prototype.slice.call(list.querySelectorAll('.pt-item'));
+      if(items.length<2) return;
+      var capNote=list.querySelector('.pt-cap-note');
+      var groups={};
+      items.forEach(function(it){
+        var oc=it.getAttribute('onclick')||'';
+        var m=oc.match(/selectPatient\('([^']+)'\)/);
+        var p=m?patientById(m[1]):null;
+        var key=groupOf(p, mode);
+        (groups[key]=groups[key]||[]).push(it);
+      });
+      var keys=Object.keys(groups).sort(function(a,b){
+        var oa=(a in GROUP_ORDER)?GROUP_ORDER[a]:50, ob=(b in GROUP_ORDER)?GROUP_ORDER[b]:50;
+        if(a==='No procedure yet') return 1; if(b==='No procedure yet') return -1;
+        if(oa!==ob) return oa-ob; return a.localeCompare(b);
+      });
+      // Rebuild using the SAME nodes (handlers preserved)
+      list.innerHTML='';
+      keys.forEach(function(k){
+        var hdr=document.createElement('div'); hdr.className='pt-group-hdr';
+        hdr.innerHTML=esc(k)+' <span style="color:var(--muted);font-weight:600">('+groups[k].length+')</span>';
+        list.appendChild(hdr);
+        groups[k].forEach(function(it){ list.appendChild(it); });
+      });
+      if(capNote) list.appendChild(capNote);
+    }catch(e){}
+  }
+
+  function hookRenderPatients(){
+    try{
+      if(window.renderPatients && !window.renderPatients.__mlsWrapped){
+        var orig=window.renderPatients;
+        window.renderPatients=function(){
+          var r=orig.apply(this, arguments);
+          try{ injectPtToolbar(); regroupPatients(); }catch(e){}
+          return r;
+        };
+        window.renderPatients.__mlsWrapped=true;
+      }
+    }catch(e){}
+  }
+
+  /* ---------- init --------------------------------------------------- */
+  function init(){
+    enhanceVisit();
+    injectPtToolbar();
+    hookRenderPatients();
+    // run once more after the app finishes its own first render
+    setTimeout(function(){ enhanceVisit(); injectPtToolbar(); try{ if(typeof window.renderPatients==='function') window.renderPatients(); }catch(e){} }, 600);
+  }
+  if(document.readyState==='complete' || document.readyState==='interactive'){ setTimeout(init,0); }
+  else { window.addEventListener('DOMContentLoaded', init); }
+  window.addEventListener('load', function(){ try{ enhanceVisit(); injectPtToolbar(); hookRenderPatients(); }catch(e){} });
+})();
 </script>
 </body>
 </html>
