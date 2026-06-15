@@ -34,6 +34,8 @@
       {label:'Recommendations', hint:'AI recommendations', icon:'💡', run:function(){go('recs');}},
       {label:'History', hint:'Visit history', icon:'📚', run:function(){go('history');}},
       {label:'Patient timeline', hint:'Chronological thread for active patient', icon:'🕒', run:function(){ safe(function(){ window.__mlsTimeline && window.__mlsTimeline.open(); }); }},
+      {label:'Activity feed', hint:'Recent practice activity', icon:'🔔', run:function(){ safe(function(){ window.__mlsActivity && window.__mlsActivity.open(); }); }},
+      {label:'Recommendations from note', hint:'Auto-drawn imaging/referral/coding', icon:'🧩', run:function(){ safe(function(){ window.__mlsRecs && window.__mlsRecs.open(); }); }},
       {label:'Legal requests', hint:'IME / legal', icon:'⚖️', run:function(){go('legalreq');}},
       {label:'Team', hint:'Team', icon:'👥', run:function(){go('team');}},
       {label:'Analysis', hint:'Trends & outcomes', icon:'📊', run:function(){go('analysis');}},
@@ -517,5 +519,353 @@
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
   window.__mlsSync={ mark:mark, getLog:getLog, state:state, render:render };
+})();
+
+
+/* ---- module: feat_activity_feed.js ---- */
+
+/* ===== MLS Unified Activity Feed — connectedness feature #5 =====
+   A practice-wide chronological feed of meaningful events: note signed, sent to Athena,
+   follow-up / upcoming appointment, payment received, BAA awaiting signature.
+   Additive overlay (opened via Cmd-K "Activity feed" or window.__mlsActivity.open()). Reads via
+   public globals (getNotes, _calAppts) and window.__mlsSync; each item is click-to-jump. Sources
+   with no accessible data yet (payments require Stripe Connect go-live; BAA-awaiting-signature
+   requires the legal/BAA list) are shown as gated, clearly-labeled placeholders rather than fake
+   data, and light up automatically once those systems expose data via registerable providers
+   (window.__mlsActivity.addProvider(fn) -> [{date,type,icon,title,sub,onClick}]). */
+(function(){
+  'use strict';
+  if (window.__mlsActivity) return;
+  var OV='mlsActOverlay', CSS='mlsActCss';
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function parseTime(v){ if(v==null) return 0; if(typeof v==='number') return v>1e12?v:v*1000; var d=new Date(v); return isNaN(d)?0:d.getTime(); }
+  function fmtDate(t){ if(!t) return ''; return new Date(t).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}); }
+  function ptName(id){ return safe(function(){ var p=window.findPatient&&window.findPatient(id); return p?(p.name||''):''; }, ''); }
+  function jumpPatient(id, view){ safe(function(){ if(id&&window.setActivePtId) window.setActivePtId(id); if(window.showView) window.showView(view||'history'); }); }
+
+  function signedNotesProvider(){
+    var notes=safe(function(){ return window.getNotes&&window.getNotes(); }, []);
+    if(!Array.isArray(notes)) return [];
+    return notes.filter(function(n){ return n.signed; }).map(function(n){
+      return { date:parseTime(n.updated||n.created), type:'signed', icon:'✅',
+        title:'Note signed', sub:(n.patient||ptName(n.patientId)||'')+(n.cc?(' · '+n.cc):''),
+        onClick:function(){ jumpPatient(n.patientId,'history'); } };
+    });
+  }
+  function athenaProvider(){
+    var log=safe(function(){ return window.__mlsSync&&window.__mlsSync.getLog(); }, []);
+    if(!Array.isArray(log)) return [];
+    return log.map(function(e){
+      return { date:e.ts, type:'athena', icon:(e.status==='error'?'⚠':'🚀'),
+        title:e.label||'Athena sync', sub:e.patient||'', onClick:function(){ jumpPatient(e.patientId,'history'); } };
+    });
+  }
+  function followupProvider(){
+    var ap=safe(function(){ return Array.isArray(window._calAppts)?window._calAppts:[]; }, []);
+    var now=Date.now();
+    return ap.filter(function(a){ var t=parseTime(a.start_at||a.appt_date); return t>now; })
+             .map(function(a){
+       var pid=a.patient_external_id;
+       return { date:parseTime(a.start_at||a.appt_date), type:'followup', icon:'📅',
+         title:'Upcoming appointment'+(a.reason?(' · '+String(a.reason).slice(0,40)):''),
+         sub:(a.name||ptName(pid)||''), future:true,
+         onClick:function(){ safe(function(){ if(window.calOpenDay&&a.appt_date) window.calOpenDay(a.appt_date); else if(window.showView) window.showView('calendar'); }); } };
+     });
+  }
+  // gated providers: no fabricated data; show a single informational placeholder each
+  function paymentProvider(){ return [{ date:0, type:'payment', icon:'💳', gated:true,
+      title:'Payments — awaiting Stripe Connect go-live', sub:'Payment-received events appear here once Connect is live', onClick:function(){} }]; }
+  function baaProvider(){ return [{ date:0, type:'baa', icon:'📝', gated:true,
+      title:'BAA awaiting signature — connects to legal/BAA list', sub:'Lights up when a BAA-awaiting list is available', onClick:function(){ safe(function(){ window.showView&&window.showView('legalreq'); }); } }]; }
+
+  var providers=[signedNotesProvider, athenaProvider, followupProvider, paymentProvider, baaProvider];
+  function addProvider(fn){ if(typeof fn==='function' && providers.indexOf(fn)<0) providers.push(fn); }
+  function gather(){
+    var ev=[];
+    providers.forEach(function(p){ var r=safe(function(){return p()||[];},[]); if(Array.isArray(r)) ev=ev.concat(r); });
+    ev=ev.filter(function(e){ return e&&e.title; });
+    // real (dated) events newest-first; gated placeholders sink to bottom
+    ev.sort(function(a,b){ if((a.gated?1:0)!==(b.gated?1:0)) return (a.gated?1:0)-(b.gated?1:0); return (b.date||0)-(a.date||0); });
+    return ev;
+  }
+  var curFilter='all';
+  function typeMeta(t){ return ({signed:'Note signed',athena:'Athena',followup:'Follow-up',payment:'Payment',baa:'BAA'})[t]||t; }
+  function render(){
+    var body=document.getElementById('mlsActBody'); if(!body) return;
+    var all=gather();
+    var evs=curFilter==='all'?all:all.filter(function(e){return e.type===curFilter;});
+    if(!evs.length){ body.innerHTML='<div class="mlsact-empty">No activity yet.</div>'; return; }
+    body.innerHTML=evs.map(function(e,i){
+      return '<button type="button" class="mlsact-row'+(e.gated?' gated':'')+'" data-i="'+i+'">'
+        +'<span class="mlsact-ic">'+esc(e.icon||'•')+'</span>'
+        +'<span class="mlsact-main"><span class="mlsact-r1"><span class="mlsact-t">'+esc(e.title)+'</span>'
+        +'<span class="mlsact-d">'+esc(e.gated?'soon':fmtDate(e.date))+'</span></span>'
+        +(e.sub?'<span class="mlsact-s">'+esc(e.sub)+'</span>':'')+'</span></button>';
+    }).join('');
+    body.querySelectorAll('.mlsact-row').forEach(function(el){ el.addEventListener('click', function(){ var e=evs[+el.getAttribute('data-i')]; if(e.gated){return;} close(); safe(function(){ e.onClick&&e.onClick(); }); }); });
+  }
+  function renderChips(){
+    var bar=document.getElementById('mlsActChips'); if(!bar) return;
+    var types=['all','signed','athena','followup','payment','baa'];
+    bar.innerHTML=types.map(function(t){ return '<button type="button" class="mlsact-chip'+(t===curFilter?' on':'')+'" data-t="'+t+'">'+esc(t==='all'?'All':typeMeta(t))+'</button>'; }).join('');
+    bar.querySelectorAll('.mlsact-chip').forEach(function(el){ el.addEventListener('click', function(){ curFilter=el.getAttribute('data-t'); renderChips(); render(); }); });
+  }
+  function open(){
+    injectCss(); close(); curFilter='all';
+    var ov=document.createElement('div'); ov.id=OV;
+    ov.innerHTML='<div class="mlsact-panel" role="dialog" aria-label="Activity feed">'
+      +'<div class="mlsact-head"><span class="mlsact-h">Activity feed</span><button type="button" id="mlsActClose" class="mlsact-x" aria-label="Close">✕</button></div>'
+      +'<div id="mlsActChips" class="mlsact-chips"></div>'
+      +'<div id="mlsActBody" class="mlsact-body"></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('mousedown', function(e){ if(e.target===ov) close(); });
+    document.getElementById('mlsActClose').addEventListener('click', close);
+    renderChips(); render();
+  }
+  function close(){ var ov=document.getElementById(OV); if(ov) ov.remove(); }
+  function injectCss(){
+    if(document.getElementById(CSS)) return;
+    var s=document.createElement('style'); s.id=CSS;
+    s.textContent=
+      '#'+OV+'{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:8vh 16px 16px;backdrop-filter:blur(2px);}'
+      +'#'+OV+' .mlsact-panel{width:100%;max-width:560px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
+      +'.mlsact-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'.mlsact-h{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
+      +'.mlsact-x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);padding:4px 6px;border-radius:8px;}'
+      +'.mlsact-x:hover{background:var(--surface,#f1f4f9);}'
+      +'.mlsact-chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'.mlsact-chip{font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--muted,#5b6b7c);border-radius:20px;padding:4px 11px;}'
+      +'.mlsact-chip.on{background:var(--brand,#2563c9);border-color:var(--brand,#2563c9);color:#fff;}'
+      +'.mlsact-body{overflow:auto;padding:6px 8px 12px;}'
+      +'.mlsact-row{display:flex;gap:11px;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:10px 10px;border-radius:10px;font:inherit;align-items:flex-start;}'
+      +'.mlsact-row:hover{background:var(--surface,#f5f8fc);}'
+      +'.mlsact-row.gated{cursor:default;opacity:.72;}'
+      +'.mlsact-row.gated:hover{background:transparent;}'
+      +'.mlsact-ic{flex:0 0 auto;width:24px;text-align:center;font-size:15px;margin-top:1px;}'
+      +'.mlsact-main{flex:1 1 auto;min-width:0;}'
+      +'.mlsact-r1{display:flex;justify-content:space-between;gap:10px;align-items:baseline;}'
+      +'.mlsact-t{font-size:14px;font-weight:600;color:var(--ink,#15293f);}'
+      +'.mlsact-d{flex:0 0 auto;font-size:12px;color:var(--muted,#9aa7b4);}'
+      +'.mlsact-s{display:block;font-size:12.5px;color:var(--muted,#5b6b7c);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+      +'.mlsact-empty{padding:30px;text-align:center;color:var(--muted,#7c8aa0);}'
+      +'@media (max-width:620px){#'+OV+'{padding:4vh 8px 8px;}#'+OV+' .mlsact-panel{max-height:90vh;}}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+  window.__mlsActivity={ open:open, close:close, addProvider:addProvider, _gather:gather };
+})();
+
+
+/* ---- module: feat_note_recs.js ---- */
+
+/* ===== MLS Recommendations from Note — connectedness feature #6 =====
+   Reads the active patient's most recent note and auto-extracts actionable recommendations —
+   imaging, referrals, follow-up interval, and coding (ICD-10 / CPT / E&M) — each as a one-click
+   chip. Additive overlay (Cmd-K "Recommendations from note" or window.__mlsRecs.open()). Actions
+   use existing app primitives: "Schedule follow-up" -> calScheduleForPatient; codes/orders ->
+   one-click Copy (the app has no add-to-orders API, so order/referral chips copy the text and can
+   open the Recommendations generator). Pure parse + read; never alters app functions. */
+(function(){
+  'use strict';
+  if (window.__mlsRecs) return;
+  var OV='mlsRecOverlay', CSS='mlsRecCss';
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function activeId(){ return safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null); }
+  function activeName(){ return safe(function(){ var p=window.findPatient&&window.findPatient(activeId()); return p?(p.name||''):''; }, ''); }
+  function latestNoteText(id){
+    return safe(function(){
+      // prefer a live visit editor if it has content
+      var live=document.getElementById('noteText')||document.getElementById('clinicalNote')||document.querySelector('[data-note-body]');
+      if(live && (live.value||live.textContent||'').trim().length>120) return (live.value||live.textContent);
+      var notes=(window.patientNotes&&window.patientNotes(id))||[];
+      notes=Array.isArray(notes)?notes.slice():[];
+      notes.sort(function(a,b){ return (new Date(b.updated||b.created||0))-(new Date(a.updated||a.created||0)); });
+      return notes.length?(notes[0].text||''):'';
+    }, '');
+  }
+  function uniq(a){ var s={},o=[]; a.forEach(function(x){ var k=x.toLowerCase(); if(!s[k]){s[k]=1;o.push(x);} }); return o; }
+
+  function extract(text){
+    text=String(text||''); var recs=[];
+    function add(type,label,value){ recs.push({type:type,label:label,value:value}); }
+    // ---- imaging ----
+    var imaging=[];
+    var imgRe=/\b(MRI|CT scan|CT|X-?ray|radiograph[s]?|ultrasound|EMG\/NCS|EMG|nerve conduction|bone scan|DEXA|myelogram|fluoroscop\w*)\b[^.;\n]{0,60}/gi, m;
+    while((m=imgRe.exec(text))){ imaging.push(m[0].trim().replace(/\s+/g,' ')); }
+    uniq(imaging).slice(0,6).forEach(function(s){ add('imaging','Imaging', s); });
+    // ---- referrals ----
+    var refs=[]; var refRe=/\b(refer(?:ral)?\s+to|consult(?:ation)?\s+(?:with|to)|refer to)\b[^.;\n]{0,60}/gi;
+    while((m=refRe.exec(text))){ refs.push(m[0].trim().replace(/\s+/g,' ')); }
+    uniq(refs).slice(0,5).forEach(function(s){ add('referral','Referral', s); });
+    // ---- follow-up interval ----
+    var fu=[]; var fuRe=/\b(?:follow[\s-]?up|f\/u|return to clinic|RTC|return)\b[^.;\n]{0,8}?(?:in|after)?\s*(\d{1,2})\s*(day|days|week|weeks|wk|wks|month|months|mo)\b/gi;
+    while((m=fuRe.exec(text))){ fu.push({num:+m[1], unit:m[2], raw:m[0].trim().replace(/\s+/g,' ')}); }
+    if(fu.length){ add('followup','Follow-up', fu[0].raw); recs[recs.length-1].fu=fu[0]; }
+    // ---- ICD-10 ----
+    var icd=(text.match(/\b[A-TV-Z]\d\d(?:\.\d{1,4})?\b/g)||[]).filter(function(c){ return /\.\d/.test(c) || /^[A-TV-Z]\d\d$/.test(c); });
+    uniq(icd).slice(0,8).forEach(function(c){ add('icd','ICD-10', c); });
+    // ---- CPT / E&M (5-digit) ----
+    var cpt=uniq((text.match(/\b\d{5}\b/g)||[]).filter(function(c){ var n=+c; return (n>=10000&&n<=99499)||(n>=99201&&n<=99499); }));
+    cpt.slice(0,8).forEach(function(c){ var em=/^992\d\d$/.test(c); add(em?'em':'cpt', em?'E&M':'CPT', c); });
+    return recs;
+  }
+
+  function copy(txt){ safe(function(){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt); } else { var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } toastMini('Copied'); }); }
+  function toastMini(msg){ safe(function(){ if(window.toast){ window.toast(msg,'ok'); return; } var d=document.createElement('div'); d.textContent=msg; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1400); }); }
+  function scheduleFollowup(){ safe(function(){ var id=activeId(); close(); if(window.calScheduleForPatient&&id){ window.calScheduleForPatient(id); } else if(window.showView){ window.showView('calendar'); } }); }
+
+  var SECTIONS=[
+    {type:'followup', title:'Follow-up interval', act:'schedule'},
+    {type:'imaging', title:'Imaging', act:'copy'},
+    {type:'referral', title:'Referrals', act:'copy'},
+    {type:'icd', title:'Diagnosis codes (ICD-10)', act:'copy'},
+    {type:'cpt', title:'Procedure codes (CPT)', act:'copy'},
+    {type:'em', title:'E&M level', act:'copy'}
+  ];
+  function render(recs){
+    var body=document.getElementById('mlsRecBody'); if(!body) return;
+    if(!recs.length){ body.innerHTML='<div class="mlsrec-empty">No structured recommendations found in the latest note.<br><button type="button" id="mlsRecGen" class="mlsrec-gen">Generate recommendations →</button></div>';
+      var g=document.getElementById('mlsRecGen'); if(g) g.addEventListener('click', function(){ close(); safe(function(){ if(window.generateRecommendations) window.generateRecommendations(); else if(window.showView) window.showView('recs'); }); }); return; }
+    var html='';
+    SECTIONS.forEach(function(sec){
+      var items=recs.filter(function(r){return r.type===sec.type;});
+      if(!items.length) return;
+      html+='<div class="mlsrec-sec"><div class="mlsrec-sectitle">'+esc(sec.title)+'</div><div class="mlsrec-chips">';
+      items.forEach(function(it,i){
+        html+='<span class="mlsrec-chip" data-type="'+esc(sec.type)+'" data-i="'+i+'"><span class="mlsrec-val">'+esc(it.value)+'</span>'
+          +'<button type="button" class="mlsrec-act" data-act="'+esc(sec.act)+'">'+(sec.act==='schedule'?'Schedule':'Copy')+'</button></span>';
+      });
+      html+='</div></div>';
+    });
+    html+='<div class="mlsrec-foot"><button type="button" id="mlsRecGen2" class="mlsrec-gen">Open full Recommendations →</button></div>';
+    body.innerHTML=html;
+    body.querySelectorAll('.mlsrec-chip').forEach(function(chip){
+      var type=chip.getAttribute('data-type'), i=+chip.getAttribute('data-i');
+      var it=recs.filter(function(r){return r.type===type;})[i];
+      var btn=chip.querySelector('.mlsrec-act');
+      btn.addEventListener('click', function(){ if(btn.getAttribute('data-act')==='schedule') scheduleFollowup(); else copy(it.value); });
+    });
+    var g2=document.getElementById('mlsRecGen2'); if(g2) g2.addEventListener('click', function(){ close(); safe(function(){ if(window.generateRecommendations) window.generateRecommendations(); else if(window.showView) window.showView('recs'); }); });
+  }
+  function open(){
+    var id=activeId(); if(!id){ safe(function(){ window.showView&&window.showView('patients'); }); return; }
+    injectCss(); close();
+    var recs=extract(latestNoteText(id));
+    var ov=document.createElement('div'); ov.id=OV;
+    ov.innerHTML='<div class="mlsrec-panel" role="dialog" aria-label="Recommendations from note">'
+      +'<div class="mlsrec-head"><span class="mlsrec-h">Recommendations — '+esc(activeName()||'patient')+'</span><button type="button" id="mlsRecClose" class="mlsrec-x">✕</button></div>'
+      +'<div class="mlsrec-hint">Auto-drawn from the latest note. One-click to act.</div>'
+      +'<div id="mlsRecBody" class="mlsrec-body"></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('mousedown', function(e){ if(e.target===ov) close(); });
+    document.getElementById('mlsRecClose').addEventListener('click', close);
+    render(recs);
+  }
+  function close(){ var ov=document.getElementById(OV); if(ov) ov.remove(); }
+  function injectCss(){
+    if(document.getElementById(CSS)) return;
+    var s=document.createElement('style'); s.id=CSS;
+    s.textContent=
+      '#'+OV+'{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px;backdrop-filter:blur(2px);}'
+      +'#'+OV+' .mlsrec-panel{width:100%;max-width:560px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
+      +'.mlsrec-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px 8px;}'
+      +'.mlsrec-h{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
+      +'.mlsrec-x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);padding:4px 6px;border-radius:8px;}'
+      +'.mlsrec-hint{padding:0 18px 12px;color:var(--muted,#7c8aa0);font-size:12.5px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'.mlsrec-body{overflow:auto;padding:12px 16px 16px;}'
+      +'.mlsrec-sec{margin-bottom:14px;}'
+      +'.mlsrec-sectitle{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#7c8aa0);margin-bottom:7px;}'
+      +'.mlsrec-chips{display:flex;flex-direction:column;gap:7px;}'
+      +'.mlsrec-chip{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line,#e6e9ef);border-radius:10px;padding:8px 8px 8px 12px;background:var(--surface,#fafcff);}'
+      +'.mlsrec-val{font-size:13.5px;color:var(--ink,#15293f);min-width:0;overflow:hidden;text-overflow:ellipsis;}'
+      +'.mlsrec-act{flex:0 0 auto;font:inherit;font-size:12px;font-weight:700;cursor:pointer;border:1px solid var(--brand,#2563c9);color:#fff;background:var(--brand,#2563c9);border-radius:8px;padding:5px 12px;}'
+      +'.mlsrec-act:hover{filter:brightness(1.07);}'
+      +'.mlsrec-empty{padding:26px 12px;text-align:center;color:var(--muted,#7c8aa0);font-size:14px;}'
+      +'.mlsrec-gen{margin-top:12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--brand,#2563c9);border-radius:9px;padding:8px 14px;}'
+      +'.mlsrec-foot{margin-top:6px;text-align:center;}'
+      +'@media (max-width:620px){#'+OV+'{padding:4vh 8px 8px;}#'+OV+' .mlsrec-panel{max-height:90vh;}}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+  window.__mlsRecs={ open:open, close:close, _extract:extract };
+})();
+
+
+/* ---- module: feat_visit_cascade.js ---- */
+
+/* ===== MLS One Visit -> Cascade — connectedness feature #7 =====
+   When a note is generated/signed/saved, the app already lands it in History and the unified card
+   recomputes last-visit. This feature ADDS the connectedness cascade: a non-intrusive prompt that
+   spawns the natural next steps in one click — schedule a Calendar follow-up, open note-derived
+   Recommendations, and jump to History — and refreshes the card + Athena sync chip.
+   ADDITIVE + passive: observes clicks on the app's own Generate/Review&Sign/Save buttons via a
+   capture-phase listener (never wraps them), then shows the cascade for the active patient. */
+(function(){
+  'use strict';
+  if (window.__mlsCascade) return;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function activeId(){ return safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null); }
+  function activeName(){ return safe(function(){ var p=window.findPatient&&window.findPatient(activeId()); return p?(p.name||''):''; }, ''); }
+  var TRIGGERS=/review\s*&\s*sign|save to history|generate note|sign\s*&\s*save|^sign$/i;
+  var lastShown=0;
+  function onClick(e){
+    safe(function(){
+      var el=e.target, hops=0, btn=null;
+      while(el && hops<4){ if(el.tagName==='BUTTON'||el.getAttribute&&el.getAttribute('onclick')){ btn=el; break; } el=el.parentElement; hops++; }
+      if(!btn) return;
+      var txt=(btn.textContent||'').replace(/\s+/g,' ').trim();
+      if(TRIGGERS.test(txt)){
+        var now=Date.now(); if(now-lastShown<3000) return; lastShown=now;
+        setTimeout(showCascade, 1100);
+      }
+    });
+  }
+  function showCascade(){
+    var id=activeId(); if(!id) return;
+    safe(function(){ if(window.__mlsCard) window.__mlsCard.refresh(); if(window.__mlsSync) window.__mlsSync.render(); });
+    var ex=document.getElementById('mlsCascade'); if(ex) ex.remove();
+    injectCss();
+    var c=document.createElement('div'); c.id='mlsCascade';
+    c.innerHTML='<div class="mlsc-top"><span class="mlsc-title">✓ Visit captured — '+esc(activeName()||'patient')+'</span>'
+      +'<button type="button" class="mlsc-x" aria-label="Dismiss">✕</button></div>'
+      +'<div class="mlsc-sub">Landed in History &amp; last-visit updated. Next steps:</div>'
+      +'<div class="mlsc-acts">'
+      +'<button type="button" data-a="followup">📅 Schedule follow-up</button>'
+      +'<button type="button" data-a="recs">💡 Recommendations</button>'
+      +'<button type="button" data-a="history">📚 History</button>'
+      +'</div>';
+    document.body.appendChild(c);
+    c.querySelector('.mlsc-x').addEventListener('click', function(){ c.remove(); });
+    c.querySelectorAll('[data-a]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var a=b.getAttribute('data-a'); c.remove();
+        if(a==='followup') safe(function(){ if(window.calScheduleForPatient) window.calScheduleForPatient(id); else if(window.showView) window.showView('calendar'); });
+        else if(a==='recs') safe(function(){ if(window.__mlsRecs) window.__mlsRecs.open(); else if(window.showView) window.showView('recs'); });
+        else if(a==='history') safe(function(){ if(window.showView) window.showView('history'); });
+      });
+    });
+    setTimeout(function(){ var n=document.getElementById('mlsCascade'); if(n) n.classList.add('fade'); }, 14000);
+    setTimeout(function(){ var n=document.getElementById('mlsCascade'); if(n) n.remove(); }, 16000);
+  }
+  function injectCss(){
+    if(document.getElementById('mlsCascadeCss')) return;
+    var s=document.createElement('style'); s.id='mlsCascadeCss';
+    s.textContent=
+      '#mlsCascade{position:fixed;right:18px;bottom:18px;z-index:100000;width:300px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-left:4px solid var(--brand,#2563c9);border-radius:13px;box-shadow:0 16px 44px rgba(15,28,46,.24);padding:13px 14px;transition:opacity .8s;font-size:13px;}'
+      +'#mlsCascade.fade{opacity:0;}'
+      +'#mlsCascade .mlsc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}'
+      +'#mlsCascade .mlsc-title{font-weight:700;color:var(--ink,#15293f);font-size:13.5px;}'
+      +'#mlsCascade .mlsc-x{border:0;background:transparent;cursor:pointer;color:var(--muted,#9aa7b4);font-size:14px;}'
+      +'#mlsCascade .mlsc-sub{color:var(--muted,#5b6b7c);font-size:12px;margin:4px 0 10px;}'
+      +'#mlsCascade .mlsc-acts{display:flex;flex-direction:column;gap:6px;}'
+      +'#mlsCascade .mlsc-acts button{font:inherit;font-size:12.5px;font-weight:600;text-align:left;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--ink,#15293f);border-radius:9px;padding:8px 11px;}'
+      +'#mlsCascade .mlsc-acts button:hover{border-color:var(--brand,#2563c9);color:var(--brand,#2563c9);}'
+      +'@media (max-width:620px){#mlsCascade{right:8px;left:8px;width:auto;bottom:8px;}}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+  function init(){ document.addEventListener('click', onClick, true); injectCss(); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
+  window.__mlsCascade={ show:showCascade };
 })();
 
