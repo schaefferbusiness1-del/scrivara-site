@@ -9543,6 +9543,7 @@ function savePatient(){
 /* ---------- PROFILE RENDER ---------- */
 function fieldBody(elId,txt,placeholder){
   const el=document.getElementById(elId);
+  if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', '); else if(txt!=null && typeof txt!=='string') txt=String(txt);
   if(txt && txt.trim()){ el.textContent=txt; el.classList.remove('empty-txt'); }
   else { el.textContent=placeholder; el.classList.add('empty-txt'); }
 }
