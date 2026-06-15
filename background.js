@@ -4,6 +4,49 @@ const DEFAULT_BACKEND = 'https://scrivara-backend.onrender.com';
 // read AND act inside iframes (e.g. athenaNet, which is heavily iframed). Rebuilt
 // on every mlsAssistElements call, consumed by mlsAssistExec for #index targets.
 const _mlsFrameMap = {};
+
+// ===========================================================================
+// NOTE WRITE-BACK ENGINE (v1.26). Shared, injected page-context helpers used by
+// both the panel's "Insert into chart" path (mlsPasteHere) and the app-driven
+// paste (mlsAppPasteRequest). Improvements over v1.25:
+//   - Field IDENTITY scoring (label/aria/placeholder/name/id + associated <label>)
+//     prefers real note fields (note/HPI/assessment/plan/SOAP/narrative/...) and
+//     penalizes search/chat/ID/login fields, layered on top of the size heuristic
+//     so the largest field still wins when identity is ambiguous (no regression).
+//   - POST-PASTE CONFIRMATION: after writing, the field is re-read to verify the
+//     text actually landed (athenaOne's controlled inputs can silently reject a
+//     programmatic write) so we never report success when nothing was inserted.
+// These NEVER click Save/Sign — they only fill a text field.
+// ===========================================================================
+function mlsFieldScanner() {
+  function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>30; }catch(e){ return false; } }
+  function hay(el){ var h=((el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('placeholder')||el.getAttribute('name')||el.getAttribute('title')||el.id))||''); try{ if(el.id){ var lb=document.querySelector('label[for="'+el.id+'"]'); if(lb) h+=' '+(lb.textContent||''); } }catch(e){} return String(h).toLowerCase(); }
+  function score(el){ var r=el.getBoundingClientRect(); var area=Math.min(r.width*r.height,400000); var h=hay(el); var s=area/1000; if(/note|hpi|assess|plan|soap|progress|narrative|subjective|objective|chief|complaint|document|free.?text|encounter|impression|history of present/.test(h)) s+=1000; if(/search|find|lookup|filter|chat|messag|comment|reason for|address|e-?mail|phone|\bnpi\b|\bmrn\b|patient.?id|claim|invoice|login|password|user.?name|\bzip\b|\bcity\b|\bstate\b/.test(h)) s-=1500; if((el.tagName||'')==='TEXTAREA') s+=120; if(el.isContentEditable) s+=100; return s; }
+  var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
+  var best=null, bestScore=-1e12; cs.forEach(function(el){ var sc=score(el); if(sc>bestScore){ bestScore=sc; best=el; } });
+  return { has: !!best, score: best?bestScore:-1e12, count: cs.length };
+}
+function mlsNotePaster(text) {
+  function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>30; }catch(e){ return false; } }
+  function hay(el){ var h=((el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('placeholder')||el.getAttribute('name')||el.getAttribute('title')||el.id))||''); try{ if(el.id){ var lb=document.querySelector('label[for="'+el.id+'"]'); if(lb) h+=' '+(lb.textContent||''); } }catch(e){} return String(h).toLowerCase(); }
+  function score(el){ var r=el.getBoundingClientRect(); var area=Math.min(r.width*r.height,400000); var h=hay(el); var s=area/1000; if(/note|hpi|assess|plan|soap|progress|narrative|subjective|objective|chief|complaint|document|free.?text|encounter|impression|history of present/.test(h)) s+=1000; if(/search|find|lookup|filter|chat|messag|comment|reason for|address|e-?mail|phone|\bnpi\b|\bmrn\b|patient.?id|claim|invoice|login|password|user.?name|\bzip\b|\bcity\b|\bstate\b/.test(h)) s-=1500; if((el.tagName||'')==='TEXTAREA') s+=120; if(el.isContentEditable) s+=100; return s; }
+  var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
+  var best=null, bestScore=-1e12; cs.forEach(function(el){ var sc=score(el); if(sc>bestScore){ bestScore=sc; best=el; } });
+  if(!best) return { ok:false, notfound:true };
+  try{ best.scrollIntoView({block:'center'}); best.focus(); }catch(e){}
+  try{ best.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true})); }catch(e){}
+  if(best.isContentEditable){ try{ best.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:text})); }catch(e){} if(!document.execCommand('insertText',false,text)){ try{ best.textContent=text; }catch(e){} } }
+  else { var p=(best.tagName==='TEXTAREA')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; var st=Object.getOwnPropertyDescriptor(p,'value'); if(st&&st.set) st.set.call(best,text); else best.value=text; }
+  try{ best.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text})); }catch(e){ best.dispatchEvent(new Event('input',{bubbles:true})); }
+  best.dispatchEvent(new Event('change',{bubbles:true}));
+  try{ best.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true})); }catch(e){}
+  // Confirm the text actually landed (controlled inputs may reject a programmatic write).
+  var cur = best.isContentEditable ? (best.innerText||best.textContent||'') : (best.value||'');
+  var probe = String(text).replace(/\s+/g,' ').trim().slice(0,30);
+  var curN = String(cur).replace(/\s+/g,' ');
+  var confirmed = !!cur && (curN.indexOf(probe)>=0 || String(cur).replace(/\s+/g,'').length >= Math.min(String(text).replace(/\s+/g,'').length,15));
+  return { ok:true, confirmed:confirmed, into:(best.getAttribute&&(best.getAttribute('aria-label')||best.getAttribute('name')))||(best.tagName||'').toLowerCase(), len:String(cur).length };
+}
 function getCfg() { return new Promise(r => chrome.storage.local.get(['mlsBackend', 'mlsKey'], r)); }
 
 // NO-API-KEY MODE: read the doctor's LIVE MLS login token straight out of an open,
@@ -414,48 +457,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
-  // Paste the drafted note into the note field of the CURRENT tab, searching
-  // EVERY frame (top + iframes). This is what the panel's "Paste note into chart"
-  // button uses so it works on iframe-based EMRs like athenaOne and Epic.
+  // Paste the drafted note into the note field of the CURRENT tab, searching EVERY
+  // frame (top + iframes) so iframe-based EMRs like athenaOne/Epic work. v1.26: picks
+  // the best frame by note-field SCORE (identity + size), confirms the paste landed,
+  // and retries once if it didn't. Returns {ok, confirmed, into}. Never clicks Save/Sign.
   if (msg.type === 'mlsPasteHere') {
     (async () => {
       try {
         const note = String(msg.note || '');
-        if (!note.trim()) return sendResponse({ ok: false });
+        if (!note.trim()) return sendResponse({ ok: false, error: 'empty' });
         let tabId = sender && sender.tab && sender.tab.id;
         if (!tabId) { const [t] = await chrome.tabs.query({ active: true, currentWindow: true }); tabId = t && t.id; }
         if (!tabId) return sendResponse({ ok: false });
-        const measureFn = () => {
-          function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>30; }catch(e){ return false; } }
-          var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
-          var best=0; cs.forEach(function(el){ var r=el.getBoundingClientRect(); var a=r.width*r.height; if(a>best) best=a; });
-          return { area: best };
-        };
-        let measure = [];
-        try { measure = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: measureFn }); }
-        catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId }, func: measureFn }); }
-        let winnerFrame = null, maxArea = 0;
-        (measure || []).forEach(function (m) { if (m && m.result && m.result.area > maxArea) { maxArea = m.result.area; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
-        if (winnerFrame === null || maxArea <= 0) return sendResponse({ ok: false });
-        const [r] = await chrome.scripting.executeScript({
-          target: { tabId, frameIds: [winnerFrame] },
-          args: [note],
-          func: (text) => {
-            function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>30; }catch(e){ return false; } }
-            var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
-            cs.sort(function(a,b){ var ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect(); return (rb.width*rb.height)-(ra.width*ra.height); });
-            var el=cs[0]; if(!el) return { ok:false };
-            try{ el.scrollIntoView({block:'center'}); el.focus(); }catch(e){}
-            try{ el.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true})); }catch(e){}
-            if(el.isContentEditable){ try{ el.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:text})); }catch(e){} if(!document.execCommand('insertText',false,text)){ el.textContent=text; } }
-            else { var p=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; var st=Object.getOwnPropertyDescriptor(p,'value'); if(st&&st.set) st.set.call(el,text); else el.value=text; }
-            try{ el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text})); }catch(e){ el.dispatchEvent(new Event('input',{bubbles:true})); }
-            el.dispatchEvent(new Event('change',{bubbles:true}));
-            try{ el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true})); }catch(e){}
-            return { ok:true, into: (el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('name')))||el.tagName.toLowerCase() };
-          }
-        });
-        sendResponse((r && r.result && r.result.ok) ? { ok: true, into: r.result.into } : { ok: false });
+        let last = { ok: false };
+        for (let attempt = 0; attempt < 2; attempt++) {
+          let measure = [];
+          try { measure = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: mlsFieldScanner }); }
+          catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId }, func: mlsFieldScanner }); }
+          let winnerFrame = null, bestScore = -1e12;
+          (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
+          if (winnerFrame === null) { last = { ok: false, notfound: true }; await new Promise(r => setTimeout(r, 450)); continue; }
+          const [r] = await chrome.scripting.executeScript({ target: { tabId, frameIds: [winnerFrame] }, args: [note], func: mlsNotePaster });
+          last = (r && r.result) || { ok: false };
+          if (last.ok && last.confirmed) break;
+          await new Promise(res2 => setTimeout(res2, 450));
+        }
+        if (last.ok && last.confirmed) sendResponse({ ok: true, confirmed: true, into: last.into });
+        else if (last.ok) sendResponse({ ok: true, confirmed: false, into: last.into });
+        else sendResponse({ ok: false });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;
@@ -481,8 +510,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   // Send a finished MLS note INTO the EMR: find the patient's note field (across
-  // frames, so Athena's iframes work), then paste — measuring first so it only ever
-  // pastes into ONE field, never duplicates across frames.
+  // frames, so Athena's iframes work), then paste. v1.26: scores frames by note-field
+  // identity+size, confirms the text landed, and retries once. Never clicks Save/Sign.
   if (msg.type === 'mlsAppPasteRequest') {
     (async () => {
       try {
@@ -494,35 +523,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const tab = cands[0];
         if (!tab) return sendResponse({ error: 'No EMR tab is open. Open the patient in your EMR in another tab, then try again.' });
         try { await chrome.tabs.update(tab.id, { active: true }); await chrome.windows.update(tab.windowId, { focused: true }); } catch (e) {}
-        const measureFn = () => {
-          function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>34; }catch(e){ return false; } }
-          var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
-          var best=0; cs.forEach(function(el){ var r=el.getBoundingClientRect(); var a=r.width*r.height; if(a>best) best=a; });
-          return { area: best };
-        };
-        let measure = [];
-        try { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: measureFn }); }
-        catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: measureFn }); }
-        let winnerFrame = null, maxArea = 0;
-        (measure || []).forEach(function (m) { if (m && m.result && m.result.area > maxArea) { maxArea = m.result.area; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
-        if (winnerFrame === null || maxArea <= 0) return sendResponse({ error: 'Could not find a note field on the EMR page. Open the patient and click into the note area, then try again.' });
-        const [r] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id, frameIds: [winnerFrame] },
-          args: [note],
-          func: (text) => {
-            function vis(el){ try{ if(el.disabled||el.readOnly) return false; var s=getComputedStyle(el); if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity||'1')<.05) return false; var r=el.getBoundingClientRect(); return r.width>120&&r.height>34; }catch(e){ return false; } }
-            var cs=[].slice.call(document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')).filter(vis);
-            cs.sort(function(a,b){ var ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect(); return (rb.width*rb.height)-(ra.width*ra.height); });
-            var el=cs[0]; if(!el) return { ok:false };
-            try{ el.scrollIntoView({block:'center'}); el.focus(); }catch(e){}
-            if(el.isContentEditable){ if(!document.execCommand('insertText',false,text)){ el.textContent=text; el.dispatchEvent(new Event('input',{bubbles:true})); } }
-            else { var p=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; var st=Object.getOwnPropertyDescriptor(p,'value'); if(st&&st.set) st.set.call(el,text); else el.value=text; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true})); }
-            return { ok:true, into: (el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('name')))||el.tagName.toLowerCase() };
-          }
-        });
-        const res = (r && r.result) || { ok: false };
-        if (res.ok) sendResponse({ ok: true, into: res.into });
-        else sendResponse({ error: 'Found a note field but could not paste. Click into the EMR note area, then try again.' });
+        let last = { ok: false }, foundField = false;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          let measure = [];
+          try { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsFieldScanner }); }
+          catch (e) { measure = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: mlsFieldScanner }); }
+          let winnerFrame = null, bestScore = -1e12;
+          (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); } });
+          if (winnerFrame === null) { await new Promise(r => setTimeout(r, 450)); continue; }
+          foundField = true;
+          const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [winnerFrame] }, args: [note], func: mlsNotePaster });
+          last = (r && r.result) || { ok: false };
+          if (last.ok && last.confirmed) break;
+          await new Promise(res2 => setTimeout(res2, 450));
+        }
+        if (last.ok && last.confirmed) sendResponse({ ok: true, confirmed: true, into: last.into });
+        else if (last.ok) sendResponse({ ok: true, confirmed: false, into: last.into, warn: 'Pasted, but could not confirm the text landed — please check the EMR note field before signing.' });
+        else if (foundField) sendResponse({ error: 'Found a note field but could not paste. Click into the EMR note area, then try again.' });
+        else sendResponse({ error: 'Could not find a note field on the EMR page. Open the patient and click into the note area, then try again.' });
       } catch (e) { sendResponse({ error: 'Send failed: ' + e.message }); }
     })();
     return true;

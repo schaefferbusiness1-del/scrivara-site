@@ -3,70 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Download MLS Assist v1.25</title>
+<title>Download MLS Assist v1.26</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-  :root{--brand:#1456a8;--brand-dk:#0d3c78;--ink:#16324f;--muted:#5b7186;}
-  *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#eef4fb;color:#16324f;line-height:1.5}
-  .wrap{max-width:620px;margin:0 auto;padding:34px 20px 60px}
-  .card{background:#fff;border:1px solid #d9e6f5;border-radius:16px;padding:26px 26px 30px;box-shadow:0 8px 30px rgba(20,86,168,.08)}
-  h1{font-size:23px;margin:0 0 4px;color:#0d3c78}
-  .ver{display:inline-block;background:#127a55;color:#fff;border-radius:999px;font-size:12px;font-weight:700;padding:2px 10px;margin-left:6px;vertical-align:middle}
-  p.sub{color:#5b7186;margin:2px 0 20px;font-size:14.5px}
-  button{background:#1456a8;color:#fff;border:0;border-radius:11px;font-size:16px;font-weight:700;padding:14px 22px;cursor:pointer;width:100%}
-  button:disabled{opacity:.6;cursor:default}
-  button:hover:not(:disabled){background:#0d3c78}
-  #status{margin:14px 0 0;font-size:13.5px;color:#3a5a78;min-height:20px;text-align:center}
-  ol{margin:22px 0 0;padding-left:20px;font-size:13.5px;color:#33536f;line-height:1.7}
-  code{background:#eef2f7;border-radius:5px;padding:1px 6px;font-size:12.5px}
-  .ok{color:#127a55;font-weight:700}
-  .err{color:#b42318;font-weight:700}
-  .note{margin-top:18px;background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:11px 13px;font-size:12.5px;color:#7a5a16}
+:root{--brand:#1456a8;--brand-dk:#0d3c78;--ink:#16324f;--muted:#5b7186;}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#eef4fb;color:#16324f;line-height:1.5}
+.wrap{max-width:620px;margin:0 auto;padding:34px 20px 60px}
+.card{background:#fff;border:1px solid #d9e6f5;border-radius:16px;padding:26px 26px 30px;box-shadow:0 8px 30px rgba(20,86,168,.08)}
+h1{font-size:23px;margin:0 0 4px;color:#0d3c78}
+.ver{display:inline-block;background:#127a55;color:#fff;border-radius:999px;font-size:12px;font-weight:700;padding:2px 10px;margin-left:6px;vertical-align:middle}
+p.sub{color:#5b7186;margin:2px 0 20px;font-size:14.5px}
+button{background:#1456a8;color:#fff;border:0;border-radius:11px;font-size:16px;font-weight:700;padding:14px 22px;cursor:pointer;width:100%}
+button:disabled{opacity:.6;cursor:default}
+button:hover:not(:disabled){background:#0d3c78}
+#status{margin:14px 0 0;font-size:13.5px;color:#3a5a78;min-height:20px;text-align:center}
+ol{margin:22px 0 0;padding-left:20px;font-size:13.5px;color:#33536f;line-height:1.7}
+code{background:#eef2f7;border-radius:5px;padding:1px 6px;font-size:12.5px}
+.ok{color:#127a55;font-weight:700}
+.err{color:#b42318;font-weight:700}
+.note{margin-top:18px;background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:11px 13px;font-size:12.5px;color:#7a5a16}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="card">
-    <h1>MLS Assist <span class="ver">v1.25</span></h1>
-    <p class="sub">The browser companion that reads your Athena schedule, drops finished notes into your EMR, and runs Autopilot. Click below to download, then load it into Chrome.</p>
-    <button id="dl" onclick="buildZip()">⬇ Download MLS Assist (.zip)</button>
-    <div id="status"></div>
-    <ol>
-      <li>Click the button above — it saves <code>mls-assist-extension.zip</code> to your Downloads. <b>Unzip it</b> (right-click → Extract All).</li>
-      <li>Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right toggle).</li>
-      <li><b>Already have an older MLS Assist?</b> Click <b>Remove</b> on it first (so the new one replaces it cleanly).</li>
-      <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder.</li>
-      <li>Make sure you're <b>signed in to MLS in a tab</b> — no key to paste. Then open your Athena schedule and use <b>📅 Pull schedule</b> in MLS.</li>
-    </ol>
-    <div class="note">If the schedule pull still says "older version" after this, double-check you clicked <b>Remove</b> on the old copy in step 3 — Chrome can otherwise keep running the old one.</div>
-  </div>
+<div class="card">
+<h1>MLS Assist <span class="ver">v1.26</span></h1>
+<p class="sub">The browser companion that reads your Athena schedule, drops finished notes into your EMR, and runs Autopilot. Click below to download, then load it into Chrome.</p>
+<button id="dl" onclick="buildZip()">⬇ Download MLS Assist (.zip)</button>
+<div id="status"></div>
+<ol>
+<li>Click the button above — it saves <code>mls-assist-extension.zip</code> to your Downloads. <b>Unzip it</b> (right-click → Extract All).</li>
+<li>Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right toggle).</li>
+<li><b>Already have an older MLS Assist?</b> Click <b>Remove</b> on it first (so the new one replaces it cleanly).</li>
+<li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder.</li>
+<li>Make sure you're <b>signed in to MLS in a tab</b> — no key to paste. Then open your Athena schedule and use <b>📅 Pull schedule</b> in MLS.</li>
+</ol>
+<div class="note">If the schedule pull still says "older version" after this, double-check you clicked <b>Remove</b> on the old copy in step 3 — Chrome can otherwise keep running the old one.</div>
+</div>
 </div>
 <script>
 var FILES=['manifest.json','background.js','content.js','content.css','popup.html','popup.js','icon-16.png','icon-32.png','icon-48.png','icon-128.png'];
 function setS(msg,cls){var el=document.getElementById('status');el.innerHTML=msg;el.className=cls||'';}
 async function buildZip(){
-  var btn=document.getElementById('dl');btn.disabled=true;
-  try{
-    if(typeof JSZip==='undefined'){setS('Could not load the zip library — check your connection and retry.','err');btn.disabled=false;return;}
-    var zip=new JSZip();var folder=zip.folder('mls-assist-extension');
-    for(var i=0;i<FILES.length;i++){
-      var f=FILES[i];setS('Packaging '+f+' ('+(i+1)+'/'+FILES.length+')…');
-      var r=await fetch('/'+f+'?t='+Date.now(),{cache:'no-store'});
-      if(!r.ok) throw new Error('fetch '+f+' → '+r.status);
-      var buf=await r.arrayBuffer();
-      folder.file(f,buf);
-    }
-    setS('Building zip…');
-    var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');a.href=url;a.download='mls-assist-extension.zip';document.body.appendChild(a);a.click();
-    setTimeout(function(){URL.revokeObjectURL(url);a.remove();},2000);
-    setS('✅ Downloaded mls-assist-extension.zip — now follow steps 1–5 below.','ok');
-  }catch(e){
-    setS('Something went wrong: '+(e&&e.message?e.message:e)+'. Refresh and try again.','err');
-  }
-  btn.disabled=false;
+var btn=document.getElementById('dl');btn.disabled=true;
+try{
+if(typeof JSZip==='undefined'){setS('Could not load the zip library — check your connection and retry.','err');btn.disabled=false;return;}
+var zip=new JSZip();var folder=zip.folder('mls-assist-extension');
+for(var i=0;i<FILES.length;i++){
+var f=FILES[i];setS('Packaging '+f+' ('+(i+1)+'/'+FILES.length+')…');
+var r=await fetch('/'+f+'?t='+Date.now(),{cache:'no-store'});
+if(!r.ok) throw new Error('fetch '+f+' → '+r.status);
+var buf=await r.arrayBuffer();
+folder.file(f,buf);
+}
+setS('Building zip…');
+var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+var url=URL.createObjectURL(blob);
+var a=document.createElement('a');a.href=url;a.download='mls-assist-extension.zip';document.body.appendChild(a);a.click();
+setTimeout(function(){URL.revokeObjectURL(url);a.remove();},2000);
+setS('✅ Downloaded mls-assist-extension.zip — now follow steps 1–5 below.','ok');
+}catch(e){
+setS('Something went wrong: '+(e&&e.message?e.message:e)+'. Refresh and try again.','err');
+}
+btn.disabled=false;
 }
 </script>
 </body>

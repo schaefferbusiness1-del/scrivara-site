@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MLS Assist",
-  "version": "1.25",
-  "description": "Consented AI scribe + supervised autopilot for any web EMR. Works automatically off your MLS login (no API key needed). Captures the visit, drafts the note, takes steps on screen with your approval, and can run a scheduled nightly patient backup from your EMR into MLS.",
+  "version": "1.26",
+  "description": "AI scribe + supervised autopilot for any web EMR. Captures visits, drafts notes, and acts on screen with your approval.",
   "permissions": [
     "storage",
     "tabs",

@@ -5,55 +5,101 @@
    it into the focused EMR field. Nothing is ever written automatically. */
 (function () {
   if (window.__mlsAssistLoaded) return; window.__mlsAssistLoaded = true;
-  // Bridge: the MLS web app can ping us (to show "Assist installed") and ask us
-  // to capture the patient currently open in the doctor's EMR tab.
+  // SECURITY (v1.26) -- trusted-origin gate for the page->extension postMessage bridge.
+  // The content script runs on <all_urls> so the doctor can open the MLS Assist panel
+  // on ANY page (that any-page behavior is intentional and unchanged). BUT the bridge
+  // below can drive the extension to scrape the open EMR/Athena chart and return PHI,
+  // so it must only be drivable by the MLS web app itself. We therefore (1) validate
+  // e.origin against an allowlist of MLS app origins, (2) validate the message shape
+  // and type, and (3) reply ONLY to the trusted origin -- never '*'. The doctor's own
+  // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
+  // so a malicious page can neither puppet the extension nor receive chart data, while
+  // the doctor's any-page usage is fully preserved.
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppPushVisit: 1 };
+  // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
+  // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
+  var _mlsExtraOrigins = [];
+  try {
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['mlsTrustedOrigins'], function (c) {
+        try { if (c && Array.isArray(c.mlsTrustedOrigins)) _mlsExtraOrigins = c.mlsTrustedOrigins.filter(function (o) { return typeof o === 'string'; }).map(function (o) { return o.toLowerCase(); }); } catch (e) {}
+      });
+    }
+    if (chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener(function (ch, area) {
+        if (area === 'local' && ch && ch.mlsTrustedOrigins) { try { var v = ch.mlsTrustedOrigins.newValue; _mlsExtraOrigins = Array.isArray(v) ? v.filter(function (o) { return typeof o === 'string'; }).map(function (o) { return o.toLowerCase(); }) : []; } catch (e) {} }
+      });
+    }
+  } catch (e) {}
+  function mlsTrustedOrigin(origin) {
+    if (!origin || typeof origin !== 'string') return false;
+    var o = origin.toLowerCase();
+    try {
+      var u = new URL(origin);
+      if (u.protocol === 'https:' && (u.hostname === 'mlsscribe.com' || u.hostname === 'www.mlsscribe.com' || u.hostname.endsWith('.mlsscribe.com'))) return true;
+    } catch (e) {}
+    if (_mlsExtraOrigins.indexOf(o) >= 0) return true;
+    return false;
+  }
+  function mlsStr(v, max) { return (typeof v === 'string') ? v.slice(0, max || 100000) : ''; }
+
+  // Bridge: the MLS web app (mlsscribe.com) can ping us (to show "Assist installed")
+  // and ask us to capture the patient currently open in the doctor's EMR tab.
   window.addEventListener('message', function (e) {
-    var d = e.data; if (!d || d.source !== 'mls-app') return;
-    if (d.type === 'mlsPing') { window.postMessage({ source: 'mls-ext', type: 'mlsPong' }, '*'); return; }
+    var d = e.data;
+    if (!d || typeof d !== 'object' || d.source !== 'mls-app') return;
+    if (typeof d.type !== 'string' || !MLS_BRIDGE_TYPES[d.type]) return;
+    if (!mlsTrustedOrigin(e.origin)) return;
+    var origin = e.origin;
+    var reply = function (payload) { try { window.postMessage(payload, origin); } catch (err) {} };
+    if (d.type === 'mlsPing') { reply({ source: 'mls-ext', type: 'mlsPong' }); return; }
     if (d.type === 'mlsAppCapture') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsAppCaptureRequest' }, function (resp) {
-          window.postMessage({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: resp || { error: 'no response' } }, '*');
+          reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: resp || { error: 'no response' } });
         });
-      } catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { error: 'extension error' } }, '*'); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { error: 'extension error' } }); }
     }
     if (d.type === 'mlsAppPasteNote') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppPasteRequest', note: d.note }, function (resp) {
-          window.postMessage({ source: 'mls-ext', type: 'mlsAppPasteResult', resp: resp || { error: 'no response' } }, '*');
+        chrome.runtime.sendMessage({ type: 'mlsAppPasteRequest', note: mlsStr(d.note) }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppPasteResult', resp: resp || { error: 'no response' } });
         });
-      } catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppPasteResult', resp: { error: 'extension error' } }, '*'); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppPasteResult', resp: { error: 'extension error' } }); }
     }
     // Pull TODAY'S SCHEDULE from the EMR tab (Athena) so MLS can pre-load the day's patients.
     if (d.type === 'mlsAppPullSchedule') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsAppScheduleRequest' }, function (resp) {
-          window.postMessage({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: resp || { error: 'no response' } }, '*');
+          reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: resp || { error: 'no response' } });
         });
-      } catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: { error: 'extension error' } }, '*'); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: { error: 'extension error' } }); }
     }
     // Open + read ONE PATIENT'S CHART from Athena. If a patient name is passed, the
     // background tries to click that patient (e.g. in the schedule) to open the chart,
     // then reads the frame that looks most like a clinical chart (not the schedule).
     if (d.type === 'mlsAppReadChart') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: d.patient || '' }, function (resp) {
-          window.postMessage({ source: 'mls-ext', type: 'mlsAppChartResult', resp: resp || { error: 'no response' } }, '*');
+        chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: mlsStr(d.patient, 200) }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: resp || { error: 'no response' } });
         });
-      } catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'extension error' } }, '*'); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'extension error' } }); }
     }
     // Push the ENTIRE finished visit into the open Athena encounter (note, diagnoses,
-    // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign —
+    // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign --
     // it stops and hands off to the doctor to review + sign in Athena.
     if (d.type === 'mlsAppPushVisit') {
-      try { _mlsPushVisit(String(d.goal || '')); }
-      catch (err) { window.postMessage({ source: 'mls-ext', type: 'mlsAppPushResult', resp: { error: 'extension error' } }, '*'); }
+      try { _mlsPushVisit(mlsStr(d.goal, 4000), origin); }
+      catch (err) { reply({ source: 'mls-ext', type: 'mlsAppPushResult', resp: { error: 'extension error' } }); }
     }
   });
   // Headless autopilot loop that enters a finished visit into the EMR encounter.
   function _bg(type, payload) { return new Promise(function (res) { try { chrome.runtime.sendMessage(Object.assign({ type: type }, payload || {}), function (r) { res(r || {}); }); } catch (e) { res({}); } }); }
-  async function _mlsPushVisit(goal) {
-    var post = function (type, payload) { try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), '*'); } catch (e) {} };
+  async function _mlsPushVisit(goal, trustedOrigin) {
+    // v1.26: results/progress go ONLY to the trusted MLS origin that initiated the push,
+    // never '*' -- so a hostile page can't observe the autopilot's PHI-bearing progress.
+    var _to = trustedOrigin || 'https://mlsscribe.com';
+    var post = function (type, payload) { try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), _to); } catch (e) {} };
     if (!goal) { post('mlsAppPushResult', { resp: { error: 'Nothing to push.' } }); return; }
     var history = [], lastSig = '', sameN = 0;
     post('mlsAppPushProgress', { msg: 'Starting — reading the Athena encounter…' });
@@ -123,7 +169,12 @@
     if (isEditable(lastEditable)) return lastEditable;
     if (isEditable(document.activeElement)) return document.activeElement;
     const cands = [...document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')].filter(el => { const r = el.getBoundingClientRect(); return r.width > 120 && r.height > 36 && r.bottom > 0 && r.top < innerHeight; });
-    cands.sort((a, b) => { const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); return (rb.width * rb.height) - (ra.width * ra.height); });
+    // v1.26: score by identity (label/aria/placeholder/name/id + associated <label>) + size,
+    // so a real note field beats a large search/chat box; falls back to largest-area when
+    // identity is ambiguous, so the v1.25 behavior still holds (no regression).
+    function _hay(el){ var h=((el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('placeholder')||el.getAttribute('name')||el.getAttribute('title')||el.id))||''); try{ if(el.id){ var lb=document.querySelector('label[for="'+el.id+'"]'); if(lb) h+=' '+(lb.textContent||''); } }catch(e){} return String(h).toLowerCase(); }
+    function _score(el){ var r=el.getBoundingClientRect(); var s=Math.min(r.width*r.height,400000)/1000; var h=_hay(el); if(/note|hpi|assess|plan|soap|progress|narrative|subjective|objective|chief|complaint|document|free.?text|encounter|impression|history of present/.test(h)) s+=1000; if(/search|find|lookup|filter|chat|messag|comment|reason for|address|e-?mail|phone|\bnpi\b|\bmrn\b|patient.?id|claim|invoice|login|password|user.?name|\bzip\b|\bcity\b|\bstate\b/.test(h)) s-=1500; if((el.tagName||'')==='TEXTAREA') s+=120; if(el.isContentEditable) s+=100; return s; }
+    cands.sort((a, b) => _score(b) - _score(a));
     return cands[0] || null;
   }
 
@@ -272,6 +323,16 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
     try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); } catch (e) {}
   }
+  // v1.26: after writing, re-read the field to confirm the text actually landed
+  // (athenaOne's controlled inputs can silently reject a programmatic write).
+  function _confirmLanded(el, note) {
+    try {
+      var cur = el.isContentEditable ? (el.innerText || el.textContent || '') : (el.value || '');
+      if (!cur) return false;
+      var probe = String(note).replace(/\s+/g, ' ').trim().slice(0, 30);
+      return String(cur).replace(/\s+/g, ' ').indexOf(probe) >= 0 || String(cur).replace(/\s+/g, '').length >= Math.min(String(note).replace(/\s+/g, '').length, 15);
+    } catch (e) { return false; }
+  }
   function localPaste(target, note) {
     target.focus();
     if (target.isContentEditable) {
@@ -279,6 +340,7 @@
       if (!document.execCommand('insertText', false, note)) { target.textContent = note; }
       try { target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: note })); } catch (e) { target.dispatchEvent(new Event('input', { bubbles: true })); }
     } else { setNativeValue(target, note); }
+    return _confirmLanded(target, note);
   }
   function clipFallback(note) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -288,17 +350,18 @@
   $('#mls-ins').addEventListener('click', () => {
     const note = noteBox.value.trim();
     if (!note) { log('Nothing to paste yet.'); return; }
-    // 1) Fast path: a note field in THIS (top) frame.
+    // 1) Fast path: a note field in THIS (top) frame — paste AND confirm it landed.
     const target = bestNoteField();
     if (target && isEditable(target)) {
-      try { localPaste(target, note); log('Pasted the note into the chart field. Review and save in your EMR.'); return; } catch (e) {}
+      try { if (localPaste(target, note)) { log('✓ Inserted the note into the chart field — verified. Review and sign in your EMR.'); return; } } catch (e) {}
     }
-    // 2) athenaOne / Epic put the note box inside an IFRAME the panel can't see —
-    // ask the background worker to paste across ALL frames of this tab.
+    // 2) athenaOne / Epic put the note box inside an IFRAME the panel can't see — ask the
+    //    background worker to score, paste, and CONFIRM across ALL frames of this tab.
     log('Finding the note field across the page…');
     try {
       chrome.runtime.sendMessage({ type: 'mlsPasteHere', note }, (resp) => {
-        if (resp && resp.ok) { log('Pasted the note into the chart (' + (resp.into || 'note field') + '). Review and save in your EMR.'); return; }
+        if (resp && resp.ok && resp.confirmed) { log('✓ Inserted the note into the chart (' + (resp.into || 'note field') + ') — verified. Review and sign in your EMR.'); return; }
+        if (resp && resp.ok) { log('⚠ Inserted into ' + (resp.into || 'a field') + ', but could not verify it stuck. Check the EMR note field before signing — if it’s empty, use Copy and paste manually.'); return; }
         clipFallback(note);
       });
     } catch (e) { clipFallback(note); }
