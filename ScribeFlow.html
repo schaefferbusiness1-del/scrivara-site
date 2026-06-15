@@ -859,6 +859,22 @@
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style id="mls-redesign">
+#visitView .mls-more-toggle{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:2px 0 12px;padding:11px 14px;cursor:pointer;background:var(--soft);border:1.5px dashed var(--line);color:var(--brand-dk);font-weight:700;font-size:14px;border-radius:11px}
+#visitView .mls-more-toggle:hover{border-color:var(--brand);background:var(--soft2)}
+#visitView #captureMore{margin:0 0 4px}
+#visitView .card:not(#visitHero){border-radius:18px;padding:26px 26px 24px;box-shadow:var(--shadow-soft)}
+#visitView .grid{gap:22px}
+#visitView h2{font-size:19px;font-weight:750}
+#visitView .note-actions{gap:9px}
+#patientsView .pt-group-bar{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:12px 0 14px}
+#patientsView .pt-group-bar .pt-group-lbl{font-size:12px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);margin-right:2px}
+#patientsView .pt-gbtn{font-size:13.5px;font-weight:700;padding:8px 15px;border-radius:30px;border:1.5px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer}
+#patientsView .pt-gbtn:hover{border-color:var(--brand);color:var(--brand-dk)}
+#patientsView .pt-gbtn.on{background:var(--brand);border-color:var(--brand);color:#fff}
+#patientsView .pt-group-hdr{font-size:12.5px;font-weight:800;letter-spacing:.4px;margin:18px 0 8px}
+#patientsView .pt-list>.pt-group-hdr:first-child{margin-top:4px}
+</style>
 </head>
 <body>
 
@@ -1343,6 +1359,13 @@
       </div>
       <div id="ptEmpty" class="empty"><span class="big">👤</span>No patients yet. Press <b>＋ New patient</b> to add one.</div>
       <div class="pt-nomatch" id="ptNoMatch" style="display:none"></div>
+      <div class="pt-group-bar" id="ptGroupBar">
+        <span class="pt-group-lbl">Group by</span>
+        <button type="button" id="ptgb_all" class="pt-gbtn on" onclick="setPtGroupMode('all')">All</button>
+        <button type="button" id="ptgb_upcoming" class="pt-gbtn" onclick="setPtGroupMode('upcoming')">📅 Upcoming</button>
+        <button type="button" id="ptgb_procedure" class="pt-gbtn" onclick="setPtGroupMode('procedure')">💉 Procedure</button>
+        <button type="button" id="ptgb_type" class="pt-gbtn" onclick="setPtGroupMode('type')">👤 Patient type</button>
+      </div>
       <div class="pt-list" id="ptList"></div>
     </div>
 
@@ -1472,6 +1495,8 @@
         <input type="text" id="patientLabel" placeholder="e.g. J.D. or MRN-1042">
       </div>
 
+      <button type="button" class="mls-more-toggle" id="captureMoreBtn" aria-expanded="false" onclick="toggleCaptureMore()">⚙️ More options <span id="captureMoreArrow">▾</span></button>
+      <div id="captureMore" style="display:none">
       <div class="field" style="margin-top:0;margin-bottom:12px">
         <label for="specialtyPreset">Specialty template</label>
         <select id="specialtyPreset" class="sf-select" onchange="onPresetChange()">
@@ -1491,8 +1516,6 @@
         <label for="contextBox">Problem list / past-visit context <span style="font-weight:400;color:var(--muted)">(optional — paste chronic conditions, meds, history)</span></label>
         <textarea id="contextBox" style="min-height:64px" placeholder="e.g. Active problems: T2DM, HTN, GERD. Home meds: metformin 1000 BID, lisinopril 10 daily. Last A1c 7.4%. Paste anything the note should account for."></textarea>
       </div>
-
-      <button id="captureBtn" class="btn-primary big-capture" onclick="toggleCapture()">▶ Start Visit</button>
 
       <div class="row tight" style="margin-top:10px">
         <button id="phoneMicBtn" class="btn-ghost" onclick="startPhoneMic()">📱 Phone mic</button>
@@ -1514,6 +1537,9 @@
         </div>
         <button class="btn-ghost" style="margin-top:12px;color:var(--danger,#c0392b)" onclick="stopPhoneMic()">Stop phone mic</button>
       </div>
+      </div>
+
+      <button id="captureBtn" class="btn-primary big-capture" onclick="toggleCapture()">▶ Start Visit</button>
 
       <div id="micWarn" style="display:none" class="disclaim">⚠️ <span></span></div>
 
@@ -1947,11 +1973,7 @@
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
         <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
-        <button class="btn-ghost" onclick="sendToEMRviaAssist(this)" id="sendEmrBtn" style="font-size:14px;padding:10px 16px" title="Quick &amp; simple: drops just the note text into whatever field is open in Athena. No diagnoses/charges/orders placed separately — it's a plain text paste.">📋 Paste note text only</button>
         <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="The full round-trip: MLS Assist enters the WHOLE visit into the patient's open Athena encounter — note, each diagnosis, E/M + CPT, and every order, each into its proper field. Shows a confirm before, a receipt after, and stops before Save/Sign so you review and sign.">🚀 Send full visit to Athena</button>
-        <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
-        <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
-        <button class="btn-ghost" onclick="gradeVisitExperience(this)" id="gradeExpBtn" title="AI rates how good the patient's experience was during this visit (bedside manner / communication), from the transcript — a coaching score that rolls into your Analysis">🌟 Grade experience</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
       <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6">🚀 <b>Send full visit</b> places each part in its own athenaOne section: <b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders. You'll see a confirm before and a receipt of exactly what was entered after.</div>
@@ -1967,6 +1989,10 @@
       <!-- Secondary / manual tools — hidden by default, one click away. All
            handlers unchanged; only relocated under this collapsible container. -->
       <div class="note-actions" id="moreTools" style="display:none">
+        <button class="btn-ghost" onclick="sendToEMRviaAssist(this)" id="sendEmrBtn" style="font-size:14px;padding:10px 16px" title="Quick &amp; simple: drops just the note text into whatever field is open in Athena. No diagnoses/charges/orders placed separately — it's a plain text paste.">📋 Paste note text only</button>
+        <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
+        <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
+        <button class="btn-ghost" onclick="gradeVisitExperience(this)" id="gradeExpBtn" title="AI rates how good the patient's experience was during this visit (bedside manner / communication), from the transcript — a coaching score that rolls into your Analysis">🌟 Grade experience</button>
         <button class="btn-gold" id="optBtn" onclick="optimizeForPayout()" disabled>📈 Optimize for Insurance Payout</button>
         <button class="btn-ghost" id="mipsBtn" onclick="runMipsCheck()" disabled>🎯 MIPS check</button>
         <button class="btn-ghost" id="redflagBtn" onclick="runRedFlagScan()" disabled>🚩 Red-flag scan</button>
@@ -9375,10 +9401,13 @@ function renderPatients(){
   if(noMatch) noMatch.style.display='none';
   const activeId=getActivePtId();
   const capNote = capped ? `<div class="pt-cap-note">Showing the first 150 of ${arr.length}. Search by name or date of birth to find anyone else.</div>` : '';
-  if(typeof getQolGroupProc==='function' && getQolGroupProc()){
+  try{ if(typeof syncPtGroupBar==='function') syncPtGroupBar(); }catch(e){}
+  var _ptMode = (typeof getPtGroupMode==='function') ? getPtGroupMode() : 'all';
+  if(_ptMode==='all' && typeof getQolGroupProc==='function' && getQolGroupProc()) _ptMode='procedure';
+  if(_ptMode!=='all'){
     var groups={};
-    shown.forEach(function(p){ var g=_ptProcedure(p); (groups[g]=groups[g]||[]).push(p); });
-    var keys=Object.keys(groups).sort(function(a,b){ if(a==='No procedure yet') return 1; if(b==='No procedure yet') return -1; return a.localeCompare(b); });
+    shown.forEach(function(p){ var g=_ptGroupKey(p,_ptMode); (groups[g]=groups[g]||[]).push(p); });
+    var keys=Object.keys(groups).sort(_ptGroupSort(_ptMode));
     var ghtml='';
     keys.forEach(function(g){ ghtml+='<div class="pt-group-hdr">'+esc(g)+' <span style="color:var(--muted);font-weight:600">('+groups[g].length+')</span></div>'; ghtml+=groups[g].map(function(p){ return _ptItemHtml(p,activeId); }).join(''); });
     list.innerHTML=ghtml + capNote;
@@ -21044,6 +21073,26 @@ window.addEventListener('DOMContentLoaded',()=>{
     }
   }
 });
+
+/* ===== MLS UX additions (declutter + patient grouping) — native, appended to the existing app script ===== */
+function toggleCaptureMore(){ var p=document.getElementById('captureMore'); var b=document.getElementById('captureMoreBtn'); var a=document.getElementById('captureMoreArrow'); if(!p) return; var open=(p.style.display==='none'||!p.style.display); p.style.display=open?'block':'none'; if(b) b.setAttribute('aria-expanded',open?'true':'false'); if(a) a.textContent=open?'▴':'▾'; }
+function getPtGroupMode(){ try{ return localStorage.getItem(uns('ptGroupMode'))||'all'; }catch(e){ return 'all'; } }
+function setPtGroupMode(m){ try{ localStorage.setItem(uns('ptGroupMode'), m); }catch(e){} try{ syncPtGroupBar(); }catch(e){} try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){} }
+function syncPtGroupBar(){ try{ var m=getPtGroupMode(); ['all','upcoming','procedure','type'].forEach(function(k){ var b=document.getElementById('ptgb_'+k); if(b) b.classList.toggle('on', k===m); }); }catch(e){} }
+function _ptGroupKey(p, mode){
+  try{
+    if(mode==='procedure'){ return (typeof _ptProcedure==='function')?_ptProcedure(p):'No procedure yet'; }
+    var n=0; try{ n=(typeof patientNotes==='function'?(patientNotes(p.id)||[]):[]).length; }catch(e){}
+    if(mode==='upcoming'){ if(p && (p.source==='athena-schedule' || p.appt)) return '📅 On today’s schedule'; return n>0 ? '🕒 Recently seen' : '🆕 New / not yet seen'; }
+    if(mode==='type'){ if(p && p.source==='athena-schedule') return '📥 From Athena schedule'; return n>0 ? '🔁 Returning patients' : '🆕 New patients'; }
+  }catch(e){}
+  return 'Other';
+}
+function _ptGroupSort(mode){
+  var ORDER={'📅 On today’s schedule':0,'🕒 Recently seen':1,'🆕 New / not yet seen':2,'📥 From Athena schedule':0,'🔁 Returning patients':1,'🆕 New patients':2};
+  return function(a,b){ if(a==='No procedure yet') return 1; if(b==='No procedure yet') return -1; var oa=(a in ORDER)?ORDER[a]:50, ob=(b in ORDER)?ORDER[b]:50; if(oa!==ob) return oa-ob; return a.localeCompare(b); };
+}
+
 </script>
 </body>
 </html>
