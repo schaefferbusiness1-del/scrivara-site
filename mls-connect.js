@@ -2135,3 +2135,310 @@
 
   window.__mlsLite = { isLiteUser: isLiteUser, apply: applyDoctorRestrictions, refreshAdmin: function(){ _liteMap = null; adminPass(); } };
 })();
+
+
+/* ---- module: feat_note_formatting.js ---- */
+
+/* ===== MLS Note Formatting — provider-grade structured display =====
+   Problem: every AI output (SOAP note, op/procedure note, insurance note,
+   recommendations, decision-support, prior-auth, chart summary, IME report,
+   data study) is shown as flat, uniform plain text. Line breaks survive, but
+   there is NO visual hierarchy — section labels look identical to body text,
+   so a correctly-sectioned note reads as one undifferentiated wall ("blob").
+
+   Fix (display layer only — content is never altered):
+   1. Editable note textareas (#noteBox SOAP/insurance, #procNoteBody op note)
+      get a styled, read-only PREVIEW with bold section headers, spaced
+      sections, and real bulleted/numbered lists, plus an Edit/Preview toggle.
+      The textarea stays the single source of truth, so Copy-for-EMR, Sign,
+      Save-to-history and Send-to-Athena keep using the exact plain text —
+      the EMR copy is never touched.
+   2. Read-only AI prose panels (.xbody: chart summary, decision support,
+      denial/prior-auth, data study, IME, document summary) get their section
+      headers bolded INLINE inside the existing pre-wrap container. Because the
+      added markup is inline and the newlines stay literal, the element's
+      textContent is byte-identical to before — every copy/print path that
+      reads .textContent stays clean.
+
+   Self-contained progressive enhancement: own IIFE, all external work guarded
+   with try/catch, never modifies any existing app function, polls/observes
+   passively, and degrades to a silent no-op on any error. Exposes
+   window.__mlsFormat (with .enabled, .rerender(), .disable()). */
+(function(){
+  'use strict';
+  if (window.__mlsFormat) return;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+
+  /* ---------- header / structure recognition ---------- */
+  // Major section labels that stand alone on a line (SOAP, op-note blocks,
+  // insurance-note blocks, coding sections). Compared case-insensitively with
+  // any trailing ":" stripped.
+  var MAJOR = {};
+  ([
+    'subjective','objective','assessment','plan','assessment and plan','assessment & plan','assessment/plan',
+    'chief complaint','history of present illness','hpi','review of systems','ros',
+    'past medical history','past surgical history','family history','social history',
+    'medications','allergies','vitals','physical exam','physical examination','examination','exam',
+    'imaging','laboratory','labs','results','diagnostics',
+    'patient','date','date of procedure','date of service','date of birth',
+    'preoperative diagnosis','pre-operative diagnosis','preprocedure diagnosis','pre-procedure diagnosis',
+    'postoperative diagnosis','post-operative diagnosis','postprocedure diagnosis','post-procedure diagnosis',
+    'procedure','procedure performed','procedures performed','operation','operation performed',
+    'anesthesia','anesthesia type','indications','indication','indications for procedure',
+    'description of procedure','description','technique','findings','complications',
+    'estimated blood loss','specimens','implants','disposition','condition',
+    'surgeon','assistant','attending','consent','fluoroscopy','fluoroscopy time',
+    'medications administered','post-procedure plan','follow-up','followup','return precautions',
+    'encounter type','medical necessity','chief complaint & medical necessity','history',
+    'medical decision making','mdm','e/m level rationale','em level rationale','plan of care',
+    'diagnoses','orders','reimbursement','coding','suggested coding','red flags',
+    'differential diagnosis','differentials','recommendations','clinical note','insurance-ready encounter note'
+  ]).forEach(function(k){ MAJOR[k]=true; });
+
+  // Sub-labels that appear as "Label: content" on one line — bold just the label.
+  var SUBLABEL = {};
+  ([
+    'chief complaint','cc','hpi','history of present illness','ros','review of systems',
+    'pmh','past medical history','psh','past surgical history','fh','family history',
+    'sh','social history','medications','meds','allergies','vitals','exam','physical exam',
+    'physical examination','imaging','labs','laboratory','results','assessment','plan',
+    'follow-up','followup','return precautions','disposition','indications','anesthesia',
+    'findings','complications','estimated blood loss','ebl','specimens','condition','comment',
+    'date of procedure','date of service','date of birth','mrn','procedure','diagnosis'
+  ]).forEach(function(k){ SUBLABEL[k]=true; });
+
+  function stripColon(s){ return s.replace(/\s*:\s*$/,''); }
+  function isAllCaps(s){ return /[A-Z]/.test(s) && s === s.toUpperCase() && !/[a-z]/.test(s); }
+
+  // Classify a single line. Returns {type, label, rest}.
+  function classify(line){
+    var t = line.replace(/\s+$/,'');           // keep leading indent, drop trailing ws
+    var trimmed = t.trim();
+    if (!trimmed) return { type:'blank' };
+    // bullet
+    var mb = trimmed.match(/^[-*•]\s+(.*)$/);
+    if (mb) return { type:'bullet', rest: mb[1] };
+    // numbered (1.  1)  )
+    var mn = trimmed.match(/^(\d{1,3})[.)]\s+(.*)$/);
+    if (mn) return { type:'num', num: mn[1], rest: mn[2] };
+    // standalone header: whole line is a label (uppercase, or known major)
+    var noColon = stripColon(trimmed);
+    if (noColon.length <= 52 && (isAllCaps(noColon) || MAJOR[noColon.toLowerCase()]) && !/[.;]/.test(noColon)){
+      // Make sure it is a label only (a "LABEL: value" with a value is a sublabel, handled below)
+      if (!/:\s*\S/.test(trimmed) || MAJOR[noColon.toLowerCase()] || isAllCaps(noColon))
+        return { type:'h', label: noColon };
+    }
+    // "Label: content" sub-label
+    var ms = trimmed.match(/^([A-Za-z][A-Za-z/&()'.\- ]{1,40}?):\s+(\S.*)$/);
+    if (ms){
+      var lab = ms[1].trim();
+      if (SUBLABEL[lab.toLowerCase()] || MAJOR[lab.toLowerCase()] || isAllCaps(lab))
+        return { type:'sub', label: lab, rest: ms[2] };
+    }
+    return { type:'p', rest: t };
+  }
+
+  /* ---------- BLOCK renderer (rich, for read-only previews) ----------
+     Used where copy/EMR reads a DIFFERENT source (the underlying textarea),
+     so the preview can use full block structure (headers, <ul>, spacing). */
+  function renderBlock(text){
+    var lines = String(text==null?'':text).split('\n');
+    var out = [], i = 0, listBuf = null, listType = null;
+    function flush(){
+      if (listBuf && listBuf.length){
+        var tag = listType==='num' ? 'ol' : 'ul';
+        out.push('<'+tag+' class="mlsf-list">'+listBuf.join('')+'</'+tag+'>');
+      }
+      listBuf = null; listType = null;
+    }
+    for (i=0;i<lines.length;i++){
+      var c = classify(lines[i]);
+      if (c.type==='bullet'){ if(listType&&listType!=='bullet') flush(); listType='bullet'; listBuf=listBuf||[]; listBuf.push('<li>'+esc(c.rest)+'</li>'); continue; }
+      if (c.type==='num'){ if(listType&&listType!=='num') flush(); listType='num'; listBuf=listBuf||[]; listBuf.push('<li>'+esc(c.rest)+'</li>'); continue; }
+      flush();
+      if (c.type==='blank'){ continue; }
+      if (c.type==='h'){ out.push('<div class="mlsf-h">'+esc(c.label)+'</div>'); continue; }
+      if (c.type==='sub'){ out.push('<div class="mlsf-p"><span class="mlsf-sub">'+esc(c.label)+':</span> '+esc(c.rest)+'</div>'); continue; }
+      out.push('<div class="mlsf-p">'+esc(c.rest)+'</div>');
+    }
+    flush();
+    return out.join('');
+  }
+
+  /* ---------- INLINE renderer (for .xbody pre-wrap panels) ----------
+     Bolds headers/sub-labels WITHOUT changing textContent: the markup added is
+     inline, and every newline stays a literal '\n' text node, so
+     el.textContent === the original text (copy/print stay byte-identical). */
+  function renderInline(text){
+    var lines = String(text==null?'':text).split('\n');
+    var anyHeader = false;
+    var html = lines.map(function(line){
+      var c = classify(line);
+      if (c.type==='h'){ anyHeader = true; return '<b class="mlsf-ih">'+esc(line)+'</b>'; }
+      if (c.type==='sub'){
+        anyHeader = true;
+        // keep leading indentation + exact spacing; only wrap the "Label:" run
+        var idx = line.indexOf(c.label);
+        var pre = esc(line.slice(0, idx));
+        return pre + '<b class="mlsf-ih">'+esc(c.label)+':</b>' + esc(line.slice(idx + c.label.length + 1));
+      }
+      return esc(line);
+    }).join('\n');
+    return { html: html, anyHeader: anyHeader };
+  }
+
+  /* ---------- styles ---------- */
+  function injectCss(){
+    if (document.getElementById('mlsfCss')) return;
+    var st = document.createElement('style'); st.id='mlsfCss';
+    st.textContent =
+      '.mlsf-note{border:1px solid var(--line,#e2e8f0);border-radius:10px;background:var(--surface,#fff);'+
+        'padding:14px 16px;font-size:14.5px;line-height:1.5;color:var(--text,#1f2937);max-height:60vh;overflow:auto;'+
+        'font-family:inherit;-webkit-font-smoothing:antialiased}'+
+      '.mlsf-note .mlsf-h{font-weight:800;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;'+
+        'color:var(--accent,#2f5fd0);margin:14px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--line,#e8edf5)}'+
+      '.mlsf-note .mlsf-h:first-child{margin-top:0}'+
+      '.mlsf-note .mlsf-p{margin:3px 0;white-space:pre-wrap}'+
+      '.mlsf-note .mlsf-sub{font-weight:700;color:var(--text,#243042)}'+
+      '.mlsf-note .mlsf-list{margin:4px 0 8px;padding-left:22px}'+
+      '.mlsf-note .mlsf-list li{margin:2px 0;white-space:pre-wrap}'+
+      '.mlsf-note ol.mlsf-list{list-style:decimal}'+
+      '.mlsf-bar{display:flex;align-items:center;gap:8px;margin:0 0 8px}'+
+      '.mlsf-toggle{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--line,#cdd7e6);'+
+        'background:var(--surface,#fff);color:var(--accent,#2f5fd0);border-radius:7px;padding:5px 11px}'+
+      '.mlsf-toggle:hover{background:#eef4ff}'+
+      '.mlsf-hint{font-size:11.5px;color:var(--muted,#7a8699)}'+
+      '.xbody .mlsf-ih{font-weight:800;color:var(--accent,#2f5fd0)}';
+    (document.head||document.documentElement).appendChild(st);
+  }
+
+  /* ---------- editable-textarea preview (note + op note) ---------- */
+  function attachPretty(ta, key){
+    if (!ta || ta.__mlsf) return;
+    ta.__mlsf = true;
+    var pretty = document.createElement('div');
+    pretty.className = 'mlsf-note';
+    pretty.setAttribute('aria-label','Formatted note preview');
+    var bar = document.createElement('div');
+    bar.className = 'mlsf-bar';
+    var btn = document.createElement('button');
+    btn.type='button'; btn.className='mlsf-toggle'; btn.textContent='✏️ Edit';
+    var hint = document.createElement('span'); hint.className='mlsf-hint';
+    hint.textContent='Formatted view — copy/EMR output is unchanged';
+    bar.appendChild(btn); bar.appendChild(hint);
+    // insert bar + pretty right before the textarea
+    ta.parentNode.insertBefore(bar, ta);
+    ta.parentNode.insertBefore(pretty, ta);
+
+    var state = { mode:'preview', last:null };
+    function rerender(){
+      var v = ta.value || '';
+      if (v === state.last) return;
+      state.last = v;
+      try { pretty.innerHTML = renderBlock(v); } catch(e){ pretty.textContent = v; }
+    }
+    function showPreview(){
+      state.mode='preview';
+      rerender();
+      // only take over the visual slot when the note actually has content
+      var has = (ta.value||'').trim().length>0;
+      pretty.style.display = has ? 'block' : 'none';
+      bar.style.display = has ? 'flex' : 'none';
+      if (has){ ta.dataset.mlsfHidden='1'; ta.style.display='none'; }
+      btn.textContent='✏️ Edit';
+    }
+    function showEdit(){
+      state.mode='edit';
+      pretty.style.display='none';
+      ta.style.display='block'; ta.dataset.mlsfHidden='';
+      btn.textContent='👁 Preview';
+      try{ ta.focus(); }catch(e){}
+    }
+    btn.addEventListener('click', function(){ if(state.mode==='preview') showEdit(); else showPreview(); });
+    ta.addEventListener('input', function(){ if(state.mode==='preview') rerender(); });
+
+    // poll for programmatic value changes (generate, format toggle, sign,
+    // template apply) — the app sets .value directly, which fires no event.
+    function tick(){
+      try{
+        if (!window.__mlsFormat || !window.__mlsFormat.enabled){ return; }
+        var hasContent = (ta.value||'').trim().length>0;
+        if (state.mode==='preview'){
+          if (hasContent){
+            // value may have changed programmatically (generate / format toggle /
+            // sign / template apply) with no event — re-render and reclaim the slot
+            rerender();
+            pretty.style.display='block'; bar.style.display='flex';
+            if (ta.style.display!=='none'){ ta.dataset.mlsfHidden='1'; ta.style.display='none'; }
+          } else {
+            pretty.style.display='none'; bar.style.display='none';
+            if (ta.dataset.mlsfHidden==='1'){ ta.dataset.mlsfHidden=''; ta.style.display=''; }
+          }
+        }
+      }catch(e){}
+    }
+    setInterval(tick, 700);
+    // initial paint
+    showPreview();
+    return { rerender: showPreview };
+  }
+
+  /* ---------- read-only xbody panels ---------- */
+  function decorateXbody(el){
+    if (!el) return;
+    try{
+      var raw = el.textContent;
+      if (raw == null) return;
+      if (el.dataset.mlsfRaw === raw) return;       // already decorated this exact text
+      if (!raw.trim() || raw.length < 8) return;     // skip empty / "Working…" states
+      var r = renderInline(raw);
+      if (!r.anyHeader) { el.dataset.mlsfRaw = raw; return; } // nothing to emphasize
+      el.dataset.mlsfBusy = '1';
+      el.innerHTML = r.html;
+      el.dataset.mlsfRaw = el.textContent;           // store post-render textContent (== raw)
+      el.dataset.mlsfBusy = '';
+    }catch(e){}
+  }
+  function watchXbody(el){
+    if (!el || el.__mlsfWatch) return;
+    el.__mlsfWatch = true;
+    decorateXbody(el);
+    try{
+      var mo = new MutationObserver(function(){
+        if (el.dataset.mlsfBusy==='1') return;       // ignore our own writes
+        decorateXbody(el);
+      });
+      mo.observe(el, { childList:true, characterData:true, subtree:true });
+    }catch(e){}
+  }
+
+  /* ---------- wiring ---------- */
+  var XBODY_IDS = ['chartSumBody','docAiBody','revToolsOut','dsOut','anaStudyOut','imeBody','surgPlanBody'];
+  function wire(){
+    if (!window.__mlsFormat || !window.__mlsFormat.enabled) return;
+    injectCss();
+    safe(function(){ attachPretty(document.getElementById('noteBox'), 'note'); });
+    safe(function(){ attachPretty(document.getElementById('procNoteBody'), 'op'); });
+    XBODY_IDS.forEach(function(id){ safe(function(){ watchXbody(document.getElementById(id)); }); });
+    // also catch any future .xbody panels generically
+    safe(function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.xbody'), function(el){ watchXbody(el); });
+    });
+  }
+
+  window.__mlsFormat = {
+    enabled: true,
+    rerender: function(){ safe(wire); },
+    disable: function(){ this.enabled=false; },
+    _renderBlock: renderBlock,
+    _renderInline: renderInline,
+    _classify: classify
+  };
+
+  function boot(){ safe(wire); }
+  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  // re-wire periodically: textareas/panels may mount after login / view switch
+  var n=0; var iv=setInterval(function(){ n++; if(n>40){ clearInterval(iv); return; } safe(wire); }, 1000);
+})();
