@@ -21163,7 +21163,7 @@ function _ptGroupSort(mode){
     return { count:n, last:last };
   }
   function go(view){ safe(function(){ if (window.showView) window.showView(view); }); }
-  function openChart(id){ safe(function(){ if (window.openPatient) window.openPatient(id); else go('patients'); }); }
+  function openChart(id){ safe(function(){ if (window.openPatient){ window.openPatient(id); go('patients'); } else go('patients'); }); }
   function openSchedule(id){
     safe(function(){
       if (window.calScheduleForPatient) { window.calScheduleForPatient(id); }
