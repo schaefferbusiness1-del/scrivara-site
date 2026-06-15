@@ -2001,3 +2001,132 @@
     else start();
   } catch (e) { try { console.warn('[MLS] version badge failed', e); } catch (_) {} }
 })();
+
+
+/* ============================================================
+   MLS-CONNECT — Feature: Lite (scribe-only) tier mode
+   Pairs with the server-side liteGate (auth.js) which is the real, unbypassable
+   enforcement. This module is the matching UX + the Owner admin control:
+     • Doctor side: if the signed-in user is on the Lite plan, hide every non-Lite
+       nav tab (keep Visit), redirect restricted views to Visit, show a "Lite" badge.
+     • Admin side: inject a per-row "Lite" toggle into the Owner Users table (next to
+       Premium), reading each row's existing adminSetPremium(id,..) to get the user id;
+       calls POST /api/admin/users/:id/lite via the app's own authed adminFetch.
+   Self-contained IIFE; every external call wrapped in try/catch; no-op on any error.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__mlsLiteMode) return; window.__mlsLiteMode = true;
+
+  var RESTRICTED = ['calendar','patients','orders','recs','history','legalreq','team','analysis','studio'];
+  var NAV_IDS = RESTRICTED.map(function(v){ return 'nav_' + v; });
+
+  function isLiteUser(){
+    try { return !!(window.bkUser && window.bkUser.lite) && !(window.bkUser && window.bkUser.isAdmin); }
+    catch(e){ return false; }
+  }
+
+  function applyDoctorRestrictions(){
+    if (!isLiteUser()) return;
+    try {
+      document.body.classList.add('mls-lite');
+      NAV_IDS.forEach(function(id){ var el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      var v = document.getElementById('nav_visit'); if (v) v.style.display = '';
+      try {
+        var active = document.querySelector('.navtab.on');
+        if (active && NAV_IDS.indexOf(active.id) !== -1 && typeof window.showView === 'function') window.showView('visit');
+      } catch(e){}
+      addBadge();
+    } catch(e){}
+  }
+
+  function addBadge(){
+    try {
+      if (document.getElementById('mlsLiteBadge')) return;
+      var b = document.createElement('span');
+      b.id = 'mlsLiteBadge'; b.textContent = 'Lite';
+      var tip = 'Lite plan: the scribe only. Coding, intake, scheduling, outcomes, legal and analytics are on Standard/Premium.';
+      b.title = tip; b.setAttribute('data-tip', tip);
+      b.style.cssText = 'display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#0e7490;color:#fff;vertical-align:middle;letter-spacing:.02em;';
+      var visit = document.getElementById('nav_visit');
+      if (visit && visit.parentNode) visit.parentNode.appendChild(b);
+      else (document.querySelector('.navtabs, nav, header') || document.body).appendChild(b);
+    } catch(e){}
+  }
+
+  var _liteMap = null;
+  function fetchLiteMap(cb){
+    try {
+      if (typeof window.adminFetch !== 'function') { cb && cb(); return; }
+      window.adminFetch('/api/admin/users')
+        .then(function(x){ return (x && typeof x.json === 'function') ? x.json() : x; })
+        .then(function(rows){
+          try { _liteMap = {}; (rows || []).forEach(function(u){ if (u && u.id != null) _liteMap[String(u.id)] = (u.lite ? 1 : 0); }); } catch(e){}
+          cb && cb();
+        })
+        .catch(function(){ cb && cb(); });
+    } catch(e){ cb && cb(); }
+  }
+
+  function injectAdminToggles(){
+    try {
+      var premBtns = Array.prototype.slice.call(document.querySelectorAll('[onclick*="adminSetPremium("]'));
+      if (!premBtns.length) return;
+      premBtns.forEach(function(btn){
+        try {
+          if (btn.parentNode && btn.parentNode.querySelector('[data-mls-lite-btn]')) return;
+          var oc = btn.getAttribute('onclick') || '';
+          var m = oc.match(/adminSetPremium\(\s*['"]?([^'",\)]+)['"]?/);
+          if (!m) return;
+          var id = m[1];
+          var liteOn = _liteMap ? !!_liteMap[String(id)] : false;
+          var lb = document.createElement('button');
+          lb.setAttribute('data-mls-lite-btn','1');
+          lb.className = btn.className || 'btn-ghost';
+          lb.style.cssText = btn.getAttribute('style') || '';
+          lb.style.marginLeft = '4px';
+          if (liteOn){ lb.style.background = '#0e7490'; lb.style.color = '#fff'; lb.style.borderColor = '#0e7490'; }
+          lb.textContent = liteOn ? 'Lite ✓' : 'Lite';
+          var tip = 'Lite plan (scribe only). Restricts this doctor to Lite-tier features. Enforced server-side.';
+          lb.title = tip; lb.setAttribute('data-tip', tip);
+          lb.onclick = function(ev){ try { ev.preventDefault(); ev.stopPropagation(); } catch(e){} setLite(id, !liteOn, lb); };
+          btn.parentNode.insertBefore(lb, btn.nextSibling);
+        } catch(e){}
+      });
+    } catch(e){}
+  }
+
+  function setLite(id, on, lb){
+    try {
+      if (typeof window.adminFetch !== 'function') return;
+      if (lb) lb.disabled = true;
+      window.adminFetch('/api/admin/users/' + id + '/lite', { method: 'POST', body: JSON.stringify({ lite: !!on }) })
+        .then(function(){
+          try { if (typeof window.toast === 'function') window.toast(on ? 'Lite plan ON — this doctor is now scribe-only.' : 'Lite plan OFF.', 'ok'); } catch(e){}
+          _liteMap = null;
+          if (typeof window.loadAdminUsers === 'function') { try { window.loadAdminUsers(); } catch(e){} }
+        })
+        .catch(function(e){
+          try { if (typeof window.toast === 'function') window.toast('Could not update Lite: ' + (e && e.message || e), 'err'); } catch(_){}
+          if (lb) lb.disabled = false;
+        });
+    } catch(e){}
+  }
+
+  function adminPass(){
+    try {
+      if (!document.querySelector('[onclick*="adminSetPremium("]')) return;
+      if (!_liteMap) fetchLiteMap(injectAdminToggles);
+      else injectAdminToggles();
+    } catch(e){}
+  }
+
+  function tick(){ try { applyDoctorRestrictions(); adminPass(); } catch(e){} }
+  try {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick);
+    tick();
+    setInterval(tick, 1500);
+  } catch(e){}
+
+  window.__mlsLite = { isLiteUser: isLiteUser, apply: applyDoctorRestrictions, refreshAdmin: function(){ _liteMap = null; adminPass(); } };
+})();
