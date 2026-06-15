@@ -2021,9 +2021,14 @@
   var RESTRICTED = ['calendar','patients','orders','recs','history','legalreq','team','analysis','studio'];
   var NAV_IDS = RESTRICTED.map(function(v){ return 'nav_' + v; });
 
+  function getBk(){
+    try { if (typeof bkUser !== 'undefined' && bkUser) return bkUser; } catch(e){}
+    try { if (window.bkUser) return window.bkUser; } catch(e){}
+    return null;
+  }
   function isLiteUser(){
-    try { return !!(window.bkUser && window.bkUser.lite) && !(window.bkUser && window.bkUser.isAdmin); }
-    catch(e){ return false; }
+    var u = getBk();
+    return !!(u && u.lite) && !(u && u.isAdmin);
   }
 
   function applyDoctorRestrictions(){
@@ -2061,7 +2066,7 @@
       window.adminFetch('/api/admin/users')
         .then(function(x){ return (x && typeof x.json === 'function') ? x.json() : x; })
         .then(function(rows){
-          try { _liteMap = {}; (rows || []).forEach(function(u){ if (u && u.id != null) _liteMap[String(u.id)] = (u.lite ? 1 : 0); }); } catch(e){}
+          try { var arr = (rows && rows.users) ? rows.users : (Array.isArray(rows) ? rows : []); _liteMap = {}; arr.forEach(function(u){ if (u && u.id != null) _liteMap[String(u.id)] = (u.lite ? 1 : 0); }); } catch(e){}
           cb && cb();
         })
         .catch(function(){ cb && cb(); });
