@@ -36,6 +36,9 @@
       {label:'Patient timeline', hint:'Chronological thread for active patient', icon:'🕒', run:function(){ safe(function(){ window.__mlsTimeline && window.__mlsTimeline.open(); }); }},
       {label:'Activity feed', hint:'Recent practice activity', icon:'🔔', run:function(){ safe(function(){ window.__mlsActivity && window.__mlsActivity.open(); }); }},
       {label:'Recommendations from note', hint:'Auto-drawn imaging/referral/coding', icon:'🧩', run:function(){ safe(function(){ window.__mlsRecs && window.__mlsRecs.open(); }); }},
+      {label:'Supervision queue', hint:'Drafts awaiting review / cosign', icon:'👥', run:function(){ safe(function(){ window.__mlsSupervision && window.__mlsSupervision.open(); }); }},
+      {label:'Check Athena chart match', hint:'Is the open Athena chart this patient?', icon:'🔎', run:function(){ safe(function(){ window.__mlsAthenaMatch && window.__mlsAthenaMatch.check(); }); }},
+      {label:'Flag legal / IME case', hint:'Assemble notes for a legal report', icon:'⚖️', run:function(){ safe(function(){ window.__mlsLegalChain && window.__mlsLegalChain.flagCase(); }); }},
       {label:'Legal requests', hint:'IME / legal', icon:'⚖️', run:function(){go('legalreq');}},
       {label:'Team', hint:'Team', icon:'👥', run:function(){go('team');}},
       {label:'Analysis', hint:'Trends & outcomes', icon:'📊', run:function(){go('analysis');}},
@@ -867,5 +870,251 @@
   function init(){ document.addEventListener('click', onClick, true); injectCss(); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
   window.__mlsCascade={ show:showCascade };
+})();
+
+
+/* ---- module: feat_supervision.js ---- */
+
+/* ===== MLS Supervision Queue — connectedness feature #8 =====
+   A review queue: doctor drafts -> submit for review -> Head Dr reviews/cosigns -> (sent to Athena).
+   Additive: the app's notes carry signed/isDraft but no supervision state, so this module keeps its
+   OWN per-note status store (localStorage), surfaces a queue overlay (Cmd-K "Supervision queue"),
+   lets a draft be submitted and (by a reviewer) marked cosigned, and best-effort badges note rows
+   in History so status is visible across views. The final "Head Dr cosign -> auto-send to Athena"
+   step is GATED on server-side roles + a live Athena path; this module records the cosign and
+   exposes the hook (window.__mlsSupervision.onCosign) so it wires up when those are available. */
+(function(){
+  'use strict';
+  if (window.__mlsSupervision) return;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function email(){ return safe(function(){ return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]; }, null); }
+  function skey(){ var e=email(); return e?('sf_u::'+e+'::mlsSupStatus'):null; }
+  function getStatus(){ var k=skey(); return k?safe(function(){return JSON.parse(localStorage.getItem(k)||'{}');},{}):{}; }
+  function setStatus(o){ var k=skey(); if(k) safe(function(){ localStorage.setItem(k, JSON.stringify(o)); }); }
+  function statusOf(id){ return getStatus()[id]||null; }
+  function setOf(id,st){ var o=getStatus(); if(st) o[id]=st; else delete o[id]; setStatus(o); }
+  function notes(){ return safe(function(){ return window.getNotes&&window.getNotes(); }, []); }
+  function fmtDate(v){ if(!v) return ''; var d=new Date(v); return isNaN(d)?'':d.toLocaleDateString([], {month:'short',day:'numeric'}); }
+
+  function queue(){
+    var ns=notes(); if(!Array.isArray(ns)) return [];
+    var st=getStatus();
+    return ns.filter(function(n){ var s=st[n.id]; return (n.isDraft || !n.signed || s==='submitted') && s!=='cosigned'; })
+      .map(function(n){ return { id:n.id, patient:n.patient||'', patientId:n.patientId, kind:n.kind||'Note', date:n.created||n.updated, status:st[n.id]||(n.isDraft?'draft':'unsigned') }; })
+      .sort(function(a,b){ return new Date(b.date||0)-new Date(a.date||0); });
+  }
+  function badge(st){ var map={draft:['Draft','#6b7280','#eef0f3'],unsigned:['Unsigned','#b45309','#fef3c7'],submitted:['Awaiting review','#1456a8','#e0edff'],cosigned:['Cosigned','#127a55','#dcfce7']}; var m=map[st]||map.draft; return '<span class="mls-sup-badge" style="color:'+m[1]+';background:'+m[2]+'">'+m[0]+'</span>'; }
+
+  function open(){
+    injectCss(); close();
+    var q=queue();
+    var ov=document.createElement('div'); ov.id='mlsSupOverlay';
+    var rows=q.length? q.map(function(it,i){
+      var acts='<button type="button" class="mls-sup-act" data-act="open" data-i="'+i+'">Open</button>';
+      if(it.status==='draft'||it.status==='unsigned') acts+='<button type="button" class="mls-sup-act primary" data-act="submit" data-i="'+i+'">Submit for review</button>';
+      else if(it.status==='submitted') acts+='<button type="button" class="mls-sup-act primary" data-act="cosign" data-i="'+i+'">Mark reviewed</button>';
+      return '<div class="mls-sup-row"><div class="mls-sup-main"><div class="mls-sup-t">'+esc(it.patient||'Patient')+' · '+esc(it.kind)+' '+badge(it.status)+'</div>'
+        +'<div class="mls-sup-s">'+esc(fmtDate(it.date))+'</div></div><div class="mls-sup-acts">'+acts+'</div></div>';
+    }).join('') : '<div class="mls-sup-empty">Nothing awaiting review. 🎉</div>';
+    ov.innerHTML='<div class="mls-sup-panel" role="dialog" aria-label="Supervision queue">'
+      +'<div class="mls-sup-head"><span class="mls-sup-h">Supervision queue <span class="mls-sup-count">'+q.length+'</span></span><button type="button" id="mlsSupX" class="mls-sup-x">✕</button></div>'
+      +'<div class="mls-sup-note">Doctor drafts → submit → Head Dr reviews/cosigns. Cosign auto-send to Athena activates with server roles + live Athena.</div>'
+      +'<div class="mls-sup-body">'+rows+'</div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('mousedown', function(e){ if(e.target===ov) close(); });
+    document.getElementById('mlsSupX').addEventListener('click', close);
+    ov.querySelectorAll('.mls-sup-act').forEach(function(b){
+      b.addEventListener('click', function(){
+        var it=q[+b.getAttribute('data-i')]; var a=b.getAttribute('data-act');
+        if(a==='open'){ close(); safe(function(){ if(it.patientId&&window.setActivePtId) window.setActivePtId(it.patientId); if(window.showView) window.showView('history'); }); }
+        else if(a==='submit'){ setOf(it.id,'submitted'); toast('Submitted for review'); open(); }
+        else if(a==='cosign'){ setOf(it.id,'cosigned'); safe(function(){ if(typeof onCosign==='function') onCosign(it); }); toast('Marked reviewed / cosigned'); open(); }
+      });
+    });
+  }
+  function close(){ var o=document.getElementById('mlsSupOverlay'); if(o) o.remove(); }
+  function toast(m){ safe(function(){ if(window.toast){window.toast(m,'ok');return;} var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1400); }); }
+  var onCosign=null;
+  function count(){ return queue().length; }
+  // best-effort: badge note rows in History (rows have onclick openNoteFromHistory('id'))
+  function badgeHistory(){
+    safe(function(){
+      var st=getStatus();
+      document.querySelectorAll('[onclick*="openNoteFromHistory("]').forEach(function(el){
+        var m=(el.getAttribute('onclick')||'').match(/openNoteFromHistory\('([^']+)'\)/); if(!m) return;
+        var s=st[m[1]]; if(!s) return;
+        if(el.querySelector('.mls-sup-badge')) return;
+        var b=document.createElement('span'); b.className='mls-sup-badge'; b.innerHTML=badge(s).replace(/^<span[^>]*>|<\/span>$/g,''); 
+        var tmp=document.createElement('div'); tmp.innerHTML=badge(s); el.appendChild(tmp.firstChild);
+      });
+    });
+  }
+  function injectCss(){
+    if(document.getElementById('mlsSupCss')) return;
+    var s=document.createElement('style'); s.id='mlsSupCss';
+    s.textContent=
+      '#mlsSupOverlay{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px;backdrop-filter:blur(2px);}'
+      +'#mlsSupOverlay .mls-sup-panel{width:100%;max-width:560px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
+      +'.mls-sup-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;}'
+      +'.mls-sup-h{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
+      +'.mls-sup-count{display:inline-block;background:var(--brand,#2563c9);color:#fff;border-radius:20px;font-size:12px;padding:1px 9px;margin-left:6px;}'
+      +'.mls-sup-x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);}'
+      +'.mls-sup-note{padding:0 18px 12px;color:var(--muted,#7c8aa0);font-size:12px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'.mls-sup-body{overflow:auto;padding:6px 12px 14px;}'
+      +'.mls-sup-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:11px 8px;border-bottom:1px solid var(--line,#f0f2f6);}'
+      +'.mls-sup-t{font-size:13.5px;font-weight:600;color:var(--ink,#15293f);}'
+      +'.mls-sup-s{font-size:12px;color:var(--muted,#9aa7b4);margin-top:2px;}'
+      +'.mls-sup-acts{display:flex;gap:6px;flex:0 0 auto;}'
+      +'.mls-sup-act{font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#15293f);border-radius:8px;padding:5px 10px;}'
+      +'.mls-sup-act.primary{background:var(--brand,#2563c9);color:#fff;border-color:var(--brand,#2563c9);}'
+      +'.mls-sup-badge{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:middle;}'
+      +'.mls-sup-empty{padding:30px;text-align:center;color:var(--muted,#7c8aa0);}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+  function init(){ injectCss(); setInterval(badgeHistory, 1600); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
+  window.__mlsSupervision={ open:open, close:close, count:count, queue:queue, setStatus:setOf, set onCosign(fn){onCosign=fn;}, get onCosign(){return onCosign;} };
+})();
+
+
+/* ---- module: feat_athena_match.js ---- */
+
+/* ===== MLS Active-Patient <-> Athena Chart Match (app side) — connectedness feature #9 =====
+   Builds the APP side of "is the chart open in Athena the same patient I have active in MLS?".
+   It does NOT touch the extension. It uses the app's existing Assist bridge (window._assistReadChart
+   / _assistReadAthenaTab) to request the open Athena chart, then compares name/DOB to the active
+   MLS patient and reports: matched / mismatch / Athena-not-detected. Fully gated + safe: with no
+   live Athena session or extension, it reports "not detected" and explains, never fabricating a
+   match. Exposed via window.__mlsAthenaMatch.check() and a Cmd-K action. Coordinates with (does not
+   modify) the extension's DOM chart-read behavior described in the project briefing. */
+(function(){
+  'use strict';
+  if (window.__mlsAthenaMatch) return;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function activePt(){ return safe(function(){ var id=window.getActivePtId&&window.getActivePtId(); return id&&window.findPatient?window.findPatient(id):null; }, null); }
+  function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+  function bridgeAvailable(){ return safe(function(){ return typeof window._assistReadChart==='function' || typeof window._assistReadAthenaTab==='function' || typeof window.sendToEMRviaAssist==='function'; }, false); }
+
+  function compare(chart, pt){
+    if(!chart||!pt) return {state:'unknown'};
+    var cn=norm(chart.name||chart.patient||''), pn=norm(pt.name||'');
+    var cd=norm(chart.dob||''), pd=norm(pt.dob||'');
+    var nameHit = cn && pn && (cn===pn || cn.indexOf(pn)>=0 || pn.indexOf(cn)>=0);
+    var dobHit = cd && pd && cd===pd;
+    if(nameHit && (dobHit||!cd)) return {state:'match', detail:(chart.name||chart.patient||'')};
+    if(nameHit || dobHit) return {state:'partial', detail:(chart.name||chart.patient||'')};
+    return {state:'mismatch', detail:(chart.name||chart.patient||'')};
+  }
+  function readOpenChart(cb){
+    // Best-effort, honest: attempt to read the open Athena chart via the app's Assist bridge.
+    if(!bridgeAvailable()){ cb(null,'no-bridge'); return; }
+    safe(function(){
+      var ret = window._assistReadChart ? window._assistReadChart() : (window._assistReadAthenaTab?window._assistReadAthenaTab():null);
+      if(ret && typeof ret.then==='function'){ ret.then(function(d){ cb(d,d?null:'empty'); }).catch(function(){ cb(null,'error'); }); }
+      else if(ret){ cb(ret,null); }
+      else cb(null,'empty');
+    }) || cb(null,'error');
+  }
+  function check(){
+    var pt=activePt();
+    if(!pt){ toast('Pick an active patient first'); return; }
+    panel('Checking the open Athena chart…','wait');
+    readOpenChart(function(chart, err){
+      if(err==='no-bridge'){ panel('Athena chart match needs MLS Assist + an open, signed-in Athena tab. Install/enable Assist and open the patient in Athena, then check again.','gate'); return; }
+      if(!chart || err){ panel('No open Athena chart detected. Open the patient’s chart in your signed-in Athena tab (via MLS Assist), then check again.','gate'); return; }
+      var r=compare(chart, pt);
+      if(r.state==='match') panel('✓ Match — the open Athena chart is '+esc(pt.name)+'.','ok');
+      else if(r.state==='partial') panel('⚠ Partial match — open chart “'+esc(r.detail)+'” vs active “'+esc(pt.name)+'”. Verify before charting.','warn');
+      else panel('⚠ Mismatch — Athena shows “'+esc(r.detail)+'” but your active patient is “'+esc(pt.name)+'”. Do not chart until they match.','warn');
+    });
+  }
+  function panel(msg, kind){
+    injectCss(); var ex=document.getElementById('mlsMatchPop'); if(ex) ex.remove();
+    var p=document.createElement('div'); p.id='mlsMatchPop'; p.className='mls-match-'+(kind||'ok');
+    p.innerHTML='<span class="mls-match-msg">'+msg+'</span><button type="button" class="mls-match-x">✕</button>';
+    document.body.appendChild(p);
+    p.querySelector('.mls-match-x').addEventListener('click', function(){ p.remove(); });
+    if(kind!=='wait') setTimeout(function(){ var n=document.getElementById('mlsMatchPop'); if(n) n.remove(); }, 9000);
+  }
+  function toast(m){ safe(function(){ if(window.toast){window.toast(m,'info');} else panel(m,'gate'); }); }
+  function injectCss(){
+    if(document.getElementById('mlsMatchCss')) return;
+    var s=document.createElement('style'); s.id='mlsMatchCss';
+    s.textContent='#mlsMatchPop{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:100001;max-width:520px;width:calc(100% - 32px);display:flex;gap:10px;align-items:flex-start;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-left:4px solid #2563c9;border-radius:12px;box-shadow:0 16px 44px rgba(15,28,46,.22);padding:13px 14px;font-size:13px;color:var(--ink,#15293f);}'
+      +'#mlsMatchPop.mls-match-ok{border-left-color:#16a34a;} #mlsMatchPop.mls-match-warn{border-left-color:#dc2626;} #mlsMatchPop.mls-match-gate{border-left-color:#b45309;} #mlsMatchPop.mls-match-wait{border-left-color:#2563c9;}'
+      +'#mlsMatchPop .mls-match-msg{flex:1;line-height:1.4;} #mlsMatchPop .mls-match-x{border:0;background:transparent;cursor:pointer;color:var(--muted,#9aa7b4);font-size:14px;}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+  window.__mlsAthenaMatch={ check:check, _compare:compare, bridgeAvailable:bridgeAvailable };
+})();
+
+
+/* ---- module: feat_legal_chain.js ---- */
+
+/* ===== MLS Clinical -> Legal -> Billing Chain — connectedness feature #10 =====
+   Flag a patient as an IME / legal case -> open the app's Legal flow which auto-assembles that
+   patient's notes into a report -> (billing) the platform 5% fee hook for when Stripe Connect is
+   live. Additive: keeps a per-patient legal-flag store (localStorage), routes into the existing
+   legal functions (legalOpenPatient / generateLegalReport / showView('legalreq')), registers a
+   timeline provider so legal flags/exports show on the patient timeline, and exposes a fee hook
+   (window.__mlsLegalFee) that computes the 5% platform fee and is ready to call Connect once live.
+   The actual fee capture is GATED on Stripe Connect go-live (documented), never charged here. */
+(function(){
+  'use strict';
+  if (window.__mlsLegalChain) return;
+  var FEE_RATE=0.05;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function email(){ return safe(function(){ return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]; }, null); }
+  function fkey(){ var e=email(); return e?('sf_u::'+e+'::mlsLegalFlags'):null; }
+  function getFlags(){ var k=fkey(); return k?safe(function(){return JSON.parse(localStorage.getItem(k)||'{}');},{}):{}; }
+  function setFlags(o){ var k=fkey(); if(k) safe(function(){ localStorage.setItem(k, JSON.stringify(o)); }); }
+  function isFlagged(id){ return !!getFlags()[id]; }
+  function activeId(){ return safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null); }
+  function ptName(id){ return safe(function(){ var p=window.findPatient&&window.findPatient(id); return p?(p.name||''):''; }, ''); }
+  function toast(m){ safe(function(){ if(window.toast){window.toast(m,'ok');return;} var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1600); }); }
+
+  function flagCase(id, type){
+    id=id||activeId(); if(!id){ toast('Pick an active patient first'); return; }
+    var f=getFlags(); f[id]={type:type||'IME/legal', ts:Date.now()}; setFlags(f);
+    toast('Flagged '+(ptName(id)||'patient')+' as '+(type||'IME/legal')+' case');
+    // route into the app's legal flow which auto-assembles this patient's notes
+    safe(function(){
+      if(window.legalOpenPatient){ window.legalOpenPatient(id); }
+      else if(window.generateLegalReport){ if(window.setActivePtId) window.setActivePtId(id); window.generateLegalReport(); }
+      else if(window.showView){ window.showView('legalreq'); }
+    });
+  }
+  function unflag(id){ var f=getFlags(); delete f[id]; setFlags(f); }
+
+  // billing fee hook — computes the 5% platform fee; GATED until Stripe Connect is live.
+  var feeHook={
+    rate:FEE_RATE,
+    compute:function(amountCents){ amountCents=+amountCents||0; var fee=Math.round(amountCents*FEE_RATE); return {amountCents:amountCents, feeCents:fee, netCents:amountCents-fee, rate:FEE_RATE}; },
+    connectReady:function(){ return safe(function(){ return !!(window.stripeConnectReady||window.connectReady); }, false); },
+    capture:function(amountCents){
+      var calc=this.compute(amountCents);
+      if(!this.connectReady()){ return {gated:true, reason:'Stripe Connect not live — 5% fee computed but not charged', calc:calc}; }
+      // when Connect is live, the backend destination-charge/application-fee flow handles capture.
+      return {gated:false, calc:calc};
+    }
+  };
+
+  function legalProvider(id){
+    var f=getFlags()[id]; if(!f) return [];
+    return [{ date:f.ts, type:'legal', icon:'⚖️', title:'Flagged as '+(f.type||'IME/legal')+' case',
+      sub:'Legal exports assemble this patient’s notes', onClick:function(){ safe(function(){ if(window.legalOpenPatient) window.legalOpenPatient(id); else if(window.showView) window.showView('legalreq'); }); } }];
+  }
+  function activityProvider(){
+    var f=getFlags(); return Object.keys(f).map(function(id){ return { date:f[id].ts, type:'baa', icon:'⚖️', title:'IME/legal case flagged', sub:ptName(id)||'', onClick:function(){ safe(function(){ if(window.legalOpenPatient) window.legalOpenPatient(id); else if(window.showView) window.showView('legalreq'); }); } }; }); }
+
+  function init(){
+    safe(function(){ if(window.__mlsTimeline&&window.__mlsTimeline.addProvider) window.__mlsTimeline.addProvider(legalProvider); });
+    safe(function(){ if(window.__mlsActivity&&window.__mlsActivity.addProvider) window.__mlsActivity.addProvider(activityProvider); });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
+  window.__mlsLegalFee=feeHook;
+  window.__mlsLegalChain={ flagCase:flagCase, unflag:unflag, isFlagged:isFlagged, getFlags:getFlags, fee:feeHook };
 })();
 
