@@ -1024,6 +1024,7 @@
     readOpenChart(function(chart, err){
       if(err==='no-bridge'){ panel('Athena chart match needs MLS Assist + an open, signed-in Athena tab. Install/enable Assist and open the patient in Athena, then check again.','gate'); return; }
       if(!chart || err){ panel('No open Athena chart detected. Open the patient’s chart in your signed-in Athena tab (via MLS Assist), then check again.','gate'); return; }
+      if(!(chart.name||chart.patient||chart.dob)){ panel('MLS Assist is connected but no patient chart is open in Athena yet. Open the chart in your signed-in Athena tab, then check again.','gate'); return; }
       var r=compare(chart, pt);
       if(r.state==='match') panel('✓ Match — the open Athena chart is '+esc(pt.name)+'.','ok');
       else if(r.state==='partial') panel('⚠ Partial match — open chart “'+esc(r.detail)+'” vs active “'+esc(pt.name)+'”. Verify before charting.','warn');
