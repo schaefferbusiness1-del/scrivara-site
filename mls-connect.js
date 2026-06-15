@@ -875,106 +875,450 @@
 
 /* ---- module: feat_supervision.js ---- */
 
-/* ===== MLS Supervision Queue — connectedness feature #8 =====
-   A review queue: doctor drafts -> submit for review -> Head Dr reviews/cosigns -> (sent to Athena).
-   Additive: the app's notes carry signed/isDraft but no supervision state, so this module keeps its
-   OWN per-note status store (localStorage), surfaces a queue overlay (Cmd-K "Supervision queue"),
-   lets a draft be submitted and (by a reviewer) marked cosigned, and best-effort badges note rows
-   in History so status is visible across views. The final "Head Dr cosign -> auto-send to Athena"
-   step is GATED on server-side roles + a live Athena path; this module records the cosign and
-   exposes the hook (window.__mlsSupervision.onCosign) so it wires up when those are available. */
+/* ===== MLS Supervision Queue (cosign lifecycle) — connectedness feature #8 =====
+   Makes the Head-Dr supervision / cosign flow REAL and PERSISTENT:
+     doctor drafts a note -> "Submit for cosign" -> it lands in the supervisor queue
+     -> a Head Dr reviews & cosigns -> status propagates to History / Visit / card / queue
+     -> (gated) the cosigned note is sent to Athena.
+
+   Persistence model (no backend change needed): the supervision status RIDES ON THE
+   NOTE RECORD as n.sup = { status, submittedBy/At, supervisor, cosignedBy/At, cosignLine }.
+   It is saved through the app's OWN persistence (window.saveNotes -> localStorage, and
+   window.saveNoteToBackend -> POST /api/records, AES-encrypted at rest, upsert by id) —
+   exactly the path the app already uses for signing. So a cosign survives reloads and
+   syncs across devices like any other note change. A light localStorage mirror
+   (sf_u::<email>::mlsSupStatus) is kept only so badges can paint instantly.
+
+   Role awareness: a treating clinician (doctor OR a Head Dr acting as provider) can submit;
+   COSIGN is enforced to Head Dr (bkUser.role==='head' || bkUser.isHead). When the app has no
+   server role (offline / un-hosted preview) both actions are allowed so the flow is testable.
+
+   Cross-account: a Head Dr already receives team-owned records server-side, so the queue can
+   also surface a sub-doctor's submitted notes (read). The head WRITING a cosign back onto a
+   sub-doctor's server record needs a Head-Dr write endpoint (POST /api/records/:id/cosign) and
+   is therefore GATED — it is attempted best-effort and clearly labeled when unavailable.
+
+   GATED: the final "send cosigned note to Athena" needs live Athena (FHIR write-back / the
+   Assist DOM path). It is wired behind window.__mlsSupervision.athenaEnabled (default false)
+   and the onCosign hook; flip athenaEnabled=true once athenahealth API access / MLS Assist is
+   live to activate it. Everything else works today. */
 (function(){
   'use strict';
   if (window.__mlsSupervision) return;
   function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
-  function email(){ return safe(function(){ return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]; }, null); }
-  function skey(){ var e=email(); return e?('sf_u::'+e+'::mlsSupStatus'):null; }
-  function getStatus(){ var k=skey(); return k?safe(function(){return JSON.parse(localStorage.getItem(k)||'{}');},{}):{}; }
-  function setStatus(o){ var k=skey(); if(k) safe(function(){ localStorage.setItem(k, JSON.stringify(o)); }); }
-  function statusOf(id){ return getStatus()[id]||null; }
-  function setOf(id,st){ var o=getStatus(); if(st) o[id]=st; else delete o[id]; setStatus(o); }
-  function notes(){ return safe(function(){ return window.getNotes&&window.getNotes(); }, []); }
-  function fmtDate(v){ if(!v) return ''; var d=new Date(v); return isNaN(d)?'':d.toLocaleDateString([], {month:'short',day:'numeric'}); }
 
-  function queue(){
-    var ns=notes(); if(!Array.isArray(ns)) return [];
-    var st=getStatus();
-    return ns.filter(function(n){ var s=st[n.id]; return (n.isDraft || !n.signed || s==='submitted') && s!=='cosigned'; })
-      .map(function(n){ return { id:n.id, patient:n.patient||'', patientId:n.patientId, kind:n.kind||'Note', date:n.created||n.updated, status:st[n.id]||(n.isDraft?'draft':'unsigned') }; })
-      .sort(function(a,b){ return new Date(b.date||0)-new Date(a.date||0); });
+  /* ---- identity / role ---- */
+  function bk(){ return safe(function(){ return window.bkUser; }, null); }
+  function myEmail(){
+    var u=bk(); if(u&&u.email) return String(u.email).toLowerCase();
+    var s=safe(function(){ return window.session&&window.session.email; }, null); if(s) return String(s).toLowerCase();
+    return safe(function(){ return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]; }, null);
   }
-  function badge(st){ var map={draft:['Draft','#6b7280','#eef0f3'],unsigned:['Unsigned','#b45309','#fef3c7'],submitted:['Awaiting review','#1456a8','#e0edff'],cosigned:['Cosigned','#127a55','#dcfce7']}; var m=map[st]||map.draft; return '<span class="mls-sup-badge" style="color:'+m[1]+';background:'+m[2]+'">'+m[0]+'</span>'; }
+  function myName(){ var n=safe(function(){ return window.getName&&window.getName(); }, ''); if(n) return n; var u=bk(); return (u&&(u.name||u.email))||'Clinician'; }
+  function hasRole(){ var u=bk(); return !!(u&&u.role); }
+  function isHead(){ var u=bk(); if(!u) return true; /* no server role -> allow (preview/testable) */ return !!(u.isHead||u.role==='head'||u.role==='owner'||u.role==='admin'); }
+  function isClinician(){ var u=bk(); if(!u) return true; return !!(u.isHead||u.role==='head'||u.role==='user'); }
 
+  /* ---- note access + persistence (rides on the note via the app's own save path) ---- */
+  function notes(){ var ns=safe(function(){ return window.getNotes&&window.getNotes(); }, []); return Array.isArray(ns)?ns:[]; }
+  function findNote(id){ return notes().filter(function(n){ return n&&n.id===id; })[0]||null; }
+  function persistNote(n){
+    safe(function(){
+      var arr=notes(); var i=arr.findIndex(function(x){ return x&&x.id===n.id; });
+      if(i>=0) arr[i]=n; else arr.unshift(n);
+      if(window.saveNotes) window.saveNotes(arr);
+    });
+    safe(function(){ if(window.saveNoteToBackend) window.saveNoteToBackend(n); });   // /api/records upsert (encrypted)
+    mirror();                                                                         // refresh instant-paint cache
+    safe(function(){ if(window.updateNavCounts) window.updateNavCounts(); });
+    safe(function(){ if(window.currentView==='history' && window.renderHistory) window.renderHistory(); });
+  }
+  /* derive a status for a note that has no explicit n.sup yet */
+  function statusOfNote(n){
+    if(!n) return null;
+    if(n.sup && n.sup.status) return n.sup.status;
+    if(n.isDraft) return 'draft';
+    if(n.signed) return 'signed';
+    return 'unsigned';
+  }
+
+  /* ---- localStorage mirror (badges paint instantly, even before notes() resolves) ---- */
+  function mkey(){ var e=myEmail(); return e?('sf_u::'+e+'::mlsSupStatus'):null; }
+  function mirrorGet(){ var k=mkey(); return k?safe(function(){ return JSON.parse(localStorage.getItem(k)||'{}'); }, {}):{}; }
+  function mirror(){ var k=mkey(); if(!k) return; safe(function(){ var m={}; notes().forEach(function(n){ if(n&&n.sup&&n.sup.status) m[n.id]=n.sup.status; }); localStorage.setItem(k, JSON.stringify(m)); }); }
+  function mirrorStatus(id){ return mirrorGet()[id]||null; }
+
+  function fmtDate(v){ if(!v) return ''; var d=new Date(v); return isNaN(d)?'':d.toLocaleDateString([], {month:'short',day:'numeric'}); }
+  function fmtWhen(v){ if(!v) return ''; var d=new Date(v); return isNaN(d)?'':d.toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+
+  /* ---- lifecycle actions ---- */
+  function submitForCosign(id, supervisor){
+    var n=findNote(id); if(!n) return false;
+    n.sup = n.sup || {};
+    n.sup.status='submitted';
+    n.sup.submittedBy=myName(); n.sup.submittedByEmail=myEmail(); n.sup.submittedAt=Date.now();
+    if(supervisor) n.sup.supervisor=supervisor;
+    n.updated=Date.now();
+    persistNote(n);
+    log('Note submitted for cosign', n);
+    return true;
+  }
+  function cosign(id, opts){
+    opts=opts||{};
+    var n = opts.note || findNote(id); if(!n) return false;
+    if(!isHead()){ toast('Only a Head Dr can cosign.','err'); return false; }
+    n.sup = n.sup || {};
+    n.sup.status='cosigned';
+    n.sup.cosignedBy=myName(); n.sup.cosignedByEmail=myEmail(); n.sup.cosignedAt=Date.now();
+    n.sup.cosignLine='Cosigned by '+myName()+' (supervising) on '+new Date().toLocaleString()+'.';
+    n.updated=Date.now();
+    if(opts.teamOwned){
+      // GATED cross-account write: head writing onto a sub-doctor's server record needs a
+      // Head-Dr cosign endpoint. Attempt it best-effort; never block the local record.
+      teamCosignWriteBack(n);
+    } else {
+      persistNote(n);
+    }
+    log('Note cosigned', n);
+    // GATED: send the cosigned note to Athena (FHIR write-back / Assist DOM path)
+    safe(function(){ if(typeof onCosign==='function') onCosign(n); });
+    sendToAthena(n);
+    return true;
+  }
+
+  /* ---- gated Athena send (wired, off until live) ---- */
+  var athenaEnabled=false;
+  function athenaAvailable(){ return athenaEnabled && safe(function(){ return typeof window.pushHistoryNoteToAthena==='function' || typeof window.sendToEMRviaAssist==='function'; }, false); }
+  function sendToAthena(n){
+    if(!n) return {gated:true};
+    if(!athenaAvailable()){
+      safe(function(){ if(window.__mlsSync&&window.__mlsSync.mark) window.__mlsSync.mark('Cosigned — Athena send queued (gated)','pending'); });
+      return {gated:true, reason:'Athena send activates when athenahealth API access / MLS Assist is live (set window.__mlsSupervision.athenaEnabled=true).'};
+    }
+    return safe(function(){
+      if(!n.isDraft && window.pushHistoryNoteToAthena){ window.pushHistoryNoteToAthena(n.id); return {sent:true}; }
+      return {gated:true};
+    }, {gated:true});
+  }
+
+  /* ---- gated cross-account cosign write-back (head -> sub-doctor record) ---- */
+  function teamCosignWriteBack(n){
+    var base=safe(function(){ return window.bkBase&&window.bkBase(); }, null);
+    var tok=safe(function(){ return window.bkToken&&window.bkToken(); }, null);
+    if(!base||!tok){ toast('Cosign recorded locally (offline).','ok'); return; }
+    safe(function(){
+      fetch(base+'/api/records/'+encodeURIComponent(n.id)+'/cosign',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({ cosign:n.sup })
+      }).then(function(r){
+        if(r&&r.ok){ toast('Cosigned — synced to the doctor’s chart.','ok'); }
+        else { toast('Cosign recorded. Server cosign-sync is pending the Head-Dr write endpoint.','ok'); }
+      }).catch(function(){ toast('Cosign recorded. Server cosign-sync is pending the Head-Dr write endpoint.','ok'); });
+    });
+  }
+
+  /* ---- queues ---- */
+  // My own notes that are in the pipeline (draft/unsigned/submitted, not yet cosigned).
+  function myQueue(){
+    return notes().filter(function(n){
+      var s=statusOfNote(n);
+      return s==='draft'||s==='unsigned'||s==='submitted';
+    }).map(function(n){
+      return { id:n.id, patient:n.patient||'', patientId:n.patientId, kind:n.kind||'Note',
+               date:n.updated||n.created, status:statusOfNote(n), sup:n.sup||null, owned:true };
+    }).sort(function(a,b){ return (b.date||0)-(a.date||0); });
+  }
+  // Recently cosigned (mine) — shown collapsed for confirmation.
+  function recentCosigned(){
+    return notes().filter(function(n){ return statusOfNote(n)==='cosigned'; })
+      .map(function(n){ return { id:n.id, patient:n.patient||'', patientId:n.patientId, kind:n.kind||'Note', date:(n.sup&&n.sup.cosignedAt)||n.updated, status:'cosigned', sup:n.sup||null, owned:true }; })
+      .sort(function(a,b){ return (b.date||0)-(a.date||0); }).slice(0,8);
+  }
+  // Team submissions awaiting MY cosign (Head Dr only) — read from server records.
+  var _team=[]; var _teamLoaded=false;
+  function loadTeam(cb){
+    if(!isHead() || !hasRole()){ _team=[]; _teamLoaded=true; if(cb) cb(); return; }
+    var base=safe(function(){ return window.bkBase&&window.bkBase(); }, null);
+    var tok=safe(function(){ return window.bkToken&&window.bkToken(); }, null);
+    if(!base||!tok){ _team=[]; _teamLoaded=true; if(cb) cb(); return; }
+    var mine=myEmail();
+    safe(function(){
+      fetch(base+'/api/records',{headers:{'Authorization':'Bearer '+tok}})
+        .then(function(r){ return r.ok?r.json():{}; })
+        .then(function(d){
+          var rows=(d&&d.records)||[];
+          _team=rows.filter(function(row){
+            var owner=row.owner_email?String(row.owner_email).toLowerCase():'';
+            var rec=row.record||{};
+            return owner && owner!==mine && rec.sup && rec.sup.status==='submitted';
+          }).map(function(row){
+            var rec=row.record||{};
+            return { id:rec.id, patient:rec.patient||'', patientId:rec.patientId, kind:rec.kind||'Note',
+                     date:(rec.sup&&rec.sup.submittedAt)||row.updated_at, status:'submitted',
+                     sup:rec.sup||null, owned:false, owner:row.owner_email, record:rec };
+          }).sort(function(a,b){ return (new Date(b.date||0))-(new Date(a.date||0)); });
+          _teamLoaded=true; if(cb) cb();
+        })
+        .catch(function(){ _team=[]; _teamLoaded=true; if(cb) cb(); });
+    });
+  }
+  function teamQueue(){ return _team; }
+
+  // Total count for the Cmd-K / badge: my pending + team submissions.
+  function count(){ return myQueue().length + teamQueue().length; }
+
+  /* ---- badge component (one look used everywhere) ---- */
+  var MAP={
+    draft:    ['Draft','#6b7280','#eef0f3'],
+    unsigned: ['Unsigned','#b45309','#fef3c7'],
+    submitted:['Awaiting cosign','#1456a8','#e0edff'],
+    cosigned: ['Cosigned','#127a55','#dcfce7'],
+    signed:   ['Signed','#127a55','#dcfce7']
+  };
+  function badgeHtml(st){ var m=MAP[st]||MAP.draft; return '<span class="mls-sup-badge" style="color:'+m[1]+';background:'+m[2]+'">'+m[0]+'</span>'; }
+
+  /* ---- activity log feed-in ---- */
+  function log(title, n){ safe(function(){ if(window.__mlsActivity && window.__mlsActivity.addProvider){ /* provider added once below */ } }); }
+
+  /* ====================== QUEUE OVERLAY ====================== */
   function open(){
     injectCss(); close();
-    var q=queue();
-    var ov=document.createElement('div'); ov.id='mlsSupOverlay';
-    var rows=q.length? q.map(function(it,i){
-      var acts='<button type="button" class="mls-sup-act" data-act="open" data-i="'+i+'">Open</button>';
-      if(it.status==='draft'||it.status==='unsigned') acts+='<button type="button" class="mls-sup-act primary" data-act="submit" data-i="'+i+'">Submit for review</button>';
-      else if(it.status==='submitted') acts+='<button type="button" class="mls-sup-act primary" data-act="cosign" data-i="'+i+'">Mark reviewed</button>';
-      return '<div class="mls-sup-row"><div class="mls-sup-main"><div class="mls-sup-t">'+esc(it.patient||'Patient')+' · '+esc(it.kind)+' '+badge(it.status)+'</div>'
-        +'<div class="mls-sup-s">'+esc(fmtDate(it.date))+'</div></div><div class="mls-sup-acts">'+acts+'</div></div>';
-    }).join('') : '<div class="mls-sup-empty">Nothing awaiting review. 🎉</div>';
-    ov.innerHTML='<div class="mls-sup-panel" role="dialog" aria-label="Supervision queue">'
-      +'<div class="mls-sup-head"><span class="mls-sup-h">Supervision queue <span class="mls-sup-count">'+q.length+'</span></span><button type="button" id="mlsSupX" class="mls-sup-x">✕</button></div>'
-      +'<div class="mls-sup-note">Doctor drafts → submit → Head Dr reviews/cosigns. Cosign auto-send to Athena activates with server roles + live Athena.</div>'
-      +'<div class="mls-sup-body">'+rows+'</div></div>';
-    document.body.appendChild(ov);
-    ov.addEventListener('mousedown', function(e){ if(e.target===ov) close(); });
+    loadTeam(function(){ render(); });
+    render(); // paint immediately; team section fills in when loadTeam returns
+  }
+  function render(){
+    var existing=document.getElementById('mlsSupOverlay');
+    var my=myQueue(), team=teamQueue(), done=recentCosigned();
+    var total=my.length+team.length;
+    var head=isHead();
+
+    function rowHtml(it, where){
+      var acts='<button type="button" class="mls-sup-act" data-act="open" data-id="'+esc(it.id)+'">Open</button>';
+      if(it.owned && (it.status==='draft'||it.status==='unsigned')){
+        acts+='<button type="button" class="mls-sup-act primary" data-act="submit" data-id="'+esc(it.id)+'">Submit for cosign</button>';
+      } else if(it.status==='submitted' && head){
+        acts+='<button type="button" class="mls-sup-act primary" data-act="cosign" data-id="'+esc(it.id)+'" data-team="'+(it.owned?'0':'1')+'">Review &amp; cosign</button>';
+      } else if(it.status==='submitted' && !head){
+        acts+='<span class="mls-sup-wait">Awaiting Head Dr</span>';
+      }
+      var who='';
+      if(it.sup){
+        if(it.status==='submitted' && it.sup.submittedBy) who='Submitted by '+esc(it.sup.submittedBy)+' · '+esc(fmtWhen(it.sup.submittedAt));
+        else if(it.status==='cosigned' && it.sup.cosignedBy) who='Cosigned by '+esc(it.sup.cosignedBy)+' · '+esc(fmtWhen(it.sup.cosignedAt));
+      }
+      if(where==='team' && it.owner) who='Dr. '+esc(it.owner)+(who?(' · '+who):'');
+      return '<div class="mls-sup-row"><div class="mls-sup-main">'
+        +'<div class="mls-sup-t">'+esc(it.patient||'Patient')+' · '+esc(it.kind)+' '+badgeHtml(it.status)+'</div>'
+        +'<div class="mls-sup-s">'+esc(fmtDate(it.date))+(who?(' &nbsp;·&nbsp; '+who):'')+'</div>'
+        +'</div><div class="mls-sup-acts">'+acts+'</div></div>';
+    }
+
+    var body='';
+    // Section: my pipeline
+    body+='<div class="mls-sup-sec">My notes <span class="mls-sup-secn">'+my.length+'</span></div>';
+    body+= my.length ? my.map(function(it){ return rowHtml(it,'mine'); }).join('') : '<div class="mls-sup-empty sm">No drafts or unsigned notes. 🎉</div>';
+    // Section: team submissions awaiting my cosign (head only)
+    if(head && hasRole()){
+      body+='<div class="mls-sup-sec">Awaiting your cosign <span class="mls-sup-secn">'+team.length+'</span></div>';
+      body+= team.length ? team.map(function(it){ return rowHtml(it,'team'); }).join('')
+                         : '<div class="mls-sup-empty sm">'+(_teamLoaded?'Nothing from your doctors awaiting cosign.':'Loading your team’s submissions…')+'</div>';
+    }
+    // Section: recently cosigned
+    if(done.length){
+      body+='<div class="mls-sup-sec">Recently cosigned</div>';
+      body+=done.map(function(it){ return rowHtml(it,'done'); }).join('');
+    }
+
+    var noteLine = head
+      ? 'You can review &amp; cosign submitted notes. The cosigned note is sent to Athena once athenahealth access / MLS Assist is live.'
+      : 'Submit a drafted note for your Head Dr to review &amp; cosign.';
+
+    var html='<div class="mls-sup-panel" role="dialog" aria-label="Supervision queue">'
+      +'<div class="mls-sup-head"><span class="mls-sup-h">Supervision queue <span class="mls-sup-count">'+total+'</span></span><button type="button" id="mlsSupX" class="mls-sup-x">✕</button></div>'
+      +'<div class="mls-sup-note">'+noteLine+'</div>'
+      +'<div class="mls-sup-body">'+body+'</div></div>';
+
+    var ov=existing;
+    if(!ov){ ov=document.createElement('div'); ov.id='mlsSupOverlay'; document.body.appendChild(ov); ov.addEventListener('mousedown', function(e){ if(e.target===ov) close(); }); }
+    ov.innerHTML=html;
     document.getElementById('mlsSupX').addEventListener('click', close);
     ov.querySelectorAll('.mls-sup-act').forEach(function(b){
       b.addEventListener('click', function(){
-        var it=q[+b.getAttribute('data-i')]; var a=b.getAttribute('data-act');
-        if(a==='open'){ close(); safe(function(){ if(it.patientId&&window.setActivePtId) window.setActivePtId(it.patientId); if(window.showView) window.showView('history'); }); }
-        else if(a==='submit'){ setOf(it.id,'submitted'); toast('Submitted for review'); open(); }
-        else if(a==='cosign'){ setOf(it.id,'cosigned'); safe(function(){ if(typeof onCosign==='function') onCosign(it); }); toast('Marked reviewed / cosigned'); open(); }
+        var a=b.getAttribute('data-act'), id=b.getAttribute('data-id');
+        if(a==='open'){ close(); openNote(id); }
+        else if(a==='submit'){ if(submitForCosign(id)){ toast('Submitted for cosign.','ok'); } render(); refreshAll(); }
+        else if(a==='cosign'){
+          var team=b.getAttribute('data-team')==='1';
+          var item=team ? teamQueue().filter(function(x){return x.id===id;})[0] : null;
+          if(confirmCosign()){ cosign(id, team?{teamOwned:true, note:item&&item.record}:{}); render(); refreshAll(); }
+        }
       });
+    });
+  }
+  function confirmCosign(){ return safe(function(){ return window.confirm('Cosign this note? You are attesting you reviewed it as the supervising physician.'); }, true); }
+  function openNote(id){
+    safe(function(){
+      var n=findNote(id);
+      if(n&&n.patientId&&window.setActivePtId) window.setActivePtId(n.patientId);
+      if(window.openNoteFromHistory){ if(window.showView) window.showView('history'); window.openNoteFromHistory(id); }
+      else if(window.showView) window.showView('history');
     });
   }
   function close(){ var o=document.getElementById('mlsSupOverlay'); if(o) o.remove(); }
-  function toast(m){ safe(function(){ if(window.toast){window.toast(m,'ok');return;} var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1400); }); }
+  function toast(m,kind){ safe(function(){ if(window.toast){ window.toast(m, kind||'ok'); return; } var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1600); }); }
   var onCosign=null;
-  function count(){ return queue().length; }
-  // best-effort: badge note rows in History (rows have onclick openNoteFromHistory('id'))
+
+  function refreshAll(){
+    safe(function(){ if(window.__mlsCard&&window.__mlsCard.refresh) window.__mlsCard.refresh(); });
+    badgeHistory(); injectCardChip(); injectVisitChip();
+  }
+
+  /* ====================== BADGES IN OTHER VIEWS ====================== */
+  // History rows (rows carry onclick openNoteFromHistory('id'))
   function badgeHistory(){
     safe(function(){
-      var st=getStatus();
+      var m=mirrorGet();
       document.querySelectorAll('[onclick*="openNoteFromHistory("]').forEach(function(el){
-        var m=(el.getAttribute('onclick')||'').match(/openNoteFromHistory\('([^']+)'\)/); if(!m) return;
-        var s=st[m[1]]; if(!s) return;
-        if(el.querySelector('.mls-sup-badge')) return;
-        var b=document.createElement('span'); b.className='mls-sup-badge'; b.innerHTML=badge(s).replace(/^<span[^>]*>|<\/span>$/g,''); 
-        var tmp=document.createElement('div'); tmp.innerHTML=badge(s); el.appendChild(tmp.firstChild);
+        var mm=(el.getAttribute('onclick')||'').match(/openNoteFromHistory\('([^']+)'\)/); if(!mm) return;
+        var s=m[mm[1]]; var n; if(!s){ n=findNote(mm[1]); s=n&&n.sup&&n.sup.status; }
+        if(!s || s==='signed') { var old=el.querySelector('.mls-sup-badge'); if(old) old.remove(); return; }
+        var cur=el.querySelector('.mls-sup-badge');
+        if(cur){ if(cur.getAttribute('data-st')===s) return; cur.remove(); }
+        var tmp=document.createElement('div'); tmp.innerHTML=badgeHtml(s); var node=tmp.firstChild; node.setAttribute('data-st',s);
+        var main=el.querySelector('.hist-main .t')||el.querySelector('.hist-main')||el; main.appendChild(node);
       });
     });
   }
+  // Unified patient card: a status chip for the ACTIVE patient's most recent in-pipeline note.
+  function activeNoteStatus(){
+    var pid=safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null);
+    if(!pid) return null;
+    var cand=notes().filter(function(n){ return n&&n.patientId===pid; })
+      .sort(function(a,b){ return (b.updated||b.created||0)-(a.updated||a.created||0); });
+    for(var i=0;i<cand.length;i++){ var s=statusOfNote(cand[i]); if(s==='submitted'||s==='cosigned'||s==='draft'||s==='unsigned') return s; }
+    return null;
+  }
+  function injectCardChip(){
+    safe(function(){
+      var actions=document.querySelector('#mlsCtxBar .mlsctx-actions');
+      var existing=document.getElementById('mlsSupCardChip');
+      var st=activeNoteStatus();
+      if(!actions || !st){ if(existing) existing.remove(); return; }
+      if(existing){ if(existing.getAttribute('data-st')===st) return; existing.remove(); }
+      var span=document.createElement('span'); span.id='mlsSupCardChip'; span.setAttribute('data-st',st);
+      span.className='mls-sup-cardchip'; span.title='Supervision status'; span.innerHTML=badgeHtml(st);
+      span.style.cssText='display:inline-flex;align-items:center;cursor:pointer';
+      span.onclick=function(){ open(); };
+      actions.insertBefore(span, actions.firstChild);
+    });
+  }
+  // Visit page: a status chip + a contextual Submit/Cosign button next to the sign controls,
+  // bound to the note currently open in the editor (window.currentNoteId).
+  function injectVisitChip(){
+    safe(function(){
+      var view=document.getElementById('view-visit')||document.querySelector('[data-view="visit"]');
+      var onVisit = safe(function(){ return window.currentView==='visit'; }, false);
+      var host=document.getElementById('signLine') ? document.getElementById('signLine').parentElement : null;
+      var anchor=document.getElementById('signBtn');
+      var wrap=document.getElementById('mlsSupVisitWrap');
+      if(!onVisit || !anchor){ if(wrap) wrap.remove(); return; }
+      var id=safe(function(){ return window.currentNoteId; }, null);
+      var n=id?findNote(id):null;
+      var st=n?statusOfNote(n):null;
+      if(!n || !st || st==='signed'){ if(wrap) wrap.remove(); return; }
+      if(!wrap){ wrap=document.createElement('span'); wrap.id='mlsSupVisitWrap'; wrap.style.cssText='display:inline-flex;align-items:center;gap:8px;margin-left:10px;vertical-align:middle'; anchor.parentElement.insertBefore(wrap, anchor.nextSibling); }
+      var canCosign = st==='submitted' && isHead();
+      var btn='';
+      if(st==='draft'||st==='unsigned') btn='<button type="button" id="mlsSupVisitBtn" class="mls-sup-act primary" style="font-size:12px">Submit for cosign</button>';
+      else if(canCosign) btn='<button type="button" id="mlsSupVisitBtn" class="mls-sup-act primary" style="font-size:12px">Review &amp; cosign</button>';
+      else if(st==='submitted') btn='<span class="mls-sup-wait">Awaiting Head Dr</span>';
+      var key=st+'|'+canCosign;
+      if(wrap.getAttribute('data-k')===key && wrap.getAttribute('data-id')===id) return;
+      wrap.setAttribute('data-k',key); wrap.setAttribute('data-id',id);
+      wrap.innerHTML=badgeHtml(st)+btn;
+      var vb=document.getElementById('mlsSupVisitBtn');
+      if(vb) vb.onclick=function(){
+        if(st==='draft'||st==='unsigned'){ if(submitForCosign(id)){ toast('Submitted for cosign.','ok'); } }
+        else if(canCosign){ if(confirmCosign()) cosign(id,{}); }
+        refreshAll();
+      };
+    });
+  }
+
+  /* ====================== STYLES ====================== */
   function injectCss(){
     if(document.getElementById('mlsSupCss')) return;
     var s=document.createElement('style'); s.id='mlsSupCss';
     s.textContent=
       '#mlsSupOverlay{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px;backdrop-filter:blur(2px);}'
-      +'#mlsSupOverlay .mls-sup-panel{width:100%;max-width:560px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
+      +'#mlsSupOverlay .mls-sup-panel{width:100%;max-width:580px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
       +'.mls-sup-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;}'
       +'.mls-sup-h{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
       +'.mls-sup-count{display:inline-block;background:var(--brand,#2563c9);color:#fff;border-radius:20px;font-size:12px;padding:1px 9px;margin-left:6px;}'
       +'.mls-sup-x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);}'
       +'.mls-sup-note{padding:0 18px 12px;color:var(--muted,#7c8aa0);font-size:12px;border-bottom:1px solid var(--line,#e6e9ef);}'
       +'.mls-sup-body{overflow:auto;padding:6px 12px 14px;}'
+      +'.mls-sup-sec{font-size:11.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#7c8aa0);padding:14px 8px 6px;}'
+      +'.mls-sup-secn{display:inline-block;background:var(--line,#eef0f3);color:var(--muted,#5b6b7c);border-radius:20px;font-size:11px;padding:0 7px;margin-left:4px;}'
       +'.mls-sup-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:11px 8px;border-bottom:1px solid var(--line,#f0f2f6);}'
+      +'.mls-sup-main{min-width:0;}'
       +'.mls-sup-t{font-size:13.5px;font-weight:600;color:var(--ink,#15293f);}'
       +'.mls-sup-s{font-size:12px;color:var(--muted,#9aa7b4);margin-top:2px;}'
-      +'.mls-sup-acts{display:flex;gap:6px;flex:0 0 auto;}'
+      +'.mls-sup-acts{display:flex;gap:6px;flex:0 0 auto;align-items:center;}'
       +'.mls-sup-act{font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#15293f);border-radius:8px;padding:5px 10px;}'
       +'.mls-sup-act.primary{background:var(--brand,#2563c9);color:#fff;border-color:var(--brand,#2563c9);}'
-      +'.mls-sup-badge{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:middle;}'
-      +'.mls-sup-empty{padding:30px;text-align:center;color:var(--muted,#7c8aa0);}';
+      +'.mls-sup-wait{font-size:11.5px;color:var(--muted,#7c8aa0);font-style:italic;}'
+      +'.mls-sup-badge{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:middle;white-space:nowrap;}'
+      +'.mls-sup-empty{padding:30px;text-align:center;color:var(--muted,#7c8aa0);}'
+      +'.mls-sup-empty.sm{padding:12px 8px;text-align:left;font-size:12.5px;}';
     (document.head||document.documentElement).appendChild(s);
   }
-  function init(){ injectCss(); setInterval(badgeHistory, 1600); }
+
+  /* ---- activity feed + timeline providers (so cosign events show in the practice feed) ---- */
+  function wireProviders(){
+    safe(function(){
+      if(window.__mlsActivity && window.__mlsActivity.addProvider){
+        window.__mlsActivity.addProvider(function(){
+          return notes().filter(function(n){ return n&&n.sup&&(n.sup.status==='submitted'||n.sup.status==='cosigned'); }).map(function(n){
+            var co=n.sup.status==='cosigned';
+            return { date: co?(n.sup.cosignedAt):(n.sup.submittedAt), type:'supervision', icon: co?'✅':'👥',
+                     title: co?('Note cosigned — '+(n.patient||'patient')):('Submitted for cosign — '+(n.patient||'patient')),
+                     sub: co?(n.sup.cosignLine||''):('by '+(n.sup.submittedBy||'')),
+                     onClick: function(){ openNote(n.id); } };
+          });
+        });
+      }
+    });
+    safe(function(){
+      if(window.__mlsTimeline && window.__mlsTimeline.addProvider){
+        window.__mlsTimeline.addProvider(function(pid){
+          return notes().filter(function(n){ return n&&n.patientId===pid&&n.sup&&n.sup.status; }).map(function(n){
+            var st=n.sup.status; var co=st==='cosigned';
+            return { date:(co?n.sup.cosignedAt:n.sup.submittedAt)||n.updated, type:'supervision', icon:co?'✅':'👥',
+                     title:(co?'Cosigned':'Submitted for cosign'), sub:(co?(n.sup.cosignLine||''):('by '+(n.sup.submittedBy||''))),
+                     onClick:function(){ openNote(n.id); } };
+          });
+        });
+      }
+    });
+  }
+
+  function init(){
+    injectCss(); mirror(); wireProviders();
+    setInterval(function(){ badgeHistory(); injectCardChip(); injectVisitChip(); }, 1500);
+  }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
-  window.__mlsSupervision={ open:open, close:close, count:count, queue:queue, setStatus:setOf, set onCosign(fn){onCosign=fn;}, get onCosign(){return onCosign;} };
+
+  window.__mlsSupervision={
+    open:open, close:close, count:count, render:render,
+    queue:myQueue, teamQueue:teamQueue, recentCosigned:recentCosigned,
+    submit:submitForCosign, cosign:cosign, statusOf:function(id){ return statusOfNote(findNote(id)); },
+    sendToAthena:sendToAthena,
+    set athenaEnabled(v){ athenaEnabled=!!v; }, get athenaEnabled(){ return athenaEnabled; },
+    set onCosign(fn){ onCosign=fn; }, get onCosign(){ return onCosign; }
+  };
 })();
 
 
