@@ -3282,27 +3282,31 @@
   function currentView(){ return safe(function(){ return viewOf(document.querySelector('.navtab.on')); },''); }
   function store(v){ var s=ss(); if(s && v && VIEWS[v]) safe(function(){ s.setItem(KEY, v); }); }
 
-  // 1) RECORD: light poll of which .navtab is active (catches clicks AND programmatic
-  //    showView() calls from cross-links / Cmd-K alike), store on change.
-  var last = currentView();
-  if (last) store(last);
-  setInterval(function(){
-    var v = currentView();
-    if (v && v !== last) { last = v; store(v); }
-  }, 1000);
+  // Capture the saved tab BEFORE anything can overwrite it.
+  var s0 = ss();
+  var saved = s0 ? safe(function(){ return s0.getItem(KEY); }, '') : '';
 
-  // 2) RESTORE once on load, after the app's own initial showView() has run.
-  var restored = false;
+  // RECORD: light poll of which .navtab is active (catches clicks AND programmatic
+  // showView() calls alike). Started only AFTER restore so the default 'visit' on
+  // load can't clobber the saved tab.
+  var started = false, last = '';
+  function startRecording(){
+    if (started) return; started = true;
+    last = currentView();
+    setInterval(function(){ var v = currentView(); if (v && v !== last){ last = v; store(v); } }, 1000);
+  }
+
+  // RESTORE once on load, after the app's own initial showView() has run.
+  var done = false;
   function restore(){
-    if (restored) return; restored = true;
-    var s = ss(); if (!s) return;
-    var saved = safe(function(){ return s.getItem(KEY); }, '');
+    if (done) return; done = true;
     if (saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
       safe(function(){ window.showView(saved); });
     }
+    setTimeout(startRecording, 200); // begin recording only after the restore settles
   }
-  if (document.readyState === 'complete') setTimeout(restore, 600);
-  else window.addEventListener('load', function(){ setTimeout(restore, 600); });
+  if (document.readyState === 'complete') setTimeout(restore, 800);
+  else window.addEventListener('load', function(){ setTimeout(restore, 800); });
 
   window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY };
 })();
