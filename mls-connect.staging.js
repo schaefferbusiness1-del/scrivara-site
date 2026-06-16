@@ -3341,13 +3341,30 @@
       return s;
     }
     function has(el){ return el && el.querySelector('span.mls-prem-badge'); }
-    // Badge a heading (h2/h3) inside a container whose text starts with `starts`.
+    // Badge a heading (h2/h3) inside a container whose trimmed text STARTS WITH `starts`.
     function tagHeading(containerId, starts, size){
       var c = document.getElementById(containerId); if(!c) return;
       var hs = c.querySelectorAll('h2,h3');
       for(var i=0;i<hs.length;i++){
         var h = hs[i];
         if((h.textContent||'').trim().indexOf(starts) === 0){
+          if(!has(h)) h.appendChild(badge(size));
+          return;
+        }
+      }
+    }
+    // Badge a heading (h2/h3) inside a container whose trimmed text CONTAINS `needle`
+    // (and does NOT match any string in `avoid`). Used for collapsible headings (leading "▸").
+    function tagHeadingContains(containerId, needle, avoid, size){
+      var c = document.getElementById(containerId); if(!c) return;
+      var hs = c.querySelectorAll('h2,h3');
+      for(var i=0;i<hs.length;i++){
+        var h = hs[i];
+        var t = (h.textContent||'').trim();
+        if(t.indexOf(needle) !== -1){
+          var bad = false;
+          if(avoid){ for(var j=0;j<avoid.length;j++){ if(t.indexOf(avoid[j])!==-1){ bad=true; break; } } }
+          if(bad) continue;
           if(!has(h)) h.appendChild(badge(size));
           return;
         }
@@ -3378,17 +3395,28 @@
         tagHeading('anaAsk', '🔎 Ask your data', 16);
         tagHeading('anaReferral', '🤝 Referral outcomes', 16);
         tagHeading('anaRegistry', '📋 Outcomes registry', 16);
-        // Team analytics (the efficiency/analytics report inside the Team tab)
-        tagHeading('teamView', '📊 MLS Efficiency report', 16);
+        // Team analytics: the (collapsible) "▸📊 MLS Efficiency report" panel inside the Team tab.
+        // Lazily rendered, so matched by substring and excluded from the team-roster H2.
+        tagHeadingContains('teamView', 'MLS Efficiency report', ['your doctors'], 16);
         // Settings premium controls
         tagSettingsRow('noteModelHint', 14); // Faster generation & model choice
         tagSettingsRow('logoHint', 14);      // Branded, white-label exports
       }catch(e){}
     }
 
+    var t = null;
+    function schedule(){ if(t) return; t = setTimeout(function(){ t=null; paint(); }, 400); }
+
     if(document.readyState !== 'loading') paint();
     document.addEventListener('DOMContentLoaded', paint);
-    var n = 0, iv = setInterval(function(){ paint(); if(++n > 60) clearInterval(iv); }, 1500);
-    window.__mlsPremiumBadges = { paint: paint, version: '1.0' };
+    // Short settle poll for the first ~15s after load.
+    var n = 0, iv = setInterval(function(){ paint(); if(++n > 10) clearInterval(iv); }, 1500);
+    // Robust: repaint (debounced) whenever the app lazily renders/re-renders panels,
+    // so tabs opened later (e.g. Team) still get badged. Cheap + idempotent.
+    try{
+      var mo = new MutationObserver(schedule);
+      mo.observe(document.body, { childList:true, subtree:true });
+    }catch(e){}
+    window.__mlsPremiumBadges = { paint: paint, version: '1.1' };
   } catch(e){ /* silent no-op */ }
 })();
