@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Download MLS Assist v1.28</title>
+<title>Download MLS Assist</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{--brand:#1456a8;--brand-dk:#0d3c78;--ink:#16324f;--muted:#5b7186;}
@@ -28,7 +28,7 @@ code{background:#eef2f7;border-radius:5px;padding:1px 6px;font-size:12.5px}
 <body>
 <div class="wrap">
 <div class="card">
-<h1>MLS Assist <span class="ver">v1.28</span></h1>
+<h1>MLS Assist <span class="ver" id="verBadge">v1.29</span></h1>
 <p class="sub">The browser companion that reads your Athena schedule, drops finished notes into your EMR, and runs Autopilot. Click below to download, then load it into Chrome.</p>
 <button id="dl" onclick="buildZip()">⬇ Download MLS Assist (.zip)</button>
 <div id="status"></div>
@@ -42,6 +42,23 @@ code{background:#eef2f7;border-radius:5px;padding:1px 6px;font-size:12.5px}
 <div class="note">If the schedule pull still says "older version" after this, double-check you clicked <b>Remove</b> on the old copy in step 3 — Chrome can otherwise keep running the old one.</div>
 </div>
 </div>
+<script>
+// Keep the version badge + title in sync with extension-version.json (single source of truth, never goes stale).
+(function(){
+  try{
+    fetch('/extension-version.json?t='+Date.now(),{cache:'no-store'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(j){
+        if(!j||!j.version) return;
+        var v='v'+String(j.version).trim();
+        var badge=document.getElementById('verBadge');
+        if(badge) badge.textContent=v;
+        document.title='Download MLS Assist '+v;
+      })
+      .catch(function(){/* leave static fallback in place */});
+  }catch(e){/* leave static fallback in place */}
+})();
+</script>
 <script>
 var FILES=['manifest.json','background.js','content.js','content.css','popup.html','popup.js','icon-16.png','icon-32.png','icon-48.png','icon-128.png'];
 function setS(msg,cls){var el=document.getElementById('status');el.innerHTML=msg;el.className=cls||'';}
