@@ -15,7 +15,7 @@
   // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
   // so a malicious page can neither puppet the extension nor receive chart data, while
   // the doctor's any-page usage is fully preserved.
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppGrabByProcedure: 1, mlsAppPushVisit: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -97,36 +97,20 @@
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReportResult', resp: { error: 'extension error' } }); }
     }
-    // READ-ONLY AUTOPILOT GRAB (v1.31): drive athenaOne's procedure/claims search, RUN it,
-    // PAGINATE through every result page, and return the harvested text of ALL pages so the
-    // app can extract name+DOB(+date/CPT) for every matching patient. Strictly read/navigate
-    // only -- it fills a filter box + date range and clicks a "run/search/next" control, but
-    // NEVER clicks Save/Sign/Submit/Post/Bill/Delete (an explicit deny-list guards every click).
-    if (d.type === 'mlsAppGrabByProcedure') {
-      try {
-        var crit = (d.criteria && typeof d.criteria === 'object') ? d.criteria : {};
-        var safeCodes = []; try { if (Array.isArray(crit.codes)) safeCodes = crit.codes.map(function (c) { return mlsStr(c, 12); }).filter(Boolean).slice(0, 12); } catch (e0) {}
-        var fwd = {
-          type: 'mlsAppGrabByProcedure',
-          query: mlsStr(crit.query, 80),
-          codes: safeCodes,
-          dateFrom: mlsStr(crit.dateFrom, 24),
-          dateTo: mlsStr(crit.dateTo, 24),
-          maxPages: Math.min(Math.max(parseInt(crit.maxPages, 10) || 40, 1), 100),
-          drive: !!crit.drive,
-          cfg: (crit.cfg && typeof crit.cfg === 'object') ? crit.cfg : {}
-        };
-        chrome.runtime.sendMessage(fwd, function (resp) {
-          reply({ source: 'mls-ext', type: 'mlsAppGrabResult', resp: resp || { error: 'no response' } });
-        });
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGrabResult', resp: { error: 'extension error' } }); }
-    }
     // Push the ENTIRE finished visit into the open Athena encounter (note, diagnoses,
     // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign --
     // it stops and hands off to the doctor to review + sign in Athena.
     if (d.type === 'mlsAppPushVisit') {
       try { _mlsPushVisit(mlsStr(d.goal, 4000), origin); }
       catch (err) { reply({ source: 'mls-ext', type: 'mlsAppPushResult', resp: { error: 'extension error' } }); }
+    }
+    // READ-ONLY autopilot (Mode C): DRIVE an athenaOne procedure/claims search, run it, and
+    // PAGINATE through every result page, harvesting each row's text. The app parses + filters
+    // + verifies+imports the rows through its existing strict name+DOB gate. Operates only the
+    // search controls (CPT/procedure + date range + Run/Next); it NEVER clicks Save/Sign.
+    if (d.type === 'mlsAppSearchProcedure') {
+      try { _mlsSearchProcedure(d.params || {}, d.cfg || {}, origin); }
+      catch (err) { reply({ source: 'mls-ext', type: 'mlsAppSearchResult', resp: { error: 'extension error' } }); }
     }
   });
   // Headless autopilot loop that enters a finished visit into the EMR encounter.
@@ -165,6 +149,63 @@
       post('mlsAppPushResult', { resp: { ok: true, partial: true, msg: 'Entered as much as I could — review Athena and finish any remaining fields, then sign.' } });
     } catch (e) { post('mlsAppPushResult', { resp: { ok: false, error: String((e && e.message) || e) } }); }
   }
+
+  // Mode C orchestrator: tell the background to FILL+RUN the athenaOne search, then page
+  // through every result page (read -> Next -> read ...) accumulating the row text, and hand
+  // the whole thing back to the MLS app to parse + verify + import. Progress is posted ONLY to
+  // the trusted MLS origin that started it (never '*'). The background does all DOM work in the
+  // signed-in athenaOne tab via chrome.scripting; this content script never touches Athena DOM.
+  function _sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  async function _mlsSearchProcedure(params, cfg, trustedOrigin) {
+    var _to = trustedOrigin || 'https://mlsscribe.com';
+    var post = function (type, payload) { try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), _to); } catch (e) {} };
+    cfg = cfg || {};
+    var pageWait = cfg.pageWaitMs || 1600, initWait = cfg.initialWaitMs || 2200, maxPages = cfg.maxPages || 60;
+    try {
+      post('mlsAppSearchProgress', { msg: 'Asking athenaOne to run the procedure search...' });
+      var fill = await _bg('mlsAppSearchFill', { params: params, cfg: cfg });
+      if (!fill || !fill.ok) { post('mlsAppSearchResult', { resp: { ok: false, error: (fill && fill.error) || 'Could not reach your athenaOne tab.' } }); return; }
+      var tabId = fill.tabId;
+      if (!(fill.acted && fill.acted.acted)) {
+        post('mlsAppSearchResult', { resp: { ok: false, code: 'NO_FORM', error: 'Could not find the procedure-search fields on your athenaOne screen. Open the procedure/claims report or charge-search page (so the CPT/procedure + date filters are visible), or tune window.__mlsStudyConfig.search, then retry. You can also run the report yourself and use the read-only Find in Athena.' } }); return;
+      }
+      await _sleep(initWait);
+      var io = {
+        read: function () { return _bg('mlsAppSearchRead', { tabId: tabId, cfg: cfg }); },
+        next: function () { return _bg('mlsAppSearchNext', { tabId: tabId, cfg: cfg }); }
+      };
+      var result = await mlsPaginate(io, {
+        maxPages: maxPages,
+        wait: function () { return _sleep(pageWait); },
+        onProgress: function (pages, rows) { post('mlsAppSearchProgress', { msg: 'Read page ' + pages + ' (' + rows + ' rows on this page)...' }); }
+      });
+      post('mlsAppSearchResult', { resp: { ok: true, text: result.text || '', pages: result.pages || 0, ranControls: fill.acted } });
+    } catch (e) { post('mlsAppSearchResult', { resp: { ok: false, error: String((e && e.message) || e) } }); }
+  }
+
+  /*MLS_PAGINATE_START*/
+  async function mlsPaginate(io, opts) {
+    opts = opts || {};
+    var maxPages = opts.maxPages || 60;
+    var seen = {}, pages = 0, all = '';
+    var onProgress = opts.onProgress || function () {};
+    for (var p = 0; p < maxPages; p++) {
+      var rd = await io.read();
+      if (!rd || !rd.ok) break;
+      pages++;
+      var dup = !!(rd.sig && seen[rd.sig]);
+      if (rd.text && !dup) { if (all.length < 300000) all += (all ? '\n' : '') + rd.text; }
+      if (rd.sig) seen[rd.sig] = 1;
+      onProgress(pages, rd.rowCount || 0);
+      if (dup) break;
+      if (!rd.hasNext) break;
+      var nx = await io.next();
+      if (!nx || !nx.clicked) break;
+      if (opts.wait) { await opts.wait(); }
+    }
+    return { text: all, pages: pages };
+  }
+  /*MLS_PAGINATE_END*/
 
   // --- custom hover tooltips: appear only after the cursor rests ~2s on a button ---
   (function () {

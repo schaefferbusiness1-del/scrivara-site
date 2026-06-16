@@ -399,6 +399,206 @@ async function callBackend(path, body) {
     return d;
   } catch (e) { return { error: 'Network error: ' + e.message }; }
 }
+// Find the signed-in EMR/Athena tab broadly (known Athena domains, else EMR-ish host keywords,
+// else the most-recently-active non-MLS http(s) tab). Shared by the Mode C search handlers; the
+// real resilience is content-based scoring inside the injected driver, not the tab URL.
+function mlsPickEmrTab(all) {
+  return all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
+      || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''))
+      || (function () { const c = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); return c[0]; })();
+}
+
+/*MLS_ATHENA_DRIVE_START*/
+async function mlsAthenaDrive(op, params, cfg) {
+  params = params || {}; cfg = cfg || {};
+  var D = (typeof document !== 'undefined') ? document : null;
+  if (!D) return { ok: false, error: 'no-document' };
+  function arr(x) { return Array.isArray(x) ? x : []; }
+  function lc(x) { return String(x == null ? '' : x).toLowerCase(); }
+  var C = {
+    cptFieldLabels:   arr(cfg.cptFieldLabels).length   ? cfg.cptFieldLabels   : ['cpt', 'procedure code', 'proc code', 'service code', 'hcpcs', 'code'],
+    procFieldLabels:  arr(cfg.procFieldLabels).length  ? cfg.procFieldLabels  : ['procedure', 'service', 'description', 'exam', 'visit type'],
+    dateFromLabels:   arr(cfg.dateFromLabels).length   ? cfg.dateFromLabels   : ['service date from', 'date of service from', 'dos from', 'date from', 'start date', 'from date', 'from', 'start', 'begin'],
+    dateToLabels:     arr(cfg.dateToLabels).length     ? cfg.dateToLabels     : ['service date to', 'date of service to', 'dos to', 'date to', 'end date', 'to date', 'through', 'thru', 'to', 'end'],
+    runLabels:        arr(cfg.runLabels).length        ? cfg.runLabels        : ['run report', 'run', 'search', 'view report', 'generate', 'go', 'apply', 'find', 'filter', 'submit', 'update'],
+    nextLabels:       arr(cfg.nextLabels).length       ? cfg.nextLabels       : ['next page', 'next', '›', '»', '>', 'older', 'show more', 'load more', 'more results'],
+    nextSelectors:    arr(cfg.nextSelectors).length    ? cfg.nextSelectors    : ['a[rel="next"]', '[aria-label*="next" i]', '.pagination .next a', 'li.next a', 'button[title*="next" i]', '[data-page="next"]', '.paging-next', '.next-page'],
+    rowSelectors:     arr(cfg.rowSelectors).length     ? cfg.rowSelectors     : ['table tbody tr', '[role="row"]', '.result-row', '.report-row', '.GridRow', '.athena-row', 'tr'],
+    excludeClickLabels: arr(cfg.excludeClickLabels).length ? cfg.excludeClickLabels : ['save', 'sign', 'finalize', 'close encounter', 'post', 'delete', 'remove', 'discard', 'bill', 'submit claim', 'approve', 'void', 'cancel appointment'],
+    maxRowChars: cfg.maxRowChars || 44000
+  };
+
+  function vis(el) {
+    try {
+      if (!el) return false;
+      var win = (el.ownerDocument && el.ownerDocument.defaultView) || (typeof window !== 'undefined' ? window : null);
+      var s = (win && win.getComputedStyle) ? win.getComputedStyle(el) : null;
+      if (s && (s.display === 'none' || s.visibility === 'hidden')) return false;
+      if (el.hidden) return false;
+      if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return false;
+      return true;
+    } catch (e) { return true; }
+  }
+  function cssEsc(s) { return String(s).replace(/["\\]/g, '\\$&'); }
+  function labelText(el) {
+    var parts = [];
+    try { ['aria-label', 'placeholder', 'title', 'name', 'id'].forEach(function (k) { var v = el.getAttribute && el.getAttribute(k); if (v) parts.push(v); }); } catch (e) {}
+    try { if (el.id) { var lb = D.querySelector('label[for="' + cssEsc(el.id) + '"]'); if (lb && lb.textContent) parts.push(lb.textContent); } } catch (e) {}
+    try { var wrap = el.closest && el.closest('label'); if (wrap && wrap.textContent) parts.push(wrap.textContent); } catch (e) {}
+    try { var prev = el.previousElementSibling, hop = 0; while (prev && hop < 2) { var pt = (prev.textContent || '').trim(); if (pt && pt.length < 40) parts.push(pt); prev = prev.previousElementSibling; hop++; } } catch (e) {}
+    return parts.join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+  function hasAny(hay, labels) { for (var i = 0; i < labels.length; i++) { var l = lc(labels[i]); if (l && hay.indexOf(l) >= 0) return true; } return false; }
+  function editableInputs() {
+    var nodes = [].slice.call(D.querySelectorAll('input,textarea,[contenteditable=""],[contenteditable="true"]'));
+    return nodes.filter(function (el) {
+      var tg = (el.tagName || '').toUpperCase();
+      if (tg === 'INPUT') { var t = lc(el.getAttribute('type') || 'text'); if (['hidden', 'checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'range', 'color'].indexOf(t) >= 0) return false; }
+      return vis(el);
+    });
+  }
+  function findField(labels) {
+    var ins = editableInputs(), best = null, bestS = -1;
+    ins.forEach(function (el) {
+      var hay = labelText(el), s = 0;
+      labels.forEach(function (l, idx) { l = lc(l); if (l && hay.indexOf(l) >= 0) { s += 10 + (labels.length - idx); if (hay === l || hay.indexOf(l) === 0) s += 3; } });
+      if (s > bestS) { bestS = s; best = el; }
+    });
+    return bestS > 0 ? best : null;
+  }
+  function findDateField(labels) {
+    var ins = editableInputs(), best = null, bestS = -1;
+    ins.forEach(function (el) {
+      var hay = labelText(el), s = 0;
+      labels.forEach(function (l) { l = lc(l); if (l && hay.indexOf(l) >= 0) s += 10; });
+      var t = lc(el.getAttribute && el.getAttribute('type'));
+      if (t === 'date') s += 4;
+      if (/date|dob|dos/.test(hay)) s += 2;
+      if (s > bestS) { bestS = s; best = el; }
+    });
+    return bestS > 0 ? best : null;
+  }
+  function clickables() { return [].slice.call(D.querySelectorAll('button,a,[role="button"],input[type="submit"],input[type="button"]')).filter(vis); }
+  function btnText(el) { var t = (el.textContent || '') + ' ' + (el.value || '') + ' ' + labelText(el); return t.replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function findButton(labels) {
+    var bs = clickables(), best = null, bestS = -1;
+    bs.forEach(function (el) {
+      var t = btnText(el); if (hasAny(t, C.excludeClickLabels)) return;
+      var s = 0; labels.forEach(function (l, idx) { l = lc(l); if (!l) return; if (t === l) s += 20; else if (t.indexOf(l) >= 0) s += 10 + (labels.length - idx); });
+      if (s > bestS) { bestS = s; best = el; }
+    });
+    return bestS > 0 ? best : null;
+  }
+  function isDisabled(el) {
+    try {
+      if (el.disabled) return true;
+      if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') return true;
+      if (/\bdisabled\b/.test((el.className || '') + '')) return true;
+      if (el.closest && el.closest('.disabled,[aria-disabled="true"]')) return true;
+    } catch (e) {}
+    return false;
+  }
+  function findNext() {
+    for (var i = 0; i < C.nextSelectors.length; i++) {
+      try { var el = D.querySelector(C.nextSelectors[i]); if (el && vis(el) && !isDisabled(el)) { var t = btnText(el); if (!hasAny(t, C.excludeClickLabels)) return el; } } catch (e) {}
+    }
+    var bs = clickables(), best = null;
+    for (var j = 0; j < bs.length; j++) {
+      var e = bs[j]; if (isDisabled(e)) continue; var tt = btnText(e); if (hasAny(tt, C.excludeClickLabels)) continue;
+      for (var k = 0; k < C.nextLabels.length; k++) { var l = lc(C.nextLabels[k]); if (!l) continue; if (tt === l) return e; if (tt.length <= 14 && tt.indexOf(l) >= 0) { best = best || e; } }
+    }
+    return best;
+  }
+  function extractRows() {
+    var bestText = '', bestCount = 0, used = '';
+    for (var i = 0; i < C.rowSelectors.length; i++) {
+      try {
+        var rows = [].slice.call(D.querySelectorAll(C.rowSelectors[i])).filter(vis);
+        if (rows.length >= 2) {
+          var txt = rows.map(function (r) { return ((r.innerText || r.textContent || '') + '').replace(/\s+/g, ' ').trim(); }).filter(function (s) { return s.length > 2; }).join('\n');
+          if (rows.length > bestCount && txt) { bestCount = rows.length; bestText = txt; used = C.rowSelectors[i]; }
+        }
+      } catch (e) {}
+    }
+    if (!bestText) { try { bestText = (((D.body && (D.body.innerText || D.body.textContent)) || '') + '').slice(0, C.maxRowChars); } catch (e) {} }
+    return { text: bestText.slice(0, C.maxRowChars), count: bestCount, selector: used };
+  }
+  function sigOf(s) { s = String(s || ''); var h = 5381, i = s.length; while (i) { h = (h * 33) ^ s.charCodeAt(--i); } return ((h >>> 0).toString(36)) + ':' + s.length; }
+  function scoreReportSelf() {
+    try {
+      var t = (((D.body && (D.body.innerText || D.body.textContent)) || '') + ''), tl = t.toLowerCase(), s = 0;
+      var dates = (t.match(/\b[01]?\d[\/\-][0-3]?\d[\/\-]\d{2,4}\b/g) || []).length; s += Math.min(dates, 200) * 2;
+      var cpts = (t.match(/\b\d{5}\b/g) || []).length; s += Math.min(cpts, 200) * 1.5;
+      ['cpt', 'procedure', 'service date', 'dos', 'claim', 'charge', 'mrn', 'dob', 'patient'].forEach(function (k) { if (tl.indexOf(k) >= 0) s += 5; });
+      return Math.round(s);
+    } catch (e) { return 0; }
+  }
+  function fireClick(el) {
+    try { el.scrollIntoView && el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    var V = (el.ownerDocument && el.ownerDocument.defaultView) || (typeof window !== 'undefined' ? window : null);
+    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) {
+      try { var Ctor = (V && (tp.indexOf('pointer') === 0 ? V.PointerEvent : V.MouseEvent)) || (V && V.Event); el.dispatchEvent(new Ctor(tp, { bubbles: true, cancelable: true })); }
+      catch (e) { try { el.dispatchEvent(new Event(tp, { bubbles: true })); } catch (e2) {} }
+    });
+    try { el.click && el.click(); } catch (e) {}
+  }
+  function fmtDate(el, ymd) {
+    var t = lc(el.getAttribute && el.getAttribute('type'));
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || '')); if (!m) return ymd;
+    if (t === 'date') return ymd; return m[2] + '/' + m[3] + '/' + m[1];
+  }
+  async function typeInto(el, val) {
+    val = String(val == null ? '' : val);
+    try { el.focus && el.focus(); } catch (e) {}
+    var tg = (el.tagName || '').toUpperCase(), CE = el.isContentEditable;
+    var V = (el.ownerDocument && el.ownerDocument.defaultView) || (typeof window !== 'undefined' ? window : null);
+    function setNative(v) {
+      if (CE) { try { el.textContent = v; } catch (e) {} return; }
+      try { var proto = tg === 'TEXTAREA' ? V.HTMLTextAreaElement.prototype : V.HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(proto, 'value'); if (d && d.set) { d.set.call(el, v); return; } } catch (e) {}
+      try { el.value = v; } catch (e) {}
+    }
+    function fire(type, ctor, init) { try { el.dispatchEvent(new V[ctor](type, init || { bubbles: true })); } catch (e) { try { el.dispatchEvent(new Event(type, { bubbles: true })); } catch (e2) {} } }
+    setNative(''); fire('input', 'InputEvent', { bubbles: true, inputType: 'deleteContentBackward' });
+    setNative(val);
+    fire('keydown', 'KeyboardEvent', { bubbles: true });
+    fire('input', 'InputEvent', { bubbles: true, inputType: 'insertText', data: val });
+    fire('keyup', 'KeyboardEvent', { bubbles: true });
+    fire('change', 'Event', { bubbles: true });
+    var got = CE ? (el.textContent || '') : (el.value || '');
+    var want = val.replace(/\s+/g, '');
+    return (got.replace(/\s+/g, '').indexOf(want.slice(0, Math.min(want.length, 8))) >= 0) || got.length > 0;
+  }
+
+  if (op === 'read') {
+    var ex = extractRows(), nx = findNext();
+    return { ok: true, op: 'read', text: ex.text, count: ex.count, selector: ex.selector, sig: sigOf(ex.text), hasNext: !!nx, nextDesc: nx ? btnText(nx).slice(0, 40) : '', score: scoreReportSelf() };
+  }
+  if (op === 'next') {
+    var n2 = findNext(); if (!n2) return { ok: true, op: 'next', clicked: false };
+    var desc = btnText(n2).slice(0, 40); fireClick(n2);
+    return { ok: true, op: 'next', clicked: true, nextDesc: desc };
+  }
+  if (op === 'fill') {
+    var res = { ok: true, op: 'fill', acted: false, controls: {} };
+    var cpt = (params.cpt && params.cpt[0]) || '', proc = params.procedureName || '';
+    var f = null;
+    if (cpt) { f = findField(C.cptFieldLabels); if (f) { res.controls.cpt = labelText(f).slice(0, 40) || '(cpt)'; if (await typeInto(f, cpt)) { res.filledCpt = true; res.acted = true; } } }
+    if (proc) { var pf = findField(C.procFieldLabels); if (pf && pf !== f) { res.controls.proc = labelText(pf).slice(0, 40) || '(proc)'; if (await typeInto(pf, proc)) { res.filledProc = true; res.acted = true; } } }
+    var df = findDateField(C.dateFromLabels), dt = findDateField(C.dateToLabels);
+    if (df && dt && df === dt) {
+      var ds = editableInputs().filter(function (el) { var t = lc(el.getAttribute && el.getAttribute('type')); var h = labelText(el); return t === 'date' || /date|dos|from|to|through|thru/.test(h); });
+      if (ds.length >= 2) { df = ds[0]; dt = ds[1]; }
+    }
+    if (params.dateFrom && df) { res.controls.from = labelText(df).slice(0, 40); if (await typeInto(df, fmtDate(df, params.dateFrom))) { res.filledFrom = true; res.acted = true; } }
+    if (params.dateTo && dt) { res.controls.to = labelText(dt).slice(0, 40); if (await typeInto(dt, fmtDate(dt, params.dateTo))) { res.filledTo = true; res.acted = true; } }
+    var rb = findButton(C.runLabels);
+    if (rb) { res.controls.run = btnText(rb).slice(0, 40); fireClick(rb); res.clickedRun = true; res.acted = true; } else { res.noRunButton = true; }
+    return res;
+  }
+  return { ok: false, error: 'bad-op' };
+}
+/*MLS_ATHENA_DRIVE_END*/
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
   // Tell the popup how we're authenticating: a saved API key, the live MLS login, or nothing yet.
@@ -525,162 +725,64 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
-  // READ-ONLY AUTOPILOT GRAB (v1.31): drive athenaOne's procedure/claims search, RUN it, and
-  // PAGINATE through every result page, harvesting the text of ALL pages. Strictly read +
-  // navigate: it may fill a filter box / date range and click a "run/search/next" control, but
-  // an explicit DENY-list blocks any Save/Sign/Submit/Post/Bill/Delete/Order click. Never writes.
-  if (msg.type === 'mlsAppGrabByProcedure') {
+  // ===== Mode C: DRIVE the athenaOne procedure search + paginate (READ-ONLY) =====
+  // The injected mlsAthenaDrive runs in EVERY frame; we pick the frame that actually has the
+  // controls / the report, so it is resilient to Athena's frames. It only operates the search
+  // controls (CPT/procedure + dates + Run/Next) and NEVER clicks Save/Sign (excludeClickLabels).
+  // FILL + RUN the search.
+  if (msg.type === 'mlsAppSearchFill') {
     (async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       try {
         const all = await chrome.tabs.query({});
-        let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
-               || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''));
-        if (!tab) {
-          const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || ''));
-          cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-          tab = cand[0];
-        }
-        if (!tab) return sendResponse({ ok: false, error: 'Open your signed-in Athena tab (the procedure/claims report or a procedure-filtered schedule) in another tab, then try again.' });
-
-        const cfg = (msg.cfg && typeof msg.cfg === 'object') ? msg.cfg : {};
-        const maxPages = Math.min(Math.max(parseInt(msg.maxPages, 10) || 40, 1), 100);
-        const query = String(msg.query || '').slice(0, 80);
-        const codes = Array.isArray(msg.codes) ? msg.codes.map((c) => String(c).slice(0, 12)) : [];
-        const from = String(msg.dateFrom || '').slice(0, 24), to = String(msg.dateTo || '').slice(0, 24);
-
-        // ---- frame reader: read every frame, content-score for "report-like", richest + concat ----
-        const scoreReport = (f) => {
-          const u = (f.u || '').toLowerCase(), t = (f.t || ''), tl = t.toLowerCase(); let s = 0;
-          if (/report|claim|billing|procedure|encounter|export|analy|registr|worklist|patient.?list|schedul/.test(u)) s += 20;
-          s += Math.min((t.match(/\b[01]?\d[\/\-][0-3]?\d[\/\-]\d{2,4}\b/g) || []).length, 200) * 2;
-          s += Math.min((t.match(/\b\d{5}\b/g) || []).length, 200) * 1.5;
-          s += Math.min((t.match(/\$\s?\d/g) || []).length, 100);
-          ['cpt', 'procedure', 'service date', 'date of service', 'dos', 'claim', 'charge', 'billed', 'units', 'modifier', 'rendering', 'diagnosis', 'icd', 'mrn', 'date of birth', 'dob', 'patient name', 'appointment', 'time'].forEach((k) => { if (tl.indexOf(k) >= 0) s += 5; });
-          s -= /conversation|colleague|inbox|message|chat/.test(tl) ? 25 : 0;
-          s += Math.min(t.length, 40000) / 600;
-          return s;
-        };
-        const readPage = async () => {
-          let results = [];
-          try {
-            results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 60000) }; } catch (e) { return { u: '', t: '' }; } } });
-          } catch (e) {
-            results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 60000) }) });
-          }
-          const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
-          const scored = frames.map((f) => ({ f: f, s: scoreReport(f) })).sort((a, b) => b.s - a.s);
-          const best = scored[0] || { f: { u: tab.url, t: '' }, s: 0 };
-          let concat = '';
-          for (const sc of scored) { if (sc.s <= 0) break; if (concat.length > 44000) break; concat += (concat ? '\n' : '') + (sc.f.t || ''); }
-          const text = (concat || best.f.t || '');
-          const sig = String(text.length) + '|' + text.replace(/\s+/g, '').slice(0, 300) + '|' + text.replace(/\s+/g, '').slice(-120);
-          return { text: text, sig: sig, bestScore: Math.round(best.s), frames: frames.length };
-        };
-
-        // ---- (best-effort) DRIVE the search form: fill filter + date range, click a SAFE run button ----
-        let drove = false, driveNote = '';
-        if (msg.drive) {
-          const driveFn = (P) => {
-            try {
-              const DENY = /save|sign\b|submit|post\b|bill|charge|void|approve|finali|delete|remove|order|send|fax|new\b|add\b|create|edit|cancel|discard|checkout|pay\b/i;
-              const RUN = /\b(run|search|go|find|view|display|show|apply|filter|generate|refresh|results?|update results|get results)\b/i;
-              const vis = (e) => { try { const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (x) { return true; } };
-              const note = [];
-              const q = String(P.q || (P.codes && P.codes[0]) || '').trim();
-              if (q) {
-                const inputs = Array.from(document.querySelectorAll('input[type="text"],input[type="search"],input:not([type]),textarea'));
-                const box = inputs.find((i) => {
-                  if (!vis(i)) return false;
-                  const t = (i.type || '').toLowerCase();
-                  if (t === 'number' || t === 'tel' || t === 'date' || t === 'email' || t === 'password') return false;
-                  if ((i.inputMode || '').toLowerCase() === 'numeric') return false;
-                  const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '') + ' ' + (i.title || '')).toLowerCase();
-                  if (/patient\s*id|patientid|\bmrn\b|chart\s*(id|no|num)|\bnpi\b|account|claim\s*id|invoice|ssn|\bdob\b/.test(h)) return false;
-                  return /procedure|cpt|code|service|search|filter|keyword|report|criteria|look\s*up/.test(h);
-                });
-                if (box) { try { box.focus(); box.value = q; box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true })); note.push('filter:set'); } catch (e1) {} }
-              }
-              const setDate = (val, which) => {
-                if (!val) return;
-                const cands = Array.from(document.querySelectorAll('input[type="date"],input[type="text"]')).filter(vis);
-                const want = which === 'from' ? /from|start|begin|service.*from|dos.*from|after/i : /to\b|end|thru|through|service.*to|dos.*to|before/i;
-                const el = cands.find((i) => { const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '') + ' ' + (i.title || '')).toLowerCase(); return want.test(h); });
-                if (el) { try { el.focus(); el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); note.push(which + ':set'); } catch (e2) {} }
-              };
-              setDate(P.from, 'from'); setDate(P.to, 'to');
-              const btns = Array.from(document.querySelectorAll('button,input[type="button"],input[type="submit"],a[role="button"],[role="button"]'));
-              let ran = false;
-              for (const b of btns) {
-                if (!vis(b)) continue;
-                if (b.disabled || b.getAttribute('aria-disabled') === 'true') continue;
-                const lab = ((b.innerText || b.textContent || b.value || '') + ' ' + (b.getAttribute('aria-label') || '') + ' ' + (b.title || '')).replace(/\s+/g, ' ').trim();
-                if (!lab || lab.length > 40) continue;
-                if (DENY.test(lab)) continue;
-                if (RUN.test(lab)) { try { b.click(); ran = true; note.push('run:' + lab.slice(0, 24)); break; } catch (e3) {} }
-              }
-              return { ran: ran, note: note.join(',') };
-            } catch (e) { return { ran: false, note: 'err' }; }
-          };
-          try {
-            const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: driveFn, args: [{ q: query, codes: codes, from: from, to: to }] });
-            const sts = res.map((r) => r && r.result).filter(Boolean);
-            drove = sts.some((s) => s && s.ran);
-            driveNote = (sts.map((s) => s && s.note).filter(Boolean).join(' | ')).slice(0, 200);
-            if (drove) await sleep(2800);
-          } catch (e) { driveNote = 'drive-failed'; }
-        }
-
-        // ---- READ + PAGINATE through every result page (read-only navigation) ----
-        const clickNextFn = (P) => {
-          try {
-            const DENY = /save|sign\b|submit|post\b|bill|charge|void|approve|finali|delete|remove|order|send|fax|new\b|add\b|create|edit|cancel|discard|checkout|pay\b|prev|previous|back|first/i;
-            const NEXTTXT = /^(next|next page|more|»|›|→|>|>>|load more|show more)$/i;
-            const vis = (e) => { try { const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (x) { return true; } };
-            const disabled = (e) => { try { if (e.disabled) return true; if (e.getAttribute('aria-disabled') === 'true') return true; if (/disabled|inactive/i.test((e.className || '') + '')) return true; } catch (x) {} return false; };
-            const cands = Array.from(document.querySelectorAll('a,button,[role="button"],[role="link"],li,span,i'));
-            for (const e of cands) {
-              if (!vis(e) || disabled(e)) continue;
-              const rel = (e.getAttribute && (e.getAttribute('rel') || '')) || '';
-              const aria = ((e.getAttribute && (e.getAttribute('aria-label') || e.getAttribute('title'))) || '').trim();
-              const cls = ((e.className || '') + '').toLowerCase();
-              const idn = ((e.id || '') + '').toLowerCase();
-              const semantic = /(^|\s)next(\s|$)/i.test(rel) || /next/i.test(aria) || /(^|[^a-z])next([^a-z]|$)|pager.?next|pagination.?next|paginate.?next|nextpage/i.test(cls + ' ' + idn);
-              if (semantic && !DENY.test(aria)) { try { e.scrollIntoView({ block: 'center' }); } catch (x) {} try { e.click(); return 'next'; } catch (x) {} }
-            }
-            for (const e of cands) {
-              if (!vis(e) || disabled(e)) continue;
-              const txt = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim();
-              if (!txt || txt.length > 12) continue;
-              if (DENY.test(txt)) continue;
-              if (NEXTTXT.test(txt)) { try { e.scrollIntoView({ block: 'center' }); } catch (x) {} try { e.click(); return 'next'; } catch (x) {} }
-            }
-            return 'no';
-          } catch (e) { return 'no'; }
-        };
-
-        const pages = [];
-        const seen = {};
-        let pageNo = 0;
-        while (pageNo < maxPages) {
-          const pg = await readPage();
-          if (!pg.text) break;
-          if (seen[pg.sig]) break;
-          seen[pg.sig] = 1;
-          pages.push(pg.text);
-          pageNo++;
-          let clicked = [];
-          try { clicked = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: clickNextFn, args: [{}] }); } catch (e) { break; }
-          const didNext = clicked.map((r) => r && r.result).some((r) => r === 'next');
-          if (!didNext) break;
-          await sleep(1700);
-        }
-        const text = ((tab.title ? ('[' + tab.title + ']\n') : '') + pages.join('\n\n----PAGE----\n\n')).slice(0, 230000);
-        sendResponse({ ok: true, text: text, pages: pageNo, drove: drove, driveNote: driveNote, paginated: pageNo > 1, title: tab.title, url: tab.url });
+        const tab = mlsPickEmrTab(all);
+        if (!tab) return sendResponse({ ok: false, error: 'Open your signed-in athenaOne in another tab (a procedure/claims report or charge-search screen), then try again.' });
+        let results = [];
+        try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaDrive, args: ['fill', msg.params || {}, msg.cfg || {}] }); }
+        catch (e) { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: mlsAthenaDrive, args: ['fill', msg.params || {}, msg.cfg || {}] }); }
+        const vals = results.map((r) => r && r.result).filter(Boolean);
+        let acted = null;
+        vals.forEach((v) => { if (v && v.acted) { if (!acted || (v.clickedRun && !acted.clickedRun)) acted = v; } });
+        sendResponse({ ok: true, tabId: tab.id, acted: acted || { acted: false }, frames: vals.length });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
   }
+  // READ the current result page (best-scoring frame) + detect a Next control.
+  if (msg.type === 'mlsAppSearchRead') {
+    (async () => {
+      try {
+        const all = await chrome.tabs.query({});
+        const tab = (msg.tabId && all.find((t) => t.id === msg.tabId)) || mlsPickEmrTab(all);
+        if (!tab) return sendResponse({ ok: false, error: 'No athenaOne tab found.' });
+        let results = [];
+        try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaDrive, args: ['read', {}, msg.cfg || {}] }); }
+        catch (e) { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: mlsAthenaDrive, args: ['read', {}, msg.cfg || {}] }); }
+        const vals = results.map((r) => r && r.result).filter((v) => v && v.ok).sort((a, b) => (b.score || 0) - (a.score || 0));
+        const best = vals[0] || { text: '', sig: '', hasNext: false, count: 0, score: 0, nextDesc: '' };
+        let concat = '';
+        for (const v of vals) { if ((v.score || 0) <= 0) break; if (concat.length > 44000) break; if (v.text) concat += (concat ? '\n\n' : '') + v.text; }
+        sendResponse({ ok: true, tabId: tab.id, text: (concat || best.text || '').slice(0, 46000), sig: best.sig, hasNext: vals.some((v) => v.hasNext), nextDesc: best.nextDesc || '', rowCount: best.count || 0, bestScore: best.score || 0, frames: vals.length });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
+  // CLICK the Next-page control in the best report frame.
+  if (msg.type === 'mlsAppSearchNext') {
+    (async () => {
+      try {
+        const all = await chrome.tabs.query({});
+        const tab = (msg.tabId && all.find((t) => t.id === msg.tabId)) || mlsPickEmrTab(all);
+        if (!tab) return sendResponse({ ok: false, error: 'No athenaOne tab found.' });
+        let results = [];
+        try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaDrive, args: ['next', {}, msg.cfg || {}] }); }
+        catch (e) { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: mlsAthenaDrive, args: ['next', {}, msg.cfg || {}] }); }
+        const clicked = results.map((r) => r && r.result).filter(Boolean).some((v) => v.clicked);
+        sendResponse({ ok: true, tabId: tab.id, clicked: clicked });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
+
   // Open + read ONE PATIENT'S CHART from Athena. If a patient name is given, try to
 
   // click that patient (in the schedule/search) to open their chart, then read the
