@@ -3420,3 +3420,217 @@
     window.__mlsPremiumBadges = { paint: paint, version: '1.1' };
   } catch(e){ /* silent no-op */ }
 })();
+
+/* ===== MLS Study / Import — Mode C: AUTOPILOT grab by procedure (v1.31) =====
+   Adds a "Search Athena with MLS Assist" action to the existing "By procedure" panel that
+   DRIVES athenaOne's procedure/claims search via MLS Assist, RUNS it, PAGINATES through every
+   result page, harvests name+DOB(+date/CPT) for each row, and feeds every selected patient
+   through the SAME strict name+DOB verify+import pipeline as Mode A/B (window.__mlsStudy._importRow).
+   Then, for any imported patient whose harvested row carries a SCHEDULED (today/future) appointment
+   date, it creates a linked MLS calendar entry (POST /api/appointments, patient_external_id) so
+   patients <-> calendar stay connected. Read-only in Athena (never Save/Sign/submit-write). The MLS
+   calendar write is the app's own DB and is part of the user-initiated import (and toggleable).
+
+   Self-contained progressive enhancement: own IIFE, try/catch everywhere, observes the overlay,
+   reuses __mlsStudy internals, never monkey-patches. Degrades to a silent no-op if anything is missing. */
+(function(){
+  if (window.__mlsGrab) return;
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function S(){ return window.__mlsStudy || null; }
+
+  /* ---- backend helpers (MLS app DB, not Athena) ---- */
+  function bkBase(){ return safe(function(){ if(typeof window.bkBase==='function') return window.bkBase(); },null) || safe(function(){ return window.MLS_BACKEND||window.__mlsBackend||'https://scrivara-backend.onrender.com'; },'https://scrivara-backend.onrender.com'); }
+  function bkToken(){ return safe(function(){ if(typeof window.bkToken==='function') return window.bkToken(); },null) || safe(function(){ return localStorage.getItem('sf_bk_token')||sessionStorage.getItem('sf_bk_token')||''; },''); }
+
+  /* ---- date helpers ---- */
+  function toIsoDate(s){
+    s=String(s||'').trim(); if(!s) return '';
+    var m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(m){ return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2); }
+    m=s.match(/^([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})$/); if(!m) return '';
+    var y=m[3]; if(y.length===2) y=(parseInt(y,10)>50?'19':'20')+y;
+    return y+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2);
+  }
+  function todayIso(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  function isFutureOrToday(iso){ return iso && iso>=todayIso(); }
+  function rowTime(line){ var m=String(line||'').match(/\b([01]?\d|2[0-3]):([0-5]\d)\s*(a\.?m\.?|p\.?m\.?)?/i); return m?m[0].replace(/\s+/g,''):''; }
+  function startIso(iso, t){
+    if(!iso||!t) return null;
+    var m=t.match(/^([01]?\d|2[0-3]):([0-5]\d)\s*(a|p)?/i); if(!m) return null;
+    var h=parseInt(m[1],10), mi=parseInt(m[2],10), ap=(m[3]||'').toLowerCase();
+    if(ap==='p'&&h<12) h+=12; if(ap==='a'&&h===12) h=0;
+    return safe(function(){ return new Date(iso+'T'+('0'+h).slice(-2)+':'+('0'+mi).slice(-2)+':00').toISOString(); }, null);
+  }
+
+  /* ---- create a linked MLS calendar entry (deduped; today/future only) ---- */
+  function calHasAppt(pid, iso){
+    return safe(function(){ return (window._calAppts||[]).some(function(a){ return String(a.patient_external_id||'')===String(pid) && String(a.appt_date||'')===iso; }); }, false);
+  }
+  function ensureCalendarEntry(pid, name, dateStr, line, reason){
+    var iso=toIsoDate(dateStr);
+    if(!iso) return Promise.resolve({created:false, why:'no-date'});
+    if(!isFutureOrToday(iso)) return Promise.resolve({created:false, why:'past'}); // a scheduled appt is today/future
+    if(calHasAppt(pid, iso)) return Promise.resolve({created:false, why:'exists'});
+    var body={ name:name, reason:reason||'Imported from Athena (procedure cohort)', patient_external_id:pid||null, appt_date:iso, start_at:startIso(iso, rowTime(line)), end_at:null };
+    return safe(function(){
+      return fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(body)})
+        .then(function(r){ return r.ok?{created:true, iso:iso}:{created:false, why:'http'+r.status}; })
+        .catch(function(){ return {created:false, why:'net'}; });
+    }, Promise.resolve({created:false, why:'err'}));
+  }
+
+  /* ---- bridge: drive Athena search + paginate (extension v1.31 mlsAppGrabByProcedure) ---- */
+  function grabViaAssist(criteria, onStatus){
+    return new Promise(function(resolve){
+      var settled=false, ponged=false, iv=null, toR=null;
+      function fin(v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); if(iv) clearInterval(iv); if(toR) clearTimeout(toR); resolve(v); }
+      function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; proceed(); } }
+      function onResult(e){ if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppGrabResult')) return; fin(e.data.resp||{error:'no response'}); }
+      window.addEventListener('message',onPong);
+      var ping=function(){ safe(function(){ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }); };
+      ping(); iv=setInterval(ping,400);
+      setTimeout(function(){ if(!ponged) fin({error:'no-ext'}); }, 2600);
+      function proceed(){
+        if(iv){ clearInterval(iv); iv=null; }
+        window.addEventListener('message',onResult);
+        if(onStatus) onStatus('MLS Assist is running the search in Athena and paginating through every result page…');
+        safe(function(){ window.postMessage({source:'mls-app',type:'mlsAppGrabByProcedure',criteria:criteria},'*'); });
+        toR=setTimeout(function(){ fin({error:'timeout'}); }, 240000); // generous: many pages
+      }
+    });
+  }
+
+  /* ---- import selected candidates: strict verify+import (reuse) + calendar link ---- */
+  var STAT={ match:{i:'✓',c:'ok',l:'Found & imported'}, dob_mismatch:{i:'⚠',c:'bad',l:'DOB mismatch — skipped'},
+    not_found:{i:'⚠',c:'warn',l:'Not found in Athena'}, review:{i:'⚠',c:'warn',l:'Verify manually'},
+    no_bridge:{i:'⚠',c:'gate',l:'MLS Assist needed'}, old_ext:{i:'⚠',c:'gate',l:'Update MLS Assist'},
+    error:{i:'⚠',c:'warn',l:'Read error — retry'}, pending:{i:'…',c:'wait',l:'Verifying in Athena…'} };
+  function importSelected(picked, cohort, addCal, els, onDone){
+    var st=S(); if(!st||!st._importRow){ if(onDone) onDone(); return; }
+    var counts={match:0,dob_mismatch:0,not_found:0,review:0,no_bridge:0,error:0,old_ext:0}, cal=0, i=0;
+    function step(){
+      if(i>=picked.length){
+        if(els.sum) els.sum.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+(addCal?(' · 📅 '+cal+' calendar entr'+(cal===1?'y':'ies')):'');
+        safe(function(){ if(window.renderPatients) window.renderPatients(); });
+        if(addCal) safe(function(){ if(window.loadCalendar) window.loadCalendar(); });
+        if(onDone) onDone(counts);
+        return;
+      }
+      var r=picked[i];
+      Promise.resolve(safe(function(){ return st._importRow(r, cohort); }, Promise.resolve({status:'error'}))).then(function(res){
+        res=res||{status:'error'};
+        var key=res.status==='old-ext'?'old_ext':res.status; counts[key]=(counts[key]||0)+1;
+        var s=STAT[key]||STAT.error, el=els.row(i);
+        function paint(extra){ if(!el) return; var rs=el.querySelector('.mls-study-rs'); if(rs){ rs.className='mls-study-rs '+s.c; rs.textContent=s.i+' '+s.l+(extra||''); } }
+        if(res.status==='match' && addCal && res.patientId){
+          ensureCalendarEntry(res.patientId, (res.chartName||r.name), r.svc, r.line, els.reason).then(function(c){
+            if(c&&c.created){ cal++; paint(' · 📅 appt '+(c.iso||'')); } else { paint(''); }
+            if(els.sum) els.sum.textContent='Importing '+(i+1)+' / '+picked.length+'…';
+            i++; setTimeout(step,120);
+          });
+        } else {
+          var ex=''; if(res.status==='dob_mismatch') ex=' (Athena: '+esc(res.chartDob||'?')+')'; else if(res.status==='review'&&res.reason) ex=' ('+esc(res.reason)+')';
+          paint(ex);
+          if(els.sum) els.sum.textContent='Importing '+(i+1)+' / '+picked.length+'…';
+          i++; setTimeout(step,120);
+        }
+      });
+    }
+    step();
+  }
+
+  /* ---- run the whole driven grab from the existing By-procedure inputs ---- */
+  function runGrab(sec){
+    var st=S(); var out=sec.querySelector('#mlsGrabOut'); if(!out) return;
+    if(!st){ out.innerHTML='<div class="mls-study-gate">Study module not ready — reopen the panel.</div>'; return; }
+    var crit=safe(function(){ return st._resolveCriteria(sec.querySelector('#mlsStudyBSel').value, sec.querySelector('#mlsStudyBProc').value); }, {label:'',keywords:[],codes:[]})||{label:'',keywords:[],codes:[]};
+    crit.from=(sec.querySelector('#mlsStudyBFrom')||{}).value||''; crit.to=(sec.querySelector('#mlsStudyBTo')||{}).value||'';
+    var drive=!!(sec.querySelector('#mlsGrabDrive')||{}).checked;
+    var addCal=!!(sec.querySelector('#mlsGrabCal')||{}).checked;
+    out.innerHTML='<div class="mls-study-sum" id="mlsGrabStatus">Looking for MLS Assist…</div>';
+    var setS=function(m){ var n=sec.querySelector('#mlsGrabStatus'); if(n) n.textContent=m; };
+    var criteria={ query:(sec.querySelector('#mlsStudyBProc').value||crit.label||'').slice(0,80), codes:crit.codes||[], dateFrom:crit.from, dateTo:crit.to, maxPages:40, drive:drive, cfg:safe(function(){return window.__mlsStudyConfig&&window.__mlsStudyConfig.grabCfg||{};},{}) };
+    grabViaAssist(criteria, setS).then(function(resp){
+      if(!resp || resp.error){
+        var em = resp&&resp.error;
+        var msg = em==='no-ext' ? 'MLS Assist isn’t detected. Install/enable the extension (v1.31+) and keep your signed-in Athena tab open, then try again.'
+                : em==='timeout' ? 'Timed out driving Athena. Open the procedure/claims report (or a procedure-filtered schedule) in your signed-in Athena tab and try again — or untick auto-run and run the report yourself first.'
+                : ('Couldn’t read Athena: '+esc(String(em||'unknown')));
+        out.innerHTML='<div class="mls-study-gate">'+msg+'</div>'; return;
+      }
+      var text=resp.text||'';
+      if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached Athena but read no report text. Open the procedure/claims report (or a filtered schedule) as your signed-in Athena tab, then retry.</div>'; return; }
+      var all=safe(function(){ return st._parseReportRows(text); }, [])||[];
+      var rows=safe(function(){ return st._filterReportRows(all, crit); }, [])||[];
+      renderCandidates(sec, rows, all.length, crit, resp, addCal);
+    });
+  }
+
+  function renderCandidates(sec, rows, totalParsed, crit, resp, addCal){
+    var out=sec.querySelector('#mlsGrabOut'); if(!out) return;
+    var norm=safe(function(){ return S()._normDob; }, null);
+    var pageInfo='Harvested '+(resp.pages||1)+' page'+((resp.pages||1)===1?'':'s')+(resp.drove?' · auto-ran the search':'')+(resp.paginated?' · paginated':'');
+    if(!rows.length){
+      out.innerHTML='<div class="mls-study-gate">'+pageInfo+'. Parsed '+esc(String(totalParsed))+' patient row(s) but none matched <b>'+esc(crit.label||'your criteria')+'</b>'+((crit.from||crit.to)?' in that date range':'')+'.<br>Tips: make sure the report shows the procedure/CPT column; widen/clear the date range; or set <code>window.__mlsStudyConfig</code> to tune the parser to your report layout.</div>';
+      return;
+    }
+    var withDob=rows.filter(function(r){ return norm?norm(r.dob):r.dob; }).length;
+    var sched=rows.filter(function(r){ return isFutureOrToday(toIsoDate(r.svc)); }).length;
+    out.innerHTML='<div class="mls-study-sum">'+pageInfo+'. Found <b>'+rows.length+'</b> patient(s) matching '+esc(crit.label||'criteria')+' — '+withDob+' with a readable DOB'+(addCal&&sched?(' · '+sched+' with a scheduled appt → calendar'):'')+'. Review, then verify + import:</div>'
+      +'<div class="mls-study-checkall"><label><input type="checkbox" id="mlsGrabAll" checked> Select all</label></div>'
+      +'<div class="mls-study-candlist">'+rows.map(function(r,i){
+          var d=norm?norm(r.dob):r.dob; var cpt=r.codes&&r.codes.length?(' · '+esc(r.codes.join(', '))):''; var sv=r.svc?(' · '+esc(r.svc)+(isFutureOrToday(toIsoDate(r.svc))?' 📅':'')):'';
+          return '<label class="mls-study-cand"><input type="checkbox" class="mls-grab-chk" data-i="'+i+'"'+(d?' checked':'')+(d?'':' disabled')+'>'
+            +'<span class="mls-study-rn">'+esc(r.name)+'</span>'
+            +'<span class="mls-study-rd">'+esc(r.dob||'(no DOB — can’t verify)')+'</span>'
+            +'<span class="mls-study-cnt">'+esc(((r.codes&&r.codes[0])||'')+(r.svc?(' '+r.svc):'')).trim()+'</span></label>';
+        }).join('')+'</div>'
+      +'<div class="mls-study-help">Only rows with a readable DOB can be verified+imported (the strict name+DOB gate needs both). Every selected patient is re-verified against their live Athena chart on import — a wrong row cannot import the wrong patient.</div>'
+      +'<label class="mls-study-lab">Cohort / study name</label>'
+      +'<input id="mlsGrabCohort" class="mls-study-in" value="'+esc(((sec.querySelector('#mlsStudyBFCohort')||{}).value||crit.label||'').slice(0,80))+'" placeholder="cohort name" />'
+      +'<div class="mls-study-actions"><button type="button" id="mlsGrabImport" class="mls-study-btn">✓ Verify &amp; import selected'+(addCal?' (+ calendar)':'')+'</button></div>'
+      +'<div class="mls-study-sum" id="mlsGrabImpSum"></div><div id="mlsGrabImpRows"></div>';
+    var allc=out.querySelector('#mlsGrabAll');
+    if(allc) allc.addEventListener('change', function(){ out.querySelectorAll('.mls-grab-chk').forEach(function(c){ if(!c.disabled) c.checked=allc.checked; }); });
+    out.querySelector('#mlsGrabImport').addEventListener('click', function(){
+      var cohort=((out.querySelector('#mlsGrabCohort')||{}).value||'').trim();
+      var sum=out.querySelector('#mlsGrabImpSum');
+      if(!cohort){ if(sum) sum.innerHTML='<span class="mls-study-gatetext">Enter a cohort name first.</span>'; return; }
+      var picked=[]; out.querySelectorAll('.mls-grab-chk').forEach(function(c){ if(c.checked&&!c.disabled) picked.push(rows[parseInt(c.getAttribute('data-i'),10)]); });
+      if(!picked.length){ if(sum) sum.innerHTML='<span class="mls-study-gatetext">Tick at least one patient with a DOB.</span>'; return; }
+      var box=out.querySelector('#mlsGrabImpRows');
+      box.innerHTML=picked.map(function(r,i){ var s=STAT.pending; return '<div class="mls-study-row" id="mlsg'+i+'"><span class="mls-study-rn">'+esc(r.name)+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.c+'">'+s.i+' '+s.l+'</span></div>'; }).join('');
+      importSelected(picked, cohort, addCal, { sum:sum, reason:(crit.label||'Procedure cohort'), row:function(i){ return box.querySelector('#mlsg'+i); } });
+    });
+  }
+
+  /* ---- inject the action into the existing "Find patients in Athena by procedure" section ---- */
+  function inject(){
+    safe(function(){
+      var findBtn=document.getElementById('mlsStudyBFind'); if(!findBtn) return;
+      var sec=findBtn.closest('.mls-study-sec'); if(!sec) return;
+      if(sec.querySelector('#mlsGrabAthenaBtn')) return;
+      // badge: this is the autopilot upgrade
+      var head=sec.querySelector('.mls-study-sech'); if(head && !head.querySelector('.mls-grab-badge')){ var bd=document.createElement('span'); bd.className='mls-study-badge live mls-grab-badge'; bd.textContent='autopilot v1.31'; head.appendChild(bd); }
+      var actions=findBtn.parentElement; // .mls-study-actions
+      var b=document.createElement('button'); b.type='button'; b.id='mlsGrabAthenaBtn'; b.className='mls-study-btn'; b.innerHTML='🤖 Search Athena with MLS Assist';
+      b.title='Drive athenaOne’s procedure/claims search, run it, paginate through every page, and import all matching patients.';
+      actions.appendChild(b);
+      // options row
+      var opt=document.createElement('div'); opt.className='mls-grab-opts';
+      opt.innerHTML='<label><input type="checkbox" id="mlsGrabDrive" checked> Auto-run the report in Athena (best-effort)</label>'
+                  +'<label><input type="checkbox" id="mlsGrabCal" checked> Add a calendar entry for any scheduled appointment</label>';
+      actions.parentElement.insertBefore(opt, actions.nextSibling);
+      // dedicated output area for the grab (kept separate from the manual Find output)
+      var out=document.createElement('div'); out.id='mlsGrabOut'; out.className='mls-study-results';
+      var findOut=sec.querySelector('#mlsStudyBFindOut'); (findOut&&findOut.parentElement?findOut.parentElement:sec).insertBefore(out, findOut?findOut.nextSibling:null);
+      // tiny style for the options row
+      if(!document.getElementById('mlsGrabCss')){ var s=document.createElement('style'); s.id='mlsGrabCss'; s.textContent='#mlsStudyOv .mls-grab-opts{display:flex;flex-direction:column;gap:4px;margin:2px 0 8px;font-size:11.5px;color:var(--muted,#5b6b7c);} #mlsStudyOv .mls-grab-opts label{display:flex;align-items:center;gap:7px;cursor:pointer;}'; (document.head||document.documentElement).appendChild(s); }
+      b.addEventListener('click', function(){ runGrab(sec); });
+    });
+  }
+  // poll: the Study overlay is created/destroyed on demand; (re)inject whenever Mode B is shown
+  setInterval(inject, 700);
+
+  window.__mlsGrab={ _grabViaAssist:grabViaAssist, _ensureCalendarEntry:ensureCalendarEntry, _toIsoDate:toIsoDate, _isFutureOrToday:isFutureOrToday, _startIso:startIso, _rowTime:rowTime, _runGrab:runGrab };
+})();
