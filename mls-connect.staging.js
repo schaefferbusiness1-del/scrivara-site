@@ -3409,108 +3409,98 @@
 ;(function(){
   "use strict";
   try {
-    var MARK = 'data-mls-prem';
-    var TIP  = 'Premium ($150) feature';
-    // Premium MLS mark = the in-product ECG-pulse badge (blue->teal gradient, white heartbeat).
-    function svg(size){
-      size = size || 15;
-      var gid = 'mlsPB' + Math.random().toString(36).slice(2,8);
-      return '<svg class="mls-prem-badge-svg" width="'+size+'" height="'+size+'" viewBox="0 0 56 56" '+
-        'aria-hidden="true" focusable="false" style="vertical-align:middle;flex:0 0 auto;display:inline-block">'+
-        '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="1" y2="1">'+
-        '<stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs>'+
-        '<rect x="1" y="1" width="54" height="54" rx="15" fill="url(#'+gid+')"/>'+
-        '<path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" '+
-        'stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>'+
-        '<circle cx="46" cy="30" r="2.4" fill="#bff0e9"/></svg>';
-    }
-    function badge(size){
-      var s = document.createElement('span');
-      s.className = 'mls-prem-badge';
-      s.setAttribute(MARK, '1');
-      s.setAttribute('data-tip', TIP);
-      s.setAttribute('aria-label', TIP);
-      s.style.cssText = 'display:inline-flex;align-items:center;margin-left:6px;cursor:help;line-height:1';
-      s.innerHTML = svg(size);
-      return s;
-    }
-    function has(el){ return el && el.querySelector('span.mls-prem-badge'); }
-    // Badge a heading (h2/h3) inside a container whose trimmed text STARTS WITH `starts`.
-    function tagHeading(containerId, starts, size){
-      var c = document.getElementById(containerId); if(!c) return;
-      var hs = c.querySelectorAll('h2,h3');
-      for(var i=0;i<hs.length;i++){
-        var h = hs[i];
-        if((h.textContent||'').trim().indexOf(starts) === 0){
-          if(!has(h)) h.appendChild(badge(size));
-          return;
-        }
-      }
-    }
-    // Badge a heading (h2/h3) inside a container whose trimmed text CONTAINS `needle`
-    // (and does NOT match any string in `avoid`). Used for collapsible headings (leading "▸").
-    function tagHeadingContains(containerId, needle, avoid, size){
-      var c = document.getElementById(containerId); if(!c) return;
-      var hs = c.querySelectorAll('h2,h3');
-      for(var i=0;i<hs.length;i++){
-        var h = hs[i];
-        var t = (h.textContent||'').trim();
-        if(t.indexOf(needle) !== -1){
-          var bad = false;
-          if(avoid){ for(var j=0;j<avoid.length;j++){ if(t.indexOf(avoid[j])!==-1){ bad=true; break; } } }
-          if(bad) continue;
-          if(!has(h)) h.appendChild(badge(size));
-          return;
-        }
-      }
-    }
-    // Badge a nav tab by id.
-    function tagNav(id, size){
-      var n = document.getElementById(id); if(!n) return;
-      if(!has(n)) n.appendChild(badge(size));
-    }
-    // Badge a Settings row that contains the given hint paragraph.
-    function tagSettingsRow(hintId, size){
-      var hint = document.getElementById(hintId); if(!hint) return;
-      var row = hint.parentElement; if(!row) return;
-      var titleEl = row.querySelector('label, .set-label, strong, b, h3, h4');
-      var target = titleEl || row;
-      if(!has(target)) target.appendChild(badge(size));
-    }
-
-    function paint(){
+    var PILL_CLASS = 'mls-prem-pill';
+    var PILL_STYLE = 'font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px;display:inline-block;line-height:1.4';
+    var PILL_TEXT  = 'PREMIUM';
+    var GRAD_RE = /linear-gradient/i;
+    var PURPLE_RE = /(7b5cff|123, *92, *255|a855f7|168, *85, *247)/i;
+    function removeEcg(){
       try{
-        // Nav: AI Studio is wholly Premium (MLS Copilot + custom widgets/library)
-        tagNav('nav_studio', 15);
-        // AI Studio panel headers
-        tagHeading('copilotHero', 'MLS Copilot', 16);
-        tagHeading('studioView', '🛠️ Build a custom tool', 16);
-        // Analysis premium sub-features (complement existing "PREMIUM" text pill)
-        tagHeading('anaAsk', '🔎 Ask your data', 16);
-        tagHeading('anaReferral', '🤝 Referral outcomes', 16);
-        tagHeading('anaRegistry', '📋 Outcomes registry', 16);
-        // Team analytics: the (collapsible) "▸📊 MLS Efficiency report" panel inside the Team tab.
-        // Lazily rendered, so matched by substring and excluded from the team-roster H2.
-        tagHeadingContains('teamView', 'MLS Efficiency report', ['your doctors'], 16);
-        // Settings premium controls
-        tagSettingsRow('noteModelHint', 14); // Faster generation & model choice
-        tagSettingsRow('logoHint', 14);      // Branded, white-label exports
+        var olds = document.querySelectorAll('.mls-prem-badge, [data-mls-prem], .mls-prem-badge-svg');
+        for(var i=0;i<olds.length;i++){
+          var o = olds[i]; var rm = o;
+          if(o.classList && o.classList.contains('mls-prem-badge-svg')){
+            var w = o.closest ? o.closest('.mls-prem-badge') : null; if(w) rm = w;
+          }
+          if(rm && rm.parentNode) rm.parentNode.removeChild(rm);
+        }
       }catch(e){}
     }
-
+    function makePill(){
+      var s = document.createElement('span');
+      s.className = PILL_CLASS;
+      s.setAttribute('data-mls-prem-pill','1');
+      s.style.cssText = PILL_STYLE; s.textContent = PILL_TEXT; return s;
+    }
+    function hasPurplePill(el){
+      if(!el) return false;
+      if(el.querySelector && el.querySelector('span.'+PILL_CLASS+', span[data-mls-prem-pill]')) return true;
+      var spans = el.querySelectorAll ? el.querySelectorAll('span') : [];
+      for(var i=0;i<spans.length;i++){
+        var sp = spans[i]; if(sp.children.length) continue;
+        var tx = (sp.textContent||'').trim().toUpperCase(); if(tx !== 'PREMIUM') continue;
+        var st = sp.getAttribute('style') || '';
+        if(GRAD_RE.test(st) && PURPLE_RE.test(st)) return true;
+      }
+      return false;
+    }
+    function ensurePill(el){ if(!el) return; if(hasPurplePill(el)) return; el.appendChild(makePill()); }
+    function ensurePillOnHeading(containerId, needle, mode, avoid){
+      var c = document.getElementById(containerId); if(!c) return;
+      var hs = c.querySelectorAll('h2,h3');
+      for(var i=0;i<hs.length;i++){
+        var h = hs[i], t = (h.textContent||'').trim();
+        var match = (mode === 'starts') ? (t.indexOf(needle) === 0) : (t.indexOf(needle) !== -1);
+        if(!match) continue;
+        if(avoid){ var bad=false; for(var j=0;j<avoid.length;j++){ if(t.indexOf(avoid[j])!==-1){ bad=true; break; } } if(bad) continue; }
+        ensurePill(h); return;
+      }
+    }
+    function ensurePillOnNav(id){ ensurePill(document.getElementById(id)); }
+    function normalizeSettingsLabel(hintId){
+      try{
+        var hint = document.getElementById(hintId); if(!hint) return;
+        var scopes = [hint.parentElement, hint.parentElement && hint.parentElement.parentElement];
+        for(var s=0;s<scopes.length;s++){
+          var row = scopes[s]; if(!row) continue;
+          var spans = row.querySelectorAll('span');
+          for(var i=0;i<spans.length;i++){
+            var sp = spans[i]; if(sp.children.length) continue;
+            var tx = (sp.textContent||'').trim();
+            if(tx === 'Premium' || tx === 'PREMIUM'){
+              sp.style.cssText = PILL_STYLE; sp.textContent = PILL_TEXT; sp.setAttribute('data-mls-prem-pill','1'); return;
+            }
+          }
+        }
+        var rowEl = hint.parentElement; if(!rowEl) return;
+        var titleEl = rowEl.querySelector('label, .set-label, strong, b, h3, h4') || rowEl;
+        ensurePill(titleEl);
+      }catch(e){}
+    }
+    function paint(){
+      try{
+        removeEcg();
+        ensurePillOnNav('nav_studio');
+        ensurePillOnHeading('copilotHero', 'MLS Copilot', 'contains');
+        ensurePillOnHeading('studioView', 'Build a custom tool', 'contains');
+        ensurePillOnHeading('teamView', 'MLS Efficiency report', 'contains', ['your doctors']);
+        ensurePillOnHeading('anaAsk', 'Ask your data', 'contains');
+        ensurePillOnHeading('anaReferral', 'Referral outcomes', 'contains');
+        ensurePillOnHeading('anaRegistry', 'Outcomes registry', 'contains');
+        normalizeSettingsLabel('noteModelHint');
+        normalizeSettingsLabel('logoHint');
+      }catch(e){}
+    }
     var t = null;
     function schedule(){ if(t) return; t = setTimeout(function(){ t=null; paint(); }, 400); }
-
     if(document.readyState !== 'loading') paint();
     document.addEventListener('DOMContentLoaded', paint);
     var n = 0, iv = setInterval(function(){ paint(); if(++n > 10) clearInterval(iv); }, 1500);
-    try{
-      var mo = new MutationObserver(schedule);
-      mo.observe(document.body, { childList:true, subtree:true });
-    }catch(e){}
-    window.__mlsPremiumBadges = { paint: paint, version: '1.1' };
+    try{ var mo = new MutationObserver(schedule); mo.observe(document.body, { childList:true, subtree:true }); }catch(e){}
+    window.__mlsPremiumBadges = { paint: paint, version: '2.0', style: 'purple-pill' };
   } catch(e){ /* silent no-op */ }
 })();
+
 
 /* ===== MLS Study / Import — Mode C: AUTOPILOT grab by procedure (v1.31) =====
    Adds a "Search Athena with MLS Assist" action to the existing "By procedure" panel that
