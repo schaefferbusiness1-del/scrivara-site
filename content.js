@@ -15,7 +15,7 @@
   // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
   // so a malicious page can neither puppet the extension nor receive chart data, while
   // the doctor's any-page usage is fully preserved.
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppGrabByProcedure: 1, mlsAppPushVisit: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -96,6 +96,30 @@
           reply({ source: 'mls-ext', type: 'mlsAppReportResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReportResult', resp: { error: 'extension error' } }); }
+    }
+    // READ-ONLY AUTOPILOT GRAB (v1.31): drive athenaOne's procedure/claims search, RUN it,
+    // PAGINATE through every result page, and return the harvested text of ALL pages so the
+    // app can extract name+DOB(+date/CPT) for every matching patient. Strictly read/navigate
+    // only -- it fills a filter box + date range and clicks a "run/search/next" control, but
+    // NEVER clicks Save/Sign/Submit/Post/Bill/Delete (an explicit deny-list guards every click).
+    if (d.type === 'mlsAppGrabByProcedure') {
+      try {
+        var crit = (d.criteria && typeof d.criteria === 'object') ? d.criteria : {};
+        var safeCodes = []; try { if (Array.isArray(crit.codes)) safeCodes = crit.codes.map(function (c) { return mlsStr(c, 12); }).filter(Boolean).slice(0, 12); } catch (e0) {}
+        var fwd = {
+          type: 'mlsAppGrabByProcedure',
+          query: mlsStr(crit.query, 80),
+          codes: safeCodes,
+          dateFrom: mlsStr(crit.dateFrom, 24),
+          dateTo: mlsStr(crit.dateTo, 24),
+          maxPages: Math.min(Math.max(parseInt(crit.maxPages, 10) || 40, 1), 100),
+          drive: !!crit.drive,
+          cfg: (crit.cfg && typeof crit.cfg === 'object') ? crit.cfg : {}
+        };
+        chrome.runtime.sendMessage(fwd, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppGrabResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGrabResult', resp: { error: 'extension error' } }); }
     }
     // Push the ENTIRE finished visit into the open Athena encounter (note, diagnoses,
     // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign --

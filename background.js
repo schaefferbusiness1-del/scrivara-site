@@ -525,6 +525,162 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  // READ-ONLY AUTOPILOT GRAB (v1.31): drive athenaOne's procedure/claims search, RUN it, and
+  // PAGINATE through every result page, harvesting the text of ALL pages. Strictly read +
+  // navigate: it may fill a filter box / date range and click a "run/search/next" control, but
+  // an explicit DENY-list blocks any Save/Sign/Submit/Post/Bill/Delete/Order click. Never writes.
+  if (msg.type === 'mlsAppGrabByProcedure') {
+    (async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      try {
+        const all = await chrome.tabs.query({});
+        let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
+               || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''));
+        if (!tab) {
+          const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || ''));
+          cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+          tab = cand[0];
+        }
+        if (!tab) return sendResponse({ ok: false, error: 'Open your signed-in Athena tab (the procedure/claims report or a procedure-filtered schedule) in another tab, then try again.' });
+
+        const cfg = (msg.cfg && typeof msg.cfg === 'object') ? msg.cfg : {};
+        const maxPages = Math.min(Math.max(parseInt(msg.maxPages, 10) || 40, 1), 100);
+        const query = String(msg.query || '').slice(0, 80);
+        const codes = Array.isArray(msg.codes) ? msg.codes.map((c) => String(c).slice(0, 12)) : [];
+        const from = String(msg.dateFrom || '').slice(0, 24), to = String(msg.dateTo || '').slice(0, 24);
+
+        // ---- frame reader: read every frame, content-score for "report-like", richest + concat ----
+        const scoreReport = (f) => {
+          const u = (f.u || '').toLowerCase(), t = (f.t || ''), tl = t.toLowerCase(); let s = 0;
+          if (/report|claim|billing|procedure|encounter|export|analy|registr|worklist|patient.?list|schedul/.test(u)) s += 20;
+          s += Math.min((t.match(/\b[01]?\d[\/\-][0-3]?\d[\/\-]\d{2,4}\b/g) || []).length, 200) * 2;
+          s += Math.min((t.match(/\b\d{5}\b/g) || []).length, 200) * 1.5;
+          s += Math.min((t.match(/\$\s?\d/g) || []).length, 100);
+          ['cpt', 'procedure', 'service date', 'date of service', 'dos', 'claim', 'charge', 'billed', 'units', 'modifier', 'rendering', 'diagnosis', 'icd', 'mrn', 'date of birth', 'dob', 'patient name', 'appointment', 'time'].forEach((k) => { if (tl.indexOf(k) >= 0) s += 5; });
+          s -= /conversation|colleague|inbox|message|chat/.test(tl) ? 25 : 0;
+          s += Math.min(t.length, 40000) / 600;
+          return s;
+        };
+        const readPage = async () => {
+          let results = [];
+          try {
+            results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 60000) }; } catch (e) { return { u: '', t: '' }; } } });
+          } catch (e) {
+            results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 60000) }) });
+          }
+          const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
+          const scored = frames.map((f) => ({ f: f, s: scoreReport(f) })).sort((a, b) => b.s - a.s);
+          const best = scored[0] || { f: { u: tab.url, t: '' }, s: 0 };
+          let concat = '';
+          for (const sc of scored) { if (sc.s <= 0) break; if (concat.length > 44000) break; concat += (concat ? '\n' : '') + (sc.f.t || ''); }
+          const text = (concat || best.f.t || '');
+          const sig = String(text.length) + '|' + text.replace(/\s+/g, '').slice(0, 300) + '|' + text.replace(/\s+/g, '').slice(-120);
+          return { text: text, sig: sig, bestScore: Math.round(best.s), frames: frames.length };
+        };
+
+        // ---- (best-effort) DRIVE the search form: fill filter + date range, click a SAFE run button ----
+        let drove = false, driveNote = '';
+        if (msg.drive) {
+          const driveFn = (P) => {
+            try {
+              const DENY = /save|sign\b|submit|post\b|bill|charge|void|approve|finali|delete|remove|order|send|fax|new\b|add\b|create|edit|cancel|discard|checkout|pay\b/i;
+              const RUN = /\b(run|search|go|find|view|display|show|apply|filter|generate|refresh|results?|update results|get results)\b/i;
+              const vis = (e) => { try { const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (x) { return true; } };
+              const note = [];
+              const q = String(P.q || (P.codes && P.codes[0]) || '').trim();
+              if (q) {
+                const inputs = Array.from(document.querySelectorAll('input[type="text"],input[type="search"],input:not([type]),textarea'));
+                const box = inputs.find((i) => {
+                  if (!vis(i)) return false;
+                  const t = (i.type || '').toLowerCase();
+                  if (t === 'number' || t === 'tel' || t === 'date' || t === 'email' || t === 'password') return false;
+                  if ((i.inputMode || '').toLowerCase() === 'numeric') return false;
+                  const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '') + ' ' + (i.title || '')).toLowerCase();
+                  if (/patient\s*id|patientid|\bmrn\b|chart\s*(id|no|num)|\bnpi\b|account|claim\s*id|invoice|ssn|\bdob\b/.test(h)) return false;
+                  return /procedure|cpt|code|service|search|filter|keyword|report|criteria|look\s*up/.test(h);
+                });
+                if (box) { try { box.focus(); box.value = q; box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true })); note.push('filter:set'); } catch (e1) {} }
+              }
+              const setDate = (val, which) => {
+                if (!val) return;
+                const cands = Array.from(document.querySelectorAll('input[type="date"],input[type="text"]')).filter(vis);
+                const want = which === 'from' ? /from|start|begin|service.*from|dos.*from|after/i : /to\b|end|thru|through|service.*to|dos.*to|before/i;
+                const el = cands.find((i) => { const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '') + ' ' + (i.title || '')).toLowerCase(); return want.test(h); });
+                if (el) { try { el.focus(); el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); note.push(which + ':set'); } catch (e2) {} }
+              };
+              setDate(P.from, 'from'); setDate(P.to, 'to');
+              const btns = Array.from(document.querySelectorAll('button,input[type="button"],input[type="submit"],a[role="button"],[role="button"]'));
+              let ran = false;
+              for (const b of btns) {
+                if (!vis(b)) continue;
+                if (b.disabled || b.getAttribute('aria-disabled') === 'true') continue;
+                const lab = ((b.innerText || b.textContent || b.value || '') + ' ' + (b.getAttribute('aria-label') || '') + ' ' + (b.title || '')).replace(/\s+/g, ' ').trim();
+                if (!lab || lab.length > 40) continue;
+                if (DENY.test(lab)) continue;
+                if (RUN.test(lab)) { try { b.click(); ran = true; note.push('run:' + lab.slice(0, 24)); break; } catch (e3) {} }
+              }
+              return { ran: ran, note: note.join(',') };
+            } catch (e) { return { ran: false, note: 'err' }; }
+          };
+          try {
+            const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: driveFn, args: [{ q: query, codes: codes, from: from, to: to }] });
+            const sts = res.map((r) => r && r.result).filter(Boolean);
+            drove = sts.some((s) => s && s.ran);
+            driveNote = (sts.map((s) => s && s.note).filter(Boolean).join(' | ')).slice(0, 200);
+            if (drove) await sleep(2800);
+          } catch (e) { driveNote = 'drive-failed'; }
+        }
+
+        // ---- READ + PAGINATE through every result page (read-only navigation) ----
+        const clickNextFn = (P) => {
+          try {
+            const DENY = /save|sign\b|submit|post\b|bill|charge|void|approve|finali|delete|remove|order|send|fax|new\b|add\b|create|edit|cancel|discard|checkout|pay\b|prev|previous|back|first/i;
+            const NEXTTXT = /^(next|next page|more|»|›|→|>|>>|load more|show more)$/i;
+            const vis = (e) => { try { const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; } catch (x) { return true; } };
+            const disabled = (e) => { try { if (e.disabled) return true; if (e.getAttribute('aria-disabled') === 'true') return true; if (/disabled|inactive/i.test((e.className || '') + '')) return true; } catch (x) {} return false; };
+            const cands = Array.from(document.querySelectorAll('a,button,[role="button"],[role="link"],li,span,i'));
+            for (const e of cands) {
+              if (!vis(e) || disabled(e)) continue;
+              const rel = (e.getAttribute && (e.getAttribute('rel') || '')) || '';
+              const aria = ((e.getAttribute && (e.getAttribute('aria-label') || e.getAttribute('title'))) || '').trim();
+              const cls = ((e.className || '') + '').toLowerCase();
+              const idn = ((e.id || '') + '').toLowerCase();
+              const semantic = /(^|\s)next(\s|$)/i.test(rel) || /next/i.test(aria) || /(^|[^a-z])next([^a-z]|$)|pager.?next|pagination.?next|paginate.?next|nextpage/i.test(cls + ' ' + idn);
+              if (semantic && !DENY.test(aria)) { try { e.scrollIntoView({ block: 'center' }); } catch (x) {} try { e.click(); return 'next'; } catch (x) {} }
+            }
+            for (const e of cands) {
+              if (!vis(e) || disabled(e)) continue;
+              const txt = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim();
+              if (!txt || txt.length > 12) continue;
+              if (DENY.test(txt)) continue;
+              if (NEXTTXT.test(txt)) { try { e.scrollIntoView({ block: 'center' }); } catch (x) {} try { e.click(); return 'next'; } catch (x) {} }
+            }
+            return 'no';
+          } catch (e) { return 'no'; }
+        };
+
+        const pages = [];
+        const seen = {};
+        let pageNo = 0;
+        while (pageNo < maxPages) {
+          const pg = await readPage();
+          if (!pg.text) break;
+          if (seen[pg.sig]) break;
+          seen[pg.sig] = 1;
+          pages.push(pg.text);
+          pageNo++;
+          let clicked = [];
+          try { clicked = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: clickNextFn, args: [{}] }); } catch (e) { break; }
+          const didNext = clicked.map((r) => r && r.result).some((r) => r === 'next');
+          if (!didNext) break;
+          await sleep(1700);
+        }
+        const text = ((tab.title ? ('[' + tab.title + ']\n') : '') + pages.join('\n\n----PAGE----\n\n')).slice(0, 230000);
+        sendResponse({ ok: true, text: text, pages: pageNo, drove: drove, driveNote: driveNote, paginated: pageNo > 1, title: tab.title, url: tab.url });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
   // Open + read ONE PATIENT'S CHART from Athena. If a patient name is given, try to
 
   // click that patient (in the schedule/search) to open their chart, then read the
