@@ -3715,3 +3715,197 @@
 
   window.__mlsGrab={ _grabViaAssist:grabViaAssist, _ensureCalendarEntry:ensureCalendarEntry, _toIsoDate:toIsoDate, _isFutureOrToday:isFutureOrToday, _startIso:startIso, _rowTime:rowTime, _runGrab:runGrab };
 })();
+
+/* ============================================================================
+   feat_nextup_connect.js  —  NEXT UP  <->  Calendar : single-source wiring
+   ----------------------------------------------------------------------------
+   Goal (visit-page "Just Talk" hero):
+     1. DOB AUTOFILL  - tapping a NEXT UP blue card (or the auto "up now" pick)
+        fills BOTH the Patient name (#heroPtName) AND the Date of birth
+        (#heroPtDob, MM/DD/YYYY) from the patient's stored DOB.
+     2. ALWAYS-ON     - the NEXT UP cards populate by DEFAULT from the
+        calendar/schedule, not only after an Athena pull / toggle.
+     3. PERSIST       - they survive a page reload by reading from the
+        persisted calendar (loadCalendar -> /api/appointments -> _calAppts),
+        not from transient post-pull state.
+     4. SINGLE SOURCE - the calendar (_calAppts) is the one source: Athena
+        pulls already write to it; the calendar reads it; the NEXT UP boxes
+        read it here; tapping a card carries name + DOB (+ history, via the
+        app's own _heroPickPatient) into the note.
+
+   Design: a self-contained IIFE appended to the mls-connect.js bundle. It only
+   READS app state and FEEDS the app's own renderers (_renderTodayPatients,
+   _calLoadNextUp). It never monkey-patches an existing app function, never
+   writes to the server, and degrades to a silent no-op if any global is
+   missing. Removing this block fully reverts the feature.
+
+   A guarded debug-date hook (window.__mlsNextUpDebugDate /
+   sessionStorage['__mlsNextUpDebugDate']) lets a tester treat another day as
+   "today" for verification against persisted data. It is inert in normal use
+   (nobody sets it) and is the ONLY way it activates.
+   ============================================================================ */
+(function () {
+  'use strict';
+  try {
+    if (window.__mlsNextUp && window.__mlsNextUp.__installed) return; // guard against double-append
+  } catch (e) { }
+
+  function gid(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function isFn(f) { return typeof f === 'function'; }
+
+  // --- "today" key (YYYY-MM-DD) in local time, with an opt-in debug override ----
+  function todayKey() {
+    try {
+      var dbg = null;
+      try { dbg = window.__mlsNextUpDebugDate || (window.sessionStorage && sessionStorage.getItem('__mlsNextUpDebugDate')); } catch (e) { }
+      if (dbg && /^\d{4}-\d{2}-\d{2}$/.test(String(dbg))) return String(dbg);
+    } catch (e) { }
+    var n = new Date();
+    return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2);
+  }
+
+  // --- the LOCAL calendar date an appointment falls on ------------------------
+  function localDateOf(a) {
+    try {
+      if (a && a.appt_date) return String(a.appt_date).slice(0, 10);
+      if (a && a.start_at) {
+        var d = new Date(a.start_at);
+        return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+      }
+    } catch (e) { }
+    return '';
+  }
+
+  // --- stored DOB for a patient name (fallback when the appt carries none) ----
+  function patientDob(name) {
+    try {
+      var pts = (isFn(window.getPatients) ? window.getPatients() : []) || [];
+      var key = String(name || '').trim().toLowerCase();
+      if (!key) return '';
+      var m = pts.find(function (x) { return String(x.name || '').trim().toLowerCase() === key; });
+      if (m) return m.dob || m.DOB || m.birthDate || '';
+    } catch (e) { }
+    return '';
+  }
+
+  // --- build TODAY's hero list from the SINGLE SOURCE (_calAppts), DOB-enriched
+  function buildToday() {
+    var out = [];
+    try {
+      var tk = todayKey();
+      var src = window._calAppts || [];
+      var hhmm = isFn(window._apptHHMMTz) ? window._apptHHMMTz : function () { return ''; };
+      var labelOf = isFn(window._calLabelOf) ? window._calLabelOf : function () { return ''; };
+      for (var i = 0; i < src.length; i++) {
+        var a = src[i] || {};
+        if (localDateOf(a) !== tk) continue;
+        var nm = String(a.name || labelOf(a) || '').trim();
+        if (!nm) continue;
+        var dob = a.dob || '';
+        if (!dob) dob = patientDob(nm);
+        out.push({
+          name: nm,
+          time: hhmm(a.start_at),
+          reason: a.reason || '',
+          dob: dob,
+          start_at: a.start_at,
+          appt_date: a.appt_date
+        });
+      }
+    } catch (e) { }
+    return out;
+  }
+
+  // --- feed the app's own renderers (render-only, no fetch) --------------------
+  function renderFromCalendar() {
+    try {
+      if (!isFn(window._renderTodayPatients)) return;
+      var todays = buildToday();
+      // Draws the NEXT UP chips + sets window._heroTodayList. The app's renderer
+      // hides the box when there are no today/tomorrow patients, so "always-on"
+      // here means "shown by default whenever scheduled patients exist".
+      window._renderTodayPatients(todays);
+
+      // Auto-load the "up now" patient (name + DOB) ONLY when the doctor has not
+      // already started typing a patient - never clobber an in-progress visit.
+      var nmEl = gid('heroPtName');
+      var nameEmpty = !nmEl || !String(nmEl.value || '').trim();
+      if (nameEmpty && isFn(window._calLoadNextUp)) { try { window._calLoadNextUp(); } catch (e) { } }
+
+      // DOB safety net: if a name is loaded but DOB is still blank, fill it from
+      // the stored patient record (covers any path where appt.dob was empty).
+      try {
+        var db = gid('heroPtDob'), nm2 = gid('heroPtName');
+        if (db && !String(db.value || '').trim() && nm2 && String(nm2.value || '').trim()) {
+          var d = patientDob(nm2.value);
+          if (d) db.value = d;
+        }
+      } catch (e) { }
+    } catch (e) { }
+  }
+
+  // --- ensure the single source is loaded, then render ------------------------
+  var _loading = false;
+  function ensureToday(force) {
+    try {
+      var haveTok = isFn(window.bkToken) && window.bkToken();
+      var need = force || !window._calAppts || !window._calAppts.length;
+      if (need && haveTok && isFn(window.loadCalendar) && !_loading) {
+        _loading = true;
+        Promise.resolve().then(function () { return window.loadCalendar(); })
+          .catch(function () { })
+          .then(function () { _loading = false; renderFromCalendar(); });
+      } else {
+        renderFromCalendar();
+      }
+    } catch (e) { _loading = false; }
+  }
+
+  // --- stay in sync with the single source (Athena pulls -> loadCalendar) ------
+  // Light poll on a content signature: re-render only when today's appts change,
+  // so we never fight the user's interaction and never trigger a fetch here.
+  var _lastSig = ' ';
+  function sig() {
+    try {
+      var tk = todayKey(), parts = [];
+      var src = window._calAppts || [];
+      for (var i = 0; i < src.length; i++) {
+        var a = src[i] || {};
+        if (localDateOf(a) !== tk) continue;
+        parts.push(String(a.name || '') + '#' + (a.dob || '') + '#' + (a.start_at || a.appt_date || ''));
+      }
+      return tk + '|' + parts.length + '|' + parts.sort().join(',');
+    } catch (e) { return ''; }
+  }
+  function tick() {
+    try {
+      var s = sig();
+      if (s !== _lastSig) { _lastSig = s; renderFromCalendar(); }
+    } catch (e) { }
+  }
+
+  function start() {
+    try {
+      ensureToday(false);
+      // calendar may arrive a moment after boot; nudge a couple of times
+      setTimeout(function () { ensureToday(false); }, 1200);
+      setTimeout(function () { ensureToday(false); }, 4000);
+      setInterval(tick, 1500);
+    } catch (e) { }
+  }
+
+  window.__mlsNextUp = {
+    __installed: true,
+    _buildToday: buildToday,
+    _render: renderFromCalendar,
+    _ensure: ensureToday,
+    _patientDob: patientDob,
+    _todayKey: todayKey,
+    reload: function () { ensureToday(true); }
+  };
+
+  try {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+    else start();
+  } catch (e) { try { start(); } catch (_) { } }
+})();
