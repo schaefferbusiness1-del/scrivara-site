@@ -822,8 +822,37 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
   function activeId(){ return safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null); }
   function activeName(){ return safe(function(){ var p=window.findPatient&&window.findPatient(activeId()); return p?(p.name||''):''; }, ''); }
-  var TRIGGERS=/review\s*&\s*sign|save to history|generate note|sign\s*&\s*save|^sign$/i;
+  /* Only buttons that actually PERSIST a visit. 'generate note' is intentionally
+     excluded — Generate Note only drafts in-memory and saves nothing to History,
+     so it must never trigger the "Landed in History" popup. */
+  var TRIGGERS=/review\s*&\s*sign|save to history|sign\s*&\s*save|^sign$/i;
   var lastShown=0;
+  /* Gate the cascade on the note ACTUALLY landing in getNotes() (a non-draft note
+     for the active patient, freshly saved after the click) rather than a blind
+     timer. Polls briefly; if the save never shows, the popup never fires, so it
+     cannot claim "Landed in History" before the save completes. */
+  function freshlySaved(id, sinceTs){
+    return safe(function(){
+      if(!window.getNotes) return false;
+      var ns=window.getNotes()||[];
+      for(var i=0;i<ns.length;i++){
+        var n=ns[i];
+        if(!n || n.patientId!==id) continue;
+        if(n.isDraft) continue;
+        var t=n.updated||n.created||0;
+        if(t>=sinceTs-1500) return true;
+      }
+      return false;
+    }, false);
+  }
+  function waitForSaveThenCascade(id, clickTs){
+    var tries=0, MAX=16; /* about 16 * 200ms = 3.2s */
+    (function poll(){
+      if(freshlySaved(id, clickTs)){ showCascade(); return; }
+      if(++tries>=MAX) return; /* save never confirmed -> stay silent, no false claim */
+      setTimeout(poll, 200);
+    })();
+  }
   function onClick(e){
     safe(function(){
       var el=e.target, hops=0, btn=null;
@@ -832,7 +861,8 @@
       var txt=(btn.textContent||'').replace(/\s+/g,' ').trim();
       if(TRIGGERS.test(txt)){
         var now=Date.now(); if(now-lastShown<3000) return; lastShown=now;
-        setTimeout(showCascade, 1100);
+        var id=activeId(); if(!id) return;
+        waitForSaveThenCascade(id, now);
       }
     });
   }
