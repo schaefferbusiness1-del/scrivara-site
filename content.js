@@ -15,7 +15,7 @@
   // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
   // so a malicious page can neither puppet the extension nor receive chart data, while
   // the doctor's any-page usage is fully preserved.
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppPushVisit: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -84,6 +84,18 @@
           reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'extension error' } }); }
+    }
+    // READ-ONLY: read the open Athena REPORT / claims / procedure / patient LIST tab so MLS
+    // can enumerate patients by procedure/CPT (Study cohort, Mode B). Unlike mlsAppPullSchedule
+    // (which scores frames for a SCHEDULE), this scores frames for a REPORT/LIST table (dates,
+    // CPT-like codes, $ charges, "claim/procedure/service date" headers, many rows) and returns
+    // the richest table frame plus a capped concat of the top frames. It never writes anything.
+    if (d.type === 'mlsAppReadReport') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppReportRequest' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppReportResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReportResult', resp: { error: 'extension error' } }); }
     }
     // Push the ENTIRE finished visit into the open Athena encounter (note, diagnoses,
     // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign --

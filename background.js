@@ -466,7 +466,67 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  // READ-ONLY: read the open Athena REPORT / claims / procedure / patient LIST tab so MLS can
+  // enumerate patients by procedure/CPT (Study cohort, Mode B). Resilient by design: it finds
+  // the EMR tab broadly, reads EVERY frame, and CONTENT-SCORES each for "looks like a report
+  // table" (many dated rows, CPT-like 5-digit codes, $ charges, claim/procedure/service-date
+  // headers). It returns the richest table frame PLUS a capped concatenation of the top frames
+  // (a report can span frames), so the app's parser sees the whole list. It never writes.
+  if (msg.type === 'mlsAppReportRequest') {
+    (async () => {
+      try {
+        const all = await chrome.tabs.query({});
+        // Same broad EMR-tab finder as the schedule path: known Athena domains, else EMR-ish
+        // host keywords, else the most-recently-active non-MLS http(s) tab.
+        let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
+               || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''));
+        if (!tab) {
+          const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || ''));
+          cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+          tab = cand[0];
+        }
+        if (!tab) return sendResponse({ ok: false, error: 'Open your Athena report (e.g. a procedure/CPT claims report or a filtered schedule) in another tab, then try again.' });
+        let results = [];
+        try {
+          results = await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 60000) }; } catch (e) { return { u: '', t: '' }; } }
+          });
+        } catch (e) {
+          results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 60000) }) });
+        }
+        const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
+        // CONTENT-SCORE each frame for "looks like a report/claims/procedure LIST" — what makes
+        // us resilient to Athena renaming frames/URLs: we find the report by what's IN it.
+        const scoreReport = (f) => {
+          const u = (f.u || '').toLowerCase(), t = (f.t || ''), tl = t.toLowerCase();
+          let s = 0;
+          if (/report|claim|billing|procedure|encounter|export|analy|registr|worklist|patient.?list/.test(u)) s += 20; // URL hint = bonus, not required
+          const dates = (t.match(/\b[01]?\d[\/\-][0-3]?\d[\/\-]\d{2,4}\b/g) || []).length;          // dated rows (DOB / service date)
+          s += Math.min(dates, 200) * 2;
+          const cpts = (t.match(/\b\d{5}\b/g) || []).length;                                         // CPT-like 5-digit codes
+          s += Math.min(cpts, 200) * 1.5;
+          const money = (t.match(/\$\s?\d/g) || []).length;                                          // charges
+          s += Math.min(money, 100);
+          ['cpt', 'procedure', 'service date', 'date of service', 'dos', 'claim', 'charge', 'billed', 'units', 'modifier', 'rendering', 'diagnosis', 'icd', 'mrn', 'date of birth', 'dob', 'patient name'].forEach((k) => { if (tl.indexOf(k) >= 0) s += 5; });
+          s -= /conversation|colleague|inbox|message|chat/.test(tl) ? 25 : 0;                         // de-rank the messaging frame
+          s += Math.min(t.length, 40000) / 600;                                                       // size as a minor tiebreaker
+          return s;
+        };
+        const scored = frames.map((f) => ({ f: f, s: scoreReport(f) })).sort((a, b) => b.s - a.s);
+        const best = scored[0] || { f: { u: tab.url, t: '' }, s: 0 };
+        // A report can render across sibling frames; concat the top few scoring frames (capped)
+        // so the app parser sees every patient row, not just the single best frame.
+        let concat = '';
+        for (const sc of scored) { if (sc.s <= 0) break; if (concat.length > 44000) break; concat += (concat ? '\n\n' : '') + (sc.f.t || ''); }
+        const text = ((tab.title ? ('[' + tab.title + ']\n') : '') + (concat || best.f.t || '')).slice(0, 46000);
+        sendResponse({ ok: true, text: text, url: best.f.u || tab.url, title: tab.title, frames: frames.length, bestScore: Math.round(best.s) });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
   // Open + read ONE PATIENT'S CHART from Athena. If a patient name is given, try to
+
   // click that patient (in the schedule/search) to open their chart, then read the
   // frame that scores highest on clinical-chart keywords (so we never grab the schedule).
   if (msg.type === 'mlsAppChartRequest') {
