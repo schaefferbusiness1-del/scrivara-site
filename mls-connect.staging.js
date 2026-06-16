@@ -2472,3 +2472,497 @@
   // re-wire periodically: textareas/panels may mount after login / view switch
   var n=0; var iv=setInterval(function(){ n++; if(n>40){ clearInterval(iv); return; } safe(wire); }, 1000);
 })();
+
+
+/* ---- module: feat_study.js ---- */
+
+/* ===== MLS Study / Import Patients — cohort builder =====
+   Build a STUDY cohort two ways:
+     MODE A (by NAME + DOB list): paste rows (Name, DOB), drive Athena patient search per row
+       via the app's existing Assist bridge (window._assistReadChart), VERIFY identity by a STRICT
+       name+DOB gate (never import on a name-only match or a DOB mismatch), then import the patient +
+       history through the app's existing pipeline (_savePatientChart) and tag them to the cohort.
+     MODE B (by INJECTION / PROCEDURE):
+       - From patients ALREADY in MLS, grouped by their note CPT (PROC_MAP/_ptProcedure) — fully works now.
+       - From Athena: an EXPERIMENTAL best-effort report scrape (clearly labeled, needs live tuning).
+       - Via athenahealth FHIR API: structurally present but GATED on athenahealth partner approval.
+   ADDITIVE + progressive enhancement: own IIFE, all external calls in try/catch, reads app globals at
+   call time, never monkey-patches. Cohort membership rides on the patient object (p.studyTags[]/p.cohort)
+   which already persists to localStorage and to the backend inside patient.data. READ/IMPORT ONLY — this
+   module never writes to Athena and never clicks Save/Sign. No PHI is logged off-device. */
+(function(){
+  'use strict';
+  if (window.__mlsStudy) return;
+
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+  function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+  function toast(m){ safe(function(){ if(window.toast) window.toast(m,'info'); }); }
+  function getPatients(){ return safe(function(){ return window.getPatients()||[]; }, []); }
+
+  /* ---------- DOB / name normalization ---------- */
+  function normDob(d){
+    if(!d) return '';
+    var s=String(d).trim();
+    var m=s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/); // YYYY-MM-DD
+    if(m){ return ('0'+m[2]).slice(-2)+('0'+m[3]).slice(-2)+m[1]; }
+    m=s.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/); // MM/DD/YYYY or MM/DD/YY
+    if(!m) return '';
+    var mm=('0'+m[1]).slice(-2), dd=('0'+m[2]).slice(-2), y=m[3];
+    if(y.length===2){ var n=parseInt(y,10); y=(n>30?'19':'20')+y; } // pivot at 30
+    return mm+dd+y;
+  }
+  function nameTokens(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9\s,]/g,' ').replace(/,/g,' ').split(/\s+/).filter(function(t){return t.length>1;}); }
+  function tokenOverlap(a,b){ var A=nameTokens(a), B=nameTokens(b), n=0; A.forEach(function(t){ if(B.indexOf(t)>=0) n++; }); return n; }
+  function rowTokensInText(name, text){
+    var toks=nameTokens(name); if(!toks.length) return false; var t=String(text||'').toLowerCase(); var hit=0;
+    toks.forEach(function(tk){ if(t.indexOf(tk)>=0) hit++; });
+    return hit>=Math.min(2, toks.length); // need both first+last (or all, if single token)
+  }
+  function scanIdentity(text){
+    var t=String(text||''); var dob='', name='';
+    var dm=t.match(/(?:dob|d\.o\.b\.|date of birth|birth date)\s*[:\-]?\s*([01]?\d[\/\-\.][0-3]?\d[\/\-\.]\d{2,4})/i);
+    if(dm) dob=dm[1];
+    var nm=t.match(/(?:patient(?:\s*name)?|name)\s*[:\-]\s*([A-Za-z][A-Za-z'\-]+,\s*[A-Za-z][A-Za-z'\-]+)/);
+    if(nm) name=nm[1];
+    return {name:name, dob:dob};
+  }
+
+  /* ---------- parse pasted rows ---------- */
+  function parseRows(text){
+    return String(text||'').split(/\n/).map(function(line){
+      var raw=line.trim(); if(!raw) return null;
+      var dm=raw.match(/(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/);
+      var dob=dm?dm[1]:'';
+      var name=raw;
+      if(dm){ name=raw.slice(0,dm.index)+raw.slice(dm.index+dm[0].length); }
+      name=name.replace(/[,;|\t]+/g,' ').replace(/\s{2,}/g,' ').trim().replace(/[\-–—]\s*$/,'').trim();
+      return { name:name, dob:dob, raw:raw, dobValid: !!normDob(dob) };
+    }).filter(Boolean);
+  }
+
+  /* ---------- STRICT name+DOB match gate ----------
+     'match' requires: a name hit AND a valid DOB on BOTH sides AND the DOBs equal.
+     Never returns 'match' on a name-only basis, and never on a DOB mismatch. */
+  function strictMatch(row, chart){
+    if(!chart) return {status:'not_found'};
+    if(chart.__err==='no-bridge'||chart.__err==='old-ext') return {status:'no_bridge'};
+    if(chart.__err) return {status:'error'};
+    var scan=scanIdentity(chart.text||'');
+    var chartName=chart.name||chart.patient||scan.name||'';
+    var chartDob=normDob(chart.dob||'')||normDob(scan.dob||'');
+    var rowDob=normDob(row.dob||'');
+    var cn=norm(chartName), pn=norm(row.name);
+    var nameHit=false;
+    if(cn && pn){ nameHit = (cn===pn) || cn.indexOf(pn)>=0 || pn.indexOf(cn)>=0 || tokenOverlap(chartName,row.name)>=2; }
+    if(!nameHit && chart.text){ nameHit = rowTokensInText(row.name, chart.text); }
+    var hasChart = !!(chartName || chartDob || (chart.text && chart.text.length>20));
+    if(!hasChart) return {status:'not_found'};
+    if(!nameHit && !chartDob) return {status:'not_found'};
+    if(!rowDob) return {status:'review', reason:'no DOB provided in your list', chartName:chartName};
+    if(!chartDob) return {status:'review', reason:'could not read a DOB from the Athena chart', chartName:chartName};
+    if(chartDob!==rowDob) return {status:'dob_mismatch', chartName:chartName, chartDob:(chart.dob||scan.dob||'')};
+    if(!nameHit) return {status:'review', reason:'DOB matched but the name did not — verify manually', chartName:chartName};
+    return {status:'match', chartName:chartName};
+  }
+
+  /* ---------- read one chart via the app's Assist bridge ---------- */
+  function readChartFor(name){
+    return new Promise(function(resolve){
+      var done=false; function fin(v){ if(!done){ done=true; resolve(v); } }
+      var TIMEOUT=setTimeout(function(){ fin({__err:'error', __timeout:true}); }, 45000);
+      safe(function(){
+        if(typeof window._assistReadChart!=='function'){ clearTimeout(TIMEOUT); fin({__err:'no-bridge'}); return; }
+        var p=window._assistReadChart(name);
+        if(!p || typeof p.then!=='function'){ clearTimeout(TIMEOUT); fin({__err:'no-bridge'}); return; }
+        p.then(function(rd){
+          if(!rd || !rd.text){ clearTimeout(TIMEOUT); fin(null); return; }
+          var parsed=null; try{ parsed=window._parsePatientChart?window._parsePatientChart(rd.text):null; }catch(e){}
+          if(parsed && typeof parsed.then==='function'){
+            parsed.then(function(c){ c=c||{}; c.text=rd.text; c.url=rd.url; clearTimeout(TIMEOUT); fin(c); })
+                  .catch(function(){ clearTimeout(TIMEOUT); fin({name:'',dob:'',text:rd.text,url:rd.url}); });
+          } else { var c=parsed||{}; c.text=rd.text; c.url=rd.url; clearTimeout(TIMEOUT); fin(c); }
+        }).catch(function(e){ clearTimeout(TIMEOUT); fin({__err:(e&&e.message==='OLDEXT')?'old-ext':'error'}); });
+      }) || (clearTimeout(TIMEOUT), fin({__err:'error'}));
+    });
+  }
+
+  /* ---------- cohort tagging on the patient object ---------- */
+  function findByName(name){
+    var n=norm(name); var ps=getPatients();
+    return ps.find(function(p){ return norm(p.name)===n; })
+        || ps.find(function(p){ var pn=norm(p.name); return pn && (pn.indexOf(n)>=0 || n.indexOf(pn)>=0); })
+        || null;
+  }
+  function tagPatientCohort(p, cohort){
+    if(!p||!cohort) return false;
+    p.studyTags = Array.isArray(p.studyTags)?p.studyTags:[];
+    if(p.studyTags.indexOf(cohort)<0) p.studyTags.push(cohort);
+    p.cohort = cohort;
+    return !!safe(function(){ window.upsertPatient(p); return true; }, false);
+  }
+  function listCohorts(){
+    var map={}; getPatients().forEach(function(p){
+      var tags=Array.isArray(p.studyTags)?p.studyTags:(p.cohort?[p.cohort]:[]);
+      tags.forEach(function(t){ if(!t) return; map[t]=(map[t]||0)+1; });
+    });
+    return Object.keys(map).sort().map(function(k){ return {name:k, n:map[k]}; });
+  }
+  function cohortMembers(cohort){
+    return getPatients().filter(function(p){
+      var tags=Array.isArray(p.studyTags)?p.studyTags:(p.cohort?[p.cohort]:[]);
+      return tags.indexOf(cohort)>=0;
+    });
+  }
+  function visitCount(p){
+    return safe(function(){ return (window.patientNotes?window.patientNotes(p.id):[]).length; }, 0);
+  }
+
+  /* ---------- import one row (Mode A) ----------
+     resolver(name) -> Promise<chart|null|{__err}>; defaults to the Assist bridge.
+     On a confident match, imports via the app's existing _savePatientChart, then tags the cohort. */
+  function importRow(row, cohort, resolver){
+    resolver = resolver || readChartFor;
+    return Promise.resolve(safe(function(){ return resolver(row.name); }, null)).then(function(chart){
+      var r=strictMatch(row, chart);
+      if(r.status==='match'){
+        safe(function(){ if(window._savePatientChart) window._savePatientChart(row.name, null, chart||{}); });
+        var p=findByName(row.name);
+        if(!p){
+          // _savePatientChart should have created it; fall back to a minimal create
+          p = safe(function(){
+            var np={ id:'p'+Date.now()+Math.random().toString(36).slice(2,7), name:row.name, dob:row.dob||'',
+                     problems:'', meds:'', allergies:'', summary:'', docs:[], source:'study-import', created:Date.now(), updated:Date.now() };
+            window.upsertPatient(np); return np;
+          }, null);
+        }
+        if(p){ if(!p.dob && (row.dob||(chart&&chart.dob))) p.dob=row.dob||chart.dob; tagPatientCohort(p, cohort); }
+        return { row:row, status:'match', chartName:r.chartName||row.name, patientId:p?p.id:null };
+      }
+      return { row:row, status:r.status, reason:r.reason, chartName:r.chartName, chartDob:r.chartDob };
+    });
+  }
+
+  /* status -> display */
+  var STAT={
+    match:        {icon:'✓', cls:'ok',   label:'Found & imported'},
+    dob_mismatch: {icon:'⚠', cls:'bad',  label:'DOB mismatch — skipped'},
+    not_found:    {icon:'⚠', cls:'warn', label:'Not found in Athena'},
+    review:       {icon:'⚠', cls:'warn', label:'Verify manually — multiple/ambiguous'},
+    no_bridge:    {icon:'⚠', cls:'gate', label:'MLS Assist + signed-in Athena needed'},
+    old_ext:      {icon:'⚠', cls:'gate', label:'Update MLS Assist extension'},
+    error:        {icon:'⚠', cls:'warn', label:'Read error — retry'},
+    pending:      {icon:'…', cls:'wait', label:'Searching Athena…'}
+  };
+  function statOf(s){ return STAT[s]||STAT.error; }
+
+  /* ====================== UI ====================== */
+  var TAB='A';
+  function open(initTab){ TAB=initTab||'A'; injectCss(); render(); }
+  function close(){ var o=document.getElementById('mlsStudyOv'); if(o) o.remove(); }
+
+  function render(){
+    var ex=document.getElementById('mlsStudyOv'); if(ex) ex.remove();
+    var o=document.createElement('div'); o.id='mlsStudyOv';
+    o.innerHTML=''
+      +'<div class="mls-study-card" role="dialog" aria-label="Study / Import Patients">'
+      +' <div class="mls-study-head">'
+      +'   <span class="mls-study-title">🧪 Study / Import Patients</span>'
+      +'   <button type="button" class="mls-study-x" aria-label="Close">✕</button>'
+      +' </div>'
+      +' <div class="mls-study-tabs">'
+      +'   <button type="button" data-t="A" class="'+(TAB==='A'?'on':'')+'">By name + DOB</button>'
+      +'   <button type="button" data-t="B" class="'+(TAB==='B'?'on':'')+'">By procedure</button>'
+      +'   <button type="button" data-t="C" class="'+(TAB==='C'?'on':'')+'">Cohorts</button>'
+      +' </div>'
+      +' <div class="mls-study-body" id="mlsStudyBody"></div>'
+      +'</div>';
+    document.body.appendChild(o);
+    o.addEventListener('mousedown', function(e){ if(e.target===o) close(); });
+    o.querySelector('.mls-study-x').addEventListener('click', close);
+    o.querySelectorAll('.mls-study-tabs [data-t]').forEach(function(b){
+      b.addEventListener('click', function(){ TAB=b.getAttribute('data-t'); render(); });
+    });
+    var body=o.querySelector('#mlsStudyBody');
+    if(TAB==='A') renderModeA(body);
+    else if(TAB==='B') renderModeB(body);
+    else renderCohorts(body);
+  }
+
+  /* ----- Mode A ----- */
+  function renderModeA(body){
+    body.innerHTML=''
+      +'<p class="mls-study-help">Paste one patient per line as <b>Name, DOB</b> (e.g. <code>Jane Doe, 04/12/1968</code>). '
+      +'For each, MLS searches your signed-in Athena tab, <b>verifies name + DOB</b>, and imports the patient + history into the cohort. '
+      +'It never imports on a name-only match or a DOB mismatch, and never writes back to Athena.</p>'
+      +'<label class="mls-study-lab">Cohort / study name</label>'
+      +'<input id="mlsStudyCohort" class="mls-study-in" placeholder="e.g. ESI Outcomes 2026" />'
+      +'<label class="mls-study-lab">Patients (one per line: Name, DOB)</label>'
+      +'<textarea id="mlsStudyRows" class="mls-study-ta" rows="7" placeholder="Jane Doe, 04/12/1968&#10;John Smith 7/3/1955"></textarea>'
+      +'<div class="mls-study-actions">'
+      +'  <button type="button" id="mlsStudyParse" class="mls-study-btn ghost">Preview list</button>'
+      +'  <button type="button" id="mlsStudyImport" class="mls-study-btn">Import &amp; verify</button>'
+      +'</div>'
+      +'<div id="mlsStudyResults" class="mls-study-results"></div>';
+    body.querySelector('#mlsStudyParse').addEventListener('click', function(){ previewList(body); });
+    body.querySelector('#mlsStudyImport').addEventListener('click', function(){ runImport(body); });
+  }
+  function previewList(body){
+    var rows=parseRows(body.querySelector('#mlsStudyRows').value);
+    var out=body.querySelector('#mlsStudyResults');
+    if(!rows.length){ out.innerHTML='<div class="mls-study-empty">Nothing to preview — paste some rows above.</div>'; return; }
+    out.innerHTML='<div class="mls-study-sum">'+rows.length+' row(s):</div>'+rows.map(function(r){
+      var ok=r.name && r.dobValid;
+      return '<div class="mls-study-row '+(ok?'':'warn')+'"><span class="mls-study-rn">'+esc(r.name||'(no name)')+'</span>'
+        +'<span class="mls-study-rd">'+esc(r.dob||'(no DOB)')+(r.dobValid?'':' ⚠')+'</span></div>';
+    }).join('');
+  }
+  function runImport(body){
+    var cohort=(body.querySelector('#mlsStudyCohort').value||'').trim();
+    var rows=parseRows(body.querySelector('#mlsStudyRows').value);
+    var out=body.querySelector('#mlsStudyResults');
+    if(!cohort){ out.innerHTML='<div class="mls-study-empty">Enter a cohort / study name first.</div>'; return; }
+    if(!rows.length){ out.innerHTML='<div class="mls-study-empty">Paste at least one patient (Name, DOB).</div>'; return; }
+    var bridge = safe(function(){ return typeof window._assistReadChart==='function'; }, false);
+    var banner = bridge ? '' : '<div class="mls-study-gate">⚠ MLS Assist isn’t detected. Install/enable the extension and open your signed-in Athena tab, then import. Rows will report "Assist needed".</div>';
+    out.innerHTML=banner+'<div class="mls-study-sum" id="mlsStudySumLine">Importing 0 / '+rows.length+'…</div>'
+      +rows.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsr'+i+'"><span class="mls-study-rn">'+esc(r.name||'(no name)')+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('');
+    var counts={match:0,dob_mismatch:0,not_found:0,review:0,no_bridge:0,error:0,old_ext:0};
+    var idx=0;
+    function step(){
+      if(idx>=rows.length){
+        var line=body.querySelector('#mlsStudySumLine');
+        if(line) line.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+((counts.no_bridge+counts.old_ext)?(' · '+(counts.no_bridge+counts.old_ext)+' need Assist'):'');
+        safe(function(){ if(window.renderPatients) window.renderPatients(); });
+        return;
+      }
+      var r=rows[idx];
+      importRow(r, cohort).then(function(res){
+        var st=res.status==='old-ext'?'old_ext':res.status;
+        counts[st]=(counts[st]||0)+1;
+        var s=statOf(st);
+        var el=body.querySelector('#mlsr'+idx);
+        if(el){
+          var extra='';
+          if(st==='dob_mismatch') extra=' (Athena: '+esc(res.chartDob||'?')+')';
+          else if(st==='review'&&res.reason) extra=' ('+esc(res.reason)+')';
+          el.querySelector('.mls-study-rs').className='mls-study-rs '+s.cls;
+          el.querySelector('.mls-study-rs').textContent=s.icon+' '+s.label+extra;
+        }
+        var line=body.querySelector('#mlsStudySumLine'); if(line) line.textContent='Importing '+(idx+1)+' / '+rows.length+'…';
+        idx++; setTimeout(step, 120);
+      });
+    }
+    step();
+  }
+
+  /* ----- Mode B ----- */
+  function proceduresInMls(){
+    var map={};
+    getPatients().forEach(function(p){
+      var proc=safe(function(){ return window._ptProcedure?window._ptProcedure(p):''; }, '');
+      if(proc && proc!=='—' && proc.toLowerCase()!=='other'){ (map[proc]=map[proc]||[]).push(p); }
+    });
+    return map;
+  }
+  function renderModeB(body){
+    var map=proceduresInMls();
+    var keys=Object.keys(map).sort();
+    var localHtml = keys.length
+      ? '<div class="mls-study-proclist">'+keys.map(function(k){ return '<div class="mls-study-prow"><label><input type="checkbox" class="mls-study-pchk" value="'+esc(k)+'"> '+esc(k)+' <span class="mls-study-cnt">'+map[k].length+'</span></label></div>'; }).join('')+'</div>'
+      : '<div class="mls-study-empty">No procedures detected on patients currently in MLS. (Procedures come from each patient’s most recent note CPT.)</div>';
+    body.innerHTML=''
+      +'<div class="mls-study-sec">'
+      +' <div class="mls-study-sech">From patients already in MLS <span class="mls-study-badge live">works now</span></div>'
+      +' <p class="mls-study-help">Build a cohort from patients you’ve already imported, grouped by their note CPT/procedure. Tick procedures and tag them to a cohort — no Athena round-trip.</p>'
+      +' '+localHtml
+      +' <label class="mls-study-lab">Cohort / study name</label>'
+      +' <input id="mlsStudyBCohort" class="mls-study-in" placeholder="e.g. Lumbar ESI cohort" />'
+      +' <div class="mls-study-actions"><button type="button" id="mlsStudyBTag" class="mls-study-btn">Add matching patients to cohort</button></div>'
+      +' <div id="mlsStudyBOut" class="mls-study-results"></div>'
+      +'</div>'
+      +'<div class="mls-study-sec">'
+      +' <div class="mls-study-sech">From Athena report <span class="mls-study-badge exp">experimental — needs live tuning</span></div>'
+      +' <p class="mls-study-help">Best-effort: reads your open Athena tab (e.g. a procedure/claims report or schedule) and tries to extract patient rows, then runs each through the name+DOB verify+import above. Athena report layouts vary, so this needs tuning against a real signed-in report and may miss rows. It never writes to Athena.</p>'
+      +' <label class="mls-study-lab">Procedure / CPT (for the cohort name &amp; your reference)</label>'
+      +' <input id="mlsStudyBProc" class="mls-study-in" placeholder="e.g. 64483 / Lumbar transforaminal ESI" />'
+      +' <div class="mls-study-actions"><button type="button" id="mlsStudyBScrape" class="mls-study-btn ghost">⚗ Try reading open Athena report</button></div>'
+      +' <div id="mlsStudyBScrapeOut" class="mls-study-results"></div>'
+      +'</div>'
+      +'<div class="mls-study-sec gated">'
+      +' <div class="mls-study-sech">Via athenahealth API (exact procedure cohort) <span class="mls-study-badge gate">gated</span></div>'
+      +' <p class="mls-study-help">A reliable “all patients who received CPT X” query runs through the SMART-on-FHIR integration. The backend client is built, but this is <b>gated pending athenahealth developer/partner approval</b>. Once approved it will return an exact cohort (no screen-scraping). This panel is a placeholder — it shows no data until the API is live.</p>'
+      +' <button type="button" class="mls-study-btn ghost" disabled>FHIR cohort query (disabled until API access)</button>'
+      +'</div>';
+    body.querySelector('#mlsStudyBTag').addEventListener('click', function(){ tagLocalProcedures(body, map); });
+    var sc=body.querySelector('#mlsStudyBScrape'); if(sc) sc.addEventListener('click', function(){ tryAthenaReport(body); });
+  }
+  function tagLocalProcedures(body, map){
+    var cohort=(body.querySelector('#mlsStudyBCohort').value||'').trim();
+    var out=body.querySelector('#mlsStudyBOut');
+    if(!cohort){ out.innerHTML='<div class="mls-study-empty">Enter a cohort name first.</div>'; return; }
+    var picked=Array.prototype.map.call(body.querySelectorAll('.mls-study-pchk:checked'), function(c){ return c.value; });
+    if(!picked.length){ out.innerHTML='<div class="mls-study-empty">Tick at least one procedure.</div>'; return; }
+    var n=0; picked.forEach(function(k){ (map[k]||[]).forEach(function(p){ if(tagPatientCohort(p, cohort)) n++; }); });
+    out.innerHTML='<div class="mls-study-sum">✓ Added '+n+' patient(s) to cohort “'+esc(cohort)+'”.</div>';
+    safe(function(){ if(window.renderPatients) window.renderPatients(); });
+  }
+  function tryAthenaReport(body){
+    var proc=(body.querySelector('#mlsStudyBProc').value||'').trim();
+    var out=body.querySelector('#mlsStudyBScrapeOut');
+    if(typeof window._assistReadAthenaTab!=='function'){
+      out.innerHTML='<div class="mls-study-gate">⚠ MLS Assist not detected. Open your signed-in Athena report tab and enable the extension, then try again.</div>'; return;
+    }
+    out.innerHTML='<div class="mls-study-sum">Reading the open Athena tab…</div>';
+    Promise.resolve(safe(function(){ return window._assistReadAthenaTab(); }, null)).then(function(rd){
+      var text=rd&&rd.text?rd.text:'';
+      if(!text){ out.innerHTML='<div class="mls-study-gate">Couldn’t read an Athena report. Make sure the report/claims list is the open, signed-in Athena tab.</div>'; return; }
+      var cand=extractReportRows(text);
+      if(!cand.length){ out.innerHTML='<div class="mls-study-gate">Read the tab but found no recognizable Name + DOB rows. This experimental scrape needs tuning to your report’s layout — send a (de-identified) sample column layout and it can be adapted.</div>'; return; }
+      out.innerHTML='<div class="mls-study-sum">Found '+cand.length+' candidate row(s). Copy them into the “By name + DOB” tab to verify &amp; import:</div>'
+        +'<textarea class="mls-study-ta" rows="6" readonly>'+esc(cand.map(function(c){return c.name+', '+c.dob;}).join('\n'))+'</textarea>'
+        +'<div class="mls-study-help">Experimental output — review every row before importing; the strict name+DOB gate still applies on import.</div>';
+    });
+  }
+  function extractReportRows(text){
+    // Best-effort: pull lines that contain a DOB-like date and a plausible name. Tuned conservatively.
+    var rows=[]; String(text||'').split(/\n/).forEach(function(line){
+      var dm=line.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+      if(!dm) return;
+      var before=line.slice(0,dm.index);
+      var nm=before.match(/([A-Z][A-Za-z'\-]+\s*,\s*[A-Z][A-Za-z'\-]+|[A-Z][A-Za-z'\-]+\s+[A-Z][A-Za-z'\-]+)/);
+      if(nm && normDob(dm[1])) rows.push({ name:nm[1].replace(/\s{2,}/g,' ').trim(), dob:dm[1] });
+    });
+    // de-dup
+    var seen={}; return rows.filter(function(r){ var k=norm(r.name)+'|'+normDob(r.dob); if(seen[k]) return false; seen[k]=1; return true; });
+  }
+
+  /* ----- Cohorts view ----- */
+  function renderCohorts(body){
+    var cohorts=listCohorts();
+    if(!cohorts.length){ body.innerHTML='<div class="mls-study-empty">No cohorts yet. Use “By name + DOB” or “By procedure” to build one.</div>'; return; }
+    body.innerHTML='<div class="mls-study-cohlist">'+cohorts.map(function(c){
+      return '<button type="button" class="mls-study-coh" data-c="'+esc(c.name)+'"><span>'+esc(c.name)+'</span><span class="mls-study-cnt">'+c.n+'</span></button>';
+    }).join('')+'</div><div id="mlsStudyCohDetail"></div>';
+    body.querySelectorAll('.mls-study-coh').forEach(function(b){
+      b.addEventListener('click', function(){ showCohort(body, b.getAttribute('data-c')); });
+    });
+  }
+  function showCohort(body, cohort){
+    var det=body.querySelector('#mlsStudyCohDetail'); if(!det) return;
+    var mem=cohortMembers(cohort);
+    det.innerHTML='<div class="mls-study-sum">'+esc(cohort)+' — '+mem.length+' patient(s)</div>'
+      +'<div class="mls-study-export"><button type="button" class="mls-study-btn ghost" id="mlsStudyCsv">Export de-identified summary (CSV)</button></div>'
+      +'<div class="mls-study-memlist">'+mem.map(function(p){
+        return '<div class="mls-study-row"><span class="mls-study-rn">'+esc(p.name||'(unnamed)')+'</span>'
+          +'<span class="mls-study-rd">'+esc(p.dob||'')+'</span>'
+          +'<span class="mls-study-cnt">'+visitCount(p)+' visit(s)</span>'
+          +'<button type="button" class="mls-study-open" data-id="'+esc(p.id)+'">Open chart</button></div>';
+      }).join('')+'</div>';
+    det.querySelectorAll('.mls-study-open').forEach(function(b){
+      b.addEventListener('click', function(){
+        var id=b.getAttribute('data-id');
+        safe(function(){ if(window.setActivePtId) window.setActivePtId(id); });
+        safe(function(){ if(window.openPatient) window.openPatient(id); });
+        safe(function(){ if(window.showView) window.showView('patients'); });
+        close();
+      });
+    });
+    var csv=det.querySelector('#mlsStudyCsv'); if(csv) csv.addEventListener('click', function(){ exportCohortCsv(cohort, mem); });
+  }
+  function exportCohortCsv(cohort, mem){
+    // De-identified: cohort, a sequential study id, age (from DOB year), sex, visit count. No name/DOB/MRN.
+    var yr=new Date().getFullYear();
+    var lines=['cohort,study_id,age,sex,visits'];
+    mem.forEach(function(p,i){
+      var age=''; var dm=normDob(p.dob||''); if(dm){ age=String(yr-parseInt(dm.slice(4),10)); }
+      lines.push([cohort, 'S'+(i+1), age, (p.sex||''), visitCount(p)].map(function(x){return '"'+String(x).replace(/"/g,'""')+'"';}).join(','));
+    });
+    safe(function(){
+      var blob=new Blob([lines.join('\n')],{type:'text/csv'});
+      var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='MLS_cohort_'+cohort.replace(/[^a-z0-9]+/gi,'_')+'_deidentified.csv';
+      document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    });
+  }
+
+  /* ---------- launch button in the Patients toolbar ---------- */
+  function injectLaunch(){
+    safe(function(){
+      if(document.getElementById('mlsStudyLaunch')) return;
+      var anchor=document.getElementById('ptPullAthenaBtn'); if(!anchor||!anchor.parentElement) return;
+      var b=document.createElement('button'); b.type='button'; b.id='mlsStudyLaunch';
+      b.className=anchor.className; b.textContent='🧪 Study / Import';
+      b.addEventListener('click', function(){ open('A'); });
+      anchor.parentElement.insertBefore(b, anchor.nextSibling);
+    });
+  }
+
+  /* ---------- timeline provider (cohort membership shows on a patient's timeline) ---------- */
+  function wireTimeline(){
+    safe(function(){
+      if(window.__mlsTimeline && window.__mlsTimeline.addProvider){
+        window.__mlsTimeline.addProvider(function(pid){
+          var p=safe(function(){ return window.findPatient?window.findPatient(pid):null; }, null);
+          if(!p) return [];
+          var tags=Array.isArray(p.studyTags)?p.studyTags:(p.cohort?[p.cohort]:[]);
+          return tags.map(function(t){ return { date:p.updated||Date.now(), type:'study', icon:'🧪', title:'In study cohort: '+t, sub:'', onClick:function(){ open('C'); } }; });
+        });
+      }
+    });
+  }
+
+  function injectCss(){
+    if(document.getElementById('mlsStudyCss')) return;
+    var s=document.createElement('style'); s.id='mlsStudyCss';
+    s.textContent=''
+      +'#mlsStudyOv{position:fixed;inset:0;z-index:100002;background:rgba(15,28,46,.42);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;}'
+      +'#mlsStudyOv .mls-study-card{background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.3);width:640px;max-width:100%;font-size:13px;color:var(--ink,#15293f);}'
+      +'#mlsStudyOv .mls-study-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line,#e6e9ef);}'
+      +'#mlsStudyOv .mls-study-title{font-weight:700;font-size:15px;}'
+      +'#mlsStudyOv .mls-study-x{border:0;background:transparent;cursor:pointer;color:var(--muted,#9aa7b4);font-size:16px;}'
+      +'#mlsStudyOv .mls-study-tabs{display:flex;gap:4px;padding:10px 12px 0;}'
+      +'#mlsStudyOv .mls-study-tabs button{flex:1;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--muted,#5b6b7c);border-radius:9px 9px 0 0;padding:8px;}'
+      +'#mlsStudyOv .mls-study-tabs button.on{background:var(--card,#fff);color:var(--brand,#2563c9);border-bottom-color:transparent;}'
+      +'#mlsStudyOv .mls-study-body{padding:14px 16px;max-height:70vh;overflow:auto;}'
+      +'#mlsStudyOv .mls-study-help{color:var(--muted,#5b6b7c);font-size:12px;line-height:1.5;margin:0 0 10px;}'
+      +'#mlsStudyOv code{background:var(--surface,#f1f5fb);padding:1px 5px;border-radius:5px;font-size:11.5px;}'
+      +'#mlsStudyOv .mls-study-lab{display:block;font-weight:600;font-size:11.5px;margin:8px 0 4px;color:var(--ink,#15293f);}'
+      +'#mlsStudyOv .mls-study-in,#mlsStudyOv .mls-study-ta{width:100%;box-sizing:border-box;font:inherit;border:1px solid var(--line,#e6e9ef);border-radius:9px;padding:8px 10px;background:var(--surface,#fafcff);color:var(--ink,#15293f);}'
+      +'#mlsStudyOv .mls-study-ta{resize:vertical;}'
+      +'#mlsStudyOv .mls-study-actions{display:flex;gap:8px;margin:10px 0;}'
+      +'#mlsStudyOv .mls-study-btn{font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--brand,#2563c9);background:var(--brand,#2563c9);color:#fff;border-radius:9px;padding:8px 14px;}'
+      +'#mlsStudyOv .mls-study-btn.ghost{background:var(--surface,#fafcff);color:var(--brand,#2563c9);}'
+      +'#mlsStudyOv .mls-study-btn:disabled{opacity:.5;cursor:not-allowed;}'
+      +'#mlsStudyOv .mls-study-results{margin-top:8px;}'
+      +'#mlsStudyOv .mls-study-sum{font-weight:600;margin:6px 0;}'
+      +'#mlsStudyOv .mls-study-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--line,#eef1f6);border-radius:8px;margin-bottom:5px;background:var(--surface,#fcfdff);}'
+      +'#mlsStudyOv .mls-study-row.warn{border-color:#f0c98a;}'
+      +'#mlsStudyOv .mls-study-rn{flex:1;font-weight:600;}'
+      +'#mlsStudyOv .mls-study-rd{color:var(--muted,#5b6b7c);font-size:12px;min-width:84px;}'
+      +'#mlsStudyOv .mls-study-rs{font-size:11.5px;font-weight:600;}'
+      +'#mlsStudyOv .mls-study-rs.ok{color:#16a34a;} #mlsStudyOv .mls-study-rs.bad{color:#dc2626;} #mlsStudyOv .mls-study-rs.warn{color:#b45309;} #mlsStudyOv .mls-study-rs.gate{color:#7c5cff;} #mlsStudyOv .mls-study-rs.wait{color:var(--muted,#9aa7b4);}'
+      +'#mlsStudyOv .mls-study-empty{color:var(--muted,#9aa7b4);padding:14px;text-align:center;}'
+      +'#mlsStudyOv .mls-study-gate{background:#fff7ec;border:1px solid #f0c98a;color:#7a4f12;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12px;}'
+      +'#mlsStudyOv .mls-study-sec{border:1px solid var(--line,#eef1f6);border-radius:11px;padding:11px 12px;margin-bottom:12px;}'
+      +'#mlsStudyOv .mls-study-sec.gated{opacity:.85;}'
+      +'#mlsStudyOv .mls-study-sech{font-weight:700;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}'
+      +'#mlsStudyOv .mls-study-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;}'
+      +'#mlsStudyOv .mls-study-badge.live{background:#e7f7ee;color:#16794a;} #mlsStudyOv .mls-study-badge.exp{background:#fff2e0;color:#9a5a12;} #mlsStudyOv .mls-study-badge.gate{background:#efeaff;color:#5b40c9;}'
+      +'#mlsStudyOv .mls-study-proclist{margin:6px 0;}'
+      +'#mlsStudyOv .mls-study-prow label{display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;}'
+      +'#mlsStudyOv .mls-study-cnt{color:var(--muted,#5b6b7c);font-size:11.5px;background:var(--surface,#f1f5fb);border-radius:999px;padding:1px 8px;}'
+      +'#mlsStudyOv .mls-study-cohlist{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}'
+      +'#mlsStudyOv .mls-study-coh{display:flex;justify-content:space-between;align-items:center;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--ink,#15293f);border-radius:9px;padding:9px 12px;}'
+      +'#mlsStudyOv .mls-study-coh:hover{border-color:var(--brand,#2563c9);color:var(--brand,#2563c9);}'
+      +'#mlsStudyOv .mls-study-open{font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;border:1px solid var(--brand,#2563c9);background:transparent;color:var(--brand,#2563c9);border-radius:7px;padding:3px 9px;}'
+      +'#mlsStudyOv .mls-study-export{margin:6px 0;}';
+    (document.head||document.documentElement).appendChild(s);
+  }
+
+  function boot(){ injectLaunch(); wireTimeline(); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  // re-inject the launch button if the Patients toolbar re-renders
+  var tries=0; var iv=setInterval(function(){ tries++; if(tries>40){ clearInterval(iv); return; } safe(injectLaunch); }, 1200);
+
+  window.__mlsStudy={ open:open, close:close, _strictMatch:strictMatch, _parseRows:parseRows, _normDob:normDob, _importRow:importRow, _listCohorts:listCohorts, _extractReportRows:extractReportRows, _tagPatientCohort:tagPatientCohort };
+})();
