@@ -1,7 +1,8 @@
 <!doctype html><html><head><meta charset="utf-8">
 <style>
   body{width:300px;margin:0;font:13px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1a2b3c}
-  .h{background:#1f7ae0;color:#fff;padding:12px 14px;font-weight:700}
+  .h{background:#1f7ae0;color:#fff;padding:12px 14px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .h svg{display:block;flex:none;border-radius:6px}
   .b{padding:14px}
   label{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5a6a7a;display:block;margin:10px 0 4px}
   input{width:100%;box-sizing:border-box;border:1px solid #cfe0f3;border-radius:8px;padding:8px;font:13px inherit}
@@ -14,7 +15,7 @@
   summary:before{content:"▸ ";color:#9aa7b4}
   details[open] summary:before{content:"▾ "}
 </style></head><body>
-<div class="h">MLS Assist</div>
+<div class="h"><svg viewBox="0 0 56 56" width="22" height="22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsPopMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsPopMark)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg> MLS Assist</div>
 <div class="b">
   <button id="openTab" style="margin-top:0;background:#0e9f6e;font-size:14px;padding:12px">🩺 Open MLS Assist on this tab</button>
   <div id="conn" style="margin-top:12px;border-radius:8px;padding:9px 11px;font-size:12.5px;background:#eef6ff;border:1px solid #cfe0f3;color:#1a4e80">Checking connection…</div>
