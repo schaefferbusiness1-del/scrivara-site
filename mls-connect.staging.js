@@ -2482,10 +2482,18 @@
        via the app's existing Assist bridge (window._assistReadChart), VERIFY identity by a STRICT
        name+DOB gate (never import on a name-only match or a DOB mismatch), then import the patient +
        history through the app's existing pipeline (_savePatientChart) and tag them to the cohort.
-     MODE B (by INJECTION / PROCEDURE):
-       - From patients ALREADY in MLS, grouped by their note CPT (PROC_MAP/_ptProcedure) — fully works now.
-       - From Athena: an EXPERIMENTAL best-effort report scrape (clearly labeled, needs live tuning).
-       - Via athenahealth FHIR API: structurally present but GATED on athenahealth partner approval.
+     MODE B (by INJECTION / PROCEDURE) — the real, layered "grab patients from Athena by the shot
+       they got" flow:
+       1) FIND IN ATHENA: pick a CPT/procedure or type a shot/injection name (+ optional date range),
+          read the open Athena REPORT/claims/procedure list via MLS Assist (mlsAppReadReport, v1.29;
+          falls back to the schedule read on older builds), parse Name+DOB(+service date+CPT) rows,
+          filter by the chosen criteria, then feed every selected row through the SAME strict name+DOB
+          verify+import pipeline as Mode A and tag the cohort. Robust + configurable selectors
+          (window.__mlsStudyConfig); needs tuning to the doctor's real Athena report layout.
+       2) FROM PATIENTS ALREADY IN MLS, grouped by their note CPT (PROC_MAP/_ptProcedure) — works now.
+       3) VIA athenahealth FHIR API: a clean, gated "all patients who got CPT X" query against the
+          SMART-on-FHIR client (backend). It probes a capability endpoint and stays disabled (no fake
+          data) until athenahealth API access is approved, then auto-enables.
    ADDITIVE + progressive enhancement: own IIFE, all external calls in try/catch, reads app globals at
    call time, never monkey-patches. Cohort membership rides on the patient object (p.studyTags[]/p.cohort)
    which already persists to localStorage and to the backend inside patient.data. READ/IMPORT ONLY — this
@@ -2528,7 +2536,7 @@
     return {name:name, dob:dob};
   }
 
-  /* ---------- parse pasted rows ---------- */
+  /* ---------- parse pasted rows (Mode A) ---------- */
   function parseRows(text){
     return String(text||'').split(/\n/).map(function(line){
       var raw=line.trim(); if(!raw) return null;
@@ -2587,6 +2595,211 @@
     });
   }
 
+  /* ---------- read the open Athena REPORT via MLS Assist (v1.29 mlsAppReadReport) ----------
+     Falls back to the existing schedule read (window._assistReadAthenaTab) on older extensions,
+     so "Find in Athena" still does something on v1.28 and reads reports properly on v1.29+. */
+  function assistReadReport(onStatus){
+    return new Promise(function(resolve,reject){
+      var say=function(m){ try{ if(onStatus) onStatus(m); }catch(e){} };
+      var ponged=false, tries=0, iv=null, got=false, settled=false;
+      function fin(fn,v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); if(iv) clearInterval(iv); fn(v); }
+      function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
+      function onResult(e){
+        if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppReportResult')) return;
+        got=true; var r=e.data.resp||{};
+        if(!r.ok||!r.text){ fin(reject,new Error(r.error||'Couldn’t read your Athena report tab.')); return; }
+        fin(resolve,{text:r.text||'',url:r.url||'',frames:r.frames,bestScore:r.bestScore});
+      }
+      window.addEventListener('message',onPong);
+      var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
+      say('Looking for MLS Assist…'); ping();
+      iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('NOEXT')); } else ping(); }, 350);
+      function proceed(){
+        say('Reading the open Athena report…');
+        window.addEventListener('message',onResult);
+        try{ window.postMessage({source:'mls-app',type:'mlsAppReadReport'},'*'); }catch(e){}
+        setTimeout(function(){ if(!got) fin(reject,new Error('OLDEXT')); }, 30000);
+      }
+    });
+  }
+  function readReportText(onStatus){
+    return assistReadReport(onStatus).catch(function(err){
+      var msg=(err&&err.message)||'';
+      if(msg==='OLDEXT' && typeof window._assistReadAthenaTab==='function'){
+        if(onStatus) onStatus('Update MLS Assist to v1.29 for proper report reading — using the older read path for now…');
+        return window._assistReadAthenaTab(onStatus);
+      }
+      if(msg==='NOEXT') throw new Error('MLS Assist isn’t responding. Install/enable it (latest version) and open your signed-in Athena report tab, then try again.');
+      throw err;
+    });
+  }
+
+  /* ====================== Procedure / CPT library + criteria ======================
+     Common spine / pain / PM&R injections & procedures. Each entry: a stable key, a human
+     label, the CPT/HCPCS codes that identify it, and free-text synonyms (so a typed shot name
+     like "lumbar transforaminal ESI" also matches). Configurable/extendable via
+     window.__mlsStudyConfig.extraProcedures (array of {k,label,codes,syn}). */
+  var CPT_LIBRARY=[
+    {k:'esi_il_lumbar',  label:'Epidural steroid injection — interlaminar, lumbar/sacral/caudal', codes:['62323','62322'], syn:['interlaminar','epidural steroid','esi','lumbar epidural','caudal epidural']},
+    {k:'esi_il_cervical',label:'Epidural steroid injection — interlaminar, cervical/thoracic',     codes:['62321','62320'], syn:['interlaminar','cervical epidural','thoracic epidural','esi']},
+    {k:'tfesi_lumbar',   label:'Transforaminal ESI — lumbar/sacral',                               codes:['64483','64484'], syn:['transforaminal','tfesi','nerve root block','selective nerve root','lumbar transforaminal']},
+    {k:'tfesi_cervical', label:'Transforaminal ESI — cervical/thoracic',                           codes:['64479','64480'], syn:['transforaminal','tfesi','cervical transforaminal']},
+    {k:'mbb_lumbar',     label:'Facet / medial branch block — lumbar/sacral',                      codes:['64493','64494','64495'], syn:['facet','medial branch','mbb','facet joint','paravertebral facet','facet block']},
+    {k:'mbb_cervical',   label:'Facet / medial branch block — cervical/thoracic',                  codes:['64490','64491','64492'], syn:['facet','medial branch','mbb','cervical facet']},
+    {k:'rfa_lumbar',     label:'Radiofrequency ablation — lumbar/sacral facet',                    codes:['64635','64636'], syn:['rfa','radiofrequency','ablation','neurotomy','denervation','rhizotomy']},
+    {k:'rfa_cervical',   label:'Radiofrequency ablation — cervical/thoracic facet',                codes:['64633','64634'], syn:['rfa','radiofrequency','ablation','neurotomy','denervation']},
+    {k:'si_joint',       label:'Sacroiliac (SI) joint injection',                                  codes:['27096','G0260'], syn:['sacroiliac','si joint','si injection']},
+    {k:'si_rfa',         label:'Sacroiliac joint RFA',                                             codes:['64625'], syn:['sacroiliac rfa','si rfa','sacroiliac ablation']},
+    {k:'tpi',            label:'Trigger point injection',                                          codes:['20552','20553'], syn:['trigger point','tpi']},
+    {k:'major_joint',    label:'Major joint / bursa injection (knee, shoulder, hip)',              codes:['20610','20611'], syn:['joint injection','knee injection','shoulder injection','hip injection','bursa']},
+    {k:'small_joint',    label:'Small / intermediate joint injection',                             codes:['20600','20604','20605','20606'], syn:['joint injection','finger injection','wrist injection']},
+    {k:'genicular_block',label:'Genicular nerve block',                                            codes:['64454'], syn:['genicular','knee nerve block']},
+    {k:'genicular_rfa',  label:'Genicular nerve RFA',                                              codes:['64624'], syn:['genicular rfa','genicular ablation']},
+    {k:'stellate',       label:'Stellate ganglion block',                                          codes:['64510'], syn:['stellate','stellate ganglion']},
+    {k:'lumbar_symp',    label:'Lumbar sympathetic block',                                         codes:['64520'], syn:['lumbar sympathetic']},
+    {k:'celiac',         label:'Celiac plexus block',                                              codes:['64530'], syn:['celiac plexus']},
+    {k:'occipital',      label:'Occipital nerve block',                                            codes:['64405'], syn:['occipital nerve','greater occipital']},
+    {k:'scs_trial',      label:'Spinal cord stimulator trial',                                     codes:['63650'], syn:['spinal cord stimulator','scs trial','neurostimulator']},
+    {k:'kypho',          label:'Kyphoplasty / vertebroplasty',                                     codes:['22513','22514','22515','22510','22511','22512'], syn:['kyphoplasty','vertebroplasty','vertebral augmentation']},
+    {k:'blood_patch',    label:'Epidural blood patch',                                             codes:['62273'], syn:['blood patch']}
+  ];
+  function library(){
+    var extra=safe(function(){ return (window.__mlsStudyConfig&&Array.isArray(window.__mlsStudyConfig.extraProcedures))?window.__mlsStudyConfig.extraProcedures:[]; }, [])||[];
+    return CPT_LIBRARY.concat(extra.filter(function(g){ return g&&g.k&&g.codes; }));
+  }
+  /* Resolve UI inputs (a picked library key + free-text) into {codes,keywords,label}. */
+  function resolveCriteria(selKey, freeText){
+    var codes=[], keywords=[], labels=[], lib=library();
+    if(selKey){ var g=lib.find(function(x){return x.k===selKey;}); if(g){ codes=codes.concat(g.codes); keywords=keywords.concat(g.syn); labels.push(g.label); } }
+    var ft=String(freeText||'').trim();
+    if(ft){
+      var fc=ft.match(/\b\d{5}\b|\bG\d{4}\b/gi)||[];
+      fc.forEach(function(c){ c=c.toUpperCase(); if(codes.indexOf(c)<0) codes.push(c); });
+      var words=ft.replace(/\b\d{5}\b|\bG\d{4}\b/gi,' ').replace(/\s{2,}/g,' ').trim();
+      if(words){
+        keywords.push(words.toLowerCase());
+        lib.forEach(function(g){ if((g.syn||[]).some(function(s){ return words.toLowerCase().indexOf(s)>=0; })){ g.codes.forEach(function(c){ if(codes.indexOf(c)<0) codes.push(c); }); } });
+      }
+      labels.push(ft);
+    }
+    keywords=keywords.filter(function(k,i){ return k && keywords.indexOf(k)===i; });
+    codes=codes.filter(function(c,i){ return c && codes.indexOf(c)===i; });
+    return { codes:codes, keywords:keywords, label:labels.join(' · ')||'all patients in the report' };
+  }
+
+  /* ====================== Report parsing (robust + configurable) ======================
+     Best-effort screen-scrape of an Athena report/claims/procedure-list. Heuristic + tunable via
+     window.__mlsStudyConfig: { nameStopWords:[], dobMinAge, dobMaxAge }. Returns rows
+     {name, dob, svc, codes[], line}. Conservative — every row still passes the strict name+DOB gate
+     on import, so a bad parse can never import the wrong patient. */
+  function parseDateInput(v){ var m=String(v||'').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(!m) return null; return new Date(+m[1],+m[2]-1,+m[3]); }
+  function dobToDate(dob){ var n=normDob(dob); if(!n) return null; return new Date(parseInt(n.slice(4),10), parseInt(n.slice(0,2),10)-1, parseInt(n.slice(2,4),10)); }
+  function classifyDates(arr){
+    var yrNow=new Date().getFullYear();
+    var parsed=arr.map(function(s){ var n=normDob(s); return {s:s, y:n?parseInt(n.slice(4),10):0}; }).filter(function(d){ return d.y>0 && d.y<=yrNow+1; });
+    if(!parsed.length) return {dob:'', svc:''};
+    if(parsed.length>=2){ parsed.sort(function(a,b){return a.y-b.y;}); return {dob:parsed[0].s, svc:parsed[parsed.length-1].s}; }
+    var age=yrNow-parsed[0].y;
+    return (age>=2) ? {dob:parsed[0].s, svc:''} : {dob:'', svc:parsed[0].s};
+  }
+  function detectName(raw, firstDateIdx){
+    var stop=safe(function(){ return (window.__mlsStudyConfig&&window.__mlsStudyConfig.nameStopWords)||[]; }, [])||[];
+    var base='date|patient|name|service|procedure|report|provider|rendering|claim|claims|total|page|print|account|insurance|primary|secondary|visit|encounter|status|balance|charge|payment|appointment|department|location|day|view|time|room|type|follow|est|dos|dob|mrn|dx|mod|code|codes|qty|amt|paid|due|age|sex|male|female|athena|athenanet|athenaone|list|detail|details|summary|export|count|diagnosis|results|filter|filtered|group|none|self|null|grand|subtotal';
+    if(stop.length){ base+='|'+stop.map(function(w){return String(w).replace(/[^a-z0-9]/gi,'');}).filter(Boolean).join('|'); }
+    var bad=new RegExp('^('+base+')$','i');
+    var searchIn = (firstDateIdx!=null && firstDateIdx>3) ? raw.slice(0, firstDateIdx) : raw;
+    // "Last, First [M]" — strongest signal
+    var m=searchIn.match(/([A-Z][A-Za-z'’\-]+)\s*,\s*([A-Z][A-Za-z'’\-]+(?:\s+[A-Z][a-z]?\.?)?)/);
+    if(m) return (m[1]+', '+m[2]).replace(/\s{2,}/g,' ').trim();
+    // "First Last" (two capitalized tokens not in the header vocabulary)
+    var re=/\b([A-Z][A-Za-z'’\-]{1,})\s+([A-Z][A-Za-z'’\-]{1,})\b/g, mm;
+    while((mm=re.exec(searchIn))){
+      if(!bad.test(mm[1]) && !bad.test(mm[2])) return (mm[1]+' '+mm[2]).trim();
+    }
+    return '';
+  }
+  function parseReportRows(text){
+    var dateRe=/\b([01]?\d[\/\-\.][0-3]?\d[\/\-\.]\d{2,4})\b/g;
+    var lines=String(text||'').split(/\r?\n/);
+    var rows=[];
+    lines.forEach(function(line){
+      var raw=line.replace(/\t/g,'  ').trim(); if(raw.length<4) return;
+      var dates=[], dm; dateRe.lastIndex=0;
+      while((dm=dateRe.exec(raw))){ dates.push({s:dm[1], idx:dm.index}); }
+      var codes=(raw.match(/\b\d{5}\b|\bG\d{4}\b/g)||[]).map(function(c){return c.toUpperCase();});
+      var name=detectName(raw, dates.length?dates[0].idx:null);
+      if(!name) return;
+      var cl=classifyDates(dates.map(function(d){return d.s;}));
+      // A real procedure/claims/schedule row carries a DOB and/or a procedure code. Header/
+      // title/total lines carry neither — drop them (a row with no DOB can't be verified anyway).
+      if(!normDob(cl.dob) && !codes.length) return;
+      rows.push({ name:name, dob:cl.dob, svc:cl.svc, codes:codes, line:raw });
+    });
+    // de-dup by name+dob, merging codes / filling svc/dob
+    var seen={}, out=[];
+    rows.forEach(function(r){
+      var k=norm(r.name)+'|'+normDob(r.dob);
+      if(seen[k]){ var ex=seen[k]; r.codes.forEach(function(c){ if(ex.codes.indexOf(c)<0) ex.codes.push(c); }); if(!ex.svc&&r.svc) ex.svc=r.svc; if(!ex.dob&&r.dob) ex.dob=r.dob; return; }
+      seen[k]=r; out.push(r);
+    });
+    return out;
+  }
+  /* legacy export kept for back-compat (older briefing/tests referenced it) */
+  function extractReportRows(text){
+    return parseReportRows(text).map(function(r){ return { name:r.name, dob:r.dob }; }).filter(function(r){ return r.name && r.dob; });
+  }
+  function inRange(svc, from, to){
+    if(!svc) return true; // can't exclude a row with no service date
+    var d=dobToDate(svc); if(!d) return true;
+    var f=parseDateInput(from); if(f && d<f) return false;
+    var t=parseDateInput(to); if(t){ t.setHours(23,59,59,999); if(d>t) return false; }
+    return true;
+  }
+  function filterReportRows(rows, crit){
+    var codes=crit.codes||[], kw=(crit.keywords||[]).map(function(k){return String(k).toLowerCase();}).filter(Boolean);
+    return rows.filter(function(r){
+      var hit;
+      if(!codes.length && !kw.length){ hit=true; }
+      else {
+        var codeHit = codes.length && r.codes.some(function(c){ return codes.indexOf(c)>=0; });
+        var line=(r.line||'').toLowerCase();
+        var kwHit = kw.length && kw.some(function(k){ return line.indexOf(k)>=0; });
+        hit = codeHit || kwHit;
+      }
+      if(!hit) return false;
+      return inRange(r.svc, crit.from, crit.to);
+    });
+  }
+
+  /* ====================== gated SMART-on-FHIR cohort client ======================
+     A reliable "all patients who received CPT X" query belongs to the SMART-on-FHIR client in the
+     backend (integrations.js). This is the CLEAN app-side wiring, GATED behind a capability probe so
+     it shows NOTHING until athenahealth API access is approved (no fake data). When the backend
+     endpoint goes live it auto-enables.
+     Backend contract (to be added by the backend task, NOT changed here):
+       GET  /api/study/cohort-by-cpt/capability -> 200 { available:true, vendor, sandbox } when SMART
+            is connected & approved; 404/501/403 otherwise.
+       POST /api/study/cohort-by-cpt { cpt:[codes], dateFrom, dateTo } (auth: Bearer sf_bk_token)
+            -> 200 { ok:true, patients:[ {name, dob, mrn, history?} ], cpt, count }  */
+  function backendBase(){ return safe(function(){ return window.MLS_BACKEND || window.__mlsBackend || (window.MLS && window.MLS.backend) || 'https://scrivara-backend.onrender.com'; }, 'https://scrivara-backend.onrender.com'); }
+  function authToken(){ return safe(function(){ return localStorage.getItem('sf_bk_token')||sessionStorage.getItem('sf_bk_token')||''; }, ''); }
+  function apiFetch(path, opts){
+    opts=opts||{}; var h=Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+    var t=authToken(); if(t) h['Authorization']='Bearer '+t; opts.headers=h;
+    return fetch(backendBase()+path, opts);
+  }
+  function studyFhirProbe(){
+    return apiFetch('/api/study/cohort-by-cpt/capability', {method:'GET'})
+      .then(function(r){ if(!r.ok) return {available:false, status:r.status}; return r.json().catch(function(){ return {available:false}; }); })
+      .then(function(j){ return {available:!!(j&&j.available), info:j}; })
+      .catch(function(){ return {available:false, error:'network'}; });
+  }
+  function fhirCohortByCpt(codes, from, to){
+    return apiFetch('/api/study/cohort-by-cpt', {method:'POST', body:JSON.stringify({cpt:codes||[], dateFrom:from||'', dateTo:to||''})})
+      .then(function(r){ if(!r.ok) return {ok:false, status:r.status}; return r.json().catch(function(){ return {ok:false}; }); })
+      .catch(function(e){ return {ok:false, error:String(e&&e.message||e)}; });
+  }
+
   /* ---------- cohort tagging on the patient object ---------- */
   function findByName(name){
     var n=norm(name); var ps=getPatients();
@@ -2618,9 +2831,9 @@
     return safe(function(){ return (window.patientNotes?window.patientNotes(p.id):[]).length; }, 0);
   }
 
-  /* ---------- import one row (Mode A) ----------
+  /* ---------- import one row (shared by Mode A and Mode B) ----------
      resolver(name) -> Promise<chart|null|{__err}>; defaults to the Assist bridge.
-     On a confident match, imports via the app's existing _savePatientChart, then tags the cohort. */
+     On a confident name+DOB match, imports via the app's existing _savePatientChart, then tags. */
   function importRow(row, cohort, resolver){
     resolver = resolver || readChartFor;
     return Promise.resolve(safe(function(){ return resolver(row.name); }, null)).then(function(chart){
@@ -2629,7 +2842,6 @@
         safe(function(){ if(window._savePatientChart) window._savePatientChart(row.name, null, chart||{}); });
         var p=findByName(row.name);
         if(!p){
-          // _savePatientChart should have created it; fall back to a minimal create
           p = safe(function(){
             var np={ id:'p'+Date.now()+Math.random().toString(36).slice(2,7), name:row.name, dob:row.dob||'',
                      problems:'', meds:'', allergies:'', summary:'', docs:[], source:'study-import', created:Date.now(), updated:Date.now() };
@@ -2655,6 +2867,34 @@
     pending:      {icon:'…', cls:'wait', label:'Searching Athena…'}
   };
   function statOf(s){ return STAT[s]||STAT.error; }
+
+  /* shared sequential importer: rows[] -> verify+import each, updating per-row + summary nodes */
+  function importSequential(rows, cohort, els, onDone){
+    var counts={match:0,dob_mismatch:0,not_found:0,review:0,no_bridge:0,error:0,old_ext:0}, idx=0;
+    function step(){
+      if(idx>=rows.length){
+        if(els.sum) els.sum.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+((counts.no_bridge+counts.old_ext)?(' · '+(counts.no_bridge+counts.old_ext)+' need Assist'):'');
+        safe(function(){ if(window.renderPatients) window.renderPatients(); });
+        if(onDone) onDone(counts);
+        return;
+      }
+      var r=rows[idx];
+      importRow(r, cohort).then(function(res){
+        var st=res.status==='old-ext'?'old_ext':res.status;
+        counts[st]=(counts[st]||0)+1;
+        var s=statOf(st), el=els.row(idx);
+        if(el){
+          var extra='';
+          if(st==='dob_mismatch') extra=' (Athena: '+esc(res.chartDob||'?')+')';
+          else if(st==='review'&&res.reason) extra=' ('+esc(res.reason)+')';
+          var rs=el.querySelector('.mls-study-rs'); if(rs){ rs.className='mls-study-rs '+s.cls; rs.textContent=s.icon+' '+s.label+extra; }
+        }
+        if(els.sum) els.sum.textContent='Importing '+(idx+1)+' / '+rows.length+'…';
+        idx++; setTimeout(step, 120);
+      });
+    }
+    step();
+  }
 
   /* ====================== UI ====================== */
   var TAB='A';
@@ -2727,33 +2967,7 @@
     var banner = bridge ? '' : '<div class="mls-study-gate">⚠ MLS Assist isn’t detected. Install/enable the extension and open your signed-in Athena tab, then import. Rows will report "Assist needed".</div>';
     out.innerHTML=banner+'<div class="mls-study-sum" id="mlsStudySumLine">Importing 0 / '+rows.length+'…</div>'
       +rows.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsr'+i+'"><span class="mls-study-rn">'+esc(r.name||'(no name)')+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('');
-    var counts={match:0,dob_mismatch:0,not_found:0,review:0,no_bridge:0,error:0,old_ext:0};
-    var idx=0;
-    function step(){
-      if(idx>=rows.length){
-        var line=body.querySelector('#mlsStudySumLine');
-        if(line) line.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+((counts.no_bridge+counts.old_ext)?(' · '+(counts.no_bridge+counts.old_ext)+' need Assist'):'');
-        safe(function(){ if(window.renderPatients) window.renderPatients(); });
-        return;
-      }
-      var r=rows[idx];
-      importRow(r, cohort).then(function(res){
-        var st=res.status==='old-ext'?'old_ext':res.status;
-        counts[st]=(counts[st]||0)+1;
-        var s=statOf(st);
-        var el=body.querySelector('#mlsr'+idx);
-        if(el){
-          var extra='';
-          if(st==='dob_mismatch') extra=' (Athena: '+esc(res.chartDob||'?')+')';
-          else if(st==='review'&&res.reason) extra=' ('+esc(res.reason)+')';
-          el.querySelector('.mls-study-rs').className='mls-study-rs '+s.cls;
-          el.querySelector('.mls-study-rs').textContent=s.icon+' '+s.label+extra;
-        }
-        var line=body.querySelector('#mlsStudySumLine'); if(line) line.textContent='Importing '+(idx+1)+' / '+rows.length+'…';
-        idx++; setTimeout(step, 120);
-      });
-    }
-    step();
+    importSequential(rows, cohort, { sum: body.querySelector('#mlsStudySumLine'), row:function(i){ return body.querySelector('#mlsr'+i); } });
   }
 
   /* ----- Mode B ----- */
@@ -2771,7 +2985,26 @@
     var localHtml = keys.length
       ? '<div class="mls-study-proclist">'+keys.map(function(k){ return '<div class="mls-study-prow"><label><input type="checkbox" class="mls-study-pchk" value="'+esc(k)+'"> '+esc(k)+' <span class="mls-study-cnt">'+map[k].length+'</span></label></div>'; }).join('')+'</div>'
       : '<div class="mls-study-empty">No procedures detected on patients currently in MLS. (Procedures come from each patient’s most recent note CPT.)</div>';
+    var procOpts='<option value="">— pick a procedure / shot —</option>'+library().map(function(g){ return '<option value="'+esc(g.k)+'">'+esc(g.label)+' ('+esc(g.codes.join(', '))+')</option>'; }).join('');
     body.innerHTML=''
+      /* ---- Section 1: Find in Athena by procedure (the real grab) ---- */
+      +'<div class="mls-study-sec">'
+      +' <div class="mls-study-sech">Find patients in Athena by procedure <span class="mls-study-badge exp">needs live tuning</span></div>'
+      +' <p class="mls-study-help">Grab everyone who got a given shot/injection. In Athena, open a report or list that shows the procedure (a <b>procedure/CPT claims report</b>, a billing/charge report, or a schedule filtered by procedure) for the date range you want. Then pick the procedure or type the shot name below and click <b>Find in Athena</b>. MLS reads that open report, extracts each patient’s name + DOB, and runs every one through the same strict name + DOB verify + import as the “By name + DOB” tab. Read-only — it never writes to Athena.</p>'
+      +' <label class="mls-study-lab">Procedure / shot</label>'
+      +' <select id="mlsStudyBSel" class="mls-study-in">'+procOpts+'</select>'
+      +' <label class="mls-study-lab">…or type a shot/injection name or CPT</label>'
+      +' <input id="mlsStudyBProc" class="mls-study-in" placeholder="e.g. lumbar transforaminal ESI  ·  64483" />'
+      +' <div class="mls-study-daterow">'
+      +'   <div><label class="mls-study-lab">Service date from (optional)</label><input type="date" id="mlsStudyBFrom" class="mls-study-in" /></div>'
+      +'   <div><label class="mls-study-lab">to</label><input type="date" id="mlsStudyBTo" class="mls-study-in" /></div>'
+      +' </div>'
+      +' <label class="mls-study-lab">Cohort / study name</label>'
+      +' <input id="mlsStudyBFCohort" class="mls-study-in" placeholder="e.g. Lumbar TF-ESI 2026" />'
+      +' <div class="mls-study-actions"><button type="button" id="mlsStudyBFind" class="mls-study-btn">🔎 Find in Athena</button></div>'
+      +' <div id="mlsStudyBFindOut" class="mls-study-results"></div>'
+      +'</div>'
+      /* ---- Section 2: From patients already in MLS (works now) ---- */
       +'<div class="mls-study-sec">'
       +' <div class="mls-study-sech">From patients already in MLS <span class="mls-study-badge live">works now</span></div>'
       +' <p class="mls-study-help">Build a cohort from patients you’ve already imported, grouped by their note CPT/procedure. Tick procedures and tag them to a cohort — no Athena round-trip.</p>'
@@ -2781,22 +3014,71 @@
       +' <div class="mls-study-actions"><button type="button" id="mlsStudyBTag" class="mls-study-btn">Add matching patients to cohort</button></div>'
       +' <div id="mlsStudyBOut" class="mls-study-results"></div>'
       +'</div>'
-      +'<div class="mls-study-sec">'
-      +' <div class="mls-study-sech">From Athena report <span class="mls-study-badge exp">experimental — needs live tuning</span></div>'
-      +' <p class="mls-study-help">Best-effort: reads your open Athena tab (e.g. a procedure/claims report or schedule) and tries to extract patient rows, then runs each through the name+DOB verify+import above. Athena report layouts vary, so this needs tuning against a real signed-in report and may miss rows. It never writes to Athena.</p>'
-      +' <label class="mls-study-lab">Procedure / CPT (for the cohort name &amp; your reference)</label>'
-      +' <input id="mlsStudyBProc" class="mls-study-in" placeholder="e.g. 64483 / Lumbar transforaminal ESI" />'
-      +' <div class="mls-study-actions"><button type="button" id="mlsStudyBScrape" class="mls-study-btn ghost">⚗ Try reading open Athena report</button></div>'
-      +' <div id="mlsStudyBScrapeOut" class="mls-study-results"></div>'
-      +'</div>'
+      /* ---- Section 3: Via athenahealth FHIR API (gated) ---- */
       +'<div class="mls-study-sec gated">'
-      +' <div class="mls-study-sech">Via athenahealth API (exact procedure cohort) <span class="mls-study-badge gate">gated</span></div>'
-      +' <p class="mls-study-help">A reliable “all patients who received CPT X” query runs through the SMART-on-FHIR integration. The backend client is built, but this is <b>gated pending athenahealth developer/partner approval</b>. Once approved it will return an exact cohort (no screen-scraping). This panel is a placeholder — it shows no data until the API is live.</p>'
-      +' <button type="button" class="mls-study-btn ghost" disabled>FHIR cohort query (disabled until API access)</button>'
+      +' <div class="mls-study-sech">Via athenahealth API (exact procedure cohort) <span class="mls-study-badge gate" id="mlsStudyFhirBadge">checking…</span></div>'
+      +' <p class="mls-study-help">A reliable “all patients who received CPT X” query runs through the SMART-on-FHIR integration — no screen-scraping. This is wired and ready; it stays disabled until athenahealth developer/partner API access is approved, then it turns on automatically. It shows no data until the API is live.</p>'
+      +' <div class="mls-study-actions"><button type="button" id="mlsStudyFhirBtn" class="mls-study-btn ghost" disabled>Run exact FHIR cohort query (disabled until API access)</button></div>'
+      +' <div id="mlsStudyFhirOut" class="mls-study-results"></div>'
       +'</div>';
+    body.querySelector('#mlsStudyBFind').addEventListener('click', function(){ doFindInAthena(body); });
     body.querySelector('#mlsStudyBTag').addEventListener('click', function(){ tagLocalProcedures(body, map); });
-    var sc=body.querySelector('#mlsStudyBScrape'); if(sc) sc.addEventListener('click', function(){ tryAthenaReport(body); });
+    wireFhirPanel(body);
   }
+
+  /* ---- Section 1 logic: read Athena report -> parse -> filter -> review -> verify+import ---- */
+  function doFindInAthena(body){
+    var out=body.querySelector('#mlsStudyBFindOut');
+    var crit=resolveCriteria(body.querySelector('#mlsStudyBSel').value, body.querySelector('#mlsStudyBProc').value);
+    crit.from=(body.querySelector('#mlsStudyBFrom').value||''); crit.to=(body.querySelector('#mlsStudyBTo').value||'');
+    out.innerHTML='<div class="mls-study-sum" id="mlsStudyBStatus">Looking for MLS Assist…</div>';
+    var setS=function(m){ var n=body.querySelector('#mlsStudyBStatus'); if(n) n.textContent=m; };
+    readReportText(setS).then(function(rd){
+      var text=(rd&&rd.text)?rd.text:'';
+      if(!text){ out.innerHTML='<div class="mls-study-gate">Couldn’t read an Athena report. Open the procedure/claims report (or a filtered schedule) as your signed-in Athena tab, then try again.</div>'; return; }
+      var all=parseReportRows(text);
+      var rows=filterReportRows(all, crit);
+      renderCandidates(body, rows, all.length, crit, rd);
+    }).catch(function(err){
+      out.innerHTML='<div class="mls-study-gate">⚠ '+esc((err&&err.message)||'Couldn’t read the Athena tab.')+'</div>';
+    });
+  }
+  function renderCandidates(body, rows, totalParsed, crit, rd){
+    var out=body.querySelector('#mlsStudyBFindOut');
+    if(!rows.length){
+      out.innerHTML='<div class="mls-study-gate">Read the report ('+esc(String(totalParsed))+' patient row(s) parsed'+(rd&&rd.bestScore!=null?(', match score '+esc(String(rd.bestScore))):'')+') but none matched <b>'+esc(crit.label)+'</b>'+((crit.from||crit.to)?' in that date range':'')+'.<br>Tips: make sure the report shows the procedure/CPT column; widen or clear the date range; or open the report so the patient rows are visible. This scrape is conservative and may need tuning to your report’s layout (set <code>window.__mlsStudyConfig</code>).</div>';
+      return;
+    }
+    var withDob=rows.filter(function(r){ return normDob(r.dob); }).length;
+    out.innerHTML='<div class="mls-study-sum">Found <b>'+rows.length+'</b> patient(s) matching '+esc(crit.label)+' — '+withDob+' with a readable DOB. Review, then verify + import:</div>'
+      +'<div class="mls-study-checkall"><label><input type="checkbox" id="mlsStudyBAll" checked> Select all</label></div>'
+      +'<div class="mls-study-candlist">'+rows.map(function(r,i){
+          var d=normDob(r.dob); var cpt=r.codes.length?(' · '+esc(r.codes.join(', '))):''; var sv=r.svc?(' · DOS '+esc(r.svc)):'';
+          return '<label class="mls-study-cand"><input type="checkbox" class="mls-study-cchk" data-i="'+i+'"'+(d?' checked':'')+(d?'':' disabled')+'>'
+            +'<span class="mls-study-rn">'+esc(r.name)+'</span>'
+            +'<span class="mls-study-rd">'+esc(r.dob||'(no DOB — can’t verify)')+'</span>'
+            +'<span class="mls-study-cnt">'+(cpt||sv?(esc(((r.codes[0]||'')+ (r.svc?(' '+r.svc):'')).trim())):'')+'</span></label>';
+        }).join('')+'</div>'
+      +'<div class="mls-study-help">Only rows with a readable DOB can be verified+imported (the strict name+DOB gate needs both). Review the list — every selected patient is re-verified against their Athena chart on import, so a wrong row can’t import the wrong patient.</div>'
+      +'<label class="mls-study-lab">Cohort / study name</label>'
+      +'<input id="mlsStudyBFCohort2" class="mls-study-in" value="'+esc((body.querySelector('#mlsStudyBFCohort').value||crit.label||'').slice(0,80))+'" placeholder="cohort name" />'
+      +'<div class="mls-study-actions"><button type="button" id="mlsStudyBImport" class="mls-study-btn">✓ Verify &amp; import selected</button></div>'
+      +'<div class="mls-study-sum" id="mlsStudyBImpSum"></div>'
+      +'<div id="mlsStudyBImpRows"></div>';
+    var all=out.querySelector('#mlsStudyBAll');
+    if(all) all.addEventListener('change', function(){ out.querySelectorAll('.mls-study-cchk').forEach(function(c){ if(!c.disabled) c.checked=all.checked; }); });
+    out.querySelector('#mlsStudyBImport').addEventListener('click', function(){ importCandidates(body, rows, out); });
+  }
+  function importCandidates(body, rows, out){
+    var cohort=(out.querySelector('#mlsStudyBFCohort2').value||'').trim();
+    if(!cohort){ out.querySelector('#mlsStudyBImpSum').innerHTML='<span class="mls-study-gatetext">Enter a cohort name first.</span>'; return; }
+    var picked=[]; out.querySelectorAll('.mls-study-cchk').forEach(function(c){ if(c.checked && !c.disabled){ picked.push(rows[parseInt(c.getAttribute('data-i'),10)]); } });
+    if(!picked.length){ out.querySelector('#mlsStudyBImpSum').innerHTML='<span class="mls-study-gatetext">Tick at least one patient with a DOB.</span>'; return; }
+    var rowsBox=out.querySelector('#mlsStudyBImpRows');
+    rowsBox.innerHTML=picked.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsbc'+i+'"><span class="mls-study-rn">'+esc(r.name)+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('');
+    importSequential(picked, cohort, { sum: out.querySelector('#mlsStudyBImpSum'), row:function(i){ return out.querySelector('#mlsbc'+i); } });
+  }
+
   function tagLocalProcedures(body, map){
     var cohort=(body.querySelector('#mlsStudyBCohort').value||'').trim();
     var out=body.querySelector('#mlsStudyBOut');
@@ -2807,34 +3089,36 @@
     out.innerHTML='<div class="mls-study-sum">✓ Added '+n+' patient(s) to cohort “'+esc(cohort)+'”.</div>';
     safe(function(){ if(window.renderPatients) window.renderPatients(); });
   }
-  function tryAthenaReport(body){
-    var proc=(body.querySelector('#mlsStudyBProc').value||'').trim();
-    var out=body.querySelector('#mlsStudyBScrapeOut');
-    if(typeof window._assistReadAthenaTab!=='function'){
-      out.innerHTML='<div class="mls-study-gate">⚠ MLS Assist not detected. Open your signed-in Athena report tab and enable the extension, then try again.</div>'; return;
-    }
-    out.innerHTML='<div class="mls-study-sum">Reading the open Athena tab…</div>';
-    Promise.resolve(safe(function(){ return window._assistReadAthenaTab(); }, null)).then(function(rd){
-      var text=rd&&rd.text?rd.text:'';
-      if(!text){ out.innerHTML='<div class="mls-study-gate">Couldn’t read an Athena report. Make sure the report/claims list is the open, signed-in Athena tab.</div>'; return; }
-      var cand=extractReportRows(text);
-      if(!cand.length){ out.innerHTML='<div class="mls-study-gate">Read the tab but found no recognizable Name + DOB rows. This experimental scrape needs tuning to your report’s layout — send a (de-identified) sample column layout and it can be adapted.</div>'; return; }
-      out.innerHTML='<div class="mls-study-sum">Found '+cand.length+' candidate row(s). Copy them into the “By name + DOB” tab to verify &amp; import:</div>'
-        +'<textarea class="mls-study-ta" rows="6" readonly>'+esc(cand.map(function(c){return c.name+', '+c.dob;}).join('\n'))+'</textarea>'
-        +'<div class="mls-study-help">Experimental output — review every row before importing; the strict name+DOB gate still applies on import.</div>';
+
+  /* ---- Section 3 logic: probe + (when enabled) run the FHIR cohort query ---- */
+  function wireFhirPanel(body){
+    var badge=body.querySelector('#mlsStudyFhirBadge'), btn=body.querySelector('#mlsStudyFhirBtn'), out=body.querySelector('#mlsStudyFhirOut');
+    if(!badge||!btn) return;
+    studyFhirProbe().then(function(p){
+      if(p.available){
+        badge.textContent='API connected'; badge.className='mls-study-badge live';
+        btn.disabled=false; btn.textContent='Run exact FHIR cohort query';
+        btn.addEventListener('click', function(){ runFhirCohort(body); });
+      } else {
+        badge.textContent='gated'; badge.className='mls-study-badge gate';
+        btn.disabled=true; btn.textContent='Run exact FHIR cohort query (disabled until API access)';
+      }
     });
   }
-  function extractReportRows(text){
-    // Best-effort: pull lines that contain a DOB-like date and a plausible name. Tuned conservatively.
-    var rows=[]; String(text||'').split(/\n/).forEach(function(line){
-      var dm=line.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
-      if(!dm) return;
-      var before=line.slice(0,dm.index);
-      var nm=before.match(/([A-Z][A-Za-z'\-]+\s*,\s*[A-Z][A-Za-z'\-]+|[A-Z][A-Za-z'\-]+\s+[A-Z][A-Za-z'\-]+)/);
-      if(nm && normDob(dm[1])) rows.push({ name:nm[1].replace(/\s{2,}/g,' ').trim(), dob:dm[1] });
+  function runFhirCohort(body){
+    var out=body.querySelector('#mlsStudyFhirOut');
+    var crit=resolveCriteria(body.querySelector('#mlsStudyBSel').value, body.querySelector('#mlsStudyBProc').value);
+    if(!crit.codes.length){ out.innerHTML='<div class="mls-study-gate">Pick a procedure or enter a CPT code first (the FHIR query needs a CPT/HCPCS code).</div>'; return; }
+    var cohort=(body.querySelector('#mlsStudyBFCohort').value||crit.label||'').trim();
+    out.innerHTML='<div class="mls-study-sum">Querying athenahealth FHIR for CPT '+esc(crit.codes.join(', '))+'…</div>';
+    fhirCohortByCpt(crit.codes, body.querySelector('#mlsStudyBFrom').value, body.querySelector('#mlsStudyBTo').value).then(function(res){
+      if(!res||!res.ok||!Array.isArray(res.patients)){ out.innerHTML='<div class="mls-study-gate">The FHIR query didn’t return a cohort'+(res&&res.status?(' (HTTP '+esc(String(res.status))+')'):'')+'. The API may not be approved yet.</div>'; return; }
+      var rows=res.patients.map(function(p){ return { name:p.name||'', dob:p.dob||'', raw:'', dobValid:!!normDob(p.dob) }; }).filter(function(r){ return r.name; });
+      out.innerHTML='<div class="mls-study-sum">FHIR returned '+rows.length+' patient(s) for CPT '+esc(crit.codes.join(', '))+'. Verifying + importing into “'+esc(cohort)+'”…</div>'
+        +rows.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsfc'+i+'"><span class="mls-study-rn">'+esc(r.name)+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('')
+        +'<div class="mls-study-sum" id="mlsStudyFhirSum"></div>';
+      importSequential(rows, cohort||'FHIR cohort', { sum: out.querySelector('#mlsStudyFhirSum'), row:function(i){ return out.querySelector('#mlsfc'+i); } });
     });
-    // de-dup
-    var seen={}; return rows.filter(function(r){ var k=norm(r.name)+'|'+normDob(r.dob); if(seen[k]) return false; seen[k]=1; return true; });
   }
 
   /* ----- Cohorts view ----- */
@@ -2928,13 +3212,17 @@
       +'#mlsStudyOv code{background:var(--surface,#f1f5fb);padding:1px 5px;border-radius:5px;font-size:11.5px;}'
       +'#mlsStudyOv .mls-study-lab{display:block;font-weight:600;font-size:11.5px;margin:8px 0 4px;color:var(--ink,#15293f);}'
       +'#mlsStudyOv .mls-study-in,#mlsStudyOv .mls-study-ta{width:100%;box-sizing:border-box;font:inherit;border:1px solid var(--line,#e6e9ef);border-radius:9px;padding:8px 10px;background:var(--surface,#fafcff);color:var(--ink,#15293f);}'
+      +'#mlsStudyOv select.mls-study-in{cursor:pointer;}'
       +'#mlsStudyOv .mls-study-ta{resize:vertical;}'
+      +'#mlsStudyOv .mls-study-daterow{display:flex;gap:10px;}'
+      +'#mlsStudyOv .mls-study-daterow>div{flex:1;}'
       +'#mlsStudyOv .mls-study-actions{display:flex;gap:8px;margin:10px 0;}'
       +'#mlsStudyOv .mls-study-btn{font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--brand,#2563c9);background:var(--brand,#2563c9);color:#fff;border-radius:9px;padding:8px 14px;}'
       +'#mlsStudyOv .mls-study-btn.ghost{background:var(--surface,#fafcff);color:var(--brand,#2563c9);}'
       +'#mlsStudyOv .mls-study-btn:disabled{opacity:.5;cursor:not-allowed;}'
       +'#mlsStudyOv .mls-study-results{margin-top:8px;}'
       +'#mlsStudyOv .mls-study-sum{font-weight:600;margin:6px 0;}'
+      +'#mlsStudyOv .mls-study-gatetext{color:#b45309;font-weight:600;}'
       +'#mlsStudyOv .mls-study-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--line,#eef1f6);border-radius:8px;margin-bottom:5px;background:var(--surface,#fcfdff);}'
       +'#mlsStudyOv .mls-study-row.warn{border-color:#f0c98a;}'
       +'#mlsStudyOv .mls-study-rn{flex:1;font-weight:600;}'
@@ -2942,15 +3230,19 @@
       +'#mlsStudyOv .mls-study-rs{font-size:11.5px;font-weight:600;}'
       +'#mlsStudyOv .mls-study-rs.ok{color:#16a34a;} #mlsStudyOv .mls-study-rs.bad{color:#dc2626;} #mlsStudyOv .mls-study-rs.warn{color:#b45309;} #mlsStudyOv .mls-study-rs.gate{color:#7c5cff;} #mlsStudyOv .mls-study-rs.wait{color:var(--muted,#9aa7b4);}'
       +'#mlsStudyOv .mls-study-empty{color:var(--muted,#9aa7b4);padding:14px;text-align:center;}'
-      +'#mlsStudyOv .mls-study-gate{background:#fff7ec;border:1px solid #f0c98a;color:#7a4f12;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12px;}'
+      +'#mlsStudyOv .mls-study-gate{background:#fff7ec;border:1px solid #f0c98a;color:#7a4f12;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12px;line-height:1.5;}'
       +'#mlsStudyOv .mls-study-sec{border:1px solid var(--line,#eef1f6);border-radius:11px;padding:11px 12px;margin-bottom:12px;}'
-      +'#mlsStudyOv .mls-study-sec.gated{opacity:.85;}'
+      +'#mlsStudyOv .mls-study-sec.gated{opacity:.92;}'
       +'#mlsStudyOv .mls-study-sech{font-weight:700;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}'
       +'#mlsStudyOv .mls-study-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;}'
       +'#mlsStudyOv .mls-study-badge.live{background:#e7f7ee;color:#16794a;} #mlsStudyOv .mls-study-badge.exp{background:#fff2e0;color:#9a5a12;} #mlsStudyOv .mls-study-badge.gate{background:#efeaff;color:#5b40c9;}'
       +'#mlsStudyOv .mls-study-proclist{margin:6px 0;}'
       +'#mlsStudyOv .mls-study-prow label{display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;}'
       +'#mlsStudyOv .mls-study-cnt{color:var(--muted,#5b6b7c);font-size:11.5px;background:var(--surface,#f1f5fb);border-radius:999px;padding:1px 8px;}'
+      +'#mlsStudyOv .mls-study-checkall{margin:6px 0;font-size:12px;}'
+      +'#mlsStudyOv .mls-study-checkall label{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;}'
+      +'#mlsStudyOv .mls-study-candlist{max-height:230px;overflow:auto;margin:4px 0 8px;}'
+      +'#mlsStudyOv .mls-study-cand{display:flex;align-items:center;gap:10px;padding:5px 8px;border:1px solid var(--line,#eef1f6);border-radius:8px;margin-bottom:4px;background:var(--surface,#fcfdff);cursor:pointer;}'
       +'#mlsStudyOv .mls-study-cohlist{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}'
       +'#mlsStudyOv .mls-study-coh{display:flex;justify-content:space-between;align-items:center;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--ink,#15293f);border-radius:9px;padding:9px 12px;}'
       +'#mlsStudyOv .mls-study-coh:hover{border-color:var(--brand,#2563c9);color:var(--brand,#2563c9);}'
@@ -2964,5 +3256,7 @@
   // re-inject the launch button if the Patients toolbar re-renders
   var tries=0; var iv=setInterval(function(){ tries++; if(tries>40){ clearInterval(iv); return; } safe(injectLaunch); }, 1200);
 
-  window.__mlsStudy={ open:open, close:close, _strictMatch:strictMatch, _parseRows:parseRows, _normDob:normDob, _importRow:importRow, _listCohorts:listCohorts, _extractReportRows:extractReportRows, _tagPatientCohort:tagPatientCohort };
+  window.__mlsStudy={ open:open, close:close, _strictMatch:strictMatch, _parseRows:parseRows, _normDob:normDob, _importRow:importRow, _listCohorts:listCohorts,
+    _extractReportRows:extractReportRows, _parseReportRows:parseReportRows, _filterReportRows:filterReportRows, _resolveCriteria:resolveCriteria,
+    _classifyDates:classifyDates, _detectName:detectName, _tagPatientCohort:tagPatientCohort, _studyFhirProbe:studyFhirProbe, _library:library };
 })();
