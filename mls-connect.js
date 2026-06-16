@@ -3260,3 +3260,53 @@
     _extractReportRows:extractReportRows, _parseReportRows:parseReportRows, _filterReportRows:filterReportRows, _resolveCriteria:resolveCriteria,
     _classifyDates:classifyDates, _detectName:detectName, _tagPatientCohort:tagPatientCohort, _studyFhirProbe:studyFhirProbe, _library:library };
 })();
+
+
+/* ---- module: feat_tab_memory.js ---- */
+
+/* ===== MLS active-tab / route memory — cohesion tweak =====
+   Remembers the last tab you were on (per session) so a page reload returns you
+   where you were instead of always snapping back to Visit. Pure progressive
+   enhancement: own IIFE, guarded with try/catch, OBSERVES the active .navtab via a
+   light poll and restores by calling the public showView() — it never modifies or
+   monkey-patches any existing app function. Degrades to a silent no-op on any error.
+   Exposes window.__mlsTabMemory. */
+(function(){
+  'use strict';
+  if (window.__mlsTabMemory) return;
+  var KEY = 'mlsLastTab';
+  var VIEWS = { calendar:1, patients:1, visit:1, orders:1, recs:1, history:1, legalreq:1, team:1, analysis:1, studio:1, admin:1 };
+  function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
+  function ss(){ try{ return window.sessionStorage; }catch(e){ return null; } }
+  function viewOf(el){ if(!el) return ''; var oc=el.getAttribute('onclick')||''; var m=oc.match(/showView\(\s*['"]([a-z]+)['"]\s*\)/i); return m?m[1]:''; }
+  function currentView(){ return safe(function(){ return viewOf(document.querySelector('.navtab.on')); },''); }
+  function store(v){ var s=ss(); if(s && v && VIEWS[v]) safe(function(){ s.setItem(KEY, v); }); }
+
+  // Capture the saved tab BEFORE anything can overwrite it.
+  var s0 = ss();
+  var saved = s0 ? safe(function(){ return s0.getItem(KEY); }, '') : '';
+
+  // RECORD: light poll of which .navtab is active (catches clicks AND programmatic
+  // showView() calls alike). Started only AFTER restore so the default 'visit' on
+  // load can't clobber the saved tab.
+  var started = false, last = '';
+  function startRecording(){
+    if (started) return; started = true;
+    last = currentView();
+    setInterval(function(){ var v = currentView(); if (v && v !== last){ last = v; store(v); } }, 1000);
+  }
+
+  // RESTORE once on load, after the app's own initial showView() has run.
+  var done = false;
+  function restore(){
+    if (done) return; done = true;
+    if (saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
+      safe(function(){ window.showView(saved); });
+    }
+    setTimeout(startRecording, 200); // begin recording only after the restore settles
+  }
+  if (document.readyState === 'complete') setTimeout(restore, 800);
+  else window.addEventListener('load', function(){ setTimeout(restore, 800); });
+
+  window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY };
+})();
