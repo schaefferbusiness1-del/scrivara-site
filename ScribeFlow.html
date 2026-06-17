@@ -21167,7 +21167,7 @@ function _ptGroupSort(mode){
   function openChart(id){ safe(function(){ if (window.openPatient){ window.openPatient(id); go('patients'); } else go('patients'); }); }
   function openSchedule(id){
     safe(function(){
-      if (window.calScheduleForPatient) { window.calScheduleForPatient(id); }
+      if (window.calScheduleForPatient) { var _ap=(typeof activePt==='function'?activePt():null); window.calScheduleForPatient(_ap&&_ap.name?_ap.name:''); }
       else if (window.calOpenPatientFor) { window.calOpenPatientFor(id); }
       else { go('calendar'); }
     });
