@@ -815,6 +815,7 @@
     _summarize: summarize,
     _mean: mean, _median: median, _sd: sd,
     _exportRows: exportRows, _summaryRows: summaryRows, _toCSV: toCSV,
+    _buildStudiesFromAIPatients: buildStudiesFromAIPatients,
     _esc: esc
   };
 
@@ -960,8 +961,16 @@
       'display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:28px 14px;';
     ov.addEventListener('click', function (e) { if (e.target === ov) closeModal(); });
     var box = document.createElement('div');
-    box.style.cssText = 'width:min(960px,96vw);background:var(--bg,#0e1626);color:var(--text,#e8eefc);' +
-      'border:1px solid var(--border,#2a3550);border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,.5);padding:20px 22px;';
+    // CONTRAST FIX: scope the theme CSS variables to a self-consistent LIGHT
+    // palette on the modal box, so every descendant that reads
+    // var(--bg/--text/--panel/--border) renders dark-on-white regardless of the
+    // host app theme (previously the title + body text inherited white on a
+    // white surface and were invisible). One scoped override fixes the whole
+    // subtree on desktop and mobile.
+    box.style.cssText = 'width:min(960px,96vw);' +
+      '--bg:#ffffff;--text:#15233d;--panel:#eef2f9;--border:#cfd7e6;' +
+      'background:#ffffff;color:#15233d;' +
+      'border:1px solid #cfd7e6;border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,.5);padding:20px 22px;';
     box.innerHTML = modalHTML();
     ov.appendChild(box);
     document.body.appendChild(ov);
@@ -996,6 +1005,11 @@
         '<button id="ocPasteBtn" style="background:#33415c;' + btnCss('#33415c') + '">Paste rows</button>' +
         '<button id="ocDemo" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:7px 12px;border-radius:9px;cursor:pointer;font-size:12px">Load demo data</button>' +
       '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+        '<button id="ocAiBtn" style="' + btnCss('#7c3aed') + '">\uD83E\uDD16 Import any Excel with AI</button>' +
+        '<input type="file" id="ocAiFile" accept=".xlsx,.xls,.csv,text/csv" style="display:none">' +
+        '<span style="opacity:.7;font-size:11.5px">Any layout \u2014 the AI reads every patient &amp; score, saves them as records, and builds the study.</span>' +
+      '</div>' +
       '<textarea id="ocPaste" placeholder="Name, DOS&#10;Jane Doe, 03/04/2026&#10;John Smith, 2026-02-15" ' +
         'style="display:none;width:100%;min-height:120px;box-sizing:border-box;background:var(--panel,#0b1220);' +
         'color:inherit;border:1px solid var(--border,#2a3550);border-radius:9px;padding:10px;font-size:13px;font-family:monospace"></textarea>' +
@@ -1014,6 +1028,11 @@
       ingestRows(parsePastedRows(this.value), box, 'pasted rows');
     });
     body.querySelector('#ocDemo').addEventListener('click', function () { loadDemo(box); });
+    var aibtn = body.querySelector('#ocAiBtn'), aifile = body.querySelector('#ocAiFile');
+    if (aibtn && aifile) {
+      aibtn.addEventListener('click', function () { aifile.click(); });
+      aifile.addEventListener('change', function () { if (aifile.files && aifile.files[0]) aiImportFile(aifile.files[0], box); });
+    }
   }
 
   function parsePastedRows(text) {
@@ -1055,6 +1074,208 @@
     s.onload = function () { cb(!!(window.XLSX && window.XLSX.utils)); };
     s.onerror = function () { cb(false); };
     document.head.appendChild(s);
+  }
+
+  /* ====================================================================== *
+   * AI "any-Excel" import  (upload ANY layout -> backend advanced AI model
+   * extracts every patient + score -> save as FULL patient records + cohort,
+   * then build the study).  Deterministic auto-detect (readFile/ingestRows)
+   * stays as the fast fallback.  Auth = the app's own Bearer token; PHI flows
+   * to the backend/OpenAI here exactly as note generation does.
+   * ====================================================================== */
+  function aiEndpoint() {
+    var base = '';
+    try { base = (typeof window.bkBase === 'function') ? window.bkBase() : (window.bkBase || ''); } catch (e) {}
+    return String(base || '').replace(/\/+$/, '') + '/api/outcome/import';
+  }
+  function aiAuthToken() {
+    try { if (typeof window.bkToken === 'function') return window.bkToken() || ''; } catch (e) {}
+    try { return (window.localStorage && localStorage.getItem('sf_bk_token')) || ''; } catch (e) {}
+    return '';
+  }
+  function aiImportFile(file, box) {
+    renderAiProgress(box, file.name);
+    var log = function (t, col) { aiLog(box, t, col); };
+    readWorkbookSheets(file, function (err, sheets) {
+      if (err || !sheets || !sheets.length) {
+        log(redMsg('Could not read the spreadsheet: ' + esc((err && err.message) || 'empty file') +
+          '. You can also use the plain upload above (auto-detect).'), '#ff6b6b');
+        return;
+      }
+      var nrows = sheets.reduce(function (a, s) { return a + (s.rows ? s.rows.length : 0); }, 0);
+      log('Read <b>' + esc(file.name) + '</b> — ' + sheets.length + ' sheet(s), ' + nrows + ' row(s). Sending to the AI model for extraction…');
+      var tok = aiAuthToken();
+      if (!tok) { log(redMsg('Not signed in (no backend token found). Sign in and retry.'), '#ff6b6b'); return; }
+      fetch(aiEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({ filename: file.name, sheets: sheets })
+      }).then(function (r) {
+        return r.json().then(function (j) { return { status: r.status, j: j }; })
+                       .catch(function () { return { status: r.status, j: null }; });
+      }).then(function (resp) {
+        if (resp.status === 401 || resp.status === 403) { log(redMsg('Not authorised for AI import (' + resp.status + ').'), '#ff6b6b'); return; }
+        var j = resp.j;
+        if (!j || !j.ok || !Array.isArray(j.patients)) {
+          log(redMsg('AI import failed' + (j && j.error ? ': ' + esc(j.error) : '') + '. Try the plain upload above (auto-detect).'), '#ff6b6b');
+          return;
+        }
+        if (!j.patients.length) { log(redMsg('The AI did not find any patients in that sheet.'), '#f5a623'); return; }
+        log('AI extracted <b>' + j.patients.length + '</b> patient(s)' + (j.chunks > 1 ? ' (' + j.chunks + ' chunks)' : '') + '. Saving records & building study…', '#39d98a');
+        finishAiImport(j, file.name, box);
+      }).catch(function (e) {
+        log(redMsg('Network error contacting the AI import endpoint: ' + esc(e.message) + '. Try the plain upload above.'), '#ff6b6b');
+      });
+    });
+  }
+  function readWorkbookSheets(file, cb) {
+    var isCSV = /\.csv$/i.test(file.name) || file.type === 'text/csv';
+    ensureXLSX(function (ok) {
+      if (!ok) { cb(new Error('Excel parser failed to load')); return; }
+      var fr = new FileReader();
+      fr.onerror = function () { cb(new Error('could not read file')); };
+      fr.onload = function () {
+        try {
+          var wb = isCSV
+            ? window.XLSX.read(String(fr.result), { type: 'string' })
+            : window.XLSX.read(new Uint8Array(fr.result), { type: 'array', cellDates: true });
+          var sheets = wb.SheetNames.map(function (nm) {
+            var ws = wb.Sheets[nm];
+            var rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+            return { name: nm, rows: rows };
+          }).filter(function (s) { return s.rows && s.rows.length; });
+          cb(null, sheets);
+        } catch (e) { cb(e); }
+      };
+      if (isCSV) fr.readAsText(file); else fr.readAsArrayBuffer(file);
+    });
+  }
+  function renderAiProgress(box, fname) {
+    var body = box.querySelector('#ocBody');
+    body.innerHTML =
+      '<div style="font-size:13px;margin-bottom:8px">🤖 <b>AI import</b> — extracting patients &amp; scores from <b>' + esc(fname) + '</b> (any layout).</div>' +
+      '<div id="ocAiLog" style="margin-top:8px;font-size:12.5px;max-height:300px;overflow:auto;border:1px solid var(--border,#cfd7e6);border-radius:9px;padding:10px"></div>' +
+      '<div style="margin-top:12px"><button id="ocAiBack" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Start over</button></div>';
+    var b = body.querySelector('#ocAiBack'); if (b) b.addEventListener('click', function () { renderStep1(box); });
+  }
+  function aiLog(box, t, col) {
+    var log = box.querySelector('#ocAiLog'); if (!log) return;
+    var d = document.createElement('div'); if (col) d.style.color = col; d.innerHTML = t; d.style.marginBottom = '3px';
+    log.appendChild(d); log.scrollTop = log.scrollHeight;
+  }
+  function finishAiImport(resp, filename, box) {
+    var c = cfg();
+    var built = buildStudiesFromAIPatients(resp.patients, c);
+    if (!built.studies.length) { aiLog(box, redMsg('Extracted patients had no usable scores.'), '#f5a623'); return; }
+    var saved = saveAIPatients(resp.patients, built.studies, filename);
+    STATE.studies = built.studies;
+    STATE.patients = built.studies.map(function (s) { return { name: s.name, dos: s.dos, dosDate: parseDate(s.dos) }; });
+    STATE.rawRows = null; STATE.analysis = null;
+    STATE.ingestInfo = { ai: true, layout: 'ai', studies: built.studies, scoreCells: built.scoreCells,
+                         saved: saved, model: resp.model || '', filename: filename, skipped: [] };
+    STATE.sourceName = filename;
+    STATE.agg = aggregate(built.studies, c);
+    aiLog(box, '<b>Done.</b> Saved ' + saved.patients + ' patient record(s)' +
+      (saved.cohort ? ' to cohort “' + esc(saved.cohort) + '”' : '') + '. Opening results…', '#39d98a');
+    setTimeout(function () { renderResults(box); }, 250);
+  }
+  function aiNum(v, lo, hi) { return normScore(v, lo, hi); }
+  function aiRec(o, bucket, offset, c) {
+    if (!o) return null;
+    var vas = aiNum(o.vas, c.vasMin, c.vasMax);
+    var sf = aiNum(o.sf, c.sfMin, c.sfMax);
+    if (vas == null && sf == null) return null;
+    var d = o.date ? parseDate(o.date) : null;
+    return { date: d ? fmtISO(d) : '', offsetDays: offset, bucket: bucket, vas: vas, shortForm: sf };
+  }
+  function buildStudiesFromAIPatients(patients, c) {
+    c = c || cfg();
+    var studies = [], scoreCells = 0;
+    (patients || []).forEach(function (pt) {
+      if (!pt) return;
+      var name = (pt.name && String(pt.name).trim()) || pickExtraName(pt.extra) || 'Unknown';
+      var dosDate = pt.dos ? parseDate(pt.dos) : null;
+      var study = { name: name, dos: dosDate ? fmtISO(dosDate) : (pt.dos ? String(pt.dos) : ''),
+                    baseline: null, followups: {}, late: [], notes: [], extra: pt.extra || {} };
+      var tps = pt.timepoints || {};
+      var hasTp = false;
+      study.baseline = aiRec(tps.baseline, 'baseline', 0, c); if (study.baseline) hasTp = true;
+      c.windows.forEach(function (w) {
+        var rec = aiRec(tps[w.key], w.key, w.target, c);
+        if (rec) { study.followups[w.key] = rec; hasTp = true; }
+      });
+      if (!hasTp && Array.isArray(pt.visits) && pt.visits.length && dosDate) {
+        var visits = pt.visits.map(function (v) {
+          return { date: v.date ? parseDate(v.date) : null,
+                   vas: aiNum(v.vas, c.vasMin, c.vasMax), shortForm: aiNum(v.sf, c.sfMin, c.sfMax) };
+        });
+        var s2 = buildPatientStudy(name, dosDate, visits, c);
+        s2.extra = pt.extra || {};
+        study = s2;
+      }
+      if (study.baseline) { scoreCells += (study.baseline.vas != null) + (study.baseline.shortForm != null); }
+      Object.keys(study.followups).forEach(function (k) {
+        scoreCells += (study.followups[k].vas != null) + (study.followups[k].shortForm != null);
+      });
+      if (study.baseline || Object.keys(study.followups).length) studies.push(study);
+    });
+    return { studies: studies, scoreCells: scoreCells };
+  }
+  function pickExtraName(extra) {
+    if (!extra) return '';
+    var keys = Object.keys(extra);
+    for (var i = 0; i < keys.length; i++) { if (/name|patient|subject/i.test(keys[i]) && extra[keys[i]]) return String(extra[keys[i]]); }
+    return '';
+  }
+  function pickExtraDob(extra) {
+    if (!extra) return '';
+    var keys = Object.keys(extra);
+    for (var i = 0; i < keys.length; i++) { if (/\b(dob|birth)\b/i.test(keys[i]) && extra[keys[i]]) return String(extra[keys[i]]); }
+    return '';
+  }
+  function saveAIPatients(patients, studies, filename) {
+    var result = { patients: 0, cohort: '' };
+    var hasStore = (typeof window.upsertPatient === 'function');
+    var cohortName = 'Outcome study — ' + String(filename || 'AI import').replace(/\.(xlsx|xls|csv)$/i, '');
+    var tagFn = (window.__mlsStudy && typeof window.__mlsStudy._tagPatientCohort === 'function') ? window.__mlsStudy._tagPatientCohort : null;
+    var normDob = (window.__mlsStudy && typeof window.__mlsStudy._normDob === 'function') ? window.__mlsStudy._normDob : function (x) { return x || ''; };
+    var now = new Date().toISOString();
+    var saved = [];
+    (patients || []).forEach(function (pt, idx) {
+      if (!pt) return;
+      var name = (pt.name && String(pt.name).trim()) || pickExtraName(pt.extra) || 'Unknown';
+      var dob = '';
+      try { dob = normDob(pickExtraDob(pt.extra)) || ''; } catch (e) {}
+      var rec = {
+        id: 'oc_' + Date.now().toString(36) + '_' + idx + '_' + Math.random().toString(36).slice(2, 7),
+        name: name, dob: dob,
+        reason: 'Outcome study (AI Excel import)',
+        source: 'ai-excel-import',
+        created: now, updated: now,
+        outcome: { dos: pt.dos || '', timepoints: pt.timepoints || {}, visits: pt.visits || [] },
+        extra: pt.extra || {}
+      };
+      if (hasStore) {
+        try { window.upsertPatient(rec); result.patients++; saved.push(rec); } catch (e) {}
+        if (tagFn) { try { tagFn(rec, cohortName); result.cohort = cohortName; } catch (e) {} }
+      }
+    });
+    if (hasStore && typeof window.savePatients === 'function') {
+      try { window.savePatients(window.getPatients ? window.getPatients() : saved); } catch (e) {}
+    }
+    return result;
+  }
+  function aiBannerHTML(info) {
+    var src = info.filename ? esc(info.filename) : 'the uploaded sheet';
+    return '<div id="ocIngestBanner" style="margin-bottom:10px;padding:9px 12px;border:1px solid #6d28d9;' +
+      'background:rgba(124,58,237,.08);border-radius:10px;font-size:12.5px">' +
+      '<span style="color:#7c3aed;font-weight:600">🤖 AI import from ' + src + '</span> — <b>' +
+      info.studies.length + '</b> patient(s), <b>' + info.scoreCells + '</b> score value(s) extracted' +
+      (info.model ? ' · model ' + esc(String(info.model)) : '') + '. ' +
+      (info.saved && info.saved.patients ? '<b>' + info.saved.patients + '</b> saved as patient record(s)' +
+        (info.saved.cohort ? ' in cohort “' + esc(info.saved.cohort) + '”' : '') + '.' : '') +
+      ' <button id="ocFillAthena" style="margin-left:6px;background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">＋ Fill blanks from Athena (optional)</button>' +
+      '<div id="ocFillLog" style="margin-top:6px;font-size:11.5px"></div></div>';
   }
 
   function handleParsed(parsed, box) {
@@ -1120,6 +1341,7 @@
   // Banner shown atop results when the data came straight from the sheet.
   function ingestBannerHTML() {
     var info = STATE.ingestInfo, an = STATE.analysis;
+    if (info && info.ai) return aiBannerHTML(info);
     if (!info || !an) return '';
     var src = STATE.sourceName ? esc(STATE.sourceName) : 'the uploaded sheet';
     return '<div id="ocIngestBanner" style="margin-bottom:10px;padding:9px 12px;border:1px solid #1f6f3f;' +
