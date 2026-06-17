@@ -581,14 +581,44 @@
   function bootUI() {
     if (window.__mlsOutcome.__booted) return;
     window.__mlsOutcome.__booted = true;
-    registerCmdK();
-    var tries = 0;
-    var iv = setInterval(function () {
-      tries++;
-      try { if (mountPanel()) { clearInterval(iv); } } catch (e) {}
-      if (tries > 40) clearInterval(iv); // ~20s
-    }, 500);
     window.__mlsOutcome.open = openModal;
+    registerCmdK();
+    // The Study/Import UI is an on-demand modal (.mls-study-card) whose tab bar
+    // (.mls-study-tabs) holds "By name + DOB / By procedure / Cohorts". We add a
+    // 4th "Outcome Study" tab. Because the modal is created on demand (and may be
+    // re-created), watch the DOM and (re)inject the tab whenever it appears.
+    try {
+      injectTab();
+      var pending = false;
+      function schedule() { if (pending) return; pending = true; setTimeout(function () { pending = false; try { injectTab(); } catch (e) {} }, 250); }
+      var mo = new MutationObserver(schedule);
+      mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      window.__mlsOutcome.__mo = mo;
+    } catch (e) {}
+    // low-frequency safety scan in case an observer mutation is missed
+    setInterval(function () { try { injectTab(); } catch (e) {} }, 1500);
+  }
+
+  // Inject the "Outcome Study" tab button into the Study/Import modal tab bar.
+  function injectTab() {
+    var bars = document.querySelectorAll('.mls-study-tabs');
+    var did = false;
+    for (var i = 0; i < bars.length; i++) {
+      var bar = bars[i];
+      if (bar.querySelector('[data-mls-outcome-tab]')) continue;
+      var btn = document.createElement('button');
+      btn.setAttribute('data-mls-outcome-tab', '1');
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Outcome Study');
+      btn.textContent = '\uD83D\uDCC8 Outcome Study';
+      btn.addEventListener('click', function (e) {
+        try { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); } catch (_) {}
+        openModal();
+      }, true);
+      bar.appendChild(btn);
+      did = true;
+    }
+    return did;
   }
 
   function registerCmdK() {
