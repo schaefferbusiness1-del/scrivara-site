@@ -843,7 +843,10 @@
       dedupeSearchButton();
       var pending = false;
       function schedule() { if (pending) return; pending = true; setTimeout(function () { pending = false; try { injectTab(); } catch (e) {} try { dedupeSearchButton(); } catch (e) {} }, 250); }
-      var mo = new MutationObserver(schedule);
+      // run the de-dupe SYNCHRONOUSLY on every mutation (MutationObserver callbacks
+      // fire before the browser paints), so the static duplicate is removed the instant
+      // the __mlsGrab button is injected — no visible flash of two Search buttons.
+      var mo = new MutationObserver(function () { try { dedupeSearchButton(); } catch (e) {} schedule(); });
       mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
       window.__mlsOutcome.__mo = mo;
     } catch (e) {}
