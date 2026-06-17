@@ -613,6 +613,7 @@
       btn.textContent = '\uD83D\uDCC8 Outcome Study';
       btn.addEventListener('click', function (e) {
         try { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); } catch (_) {}
+        try { dismissStudyCard(this); } catch (_) {}
         openModal();
       }, true);
       bar.appendChild(btn);
@@ -678,6 +679,25 @@
       'font-size:13px;font-weight:600;color:#fff;background:' + (bg || '#1f9ad6') + ';';
   }
 
+  // Close the app's Study/Import modal (card + its fixed backdrop) so the
+  // Outcome Study workflow is shown on its own, not stacked behind it.
+  function dismissStudyCard(fromEl) {
+    try {
+      var card = fromEl && fromEl.closest ? fromEl.closest('.mls-study-card') : document.querySelector('.mls-study-card');
+      if (!card) return;
+      // climb to the fixed-position backdrop (the modal root)
+      var backdrop = card, el = card.parentElement, hops = 0;
+      while (el && hops < 6) { try { if (getComputedStyle(el).position === 'fixed') { backdrop = el; break; } } catch (e) {} el = el.parentElement; hops++; }
+      // prefer the app's own close button (lets it clean up state)
+      var x = card.querySelector('button');
+      var closeBtn = null, btns = card.querySelectorAll('button,[role=button],span');
+      for (var i = 0; i < btns.length; i++) { var t = (btns[i].textContent || '').trim(); if (t === '\u2715' || t === '\u00d7' || /^close$/i.test(t)) { closeBtn = btns[i]; break; } }
+      if (closeBtn) { closeBtn.click(); }
+      // belt-and-suspenders: if it is still in the DOM, hide the backdrop
+      setTimeout(function () { try { if (document.body.contains(backdrop)) backdrop.style.display = 'none'; } catch (e) {} }, 30);
+    } catch (e) {}
+  }
+
   /* ---------------------- the modal workflow ---------------------------- */
   var STATE = { patients: [], studies: [], agg: null, _demoVisits: null };
 
@@ -685,7 +705,7 @@
     closeModal();
     var ov = document.createElement('div');
     ov.id = 'mlsOutcomeModal';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(6,10,20,.66);' +
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(6,10,20,.82);' +
       'display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:28px 14px;';
     ov.addEventListener('click', function (e) { if (e.target === ov) closeModal(); });
     var box = document.createElement('div');
