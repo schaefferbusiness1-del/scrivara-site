@@ -41,6 +41,22 @@
     dosHeaders : ['dos', 'date of service', 'procedure date', 'service date',
                   'proc date', 'date', 'visit date', 'surgery date'],
 
+    // --- score-bearing-sheet ingest (the uploaded Excel IS the data source) -
+    // Header detection for sheets that already contain the VAS + short-form
+    // values at each timepoint.  Used by analyzeSheet/buildStudiesFromSheet.
+    idHeaders        : ['patient name', 'patient id', 'patient', 'pt name', 'pt',
+                        'name', 'mrn', 'medical record', 'record id', 'record',
+                        'subject', 'study id', 'chart id', 'chart'],
+    procHeaders      : ['date of service', 'procedure date', 'service date',
+                        'proc date', 'surgery date', 'injection date',
+                        'baseline date', 'index date', 'dos', 'procedure'],
+    visitDateHeaders : ['visit date', 'encounter date', 'date of visit',
+                        'date seen', 'seen on', 'appt date', 'appointment date',
+                        'follow up date', 'visit dt'],
+    timepointHeaders : ['timepoint', 'time point', 'interval', 'phase', 'period',
+                        'stage', 'follow up', 'follow-up', 'followup',
+                        'visit type', 'visit name', 'visit label'],
+
     // --- follow-up bucket windows (days post-procedure) -------------------
     // Each follow-up visit is assigned to the NEAREST target whose [min,max]
     // window contains its day-offset. Visits beyond the last window are "late"
@@ -216,6 +232,233 @@
     return -1;
   }
   function cleanStr(v) { return v == null ? '' : String(v).replace(/\s+/g, ' ').trim(); }
+
+  /* ---------------------------------------------------------------------- *
+   * 3b. SCORE-BEARING SHEET INGEST  (the uploaded Excel IS the data source)
+   * ----------------------------------------------------------------------
+   * Reads EVERY per-patient / per-timepoint VAS + short-form value straight
+   * from the sheet — NO paste, NO demo, NO Athena required.  Two layouts are
+   * auto-detected (and a manual column-mapper can override the detection):
+   *   WIDE : one row per patient, columns like "VAS baseline", "SF 10d", …
+   *   LONG : one row per visit  (patient, visit date|timepoint, pain, function)
+   * ---------------------------------------------------------------------- */
+  var TP_ORDER = ['baseline', '10d', '1mo', '2mo', '3mo'];
+
+  function normHdr(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function hdrHas(norm, list) {
+    for (var i = 0; i < (list || []).length; i++) {
+      if (norm.indexOf(list[i]) !== -1) return true;
+    }
+    return false;
+  }
+  // a timepoint key from arbitrary text (header word OR a cell value), else null
+  function detectTimepoint(s) {
+    var t = ' ' + normHdr(s).replace(/-/g, ' ') + ' ';
+    if (/\b(baseline|base|pre ?op|pre ?procedure|preop|initial|day ?0|d0|t0|visit ?0|month ?0)\b/.test(t)) return 'baseline';
+    if (/\b(10 ?d|10 ?days?|day ?10|2 ?weeks?|2 ?wk|two ?weeks?)\b/.test(t)) return '10d';
+    if (/\b(1 ?mo|1 ?months?|one ?month|month ?1|m1|30 ?d|30 ?days?|4 ?weeks?|4 ?wk)\b/.test(t)) return '1mo';
+    if (/\b(2 ?mo|2 ?months?|two ?months?|month ?2|m2|60 ?d|60 ?days?|8 ?weeks?|8 ?wk)\b/.test(t)) return '2mo';
+    if (/\b(3 ?mo|3 ?months?|three ?months?|month ?3|m3|90 ?d|90 ?days?|12 ?weeks?|12 ?wk)\b/.test(t)) return '3mo';
+    return null;
+  }
+  // a metric from arbitrary text: 'vas' (pain) | 'sf' (function) | null
+  function detectMetric(s) {
+    var t = ' ' + normHdr(s).replace(/-/g, ' ') + ' ';
+    if (/\b(short ?form|shortform|functional|function|disability|oswestry|odi|fsf|sf)\b/.test(t)) return 'sf';
+    if (/\b(vas|pain|nprs|npr|soreness|ache)\b/.test(t)) return 'vas';
+    return null;
+  }
+  // classify ONE header cell -> {role, metric, timepoint, header}
+  function classifyColumn(headerCell, c) {
+    c = c || cfg();
+    var norm = normHdr(headerCell);
+    var out = { role: 'ignore', metric: null, timepoint: null, header: cleanStr(headerCell) };
+    if (!norm) return out;
+    var metric = detectMetric(norm);
+    var tp = detectTimepoint(norm);
+    // a column whose VALUES are timepoint labels (explicitly a tp/visit-type col)
+    if (!metric && hdrHas(norm, c.timepointHeaders)) { out.role = 'timepoint'; return out; }
+    if (metric) { out.role = 'score'; out.metric = metric; out.timepoint = tp; return out; }
+    if (hdrHas(norm, c.procHeaders)) { out.role = 'dos'; return out; }
+    if (hdrHas(norm, c.visitDateHeaders)) { out.role = 'visitDate'; return out; }
+    if (hdrHas(norm, c.idHeaders)) { out.role = 'id'; return out; }
+    if (/\bdate\b/.test(norm)) { out.role = 'visitDate'; return out; }
+    return out;
+  }
+  function applyCols(res, cols) {
+    res.idCol = -1; res.dosCol = -1; res.visitDateCol = -1; res.timepointCol = -1;
+    res.wideCols = []; res.bareMetricCols = { vas: -1, sf: -1 };
+    cols.forEach(function (x, ci) {
+      if (x.role === 'id') { if (res.idCol < 0) res.idCol = ci; }
+      else if (x.role === 'dos') { if (res.dosCol < 0) res.dosCol = ci; }
+      else if (x.role === 'visitDate') { if (res.visitDateCol < 0) res.visitDateCol = ci; }
+      else if (x.role === 'timepoint') { if (res.timepointCol < 0) res.timepointCol = ci; }
+      else if (x.role === 'score') {
+        if (x.timepoint) res.wideCols.push({ col: ci, metric: x.metric, timepoint: x.timepoint });
+        else if (x.metric === 'vas') { if (res.bareMetricCols.vas < 0) res.bareMetricCols.vas = ci; }
+        else if (x.metric === 'sf') { if (res.bareMetricCols.sf < 0) res.bareMetricCols.sf = ci; }
+      }
+    });
+    res.layout = res.wideCols.length ? 'wide'
+      : (res.bareMetricCols.vas >= 0 || res.bareMetricCols.sf >= 0) ? 'long' : 'simple';
+    return res;
+  }
+  // Inspect rows (array-of-arrays) and return a column analysis.
+  function analyzeSheet(rows, c) {
+    c = c || cfg();
+    var res = { layout: 'simple', headerRow: -1, headers: [], cols: [],
+                idCol: -1, dosCol: -1, visitDateCol: -1, timepointCol: -1,
+                wideCols: [], bareMetricCols: { vas: -1, sf: -1 } };
+    if (!rows || !rows.length) return res;
+    var bestRow = -1, bestScore = -1, bestCols = null;
+    for (var i = 0; i < Math.min(rows.length, 15); i++) {
+      var r = rows[i] || [];
+      var cols = r.map(function (cell) { return classifyColumn(cell, c); });
+      var nonIgnore = cols.filter(function (x) { return x.role !== 'ignore'; }).length;
+      var hasId = cols.some(function (x) { return x.role === 'id'; });
+      var hasSignal = cols.some(function (x) { return x.role === 'score' || x.role === 'dos' || x.role === 'visitDate'; });
+      if (hasId && hasSignal && nonIgnore > bestScore) { bestScore = nonIgnore; bestRow = i; bestCols = cols; }
+    }
+    if (bestRow === -1) return res;
+    res.headerRow = bestRow; res.headers = (rows[bestRow] || []).map(cleanStr); res.cols = bestCols;
+    return applyCols(res, bestCols);
+  }
+  // Build an analysis from explicit per-column selection tokens (the mapper UI).
+  // token forms: 'ignore' | 'id' | 'dos' | 'visitDate' | 'timepoint'
+  //              | 'score:vas:baseline' … | 'bare:vas' | 'bare:sf'
+  function buildAnalysisFromMapping(headerRow, headers, selections) {
+    var cols = (selections || []).map(function (sel, ci) {
+      var o = { role: 'ignore', metric: null, timepoint: null, header: headers ? headers[ci] : '' };
+      if (!sel || sel === 'ignore') return o;
+      if (sel === 'id' || sel === 'dos' || sel === 'visitDate' || sel === 'timepoint') { o.role = sel; return o; }
+      var m = String(sel).split(':');
+      if (m[0] === 'score') { o.role = 'score'; o.metric = m[1]; o.timepoint = m[2]; }
+      else if (m[0] === 'bare') { o.role = 'score'; o.metric = m[1]; o.timepoint = null; }
+      return o;
+    });
+    var res = { layout: 'simple', headerRow: headerRow, headers: headers || [], cols: cols };
+    return applyCols(res, cols);
+  }
+
+  function readScore(cell, metric, c) {
+    return metric === 'vas' ? normScore(cell, c.vasMin, c.vasMax)
+                            : normScore(cell, c.sfMin, c.sfMax);
+  }
+  function winByKey(c, key) {
+    for (var i = 0; i < c.windows.length; i++) if (c.windows[i].key === key) return c.windows[i];
+    return null;
+  }
+  function emptyStudy(name, dosDate) {
+    return { name: name, dos: dosDate ? fmtISO(dosDate) : '', baseline: null,
+             followups: {}, late: [], notes: [] };
+  }
+  function putRec(study, tp, rec) {
+    if (tp === 'baseline') study.baseline = pickBetter(study.baseline, rec);
+    else study.followups[tp] = study.followups[tp] ? pickBetter(study.followups[tp], rec) : rec;
+  }
+  function rowHasAny(row) {
+    for (var i = 0; i < (row || []).length; i++) { if (cleanStr(row[i]) !== '') return true; }
+    return false;
+  }
+  // Turn an analyzed sheet directly into per-patient studies (same shape as
+  // buildPatientStudy output) — zero paste, zero Athena.
+  function buildStudiesFromSheet(rows, an, c) {
+    c = c || cfg();
+    var start = (an.headerRow == null ? -1 : an.headerRow) + 1;
+    var studies = [], skipped = [], scoreCells = 0;
+
+    if (an.layout === 'wide') {
+      for (var j = start; j < rows.length; j++) {
+        var row = rows[j] || [];
+        var name = cleanStr(row[an.idCol]);
+        if (!name) { if (rowHasAny(row)) skipped.push({ row: j + 1, reason: 'no patient name' }); continue; }
+        var dosDate = an.dosCol >= 0 ? parseDate(row[an.dosCol]) : null;
+        var st = emptyStudy(name, dosDate);
+        var byTp = {};
+        an.wideCols.forEach(function (wc) {
+          var val = readScore(row[wc.col], wc.metric, c);
+          if (val == null) return;
+          var slot = byTp[wc.timepoint] || (byTp[wc.timepoint] = {});
+          slot[wc.metric === 'vas' ? 'vas' : 'shortForm'] = val;
+        });
+        TP_ORDER.forEach(function (tp) {
+          var d = byTp[tp];
+          if (!d) return;
+          var w = tp === 'baseline' ? null : winByKey(c, tp);
+          var off = tp === 'baseline' ? 0 : (w ? w.target : 0);
+          var date = dosDate ? fmtISO(new Date(dosDate.getTime() + off * MS_DAY)) : '';
+          var rec = { date: date, offsetDays: off, bucket: tp,
+                      vas: d.vas != null ? d.vas : null, shortForm: d.shortForm != null ? d.shortForm : null };
+          if (rec.vas != null) scoreCells++;
+          if (rec.shortForm != null) scoreCells++;
+          putRec(st, tp, rec);
+        });
+        studies.push(st);
+      }
+    } else if (an.layout === 'long') {
+      var groups = {}, order = [];
+      for (var k = start; k < rows.length; k++) {
+        var r = rows[k] || [];
+        var nm = cleanStr(r[an.idCol]);
+        if (!nm) { if (rowHasAny(r)) skipped.push({ row: k + 1, reason: 'no patient name' }); continue; }
+        if (!groups[nm]) { groups[nm] = []; order.push(nm); }
+        groups[nm].push(r);
+      }
+      order.forEach(function (nm) {
+        var grp = groups[nm];
+        var dosDate = null, a;
+        if (an.dosCol >= 0) { for (a = 0; a < grp.length; a++) { var dd = parseDate(grp[a][an.dosCol]); if (dd) { dosDate = dd; break; } } }
+        if (an.timepointCol >= 0) {
+          // labeled long: each row carries its own timepoint label
+          var st2 = emptyStudy(nm, dosDate);
+          grp.forEach(function (r) {
+            var tp = detectTimepoint(r[an.timepointCol]);
+            if (!tp) return;
+            var vd = an.visitDateCol >= 0 ? parseDate(r[an.visitDateCol]) : (an.dosCol >= 0 ? parseDate(r[an.dosCol]) : null);
+            var vas = an.bareMetricCols.vas >= 0 ? readScore(r[an.bareMetricCols.vas], 'vas', c) : null;
+            var sf = an.bareMetricCols.sf >= 0 ? readScore(r[an.bareMetricCols.sf], 'sf', c) : null;
+            if (vas != null) scoreCells++;
+            if (sf != null) scoreCells++;
+            var w = tp === 'baseline' ? null : winByKey(c, tp);
+            var off = tp === 'baseline' ? 0 : (w ? w.target : 0);
+            putRec(st2, tp, { date: vd ? fmtISO(vd) : '', offsetDays: off, bucket: tp, vas: vas, shortForm: sf });
+          });
+          studies.push(st2);
+        } else {
+          // date-based long: pivot visit dates around DOS (or earliest visit)
+          var visits = grp.map(function (r) {
+            return {
+              date: an.visitDateCol >= 0 ? parseDate(r[an.visitDateCol]) : (an.dosCol >= 0 ? parseDate(r[an.dosCol]) : null),
+              vas: an.bareMetricCols.vas >= 0 ? readScore(r[an.bareMetricCols.vas], 'vas', c) : null,
+              shortForm: an.bareMetricCols.sf >= 0 ? readScore(r[an.bareMetricCols.sf], 'sf', c) : null
+            };
+          }).filter(function (v) { return v.date; });
+          visits.forEach(function (v) { if (v.vas != null) scoreCells++; if (v.shortForm != null) scoreCells++; });
+          if (!dosDate && visits.length) {
+            dosDate = visits.slice().sort(function (x, y) { return x.date - y.date; })[0].date;
+          }
+          studies.push(buildPatientStudy(nm, dosDate, visits, c));
+        }
+      });
+    }
+    return { studies: studies, skipped: skipped, scoreCells: scoreCells, layout: an.layout };
+  }
+  // Merge Athena-derived scores into existing studies, filling BLANKS ONLY.
+  function fillBlanksInto(target, src, c) {
+    function fill(dst, s) {
+      if (!s) return dst;
+      if (!dst) return { date: s.date, offsetDays: s.offsetDays, bucket: s.bucket, vas: s.vas, shortForm: s.shortForm };
+      if (dst.vas == null && s.vas != null) dst.vas = s.vas;
+      if (dst.shortForm == null && s.shortForm != null) dst.shortForm = s.shortForm;
+      return dst;
+    }
+    target.baseline = fill(target.baseline, src.baseline);
+    c.windows.forEach(function (w) { if (src.followups[w.key]) target.followups[w.key] = fill(target.followups[w.key], src.followups[w.key]); });
+    return target;
+  }
 
   /* ---------------------------------------------------------------------- *
    * 4. CHART TEXT -> per-visit {date, vas, shortForm}   (CONFIGURABLE)
@@ -558,6 +801,13 @@
     _daysBetween: daysBetween,
     _fmtISO: fmtISO,
     _parseSpreadsheet: parseSpreadsheet,
+    _classifyColumn: classifyColumn,
+    _detectTimepoint: detectTimepoint,
+    _detectMetric: detectMetric,
+    _analyzeSheet: analyzeSheet,
+    _buildAnalysisFromMapping: buildAnalysisFromMapping,
+    _buildStudiesFromSheet: buildStudiesFromSheet,
+    _fillBlanksInto: fillBlanksInto,
     _extractVisits: extractVisits,
     _buildPatientStudy: buildPatientStudy,
     _assignWindow: assignWindow,
@@ -699,7 +949,8 @@
   }
 
   /* ---------------------- the modal workflow ---------------------------- */
-  var STATE = { patients: [], studies: [], agg: null, _demoVisits: null };
+  var STATE = { patients: [], studies: [], agg: null, _demoVisits: null,
+                rawRows: null, analysis: null, ingestInfo: null, sourceName: '' };
 
   function openModal() {
     closeModal();
@@ -732,9 +983,13 @@
   function renderStep1(box) {
     var body = box.querySelector('#ocBody');
     body.innerHTML =
-      '<div style="font-size:13px;opacity:.85;margin-bottom:12px">Step 1 — Upload a patient spreadsheet ' +
-        '(<b>.xlsx</b>, <b>.xls</b>, or <b>.csv</b>) with a <b>patient name</b> column and a ' +
-        '<b>date of service / procedure date</b> column. Or paste rows below.</div>' +
+      '<div style="font-size:13px;opacity:.85;margin-bottom:12px">Step 1 — Upload your spreadsheet ' +
+        '(<b>.xlsx</b>, <b>.xls</b>, or <b>.csv</b>). If it already contains the scores — VAS pain (0–10) ' +
+        'and the functional short-form (0–25) at <b>baseline / 10d / 1mo / 2mo / 3mo</b> — MLS reads every ' +
+        'value straight from the sheet and shows the results immediately (no paste, no Athena). ' +
+        'Both <b>one row per patient</b> (columns like “VAS baseline”, “SF 10d”…) and ' +
+        '<b>one row per visit</b> (patient, visit date, pain, function) are auto-detected; ' +
+        'you can fine-tune the column mapping after upload.</div>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
         '<input type="file" id="ocFile" accept=".xlsx,.xls,.csv,text/csv" style="font-size:13px">' +
         '<span style="opacity:.6;font-size:12px">or</span>' +
@@ -756,7 +1011,7 @@
       if (ta.style.display === 'block') ta.focus();
     });
     body.querySelector('#ocPaste').addEventListener('input', function () {
-      handleParsed(parseSpreadsheet(parsePastedRows(this.value)), box);
+      ingestRows(parsePastedRows(this.value), box, 'pasted rows');
     });
     body.querySelector('#ocDemo').addEventListener('click', function () { loadDemo(box); });
   }
@@ -772,7 +1027,7 @@
     var isCSV = /\.csv$/i.test(f.name) || f.type === 'text/csv';
     if (isCSV) {
       var fr = new FileReader();
-      fr.onload = function () { handleParsed(parseSpreadsheet(parsePastedRows(fr.result)), box); };
+      fr.onload = function () { ingestRows(parsePastedRows(fr.result), box, f.name); };
       fr.onerror = function () { msg.innerHTML = redMsg('Could not read the file.'); };
       fr.readAsText(f);
     } else {
@@ -784,7 +1039,7 @@
             var wb = window.XLSX.read(new Uint8Array(fr.result), { type: 'array', cellDates: true });
             var ws = wb.Sheets[wb.SheetNames[0]];
             var rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
-            handleParsed(parseSpreadsheet(rows), box);
+            ingestRows(rows, box, f.name);
           } catch (e) { msg.innerHTML = redMsg('Could not parse the spreadsheet: ' + esc(e.message)); }
         };
         fr.onerror = function () { msg.innerHTML = redMsg('Could not read the file.'); };
@@ -832,6 +1087,180 @@
     acts.querySelector('#ocRunDemo').addEventListener('click', function () { runFromInline(box); });
   }
   function redMsg(t) { return '<span style="color:#ff6b6b">⚠ ' + t + '</span>'; }
+
+  /* ---- Excel-as-data-source router (zero paste / zero Athena) ---------- */
+  // Analyze the uploaded rows. If the sheet already carries the scores (wide
+  // or long), build the study + results straight from the file. Otherwise
+  // fall back to the legacy name+DOS path (paste/Athena/demo).
+  function ingestRows(rows, box, sourceName) {
+    var c = cfg();
+    var an = analyzeSheet(rows, c);
+    STATE.rawRows = rows; STATE.analysis = an; STATE.sourceName = sourceName || '';
+    if (an.layout === 'wide' || an.layout === 'long') {
+      var built = buildStudiesFromSheet(rows, an, c);
+      if (!built.studies.length) {
+        var msg0 = box.querySelector('#ocParseMsg');
+        if (msg0) msg0.innerHTML = redMsg('A score layout was detected but no patient rows were read. Use “Adjust columns”.');
+        renderMapper(box);
+        return;
+      }
+      STATE.studies = built.studies;
+      STATE.patients = built.studies.map(function (s) { return { name: s.name, dos: s.dos, dosDate: parseDate(s.dos) }; });
+      STATE.ingestInfo = built;
+      STATE.agg = aggregate(built.studies, c);
+      renderResults(box);
+    } else {
+      STATE.ingestInfo = null;
+      handleParsed(parseSpreadsheet(rows, c), box);
+    }
+  }
+
+  function layoutLabel(l) { return l === 'wide' ? 'one row per patient' : l === 'long' ? 'one row per visit' : l; }
+
+  // Banner shown atop results when the data came straight from the sheet.
+  function ingestBannerHTML() {
+    var info = STATE.ingestInfo, an = STATE.analysis;
+    if (!info || !an) return '';
+    var src = STATE.sourceName ? esc(STATE.sourceName) : 'the uploaded sheet';
+    return '<div id="ocIngestBanner" style="margin-bottom:10px;padding:9px 12px;border:1px solid #1f6f3f;' +
+      'background:rgba(57,217,138,.08);border-radius:10px;font-size:12.5px">' +
+      '<span style="color:#39d98a">✓ Read directly from ' + src + '</span> — ' +
+      esc(layoutLabel(info.layout)) + ' layout, <b>' + info.studies.length + '</b> patient(s), <b>' +
+      info.scoreCells + '</b> score value(s) read from the sheet. No paste or Athena needed.' +
+      (info.skipped && info.skipped.length ? ' <span style="color:#f5a623">' + info.skipped.length + ' row(s) skipped.</span>' : '') +
+      ' <button id="ocAdjustCols" style="margin-left:6px;background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">🛠 Adjust columns</button>' +
+      ' <button id="ocFillAthena" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">＋ Fill blanks from Athena (optional)</button>' +
+      '<div id="ocFillLog" style="margin-top:6px;font-size:11.5px"></div></div>';
+  }
+  function wireIngestBanner(box) {
+    var a = box.querySelector('#ocAdjustCols'); if (a) a.addEventListener('click', function () { renderMapper(box); });
+    var f = box.querySelector('#ocFillAthena'); if (f) f.addEventListener('click', function () { fillBlanksFromAthena(box); });
+  }
+
+  /* ---- manual column-mapper fallback (any layout works) ---------------- */
+  var MAP_OPTIONS = [
+    ['ignore', '— ignore —'],
+    ['id', 'Patient name / ID'],
+    ['dos', 'Date of service (procedure)'],
+    ['visitDate', 'Visit date (per-visit rows)'],
+    ['timepoint', 'Timepoint label (baseline / 10d / …)'],
+    ['score:vas:baseline', 'VAS pain — baseline'],
+    ['score:vas:10d', 'VAS pain — 10 days'],
+    ['score:vas:1mo', 'VAS pain — 1 month'],
+    ['score:vas:2mo', 'VAS pain — 2 months'],
+    ['score:vas:3mo', 'VAS pain — 3 months'],
+    ['bare:vas', 'VAS pain — (per-visit value)'],
+    ['score:sf:baseline', 'Short-form — baseline'],
+    ['score:sf:10d', 'Short-form — 10 days'],
+    ['score:sf:1mo', 'Short-form — 1 month'],
+    ['score:sf:2mo', 'Short-form — 2 months'],
+    ['score:sf:3mo', 'Short-form — 3 months'],
+    ['bare:sf', 'Short-form — (per-visit value)']
+  ];
+  function colToken(x) {
+    if (!x) return 'ignore';
+    if (x.role === 'id' || x.role === 'dos' || x.role === 'visitDate' || x.role === 'timepoint') return x.role;
+    if (x.role === 'score') return x.timepoint ? ('score:' + x.metric + ':' + x.timepoint) : ('bare:' + x.metric);
+    return 'ignore';
+  }
+  function renderMapper(box) {
+    var body = box.querySelector('#ocBody');
+    var an = STATE.analysis, rows = STATE.rawRows || [];
+    if (!an || an.headerRow < 0) { body.innerHTML = redMsg('No spreadsheet loaded to map. Go back and upload a file.') +
+      '<div style="margin-top:12px"><button id="ocMapBack" style="' + btnCss('#33415c') + '">↩ Back</button></div>';
+      var bb = body.querySelector('#ocMapBack'); if (bb) bb.addEventListener('click', function () { renderStep1(box); }); return; }
+    var headers = an.headers || [];
+    var firstData = rows[an.headerRow + 1] || [];
+    var optsFor = function (sel) {
+      return MAP_OPTIONS.map(function (o) {
+        return '<option value="' + o[0] + '"' + (o[0] === sel ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+      }).join('');
+    };
+    var rowsHtml = headers.map(function (h, ci) {
+      var sel = colToken(an.cols && an.cols[ci]);
+      var sample = cleanStr(firstData[ci]);
+      return '<tr style="border-top:1px solid var(--border,#222e48)">' +
+        '<td style="padding:5px 9px;font-weight:600">' + esc(h || ('Column ' + (ci + 1))) + '</td>' +
+        '<td style="padding:5px 9px;opacity:.7;font-size:11.5px">' + esc(sample) + '</td>' +
+        '<td style="padding:5px 9px"><select data-mapcol="' + ci + '" style="background:var(--panel,#0b1220);color:inherit;' +
+          'border:1px solid var(--border,#2a3550);border-radius:7px;padding:4px 6px;font-size:12px">' + optsFor(sel) + '</select></td></tr>';
+    }).join('');
+    body.innerHTML =
+      '<div style="font-size:13px;opacity:.85;margin-bottom:10px">🛠 <b>Column mapping</b> — confirm what each column holds, then build the study. ' +
+        'Use the per-timepoint options for one-row-per-patient sheets, or the “(per-visit value)” + “Timepoint label / Visit date” options for one-row-per-visit sheets.</div>' +
+      '<div style="max-height:340px;overflow:auto;border:1px solid var(--border,#2a3550);border-radius:9px">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>' +
+        '<th style="text-align:left;padding:5px 9px;position:sticky;top:0;background:var(--panel,#10182a)">Column</th>' +
+        '<th style="text-align:left;padding:5px 9px;position:sticky;top:0;background:var(--panel,#10182a)">Sample</th>' +
+        '<th style="text-align:left;padding:5px 9px;position:sticky;top:0;background:var(--panel,#10182a)">Maps to</th></tr></thead><tbody>' +
+        rowsHtml + '</tbody></table></div>' +
+      '<div id="ocMapMsg" style="margin-top:10px;font-size:12.5px"></div>' +
+      '<div style="margin-top:12px">' +
+        '<button id="ocMapApply" style="' + btnCss('#1f9ad6') + '">✓ Apply mapping &amp; build study</button> ' +
+        '<button id="ocMapBack" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Back</button></div>';
+    body.querySelector('#ocMapBack').addEventListener('click', function () {
+      if (STATE.ingestInfo) renderResults(box); else renderStep1(box);
+    });
+    body.querySelector('#ocMapApply').addEventListener('click', function () { applyMapping(box); });
+  }
+  function applyMapping(box) {
+    var c = cfg();
+    var selects = box.querySelectorAll('select[data-mapcol]');
+    var sels = [];
+    for (var i = 0; i < selects.length; i++) { sels[+selects[i].getAttribute('data-mapcol')] = selects[i].value; }
+    var an = buildAnalysisFromMapping(STATE.analysis.headerRow, STATE.analysis.headers, sels);
+    if (an.layout === 'simple') {
+      box.querySelector('#ocMapMsg').innerHTML = redMsg('Map at least one VAS or short-form column (and a Patient column) to build the study.');
+      return;
+    }
+    STATE.analysis = an;
+    var built = buildStudiesFromSheet(STATE.rawRows, an, c);
+    if (!built.studies.length) {
+      box.querySelector('#ocMapMsg').innerHTML = redMsg('No patient rows read with this mapping — check the Patient column.');
+      return;
+    }
+    STATE.studies = built.studies;
+    STATE.patients = built.studies.map(function (s) { return { name: s.name, dos: s.dos, dosDate: parseDate(s.dos) }; });
+    STATE.ingestInfo = built;
+    STATE.agg = aggregate(built.studies, c);
+    renderResults(box);
+  }
+
+  /* ---- optional: pull Athena charts to FILL BLANKS ONLY ---------------- */
+  function fillBlanksFromAthena(box) {
+    var c = cfg();
+    var log = box.querySelector('#ocFillLog');
+    function put(t, col) { if (!log) return; var d = document.createElement('div'); if (col) d.style.color = col; d.innerHTML = t; log.appendChild(d); }
+    var reader = resolveChartReader();
+    if (!reader) {
+      put(redMsg('Athena chart-read bridge not found (MLS Assist + a signed-in athenaOne tab needed). The sheet results above are unchanged.'), '#ff6b6b');
+      return;
+    }
+    put('Filling blanks read-only via MLS Assist (never Save/Sign)…');
+    var i = 0, filled = 0;
+    (function next() {
+      if (i >= STATE.studies.length) {
+        STATE.agg = aggregate(STATE.studies, c);
+        put('<b>Done.</b> Filled ' + filled + ' blank field(s) from Athena.', '#39d98a');
+        setTimeout(function () { renderResults(box); }, 300);
+        return;
+      }
+      var st = STATE.studies[i++];
+      var p = { name: st.name, dos: st.dos };
+      Promise.resolve().then(function () { return reader(p); }).then(function (chartText) {
+        var before = countScores(st);
+        fillBlanksInto(st, buildPatientStudy(st.name, parseDate(st.dos), extractVisits(chartText, c), c), c);
+        filled += countScores(st) - before;
+        next();
+      }).catch(function () { next(); });
+    })();
+  }
+  function countScores(st) {
+    var n = 0;
+    if (st.baseline) { if (st.baseline.vas != null) n++; if (st.baseline.shortForm != null) n++; }
+    for (var k in st.followups) { if (st.followups[k].vas != null) n++; if (st.followups[k].shortForm != null) n++; }
+    return n;
+  }
 
   function loadDemo(box) {
     var c = cfg();
@@ -950,6 +1379,7 @@
     var body = box.querySelector('#ocBody');
     var agg = STATE.agg, c = cfg();
     body.innerHTML =
+      ingestBannerHTML() +
       '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">' +
         '<div style="font-size:13px;opacity:.85;max-width:560px">' + esc(summarize(agg, c)) + '</div>' +
         '<div><button id="ocExpCsv" style="' + btnCss('#33415c') + '">⬇ CSV</button> ' +
@@ -963,6 +1393,7 @@
     body.querySelector('#ocExpCsv').addEventListener('click', exportCSVFile);
     body.querySelector('#ocExpXlsx').addEventListener('click', exportXLSXFile);
     body.querySelector('#ocBack').addEventListener('click', function () { renderStep1(box); });
+    wireIngestBanner(box);
   }
 
   function statTable(title, block, lowerIsBetter) {
