@@ -858,7 +858,7 @@
   }
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script src="legal-connect-ui.js?v=20260617"></script>
 <style id="mls-redesign">
 #visitView .mls-more-toggle{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:2px 0 12px;padding:11px 14px;cursor:pointer;background:var(--soft);border:1.5px dashed var(--line);color:var(--brand-dk);font-weight:700;font-size:14px;border-radius:11px}
 #visitView .mls-more-toggle:hover{border-color:var(--brand);background:var(--soft2)}
@@ -8517,7 +8517,7 @@ function renderLawyers(list, justCreated){
     h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No lawyers invited yet.</div>';
   }
   h+='<div style="border-top:1px dashed #d9cdf0;padding-top:10px;margin-top:6px">';
-  h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Invite a lawyer</div>';
+  h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">🔗 Self-serve connect link</div>'; h+='<div class="mini" style="color:var(--muted);margin-bottom:6px">Share one link; any attorney who opens it creates their own portal login, auto-connected to you.</div>'; h+='<button class="btn-ghost" id="lawLinkBtn" style="font-size:13px;padding:7px 13px;margin-bottom:8px" onclick="publishLawyerConnectLink()">🔗 Get connect link</button><div id="lawConnectLinkBox" style="margin-bottom:10px"></div>'; h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Invite a lawyer</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
   h+='<input id="lawName" placeholder="Name / firm" style="flex:1;min-width:120px;border:1px solid #cdbce8;border-radius:8px;padding:7px 9px;font-size:13px">';
   h+='<input id="lawEmail" type="email" placeholder="Email" style="flex:2;min-width:160px;border:1px solid #cdbce8;border-radius:8px;padding:7px 9px;font-size:13px">';
