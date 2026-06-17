@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://formsubmit.co https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://scrivara-backend.onrender.com; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://formsubmit.co https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>For Attorneys — Expert physician reports in 24 hours | MLS</title>
@@ -107,20 +107,29 @@ header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdro
 @media(max-width:820px){ .hl{grid-template-columns:1fr} }
 
 /* DIRECTORY */
-.dir-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center;margin-bottom:30px}
+.dir-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center;margin-bottom:14px}
 .dir-controls input,.dir-controls select{border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff}
-.dir-controls input{flex:1;min-width:240px;max-width:380px}
+.dir-controls input{flex:1;min-width:240px;max-width:360px}
 .dir-controls input:focus,.dir-controls select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+.dir-statebar{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:30px;color:var(--ink2);font-size:14.5px}
+.dir-statebar select{border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;font-size:14.5px;font-family:inherit;color:var(--ink);background:#fff;font-weight:600}
 .dir-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
 @media(max-width:860px){ .dir-grid{grid-template-columns:1fr 1fr} }
 @media(max-width:560px){ .dir-grid{grid-template-columns:1fr} }
-.docs-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column}
-.docs-card .av{width:50px;height:50px;border-radius:13px;background:linear-gradient(135deg,#2dd4bf,#2563c9);color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
-.docs-card h3{font-size:17px;margin-bottom:3px}
+.docs-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;transition:.16s;position:relative}
+.docs-card:hover{transform:translateY(-3px);border-color:#d4e0ef}
+.docs-card.is-match{border-color:#f0d79a;box-shadow:0 0 0 2px #fbeec6,var(--shadow)}
+.docs-card .match-tag{position:absolute;top:14px;right:14px;font-size:11px;font-weight:800;color:var(--gold);background:#fff7e6;border:1px solid #f0d79a;border-radius:20px;padding:3px 9px}
+.docs-card .head{display:flex;gap:13px;align-items:center;margin-bottom:12px}
+.docs-card .photo{width:56px;height:56px;border-radius:14px;object-fit:cover;background:#dde7f1;border:1px solid var(--line);flex:0 0 auto}
+.docs-card .av{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#2dd4bf,#2563c9);color:#fff;font-weight:800;font-size:19px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.docs-card h3{font-size:17px;margin:0 0 2px}
+.docs-card .cred{color:var(--muted);font-size:12.5px;line-height:1.3}
 .docs-card .spec{color:var(--brand);font-weight:700;font-size:13.5px;margin-bottom:8px}
 .docs-card .meta{color:var(--muted);font-size:13px;margin-bottom:4px;display:flex;gap:6px;align-items:flex-start}
 .docs-card .bio{color:var(--ink2);font-size:14px;margin:10px 0 16px;flex:1}
-.docs-card .btn{margin-top:auto}
+.docs-card .row-btns{margin-top:auto;display:flex;gap:8px}
+.docs-card .row-btns .btn{flex:1}
 .dir-state{text-align:center;color:var(--ink2);background:var(--soft);border:1px dashed #cdd9e8;border-radius:var(--radius);padding:38px 26px;max-width:680px;margin:0 auto}
 .dir-state h3{margin-bottom:8px}
 .dir-state p{color:var(--muted);font-size:15px;margin-top:6px}
@@ -240,14 +249,19 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:46px 0 36
 <div class="sec-head">
 <span class="eyebrow">Expert directory</span>
 <h2>Find a physician for your case</h2>
-<p>Search participating spine, pain and PM&amp;R physicians. Filter by specialty, then request a report or connect directly.</p>
+<p>Search participating spine, pain and PM&amp;R physicians. Set your state to see physicians licensed in your venue first.</p>
 </div>
 <div class="dir-controls">
 <input id="dirSearch" type="search" placeholder="Search by name, specialty, jurisdiction…" aria-label="Search experts">
 <select id="dirSpec" aria-label="Filter by specialty"><option value="">All specialties</option></select>
 </div>
+<div class="dir-statebar">
+<label for="dirState">📍 Your state:</label>
+<select id="dirState" aria-label="Your state"><option value="">All states</option></select>
+<span id="dirStateNote"></span>
+</div>
 <div id="dirGrid" class="dir-grid" style="display:none"></div>
-<div id="dirState" class="dir-state">
+<div id="dirStateMsg" class="dir-state">
 <h3>Loading the expert directory…</h3>
 <p>One moment while we pull the current list of participating physicians.</p>
 </div>
@@ -365,48 +379,59 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:46px 0 36
 const BACKEND_URL="https://scrivara-backend.onrender.com";
 const REQUEST_ENDPOINT="https://formsubmit.co/ajax/michael@mlsscribe.com";
 
-/* ---------- session detection (existing attorney portal login) ---------- */
-function getSessionToken(){
-  try{ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }catch(e){ return ''; }
-}
+const STATE_NAMES={AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',PR:'Puerto Rico'};
 
 /* ---------- expert directory ---------- */
 let ALL_EXPERTS=[];
+let YOUR_STATE='';
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
 function field(o,keys){ for(const k of keys){ if(o&&o[k]!=null&&String(o[k]).trim()!=='') return o[k]; } return ''; }
-function initials(name){ const p=String(name||'').replace(/^(dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i,'').trim().split(/\s+/); return ((p[0]||'')[0]||'')+((p[p.length-1]||'')[0]||'')||'Dr'; }
+function initials(name){ const p=String(name||'').replace(/^(dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i,'').trim().split(/\s+/); return (((p[0]||'')[0]||'')+((p[p.length-1]||'')[0]||'')).toUpperCase()||'DR'; }
 function money(cents){ const n=Number(cents); if(!n||isNaN(n)) return ''; return '$'+(n/100).toLocaleString('en-US',{maximumFractionDigits:0}); }
+
+function expertStates(e){ return Array.isArray(e.states)?e.states:[]; }
 
 function expertCard(e){
   const name=field(e,['name','display_name','doctor_name','full_name'])||'Participating physician';
-  const spec=field(e,['expert_specialty','specialty']);
-  const juris=field(e,['expert_jurisdiction','jurisdiction']);
-  const bio=field(e,['expert_bio','bio','cv_text']);
+  const cred=field(e,['credentials']);
+  const spec=field(e,['specialty','expert_specialty']);
+  const sub=field(e,['subspecialty']);
+  const juris=field(e,['jurisdiction','expert_jurisdiction']);
+  const bio=field(e,['headline','bio','expert_bio','cv_text']);
   const depo=money(field(e,['depo_rate_cents']));
   const trial=money(field(e,['trial_rate_cents']));
   const id=field(e,['id','user_id','expert_id']);
+  const states=expertStates(e);
+  const isMatch = YOUR_STATE && states.indexOf(YOUR_STATE)!==-1;
+  const detail='expert.html?id='+encodeURIComponent(id)+(YOUR_STATE?('&state='+encodeURIComponent(YOUR_STATE)):'');
+
+  const photo = e.has_photo
+    ? '<img class="photo" alt="'+esc(name)+'" src="'+BACKEND_URL+esc(e.photo_url)+'">'
+    : '<div class="av">'+esc(initials(name))+'</div>';
+
   let rates='';
   if(depo||trial){ rates='<div class="meta">💵 '+(depo?('Depo '+esc(depo)):'')+(depo&&trial?' · ':'')+(trial?('Trial '+esc(trial)):'')+'</div>'; }
-  return '<div class="docs-card" data-id="'+esc(id)+'">'
-    +'<div class="av">'+esc(initials(name).toUpperCase())+'</div>'
-    +'<h3>'+esc(name)+'</h3>'
-    +(spec?'<div class="spec">'+esc(spec)+'</div>':'')
-    +(juris?'<div class="meta">📍 '+esc(juris)+'</div>':'')
+  const statesTxt = states.length ? states.slice(0,6).join(', ')+(states.length>6?'…':'') : juris;
+
+  return '<div class="docs-card'+(isMatch?' is-match':'')+'" data-id="'+esc(id)+'">'
+    +(isMatch?'<span class="match-tag">📍 '+esc(YOUR_STATE)+'</span>':'')
+    +'<div class="head">'+photo+'<div><h3>'+esc(name)+'</h3>'+(cred?'<div class="cred">'+esc(cred)+'</div>':'')+'</div></div>'
+    +((spec||sub)?'<div class="spec">'+esc([spec,sub].filter(Boolean).join(' · '))+'</div>':'')
+    +(statesTxt?'<div class="meta">📍 '+esc(statesTxt)+'</div>':'')
     +rates
-    +(bio?'<p class="bio">'+esc(String(bio).slice(0,220))+(String(bio).length>220?'…':'')+'</p>':'<p class="bio" style="color:var(--muted)">Profile details available on request.</p>')
-    +'<a class="btn btn-primary btn-sm" href="#request" onclick="prefillRequest('+JSON.stringify(esc(name))+','+JSON.stringify(esc(spec))+')">Request this expert</a>'
+    +(bio?'<p class="bio">'+esc(String(bio).slice(0,160))+(String(bio).length>160?'…':'')+'</p>':'<p class="bio" style="color:var(--muted)">Full profile available.</p>')
+    +'<div class="row-btns"><a class="btn btn-primary btn-sm" href="'+detail+'">View profile →</a></div>'
     +'</div>';
 }
 
 function renderExperts(list){
   const grid=document.getElementById('dirGrid');
-  const state=document.getElementById('dirState');
+  const state=document.getElementById('dirStateMsg');
   if(!list.length){
-    grid.style.display='none';
-    grid.innerHTML='';
+    grid.style.display='none'; grid.innerHTML='';
     state.style.display='block';
     if(ALL_EXPERTS.length){
-      state.innerHTML='<h3>No matches</h3><p>No participating physicians match that search yet. Try a different specialty, or send a request below and we’ll match you.</p>';
+      state.innerHTML='<h3>No matches</h3><p>No participating physicians match that search yet. Try a different specialty or state, or send a request below and we’ll match you.</p>';
     }
     return;
   }
@@ -419,22 +444,39 @@ function applyFilters(){
   const q=(document.getElementById('dirSearch').value||'').toLowerCase().trim();
   const spec=document.getElementById('dirSpec').value;
   let list=ALL_EXPERTS.slice();
-  if(spec) list=list.filter(e=>String(field(e,['expert_specialty','specialty']))===spec);
+  if(spec) list=list.filter(e=>String(field(e,['specialty','expert_specialty']))===spec);
   if(q) list=list.filter(e=>JSON.stringify(e).toLowerCase().includes(q));
+  // state-first ordering on the client too (server already orders, but search/spec may reorder)
+  if(YOUR_STATE){
+    const match=list.filter(e=>expertStates(e).indexOf(YOUR_STATE)!==-1);
+    const rest=list.filter(e=>expertStates(e).indexOf(YOUR_STATE)===-1);
+    list=match.concat(rest);
+    const note=document.getElementById('dirStateNote');
+    if(note) note.textContent = match.length ? ('Showing '+match.length+' physician'+(match.length===1?'':'s')+' licensed in '+(STATE_NAMES[YOUR_STATE]||YOUR_STATE)+' first.') : ('No physician is licensed in '+(STATE_NAMES[YOUR_STATE]||YOUR_STATE)+' yet — showing all.');
+  } else {
+    const note=document.getElementById('dirStateNote'); if(note) note.textContent='';
+  }
   renderExperts(list);
 }
 
 function populateSpecialties(){
   const sel=document.getElementById('dirSpec');
-  const specs=[...new Set(ALL_EXPERTS.map(e=>String(field(e,['expert_specialty','specialty']))).filter(Boolean))].sort();
+  const specs=[...new Set(ALL_EXPERTS.map(e=>String(field(e,['specialty','expert_specialty']))).filter(Boolean))].sort();
   specs.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
+}
+function populateStateSelect(){
+  const sel=document.getElementById('dirState');
+  Object.keys(STATE_NAMES).forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=STATE_NAMES[c]; sel.appendChild(o); });
+  // restore from URL ?state=
+  try{ const u=new URLSearchParams(location.search).get('state'); if(u&&STATE_NAMES[u.toUpperCase()]){ YOUR_STATE=u.toUpperCase(); sel.value=YOUR_STATE; } }catch(e){}
 }
 
 async function loadExperts(){
-  const state=document.getElementById('dirState');
+  const state=document.getElementById('dirStateMsg');
   try{
-    const r=await fetch(BACKEND_URL+'/api/experts',{headers:{'Accept':'application/json'}});
-    const d=await r.json().catch(()=>({}));
+    const url=BACKEND_URL+'/api/public/experts'+(YOUR_STATE?('?state='+encodeURIComponent(YOUR_STATE)):'');
+    let r=await fetch(url,{headers:{'Accept':'application/json'}});
+    let d=await r.json().catch(()=>({}));
     ALL_EXPERTS=Array.isArray(d.experts)?d.experts:(Array.isArray(d)?d:[]);
     if(!ALL_EXPERTS.length){
       document.getElementById('dirGrid').style.display='none';
@@ -452,8 +494,14 @@ async function loadExperts(){
     state.innerHTML='<h3>Directory temporarily unavailable</h3><p>We couldn’t reach the directory just now. Please send a request below and we’ll match your case directly, or try again shortly.</p>';
   }
 }
+
 document.getElementById('dirSearch').addEventListener('input',applyFilters);
 document.getElementById('dirSpec').addEventListener('change',applyFilters);
+document.getElementById('dirState').addEventListener('change',function(){
+  YOUR_STATE=this.value||'';
+  try{ const u=new URL(location.href); if(YOUR_STATE) u.searchParams.set('state',YOUR_STATE); else u.searchParams.delete('state'); history.replaceState(null,'',u.toString()); }catch(e){}
+  applyFilters();
+});
 
 /* ---------- request form ---------- */
 function prefillRequest(name,spec){
@@ -463,6 +511,11 @@ function prefillRequest(name,spec){
     if(msg && msg.value.indexOf('Re:')!==0){ msg.value=pre+msg.value; msg.focus(); }
   }catch(e){}
 }
+// prefill from an expert profile page handoff
+try{
+  const stash=sessionStorage.getItem('mls_req_expert');
+  if(stash){ const ex=JSON.parse(stash); if(ex&&ex.name){ window.addEventListener('DOMContentLoaded',function(){ prefillRequest(ex.name,ex.specialty); }); } sessionStorage.removeItem('mls_req_expert'); }
+}catch(e){}
 
 async function submitRequest(e){
   e.preventDefault();
@@ -487,6 +540,7 @@ async function submitRequest(e){
   return false;
 }
 
+populateStateSelect();
 loadExperts();
 </script>
 </body>

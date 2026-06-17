@@ -138,3 +138,21 @@
     } catch (e) { return ''; }
   };
 })();
+
+/* ---------------------------------------------------------------------------
+   MLS — additive loader: pull in the Expert Marketplace editor.
+   (Kept here so ScribeFlow.html needs no edit; this file is already included.)
+   Loads expert-marketplace-ui.js, which injects the doctor-facing
+   "List yourself on the attorney marketplace" editor next to the existing
+   expert opt-in box. Fully self-contained; safe no-op on error.
+   ------------------------------------------------------------------------ */
+(function () {
+  try {
+    if (window.__mlsExpertMktLoader) return;
+    window.__mlsExpertMktLoader = true;
+    var s = document.createElement('script');
+    s.src = 'expert-marketplace-ui.js?v=20260617a';
+    s.async = true;
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) { /* best-effort */ }
+})();

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://scrivara-backend.onrender.com; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://formsubmit.co https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expert physician profile | MLS for Attorneys</title>
+<meta name="description" content="Board-certified, actively-practicing physician available for IME, expert narrative, causation and record-review reports — signed within 24 hours. View credentials, jurisdictions, deposition & trial availability and fees.">
+<meta name="theme-color" content="#0e2238">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" href="icon-32.png">
+<style>
+:root{
+--ink:#0e2238; --ink2:#3a5575; --muted:#6a829c; --line:#e7edf4;
+--bg:#ffffff; --soft:#f6f9fc; --soft2:#eef4fb;
+--brand:#2563eb; --brand-dk:#1b4fd1; --teal:#0d9488; --green:#127a4d; --gold:#b4842a;
+--radius:16px; --shadow:0 1px 2px rgba(16,40,70,.04), 0 10px 30px rgba(16,40,70,.05);
+--maxw:1080px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased;font-size:17px}
+a{color:var(--brand);text-decoration:none}
+h1,h2,h3{letter-spacing:-.02em;line-height:1.14;margin:0}
+h1{font-size:clamp(26px,4vw,40px);font-weight:850}
+h2{font-size:21px;font-weight:800}
+h3{font-size:16px;font-weight:700}
+p{margin:0}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:15.5px;border-radius:12px;padding:13px 22px;cursor:pointer;border:1.5px solid transparent;transition:.16s;white-space:nowrap}
+.btn-primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn-primary:hover{background:var(--brand-dk);border-color:var(--brand-dk);transform:translateY(-1px)}
+.btn-ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--brand);color:var(--brand)}
+.btn-sm{padding:9px 15px;font-size:14px;border-radius:10px}
+
+/* NAV */
+header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdrop-filter:saturate(150%) blur(12px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;gap:22px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;color:var(--ink)}
+.brand .mk svg{width:30px;height:30px;display:block}
+.brand .tagpill{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--brand);background:var(--soft2);border:1px solid #dbe7f7;padding:3px 8px;border-radius:20px;margin-left:2px}
+.nav .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.nav .signin{color:var(--ink);font-weight:700;font-size:15px;padding:9px 14px;border-radius:10px}
+.nav .signin:hover{background:var(--soft)}
+
+main{padding:34px 0 70px}
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-weight:600;font-size:14.5px;margin-bottom:20px}
+.back:hover{color:var(--brand)}
+
+/* HERO CARD */
+.phero{display:grid;grid-template-columns:180px 1fr;gap:28px;align-items:start;background:linear-gradient(160deg,#f3f8ff,#eefaf5);border:1px solid #dceaf8;border-radius:22px;padding:28px}
+.phero .photo{width:180px;height:180px;border-radius:18px;object-fit:cover;background:#dde7f1;border:1px solid var(--line);box-shadow:var(--shadow)}
+.phero .photo-ph{width:180px;height:180px;border-radius:18px;background:linear-gradient(135deg,#2dd4bf,#2563c9);color:#fff;font-weight:800;font-size:54px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+.phero .cred{color:var(--ink2);font-size:15.5px;margin-top:4px;font-weight:600}
+.phero .spec{color:var(--brand);font-weight:800;font-size:15px;margin-top:8px}
+.phero .headline{color:var(--ink2);font-size:17px;margin-top:14px;max-width:620px}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;border-radius:30px;padding:5px 12px;background:#fff;border:1px solid var(--line);color:var(--ink2)}
+.badge.green{background:#eafaf1;border-color:#bfe8d2;color:var(--green)}
+.badge.match{background:#fff7e6;border-color:#f0d79a;color:var(--gold)}
+.phero .cta{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+@media(max-width:720px){ .phero{grid-template-columns:1fr;text-align:center} .phero .photo,.phero .photo-ph{margin:0 auto} .phero .cta,.badges{justify-content:center} }
+
+/* BODY GRID */
+.layout{display:grid;grid-template-columns:1fr 320px;gap:28px;margin-top:30px}
+@media(max-width:860px){ .layout{grid-template-columns:1fr} }
+.block{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);margin-bottom:20px}
+.block h2{margin-bottom:12px}
+.block p{color:var(--ink2);font-size:15.5px}
+.adcopy p{margin-bottom:12px}
+.kv{display:flex;flex-direction:column;gap:12px}
+.kv .row{display:flex;gap:10px;align-items:flex-start;font-size:14.5px}
+.kv .row .lbl{color:var(--muted);font-weight:700;min-width:108px;flex:0 0 auto}
+.kv .row .val{color:var(--ink);font-weight:600}
+.docs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.docs a{display:flex;gap:10px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--ink);font-weight:600;font-size:14px}
+.docs a:hover{border-color:var(--brand);color:var(--brand)}
+.statechips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:12.5px;font-weight:700;border-radius:8px;padding:4px 9px;background:var(--soft2);border:1px solid #dbe7f7;color:var(--brand-dk)}
+.chip.hl{background:#fff7e6;border-color:#f0d79a;color:var(--gold)}
+.aside .block{position:sticky;top:84px}
+.fee{display:flex;justify-content:space-between;font-size:14.5px;padding:7px 0;border-bottom:1px solid var(--line)}
+.fee:last-child{border-bottom:none}
+.fee .v{font-weight:800}
+.note{font-size:12.5px;color:var(--muted);margin-top:14px;line-height:1.45}
+.statebar{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:22px}
+.statebar label{font-size:13.5px;font-weight:700;color:var(--ink2)}
+.statebar select{border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;font-size:14px;font-family:inherit;color:var(--ink);background:#fff}
+
+#loadState{text-align:center;color:var(--ink2);background:var(--soft);border:1px dashed #cdd9e8;border-radius:var(--radius);padding:46px 26px;max-width:620px;margin:30px auto}
+
+footer{background:var(--soft);border-top:1px solid var(--line);padding:40px 0 34px;margin-top:40px}
+.foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.foot .muted{color:var(--muted);font-size:14px;max-width:360px;margin-top:10px}
+.foot a{color:var(--ink2);font-weight:600;font-size:14.5px}
+.foot .links{display:flex;gap:22px;flex-wrap:wrap}
+.foot .fineprint{color:var(--muted);font-size:12.5px;margin-top:24px;border-top:1px solid var(--line);padding-top:18px}
+</style>
+</head>
+<body id="top">
+
+<header>
+<div class="wrap nav">
+<a class="brand" href="lawyers.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS <span class="tagpill">For Attorneys</span></a>
+<div class="right">
+<a class="signin" href="ScribeFlow.html">Attorney sign in</a>
+<a class="btn btn-primary btn-sm" href="lawyers.html#request">Request a report</a>
+</div>
+</div>
+</header>
+
+<main>
+<div class="wrap">
+<a class="back" href="lawyers.html#directory">← Back to the expert directory</a>
+<div id="content" style="display:none"></div>
+<div id="loadState"><h2>Loading physician profile…</h2><p style="color:var(--muted);margin-top:8px">One moment.</p></div>
+</div>
+</main>
+
+<footer>
+<div class="wrap">
+<div class="foot">
+<div>
+<a class="brand" href="index.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</a>
+<p class="muted">Connecting attorneys with board-certified spine, pain and PM&amp;R physicians for fast, defensible medico-legal reports. By MLS Scribe LLC.</p>
+</div>
+<div class="links">
+<a href="lawyers.html#directory">Find an expert</a>
+<a href="lawyers.html#how">How it works</a>
+<a href="lawyers.html#request">Request a report</a>
+<a href="ScribeFlow.html">Sign in</a>
+<a href="mailto:michael@mlsscribe.com">Contact</a>
+</div>
+</div>
+<p class="fineprint">© 2026 MLS Scribe LLC. MLS provides a platform that connects attorneys with independent physician experts; it does not itself render medical or legal opinions. Profile content is supplied by the physician. A signed patient authorization is required before any report is released. HIPAA-ready architecture; Business Associate Agreements in progress — synthetic data only until compliance review is complete.</p>
+</div>
+</footer>
+
+<script>
+const BACKEND_URL="https://scrivara-backend.onrender.com";
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+function qp(k){ try{ return new URLSearchParams(location.search).get(k)||''; }catch(e){ return ''; } }
+function initials(name){ const p=String(name||'').replace(/^(dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i,'').trim().split(/\s+/); return (((p[0]||'')[0]||'')+((p[p.length-1]||'')[0]||'')).toUpperCase()||'DR'; }
+function money(cents){ const n=Number(cents); if(!n||isNaN(n)) return ''; return '$'+(n/100).toLocaleString('en-US',{maximumFractionDigits:0}); }
+function paras(text){ return String(text||'').split(/\n{2,}/).map(function(p){ return p.trim(); }).filter(Boolean).map(function(p){ return '<p>'+esc(p).replace(/\n/g,'<br>')+'</p>'; }).join(''); }
+
+const STATE_NAMES={AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',PR:'Puerto Rico'};
+
+function render(e){
+  const yourState=(qp('state')||'').toUpperCase();
+  const states=Array.isArray(e.states)?e.states:[];
+  const match = yourState && states.indexOf(yourState)!==-1;
+  const photo = e.has_photo
+    ? '<img class="photo" alt="'+esc(e.name)+'" src="'+BACKEND_URL+esc(e.photo_url)+'">'
+    : '<div class="photo-ph">'+esc(initials(e.name))+'</div>';
+
+  const badges=[];
+  badges.push('<span class="badge green">🩺 Actively practicing</span>');
+  if(e.credentials && /board/i.test(e.credentials)) badges.push('<span class="badge">🎓 Board-certified</span>');
+  badges.push('<span class="badge">⏱️ 24-hour reports</span>');
+  if(match) badges.unshift('<span class="badge match">📍 Licensed in '+esc(STATE_NAMES[yourState]||yourState)+'</span>');
+
+  const reqHref='lawyers.html#request';
+
+  // header card
+  let h='<div class="phero">'+photo+'<div>'
+    +'<h1>'+esc(e.name)+'</h1>'
+    +(e.credentials?'<div class="cred">'+esc(e.credentials)+'</div>':'')
+    +((e.specialty||e.subspecialty)?'<div class="spec">'+esc([e.specialty,e.subspecialty].filter(Boolean).join(' · '))+'</div>':'')
+    +(e.headline?'<div class="headline">'+esc(e.headline)+'</div>':'')
+    +'<div class="badges">'+badges.join('')+'</div>'
+    +'<div class="cta"><a class="btn btn-primary" href="'+reqHref+'" onclick="stashExpert()">Request this expert</a>'
+    +'<a class="btn btn-ghost" href="mailto:michael@mlsscribe.com?subject='+encodeURIComponent('Expert request: '+e.name)+'">Email about this expert</a></div>'
+    +'</div></div>';
+
+  // optional "your state" bar
+  h+='<div class="statebar"><label for="stateSel">📍 Your state:</label>'
+    +'<select id="stateSel"><option value="">Select…</option>'
+    +Object.keys(STATE_NAMES).map(function(c){ return '<option value="'+c+'"'+(c===yourState?' selected':'')+'>'+esc(STATE_NAMES[c])+'</option>'; }).join('')
+    +'</select><span style="font-size:13px;color:var(--muted)">See whether this physician is licensed where your case sits.</span></div>';
+
+  // main + aside
+  h+='<div class="layout"><div class="mainCol">';
+
+  if(e.ad_copy){ h+='<div class="block adcopy"><h2>About '+esc((e.name||'').split(/\s+/)[0]||'this physician')+'</h2>'+paras(e.ad_copy)+'</div>'; }
+  else if(e.bio){ h+='<div class="block adcopy"><h2>About</h2>'+paras(e.bio)+'</div>'; }
+
+  const kvRows=[];
+  if(e.specialty||e.subspecialty) kvRows.push(['Specialty', [e.specialty,e.subspecialty].filter(Boolean).join(' · ')]);
+  if(e.years) kvRows.push(['Experience', e.years]);
+  if(e.depo_experience) kvRows.push(['Deposition', e.depo_experience]);
+  if(e.trial_experience) kvRows.push(['Trial / testimony', e.trial_experience]);
+  if(e.availability) kvRows.push(['Availability', e.availability]);
+  if(e.contact_pref) kvRows.push(['Contact', e.contact_pref]);
+  if(kvRows.length){
+    h+='<div class="block"><h2>Credentials &amp; experience</h2><div class="kv">'
+      +kvRows.map(function(r){ return '<div class="row"><span class="lbl">'+esc(r[0])+'</span><span class="val">'+esc(r[1])+'</span></div>'; }).join('')
+      +'</div></div>';
+  }
+
+  if(states.length){
+    h+='<div class="block"><h2>Licensed jurisdictions</h2><div class="statechips">'
+      +states.map(function(c){ return '<span class="chip'+(c===yourState?' hl':'')+'">'+esc(c)+(STATE_NAMES[c]?(' · '+esc(STATE_NAMES[c])):'')+'</span>'; }).join('')
+      +'</div></div>';
+  }
+
+  if(Array.isArray(e.documents) && e.documents.length){
+    h+='<div class="block"><h2>Documents</h2><ul class="docs">'
+      +e.documents.map(function(d){ return '<a href="'+BACKEND_URL+esc(d.url)+'" target="_blank" rel="noopener">📄 '+esc(d.label||d.filename||'Document')+'</a>'; }).join('')
+      +'</ul><p class="note">Documents are provided by the physician (e.g. CV, de-identified sample report, certifications).</p></div>';
+  }
+
+  h+='</div>'; // mainCol
+
+  // aside (fees + CTA)
+  h+='<div class="aside"><div class="block">';
+  h+='<h2>Engagement</h2>';
+  const depo=money(e.depo_rate_cents), trial=money(e.trial_rate_cents);
+  if(depo||trial||e.fee_info){
+    if(depo) h+='<div class="fee"><span>Deposition</span><span class="v">'+esc(depo)+'/hr</span></div>';
+    if(trial) h+='<div class="fee"><span>Trial / testimony</span><span class="v">'+esc(trial)+'/hr</span></div>';
+    if(e.fee_info) h+='<p class="note">'+esc(e.fee_info)+'</p>';
+  } else {
+    h+='<p class="note">Fees on request — included with your engagement quote.</p>';
+  }
+  h+='<a class="btn btn-primary" style="width:100%;margin-top:16px" href="'+reqHref+'" onclick="stashExpert()">Request this expert</a>';
+  h+='<p class="note">Online payment is being finalized; until then billing is arranged directly. A signed patient authorization (HIPAA §164.508) is required before any report is released.</p>';
+  h+='</div></div>';
+
+  h+='</div>'; // layout
+
+  document.getElementById('content').innerHTML=h;
+  document.getElementById('content').style.display='block';
+  document.getElementById('loadState').style.display='none';
+  document.title = e.name + ' — Expert physician | MLS for Attorneys';
+
+  // store name/spec so the request form can prefill
+  window.__expert={ id:e.id, name:e.name, specialty:e.specialty };
+  var sel=document.getElementById('stateSel');
+  if(sel) sel.addEventListener('change', function(){ const v=this.value; const u=new URL(location.href); if(v) u.searchParams.set('state',v); else u.searchParams.delete('state'); location.href=u.toString(); });
+}
+
+function stashExpert(){
+  try{ if(window.__expert){ sessionStorage.setItem('mls_req_expert', JSON.stringify(window.__expert)); } }catch(e){}
+}
+
+async function load(){
+  const id=qp('id');
+  const ls=document.getElementById('loadState');
+  if(!id){ ls.innerHTML='<h2>No physician selected</h2><p style="margin-top:8px">Return to the <a href="lawyers.html#directory">expert directory</a> to choose a physician.</p>'; return; }
+  try{
+    const r=await fetch(BACKEND_URL+'/api/public/experts/'+encodeURIComponent(id),{headers:{Accept:'application/json'}});
+    if(r.status===404){ ls.innerHTML='<h2>Profile not available</h2><p style="margin-top:8px">This physician is not currently listed in the public directory. Browse <a href="lawyers.html#directory">other experts</a> or <a href="lawyers.html#request">send a request</a> and we’ll match your case.</p>'; return; }
+    if(!r.ok) throw new Error('status '+r.status);
+    const d=await r.json();
+    if(!d.expert) throw new Error('no data');
+    render(d.expert);
+  }catch(e){
+    ls.innerHTML='<h2>Couldn’t load this profile</h2><p style="margin-top:8px">Please try again shortly, or browse the <a href="lawyers.html#directory">expert directory</a>.</p>';
+  }
+}
+load();
+</script>
+</body>
+</html>
