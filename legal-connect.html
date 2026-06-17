@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Connect to a physician's legal portal — MLS</title>
+<style>
+  :root{ --bg:#f4f6fa; --card:#ffffff; --ink:#15293f; --muted:#5b6b7e; --line:#e2e8f1; --brand:#2563c9; --brand-dk:#1b4fa6; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .card{ background:var(--card); width:100%; max-width:440px; border:1px solid var(--line); border-radius:16px; padding:26px 24px; box-shadow:0 8px 30px rgba(20,40,70,.08); }
+  .logo{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .logo .mark{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#2dd4bf,#2563c9); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; }
+  h1{ font-size:19px; margin:14px 0 4px; }
+  p.sub{ color:var(--muted); font-size:14px; margin:0 0 18px; line-height:1.45; }
+  label{ display:block; font-size:13px; font-weight:600; margin:12px 0 5px; }
+  input{ width:100%; border:1px solid #cdd8e6; border-radius:9px; padding:10px 11px; font-size:14px; }
+  input:focus{ outline:none; border-color:var(--brand); }
+  button.go{ width:100%; margin-top:18px; background:var(--brand); color:#fff; border:none; border-radius:10px; padding:12px; font-size:15px; font-weight:700; cursor:pointer; }
+  button.go:disabled{ opacity:.6; cursor:default; }
+  .msg{ font-size:13px; border-radius:9px; padding:10px 12px; margin-top:14px; display:none; }
+  .msg.err{ background:#fdecec; border:1px solid #f5c6c6; color:#a23030; }
+  .msg.ok{ background:#eafaf1; border:1px solid #b8e6cd; color:#1d7a4d; }
+  .foot{ font-size:12px; color:var(--muted); margin-top:16px; line-height:1.4; }
+  a{ color:var(--brand-dk); }
+  .hide{ display:none; }
+  .spin{ text-align:center; color:var(--muted); font-size:14px; padding:14px 0; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo"><div class="mark">⚖️</div><div style="font-weight:800">MLS Legal Portal</div></div>
+    <div id="loading" class="spin">Checking your invitation link…</div>
+    <div id="invalid" class="hide">
+      <h1>This link isn't valid</h1>
+      <p class="sub" id="invalidMsg">This connection link is invalid or has been turned off. Ask the physician for a current link.</p>
+      <a href="/ScribeFlow.html">Go to the MLS sign-in page</a>
+    </div>
+    <div id="form" class="hide">
+      <h1 id="title">Connect to your physician's legal portal</h1>
+      <p class="sub" id="subtitle">Create your secure attorney login to request reports and exchange case files. You'll only have access to the legal request portal — never clinical charts.</p>
+      <label for="name">Your name / firm</label>
+      <input id="name" type="text" autocomplete="name" placeholder="Jane Doe, Esq. / Doe &amp; Associates">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@lawfirm.com">
+      <label for="password">Choose a password</label>
+      <input id="password" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+      <label for="password2">Confirm password</label>
+      <input id="password2" type="password" autocomplete="new-password" placeholder="Re-enter password">
+      <button id="go" class="go" onclick="submitConnect()">Create my portal login</button>
+      <div id="msg" class="msg"></div>
+      <div class="foot">Already have a login? <a href="/ScribeFlow.html">Sign in here.</a> This portal is encrypted and limited to legal requests only.</div>
+    </div>
+  </div>
+<script>
+  var BACKEND_URL = 'https://scrivara-backend.onrender.com';
+  function qp(n){ try{ return new URLSearchParams(location.search).get(n)||''; }catch(e){ return ''; } }
+  var TOKEN = qp('token');
+  function show(id){ document.getElementById(id).classList.remove('hide'); }
+  function hide(id){ document.getElementById(id).classList.add('hide'); }
+  function setMsg(t,kind){ var m=document.getElementById('msg'); m.textContent=t; m.className='msg '+(kind||'err'); m.style.display=t?'block':'none'; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+
+  async function init(){
+    if(!TOKEN){ hide('loading'); document.getElementById('invalidMsg').textContent='No connection token was provided in the link.'; show('invalid'); return; }
+    try{
+      var r = await fetch(BACKEND_URL+'/api/legal/connect/'+encodeURIComponent(TOKEN));
+      var d = await r.json().catch(function(){return {};});
+      hide('loading');
+      if(!r.ok || !d.ok){ document.getElementById('invalidMsg').textContent=(d&&d.error)||'This connection link is invalid or has been turned off.'; show('invalid'); return; }
+      var dn = d.doctor_name || 'your physician';
+      document.getElementById('title').textContent = 'Connect to ' + dn + "'s legal portal";
+      document.getElementById('subtitle').textContent = "You've been invited to "+dn+"'s secure medical-legal portal. Create your attorney login below to request reports and exchange case files. You'll only have access to the legal request portal — never clinical charts.";
+      show('form');
+    }catch(e){ hide('loading'); document.getElementById('invalidMsg').textContent='Could not reach the server. Please try again in a moment.'; show('invalid'); }
+  }
+
+  async function submitConnect(){
+    var name=(document.getElementById('name').value||'').trim();
+    var email=(document.getElementById('email').value||'').trim();
+    var pw=document.getElementById('password').value||'';
+    var pw2=document.getElementById('password2').value||'';
+    setMsg('','');
+    if(!email){ setMsg('Enter your email.','err'); return; }
+    if(pw.length<8){ setMsg('Choose a password of at least 8 characters.','err'); return; }
+    if(pw!==pw2){ setMsg('The two passwords do not match.','err'); return; }
+    var btn=document.getElementById('go'); btn.disabled=true; btn.textContent='Creating…';
+    try{
+      var r=await fetch(BACKEND_URL+'/api/legal/connect/'+encodeURIComponent(TOKEN),{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name,email:email,password:pw}) });
+      var d=await r.json().catch(function(){return {};});
+      if(!r.ok || !d.ok || !d.token){
+        btn.disabled=false; btn.textContent='Create my portal login';
+        setMsg((d&&d.error)||'Could not create your login.','err');
+        return;
+      }
+      try{ sessionStorage.setItem('sf_bk_token',d.token); localStorage.setItem('sf_bk_token',d.token); sessionStorage.setItem('sf_session',email); localStorage.setItem('sf_session',email); }catch(e){}
+      setMsg('Login created — taking you to your portal…','ok');
+      setTimeout(function(){ location.href='/ScribeFlow.html'; }, 800);
+    }catch(e){ btn.disabled=false; btn.textContent='Create my portal login'; setMsg('Could not reach the server. Please try again.','err'); }
+  }
+  init();
+</script>
+</body>
+</html>
