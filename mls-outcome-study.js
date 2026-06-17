@@ -840,14 +840,37 @@
     // re-created), watch the DOM and (re)inject the tab whenever it appears.
     try {
       injectTab();
+      dedupeSearchButton();
       var pending = false;
-      function schedule() { if (pending) return; pending = true; setTimeout(function () { pending = false; try { injectTab(); } catch (e) {} }, 250); }
+      function schedule() { if (pending) return; pending = true; setTimeout(function () { pending = false; try { injectTab(); } catch (e) {} try { dedupeSearchButton(); } catch (e) {} }, 250); }
       var mo = new MutationObserver(schedule);
       mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
       window.__mlsOutcome.__mo = mo;
     } catch (e) {}
     // low-frequency safety scan in case an observer mutation is missed
-    setInterval(function () { try { injectTab(); } catch (e) {} }, 1500);
+    setInterval(function () { try { injectTab(); } catch (e) {} try { dedupeSearchButton(); } catch (e) {} }, 1500);
+  }
+
+  // BUG-1 FIX: the "By procedure" actions row can show TWO identical
+  // "Search Athena with MLS Assist" buttons -- the static one baked into the
+  // Study/Import render (#mlsStudyBAuto, satellite) AND the one injected by the
+  // __mlsGrab autopilot module (#mlsGrabAthenaBtn, robot). __mlsGrab is the
+  // feature-complete path (drives + paginates the athenaOne search, links pulled
+  // patients to the calendar, and owns the Auto-run / Add-calendar toggles), so
+  // we keep it and remove the static duplicate. We only remove #mlsStudyBAuto
+  // when #mlsGrabAthenaBtn is actually present, so a Search action is never left
+  // missing. (To instead keep #mlsStudyBAuto and drop #mlsGrabAthenaBtn, swap the
+  // two ids below.)
+  function dedupeSearchButton() {
+    try {
+      var rows = document.querySelectorAll('.mls-study-actions');
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var keep = row.querySelector('#mlsGrabAthenaBtn');
+        var dup = row.querySelector('#mlsStudyBAuto');
+        if (keep && dup && dup !== keep && dup.parentNode) { dup.parentNode.removeChild(dup); }
+      }
+    } catch (e) {}
   }
 
   // Inject the "Outcome Study" tab button into the Study/Import modal tab bar.
@@ -864,13 +887,62 @@
       btn.textContent = '\uD83D\uDCC8 Outcome Study';
       btn.addEventListener('click', function (e) {
         try { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); } catch (_) {}
-        try { dismissStudyCard(this); } catch (_) {}
-        openModal();
+        // BUG-2 FIX: render the Outcome Study workflow INSIDE the Study/Import
+        // card body, keeping the tab bar (By name+DOB / By procedure / Cohorts /
+        // Outcome Study) visible & selectable. Falls back to the standalone modal
+        // if the card body can't be located (e.g. opened via Cmd-K).
+        openInline(this);
       }, true);
       bar.appendChild(btn);
+      // BUG-2 FIX: when the user clicks one of the app's own tabs, make sure the
+      // Outcome Study tab loses its active highlight (the app re-renders the card
+      // body for that tab, which also clears our inline panel).
+      if (!bar.__mlsOutcomeBarWired) {
+        bar.__mlsOutcomeBarWired = true;
+        bar.addEventListener('click', function (ev) {
+          try {
+            var b = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+            if (b && !b.hasAttribute('data-mls-outcome-tab')) {
+              var ob = bar.querySelector('[data-mls-outcome-tab]');
+              if (ob) ob.classList.remove('on');
+            }
+          } catch (_) {}
+        }, false);
+      }
       did = true;
     }
     return did;
+  }
+
+  // BUG-2 FIX: mount the Outcome Study workflow into the Study/Import card body
+  // (#mlsStudyBody) instead of a separate full-screen modal, so the card's tab
+  // bar stays visible and every tab remains selectable. The entire workflow is
+  // already parameterised by its container, so we just pass #mlsStudyBody as the
+  // mount point. If anything is missing we degrade to the standalone modal.
+  function openInline(tabBtn) {
+    try {
+      var card = (tabBtn && tabBtn.closest) ? tabBtn.closest('.mls-study-card') : document.querySelector('.mls-study-card');
+      var bodyEl = card ? card.querySelector('#mlsStudyBody') : null;
+      if (!card || !bodyEl) { openModal(); return; }
+      // active tab states (the app marks the active tab with class "on")
+      var bar = card.querySelector('.mls-study-tabs');
+      if (bar) { var bs = bar.querySelectorAll('button'); for (var i = 0; i < bs.length; i++) bs[i].classList.remove('on'); }
+      if (tabBtn && tabBtn.classList) tabBtn.classList.add('on');
+      // mount container — scope a self-consistent LIGHT palette (same contrast
+      // fix as the modal) so all text renders dark-on-white inside the card.
+      bodyEl.innerHTML = '';
+      var box = document.createElement('div');
+      box.id = 'mlsOutcomeInline';
+      box.style.cssText = '--bg:#ffffff;--text:#15233d;--panel:#eef2f9;--border:#cfd7e6;color:#15233d;padding:2px 0;';
+      box.innerHTML = modalHTML();
+      bodyEl.appendChild(box);
+      // the card already has its own X in the header and the tabs are right
+      // there, so hide the redundant inline close button.
+      var c2 = box.querySelector('#ocClose'); if (c2) c2.style.display = 'none';
+      renderStep1(box);
+    } catch (e) {
+      try { openModal(); } catch (_) {}
+    }
   }
 
   function registerCmdK() {
