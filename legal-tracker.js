@@ -75,9 +75,17 @@
       var status = String(rq.status || 'pending').toLowerCase();
       var fulfilled = (status === 'fulfilled' || status === 'done' ||
                        status === 'complete' || !!rq.result_text);
+      var paid = (rq.paid === true || rq.paid === 1);
       var hasAuth = (rq.has_authorization === true || rq.has_authorization === 1 ||
                      rq.hasAuthorization === true);
-      var paid = (rq.paid === true || rq.paid === 1);
+
+      /* Keep the timeline strictly monotonic: a later milestone implies the
+         earlier ones are satisfied. The §34 consent gate already blocks
+         fulfilment until a signed authorization is on file, so a fulfilled
+         (or paid) report means authorization was received. This avoids a
+         confusing "backwards" current-step marker on older records. */
+      hasAuth   = hasAuth || fulfilled || paid;
+      fulfilled = fulfilled || paid;
 
       /* Ordered milestones — each tied to a real backend signal. */
       var steps = [
