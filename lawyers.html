@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://formsubmit.co https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>For Attorneys — Expert physician reports in 24 hours | MLS</title>
+<meta name="description" content="MLS connects attorneys with board-certified, actively-practicing spine, pain and PM&R physicians for IME, expert narrative, causation and record-review reports — signed and back to you within 24 hours. Transparent fees, deposition & trial availability, encrypted portal. For plaintiff and defense counsel.">
+<meta name="theme-color" content="#0e2238">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" href="icon-32.png">
+<style>
+:root{
+--ink:#0e2238; --ink2:#3a5575; --muted:#6a829c; --line:#e7edf4;
+--bg:#ffffff; --soft:#f6f9fc; --soft2:#eef4fb;
+--brand:#2563eb; --brand-dk:#1b4fd1; --teal:#0d9488; --green:#127a4d; --gold:#b4842a;
+--radius:16px; --shadow:0 1px 2px rgba(16,40,70,.04), 0 10px 30px rgba(16,40,70,.05);
+--maxw:1080px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased;font-size:17px}
+a{color:var(--brand);text-decoration:none}
+h1,h2,h3{letter-spacing:-.02em;line-height:1.12;margin:0}
+h2{font-size:clamp(26px,3.4vw,38px);font-weight:800}
+h3{font-size:19px;font-weight:700}
+p{margin:0}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+section{padding:80px 0}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand)}
+.lead{color:var(--ink2);font-size:18px;max-width:640px}
+.sec-head{max-width:700px;margin:0 auto 46px;text-align:center}
+.sec-head .eyebrow{display:block;margin-bottom:12px}
+.sec-head p{color:var(--ink2);margin-top:14px;font-size:18px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:15.5px;border-radius:12px;padding:13px 22px;cursor:pointer;border:1.5px solid transparent;transition:.16s;white-space:nowrap}
+.btn-primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn-primary:hover{background:var(--brand-dk);border-color:var(--brand-dk);transform:translateY(-1px)}
+.btn-ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--brand);color:var(--brand)}
+.btn-light{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.28)}
+.btn-light:hover{background:rgba(255,255,255,.2)}
+.btn-sm{padding:9px 15px;font-size:14px;border-radius:10px}
+
+/* NAV */
+header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdrop-filter:saturate(150%) blur(12px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;gap:22px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;color:var(--ink)}
+.brand .mk{width:30px;height:30px;display:flex;align-items:center;justify-content:center}
+.brand .mk svg{width:30px;height:30px;display:block}
+.brand .tagpill{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--brand);background:var(--soft2);border:1px solid #dbe7f7;padding:3px 8px;border-radius:20px;margin-left:2px}
+.nav .links{display:flex;gap:24px;margin-left:18px}
+.nav .links a{color:var(--ink2);font-weight:600;font-size:15px}
+.nav .links a:hover{color:var(--ink)}
+.nav .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.nav .signin{color:var(--ink);font-weight:700;font-size:15px;padding:9px 14px;border-radius:10px}
+.nav .signin:hover{background:var(--soft)}
+@media(max-width:900px){ .nav .links{display:none} }
+
+/* HERO */
+.hero{padding:74px 0 60px;background:radial-gradient(1100px 480px at 72% -10%,#eaf2ff 0%,rgba(234,242,255,0) 60%),var(--bg)}
+.hero .badge24{display:inline-flex;align-items:center;gap:8px;background:#eafaf1;border:1px solid #bfe8d2;color:var(--green);font-weight:700;font-size:13.5px;padding:7px 14px;border-radius:30px;margin-bottom:18px}
+.hero h1{font-size:clamp(32px,5.2vw,56px);font-weight:850;letter-spacing:-.03em;max-width:900px}
+.hero h1 .grad{background:linear-gradient(120deg,#1f6fe0,#0d9488);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.lead{margin-top:22px;font-size:20px;max-width:660px}
+.hero .cta{margin-top:30px;display:flex;gap:12px;flex-wrap:wrap}
+.hero .trust-line{margin-top:24px;color:var(--muted);font-size:14.5px;display:flex;gap:18px;flex-wrap:wrap}
+.hero .trust-line span{display:inline-flex;align-items:center;gap:6px}
+
+/* STAT STRIP */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:52px}
+.stat{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:18px 16px;text-align:center}
+.stat b{display:block;font-size:23px;font-weight:800;color:var(--ink)}
+.stat span{font-size:13.5px;color:var(--muted)}
+@media(max-width:720px){ .stats{grid-template-columns:repeat(2,1fr)} }
+
+/* STEPS */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.step{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px 24px;box-shadow:var(--shadow)}
+.step .n{width:38px;height:38px;border-radius:11px;background:var(--soft2);color:var(--brand);font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.step h3{margin-bottom:6px}
+.step p{color:var(--ink2);font-size:15.5px}
+@media(max-width:820px){ .steps{grid-template-columns:1fr} }
+
+/* FEATURE GRID */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px 24px;box-shadow:var(--shadow);transition:.18s}
+.card:hover{transform:translateY(-3px);border-color:#d4e0ef}
+.card .ic{width:46px;height:46px;border-radius:12px;background:var(--soft2);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px}
+.card h3{margin-bottom:8px}
+.card p{color:var(--ink2);font-size:15px}
+@media(max-width:860px){ .grid{grid-template-columns:1fr 1fr} }
+@media(max-width:560px){ .grid{grid-template-columns:1fr} }
+
+/* REPORT TYPES (dark) */
+.dark{background:linear-gradient(160deg,#0e2238,#143150);color:#eaf1fb}
+.dark .sec-head h2{color:#fff}
+.dark .sec-head p{color:#bcd0e6}
+.dark .eyebrow{color:#79b4ff}
+.hl{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.hl .c{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:var(--radius);padding:26px 24px}
+.hl .c .ic{font-size:24px;margin-bottom:12px}
+.hl .c h3{color:#fff;margin-bottom:8px}
+.hl .c p{color:#c6d6e8;font-size:15px}
+@media(max-width:820px){ .hl{grid-template-columns:1fr} }
+
+/* DIRECTORY */
+.dir-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center;margin-bottom:30px}
+.dir-controls input,.dir-controls select{border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff}
+.dir-controls input{flex:1;min-width:240px;max-width:380px}
+.dir-controls input:focus,.dir-controls select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+.dir-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media(max-width:860px){ .dir-grid{grid-template-columns:1fr 1fr} }
+@media(max-width:560px){ .dir-grid{grid-template-columns:1fr} }
+.docs-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column}
+.docs-card .av{width:50px;height:50px;border-radius:13px;background:linear-gradient(135deg,#2dd4bf,#2563c9);color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.docs-card h3{font-size:17px;margin-bottom:3px}
+.docs-card .spec{color:var(--brand);font-weight:700;font-size:13.5px;margin-bottom:8px}
+.docs-card .meta{color:var(--muted);font-size:13px;margin-bottom:4px;display:flex;gap:6px;align-items:flex-start}
+.docs-card .bio{color:var(--ink2);font-size:14px;margin:10px 0 16px;flex:1}
+.docs-card .btn{margin-top:auto}
+.dir-state{text-align:center;color:var(--ink2);background:var(--soft);border:1px dashed #cdd9e8;border-radius:var(--radius);padding:38px 26px;max-width:680px;margin:0 auto}
+.dir-state h3{margin-bottom:8px}
+.dir-state p{color:var(--muted);font-size:15px;margin-top:6px}
+
+/* REQUEST / CONNECT */
+.req-wrap{background:linear-gradient(160deg,#143150,#0e2238);border-radius:24px;padding:44px;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start;color:#eaf1fb}
+.req-wrap h2{color:#fff}
+.req-wrap p{color:#bcd0e6;margin-top:14px}
+.req-wrap ul{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-direction:column;gap:11px}
+.req-wrap li{position:relative;padding-left:26px;color:#cfe0f1;font-size:15px}
+.req-wrap li:before{content:"✓";position:absolute;left:0;top:0;color:#5fd0b8;font-weight:800}
+.req-form{background:#fff;border-radius:16px;padding:24px;color:var(--ink)}
+.req-form label{display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:12px 0 5px}
+.req-form input,.req-form textarea,.req-form select{width:100%;border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;font-size:15px;font-family:inherit;color:var(--ink)}
+.req-form input:focus,.req-form textarea:focus,.req-form select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+.req-form .btn{width:100%;margin-top:18px}
+.req-form .signin-note{font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
+@media(max-width:820px){ .req-wrap{grid-template-columns:1fr;padding:30px} }
+
+/* FAQ */
+.faq{max-width:760px;margin:0 auto}
+details{border-bottom:1px solid var(--line);padding:18px 0}
+details summary{font-weight:700;font-size:17px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:16px}
+details summary::-webkit-details-marker{display:none}
+details summary:after{content:"+";color:var(--brand);font-weight:800;font-size:22px;line-height:1}
+details[open] summary:after{content:"\2013"}
+details p{color:var(--ink2);margin-top:12px;font-size:15.5px}
+
+/* FOOTER */
+footer{background:var(--soft);border-top:1px solid var(--line);padding:46px 0 36px}
+.foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.foot .muted{color:var(--muted);font-size:14px;max-width:360px;margin-top:10px}
+.foot a{color:var(--ink2);font-weight:600;font-size:14.5px}
+.foot .links{display:flex;gap:26px;flex-wrap:wrap}
+.foot .fineprint{color:var(--muted);font-size:12.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:20px}
+</style>
+</head>
+<body id="top">
+
+<header>
+<div class="wrap nav">
+<a class="brand" href="index.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS <span class="tagpill">For Attorneys</span></a>
+<nav class="links">
+<a href="#how">How it works</a>
+<a href="#reports">Report types</a>
+<a href="#directory">Find an expert</a>
+<a href="#why">Why MLS</a>
+</nav>
+<div class="right">
+<a class="signin" href="ScribeFlow.html">Attorney sign in</a>
+<a class="btn btn-primary btn-sm" href="#request">Request a report</a>
+</div>
+</div>
+</header>
+
+<main>
+
+<!-- HERO -->
+<section class="hero">
+<div class="wrap">
+<span class="badge24">⏱️ Signed reports back within 24 hours</span>
+<h1>Expert physician reports for your case — <span class="grad">back within 24 hours.</span></h1>
+<p class="lead">MLS connects plaintiff and defense counsel with board-certified, actively-practicing spine, pain and PM&amp;R physicians for IME, expert-narrative, causation and record-review work. Send your request and authorization; get a signed, defensible report — typically within 24 hours, not the usual two-week wait.</p>
+<div class="cta">
+<a class="btn btn-primary" href="#directory">Find an expert physician</a>
+<a class="btn btn-ghost" href="#request">Request a report</a>
+</div>
+<div class="trust-line">
+<span>🩺 Board-certified, still treating patients</span>
+<span>⚖️ Plaintiff &amp; defense</span>
+<span>🔒 Encrypted, HIPAA-ready portal</span>
+</div>
+<div class="stats">
+<div class="stat"><b>24 hours</b><span>typical report turnaround</span></div>
+<div class="stat"><b>Board-certified</b><span>actively-practicing physicians</span></div>
+<div class="stat"><b>IME · Narrative · Review</b><span>report types on demand</span></div>
+<div class="stat"><b>Depo &amp; trial</b><span>availability on request</span></div>
+</div>
+</div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" style="background:var(--soft)">
+<div class="wrap">
+<div class="sec-head">
+<span class="eyebrow">How it works</span>
+<h2>Three steps to a signed report</h2>
+<p>No retainer hunting, no chasing a physician's office for weeks. A clear path from request to signed opinion.</p>
+</div>
+<div class="steps">
+<div class="step"><div class="n">1</div><h3>Find a physician</h3><p>Browse participating experts by specialty and jurisdiction. Review their credentials, areas of opinion, and deposition/trial availability before you reach out.</p></div>
+<div class="step"><div class="n">2</div><h3>Send your request</h3><p>Submit the case through the secure portal — attach the signed patient authorization, medical records, imaging and PT notes. Set the report type and any specific questions.</p></div>
+<div class="step"><div class="n">3</div><h3>Get the signed report</h3><p>The physician reviews and signs a structured, defensible report — typically returned within 24 hours through the encrypted portal, ready for your file.</p></div>
+</div>
+</div>
+</section>
+
+<!-- REPORT TYPES (dark) -->
+<section id="reports" class="dark">
+<div class="wrap">
+<div class="sec-head">
+<span class="eyebrow">What you can request</span>
+<h2>The medico-legal reports counsel actually need</h2>
+<p>Drafted by the treating-or-reviewing physician, reviewed and signed by them — never an anonymous report mill.</p>
+</div>
+<div class="hl">
+<div class="c"><div class="ic">📋</div><h3>Independent Medical Exam (IME)</h3><p>A structured, impartial examination and written opinion on diagnosis, causation, impairment and work status — formatted for the file and for cross-examination.</p></div>
+<div class="c"><div class="ic">📝</div><h3>Expert narrative &amp; causation</h3><p>A narrative report tying the mechanism of injury to the clinical findings and prognosis, with a clear statement of opinion to a reasonable degree of medical certainty.</p></div>
+<div class="c"><div class="ic">🔎</div><h3>Record review &amp; utilization review</h3><p>A focused review of the longitudinal record — visits, imaging concordance, outcomes, opioid/MME history — for medical-necessity and reasonableness questions.</p></div>
+</div>
+</div>
+</section>
+
+<!-- DIRECTORY -->
+<section id="directory">
+<div class="wrap">
+<div class="sec-head">
+<span class="eyebrow">Expert directory</span>
+<h2>Find a physician for your case</h2>
+<p>Search participating spine, pain and PM&amp;R physicians. Filter by specialty, then request a report or connect directly.</p>
+</div>
+<div class="dir-controls">
+<input id="dirSearch" type="search" placeholder="Search by name, specialty, jurisdiction…" aria-label="Search experts">
+<select id="dirSpec" aria-label="Filter by specialty"><option value="">All specialties</option></select>
+</div>
+<div id="dirGrid" class="dir-grid" style="display:none"></div>
+<div id="dirState" class="dir-state">
+<h3>Loading the expert directory…</h3>
+<p>One moment while we pull the current list of participating physicians.</p>
+</div>
+</div>
+</section>
+
+<!-- WHY MLS -->
+<section id="why" style="background:var(--soft)">
+<div class="wrap">
+<div class="sec-head">
+<span class="eyebrow">Why MLS experts hold up</span>
+<h2>Credibility that survives cross-examination</h2>
+<p>The fastest report is worthless if the expert doesn't hold up. Here's why ours do.</p>
+</div>
+<div class="grid">
+<div class="card"><div class="ic">🩺</div><h3>Actively practicing</h3><p>Our physicians treat spine, pain and PM&amp;R patients every week — they're clinicians who also review cases, not professional witnesses who only testify. That distinction matters under cross.</p></div>
+<div class="card"><div class="ic">🎓</div><h3>Board-certified &amp; credentialed</h3><p>Each profile shows specialty, board certification, jurisdiction and a current CV, so you can vet the expert against your venue and issues before you engage.</p></div>
+<div class="card"><div class="ic">⚖️</div><h3>Deposition &amp; trial ready</h3><p>Experts list their deposition and trial-appearance availability and rates up front, so there are no surprises when the case moves toward testimony.</p></div>
+<div class="card"><div class="ic">💵</div><h3>Transparent fees</h3><p>Report, deposition and trial rates are stated on the profile and itemized on the invoice. You know the cost of the opinion before you commit.</p></div>
+<div class="card"><div class="ic">⏱️</div><h3>24-hour turnaround</h3><p>The AI-assisted drafting that powers MLS's clinical scribe lets our physicians turn a complete request into a reviewed, signed report in about a day — versus an industry norm of roughly two weeks.</p></div>
+<div class="card"><div class="ic">🔒</div><h3>Secure &amp; encrypted</h3><p>Records, messages and reports move through an encrypted, HIPAA-ready portal with audit logging — and a signed patient authorization is required on file before any report is released.</p></div>
+</div>
+</div>
+</section>
+
+<!-- REQUEST / CONNECT -->
+<section id="request">
+<div class="wrap">
+<div class="req-wrap">
+<div>
+<span class="eyebrow" style="color:#79b4ff">Get connected</span>
+<h2 style="margin-top:12px">Request a report or open an account</h2>
+<p>Tell us about your case and the kind of opinion you need. We'll connect you with the right physician and set you up with a secure attorney portal login to exchange records and receive the signed report.</p>
+<ul>
+<li>Plaintiff and defense counsel welcome</li>
+<li>Attorney portal — request reports, message the physician, download files</li>
+<li>You never see clinical charts — only the report you commissioned</li>
+<li>Signed patient authorization required before any report is released</li>
+</ul>
+<p style="font-size:14.5px;margin-top:18px">Prefer email? <a href="mailto:michael@mlsscribe.com" style="color:#fff;text-decoration:underline">michael@mlsscribe.com</a> &nbsp;·&nbsp; <a id="sampleLink" href="MLS_Sample_Report.pdf" target="_blank" rel="noopener" style="color:#fff;text-decoration:underline">See a sample report</a></p>
+</div>
+<form class="req-form" onsubmit="return submitRequest(event)">
+<label for="r-name">Your name / firm</label>
+<input id="r-name" name="name" required placeholder="Jane Doe, Esq. / Doe &amp; Associates">
+<label for="r-email">Email</label>
+<input id="r-email" name="email" type="email" required placeholder="you@lawfirm.com">
+<label for="r-side">You represent</label>
+<select id="r-side" name="side">
+<option value="">Select…</option>
+<option>Plaintiff</option>
+<option>Defense</option>
+<option>Insurer / TPA</option>
+<option>Other</option>
+</select>
+<label for="r-type">Report needed</label>
+<select id="r-type" name="reporttype">
+<option value="">Select…</option>
+<option>Independent Medical Exam (IME)</option>
+<option>Expert narrative / causation</option>
+<option>Record review / utilization review</option>
+<option>Not sure yet</option>
+</select>
+<label for="r-msg">Tell us about the case</label>
+<textarea id="r-msg" name="msg" rows="3" placeholder="Specialty needed, jurisdiction, key questions, timeline…"></textarea>
+<button class="btn btn-primary" type="submit">Request a report</button>
+<div id="reqStatus" style="display:none;font-size:13.5px;margin-top:12px;color:var(--muted)"></div>
+<div class="signin-note">Already have an attorney portal login? <a href="ScribeFlow.html">Sign in here</a>.</div>
+</form>
+</div>
+</div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" style="background:var(--soft)">
+<div class="wrap">
+<div class="sec-head">
+<span class="eyebrow">FAQ</span>
+<h2>Questions attorneys ask</h2>
+</div>
+<div class="faq">
+<details><summary>How fast will I actually get the report?</summary><p>Most complete requests — meaning the signed authorization, records and your specific questions are all in the portal — are returned as a signed report within about 24 hours. Complex causation reviews or cases with very large record sets can take longer; the physician will tell you up front if so.</p></details>
+<details><summary>Do you work with both plaintiff and defense counsel?</summary><p>Yes. The physicians render an independent, impartial opinion based on the records and exam regardless of who retains them. Reports are written to withstand scrutiny from either side.</p></details>
+<details><summary>What specialties are available?</summary><p>MLS is built around spine, pain management and PM&amp;R — the specialties most often at issue in orthopedic injury, workers' compensation, auto and disability matters. The live directory above shows exactly who is currently participating.</p></details>
+<details><summary>What does it cost?</summary><p>Each physician sets their own report, deposition and trial fees, shown on their profile and itemized on the invoice. You see the price before you engage. (Online payment through the portal is being finalized — until it's live, billing is arranged directly.)</p></details>
+<details><summary>Will the expert sit for deposition or testify?</summary><p>Many will — each profile indicates deposition and trial availability and rates. You can confirm appearance terms before you commission the report.</p></details>
+<details><summary>How are records and reports kept secure?</summary><p>Everything moves through an encrypted, HIPAA-ready portal with audit logging. Attorneys only ever see the report they commissioned — never the physician's clinical charts — and a signed patient authorization (HIPAA §164.508) must be on file before any report is released.</p></details>
+</div>
+</div>
+</section>
+
+</main>
+
+<footer>
+<div class="wrap">
+<div class="foot">
+<div>
+<a class="brand" href="index.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</a>
+<p class="muted">Connecting attorneys with board-certified spine, pain and PM&amp;R physicians for fast, defensible medico-legal reports. By MLS Scribe LLC.</p>
+</div>
+<div class="links">
+<a href="#how">How it works</a>
+<a href="#reports">Report types</a>
+<a href="#directory">Find an expert</a>
+<a href="#request">Request a report</a>
+<a href="index.html">For physicians</a>
+<a href="ScribeFlow.html">Sign in</a>
+<a href="mailto:michael@mlsscribe.com">Contact</a>
+</div>
+</div>
+<p class="fineprint">© 2026 MLS Scribe LLC. MLS provides a platform that connects attorneys with independent physician experts; it does not itself render medical or legal opinions. Report turnaround is typical, not guaranteed. A signed patient authorization is required before any report is released. HIPAA-ready architecture; Business Associate Agreements in progress — synthetic data only until compliance review is complete.</p>
+</div>
+</footer>
+
+<script>
+const BACKEND_URL="https://scrivara-backend.onrender.com";
+const REQUEST_ENDPOINT="https://formsubmit.co/ajax/michael@mlsscribe.com";
+
+/* ---------- session detection (existing attorney portal login) ---------- */
+function getSessionToken(){
+  try{ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }catch(e){ return ''; }
+}
+
+/* ---------- expert directory ---------- */
+let ALL_EXPERTS=[];
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+function field(o,keys){ for(const k of keys){ if(o&&o[k]!=null&&String(o[k]).trim()!=='') return o[k]; } return ''; }
+function initials(name){ const p=String(name||'').replace(/^(dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i,'').trim().split(/\s+/); return ((p[0]||'')[0]||'')+((p[p.length-1]||'')[0]||'')||'Dr'; }
+function money(cents){ const n=Number(cents); if(!n||isNaN(n)) return ''; return '$'+(n/100).toLocaleString('en-US',{maximumFractionDigits:0}); }
+
+function expertCard(e){
+  const name=field(e,['name','display_name','doctor_name','full_name'])||'Participating physician';
+  const spec=field(e,['expert_specialty','specialty']);
+  const juris=field(e,['expert_jurisdiction','jurisdiction']);
+  const bio=field(e,['expert_bio','bio','cv_text']);
+  const depo=money(field(e,['depo_rate_cents']));
+  const trial=money(field(e,['trial_rate_cents']));
+  const id=field(e,['id','user_id','expert_id']);
+  let rates='';
+  if(depo||trial){ rates='<div class="meta">💵 '+(depo?('Depo '+esc(depo)):'')+(depo&&trial?' · ':'')+(trial?('Trial '+esc(trial)):'')+'</div>'; }
+  return '<div class="docs-card" data-id="'+esc(id)+'">'
+    +'<div class="av">'+esc(initials(name).toUpperCase())+'</div>'
+    +'<h3>'+esc(name)+'</h3>'
+    +(spec?'<div class="spec">'+esc(spec)+'</div>':'')
+    +(juris?'<div class="meta">📍 '+esc(juris)+'</div>':'')
+    +rates
+    +(bio?'<p class="bio">'+esc(String(bio).slice(0,220))+(String(bio).length>220?'…':'')+'</p>':'<p class="bio" style="color:var(--muted)">Profile details available on request.</p>')
+    +'<a class="btn btn-primary btn-sm" href="#request" onclick="prefillRequest('+JSON.stringify(esc(name))+','+JSON.stringify(esc(spec))+')">Request this expert</a>'
+    +'</div>';
+}
+
+function renderExperts(list){
+  const grid=document.getElementById('dirGrid');
+  const state=document.getElementById('dirState');
+  if(!list.length){
+    grid.style.display='none';
+    grid.innerHTML='';
+    state.style.display='block';
+    if(ALL_EXPERTS.length){
+      state.innerHTML='<h3>No matches</h3><p>No participating physicians match that search yet. Try a different specialty, or send a request below and we’ll match you.</p>';
+    }
+    return;
+  }
+  state.style.display='none';
+  grid.style.display='grid';
+  grid.innerHTML=list.map(expertCard).join('');
+}
+
+function applyFilters(){
+  const q=(document.getElementById('dirSearch').value||'').toLowerCase().trim();
+  const spec=document.getElementById('dirSpec').value;
+  let list=ALL_EXPERTS.slice();
+  if(spec) list=list.filter(e=>String(field(e,['expert_specialty','specialty']))===spec);
+  if(q) list=list.filter(e=>JSON.stringify(e).toLowerCase().includes(q));
+  renderExperts(list);
+}
+
+function populateSpecialties(){
+  const sel=document.getElementById('dirSpec');
+  const specs=[...new Set(ALL_EXPERTS.map(e=>String(field(e,['expert_specialty','specialty']))).filter(Boolean))].sort();
+  specs.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
+}
+
+async function loadExperts(){
+  const state=document.getElementById('dirState');
+  try{
+    const r=await fetch(BACKEND_URL+'/api/experts',{headers:{'Accept':'application/json'}});
+    const d=await r.json().catch(()=>({}));
+    ALL_EXPERTS=Array.isArray(d.experts)?d.experts:(Array.isArray(d)?d:[]);
+    if(!ALL_EXPERTS.length){
+      document.getElementById('dirGrid').style.display='none';
+      state.style.display='block';
+      state.innerHTML='<h3>Physicians are being onboarded</h3>'
+        +'<p>Our spine, pain and PM&amp;R physicians are completing their expert profiles now. New experts opt in to the public directory continually — in the meantime, send a request below and we’ll match your case to the right physician directly.</p>'
+        +'<p style="margin-top:16px"><a class="btn btn-primary btn-sm" href="#request">Request a report</a></p>';
+      return;
+    }
+    populateSpecialties();
+    applyFilters();
+  }catch(e){
+    document.getElementById('dirGrid').style.display='none';
+    state.style.display='block';
+    state.innerHTML='<h3>Directory temporarily unavailable</h3><p>We couldn’t reach the directory just now. Please send a request below and we’ll match your case directly, or try again shortly.</p>';
+  }
+}
+document.getElementById('dirSearch').addEventListener('input',applyFilters);
+document.getElementById('dirSpec').addEventListener('change',applyFilters);
+
+/* ---------- request form ---------- */
+function prefillRequest(name,spec){
+  try{
+    const msg=document.getElementById('r-msg');
+    const pre='Re: '+(name||'a participating physician')+(spec?(' ('+spec+')'):'')+'. ';
+    if(msg && msg.value.indexOf('Re:')!==0){ msg.value=pre+msg.value; msg.focus(); }
+  }catch(e){}
+}
+
+async function submitRequest(e){
+  e.preventDefault();
+  const f=e.target;
+  const status=document.getElementById('reqStatus');
+  const btn=f.querySelector('button[type=submit]');
+  status.style.display='block'; status.style.color='var(--muted)'; status.textContent='Sending…';
+  if(btn){btn.disabled=true;}
+  const payload={
+    name:f.name.value, email:f.email.value,
+    represents:f.side.value||'', report_type:f.reporttype.value||'',
+    case_details:f.msg.value||'',
+    _subject:'New MLS attorney report request', _template:'table'
+  };
+  try{
+    const r=await fetch(REQUEST_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)});
+    const data=await r.json();
+    if(r.ok&&(data.success===true||data.success==='true')){ f.reset(); status.style.color='var(--green)'; status.textContent='✓ Thank you — your request was sent. We’ll connect you with the right physician and set up your secure portal access shortly.'; }
+    else { throw new Error(data.message||'Submission failed'); }
+  }catch(err){ status.style.color='#c0392b'; status.textContent='Something went wrong sending the form. Please email michael@mlsscribe.com directly.'; }
+  finally{ if(btn){btn.disabled=false;} }
+  return false;
+}
+
+loadExperts();
+</script>
+</body>
+</html>
