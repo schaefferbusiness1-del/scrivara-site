@@ -3456,7 +3456,8 @@
         ensurePill(h); return;
       }
     }
-    function ensurePillOnNav(id){ ensurePill(document.getElementById(id)); }
+    function makeNavPill(){ var s=document.createElement('span'); s.className=PILL_CLASS; s.setAttribute('data-mls-prem-pill','1'); s.style.cssText='font-size:9px;font-weight:700;letter-spacing:.3px;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:1px 6px;border-radius:999px;line-height:1.5;display:inline-block;vertical-align:middle;flex:0 0 auto'; s.textContent=PILL_TEXT; return s; }
+    function ensurePillOnNav(id){ var el=document.getElementById(id); if(!el) return; try{ el.style.whiteSpace='nowrap'; el.style.flex='0 0 auto'; }catch(e){} if(hasPurplePill(el)) return; el.appendChild(makeNavPill()); }
     function normalizeSettingsLabel(hintId){
       try{
         var hint = document.getElementById(hintId); if(!hint) return;
