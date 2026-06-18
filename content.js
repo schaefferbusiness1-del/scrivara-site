@@ -758,3 +758,31 @@
   }
 })();
 /* MLS Assist content.js — v1.17 schedule-pull build */
+
+/* === MLS Assist v1.32 — Copy-every-visit bridge (APPEND-ONLY to content.js) ===
+ * Self-contained. Adds its own message listeners; does not touch the existing
+ * bridge router. Relays the app's mlsAppReadAllVisits request to background and
+ * streams mlsAppVisitsProgress / mlsAppAllVisitsResult back to the page. */
+(function () {
+  'use strict';
+  try { if (window.__mlsAllVisitsBridge) return; window.__mlsAllVisitsBridge = 1; } catch (e) { return; }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data; if (!d || d.type !== 'mlsAppReadAllVisits') return;
+    try {
+      chrome.runtime.sendMessage({ type: 'mlsAppAllVisitsRequest', hint: d.hint || {} }, function (res) {
+        var err = chrome.runtime && chrome.runtime.lastError;
+        if (err || !res) { window.postMessage({ type: 'mlsAppAllVisitsResult', ok: false, error: (err && err.message) || 'No response from MLS Assist' }, '*'); return; }
+        var out = {}; for (var k in res) out[k] = res[k]; out.type = 'mlsAppAllVisitsResult';
+        window.postMessage(out, '*');
+      });
+    } catch (e) { window.postMessage({ type: 'mlsAppAllVisitsResult', ok: false, error: String((e && e.message) || e) }, '*'); }
+  }, false);
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (msg && msg.type === 'mlsAppVisitsProgress') {
+        window.postMessage({ type: 'mlsAppVisitsProgress', message: msg.message, n: msg.n, total: msg.total }, '*');
+      }
+    });
+  } catch (e) {}
+})();
+
