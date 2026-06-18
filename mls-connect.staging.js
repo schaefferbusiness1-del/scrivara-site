@@ -3560,23 +3560,34 @@
     }, Promise.resolve({created:false, why:'err'}));
   }
 
-  /* ---- bridge: drive Athena search + paginate (extension v1.31 mlsAppGrabByProcedure) ---- */
+  /* ---- bridge: drive athenaOne search + paginate via MLS Assist v1.31 (mlsAppSearchProcedure) ---- */
   function grabViaAssist(criteria, onStatus){
+    // criteria = { params:{cpt:[],procedureName,dateFrom,dateTo}, cfg:{} }
+    var params=(criteria&&criteria.params)||criteria||{};
+    var cfg=(criteria&&criteria.cfg)||{};
+    function mapResult(r){ r=r||{}; return { text:r.text||'', pages:r.pages||0, drove:!!r.ranControls, paginated:(r.pages||0)>1 }; }
+    // Preferred: reuse the Study module's proven, progress-emitting driver (mlsAppSearchProcedure).
+    var st=S();
+    if(st && typeof st._assistSearchProcedure==='function'){
+      return st._assistSearchProcedure(params, cfg, onStatus).then(mapResult, function(err){ return { error:(err&&err.message)||'search-failed', code:(err&&err.code)||'' }; });
+    }
+    // Fallback: drive the extension's live mlsAppSearchProcedure protocol directly (with live progress).
     return new Promise(function(resolve){
-      var settled=false, ponged=false, iv=null, toR=null;
-      function fin(v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); if(iv) clearInterval(iv); if(toR) clearTimeout(toR); resolve(v); }
+      var settled=false, ponged=false, iv=null, toR=null, tries=0;
+      function fin(v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onEvt); if(iv) clearInterval(iv); if(toR) clearTimeout(toR); resolve(v); }
       function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; proceed(); } }
-      function onResult(e){ if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppGrabResult')) return; fin(e.data.resp||{error:'no response'}); }
+      function onEvt(e){ var d=e.data; if(!(d&&d.source==='mls-ext')) return;
+        if(d.type==='mlsAppSearchProgress'){ if(onStatus) onStatus(d.msg||'Working…'); return; }
+        if(d.type==='mlsAppSearchResult'){ var r=d.resp||{}; if(r.ok===false){ fin({error:r.error||'search-failed',code:r.code||''}); return; } fin(mapResult(r)); } }
       window.addEventListener('message',onPong);
       var ping=function(){ safe(function(){ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }); };
-      ping(); iv=setInterval(ping,400);
-      setTimeout(function(){ if(!ponged) fin({error:'no-ext'}); }, 2600);
+      ping(); iv=setInterval(function(){ if(ponged){ clearInterval(iv); iv=null; return; } if(++tries>8){ clearInterval(iv); iv=null; if(!settled) fin({error:'no-ext'}); } else ping(); }, 350);
       function proceed(){
         if(iv){ clearInterval(iv); iv=null; }
-        window.addEventListener('message',onResult);
-        if(onStatus) onStatus('MLS Assist is running the search in Athena and paginating through every result page…');
-        safe(function(){ window.postMessage({source:'mls-app',type:'mlsAppGrabByProcedure',criteria:criteria},'*'); });
-        toR=setTimeout(function(){ fin({error:'timeout'}); }, 240000); // generous: many pages
+        window.addEventListener('message',onEvt);
+        if(onStatus) onStatus('Driving the athenaOne procedure search…');
+        safe(function(){ window.postMessage({source:'mls-app',type:'mlsAppSearchProcedure',params:params,cfg:cfg},'*'); });
+        toR=setTimeout(function(){ fin({error:'timeout'}); }, 360000); // generous: many pages
       }
     });
   }
@@ -3598,6 +3609,7 @@
         return;
       }
       var r=picked[i];
+      if(els.sum) els.sum.textContent='Importing '+esc(r.name||('patient '+(i+1)))+' ('+(i+1)+'/'+picked.length+') — verifying DOB in athenaOne…';
       Promise.resolve(safe(function(){ return st._importRow(r, cohort); }, Promise.resolve({status:'error'}))).then(function(res){
         res=res||{status:'error'};
         var key=res.status==='old-ext'?'old_ext':res.status; counts[key]=(counts[key]||0)+1;
@@ -3626,21 +3638,22 @@
     if(!st){ out.innerHTML='<div class="mls-study-gate">Study module not ready — reopen the panel.</div>'; return; }
     var crit=safe(function(){ return st._resolveCriteria(sec.querySelector('#mlsStudyBSel').value, sec.querySelector('#mlsStudyBProc').value); }, {label:'',keywords:[],codes:[]})||{label:'',keywords:[],codes:[]};
     crit.from=(sec.querySelector('#mlsStudyBFrom')||{}).value||''; crit.to=(sec.querySelector('#mlsStudyBTo')||{}).value||'';
-    var drive=!!(sec.querySelector('#mlsGrabDrive')||{}).checked;
     var addCal=!!(sec.querySelector('#mlsGrabCal')||{}).checked;
-    out.innerHTML='<div class="mls-study-sum" id="mlsGrabStatus">Looking for MLS Assist…</div>';
+    var procName=(sec.querySelector('#mlsStudyBProc').value||'').trim()||(crit.label||'');
+    out.innerHTML='<div class="mls-study-sum" id="mlsGrabStatus">Searching Athena for '+esc(crit.label||procName||'procedure')+'…</div>';
     var setS=function(m){ var n=sec.querySelector('#mlsGrabStatus'); if(n) n.textContent=m; };
-    var criteria={ query:(sec.querySelector('#mlsStudyBProc').value||crit.label||'').slice(0,80), codes:crit.codes||[], dateFrom:crit.from, dateTo:crit.to, maxPages:40, drive:drive, cfg:safe(function(){return window.__mlsStudyConfig&&window.__mlsStudyConfig.grabCfg||{};},{}) };
-    grabViaAssist(criteria, setS).then(function(resp){
+    var params={ cpt:crit.codes||[], procedureName:procName, dateFrom:crit.from, dateTo:crit.to };
+    var cfg=safe(function(){ return (window.__mlsStudyConfig&&(window.__mlsStudyConfig.search||window.__mlsStudyConfig.grabCfg))||{}; },{});
+    grabViaAssist({params:params,cfg:cfg}, setS).then(function(resp){
       if(!resp || resp.error){
         var em = resp&&resp.error;
-        var msg = em==='no-ext' ? 'MLS Assist isn’t detected. Install/enable the extension (v1.31+) and keep your signed-in Athena tab open, then try again.'
-                : em==='timeout' ? 'Timed out driving Athena. Open the procedure/claims report (or a procedure-filtered schedule) in your signed-in Athena tab and try again — or untick auto-run and run the report yourself first.'
-                : ('Couldn’t read Athena: '+esc(String(em||'unknown')));
+        var msg = em==='no-ext' ? 'MLS Assist isn’t responding. Install/enable the extension (v1.31+) and keep your signed-in athenaOne tab open, then try again.'
+                : em==='timeout' ? 'Timed out driving athenaOne. Open your signed-in athenaOne tab (a procedure/claims search or report) and try again — or use 🔎 Find in Athena on a report you’ve already run.'
+                : esc(String(em||'Couldn’t drive the athenaOne search — is an athenaOne tab open and signed in?'));
         out.innerHTML='<div class="mls-study-gate">'+msg+'</div>'; return;
       }
       var text=resp.text||'';
-      if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached Athena but read no report text. Open the procedure/claims report (or a filtered schedule) as your signed-in Athena tab, then retry.</div>'; return; }
+      if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached athenaOne but read 0 result rows'+(resp.pages?(' across '+resp.pages+' page(s)'):'')+'. Open a procedure/claims search or report so the result rows are visible, or tune <code>window.__mlsStudyConfig.search</code> to your layout — or use 🔎 Find in Athena on a report you’ve already run.</div>'; return; }
       var all=safe(function(){ return st._parseReportRows(text); }, [])||[];
       var rows=safe(function(){ return st._filterReportRows(all, crit); }, [])||[];
       renderCandidates(sec, rows, all.length, crit, resp, addCal);
