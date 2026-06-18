@@ -4018,3 +4018,5 @@
 
 /* MLS — load patient/visit ease-of-use pass (append-only, guarded) */
 (function(){try{if(!document.querySelector('script[data-mls-asset="feat_ease.js"]')){var s=document.createElement('script');s.src='feat_ease.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_ease.js');s.async=false;(document.head||document.documentElement).appendChild(s);}}catch(e){}})();
+
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_guard.js"]'))return;var s=document.createElement('script');s.src='feat_athena_guard.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_guard.js');document.head.appendChild(s);}catch(e){}})(); /* MLS — athenaOne-open guard (block fake progress/saves when logged out) */
