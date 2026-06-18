@@ -4005,3 +4005,5 @@
     window.__mlsStudioLock = { apply: applyLock, unlock: unlock, isPrem: isPrem };
   } catch(e){}
 })();
+
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260618';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
