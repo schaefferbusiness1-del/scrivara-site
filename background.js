@@ -1396,3 +1396,172 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'mlsSetBackup') { setBackup(Object.assign({ enabled: false, hour: 2, minute: 0, maxPatients: 250 }, msg.value || {})).then(scheduleBackupAlarm).then(() => sendResponse({ ok: true })); return true; }
   if (msg.type === 'mlsRunBackupNow') { runNightlyBackup('manual').then(sendResponse); return true; }
 });
+
+/* === MLS Assist v1.32 — Copy-every-visit driver (APPEND-ONLY to background.js) ==
+ * Self-contained. Adds its own chrome.runtime.onMessage handler for
+ * mlsAppAllVisitsRequest; does not modify existing handlers. Walks the OPEN
+ * patient's encounters/visits list in athenaOne (content-scored), opens & reads
+ * each encounter, streams progress, returns {ok, identity, visits[]}.
+ * READ-ONLY: clicks only dated encounter rows; never Save/Sign/Submit
+ * (excludeClickLabels guard, unit-tested). Selectors tunable via
+ * chrome.storage.local 'mlsAthenaVisitsCfg'. */
+(function () {
+  'use strict';
+  try { if (self.__mlsAllVisitsHandler) return; self.__mlsAllVisitsHandler = 1; } catch (e) {}
+
+  var ORCH_DEFAULT = { maxVisits: 60, waitMs: 1400, initialWaitMs: 1000 };
+  var EMR_RE = /(athenahealth|athenanet|athenaone|athena\.io|\.px\.athena)/i;
+
+  /* CANONICAL self-contained injected driver. Passed to chrome.scripting
+   * .executeScript({func: mlsVisitsDriverFn}) — must reference no outer scope and
+   * no eval (athenaOne CSP-safe). Read-only: only clicks dated encounter rows,
+   * never Save/Sign/Submit. Embedded verbatim in background.js. */
+  function mlsVisitsDriverFn(op, cfg, idx) {
+    cfg = cfg || {};
+    var DEFAULT = {
+      rowSelectors: ['tr', '[role="row"]', 'li', '.encounter', '.encounter-row', '[data-encounter-id]', '.visit-row'],
+      detailSelectors: ['[role="main"]', 'main', '.encounter-detail', '.documentation', '.clinical', 'article', '.chart-detail'],
+      excludeClickLabels: ['save', 'sign', 'finalize', 'post', 'bill', 'submit claim', 'submit', 'delete', 'lock', 'addend', 'amend', 'discard', 'cancel appointment'],
+      maxVisits: 60
+    };
+    for (var k in DEFAULT) { if (cfg[k] == null) cfg[k] = DEFAULT[k]; }
+    var DATE_RE = /(?:^|[^\d])(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})(?!\d)/;
+    var CPT_RE = /\b\d{5}\b/g, ICD_RE = /\b[A-TV-Z]\d[0-9A-Z](?:\.[0-9A-Z]{1,4})?\b/g;
+    function txt(el) { return (el && (el.innerText || el.textContent) || '').replace(/\s+/g, ' ').trim(); }
+    function excluded(s) { s = String(s || '').toLowerCase(); for (var i = 0; i < cfg.excludeClickLabels.length; i++) { if (s.indexOf(cfg.excludeClickLabels[i]) >= 0) return true; } return false; }
+    function codes(s, re) { var out = [], m; re.lastIndex = 0; while ((m = re.exec(String(s || '')))) { var c = m[0].toUpperCase(); if (out.indexOf(c) < 0) out.push(c); if (out.length > 40) break; } return out; }
+    function rowSet() {
+      var best = null, bestScore = 0;
+      for (var s = 0; s < cfg.rowSelectors.length; s++) {
+        var nodes; try { nodes = Array.prototype.slice.call(document.querySelectorAll(cfg.rowSelectors[s])); } catch (e) { continue; }
+        var groups = new Map();
+        for (var i = 0; i < nodes.length; i++) {
+          var n = nodes[i], t = txt(n);
+          if (t.length < 4 || t.length > 600) continue;
+          if (!DATE_RE.test(t)) continue;
+          if (excluded(t)) continue;
+          var par = n.parentElement || n;
+          if (!groups.has(par)) groups.set(par, []);
+          groups.get(par).push(n);
+        }
+        groups.forEach(function (rows) { if (rows.length > bestScore) { bestScore = rows.length; best = rows; } });
+      }
+      return best || [];
+    }
+    if (op === 'identity') {
+      var body = txt(document.body), dob = '', name = '';
+      var dm = body.match(/\b(?:DOB|D\.O\.B\.|Date of Birth|Born)\D{0,8}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/i); if (dm) dob = dm[1];
+      var nm = body.match(/\bPatient\D{0,4}([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)/); if (nm) name = nm[1];
+      if (!name) { var h = document.querySelector('h1,h2,[data-patient-name],.patient-name'); if (h) name = txt(h).slice(0, 60); }
+      return { name: name, dob: dob };
+    }
+    if (op === 'enumerate') {
+      return rowSet().map(function (n, i) { var t = txt(n); var d = t.match(DATE_RE); return { index: i, date: d ? d[1] : '', type: t.replace(DATE_RE, '').slice(0, 80).trim(), label: t.slice(0, 120) }; });
+    }
+    if (op === 'click') {
+      var rows = rowSet(); var row = rows[idx]; if (!row) return { clicked: false, reason: 'no-row', count: rows.length };
+      if (excluded(txt(row))) return { clicked: false, reason: 'excluded' };
+      var target = row; var c = row.querySelector && row.querySelector('a,button,[role="link"],[role="button"],td'); if (c && !excluded(txt(c))) target = c;
+      try { target.click(); } catch (e) { return { clicked: false, reason: 'click-failed', error: String(e) }; }
+      return { clicked: true, label: txt(row).slice(0, 120) };
+    }
+    if (op === 'detail') {
+      var best = null, bestLen = 0;
+      for (var s2 = 0; s2 < cfg.detailSelectors.length; s2++) {
+        var nodes2; try { nodes2 = Array.prototype.slice.call(document.querySelectorAll(cfg.detailSelectors[s2])); } catch (e) { continue; }
+        for (var j = 0; j < nodes2.length; j++) { var t2 = txt(nodes2[j]); if (t2.length > bestLen) { bestLen = t2.length; best = nodes2[j]; } }
+      }
+      if (!best) best = document.body;
+      var raw = txt(best); var d2 = raw.match(DATE_RE);
+      return { date: d2 ? d2[1] : '', type: '', raw: raw, cpt: codes(raw, CPT_RE), icd10: codes(raw, ICD_RE) };
+    }
+    return null;
+  }
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function emit(tabId, message, n, total) { try { if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'mlsAppVisitsProgress', message: message, n: n, total: total }); } catch (e) {} }
+
+  function pickEmrTab() {
+    return new Promise(function (resolve) {
+      try {
+        chrome.tabs.query({}, function (tabs) {
+          var cand = (tabs || []).filter(function (t) { return t.url && EMR_RE.test(t.url); });
+          // prefer the active / most-recently-focused EMR tab
+          cand.sort(function (a, b) { return (b.active ? 1 : 0) - (a.active ? 1 : 0) || (b.id - a.id); });
+          resolve(cand[0] || null);
+        });
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  function exec(tabId, frameIds, args) {
+    var target = { tabId: tabId }; if (frameIds) target.frameIds = frameIds; else target.allFrames = true;
+    return chrome.scripting.executeScript({ target: target, func: mlsVisitsDriverFn, args: args }).catch(function () { return []; });
+  }
+  function bestResult(results, scoreFn) {
+    var best = null, bestScore = -1, bestFrame = 0;
+    (results || []).forEach(function (r) { if (!r || r.result == null) return; var sc = scoreFn(r.result); if (sc > bestScore) { bestScore = sc; best = r.result; bestFrame = r.frameId; } });
+    return { result: best, frameId: bestFrame, score: bestScore };
+  }
+
+  function runAllVisits(appTabId, hint, cfg) {
+    var identity = {}, listFrame = 0, snapshot = [];
+    return pickEmrTab().then(function (emr) {
+      if (!emr) return { ok: false, error: 'No signed-in athenaOne tab found. Open athenaOne with the patient chart, then retry.' };
+      var emrId = emr.id;
+      emit(appTabId, 'Found athenaOne — reading the open chart…');
+      return sleep(cfg.initialWaitMs)
+        .then(function () { return exec(emrId, null, ['identity', cfg]); })
+        .then(function (idRes) { var b = bestResult(idRes, function (r) { return (r && (r.name ? 2 : 0) + (r.dob ? 1 : 0)) || 0; }); identity = b.result || {}; })
+        .then(function () { return exec(emrId, null, ['enumerate', cfg]); })
+        .then(function (enRes) {
+          var b = bestResult(enRes, function (r) { return Array.isArray(r) ? r.length : 0; });
+          snapshot = b.result || []; listFrame = b.frameId;
+          if (!snapshot.length) {
+            return { ok: false, identity: identity, visits: [], error: 'Could not find an encounters/visits list on this chart. Open the patient’s Encounters/Visits tab, or the row selectors need one tuning pass (window/storage mlsAthenaVisitsCfg.rowSelectors).' };
+          }
+          var total = Math.min(snapshot.length, cfg.maxVisits);
+          emit(appTabId, 'Found ' + snapshot.length + ' visit(s). Reading each…', 0, total);
+          var visits = [];
+          var i = 0;
+          function step() {
+            if (i >= total) { emit(appTabId, 'Read ' + visits.length + ' visit(s).'); return { ok: true, identity: identity, visits: visits }; }
+            var snap = snapshot[i] || {};
+            emit(appTabId, 'Reading visit ' + (i + 1) + ' of ' + total + (snap.date ? ' (' + snap.date + ')' : '') + '…', i + 1, total);
+            return exec(emrId, [listFrame], ['click', cfg, i])
+              .then(function () { return sleep(cfg.waitMs); })
+              .then(function () { return exec(emrId, null, ['detail', cfg]); })
+              .then(function (dRes) {
+                var d = bestResult(dRes, function (r) { return (r && r.raw) ? r.raw.length : 0; }).result || {};
+                var visit = {
+                  date: snap.date || d.date || '',
+                  type: snap.type || d.type || '',
+                  raw: (d.raw && d.raw.length > (snap.label || '').length) ? d.raw : (snap.label || d.raw || ''),
+                  cpt: d.cpt || [], icd10: d.icd10 || [],
+                  source: 'athena-copy'
+                };
+                visits.push(visit);
+                i++;
+                return step();
+              });
+          }
+          return step();
+        });
+    }).catch(function (e) { return { ok: false, identity: identity, error: String((e && e.message) || e) }; });
+  }
+
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== 'mlsAppAllVisitsRequest') return; // not ours; let other listeners handle
+    var appTabId = sender && sender.tab && sender.tab.id;
+    try {
+      chrome.storage.local.get(['mlsAthenaVisitsCfg'], function (st) {
+        var cfg = {}; var stored = (st && st.mlsAthenaVisitsCfg) || {};
+        for (var k in ORCH_DEFAULT) cfg[k] = (stored[k] != null ? stored[k] : ORCH_DEFAULT[k]);
+        for (var k2 in stored) if (cfg[k2] == null) cfg[k2] = stored[k2];
+        runAllVisits(appTabId, msg.hint || {}, cfg).then(sendResponse, function (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); });
+      });
+    } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    return true; // async response
+  });
+})();
+
