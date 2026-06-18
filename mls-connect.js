@@ -3916,3 +3916,79 @@
 
 ;/* === RVU feature loader (loads mls-rvu.js) === */
 (function(){try{if(document.getElementById('mlsRvuLoader'))return;var s=document.createElement('script');s.id='mlsRvuLoader';s.src='mls-rvu.js?v=20260617b';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+/* ===== feat_premium_studio_lock.js — MLS premium UI lock for AI Studio (additive, fail-safe) =====
+   Complements the server-side premiumGate. For NON-premium users it locks the AI Studio
+   view (MLS Copilot + custom widgets) with an upgrade prompt instead of usable controls,
+   mirroring the app's existing premium-lock card (#anaPremiumLocked) styling and wording.
+   Premium/owner/admin users are unaffected (effectivePremium() === true => no-op + auto-unlock).
+   Own IIFE, all work in try/catch, silent no-op on any error, idempotent, no monkey-patching. */
+(function(){
+  'use strict';
+  try {
+    var LOCK_ID = 'mlsStudioPremiumLock';
+    function isPrem(){
+      try { if (typeof effectivePremium === 'function') return !!effectivePremium(); } catch(e){}
+      try { var u = (typeof bkUser !== 'undefined' && bkUser) || (window.bkUser) || {}; return !!(u.premium || u.isAdmin); } catch(e){}
+      return true; // fail-open: never lock out a user on a detection error (server still enforces)
+    }
+    function makeLock(){
+      var d = document.createElement('div');
+      d.id = LOCK_ID;
+      d.setAttribute('style','border:1px solid var(--line);border-radius:12px;padding:20px;text-align:center;background:var(--card-2,rgba(123,92,255,0.05));margin:0 0 14px;');
+      d.innerHTML = '<div style="font-size:26px;line-height:1;margin-bottom:6px">🔒</div>'
+        + '<div style="font-weight:700;margin-bottom:4px">Premium feature</div>'
+        + '<p class="sub" style="margin:0">AI Studio — MLS Copilot and custom widgets — is a Premium ($150) feature. Contact your administrator to enable it.</p>';
+      return d;
+    }
+    function applyLock(){
+      try {
+        var sv = document.getElementById('studioView');
+        if (!sv) return;
+        if (isPrem()) { unlock(); return; }
+        if (!document.getElementById(LOCK_ID)) {
+          sv.insertBefore(makeLock(), sv.firstChild);
+        }
+        var ctrls = sv.querySelectorAll('textarea,button,input,select,[contenteditable]');
+        for (var i=0;i<ctrls.length;i++){
+          var el = ctrls[i];
+          if (el.closest && el.closest('#'+LOCK_ID)) continue;
+          if (!el.hasAttribute('data-mls-prem-dis')) {
+            el.setAttribute('data-mls-prem-dis','1');
+            try { el.disabled = true; } catch(e){}
+            el.style.pointerEvents = 'none';
+          }
+        }
+        var kids = sv.children;
+        for (var j=0;j<kids.length;j++){
+          var c = kids[j];
+          if (c.id === LOCK_ID) continue;
+          if (c.getAttribute('data-mls-prem-dim')) continue;
+          c.setAttribute('data-mls-prem-dim','1');
+          c.style.opacity = '0.5';
+        }
+      } catch(e){}
+    }
+    function unlock(){
+      try {
+        var lk = document.getElementById(LOCK_ID); if (lk) lk.remove();
+        var dis = document.querySelectorAll('[data-mls-prem-dis]');
+        for (var i=0;i<dis.length;i++){ var el=dis[i]; el.removeAttribute('data-mls-prem-dis'); try{el.disabled=false;}catch(e){} el.style.pointerEvents=''; }
+        var dim = document.querySelectorAll('[data-mls-prem-dim]');
+        for (var j=0;j<dim.length;j++){ var c=dim[j]; c.removeAttribute('data-mls-prem-dim'); c.style.opacity=''; }
+      } catch(e){}
+    }
+    function tick(){ applyLock(); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick);
+    tick();
+    var n=0, iv=setInterval(function(){ tick(); if(++n>20) clearInterval(iv); }, 500);
+    try {
+      var mo = new MutationObserver(function(){
+        if (window.__mlsStudioLockT) return;
+        window.__mlsStudioLockT = setTimeout(function(){ window.__mlsStudioLockT=null; tick(); }, 150);
+      });
+      mo.observe(document.body, { childList:true, subtree:true });
+    } catch(e){}
+    window.__mlsStudioLock = { apply: applyLock, unlock: unlock, isPrem: isPrem };
+  } catch(e){}
+})();
