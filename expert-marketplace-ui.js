@@ -224,7 +224,7 @@
 
         '<div class="mx-sec"><h3>Photo</h3>' +
         '<div class="mx-photo">' +
-        '<img id="mxPhotoPv" class="pv" alt="Headshot preview" style="display:' + (p.has_photo ? 'block' : 'none') + '" src="' + (p.has_photo ? (base() + '/api/expert/me/photo?t=' + Date.now()) : '') + '">' +
+        '<img id="mxPhotoPv" class="pv" alt="Headshot preview" style="display:' + (p.has_photo ? 'block' : 'none') + '" src="">' +
         '<div id="mxPhotoPh" class="ph" style="display:' + (p.has_photo ? 'none' : 'flex') + '">🩺</div>' +
         '<div><input type="file" id="mxPhotoFile" accept="image/png,image/jpeg,image/webp" style="display:none">' +
         '<button class="mx-btn ghost sm" type="button" id="mxPhotoBtn">Upload headshot</button> ' +
@@ -306,6 +306,24 @@
     document.getElementById('mxDocFile').addEventListener('change', onDocPick);
     updateLiveLink();
     renderDocs();
+    if (p.has_photo) loadPhotoPreview();
+  }
+
+  // The clinician preview endpoint requires a Bearer token, which an <img src>
+  // cannot send — so fetch it with auth and show it as an object URL.
+  async function loadPhotoPreview() {
+    try {
+      var pv = document.getElementById('mxPhotoPv');
+      if (!pv) return;
+      var r = await fetch(base() + '/api/expert/me/photo', { headers: authHeaders(false) });
+      if (!r.ok) return;
+      var blob = await r.blob();
+      if (pv.__url) { try { URL.revokeObjectURL(pv.__url); } catch (e) {} }
+      pv.__url = URL.createObjectURL(blob);
+      pv.src = pv.__url;
+      pv.style.display = 'block';
+      var ph = document.getElementById('mxPhotoPh'); if (ph) ph.style.display = 'none';
+    } catch (e) { /* preview is best-effort */ }
   }
 
   function updateLiveLink() {
@@ -398,8 +416,8 @@
       var d = await r.json().catch(function () { return {}; });
       if (!r.ok) throw new Error(d.error || 'Upload failed');
       var pv = document.getElementById('mxPhotoPv'), ph = document.getElementById('mxPhotoPh'), rm = document.getElementById('mxPhotoRm');
-      pv.src = base() + '/api/expert/me/photo?t=' + Date.now();
       pv.style.display = 'block'; ph.style.display = 'none'; rm.style.display = 'inline-block';
+      loadPhotoPreview();
       STATE.profile.has_photo = true;
       msg('✓ Photo uploaded.', 'ok');
     } catch (e) { msg(e.message || 'Photo upload failed.', 'err'); }
