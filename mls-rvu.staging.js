@@ -263,10 +263,17 @@
 
   // ---- 2) Billing Code Sheet picker + manager (.mlscs-ov / .mlscs-row) ----
   function annotateCodeSheet(root) {
-    var rows = (root || document).querySelectorAll('.mlscs-row[data-code]');
+    // Manager rows carry data-code on the row itself; picker rows (labels) carry
+    // it on the child checkbox (.mlscs-chk[data-code]) — handle both.
+    var rows = (root || document).querySelectorAll('.mlscs-row');
     rows.forEach(function (row) {
       if (row.querySelector('.mlsrvu-badge')) return;
-      var code = row.getAttribute('data-code'); var r = lookup(code);
+      var withCode = row.getAttribute('data-code') ? row : row.querySelector('[data-code]');
+      var code = (row.getAttribute('data-code')) || (withCode && withCode.getAttribute && withCode.getAttribute('data-code'));
+      if (!code) { var cc = row.querySelector('.mlscs-code'); if (cc) code = cc.textContent.trim(); }
+      code = codeOf(code) || code;
+      if (!code) return;
+      var r = lookup(code);
       var desc = row.querySelector('.mlscs-desc') || row.querySelector('.mlscs-code') || row;
       var b = document.createElement('span'); b.innerHTML = badgeHTML(r);
       (desc.parentNode === row ? row : desc).appendChild(b.firstChild);
