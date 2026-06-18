@@ -7,7 +7,7 @@
  * What it does:
  *  1) ONE clear primary action in the open-patient visit zone: keeps the distinct
  *     purple "Copy every visit from athenaOne" as the primary and adds a single
- *     secondary "➕ Add a visit" beside it (consistent style, stable native tooltips).
+ *     secondary "➕ Add a visit" beside it (consistent style).
  *  2) Actionable empty state: "No visits yet — add one or copy from Athena." with two
  *     real buttons (➕ Add a visit / 📋 Copy from Athena), so the next step is one click.
  *  3) Add-visit in one click for the OPEN patient: opens the §43 add-patient modal
@@ -16,6 +16,11 @@
  *  4) Sensible defaults in the add modal: Visit date prefilled to today; last visit
  *     type remembered (user-scoped); score inputs get their scales (VAS/NRS 0–10,
  *     ODI 0–100%); the "Type / paste → AI" path is flagged as the fast lane.
+ *
+ * Triggering is belt-and-suspenders: wraps __mlsVisitUI.render, wraps showView,
+ * a guarded #profileCard observer, AND a light idempotent poll — so the open-patient
+ * enhancements appear whichever way the profile is shown. Every pass is idempotent
+ * (no rewrites once applied), so there is no render churn and the §44 ctxbar is untouched.
  */
 (function () {
   'use strict';
@@ -24,6 +29,7 @@
   var LOG = '[mlsEase]';
   var STYLE_ID = 'mlsEaseStyle';
   var LAST_TYPE_KEY = 'mlsEaseLastVisitType';
+  var ADD_TIP = 'Add a visit to this patient — opens the guided form (date is set to today)';
 
   /* ---------- small helpers ---------- */
   function key(k) {
@@ -110,7 +116,7 @@
     opts = opts || {};
     var props = {
       class: 'mlsease-btn mlsease-addvisit ' + (opts.cls || 'is-secondary'),
-      title: 'Add a visit to this patient — opens the guided form (date is set to today)'
+      title: ADD_TIP
     };
     if (opts.id) props.id = opts.id;
     var b = el('button', props, '➕ Add a visit');
@@ -118,7 +124,8 @@
     return b;
   }
 
-  // Build the actionable empty state inside .mlsvh-empty
+  // Build the actionable empty state inside .mlsvh-empty (these tooltips persist —
+  // the app does not manage this node, and fillEmpty re-applies after §40 re-renders).
   function fillEmpty(emptyNode) {
     if (!emptyNode || emptyNode.getAttribute('data-mlsease') === '1') return;
     emptyNode.setAttribute('data-mlsease', '1');
@@ -137,18 +144,17 @@
     emptyNode.appendChild(row);
   }
 
-  // Make the copy bar a clear primary + secondary row; add a stable tooltip to the
-  // existing copy button and append a single "Add a visit" secondary beside it.
+  // Add a single "Add a visit" secondary beside the existing purple primary copy button,
+  // forming a clear primary+secondary action row. Idempotent; no tug-of-war with the app
+  // (the §40 copy module rewrites/strips its own button attributes on a heartbeat, so we
+  // do NOT re-assert a tooltip on it — the clear text labels carry discoverability).
   function enhanceCopyBar() {
     var bar = document.getElementById('mlsCopyVisitsBar');
     if (!bar) return;
-    var primary = bar.querySelector('button, a, [role=button]');
-    if (primary && !primary.getAttribute('title')) {
-      primary.setAttribute('title',
-        'Read every visit from the open, signed-in athenaOne chart (read-only — never Save/Sign)');
-    }
     if (!bar.classList.contains('mlsease-actions')) bar.classList.add('mlsease-actions');
-    if (!bar.querySelector('#mlsEaseAddVisit')) bar.appendChild(makeAddVisitBtn({ id: 'mlsEaseAddVisit', cls: 'is-secondary' }));
+    if (!bar.querySelector('#mlsEaseAddVisit')) {
+      bar.appendChild(makeAddVisitBtn({ id: 'mlsEaseAddVisit', cls: 'is-secondary' }));
+    }
   }
 
   function enhanceProfile() {
@@ -160,6 +166,8 @@
         var empty = vh.querySelector('.mlsvh-empty');
         if (empty) fillEmpty(empty);
       }
+      // attach the observer lazily once #profileCard exists
+      if (!observerAttached) startObserver();
     } catch (e) { /* silent */ }
   }
 
@@ -179,7 +187,6 @@
   function labelFor(root, input) {
     if (!input) return null;
     if (input.id) { var l = root.querySelector('label[for="' + input.id + '"]'); if (l) return l; }
-    // previous-sibling label or parent's label
     var p = input.parentElement;
     while (p && p !== root) {
       var lab = p.querySelector('label');
@@ -198,7 +205,6 @@
 
   function enhanceModal(root) {
     if (!root || root.getAttribute('data-mlsease-modal') === '1') {
-      // still apply pending prefill even if styled already
       applyPrefill(root); return;
     }
     root.setAttribute('data-mlsease-modal', '1');
@@ -266,9 +272,10 @@
   }
 
   /* ============================================================
-   *  Wiring — wrap render + open, plus a guarded observer fallback
+   *  Wiring — wrap render + open + showView, observer + idempotent poll
    * ============================================================ */
-  var origRender = null, origOpen = null, observer = null, rafPending = false, applying = false;
+  var origRender = null, origOpen = null, origShowView = null,
+      observer = null, observerAttached = false, rafPending = false, applying = false, pollTimer = null;
 
   function scheduleEnhance() {
     if (rafPending || applying) return;
@@ -277,8 +284,8 @@
       rafPending = false;
       applying = true;
       try { if (observer) observer.disconnect(); } catch (e) {}
-      enhanceProfile();
-      try { if (observer) startObserver(); } catch (e) {}
+      try { enhanceProfile(); } catch (e) {}
+      try { if (observerAttached && observer) { var pc = document.getElementById('profileCard'); if (pc) observer.observe(pc, { childList: true, subtree: true }); } } catch (e) {}
       applying = false;
     });
   }
@@ -286,10 +293,9 @@
   function startObserver() {
     var pc = document.getElementById('profileCard');
     if (!pc) return;
-    if (!observer) {
-      observer = new MutationObserver(function () { scheduleEnhance(); });
-    }
+    if (!observer) observer = new MutationObserver(function () { scheduleEnhance(); });
     observer.observe(pc, { childList: true, subtree: true });
+    observerAttached = true;
   }
 
   function wrapRender() {
@@ -322,19 +328,38 @@
     }
   }
 
+  // Wrap showView so switching to the Patients/profile view enhances immediately.
+  function wrapShowView() {
+    if (typeof window.showView === 'function' && !window.showView.__mlsEaseWrapped) {
+      origShowView = window.showView;
+      var wrapped = function () {
+        var r = origShowView.apply(this, arguments);
+        try { enhanceProfile(); setTimeout(enhanceProfile, 80); } catch (e) {}
+        return r;
+      };
+      wrapped.__mlsEaseWrapped = true;
+      wrapped.__mlsEaseOrig = origShowView;
+      window.showView = wrapped;
+    }
+  }
+
   function install() {
     try {
       injectStyle();
       wrapRender();
       wrapOpen();
+      wrapShowView();
       startObserver();
       enhanceProfile();
+      // light idempotent safety-net poll: does nothing once applied, never touches #mlsCtxBar
+      if (!pollTimer) pollTimer = setInterval(function () { try { enhanceProfile(); } catch (e) {} }, 1200);
     } catch (e) { try { console.warn(LOG, 'install failed', e); } catch (_) {} }
   }
 
   function revert() {
+    try { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } } catch (e) {}
     try { if (observer) observer.disconnect(); } catch (e) {}
-    observer = null;
+    observer = null; observerAttached = false;
     try {
       if (window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render.__mlsEaseWrapped) {
         window.__mlsVisitUI.render = window.__mlsVisitUI.render.__mlsEaseOrig;
@@ -346,6 +371,11 @@
       }
     } catch (e) {}
     try {
+      if (window.showView && window.showView.__mlsEaseWrapped) {
+        window.showView = window.showView.__mlsEaseOrig;
+      }
+    } catch (e) {}
+    try {
       [].slice.call(document.querySelectorAll('.mlsease-addvisit')).forEach(function (n) { n.remove(); });
       var st = document.getElementById(STYLE_ID); if (st) st.remove();
     } catch (e) {}
@@ -354,7 +384,7 @@
 
   window.__mlsEase = {
     installed: true,
-    version: '1.0.0',
+    version: '1.1.0',
     enhanceProfile: enhanceProfile,
     enhanceModal: enhanceModal,
     addVisitForActive: addVisitForActive,
