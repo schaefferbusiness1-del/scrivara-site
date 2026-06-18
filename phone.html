@@ -86,7 +86,7 @@
 
 <script>
   var BK='https://scrivara-backend.onrender.com';
-  var code='', rec=null, stream=null, sentCount=0, active=false;
+  var code='', rec=null, stream=null, sentCount=0, active=false; var segTimer=null, recMime='';
 
   function qp(name){ try{ return new URLSearchParams(location.search).get(name)||''; }catch(e){ return ''; } }
   function show(id){ document.getElementById('connectScreen').classList.toggle('hidden', id!=='connect'); document.getElementById('recScreen').classList.toggle('hidden', id!=='rec'); }
@@ -108,21 +108,46 @@
     }
   }
   function toggleRec(){ active?stopRec():startRec(); }
+    function pickMime(){
+    var cands=['audio/webm;codecs=opus','audio/webm','audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/aac','audio/ogg;codecs=opus'];
+    try{ if(window.MediaRecorder && MediaRecorder.isTypeSupported){ for(var i=0;i<cands.length;i++){ if(MediaRecorder.isTypeSupported(cands[i])) return cands[i]; } } }catch(e){}
+    return '';
+  }
+  // Record in short, SELF-CONTAINED segments. Each segment is its own MediaRecorder
+  // that we stop after a few seconds, so every uploaded clip is a COMPLETE, decodable
+  // audio file (its own header) rather than a headerless timeslice fragment. This is
+  // what lets the backend transcribe each clip and stream the transcript live, and it
+  // also works on iOS Safari (which does not fire timeslice dataavailable reliably).
+  var SEG_MS=8000;
+  function startSegment(){
+    if(!active || !stream) return;
+    var r;
+    try{ r = recMime ? new MediaRecorder(stream,{mimeType:recMime}) : new MediaRecorder(stream); }
+    catch(e){ try{ r=new MediaRecorder(stream); }catch(e2){ var er=document.getElementById('recErr'); if(er) er.textContent='Could not start recording on this device.'; return; } }
+    rec=r;
+    var parts=[];
+    r.ondataavailable=function(ev){ if(ev.data && ev.data.size>0) parts.push(ev.data); };
+    r.onstop=function(){
+      try{ if(parts.length){ var blob=new Blob(parts,{type:(r.mimeType||recMime||'audio/webm')}); if(blob.size>0) uploadChunk(blob, blob.type); } }catch(e){}
+      if(active){ startSegment(); }
+      else if(stream){ try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} stream=null; }
+    };
+    try{ r.start(); }catch(e){ try{ r.start(); }catch(e2){ return; } }
+    if(segTimer){ try{ clearTimeout(segTimer); }catch(e){} }
+    segTimer=setTimeout(function(){ try{ if(rec && rec.state!=='inactive') rec.stop(); }catch(e){} }, SEG_MS);
+  }
   async function startRec(){
     var err=document.getElementById('recErr'); err.textContent='';
-    if(typeof MediaRecorder==='undefined'){ err.textContent='Use a recent Safari or Chrome.'; return; }
+    if(typeof MediaRecorder==='undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ err.textContent='Recording isn\u2019t supported in this browser. Use a recent Safari or Chrome.'; return; }
     try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
     catch(e){ err.textContent='Microphone access was blocked. Allow the mic in your browser settings, then tap Record again.'; return; }
-    var r;
-    try{ r=new MediaRecorder(stream); }
-    catch(e){ try{ r=new MediaRecorder(stream,{mimeType:'audio/webm'}); }catch(e2){ err.textContent='Could not start recording on this device.'; return; } }
-    rec=r; active=true;
-    r.ondataavailable=function(ev){ if(ev.data && ev.data.size>0) uploadChunk(ev.data, r.mimeType||ev.data.type); };
-    try{ r.start(8000); }catch(e){ try{ r.start(); }catch(e2){} }
+    recMime=pickMime();
+    active=true;
     var btn=document.getElementById('recBtn'); btn.classList.add('on');
-    document.getElementById('recIc').textContent='■'; document.getElementById('recLabel').textContent='Stop';
-    document.getElementById('status').textContent='● Recording… talk normally';
+    document.getElementById('recIc').textContent='\u25A0'; document.getElementById('recLabel').textContent='Stop';
+    document.getElementById('status').textContent='\u25CF Recording\u2026 talk normally';
     document.getElementById('doneBtn').style.display='inline-block';
+    startSegment();
   }
   function uploadChunk(blob, mimetype){
     var reader=new FileReader();
@@ -138,13 +163,15 @@
     };
     reader.readAsDataURL(blob);
   }
-  function stopRec(){
+    function stopRec(){
     active=false;
-    if(rec){ try{ rec.stop(); }catch(e){} rec=null; }
-    if(stream){ try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} stream=null; }
+    if(segTimer){ try{ clearTimeout(segTimer); }catch(e){} segTimer=null; }
+    if(rec && rec.state!=='inactive'){ try{ rec.stop(); }catch(e){} }
+    else { if(stream){ try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} stream=null; } }
+    rec=null;
     var btn=document.getElementById('recBtn'); btn.classList.remove('on');
-    document.getElementById('recIc').textContent='●'; document.getElementById('recLabel').textContent='Record';
-    document.getElementById('status').textContent=sentCount?'Stopped — your computer has the audio.':'Stopped.';
+    document.getElementById('recIc').textContent='\u25CF'; document.getElementById('recLabel').textContent='Record';
+    document.getElementById('status').textContent=sentCount?'Stopped \u2014 your computer has the audio.':'Stopped.';
   }
   function finishRec(){ stopRec(); document.getElementById('status').textContent='Done. You can switch back to your computer.'; }
 
