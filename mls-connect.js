@@ -4013,3 +4013,5 @@
 ;(function(){try{['feat_addpatient.js','feat_cohort_visits.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})();
 /* MLS - stabilize active-patient context bar badges (idempotent render; append-only, guarded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="ctxbar-stabilize.js"]'))return;var s=document.createElement('script');s.src='ctxbar-stabilize.js?v='+Date.now();s.setAttribute('data-mls-asset','ctxbar-stabilize.js');s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_detail.js');s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
