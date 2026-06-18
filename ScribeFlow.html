@@ -11950,7 +11950,7 @@ async function stopPhoneMic(){
    Records audio in ~8s chunks and uploads each as base64 to
    /api/mic/<CODE>/audio. No login required (code is the cap).
    ========================================================= */
-let phoneRecCode='', phoneRec=null, phoneRecStream=null, phoneRecSentCount=0, phoneRecActive=false;
+let phoneRecCode='', phoneRec=null, phoneRecStream=null, phoneRecSentCount=0, phoneRecActive=false; let phoneRecSegTimer=null, phoneRecMime='';
 function initPhoneMicPage(code){
   phoneRecCode=code;
   document.getElementById('phoneMicPage').style.display='flex';
@@ -11965,10 +11965,37 @@ function initPhoneMicPage(code){
   }
 }
 function togglePhoneRec(){ phoneRecActive?stopPhoneRec():startPhoneRec(); }
+function pickPhoneMime(){
+  var cands=['audio/webm;codecs=opus','audio/webm','audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/aac','audio/ogg;codecs=opus'];
+  try{ if(window.MediaRecorder && MediaRecorder.isTypeSupported){ for(var i=0;i<cands.length;i++){ if(MediaRecorder.isTypeSupported(cands[i])) return cands[i]; } } }catch(e){}
+  return '';
+}
+// Record in short SELF-CONTAINED segments: each segment is its own MediaRecorder we
+// stop after a few seconds, so every uploaded clip is a COMPLETE decodable audio file
+// (with its own header) rather than a headerless timeslice fragment. That is what lets
+// the backend transcribe each clip and stream the transcript live, and it works on iOS
+// Safari (which does not fire timeslice dataavailable reliably).
+function startPhoneSegment(){
+  if(!phoneRecActive || !phoneRecStream) return;
+  let rec;
+  try{ rec = phoneRecMime ? new MediaRecorder(phoneRecStream,{mimeType:phoneRecMime}) : new MediaRecorder(phoneRecStream); }
+  catch(e){ try{ rec=new MediaRecorder(phoneRecStream); }catch(e2){ const er=document.getElementById('phoneRecError'); if(er) er.textContent='Could not start recording on this device.'; return; } }
+  phoneRec=rec;
+  const parts=[];
+  rec.ondataavailable=ev=>{ if(ev.data && ev.data.size>0) parts.push(ev.data); };
+  rec.onstop=()=>{
+    try{ if(parts.length){ const blob=new Blob(parts,{type:(rec.mimeType||phoneRecMime||'audio/webm')}); if(blob.size>0) uploadPhoneChunk(blob, blob.type); } }catch(e){}
+    if(phoneRecActive){ startPhoneSegment(); }
+    else if(phoneRecStream){ try{ phoneRecStream.getTracks().forEach(t=>t.stop()); }catch(e){} phoneRecStream=null; }
+  };
+  try{ rec.start(); }catch(e){ try{ rec.start(); }catch(e2){ return; } }
+  if(phoneRecSegTimer){ try{ clearTimeout(phoneRecSegTimer); }catch(e){} }
+  phoneRecSegTimer=setTimeout(()=>{ try{ if(phoneRec && phoneRec.state!=='inactive') phoneRec.stop(); }catch(e){} }, 8000);
+}
 async function startPhoneRec(){
   const errEl=document.getElementById('phoneRecError'); if(errEl) errEl.textContent='';
-  if(typeof MediaRecorder==='undefined'){
-    if(errEl) errEl.textContent='Please use a recent Safari or Chrome.'; return;
+  if(typeof MediaRecorder==='undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    if(errEl) errEl.textContent='Recording isn\u2019t supported in this browser. Please use a recent Safari or Chrome.'; return;
   }
   try{
     phoneRecStream=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -11976,22 +12003,13 @@ async function startPhoneRec(){
     if(errEl) errEl.textContent='Microphone access was blocked. Allow mic access in your browser settings and tap Record again.';
     return;
   }
-  let rec;
-  try{ rec=new MediaRecorder(phoneRecStream); }
-  catch(e){
-    // some browsers need an explicit mimetype
-    try{ rec=new MediaRecorder(phoneRecStream,{mimeType:'audio/webm'}); }
-    catch(e2){ if(errEl) errEl.textContent='Could not start recording on this device.'; return; }
-  }
-  phoneRec=rec;
+  phoneRecMime=pickPhoneMime();
   phoneRecActive=true;
-  rec.ondataavailable=ev=>{ if(ev.data && ev.data.size>0) uploadPhoneChunk(ev.data,rec.mimeType||ev.data.type); };
-  // fire ondataavailable roughly every 8s so audio streams in near-real-time
-  try{ rec.start(8000); }catch(e){ try{ rec.start(); }catch(e2){} }
   const btn=document.getElementById('phoneRecBtn');
-  if(btn){ btn.textContent='■ Stop'; btn.style.background='#ffdede'; btn.style.color='#b00020'; }
-  document.getElementById('phoneRecStatus').textContent='● Recording…';
+  if(btn){ btn.textContent='\u25A0 Stop'; btn.style.background='#ffdede'; btn.style.color='#b00020'; }
+  document.getElementById('phoneRecStatus').textContent='\u25CF Recording\u2026';
   document.getElementById('phoneDoneBtn').style.display='inline-block';
+  startPhoneSegment();
 }
 function uploadPhoneChunk(blob,mimetype){
   const reader=new FileReader();
@@ -12015,10 +12033,12 @@ function uploadPhoneChunk(blob,mimetype){
 }
 function stopPhoneRec(){
   phoneRecActive=false;
-  if(phoneRec){ try{ phoneRec.stop(); }catch(e){} phoneRec=null; }
-  if(phoneRecStream){ try{ phoneRecStream.getTracks().forEach(t=>t.stop()); }catch(e){} phoneRecStream=null; }
+  if(phoneRecSegTimer){ try{ clearTimeout(phoneRecSegTimer); }catch(e){} phoneRecSegTimer=null; }
+  if(phoneRec && phoneRec.state!=='inactive'){ try{ phoneRec.stop(); }catch(e){} }
+  else { if(phoneRecStream){ try{ phoneRecStream.getTracks().forEach(t=>t.stop()); }catch(e){} phoneRecStream=null; } }
+  phoneRec=null;
   const btn=document.getElementById('phoneRecBtn');
-  if(btn){ btn.textContent='● Record'; btn.style.background='#fff'; btn.style.color='#0b6b6e'; }
+  if(btn){ btn.textContent='\u25CF Record'; btn.style.background='#fff'; btn.style.color='#0b6b6e'; }
   document.getElementById('phoneRecStatus').textContent=phoneRecSentCount?'Stopped. You can close this page.':'Stopped.';
   document.getElementById('phoneDoneBtn').style.display='none';
 }
