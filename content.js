@@ -766,21 +766,35 @@
 (function () {
   'use strict';
   try { if (window.__mlsAllVisitsBridge) return; window.__mlsAllVisitsBridge = 1; } catch (e) { return; }
+  var activeOrigin = '', activeUntil = 0;
+  function trusted(origin) {
+    if (!origin || typeof origin !== 'string') return false;
+    try {
+      var u = new URL(origin);
+      if (u.protocol === 'https:' && (u.hostname === 'mlsscribe.com' || u.hostname === 'www.mlsscribe.com' || u.hostname.endsWith('.mlsscribe.com'))) return true;
+    } catch (e) {}
+    return false;
+  }
+  function post(origin, type, payload) {
+    try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), origin); } catch (e) {}
+  }
   window.addEventListener('message', function (ev) {
-    var d = ev && ev.data; if (!d || d.type !== 'mlsAppReadAllVisits') return;
+    var d = ev && ev.data; if (!d || d.type !== 'mlsAppReadAllVisits' || d.source !== 'mls-app' || !trusted(ev.origin)) return;
+    var origin = ev.origin;
+    activeOrigin = origin; activeUntil = Date.now() + 300000;
     try {
       chrome.runtime.sendMessage({ type: 'mlsAppAllVisitsRequest', hint: d.hint || {} }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
-        if (err || !res) { window.postMessage({ type: 'mlsAppAllVisitsResult', ok: false, error: (err && err.message) || 'No response from MLS Assist' }, '*'); return; }
+        if (err || !res) { post(origin, 'mlsAppAllVisitsResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist' }); return; }
         var out = {}; for (var k in res) out[k] = res[k]; out.type = 'mlsAppAllVisitsResult';
-        window.postMessage(out, '*');
+        post(origin, 'mlsAppAllVisitsResult', out);
       });
-    } catch (e) { window.postMessage({ type: 'mlsAppAllVisitsResult', ok: false, error: String((e && e.message) || e) }, '*'); }
+    } catch (e) { post(origin, 'mlsAppAllVisitsResult', { ok: false, error: String((e && e.message) || e) }); }
   }, false);
   try {
     chrome.runtime.onMessage.addListener(function (msg) {
       if (msg && msg.type === 'mlsAppVisitsProgress') {
-        window.postMessage({ type: 'mlsAppVisitsProgress', message: msg.message, n: msg.n, total: msg.total }, '*');
+        if (activeOrigin && Date.now() < activeUntil) post(activeOrigin, 'mlsAppVisitsProgress', { message: msg.message, n: msg.n, total: msg.total });
       }
     });
   } catch (e) {}
