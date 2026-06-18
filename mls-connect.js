@@ -4015,3 +4015,6 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="ctxbar-stabilize.js"]'))return;var s=document.createElement('script');s.src='ctxbar-stabilize.js?v='+Date.now();s.setAttribute('data-mls-asset','ctxbar-stabilize.js');s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_detail.js');s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+/* MLS — load patient/visit ease-of-use pass (append-only, guarded) */
+(function(){try{if(!document.querySelector('script[data-mls-asset="feat_ease.js"]')){var s=document.createElement('script');s.src='feat_ease.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_ease.js');s.async=false;(document.head||document.documentElement).appendChild(s);}}catch(e){}})();
