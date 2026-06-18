@@ -448,7 +448,7 @@
       var done = false;
       function on(ev) { if (ev.data && (ev.data.type === 'mlsPong')) { if (done) return; done = true; window.removeEventListener('message', on); resolve(true); } }
       window.addEventListener('message', on);
-      try { window.postMessage({ type: 'mlsPing', from: 'mls-app' }, '*'); } catch (e) {}
+      try { window.postMessage({ type: 'mlsPing', source: 'mls-app', from: 'mls-app' }, '*'); } catch (e) {}
       setTimeout(function () { if (done) return; done = true; window.removeEventListener('message', on); resolve(false); }, timeout || 1500);
     });
   }
@@ -476,7 +476,7 @@
         }
       }
       window.addEventListener('message', on);
-      try { window.postMessage(Object.assign({ type: reqType, from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
+      try { window.postMessage(Object.assign({ type: reqType, source: 'mls-app', from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
       engTid = setTimeout(function () { if (!engaged) fin(reject, new Error('no-ext')); }, engageTimeout || 6000);
     });
   }
@@ -508,7 +508,7 @@
     var st = function (m) { try { onStatus && onStatus(m); } catch (e) {} };
     st('Connecting to MLS Assist…');
     return ping(1800).then(function (ok) {
-      if (!ok) throw new Error('MLS Assist not detected. Make sure the extension is loaded and a signed-in athenaOne tab is open.');
+      if (!ok) throw new Error('MLS Assist isn’t responding. If it’s installed, reload it at chrome://extensions (or get the latest from MLS Settings → Get the extension). If it isn’t installed yet, install it there, then try again.');
       st('Reading every visit from athenaOne… (read-only)');
       return driveRequest(
         'mlsAppReadAllVisits',
