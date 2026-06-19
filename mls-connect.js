@@ -1,13 +1,11 @@
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_note_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_note_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_note_detail.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-/*
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_note_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_note_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_note_detail.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-
-undefined/* ============================================================
+/* ============================================================
    MLS-CONNECT — connectedness feature bundle (external)
    Loaded by ScribeFlow via a cache-busted <script> loader.
    Each feature is a self-contained IIFE, progressive-enhancement,
    guarded with try/catch, never modifies existing app functions.
    ============================================================ */
+
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_note_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_note_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_note_detail.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 
 /* ---- module: feat_cmdk.js ---- */
