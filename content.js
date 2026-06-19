@@ -4,6 +4,8 @@
    selection) -> MLS generates a note -> the doctor reviews -> one click inserts
    it into the focused EMR field. Nothing is ever written automatically. */
 (function () {
+  /* MLS Assist v1.35 — scope guard: never run on github.com (perf+privacy; via <all_urls> the panel/observers used to inject into GitHub and could freeze its renderer). Belt-and-suspenders with manifest exclude_matches. athenaOne + mlsscribe.com are unaffected. */
+  try { var __mlsHost = (location && location.hostname || '').toLowerCase(); if (__mlsHost === 'github.com' || __mlsHost.slice(-11) === '.github.com' || __mlsHost === 'githubusercontent.com' || __mlsHost.slice(-22) === '.githubusercontent.com' || __mlsHost === 'github.dev' || __mlsHost.slice(-11) === '.github.dev') { return; } } catch (e) {}
   if (window.__mlsAssistLoaded) return; window.__mlsAssistLoaded = true;
   // SECURITY (v1.26) -- trusted-origin gate for the page->extension postMessage bridge.
   // The content script runs on <all_urls> so the doctor can open the MLS Assist panel
@@ -759,7 +761,7 @@
 })();
 /* MLS Assist content.js — v1.17 schedule-pull build */
 
-/* === MLS Assist v1.32 — Copy-every-visit bridge (APPEND-ONLY to content.js) ===
+/* === MLS Assist v1.35 — Copy-every-visit bridge (APPEND-ONLY to content.js) ===
  * Self-contained. Adds its own message listeners; does not touch the existing
  * bridge router. Relays the app's mlsAppReadAllVisits request to background and
  * streams mlsAppVisitsProgress / mlsAppAllVisitsResult back to the page. */
