@@ -1,6 +1,6 @@
 /* =====================================================================
    feat_visits_honest.js  — honest per-visit progress + real-data gate (§48)
-   v1.1.0
+   v1.1.2
    ---------------------------------------------------------------------
    PROBLEM it fixes: "📋 Copy every visit from athenaOne" (and the cohort
    per-visit capture) could stream a fabricated "Reading visit N of M …"
@@ -48,7 +48,7 @@
     function isRealVisit(v) { return !!v && !!v.date && realContent(v); }
 
     /* ---------- optimistic-progress matcher (the fabricable counter) ------- */
-    var FAKE = /(\breading\b|\bsaved visit\b|\bvisit\s*\d+\b|\b\d+\s*of\s*\d+\b|\bof\s*\d+\b|generating ai|summariz)/i;
+    var FAKE = /(\breading\b|\bsaved visit\b|\bvisit\s*\d+\b|\b\d+\s*of\s*\d+\b|\bof\s*\d+\b|\b\d+\s+(?:visit|encounter|chart|note|record)s?\b|generating ai|summariz)/i;
     function isOptimistic(line) { return FAKE.test(String(line || '')); }
     var HONEST = /(sign(ed)?[\s-]?in|log[\s-]?in|couldn'?t|can'?t read|athena[Oo]ne|extension|update|not found|no .*(visit|encounter|chart)|empty|nothing was saved|open .*chart)/i;
     function isHonest(line) { return HONEST.test(String(line || '')); }
@@ -130,12 +130,16 @@
           if (isHonest(line)) honestSeen = true;
           cb(line);
         }
-        return withGate(function () {
-          return Promise.race([
-            Promise.resolve(orig(filtered)).then(function (r) { return { r: r }; }, function (e) { return { err: e }; }),
-            new Promise(function (res) { setTimeout(function () { res({ __timeout: true }); }, MAXMS); })
-          ]);
-        }).then(function (o) {
+        gating++;
+        var gateCleared = false;
+        function clearGate() { if (!gateCleared) { gateCleared = true; gating = Math.max(0, gating - 1); } }
+        var gateSafety = setTimeout(clearGate, 90000);
+        var realRun = Promise.resolve(orig(filtered)).then(function (r) { return { r: r }; }, function (e) { return { err: e }; });
+        realRun.then(function () { clearTimeout(gateSafety); clearGate(); }, function () { clearTimeout(gateSafety); clearGate(); });
+        return Promise.race([
+          realRun,
+          new Promise(function (res) { setTimeout(function () { res({ __timeout: true }); }, MAXMS); })
+        ]).then(function (o) {
           finished = true;
           var d = realDelta();
           if (d > 0) {
@@ -177,7 +181,7 @@
 
     /* ---------- public surface + revert ---------- */
     window.__mlsVisitsHonest = {
-      installed: true, _full: true, version: '1.1.0',
+      installed: true, _full: true, version: '1.1.2',
       isRealVisit: isRealVisit, isOptimistic: isOptimistic, ensureWrapped: ensureWrapped,
       _gating: function () { return gating; },
       revert: function () {
