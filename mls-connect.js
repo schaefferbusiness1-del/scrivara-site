@@ -1,4 +1,6 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_note_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_note_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_note_detail.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+/*
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_note_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_note_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_note_detail.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 undefined/* ============================================================
    MLS-CONNECT — connectedness feature bundle (external)
