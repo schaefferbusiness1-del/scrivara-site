@@ -1397,14 +1397,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'mlsRunBackupNow') { runNightlyBackup('manual').then(sendResponse); return true; }
 });
 
-/* === MLS Assist v1.32 — Copy-every-visit driver (APPEND-ONLY to background.js) ==
+/* === MLS Assist v1.34 — Copy-every-visit driver (APPEND-ONLY to background.js) ==
  * Self-contained. Adds its own chrome.runtime.onMessage handler for
- * mlsAppAllVisitsRequest; does not modify existing handlers. Walks the OPEN
- * patient's encounters/visits list in athenaOne (content-scored), opens & reads
- * each encounter, streams progress, returns {ok, identity, visits[]}.
- * READ-ONLY: clicks only dated encounter rows; never Save/Sign/Submit
- * (excludeClickLabels guard, unit-tested). Selectors tunable via
- * chrome.storage.local 'mlsAthenaVisitsCfg'. */
+ * mlsAppAllVisitsRequest; does not modify existing handlers. Genuinely walks the
+ * OPEN patient's encounters/visits list in athenaOne (frame-aware, content-scored),
+ * reads each encounter's real content, and returns {ok, identity, visits[], diag}.
+ *
+ * v1.34 changes vs v1.32:
+ *  - Frame-aware enumeration: scores every frame's candidate row-groups by
+ *    encounter-likeness (date + type-keyword + clickable + code signals), not just
+ *    "has a date", and picks the single best frame+group.
+ *  - Two read paths: (A) EXPANDED — if rows already carry real content, read them
+ *    in place with NO clicks (safest, read-only); (B) CLICK — only for thin rows,
+ *    open each row, read the detail pane (content-scored across frames). Falls back
+ *    A->B per-row when an expanded row is too thin.
+ *  - HONEST progress: emits a per-visit line ONLY after a visit with REAL content
+ *    is actually read; total M is the real enumerated count. Never a pre-counted
+ *    "reading N of M" with no data behind it.
+ *  - HONEST failure: if no encounters list is recognized, returns ok:false with a
+ *    clear message — never a fabricated count.
+ *  - SELF-DIAGNOSTIC: always attaches result.diag, a fully REDACTED structural
+ *    fingerprint of the chart DOM (frame hosts, candidate selectors, row tag/class
+ *    signatures, counts, and date/CPT/ICD booleans) — NO patient text, names, DOBs,
+ *    dates, or codes — so the selectors can be tuned to a real chart from one run.
+ *    The redacted diag is also saved to chrome.storage.local 'mlsAthenaVisitsDiag'.
+ *  - READ-ONLY: clicks ONLY dated encounter rows; never Save/Sign/Submit/etc.
+ *    (excludeClickLabels guard). Selectors tunable via chrome.storage.local
+ *    'mlsAthenaVisitsCfg'. */
 (function () {
   'use strict';
   try { if (self.__mlsAllVisitsHandler) return; self.__mlsAllVisitsHandler = 1; } catch (e) {}
@@ -1419,65 +1438,224 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   function mlsVisitsDriverFn(op, cfg, idx) {
     cfg = cfg || {};
     var DEFAULT = {
-      rowSelectors: ['tr', '[role="row"]', 'li', '.encounter', '.encounter-row', '[data-encounter-id]', '.visit-row'],
-      detailSelectors: ['[role="main"]', 'main', '.encounter-detail', '.documentation', '.clinical', 'article', '.chart-detail'],
-      excludeClickLabels: ['save', 'sign', 'finalize', 'post', 'bill', 'submit claim', 'submit', 'delete', 'lock', 'addend', 'amend', 'discard', 'cancel appointment'],
-      maxVisits: 60
+      rowSelectors: [
+        'tr', '[role="row"]', 'li',
+        '.encounter', '.encounter-row', '.encounterrow', '[data-encounter-id]',
+        '[data-encounterid]', '[id*="encounter" i]', '[class*="encounter" i]',
+        '.visit', '.visit-row', '[class*="visit" i]', '[class*="timeline" i] li',
+        '.athena-encounter', '.chart-encounter', '.documentencounter'
+      ],
+      detailSelectors: [
+        '[role="main"]', 'main', '.encounter-detail', '.encounterdetail',
+        '.documentation', '.clinical', 'article', '.chart-detail', '.notesection',
+        '[class*="encounterbody" i]', '[class*="notebody" i]', '[class*="document" i]',
+        '[id*="encounter" i]', '.assessment', '.hpi'
+      ],
+      typeKeywords: [
+        'office visit', 'encounter', 'telehealth', 'follow', 'follow-up', 'f/u',
+        'new patient', 'established', 'consult', 'procedure', 'injection', 'block',
+        'ablation', 'epidural', 'facet', 'esi', 'rfa', 'evaluation', 'eval',
+        'visit', 'exam', 'phone', 'lab', 'imaging', 'mri', 'x-ray', 'progress note',
+        'preop', 'postop', 'pre-op', 'post-op', 'surgery'
+      ],
+      excludeClickLabels: [
+        'save', 'sign', 'finalize', 'post', 'bill', 'submit claim', 'submit',
+        'delete', 'lock', 'addend', 'amend', 'discard', 'cancel appointment',
+        'close encounter', 'check out', 'checkout'
+      ],
+      maxVisits: 60,
+      minRealLen: 60
     };
     for (var k in DEFAULT) { if (cfg[k] == null) cfg[k] = DEFAULT[k]; }
     var DATE_RE = /(?:^|[^\d])(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})(?!\d)/;
     var CPT_RE = /\b\d{5}\b/g, ICD_RE = /\b[A-TV-Z]\d[0-9A-Z](?:\.[0-9A-Z]{1,4})?\b/g;
     function txt(el) { return (el && (el.innerText || el.textContent) || '').replace(/\s+/g, ' ').trim(); }
-    function excluded(s) { s = String(s || '').toLowerCase(); for (var i = 0; i < cfg.excludeClickLabels.length; i++) { if (s.indexOf(cfg.excludeClickLabels[i]) >= 0) return true; } return false; }
+    function low(s) { return String(s || '').toLowerCase(); }
+    function excluded(s) { s = low(s); for (var i = 0; i < cfg.excludeClickLabels.length; i++) { if (s.indexOf(cfg.excludeClickLabels[i]) >= 0) return true; } return false; }
+    function hasType(s) { s = low(s); for (var i = 0; i < cfg.typeKeywords.length; i++) { if (s.indexOf(cfg.typeKeywords[i]) >= 0) return true; } return false; }
+    function hasDate(s) { return DATE_RE.test(String(s || '')); }
+    function hasCpt(s) { CPT_RE.lastIndex = 0; return CPT_RE.test(String(s || '')); }
+    function hasIcd(s) { ICD_RE.lastIndex = 0; return ICD_RE.test(String(s || '')); }
     function codes(s, re) { var out = [], m; re.lastIndex = 0; while ((m = re.exec(String(s || '')))) { var c = m[0].toUpperCase(); if (out.indexOf(c) < 0) out.push(c); if (out.length > 40) break; } return out; }
-    function rowSet() {
-      var best = null, bestScore = 0;
+    function clickable(n) { try { return !!(n.querySelector && n.querySelector('a[href],button,[role="link"],[role="button"],[onclick],td a, td')); } catch (e) { return false; } }
+
+    // Score a single candidate row's text for "looks like an encounter row".
+    function rowScore(t) {
+      if (!t) return 0;
+      var s = 0;
+      if (hasDate(t)) s += 3;
+      if (hasType(t)) s += 2;
+      if (hasCpt(t)) s += 1;
+      if (hasIcd(t)) s += 1;
+      if (t.length >= 12 && t.length <= 400) s += 1;
+      return s;
+    }
+
+    // Build candidate groups: for each selector, group matching nodes by parent,
+    // keep groups whose members look like dated encounter rows; return scored groups.
+    function candidateGroups() {
+      var groups = [];
       for (var s = 0; s < cfg.rowSelectors.length; s++) {
-        var nodes; try { nodes = Array.prototype.slice.call(document.querySelectorAll(cfg.rowSelectors[s])); } catch (e) { continue; }
-        var groups = new Map();
+        var nodes;
+        try { nodes = Array.prototype.slice.call(document.querySelectorAll(cfg.rowSelectors[s])); } catch (e) { continue; }
+        if (!nodes.length) continue;
+        var byParent = new Map();
         for (var i = 0; i < nodes.length; i++) {
           var n = nodes[i], t = txt(n);
-          if (t.length < 4 || t.length > 600) continue;
-          if (!DATE_RE.test(t)) continue;
+          if (t.length < 8 || t.length > 1200) continue;
+          if (!hasDate(t)) continue;
           if (excluded(t)) continue;
           var par = n.parentElement || n;
-          if (!groups.has(par)) groups.set(par, []);
-          groups.get(par).push(n);
+          if (!byParent.has(par)) byParent.set(par, []);
+          byParent.get(par).push(n);
         }
-        groups.forEach(function (rows) { if (rows.length > bestScore) { bestScore = rows.length; best = rows; } });
+        byParent.forEach(function (rows, par) {
+          if (rows.length < 2) return; // a list has multiple dated rows
+          var sc = 0, withType = 0, withCode = 0, withClick = 0, lens = [];
+          for (var j = 0; j < rows.length; j++) {
+            var rt = txt(rows[j]);
+            sc += rowScore(rt);
+            if (hasType(rt)) withType++;
+            if (hasCpt(rt) || hasIcd(rt)) withCode++;
+            if (clickable(rows[j])) withClick++;
+            lens.push(rt.length);
+          }
+          lens.sort(function (a, b) { return a - b; });
+          var median = lens[Math.floor(lens.length / 2)] || 0;
+          // group score: per-row signal * count, with bonuses for type/click consistency
+          var groupScore = sc + rows.length * 2 + withType + Math.min(withClick, rows.length);
+          groups.push({
+            selector: cfg.rowSelectors[s], parent: par, rows: rows,
+            count: rows.length, score: groupScore, withType: withType,
+            withCode: withCode, withClick: withClick, median: median
+          });
+        });
       }
-      return best || [];
+      groups.sort(function (a, b) { return b.score - a.score; });
+      return groups;
     }
+
+    function bestGroup() { var g = candidateGroups(); return g.length ? g[0] : null; }
+
+    // ---- redacted structural fingerprint (NO PHI) ----------------------------
+    function sigOf(node) {
+      var classes = [];
+      try { classes = (node.className && node.className.baseVal != null ? node.className.baseVal : (node.className || '')).toString().split(/\s+/).filter(Boolean).slice(0, 6); } catch (e) {}
+      var childTags = {};
+      try {
+        var ch = node.children || [];
+        for (var i = 0; i < ch.length && i < 30; i++) { var tg = (ch[i].tagName || '').toLowerCase(); if (tg) childTags[tg] = (childTags[tg] || 0) + 1; }
+      } catch (e) {}
+      var attrKeys = [];
+      try { for (var a = 0; a < node.attributes.length && a < 12; a++) { var an = node.attributes[a].name; if (an !== 'class' && an !== 'style') attrKeys.push(an); } } catch (e) {}
+      var t = txt(node);
+      return {
+        tag: (node.tagName || '').toLowerCase(),
+        classes: classes,            // CSS class NAMES only (structural, no PHI)
+        childTags: childTags,        // counts of child element tags
+        attrKeys: attrKeys,          // attribute NAMES only (no values)
+        textLen: t.length,           // length only (no text)
+        hasDate: hasDate(t), hasCpt: hasCpt(t), hasIcd: hasIcd(t), hasType: hasType(t)
+      };
+    }
+    function diagnose() {
+      var host = '';
+      try { host = location.hostname || ''; } catch (e) {}
+      var groups = candidateGroups();
+      var cands = groups.slice(0, 4).map(function (g) {
+        return {
+          selector: g.selector, count: g.count, score: g.score,
+          withType: g.withType, withCode: g.withCode, withClick: g.withClick,
+          medianLen: g.median, rowSig: g.rows[0] ? sigOf(g.rows[0]) : null
+        };
+      });
+      // generic counts to see what's present even when no group qualified
+      function cnt(sel) { try { return document.querySelectorAll(sel).length; } catch (e) { return -1; } }
+      return {
+        host: host,
+        frameDepth: (function () { try { return window.top === window ? 0 : 1; } catch (e) { return 1; } })(),
+        counts: { tr: cnt('tr'), role_row: cnt('[role="row"]'), li: cnt('li'), tables: cnt('table'), iframes: cnt('iframe'), encounterish: cnt('[class*="encounter" i],[id*="encounter" i]'), visitish: cnt('[class*="visit" i]') },
+        groupCount: groups.length, candidates: cands
+      };
+    }
+
+    // ---- operations ----------------------------------------------------------
     if (op === 'identity') {
       var body = txt(document.body), dob = '', name = '';
       var dm = body.match(/\b(?:DOB|D\.O\.B\.|Date of Birth|Born)\D{0,8}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/i); if (dm) dob = dm[1];
       var nm = body.match(/\bPatient\D{0,4}([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)/); if (nm) name = nm[1];
-      if (!name) { var h = document.querySelector('h1,h2,[data-patient-name],.patient-name'); if (h) name = txt(h).slice(0, 60); }
+      if (!name) { var h = document.querySelector('h1,h2,[data-patient-name],.patient-name,[class*="patientname" i]'); if (h) name = txt(h).slice(0, 60); }
       return { name: name, dob: dob };
     }
+    if (op === 'diagnose') { return diagnose(); }
     if (op === 'enumerate') {
-      return rowSet().map(function (n, i) { var t = txt(n); var d = t.match(DATE_RE); return { index: i, date: d ? d[1] : '', type: t.replace(DATE_RE, '').slice(0, 80).trim(), label: t.slice(0, 120) }; });
+      var g = bestGroup();
+      if (!g) return { ok: false, count: 0, score: 0 };
+      var rows = g.rows.map(function (n, i) {
+        var t = txt(n); var d = t.match(DATE_RE);
+        return {
+          index: i, date: d ? d[1] : '',
+          type: t.replace(DATE_RE, '').slice(0, 80).trim(),
+          textLen: t.length, hasCode: (hasCpt(t) || hasIcd(t)),
+          // 'rich' = this row likely already contains the visit content
+          rich: (t.length >= cfg.minRealLen && (hasCpt(t) || hasIcd(t) || t.length >= 220))
+        };
+      });
+      var richCount = rows.filter(function (r) { return r.rich; }).length;
+      return {
+        ok: true, selector: g.selector, count: g.count, score: g.score,
+        median: g.median, withClick: g.withClick, richCount: richCount, rows: rows
+      };
+    }
+    if (op === 'readExpanded') {
+      // Build visits directly from the chosen group's rows (no clicks).
+      var g2 = bestGroup(); if (!g2) return { ok: false, visits: [] };
+      var visits = g2.rows.map(function (n) {
+        var raw = txt(n); var d = raw.match(DATE_RE);
+        return {
+          date: d ? d[1] : '',
+          type: raw.replace(DATE_RE, '').slice(0, 80).trim(),
+          raw: raw, cpt: codes(raw, CPT_RE), icd10: codes(raw, ICD_RE),
+          source: 'athena-copy'
+        };
+      });
+      return { ok: true, visits: visits };
     }
     if (op === 'click') {
-      var rows = rowSet(); var row = rows[idx]; if (!row) return { clicked: false, reason: 'no-row', count: rows.length };
+      var g3 = bestGroup(); if (!g3) return { clicked: false, reason: 'no-group' };
+      var row = g3.rows[idx]; if (!row) return { clicked: false, reason: 'no-row', count: g3.rows.length };
       if (excluded(txt(row))) return { clicked: false, reason: 'excluded' };
-      var target = row; var c = row.querySelector && row.querySelector('a,button,[role="link"],[role="button"],td'); if (c && !excluded(txt(c))) target = c;
-      try { target.click(); } catch (e) { return { clicked: false, reason: 'click-failed', error: String(e) }; }
-      return { clicked: true, label: txt(row).slice(0, 120) };
+      var target = row;
+      try { var c = row.querySelector && row.querySelector('a[href],button,[role="link"],[role="button"],td a,td'); if (c && !excluded(txt(c))) target = c; } catch (e) {}
+      try { target.click(); } catch (e2) { return { clicked: false, reason: 'click-failed', error: String(e2) }; }
+      return { clicked: true, len: txt(row).length };
     }
     if (op === 'detail') {
-      var best = null, bestLen = 0;
-      for (var s2 = 0; s2 < cfg.detailSelectors.length; s2++) {
-        var nodes2; try { nodes2 = Array.prototype.slice.call(document.querySelectorAll(cfg.detailSelectors[s2])); } catch (e) { continue; }
-        for (var j = 0; j < nodes2.length; j++) { var t2 = txt(nodes2[j]); if (t2.length > bestLen) { bestLen = t2.length; best = nodes2[j]; } }
+      // pick the container that best looks like a clinical note (content-scored)
+      var best = null, bestScore = -1;
+      var sels = cfg.detailSelectors;
+      for (var s2 = 0; s2 < sels.length; s2++) {
+        var nodes2; try { nodes2 = Array.prototype.slice.call(document.querySelectorAll(sels[s2])); } catch (e) { continue; }
+        for (var j2 = 0; j2 < nodes2.length; j2++) {
+          var t2 = txt(nodes2[j2]); if (t2.length < cfg.minRealLen) continue;
+          var sc2 = Math.min(t2.length, 4000) / 1000;
+          if (hasCpt(t2)) sc2 += 2; if (hasIcd(t2)) sc2 += 2; if (hasType(t2)) sc2 += 1; if (hasDate(t2)) sc2 += 1;
+          if (sc2 > bestScore) { bestScore = sc2; best = nodes2[j2]; }
+        }
+      }
+      if (!best) {
+        // last resort: largest text block on the page
+        var all = document.querySelectorAll('div,section,article,td');
+        for (var a2 = 0; a2 < all.length; a2++) { var tt = txt(all[a2]); if (tt.length > bestScore * 1000) { bestScore = tt.length / 1000; best = all[a2]; } }
       }
       if (!best) best = document.body;
-      var raw = txt(best); var d2 = raw.match(DATE_RE);
-      return { date: d2 ? d2[1] : '', type: '', raw: raw, cpt: codes(raw, CPT_RE), icd10: codes(raw, ICD_RE) };
+      var raw2 = txt(best); var d3 = raw2.match(DATE_RE);
+      return { date: d3 ? d3[1] : '', type: '', raw: raw2, cpt: codes(raw2, CPT_RE), icd10: codes(raw2, ICD_RE), len: raw2.length };
     }
     return null;
   }
 
+  // ---- orchestrator (background scope; chrome.* + closures OK) ---------------
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function emit(tabId, message, n, total) { try { if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'mlsAppVisitsProgress', message: message, n: n, total: total }); } catch (e) {} }
 
@@ -1486,7 +1664,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         chrome.tabs.query({}, function (tabs) {
           var cand = (tabs || []).filter(function (t) { return t.url && EMR_RE.test(t.url); });
-          // prefer the active / most-recently-focused EMR tab
           cand.sort(function (a, b) { return (b.active ? 1 : 0) - (a.active ? 1 : 0) || (b.id - a.id); });
           resolve(cand[0] || null);
         });
@@ -1503,51 +1680,96 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (results || []).forEach(function (r) { if (!r || r.result == null) return; var sc = scoreFn(r.result); if (sc > bestScore) { bestScore = sc; best = r.result; bestFrame = r.frameId; } });
     return { result: best, frameId: bestFrame, score: bestScore };
   }
+  function realVisit(v, minLen) {
+    if (!v) return false;
+    var raw = String(v.raw || '').trim();
+    var hasCode = (Array.isArray(v.cpt) && v.cpt.length) || (Array.isArray(v.icd10) && v.icd10.length);
+    return (raw.length >= (minLen || 60)) || hasCode;
+  }
+  function saveDiag(diag) {
+    try { chrome.storage.local.set({ mlsAthenaVisitsDiag: { at: Date.now(), diag: diag } }); } catch (e) {}
+    // Redacted (no-PHI) structural map — safe to log so it can be copied for selector tuning.
+    try { console.log('[MLS Assist v1.34 diag — redacted, no PHI]', JSON.stringify(diag)); } catch (e) {}
+  }
 
   function runAllVisits(appTabId, hint, cfg) {
-    var identity = {}, listFrame = 0, snapshot = [];
+    var identity = {}, listFrame = 0, enumRes = null, diag = null;
+    var minLen = cfg.minRealLen || 60;
     return pickEmrTab().then(function (emr) {
       if (!emr) return { ok: false, error: 'No signed-in athenaOne tab found. Open athenaOne with the patient chart, then retry.' };
       var emrId = emr.id;
-      emit(appTabId, 'Found athenaOne — reading the open chart…');
+      emit(appTabId, '🔍 Reading visits from athenaOne… (read-only)');
       return sleep(cfg.initialWaitMs)
+        // identity
         .then(function () { return exec(emrId, null, ['identity', cfg]); })
-        .then(function (idRes) { var b = bestResult(idRes, function (r) { return (r && (r.name ? 2 : 0) + (r.dob ? 1 : 0)) || 0; }); identity = b.result || {}; })
+        .then(function (idRes) { identity = bestResult(idRes, function (r) { return (r && ((r.name ? 2 : 0) + (r.dob ? 1 : 0))) || 0; }).result || {}; })
+        // redacted diagnostic (always, across frames; pick the richest frame's diag)
+        .then(function () { return exec(emrId, null, ['diagnose', cfg]); })
+        .then(function (dgRes) { var b = bestResult(dgRes, function (r) { return (r && r.groupCount) || 0; }); diag = b.result || null; saveDiag(diag); })
+        // enumerate: pick the best frame+group
         .then(function () { return exec(emrId, null, ['enumerate', cfg]); })
-        .then(function (enRes) {
-          var b = bestResult(enRes, function (r) { return Array.isArray(r) ? r.length : 0; });
-          snapshot = b.result || []; listFrame = b.frameId;
-          if (!snapshot.length) {
-            return { ok: false, identity: identity, visits: [], error: 'Could not find an encounters/visits list on this chart. Open the patient’s Encounters/Visits tab, or the row selectors need one tuning pass (window/storage mlsAthenaVisitsCfg.rowSelectors).' };
+        .then(function (enR) {
+          var b = bestResult(enR, function (r) { return (r && r.ok) ? r.score : 0; });
+          enumRes = b.result; listFrame = b.frameId;
+          if (!enumRes || !enumRes.ok || !enumRes.count) {
+            return { ok: false, identity: identity, visits: [], diag: diag,
+              error: 'No encounters/visits list recognized on this chart. Open the patient’s Encounters/Visits tab (or chart timeline), then retry. (A redacted DOM map was captured to tune the selectors — nothing was saved.)' };
           }
-          var total = Math.min(snapshot.length, cfg.maxVisits);
-          emit(appTabId, 'Found ' + snapshot.length + ' visit(s). Reading each…', 0, total);
-          var visits = [];
+          var rows = enumRes.rows || [];
+          var total = Math.min(rows.length, cfg.maxVisits);
+          var richFrac = total ? (enumRes.richCount / total) : 0;
+          // Path A: rows already carry real content -> read in place, no clicks.
+          if (richFrac >= 0.6) {
+            return exec(emrId, [listFrame], ['readExpanded', cfg]).then(function (rxR) {
+              var rx = bestResult(rxR, function (r) { return (r && r.visits) ? r.visits.length : 0; }).result || { visits: [] };
+              var visits = [];
+              (rx.visits || []).slice(0, total).forEach(function (v) {
+                if (realVisit(v, minLen)) { visits.push(v); emit(appTabId, 'Read visit ' + (v.date || (visits.length)) + ' (' + visits.length + ' of ' + total + ')…', visits.length, total); }
+              });
+              if (!visits.length) {
+                return { ok: false, identity: identity, visits: [], diag: diag,
+                  error: 'Found a visit list but none of the rows contained readable visit content. (Redacted DOM map captured; nothing saved.)' };
+              }
+              emit(appTabId, 'Read ' + visits.length + ' visit(s).', visits.length, total);
+              return { ok: true, identity: identity, visits: visits, diag: diag, strategy: 'expanded', found: rows.length };
+            });
+          }
+          // Path B: thin rows -> open each and read the detail pane.
+          var visitsB = [];
           var i = 0;
           function step() {
-            if (i >= total) { emit(appTabId, 'Read ' + visits.length + ' visit(s).'); return { ok: true, identity: identity, visits: visits }; }
-            var snap = snapshot[i] || {};
-            emit(appTabId, 'Reading visit ' + (i + 1) + ' of ' + total + (snap.date ? ' (' + snap.date + ')' : '') + '…', i + 1, total);
+            if (i >= total) {
+              if (!visitsB.length) {
+                return { ok: false, identity: identity, visits: [], diag: diag,
+                  error: 'Opened the encounters but could not read readable content from any. The detail selectors need a tuning pass. (Redacted DOM map captured; nothing saved.)' };
+              }
+              emit(appTabId, 'Read ' + visitsB.length + ' visit(s).', visitsB.length, total);
+              return { ok: true, identity: identity, visits: visitsB, diag: diag, strategy: 'click', found: rows.length };
+            }
+            var snap = rows[i] || {};
             return exec(emrId, [listFrame], ['click', cfg, i])
               .then(function () { return sleep(cfg.waitMs); })
               .then(function () { return exec(emrId, null, ['detail', cfg]); })
-              .then(function (dRes) {
-                var d = bestResult(dRes, function (r) { return (r && r.raw) ? r.raw.length : 0; }).result || {};
+              .then(function (dR) {
+                var d = bestResult(dR, function (r) { return (r && r.raw) ? r.raw.length : 0; }).result || {};
                 var visit = {
                   date: snap.date || d.date || '',
                   type: snap.type || d.type || '',
-                  raw: (d.raw && d.raw.length > (snap.label || '').length) ? d.raw : (snap.label || d.raw || ''),
+                  raw: (d.raw && d.raw.length > (snap.textLen || 0)) ? d.raw : (d.raw || ''),
                   cpt: d.cpt || [], icd10: d.icd10 || [],
                   source: 'athena-copy'
                 };
-                visits.push(visit);
+                if (realVisit(visit, minLen)) {
+                  visitsB.push(visit);
+                  emit(appTabId, 'Read visit ' + (visit.date || visitsB.length) + ' (' + visitsB.length + ' of ' + total + ')…', visitsB.length, total);
+                }
                 i++;
                 return step();
               });
           }
           return step();
         });
-    }).catch(function (e) { return { ok: false, identity: identity, error: String((e && e.message) || e) }; });
+    }).catch(function (e) { return { ok: false, identity: identity, diag: diag, error: String((e && e.message) || e) }; });
   }
 
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
@@ -1564,4 +1786,3 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async response
   });
 })();
-
