@@ -1,12 +1,13 @@
 /* =====================================================================
    feat_visits_honest.js  — honest per-visit progress + real-data gate (§48)
+   v1.1.0
    ---------------------------------------------------------------------
-   PROBLEM it fixes: "📋 Copy every visit from athenaOne" could stream a
-   fabricated "Reading visit N of M …" counter (and save empty/echo visits)
-   even when the loaded MLS Assist extension returned NO real per-visit data
-   (old extension, empty chart, error, or an optimistic driver). The §46
-   guard only blocked the logged-OUT case; this also covers the
-   logged-IN-but-no-real-data case.
+   PROBLEM it fixes: "📋 Copy every visit from athenaOne" (and the cohort
+   per-visit capture) could stream a fabricated "Reading visit N of M …"
+   counter and save empty/echo visits even when the loaded MLS Assist
+   extension returned NO real per-visit data (old extension, empty chart,
+   error, or an optimistic driver). The §46 guard only blocked the
+   logged-OUT case; this also covers the logged-IN-but-no-real-data case.
 
    GUARANTEES:
    1. A "visit N" / "N of M" counter is NEVER shown from the extension's
@@ -18,30 +19,15 @@
    3. Real reads (v1.33 extension returning real bodies) work normally and
       show a truthful saved-visit count.
 
-   Self-contained, idempotent, progressive-enhancement, fully reversible via
-   window.__mlsVisitsHonest.revert(). Wraps only the copy/cohort save+run
-   paths; manual entry and every other feature are untouched.
+   Robust to load order: an ensureWrapped() heartbeat re-applies the wraps
+   after other modules (e.g. the §46 guard, cohort module) load, so the
+   run/cohort wrappers can't be shadowed and cohort is wrapped once ready.
+   Self-contained, idempotent, fully reversible via
+   window.__mlsVisitsHonest.revert(). Manual entry is never gated.
    ===================================================================== */
 (function () {
-  // Loaders inject async, so the visit-model / copy-flow globals may not exist yet.
-  // Poll until they're ready (up to ~20s), then install — order-independent.
-  var tries = 0;
-  function boot() {
-    if (window.__mlsVisitsHonest && window.__mlsVisitsHonest.installed) return;
-    if (!window.__mlsCopyVisits || !window.__mlsVisitModel) {
-      if (tries++ < 80) { setTimeout(boot, 250); }
-      return;
-    }
-    install();
-  }
-  function install() {
   try {
-    if (window.__mlsVisitsHonest && window.__mlsVisitsHonest.installed) return;
-    var H = { installed: false, version: '1.0.0' };
-
-    var M  = window.__mlsVisitModel;
-    var CV = window.__mlsCopyVisits;
-    var CO = window.__mlsCohortVisits;
+    if (window.__mlsVisitsHonest && window.__mlsVisitsHonest._full) return;
 
     /* ---------- realness test (aiSummary is DERIVED, so excluded) ---------- */
     function realContent(v) {
@@ -60,12 +46,12 @@
       return t.length > 1 || codes > 0 || meds > 0 || scores;
     }
     function isRealVisit(v) { return !!v && !!v.date && realContent(v); }
-    H.isRealVisit = isRealVisit;
 
     /* ---------- optimistic-progress matcher (the fabricable counter) ------- */
     var FAKE = /(\breading\b|\bsaved visit\b|\bvisit\s*\d+\b|\b\d+\s*of\s*\d+\b|\bof\s*\d+\b|generating ai|summariz)/i;
     function isOptimistic(line) { return FAKE.test(String(line || '')); }
-    H.isOptimistic = isOptimistic;
+    var HONEST = /(sign(ed)?[\s-]?in|log[\s-]?in|couldn'?t|can'?t read|athena[Oo]ne|extension|update|not found|no .*(visit|encounter|chart)|empty|nothing was saved|open .*chart)/i;
+    function isHonest(line) { return HONEST.test(String(line || '')); }
 
     /* ---------- operation-scoped save gate (auto-clears, never sticks) ----- */
     var gating = 0;
@@ -81,60 +67,56 @@
         function (e) { clearTimeout(safety); clear(); throw e; }
       );
     }
-    H._gating = function () { return gating; };
 
-    /* ---------- gate model.addVisit: drop non-real visits DURING a copy/cohort op ---------- */
-    if (M && typeof M.addVisit === 'function' && !M.addVisit.__honestWrapped) {
-      var origAdd = M.addVisit.bind(M);
-      var wrapAdd = function (patient, visit) {
-        try { if (gating > 0 && !isRealVisit(visit)) return null; } catch (e) {}
-        return origAdd(patient, visit);
-      };
-      wrapAdd.__honestWrapped = true; wrapAdd.__orig = origAdd;
-      M.addVisit = wrapAdd;
+    function getVisitsSafe(M, p) { try { var a = M.getVisits(p); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+    function keyOf(v) {
+      return (v && (v.id || ((v.date || '') + '|' + (v.type || '') + '|' + ((v.cpt && v.cpt[0]) || '')))) || '';
     }
 
-    /* ---------- gate _saveVisits (defense in depth) ---------- */
-    if (CV && typeof CV._saveVisits === 'function' && !CV._saveVisits.__honestWrapped) {
-      var origSave = CV._saveVisits.bind(CV);
-      var wrapSave = function () {
+    var UPDATE_MSG = "⚠️ Couldn't read your visits from athenaOne — nothing was saved. "
+                   + "Make sure the patient's athenaOne chart is open in a signed-in tab, then update "
+                   + "MLS Assist to v1.33 (Settings → Get the extension) and reload. "
+                   + "If this patient truly has no past visits in athenaOne, that's expected.";
+    var MAXMS = 30000;
+
+    /* ---------- wrappers (each idempotent) ---------- */
+    function wrapAddVisit(M) {
+      if (!M || typeof M.addVisit !== 'function' || M.addVisit.__honestWrapped) return;
+      var orig = M.addVisit.bind(M);
+      var w = function (patient, visit) {
+        try { if (gating > 0 && !isRealVisit(visit)) return null; } catch (e) {}
+        return orig(patient, visit);
+      };
+      w.__honestWrapped = true; w.__orig = orig;
+      M.addVisit = w;
+    }
+    function wrapSave(CV) {
+      if (!CV || typeof CV._saveVisits !== 'function' || CV._saveVisits.__honestWrapped) return;
+      var orig = CV._saveVisits.bind(CV);
+      var w = function () {
         var args = Array.prototype.slice.call(arguments);
         try {
           for (var i = 0; i < args.length; i++) {
             if (Array.isArray(args[i])) { args[i] = args[i].filter(isRealVisit); break; }
           }
         } catch (e) {}
-        return origSave.apply(CV, args);
+        return orig.apply(CV, args);
       };
-      wrapSave.__honestWrapped = true; wrapSave.__orig = origSave;
-      CV._saveVisits = wrapSave;
+      w.__honestWrapped = true; w.__orig = orig;
+      CV._saveVisits = w;
     }
-
-    /* ---------- real-visit delta helpers ---------- */
-    function getVisitsSafe(p) { try { var a = M.getVisits(p); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
-    function keyOf(v) {
-      return (v && (v.id || ((v.date || '') + '|' + (v.type || '') + '|' + ((v.cpt && v.cpt[0]) || '')))) || '';
-    }
-
-    /* ---------- wrap copy-every-visit run() ---------- */
-    if (CV && typeof CV.run === 'function' && !CV.run.__honestWrapped) {
-      var origRun = CV.run.bind(CV);
-      var UPDATE_MSG = "⚠️ Couldn't read your visits from athenaOne — nothing was saved. "
-                     + "Make sure the patient's athenaOne chart is open in a signed-in tab, then update "
-                     + "MLS Assist to v1.33 (Settings → Get the extension) and reload. "
-                     + "If this patient truly has no past visits in athenaOne, that's expected.";
-      var MAXMS = 30000;
-
-      var wrapRun = function (onStatus) {
+    function wrapRun(CV, M) {
+      if (!CV || typeof CV.run !== 'function' || CV.run.__honestWrapped) return;
+      var orig = CV.run.bind(CV);
+      var w = function (onStatus) {
         var cb = (typeof onStatus === 'function') ? onStatus : function () {};
         var patient = (typeof window.activePatient === 'function') ? window.activePatient() : null;
         var before = {};
-        getVisitsSafe(patient).forEach(function (v) { if (isRealVisit(v)) before[keyOf(v)] = 1; });
-        var neutralShown = false, lastShown = 0, finished = false;
-
+        getVisitsSafe(M, patient).forEach(function (v) { if (isRealVisit(v)) before[keyOf(v)] = 1; });
+        var neutralShown = false, lastShown = 0, finished = false, honestSeen = false;
         function realDelta() {
           var n = 0;
-          getVisitsSafe(patient).forEach(function (v) { if (isRealVisit(v) && !before[keyOf(v)]) n++; });
+          getVisitsSafe(M, patient).forEach(function (v) { if (isRealVisit(v) && !before[keyOf(v)]) n++; });
           return n;
         }
         function filtered(line) {
@@ -145,12 +127,12 @@
             if (d > lastShown) { lastShown = d; cb('✓ Saved ' + d + ' real visit' + (d === 1 ? '' : 's') + ' from athenaOne so far…'); }
             return;
           }
-          cb(line); // non-progress lines (genuine errors etc.) pass through
+          if (isHonest(line)) honestSeen = true;
+          cb(line);
         }
-
         return withGate(function () {
           return Promise.race([
-            Promise.resolve(origRun(filtered)).then(function (r) { return { r: r }; }, function (e) { return { err: e }; }),
+            Promise.resolve(orig(filtered)).then(function (r) { return { r: r }; }, function (e) { return { err: e }; }),
             new Promise(function (res) { setTimeout(function () { res({ __timeout: true }); }, MAXMS); })
           ]);
         }).then(function (o) {
@@ -160,43 +142,55 @@
             cb('✓ Done — ' + d + ' visit' + (d === 1 ? '' : 's') + ' read from athenaOne, each with an AI summary.');
             return (o && o.r) || { ok: true, real: d };
           }
-          cb(UPDATE_MSG);
+          if (!honestSeen) cb(UPDATE_MSG);
           return { blocked: true, real: 0, reason: (o && o.__timeout) ? 'timeout' : (o && o.err) ? 'error' : 'no-real-visits' };
         });
       };
-      wrapRun.__honestWrapped = true; wrapRun.__orig = origRun;
-      CV.run = wrapRun;
+      w.__honestWrapped = true; w.__orig = orig;
+      CV.run = w;
     }
-
-    /* ---------- wrap cohort per-visit capture (same save gate) ---------- */
-    if (CO && typeof CO._capturePatient === 'function' && !CO._capturePatient.__honestWrapped) {
-      var origCap = CO._capturePatient.bind(CO);
-      var wrapCap = function () {
+    function wrapCohort(CO) {
+      if (!CO || typeof CO._capturePatient !== 'function' || CO._capturePatient.__honestWrapped) return;
+      var orig = CO._capturePatient.bind(CO);
+      var w = function () {
         var args = arguments, self = this;
-        return withGate(function () { return origCap.apply(self, args); });
+        return withGate(function () { return orig.apply(self, args); });
       };
-      wrapCap.__honestWrapped = true; wrapCap.__orig = origCap;
-      CO._capturePatient = wrapCap;
+      w.__honestWrapped = true; w.__orig = orig;
+      CO._capturePatient = w;
     }
 
-    /* ---------- revert ---------- */
-    H.revert = function () {
-      try { if (M && M.addVisit && M.addVisit.__orig) M.addVisit = M.addVisit.__orig; } catch (e) {}
-      try { if (CV && CV._saveVisits && CV._saveVisits.__orig) CV._saveVisits = CV._saveVisits.__orig; } catch (e) {}
-      try { if (CV && CV.run && CV.run.__orig) CV.run = CV.run.__orig; } catch (e) {}
-      try { if (CO && CO._capturePatient && CO._capturePatient.__orig) CO._capturePatient = CO._capturePatient.__orig; } catch (e) {}
-      H.installed = false;
-    };
+    /* ---------- heartbeat: (re)apply wraps until everything settles ---------- */
+    function ensureWrapped() {
+      try {
+        var M = window.__mlsVisitModel, CV = window.__mlsCopyVisits, CO = window.__mlsCohortVisits;
+        wrapAddVisit(M);
+        wrapSave(CV);
+        if (CV && M) wrapRun(CV, M);
+        wrapCohort(CO);
+      } catch (e) {}
+    }
+    var ticks = 0;
+    var iv = setInterval(function () { ensureWrapped(); if (++ticks > 60) clearInterval(iv); }, 500);
+    ensureWrapped();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureWrapped);
 
-    H.installed = true;
-    window.__mlsVisitsHonest = H;
+    /* ---------- public surface + revert ---------- */
+    window.__mlsVisitsHonest = {
+      installed: true, _full: true, version: '1.1.0',
+      isRealVisit: isRealVisit, isOptimistic: isOptimistic, ensureWrapped: ensureWrapped,
+      _gating: function () { return gating; },
+      revert: function () {
+        try { clearInterval(iv); } catch (e) {}
+        var M = window.__mlsVisitModel, CV = window.__mlsCopyVisits, CO = window.__mlsCohortVisits;
+        try { if (M && M.addVisit && M.addVisit.__orig) M.addVisit = M.addVisit.__orig; } catch (e) {}
+        try { if (CV && CV._saveVisits && CV._saveVisits.__orig) CV._saveVisits = CV._saveVisits.__orig; } catch (e) {}
+        try { if (CV && CV.run && CV.run.__orig) CV.run = CV.run.__orig; } catch (e) {}
+        try { if (CO && CO._capturePatient && CO._capturePatient.__orig) CO._capturePatient = CO._capturePatient.__orig; } catch (e) {}
+        this.installed = false; this._full = false;
+      }
+    };
   } catch (e) {
-    /* progressive enhancement: never break the app */
     try { window.__mlsVisitsHonest = { installed: false, error: String(e && e.message || e) }; } catch (e2) {}
   }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-  }
-  boot();
 })();
