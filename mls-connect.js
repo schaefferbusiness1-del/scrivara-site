@@ -4025,3 +4025,6 @@
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_honest.js"]'))return;var s=document.createElement('script');s.src='feat_visits_honest.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visits_honest.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_counter_guard.js"]'))return;var s=document.createElement('script');s.src='feat_visits_counter_guard.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visits_counter_guard.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+/* loader: extended visit-history UI (timeline + overview + trends + filter/search/sort) — guarded, idempotent, cache-busted */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_history_ext.js"]'))return;var s=document.createElement('script');s.src='feat_visit_history_ext.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_visit_history_ext.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
