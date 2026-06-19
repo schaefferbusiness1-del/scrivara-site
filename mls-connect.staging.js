@@ -3935,3 +3935,7 @@
 ;(function(){try{['feat_addpatient.js','feat_cohort_visits.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})();
 
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_guard.js"]'))return;var s=document.createElement('script');s.src='feat_athena_guard.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_guard.js');document.head.appendChild(s);}catch(e){}})(); /* MLS — athenaOne-open guard (block fake progress/saves when logged out) */
+
+
+/* ---- loader: mls-opnote-pro (op-note professional format + Save-as-PDF) ---- */
+(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.staging.js?v=20260619a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
