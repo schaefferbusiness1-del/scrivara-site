@@ -1,1 +1,5 @@
-{ "version": "1.33", "url": "https://mlsscribe.com/get-extension.html", "notes": "MLS Assist v1.33 — Security hardening. The copy-every-visit bridge (which can return chart/visit data) is now gated exactly like the main MLS bridge: it only accepts requests from the trusted MLS app (mlsscribe.com over HTTPS, source 'mls-app') and posts results/progress back only to that trusted active origin — never broadcast to other pages. An untrusted or non-MLS page can no longer trigger it or read its results. No functional change to copy-every-visit, the Mode C procedure grab, the scribe, or any prior feature. Download and reload at chrome://extensions to update." }
+{
+ "version": "1.34",
+ "url": "https://mlsscribe.com/get-extension.html",
+ "notes": "MLS Assist v1.34 — Real per-visit reader. The 'Copy every visit from athenaOne' flow now genuinely walks the patient's encounters in the live athenaOne DOM (frame-aware, content-scored), reads each visit's real content, and reports truthfully: 'Reading visit N of M' counts only visits actually read, and if no encounters list is recognized it says so and saves nothing — never a fabricated count. Read-only in athenaOne (never Save/Sign). Download and reload at chrome://extensions to update."
+}
