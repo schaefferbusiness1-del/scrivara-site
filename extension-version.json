@@ -1,5 +1,5 @@
 {
- "version": "1.34",
- "url": "https://mlsscribe.com/get-extension.html",
- "notes": "MLS Assist v1.34 — Real per-visit reader. The 'Copy every visit from athenaOne' flow now genuinely walks the patient's encounters in the live athenaOne DOM (frame-aware, content-scored), reads each visit's real content, and reports truthfully: 'Reading visit N of M' counts only visits actually read, and if no encounters list is recognized it says so and saves nothing — never a fabricated count. Read-only in athenaOne (never Save/Sign). Download and reload at chrome://extensions to update."
+  "version": "1.35",
+  "url": "https://mlsscribe.com/get-extension.html",
+  "notes": "MLS Assist v1.35 \u2014 Scoped the content script OFF github.com (and *.github.com / github.dev / githubusercontent.com). It previously injected its panel and DOM observers into every site via <all_urls>, including GitHub, where it could freeze the page; now it never loads there (manifest exclude_matches plus an in-script github.com guard). athenaOne note write-back, the copy-every-visit reader, and the mlsscribe.com app bridge are unchanged \u2014 no functional change on athenaOne or mlsscribe.com. Download and reload at chrome://extensions to update."
 }
