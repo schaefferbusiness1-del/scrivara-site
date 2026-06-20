@@ -643,6 +643,7 @@
   // boot / observer (idempotent, no jitter)
   // ---------------------------------------------------------------------------
   var _obs = null;
+  var _wrapIv = null;
   var _scheduled = false;
   function scheduleEnsure() {
     if (_scheduled) return;
@@ -664,6 +665,20 @@
     wrapUpsert();
     wrapCopyVisits();
     ensureButton();
+    // __mlsCopyVisits is defined by a separately-loaded asset that may execute
+    // AFTER us (dynamic <script>, async). Poll a bounded number of times to wrap
+    // its run() once it appears. wrapCopyVisits() is idempotent; the loop stops
+    // as soon as run() is wrapped or after the bounded window (~10s).
+    try {
+      var tries = 0;
+      _wrapIv = setInterval(function () {
+        tries++;
+        try { wrapCopyVisits(); } catch (e) {}
+        var wrapped = !!(window.__mlsCopyVisits && window.__mlsCopyVisits.run &&
+          window.__mlsCopyVisits.run.__mlsVerifyWrapped);
+        if (wrapped || tries >= 25) { clearInterval(_wrapIv); _wrapIv = null; }
+      }, 400);
+    } catch (e) {}
     // Re-wrap copyVisits if its module loads later, and re-add the button if the
     // profile re-renders. The observer only ACTS when something is missing — it
     // never mutates on a steady state (the ctxbar idempotent lesson).
@@ -680,6 +695,7 @@
 
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {} _obs = null;
+    try { if (_wrapIv) clearInterval(_wrapIv); } catch (e) {} _wrapIv = null;
     try { window.removeEventListener('message', onResultMessage, true); } catch (e) {}
     try {
       var cv = window.__mlsCopyVisits;
