@@ -141,6 +141,7 @@
       'border-radius:999px;background:rgba(124,58,237,.10);border:1px solid rgba(124,58,237,.40);' +
       'color:#5b21b6;font-weight:700}' +
       '.mls-src-cardchip{margin-top:4px}' +
+      '.mls-src-headdot{margin-right:6px}' +
       '.mlsxh-card .mls-src-cardchip{display:inline-flex}' +
       '.mls-src-banner{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 11px;' +
       'border-radius:9px;background:' + SOFT + ';border:1px solid ' + LINE + ';' +
@@ -273,9 +274,13 @@
       if (!d || typeof d.buildRead !== 'function' || d.buildRead.__mlsSrcWrapped) return;
       _origBuildRead = d.buildRead;
       var wrapped = function (visit, patient) {
-        var node = _origBuildRead.apply(this, arguments);
+        var res = _origBuildRead.apply(this, arguments);
         try {
-          if (node && node.nodeType === 1 && visit) {
+          // §45 buildRead returns { body, editBtn, regenBtn, status } where body is the
+          // read-view DOM node; older/other builds may return the node directly.
+          var host = (res && res.body && res.body.nodeType === 1) ? res.body
+                   : (res && res.nodeType === 1) ? res : null;
+          if (host && visit) {
             var meta = srcMeta(visit.source);
             var when = fmtImport(importTs(visit));
             var banner = el('div', 'mls-src-banner');
@@ -283,10 +288,10 @@
             banner.appendChild(el('span', null, meta.label));
             if ((meta.key === 'athena' || meta.key === 'cohort') && when)
               banner.appendChild(el('span', 'mls-src-when', '· imported ' + when));
-            if (!node.querySelector('.mls-src-banner')) node.insertBefore(banner, node.firstChild);
+            if (!host.querySelector('.mls-src-banner')) host.insertBefore(banner, host.firstChild);
           }
         } catch (e) {}
-        return node;
+        return res;
       };
       wrapped.__mlsSrcWrapped = true;
       d.buildRead = wrapped;
@@ -296,6 +301,40 @@
     try {
       var d = window.__mlsVisitDetail;
       if (d && _origBuildRead && d.buildRead && d.buildRead.__mlsSrcWrapped) d.buildRead = _origBuildRead;
+    } catch (e) {}
+  }
+
+  /* ---- wrap __mlsVisitDetail.buildCard -> circle on the collapsed header ---- */
+  var _origBuildCard = null;
+  function wrapBuildCard() {
+    try {
+      var d = window.__mlsVisitDetail;
+      if (!d || typeof d.buildCard !== 'function' || d.buildCard.__mlsSrcWrapped) return;
+      _origBuildCard = d.buildCard;
+      var wrapped = function (visit, patient) {
+        var card = _origBuildCard.apply(this, arguments);
+        try {
+          if (card && card.nodeType === 1 && visit) {
+            var head = card.querySelector('.mlsvd-head') || card;
+            if (!head.querySelector('.mls-src-headdot')) {
+              var meta = srcMeta(visit.source);
+              var hd = dot(meta.color);
+              hd.classList.add('mls-src-headdot');
+              hd.title = meta.label;
+              head.insertBefore(hd, head.firstChild);
+            }
+          }
+        } catch (e) {}
+        return card;
+      };
+      wrapped.__mlsSrcWrapped = true;
+      d.buildCard = wrapped;
+    } catch (e) {}
+  }
+  function unwrapBuildCard() {
+    try {
+      var d = window.__mlsVisitDetail;
+      if (d && _origBuildCard && d.buildCard && d.buildCard.__mlsSrcWrapped) d.buildCard = _origBuildCard;
     } catch (e) {}
   }
 
@@ -393,6 +432,7 @@
   function boot() {
     injectStyle();
     wrapBuildRead();
+    wrapBuildCard();
     wrapCopyRun();
     wrapAddVisit();
     decorate();
@@ -403,18 +443,19 @@
         _obs.observe(host, { childList: true, subtree: true });
       }
     } catch (e) {}
-    if (!_timer) _timer = setInterval(function () { wrapBuildRead(); wrapCopyRun(); wrapAddVisit(); decorate(); }, 1200);
+    if (!_timer) _timer = setInterval(function () { wrapBuildRead(); wrapBuildCard(); wrapCopyRun(); wrapAddVisit(); decorate(); }, 1200);
   }
 
   function revert() {
     try { if (_obs) _obs.disconnect(); _obs = null; } catch (e) {}
     try { if (_timer) clearInterval(_timer); _timer = null; } catch (e) {}
     unwrapBuildRead();
+    unwrapBuildCard();
     unwrapCopyRun();
     unwrapAddVisit();
     try {
       var s = document.getElementById(STYLE_ID); if (s) s.parentNode.removeChild(s);
-      document.querySelectorAll('#' + LEGEND_ID + ',#' + SUMMARY_ID + ',.mls-src-cardchip,.mls-src-banner,.mls-src-toast')
+      document.querySelectorAll('#' + LEGEND_ID + ',#' + SUMMARY_ID + ',.mls-src-cardchip,.mls-src-banner,.mls-src-toast,.mls-src-headdot')
         .forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
       document.querySelectorAll('[data-mls-src]').forEach(function (n) { n.removeAttribute('data-mls-src'); });
     } catch (e) {}
