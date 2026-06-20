@@ -4037,3 +4037,7 @@
 (function(){try{if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.js?v=20260619a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(!document.querySelector('script[data-mls-asset="feat_source_clarity.js"]')){var s=document.createElement('script');s.src='feat_source_clarity.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_source_clarity.js');document.head.appendChild(s);}}catch(e){}})();
+/* ---- loader: feat_athena_autopull (one-click open-chart auto-pull; fixes false name-match safety stop; additive, reversible) ---- */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_autopull.js"]'))return;var s=document.createElement('script');s.src='feat_athena_autopull.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_athena_autopull.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+/* ---- loader: feat_athena_status_dot (always-on top-right Athena connection indicator; additive, reversible) ---- */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_dot.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_dot.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_athena_status_dot.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
