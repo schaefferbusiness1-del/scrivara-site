@@ -4045,3 +4045,5 @@
 
 /* ---- loader: feat_opnote_history_pdf (one-click PDF on op-note history rows) ---- */
 (function(){try{if(window.__mlsOpNoteHistPdfLoader)return;window.__mlsOpNoteHistPdfLoader=1;var s=document.createElement('script');s.src='feat_opnote_history_pdf.js?v=20260620a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy.js"]'))return;var s=document.createElement('script');s.src='feat_mls_easy.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_mls_easy.js');document.head.appendChild(s);}catch(e){}})();
