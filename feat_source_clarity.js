@@ -233,14 +233,20 @@
         else root.insertBefore(legend, root.firstChild);
       }
 
-      // 2) per-patient summary (refresh each pass so counts stay live)
+      // 2) per-patient summary — only rebuild when the provenance tally changes,
+      //    so a steady-state decorate() makes NO DOM mutation (no observer churn).
+      var sum = summarize(ctx.visits);
+      var sig = [sum.total, sum.athena, sum.cohort, sum.manual, sum.unknown, sum.lastImport].join('|');
       var old = root.querySelector('#' + SUMMARY_ID);
-      var summary = buildSummary(summarize(ctx.visits));
-      if (old) old.parentNode.replaceChild(summary, old);
-      else {
-        var lg = root.querySelector('#' + LEGEND_ID);
-        if (lg && lg.parentNode) lg.parentNode.insertBefore(summary, lg.nextSibling);
-        else root.insertBefore(summary, root.firstChild);
+      if (!old || old.getAttribute('data-sig') !== sig) {
+        var summary = buildSummary(sum);
+        summary.setAttribute('data-sig', sig);
+        if (old) old.parentNode.replaceChild(summary, old);
+        else {
+          var lg = root.querySelector('#' + LEGEND_ID);
+          if (lg && lg.parentNode) lg.parentNode.insertBefore(summary, lg.nextSibling);
+          else root.insertBefore(summary, root.firstChild);
+        }
       }
 
       // 3) per-visit circle on every card, matched by the card's own data-vid
@@ -428,7 +434,18 @@
   }
 
   /* ---- lifecycle ----------------------------------------------------------- */
-  var _obs = null, _timer = null;
+  var _obs = null, _timer = null, _pending = null, _busy = false;
+  // Run decorate() with the observer disconnected so our OWN DOM writes can never
+  // re-trigger the observer (which would loop). Debounced via schedule().
+  function safeDecorate() {
+    if (_busy) return;
+    _busy = true;
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { decorate(); } catch (e) {}
+    try { var h = document.getElementById('profileCard') || document.body; if (_obs && h) _obs.observe(h, { childList: true, subtree: true }); } catch (e) {}
+    _busy = false;
+  }
+  function schedule() { if (_pending) return; _pending = setTimeout(function () { _pending = null; safeDecorate(); }, 120); }
   function boot() {
     injectStyle();
     wrapBuildRead();
@@ -439,16 +456,17 @@
     try {
       var host = document.getElementById('profileCard') || document.body;
       if (host && !_obs) {
-        _obs = new MutationObserver(function () { decorate(); });
+        _obs = new MutationObserver(function () { schedule(); });
         _obs.observe(host, { childList: true, subtree: true });
       }
     } catch (e) {}
-    if (!_timer) _timer = setInterval(function () { wrapBuildRead(); wrapBuildCard(); wrapCopyRun(); wrapAddVisit(); decorate(); }, 1200);
+    if (!_timer) _timer = setInterval(function () { wrapBuildRead(); wrapBuildCard(); wrapCopyRun(); wrapAddVisit(); safeDecorate(); }, 1200);
   }
 
   function revert() {
     try { if (_obs) _obs.disconnect(); _obs = null; } catch (e) {}
     try { if (_timer) clearInterval(_timer); _timer = null; } catch (e) {}
+    try { if (_pending) clearTimeout(_pending); _pending = null; } catch (e) {}
     unwrapBuildRead();
     unwrapBuildCard();
     unwrapCopyRun();
