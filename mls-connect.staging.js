@@ -3956,3 +3956,7 @@
 
 /* ---- loader: feat_athena_actions.js (shared Athena-action treatment: live status / click-intent labels / destination-verify / self-recovery) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_actions.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_actions.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_actions.js');document.head.appendChild(s);}catch(e){}})();
+
+
+/* ---- loader: feat_athena_writeback.js (WRITE finished note into the open Athena chart; verified paste; patient name+DOB gate; never Save/Sign) ---- */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_writeback.js"]'))return;var s=document.createElement('script');s.src='feat_athena_writeback.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_writeback.js');document.head.appendChild(s);}catch(e){}})();
