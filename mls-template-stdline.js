@@ -76,20 +76,48 @@
     return [];
   }
 
-  var TARGET_LABELS = [
-    /medications?(?:\s+administered)?/i,
-    /description\s+of\s+procedure/i,
-    /procedure\s+note/i,
-    /technique/i,
-    /description/i,
-    /procedure(?!\s*(?:note|codes|performed|s\b))/i
+  /* ---------- pure insertion logic ---------- */
+  var TARGET_MED = 'medications?(?:\\s+administered)?';
+  var TARGET_BODY = [
+    'description\\s+of\\s+procedure',
+    'procedure\\s+note',
+    'operative\\s+technique',
+    'technique',
+    'description',
+    'procedure(?!\\s*(?:note|codes|performed|s\\b))'
+  ];
+  var CLOSING_LABELS = [
+    'conclusion', 'comments', 'disposition', 'post-procedure plan', 'postoperative plan',
+    'post procedure plan', 'plan', 'complications', 'estimated blood loss', 'specimens',
+    'diagnosis codes', 'procedure codes', 'signature', 'attestation', 'follow-up',
+    'follow up', 'addendum', 'impression'
   ];
 
   function isPresent(text, line) {
     return norm(text).indexOf(norm(line)) !== -1;
   }
 
-  function nextBoundaryIndex(text, fromIdx) {
+  // Match a label as a field ("Label:") OR a heading (Title-case or ALL-CAPS, no colon),
+  // anchored at start / newline / double-space. Returns index just AFTER the label, or -1.
+  function labelEndIndex(text, labelSrc) {
+    var re = new RegExp('(?:^|\\n|\\s{2,})(' + labelSrc + ')(?=\\s*:|\\s*\\n|\\s{2,}|[\\/]|$)', 'i');
+    var m = re.exec(text);
+    return m ? (m.index + m[0].length) : -1;
+  }
+
+  // Preferred target section: Medications first, then the procedure/description body.
+  function findTargetLabel(text) {
+    var medEnd = labelEndIndex(text, TARGET_MED);
+    if (medEnd !== -1) { return { idx: medEnd, kind: 'med' }; }
+    for (var i = 0; i < TARGET_BODY.length; i++) {
+      var e = labelEndIndex(text, TARGET_BODY[i]);
+      if (e !== -1) { return { idx: e, kind: 'body' }; }
+    }
+    return null;
+  }
+
+  // Next label boundary of ANY kind after fromIdx (used to find the end of the Medications section).
+  function nextAnyBoundary(text, fromIdx) {
     var cands = [];
     var re1 = /(?:\n+|\s{2,})([A-Z][A-Za-z0-9]*(?:[ \/\-](?:[A-Z][A-Za-z0-9]*|of|and|the|for))*)\s*:/g;
     re1.lastIndex = fromIdx;
@@ -103,20 +131,34 @@
     return cands.length ? Math.min.apply(null, cands) : -1;
   }
 
-  function findTargetLabel(text) {
-    for (var i = 0; i < TARGET_LABELS.length; i++) {
-      var re = new RegExp('(?:^|\\n|\\s{2,})(' + TARGET_LABELS[i].source + ')\\s*:', 'i');
-      var m = re.exec(text);
-      if (m) { return { idx: m.index + m[0].length, label: m[1] }; }
-      var re2 = new RegExp('(?:^|\\n)\\s*(' + TARGET_LABELS[i].source + ')\\s*(?:\\n|$)', 'i');
-      var m2 = re2.exec(text);
-      if (m2 && m2[1] === m2[1].toUpperCase()) { return { idx: m2.index + m2[0].length, label: m2[1] }; }
+  // Start index of the first CLOSING section at/after fromIdx (Conclusion, Disposition, Plan, ...), or -1.
+  function closingIndex(text, fromIdx) {
+    var from = fromIdx || 0;
+    var best = -1;
+    for (var i = 0; i < CLOSING_LABELS.length; i++) {
+      var lab = CLOSING_LABELS[i].replace(/ /g, '\\s+');
+      var re = new RegExp('(?:^|\\n|\\s{2,})(' + lab + ')(?=[^A-Za-z]|$)', 'ig');
+      re.lastIndex = from;
+      var m;
+      while ((m = re.exec(text)) !== null) {
+        var pos = m.index + m[0].indexOf(m[1]);
+        if (pos >= from) { if (best === -1 || pos < best) { best = pos; } break; }
+      }
     }
-    return null;
+    return best;
   }
 
   function sepFor(text) { return /\n/.test(text) ? '\n' : '  '; }
 
+  function insertAt(text, pos, line, sep) {
+    var head = text.slice(0, pos).replace(/\s+$/, '');
+    var tail = text.slice(pos).replace(/^\s+/, '');
+    return head + sep + line + sep + tail;
+  }
+
+  // Insert a standard line at the END of the procedure/description body (just before the
+  // closing section), or at the end of the Medications section. Non-duplicating;
+  // appends clearly if no sensible section is found.
   function insertLineIntoText(text, line) {
     text = (text == null) ? '' : String(text);
     line = (line == null) ? '' : String(line).trim();
@@ -127,14 +169,13 @@
     var target = findTargetLabel(text);
 
     if (target) {
-      var boundary = nextBoundaryIndex(text, target.idx);
-      if (boundary !== -1) {
-        var head = text.slice(0, boundary).replace(/\s+$/, '');
-        var tail = text.slice(boundary).replace(/^\s+/, '');
-        return head + sep + line + sep + tail;
-      }
-      return text.replace(/\s+$/, '') + sep + line;
+      var b = (target.kind === 'med') ? nextAnyBoundary(text, target.idx) : closingIndex(text, target.idx);
+      if (b !== -1) { return insertAt(text, b, line, sep); }
+      return text.replace(/\s+$/, '') + sep + line; // target is the last section -> end of body
     }
+
+    var c = closingIndex(text, 0);
+    if (c !== -1) { return insertAt(text, c, line, sep); }
 
     if (/\n/.test(text)) { return text.replace(/\s+$/, '') + '\n\n' + line; }
     return text.replace(/\s+$/, '') + '  ' + line;
