@@ -3960,3 +3960,10 @@
 
 /* ---- loader: feat_athena_writeback.js (WRITE finished note into the open Athena chart; verified paste; patient name+DOB gate; never Save/Sign) ---- */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_writeback.js"]'))return;var s=document.createElement('script');s.src='feat_athena_writeback.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_writeback.js');document.head.appendChild(s);}catch(e){}})();
+
+
+/* feat_athena_clarity.js */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_clarity.js"]'))return;var s=document.createElement('script');s.src='feat_athena_clarity.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_clarity.js');document.head.appendChild(s);}catch(e){}})();
+
+/* feat_athena_selfheal.js */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_selfheal.js"]'))return;var s=document.createElement('script');s.src='feat_athena_selfheal.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_selfheal.js');document.head.appendChild(s);}catch(e){}})();
