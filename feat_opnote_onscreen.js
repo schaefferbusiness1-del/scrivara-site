@@ -1,46 +1,50 @@
 /* ============================================================================
- * feat_opnote_onscreen.js  ->  window.__mlsOpNoteOnscreen   (v1.0.0)
+ * feat_opnote_onscreen.js  ->  window.__mlsOpNoteOnscreen   (v1.0.1)
  * ----------------------------------------------------------------------------
  * Makes OPERATIVE / PROCEDURE notes look as clean ON SCREEN as they do in the
- * exported PDF — without rebuilding the PDF or the op-note format engine.
+ * exported PDF, without rebuilding the PDF or the op-note format engine.
  *
- * It REUSES the existing §53 engine (window.__mlsOpNotePro: normalize / parseNote
- * / isNormalized). It NEVER invents sections; undictated sections keep the
- * engine's "[not dictated]" placeholder. It is purely additive, own-scope,
+ * It REUSES the existing section-53 engine (window.__mlsOpNotePro: normalize /
+ * parseNote / isNormalized). It NEVER invents sections; undictated sections keep
+ * the engine's "[not dictated]" placeholder. It is purely additive, own-scope,
  * idempotent, all work in try/catch, and fully reversible via
  * window.__mlsOpNoteOnscreen.revert().
  *
  * Two surfaces are upgraded:
  *
- *  1) RENDERED HTML view — the §45 per-visit detail card read view and the §47
- *     note-detail modal (both produced by __mlsVisitDetail.buildRead). The op
- *     note previously appeared only as a flat run-on blob inside the collapsed
- *     "Full captured visit data" <pre>. We parse that text with the §53 engine
- *     and render it with real structure: bold section headings, bulleted lists
- *     for codes / medications / specimens / step lists, and clear spacing — the
- *     same 11-heading structure the PDF uses.
+ *  1) RENDERED HTML view - the section-45 per-visit detail card read view and
+ *     the section-47 note-detail modal (both produced by
+ *     __mlsVisitDetail.buildRead). The op note previously appeared only as a
+ *     flat run-on blob inside the collapsed "Full captured visit data" <pre>.
+ *     We parse that text with the engine and render it with real structure:
+ *     bold section headings, bulleted lists for codes / medications / specimens,
+ *     and clear spacing - the same heading structure the PDF uses.
  *
- *  2) PLAIN editable TEXT box — the history raw-note editor (#viewBody), which
+ *  2) PLAIN editable TEXT box - the history raw-note editor (#viewBody), which
  *     cannot host rich HTML. When it holds an op note we normalise the TEXT
  *     itself (lossless, via the engine) so even as plain text it reads with
  *     clear heading lines, blank-line separation between sections and dash
  *     bullets. Editing is never broken (it stays a normal <textarea>).
  *
  * The main visit-page op-note box (#procNoteBody) and #noteBox already receive
- * the §21 __mlsFormat styled preview over §53-normalised text, so they are left
- * to those modules (no double-handling / no conflict).
+ * the section-21 __mlsFormat styled preview over normalised text, so they are
+ * left to those modules (no double-handling / no conflict).
+ *
+ * v1.0.1: buildRead wrap now captures the original in a CLOSURE (never a shared
+ * module variable) and the injection is idempotent (skips if a formatted block
+ * is already present), so re-wrapping by other modules can never recurse or
+ * duplicate the UI.
  * ==========================================================================*/
 (function () {
   "use strict";
   var NS = "__mlsOpNoteOnscreen";
   if (window[NS] && window[NS].installed) return; // idempotent
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.0.1";
 
   /* ---------- tiny helpers ------------------------------------------------ */
   function eng() { return window.__mlsOpNotePro || null; }
   function S(x) { return x == null ? "" : String(x); }
-  function txt(el, s) { el.textContent = s; return el; }
   function mk(tag, cls) { var e = document.createElement(tag); if (cls) e.className = cls; return e; }
 
   // Heading set that always reads as a bulleted list (codes / meds / specimens).
@@ -57,7 +61,7 @@
     return /\b(pre[\s-]?operative diagnosis|post[\s-]?operative diagnosis|operative note|procedure note|description of procedure|procedure performed|operation performed|anesthesia|epidural|injection|arthro|tfesi|esi)\b/i.test(t);
   }
 
-  /* ---------- normalise text through the §53 engine (lossless) ------------ */
+  /* ---------- normalise text through the engine (lossless) ---------------- */
   function normalized(text) {
     var t = S(text);
     var E = eng();
@@ -69,14 +73,14 @@
 
   /* ---------- decide bullets vs prose for one section -------------------- */
   function isBulletyLine(l) {
-    return /^\s*[-•*]\s+/.test(l) || /^\s*\d+[.)]\s+/.test(l);
+    return /^\s*[-\u2022*]\s+/.test(l) || /^\s*\d+[.)]\s+/.test(l);
   }
   function stripBullet(l) {
-    return l.replace(/^\s*[-•*]\s+/, "").replace(/^\s*\d+[.)]\s+/, "").trim();
+    return l.replace(/^\s*[-\u2022*]\s+/, "").replace(/^\s*\d+[.)]\s+/, "").trim();
   }
 
   /* ---------- render structured op-note HTML from text ------------------- */
-  // Returns a DOM node (".mls-opx") whose structure mirrors the §53 PDF.
+  // Returns a DOM node (".mls-opx") whose structure mirrors the PDF.
   function renderOpNoteHtml(rawText) {
     var wrap = mk("div", "mls-opx");
     var E = eng();
@@ -101,7 +105,7 @@
       return wrap;
     }
 
-    // Header block (patient / DOP / provider lines), shown muted at the top.
+    // Header block (patient / DOP lines), shown muted at the top.
     var hdr = parsed.header || {};
     var hdrLines = [];
     if (hdr.patient) hdrLines.push(S(hdr.patient));
@@ -120,7 +124,6 @@
       var h = mk("div", "mls-opx-h"); h.textContent = heading; block.appendChild(h);
 
       var lines = (sec[heading] || []).map(S);
-      // collapse to non-empty
       var body = lines.filter(function (l) { return l != null; });
 
       // a section whose only content is the placeholder reads as "[not dictated]"
@@ -161,17 +164,20 @@
     function naDiv() { var d = mk("div", "mls-opx-na"); d.textContent = "[not dictated]"; return d; }
   }
 
-  /* ---------- 1) wrap __mlsVisitDetail.buildRead (detail card + modal) ---- */
-  var _origBuildRead = null;
+  /* ---------- 1) wrap __mlsVisitDetail.buildRead (detail card + modal) ----
+   * The original is captured in a CLOSURE (orig) - never a shared variable -
+   * so layering with other modules' wrappers can never recurse. Injection is
+   * idempotent: if the produced body already contains a formatted block, we
+   * leave it alone (no duplicate sections even if wrapped more than once).      */
   function wrapBuildRead() {
     var VD = window.__mlsVisitDetail;
     if (!VD || typeof VD.buildRead !== "function") return false;
     if (VD.buildRead.__mlsOpxWrapped) return true;
-    _origBuildRead = VD.buildRead;
+    var orig = VD.buildRead;
     var wrapped = function (visit) {
-      var r = _origBuildRead.apply(this, arguments);
+      var r = orig.apply(this, arguments);
       try {
-        if (r && r.body && visit) {
+        if (r && r.body && visit && !r.body.querySelector(".mls-opx-host")) {
           var raw = S(visit.raw);
           if (raw && looksOp(raw, visit)) {
             var det = r.body.querySelector("details.mlsvd-raw");
@@ -196,7 +202,7 @@
       return r;
     };
     wrapped.__mlsOpxWrapped = true;
-    wrapped.__mlsOpxOrig = _origBuildRead;
+    wrapped.__mlsOpxOrig = orig;
     VD.buildRead = wrapped;
     return true;
   }
@@ -210,7 +216,7 @@
     var E = eng();
     if (!E) return;
     try {
-      if (E.isNormalized(v)) return;     // already structured — leave it
+      if (E.isNormalized(v)) return;     // already structured - leave it
       var nv = E.normalize(v);           // lossless restructure
       if (nv && nv.length && nv !== v) {
         ta.value = nv;                   // display-only; persisted only if the user saves
@@ -260,7 +266,7 @@
     injectStyle();
     var okBR = wrapBuildRead();
     watchViewModal();
-    // Retry a few times only until the modules exist, then stop (no idle loop).
+    // Retry only until the modules exist, then stop (no idle loop).
     if ((!okBR || !document.getElementById("viewModal")) && _tries < 40) {
       _tries++;
       _boot = setTimeout(boot, 250);
@@ -286,7 +292,6 @@
       try { if (_boot) clearTimeout(_boot); } catch (e3) {}
       try { var s = document.getElementById(STYLE_ID); if (s) s.remove(); } catch (e4) {}
       try {
-        // un-hide any raw blocks we relabelled (best-effort)
         document.querySelectorAll("details.mls-opx-rawmoved").forEach(function (d) {
           d.classList.remove("mls-opx-rawmoved");
           var sum = d.querySelector("summary"); if (sum) sum.textContent = "Full captured visit data";
