@@ -1,5 +1,5 @@
 {
-  "version": "1.35",
+  "version": "1.36",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "MLS Assist v1.35 \u2014 Scoped the content script OFF github.com (and *.github.com / github.dev / githubusercontent.com). It previously injected its panel and DOM observers into every site via <all_urls>, including GitHub, where it could freeze the page; now it never loads there (manifest exclude_matches plus an in-script github.com guard). athenaOne note write-back, the copy-every-visit reader, and the mlsscribe.com app bridge are unchanged \u2014 no functional change on athenaOne or mlsscribe.com. Download and reload at chrome://extensions to update."
+  "notes": "MLS Assist v1.36 — Fixed the panel “Pull from chart” button: it now reads the OPEN chart’s patient (name + DOB) and ALL their visits via the frame-aware reader and lands them in MLS, instead of the old top-frame text grab that did nothing on athenaOne. Added READ-ONLY search-and-navigate by name (types “Last, First” into the Athena search bar, opens the matching chart, then pulls visits — never writes/signs). Every Athena action now shares ONE module for live step-by-step status, click-intent labels, exact-destination reporting + save-verify, and self-troubleshooting with adaptive retry. Download and reload at chrome://extensions to update."
 }
