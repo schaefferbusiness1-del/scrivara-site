@@ -17,7 +17,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   if (window.__mlsAthenaClarity && window.__mlsAthenaClarity.installed) return;
 
   var STYLE_ID = 'mlsac-style';
@@ -120,10 +120,8 @@
     btn.setAttribute('title', e.label + ' — ' + e.sub);
     // keep §61's hidden intent attribute too (tooltip), but never remove it
     safe(function () {
-      var A = window.__mlsAthenaActions;
-      if (A && isFn(A.decorateButtons) && !btn.getAttribute('data-mlsaa-intent')) {
-        A.decorateButtons(btn.parentElement || btn);
-      }
+      var sib = btn.nextSibling;
+      if (sib && sib.classList && sib.classList.contains('mlsaa-intent')) sib.remove();
     });
     // per-patient pull: wire honest real-result reporting on click
     if (e.pull) {
