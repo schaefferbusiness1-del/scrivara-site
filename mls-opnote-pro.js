@@ -169,6 +169,19 @@
     return true;
   }
 
+  // Resolve a source heading label to a canonical key. Tolerant of a TRAILING
+  // parenthetical qualifier (e.g. "procedure(s) performed (with cpt)" ->
+  // "PROCEDURE(S) PERFORMED") so a heading variant is folded into its canonical
+  // section instead of being emitted a SECOND time as an unmatched block — which
+  // previously produced a DOUBLED heading in both the PDF and the on-screen view.
+  function aliasFor(lkey) {
+    lkey = String(lkey == null ? '' : lkey).toLowerCase().trim();
+    if (ALIAS[lkey]) return ALIAS[lkey];
+    var stripped = lkey.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    if (stripped && stripped !== lkey && ALIAS[stripped]) return ALIAS[stripped];
+    return null;
+  }
+
   /* Parse a raw op-note string into {header:{}, order:[], sec:{key->[lines]}, unmatched:[]}.
      - header: demographics lifted from "Key: value" lines at the very top.
      - sec: canonical-keyed section bodies (array of text lines).
@@ -213,14 +226,14 @@
       }
 
       // --- Section heading detection ---
-      if (m && (ALIAS[lkey] || looksLikeHeading(label))) {
-        var canon = ALIAS[lkey];
+      if (m && (aliasFor(lkey) || looksLikeHeading(label))) {
+        var canon = aliasFor(lkey);
         if (canon) { pushCanon(canon, value); continue; }
         pushUnmatched(label.toUpperCase(), value); continue;
       }
       // A standalone ALL-CAPS line with no colon is also a heading.
       if (!m && trimmed && looksLikeHeading(trimmed)) {
-        var c2 = ALIAS[trimmed.toLowerCase()];
+        var c2 = aliasFor(trimmed.toLowerCase());
         if (c2) { pushCanon(c2, ''); continue; }
         pushUnmatched(stripColon(trimmed).toUpperCase(), ''); continue;
       }
