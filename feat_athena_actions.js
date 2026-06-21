@@ -32,7 +32,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   if (window.__mlsAthenaActions && window.__mlsAthenaActions.installed) return;
 
   // ---- small helpers ------------------------------------------------------
@@ -428,6 +428,12 @@
       if (!/athena|pull|copy every|search athena|schedule|find patient|chart/i.test(btn.textContent || '')) return;
       var it = intentFor(btn);
       if (!it) return;
+      if (btn.getAttribute && btn.getAttribute('data-mlsac')) {
+        var dupSib = btn.nextSibling && btn.nextSibling.classList && btn.nextSibling.classList.contains('mlsaa-intent') ? btn.nextSibling : null;
+        if (dupSib) dupSib.remove();
+        btn.setAttribute('data-mlsaa-intent', it.brings);
+        return;
+      }
       if (btn.getAttribute('data-mlsaa-intent') === it.brings) return;
       var existing = btn.nextSibling && btn.nextSibling.classList && btn.nextSibling.classList.contains('mlsaa-intent') ? btn.nextSibling : null;
       if (existing) existing.remove();
