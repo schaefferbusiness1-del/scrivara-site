@@ -32,7 +32,7 @@
   'use strict';
   try { if (window.__mlsProviderPicker && window.__mlsProviderPicker.installed) return; } catch (e) {}
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var ASSET = 'feat_athena_provider_picker.js';
   var PICK_KEY = 'mlsProvPick';        // 'mine' (default) | 'all' | '<provider display>'
   var CACHE_KEY = 'mlsSchedProviders'; // JSON array of discovered provider display strings
@@ -286,13 +286,28 @@
     return 'MLS will bring only ' + providerLabel(who) + '’s patients. If the schedule has no per-doctor data yet, it pulls all and tells you.';
   }
 
+  // v1.0.1 GLITCH FIX: renderDropdown is driven by a 1500ms poll, a 1000ms boot
+  // poll, AND a body MutationObserver, and it used to rewrite wrap.innerHTML on
+  // EVERY call -> the live <select> was torn down/rebuilt ~every 1.5s (worse on a
+  // foreground tab), so it flickered and SLAMMED SHUT when opened. Now: do NOTHING
+  // when the desired state is unchanged (signature), and never rebuild while the
+  // user is interacting with the <select>.
+  var _lastSig = null;
+  function renderSig(pick) {
+    var opts = optionList().map(function (o) { return o.v + '' + o.t; }).join('');
+    return S(pick) + '' + opts + '' + hintFor(pick);
+  }
+  function selIsOpen(sel) { return !!(sel && document.activeElement === sel); }
   function renderDropdown() {
     safe(function () {
       var host = document.getElementById('mlscpPulls');
       if (!host) return;
-      injectStyle();
       var pick = getPick();
       var wrap = document.getElementById('mlsppWrap');
+      var sig = renderSig(pick);
+      if (wrap && sig === _lastSig) return;
+      if (wrap && selIsOpen(document.getElementById('mlsppSel'))) return;
+      injectStyle();
       var html = '<label for="mlsppSel">🩺 Whose patients?</label>' +
         '<select id="mlsppSel">' + optionList().map(function (o) {
           return '<option value="' + esc(o.v) + '"' + (o.v === pick ? ' selected' : '') + '>' + esc(o.t) + '</option>';
@@ -305,11 +320,13 @@
       } else {
         wrap.innerHTML = html;
       }
+      _lastSig = sig;
       var sel = document.getElementById('mlsppSel');
       if (sel && !sel.__mlsppBound) {
         sel.__mlsppBound = true;
         sel.addEventListener('change', function () {
           setPick(sel.value);
+          _lastSig = renderSig(sel.value);
           var h = document.getElementById('mlsppHint'); if (h) h.textContent = hintFor(sel.value);
           adjustCenterpieceNote();
         });
