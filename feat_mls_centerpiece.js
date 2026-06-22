@@ -1,4 +1,4 @@
-/* feat_mls_centerpiece.js  ->  window.__mlsCenterpiece  (v1.0.0)
+/* feat_mls_centerpiece.js  ->  window.__mlsCenterpiece  (v1.0.1)
  *
  * Day-driven MLS centerpiece. Self-contained, additive, fully reversible.
  * - Surfaces the (already-working) day-schedule pull + the selected-patient pull
@@ -27,7 +27,7 @@
     if (window.__mlsCenterpiece && window.__mlsCenterpiece.installed) return;
   } catch (e) {}
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var ASSET = 'feat_mls_centerpiece.js';
   var S = {}; // module state: walkArmed, walk{list,idx,kind}, importBaseline
   var ALL_PROV_NOTE = 'Pulls all providers for now (the per-doctor filter needs the next MLS Assist update).';
@@ -348,21 +348,23 @@
   // ============================================================
   //  PART C -- wrap _importPulledSchedule (outermost) to drive the walk
   // ============================================================
-  var _wrappedImport = null, _origImport = null;
+  var _wrappedImport = null, _origImport = null, _didWrap = false, _reverted = false;
   function wrapImport() {
     try {
-      if (typeof window._importPulledSchedule !== 'function') return;
-      if (window._importPulledSchedule.__mlscpWrapped) return;
+      if (_didWrap) return;
+      if (typeof window._importPulledSchedule !== 'function') return; // not defined yet -- the poll retries
+      if (window._importPulledSchedule.__mlscpWrapped) { _didWrap = true; return; }
       _origImport = window._importPulledSchedule;
       _wrappedImport = function () {
         var r;
         try { r = _origImport.apply(this, arguments); } catch (e) { r = undefined; }
-        // capture the walk once the import has settled
-        if (S.walkArmed) { schedule(captureWalk, 900); schedule(function () { renderWalkStrip(); refreshActing(); }, 1600); }
+        // capture the walk once the import has settled (skip if reverted)
+        if (!_reverted && S.walkArmed) { schedule(captureWalk, 900); schedule(function () { renderWalkStrip(); refreshActing(); }, 1600); }
         return r;
       };
       _wrappedImport.__mlscpWrapped = true;
       window._importPulledSchedule = _wrappedImport;
+      _didWrap = true;
     } catch (e) {}
   }
 
@@ -385,7 +387,7 @@
       _obs.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
     // a slow safety poll keeps the acting banner fresh + re-mounts if MLS Easy re-renders
-    _pollT = setInterval(function () { try { if (onStep1()) { scheduleInject(); refreshActing(); } } catch (e) {} }, 1500);
+    _pollT = setInterval(function () { try { wrapImport(); if (onStep1()) { scheduleInject(); refreshActing(); } } catch (e) {} }, 1500);
   }
 
   // ============================================================
@@ -395,6 +397,7 @@
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { if (_pollT) clearInterval(_pollT); } catch (e) {}
     try { _timers.forEach(function (t) { clearTimeout(t); }); } catch (e) {}
+    _reverted = true;
     try { if (_wrappedImport && window._importPulledSchedule === _wrappedImport && _origImport) window._importPulledSchedule = _origImport; } catch (e) {}
     try { var s = document.getElementById(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try { ['mlscpPulls', 'mlscpWalk', 'mlscpActing'].forEach(function (id) { var el = document.getElementById(id); if (el) { var host = el.closest && el.closest('.mlscp-actions-host'); (host || el).remove(); } }); } catch (e) {}
