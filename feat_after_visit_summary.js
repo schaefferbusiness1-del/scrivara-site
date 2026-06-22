@@ -20,8 +20,9 @@
  *   - email send : POST bkBase()+'/api/copilot/email' {to,subject,body} with the
  *                  app's Bearer auth (bkToken()) -- the SAME backend Resend
  *                  transactional path the app's copilot email uses.
- *   - PDF        : window.loadJsPdf() + window.pdfSafe() + MLS_OPNOTE_LETTERHEAD
- *                  -- the same jsPDF engine the op-note PDF uses.
+ *   - PDF        : jsPDF (reusing window.jspdf/loadJsPdf if present, else loaded
+ *                  from CDN) + window.pdfSafe() + MLS_OPNOTE_LETTERHEAD -- the
+ *                  same jsPDF engine the op-note PDF uses.
  *
  * SAFETY:
  *   - Read-only w.r.t. athenaOne and the chart: never Save/Sign/attest/write.
@@ -346,13 +347,35 @@
     } catch (e) { setStatus('Copy failed. Select the text and copy manually.', 'err'); }
   }
 
+  // Obtain a jsPDF constructor robustly: prefer one already loaded, then the app's
+  // on-demand loader (only if it is actually callable -- some app builds leave
+  // window.loadJsPdf as a non-callable value), else load jsPDF from CDN (same engine).
+  function jsPdfCtor() { return (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default) || null; }
+  function ensureJsPDF() {
+    var cur = jsPdfCtor();
+    if (cur) return Promise.resolve(cur);
+    var viaApp = (typeof window.loadJsPdf === 'function')
+      ? Promise.resolve(safe(function () { return window.loadJsPdf(); }, null))
+      : Promise.resolve(null);
+    return viaApp.then(function () {
+      var JS = jsPdfCtor();
+      if (JS) return JS;
+      return new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        s.onload = function () { resolve(jsPdfCtor()); };
+        s.onerror = function () { reject(new Error('Could not load the PDF engine.')); };
+        (document.head || document.documentElement).appendChild(s);
+      });
+    });
+  }
+
   // ---------------- PDF (reuses the op-note jsPDF engine) ----------------
   function onPdf() {
     var txt = S(els.text && els.text.value).trim();
     if (!txt) { setStatus('Generate a summary before downloading.', 'err'); return; }
     setStatus('Building PDF...', 'run');
-    Promise.resolve(safe(function () { return window.loadJsPdf && window.loadJsPdf(); }, null)).then(function () {
-      var JS = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default);
+    ensureJsPDF().then(function (JS) {
       if (!JS) throw new Error('PDF engine not available.');
       var clean = function (s) { try { return window.pdfSafe ? window.pdfSafe(s) : String(s); } catch (e) { return String(s); } };
       var doc = new JS({ unit: 'pt', format: 'letter' });
