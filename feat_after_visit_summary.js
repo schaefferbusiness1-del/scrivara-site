@@ -17,8 +17,9 @@
  *   - generation : window.aiCallRaw(sys,user,getKey(),{freeform:true}) -- the
  *                  existing OpenAI proxy / note-gen path. It auto-selects the
  *                  strong note model (getNoteModel(), e.g. gpt-4o).
- *   - email send : POST /api/copilot/email {to,subject,body} -- the SAME backend
- *                  Resend transactional path the app's copilot email uses.
+ *   - email send : POST bkBase()+'/api/copilot/email' {to,subject,body} with the
+ *                  app's Bearer auth (bkToken()) -- the SAME backend Resend
+ *                  transactional path the app's copilot email uses.
  *   - PDF        : window.loadJsPdf() + window.pdfSafe() + MLS_OPNOTE_LETTERHEAD
  *                  -- the same jsPDF engine the op-note PDF uses.
  *
@@ -415,12 +416,17 @@
     });
   }
 
-  // POST to the existing transactional email endpoint (same-origin, Resend-backed).
+  // POST to the existing transactional email endpoint (Resend-backed), using the
+  // SAME backend base + bearer auth the app's own copilot email uses:
+  //   fetch(bkBase() + '/api/copilot/email', { headers:{ Authorization:'Bearer '+bkToken() }})
   function sendViaBackend(to, subject, body) {
-    return fetch('/api/copilot/email', {
+    var base = '';
+    try { if (typeof window.bkBase === 'function') base = window.bkBase() || ''; } catch (e) { base = ''; }
+    var headers = { 'Content-Type': 'application/json' };
+    try { if (typeof window.bkToken === 'function') { var tk = window.bkToken(); if (tk) headers.Authorization = 'Bearer ' + tk; } } catch (e) {}
+    return fetch(base + '/api/copilot/email', {
       method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify({ to: to, subject: subject, body: body })
     }).then(function (res) {
       return res.text().then(function (t) {
