@@ -3974,3 +3974,5 @@
 
 /* ---- loader feat_athena_provider_picker.js (Whose patients? doctor dropdown + provider-scoped schedule pull) ---- */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_picker.js"]'))return; var s=document.createElement('script'); s.src='/feat_athena_provider_picker.js?v='+Date.now(); s.setAttribute('data-mls-asset','feat_athena_provider_picker.js'); document.head.appendChild(s); }catch(e){}})()
+/* ---- loader: feat_mls_protocol (MLS Easy protocol: auto-advance to NEXT UP Slide 2, record textbox, full ordered flow, provider-name-everywhere, sizing/readability; additive, reversible) ---- */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol.js"]'))return;var s=document.createElement('script');s.src='feat_mls_protocol.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_mls_protocol.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
