@@ -1,5 +1,5 @@
 {
-  "version": "1.36",
+  "version": "1.37",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "MLS Assist v1.36 — Fixed the panel “Pull from chart” button: it now reads the OPEN chart’s patient (name + DOB) and ALL their visits via the frame-aware reader and lands them in MLS, instead of the old top-frame text grab that did nothing on athenaOne. Added READ-ONLY search-and-navigate by name (types “Last, First” into the Athena search bar, opens the matching chart, then pulls visits — never writes/signs). Every Athena action now shares ONE module for live step-by-step status, click-intent labels, exact-destination reporting + save-verify, and self-troubleshooting with adaptive retry. Download and reload at chrome://extensions to update."
+  "notes": "MLS Assist v1.37 — The schedule read now captures the PROVIDER (doctor) for each appointment, plus the distinct list of providers on the day, by reading athenaOne’s schedule-grid provider column / provider grouping (read-only; diagnostics contain no patient PHI). This powers the new “Whose patients?” doctor picker in MLS, so you can pull ONLY one doctor’s patients. If a schedule shows no per-doctor data, MLS safely pulls all and tells you. Download and reload at chrome://extensions to update."
 }
