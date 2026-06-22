@@ -1,5 +1,17 @@
 /* ============================================================================
- * feat_opnote_onscreen.js  ->  window.__mlsOpNoteOnscreen   (v1.1.0)
+ * feat_opnote_onscreen.js  ->  window.__mlsOpNoteOnscreen   (v1.2.0)
+ *
+ * v1.2.0 (additive, no behaviour removed):
+ *   • FIX 1 (layout): the §53 engine's parseNote() returns "unmatched" entries
+ *     as {h, body} OBJECTS, but renderOpNoteHtml() previously did .map(String)
+ *     on them — which printed literal "[object Object]" lines under ADDITIONAL
+ *     DOCUMENTATION in the detail card / note-detail modal. Now each object is
+ *     rendered as a real heading + its body lines (bullets / [not dictated] /
+ *     paragraphs), so the on-screen op note is clean structure, not a blob.
+ *   • FIX 2 (Save as PDF): every rendered op-note read view (the §45 per-visit
+ *     detail card AND the §47 note-detail modal that replaced openNoteFromHistory)
+ *     now gets a "📄 Save as PDF" button wired to the EXISTING §53 PDF engine
+ *     (window.__mlsOpNotePdf) — reused, not rebuilt. Idempotent; reversible.
  * ----------------------------------------------------------------------------
  * Makes OPERATIVE / PROCEDURE notes look as clean ON SCREEN as they do in the
  * exported PDF, without rebuilding the PDF or the op-note format engine.
@@ -39,7 +51,7 @@
   var NS = "__mlsOpNoteOnscreen";
   if (window[NS] && window[NS].installed) return; // idempotent
 
-  var VERSION = "1.1.0";
+  var VERSION = "1.2.0";
 
   /* ---------- tiny helpers ------------------------------------------------ */
   function eng() { return window.__mlsOpNotePro || null; }
@@ -69,10 +81,10 @@
 
   /* ---------- decide bullets vs prose for one section -------------------- */
   function isBulletyLine(l) {
-    return /^\s*[-\u2022*]\s+/.test(l) || /^\s*\d+[.)]\s+/.test(l);
+    return /^\s*[-•*]\s+/.test(l) || /^\s*\d+[.)]\s+/.test(l);
   }
   function stripBullet(l) {
-    return l.replace(/^\s*[-\u2022*]\s+/, "").replace(/^\s*\d+[.)]\s+/, "").trim();
+    return l.replace(/^\s*[-•*]\s+/, "").replace(/^\s*\d+[.)]\s+/, "").trim();
   }
 
   /* ---------- render structured op-note HTML from text ------------------- */
@@ -140,12 +152,47 @@
       wrap.appendChild(block);
     });
 
-    var unm = (parsed.unmatched || []).map(S).filter(function (l) { return l && l.trim(); });
+    // (FIX 1) parsed.unmatched entries may be plain strings OR {h, body} objects
+    // (the §53 engine emits objects). Render objects as a real heading + body
+    // lines instead of stringifying them to literal "[object Object]".
+    var unm = (parsed.unmatched || []).filter(function (u) { return u != null; });
     if (unm.length) {
-      var ub = mk("div", "mls-opx-sec");
-      var uh = mk("div", "mls-opx-h"); uh.textContent = "ADDITIONAL DOCUMENTATION"; ub.appendChild(uh);
-      unm.forEach(function (l) { var p = mk("div", "mls-opx-p"); p.textContent = l; ub.appendChild(p); });
-      wrap.appendChild(ub);
+      var strayStrings = [];
+      unm.forEach(function (u) {
+        if (u && typeof u === "object" && ("h" in u || "body" in u)) {
+          var osec = mk("div", "mls-opx-sec");
+          var hh = S(u.h).replace(/:\s*$/, "").trim();
+          if (hh) { var oh = mk("div", "mls-opx-h"); oh.textContent = hh; osec.appendChild(oh); }
+          var bodyArr = Array.isArray(u.body) ? u.body : (u.body == null ? [] : [u.body]);
+          var clean = bodyArr.map(S).filter(function (l) { return l != null && String(l).trim() !== ""; });
+          var allNaO = clean.length > 0 && clean.every(function (l) { return /^\s*\[not dictated\]\s*$/i.test(l); });
+          if (!clean.length || allNaO) {
+            osec.appendChild(naDiv());
+          } else {
+            var listy = clean.length > 1 && clean.filter(isBulletyLine).length >= Math.max(1, clean.length - 1);
+            if (listy) {
+              var oul = mk("ul", "mls-opx-ul");
+              clean.forEach(function (l) { if (!l.trim()) return; var li = mk("li"); li.textContent = stripBullet(l); oul.appendChild(li); });
+              if (oul.children.length) osec.appendChild(oul); else osec.appendChild(naDiv());
+            } else {
+              clean.forEach(function (l) {
+                var cls = /^\s*\[not dictated\]\s*$/i.test(l) ? "mls-opx-na" : "mls-opx-p";
+                var p = mk("div", cls); p.textContent = l; osec.appendChild(p);
+              });
+            }
+          }
+          if (osec.children.length) wrap.appendChild(osec);
+        } else {
+          var sline = S(u).trim();
+          if (sline) strayStrings.push(sline);
+        }
+      });
+      if (strayStrings.length) {
+        var ub = mk("div", "mls-opx-sec");
+        var uh = mk("div", "mls-opx-h"); uh.textContent = "ADDITIONAL DOCUMENTATION"; ub.appendChild(uh);
+        strayStrings.forEach(function (l) { var p = mk("div", "mls-opx-p"); p.textContent = l; ub.appendChild(p); });
+        wrap.appendChild(ub);
+      }
     }
     return wrap;
     function naDiv() { var d = mk("div", "mls-opx-na"); d.textContent = "[not dictated]"; return d; }
@@ -173,7 +220,32 @@
       det.removeAttribute("open");
       var sum = det.querySelector("summary");
       if (sum) sum.textContent = "Raw captured text";
+
+      // (FIX 2) add a "Save as PDF" button to this op-note read view, REUSING
+      // the existing §53 PDF engine (window.__mlsOpNotePdf) — not a rebuild.
+      try { addPdfButton(body, raw); } catch (e2) {}
     } catch (e) {}
+  }
+
+  /* ---------- Save-as-PDF button on a rendered op-note read view ---------- */
+  // Wired to the §53 engine's exposed helper window.__mlsOpNotePdf(getText[,name]);
+  // placed in the §45 ".mlsvd-acts" action row (detail card + §47 modal).
+  function addPdfButton(body, rawText) {
+    if (!body) return;
+    var acts = body.querySelector(".mlsvd-acts");
+    if (!acts) return;                                  // no action row to host it
+    if (acts.querySelector(".mls-opx-pdf")) return;     // idempotent
+    var btn = mk("button", "mlsvd-btn mls-opx-pdf");
+    btn.type = "button";
+    btn.textContent = "📄 Save as PDF";
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var fn = window.__mlsOpNotePdf;
+      if (typeof fn !== "function") return;             // engine not present — silent
+      try { fn(function () { return rawText; }); } catch (err) {}
+    });
+    // place after the existing primary action, before the status span
+    acts.insertBefore(btn, acts.querySelector(".mlsvd-status") || null);
   }
 
   function sweep() {
@@ -267,6 +339,7 @@
     looksOp: looksOp,
     renderOpNoteHtml: renderOpNoteHtml,
     enhanceReadView: enhanceReadView,
+    addPdfButton: addPdfButton,
     sweep: sweep,
     normalizeViewBody: normalizeViewBody,
     revert: function () {
@@ -279,6 +352,7 @@
           var sum = d.querySelector("summary"); if (sum) sum.textContent = "Full captured visit data";
         });
         document.querySelectorAll(".mls-opx-host").forEach(function (h) { h.remove(); });
+        document.querySelectorAll(".mls-opx-pdf").forEach(function (b) { b.remove(); });
       } catch (e4) {}
       try { window[NS].installed = false; } catch (e5) {}
     }
