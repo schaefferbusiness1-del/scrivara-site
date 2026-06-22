@@ -126,7 +126,7 @@
       var ext = await pingExtension();
       if (!ext) { render('noext'); return; }
       var open = await probeAthenaOpen();
-      render(open ? 'connected' : 'noathena');
+      render((open && (!window.__mlsConnTruth || window.__mlsConnTruth.isConnected())) ? 'connected' : 'noathena');
     } catch (e) {
       render('noext');
     } finally { checking = false; }
