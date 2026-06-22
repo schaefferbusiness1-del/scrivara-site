@@ -3986,3 +3986,33 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_roster.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_roster.js?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset','feat_athena_provider_roster.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_stdline_insert.js"]'))return;var s=document.createElement('script');s.src='/feat_stdline_insert.js?v=20260622';s.setAttribute('data-mls-asset','feat_stdline_insert.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_pdf_anyview.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_pdf_anyview.js?v=20260622';s.setAttribute('data-mls-asset','feat_opnote_pdf_anyview.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+/* LOADER for feat_athena_truthcheck.js  (PART 1)
+ * Append this ONE guarded, idempotent, cache-busted, ;-prefixed line/block at
+ * the TRUE EOF of mls-connect.js (and its .staging.js twin), after the last
+ * existing data-mls-asset loader. The leading ';' guarantees ASI safety even
+ * if the preceding line lacked a terminator. Revert = delete this block.
+ */
+;(function(){try{
+  var A='feat_athena_truthcheck.js';
+  if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
+  var s=document.createElement('script');
+  s.src=A+'?v='+Date.now();
+  s.setAttribute('data-mls-asset',A);
+  s.async=false;
+  (document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})();
+/* LOADER for feat_athena_cardtips.js  (PART 2)
+ * Append this ONE guarded, idempotent, cache-busted, ;-prefixed block at the
+ * TRUE EOF of mls-connect.js (and its .staging.js twin), after the Part 1
+ * loader. The leading ';' guarantees ASI safety. Revert = delete this block.
+ */
+;(function(){try{
+  var A='feat_athena_cardtips.js';
+  if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
+  var s=document.createElement('script');
+  s.src=A+'?v='+Date.now();
+  s.setAttribute('data-mls-asset',A);
+  s.async=false;
+  (document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})();
