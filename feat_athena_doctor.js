@@ -172,7 +172,7 @@
       byId.worker.status = 'pass';
       byId.worker.detail = 'The background worker answered the page-read request.';
 
-      if (sp.ok) {
+      if (sp.ok && (!window.__mlsConnTruth || window.__mlsConnTruth.isConnected())) {
         // tab open AND readable AND permitted
         byId.tab.status = 'pass';  byId.tab.detail = 'A signed-in athenaOne tab was found and is readable.';
         byId.perm.status = 'pass'; byId.perm.detail = 'The extension successfully read the athenaOne page.';
