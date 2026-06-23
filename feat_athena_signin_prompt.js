@@ -33,6 +33,14 @@
  *   a genuine "Fixed it" still shows on a real recovery. (Same shared-chokepoint
  *   pattern as the deployed fabricated-counter guard.)
  *
+ * PART 2b - SCRUB ALREADY-RENDERED FAB LINES
+ *   This asset is the LAST loader, so a recovery/health-check line emitted
+ *   during page load can render through the unified status mirror BEFORE the
+ *   sink wrap installs. When __mlsConnTruth resolves to a genuine disconnect we
+ *   therefore also SCRUB any already-rendered fabricated status text (inside the
+ *   mlsux-/mlsaa- status surfaces only) to the honest line - so even the
+ *   first-paint state is honest. Gated on __mlsConnTruth; connected = no scrub.
+ *
  * SINGLE SOURCE OF TRUTH (strict gate)
  *   The ONLY thing that decides "disconnected" is window.__mlsConnTruth, the
  *   deployed Connection-Truth utility. This asset reads __mlsConnTruth.state /
@@ -63,7 +71,7 @@
     if (window.__mlsAthenaSignInPrompt && window.__mlsAthenaSignInPrompt.installed) return;
   } catch (e) {}
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
   var ASSET = 'feat_athena_signin_prompt.js';
 
   // The standard athenaOne login URL. The extension/app identifies athenaOne by
@@ -305,10 +313,11 @@
 
   var _sinkPoll = null, _sinkTries = 0;
   function startSinkPoll() {
-    if (wrapSinks()) return;            // both present already
+    if (wrapSinks()) { scrubExisting(); return; }   // both present already
     _sinkPoll = setInterval(function () {
       _sinkTries++;
       if (wrapSinks() || _sinkTries > 20) {   // ~30s ceiling
+        scrubExisting();
         if (_sinkPoll) { clearInterval(_sinkPoll); _sinkPoll = null; }
       }
     }, 1500);
@@ -323,6 +332,31 @@
     _wraps = [];
   }
 
+  // Scrub any ALREADY-RENDERED fabricated status text (mlsux-/mlsaa- surfaces
+  // only) to the honest line. Only runs on a genuine disconnect. This catches a
+  // line that rendered during load before our sink wrap installed.
+  function scrubExisting() {
+    try {
+      if (!disconnectStatus()) return false;
+      var roots = document.querySelectorAll('[class*="mlsux"], [class*="mlsaa"]');
+      var touched = false;
+      for (var i = 0; i < roots.length; i++) {
+        var nodes = roots[i].querySelectorAll('*');
+        var list = [roots[i]];
+        for (var j = 0; j < nodes.length; j++) list.push(nodes[j]);
+        for (var k = 0; k < list.length; k++) {
+          var el = list[k];
+          if (el.children.length === 0 && FAB_RE.test(el.textContent || '')) {
+            el.textContent = HONEST_LINE;
+            touched = true;
+          }
+        }
+      }
+      if (touched) recoverOpenOnce();
+      return touched;
+    } catch (e) { return false; }
+  }
+
   // When the source of truth flips to connected, replace the prompt with an
   // honest "you're signed in" note (only fired by the real probe).
   function onTruthChange(state) {
@@ -330,6 +364,12 @@
       if (S.reverted) return;
       if (state && state.status === 'connected') {
         if (document.getElementById('mlsSignInPrompt')) showPrompt(true);
+      } else if (disconnectStatus()) {
+        // a recovery/health-check line may have rendered pre-wrap during load;
+        // scrub it now, and again shortly after in case narration emits late.
+        scrubExisting();
+        later(scrubExisting, 500);
+        later(scrubExisting, 1500);
       }
     } catch (e) {}
   }
@@ -372,6 +412,7 @@
     _isFabClaim: isFabClaim,
     _shouldRewrite: shouldRewrite,
     _wrapSinks: wrapSinks,
+    _scrubExisting: scrubExisting,
     _honestLine: HONEST_LINE,
     triggerSelector: TRIGGER_SEL,
     revert: revert
