@@ -1,13 +1,19 @@
-/* feat_mls_simpleview_global.js  ->  window.__mlsSimpleViewGlobal  (v1.0.0)
+/* feat_mls_simpleview_global.js  ->  window.__mlsSimpleViewGlobal  (v1.1.0)
  *
  * Make "simple view" a PROGRAM-WIDE mode. When MLS Easy is in simple view
  * (window.__mlsEasy.state.mode === 'easy'), restrict the whole app so ONLY
  * the simple sections are available across the top nav: Patients, Calendar,
- * History. Every other top-level section/nav entry (Visit, Orders,
+ * History and Visit. Every other top-level section/nav entry (Orders,
  * Recommendations, Legal requests, Team, Analysis, AI Studio, Admin,
  * Templates, Custom widget, Outcome study, etc.) is HIDDEN. When in
  * complex/full view (mode === 'full'), nothing is restricted -- the app
  * behaves exactly as it does today (current behavior, unchanged).
+ *
+ * CHANGELOG:
+ *   v1.1.0 - add "visit" (the scribe capture screen) to the simple allow-list,
+ *            so simple view now shows Patients, Calendar, History and Visit.
+ *            No other behavior changed; complex/full view stays unrestricted.
+ *   v1.0.0 - initial: simple view limited to Patients, Calendar, History.
  *
  * Additive, reversible, composes with -- never edits -- feat_mls_easy.js
  * (window.__mlsEasy) and feat_mls_viewpersist.js (window.__mlsViewPersist).
@@ -44,11 +50,12 @@
  *    class, and the tags, leaving the DOM byte-equivalent to baseline.
  *  - "Allowed in simple" is decided by VIEW TOKEN, not by hard-coded IDs,
  *    so it adapts to whatever nav the live app actually ships. Allowed set:
- *    { patients, calendar, history }. Any navtab whose parsed token is NOT
- *    in that set is hidden in simple view. Tabs whose token can't be parsed
- *    are left alone (conservative: never hide something we can't classify).
+ *    { patients, calendar, history, visit }. Any navtab whose parsed token
+ *    is NOT in that set is hidden in simple view. Tabs whose token can't be
+ *    parsed are left alone (conservative: never hide something we can't
+ *    classify).
  *  - If, in simple view, the currently-shown view is a disallowed one
- *    (e.g. the default landed on Visit, or a deep link opened Studio), we
+ *    (e.g. the default landed on Orders, or a deep link opened Studio), we
  *    call the host's own showView('patients') once so the user is never
  *    stranded on a section whose tab we just hid.
  *  - Late-revealed tabs (role-gating after login) are re-tagged on the
@@ -73,7 +80,7 @@
   "use strict";
   try { if (window.__mlsSimpleViewGlobal && window.__mlsSimpleViewGlobal.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.1.0";
   var ASSET = "feat_mls_simpleview_global.js";
   var PERSIST_KEY = "mls.easy.viewPref";     // shared with viewpersist; "complex" | "simple"
   var STYLE_ID = "mls-sv-style";
@@ -82,7 +89,7 @@
   var MARK_ATTR = "data-mls-sv";
 
   // The simple set: only these view tokens stay available in simple view.
-  var ALLOW = { patients: 1, calendar: 1, history: 1 };
+  var ALLOW = { patients: 1, calendar: 1, history: 1, visit: 1 };
   // Where to land if simple view is active and the current view is disallowed.
   var FALLBACK_VIEW = "patients";
 
