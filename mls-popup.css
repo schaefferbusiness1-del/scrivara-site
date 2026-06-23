@@ -7,7 +7,7 @@
 #mls-popup-root, #mls-popup-root * {
   all: revert;
   box-sizing: border-box;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 #mls-popup-root {
@@ -83,14 +83,14 @@
   border: none; border-radius: 12px; font-size: 16px; font-weight: 700;
   cursor: pointer; margin-top: 10px; text-align: center;
 }
-#mls-popup-root .mlsp-btn.primary   { background: #2563eb; color: #fff; }
-#mls-popup-root .mlsp-btn.primary:hover:not(:disabled) { background: #1d4ed8; }
+#mls-popup-root .mlsp-btn.primary   { background: #2f6bed; color: #fff; }
+#mls-popup-root .mlsp-btn.primary:hover:not(:disabled) { background: #2257cf; }
 #mls-popup-root .mlsp-btn.danger    { background: #dc2626; color: #fff; }
 #mls-popup-root .mlsp-btn.ghost     { background: #f1f5f9; color: #0f172a; }
 #mls-popup-root .mlsp-btn.ghost:hover { background: #e2e8f0; }
 #mls-popup-root .mlsp-btn:disabled  { opacity: .5; cursor: not-allowed; }
 #mls-popup-root .mlsp-btn.secondary {
-  min-height: 0; background: transparent; color: #2563eb; font-weight: 600;
+  min-height: 0; background: transparent; color: #2f6bed; font-weight: 600;
   font-size: 13px; padding: 8px; margin-top: 6px;
 }
 
@@ -115,12 +115,12 @@
 
 /* progress bar */
 #mls-popup-root .mlsp-bar { height: 6px; background: #e2e8f0; border-radius: 999px; margin-top: 12px; overflow: hidden; }
-#mls-popup-root .mlsp-bar > i { display: block; height: 100%; width: 30%; background: #2563eb; border-radius: 999px;
+#mls-popup-root .mlsp-bar > i { display: block; height: 100%; width: 30%; background: #2f6bed; border-radius: 999px;
   animation: mlsp-indet 1.1s ease-in-out infinite; }
 @keyframes mlsp-indet { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
 
 /* summary chip / review rows */
-#mls-popup-root .mlsp-chip { display: inline-block; background: #eff6ff; color: #1d4ed8;
+#mls-popup-root .mlsp-chip { display: inline-block; background: #eff6ff; color: #2257cf;
   border: 1px solid #bfdbfe; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; margin: 2px 4px 2px 0; }
 #mls-popup-root .mlsp-chip.warn { background: #fffbeb; color: #92400e; border-color: #fde68a; }
 #mls-popup-root .mlsp-chip.bad  { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
