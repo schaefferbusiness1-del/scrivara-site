@@ -4049,3 +4049,5 @@
 ;(function(){try{var A='feat_athena_narration.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_hardening.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_easy_hardening.js?v=20260622a';s.setAttribute('data-mls-asset','feat_mls_easy_hardening.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+;(function(){try{var A='feat_athena_cardtips_noinfo.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
