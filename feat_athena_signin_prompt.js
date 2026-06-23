@@ -71,7 +71,7 @@
     if (window.__mlsAthenaSignInPrompt && window.__mlsAthenaSignInPrompt.installed) return;
   } catch (e) {}
 
-  var VERSION = '1.2.2';
+  var VERSION = '1.2.3';
   var ASSET = 'feat_athena_signin_prompt.js';
 
   // The standard athenaOne login URL. The extension/app identifies athenaOne by
@@ -253,10 +253,12 @@
   //  __mlsConnTruth reports a genuine disconnect. Wraps the two shared sinks
   //  used by feat_athena_selfheal.js and feat_athena_narration.js.
   // ============================================================
-  // Only these claims imply a real READ or a real CONNECTION. Honest process
+  // These claims imply a real READ, CONNECTION, or a successful pull/save that
+  // cannot exist while disconnected (incl. "saving into MLS", "pulled into this
+  // patient ... MLS record", "verified by the save-check"). Honest process
   // lines ("Checking that MLS Assist is awake", "Trying to fix this myself")
   // are intentionally NOT matched - they remain visible.
-  var FAB_RE = /(read the schedule|found no appointments|fixed it|responding again|athena ?one is responding)/i;
+  var FAB_RE = /(read the schedule|found no appointments|fixed it|responding again|athena ?one is responding|saving into mls|pulled into this patient|verified by the save.?check)/i;
   var HONEST_LINE = 'No signed-in athenaOne tab detected - opening athenaOne. Please sign in, then come back and try again.';
   // Passive wording used when SCRUBBING an already-rendered fab line on load
   // (no user action yet, so we do NOT claim 'opening' and do NOT pop the prompt).
