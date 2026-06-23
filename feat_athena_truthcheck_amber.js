@@ -1,4 +1,4 @@
-/*! feat_athena_truthcheck_amber.js  ->  window.__mlsAthenaTruthAmber  (v1.0.0)
+/*! feat_athena_truthcheck_amber.js  ->  window.__mlsAthenaTruthAmber  (v1.1.0)
  * =====================================================================
  * SECONDARY 1 — amber -> RED consistency on a confirmed phantom.
  *
@@ -24,7 +24,9 @@
  *     __mlsConnTruth.isConnected() === false. (Belt and suspenders.)
  *   - It skips a panel that is still mid-check (grey ic-check icons present).
  *   - Reads no PHI: only row label text and icon CSS classes. NUL-free.
- *   - Idempotent, observer-driven, fully reversible via
+ *   - Idempotent, observer + slow-poll driven (the doctor diagnose chain can
+ *     settle WITHOUT a final mutation that re-triggers the observer, so a
+ *     1.2s poll guarantees the downgrade still lands), fully reversible via
  *     window.__mlsAthenaTruthAmber.revert() (restores any line it changed).
  * ===================================================================== */
 (function () {
@@ -33,7 +35,7 @@
   if (!W) return;
   if (W.__mlsAthenaTruthAmber && W.__mlsAthenaTruthAmber.installed) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var ASSET = 'feat_athena_truthcheck_amber.js';
 
   var PANEL_SEL = '.mlsdoc-card';
@@ -45,7 +47,7 @@
   var PERM_LBL = /read the athenaOne page/i;
   var X_MARK = '✗'; // ✗ heavy ballot X (same glyph family the panel uses)
 
-  var _obs = null, _raf = 0;
+  var _obs = null, _raf = 0, _pollT = null;
   var _changed = []; // {ic, det, prevClass, prevText, prevDet, hadDet} for revert
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -129,10 +131,16 @@
       _obs = new MutationObserver(function () { schedule(); });
       _obs.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     });
+    // Slow safety poll: the doctor panel's diagnose chain settles WITHOUT a final
+    // mutation that re-triggers the observer (it can fire only mid-check, where we
+    // correctly bail on grey ic-check icons). A periodic re-check guarantees the
+    // amber->red downgrade still lands once the panel reaches its final state.
+    _pollT = setInterval(function () { correctAll(); }, 1200);
   }
 
   function revert() {
     safe(function () { if (_obs) { _obs.disconnect(); _obs = null; } });
+    safe(function () { if (_pollT) { clearInterval(_pollT); _pollT = null; } });
     safe(function () { if (_raf && W.cancelAnimationFrame) W.cancelAnimationFrame(_raf); });
     _raf = 0;
     _changed.forEach(function (c) {
