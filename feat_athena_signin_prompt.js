@@ -71,7 +71,7 @@
     if (window.__mlsAthenaSignInPrompt && window.__mlsAthenaSignInPrompt.installed) return;
   } catch (e) {}
 
-  var VERSION = '1.2.0';
+  var VERSION = '1.2.1';
   var ASSET = 'feat_athena_signin_prompt.js';
 
   // The standard athenaOne login URL. The extension/app identifies athenaOne by
@@ -357,6 +357,29 @@
     } catch (e) { return false; }
   }
 
+  // A short-lived, self-limiting observer that scrubs fabricated status text as
+  // soon as it is painted while disconnected - robust to load-time race and to
+  // background-tab timer throttling (uses a setTimeout debounce, not rAF, so it
+  // still fires when the tab is backgrounded). Auto-stops after 15s; steady-state
+  // is handled by the sink wrap.
+  var _scrubObs = null, _scrubPending = false;
+  function scheduleScrub() {
+    if (_scrubPending) return;
+    _scrubPending = true;
+    later(function () { _scrubPending = false; if (!S.reverted && disconnectStatus()) scrubExisting(); }, 50);
+  }
+  function startScrubObserver() {
+    try {
+      if (_scrubObs || S.reverted || !window.MutationObserver || !document.body) return;
+      _scrubObs = new MutationObserver(scheduleScrub);
+      _scrubObs.observe(document.body, { childList: true, subtree: true, characterData: true });
+      later(function () { try { if (_scrubObs) { _scrubObs.disconnect(); _scrubObs = null; } } catch (e) {} }, 15000);
+    } catch (e) {}
+  }
+  function stopScrubObserver() {
+    try { if (_scrubObs) { _scrubObs.disconnect(); _scrubObs = null; } } catch (e) {}
+  }
+
   // When the source of truth flips to connected, replace the prompt with an
   // honest "you're signed in" note (only fired by the real probe).
   function onTruthChange(state) {
@@ -366,10 +389,9 @@
         if (document.getElementById('mlsSignInPrompt')) showPrompt(true);
       } else if (disconnectStatus()) {
         // a recovery/health-check line may have rendered pre-wrap during load;
-        // scrub it now, and again shortly after in case narration emits late.
+        // scrub it now and watch (briefly) for any that paint late.
         scrubExisting();
-        later(scrubExisting, 500);
-        later(scrubExisting, 1500);
+        startScrubObserver();
       }
     } catch (e) {}
   }
@@ -385,6 +407,8 @@
     } catch (e) {}
     // PART 2: wrap the shared narration sinks (retry until both exist).
     try { startSinkPoll(); } catch (e) {}
+    // PART 2b: scrub any pre-wrap fab line + watch briefly for late paints.
+    try { scrubExisting(); startScrubObserver(); } catch (e) {}
   }
 
   function revert() {
@@ -392,6 +416,7 @@
     try { document.removeEventListener('click', onClick, true); } catch (e) {}
     try { if (typeof S.unsub === 'function') S.unsub(); } catch (e) {}
     try { unwrapSinks(); } catch (e) {}
+    try { stopScrubObserver(); } catch (e) {}
     try { _timers.forEach(function (t) { clearTimeout(t); }); } catch (e) {}
     dismissPrompt();
     try { var s = document.getElementById(STYLE_ID); if (s) s.remove(); } catch (e) {}
