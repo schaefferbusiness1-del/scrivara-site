@@ -1,3 +1,5 @@
+try { importScripts('feat_codes_driver.js'); } catch (e) {}
+function mlsHostOnly(u){ try { return new URL(u).hostname; } catch (e) { return ''; } }
 // MLS Assist — background worker. Only place that holds the API key + talks to MLS. (v1.7 robust executor)
 const DEFAULT_BACKEND = 'https://scrivara-backend.onrender.com';
 // Maps each global element #index → { frameId, localIndex } so the autopilot can
@@ -837,12 +839,9 @@ var mlsProv = (function () {
         // doesn't break us — the real work is content-based below.
         let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
                || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''));
-        if (!tab) {
-          const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || ''));
-          cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-          tab = cand[0];
-        }
-        if (!tab) return sendResponse({ ok: false, error: 'Open your EMR schedule (e.g. the Athena day view) in another tab, then try again.' });
+        // v1.38 truth fix: do NOT fall back to an unrelated most-recently-active tab and report it connected (phantom-tab bug).
+        if (!tab) return sendResponse({ ok: false, reason: 'no-athena-tab', emr: 'none', host: '', id: msg.id, error: 'Open a signed-in athenaOne tab, then try again.' });
+        const isRealAthena = /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(tab.url || '');
         // Read every frame WITH its URL so we can isolate the SCHEDULE/CALENDAR frame and
         // drop the noise (athenaText messaging, department lists) that would pollute parsing.
         let results = [];
@@ -924,7 +923,7 @@ function mlsSchedDomInline(doc){
         frames.forEach((f) => { const s = scoreSched(f); if (s > best) { best = s; pick = f; } });
         pick = pick || { u: tab.url, t: '' };
         // Include the page title so the parser can anchor the date range of a multi-day view.
-        var __mlsTS = (typeof mlsProv!=='undefined') ? mlsProv.fromText((pick && pick.t) || '') : {appts:[],providers:[],diag:{}}; var __mlsM = (typeof mlsProv!=='undefined') ? mlsProv.merge(pick && pick.s, __mlsTS) : {appts:[],providers:[],diag:{}}; sendResponse({ ok: true, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: __mlsM.appts, providers: __mlsM.providers, providerDiag: __mlsM.providerDiag });
+        var __mlsTS = (typeof mlsProv!=='undefined') ? mlsProv.fromText((pick && pick.t) || '') : {appts:[],providers:[],diag:{}}; var __mlsM = (typeof mlsProv!=='undefined') ? mlsProv.merge(pick && pick.s, __mlsTS) : {appts:[],providers:[],diag:{}}; sendResponse({ ok: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: __mlsM.appts, providers: __mlsM.providers, providerDiag: __mlsM.providerDiag });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -943,12 +942,9 @@ function mlsSchedDomInline(doc){
         // host keywords, else the most-recently-active non-MLS http(s) tab.
         let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
                || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''));
-        if (!tab) {
-          const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || ''));
-          cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-          tab = cand[0];
-        }
-        if (!tab) return sendResponse({ ok: false, error: 'Open your Athena report (e.g. a procedure/CPT claims report or a filtered schedule) in another tab, then try again.' });
+        // v1.38 truth fix: no arbitrary-tab fallback for a positive result (phantom-tab bug).
+        if (!tab) return sendResponse({ ok: false, reason: 'no-athena-tab', emr: 'none', host: '', id: msg.id, error: 'Open a signed-in athenaOne report tab, then try again.' });
+        const isRealAthena = /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(tab.url || '');
         let results = [];
         try {
           results = await chrome.scripting.executeScript({
@@ -983,7 +979,7 @@ function mlsSchedDomInline(doc){
         let concat = '';
         for (const sc of scored) { if (sc.s <= 0) break; if (concat.length > 44000) break; concat += (concat ? '\n\n' : '') + (sc.f.t || ''); }
         const text = ((tab.title ? ('[' + tab.title + ']\n') : '') + (concat || best.f.t || '')).slice(0, 46000);
-        sendResponse({ ok: true, text: text, url: best.f.u || tab.url, title: tab.title, frames: frames.length, bestScore: Math.round(best.s) });
+        sendResponse({ ok: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(best.f.u || tab.url), id: msg.id, text: text, url: best.f.u || tab.url, title: tab.title, frames: frames.length, bestScore: Math.round(best.s) });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -2242,4 +2238,365 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     // not ours — let other listeners handle it
   });
+})();
+
+
+/* ===== v1.38: MLS Seamless Pop-up overlay router (appended) ===== */
+/* =========================================================================
+   MLS Seamless Pop-up  —  background.js ADDITIONS  (v0.2.0)
+
+   APPEND-ONLY block for the MLS Assist service worker. It adds an intent
+   router for the overlay and re-uses the EXISTING, in-production handlers —
+   it does NOT rewrite them:
+       mlsAppReadAllVisits  (read open patient + all visits, identity)   [reuse]
+       mlsAppPasteNote      (frame-aware verified paste, never signs)    [reuse]
+       (note generation goes through the existing backend call path)     [reuse]
+   plus ONE new, FLAG-GATED driver: mlsAppWriteCodes (coding-field driver).
+
+   HARD RAILS: read-only except the two deliberate gated writes; NEVER clicks
+   Save/Sign/attest/submit-charges; success only when verified; no fabrication.
+
+   The functions referenced as EXISTING (runReadAllVisits, runPasteNote,
+   readChartIdentity, callBackendNote, namesMatch, dobsMatch, normDob,
+   findAthenaTab, focusTab, validateCodesViaApp, saveVisitsViaApp) are the
+   service worker's already-shipped internals; this block only orchestrates
+   them. Names are bound defensively so a missing internal degrades honestly
+   rather than throwing.
+   ========================================================================= */
+(function () {
+  'use strict';
+  if (typeof chrome === 'undefined' || !chrome.runtime) return;
+  if (self.__mlsOverlayRouterInstalled) return;
+  self.__mlsOverlayRouterInstalled = true;
+
+  // ---- feature flag: the codes-into-pickers driver stays OFF until it has
+  //      had one real athenaOne selector-tuning pass (see 04_codes_writeback).
+  var FLAGS = { codesDriver: false };
+  try { chrome.storage && chrome.storage.local.get(['mlsFlags'], function (v) {
+    if (v && v.mlsFlags) Object.assign(FLAGS, v.mlsFlags);
+  }); } catch (e) {}
+
+  // ---- per-tab session: the identity locked at "Go" -----------------------
+  var sessions = {};   // tabId -> { lockedIdentity:{name,dob} }
+  function sess(tabId) { return (sessions[tabId] = sessions[tabId] || {}); }
+
+  // ---- recording session: which overlay tab is currently recording --------
+  //      (transcript chunks are streamed back to exactly this tab)
+  var recordingTabId = null;
+
+  // ---- defensive bind to existing service-worker internals ----------------
+  function bind(name) { return (typeof self[name] === 'function') ? self[name] : null; }
+  var ext = {
+    readAllVisits: bind('runReadAllVisits') || bind('mlsRunReadAllVisits'),
+    pasteNote:     bind('runPasteNote')     || bind('mlsRunPasteNote'),
+    readIdentity:  bind('readChartIdentity')|| bind('mlsReadChartIdentity'),
+    backendNote:   bind('callBackendNote')  || bind('mlsCallBackendNote'),
+    validateCodes: bind('validateCodesViaApp'),
+    saveVisits:    bind('saveVisitsViaApp'),
+    findTab:       bind('findAthenaTab')    || bind('mlsFindAthenaTab'),
+    focusTab:      bind('focusTab')         || bind('mlsFocusTab'),
+    namesMatch:    bind('namesMatch'),
+    dobsMatch:     bind('dobsMatch'),
+    normDob:       bind('normDob'),
+    // Backend transcription of ONE complete §35 segment, using the doctor's JWT
+    // (pulled from the mlsscribe tab, exactly as the rest of the worker does).
+    // Contract: (Uint8Array|number[] bytes, mime) -> Promise<{ text }>.
+    // The backend transcription endpoint is UNCHANGED — each segment is already
+    // a complete, decodable file (the §35 fix). If this internal isn't present,
+    // recording degrades HONESTLY to type-only (no fabricated transcript).
+    transcribeSegment: bind('transcribeSegmentViaBackend') || bind('uploadAudioSegment') || bind('mlsTranscribeSegment')
+  };
+
+  function progress(tabId, message, kind) {
+    try { chrome.tabs.sendMessage(tabId, { type: 'MLS_OVL_PROGRESS', message: message, kind: kind || 'run' }); } catch (e) {}
+  }
+
+  // ---- conservative identity match (reuse ext fns; safe fallback) ---------
+  function identitiesMatch(a, b) {
+    if (!a || !b || !a.name || !b.name) return false;
+    var nameOk = ext.namesMatch ? !!ext.namesMatch(a.name, b.name)
+      : norm(a.name) === norm(b.name);
+    var da = ext.normDob ? ext.normDob(a.dob) : (a.dob || '');
+    var db = ext.normDob ? ext.normDob(b.dob) : (b.dob || '');
+    var dobOk = ext.dobsMatch ? !!ext.dobsMatch(a.dob, b.dob) : (!!da && da === db);
+    return nameOk && dobOk;                 // require BOTH name and DOB
+  }
+  function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+  // ====================================================================== //
+  //  NEW: coding-field driver (flag-gated). Types each code into Athena's   //
+  //  Diagnoses/Orders/E-M pickers, selects the EXACT-code row, verifies it  //
+  //  in the committed list. NEVER picks a near match. NEVER saves/signs.    //
+  //  Returns {ok, added:[], missed:[{code,reason}]}. Real selectors are     //
+  //  tuned in the one live athenaOne pass; until then the flag is OFF and   //
+  //  callers receive {deferred:true}.                                       //
+  // ====================================================================== //
+  function writeCodes(tabId, codes) {
+    // OFF until one real athenaOne selector-tuning pass (04_codes_writeback.md).
+    if (!FLAGS.codesDriver) {
+      return Promise.resolve({ deferred: true, added: [], missed: [] });
+    }
+    var driver = (typeof self !== 'undefined' && self.__mlsCodesDriver) ? self.__mlsCodesDriver : null;
+    if (!driver || !ext.findTab || typeof chrome.scripting === 'undefined') {
+      return Promise.resolve({ deferred: true, added: [], missed: [] });
+    }
+    var tab = ext.findTab();
+    if (!tab) return Promise.resolve({ deferred: true, added: [], missed: [] });
+
+    // serialize the content-scored page-side driver into the Athena frames,
+    // one bounded phase at a time: find -> type -> (wait) -> select -> verify.
+    function phase(p, step) {
+      return chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: driver.codesPickerDriverFn,
+        args: [step.kind, step.code, p]
+      }).then(function (res) {
+        // pick the first frame that returned a definitive result
+        var hit = (res || []).map(function (x) { return x && x.result; })
+                             .filter(function (r) { return r && (r.ok || r.reason); });
+        return hit.find(function (r) { return r.ok; }) || hit[0] || { ok: false, reason: 'no-frame' };
+      }).catch(function () { return { ok: false, reason: 'exec-failed' }; });
+    }
+    function driveOne(step) {
+      return phase('type', step).then(function (t) {
+        if (!t.ok) return t;
+        return new Promise(function (r) { setTimeout(r, 2500); })       // bounded wait for the result list
+          .then(function () { return phase('select', step); })
+          .then(function (s) { if (!s.ok) return s; return phase('verify', step); });
+      });
+    }
+    return driver.runCodes(codes, driveOne, function (m, k) { progress(tabId, m, k); });
+  }
+
+  // ====================================================================== //
+  //  Intent router                                                         //
+  // ====================================================================== //
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || typeof msg.type !== 'string' || msg.type.indexOf('MLS_OVL_') !== 0) return;
+    var tabId = sender && sender.tab && sender.tab.id;
+
+    // ---------- STATUS (read-only, passive) ----------
+    if (msg.type === 'MLS_OVL_STATUS') {
+      Promise.resolve()
+        .then(function () { return ext.findTab ? ext.findTab() : null; })
+        .then(function (tab) {
+          // passive: do NOT focus/navigate; just report what we can see
+          var athenaOpen = !!tab;
+          var patientOpen = false;
+          // identity read is read-only; only attempt if a tab exists
+          var idP = (athenaOpen && ext.readIdentity) ? ext.readIdentity(tab.id).catch(function () { return null; }) : Promise.resolve(null);
+          return idP.then(function (id) {
+            patientOpen = !!(id && id.name);
+            sendResponse({ athenaOpen: athenaOpen, mlsApp: true, patientOpen: patientOpen });
+          });
+        })
+        .catch(function () { sendResponse({ error: 'status-failed' }); });
+      return true;
+    }
+
+    // ---------- GO: read patient + all visits (READ-ONLY) ----------
+    if (msg.type === 'MLS_OVL_GO') {
+      if (!ext.readAllVisits) { sendResponse({ ok: false, message: 'Reader unavailable — reload the extension.' }); return true; }
+      progress(tabId, 'Reading the open patient…', 'run');
+      ext.readAllVisits({ onProgress: function (m) { progress(tabId, m, 'run'); } })
+        .then(function (r) {
+          r = r || {};
+          if (!r.ok) { sendResponse({ ok: false, message: r.message || "Couldn't read this chart's visits — nothing saved." }); return; }
+          if (tabId != null && r.identity) sess(tabId).lockedIdentity = r.identity;   // LOCK identity
+          if (ext.saveVisits) { try { ext.saveVisits(r.visits, r.identity); } catch (e) {} }   // persist via app brain
+          sendResponse({ ok: true, identity: r.identity, visits: r.visits, savedCount: (r.visits || []).length });
+        })
+        .catch(function () { sendResponse({ ok: false, message: "Couldn't read this chart's visits — nothing saved." }); });
+      return true;
+    }
+
+    // ---------- RECORD start/stop (reuses §35 recorder via offscreen doc) ----------
+    if (msg.type === 'MLS_OVL_RECORD_START') { recordingTabId = tabId; startRecorder(tabId).then(function (r) { sendResponse(r); }); return true; }
+    if (msg.type === 'MLS_OVL_RECORD_STOP')  { stopRecorder(tabId).then(function (r) { recordingTabId = null; sendResponse(r); }); return true; }
+
+    // ---------- GENERATE: note + codes (backend, reuse) ----------
+    if (msg.type === 'MLS_OVL_GENERATE') {
+      if (!ext.backendNote) { sendResponse({ error: 'backend-unavailable', message: 'Note service unavailable.' }); return true; }
+      progress(tabId, 'Writing the note…', 'run');
+      ext.backendNote({ transcript: msg.transcript, typedNotes: msg.typedNotes })
+        .then(function (note) {
+          progress(tabId, 'Checking codes against your code sheet…', 'run');
+          var vP = ext.validateCodes ? ext.validateCodes(note).catch(function () { return null; }) : Promise.resolve(null);
+          return vP.then(function (codes) { sendResponse({ note: note, codes: codes }); });
+        })
+        .catch(function () { sendResponse({ error: 'generate-failed', message: "Couldn't generate the note." }); });
+      return true;
+    }
+
+    // ---------- WRITEBACK: gate -> note paste -> codes (NEVER signs) ----------
+    if (msg.type === 'MLS_OVL_WRITEBACK') {
+      doWriteBack(tabId, msg).then(function (r) { sendResponse(r); })
+        .catch(function () { sendResponse({ error: 'write-failed', message: 'Write failed.' }); });
+      return true;
+    }
+
+    // ---------- FOCUS Athena tab (brings forward, clicks NOTHING) ----------
+    if (msg.type === 'MLS_OVL_FOCUS_ATHENA') {
+      Promise.resolve(ext.findTab ? ext.findTab() : null).then(function (tab) {
+        if (tab && ext.focusTab) ext.focusTab(tab.id);
+        sendResponse({ ok: true });
+      });
+      return true;
+    }
+  });
+
+  // ====================================================================== //
+  //  Increment 3 — offscreen §35 segmented recorder orchestration.          //
+  //  BG owns the offscreen doc lifecycle + the authenticated upload; the    //
+  //  offscreen doc owns mic capture + segmentation. Transcript text only    //
+  //  ever comes from a REAL backend response (no fabrication).              //
+  // ====================================================================== //
+  var OFFSCREEN_PATH = 'offscreen.html';
+
+  function hasOffscreenApi() {
+    return (typeof chrome !== 'undefined' && chrome.offscreen &&
+            typeof chrome.offscreen.createDocument === 'function');
+  }
+
+  function ensureOffscreen() {
+    if (!hasOffscreenApi()) return Promise.resolve(false);
+    // Avoid creating a second offscreen document if one already exists.
+    var checkP;
+    if (chrome.runtime.getContexts) {
+      checkP = chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })
+        .then(function (ctxs) { return ctxs && ctxs.length > 0; })
+        .catch(function () { return false; });
+    } else if (typeof chrome.offscreen.hasDocument === 'function') {
+      checkP = chrome.offscreen.hasDocument().catch(function () { return false; });
+    } else {
+      checkP = Promise.resolve(false);
+    }
+    return checkP.then(function (exists) {
+      if (exists) return true;
+      return chrome.offscreen.createDocument({
+        url: OFFSCREEN_PATH,
+        reasons: ['USER_MEDIA'],
+        justification: 'Record the visit audio in complete §35 segments for backend transcription.'
+      }).then(function () { return true; }).catch(function () { return false; });
+    });
+  }
+
+  function closeOffscreen() {
+    if (!hasOffscreenApi() || typeof chrome.offscreen.closeDocument !== 'function') return Promise.resolve();
+    return chrome.offscreen.closeDocument().catch(function () {});
+  }
+
+  function startRecorder(tabId) {
+    if (!hasOffscreenApi()) {
+      // Honest degrade: no offscreen support -> type-only. Never fake a transcript.
+      progress(tabId, 'Mic capture unavailable here — type your note instead.', 'warn');
+      return Promise.resolve({ ok: false, reason: 'no-offscreen', typeOnly: true });
+    }
+    return ensureOffscreen().then(function (ready) {
+      if (!ready) {
+        progress(tabId, 'Couldn’t start the recorder — type your note instead.', 'warn');
+        return { ok: false, reason: 'offscreen-failed', typeOnly: true };
+      }
+      progress(tabId, 'Recording… (talk through the visit)', 'run');
+      return new Promise(function (resolve) {
+        try {
+          chrome.runtime.sendMessage({ type: 'MLS_OFFSCREEN_START' }, function (r) {
+            if (chrome.runtime.lastError || !r || r.ok === false) {
+              var reason = (r && r.reason) || 'recorder-start-failed';
+              progress(tabId, reason === 'mic-denied'
+                ? 'Microphone blocked — allow mic access or type your note.'
+                : 'Couldn’t start the mic — type your note instead.', 'warn');
+              resolve({ ok: false, reason: reason, typeOnly: true });
+            } else { resolve({ ok: true }); }
+          });
+        } catch (e) { resolve({ ok: false, reason: 'recorder-start-failed', typeOnly: true }); }
+      });
+    });
+  }
+
+  function stopRecorder(tabId) {
+    if (!hasOffscreenApi()) return Promise.resolve({ ok: true });
+    return new Promise(function (resolve) {
+      try {
+        chrome.runtime.sendMessage({ type: 'MLS_OFFSCREEN_STOP' }, function (r) {
+          // close the doc to release the mic; ignore errors
+          closeOffscreen().then(function () { resolve(r || { ok: true }); });
+        });
+      } catch (e) { closeOffscreen().then(function () { resolve({ ok: true }); }); }
+    });
+  }
+
+  // ---- segments + errors coming back FROM the offscreen recorder ----------
+  //      (a second listener; returns nothing for non-offscreen messages so it
+  //       never interferes with the intent router above — the §136 convention)
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.from !== 'mls-offscreen') return;
+
+    if (msg.type === 'MLS_OFFSCREEN_SEGMENT') {
+      var tabId = recordingTabId;
+      if (!ext.transcribeSegment) {
+        // HONEST: capture works but the backend uploader isn't bound here.
+        // Do NOT invent text. Tell the doctor once and let them type.
+        if (tabId != null) progress(tabId, 'Captured audio, but transcription isn’t wired in this build — type your note.', 'warn');
+        return; // no async response needed
+      }
+      Promise.resolve(ext.transcribeSegment(msg.bytes, msg.mime))
+        .then(function (res) {
+          var text = res && (res.text || res.transcript || '');
+          if (text && tabId != null) {
+            chrome.tabs.sendMessage(tabId, { type: 'MLS_OVL_TRANSCRIPT', text: text, append: true, seq: msg.seq });
+          }
+        })
+        .catch(function () {
+          if (tabId != null) progress(tabId, 'A segment didn’t transcribe — kept recording.', 'warn');
+        });
+      return;
+    }
+
+    if (msg.type === 'MLS_OFFSCREEN_ERROR') {
+      var tid = recordingTabId;
+      if (tid != null) {
+        var human = msg.reason === 'mic-denied'
+          ? 'Microphone blocked — allow mic access or type your note.'
+          : 'Mic problem — type your note instead.';
+        progress(tid, human, 'warn');
+        try { chrome.tabs.sendMessage(tid, { type: 'MLS_OVL_RECORD_ERROR', reason: msg.reason }); } catch (e) {}
+      }
+      return;
+    }
+  });
+
+  function doWriteBack(tabId, msg) {
+    if (!ext.pasteNote) return Promise.resolve({ error: 'paste-unavailable', message: 'Write path unavailable — reload the extension.' });
+    progress(tabId, 'Confirming this is the right chart…', 'run');
+
+    // ---- HARD patient-match gate (re-read current chart vs lockedIdentity) ----
+    var locked = (tabId != null && sessions[tabId]) ? sessions[tabId].lockedIdentity : null;
+    // read the CURRENT open chart identity fresh from the Athena tab (read-only)
+    return Promise.resolve(ext.findTab ? ext.findTab() : null).then(function (tab) {
+      var readP = (tab && ext.readIdentity) ? ext.readIdentity(tab.id) : Promise.resolve(null);
+      return readP.then(function (chartId) {
+        var matchTarget = locked || null;
+        var confident = matchTarget && chartId && identitiesMatch(matchTarget, chartId);
+        if (!confident && !msg.override) {
+          return { blocked: true, mlsIdentity: matchTarget, chartIdentity: chartId };
+        }
+        // ---- write the NOTE (segmented router handled inside pasteNote) ----
+        progress(tabId, '✓ Confirmed — writing the note…', 'ok');
+        return ext.pasteNote({ note: msg.note }).then(function (resp) {
+          resp = resp || {};
+          var sections = (resp.sections) ? resp.sections : [{
+            section: resp.chosenSection || resp.into || 'note field',
+            confirmed: !!resp.confirmed
+          }];
+          if (resp.error) return { error: resp.error, message: resp.error };
+          // ---- write CODES (flag-gated) ----
+          return writeCodes(tabId, msg.codes || (msg.note && { icd10: msg.note.icd10, cpt: msg.note.cpt, em_level: msg.note.em_level }))
+            .then(function (codeRes) {
+              return { note: { sections: sections }, codes: codeRes };
+            });
+        });
+      });
+    });
+  }
 })();

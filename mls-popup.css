@@ -1,0 +1,150 @@
+/* =========================================================================
+   MLS Seamless Athena Pop-up — styles
+   Scoped entirely under #mls-popup-root so Athena CSS cannot leak in and
+   these rules cannot leak out. Additive; removing the file = byte-identical.
+   ========================================================================= */
+
+#mls-popup-root, #mls-popup-root * {
+  all: revert;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#mls-popup-root {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2147483600;            /* above Athena, below browser chrome */
+  width: 360px;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- collapsed resting pill ---- */
+#mls-popup-root .mlsp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.16);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  user-select: none;
+}
+#mls-popup-root .mlsp-pill:hover { box-shadow: 0 8px 28px rgba(15, 23, 42, 0.22); }
+
+/* ---- expanded card ---- */
+#mls-popup-root .mlsp-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+}
+
+/* header / drag handle */
+#mls-popup-root .mlsp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #eef2f7;
+  cursor: grab;
+}
+#mls-popup-root .mlsp-head.mlsp-dragging { cursor: grabbing; }
+#mls-popup-root .mlsp-brand { font-weight: 700; font-size: 14px; letter-spacing: .2px; }
+#mls-popup-root .mlsp-pt { font-size: 13px; color: #475569; margin-left: 2px; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mls-popup-root .mlsp-iconbtn {
+  border: none; background: transparent; cursor: pointer; font-size: 16px;
+  line-height: 1; padding: 4px 6px; border-radius: 8px; color: #64748b;
+}
+#mls-popup-root .mlsp-iconbtn:hover { background: #e2e8f0; }
+
+/* connection dot */
+#mls-popup-root .mlsp-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+#mls-popup-root .mlsp-dot.green { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.18); }
+#mls-popup-root .mlsp-dot.red   { background: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,.18); }
+#mls-popup-root .mlsp-dot.amber { background: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.18); }
+
+/* body */
+#mls-popup-root .mlsp-body { padding: 16px 16px 12px; }
+#mls-popup-root .mlsp-title { font-size: 17px; font-weight: 700; margin: 0 0 4px; }
+#mls-popup-root .mlsp-sub   { font-size: 13px; color: #64748b; margin: 0 0 14px; line-height: 1.45; }
+
+/* big buttons (>=48px tall, full width) */
+#mls-popup-root .mlsp-btn {
+  display: block; width: 100%; min-height: 50px; padding: 14px 16px;
+  border: none; border-radius: 12px; font-size: 16px; font-weight: 700;
+  cursor: pointer; margin-top: 10px; text-align: center;
+}
+#mls-popup-root .mlsp-btn.primary   { background: #2563eb; color: #fff; }
+#mls-popup-root .mlsp-btn.primary:hover:not(:disabled) { background: #1d4ed8; }
+#mls-popup-root .mlsp-btn.danger    { background: #dc2626; color: #fff; }
+#mls-popup-root .mlsp-btn.ghost     { background: #f1f5f9; color: #0f172a; }
+#mls-popup-root .mlsp-btn.ghost:hover { background: #e2e8f0; }
+#mls-popup-root .mlsp-btn:disabled  { opacity: .5; cursor: not-allowed; }
+#mls-popup-root .mlsp-btn.secondary {
+  min-height: 0; background: transparent; color: #2563eb; font-weight: 600;
+  font-size: 13px; padding: 8px; margin-top: 6px;
+}
+
+/* write-intent badge */
+#mls-popup-root .mlsp-writebadge {
+  display: inline-block; margin-top: 10px; padding: 4px 9px; border-radius: 999px;
+  background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa;
+  font-size: 11px; font-weight: 700; letter-spacing: .3px;
+}
+
+/* narration strip */
+#mls-popup-root .mlsp-narr {
+  margin-top: 12px; max-height: 168px; overflow-y: auto;
+  background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 10px 12px;
+  font-size: 12.5px; line-height: 1.5; font-variant-numeric: tabular-nums;
+}
+#mls-popup-root .mlsp-narr .line { display: flex; gap: 6px; padding: 1px 0; }
+#mls-popup-root .mlsp-narr .ok   { color: #4ade80; }
+#mls-popup-root .mlsp-narr .warn { color: #fbbf24; }
+#mls-popup-root .mlsp-narr .fail { color: #f87171; }
+#mls-popup-root .mlsp-narr .run  { color: #93c5fd; }
+
+/* progress bar */
+#mls-popup-root .mlsp-bar { height: 6px; background: #e2e8f0; border-radius: 999px; margin-top: 12px; overflow: hidden; }
+#mls-popup-root .mlsp-bar > i { display: block; height: 100%; width: 30%; background: #2563eb; border-radius: 999px;
+  animation: mlsp-indet 1.1s ease-in-out infinite; }
+@keyframes mlsp-indet { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+
+/* summary chip / review rows */
+#mls-popup-root .mlsp-chip { display: inline-block; background: #eff6ff; color: #1d4ed8;
+  border: 1px solid #bfdbfe; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; margin: 2px 4px 2px 0; }
+#mls-popup-root .mlsp-chip.warn { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+#mls-popup-root .mlsp-chip.bad  { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+#mls-popup-root .mlsp-row { border: 1px solid #eef2f7; border-radius: 10px; margin-top: 8px; }
+#mls-popup-root .mlsp-row > summary { padding: 10px 12px; cursor: pointer; font-weight: 600; font-size: 13px; }
+#mls-popup-root .mlsp-row > .mlsp-rowbody { padding: 0 12px 12px; font-size: 12.5px; color: #334155;
+  white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+
+/* typed-notes textbox */
+#mls-popup-root .mlsp-notes {
+  width: 100%; margin-top: 12px; min-height: 64px; resize: vertical;
+  border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; font-size: 13px;
+}
+
+/* identity-mismatch box */
+#mls-popup-root .mlsp-mismatch { margin-top: 10px; border: 1px solid #fecaca; background: #fef2f2;
+  border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: #7f1d1d; }
+#mls-popup-root .mlsp-mismatch b { color: #991b1b; }
+
+/* footer */
+#mls-popup-root .mlsp-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px 12px; border-top: 1px solid #f1f5f9;
+  font-size: 11px; color: #94a3b8;
+}
+
+#mls-popup-root .mlsp-hidden { display: none !important; }
