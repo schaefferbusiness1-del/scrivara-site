@@ -4016,3 +4016,32 @@
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
 }catch(e){}})();
+
+/* ---- loaders: Slide-5 Submit checklist + amber->red truthcheck consistency + mlsac-card tooltips (additive, reversible) ---- */
+;(function(){try{
+  var A='feat_mls_submit_checklist.js';
+  if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
+  var s=document.createElement('script');
+  s.src=A+'?v='+Date.now();
+  s.setAttribute('data-mls-asset',A);
+  s.async=false;
+  (document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})();
+;(function(){try{
+  var A='feat_athena_truthcheck_amber.js';
+  if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
+  var s=document.createElement('script');
+  s.src=A+'?v='+Date.now();
+  s.setAttribute('data-mls-asset',A);
+  s.async=false;
+  (document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})();
+;(function(){try{
+  var A='feat_athena_cardtips_mlsac.js';
+  if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
+  var s=document.createElement('script');
+  s.src=A+'?v='+Date.now();
+  s.setAttribute('data-mls-asset',A);
+  s.async=false;
+  (document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})();
