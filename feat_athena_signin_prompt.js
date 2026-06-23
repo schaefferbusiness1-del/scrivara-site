@@ -71,7 +71,7 @@
     if (window.__mlsAthenaSignInPrompt && window.__mlsAthenaSignInPrompt.installed) return;
   } catch (e) {}
 
-  var VERSION = '1.2.1';
+  var VERSION = '1.2.2';
   var ASSET = 'feat_athena_signin_prompt.js';
 
   // The standard athenaOne login URL. The extension/app identifies athenaOne by
@@ -258,6 +258,9 @@
   // are intentionally NOT matched - they remain visible.
   var FAB_RE = /(read the schedule|found no appointments|fixed it|responding again|athena ?one is responding)/i;
   var HONEST_LINE = 'No signed-in athenaOne tab detected - opening athenaOne. Please sign in, then come back and try again.';
+  // Passive wording used when SCRUBBING an already-rendered fab line on load
+  // (no user action yet, so we do NOT claim 'opening' and do NOT pop the prompt).
+  var HONEST_PASSIVE = 'No signed-in athenaOne tab detected - open a signed-in athenaOne tab and reload.';
 
   function isFabClaim(text) { try { return FAB_RE.test(String(text == null ? '' : text)); } catch (e) { return false; } }
   // Decide AT RENDER TIME by reading the single source of truth.
@@ -338,8 +341,13 @@
   function scrubExisting() {
     try {
       if (!disconnectStatus()) return false;
-      var roots = document.querySelectorAll('[class*="mlsux"], [class*="mlsaa"]');
       var touched = false;
+      // Was the unified-status mirror showing a fab line? (check BEFORE we edit it)
+      var ux = window.__mlsUxUnify, mir = document.querySelector('.mlsux-mirror');
+      var uxFab = !!(mir && FAB_RE.test(mir.textContent || ''));
+      // 1) Direct DOM scrub of any fab leaf inside the status surfaces (covers the
+      //    append-only athena timeline as well as the mirror).
+      var roots = document.querySelectorAll('[class*="mlsux"], [class*="mlsaa"]');
       for (var i = 0; i < roots.length; i++) {
         var nodes = roots[i].querySelectorAll('*');
         var list = [roots[i]];
@@ -347,12 +355,18 @@
         for (var k = 0; k < list.length; k++) {
           var el = list[k];
           if (el.children.length === 0 && FAB_RE.test(el.textContent || '')) {
-            el.textContent = HONEST_LINE;
+            el.textContent = HONEST_PASSIVE;
             touched = true;
           }
         }
       }
-      if (touched) recoverOpenOnce();
+      // 2) Durable fix: push the honest line through ux-unify's OWN api so its
+      //    cached status cannot re-paint the lie on a later re-render.
+      if (uxFab && ux && typeof ux.mirror === 'function') {
+        try { ux.mirror(HONEST_PASSIVE); } catch (e) {}
+        touched = true;
+      }
+      // NOTE: passive scrub never opens a tab or pops the prompt (no user action).
       return touched;
     } catch (e) { return false; }
   }
@@ -360,11 +374,11 @@
   // A short-lived, self-limiting observer that scrubs fabricated status text as
   // soon as it is painted while disconnected - robust to load-time race and to
   // background-tab timer throttling (uses a setTimeout debounce, not rAF, so it
-  // still fires when the tab is backgrounded). Auto-stops after 15s; steady-state
-  // is handled by the sink wrap.
+  // still fires when the tab is backgrounded). Stays until revert(); only does
+  // work while disconnected (the debounce early-returns when connected).
   var _scrubObs = null, _scrubPending = false;
   function scheduleScrub() {
-    if (_scrubPending) return;
+    if (_scrubPending || S.reverted || !disconnectStatus()) return;
     _scrubPending = true;
     later(function () { _scrubPending = false; if (!S.reverted && disconnectStatus()) scrubExisting(); }, 50);
   }
@@ -373,7 +387,8 @@
       if (_scrubObs || S.reverted || !window.MutationObserver || !document.body) return;
       _scrubObs = new MutationObserver(scheduleScrub);
       _scrubObs.observe(document.body, { childList: true, subtree: true, characterData: true });
-      later(function () { try { if (_scrubObs) { _scrubObs.disconnect(); _scrubObs = null; } } catch (e) {} }, 15000);
+      // Persistent (cheap: the debounced callback only scans the mlsux-/mlsaa-
+      // status surfaces, and only while disconnected). Removed on revert().
     } catch (e) {}
   }
   function stopScrubObserver() {
@@ -439,6 +454,7 @@
     _wrapSinks: wrapSinks,
     _scrubExisting: scrubExisting,
     _honestLine: HONEST_LINE,
+    _honestPassive: HONEST_PASSIVE,
     triggerSelector: TRIGGER_SEL,
     revert: revert
   };
