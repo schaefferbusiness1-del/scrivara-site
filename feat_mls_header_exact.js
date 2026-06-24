@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "hx-2.0.1";
+  var VERSION = "hx-2.0.2";
   var OWNER = "leeschaeffer41";
   try { if (window.__mlsHx && window.__mlsHx.installed) return; } catch (e) { return; }
 
@@ -72,8 +72,8 @@
       /* hidden (relocated) tabs */
       "#mlsRdNav #nav_orders,#mlsRdNav #nav_admin{display:none!important}",
       /* relocated tabs rendered as menu rows inside the Menu dropdown */
-      "#mlsTbMenuPanel .navtab.hx-menurow{display:flex!important;width:100%!important;height:auto!important;justify-content:flex-start!important;padding:9px 12px!important;border-radius:9px!important;background:transparent!important;color:#1f2d40!important;font-weight:600!important;font-size:13.5px!important;box-sizing:border-box!important}",
-      "#mlsTbMenuPanel .navtab.hx-menurow:hover{background:#f1f5fb!important}"
+      "#mlsTbMenuPanel .navtab.hx-menurow{display:flex!important;width:100%!important;height:auto!important;justify-content:flex-start!important;padding:9px 12px!important;border-radius:9px!important;background:transparent!important;color:#eaf2ff!important;font-weight:600!important;font-size:13.5px!important;box-sizing:border-box!important}",
+      "#mlsTbMenuPanel .navtab.hx-menurow:hover{background:rgba(255,255,255,.07)!important}"
     ].join("\n");
     var s = $(STYLE_ID);
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
