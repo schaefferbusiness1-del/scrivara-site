@@ -78,6 +78,18 @@
 "#appHeader.mlsRdHdr #nav_studio .nbadge{ background:rgba(255,255,255,.25) !important; color:#fff !important; }",
 "#appHeader.mlsRdHdr #nav_help{ color:#9fb4ce !important; }",
 "#appHeader.mlsRdHdr #nav_help.on{ background:transparent !important; color:#fff !important; }",
+"/* responsive shell: tablet/phone */",
+"@media (max-width:900px){",
+"  #appHeader.mlsRdHdr #mlsRdTop{ flex-wrap:wrap !important; height:auto !important; min-height:58px !important; padding:8px 14px !important; gap:8px 12px !important; }",
+"  #appHeader.mlsRdHdr #mlsRdSearchSlot{ order:6 !important; width:100% !important; max-width:none !important; margin-left:0 !important; }",
+"  #appHeader.mlsRdHdr #mlsRdNav{ padding:0 10px !important; }",
+"  #appHeader.mlsRdHdr .mainnav{ overflow-x:auto !important; -webkit-overflow-scrolling:touch !important; }",
+"  #appHeader.mlsRdHdr #nav_studio{ margin-left:8px !important; }",
+"}",
+"@media (max-width:560px){",
+"  #appHeader.mlsRdHdr #mlsRdTop .mlsRdSub{ display:none !important; }",
+"  #appHeader.mlsRdHdr #mlsRdTop{ gap:8px !important; padding:8px 12px !important; }",
+"}",
 
 "/* --- cards / panels --- */",
 "body.mls-redesign .card{ border:1px solid var(--line) !important; border-radius:18px !important;",
@@ -163,7 +175,7 @@
       // logo
       var logo=mk('div','display:flex;align-items:center;gap:12px',
         '<div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(140deg,#19b8a6,#2f6bed);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(47,107,237,.35)">'+LOGO_SVG+'</div>'+
-        '<div style="line-height:1.05"><div style="display:flex;align-items:center;gap:8px"><span style="color:#fff;font-weight:800;font-size:19px;letter-spacing:-.01em">MLS</span><span style="color:#9fc0ff;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Scribe</span></div><div style="color:#8aa4c4;font-size:11.5px;font-weight:500">Ambient AI medical scribe</div></div>');
+        '<div style="line-height:1.05"><div style="display:flex;align-items:center;gap:8px"><span style="color:#fff;font-weight:800;font-size:19px;letter-spacing:-.01em">MLS</span><span style="color:#9fc0ff;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Scribe</span></div><div class="mlsRdSub" style="color:#8aa4c4;font-size:11.5px;font-weight:500">Ambient AI medical scribe</div></div>');
       top.appendChild(logo);
       // toggle slot
       var tgSlot=mk('div','display:flex;align-items:center'); tgSlot.id='mlsRdToggleSlot'; top.appendChild(tgSlot);
