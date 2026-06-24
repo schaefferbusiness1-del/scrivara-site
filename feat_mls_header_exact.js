@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "hx-2.0.0";
+  var VERSION = "hx-2.0.1";
   var OWNER = "leeschaeffer41";
   try { if (window.__mlsHx && window.__mlsHx.installed) return; } catch (e) { return; }
 
@@ -122,7 +122,7 @@
   /* avatar: design shows the logged-in provider name + plan. Only relabel for the
    * account owner (his explicit request); other accounts keep their real text. */
   function fixAvatar() {
-    var box = $("mlsRdAvName"); if (!box || box.children.length < 1) return;
+    var box = document.querySelector(".mlsRdAvName"); if (!box || box.children.length < 1) return;
     var line1 = box.children[0];
     var cur = (line1.textContent || "").toLowerCase();
     var isOwner = cur.indexOf(OWNER) >= 0 || cur.indexOf("michael") >= 0;
@@ -201,12 +201,10 @@
       });
     } catch (e) {}
     try {
-      ["mlsRdAvName"].forEach(function (id) {
-        var box = $(id); if (!box) return;
-        Array.prototype.forEach.call(box.children, function (c) {
-          var o = c.getAttribute && c.getAttribute("data-hx-orig");
-          if (o != null) { c.textContent = o; c.removeAttribute("data-hx-orig"); }
-        });
+      var avbox = document.querySelector(".mlsRdAvName");
+      if (avbox) Array.prototype.forEach.call(avbox.children, function (c) {
+        var o = c.getAttribute && c.getAttribute("data-hx-orig");
+        if (o != null) { c.textContent = o; c.removeAttribute("data-hx-orig"); }
       });
     } catch (e) {}
     try {
