@@ -22,7 +22,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "cx-2.0.2";
+  var VERSION = "cx-2.1.0";
   try { if (window.__mlsCx && window.__mlsCx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -54,10 +54,16 @@
       "#calendarView .cx-main,#calendarView .cx-main *{box-sizing:border-box}",
       "#calendarView .cx-card{background:#fff;border:1px solid #e4ebf3;border-radius:16px;box-shadow:0 1px 2px rgba(15,37,64,.04)}",
       "#calendarView .cx-mini-day:hover{background:#eef4fc!important}",
+      /* Fix #1: stop Saturday column overflow/spill from the mini-month rail onto the main grid */
+      "#calendarView .cx-mini > div{width:100%}",
+      "#calendarView .cx-mini > div > *{min-width:0}",
+      "#calendarView .cx-mini-day{min-width:0;padding:0}",
+      "#calendarView .cx-agenda-head{border-bottom:1px solid #eef2f7;padding-bottom:16px}",
       "#calendarView .cx-agenda{background:#fff!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important}",
       "#calendarView .cx-agenda input,#calendarView .cx-agenda select,#calendarView .cx-agenda textarea{max-width:100%}",
-      "#calendarView .cx-seg-btn{height:32px;padding:0 16px;border-radius:8px;border:none;font-family:inherit;cursor:pointer;font-weight:600;font-size:13px;background:transparent;color:#6b7d93}",
-      "#calendarView .cx-seg-btn.cx-on{background:#fff;color:#2f6bed;box-shadow:0 1px 2px rgba(15,37,64,.1);font-weight:700}",
+      /* Fix #4: !important so the design pill wins over native renderCalendar inline blue-fill writes */
+      "#calendarView .cx-seg-btn{height:32px;padding:0 16px;border-radius:8px;border:none!important;font-family:inherit;cursor:pointer;font-weight:600;font-size:13px;background:transparent!important;color:#6b7d93!important;box-shadow:none!important}",
+      "#calendarView .cx-seg-btn.cx-on{background:#fff!important;color:#2f6bed!important;box-shadow:0 1px 2px rgba(15,37,64,.1)!important;font-weight:700!important}",
       "#calendarView .cx-navbtn{width:36px;height:36px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}",
       "#calendarView .cx-todaybtn{height:36px;padding:0 14px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer}",
       "#calendarView .cx-ghost{height:40px;padding:0 14px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}",
@@ -166,14 +172,8 @@
     if (nx) nx.onclick = function () { try { if (typeof window.calNext === "function") window.calNext(); } catch (e) {} schedule(); };
     var btns = mini.querySelectorAll(".cx-mini-day");
     for (var q = 0; q < btns.length; q++) {
-      btns[q].onclick = function () {
-        var key = this.getAttribute("data-key");
-        try {
-          if (gv("_calMode", "month") === "day" && typeof window.calOpenDay === "function") { window.calOpenDay(key); }
-          else { window._calSelDay = key; if (typeof window.renderCalendar === "function") window.renderCalendar(); }
-        } catch (e) {}
-        schedule();
-      };
+      /* Fix #3: unified selectDay() so clicking a day updates the date AND stays in the current view */
+      btns[q].onclick = function () { selectDay(this.getAttribute("data-key")); };
     }
   }
 
@@ -275,7 +275,7 @@
     if (lbl) { imp(lbl, "font-family", "'Newsreader',Georgia,serif"); imp(lbl, "font-weight", "500"); imp(lbl, "font-size", "26px"); imp(lbl, "letter-spacing", "-.015em"); imp(lbl, "margin", "0"); imp(lbl, "color", "#0f2540"); }
     var sub = titlewrap.querySelector(".cx-sub");
     if (!sub) { sub = mk("div", "color:#6b7d93;font-size:13px;font-weight:500;margin-top:2px"); sub.className = "cx-sub"; titlewrap.appendChild(sub); }
-    sub.textContent = subtitleText();
+    var subTxt = subtitleText(); if (sub.textContent !== subTxt) sub.textContent = subTxt; /* guarded: no 150ms churn */
 
     /* segmented Day | Week | Month (design order); REAL buttons */
     var mDay = $("calMode_day"), mWeek = $("calMode_week"), mMonth = $("calMode_month");
@@ -332,6 +332,138 @@
     buildAgendaHeader(card);
   }
 
+  /* ============ Fix #3: unified day selection (updates date + keeps the active view) ============ */
+  function selectDay(key) {
+    if (!key) return;
+    try {
+      window._calSelDay = key; window._calRefDate = key;
+      var p = String(key).split("-"); if (p.length === 3) { window._calYear = +p[0]; window._calMonth = +p[1] - 1; }
+      var mode = String(gv("_calMode", "month")).toLowerCase();
+      if (mode === "day" && typeof window.calSetMode === "function") { window.calSetMode("day"); }   /* updates Day view to key AND stays in Day */
+      else { if (typeof window.renderCalendar === "function") window.renderCalendar(); if (typeof window.calOpenDay === "function") window.calOpenDay(key); }
+    } catch (e) {}
+    schedule();
+  }
+
+  /* ============ Fix #4: keep the active segmented pill in sync with _calMode (no flash) ============ */
+  function syncSeg() {
+    var m = String(gv("_calMode", "month")).toLowerCase();
+    [["day", "calMode_day"], ["week", "calMode_week"], ["month", "calMode_month"]].forEach(function (p) {
+      var b = $(p[1]); if (!b) return;
+      var want = "cx-seg-btn" + (p[0] === m ? " cx-on" : "");
+      if (b.className !== want) b.className = want;
+    });
+  }
+
+  /* install native-function hooks ONCE (calOpenDay persists _calRefDate; renderCalendar re-syncs seg + de-overlaps) */
+  function installHooks() {
+    try {
+      if (!window.__cxOpenHooked && typeof window.calOpenDay === "function") {
+        var oo = window.calOpenDay;
+        window.calOpenDay = function (key) {
+          if (key) { window._calRefDate = key; var p = String(key).split("-"); if (p.length === 3) { window._calYear = +p[0]; window._calMonth = +p[1] - 1; } }
+          return oo.apply(this, arguments);
+        };
+        window.__cxOpenHooked = true;
+      }
+      if (!window.__cxRenderHooked && typeof window.renderCalendar === "function") {
+        var orig = window.renderCalendar;
+        window.renderCalendar = function () {
+          var r = orig.apply(this, arguments);
+          try { clearOv(); } catch (e) {}
+          try { syncSeg(); } catch (e) {}
+          try { deoverlapGrid(); } catch (e) {}
+          try { schedule(); } catch (e) {}
+          return r;
+        };
+        window.__cxRenderHooked = true;
+      }
+    } catch (e) {}
+  }
+
+  /* ============ Fix #2b: additive geometric de-overlap for Day/Week time-grid blocks ============ */
+  function isBlk(el) {
+    try {
+      var cs = getComputedStyle(el);
+      if (cs.position !== "absolute") return false;
+      if (parseFloat(cs.borderLeftWidth || "0") < 1.5) return false;
+      var r = el.getBoundingClientRect();
+      if ((r.height || 0) < 10) return false;
+      return true;
+    } catch (e) { return false; }
+  }
+  function clearOv() {
+    var grid = $("calGrid"); if (!grid) return;
+    var n = grid.querySelectorAll("[data-cx-ov]");
+    for (var i = 0; i < n.length; i++) n[i].removeAttribute("data-cx-ov");
+  }
+  function layoutLane(blocks) {
+    if (!blocks || !blocks.length) return;
+    var i, laneLeft = Infinity, laneRight = -Infinity;
+    for (i = 0; i < blocks.length; i++) {
+      var ol = blocks[i].offsetLeft, ow = blocks[i].offsetWidth;
+      if (ol < laneLeft) laneLeft = ol;
+      if (ol + ow > laneRight) laneRight = ol + ow;
+    }
+    var laneW = laneRight - laneLeft; if (!(laneW > 0)) return;
+    var items = [];
+    for (i = 0; i < blocks.length; i++) items.push({ el: blocks[i], top: blocks[i].offsetTop, bot: blocks[i].offsetTop + blocks[i].offsetHeight });
+    items.sort(function (a, b) { return (a.top - b.top) || (a.bot - b.bot); });
+    /* cluster transitively-overlapping items */
+    var clusters = [], cur = [], curBot = -Infinity;
+    for (i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (cur.length && it.top < curBot - 0.5) { cur.push(it); if (it.bot > curBot) curBot = it.bot; }
+      else { if (cur.length) clusters.push(cur); cur = [it]; curBot = it.bot; }
+    }
+    if (cur.length) clusters.push(cur);
+    /* per cluster: greedy column assignment (interval coloring) + geometry */
+    for (var c = 0; c < clusters.length; c++) {
+      var cl = clusters[c], colEnd = [], j, k;
+      for (j = 0; j < cl.length; j++) {
+        var placed = false;
+        for (k = 0; k < colEnd.length; k++) {
+          if (cl[j].top >= colEnd[k] - 0.5) { cl[j].col = k; colEnd[k] = cl[j].bot; placed = true; break; }
+        }
+        if (!placed) { cl[j].col = colEnd.length; colEnd.push(cl[j].bot); }
+      }
+      var ncols = colEnd.length || 1;
+      var dense = ncols > 3;            /* dense clusters: shrink padding so narrow columns fit (padding+border is the floor) */
+      var gap = dense ? 1 : 2;
+      var colW = laneW / ncols;
+      for (j = 0; j < cl.length; j++) {
+        var el = cl[j].el, left = laneLeft + cl[j].col * colW, w = colW - gap; if (w < 3) w = 3;
+        el.style.setProperty("box-sizing", "border-box");
+        el.style.setProperty("overflow", "hidden");
+        el.style.setProperty("left", left + "px");
+        el.style.setProperty("width", w + "px");
+        el.style.setProperty("right", "auto");
+        if (dense) {
+          el.style.setProperty("padding", "1px 2px");
+          el.style.setProperty("font-size", "9px");
+          el.style.setProperty("line-height", "1.05");
+          el.style.setProperty("white-space", "nowrap");
+        }
+      }
+    }
+  }
+  function deoverlapGrid() {
+    var grid = $("calGrid"); if (!grid) return;
+    var all = [].slice.call(grid.querySelectorAll("*")).filter(isBlk);
+    if (!all.length) return;
+    var i, anyFresh = false;
+    for (i = 0; i < all.length; i++) { if (!all[i].hasAttribute("data-cx-ov")) { anyFresh = true; break; } }
+    if (!anyFresh) return;            /* idempotent: only (re)layout freshly-rendered blocks */
+    /* group blocks by parent lane (day = one lane; week = one lane per day column) */
+    var lanes = [], parents = [];
+    for (i = 0; i < all.length; i++) {
+      var par = all[i].parentElement, idx = parents.indexOf(par);
+      if (idx < 0) { parents.push(par); lanes.push([all[i]]); } else lanes[idx].push(all[i]);
+    }
+    for (var L = 0; L < lanes.length; L++) { try { layoutLane(lanes[L]); } catch (e) {} }
+    for (i = 0; i < all.length; i++) { try { all[i].setAttribute("data-cx-ov", "1"); } catch (e) {} }
+  }
+
   /* ============ orchestration ============ */
   function build() {
     var v = $("calendarView"); if (!v) return;
@@ -351,6 +483,9 @@
     if (card.parentElement !== agendaSlot) agendaSlot.appendChild(card);
     buildRail(rail);
     styleAgenda(card);
+    installHooks();
+    try { syncSeg(); } catch (e) {}
+    try { deoverlapGrid(); } catch (e) {}
     v.setAttribute("data-cx-built", VERSION);
   }
   function applyAll() {
