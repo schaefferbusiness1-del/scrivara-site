@@ -191,7 +191,9 @@
     var vt=$('mlsViewToggle'); if(vt && tgSlot && vt.parentElement!==tgSlot){ styleToggle(vt); tgSlot.appendChild(vt); }
     var se=$('mlsPqsInput'); if(se && seSlot && se.parentElement!==seSlot){ styleSearch(se); seSlot.appendChild(se);
       if(!$('mlsRdKbd')){ var k=mk('kbd','position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#8aa4c4;font-size:11px;border:1px solid rgba(255,255,255,.16);border-radius:5px;padding:2px 7px','/'); k.id='mlsRdKbd'; seSlot.appendChild(k); } }
-    var me=$('mlsTbMenuBtn'); if(me && meSlot && me.parentElement!==meSlot){ styleMenu(me); meSlot.appendChild(me); }
+    var meWrap=$('mlsTbMenu'); var meBtn=$('mlsTbMenuBtn');
+    if(meWrap && meSlot && meWrap.parentElement!==meSlot){ meWrap.style.position='relative'; if(meBtn) styleMenu(meBtn); meSlot.appendChild(meWrap); }
+    else if(!meWrap && meBtn && meSlot && meBtn.parentElement!==meSlot){ styleMenu(meBtn); meSlot.appendChild(meBtn); }
     var nav=document.querySelector('.mainnav'); if(nav && navWrap && nav.parentElement!==navWrap){ navWrap.appendChild(nav); }
     return true;
   }
