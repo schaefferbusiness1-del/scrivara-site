@@ -13,13 +13,13 @@
  *    It does NOT recreate the app's logic. Every interactive element is the
  *    app's REAL element, MOVED into the design slot BY ID, so the app's
  *    render/data flow keeps working untouched. Static/decorative wrapper
- *    markup is the only thing built fresh. Nothing is deleted: leftover
- *    originals are parked hidden in an attic so the app can still read them.
+ *    markup is the only thing built fresh. Nothing is deleted.
  *
  *  Slice 2 (separate) relocates the ~100 hidden tool cards + #visitToolsGroup
  *  out of #noteCard into the design "Clinical tools / More tools" area.
  *
- *  Reversible: window.__mlsVx.revert().  ASCII-only. NUL-free. Idempotent.
+ *  Reversible: window.__mlsVx.revert().  ASCII-only (emoji via HTML entities).
+ *  NUL-free. Idempotent.
  */
 ;(function () {
   "use strict";
@@ -37,42 +37,35 @@
   if (!isStaging()) { try { window.__mlsVx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
 
   var BUILT_ATTR = "data-vx-built";
-  var ATTIC_ID = "vxAttic";
   var STYLE_ID = "vxStyle";
   var _obs = null, _t = null, _schedT = null;
+
+  /* emoji as HTML numeric entities (keeps this source pure ASCII) */
+  var E = {
+    mic: "&#127897;&#65039;", note: "&#128221;", folder: "&#128193;", chart: "&#128200;",
+    inbox: "&#128229;", plug: "&#128268;", syringe: "&#128137;"
+  };
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function mk(tag, css, html) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (html != null) e.innerHTML = html; return e; }
   function imp(el, prop, val) { try { el.style.setProperty(prop, val, "important"); } catch (e) {} }
-  /* move a real element (by id) into target; returns the element or null */
-  function moveIn(id, target, beforeNode) {
-    var el = $(id); if (!el || !target) return el || null;
-    try { if (beforeNode) target.insertBefore(el, beforeNode); else target.appendChild(el); } catch (e) {}
-    return el;
+  function impAll(el, list) {
+    if (!el) return;
+    list.forEach(function (p) { var i = p.indexOf(":"); imp(el, p.slice(0, i), p.slice(i + 1)); });
   }
-  function attic() {
-    var a = $(ATTIC_ID);
-    if (!a) { a = mk("div", "display:none!important"); a.id = ATTIC_ID; (document.body || document.documentElement).appendChild(a); }
-    return a;
-  }
-  function park(el) { if (el) try { attic().appendChild(el); } catch (e) {} }
 
-  /* ===================== design tokens (from catalog) ===================== */
   var ICONSQ = "width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px";
 
   function injectCSS() {
     var css = [
-      /* scope everything to the staging visit rebuild */
       "#visitView .vx-grid{display:grid;grid-template-columns:1fr 1fr 460px;gap:20px;margin-top:20px;align-items:start}",
       "#visitView .vx-emr{position:sticky;top:138px;align-self:start}",
-      /* responsive: verified at 360/390/560/720/820/900/1024 */
       "@media (max-width:1100px){#visitView .vx-grid{grid-template-columns:1fr 1fr}#visitView .vx-emr{position:static;grid-column:1 / -1}}",
       "@media (max-width:820px){#visitView .vx-grid{grid-template-columns:1fr}#visitView .vx-emr{grid-column:auto}}",
       "@media (max-width:560px){#visitView .vx-hero-inner{grid-template-columns:1fr!important;padding:22px 18px!important}#visitView .vx-cap-row{flex-direction:column!important;align-items:stretch!important}#visitView .vx-cap-row>*{width:100%!important}}",
       "#visitView .vx-grid,#visitView .vx-grid *{box-sizing:border-box}",
       "#visitView .vx-grid input,#visitView .vx-grid textarea,#visitView .vx-grid select{max-width:100%}",
       "#visitView .vx-qbtn:hover{background:rgba(255,255,255,.13)!important}",
-      /* suppress redundant app-injected hero annotation (READ-ONLY already on the button) */
       "#visitView .mlsaa-intent{display:none!important}"
     ].join("\n");
     var s = $(STYLE_ID);
@@ -88,10 +81,12 @@
     imp(hero, "box-shadow", "0 22px 50px -22px rgba(13,33,56,.6)"); imp(hero, "padding", "0");
     imp(hero, "overflow", "hidden"); imp(hero, "position", "relative"); imp(hero, "margin-bottom", "0");
 
-    if (hero.querySelector(":scope > .vx-hero-wrap")) return; /* already built */
+    if (hero.querySelector(":scope > .vx-hero-wrap")) return;
 
     var nameInp = $("heroPtName"), dob = $("heroPtDob"), rec = $("heroRecBtn"),
         list = $("heroPtList"), pull = $("heroPullStatus"), today = $("heroToday");
+    var inpCss = ["width:100%", "height:48px", "border-radius:12px", "border:1px solid rgba(255,255,255,.16)",
+      "background:rgba(255,255,255,.96)", "color:#0f2540", "padding:0 15px", "font-size:14.5px"];
 
     hero.innerHTML = "";
     hero.appendChild(mk("div", "position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(circle at 88% -20%,rgba(25,184,166,.35),transparent 45%),radial-gradient(circle at 100% 120%,rgba(47,107,237,.3),transparent 40%)"));
@@ -99,7 +94,6 @@
     inner.className = "vx-hero-wrap vx-hero-inner";
     hero.appendChild(inner);
 
-    /* LEFT */
     var left = mk("div");
     left.innerHTML =
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">' +
@@ -113,18 +107,22 @@
     var dobWrap = mk("div", "width:150px", '<label style="display:block;color:#9fc0ff;font-size:11.5px;font-weight:600;margin-bottom:6px">Date of birth</label>');
     row.appendChild(nameWrap); row.appendChild(dobWrap); left.appendChild(row); inner.appendChild(left);
 
-    if (nameInp) { ["width:100%","height:48px","border-radius:12px","border:1px solid rgba(255,255,255,.16)","background:rgba(255,255,255,.96)","color:#0f2540","padding:0 15px","font-size:14.5px"].forEach(function(p){var kv=p.split(":");imp(nameInp,kv[0],p.slice(kv[0].length+1));}); nameWrap.appendChild(nameInp); }
+    if (nameInp) { impAll(nameInp, inpCss); nameWrap.appendChild(nameInp); }
     if (list) nameWrap.appendChild(list);
-    if (dob) { ["width:100%","height:48px","border-radius:12px","border:1px solid rgba(255,255,255,.16)","background:rgba(255,255,255,.96)","color:#0f2540","padding:0 15px","font-size:14.5px"].forEach(function(p){var kv=p.split(":");imp(dob,kv[0],p.slice(kv[0].length+1));}); dobWrap.appendChild(dob); }
-    if (rec) { ["height:48px","padding:0 22px","border-radius:12px","border:0","background:linear-gradient(135deg,#19b8a6,#13a18f)","color:#fff","font-weight:700","font-size:14.5px","box-shadow:0 10px 22px -8px rgba(25,184,166,.7)","white-space:nowrap"].forEach(function(p){var kv=p.split(":");imp(rec,kv[0],p.slice(kv[0].length+1));}); row.appendChild(rec); }
+    if (dob) { impAll(dob, inpCss); dobWrap.appendChild(dob); }
+    if (rec) {
+      impAll(rec, ["height:48px", "padding:0 22px", "border-radius:12px", "border:0",
+        "background:linear-gradient(135deg,#19b8a6,#13a18f)", "color:#fff", "font-weight:700",
+        "font-size:14.5px", "box-shadow:0 10px 22px -8px rgba(25,184,166,.7)", "white-space:nowrap"]);
+      row.appendChild(rec);
+    }
 
-    /* RIGHT: quick actions wired to the same real handlers */
     var right = mk("div", "display:flex;flex-direction:column;gap:11px",
       '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9fc0ff;font-size:12px;font-weight:600">Quick actions</span></div>');
     var qa = [
-      { h: "pullScheduleViaAssist(this)", icon: "📥", t: "Pull today's patients", s: "Import schedule &amp; history", tag: "READ-ONLY" },
-      { h: "emrConnectFromHero()", icon: "🔌", t: "Connect to EMR", s: "HL7 FHIR R4 &middot; SMART on FHIR", tag: "" },
-      { h: "openOpPrepSmart()", icon: "💉", t: "Prep op note", s: "Pre-draft a procedure note", tag: "" }
+      { h: "pullScheduleViaAssist(this)", icon: E.inbox, t: "Pull today's patients", s: "Import schedule &amp; history", tag: "READ-ONLY" },
+      { h: "emrConnectFromHero()", icon: E.plug, t: "Connect to EMR", s: "HL7 FHIR R4 &middot; SMART on FHIR", tag: "" },
+      { h: "openOpPrepSmart()", icon: E.syringe, t: "Prep op note", s: "Pre-draft a procedure note", tag: "" }
     ];
     qa.forEach(function (q) {
       var b = mk("button", "width:100%;display:flex;align-items:center;gap:13px;padding:14px 16px;border-radius:13px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.07);color:#fff;font-family:inherit;cursor:pointer;text-align:left");
@@ -155,7 +153,6 @@
       if (hero && hero.parentElement === v) v.insertBefore(grid, hero.nextSibling);
       else v.insertBefore(grid, v.firstChild);
     }
-    /* neutralize the old .grid wrapper so the overlay's styleVisit() no-ops */
     var oldGrid = v.querySelector(":scope > .grid");
     if (oldGrid && oldGrid !== grid) { oldGrid.classList.remove("grid"); oldGrid.classList.add("vx-oldgrid"); imp(oldGrid, "display", "contents"); }
 
@@ -175,10 +172,10 @@
   /* ===================== header chrome inside cards ===================== */
   function restyleCardChrome() {
     var heads = [
-      { card: "captureCard", icon: "🎙️", bg: "#eef3fb" },
-      { card: "noteCard", icon: "📝", bg: "#f3eefb" },
-      { card: "emrCard", icon: "📁", bg: "#fbf3e3", small: true },
-      { card: "outcomesCard", icon: "📈", bg: "#e7f5ee" }
+      { card: "captureCard", icon: E.mic, bg: "#eef3fb" },
+      { card: "noteCard", icon: E.note, bg: "#f3eefb" },
+      { card: "emrCard", icon: E.folder, bg: "#fbf3e3", small: true },
+      { card: "outcomesCard", icon: E.chart, bg: "#e7f5ee" }
     ];
     heads.forEach(function (h) {
       var card = $(h.card); if (!card) return;
@@ -226,4 +223,6 @@
   }
 
   window.__mlsVx = { installed: true, version: VERSION, reapply: boot, revert: revert, build: build };
-  try { if (doc
+  try { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot(); }
+  catch (e) { try { boot(); } catch (e2) {} }
+})();
