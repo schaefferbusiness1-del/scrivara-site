@@ -232,6 +232,17 @@
     try { if (window.__mlsCard && window.__mlsCard.refresh) window.__mlsCard.refresh(); } catch (e) {}
     try { ensureCtxBar(); } catch (e) {}
     var p = null, ps = getPatients(); for (var i = 0; i < ps.length; i++) if (ps[i] && ps[i].id === id) { p = ps[i]; break; }
+    /* mirror the selected patient into the visit hero name/DOB fields so the whole app
+       (incl. "Start recording") is scoped to the SAME patient -- prevents a wrong-patient
+       mismatch where openPatient set the active chart but the visit fields stayed blank/stale */
+    if (p) {
+      try {
+        var hn = $("heroPtName");
+        if (hn && (hn.value || "").trim() !== String(p.name || "").trim()) { hn.value = p.name || ""; try { hn.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {} try { hn.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {} }
+        var hd = $("heroPtDob");
+        if (hd && (hd.value || "") !== String(p.dob || "")) { hd.value = p.dob || ""; try { hd.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {} try { hd.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {} }
+      } catch (e) {}
+    }
     try { document.dispatchEvent(new CustomEvent("mls:patientpicked", { detail: { id: id, patient: p } })); } catch (e) {}
     return p;
   }
@@ -278,7 +289,12 @@
       ".mlspk-empty{padding:22px 14px;text-align:center;color:#8a9cb2;font-size:13px;border:1px dashed #dde6f0;border-radius:14px;background:#fbfcfe}",
       ".mlspk-note{font-size:12px;color:#6b7d93;margin:0 0 10px}",
       /* inline Complex host */
-      "#mlsPickComplexWrap{margin:0 0 18px;font-family:'Plus Jakarta Sans',system-ui,sans-serif}",
+      "#mlsPickComplexWrap{margin:0 0 18px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;max-width:100%;overflow:hidden;box-sizing:border-box}",
+      /* explicit, shrinkable columns (minmax(0,1fr)) so the inline grid never widens
+         the un-width-constrained #visitView at narrow widths -> no horizontal overflow */
+      "#mlsPickComplexWrap .mlspk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}",
+      "@media(max-width:900px){#mlsPickComplexWrap .mlspk-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}",
+      "@media(max-width:560px){#mlsPickComplexWrap .mlspk-grid{grid-template-columns:minmax(0,1fr)}}",
       "#mlsPickComplexWrap .mlspk-cx-hd{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}",
       "#mlsPickComplexWrap .mlspk-cx-hd h4{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:19px;margin:0;color:#0f2540}",
       "#mlsPickComplexWrap .mlspk-cx-hd span{font-size:12px;color:#8a9cb2}",
