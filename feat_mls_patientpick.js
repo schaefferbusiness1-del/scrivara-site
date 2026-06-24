@@ -352,15 +352,18 @@
     var curId = activeId();
     var limit = (opts.limit == null ? DEFAULT_LIMIT : opts.limit) | 0; if (limit < 1) limit = DEFAULT_LIMIT;
     var nIdx = nowIndex(res.list);
-    /* auto-expand only enough to keep the focal "now" card visible as the day advances */
-    var autoExpand = (nIdx >= limit);
-    var expanded = !!hostEl.__mlspkExpanded || autoExpand;
     var total = res.list.length;
-    var shown = expanded ? total : Math.min(limit, total);
+    var expanded = !!hostEl.__mlspkExpanded;
+    /* collapsed = a window of `limit` cards anchored at the current slot, so the list
+       advances toward "now" as the day progresses while still showing only 6 at a time.
+       In the morning (nIdx 0) this is simply the earliest 6. "Show more" reveals all. */
+    var count = expanded ? total : Math.min(limit, total);
+    var start = expanded ? 0 : Math.max(0, Math.min(nIdx < 0 ? 0 : nIdx, total - count));
+    var end = start + count;
     var focalId = (nIdx >= 0 && nIdx < total) ? res.list[nIdx].id : "";
 
     /* idempotent: skip the DOM rewrite when nothing visible changed (no flicker) */
-    var sig = res.scope + "|" + res.dateLabel + "|" + total + "|" + shown + "|" + curId + "|" + focalId + "|" + (expanded ? 1 : 0) + "|" + (opts.showNote === false ? 0 : 1);
+    var sig = res.scope + "|" + res.dateLabel + "|" + total + "|" + start + "|" + count + "|" + curId + "|" + focalId + "|" + (expanded ? 1 : 0) + "|" + (opts.showNote === false ? 0 : 1);
     registerHost(hostEl, opts);
     if (hostEl.__mlspkSig === sig && hostEl.firstChild) return res;
     hostEl.__mlspkSig = sig;
@@ -376,9 +379,9 @@
       return res;
     }
     html += '<div class="mlspk-grid">';
-    for (var i = 0; i < shown; i++) html += cardHTML(res.list[i], res.list[i].id === curId, i === nIdx);
+    for (var i = start; i < end; i++) html += cardHTML(res.list[i], res.list[i].id === curId, i === nIdx);
     if (total > limit) {
-      var moreN = total - shown;
+      var moreN = total - count;
       html += '<div class="mlspk-more"><button type="button" data-mlspk-more="1">' +
         (expanded ? "Show fewer" : ("Show more (" + moreN + " more)")) + '</button></div>';
     }
