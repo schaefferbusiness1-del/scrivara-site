@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "ax-2.1.1";
+  var VERSION = "ax-2.1.2";
   try { if (window.__mlsAx && window.__mlsAx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -108,6 +108,9 @@
       "#analysisView." + GRID_CLASS + " .ax-body > .card{border:0!important;border-radius:0!important;box-shadow:none!important;margin:0!important;height:100%;overflow:auto;background:#fff!important}",
       "#analysisView." + GRID_CLASS + " .ax-grip{position:absolute;right:3px;bottom:3px;width:20px;height:20px;cursor:nwse-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px;z-index:5;color:#b9c6d6}",
       "#analysisView." + GRID_CLASS + " .ax-grip:hover{color:#2f6bed}",
+      "#analysisView." + GRID_CLASS + " .ax-collapse{display:none;position:absolute;right:14px;top:14px;z-index:6;height:32px;padding:0 12px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#6b7d93;font-weight:600;font-size:12.5px;font-family:inherit;cursor:pointer;box-shadow:0 2px 6px rgba(15,37,64,.08)}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp .ax-collapse{display:block}",
+      "#analysisView." + GRID_CLASS + " .ax-collapse:hover{background:#f3f6fb;color:#2f6bed}",
       "@media (max-width:1099px){#analysisView." + GRID_CLASS + "{grid-template-columns:repeat(3,minmax(0,1fr))!important}}",
       "@media (max-width:819px){#analysisView." + GRID_CLASS + "{grid-template-columns:repeat(2,minmax(0,1fr))!important}}",
       "@media (max-width:559px){#analysisView." + GRID_CLASS + "{grid-template-columns:1fr!important}}",
@@ -164,6 +167,10 @@
     grip.className = "ax-grip"; grip.title = "Drag to resize";
     grip.addEventListener("pointerdown", function (e) { startResize(key, e); });
     tile.appendChild(grip);
+    var col = mk("button", null, "&#10529; Collapse");
+    col.className = "ax-collapse"; col.type = "button";
+    col.addEventListener("click", function (e) { e.stopPropagation(); toggle(key); });
+    tile.appendChild(col);
     tile.addEventListener("dragstart", function (e) { if (isExpanded(key)) { e.preventDefault(); return; } _dragKey = key; try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", key); } catch (x) {} tile.classList.add("ax-drag"); });
     tile.addEventListener("dragover", function (e) { e.preventDefault(); _overKey = key; reorderTo(key); });
     tile.addEventListener("drop", function (e) { e.preventDefault(); _dragKey = null; _overKey = null; save(); render(); });
@@ -200,8 +207,9 @@
       tile.classList.toggle("ax-exp", exp);
       tile.classList.toggle("ax-over", _overKey === k && _dragKey && _dragKey !== k);
       tile.setAttribute("draggable", exp ? "false" : "true");
-      if (exp) { prev.style.display = "none"; body.style.display = "flex"; card.style.display = ""; }
-      else { buildPreview(prev, m); prev.style.display = "flex"; body.style.display = "none"; }
+      var colBtn = tile.querySelector(".ax-collapse");
+      if (exp) { prev.style.display = "none"; body.style.display = "flex"; card.style.display = ""; if (colBtn) colBtn.style.display = "block"; }
+      else { buildPreview(prev, m); prev.style.display = "flex"; body.style.display = "none"; if (colBtn) colBtn.style.display = "none"; }
       v.appendChild(tile);
     });
     v.setAttribute("data-ax-built", VERSION);
