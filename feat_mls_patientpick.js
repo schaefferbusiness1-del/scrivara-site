@@ -35,7 +35,7 @@
    *   - renders an INLINE selectable grid in Complex visit mode too (not only the modal)
    *   - keeps the top active-patient context bar (#mlsCtxBar) bound + visible
    */
-  var VERSION = "pick-1.2.0";
+  var VERSION = "pick-1.3.0";   /* + pin #mlsCtxBar below header (fixes flash-then-clip glitch) */
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -552,11 +552,23 @@
     renderGrid(host, { scope: "today", limit: DEFAULT_LIMIT, onPick: function () { ensureCtxBar(); } });
   }
 
-  /* ---- keep the compact top active-patient widget (#mlsCtxBar) present ---- */
+  /* ---- keep the compact top active-patient widget (#mlsCtxBar) visible + bound ----
+     On some loads a race parents #mlsCtxBar INSIDE #mlsRdNav (the dark header nav row,
+     which is height-fixed + overflow-y:hidden) so the bar paints for a moment then gets
+     CLIPPED away -- the "loads then disappears" glitch. Pin it as a stable full-width bar
+     directly below #appHeader instead, where it shows the active patient + its Chart/Visit/
+     History/Schedule/After-visit/Switch buttons. Idempotent (only moves when misplaced; no
+     continuous mover exists -> no flicker) and un-hides it if something set display:none. */
   function ensureCtxBar() {
     try {
       var c = $("mlsCtxBar");
-      if (c && c.querySelector(".mlsctx-id") && getComputedStyle(c).display === "none") c.style.display = "";
+      if (!c || !c.querySelector(".mlsctx-id")) return;          /* only the real bar */
+      if (getComputedStyle(c).display === "none") c.style.display = "";
+      var hdr = $("appHeader");
+      var wrap = (hdr && hdr.parentElement) || $("appWrap");
+      if (!hdr || !wrap) return;
+      if (c.parentElement === wrap && hdr.nextSibling === c) return;  /* already pinned */
+      wrap.insertBefore(c, hdr.nextSibling);                     /* move just below the header */
     } catch (e) {}
   }
 
@@ -569,6 +581,8 @@
       _obs.observe(document.documentElement, { childList: true, subtree: true });
     } catch (e) {}
     startNowTimer();
+    /* catch the delayed load-race that drops #mlsCtxBar into the clipped nav ~1s in */
+    try { [250, 700, 1400, 2600, 4000].forEach(function (ms) { setTimeout(ensureCtxBar, ms); }); } catch (e) {}
   }
 
   function revert() {
