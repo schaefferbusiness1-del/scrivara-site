@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "ax-2.1.2";
+  var VERSION = "ax-2.1.3";
   try { if (window.__mlsAx && window.__mlsAx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -98,7 +98,7 @@
   function injectCSS() {
     var css = [
       "#analysisView." + GRID_CLASS + "{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;grid-auto-rows:" + ROWH + "px!important;gap:" + GAP + "px!important;grid-auto-flow:row dense!important;align-items:stretch!important;max-width:1320px;margin:0 auto}",
-      "#analysisView." + GRID_CLASS + " .ax-title{grid-column:1 / -1;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 0 6px}",
+      "#analysisView." + GRID_CLASS + " .ax-title{grid-column:1 / -1;display:block;margin:2px 0 12px}",
       "#analysisView." + GRID_CLASS + " .ax-tile{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid #e8edf3;box-shadow:0 1px 2px rgba(15,37,64,.04);transition:box-shadow .18s ease,transform .18s ease;min-width:0}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp{border-color:#bcd6fb;box-shadow:0 18px 40px -20px rgba(13,33,56,.4)}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-drag{opacity:.5;background:#eef5ff;box-shadow:inset 0 0 0 2px #9cc0f5}",
@@ -183,9 +183,8 @@
     if (v.querySelector(":scope > .ax-title")) return;
     var t = mk("div"); t.className = "ax-title";
     t.innerHTML =
-      '<span style="width:38px;height:38px;border-radius:10px;background:#eef3fb;display:flex;align-items:center;justify-content:center;font-size:18px">&#128202;</span>' +
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.015em;margin:0">Analysis</h1>' +
-      '<span style="color:#6b7d93;font-size:13.5px">&mdash; click a tile to expand &middot; drag to reorder &middot; drag the corner to resize</span>';
+      '<p style="color:#9aa8bb;font-size:12.5px;margin:4px 0 0">Resizable dashboard. Tap a tile to grow it to full width; tap again to collapse.</p>';
     v.insertBefore(t, v.firstChild);
   }
 
