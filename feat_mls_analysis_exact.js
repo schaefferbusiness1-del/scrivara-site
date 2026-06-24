@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "ax-2.1.0";
+  var VERSION = "ax-2.1.1";
   try { if (window.__mlsAx && window.__mlsAx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -184,6 +184,7 @@
 
   function render() {
     var v = $("analysisView"); if (!v) return;
+    if (v.style.display === "none") { v.classList.remove(GRID_CLASS); return; }
     v.classList.add(GRID_CLASS);
     ensureTitle();
     var list = cards(), byId = {}; list.forEach(function (c) { if (c.id) byId[c.id] = c; });
@@ -206,9 +207,12 @@
     v.setAttribute("data-ax-built", VERSION);
   }
 
+  function hookShowView() {
+    try { if (typeof window.showView === "function" && !window.__axHook) { window.__axHook = 1; var _o = window.showView; window.showView = function () { var r = _o.apply(this, arguments); schedule(); return r; }; } } catch (e) {}
+  }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { injectCSS(); if ($("analysisView")) render(); } catch (e) {}
+    try { hookShowView(); injectCSS(); if ($("analysisView")) render(); } catch (e) {}
     try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
   }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }

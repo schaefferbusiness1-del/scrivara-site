@@ -17,7 +17,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "sx-2.0.0";
+  var VERSION = "sx-2.0.1";
   try { if (window.__mlsSx && window.__mlsSx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -84,6 +84,7 @@
   function build() {
     var v = $("studioView"); if (!v) return;
     injectCSS();
+    if (v.style.display === "none") { v.classList.remove(GRID_CLASS); return; }
     v.classList.add(GRID_CLASS);
     buildTitle(v);
 
@@ -112,9 +113,12 @@
     v.setAttribute("data-sx-built", VERSION);
   }
 
+  function hookShowView() {
+    try { if (typeof window.showView === "function" && !window.__sxHook) { window.__sxHook = 1; var _o = window.showView; window.showView = function () { var r = _o.apply(this, arguments); schedule(); return r; }; } } catch (e) {}
+  }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
-    try { build(); } catch (e) {}
+    try { hookShowView(); build(); } catch (e) {}
     try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
   }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
