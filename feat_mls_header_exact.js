@@ -2,21 +2,37 @@
  *
  *  STAGING ONLY. Loaded by mls-connect.staging.js AFTER feat_mls_redesign.js
  *  (the overlay that builds the dark top bar #mlsRdTop + nav #mlsRdNav) and
- *  AFTER feat_mls_visit_exact.js. Never loaded by the prod loader mls-connect.js.
- *  Runtime-gated to the staging page. Production untouched.
+ *  AFTER feat_mls_visit_exact.js. On prod the data:-marker makes isStaging()
+ *  true so this is active on prod too. Production base app untouched.
  *
  *  Brings the WHOLE header to design_renders/ScribeFlow.dc.html exactly:
  *    ROW 1 (68px): logo + Simple|Complex toggle + search (380) + spacer +
  *                  Menu + avatar(MS / name / plan)
- *    ROW 2 (46px): 8 left tabs (Calendar, Patients, Visit, Recommendations,
+ *    ROW 2 (nav):  8 left tabs (Calendar, Patients, Visit, Recommendations,
  *                  History, Legal requests, Team, Analysis) + spacer +
  *                  AI Studio (purple PREMIUM pill) + Help
- *  The app's #appHeader was a flex ROW that placed #mlsRdTop (squished) beside
- *  #mlsRdNav; v2 makes #appHeader a COLUMN so the two design rows stack, and
- *  lays #mlsRdTop out as the design's single inline 68px row.
- *  Nav labels de-emojified to match the design (plain text + badge pill);
- *  AI Studio keeps the design star; originals saved for revert.
- *  Orders + Admin (not in the design top bar) RELOCATED into the Menu dropdown.
+ *  #appHeader is laid out as a COLUMN so the two design rows stack.
+ *
+ *  hx-2.0.3 changes (this pass):
+ *   1+2 NAV CENTERING + NO-JUMP: the app's base .mainnav carries
+ *       position:sticky;top:10px (+ margin-bottom:16px). Inside the redesigned
+ *       #mlsRdNav wrapper that offsets the whole nav row +10px DOWN, so the tab
+ *       bottoms spilled below the navy bar ("hanging off"). We neutralize it
+ *       (#mlsRdNav .mainnav{position:static;top:auto;margin:0}) so the tabs sit
+ *       centered INSIDE the blue. The structural CSS is injected synchronously
+ *       at module load (before first paint) so there is no reflow/jump.
+ *   3   NAV BREATHING ROOM: the nav row is a fixed 58px (was 46) with the tabs
+ *       centered, so there is navy space above and below the tabs (not cramped).
+ *       Height stays FIXED + overflow-y:hidden so the in-flow #mlsCtxBar that lives
+ *       inside #mlsRdNav keeps its existing clipped placement (unchanged).
+ *   4   ORDERS centered in Menu: relocated rows now match the real .mlsTbItem
+ *       siblings (justify-content:center; gap:10px; font-size:14px; pad 10/12).
+ *   5   ADMIN tab removed from the nav entirely (never in the nav row).
+ *   6   ACCOUNT GATING: the personal account(s) leeschaeffer@gmail.com /
+ *       leeschaeffer41@gmail.com never get admin (isAdmin forced off + Admin
+ *       hidden everywhere). Accounts with real admin (the business account) keep
+ *       it and reach Admin via the Menu dropdown. App role-gating in code only;
+ *       no external access controls touched.
  *
  *  All tabs/controls are the app's REAL elements (onclick=showView, the real
  *  toggle/search/menu) - this only moves/restyles/relabels them. Nothing deleted.
@@ -24,8 +40,10 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "hx-2.0.2";
+  var VERSION = "hx-2.0.3";
   var OWNER = "leeschaeffer41";
+  /* Personal accounts that must NEVER have admin (admin = business account only). */
+  var PERSONAL_EMAILS = ["leeschaeffer@gmail.com", "leeschaeffer41@gmail.com"];
   try { if (window.__mlsHx && window.__mlsHx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -44,6 +62,37 @@
   function mk(t, c, h) { var e = document.createElement(t); if (c) e.style.cssText = c; if (h != null) e.innerHTML = h; return e; }
   function imp(el, p, v) { try { el.style.setProperty(p, v, "important"); } catch (e) {} }
 
+  /* ---- identity / admin gating ---------------------------------------- */
+  function getBk() {
+    try { if (typeof bkUser !== "undefined" && bkUser) return bkUser; } catch (e) {}
+    try { return window.bkUser || null; } catch (e) {}
+    return null;
+  }
+  function curEmail() {
+    var u = getBk();
+    if (u && u.email) { try { return String(u.email).toLowerCase(); } catch (e) {} }
+    return "";
+  }
+  function isPersonal() { return PERSONAL_EMAILS.indexOf(curEmail()) >= 0; }
+  /* real admin = an account the server marked isAdmin AND not a personal account */
+  function effectiveAdmin() {
+    var u = getBk(); if (!u) return false;
+    if (isPersonal()) return false;
+    return !!u.isAdmin;
+  }
+  /* Defense in depth: if a personal account somehow carries isAdmin, force it off
+   * in the app's own model and re-run the app's gating so every admin-only bit hides.
+   * (The business account is untouched.) Runs once per state; idempotent. */
+  function gateAccount() {
+    try {
+      var u = getBk();
+      if (u && isPersonal() && u.isAdmin) {
+        u.isAdmin = false;
+        try { if (typeof applyAccessUI === "function") applyAccessUI(); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
   function injectCSS() {
     var css = [
       /* ROW STACK: appHeader becomes a column so top row + nav row stack (design) */
@@ -55,25 +104,30 @@
       "#mlsRdToggleSlot{flex:0 0 auto!important}",
       "#mlsRdSearchSlot{flex:1 1 auto!important;max-width:380px!important;margin-left:8px!important}",
       "#mlsRdMenuSlot{flex:0 0 auto!important}",
-      /* ROW 2: nav full-width, centered, 28 padding (so tabs start under the logo) */
-      "#mlsRdNav{width:100%!important;max-width:1500px!important;margin:0 auto!important;padding:0 28px!important;height:46px!important;box-sizing:border-box!important;overflow-x:auto!important;overflow-y:hidden!important;-ms-overflow-style:none;scrollbar-width:none}",
+      /* ROW 2: nav full-width, centered, 28 padding; height:auto + top/bottom pad
+       * gives navy breathing room above and (more) below the tabs (design feel). */
+      "#mlsRdNav{width:100%!important;max-width:1500px!important;margin:0 auto!important;padding:0 28px!important;height:58px!important;box-sizing:border-box!important;overflow-x:auto!important;overflow-y:hidden!important;-ms-overflow-style:none;scrollbar-width:none}",
       "#mlsRdNav::-webkit-scrollbar{height:0!important;display:none}",
-      "#mlsRdNav .mainnav{flex-wrap:nowrap!important;min-width:0!important;gap:4px!important;height:46px!important;align-items:center!important}",
+      /* CRITICAL: kill the base app's .mainnav sticky offset (position:sticky;top:10px)
+       * + its margin-bottom:16px. Without this the whole nav row sits ~10px low and the
+       * tab bottoms hang off the bottom of the blue bar. Centered, static, no margin. */
+      "#mlsRdNav .mainnav{position:static!important;top:auto!important;margin:0!important;flex-wrap:nowrap!important;min-width:0!important;gap:4px!important;height:58px!important;align-items:center!important}",
       /* tablet/phone: keep top chrome contained, no horizontal overflow */
       "@media (max-width:1100px){#mlsRdTop,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}",
       "@media (max-width:760px){#mlsRdTop{flex-wrap:wrap!important;height:auto!important;gap:10px!important;padding:8px 14px!important}#mlsRdSearchSlot{order:5!important;max-width:100%!important;flex:1 1 100%!important;margin-left:0!important}}",
-      /* design tab tokens (plain pill, no icon) */
+      /* design tab tokens (plain pill, no icon), vertically centered in the 46 row */
       "#mlsRdNav .navtab{height:32px!important;padding:0 13px!important;border-radius:9px!important;font-size:13.5px!important;display:flex!important;align-items:center!important;gap:7px!important;white-space:nowrap!important;border:none!important;flex:0 0 auto!important}",
       "#mlsRdNav .navtab:not(.on){background:transparent!important;color:#adc2dd!important;font-weight:600!important}",
       "#mlsRdNav .navtab.on{background:rgba(95,227,207,.16)!important;color:#7ff0de!important;font-weight:700!important}",
       /* design badge pill (counts) */
       "#mlsRdNav .navtab .nbadge{font-size:10.5px!important;font-weight:700!important;line-height:1!important;padding:3px 7px!important;border-radius:20px!important;background:rgba(159,192,255,.18)!important;color:#cfe0ff!important;margin-left:1px!important}",
       "#mlsRdNav .navtab.on .nbadge{background:rgba(95,227,207,.22)!important;color:#9ff3e3!important}",
-      /* hidden (relocated) tabs */
+      /* ADMIN removed from the nav row entirely; Orders relocated (hidden in nav) */
       "#mlsRdNav #nav_orders,#mlsRdNav #nav_admin{display:none!important}",
-      /* relocated tabs rendered as menu rows inside the Menu dropdown */
-      "#mlsTbMenuPanel .navtab.hx-menurow{display:flex!important;width:100%!important;height:auto!important;justify-content:flex-start!important;padding:9px 12px!important;border-radius:9px!important;background:transparent!important;color:#eaf2ff!important;font-weight:600!important;font-size:13.5px!important;box-sizing:border-box!important}",
-      "#mlsTbMenuPanel .navtab.hx-menurow:hover{background:rgba(255,255,255,.07)!important}"
+      /* relocated rows in the Menu dropdown -> MATCH the real .mlsTbItem siblings
+       * (center-justified, gap 10, 14px, 8 radius, 10/12 pad) so Orders is not off-center */
+      "#mlsTbMenuPanel .navtab.hx-menurow[data-hx-relocated]{display:flex!important;width:100%!important;height:auto!important;align-items:center!important;justify-content:center!important;gap:10px!important;padding:10px 12px!important;border-radius:8px!important;background:transparent!important;color:#eaf2ff!important;font-weight:600!important;font-size:14px!important;box-sizing:border-box!important;text-align:left!important}",
+      "#mlsTbMenuPanel .navtab.hx-menurow[data-hx-relocated]:hover{background:rgba(255,255,255,.07)!important}"
     ].join("\n");
     var s = $(STYLE_ID);
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
@@ -141,22 +195,55 @@
     }
   }
 
-  /* relocate Orders + Admin tabs into the Menu dropdown panel (keep + reachable) */
+  /* Make a relocated row look exactly like the real .mlsTbItem siblings. Inline !important
+   * beats the redesign "#appHeader.mlsRdHdr .navtab" rule (the Menu panel lives inside
+   * #appHeader, so that rule would otherwise keep Orders at nav-tab padding/font/height). */
+  var MENUROW_STYLE = {
+    "display": "flex", "width": "100%", "height": "auto", "align-items": "center",
+    "justify-content": "center", "gap": "10px", "padding": "10px 12px", "border-radius": "8px",
+    "background": "transparent", "color": "#eaf2ff", "font-weight": "600", "font-size": "14px",
+    "box-sizing": "border-box", "text-align": "left"
+  };
+  function styleMenuRow(el) { for (var k in MENUROW_STYLE) { if (MENUROW_STYLE.hasOwnProperty(k)) imp(el, k, MENUROW_STYLE[k]); } }
+  function clearMenuRow(el) { for (var k in MENUROW_STYLE) { if (MENUROW_STYLE.hasOwnProperty(k)) { try { el.style.removeProperty(k); } catch (e) {} } } }
+
+  /* Orders -> Menu dropdown always. Admin -> Menu ONLY for real-admin (business)
+   * accounts; for personal/non-admin accounts Admin is hidden everywhere. */
+  /* Put a row into the Menu panel and make it look like the .mlsTbItem siblings.
+   * Styling runs on EVERY pass (idempotent) so it holds even if the row was already
+   * relocated by a prior run and so it self-heals if other code restyles it. */
+  function placeInMenu(el, menu) {
+    if (el.parentElement !== menu) {
+      el.style.removeProperty("display"); menu.appendChild(el);
+    }
+    if (!el.classList.contains("hx-menurow")) el.classList.add("hx-menurow");
+    el.setAttribute("data-hx-relocated", "1");
+    styleMenuRow(el);
+  }
   function relocateToMenu() {
     var menu = $("mlsTbMenuPanel") || $("mlsTbMenu"); if (!menu) return;
-    ["nav_orders", "nav_admin"].forEach(function (id) {
-      var t = $(id); if (!t) return;
-      if (t.parentElement === menu) return; /* already relocated */
-      t.classList.add("hx-menurow");
-      t.setAttribute("data-hx-relocated", "1");
-      menu.appendChild(t);
-    });
+    var o = $("nav_orders");
+    if (o) placeInMenu(o, menu);
+    var a = $("nav_admin");
+    if (a) {
+      if (effectiveAdmin()) {
+        placeInMenu(a, menu);
+      } else {
+        /* personal / non-admin: never in the menu, never visible */
+        if (a.parentElement === menu) { /* move back out of the menu */
+          clearMenuRow(a); a.classList.remove("hx-menurow"); a.removeAttribute("data-hx-relocated");
+          var navw = $("mlsRdNav"); if (navw) navw.appendChild(a);
+        }
+        a.style.setProperty("display", "none", "important");
+      }
+    }
   }
 
   function buildNav() {
     var nav = $("mlsRdNav"); if (!nav) return;
     var mainnav = nav.querySelector(".mainnav"); if (!mainnav) return;
 
+    gateAccount();
     relocateToMenu();
     relabelAll();
     fixAvatar();
@@ -209,13 +296,17 @@
     } catch (e) {}
     try {
       ["nav_orders", "nav_admin"].forEach(function (id) {
-        var t = $(id); if (t) { t.classList.remove("hx-menurow"); t.removeAttribute("data-hx-relocated"); }
+        var t = $(id); if (t) { clearMenuRow(t); t.classList.remove("hx-menurow"); t.removeAttribute("data-hx-relocated"); t.style.removeProperty("display"); }
       });
     } catch (e) {}
     try { window.__mlsHx.installed = false; } catch (e) {}
   }
 
-  window.__mlsHx = { installed: true, version: VERSION, reapply: boot, revert: revert };
+  window.__mlsHx = { installed: true, version: VERSION, reapply: boot, revert: revert,
+    effectiveAdmin: effectiveAdmin, isPersonal: isPersonal };
+  /* paint-time structural CSS: inject synchronously at load so the nav row has its
+   * final (centered) placement before first paint -> no reflow/jump. */
+  try { injectCSS(); } catch (e) {}
   try { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot(); }
   catch (e) { try { boot(); } catch (e2) {} }
 })();
