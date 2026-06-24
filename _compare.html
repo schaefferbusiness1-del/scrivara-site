@@ -16,6 +16,7 @@
 <p>Left = live app (Visit = STAGING rebuild ScribeFlow-staging.html; others = prod). Right = the exported design. Scroll each frame. Temporary QA page.</p></header>
 <div id="rows"></div>
 <script>
+var STAGING_KEYS=['visit','calendar','patients','history','orders','recs','legalreq','team','analysis','studio']; /* pages rebuilt on staging */
 var pages=[
  {key:'visit',label:'Visit',dz:'_dz_visit.html'},
  {key:'patients',label:'Patients',dz:'_dz_patients.html'},
@@ -36,7 +37,7 @@ pages.forEach(function(p){
   var row=document.createElement('div');row.className='row';
   var live = (p.key==='__login')
     ? '<div class="note">Live login screen can\'t be shown here (this browser is already signed in). Design shown at right.</div>'
-    : '<iframe loading="lazy" data-key="'+p.key+'" src="'+(p.key==='visit'?'ScribeFlow-staging.html':'ScribeFlow.html')+'?cmp='+p.key+'"></iframe>';
+    : '<iframe loading="lazy" data-key="'+p.key+'" src="'+(STAGING_KEYS.indexOf(p.key)>=0?'ScribeFlow-staging.html':'ScribeFlow.html')+'?cmp='+p.key+'"></iframe>';
   row.innerHTML='<h2>'+p.label+'</h2><div class="pair">'+
     '<div class="col"><div class="tag">Live &middot; mlsscribe.com</div>'+live+'</div>'+
     '<div class="col"><div class="tag">Design</div><iframe loading="lazy" src="'+p.dz+'"></iframe></div></div>';
