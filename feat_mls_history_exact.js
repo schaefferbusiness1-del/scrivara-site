@@ -14,7 +14,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "hy-1.0.0";
+  var VERSION = "hy-1.1.0";
   try { if (window.__mlsHy && window.__mlsHy.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -38,6 +38,11 @@
       "#historyView #historyCard > h2{display:flex!important;align-items:center!important;gap:12px!important;flex-wrap:wrap!important;font-size:20px!important;font-weight:700!important;letter-spacing:-.01em!important}",
       "#historyView #histSearch{height:46px!important;border-radius:11px!important;border:1px solid #e0e8f1!important;background:#f8fafc!important;padding:0 14px!important;font-size:13.5px!important}",
       "#historyView #histFilter{height:46px!important;border-radius:11px!important;border:1px solid #e0e8f1!important;background:#fff!important;padding:0 14px!important;font-size:13px!important;font-weight:600!important;color:#0f2540!important}",
+      "#historyView #histFilter{display:none!important}",
+      "#historyView #hyChips{display:flex!important;flex-wrap:wrap!important;gap:8px!important;margin:0 0 16px!important}",
+      "#historyView .hy-chip{height:34px!important;padding:0 15px!important;border-radius:20px!important;font-weight:600!important;font-size:12.5px!important;font-family:inherit!important;cursor:pointer!important;border:1px solid #e0e8f1!important;background:#fff!important;color:#3d5168!important;transition:background .12s,color .12s,border-color .12s!important}",
+      "#historyView .hy-chip[data-on=\"1\"]{background:#2f6bed!important;color:#fff!important;border-color:#2f6bed!important}",
+      "#historyView .hy-chip:hover{border-color:#cfe0fb!important}",
       "#historyView .hist-list{display:flex!important;flex-direction:column!important;gap:10px!important}",
       "#historyView .hist-item{border:1px solid #e4ebf3!important;border-radius:14px!important;background:#fff!important;padding:15px 17px!important;box-shadow:none!important}",
       "#historyView .hist-item:hover{border-color:#cfe0fb!important;background:#fbfdff!important}",
@@ -74,9 +79,42 @@
     }
   }
 
+  /* Design filter CHIPS wired to the real #histFilter select (renderHistory reads its value). */
+  function syncChips() {
+    var wrap = $("hyChips"), f = $("histFilter"); if (!wrap || !f) return;
+    var kids = wrap.children;
+    for (var i = 0; i < kids.length; i++) { kids[i].setAttribute("data-on", kids[i].getAttribute("data-val") === f.value ? "1" : "0"); }
+  }
+  function buildChips() {
+    var f = $("histFilter"); if (!f) return;
+    var row = $("histSearchRow"); if (!row) return;
+    var sig = "";
+    for (var k = 0; k < f.options.length; k++) { sig += f.options[k].value + "|" + f.options[k].textContent + "~"; }
+    var wrap = $("hyChips");
+    if (wrap && wrap.getAttribute("data-sig") === sig) { syncChips(); return; }
+    if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    wrap = mk("div"); wrap.id = "hyChips"; wrap.setAttribute("data-sig", sig);
+    function strip(t) { return (t || "").replace(/^[^\x00-\x7F\s]+\s*/, "").trim(); }
+    for (var j = 0; j < f.options.length; j++) {
+      (function (o) {
+        var b = mk("button"); b.type = "button"; b.className = "hy-chip";
+        b.setAttribute("data-val", o.value);
+        b.textContent = strip(o.textContent) || o.textContent || o.value;
+        b.addEventListener("click", function () {
+          try { f.value = o.value; } catch (e) {}
+          try { if (typeof window.renderHistory === "function") window.renderHistory(); else f.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) {}
+          syncChips();
+        });
+        wrap.appendChild(b);
+      })(f.options[j]);
+    }
+    if (row.parentNode) row.parentNode.insertBefore(wrap, row.nextSibling);
+    syncChips();
+  }
+
   function build() {
     var v = $("historyView"); if (!v) return;
-    injectCSS(); styleHeader();
+    injectCSS(); styleHeader(); buildChips();
     v.setAttribute("data-hy-built", VERSION);
   }
   function applyAll() {
@@ -94,6 +132,7 @@
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { if (_t) clearInterval(_t); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
+    try { var w = $("hyChips"); if (w && w.parentNode) w.parentNode.removeChild(w); } catch (e) {}
     try { window.__mlsHy.installed = false; } catch (e) {}
   }
   window.__mlsHy = { installed: true, version: VERSION, reapply: boot, revert: revert, build: build };

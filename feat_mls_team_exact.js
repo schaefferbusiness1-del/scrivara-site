@@ -8,7 +8,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "tx-1.0.0";
+  var VERSION = "tx-1.1.0";
   try { if (window.__mlsTx && window.__mlsTx.installed) return; } catch (e) { return; }
   function isStaging() { try { if (/staging/i.test(location.pathname)) return true; if (document.querySelector('script[src*="mls-connect.staging.js"]')) return true; } catch (e) {} return false; }
   if (!isStaging()) { try { window.__mlsTx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
@@ -23,6 +23,9 @@
       "#teamView > .card{border-radius:18px!important;border:1px solid #e4ebf3!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;padding:24px 26px!important}",
       "#teamView > .card > h2{display:flex!important;align-items:center!important;gap:12px!important;flex-wrap:wrap!important;font-size:19px!important;font-weight:700!important;letter-spacing:-.01em!important}",
       "#teamView .extra-card{border:1px solid #e4ebf3!important;border-radius:14px!important;background:#fff!important;box-shadow:none!important;padding:18px!important}",
+      "#teamView #teamList .team-docrow{display:grid!important;grid-template-columns:repeat(2,1fr)!important;gap:12px!important;align-items:stretch!important}",
+      "#teamView #teamList .team-doc{width:auto!important;min-width:0!important;max-width:none!important}",
+      "@media (max-width:760px){#teamView #teamList .team-docrow{grid-template-columns:1fr!important}}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
