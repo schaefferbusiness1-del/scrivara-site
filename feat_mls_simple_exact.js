@@ -28,7 +28,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "simx-1.0.0";
+  var VERSION = "simx-1.1.0";
   try { if (window.__mlsSimX && window.__mlsSimX.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -77,6 +77,42 @@
   function patientDob() { return val("heroPtDob").trim(); }
 
   function easyGoto(n) { var e = easy(); if (e && typeof e.goto === "function") { try { e.goto(n); } catch (x) {} } renderCard(); }
+
+  /* ---- real active patient (fixes the "No active patient yet" bug: read the app's
+     ACTIVE patient, not the empty hero name field) + the shared pull-and-select picker ---- */
+  function realActive() {
+    try { if (window.__mlsPick && typeof window.__mlsPick.activePatient === "function") { var a = window.__mlsPick.activePatient(); if (a) return a; } } catch (e) {}
+    try { return window.activePatient ? window.activePatient() : null; } catch (e) {}
+    return null;
+  }
+  function initials(name) {
+    var parts = String(name || "").trim().split(/\s+/);
+    if (!parts.length || !parts[0]) return "?";
+    return ((parts[0][0] || "") + (parts.length > 1 ? (parts[parts.length - 1][0] || "") : "")).toUpperCase();
+  }
+  function ageOf(dob) {
+    var s = String(dob || "").trim(); if (!s) return null;
+    var d = null, m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) d = new Date(+m[1], +m[2] - 1, +m[3]);
+    else { m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/); if (m) d = new Date(+m[3], +m[1] - 1, +m[2]); }
+    if (!d || isNaN(d.getTime())) return null;
+    var n = new Date(), a = n.getFullYear() - d.getFullYear(), mo = n.getMonth() - d.getMonth();
+    if (mo < 0 || (mo === 0 && n.getDate() < d.getDate())) a--;
+    return (a >= 0 && a < 130) ? a : null;
+  }
+  function athenaConnected() { try { if (window.__mlsUxUnify && typeof window.__mlsUxUnify.connected === "function") return !!window.__mlsUxUnify.connected(); } catch (e) {} return false; }
+  var _pickScope = "today", _manualPending = null;
+  function openPicker() {
+    if (window.__mlsPick && typeof window.__mlsPick.openModal === "function") { window.__mlsPick.openModal({ scope: _pickScope || "today" }); return; }
+    if (!clickById("mlscpFind")) callFn("mlsQuickFind");
+  }
+  function renderPick(scope) {
+    if (scope) _pickScope = scope;
+    var host = $("simPickGrid"); if (!host) return;
+    if (window.__mlsPick && typeof window.__mlsPick.renderGrid === "function") {
+      window.__mlsPick.renderGrid(host, { scope: _pickScope, onPick: function () { _manualPending = null; renderBanner(); renderPick(_pickScope); } });
+    } else { host.innerHTML = ""; }
+  }
 
   /* ===================== styles ===================== */
   function injectCSS() {
@@ -149,20 +185,39 @@
   /* ---- context banner ---- */
   function renderBanner() {
     var host = $("simBanner"); if (!host) return;
-    var name = patientName(), dob = patientDob();
-    var title, sub;
-    if (name) { title = esc(name); sub = dob ? ("DOB " + esc(dob) + " &middot; visits attach to this chart") : "Visits will attach to this chart."; }
-    else { title = "No active patient yet"; sub = "Visits won't attach to a chart until you pick one."; }
+    var p = realActive();
+    var title, sub, avatarHTML, avatarBg = "#fff4e6", active = false;
+    if (p) {
+      active = true;
+      var bits = [];
+      var age = ageOf(p.dob); if (age != null) bits.push(age + "y");
+      if (p.sex) bits.push(esc(p.sex));
+      if (p.dob) bits.push("DOB " + esc(p.dob));
+      title = esc(p.name || "Active patient");
+      sub = (bits.join(" &middot; ") || "Active patient") + " &middot; visits attach to this chart";
+      avatarHTML = esc(initials(p.name)); avatarBg = "#eef3fb";
+    } else if (_manualPending && _manualPending.name) {
+      title = esc(_manualPending.name);
+      sub = (_manualPending.dob ? ("DOB " + esc(_manualPending.dob) + " &middot; ") : "") + "manual entry &middot; will attach when you record";
+      avatarHTML = esc(initials(_manualPending.name)); avatarBg = "#eef3fb";
+    } else {
+      title = "No active patient yet";
+      sub = "Pull the day's patients below, then tap one to select.";
+      avatarHTML = E.person;
+    }
+    var athConn = athenaConnected();
+    var statusDot = '<span style="display:flex;align-items:center;gap:6px;background:' + (athConn ? "#eef7f3" : "#f5f7fa") + ';border:1px solid ' + (athConn ? "#cfe9dd" : "#e4ebf3") + ';border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:600;color:' + (athConn ? "#1f7d5c" : "#8a9cb2") + '"><span style="width:7px;height:7px;border-radius:50%;background:' + (athConn ? "#27b07a" : "#c2cdda") + '"></span>Athena &middot; ' + (athConn ? "connected" : "idle") + '</span>';
     host.innerHTML =
-      '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e4ebf3;border-radius:13px;padding:13px 16px;margin-bottom:18px;box-shadow:0 1px 2px rgba(15,37,64,.04)">' +
-        '<span style="width:34px;height:34px;border-radius:9px;background:#fff4e6;display:flex;align-items:center;justify-content:center;font-size:15px">' + E.person + '</span>' +
-        '<div style="flex:1;line-height:1.35">' +
-          '<div style="font-weight:700;font-size:13.5px">' + title + '</div>' +
+      '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ' + (active ? "#cfe0fb" : "#e4ebf3") + ';border-radius:13px;padding:13px 16px;margin-bottom:18px;box-shadow:0 1px 2px rgba(15,37,64,.04)">' +
+        '<span style="width:36px;height:36px;border-radius:10px;background:' + avatarBg + ';color:#2f6bed;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">' + avatarHTML + '</span>' +
+        '<div style="flex:1;min-width:0;line-height:1.35">' +
+          '<div style="font-weight:700;font-size:13.5px;color:#0f2540">' + title + '</div>' +
           '<div style="color:#6b7d93;font-size:12.5px">' + sub + '</div>' +
         '</div>' +
+        statusDot +
         '<button id="simSwitch" style="height:34px;padding:0 14px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#2f6bed;font-weight:600;font-size:12.5px;cursor:pointer">Switch patient</button>' +
       '</div>';
-    var sw = $("simSwitch"); if (sw) sw.onclick = function () { if (!clickById("mlscpFind")) callFn("mlsQuickFind"); };
+    var sw = $("simSwitch"); if (sw) sw.onclick = function () { openPicker(); };
   }
 
   /* ---- provider <option>s from REAL data only (no fabricated names) ---- */
@@ -230,6 +285,7 @@
           optBtn("simFind", E.find, "Find a patient by name", "Search and pull one patient") +
           optBtn("simManual", E.pen, "Enter manually", "Type name &amp; DOB yourself") +
         '</div>' +
+        '<div id="simPickGrid" style="margin-top:18px"></div>' +
         '<div id="simManualBox" style="display:none;margin-top:14px;background:#fbfcfe;border:1px solid #e4ebf3;border-radius:14px;padding:16px">' +
           '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
             '<div style="flex:1;min-width:180px"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:6px;color:#3d5168">Patient name</label>' +
@@ -240,9 +296,9 @@
           '<button id="simMUse" style="margin-top:12px;height:42px;padding:0 18px;border-radius:11px;border:none;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font-weight:700;font-size:13.5px;cursor:pointer">Use this patient</button>' +
         '</div>' +
         '<p style="text-align:center;color:#8a9cb2;font-size:12.5px;margin-top:16px">Not connected? Use the &ldquo;Whose patients?&rdquo; box above to pick a doctor, then pull.</p>';
-      $("simPullToday").onclick = function () { if (!clickById("mlscpToday")) callFn("pullScheduleViaAssist", this); };
-      $("simPullWeek").onclick = function () { clickById("mlscpWeek"); };
-      $("simPullOpen").onclick = function () { if (!clickById("mlscpSelected")) callFn("pullPatientFromAthenaPrompt", this); };
+      $("simPullToday").onclick = function () { _pickScope = "today"; if (athenaConnected()) clickById("mlscpToday"); renderPick("today"); setTimeout(function () { renderPick("today"); }, 1600); };
+      $("simPullWeek").onclick = function () { _pickScope = "week"; if (athenaConnected()) clickById("mlscpWeek"); renderPick("week"); setTimeout(function () { renderPick("week"); }, 1600); };
+      $("simPullOpen").onclick = function () { if (!clickById("mlscpSelected")) callFn("pullPatientFromAthenaPrompt", this); setTimeout(renderBanner, 900); };
       $("simFind").onclick = function () { if (!clickById("mlscpFind")) callFn("mlsQuickFind"); };
       $("simManual").onclick = function () { _manual = !_manual; var mb = $("simManualBox"); if (mb) mb.style.display = _manual ? "block" : "none"; if (_manual) { var mn = $("simMName"); if (mn) { mn.value = patientName(); try { mn.focus(); } catch (e) {} } var md = $("simMDob"); if (md) md.value = patientDob(); } };
       $("simMUse").onclick = function () {
@@ -251,8 +307,10 @@
         if (hn) { hn.value = n; try { hn.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {} }
         if (hd) { hd.value = val("simMDob"); try { hd.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {} }
         _manual = false; var mb = $("simManualBox"); if (mb) mb.style.display = "none";
+        _manualPending = { name: n, dob: val("simMDob") };
         renderBanner();
       };
+      renderPick(_pickScope);
       return;
     }
 
@@ -394,7 +452,8 @@
   function sync() {
     if (!isSimple()) { hideWrap(); _lastSig = ""; return; }
     injectCSS();
-    var sig = String(curStep()) + "|" + isRecording() + "|" + hasTranscript() + "|" + hasNote() + "|" + patientName() + "|" + (!!window.__mlsEzGenerating);
+    var ra = realActive();
+    var sig = String(curStep()) + "|" + isRecording() + "|" + hasTranscript() + "|" + hasNote() + "|" + patientName() + "|" + (ra ? ra.id : "") + "|" + (!!window.__mlsEzGenerating);
     var w = $(WRAP_ID);
     if (!w || w.parentElement !== $("visitView") || sig !== _lastSig) {
       _lastSig = sig;
