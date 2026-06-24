@@ -77,24 +77,36 @@
   function toastMsg(m) { safe(function () { if (isFn(window.toast)) window.toast(m); }); }
 
   /* ---------- resolve the current note box (live each call) --------------- */
+  /* GENUINE visibility only. offsetParent is null when the element OR an
+   * ancestor is display:none (not actually rendered). A textarea that is
+   * display:inline-block but buried inside a hidden ancestor (e.g. the
+   * operative-note body #procNoteBody, which is perpetually inline-block but
+   * lives in a hidden card) reports display!=='none' yet is NOT on screen.
+   * Counting it as visible made the AI weave write the line into that offscreen
+   * box instead of the visit note the doctor is looking at (#noteBox). Require a
+   * real layout box: offsetParent present, OR client rects (covers position:fixed
+   * visible elements, whose offsetParent is null but which do have rects). */
   function isVisible(el) {
     if (!el) return false;
     return safe(function () {
       if (el.offsetParent !== null) return true;
-      var cs = window.getComputedStyle ? getComputedStyle(el) : null;
-      return !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden');
+      if (el.getClientRects && el.getClientRects().length > 0) return true;
+      return false;
     }, true);
   }
   function noteBox() {
     var ids = ['procNoteBody', 'noteBox', 'viewBody'];
-    var firstPresent = null;
+    var firstPresent = null, mainNote = null;
     for (var i = 0; i < ids.length; i++) {
       var el = gid(ids[i]);
       if (!el) continue;
       if (firstPresent == null) firstPresent = el;
+      if (ids[i] === 'noteBox') mainNote = el;
       if (isVisible(el)) return el;
     }
-    return firstPresent;
+    /* nothing genuinely visible: prefer the visit note box over the offscreen
+     * operative-note body so we never silently write into a hidden textarea. */
+    return mainNote || firstPresent;
   }
   function readBox(el) {
     if (!el) return '';
