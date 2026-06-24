@@ -23,7 +23,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "vx-1.2.0";
+  var VERSION = "vx-1.3.0";
   try { if (window.__mlsVx && window.__mlsVx.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -67,6 +67,9 @@
       "#visitView .vx-grid input,#visitView .vx-grid textarea,#visitView .vx-grid select{max-width:100%}",
       "#visitView .vx-qbtn:hover{background:rgba(255,255,255,.13)!important}",
       "#visitView .mlsaa-intent{display:none!important}",
+      /* SIMPLE (MLS Easy) view: the design shows ONLY the guided wizard (#visitHero);
+         hide the Complex 3-col grid + tools so they never leak under the wizard */
+      "html.mls-sv-active #visitView .vx-grid,html.mls-sv-active #visitView .vx-tools{display:none!important}",
       /* contain the shared overlay top chrome so the page never overflows at tablet widths */
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
