@@ -101,6 +101,15 @@
 "body.mls-redesign .mlsRdVisitGrid{ display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,400px) !important; gap:18px !important; align-items:start !important; }",
 "@media (max-width:1200px){ body.mls-redesign .mlsRdVisitGrid{ grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important; } body.mls-redesign .mlsRdVisitGrid #emrCard{ grid-column:1 / -1 !important; } }",
 "@media (max-width:760px){ body.mls-redesign .mlsRdVisitGrid{ grid-template-columns:1fr !important; } body.mls-redesign .mlsRdVisitGrid #emrCard{ grid-column:auto !important; } }",
+"/* Analysis: draggable + resizable widget dashboard (design behavior) */",
+"body.mls-redesign #analysisView.mlsRdAnaGrid{ display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)) !important; grid-auto-rows:minmax(200px,auto) !important; gap:18px !important; align-items:start !important; grid-auto-flow:dense !important; }",
+"body.mls-redesign #analysisView.mlsRdAnaGrid > .card{ position:relative !important; margin:0 !important; overflow:auto; }",
+"@media (max-width:1100px){ body.mls-redesign #analysisView.mlsRdAnaGrid{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; } }",
+"@media (max-width:680px){ body.mls-redesign #analysisView.mlsRdAnaGrid{ grid-template-columns:1fr !important; } body.mls-redesign #analysisView.mlsRdAnaGrid > .card{ grid-column:1 / -1 !important; grid-row:auto !important; } }",
+"body.mls-redesign .mlsRdAnaGrip{ position:absolute; right:5px; bottom:5px; width:16px; height:16px; cursor:nwse-resize; z-index:6; opacity:.55; background:linear-gradient(135deg,transparent 45%,#9fb6d6 45%,#9fb6d6 60%,transparent 60%,transparent 72%,#9fb6d6 72%,#9fb6d6 86%,transparent 86%); }",
+"body.mls-redesign .mlsRdAnaGrip:hover{ opacity:.9; }",
+"body.mls-redesign .mlsRdAnaGrid > .card > h2, body.mls-redesign .mlsRdAnaGrid > .card > h3{ cursor:move; user-select:none; }",
+"body.mls-redesign .mlsRdAnaDragging{ opacity:.55 !important; outline:2px dashed #2f6bed !important; }",
 
 "/* --- cards / panels --- */",
 "body.mls-redesign .card{ border:1px solid var(--line) !important; border-radius:18px !important;",
@@ -242,6 +251,48 @@
 
   function reStyleToggleState(){ var vt=$('mlsViewToggle'); if(vt&&vt.parentElement&&vt.parentElement.id==='mlsRdToggleSlot') styleToggle(vt); }
 
+  function anaLoad(){ try{ return JSON.parse(localStorage.getItem('mlsRdAnaLayout')||'{}'); }catch(e){ return {}; } }
+  function anaSave(o){ try{ localStorage.setItem('mlsRdAnaLayout', JSON.stringify(o)); }catch(e){} }
+  function makeAnalysisDashboard(){
+    try{
+      var v=$('analysisView'); if(!v) return;
+      var cards=[].slice.call(v.querySelectorAll(':scope > .card'));
+      if(!cards.length) return;
+      v.classList.add('mlsRdAnaGrid');
+      var L=anaLoad();
+      if(L.order){ L.order.forEach(function(id){ var c=document.getElementById(id); if(c&&c.parentElement===v) v.appendChild(c); }); }
+      cards=[].slice.call(v.querySelectorAll(':scope > .card'));
+      cards.forEach(function(card){
+        if(card.id && L.sizes && L.sizes[card.id]){ var z=L.sizes[card.id]; card.style.gridColumn='span '+Math.min(4,Math.max(1,z.cols||1)); card.style.gridRow='span '+Math.min(5,Math.max(1,z.rows||1)); }
+        if(card.__mlsRdAna) return; card.__mlsRdAna=1; card.style.position='relative';
+        var grip=document.createElement('div'); grip.className='mlsRdAnaGrip'; grip.title='Drag to resize'; card.appendChild(grip);
+        grip.addEventListener('pointerdown', function(e){
+          e.preventDefault(); e.stopPropagation();
+          var rect=v.getBoundingClientRect(), gap=18, ncol=4, rowH=212;
+          var cellW=(rect.width-gap*(ncol-1))/ncol, sx=e.clientX, sy=e.clientY;
+          var cur=(L.sizes&&L.sizes[card.id])||{cols:1,rows:1};
+          function mv(ev){ var dc=Math.round((ev.clientX-sx)/(cellW+gap)), dr=Math.round((ev.clientY-sy)/(rowH+gap));
+            var cols=Math.min(4,Math.max(1,(cur.cols||1)+dc)), rows=Math.min(5,Math.max(1,(cur.rows||1)+dr));
+            card.style.gridColumn='span '+cols; card.style.gridRow='span '+rows;
+            L.sizes=L.sizes||{}; L.sizes[card.id]={cols:cols,rows:rows}; }
+          function up(){ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); anaSave(L); }
+          window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
+        });
+        var hdr=card.querySelector('h2,h3');
+        if(hdr){ hdr.style.cursor='move';
+          hdr.addEventListener('pointerdown', function(e){
+            if(e.target.closest('button,a,input,select,textarea')) return;
+            e.preventDefault(); card.classList.add('mlsRdAnaDragging');
+            function mv(ev){ var el=document.elementFromPoint(ev.clientX,ev.clientY); var tgt=el&&el.closest&&el.closest('#analysisView > .card');
+              if(tgt&&tgt!==card){ var r=tgt.getBoundingClientRect(); var before=(ev.clientY<r.top+r.height/2)||(ev.clientX<r.left+r.width/2); v.insertBefore(card, before?tgt:tgt.nextSibling); } }
+            function up(){ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); card.classList.remove('mlsRdAnaDragging');
+              L.order=[].slice.call(v.querySelectorAll(':scope > .card')).map(function(c){return c.id;}).filter(Boolean); anaSave(L); }
+            window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
+          });
+        }
+      });
+    }catch(e){}
+  }
   function styleVisit(){
     try{
       var v=document.getElementById('visitView'); if(!v) return;
@@ -253,10 +304,10 @@
   }
   function boot(){
     injectFonts(); injectCSS(); mark();
-    try{ buildShell(); styleVisit(); }catch(e){}
+    try{ buildShell(); styleVisit(); makeAnalysisDashboard(); }catch(e){}
     // re-assert against late mounts / other modules' observers
-    var n=0; _t=setInterval(function(){ try{ injectCSS(); mark(); buildShell(); styleVisit(); reStyleToggleState(); }catch(e){} if(++n>20) clearInterval(_t); }, 600);
-    try{ _obs=new MutationObserver(function(){ try{ if(!$(STYLE_ID))injectCSS(); buildShell(); styleVisit(); reStyleToggleState(); }catch(e){} });
+    var n=0; _t=setInterval(function(){ try{ injectCSS(); mark(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); }catch(e){} if(++n>20) clearInterval(_t); }, 600);
+    try{ _obs=new MutationObserver(function(){ try{ if(!$(STYLE_ID))injectCSS(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); }catch(e){} });
       _obs.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
   }
   function revert(){ try{if(_obs)_obs.disconnect();}catch(e){} try{if(_t)clearInterval(_t);}catch(e){}
