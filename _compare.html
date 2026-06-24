@@ -13,7 +13,7 @@
   .note{height:640px;border:1px dashed #22344c;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#7e93ad;font-size:13px;text-align:center;padding:20px;box-sizing:border-box}
 </style></head><body>
 <header><h1>MLSscribe redesign — LIVE (prod) vs DESIGN, per page</h1>
-<p>Left = live app at mlsscribe.com (logged in). Right = the exported design for the same page. Scroll each frame. Temporary QA page.</p></header>
+<p>Left = live app (Visit = STAGING rebuild ScribeFlow-staging.html; others = prod). Right = the exported design. Scroll each frame. Temporary QA page.</p></header>
 <div id="rows"></div>
 <script>
 var pages=[
@@ -36,7 +36,7 @@ pages.forEach(function(p){
   var row=document.createElement('div');row.className='row';
   var live = (p.key==='__login')
     ? '<div class="note">Live login screen can\'t be shown here (this browser is already signed in). Design shown at right.</div>'
-    : '<iframe loading="lazy" data-key="'+p.key+'" src="ScribeFlow.html?cmp='+p.key+'"></iframe>';
+    : '<iframe loading="lazy" data-key="'+p.key+'" src="'+(p.key==='visit'?'ScribeFlow-staging.html':'ScribeFlow.html')+'?cmp='+p.key+'"></iframe>';
   row.innerHTML='<h2>'+p.label+'</h2><div class="pair">'+
     '<div class="col"><div class="tag">Live &middot; mlsscribe.com</div>'+live+'</div>'+
     '<div class="col"><div class="tag">Design</div><iframe loading="lazy" src="'+p.dz+'"></iframe></div></div>';
