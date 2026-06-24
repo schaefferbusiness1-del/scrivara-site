@@ -23,7 +23,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "vx-1.1.0";
+  var VERSION = "vx-1.2.0";
   try { if (window.__mlsVx && window.__mlsVx.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -191,6 +191,39 @@
     });
   }
 
+  /* ===================== TOOLS RELOCATION (Slice 2) =====================
+   * Move the big tool RESULT panels (and #visitToolsGroup's ~100 hidden tool
+   * cards) out of the cramped note column into a full-width "Clinical tools &
+   * reports" area below the grid. Moved BY ID so their show/hide handlers keep
+   * working. Trigger buttons (More tools / Clinical tools) stay in the note
+   * card and toggle these by ID. Nothing deleted. */
+  function buildTools() {
+    var v = $("visitView"); if (!v) return;
+    var grid = v.querySelector(":scope > .vx-grid"); if (!grid) return;
+    var sec = v.querySelector(":scope > .vx-tools");
+    if (!sec) {
+      sec = mk("div"); sec.className = "vx-tools"; sec.style.cssText = "margin-top:20px";
+      sec.innerHTML = '<div class="vx-tools-lbl" style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#8a9cb2;margin:0 0 10px;display:none">Clinical tools &amp; reports</div>';
+      var host = mk("div"); host.className = "vx-tools-host"; host.style.cssText = "display:flex;flex-direction:column;gap:16px";
+      sec.appendChild(host);
+      var outc = $("outcomesCard");
+      if (outc && outc.parentElement === v) v.insertBefore(sec, outc); else v.appendChild(sec);
+    }
+    var host = sec.querySelector(".vx-tools-host");
+    var ids = ["codeCard", "optCard", "revToolsCard", "dsCard", "teachCard", "avsCard",
+      "refCard", "imeCard", "legalCard", "visitToolsGroup"];
+    var moved = 0, anyVisible = false;
+    ids.forEach(function (id) {
+      var el = $(id); if (!el) return;
+      if (el.parentElement !== host) host.appendChild(el);
+      moved++;
+      try { if (el.offsetParent !== null || getComputedStyle(el).display !== "none") anyVisible = true; } catch (e) {}
+    });
+    /* show the section label only once at least one tool panel is open */
+    var lbl = sec.querySelector(".vx-tools-lbl");
+    if (lbl) lbl.style.display = anyVisible ? "block" : "none";
+  }
+
   /* ===================== OUTCOMES ===================== */
   function buildOutcomes() {
     var o = $("outcomesCard"); if (!o) return;
@@ -203,7 +236,7 @@
   /* ===================== orchestration ===================== */
   function build() {
     var v = $("visitView"); if (!v) return;
-    injectCSS(); buildHero(); buildGrid(); restyleCardChrome(); buildOutcomes();
+    injectCSS(); buildHero(); buildGrid(); buildTools(); restyleCardChrome(); buildOutcomes();
     v.setAttribute(BUILT_ATTR, VERSION);
   }
   function applyAll() {
