@@ -39,7 +39,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "link-1.0.0";
+  var VERSION = "link-1.0.1";
   try { if (window.__mlsLink && window.__mlsLink.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -138,7 +138,24 @@
     } catch (e) {}
   }
 
-  function pokePicker() { try { if (window.__mlsPick && typeof window.__mlsPick.reapply === "function") window.__mlsPick.reapply(); } catch (e) {} }
+  /* Re-render the picker's existing grids in place (idempotent: the picker skips the
+     DOM rewrite when nothing visible changed, so this is flicker-free and -- unlike the
+     picker's reapply()/boot -- does NOT spin up a fresh MutationObserver/timer each call. */
+  function pokePicker() {
+    try {
+      var P = window.__mlsPick;
+      if (!P || typeof P.renderGrid !== "function") return;
+      var cx = document.querySelector("#mlsPickComplexWrap .mlspk-cx-grid");
+      if (cx) { try { P.renderGrid(cx, { scope: "today", limit: 6 }); } catch (e) {} }
+      var sim = document.getElementById("simPickGrid");
+      if (sim) { try { P.renderGrid(sim, { scope: "today", limit: 6 }); } catch (e) {} }
+      var modal = document.getElementById("mlsPickModal");
+      if (modal && !modal.hasAttribute("hidden")) {
+        var body = modal.querySelector(".mlspk-body");
+        if (body) { try { P.renderGrid(body, { scope: "today", limit: 6 }); } catch (e) {} }
+      }
+    } catch (e) {}
+  }
   function buildCx() { try { if (window.__mlsCx && typeof window.__mlsCx.build === "function") window.__mlsCx.build(); } catch (e) {} }
   function buildPx() { try { if (window.__mlsPx && typeof window.__mlsPx.build === "function") window.__mlsPx.build(); } catch (e) {} }
 
@@ -192,11 +209,18 @@
 
   /* ---------- function wrapping (reversible) ---------- */
   var ORIG = {};
+  /* Wrap a global once. Robust to the app REDEFINING the function after we wrap it
+     (which the app does for some init fns): the guard keys on whether the LIVE function
+     is still ours, so a redefinition is detected and re-wrapped (chaining onto the app's
+     new implementation). ORIG keeps the latest pre-wrap original so revert restores the
+     app's real function. */
   function wrap(name, after, async) {
-    if (!isFn(name) || ORIG[name]) return false;
-    var orig = window[name];
+    if (!isFn(name)) return false;
+    var cur = window[name];
+    if (cur && cur.__mlsLinkWrapped) return true;     /* live fn is already our wrapper */
+    var orig = cur;
     ORIG[name] = orig;
-    window[name] = function () {
+    var w = function () {
       var r;
       try { r = orig.apply(this, arguments); } catch (e) { r = undefined; }
       try {
@@ -209,7 +233,9 @@
       } catch (e) {}
       return r;
     };
-    try { window[name].__mlsLinkWrapped = true; } catch (e) {}
+    w.__mlsLinkWrapped = true;
+    try { for (var k in cur) { if (!(k in w)) { try { w[k] = cur[k]; } catch (e) {} } } } catch (e) {}
+    window[name] = w;
     return true;
   }
 
@@ -241,7 +267,7 @@
     installHooks();
     /* a few retries in case any data fn is (re)defined slightly after we load */
     try {
-      _bootT = setInterval(function () { installHooks(); if (++_bootN > 10) { clearInterval(_bootT); _bootT = null; } }, 700);
+      _bootT = setInterval(function () { installHooks(); if (++_bootN > 16) { clearInterval(_bootT); _bootT = null; } }, 700);
     } catch (e) {}
     startPoll();
   }
