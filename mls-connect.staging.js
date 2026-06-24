@@ -4086,7 +4086,7 @@
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calendar_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calendar_exact.js?v=20260624cx3';s.setAttribute('data-mls-asset','feat_mls_calendar_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Calendar design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_calendar_exact.js) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patients_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patients_exact.js?v=20260624px1';s.setAttribute('data-mls-asset','feat_mls_patients_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patients_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patients_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patients_exact.js?v=20260624px2';s.setAttribute('data-mls-asset','feat_mls_patients_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patients_exact.js (STAGING ONLY) — additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_exact.js?v=20260624hy1';s.setAttribute('data-mls-asset','feat_mls_history_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_history_exact.js (STAGING ONLY) — additive, reversible */
 

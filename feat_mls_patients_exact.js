@@ -20,7 +20,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "px-1.0.0";
+  var VERSION = "px-1.1.0";
   try { if (window.__mlsPx && window.__mlsPx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -55,6 +55,8 @@
       "#patientsView .px-prof-hd .sub,#patientsView .px-prof-hd #profDemo{color:#bcd2ed!important}",
       "@media (min-width:981px){#patientsView #ptSplitWrap.px-has-profile > .card:first-child{position:sticky;top:138px}}",
       "@media (max-width:980px){#patientsView #ptSplitWrap.px-has-profile{grid-template-columns:1fr}}",
+      /* narrow widths: let the stacked grid items shrink to the viewport (no h-overflow) */
+      "@media (max-width:980px){#patientsView #ptSplitWrap{min-width:0!important}#patientsView #ptSplitWrap>*{min-width:0!important;max-width:100%!important}#patientsView #ptSplitWrap .card *{max-width:100%}}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
