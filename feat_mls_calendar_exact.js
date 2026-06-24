@@ -22,7 +22,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "cx-2.0.1";
+  var VERSION = "cx-2.0.2";
   try { if (window.__mlsCx && window.__mlsCx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -63,6 +63,12 @@
       "#calendarView .cx-ghost{height:40px;padding:0 14px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}",
       /* month grid polish to design tokens */
       "#calendarView #calGrid>div{gap:8px!important}",
+      /* contain the app month/week/day grid so it never overflows narrow viewports */
+      "#calendarView #calSplitWrap,#calendarView #calGrid{min-width:0;max-width:100%}",
+      "#calendarView #calSplitWrap>*{min-width:0;max-width:100%}",
+      "#calendarView #calGrid>div{max-width:100%}",
+      "#calendarView #calGrid>div>*{min-width:0;overflow:hidden}",
+      "#calendarView #calGrid>div>*>*{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}",
       "@media (max-width:980px){#calendarView .cx-main{grid-template-columns:1fr}#calendarView .cx-rail{position:static;min-width:0}#calendarView .cx-agenda-slot{min-width:0}#calendarView .cx-agenda{min-width:0}#calendarView .cx-rail>*{min-width:0;max-width:100%}#calendarView .cx-mini *{min-width:0}#calendarView .cx-agenda-head{gap:10px}}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
