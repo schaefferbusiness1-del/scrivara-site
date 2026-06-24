@@ -18,7 +18,7 @@
   function mk(t, c, h) { var e = document.createElement(t); if (c) e.style.cssText = c; if (h != null) e.innerHTML = h; return e; }
   function injectCSS() {
     var css = [
-      "#authScreen.auth-wrap{background:linear-gradient(135deg,#0d2138,#143560)!important;min-height:100vh!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:36px 20px!important}",
+      "#authScreen.auth-wrap:not([style*='display: none']):not([style*='display:none']){background:linear-gradient(135deg,#0d2138,#143560)!important;min-height:100vh!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:36px 20px!important}",
       "#authScreen .auth-card{width:420px!important;max-width:100%!important;background:#fff!important;border-radius:20px!important;box-shadow:0 40px 90px -30px rgba(0,0,0,.6)!important;padding:30px 30px 26px!important;border:0!important}",
       "#authScreen .auth-card,#authScreen .auth-card *{box-sizing:border-box}",
       "#authScreen .auth-logo{font-family:'Newsreader',Georgia,serif!important;font-weight:600!important;display:flex!important;align-items:center!important;gap:10px!important;font-size:24px!important}",
