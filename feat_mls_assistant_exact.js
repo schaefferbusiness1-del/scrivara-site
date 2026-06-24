@@ -386,7 +386,12 @@
   function injectSuppress() {
     if ($(SUPPRESS_ID)) return;
     var s = el("style"); s.id = SUPPRESS_ID;
-    s.textContent = "#mlsuxPanel,.mlssh-toast{display:none !important;}";
+    // ONE assistant on screen: hide the legacy floating status surfaces AND the old
+    // .mlsaa-tl "Pull from Athena" narration timeline (this panel is now the single
+    // status surface). The write-back STILL executes when .mlsaa-tl is hidden, and our
+    // _step wrap still reads its confirmed/failed signal for per-item writeback status,
+    // so nothing functional is lost -- only the duplicate visual surface is removed.
+    s.textContent = "#mlsuxPanel,.mlssh-toast,.mlsaa-tl{display:none !important;}";
     (document.head || document.documentElement).appendChild(s);
   }
 
