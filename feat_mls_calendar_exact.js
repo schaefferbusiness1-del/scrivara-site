@@ -25,7 +25,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "cx-1.0.0";
+  var VERSION = "cx-1.1.0";
   try { if (window.__mlsCx && window.__mlsCx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -77,13 +77,33 @@
   function apptDate(a) { try { if (typeof window._calDateOf === "function") return window._calDateOf(a); } catch (e) {} return (a && (a.appt_date || String(a.start_at || "").slice(0, 10))) || ""; }
   function statusColor(s) { try { if (typeof window._calStatusColor === "function") return window._calStatusColor(s); } catch (e) {} return { bg: "#eef4fc", fg: "#155fb3" }; }
 
+  /* find the app's REAL "New appointment" button (no #id; onclick=calNewAppt()) */
+  function findNewApptBtn() {
+    var v = $("calendarView"); if (!v) return null;
+    var bs = v.querySelectorAll("button"), i;
+    for (i = 0; i < bs.length; i++) {
+      var oc = bs[i].getAttribute("onclick") || "";
+      if (/calNewAppt\s*\(/.test(oc)) return bs[i];
+    }
+    for (i = 0; i < bs.length; i++) {
+      var t = (bs[i].textContent || "").trim().toLowerCase();
+      if (t.indexOf("new appointment") >= 0 && t.length < 28) return bs[i];
+    }
+    return null;
+  }
+
   /* ============ LEFT RAIL ============ */
   function buildRail(rail) {
-    /* 1) + New appointment : move the REAL #calNewAppt button */
+    /* 1) + New appointment : MOVE the app's real wired button (onclick=calNewAppt) */
     var slotCTA = rail.querySelector(":scope > .cx-cta-slot");
     if (!slotCTA) { slotCTA = mk("div", ""); slotCTA.className = "cx-cta-slot"; rail.appendChild(slotCTA); }
-    var realNew = $("calNewAppt");
+    var realNew = $("calNewAppt") || findNewApptBtn();
     if (realNew && realNew.parentElement !== slotCTA) {
+      realNew.setAttribute("data-cx-newappt", "1");
+      /* de-emojify label to the design "+ New appointment" (reversible) */
+      if (realNew.getAttribute("data-cx-origlabel") == null) realNew.setAttribute("data-cx-origlabel", realNew.textContent);
+      var clean = realNew.textContent.replace(/^[^A-Za-z]+/, "");
+      realNew.textContent = "+ " + clean;
       slotCTA.appendChild(realNew);
       impAll(realNew, ["width:100%", "height:48px", "border-radius:13px", "border:none",
         "background:linear-gradient(135deg,#2f6bed,#2257cf)", "color:#fff", "font-weight:700",
@@ -293,7 +313,13 @@
       if (main) {
         var card = main.querySelector(".card");
         if (card) {
-          var realNew = $("calNewAppt"); if (realNew) card.appendChild(realNew);
+          var realNew = $("calNewAppt") || document.querySelector('[data-cx-newappt]');
+          if (realNew) {
+            var ol = realNew.getAttribute("data-cx-origlabel");
+            if (ol != null) { realNew.textContent = ol; realNew.removeAttribute("data-cx-origlabel"); }
+            realNew.removeAttribute("data-cx-newappt");
+            card.appendChild(realNew);
+          }
           var realProv = $("calProvFilter"); if (realProv) card.appendChild(realProv);
           v.insertBefore(card, main);
         }
