@@ -44,16 +44,13 @@ pages.forEach(function(p){
 });
 document.querySelectorAll('iframe[data-key]').forEach(function(f){
   f.addEventListener('load',function(){
-    var k=f.getAttribute('data-key'), tries=0;
-    var t=setInterval(function(){
-      tries++;
-      try{ var w=f.contentWindow;
-        if(k==='__help'){ if(w.openMlsHelp){ w.openMlsHelp(); clearInterval(t);} }
-        else if(k==='__settings'){ if(w.openSettings){ w.openSettings(); clearInterval(t);} }
-        else { if(w.showView){ w.showView(k); w.scrollTo&&w.scrollTo(0,0); clearInterval(t);} }
-      }catch(e){}
-      if(tries>30) clearInterval(t);
-    },500);
+    var k=f.getAttribute('data-key');
+    if(k==='__help'||k==='__settings'){
+      setTimeout(function(){ try{ var w=f.contentWindow; if(k==='__help'&&w.openMlsHelp) w.openMlsHelp(); if(k==='__settings'&&w.openSettings) w.openSettings(); }catch(e){} }, 7000);
+      return;
+    }
+    var start=Date.now();
+    var t=setInterval(function(){ try{ var w=f.contentWindow; if(w.showView){ w.showView(k); } }catch(e){} if(Date.now()-start>14000) clearInterval(t); }, 800);
   });
 });
 </script></body></html>
