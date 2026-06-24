@@ -65,7 +65,8 @@
 "#appHeader.mlsRdHdr .navtab{ flex:0 0 auto !important; min-width:0 !important; height:32px !important;",
 "  padding:0 13px !important; border-radius:9px !important; font-weight:600 !important; font-size:13.5px !important;",
 "  color:#adc2dd !important; background:transparent !important; border:0 !important; box-shadow:none !important;",
-"  display:flex !important; align-items:center !important; gap:7px !important; white-space:nowrap; transition:background .12s,color .12s; }",
+"  align-items:center !important; gap:7px !important; white-space:nowrap; transition:background .12s,color .12s; }",
+"#appHeader.mlsRdHdr .navtab:not([style*='display:none']):not([style*='display: none']):not(.nav-feat-off){ display:flex !important; }",
 "#appHeader.mlsRdHdr .navtab:hover{ background:rgba(255,255,255,.07) !important; color:#fff !important; }",
 "#appHeader.mlsRdHdr .navtab.on{ background:rgba(95,227,207,.16) !important; color:#7ff0de !important; font-weight:700 !important; }",
 "#appHeader.mlsRdHdr .navtab .nbadge{ background:rgba(255,255,255,.10) !important; color:#9fc0ff !important;",
@@ -167,7 +168,7 @@
       // toggle slot
       var tgSlot=mk('div','display:flex;align-items:center'); tgSlot.id='mlsRdToggleSlot'; top.appendChild(tgSlot);
       // search slot
-      var seSlot=mk('div','flex:1;max-width:380px;margin-left:8px;position:relative'); seSlot.id='mlsRdSearchSlot';
+      var seSlot=mk('div','flex:0 0 auto;width:min(360px,34vw);min-width:120px;margin-left:8px;position:relative'); seSlot.id='mlsRdSearchSlot';
       seSlot.appendChild(mk('span','position:absolute;left:14px;top:50%;transform:translateY(-50%);pointer-events:none;display:flex',SEARCH_ICON));
       top.appendChild(seSlot);
       top.appendChild(mk('div','flex:1'));
@@ -197,7 +198,7 @@
   function styleToggle(vt){ try{ vt.style.cssText='display:flex;align-items:center;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:3px;gap:2px';
     [].slice.call(vt.children).forEach(function(b){ var on=/mlsVtOn/.test(b.className);
       b.style.cssText='display:flex;align-items:center;height:32px;padding:0 16px;border:0;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;'+(on?'background:#fff;color:#0f2540;box-shadow:0 1px 3px rgba(0,0,0,.25);':'background:transparent;color:#9fb4ce;'); }); }catch(e){} }
-  function styleSearch(se){ try{ se.style.cssText='width:100%;height:42px;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;padding:0 40px;font-size:13.5px;font-family:inherit;outline:none'; se.classList.add('mlsRdSearch'); }catch(e){} }
+  function styleSearch(se){ try{ se.style.cssText='width:100%;height:42px;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;padding:0 40px;font-size:13.5px;font-family:inherit;outline:none'; se.classList.add('mlsRdSearch'); try{se.placeholder='Find anything \u2014 patients, notes, codes\u2026';}catch(e){} }catch(e){} }
   function styleMenu(me){ try{ me.style.cssText='height:38px;padding:0 15px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#dce7f5;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:8px';
     if(!/mlsRdMenuIco/.test(me.innerHTML)){ me.innerHTML='<span class="mlsRdMenuIco" style="display:flex">'+MENU_ICON+'</span>Menu'; } }catch(e){} }
 
