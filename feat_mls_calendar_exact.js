@@ -1,31 +1,28 @@
 /* feat_mls_calendar_exact.js  ->  window.__mlsCx  (Calendar page, design-exact rebuild)
  *
- *  STAGING ONLY. Loaded by mls-connect.staging.js AFTER feat_mls_redesign.js,
- *  feat_mls_visit_exact.js and feat_mls_header_exact.js. Never loaded by the
- *  prod loader mls-connect.js. Runtime-gated to the staging page. Prod untouched.
+ *  STAGING-FIRST. Loaded by mls-connect.staging.js AFTER feat_mls_redesign.js,
+ *  feat_mls_visit_exact.js and feat_mls_header_exact.js, and (after verification)
+ *  by the prod loader mls-connect.js via the data: staging marker. Runtime-gated to
+ *  the staging page. View-isolated to #calendarView.
  *
- *  Brings the Calendar view (#calendarView) to design_renders/ScribeFlow Calendar.dc.html:
- *    - a 288px sticky LEFT RAIL (the design feature the app lacked): big
- *      "+ New appointment" CTA, a real mini-month calendar, a real "Day at a
- *      glance" status breakdown, and a "Providers" card
- *    - the existing calendar card becomes the design "agenda" section (white,
- *      rounded, design tokens), Newsreader title
- *
- *  Everything in the rail is REAL data read from the app's own globals
- *  (_calAppts, _calProviders, _calMonth, _calYear, _calMode, _calRefDate,
- *  _calStatusColor, _calDateOf) -- nothing is fabricated. The real wired
- *  controls (#calNewAppt button, #calProvFilter select) are MOVED in BY ID so
- *  their handlers stay intact. The mini-calendar nav calls the app's real
- *  calPrev/calNext/calToday/renderCalendar. Nothing is deleted; controls the
- *  design omits (Working hours, Remove duplicates, month jump) stay in the
- *  agenda toolbar.
+ *  Brings the Calendar view to design_renders/ScribeFlow Calendar.dc.html:
+ *    - 288px sticky LEFT RAIL: big "+ New appointment" CTA (the app's real wired
+ *      button moved in BY ID), real mini-month, real "Day at a glance" status
+ *      breakdown, and a "Providers" card (real provider list + real #calProvFilter).
+ *    - the agenda card rebuilt to the design HEADER: a bordered prev/Today/next
+ *      nav group, a Newsreader serif date title + subtitle, a segmented
+ *      Day | Week | Month control, and a right cluster (Refresh, Working hours,
+ *      date picker, Remove duplicates, Check-in) -- ALL the app's REAL wired
+ *      controls, MOVED into the design slots BY ID / onclick so handlers stay
+ *      intact. The month grid is restyled to the design tokens (8px gaps,
+ *      uppercase DOW, rounded cells). Nothing is fabricated; nothing is deleted.
  *
  *  Reversible: window.__mlsCx.revert().  ASCII-only (emoji via HTML entities).
- *  Idempotent. View-isolated to #calendarView.
+ *  Idempotent.
  */
 ;(function () {
   "use strict";
-  var VERSION = "cx-1.1.0";
+  var VERSION = "cx-2.0.0";
   try { if (window.__mlsCx && window.__mlsCx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -41,7 +38,6 @@
   var _obs = null, _t = null, _sched = null;
   var LARR = "&#9664;", RARR = "&#9654;";
   var MON = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  var MONS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   var DOW = ["S","M","T","W","T","F","S"];
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -60,7 +56,14 @@
       "#calendarView .cx-mini-day:hover{background:#eef4fc!important}",
       "#calendarView .cx-agenda{background:#fff!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important}",
       "#calendarView .cx-agenda input,#calendarView .cx-agenda select,#calendarView .cx-agenda textarea{max-width:100%}",
-      "@media (max-width:980px){#calendarView .cx-main{grid-template-columns:1fr}#calendarView .cx-rail{position:static;min-width:0}#calendarView .cx-agenda-slot{min-width:0}#calendarView .cx-agenda{min-width:0}#calendarView .cx-rail>*{min-width:0;max-width:100%}#calendarView .cx-mini *{min-width:0}}",
+      "#calendarView .cx-seg-btn{height:32px;padding:0 16px;border-radius:8px;border:none;font-family:inherit;cursor:pointer;font-weight:600;font-size:13px;background:transparent;color:#6b7d93}",
+      "#calendarView .cx-seg-btn.cx-on{background:#fff;color:#2f6bed;box-shadow:0 1px 2px rgba(15,37,64,.1);font-weight:700}",
+      "#calendarView .cx-navbtn{width:36px;height:36px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}",
+      "#calendarView .cx-todaybtn{height:36px;padding:0 14px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer}",
+      "#calendarView .cx-ghost{height:40px;padding:0 14px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}",
+      /* month grid polish to design tokens */
+      "#calendarView #calGrid>div{gap:8px!important}",
+      "@media (max-width:980px){#calendarView .cx-main{grid-template-columns:1fr}#calendarView .cx-rail{position:static;min-width:0}#calendarView .cx-agenda-slot{min-width:0}#calendarView .cx-agenda{min-width:0}#calendarView .cx-rail>*{min-width:0;max-width:100%}#calendarView .cx-mini *{min-width:0}#calendarView .cx-agenda-head{gap:10px}}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
@@ -68,39 +71,31 @@
     if (s.textContent !== css) s.textContent = css;
   }
 
-  /* active day key the app is focused on (real) */
   function activeKey() {
     var k = gv("_calSelDay", null) || gv("_calRefDate", null);
     if (k) return k;
     var n = new Date(); return n.getFullYear() + "-" + pad(n.getMonth() + 1) + "-" + pad(n.getDate());
   }
   function apptDate(a) { try { if (typeof window._calDateOf === "function") return window._calDateOf(a); } catch (e) {} return (a && (a.appt_date || String(a.start_at || "").slice(0, 10))) || ""; }
-  function statusColor(s) { try { if (typeof window._calStatusColor === "function") return window._calStatusColor(s); } catch (e) {} return { bg: "#eef4fc", fg: "#155fb3" }; }
 
-  /* find the app's REAL "New appointment" button (no #id; onclick=calNewAppt()) */
   function findNewApptBtn() {
     var v = $("calendarView"); if (!v) return null;
     var bs = v.querySelectorAll("button"), i;
-    for (i = 0; i < bs.length; i++) {
-      var oc = bs[i].getAttribute("onclick") || "";
-      if (/calNewAppt\s*\(/.test(oc)) return bs[i];
-    }
-    for (i = 0; i < bs.length; i++) {
-      var t = (bs[i].textContent || "").trim().toLowerCase();
-      if (t.indexOf("new appointment") >= 0 && t.length < 28) return bs[i];
-    }
+    for (i = 0; i < bs.length; i++) { var oc = bs[i].getAttribute("onclick") || ""; if (/calNewAppt\s*\(/.test(oc)) return bs[i]; }
+    for (i = 0; i < bs.length; i++) { var t = (bs[i].textContent || "").trim().toLowerCase(); if (t.indexOf("new appointment") >= 0 && t.length < 28) return bs[i]; }
     return null;
+  }
+  function findBtnOc(root, re) {
+    var bs = root.querySelectorAll("button"); for (var i = 0; i < bs.length; i++) { if (re.test(bs[i].getAttribute("onclick") || "")) return bs[i]; } return null;
   }
 
   /* ============ LEFT RAIL ============ */
   function buildRail(rail) {
-    /* 1) + New appointment : MOVE the app's real wired button (onclick=calNewAppt) */
     var slotCTA = rail.querySelector(":scope > .cx-cta-slot");
     if (!slotCTA) { slotCTA = mk("div", ""); slotCTA.className = "cx-cta-slot"; rail.appendChild(slotCTA); }
     var realNew = $("calNewAppt") || findNewApptBtn();
     if (realNew && realNew.parentElement !== slotCTA) {
       realNew.setAttribute("data-cx-newappt", "1");
-      /* de-emojify label to the design "+ New appointment" (reversible) */
       if (realNew.getAttribute("data-cx-origlabel") == null) realNew.setAttribute("data-cx-origlabel", realNew.textContent);
       var clean = realNew.textContent.replace(/^[^A-Za-z]+/, "");
       realNew.textContent = "+ " + clean;
@@ -110,18 +105,12 @@
         "font-size:14.5px", "cursor:pointer", "box-shadow:0 12px 26px -10px rgba(47,107,237,.6)",
         "margin:0", "display:flex", "align-items:center", "justify-content:center", "gap:9px"]);
     }
-
-    /* 2) mini calendar (rebuilt from real globals each pass) */
     var mini = rail.querySelector(":scope > .cx-mini");
     if (!mini) { mini = mk("div", "padding:16px"); mini.className = "cx-card cx-mini"; rail.appendChild(mini); }
     renderMini(mini);
-
-    /* 3) day at a glance (rebuilt from real globals each pass) */
     var glance = rail.querySelector(":scope > .cx-glance");
     if (!glance) { glance = mk("div", "padding:16px 18px"); glance.className = "cx-card cx-glance"; rail.appendChild(glance); }
     renderGlance(glance);
-
-    /* 4) providers : move the REAL #calProvFilter select in + real provider list */
     var prov = rail.querySelector(":scope > .cx-prov");
     if (!prov) {
       prov = mk("div", "padding:16px 18px"); prov.className = "cx-card cx-prov";
@@ -138,7 +127,6 @@
     var dim = new Date(y, m + 1, 0).getDate();
     var today = new Date(), tKey = today.getFullYear() + "-" + pad(today.getMonth() + 1) + "-" + pad(today.getDate());
     var sel = activeKey();
-    /* real appt day set for this month */
     var have = {};
     try {
       var appts = gv("_calAppts", []) || [];
@@ -167,7 +155,6 @@
     cells += '</div>';
     var html = head + dows + cells;
     if (mini.getAttribute("data-cx-h") !== html) { mini.innerHTML = html; mini.setAttribute("data-cx-h", html); }
-    /* wire */
     var p = mini.querySelector(".cx-mini-prev"), nx = mini.querySelector(".cx-mini-next");
     if (p) p.onclick = function () { try { if (typeof window.calPrev === "function") window.calPrev(); } catch (e) {} schedule(); };
     if (nx) nx.onclick = function () { try { if (typeof window.calNext === "function") window.calNext(); } catch (e) {} schedule(); };
@@ -200,13 +187,11 @@
         total++;
         var st = String(a.status || a.appt_status || "").toLowerCase();
         var placed = false;
-        for (var bIdx = 1; bIdx < buckets.length; bIdx++) {
-          if (buckets[bIdx].match.indexOf(st) >= 0) { counts[bIdx]++; placed = true; break; }
-        }
+        for (var bIdx = 1; bIdx < buckets.length; bIdx++) { if (buckets[bIdx].match.indexOf(st) >= 0) { counts[bIdx]++; placed = true; break; } }
         if (!placed) counts[0]++;
       }
     } catch (e) {}
-    var dt = key.split("-"), nowLbl = "";
+    var nowLbl = "";
     try { nowLbl = new Date(key + "T12:00").toLocaleDateString([], { month: "short", day: "numeric" }); } catch (e) { nowLbl = key; }
     var rows = "";
     for (var r = 0; r < buckets.length; r++) {
@@ -245,48 +230,126 @@
       html = '<div style="color:#9aa8bb;font-size:12.5px;font-weight:500;margin-bottom:8px">All providers</div>';
     }
     if (list && list.getAttribute("data-cx-h") !== html) { list.innerHTML = html; list.setAttribute("data-cx-h", html); }
-    /* move the REAL provider filter select in (keeps filtering wired) */
     var slot = prov.querySelector(".cx-prov-slot");
     var sel = $("calProvFilter");
     if (sel && slot && sel.parentElement !== slot) {
       slot.appendChild(sel);
-      impAll(sel, ["width:100%", "height:36px", "border-radius:9px", "border:1px solid #e0e8f1",
-        "background:#fff", "padding:0 11px", "font-size:12.5px", "margin:0"]);
+      impAll(sel, ["width:100%", "height:36px", "border-radius:9px", "border:1px solid #e0e8f1", "background:#fff", "padding:0 11px", "font-size:12.5px", "margin:0"]);
     }
   }
 
-  /* ============ AGENDA (restyle existing card) ============ */
+  /* ============ AGENDA HEADER (design-exact, relocates real controls by id/onclick) ============ */
+  function buildAgendaHeader(card) {
+    var head = card.querySelector(":scope > .cx-agenda-head");
+    if (!head) {
+      head = mk("div"); head.className = "cx-agenda-head";
+      head.style.cssText = "display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px";
+      head.innerHTML =
+        '<div class="cx-navgrp" style="display:flex;align-items:center;gap:6px"></div>' +
+        '<div class="cx-titlewrap" style="line-height:1.1"></div>' +
+        '<div style="flex:1"></div>' +
+        '<div class="cx-seg" style="display:flex;align-items:center;gap:3px;background:#f1f4f8;border-radius:10px;padding:3px"></div>' +
+        '<div class="cx-rightctrls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>';
+      card.insertBefore(head, card.firstChild);
+    }
+    var navgrp = head.querySelector(".cx-navgrp");
+    var titlewrap = head.querySelector(".cx-titlewrap");
+    var seg = head.querySelector(".cx-seg");
+    var right = head.querySelector(".cx-rightctrls");
+
+    /* nav group: prev / Today / next */
+    var prev = findBtnOc(card, /calPrev\s*\(/), today = findBtnOc(card, /calToday\s*\(/), next = findBtnOc(card, /calNext\s*\(/);
+    if (prev && prev.parentElement !== navgrp) { prev.className = "cx-navbtn"; prev.removeAttribute("style"); prev.classList.add("cx-navbtn"); navgrp.appendChild(prev); }
+    if (today && today.parentElement !== navgrp) { today.removeAttribute("style"); today.className = "cx-todaybtn"; navgrp.appendChild(today); }
+    if (next && next.parentElement !== navgrp) { next.removeAttribute("style"); next.className = "cx-navbtn"; navgrp.appendChild(next); }
+
+    /* title (Newsreader) + subtitle from REAL data */
+    var lbl = $("calMonthLabel");
+    if (lbl && lbl.parentElement !== titlewrap) titlewrap.appendChild(lbl);
+    if (lbl) { imp(lbl, "font-family", "'Newsreader',Georgia,serif"); imp(lbl, "font-weight", "500"); imp(lbl, "font-size", "26px"); imp(lbl, "letter-spacing", "-.015em"); imp(lbl, "margin", "0"); imp(lbl, "color", "#0f2540"); }
+    var sub = titlewrap.querySelector(".cx-sub");
+    if (!sub) { sub = mk("div", "color:#6b7d93;font-size:13px;font-weight:500;margin-top:2px"); sub.className = "cx-sub"; titlewrap.appendChild(sub); }
+    sub.textContent = subtitleText();
+
+    /* segmented Day | Week | Month (design order); REAL buttons */
+    var mDay = $("calMode_day"), mWeek = $("calMode_week"), mMonth = $("calMode_month");
+    [mDay, mWeek, mMonth].forEach(function (btn) { if (btn && btn.parentElement !== seg) { seg.appendChild(btn); } });
+    var mode = String(gv("_calMode", "month")).toLowerCase();
+    [["day", mDay], ["week", mWeek], ["month", mMonth]].forEach(function (pair) {
+      var btn = pair[1]; if (!btn) return;
+      btn.removeAttribute("style"); btn.className = "cx-seg-btn" + (pair[0] === mode ? " cx-on" : "");
+    });
+
+    /* right cluster: Refresh, Working hours, date jump, Remove duplicates, Check-in */
+    var refresh = findBtnOc(card, /loadCalendar\s*\(/);
+    var wh = findBtnOc(card, /calWorkingHours\s*\(/);
+    var dup = findBtnOc(card, /cleanupDuplicate/i);
+    var jump = $("calJump");
+    var checkin = $("calCheckinWrap");
+    if (refresh && refresh.parentElement !== right) { refresh.removeAttribute("style"); refresh.className = "cx-ghost"; right.appendChild(refresh); }
+    if (wh && wh.parentElement !== right) { wh.removeAttribute("style"); wh.className = "cx-ghost"; right.appendChild(wh); }
+    if (jump && jump.parentElement !== right) { right.appendChild(jump); impAll(jump, ["height:40px", "border-radius:11px", "border:1px solid #e0e8f1", "background:#fff", "padding:0 10px", "font-size:13px", "color:#3d5168", "font-family:inherit", "margin:0"]); }
+    if (dup && dup.parentElement !== right) { dup.removeAttribute("style"); dup.className = "cx-ghost"; right.appendChild(dup); }
+    if (checkin && checkin.parentElement !== right) { right.appendChild(checkin); var cb = checkin.querySelector("button"); if (cb) { cb.removeAttribute("style"); cb.className = "cx-ghost"; } }
+
+    /* hide the now-emptied original toolbar row + the plain "Calendar" h2 icon row */
+    try {
+      var kids = card.children;
+      for (var i = 0; i < kids.length; i++) {
+        var c = kids[i];
+        if (c === head) continue;
+        if (c.classList && (c.classList.contains("cx-agenda-head"))) continue;
+        if (c.tagName === "H2" && !c.getAttribute("data-cx-hid")) {
+          /* the original h2 held the check-in wrap (moved) + a 'Calendar' label/icon -> hide if now empty of real controls */
+          if (!c.querySelector("#calCheckinWrap")) { c.setAttribute("data-cx-hid", "1"); imp(c, "display", "none"); }
+        }
+        if (c.tagName === "DIV" && !c.id && !c.className && !c.getAttribute("data-cx-hid")) {
+          /* a bare toolbar div that is now empty after we relocated its controls */
+          if (c.children.length === 0 && (c.textContent || "").trim() === "") { c.setAttribute("data-cx-hid", "1"); imp(c, "display", "none"); }
+        }
+      }
+    } catch (e) {}
+  }
+
+  function subtitleText() {
+    var y = gv("_calYear", null); if (y == null) y = new Date().getFullYear();
+    var mode = String(gv("_calMode", "month")).toLowerCase();
+    if (mode === "month") {
+      var ym = y + "-" + pad((gv("_calMonth", new Date().getMonth())) + 1);
+      var n = 0; try { var a = gv("_calAppts", []) || []; for (var i = 0; i < a.length; i++) { if (apptDate(a[i]).slice(0, 7) === ym) n++; } } catch (e) {}
+      return y + " \u00B7 " + n + (n === 1 ? " appointment" : " appointments") + " this month";
+    }
+    if (mode === "day") {
+      var key = activeKey(), c = 0; try { var ap = gv("_calAppts", []) || []; for (var j = 0; j < ap.length; j++) { if (apptDate(ap[j]) === key) c++; } } catch (e) {}
+      return y + " \u00B7 " + c + (c === 1 ? " appointment" : " appointments") + " scheduled";
+    }
+    return y + " \u00B7 whole-practice schedule";
+  }
+
   function styleAgenda(card) {
     card.classList.add("cx-agenda");
-    imp(card, "padding", "0");
-    imp(card, "margin", "0");
-    imp(card, "overflow", "hidden");
-    /* inner padding wrapper: leave the card's children but add comfortable padding via a class on h2/toolbar is risky;
-       instead pad the card uniformly */
     imp(card, "padding", "20px 24px 24px");
-    /* Newsreader month label */
-    var lbl = $("calMonthLabel");
-    if (lbl) { imp(lbl, "font-family", "'Newsreader',Georgia,serif"); imp(lbl, "font-weight", "500"); imp(lbl, "font-size", "24px"); imp(lbl, "letter-spacing", "-.01em"); }
+    imp(card, "margin", "0");
+    buildAgendaHeader(card);
   }
 
   /* ============ orchestration ============ */
   function build() {
     var v = $("calendarView"); if (!v) return;
     injectCSS();
-    var card = v.querySelector(":scope > .card"); if (!card) return;
-
+    var card = v.querySelector(":scope > .card") || v.querySelector(":scope > .cx-agenda-slot > .card") || v.querySelector(".card");
+    if (!card) return;
     var main = v.querySelector(":scope > .cx-main");
     if (!main) {
       main = mk("div"); main.className = "cx-main";
-      var rail = mk("div"); rail.className = "cx-rail";
-      var agendaSlot = mk("div"); agendaSlot.className = "cx-agenda-slot"; agendaSlot.style.cssText = "min-width:0";
-      main.appendChild(rail); main.appendChild(agendaSlot);
+      var rail0 = mk("div"); rail0.className = "cx-rail";
+      var agendaSlot0 = mk("div"); agendaSlot0.className = "cx-agenda-slot"; agendaSlot0.style.cssText = "min-width:0";
+      main.appendChild(rail0); main.appendChild(agendaSlot0);
       v.insertBefore(main, v.firstChild);
     }
     var rail = main.querySelector(":scope > .cx-rail");
     var agendaSlot = main.querySelector(":scope > .cx-agenda-slot");
     if (card.parentElement !== agendaSlot) agendaSlot.appendChild(card);
-
     buildRail(rail);
     styleAgenda(card);
     v.setAttribute("data-cx-built", VERSION);
@@ -306,20 +369,21 @@
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { if (_t) clearInterval(_t); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
-    /* Restore the real moved-in controls back into the card, move the card
-       out of the slot, then remove the scaffold so nothing real is destroyed. */
     try {
       var v = $("calendarView"), main = v && v.querySelector(":scope > .cx-main");
       if (main) {
         var card = main.querySelector(".card");
         if (card) {
-          var realNew = $("calNewAppt") || document.querySelector('[data-cx-newappt]');
-          if (realNew) {
-            var ol = realNew.getAttribute("data-cx-origlabel");
-            if (ol != null) { realNew.textContent = ol; realNew.removeAttribute("data-cx-origlabel"); }
-            realNew.removeAttribute("data-cx-newappt");
-            card.appendChild(realNew);
+          /* move the design header's real controls back into the card body, then drop the header */
+          var head = card.querySelector(":scope > .cx-agenda-head");
+          if (head) {
+            var movers = head.querySelectorAll("#calMonthLabel,#calMode_day,#calMode_week,#calMode_month,#calJump,#calCheckinWrap,button");
+            for (var k = 0; k < movers.length; k++) { try { card.appendChild(movers[k]); } catch (e) {} }
+            try { head.parentNode.removeChild(head); } catch (e) {}
           }
+          try { card.querySelectorAll('[data-cx-hid]').forEach(function (el) { el.style.removeProperty("display"); el.removeAttribute("data-cx-hid"); }); } catch (e) {}
+          var realNew = $("calNewAppt") || document.querySelector('[data-cx-newappt]');
+          if (realNew) { var ol = realNew.getAttribute("data-cx-origlabel"); if (ol != null) { realNew.textContent = ol; realNew.removeAttribute("data-cx-origlabel"); } realNew.removeAttribute("data-cx-newappt"); card.appendChild(realNew); }
           var realProv = $("calProvFilter"); if (realProv) card.appendChild(realProv);
           v.insertBefore(card, main);
         }
