@@ -28,7 +28,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "simx-1.1.0";
+  var VERSION = "simx-1.1.1";
   try { if (window.__mlsSimX && window.__mlsSimX.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -103,6 +103,8 @@
   function athenaConnected() { try { if (window.__mlsUxUnify && typeof window.__mlsUxUnify.connected === "function") return !!window.__mlsUxUnify.connected(); } catch (e) {} return false; }
   var _pickScope = "today", _manualPending = null;
   function openPicker() {
+    /* prefer the app's native searchable switcher (all patients); then our schedule modal */
+    if (window.__mlsPatientSwitcher && typeof window.__mlsPatientSwitcher.open === "function") { window.__mlsPatientSwitcher.open(); return; }
     if (window.__mlsPick && typeof window.__mlsPick.openModal === "function") { window.__mlsPick.openModal({ scope: _pickScope || "today" }); return; }
     if (!clickById("mlscpFind")) callFn("mlsQuickFind");
   }

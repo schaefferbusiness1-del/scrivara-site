@@ -26,7 +26,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "pick-1.0.0";
+  var VERSION = "pick-1.0.1";
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -382,12 +382,12 @@
         if (b.__mlspkWired) continue;
         var oc = b.getAttribute("onclick") || "";
         if (/pullScheduleViaAssist/i.test(oc)) {
+          /* deterministically replace the inline pull handler with one that opens the
+             selectable-card modal (the modal still offers a real "Pull from athenaOne"). */
           b.__mlspkWired = true;
-          b.addEventListener("click", function (ev) {
-            /* open the card modal so the pulled/loaded patients are pickable in one click */
-            try { ev.stopImmediatePropagation(); ev.preventDefault(); } catch (e) {}
-            openModal({ scope: "today" });
-          }, true);
+          b.setAttribute("data-mlspk-onclick", oc);
+          b.removeAttribute("onclick");
+          b.onclick = function (ev) { try { ev.preventDefault(); } catch (e) {} openModal({ scope: "today" }); };
         }
       }
     } catch (e) {}
@@ -403,6 +403,7 @@
 
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { var wired = document.querySelectorAll("[data-mlspk-onclick]"); for (var i = 0; i < wired.length; i++) { var w = wired[i]; w.setAttribute("onclick", w.getAttribute("data-mlspk-onclick")); w.removeAttribute("data-mlspk-onclick"); w.onclick = null; w.__mlspkWired = false; } } catch (e) {}
     try { var m = $(MODAL_ID); if (m) m.remove(); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try { document.removeEventListener("keydown", onKey, true); } catch (e) {}
