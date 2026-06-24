@@ -60,7 +60,7 @@
       "#calendarView .cx-mini-day:hover{background:#eef4fc!important}",
       "#calendarView .cx-agenda{background:#fff!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important}",
       "#calendarView .cx-agenda input,#calendarView .cx-agenda select,#calendarView .cx-agenda textarea{max-width:100%}",
-      "@media (max-width:980px){#calendarView .cx-main{grid-template-columns:1fr}#calendarView .cx-rail{position:static}}",
+      "@media (max-width:980px){#calendarView .cx-main{grid-template-columns:1fr}#calendarView .cx-rail{position:static;min-width:0}#calendarView .cx-agenda-slot{min-width:0}#calendarView .cx-agenda{min-width:0}#calendarView .cx-rail>*{min-width:0;max-width:100%}#calendarView .cx-mini *{min-width:0}}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
