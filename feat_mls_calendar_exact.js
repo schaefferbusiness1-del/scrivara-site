@@ -22,7 +22,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "cx-2.1.0";
+  var VERSION = "cx-2.1.1";
   try { if (window.__mlsCx && window.__mlsCx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -394,17 +394,42 @@
   }
   function clearOv() {
     var grid = $("calGrid"); if (!grid) return;
-    var n = grid.querySelectorAll("[data-cx-ov]");
-    for (var i = 0; i < n.length; i++) n[i].removeAttribute("data-cx-ov");
-  }
-  function layoutLane(blocks) {
-    if (!blocks || !blocks.length) return;
-    var i, laneLeft = Infinity, laneRight = -Infinity;
-    for (i = 0; i < blocks.length; i++) {
-      var ol = blocks[i].offsetLeft, ow = blocks[i].offsetWidth;
-      if (ol < laneLeft) laneLeft = ol;
-      if (ol + ow > laneRight) laneRight = ol + ow;
+    var n = grid.querySelectorAll("[data-cx-ov],[data-cx-natl],[data-cx-natw],[data-cx-ovhidden]");
+    for (var i = 0; i < n.length; i++) {
+      var e = n[i];
+      if (e.getAttribute("data-cx-ovhidden")) e.style.removeProperty("display");
+      e.removeAttribute("data-cx-ov"); e.removeAttribute("data-cx-natl"); e.removeAttribute("data-cx-natw"); e.removeAttribute("data-cx-ovhidden");
     }
+    var chips = grid.querySelectorAll(".cx-ovmore");
+    for (i = 0; i < chips.length; i++) { try { chips[i].parentNode.removeChild(chips[i]); } catch (e2) {} }
+  }
+  /* native horizontal geometry is cached so re-layout is idempotent (no progressive shrink) */
+  function natL(el) { if (el.hasAttribute("data-cx-natl")) return +el.getAttribute("data-cx-natl"); var v = el.offsetLeft; el.setAttribute("data-cx-natl", v); return v; }
+  function natW(el) { if (el.hasAttribute("data-cx-natw")) return +el.getAttribute("data-cx-natw"); var v = el.offsetWidth; el.setAttribute("data-cx-natw", v); return v; }
+  function placeBlock(el, left, w, shrink) {
+    if (w < 3) w = 3;
+    el.style.setProperty("box-sizing", "border-box");
+    el.style.setProperty("overflow", "hidden");
+    el.style.setProperty("left", left + "px");
+    el.style.setProperty("width", w + "px");
+    el.style.setProperty("right", "auto");
+    if (shrink) { el.style.setProperty("padding", "1px 3px"); el.style.setProperty("font-size", "9px"); el.style.setProperty("line-height", "1.1"); }
+    else { el.style.removeProperty("padding"); el.style.removeProperty("font-size"); el.style.removeProperty("line-height"); }
+  }
+  function addMoreChip(host, left, w, top, height, n) {
+    try {
+      var chip = document.createElement("div");
+      chip.className = "cx-ovmore";
+      chip.textContent = "+" + n + " more";
+      chip.style.cssText = "position:absolute;left:" + left + "px;top:" + top + "px;width:" + w + "px;height:" + height + "px;pointer-events:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:700;color:#2f6bed;background:#eef4fc;border:1px dashed #b9cdf0;border-radius:6px;padding:1px 2px;overflow:hidden;z-index:6";
+      host.appendChild(chip);
+    } catch (e) {}
+  }
+  function layoutLane(parent, blocks) {
+    if (!blocks || !blocks.length) return;
+    var host = blocks[0].offsetParent || parent;
+    var i, laneLeft = Infinity, laneRight = -Infinity;
+    for (i = 0; i < blocks.length; i++) { var ol = natL(blocks[i]), ow = natW(blocks[i]); if (ol < laneLeft) laneLeft = ol; if (ol + ow > laneRight) laneRight = ol + ow; }
     var laneW = laneRight - laneLeft; if (!(laneW > 0)) return;
     var items = [];
     for (i = 0; i < blocks.length; i++) items.push({ el: blocks[i], top: blocks[i].offsetTop, bot: blocks[i].offsetTop + blocks[i].offsetHeight });
@@ -417,7 +442,7 @@
       else { if (cur.length) clusters.push(cur); cur = [it]; curBot = it.bot; }
     }
     if (cur.length) clusters.push(cur);
-    /* per cluster: greedy column assignment (interval coloring) + geometry */
+    var MINW = 58;   /* readable minimum column width; denser than this -> show what fits + a "+N more" chip (full detail in Day view) */
     for (var c = 0; c < clusters.length; c++) {
       var cl = clusters[c], colEnd = [], j, k;
       for (j = 0; j < cl.length; j++) {
@@ -428,22 +453,19 @@
         if (!placed) { cl[j].col = colEnd.length; colEnd.push(cl[j].bot); }
       }
       var ncols = colEnd.length || 1;
-      var dense = ncols > 3;            /* dense clusters: shrink padding so narrow columns fit (padding+border is the floor) */
-      var gap = dense ? 1 : 2;
-      var colW = laneW / ncols;
-      for (j = 0; j < cl.length; j++) {
-        var el = cl[j].el, left = laneLeft + cl[j].col * colW, w = colW - gap; if (w < 3) w = 3;
-        el.style.setProperty("box-sizing", "border-box");
-        el.style.setProperty("overflow", "hidden");
-        el.style.setProperty("left", left + "px");
-        el.style.setProperty("width", w + "px");
-        el.style.setProperty("right", "auto");
-        if (dense) {
-          el.style.setProperty("padding", "1px 2px");
-          el.style.setProperty("font-size", "9px");
-          el.style.setProperty("line-height", "1.05");
-          el.style.setProperty("white-space", "nowrap");
+      var maxCols = Math.max(1, Math.floor(laneW / MINW));
+      var gap = 2;
+      if (ncols <= maxCols) {                       /* everything fits readably: one column per concurrent appt, names shown */
+        var colW = laneW / ncols;
+        for (j = 0; j < cl.length; j++) placeBlock(cl[j].el, laneLeft + cl[j].col * colW, colW - gap, false);
+      } else {                                      /* too dense: show the first columns readably, collapse the rest into "+N more" */
+        var slots = Math.max(2, maxCols), showCols = slots - 1, colW2 = laneW / slots;
+        var ot = Infinity, ob = -Infinity, nOver = 0;
+        for (j = 0; j < cl.length; j++) {
+          if (cl[j].col < showCols) { placeBlock(cl[j].el, laneLeft + cl[j].col * colW2, colW2 - gap, (colW2 - gap) < 46); }
+          else { nOver++; cl[j].el.setAttribute("data-cx-ovhidden", "1"); cl[j].el.style.setProperty("display", "none", "important"); if (cl[j].top < ot) ot = cl[j].top; if (cl[j].bot > ob) ob = cl[j].bot; }
         }
+        if (nOver) addMoreChip(host, laneLeft + showCols * colW2, colW2 - gap, ot, Math.max(15, ob - ot), nOver);
       }
     }
   }
@@ -460,7 +482,7 @@
       var par = all[i].parentElement, idx = parents.indexOf(par);
       if (idx < 0) { parents.push(par); lanes.push([all[i]]); } else lanes[idx].push(all[i]);
     }
-    for (var L = 0; L < lanes.length; L++) { try { layoutLane(lanes[L]); } catch (e) {} }
+    for (var L = 0; L < lanes.length; L++) { try { layoutLane(parents[L], lanes[L]); } catch (e) {} }
     for (i = 0; i < all.length; i++) { try { all[i].setAttribute("data-cx-ov", "1"); } catch (e) {} }
   }
 
