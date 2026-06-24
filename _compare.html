@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>MLSscribe — LIVE vs DESIGN</title>
+<style>
+  body{margin:0;background:#0d1622;color:#e7eef8;font-family:system-ui,-apple-system,sans-serif}
+  header{padding:16px 22px;border-bottom:1px solid #22344c;position:sticky;top:0;background:#0d1622;z-index:10}
+  header h1{margin:0;font-size:18px}
+  header p{margin:4px 0 0;font-size:12.5px;color:#8aa4c4}
+  .row{padding:20px 22px;border-bottom:1px solid #18263c}
+  .row h2{font-size:15px;margin:0 0 12px;color:#9fc0ff}
+  .pair{display:flex;gap:16px;flex-wrap:wrap}
+  .col{flex:1;min-width:420px}
+  .tag{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:#8aa4c4;margin:0 0 5px;font-weight:600}
+  iframe{width:100%;height:640px;border:1px solid #22344c;border-radius:10px;background:#fff}
+  .note{height:640px;border:1px dashed #22344c;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#7e93ad;font-size:13px;text-align:center;padding:20px;box-sizing:border-box}
+</style></head><body>
+<header><h1>MLSscribe redesign — LIVE (prod) vs DESIGN, per page</h1>
+<p>Left = live app at mlsscribe.com (logged in). Right = the exported design for the same page. Scroll each frame. Temporary QA page.</p></header>
+<div id="rows"></div>
+<script>
+var pages=[
+ {key:'visit',label:'Visit',dz:'_dz_visit.html'},
+ {key:'patients',label:'Patients',dz:'_dz_patients.html'},
+ {key:'calendar',label:'Calendar',dz:'_dz_calendar.html'},
+ {key:'history',label:'History',dz:'_dz_history.html'},
+ {key:'orders',label:'Orders',dz:'_dz_orders.html'},
+ {key:'recs',label:'Recommendations',dz:'_dz_recs.html'},
+ {key:'legalreq',label:'Legal requests',dz:'_dz_legal.html'},
+ {key:'team',label:'Team',dz:'_dz_team.html'},
+ {key:'analysis',label:'Analysis',dz:'_dz_analysis.html'},
+ {key:'studio',label:'AI Studio',dz:'_dz_aistudio.html'},
+ {key:'__help',label:'Help',dz:'_dz_help.html'},
+ {key:'__settings',label:'Settings',dz:'_dz_settings.html'},
+ {key:'__login',label:'Login / Landing',dz:'_dz_login.html'}
+];
+var c=document.getElementById('rows');
+pages.forEach(function(p){
+  var row=document.createElement('div');row.className='row';
+  var live = (p.key==='__login')
+    ? '<div class="note">Live login screen can\'t be shown here (this browser is already signed in). Design shown at right.</div>'
+    : '<iframe loading="lazy" data-key="'+p.key+'" src="ScribeFlow.html?cmp='+p.key+'"></iframe>';
+  row.innerHTML='<h2>'+p.label+'</h2><div class="pair">'+
+    '<div class="col"><div class="tag">Live &middot; mlsscribe.com</div>'+live+'</div>'+
+    '<div class="col"><div class="tag">Design</div><iframe loading="lazy" src="'+p.dz+'"></iframe></div></div>';
+  c.appendChild(row);
+});
+document.querySelectorAll('iframe[data-key]').forEach(function(f){
+  f.addEventListener('load',function(){
+    var k=f.getAttribute('data-key'), tries=0;
+    var t=setInterval(function(){
+      tries++;
+      try{ var w=f.contentWindow;
+        if(k==='__help'){ if(w.openMlsHelp){ w.openMlsHelp(); clearInterval(t);} }
+        else if(k==='__settings'){ if(w.openSettings){ w.openSettings(); clearInterval(t);} }
+        else { if(w.showView){ w.showView(k); w.scrollTo&&w.scrollTo(0,0); clearInterval(t);} }
+      }catch(e){}
+      if(tries>30) clearInterval(t);
+    },500);
+  });
+});
+</script></body></html>
