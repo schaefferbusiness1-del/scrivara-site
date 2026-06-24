@@ -834,6 +834,10 @@ var mlsProv = (function () {
     (async () => {
       try {
         const all = await chrome.tabs.query({});
+        // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
+        // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
+        // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         // Find the EMR tab by KNOWN domains, else by EMR-looking host keywords, else the
         // most-recently-active non-MLS http(s) tab. Kept broad so an Athena domain/URL change
         // doesn't break us — the real work is content-based below.
@@ -938,6 +942,10 @@ function mlsSchedDomInline(doc){
     (async () => {
       try {
         const all = await chrome.tabs.query({});
+        // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
+        // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
+        // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         // Same broad EMR-tab finder as the schedule path: known Athena domains, else EMR-ish
         // host keywords, else the most-recently-active non-MLS http(s) tab.
         let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
@@ -993,6 +1001,10 @@ function mlsSchedDomInline(doc){
     (async () => {
       try {
         const all = await chrome.tabs.query({});
+        // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
+        // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
+        // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         const tab = mlsPickEmrTab(all);
         if (!tab) return sendResponse({ ok: false, error: 'Open your signed-in athenaOne in another tab (a procedure/claims report or charge-search screen), then try again.' });
         let results = [];
@@ -1011,6 +1023,10 @@ function mlsSchedDomInline(doc){
     (async () => {
       try {
         const all = await chrome.tabs.query({});
+        // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
+        // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
+        // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         const tab = (msg.tabId && all.find((t) => t.id === msg.tabId)) || mlsPickEmrTab(all);
         if (!tab) return sendResponse({ ok: false, error: 'No athenaOne tab found.' });
         let results = [];
@@ -1030,6 +1046,10 @@ function mlsSchedDomInline(doc){
     (async () => {
       try {
         const all = await chrome.tabs.query({});
+        // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
+        // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
+        // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         const tab = (msg.tabId && all.find((t) => t.id === msg.tabId)) || mlsPickEmrTab(all);
         if (!tab) return sendResponse({ ok: false, error: 'No athenaOne tab found.' });
         let results = [];
@@ -1050,6 +1070,10 @@ function mlsSchedDomInline(doc){
     (async () => {
       try {
         const all = await chrome.tabs.query({});
+        // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
+        // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
+        // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         let tab = all.find((t) => /athenahealth|athenanet|athena\.io|\.px\.athena/i.test(t.url || ''));
         if (!tab) { const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || '')); cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); tab = cand[0]; }
         if (!tab) return sendResponse({ ok: false, error: 'Open the patient in your Athena tab, then try again.' });
