@@ -35,7 +35,7 @@
    *   - renders an INLINE selectable grid in Complex visit mode too (not only the modal)
    *   - keeps the top active-patient context bar (#mlsCtxBar) bound + visible
    */
-  var VERSION = "pick-1.3.0";   /* + pin #mlsCtxBar below header (fixes flash-then-clip glitch) */
+  var VERSION = "pick-1.4.0";   /* TZ-correct times (acct TZ, not literal UTC) + honest in-modal pull status/refresh */
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -113,14 +113,25 @@
      displayed time matches the scheduled slot regardless of the viewer's
      timezone; the synthetic appt_date already matches the ISO date) ---- */
   function apptMins(t) {
-    var m = String(t == null ? "" : t).match(/T(\d{2}):(\d{2})/);
-    if (!m) { m = String(t == null ? "" : t).match(/(?:^|\s)(\d{1,2}):(\d{2})/); }
+    var s = String(t == null ? "" : t);
+    /* start_at is stored UTC; show it in the ACCOUNT time zone via the app's own
+       parser so picker times MATCH the calendar (literal-UTC read was up to several
+       hours off). Literal fallback only for bare "HH:MM" (manual/offline entry). */
+    if (/T/.test(s) && typeof window._apptMinsTz === "function") {
+      try { var z = window._apptMinsTz(s); if (z != null) return z; } catch (e) {}
+    }
+    var m = s.match(/T(\d{2}):(\d{2})/);
+    if (!m) { m = s.match(/(?:^|\s)(\d{1,2}):(\d{2})/); }
     if (!m) return null;
     var h = +m[1], mi = +m[2];
     if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
     return h * 60 + mi;
   }
   function fmtTime(t) {
+    var s = String(t == null ? "" : t);
+    if (/T/.test(s) && typeof window._fmtApptTime === "function") {
+      try { var f = window._fmtApptTime(s); if (f) return f; } catch (e) {}
+    }
     var mins = apptMins(t); if (mins == null) return "";
     var h = Math.floor(mins / 60), mi = mins % 60;
     var ap = h < 12 ? "AM" : "PM"; var h12 = h % 12; if (h12 === 0) h12 = 12;
@@ -454,7 +465,7 @@
           '<button type="button" class="mlspk-fbtn" data-act="find">' + E.find + ' Find by name</button>' +
           '<button type="button" class="mlspk-fbtn" data-act="athena">' + E.down + ' Pull from athenaOne</button>' +
           '<span style="flex:1"></span>' +
-          '<span style="color:#8a9cb2;font-size:11.5px">Synthetic data only</span>' +
+          '<span class="mlspk-pullstatus" style="color:#8a9cb2;font-size:11.5px"></span>' +
         '</div>' +
       '</div>';
     document.body.appendChild(m);
@@ -468,14 +479,46 @@
       if (!callFnTry("mlscpFind")) callFn("mlsQuickFind");
       closeModal();
     });
-    m.querySelector('[data-act="athena"]').addEventListener("click", function () {
-      /* trigger the real schedule pull (works when athenaOne is connected); list refreshes after */
-      try { if (typeof window.pullScheduleViaAssist === "function") window.pullScheduleViaAssist(this); } catch (e) {}
-      setTimeout(paintModal, 1400);
-    });
+    m.querySelector('[data-act="athena"]').addEventListener("click", function () { modalPull(this); });
     document.addEventListener("keydown", onKey, true);
     return m;
   }
+  function pullStatusEl() { var m = $(MODAL_ID); return m ? m.querySelector(".mlspk-pullstatus") : null; }
+  function setPullStatus(msg, ok) { var s = pullStatusEl(); if (s) { s.textContent = msg || ""; s.style.color = ok ? "#16a34a" : "#8a9cb2"; } }
+  function nowClock() { try { return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch (e) { return "now"; } }
+  /* Honest "Pull from athenaOne": gate on the REAL connection truth, show status IN the
+     modal (the engine writes to #heroPullStatus which isn't visible here), and repaint the
+     card grid with the real result + count after the import completes. No fake success. */
+  function modalPull(btn) {
+    var ct = null; try { ct = window.__mlsConnTruth; } catch (e) {}
+    var connected = !!(ct && typeof ct.isConnected === "function" && ct.isConnected());
+    if (ct && !connected) {
+      var detail = "";
+      try { var d = ct.describe ? ct.describe(ct.state) : null; detail = (d && (d.detail || d.label)) || ""; } catch (e) {}
+      setPullStatus(detail || "athenaOne isn't connected yet \u2014 open your signed-in Day schedule, then pull.", false);
+      return;
+    }
+    if (typeof window.pullScheduleViaAssist !== "function") { setPullStatus("Schedule pull is unavailable right now.", false); return; }
+    setPullStatus("Reading your athenaOne Day schedule\u2026", false);
+    var n0 = 0; try { n0 = (window._calAppts || []).length; } catch (e) {}
+    var done = false;
+    function onRes(e) {
+      if (!(e.data && e.data.source === "mls-ext" && e.data.type === "mlsAppScheduleResult")) return;
+      done = true; window.removeEventListener("message", onRes);
+      /* the import is async after the result fires; give it time to POST + reload the calendar */
+      setTimeout(function () {
+        var n1 = 0; try { n1 = (window._calAppts || []).length; } catch (e) {}
+        var added = n1 - n0;
+        paintModal();
+        if (added > 0) setPullStatus("Pulled " + added + " appointment" + (added === 1 ? "" : "s") + " \u00b7 " + nowClock(), true);
+        else setPullStatus("No new appointments added \u2014 they may already be on your calendar, or open your athenaOne Day schedule with patients and pull again.", false);
+      }, 1800);
+    }
+    window.addEventListener("message", onRes);
+    setTimeout(function () { if (!done) { window.removeEventListener("message", onRes); var s = pullStatusEl(); if (s && /Reading/.test(s.textContent)) setPullStatus("Didn't hear back from athenaOne \u2014 make sure MLS Assist is enabled and your signed-in Day schedule is open, then pull again.", false); } }, 33000);
+    try { window.pullScheduleViaAssist(btn); } catch (e) {}
+  }
+
   function callFnTry(id) { var el = $(id); if (el) { try { el.click(); return true; } catch (e) {} } return false; }
   function onKey(e) { if (e.key === "Escape" && isModalOpen()) { e.preventDefault(); closeModal(); } }
   function paintModal() {

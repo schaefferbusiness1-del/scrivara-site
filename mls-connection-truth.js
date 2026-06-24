@@ -61,7 +61,7 @@
   'use strict';
 
   var NS = '__mlsConnTruth';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
 
   // Idempotent boot — never install twice.
   if (typeof window !== 'undefined' && window[NS] && window[NS].installed) {
@@ -134,6 +134,25 @@
     } catch (e) { return ''; }
   }
 
+  // Detect the PUBLIC athenaOne sign-in / landing page from a schedule read.
+  // We match ONLY well-known PUBLIC marketing/login strings and keep just a
+  // boolean -- no PHI is stored or transmitted. A signed-in schedule (which
+  // WOULD contain PHI) is large and won't match these public markers, so it
+  // is left untouched. This closes the "green connected while on the sign-in
+  // page" lie: ok===true only means a tab was readable, not that it is signed in.
+  function isSigninPage(resp) {
+    try {
+      var t = resp && typeof resp.text === 'string' ? resp.text : '';
+      if (!t) return false;
+      if (t.length > 4000) return false; // a real day schedule is large; the sign-in page is tiny
+      var head = t.slice(0, 1200);
+      if (/get more from athenaone|find trusted solutions/i.test(head)) return true;
+      if (/athenahealth[\s\S]{0,40}sign\s*in/i.test(head)) return true;
+      if (/\bsign\s*in\b/i.test(head) && /\b(password|username|log\s*in)\b/i.test(head)) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+
   // Post a request and resolve when a matching reply arrives or on timeout.
   // We DELIBERATELY never read resp.text/url/title.
   function request(type, replyType, timeoutMs) {
@@ -154,13 +173,14 @@
         clearTimeout(timer);
         delete pending[id];
         // Read ONLY non-PHI control fields.
-        var ok;
+        var ok, signin = false;
         if (replyType === 'mlsPong') {
           ok = true; // a pong at all means the extension is present
         } else {
           ok = !!(data.resp && data.resp.ok === true);
+          signin = isSigninPage(data.resp); // ok+sign-in page = NOT genuinely connected
         }
-        resolve({ ok: ok, timedOut: false, reason: safeReason(data && data.resp) });
+        resolve({ ok: ok, signin: signin, timedOut: false, reason: safeReason(data && data.resp) });
       };
 
       try {
@@ -212,7 +232,7 @@
         // 2) Readable signed-in athenaOne tab (passive, PHI-safe).
         return request('mlsAppPullSchedule', 'mlsAppScheduleResult', SCHED_TIMEOUT_MS)
           .then(function (schedRes) {
-            if (schedRes.ok) {
+            if (schedRes.ok && !schedRes.signin) {
               return setState({
                 status: 'connected',
                 ext: true, tab: true,
@@ -223,9 +243,11 @@
             return setState({
               status: 'no-tab',
               ext: true, tab: false,
-              reason: schedRes.reason
-                ? ('No readable athenaOne tab (' + schedRes.reason + ') — open a signed-in athenaOne tab.')
-                : 'No signed-in athenaOne tab is readable — open one and reload.',
+              reason: schedRes.signin
+                ? 'Your athenaOne tab is on the sign-in page — sign in and open your Day schedule, then reload.'
+                : (schedRes.reason
+                    ? ('No readable athenaOne tab (' + schedRes.reason + ') — open a signed-in athenaOne tab.')
+                    : 'No signed-in athenaOne tab is readable — open one and reload.'),
               at: Date.now()
             });
           });
