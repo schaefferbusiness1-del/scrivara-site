@@ -260,7 +260,13 @@
       if(!cards.length) return;
       v.classList.add('mlsRdAnaGrid');
       var L=anaLoad();
-      if(L.order){ L.order.forEach(function(id){ var c=document.getElementById(id); if(c&&c.parentElement===v) v.appendChild(c); }); }
+      if(L.order && L.order.length){
+        var cur=[].slice.call(v.querySelectorAll(':scope > .card')).map(function(c){return c.id;});
+        var want=L.order.filter(function(id){ return cur.indexOf(id)>=0; });
+        cur.forEach(function(id){ if(want.indexOf(id)<0) want.push(id); });
+        var same = cur.length===want.length && cur.every(function(id,i){ return id===want[i]; });
+        if(!same){ want.forEach(function(id){ var c=document.getElementById(id); if(c) v.appendChild(c); }); }
+      }
       cards=[].slice.call(v.querySelectorAll(':scope > .card'));
       cards.forEach(function(card){
         if(card.id && L.sizes && L.sizes[card.id]){ var z=L.sizes[card.id]; card.style.gridColumn='span '+Math.min(4,Math.max(1,z.cols||1)); card.style.gridRow='span '+Math.min(5,Math.max(1,z.rows||1)); }
@@ -302,13 +308,18 @@
       if(emr && emr.parentElement!==grid){ grid.appendChild(emr); }
     }catch(e){}
   }
+  function applyAll(){
+    try{ if(_obs) _obs.disconnect(); }catch(e){}
+    try{ injectCSS(); mark(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); }catch(e){}
+    try{ if(_obs) _obs.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+  }
+  var _schedT=null;
+  function schedule(){ if(_schedT) return; _schedT=setTimeout(function(){ _schedT=null; applyAll(); },120); }
   function boot(){
-    injectFonts(); injectCSS(); mark();
-    try{ buildShell(); styleVisit(); makeAnalysisDashboard(); }catch(e){}
-    // re-assert against late mounts / other modules' observers
-    var n=0; _t=setInterval(function(){ try{ injectCSS(); mark(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); }catch(e){} if(++n>20) clearInterval(_t); }, 600);
-    try{ _obs=new MutationObserver(function(){ try{ if(!$(STYLE_ID))injectCSS(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); }catch(e){} });
-      _obs.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+    injectFonts();
+    try{ _obs=new MutationObserver(function(){ schedule(); }); }catch(e){}
+    applyAll();
+    var n=0; _t=setInterval(function(){ applyAll(); if(++n>15) clearInterval(_t); }, 700);
   }
   function revert(){ try{if(_obs)_obs.disconnect();}catch(e){} try{if(_t)clearInterval(_t);}catch(e){}
     try{var s=$(STYLE_ID);if(s)s.remove();}catch(e){} try{var f=$(FONT_ID);if(f)f.remove();}catch(e){}
