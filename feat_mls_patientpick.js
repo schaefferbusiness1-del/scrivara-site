@@ -26,7 +26,16 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "pick-1.0.1";
+  /* pick-1.2.0:
+   *   - card shows the APPOINTMENT TIME; cards ordered earliest-first (existing sort)
+   *   - shows only the first 6 with a "Show more" control that reveals the rest
+   *   - auto-advances toward the current time slot: the next-up appointment is
+   *     highlighted ("Now"/"Next") and scrolled into view; a light timer keeps it
+   *     current as the clock moves (idempotent class/scroll only -> no flicker)
+   *   - renders an INLINE selectable grid in Complex visit mode too (not only the modal)
+   *   - keeps the top active-patient context bar (#mlsCtxBar) bound + visible
+   */
+  var VERSION = "pick-1.2.0";
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -99,6 +108,36 @@
     try { return d.toLocaleDateString([], { month: "short", day: "numeric" }); } catch (e) { return ds; }
   }
   function apptDate(a) { return String(a.appt_date || a.start_at || "").slice(0, 10); }
+
+  /* ---- appointment time (read the LITERAL clock from the ISO string so the
+     displayed time matches the scheduled slot regardless of the viewer's
+     timezone; the synthetic appt_date already matches the ISO date) ---- */
+  function apptMins(t) {
+    var m = String(t == null ? "" : t).match(/T(\d{2}):(\d{2})/);
+    if (!m) { m = String(t == null ? "" : t).match(/(?:^|\s)(\d{1,2}):(\d{2})/); }
+    if (!m) return null;
+    var h = +m[1], mi = +m[2];
+    if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+    return h * 60 + mi;
+  }
+  function fmtTime(t) {
+    var mins = apptMins(t); if (mins == null) return "";
+    var h = Math.floor(mins / 60), mi = mins % 60;
+    var ap = h < 12 ? "AM" : "PM"; var h12 = h % 12; if (h12 === 0) h12 = 12;
+    return h12 + ":" + (mi < 10 ? "0" : "") + mi + " " + ap;
+  }
+  function nowMins() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  /* index of the first card at/after "now" (the slot we are advancing toward);
+     if every slot is in the past, points at the last card. -1 when list empty. */
+  function nowIndex(list) {
+    if (!list || !list.length) return -1;
+    var n = nowMins(), i;
+    for (i = 0; i < list.length; i++) {
+      var mm = (list[i].mins != null) ? list[i].mins : apptMins(list[i].time);
+      if (mm != null && mm >= n) return i;
+    }
+    return list.length - 1;
+  }
 
   /* ---- match an appointment to an existing patient record ---- */
   function buildIndex() {
@@ -175,7 +214,8 @@
       if (seen[key]) continue; seen[key] = 1;
       var p = matchAppt(a, idx); if (!p) continue;
       out.push({ id: p.id, name: p.name || a.name || "(unnamed)", dob: p.dob || a.dob || "",
-        sex: p.sex || "", mrn: p.mrn || "", reason: a.reason || "", time: a.start_at || "" });
+        sex: p.sex || "", mrn: p.mrn || "", reason: a.reason || "", time: a.start_at || "",
+        mins: apptMins(a.start_at) });
     }
     return { list: out, dateLabel: dateLabel, fallback: fallback, scope: scope };
   }
@@ -190,6 +230,7 @@
     /* keep the patient context bar + native renderers in sync (openPatient usually does this) */
     try { if (window.renderPatientBar) window.renderPatientBar(); } catch (e) {}
     try { if (window.__mlsCard && window.__mlsCard.refresh) window.__mlsCard.refresh(); } catch (e) {}
+    try { ensureCtxBar(); } catch (e) {}
     var p = null, ps = getPatients(); for (var i = 0; i < ps.length; i++) if (ps[i] && ps[i].id === id) { p = ps[i]; break; }
     try { document.dispatchEvent(new CustomEvent("mls:patientpicked", { detail: { id: id, patient: p } })); } catch (e) {}
     return p;
@@ -223,8 +264,25 @@
       ".mlspk-reason{display:block;color:#8a9cb2;font-size:11.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".mlspk-go{flex-shrink:0;font-size:11.5px;font-weight:700;color:#2f6bed;background:#eef3fb;border-radius:8px;padding:5px 10px}",
       ".mlspk-card.is-active .mlspk-go{color:#1f9d6b;background:#e7f5ee}",
+      /* time pill on the left edge of each card */
+      ".mlspk-time{flex-shrink:0;min-width:62px;text-align:center;font-weight:700;font-size:12px;color:#15406f;background:#eef3fb;border:1px solid #dbe6f6;border-radius:9px;padding:6px 8px;line-height:1.1}",
+      ".mlspk-time small{display:block;font-size:9px;font-weight:700;letter-spacing:.05em;color:#7e93ad;margin-top:1px}",
+      ".mlspk-card.is-now .mlspk-time{background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;border-color:transparent}",
+      ".mlspk-card.is-now .mlspk-time small{color:#cfe0fb}",
+      ".mlspk-card.is-now{border-color:#2f6bed;box-shadow:0 0 0 2px rgba(47,107,237,.16)}",
+      ".mlspk-card.is-active.is-now{box-shadow:0 0 0 2px rgba(47,107,237,.28)}",
+      /* show more / fewer control */
+      ".mlspk-more{grid-column:1/-1;margin-top:2px;display:flex;justify-content:center}",
+      ".mlspk-more button{height:38px;padding:0 18px;border-radius:11px;border:1px solid #dbe6f6;background:#f5f9ff;color:#2f6bed;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit}",
+      ".mlspk-more button:hover{background:#eaf2ff}",
       ".mlspk-empty{padding:22px 14px;text-align:center;color:#8a9cb2;font-size:13px;border:1px dashed #dde6f0;border-radius:14px;background:#fbfcfe}",
       ".mlspk-note{font-size:12px;color:#6b7d93;margin:0 0 10px}",
+      /* inline Complex host */
+      "#mlsPickComplexWrap{margin:0 0 18px;font-family:'Plus Jakarta Sans',system-ui,sans-serif}",
+      "#mlsPickComplexWrap .mlspk-cx-hd{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}",
+      "#mlsPickComplexWrap .mlspk-cx-hd h4{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:19px;margin:0;color:#0f2540}",
+      "#mlsPickComplexWrap .mlspk-cx-hd span{font-size:12px;color:#8a9cb2}",
+      "html.mls-sv-active #mlsPickComplexWrap{display:none!important}",
       /* modal */
       "#" + MODAL_ID + "{position:fixed;inset:0;z-index:100050;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 16px;background:rgba(8,18,33,.55);font-family:'Plus Jakarta Sans',system-ui,sans-serif}",
       "#" + MODAL_ID + "[hidden]{display:none}",
@@ -247,13 +305,19 @@
   }
 
   /* ===================== card grid ===================== */
-  function cardHTML(p, isActive) {
+  var DEFAULT_LIMIT = 6;
+  function cardHTML(p, isActive, isNow) {
     var age = ageFromDob(p.dob);
     var meta = [];
     if (age != null) meta.push(age + "y");
     if (p.sex) meta.push(esc(p.sex));
     if (p.dob) meta.push("DOB " + esc(p.dob));
-    return '<button type="button" class="mlspk-card' + (isActive ? " is-active" : "") + '" data-id="' + esc(p.id) + '">' +
+    var tStr = fmtTime(p.time);
+    var upcoming = (p.mins != null && p.mins >= nowMins());
+    var tag = isNow ? ('<small>' + (upcoming ? "NEXT" : "NOW") + '</small>') : (tStr ? '<small>appt</small>' : '');
+    var timePill = '<span class="mlspk-time">' + (tStr ? esc(tStr) : "&mdash;") + tag + '</span>';
+    return '<button type="button" class="mlspk-card' + (isActive ? " is-active" : "") + (isNow ? " is-now" : "") + '" data-id="' + esc(p.id) + '" data-mins="' + (p.mins == null ? "" : p.mins) + '">' +
+      timePill +
       '<span class="mlspk-av">' + esc(initials(p.name)) + '</span>' +
       '<span class="mlspk-info">' +
         '<span class="mlspk-nm">' + esc(p.name) + '</span>' +
@@ -264,27 +328,63 @@
     '</button>';
   }
 
-  /* opts: { scope, provider, onPick, showNote } */
+  /* ---- hosts registry for the "advance toward now" timer ---- */
+  var _gridHosts = [], _nowTimer = null;
+  function registerHost(h, opts) { if (!h) return; h.__mlspkOpts = opts; if (_gridHosts.indexOf(h) < 0) _gridHosts.push(h); startNowTimer(); }
+  function startNowTimer() { if (_nowTimer) return; try { _nowTimer = setInterval(refreshNow, 45000); } catch (e) {} }
+  function refreshNow() {
+    for (var i = _gridHosts.length - 1; i >= 0; i--) {
+      var h = _gridHosts[i];
+      try {
+        if (!h || !h.isConnected) { _gridHosts.splice(i, 1); continue; }
+        if (!h.offsetWidth && !h.offsetHeight) continue;   /* hidden (self or ancestor) */
+        if (h.__mlspkOpts) renderGrid(h, h.__mlspkOpts);
+      } catch (e) {}
+    }
+  }
+
+  /* opts: { scope, provider, onPick, showNote, limit } */
   function renderGrid(hostEl, opts) {
     if (!hostEl) return;
     injectCSS();
     opts = opts || {};
     var res = scopeList(opts.scope || "recent", opts.provider);
     var curId = activeId();
+    var limit = (opts.limit == null ? DEFAULT_LIMIT : opts.limit) | 0; if (limit < 1) limit = DEFAULT_LIMIT;
+    var nIdx = nowIndex(res.list);
+    /* auto-expand only enough to keep the focal "now" card visible as the day advances */
+    var autoExpand = (nIdx >= limit);
+    var expanded = !!hostEl.__mlspkExpanded || autoExpand;
+    var total = res.list.length;
+    var shown = expanded ? total : Math.min(limit, total);
+    var focalId = (nIdx >= 0 && nIdx < total) ? res.list[nIdx].id : "";
+
+    /* idempotent: skip the DOM rewrite when nothing visible changed (no flicker) */
+    var sig = res.scope + "|" + res.dateLabel + "|" + total + "|" + shown + "|" + curId + "|" + focalId + "|" + (expanded ? 1 : 0) + "|" + (opts.showNote === false ? 0 : 1);
+    registerHost(hostEl, opts);
+    if (hostEl.__mlspkSig === sig && hostEl.firstChild) return res;
+    hostEl.__mlspkSig = sig;
+
     var html = "";
     if (opts.showNote !== false) {
       if (res.fallback) html += '<p class="mlspk-note">No one on today\'s schedule yet &mdash; showing your most recent day (' + esc(res.dateLabel) + ').</p>';
-      else if (res.list.length) html += '<p class="mlspk-note">' + res.list.length + ' patient' + (res.list.length === 1 ? "" : "s") + ' on ' + esc(res.dateLabel === "today" ? "today&#39;s schedule" : res.dateLabel) + ' &middot; tap one to select.</p>';
+      else if (total) html += '<p class="mlspk-note">' + total + ' patient' + (total === 1 ? "" : "s") + ' on ' + esc(res.dateLabel === "today" ? "today&#39;s schedule" : res.dateLabel) + ' &middot; in time order &middot; tap one to select.</p>';
     }
-    if (!res.list.length) {
+    if (!total) {
       html += '<div class="mlspk-empty">No scheduled patients found for this view. Use &ldquo;Find a patient by name&rdquo; or &ldquo;Enter manually&rdquo; below.</div>';
       hostEl.innerHTML = html;
       return res;
     }
     html += '<div class="mlspk-grid">';
-    for (var i = 0; i < res.list.length; i++) html += cardHTML(res.list[i], res.list[i].id === curId);
+    for (var i = 0; i < shown; i++) html += cardHTML(res.list[i], res.list[i].id === curId, i === nIdx);
+    if (total > limit) {
+      var moreN = total - shown;
+      html += '<div class="mlspk-more"><button type="button" data-mlspk-more="1">' +
+        (expanded ? "Show fewer" : ("Show more (" + moreN + " more)")) + '</button></div>';
+    }
     html += '</div>';
     hostEl.innerHTML = html;
+
     var cards = hostEl.querySelectorAll(".mlspk-card");
     for (var j = 0; j < cards.length; j++) {
       cards[j].addEventListener("click", function () {
@@ -293,6 +393,23 @@
         try { if (typeof opts.onPick === "function") opts.onPick(id, p); } catch (e) {}
       });
     }
+    var moreBtn = hostEl.querySelector("[data-mlspk-more]");
+    if (moreBtn) moreBtn.addEventListener("click", function () {
+      hostEl.__mlspkExpanded = !hostEl.__mlspkExpanded;
+      hostEl.__mlspkSig = "";            /* force a rebuild */
+      renderGrid(hostEl, opts);
+    });
+
+    /* advance toward now: scroll the focal card into view when it changes
+       (skip the first paint so the page doesn't jump on load) */
+    try {
+      if (focalId && hostEl.__mlspkPainted && hostEl.__mlspkFocal !== focalId) {
+        var fc = hostEl.querySelector('.mlspk-card.is-now');
+        if (fc && fc.scrollIntoView) fc.scrollIntoView({ block: "nearest" });
+      }
+      hostEl.__mlspkFocal = focalId;
+      hostEl.__mlspkPainted = true;
+    } catch (e) {}
     return res;
   }
 
@@ -392,18 +509,55 @@
       }
     } catch (e) {}
   }
+
+  /* ---- inline selectable grid for COMPLEX visit mode (not just the modal) ---- */
+  var CX_WRAP = "mlsPickComplexWrap";
+  function renderComplexInline() {
+    var w = $(CX_WRAP);
+    if (!onVisitComplex()) { if (w) w.style.display = "none"; return; }
+    var v = $("visitView"); if (!v) return;
+    if (!w || w.parentElement !== v) {
+      if (w) { try { w.parentElement.removeChild(w); } catch (e) {} }
+      w = mk("div"); w.id = CX_WRAP; w.setAttribute("data-mls-asset", "feat_mls_patientpick.js");
+      w.innerHTML =
+        '<div class="mlspk-cx-hd"><h4>Today&#39;s patients</h4><span>in time order &middot; tap one to open their chart</span></div>' +
+        '<div class="mlspk-cx-grid"></div>';
+      /* place it just under the dark hero, above the capture/note grid */
+      var hero = $("visitHero");
+      if (hero && hero.parentElement === v && hero.nextSibling) v.insertBefore(w, hero.nextSibling);
+      else if (hero && hero.parentElement === v) v.appendChild(w);
+      else v.insertBefore(w, v.firstChild);
+    }
+    w.style.display = "";
+    var host = w.querySelector(".mlspk-cx-grid");
+    renderGrid(host, { scope: "today", limit: DEFAULT_LIMIT, onPick: function () { ensureCtxBar(); } });
+  }
+
+  /* ---- keep the compact top active-patient widget (#mlsCtxBar) present ---- */
+  function ensureCtxBar() {
+    try {
+      var c = $("mlsCtxBar");
+      if (c && c.querySelector(".mlsctx-id") && getComputedStyle(c).display === "none") c.style.display = "";
+    } catch (e) {}
+  }
+
+  function tick() { wireComplex(); renderComplexInline(); ensureCtxBar(); }
   function boot() {
     injectCSS();
-    wireComplex();
+    tick();
     try {
-      _obs = new MutationObserver(function () { if (_wireT) return; _wireT = setTimeout(function () { _wireT = null; wireComplex(); }, 200); });
+      _obs = new MutationObserver(function () { if (_wireT) return; _wireT = setTimeout(function () { _wireT = null; tick(); }, 200); });
       _obs.observe(document.documentElement, { childList: true, subtree: true });
     } catch (e) {}
+    startNowTimer();
   }
 
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_nowTimer) { clearInterval(_nowTimer); _nowTimer = null; } } catch (e) {}
+    _gridHosts = [];
     try { var wired = document.querySelectorAll("[data-mlspk-onclick]"); for (var i = 0; i < wired.length; i++) { var w = wired[i]; w.setAttribute("onclick", w.getAttribute("data-mlspk-onclick")); w.removeAttribute("data-mlspk-onclick"); w.onclick = null; w.__mlspkWired = false; } } catch (e) {}
+    try { var cw = $(CX_WRAP); if (cw) cw.remove(); } catch (e) {}
     try { var m = $(MODAL_ID); if (m) m.remove(); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
     try { document.removeEventListener("keydown", onKey, true); } catch (e) {}

@@ -28,7 +28,12 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "simx-1.1.1";
+  /* simx-1.2.0: + "Prep op note" option in MLS Easy step 1 (wired to the real
+     op-note builder openOpPrepSmart(), the same handler the Complex hero uses).
+     The inline schedule picker (#simPickGrid) now inherits the upgraded
+     feat_mls_patientpick grid: appointment times, earliest-first order, first 6
+     + Show more, and the auto-advancing "now" highlight. */
+  var VERSION = "simx-1.2.0";
   try { if (window.__mlsSimX && window.__mlsSimX.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -287,6 +292,11 @@
           optBtn("simFind", E.find, "Find a patient by name", "Search and pull one patient") +
           optBtn("simManual", E.pen, "Enter manually", "Type name &amp; DOB yourself") +
         '</div>' +
+        '<button id="simPrepOp" class="sim-opt" style="width:100%;margin-top:12px;display:flex;align-items:center;gap:13px;text-align:left;padding:15px 16px;border-radius:14px;border:1px solid #e4ebf3;background:#fbfcfe;cursor:pointer">' +
+          '<span style="width:40px;height:40px;border-radius:11px;background:#fdeef0;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#128137;</span>' +
+          '<span><span style="display:block;font-weight:700;font-size:14px;color:#0f2540">Prep op note</span>' +
+          '<span style="display:block;color:#6b7d93;font-size:12px;margin-top:2px;line-height:1.4">Pre-draft a procedure / operative note for the active patient</span></span>' +
+        '</button>' +
         '<div id="simPickGrid" style="margin-top:18px"></div>' +
         '<div id="simManualBox" style="display:none;margin-top:14px;background:#fbfcfe;border:1px solid #e4ebf3;border-radius:14px;padding:16px">' +
           '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
@@ -302,6 +312,7 @@
       $("simPullWeek").onclick = function () { _pickScope = "week"; if (athenaConnected()) clickById("mlscpWeek"); renderPick("week"); setTimeout(function () { renderPick("week"); }, 1600); };
       $("simPullOpen").onclick = function () { if (!clickById("mlscpSelected")) callFn("pullPatientFromAthenaPrompt", this); setTimeout(renderBanner, 900); };
       $("simFind").onclick = function () { if (!clickById("mlscpFind")) callFn("mlsQuickFind"); };
+      $("simPrepOp").onclick = function () { if (typeof window.openOpPrepSmart === "function") callFn("openOpPrepSmart"); else if (typeof window.openOpPrepForPatient === "function") callFn("openOpPrepForPatient"); };
       $("simManual").onclick = function () { _manual = !_manual; var mb = $("simManualBox"); if (mb) mb.style.display = _manual ? "block" : "none"; if (_manual) { var mn = $("simMName"); if (mn) { mn.value = patientName(); try { mn.focus(); } catch (e) {} } var md = $("simMDob"); if (md) md.value = patientDob(); } };
       $("simMUse").onclick = function () {
         var n = val("simMName").trim(); if (!n) { try { $("simMName").focus(); } catch (e) {} return; }
