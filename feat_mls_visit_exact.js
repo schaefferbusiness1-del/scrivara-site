@@ -23,7 +23,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "vx-1.3.0";
+  var VERSION = "vx-1.4.0";
   try { if (window.__mlsVx && window.__mlsVx.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -58,7 +58,7 @@
 
   function injectCSS() {
     var css = [
-      "#visitView .vx-grid{display:grid;grid-template-columns:1fr 1fr 460px;gap:20px;margin-top:20px;align-items:start}",
+      "#visitView .vx-grid{display:grid;grid-template-columns:1fr 1fr 360px;gap:20px;margin-top:20px;align-items:start}", /* #5 widened Capture+Note: trimmed EMR rail 460->360 */
       "#visitView .vx-emr{position:sticky;top:138px;align-self:start}",
       "@media (max-width:1100px){#visitView .vx-grid{grid-template-columns:1fr 1fr}#visitView .vx-emr{position:static;grid-column:1 / -1}}",
       "@media (max-width:820px){#visitView .vx-grid{grid-template-columns:1fr}#visitView .vx-emr{grid-column:auto}}",
@@ -67,6 +67,7 @@
       "#visitView .vx-grid input,#visitView .vx-grid textarea,#visitView .vx-grid select{max-width:100%}",
       "#visitView .vx-qbtn:hover{background:rgba(255,255,255,.13)!important}",
       "#visitView .mlsaa-intent{display:none!important}",
+      ".mlswb-cap{display:none!important}", /* #4 hide writeback caption that duplicates the in-button WRITES TO CHART badge+tooltip (design shows one badge) */
       /* SIMPLE (MLS Easy) view: the design shows ONLY the guided wizard (#visitHero);
          hide the Complex 3-col grid + tools so they never leak under the wizard */
       "html.mls-sv-active #visitView .vx-grid,html.mls-sv-active #visitView .vx-tools{display:none!important}",
@@ -165,13 +166,24 @@
       imp(c, "background", "#fff"); imp(c, "border", "1px solid #e4ebf3"); imp(c, "border-radius", "18px");
       imp(c, "padding", "24px"); imp(c, "box-shadow", "0 1px 2px rgba(15,37,64,.04)"); imp(c, "margin", "0");
     });
-    grid.appendChild(cap); grid.appendChild(note);
-
     if (emr) {
       imp(emr, "background", "#fff"); imp(emr, "border", "1px solid #e4ebf3"); imp(emr, "border-radius", "18px");
       imp(emr, "padding", "20px"); imp(emr, "box-shadow", "0 1px 2px rgba(15,37,64,.04)"); imp(emr, "margin", "0");
-      emr.classList.add("vx-emr"); grid.appendChild(emr);
+      emr.classList.add("vx-emr");
     }
+    /* IDEMPOTENT placement (glitch fix #1/#2/#3): only (re)append the cards when
+       they are NOT already the grid's children in [capture, note, emr] order. The
+       old code ran grid.appendChild() unconditionally on every observer tick + on
+       a 700ms interval, detaching+reattaching these card subtrees several times a
+       second. That churn (a) flickered the page, (b) restarted CSS spin animations
+       (the "half-circle restart" spinner), and (c) dropped first clicks on the
+       Style/Length buttons that live inside captureCard. Appending only when out of
+       order makes steady-state produce ZERO DOM mutations, so the cross-module
+       MutationObserver cascade goes quiet and clicks/animations are never disturbed. */
+    var ok = cap.parentElement === grid && note.parentElement === grid &&
+             cap.nextElementSibling === note &&
+             (!emr || (emr.parentElement === grid && note.nextElementSibling === emr));
+    if (!ok) { grid.appendChild(cap); grid.appendChild(note); if (emr) grid.appendChild(emr); }
   }
 
   /* ===================== header chrome inside cards ===================== */
@@ -233,7 +245,7 @@
     imp(o, "background", "#fff"); imp(o, "border", "1px solid #e4ebf3"); imp(o, "border-radius", "18px");
     imp(o, "padding", "24px"); imp(o, "box-shadow", "0 1px 2px rgba(15,37,64,.04)"); imp(o, "margin-top", "20px");
     var v = $("visitView"), grid = v && v.querySelector(":scope > .vx-grid");
-    if (grid && o.parentElement === v) { try { v.appendChild(o); } catch (e) {} }
+    if (grid && o.parentElement === v && o !== v.lastElementChild) { try { v.appendChild(o); } catch (e) {} } /* idempotent: only move when not already last */
   }
 
   /* ===================== orchestration ===================== */
