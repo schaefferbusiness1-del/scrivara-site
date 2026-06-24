@@ -90,6 +90,12 @@
 "  #appHeader.mlsRdHdr #mlsRdTop .mlsRdSub{ display:none !important; }",
 "  #appHeader.mlsRdHdr #mlsRdTop{ gap:8px !important; padding:8px 12px !important; }",
 "}",
+"#appHeader.mlsRdHdr .mlsRdAvName{ }",
+"@media (max-width:560px){ #appHeader.mlsRdHdr .mlsRdAvName{ display:none !important; } }",
+"/* Visit page: design 3-column layout (Capture | Clinical note | EMR fields) */",
+"body.mls-redesign .mlsRdVisitGrid{ display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,400px) !important; gap:18px !important; align-items:start !important; }",
+"@media (max-width:1200px){ body.mls-redesign .mlsRdVisitGrid{ grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important; } body.mls-redesign .mlsRdVisitGrid #emrCard{ grid-column:1 / -1 !important; } }",
+"@media (max-width:760px){ body.mls-redesign .mlsRdVisitGrid{ grid-template-columns:1fr !important; } body.mls-redesign .mlsRdVisitGrid #emrCard{ grid-column:auto !important; } }",
 
 "/* --- cards / panels --- */",
 "body.mls-redesign .card{ border:1px solid var(--line) !important; border-radius:18px !important;",
@@ -188,10 +194,11 @@
       var meSlot=mk('div','display:flex;align-items:center'); meSlot.id='mlsRdMenuSlot'; top.appendChild(meSlot);
       // avatar
       var initials='MS'; var name='Account'; var plan='';
-      try{ var w=$('whoLabel'); if(w&&w.textContent.trim()){ name=w.textContent.trim(); } }catch(e){}
+      try{ var nm=localStorage.getItem('mls_provider_name')||localStorage.getItem('mls_name')||localStorage.getItem('providerName'); if(nm){ name=nm; var pp=nm.trim().split(/\\s+/); initials=((pp[0]||'')[0]||'')+((pp[pp.length-1]||'')[0]||''); initials=initials.toUpperCase()||'MS'; } }catch(e){}
+      try{ if(name==='Account'){ var w=$('whoLabel'); if(w&&w.textContent.trim()) name=w.textContent.trim(); } }catch(e){}
       var av=mk('div','display:flex;align-items:center;gap:10px;padding-left:6px;cursor:pointer',
         '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(140deg,#2f6bed,#19b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px">'+initials+'</div>'+
-        '<div style="line-height:1.15"><div style="color:#fff;font-size:13px;font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</div><div style="color:#8aa4c4;font-size:11.5px">Settings</div></div>');
+        '<div class="mlsRdAvName" style="line-height:1.15"><div style="color:#fff;font-size:13px;font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</div><div style="color:#8aa4c4;font-size:11.5px">Settings</div></div>');
       av.title='Settings'; av.addEventListener('click',function(){ try{ if(typeof window.openSettings==='function') window.openSettings(); }catch(e){} });
       top.appendChild(av);
       // ---- ROW 2 (nav) ----
@@ -218,12 +225,21 @@
 
   function reStyleToggleState(){ var vt=$('mlsViewToggle'); if(vt&&vt.parentElement&&vt.parentElement.id==='mlsRdToggleSlot') styleToggle(vt); }
 
+  function styleVisit(){
+    try{
+      var v=document.getElementById('visitView'); if(!v) return;
+      var grid=v.querySelector(':scope > .grid'); var emr=document.getElementById('emrCard');
+      if(!grid) return;
+      grid.classList.add('mlsRdVisitGrid');
+      if(emr && emr.parentElement!==grid){ grid.appendChild(emr); }
+    }catch(e){}
+  }
   function boot(){
     injectFonts(); injectCSS(); mark();
-    try{ buildShell(); }catch(e){}
+    try{ buildShell(); styleVisit(); }catch(e){}
     // re-assert against late mounts / other modules' observers
-    var n=0; _t=setInterval(function(){ try{ injectCSS(); mark(); buildShell(); reStyleToggleState(); }catch(e){} if(++n>20) clearInterval(_t); }, 600);
-    try{ _obs=new MutationObserver(function(){ try{ if(!$(STYLE_ID))injectCSS(); buildShell(); reStyleToggleState(); }catch(e){} });
+    var n=0; _t=setInterval(function(){ try{ injectCSS(); mark(); buildShell(); styleVisit(); reStyleToggleState(); }catch(e){} if(++n>20) clearInterval(_t); }, 600);
+    try{ _obs=new MutationObserver(function(){ try{ if(!$(STYLE_ID))injectCSS(); buildShell(); styleVisit(); reStyleToggleState(); }catch(e){} });
       _obs.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
   }
   function revert(){ try{if(_obs)_obs.disconnect();}catch(e){} try{if(_t)clearInterval(_t);}catch(e){}
