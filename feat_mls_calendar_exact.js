@@ -22,7 +22,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "cx-2.0.0";
+  var VERSION = "cx-2.0.1";
   try { if (window.__mlsCx && window.__mlsCx.installed) return; } catch (e) { return; }
 
   function isStaging() {
@@ -257,9 +257,9 @@
     var seg = head.querySelector(".cx-seg");
     var right = head.querySelector(".cx-rightctrls");
 
-    /* nav group: prev / Today / next */
+    /* nav group: prev / Today / next (capture the original toolbar row first, to hide later) */
     var prev = findBtnOc(card, /calPrev\s*\(/), today = findBtnOc(card, /calToday\s*\(/), next = findBtnOc(card, /calNext\s*\(/);
-    if (prev && prev.parentElement !== navgrp) { prev.className = "cx-navbtn"; prev.removeAttribute("style"); prev.classList.add("cx-navbtn"); navgrp.appendChild(prev); }
+    if (prev && prev.parentElement !== navgrp) { try { if (prev.parentElement && prev.parentElement !== card) prev.parentElement.setAttribute("data-cx-orig", "toolbar"); } catch (e) {} prev.removeAttribute("style"); prev.className = "cx-navbtn"; navgrp.appendChild(prev); }
     if (today && today.parentElement !== navgrp) { today.removeAttribute("style"); today.className = "cx-todaybtn"; navgrp.appendChild(today); }
     if (next && next.parentElement !== navgrp) { next.removeAttribute("style"); next.className = "cx-navbtn"; navgrp.appendChild(next); }
 
@@ -290,23 +290,16 @@
     if (wh && wh.parentElement !== right) { wh.removeAttribute("style"); wh.className = "cx-ghost"; right.appendChild(wh); }
     if (jump && jump.parentElement !== right) { right.appendChild(jump); impAll(jump, ["height:40px", "border-radius:11px", "border:1px solid #e0e8f1", "background:#fff", "padding:0 10px", "font-size:13px", "color:#3d5168", "font-family:inherit", "margin:0"]); }
     if (dup && dup.parentElement !== right) { dup.removeAttribute("style"); dup.className = "cx-ghost"; right.appendChild(dup); }
-    if (checkin && checkin.parentElement !== right) { right.appendChild(checkin); var cb = checkin.querySelector("button"); if (cb) { cb.removeAttribute("style"); cb.className = "cx-ghost"; } }
+    if (checkin && checkin.parentElement !== right) { try { var h2c = checkin.closest && checkin.closest("h2"); if (h2c) h2c.setAttribute("data-cx-orig", "h2"); } catch (e) {} right.appendChild(checkin); var cb = checkin.querySelector("button"); if (cb) { cb.removeAttribute("style"); cb.className = "cx-ghost"; } }
 
-    /* hide the now-emptied original toolbar row + the plain "Calendar" h2 icon row */
+    /* hide the now-emptied original toolbar row + the plain "Calendar" h2 icon row
+       (captured above; never hide our own header or its ancestors) */
     try {
-      var kids = card.children;
-      for (var i = 0; i < kids.length; i++) {
-        var c = kids[i];
-        if (c === head) continue;
-        if (c.classList && (c.classList.contains("cx-agenda-head"))) continue;
-        if (c.tagName === "H2" && !c.getAttribute("data-cx-hid")) {
-          /* the original h2 held the check-in wrap (moved) + a 'Calendar' label/icon -> hide if now empty of real controls */
-          if (!c.querySelector("#calCheckinWrap")) { c.setAttribute("data-cx-hid", "1"); imp(c, "display", "none"); }
-        }
-        if (c.tagName === "DIV" && !c.id && !c.className && !c.getAttribute("data-cx-hid")) {
-          /* a bare toolbar div that is now empty after we relocated its controls */
-          if (c.children.length === 0 && (c.textContent || "").trim() === "") { c.setAttribute("data-cx-hid", "1"); imp(c, "display", "none"); }
-        }
+      var origs = card.querySelectorAll('[data-cx-orig]');
+      for (var i = 0; i < origs.length; i++) {
+        var o = origs[i];
+        if (o === head || o.contains(head)) continue;
+        imp(o, "display", "none");
       }
     } catch (e) {}
   }
@@ -381,7 +374,7 @@
             for (var k = 0; k < movers.length; k++) { try { card.appendChild(movers[k]); } catch (e) {} }
             try { head.parentNode.removeChild(head); } catch (e) {}
           }
-          try { card.querySelectorAll('[data-cx-hid]').forEach(function (el) { el.style.removeProperty("display"); el.removeAttribute("data-cx-hid"); }); } catch (e) {}
+          try { card.querySelectorAll('[data-cx-hid],[data-cx-orig]').forEach(function (el) { el.style.removeProperty("display"); el.removeAttribute("data-cx-hid"); el.removeAttribute("data-cx-orig"); }); } catch (e) {}
           var realNew = $("calNewAppt") || document.querySelector('[data-cx-newappt]');
           if (realNew) { var ol = realNew.getAttribute("data-cx-origlabel"); if (ol != null) { realNew.textContent = ol; realNew.removeAttribute("data-cx-origlabel"); } realNew.removeAttribute("data-cx-newappt"); card.appendChild(realNew); }
           var realProv = $("calProvFilter"); if (realProv) card.appendChild(realProv);
