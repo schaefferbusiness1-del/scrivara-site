@@ -256,8 +256,13 @@
   function makeAnalysisDashboard(){
     try{
       var v=$('analysisView'); if(!v) return;
+      // VIEW ISOLATION: only apply the grid (which uses display:grid !important) when
+      // Analysis is the ACTIVE view; otherwise remove the class so the app's hide works.
+      var navA=$('nav_analysis');
+      var active = navA && (' '+navA.className+' ').indexOf(' on ')>=0;
+      if(!active){ v.classList.remove('mlsRdAnaGrid'); return; }
       var cards=[].slice.call(v.querySelectorAll(':scope > .card'));
-      if(!cards.length) return;
+      if(!cards.length){ v.classList.remove('mlsRdAnaGrid'); return; }
       v.classList.add('mlsRdAnaGrid');
       var L=anaLoad();
       if(L.order && L.order.length){
