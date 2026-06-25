@@ -595,10 +595,15 @@
     var nameComma = /^[A-Z][a-z'\-]+,\s*[A-Z][a-z'\-]+$/.test(n);
     return underscoreFmt || commaCred || nameComma;
   }
+  function provName(p) {
+    // _calProviders entries may be strings OR objects ({id,name,specialty,...}).
+    if (p && typeof p === "object") return String(p.name || p.displayName || p.label || p.provider || "").trim();
+    return String(p == null ? "" : p).trim();
+  }
   function rosterProviders() {
     var set = {}, out = [];
-    function addRaw(n) { // trusted, verbatim
-      n = String(n == null ? "" : n).trim();
+    function addRaw(n) { // trusted, verbatim (objects -> their name)
+      n = provName(n);
       if (!n || /^all doctors$/i.test(n)) return;
       var k = n.toLowerCase(); if (!set[k]) { set[k] = 1; out.push(n); }
     }
@@ -633,7 +638,7 @@
     var real = rosterProviders();
     try {
       var cal = Array.isArray(window._calProviders) ? window._calProviders : [];
-      var have = {}; for (var i = 0; i < cal.length; i++) have[String(cal[i]).toLowerCase()] = 1;
+      var have = {}; for (var i = 0; i < cal.length; i++) have[provName(cal[i]).toLowerCase()] = 1;
       for (var j = 0; j < real.length; j++) { var k = real[j].toLowerCase(); if (!have[k]) { cal.push(real[j]); have[k] = 1; } }
       window._calProviders = cal;
     } catch (e) {}
