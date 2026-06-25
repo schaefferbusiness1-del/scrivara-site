@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.0.0";
+  var VERSION = "si-1.0.1";
   var EST_TZ = "America/New_York";
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -192,8 +192,16 @@
 
   /* ---- replacement for window._importPulledSchedule (same signature: (appts) -> Promise) ---- */
   var _prevImport = null;
+  function chainHasReplacement() {
+    /* true if our corrected importer is already anywhere in the wrapper chain
+       (a later module may have wrapped it as its .__orig). Prevents a re-install
+       ping-pong with provider-scope/centerpiece/protocol wrappers. */
+    var f = window._importPulledSchedule, guard = 0;
+    while (f && guard < 16) { if (f.__mlsSIReplaced) return true; f = f.__orig; guard++; }
+    return false;
+  }
   function installImport() {
-    if (window._importPulledSchedule && window._importPulledSchedule.__mlsSIReplaced) return;
+    if (chainHasReplacement()) return;
     _prevImport = window._importPulledSchedule || null;
     var fn = function (appts) {
       return Promise.resolve(importAppts(appts, {})).then(function (res) {
