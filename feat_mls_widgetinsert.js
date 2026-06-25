@@ -43,7 +43,7 @@
   'use strict';
   try { if (window.__mlsWi && window.__mlsWi.installed) return; } catch (e) {}
 
-  var VERSION = 'wi-1.0.0';
+  var VERSION = 'wi-1.1.0';
   var _origPush = null;
   var _origRender = null;
   var _autoRevealedOnce = false;
@@ -114,48 +114,27 @@
   }
 
   /* ---------- robust Add-to-note (override) -------------------------------- */
+  /* wi-1.1.0 FIX: the prior external robustPush reimplemented the insert and
+     read window.currentSoap / window._cwState / window._cwLatest -- but those are
+     the app's LEXICALLY-SCOPED globals, NOT window properties, so they read as
+     undefined and the function bailed ("Generate a note first.") on EVERY click,
+     silently breaking "Add to note". The app's own cwPushToNote (_origPush) runs
+     in-scope, serializes layout AND simple widgets correctly, and refreshes the
+     visible noteBox. So we now DELEGATE to it and only add the surfacing (reveal
+     the buried card) on top. No window-scoped state access -> cannot mis-bail. */
   function robustPush(id) {
     var w = widgetById(id);
-    if (!w) return;
-    var serialized = widgetText(w);
-    if (!serialized) { toastMsg('Nothing to add yet -- generate or refresh this widget first.', 'err'); return; }
-
-    var currentSoap = gv('currentSoap');
-    var currentInsurance = gv('currentInsurance');
-    if (!currentSoap && !currentInsurance) { toastMsg('Generate a note first.', 'err'); return; }
-
-    var currentFormat = gv('currentFormat');
-    var isInsurance = (currentFormat === 'insurance');
-    var base = isInsurance ? (currentInsurance || '') : (currentSoap || '');
-
-    var header = '-- ' + w.title + ' --';   // ASCII title wrapper (plain-text note block)
-    var block = header + '\n' + serialized;
-    if (base.indexOf(block) >= 0) { toastMsg('"' + w.title + '" is already in the note.', ''); return; }
-
-    // insert before the signature block (keep signature last) -- app helpers if present
-    var next;
-    if (isFn(window.stripSignatureBlock)) {
-      var sigStr = window.stripSignatureBlock(base);
-      var hadSig = (sigStr.length !== base.replace(/\s+$/, '').length);
-      next = sigStr.replace(/\s+$/, '') + '\n\n' + block;
-      if (hadSig && isFn(window.withSignatureBlock)) next = window.withSignatureBlock(next);
-    } else {
-      next = base.replace(/\s+$/, '') + '\n\n' + block;
+    var didOrig = false;
+    if (isFn(_origPush)) { didOrig = true; try { _origPush.call(window, id); } catch (e) { didOrig = false; } }
+    // make sure the just-added widget's card is visible (it may be collapsed/buried)
+    safe(function () { if (w) surfaceWidget(w); });
+    // Fallback ONLY if the app's own push is somehow unavailable: tell the user
+    // honestly rather than silently doing nothing. (We never fabricate content.)
+    if (!didOrig) {
+      var t = widgetText(w);
+      toastMsg(t ? 'Could not reach the note inserter -- reload the page and try again.'
+                 : 'Nothing to add yet -- generate or refresh this widget first.', 'err');
     }
-
-    safe(function () {
-      if (isInsurance) window.currentInsurance = next; else window.currentSoap = next;
-    });
-
-    // refresh the visible note buffer if it is the one showing
-    var nb = gid('noteBox');
-    if (nb && nb.style.display !== 'none') {
-      if ((isInsurance && currentFormat === 'insurance') || (!isInsurance && currentFormat === 'soap')) {
-        nb.value = next;
-        safe(function () { nb.dispatchEvent(new Event('input', { bubbles: true })); });
-      }
-    }
-    toastMsg('Added "' + w.title + '" to the visit note.', 'ok');
   }
 
   /* ---------- surface a content-bearing custom widget --------------------- */
