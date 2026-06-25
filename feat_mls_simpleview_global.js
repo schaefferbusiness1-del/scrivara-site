@@ -80,7 +80,7 @@
   "use strict";
   try { if (window.__mlsSimpleViewGlobal && window.__mlsSimpleViewGlobal.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.2.0";
+  var VERSION = "1.3.0";
   var ASSET = "feat_mls_simpleview_global.js";
   var PERSIST_KEY = "mls.easy.viewPref";     // shared with viewpersist; "complex" | "simple"
   var STYLE_ID = "mls-sv-style";
@@ -161,11 +161,15 @@
          (id-scoped + !important) which OUTRANKS a plain .mls-sv-hide hide -> the advanced
          tabs stayed visible in simple view. Add id+class-scoped !important selectors that
          beat it (same id #mlsRdNav, one extra class), keeping the generic rule as fallback. */
+      /* v1.3.0: feat_mls_redesign forces
+         "#appHeader.mlsRdHdr .navtab:not([style*=display:none]):not(.nav-feat-off){display:flex!important}"
+         (specificity 1 id / 5 classes) which OUTRANKS a single-id hide. Use TWO ids
+         (#appHeader #mlsRdNav) so our hide wins (2 ids > 1 id) regardless of class count. */
       s.textContent =
         "html." + ACTIVE_CLASS + " ." + HIDE_CLASS + "{display:none !important;}" +
-        "html." + ACTIVE_CLASS + " #mlsRdNav ." + HIDE_CLASS + "{display:none !important;}" +
-        "html." + ACTIVE_CLASS + " #mlsRdNav .navtab." + HIDE_CLASS + "{display:none !important;}" +
-        "html." + ACTIVE_CLASS + " .mainnav ." + HIDE_CLASS + "{display:none !important;}";
+        "html." + ACTIVE_CLASS + " #appHeader #mlsRdNav ." + HIDE_CLASS + "{display:none !important;}" +
+        "html." + ACTIVE_CLASS + " #appHeader #mlsRdNav .navtab." + HIDE_CLASS + "{display:none !important;}" +
+        "html." + ACTIVE_CLASS + " #appHeader #mlsRdNav .mainnav .navtab." + HIDE_CLASS + "{display:none !important;}";
       (document.head || document.documentElement).appendChild(s);
     });
   }
