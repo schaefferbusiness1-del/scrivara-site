@@ -9,9 +9,10 @@
  * scroll-into-view and re-checks periodically so the selector advances as time passes.
  *
  * Strictly additive + reversible: window.__mlsNextUpAutoScroll.revert()
- * Gentle: uses scrollIntoView({block:"nearest"}); only scrolls when the focal card is offscreen;
- * after the initial landing it only re-scrolls when the focal patient actually changes, and it
- * backs off briefly after the user scrolls so it never fights manual scrolling.
+ * Gentle: only scrolls when the focal card is offscreen; the initial landing centers the card,
+ * later time-advances use "nearest"; after the initial landing it only re-scrolls when the focal
+ * patient actually changes, and it backs off briefly after the user scrolls so it never fights
+ * manual scrolling.
  */
 ;(function(){
   'use strict';
@@ -66,8 +67,11 @@
       if (initialDone && !focalChanged && (Date.now() - lastUserScroll < USER_SCROLL_BACKOFF)) return false;
 
       if (!inView(fc, 8)){
+        // Initial landing: center the current-time card so it clearly "lands" on the patient and
+        // shows the surrounding upcoming patients. Later time-advances are small -> "nearest" (gentle).
+        var block = initialDone ? 'nearest' : 'center';
         try {
-          fc.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: initialDone ? 'smooth' : 'auto' });
+          fc.scrollIntoView({ block: block, inline: 'nearest', behavior: initialDone ? 'smooth' : 'auto' });
         } catch(e){ try { fc.scrollIntoView(); } catch(e2){} }
       }
       lastFocal = key;
