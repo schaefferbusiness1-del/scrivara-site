@@ -60,7 +60,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "upnowsync-1.1.0";
+  var VERSION = "upnowsync-1.2.0";
   try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.version === VERSION) return; } catch (e) { return; }
   try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.revert) { window.__mlsUpNowSync.revert(); } } catch (e) {}
 
@@ -74,6 +74,43 @@
   var _depth = 0;             /* guard: bounded re-render recursion */
   var _origRender = null;
   var _obs = null, _poll = null, _t = null;
+  var _chartCap = null;       /* capture-phase Chart-button interceptor */
+
+  /* ---------------------------------------------------------------------------
+   * CHART BUTTON FIX (same single-source-of-truth domain)
+   * The patient-bar (#mlsCtxBar) Chart button is wired in renderInto() as
+   *   b.onclick = function(){ if (act==='chart') openChart(id); }
+   * where `id` is a CLOSURE captured at render time. When the active patient is
+   * changed via the schedule "Select" path, the bar's name/meta re-renders but the
+   * onclick closure can lag (the heartbeat re-render is throttled by
+   * ctxbar-stabilize's idempotent-innerHTML guard), so openChart(id) ->
+   * openPatient(id) opens/activates the STALE patient -- the wrong chart.
+   * Fix: intercept the Chart click in the CAPTURE phase and route it through the
+   * ONE active-patient source of truth (getActivePtId at click time), pre-empting
+   * the stale closure. Schedule reads activePt() live (already correct);
+   * Visit/History carry no id. Additive, reversible.
+   * ------------------------------------------------------------------------- */
+  function chartCapHandler(e) {
+    try {
+      var t = e && e.target;
+      if (!t || !t.closest) return;
+      var btn = t.closest('#mlsCtxBar .mlsctx-actions button[data-act="chart"]');
+      if (!btn) return;
+      var id = (typeof window.getActivePtId === "function") ? window.getActivePtId() : null;
+      if (!id) return;                       /* no active patient -> let the app's default run */
+      e.stopImmediatePropagation();          /* pre-empt the stale-closure onclick */
+      e.preventDefault();
+      if (typeof window.openPatient === "function") window.openPatient(id);   /* active = the ONE source of truth */
+      else if (typeof window.setActivePtId === "function") window.setActivePtId(id);
+      if (typeof window.showView === "function") window.showView("patients");  /* open the chart view */
+    } catch (err) {}
+  }
+  function installChartFix() {
+    try { if (_chartCap) return; _chartCap = chartCapHandler; document.addEventListener("click", _chartCap, true); } catch (e) {}
+  }
+  function uninstallChartFix() {
+    try { if (_chartCap) { document.removeEventListener("click", _chartCap, true); _chartCap = null; } } catch (e) {}
+  }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function lc(s) { return String(s == null ? "" : s).trim().toLowerCase(); }
@@ -242,6 +279,7 @@
     var ok = wrapRender();
     if (!ok) { try { setTimeout(boot, 800); } catch (e) {} }
     bindName();
+    installChartFix();
     try {
       _obs = new MutationObserver(function () { if (_busy) return; scheduleSync(); });
       _obs.observe(heroBox() || document.documentElement, { childList: true, subtree: true });
@@ -259,6 +297,7 @@
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { if (_poll) { clearInterval(_poll); _poll = null; } } catch (e) {}
     try { if (_t) { clearTimeout(_t); _t = null; } } catch (e) {}
+    uninstallChartFix();
     try {
       if (_origRender && window._renderTodayPatients && window._renderTodayPatients.__mlsUpNowWrapped) {
         window._renderTodayPatients = _origRender;
