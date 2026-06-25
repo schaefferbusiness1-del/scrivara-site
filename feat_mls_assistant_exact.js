@@ -1,4 +1,4 @@
-/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.1)
+/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.2)
  *
  *  THE full design-language MLS Assistant panel (Slice 3 of the Assistant rework).
  *  STAGING-FIRST, then prod via the data: staging marker (self-gated exactly like the
@@ -48,7 +48,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "asst-2.1.1";
+  var VERSION = "asst-2.1.2";
   try { if (window.__mlsAsst && window.__mlsAsst.installed) return; } catch (e) { return; }
 
   /* ---------- self-gate: staging page OR prod staging-marker (active on both) ---------- */
@@ -908,7 +908,12 @@
     try { e.style.setProperty("display", "none", "important"); e.style.setProperty("visibility", "hidden", "important"); e.setAttribute("data-mls-dup-hidden", "1"); } catch (x) {}
     return true;
   }
-  function killBadge() { return safe(function () { return hideEl(document.getElementById("mls-assist-badge")); }, false); }
+  function attachBadgeObs(b) {
+    if (!b || b.__mlsDupAttrObs) return;
+    b.__mlsDupAttrObs = true;
+    safe(function () { var ob = new MutationObserver(function () { hideEl(document.getElementById("mls-assist-badge")); }); ob.observe(b, { attributes: true, attributeFilter: ["style", "class"] }); b.__mlsDupAttrObsRef = ob; });
+  }
+  function killBadge() { return safe(function () { var b = document.getElementById("mls-assist-badge"); if (b) attachBadgeObs(b); return hideEl(b); }, false); }
   function killDupFull() {
     return safe(function () {
       var changed = killBadge();
@@ -932,14 +937,23 @@
     if (_dupRaf) return;
     _dupRaf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () { _dupRaf = 0; killBadge(); });
   }
+  var _dupFullPoll = null;
   function startDupWatch() {
     killDupFull();
+    /* catch (re)creation of the badge or any new node */
     safe(function () { _dupObs = new MutationObserver(scheduleDup); _dupObs.observe(document.body || document.documentElement, { childList: true, subtree: true }); });
-    var t = 0; _dupPoll = setInterval(function () { killDupFull(); if (++t > 30) { clearInterval(_dupPoll); _dupPoll = null; } }, 1000);
+    /* UNCAPPED gentle backstop: re-hide the known badge forever (cheap getElementById).
+       Combined with the per-badge attribute observer (attachBadgeObs), a re-show by the
+       redesign paint loop is reverted within a frame, so it cannot come back. */
+    _dupPoll = setInterval(function () { killBadge(); }, 1500);
+    /* heavier full safety-net scan, less frequent + capped */
+    var t = 0; _dupFullPoll = setInterval(function () { killDupFull(); if (++t > 20) { clearInterval(_dupFullPoll); _dupFullPoll = null; } }, 2000);
   }
   function unkillDup() {
     safe(function () { if (_dupObs) _dupObs.disconnect(); _dupObs = null; });
     safe(function () { if (_dupPoll) clearInterval(_dupPoll); _dupPoll = null; });
+    safe(function () { if (_dupFullPoll) clearInterval(_dupFullPoll); _dupFullPoll = null; });
+    safe(function () { var b = document.getElementById("mls-assist-badge"); if (b && b.__mlsDupAttrObsRef) { b.__mlsDupAttrObsRef.disconnect(); b.__mlsDupAttrObs = false; } });
     safe(function () { var h = document.querySelectorAll('[data-mls-dup-hidden="1"]'); for (var i = 0; i < h.length; i++) { h[i].style.removeProperty("display"); h[i].style.removeProperty("visibility"); h[i].removeAttribute("data-mls-dup-hidden"); } });
   }
 
