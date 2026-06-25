@@ -8,16 +8,16 @@
 <style>
   :root{ --bg:#f4f6fa; --card:#ffffff; --ink:#15293f; --muted:#5b6b7e; --line:#e2e8f1; --brand:#2563c9; --brand-dk:#1b4fa6; }
   *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
-  .card{ background:var(--card); width:100%; max-width:440px; border:1px solid var(--line); border-radius:16px; padding:26px 24px; box-shadow:0 8px 30px rgba(20,40,70,.08); }
+  body{ margin:0; background:linear-gradient(135deg,#0d2138 0%,#143560 100%); color:var(--ink); font-family:-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:36px 20px; }
+  .card{ background:#ffffff; width:100%; max-width:440px; border:0; border-radius:20px; padding:30px 30px 26px; box-shadow:0 40px 90px -30px rgba(0,0,0,.6); }
   .logo{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
   .logo .mark{ width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#2dd4bf,#2563c9); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; }
   h1{ font-size:19px; margin:14px 0 4px; }
   p.sub{ color:var(--muted); font-size:14px; margin:0 0 18px; line-height:1.45; }
   label{ display:block; font-size:13px; font-weight:600; margin:12px 0 5px; }
-  input{ width:100%; border:1px solid #cdd8e6; border-radius:9px; padding:10px 11px; font-size:14px; }
-  input:focus{ outline:none; border-color:var(--brand); }
-  button.go{ width:100%; margin-top:18px; background:var(--brand); color:#fff; border:none; border-radius:10px; padding:12px; font-size:15px; font-weight:700; cursor:pointer; }
+  input{ width:100%; height:46px; border:1px solid #e0e8f1; background:#f8fafc; border-radius:11px; padding:0 14px; font-size:14px; }
+  input:focus{ outline:none; border-color:#2f6bed; background:#fff; }
+  button.go{ width:100%; margin-top:18px; background:linear-gradient(135deg,#2f6bed,#2257cf); color:#fff; border:none; border-radius:12px; padding:13px; font-size:15px; font-weight:700; cursor:pointer; box-shadow:0 12px 26px -10px rgba(47,107,237,.6); }
   button.go:disabled{ opacity:.6; cursor:default; }
   .msg{ font-size:13px; border-radius:9px; padding:10px 12px; margin-top:14px; display:none; }
   .msg.err{ background:#fdecec; border:1px solid #f5c6c6; color:#a23030; }
