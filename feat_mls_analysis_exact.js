@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "ax-2.1.3";
+  var VERSION = "ax-2.1.4";
   try { if (window.__mlsAx && window.__mlsAx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -209,8 +209,23 @@
       var colBtn = tile.querySelector(".ax-collapse");
       if (exp) { prev.style.display = "none"; body.style.display = "flex"; card.style.display = ""; if (colBtn) colBtn.style.display = "block"; }
       else { buildPreview(prev, m); prev.style.display = "flex"; body.style.display = "none"; if (colBtn) colBtn.style.display = "none"; }
-      v.appendChild(tile);
     });
+    /* idempotent ordering: only re-append tiles when their order actually changed.
+       Re-appending every tile on every render() detached/re-attached subtrees and
+       broke scroll anchoring (page jumped on Expand/Collapse). Reconcile once, and
+       preserve the window scroll position if the reflow nudges it. */
+    var titleEl = v.querySelector(":scope > .ax-title");
+    var seq = []; if (titleEl) seq.push(titleEl);
+    order(ids).forEach(function (k) {
+      var t = v.querySelector('.ax-tile[data-ax-id="' + k + '"]'); if (t) seq.push(t);
+    });
+    var cur = Array.prototype.filter.call(v.children, function (c) { return seq.indexOf(c) >= 0; });
+    var same = cur.length === seq.length && cur.every(function (c, i) { return c === seq[i]; });
+    if (!same) {
+      var _sy = window.scrollY;
+      seq.forEach(function (el) { v.appendChild(el); });
+      if (Math.abs(window.scrollY - _sy) > 1) window.scrollTo(0, _sy);
+    }
     v.setAttribute("data-ax-built", VERSION);
   }
 

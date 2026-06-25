@@ -17,7 +17,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "sx-2.0.1";
+  var VERSION = "sx-2.0.2";
   try { if (window.__mlsSx && window.__mlsSx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -100,10 +100,23 @@
     if (buildCard) { buildCard.classList.add("sx-buildcard"); if (buildCard.parentElement !== right) right.appendChild(buildCard); }
     if (creations) { creations.classList.add("sx-creations"); if (creations.parentElement !== right) right.appendChild(creations); }
 
-    /* order: title (0), copilot (col1), right (col2), result (full width) */
-    if (copilot && copilot.parentElement === v) v.appendChild(copilot);
-    if (right.parentElement !== v) v.appendChild(right); else v.appendChild(right);
-    if (result && result.parentElement === v) v.appendChild(result);
+    /* idempotent ordering: title, copilot, right, result. Re-appending #copilotCard
+       on every observer tick was resetting #copilotThread.scrollTop to 0 -- the
+       glitchy MLS Copilot scroll. Only reorder when the sequence actually differs,
+       and preserve the thread scroll position if a reorder is needed. */
+    var titleEl = v.querySelector(":scope > .sx-title");
+    var seq = [];
+    if (titleEl) seq.push(titleEl);
+    if (copilot) seq.push(copilot);
+    if (right) seq.push(right);
+    if (result) seq.push(result);
+    var cur = Array.prototype.filter.call(v.children, function (c) { return seq.indexOf(c) >= 0; });
+    var same = cur.length === seq.length && cur.every(function (c, i) { return c === seq[i]; });
+    if (!same) {
+      var _th = $("copilotThread"); var _tt = _th ? _th.scrollTop : 0;
+      seq.forEach(function (el) { v.appendChild(el); });
+      if (_th && _th.scrollTop !== _tt) _th.scrollTop = _tt;
+    }
 
     /* mark the note paragraph under copilot so CSS can pad it */
     if (copilot) {
