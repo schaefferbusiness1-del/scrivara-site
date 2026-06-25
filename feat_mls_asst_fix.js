@@ -571,18 +571,47 @@
    * FIX 5 -- dynamic doctor picker from the REAL athena providers
    * ===================================================================== */
   var providerPoll = null;
+  /* Sanitize roster-recovered names. The roster's flat-text extractor over-captures
+   * (dates, locations, "Appointment Type", resource codes, UI "Close" artifacts), so
+   * we admit a recovered name only if it actually LOOKS like a provider: athena's
+   * "Last_First_Cred" underscore format, "Name, CRED", or a clean "Last, First".
+   * App-provided _calProviders entries (e.g. the user's own name) are trusted verbatim. */
+  var PROV_CRED = /\b(MD|DO|DPM|PA-?C|CRNP|DNP|NP-?C|PsyD|PhD|MBBS|DDS|DC|OD|MSN|DPT)\b/;
+  function cleanProviderName(n) {
+    n = String(n == null ? "" : n).replace(/\s+/g, " ").trim();
+    n = n.replace(/\s*Close$/, "").trim();
+    return n;
+  }
+  function isProviderName(n) {
+    n = String(n || "");
+    if (n.length < 4 || n.length > 40) return false;
+    if (/^[A-Za-z]{1,4}\d/.test(n)) return false; // resource codes (NP10, RM5...)
+    if (/appointment|encounter|request|performed|documented|schedule|\btype\b|provider$|patient$|status|reason|resource|department|rendering|location/i.test(n)) return false;
+    if (/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/i.test(n)) return false;
+    if (/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(n)) return false;
+    if (/\d{4}/.test(n)) return false;
+    var underscoreFmt = /^[A-Za-z][A-Za-z'\-]+_[A-Za-z][A-Za-z'\-. ]+_[A-Za-z\-]+$/.test(n);
+    var commaCred = /,/.test(n) && PROV_CRED.test(n);
+    var nameComma = /^[A-Z][a-z'\-]+,\s*[A-Z][a-z'\-]+$/.test(n);
+    return underscoreFmt || commaCred || nameComma;
+  }
   function rosterProviders() {
     var set = {}, out = [];
-    function add(n) {
+    function addRaw(n) { // trusted, verbatim
       n = String(n == null ? "" : n).trim();
       if (!n || /^all doctors$/i.test(n)) return;
       var k = n.toLowerCase(); if (!set[k]) { set[k] = 1; out.push(n); }
     }
+    function addFiltered(n) { // roster-recovered, sanitized
+      n = cleanProviderName(n);
+      if (!n || /^all doctors$/i.test(n) || !isProviderName(n)) return;
+      var k = n.toLowerCase(); if (!set[k]) { set[k] = 1; out.push(n); }
+    }
+    var cal = providers(); for (var k = 0; k < cal.length; k++) addRaw(cal[k]);
     var pk = safe(function () { return window.__mlsProviderPicker; }, null);
-    if (pk && isFn(pk.cachedProviders)) { var c = safe(function () { return pk.cachedProviders(); }, []) || []; for (var i = 0; i < c.length; i++) add(c[i]); }
+    if (pk && isFn(pk.cachedProviders)) { var c = safe(function () { return pk.cachedProviders(); }, []) || []; for (var i = 0; i < c.length; i++) addFiltered(c[i]); }
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
-    if (rp && isFn(rp.providers)) { var c2 = safe(function () { return rp.providers(); }, []) || []; for (var j = 0; j < c2.length; j++) add(c2[j]); }
-    var cal = providers(); for (var k = 0; k < cal.length; k++) add(cal[k]);
+    if (rp && isFn(rp.providers)) { var c2 = safe(function () { return rp.providers(); }, []) || []; for (var j = 0; j < c2.length; j++) addFiltered(c2[j]); }
     return out;
   }
   function rebuildProvDropdown(real) {
