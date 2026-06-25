@@ -80,7 +80,7 @@
   "use strict";
   try { if (window.__mlsSimpleViewGlobal && window.__mlsSimpleViewGlobal.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.1.0";
+  var VERSION = "1.2.0";
   var ASSET = "feat_mls_simpleview_global.js";
   var PERSIST_KEY = "mls.easy.viewPref";     // shared with viewpersist; "complex" | "simple"
   var STYLE_ID = "mls-sv-style";
@@ -157,7 +157,15 @@
       var s = document.createElement("style");
       s.id = STYLE_ID;
       s.type = "text/css";
-      s.textContent = "html." + ACTIVE_CLASS + " ." + HIDE_CLASS + "{display:none !important;}";
+      /* v1.2.0: feat_mls_header_exact adds "#mlsRdNav .navtab{display:flex!important}"
+         (id-scoped + !important) which OUTRANKS a plain .mls-sv-hide hide -> the advanced
+         tabs stayed visible in simple view. Add id+class-scoped !important selectors that
+         beat it (same id #mlsRdNav, one extra class), keeping the generic rule as fallback. */
+      s.textContent =
+        "html." + ACTIVE_CLASS + " ." + HIDE_CLASS + "{display:none !important;}" +
+        "html." + ACTIVE_CLASS + " #mlsRdNav ." + HIDE_CLASS + "{display:none !important;}" +
+        "html." + ACTIVE_CLASS + " #mlsRdNav .navtab." + HIDE_CLASS + "{display:none !important;}" +
+        "html." + ACTIVE_CLASS + " .mainnav ." + HIDE_CLASS + "{display:none !important;}";
       (document.head || document.documentElement).appendChild(s);
     });
   }
