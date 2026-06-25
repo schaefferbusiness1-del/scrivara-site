@@ -46,6 +46,7 @@
   }
 
   function upNowName(){
+    try{var _hpn=(document.getElementById('heroPtName')||{}).value||'';_hpn=String(_hpn).trim();if(_hpn)return _hpn;}catch(_e){}
     // Prefer the structured today list at the current "now" index (the same source the banner
     // and NEXT UP highlight use); fall back to the hero name input the auto-load filled.
     try {
