@@ -22,7 +22,7 @@
   'use strict';
   try { if (window.__mlsLoginClean && window.__mlsLoginClean.installed) return; } catch (e) { return; }
 
-  var VERSION = 'lc-1.0.0';
+  var VERSION = 'lc-1.0.1';
   var STYLE_ID = 'mlsLoginCleanStyle';
   var CLS = 'mls-login-only';
   var tickT = 0, obs = null;
@@ -31,13 +31,20 @@
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
 
   // Is the auth/login screen actually on-screen right now?
+  // IMPORTANT: detect via the app's OWN inline display toggles (which this module's
+  // !important CSS does NOT alter), never via computed display -- otherwise our own
+  // "html.mls-login-only #authScreen{display:flex!important}" rule would make the auth
+  // screen read as visible forever and stick the gate ON even after a real login.
   function isOnLogin() {
     var a = gid('authScreen') || safe(function () { return document.querySelector('.auth-wrap'); }, null);
     if (!a) return false;
-    var cs = safe(function () { return getComputedStyle(a); }, null);
-    if (!cs) return false;
-    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-    return safe(function () { return a.getBoundingClientRect().height > 40; }, false);
+    var app = gid('appScreen');
+    // The app reveals #appScreen (inline display set to a truthy value) once authenticated.
+    var appShown = !!(app && app.style && app.style.display && app.style.display !== 'none');
+    if (appShown) return false;                 // logged in -> not on login
+    // Logged out / pre-auth: the app sets #authScreen inline display to 'none' when it
+    // hides the login. Anything other than an explicit inline 'none' means it is showing.
+    return (a.style && a.style.display) !== 'none';
   }
 
   function injectCSS() {
