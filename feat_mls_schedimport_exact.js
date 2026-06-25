@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.0.1";
+  var VERSION = "si-1.0.2";
   var EST_TZ = "America/New_York";
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -121,7 +121,26 @@
 
     /* target day: explicit -> page-printed date -> EST today (NO synthetic fallback) */
     var schedText = safe(function () { return (window.__schedRaw && window.__schedRaw.text) || (lastResp && lastResp.text) || ""; }, "");
-    var target = opts.date || window.__mlsSITarget || detectSchedDate(schedText) || estTodayKey();
+    var pageDate = normDate(detectSchedDate(schedText)) || "";
+    var fallbackDay = normDate(opts.date) || (window.__mlsSITarget ? normDate(window.__mlsSITarget) : "") || pageDate || estTodayKey();
+    var scopeDate = opts.scopeDate ? (normDate(opts.scopeDate) || String(opts.scopeDate).slice(0, 10)) : "";
+
+    /* Resolve EACH appointment's REAL scheduled date: its own parsed date first, then the
+       date printed on the schedule page, then the requested/target day. This stops the old
+       behaviour where every parsed row got one single fallback date (the whole week landing
+       on today). */
+    appts = appts.map(function (a) {
+      var o = {}; for (var k in a) { if (a.hasOwnProperty(k)) o[k] = a[k]; }
+      o._date = normDate(a.date) || pageDate || fallbackDay;
+      return o;
+    });
+    /* Day-scoped pull (Today / Tomorrow / a specific date): import ONLY that day's
+       appointments, placed on that day. Never smear other days onto it. */
+    if (scopeDate) appts = appts.filter(function (a) { return a._date === scopeDate; });
+    if (!appts.length) {
+      return Promise.resolve({ created: 0, skipped: 0, reason: scopeDate ? "none-for-day" : "empty", days: {}, target: scopeDate || fallbackDay, scope: scopeDate || "" });
+    }
+    var target = scopeDate || fallbackDay;
 
     /* optional provider scoping (item 5): keep only the chosen provider's rows when present */
     if (opts.provider && !/^all$/i.test(String(opts.provider))) {
@@ -151,7 +170,7 @@
       appts.forEach(function (a) {
         chain = chain.then(function () {
           var name = String(a.name || "").trim(); if (!name) return;
-          var date = normDate(a.date) || target;          /* each appt on its OWN day, else target */
+          var date = a._date || normDate(a.date) || target;   /* the resolved per-appt date */
           var nt = normTime(a.time);
           var key = apptKey(name, date, nt);
           var dayKey = "D:" + name.toLowerCase().replace(/\s+/g, " ") + "|" + date;
@@ -179,12 +198,12 @@
         return Promise.resolve(safe(function () { return isFn(window.loadCalendar) ? window.loadCalendar() : null; })).then(function () {
           window._heroNowIdx = -1;
           var todayKey = estTodayKey();
-          var todays = appts.filter(function (a) { return (normDate(a.date) || target) === todayKey && String(a.name || "").trim(); });
+          var todays = appts.filter(function (a) { return (a._date || normDate(a.date) || target) === todayKey && String(a.name || "").trim(); });
           safe(function () { if (isFn(window._renderTodayPatients)) window._renderTodayPatients(todays); });
           safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.refresh)) window.__mlsPick.refresh(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
-          return { created: created, skipped: skipped, days: days, target: target };
+          return { created: created, skipped: skipped, days: days, target: target, scope: scopeDate || "" };
         });
       });
     });
@@ -206,11 +225,14 @@
     var fn = function (appts) {
       return Promise.resolve(importAppts(appts, {})).then(function (res) {
         safe(function () {
-          var msg = res && res.created
-            ? ("Added " + res.created + " appointment" + (res.created === 1 ? "" : "s") + (res.skipped ? (" - " + res.skipped + " already on your calendar") : "") + ".")
-            : (res && res.skipped ? ("Everything pulled was already on your calendar (" + res.skipped + ") - nothing to add.")
+          var nDays = (res && res.days) ? Object.keys(res.days).length : 0;
+          var msg = (res && res.created)
+            ? ("Imported " + res.created + " appointment" + (res.created === 1 ? "" : "s")
+               + (nDays > 1 ? (" across " + nDays + " days") : (res.target ? (" for " + res.target) : ""))
+               + (res.skipped ? (" (" + res.skipped + " already on your calendar)") : "") + ".")
+            : (res && res.skipped ? ("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar - nothing new to import.")
               : (res && res.reason === "signin" ? "Sign in to import the schedule."
-                : "No appointments found to add. Open your athenaOne Day schedule (the patient grid, not the dashboard) and pull again."));
+                : "No appointments found to import. Open your athenaOne Day schedule (the patient grid, not the dashboard) and pull again."));
           toast(msg, res && res.created ? "ok" : "");
           var ps = document.getElementById("heroPullStatus");
           if (ps) { ps.textContent = msg; ps.style.color = (res && res.created) ? "#d8ffe8" : "rgba(255,255,255,.95)"; ps.style.display = "block"; }
@@ -251,12 +273,13 @@
         onStatus("Finding patients on " + date + "...", "");
         return Promise.resolve(safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(r.text) : []; }, [])).then(function (parsed) {
           parsed = Array.isArray(parsed) ? parsed : [];
-          /* force the chosen day: drop the parse's own dates so every appt files on `date` */
-          var forced = parsed.map(function (a) { return { name: a.name, dob: a.dob || "", date: date, time: a.time || "", reason: a.reason || "" }; });
-          return importAppts(forced, { date: date, provider: opts.provider }).then(function (res) {
-            if (res.created > 0) onStatus("Added " + res.created + " appointment" + (res.created === 1 ? "" : "s") + " for " + date + ".", "ok");
-            else if (res.skipped > 0) onStatus("All " + res.skipped + " were already on your calendar for " + date + ".", "");
-            else onStatus("No patients found for that day. Open your athenaOne Day schedule (the patient grid) and pull again.", "err");
+          /* keep each appt OWN parsed date; importAppts scopes to `date` and files each
+             appointment on its real day -- no whole-week-onto-one-day smear. */
+          var rows = parsed.map(function (a) { return { name: a.name, dob: a.dob || "", date: a.date || "", time: a.time || "", reason: a.reason || "" }; });
+          return importAppts(rows, { date: date, scopeDate: date, provider: opts.provider }).then(function (res) {
+            if (res.created > 0) onStatus("Imported " + res.created + " appointment" + (res.created === 1 ? "" : "s") + " for " + date + ".", "ok");
+            else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
+            else onStatus("No patients scheduled for " + date + " in your open athenaOne tab. Open that day Day schedule (the patient grid) and pull again.", "err");
             /* also pull each patient's chart history in the background (non-blocking) */
             safe(function () { if (isFn(window._pullAllHistories)) window._pullAllHistories(forced); });
             return res;

@@ -516,8 +516,8 @@
         var n1 = 0; try { n1 = (window._calAppts || []).length; } catch (e) {}
         var added = n1 - n0;
         paintModal();
-        if (added > 0) setPullStatus("Pulled " + added + " appointment" + (added === 1 ? "" : "s") + " \u00b7 " + nowClock(), true);
-        else setPullStatus("No new appointments added \u2014 they may already be on your calendar, or open your athenaOne Day schedule with patients and pull again.", false);
+        if (added > 0) setPullStatus("Imported " + added + " appointment" + (added === 1 ? "" : "s") + " \u00b7 " + nowClock(), true);
+        else setPullStatus("No new appointments were imported. Open your athenaOne Day schedule (the patient grid) with the day's patients and pull again.", false);
       }, 1800);
     }
     window.addEventListener("message", onRes);

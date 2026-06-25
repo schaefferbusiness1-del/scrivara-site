@@ -671,8 +671,8 @@
         var n1 = appts().length, added = n1 - n0;
         try { var L = dayList(selDate, selProvider); wbMarkPulled(L.map(function (x) { return x.id; })); } catch (e) {}
         renderSchedule();
-        if (added > 0) setPullStatus("Pulled " + added + " appointment" + (added === 1 ? "" : "s") + " - " + nowClock(), true);
-        else setPullStatus("No new appointments added - they may already be on your calendar, or open your Day schedule with patients and pull again.", false);
+        if (added > 0) setPullStatus("Imported " + added + " appointment" + (added === 1 ? "" : "s") + " - " + nowClock(), true);
+        else setPullStatus("No new appointments were imported. Open your athenaOne Day schedule (the patient grid) with the day's patients and pull again.", false);
       }, 1800);
     }
     window.addEventListener("message", onRes);
