@@ -710,6 +710,14 @@
     q = String(q || "").trim();
     if (!q || busy) return;
     addMsg("user", q);
+    /* Smart adaptive writeback location: handle "put injections under X instead" or
+       "where does everything go?" locally + deterministically (works even offline),
+       and tell the doctor exactly where each thing will be written. */
+    var _wbr = safe(function () { return window.__mlsWbRouter; }, null);
+    if (_wbr && isFn(_wbr.parseCommand)) {
+      var _pc = safe(function () { return _wbr.parseCommand(q); }, null);
+      if (_pc && _pc.matched) { addMsg("ai", _pc.reply); return; }
+    }
     if (!backendReady()) {
       addMsg("ai", "Sign in to your MLS account to chat with the assistant - it needs your account to read your practice data.");
       return;
@@ -728,7 +736,8 @@
         athena_status: cn ? (cn.label || "") : "", athena_detail: cn ? (cn.detail || "") : "",
         patients_on_selected_day: (L && L.length) || 0, op_note_candidates_on_selected_day: (L ? opNoteCount(L) : 0),
         active_patient: ap ? { name: ap.name || "", id: ap.id || "" } : null,
-        total_patients: (getPatients() || []).length, total_appointments: (appts() || []).length };
+        total_patients: (getPatients() || []).length, total_appointments: (appts() || []).length,
+        writeback_targets: safe(function () { return (window.__mlsWbRouter && window.__mlsWbRouter.all) ? window.__mlsWbRouter.all() : null; }, null) };
     }, null);
     var hist = history.filter(function (m) { return m.role === "user" || m.role === "ai"; })
                       .map(function (m) { return { role: m.role === "user" ? "user" : "ai", text: m.text }; });

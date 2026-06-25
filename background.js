@@ -348,9 +348,156 @@ function mlsMatchPatients(mls, ath) {
   return { status: 'uncertain', dobMatch: dobMatch, mrnMatch: mrnMatch, nameMatch: nameMatch };
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { mlsRobustType: mlsRobustType, mlsFieldScanner: mlsFieldScanner, mlsNotePaster: mlsNotePaster, mlsRouteSection: mlsRouteSection, mlsSegmentNote: mlsSegmentNote, mlsMatchPatients: mlsMatchPatients, mlsReadChartIdentity: mlsReadChartIdentity, mlsReadActivePatient: mlsReadActivePatient };
+// ---- Procedure-template prep driver (injected, runs per frame) ----
+// Drives athenaOne so the op-note has a destination: PE tab -> Procedure
+// Documentation -> add the chosen procedure template (e.g. "Injection Generic
+// Template") -> leaves the editable skeleton box ready. The EXISTING note paster
+// (mlsNotePaster) then ERASES that skeleton and inserts the op-note. NEVER clicks
+// Save/Sign. Self-contained (no out-of-scope refs) for executeScript injection.
+// mode 'probe' = READ-ONLY (no clicks): report what is reachable/present.
+// mode 'prep'  = perform the add-template sequence (clicks navigation only).
+async function mlsAthenaPrepProcTemplate(params, mode) {
+  params = params || {}; mode = mode || 'prep';
+  var sectionName = String(params.sectionName || 'Procedure Documentation');
+  var template = String(params.template || 'Injection Generic Template');
+  var tabName = String(params.tab || 'PE');
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  function vis(el) { try { var r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden' && parseFloat(s.opacity || '1') > 0.05; } catch (e) { return true; } }
+  function txt(el) { return ((el && (el.textContent || el.innerText)) || '').replace(/\s+/g, ' ').trim(); }
+  function clickEl(el) {
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    var o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+    ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) {
+      try { el.dispatchEvent(new (tp.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(tp, o)); } catch (e) {}
+    });
+    try { el.click(); } catch (e) {}
+  }
+  function nodes(sel) { try { return [].slice.call(document.querySelectorAll(sel)); } catch (e) { return []; } }
+  // shortest visible element whose text matches re (so we hit the label, not a big container)
+  function findByText(re, sel) {
+    var els = nodes(sel || 'button,a,[role=button],[role=tab],[role=menuitem],[role=option],li,span,div,td');
+    var hits = [];
+    for (var i = 0; i < els.length; i++) { var el = els[i]; if (!vis(el)) continue; var t = txt(el); if (t && t.length <= 90 && re.test(t)) hits.push({ el: el, t: t, len: t.length }); }
+    hits.sort(function (a, b) { return a.len - b.len; });
+    return hits;
+  }
+  // the editable Injection-template skeleton box (INFORMED CONSENT / PROCEDURE / DISCUSSION)
+  function findTemplateBox() {
+    var eds = nodes('textarea,[contenteditable=""],[contenteditable="true"]').filter(vis);
+    var best = null, bs = -1;
+    for (var i = 0; i < eds.length; i++) {
+      var el = eds[i];
+      var c = (el.value != null ? el.value : (el.innerText || el.textContent || ''));
+      var lo = String(c).toLowerCase();
+      var r = el.getBoundingClientRect(), s = 0;
+      if (/informed consent/.test(lo)) s += 50;
+      if (/\bprocedure\b/.test(lo)) s += 18;
+      if (/\bdiscussion\b/.test(lo)) s += 18;
+      if (/sterile|injection|tolerated the procedure|dressing was applied/.test(lo)) s += 15;
+      // a sizeable box sitting under a "Procedure Documentation" heading also counts
+      try { var h = el.closest && el.closest('section,div,form'); if (h && new RegExp(sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(h.textContent || '')) s += 12; } catch (e) {}
+      s += Math.min(r.width * r.height, 300000) / 25000;
+      if (s > bs) { bs = s; best = el; }
+    }
+    return (best && bs >= 12) ? { el: best, score: Math.round(bs) } : null;
+  }
+  function sectionReachable() {
+    // a visible "Procedure Documentation" heading/section already on screen
+    return findByText(new RegExp(sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), 'h1,h2,h3,h4,h5,h6,legend,[role=heading],div,span,a,button').length > 0;
+  }
+
+  // ---------- PROBE (read-only) ----------
+  var existing = findTemplateBox();
+  var tabHit = findByText(new RegExp('^' + tabName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'), 'a,button,[role=tab],[role=button],li,span')[0] || null;
+  var observ = {
+    url: location.href, frame: (function () { try { return window.top === window; } catch (e) { return false; } })(),
+    templatePresent: !!existing, templateScore: existing ? existing.score : 0,
+    sectionReachable: sectionReachable(), tabFound: !!tabHit, tabName: tabName,
+    sectionName: sectionName, template: template
+  };
+  if (mode === 'probe') { return { ok: true, mode: 'probe', ready: !!existing, observed: observ }; }
+
+  // ---------- PREP (navigation clicks only; never Save/Sign) ----------
+  // 0) already there -> nothing to do; the paster will erase+fill it.
+  if (existing) return { ok: true, ready: true, alreadyPresent: true, step: 'present', observed: observ };
+
+  var steps = [];
+  var secRe = new RegExp(sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  // 1) open the tab dropdown (the caret beside the tab is what opens the menu) and choose the section.
+  if (!sectionReachable()) {
+    var openers = [];
+    nodes('[aria-haspopup],button[aria-expanded],[class*=caret],[class*=dropdown],[class*=disclosure]').filter(vis).forEach(function (e) { openers.push(e); });
+    if (tabHit) openers.push(tabHit.el);  // the tab label itself, as a fallback opener
+    var secItem = null;
+    for (var oi = 0; oi < openers.length && !secItem; oi++) {
+      clickEl(openers[oi]); steps.push('open-attempt'); await sleep(450);
+      secItem = findByText(secRe, '[role=menuitem],[role=option],li,a,button,div')[0];
+      if (secItem || sectionReachable()) break;
+    }
+    if (secItem) { clickEl(secItem.el); steps.push('clicked-section'); await sleep(700); }
+    else if (!sectionReachable()) return { ok: false, ready: false, step: 'section', steps: steps, msg: 'Could not reach "' + sectionName + '" from the ' + tabName + ' tab.', observed: observ };
+  }
+  if (findTemplateBox()) return { ok: true, ready: true, step: 'section-had-box', steps: steps };
+
+  // 2) open the add/picker control and select the template by typeahead.
+  var addCtrl = findByText(/add|\+|procedure documentation|search|select a procedure|choose/i, 'button,[role=button],a,input,[role=combobox]')[0];
+  // prefer a search/typeahead input if present
+  var input = nodes('input[type=text],input:not([type]),[role=combobox] input,[contenteditable=""]').filter(vis)[0] || null;
+  if (addCtrl) { clickEl(addCtrl.el); steps.push('opened-picker'); await sleep(450); input = nodes('input[type=text],input:not([type]),[role=combobox] input').filter(vis)[0] || input; }
+  if (input) {
+    try { input.focus(); } catch (e) {}
+    try {
+      var pr = (input.tagName === 'TEXTAREA') ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      var d = Object.getOwnPropertyDescriptor(pr, 'value'); if (d && d.set) d.set.call(input, template); else input.value = template;
+    } catch (e) { try { input.value = template; } catch (e2) {} }
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+    steps.push('typed-template'); await sleep(800);
+  }
+  // 3) pick the matching option from the typeahead list.
+  var opt = findByText(new RegExp(template.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '[role=option],li,.option,.item,td,a,button,div')[0]
+         || findByText(/injection generic template|injection/i, '[role=option],li,.option,.item,td,a,button,div')[0];
+  if (opt) { clickEl(opt.el); steps.push('picked-template'); await sleep(900); }
+  else return { ok: false, ready: false, step: 'pick', steps: steps, msg: 'Opened Procedure Documentation but could not find the "' + template + '" option to add.', observed: observ };
+
+  // 4) wait for the editable skeleton box to render.
+  for (var w = 0; w < 8; w++) { if (findTemplateBox()) return { ok: true, ready: true, step: 'added', steps: steps }; await sleep(400); }
+  return { ok: false, ready: false, step: 'render', steps: steps, msg: 'Added the template but the editable box did not appear in time.', observed: observ };
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { mlsRobustType: mlsRobustType, mlsFieldScanner: mlsFieldScanner, mlsNotePaster: mlsNotePaster, mlsRouteSection: mlsRouteSection, mlsSegmentNote: mlsSegmentNote, mlsMatchPatients: mlsMatchPatients, mlsReadChartIdentity: mlsReadChartIdentity, mlsReadActivePatient: mlsReadActivePatient, mlsAthenaPrepProcTemplate: mlsAthenaPrepProcTemplate };
+}
+
+// ---- Procedure-template PREP handler (op-note writeback step 1) ----
+// Drives athenaOne to add the chosen procedure template so the op-note has a
+// destination box, OR (mode 'probe') reports READ-ONLY what is reachable. The
+// actual op-note text is then written by the existing verified paste path
+// (mlsAppPasteNote), which erases the skeleton and inserts the note. NEVER Save/Sign.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== 'mlsAppPrepProcTemplateRequest') return;
+  (async () => {
+    try {
+      const params = msg.params || {};
+      const mode = msg.mode === 'probe' ? 'probe' : 'prep';
+      const isMls = (u) => /mlsscribe\.com/.test(u || '');
+      let emrTab = null;
+      const su = (sender && sender.tab && sender.tab.url) || '';
+      if (sender && sender.tab && /^https?:/.test(su) && !isMls(su)) emrTab = sender.tab;
+      if (!emrTab) { const tabs = await chrome.tabs.query({}); const c = tabs.filter(t => /^https?:/.test(t.url || '') && !isMls(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); emrTab = c[0]; }
+      if (!emrTab) return sendResponse({ ok: false, error: 'No EMR/chart tab is open. Open the patient encounter in athenaOne, then try again.' });
+      let results = [];
+      try { results = await chrome.scripting.executeScript({ target: { tabId: emrTab.id, allFrames: true }, func: mlsAthenaPrepProcTemplate, args: [params, mode] }); }
+      catch (e) { results = await chrome.scripting.executeScript({ target: { tabId: emrTab.id }, func: mlsAthenaPrepProcTemplate, args: [params, mode] }); }
+      let best = null;
+      const score = (x) => (x.ready ? 100 : 0) + (x.observed && x.observed.sectionReachable ? 5 : 0) + (x.observed && x.observed.tabFound ? 2 : 0) + ((x.steps || []).length);
+      (results || []).forEach(r => { const v = r && r.result; if (!v) return; if (!best || score(v) > score(best)) best = v; });
+      sendResponse(best || { ok: false, error: 'Could not run the procedure-template step in any frame.' });
+    } catch (e) { sendResponse({ ok: false, error: 'Prep failed: ' + (e && e.message || e) }); }
+  })();
+  return true;
+});
+
 
 function getCfg() { return new Promise(r => chrome.storage.local.get(['mlsBackend', 'mlsKey'], r)); }
 

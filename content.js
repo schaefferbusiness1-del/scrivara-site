@@ -17,7 +17,7 @@
   // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
   // so a malicious page can neither puppet the extension nor receive chart data, while
   // the doctor's any-page usage is fully preserved.
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -61,6 +61,14 @@
           reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { error: 'extension error' } }); }
+    }
+    if (d.type === 'mlsAppPrepProcTemplate') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppPrepProcTemplateRequest', params: (d.params || {}), mode: (d.mode || 'prep') }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppPrepProcTemplateResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppPrepProcTemplateResult', resp: { error: 'extension error' } }); }
+      return;
     }
     if (d.type === 'mlsAppPasteNote') {
       try {
