@@ -33,7 +33,7 @@
      The inline schedule picker (#simPickGrid) now inherits the upgraded
      feat_mls_patientpick grid: appointment times, earliest-first order, first 6
      + Show more, and the auto-advancing "now" highlight. */
-  var VERSION = "simx-1.3.0";
+  var VERSION = "simx-1.4.0";
   try { if (window.__mlsSimX && window.__mlsSimX.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -130,6 +130,9 @@
       "html.mls-sv-active #visitView .vx-grid,html.mls-sv-active #visitView .vx-tools,html.mls-sv-active #visitView #outcomesCard,html.mls-sv-active #visitView #waitingRoomBar{display:none!important}",
       /* light design backdrop behind the card */
       "html.mls-sv-active #visitView{background-image:radial-gradient(circle at 50% -8%,#e2ecf8 0,rgba(238,242,247,0) 50%)!important}",
+      /* DUP BAR fix (item 1): hide the second lighter Simple-visit patient bar; keep the main #mlsCtxBar (Chart/Visit/History/Schedule/Switch). Idempotent, reversible. */
+      "html.mls-sv-active #mlsSimWrap #simBanner{display:none!important}",
+
       "#" + WRAP_ID + "{max-width:760px;margin:6px auto 0;padding:0 2px 24px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#0f2540;box-sizing:border-box}",
       "#" + WRAP_ID + " *{box-sizing:border-box}",
       "#" + WRAP_ID + " ::placeholder{color:#9aa8bb}",
