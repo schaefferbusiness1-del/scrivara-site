@@ -35,7 +35,7 @@
    *   - renders an INLINE selectable grid in Complex visit mode too (not only the modal)
    *   - keeps the top active-patient context bar (#mlsCtxBar) bound + visible
    */
-  var VERSION = "pick-1.4.0";   /* TZ-correct times (acct TZ, not literal UTC) + honest in-modal pull status/refresh */
+  var VERSION = "pick-1.5.0";   /* TZ-correct times (acct TZ, not literal UTC) + honest in-modal pull status/refresh */
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -192,16 +192,21 @@
       return Object.keys(d).sort();
     }
 
-    if (scope === "today") {
+    if (typeof scope === "string" && scope.indexOf("date:") === 0) {
+      var _dk = scope.slice(5); pool = dayPool(_dk); dateLabel = prettyDate(_dk);
+    } else if (scope === "today") {
       pool = dayPool(today); dateLabel = "today";
-      if (!pool.length) { var ds = distinctDates(); var last = ds[ds.length - 1]; if (last) { pool = dayPool(last); dateLabel = prettyDate(last); fallback = true; } }
+      /* item 3: NO silent fallback to a most-recent day - an empty today is shown honestly. */
+    } else if (scope === "tomorrow") {
+      var _tm = new Date(); _tm.setDate(_tm.getDate() + 1); var _tmk = localDateStr(_tm);
+      pool = dayPool(_tmk); dateLabel = "tomorrow";
     } else if (scope === "week") {
       var now = new Date(); var dow = now.getDay(); var start = new Date(now); start.setDate(now.getDate() - dow);
       var end = new Date(start); end.setDate(start.getDate() + 6);
       var s = localDateStr(start), e2 = localDateStr(end);
       pool = all.filter(function (a) { var d = apptDate(a); return d >= s && d <= e2; });
       dateLabel = "this week";
-      if (!pool.length) { var ds2 = distinctDates(); var last2 = ds2[ds2.length - 1]; if (last2) { pool = dayPool(last2); dateLabel = prettyDate(last2); fallback = true; } }
+      /* item 3: no silent fallback - an empty week is shown honestly. */
     } else { /* recent */
       var ds3 = distinctDates(); var last3 = ds3[ds3.length - 1];
       if (last3) { pool = dayPool(last3); dateLabel = prettyDate(last3); }
@@ -401,7 +406,7 @@
       else if (total) html += '<p class="mlspk-note">' + total + ' patient' + (total === 1 ? "" : "s") + ' on ' + esc(res.dateLabel === "today" ? "today&#39;s schedule" : res.dateLabel) + ' &middot; in time order &middot; tap one to select.</p>';
     }
     if (!total) {
-      html += '<div class="mlspk-empty">No scheduled patients found for this view. Use &ldquo;Find a patient by name&rdquo; or &ldquo;Enter manually&rdquo; below.</div>';
+      html += '<div class="mlspk-empty">No patients scheduled for ' + esc(res.dateLabel || "this day") + '. Pick another day above, pull from athenaOne with your Day schedule open, or use &ldquo;Find a patient by name&rdquo; / &ldquo;Enter manually&rdquo; below.</div>';
       hostEl.innerHTML = html;
       return res;
     }
@@ -455,6 +460,7 @@
         '<div class="mlspk-hd"><h3>Today&#39;s patients</h3><button type="button" class="mlspk-x" aria-label="Close">&#215;</button></div>' +
         '<div class="mlspk-controls">' +
           '<button type="button" class="mlspk-tab" data-scope="today">Today</button>' +
+          '<button type="button" class="mlspk-tab" data-scope="tomorrow">Tomorrow</button>' +
           '<button type="button" class="mlspk-tab" data-scope="week">This week</button>' +
           '<button type="button" class="mlspk-tab" data-scope="recent">Recent</button>' +
           '<span style="flex:1"></span>' +

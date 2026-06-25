@@ -28,12 +28,12 @@
  */
 ;(function () {
   "use strict";
-  /* simx-1.2.0: + "Prep op note" option in MLS Easy step 1 (wired to the real
+  /* simx-1.3.0: + "Prep op note" option in MLS Easy step 1 (wired to the real
      op-note builder openOpPrepSmart(), the same handler the Complex hero uses).
      The inline schedule picker (#simPickGrid) now inherits the upgraded
      feat_mls_patientpick grid: appointment times, earliest-first order, first 6
      + Show more, and the auto-advancing "now" highlight. */
-  var VERSION = "simx-1.2.0";
+  var VERSION = "simx-1.3.0";
   try { if (window.__mlsSimX && window.__mlsSimX.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -286,6 +286,12 @@
           '</span>' +
           '<span style="position:relative;color:#8fe9da;font-size:22px;font-weight:700">' + E.arrow + '</span>' +
         '</button>' +
+        '<div style="display:flex;gap:9px;align-items:center;margin:12px 2px 2px;flex-wrap:wrap">' +
+          '<label style="font-size:12.5px;font-weight:700;color:#3d5168">Or pick a day:</label>' +
+          '<input type="date" id="simPullDate" style="height:38px;border-radius:10px;border:1px solid #e0e8f1;background:#fff;padding:0 10px;font-size:13.5px;color:#0f2540">' +
+          '<button id="simPullDay" style="height:38px;padding:0 16px;border-radius:10px;border:none;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font-weight:700;font-size:13px;cursor:pointer">Pull that day</button>' +
+          '<span id="simDayStatus" style="display:none;width:100%;font-size:11.5px;color:#5a6b80;margin-top:2px"></span>' +
+        '</div>' +
         '<div class="sim-grid">' +
           optBtn("simPullWeek", E.calWk, "Pull this week's patients", "The whole week's schedule") +
           optBtn("simPullOpen", E.down, "Patient open in athenaOne", "Pull the chart you have open") +
@@ -309,6 +315,14 @@
         '</div>' +
         '<p style="text-align:center;color:#8a9cb2;font-size:12.5px;margin-top:16px">Not connected? Use the &ldquo;Whose patients?&rdquo; box above to pick a doctor, then pull.</p>';
       $("simPullToday").onclick = function () { _pickScope = "today"; if (athenaConnected()) clickById("mlscpToday"); renderPick("today"); setTimeout(function () { renderPick("today"); }, 1600); };
+      (function () { var _spd = $("simPullDate"); if (_spd && !_spd.value) { var _t = new Date(); _spd.value = _t.getFullYear() + "-" + ("0" + (_t.getMonth() + 1)).slice(-2) + "-" + ("0" + _t.getDate()).slice(-2); }
+        var _db = $("simPullDay"); if (_db) _db.onclick = function () {
+          var dd = (_spd && _spd.value) || ""; if (!dd) return; _pickScope = "date:" + dd; var st = $("simDayStatus");
+          if (window.__mlsSI && typeof window.__mlsSI.pull === "function") {
+            if (st) { st.style.display = "block"; st.textContent = "Starting to import visits... you can keep working."; }
+            window.__mlsSI.pull({ date: dd, onStatus: function (m) { if (st) st.textContent = m; } }).then(function () { renderPick("date:" + dd); }).catch(function () {});
+          } else { renderPick("date:" + dd); }
+        }; })();
       $("simPullWeek").onclick = function () { _pickScope = "week"; if (athenaConnected()) clickById("mlscpWeek"); renderPick("week"); setTimeout(function () { renderPick("week"); }, 1600); };
       $("simPullOpen").onclick = function () { if (!clickById("mlscpSelected")) callFn("pullPatientFromAthenaPrompt", this); setTimeout(renderBanner, 900); };
       $("simFind").onclick = function () { if (!clickById("mlscpFind")) callFn("mlsQuickFind"); };

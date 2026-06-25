@@ -1,4 +1,4 @@
-/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.0.0)
+/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.1)
  *
  *  THE full design-language MLS Assistant panel (Slice 3 of the Assistant rework).
  *  STAGING-FIRST, then prod via the data: staging marker (self-gated exactly like the
@@ -48,7 +48,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "asst-2.0.0";
+  var VERSION = "asst-2.1.1";
   try { if (window.__mlsAsst && window.__mlsAsst.installed) return; } catch (e) { return; }
 
   /* ---------- self-gate: staging page OR prod staging-marker (active on both) ---------- */
@@ -391,7 +391,7 @@
     // status surface). The write-back STILL executes when .mlsaa-tl is hidden, and our
     // _step wrap still reads its confirmed/failed signal for per-item writeback status,
     // so nothing functional is lost -- only the duplicate visual surface is removed.
-    s.textContent = "#mlsuxPanel,.mlssh-toast,.mlsaa-tl{display:none !important;}";
+    s.textContent = "#mlsuxPanel,.mlssh-toast,.mlsaa-tl,#mls-assist-badge{display:none !important;}";
     (document.head || document.documentElement).appendChild(s);
   }
 
@@ -631,7 +631,10 @@
     }
   }
 
-  /* ---------- the gated, honest "Pull from athenaOne" ---------- */
+  /* ---------- gated, honest, NON-BLOCKING "Pull from athenaOne" ---------- */
+  /* Uses the corrected importer __mlsSI.pull (item 1 engine): files the CHOSEN day onto
+     THAT date in EST, non-blocking so the app stays usable, stores when done. Falls back to
+     the legacy pullScheduleViaAssist only if __mlsSI is absent. */
   function doPull(btn) {
     var c = ct();
     var connected = !!(c && isFn(c.isConnected) && safe(function () { return c.isConnected(); }, false));
@@ -641,9 +644,24 @@
       var cc = ct(); if (cc && isFn(cc.check)) safe(function () { cc.check(); });
       return;
     }
+    var SI = window.__mlsSI;
+    if (SI && isFn(SI.pull)) {
+      if (btn) btn.disabled = true;
+      setPullStatus("Starting to import visits... you can keep working - I'll store them when done.", false);
+      safe(function () {
+        SI.pull({ date: selDate, provider: selProvider, onStatus: function (msg, kind) { setPullStatus(msg, kind === "ok"); } })
+          .then(function (res) {
+            if (btn) btn.disabled = false;
+            try { var L = dayList(selDate, selProvider); wbMarkPulled(L.map(function (x) { return x.id; })); } catch (e) {}
+            renderSchedule();
+          })
+          .catch(function () { if (btn) btn.disabled = false; setPullStatus("Couldn't finish the import - open your athenaOne Day schedule and try again.", false); });
+      });
+      return;
+    }
     if (!isGFn("pullScheduleViaAssist")) { setPullStatus("Schedule pull is unavailable right now.", false); return; }
     if (btn) btn.disabled = true;
-    setPullStatus("Reading your athenaOne Day schedule...", false);
+    setPullStatus("Starting to import visits...", false);
     var n0 = appts().length, done = false;
     function onRes(e) {
       if (!(e.data && e.data.source === "mls-ext" && e.data.type === "mlsAppScheduleResult")) return;
@@ -651,19 +669,18 @@
       setTimeout(function () {
         if (btn) btn.disabled = false;
         var n1 = appts().length, added = n1 - n0;
-        /* stamp a REAL "pulled at" on the patients now present for the selected day */
         try { var L = dayList(selDate, selProvider); wbMarkPulled(L.map(function (x) { return x.id; })); } catch (e) {}
         renderSchedule();
         if (added > 0) setPullStatus("Pulled " + added + " appointment" + (added === 1 ? "" : "s") + " - " + nowClock(), true);
-        else setPullStatus("No new appointments added - they may already be on your calendar, or open your athenaOne Day schedule with patients and pull again.", false);
+        else setPullStatus("No new appointments added - they may already be on your calendar, or open your Day schedule with patients and pull again.", false);
       }, 1800);
     }
     window.addEventListener("message", onRes);
     setTimeout(function () {
       if (!done) {
         window.removeEventListener("message", onRes); if (btn) btn.disabled = false;
-        var s = pullStatusEl();
-        if (s && /Reading/.test(s.textContent)) setPullStatus("Didn't hear back from athenaOne - make sure MLS Assist is enabled and your signed-in Day schedule is open, then pull again.", false);
+        var sEl = pullStatusEl();
+        if (sEl && /import/i.test(sEl.textContent)) setPullStatus("Didn't hear back from athenaOne - make sure MLS Assist is enabled and your signed-in Day schedule is open, then pull again.", false);
       }
     }, 33000);
     try { window.pullScheduleViaAssist(btn); } catch (e) {}
@@ -702,11 +719,23 @@
     var base = safe(function () { return window.bkBase(); }, "");
     var tok = safe(function () { return window.bkToken(); }, "");
     var ctx = safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot() : null; }, null);
+    /* item 7: enrich with the assistant's live, REAL context (the user's own data only; no fabrication) */
+    var asstCtx = safe(function () {
+      var L = dayList(selDate, selProvider);
+      var cn = describeNow();
+      var ap = activePatient();
+      return { today_est: todayStr(), selected_day: selDate, selected_provider: selProvider,
+        athena_status: cn ? (cn.label || "") : "", athena_detail: cn ? (cn.detail || "") : "",
+        patients_on_selected_day: (L && L.length) || 0, op_note_candidates_on_selected_day: (L ? opNoteCount(L) : 0),
+        active_patient: ap ? { name: ap.name || "", id: ap.id || "" } : null,
+        total_patients: (getPatients() || []).length, total_appointments: (appts() || []).length };
+    }, null);
     var hist = history.filter(function (m) { return m.role === "user" || m.role === "ai"; })
                       .map(function (m) { return { role: m.role === "user" ? "user" : "ai", text: m.text }; });
     hist = hist.slice(0, -1);
     var body = { question: q, history: hist };
     if (ctx) body.context = ctx;
+    if (asstCtx) body.assistant_context = asstCtx;
     fetch(base + "/api/copilot", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok },
@@ -866,12 +895,61 @@
     } catch (e) {}
   }
 
+  /* ---------- item 4: kill the duplicate RIGHT-side "MLS Assist" surface for real ----------
+     #mls-assist-badge (built by feat_mls_redesign.js) is the bottom-right duplicate. CSS alone
+     loses if it is re-created or shown via inline !important, so we ALSO hide it actively and
+     idempotently: a cheap observer/rAF re-hides the known badge whenever the DOM changes, and a
+     1s interval (30x) runs a full safety-net scan for any OTHER fixed bottom-right element whose
+     own text is exactly "MLS Assist". The new LEFT panel (#mlsAsstPanel) supersedes it. */
+  var _dupObs = null, _dupPoll = null, _dupRaf = 0;
+  function hideEl(e) {
+    if (!e) return false;
+    if (e.getAttribute && e.getAttribute("data-mls-dup-hidden") === "1" && e.style && e.style.display === "none") return false;
+    try { e.style.setProperty("display", "none", "important"); e.style.setProperty("visibility", "hidden", "important"); e.setAttribute("data-mls-dup-hidden", "1"); } catch (x) {}
+    return true;
+  }
+  function killBadge() { return safe(function () { return hideEl(document.getElementById("mls-assist-badge")); }, false); }
+  function killDupFull() {
+    return safe(function () {
+      var changed = killBadge();
+      var all = document.querySelectorAll("body *");
+      for (var i = 0; i < all.length; i++) {
+        var e = all[i];
+        if (e.id === FAB_ID || e.id === PANEL_ID) continue;
+        if (e.closest && (e.closest("#" + PANEL_ID) || e.closest("#" + FAB_ID))) continue;
+        if (e.getAttribute && e.getAttribute("data-mls-dup-hidden") === "1") continue;
+        var own = ""; for (var c = 0; c < e.childNodes.length; c++) { if (e.childNodes[c].nodeType === 3) own += e.childNodes[c].nodeValue; }
+        own = own.replace(/\s+/g, " ").trim();
+        if (!/^[^A-Za-z]*MLS Assist$/i.test(own)) continue;            /* exactly "MLS Assist" (not "MLS Assistant") */
+        var st = safe(function () { return getComputedStyle(e); }, null); if (!st || st.position !== "fixed") continue;
+        var r = safe(function () { return e.getBoundingClientRect(); }, null); if (!r || r.width < 24) continue;
+        if (r.right > window.innerWidth - 300 && r.bottom > window.innerHeight - 220) { if (hideEl(e)) changed = true; }
+      }
+      return changed;
+    }, false);
+  }
+  function scheduleDup() {
+    if (_dupRaf) return;
+    _dupRaf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () { _dupRaf = 0; killBadge(); });
+  }
+  function startDupWatch() {
+    killDupFull();
+    safe(function () { _dupObs = new MutationObserver(scheduleDup); _dupObs.observe(document.body || document.documentElement, { childList: true, subtree: true }); });
+    var t = 0; _dupPoll = setInterval(function () { killDupFull(); if (++t > 30) { clearInterval(_dupPoll); _dupPoll = null; } }, 1000);
+  }
+  function unkillDup() {
+    safe(function () { if (_dupObs) _dupObs.disconnect(); _dupObs = null; });
+    safe(function () { if (_dupPoll) clearInterval(_dupPoll); _dupPoll = null; });
+    safe(function () { var h = document.querySelectorAll('[data-mls-dup-hidden="1"]'); for (var i = 0; i < h.length; i++) { h[i].style.removeProperty("display"); h[i].style.removeProperty("visibility"); h[i].removeAttribute("data-mls-dup-hidden"); } });
+  }
+
   /* ---------- boot / revert ---------- */
   function boot() {
     installEstHooks();          /* re-assert in case the app (re)defined a hook after our sync install */
     startHealWatch();
     startWbWatch();
     injectSuppress();
+    startDupWatch();
     buildPanel();
     repaintAll();
     try { [250, 1200, 3000].forEach(function (ms) { setTimeout(repaintAll, ms); }); } catch (e) {}
@@ -889,6 +967,7 @@
     safe(function () { var f = $(FAB_ID); if (f) f.remove(); });
     safe(function () { var s = $(STYLE_ID); if (s) s.remove(); });
     safe(function () { var s = $(SUPPRESS_ID); if (s) s.remove(); });
+    unkillDup();
     try { window.__mlsAsst.installed = false; } catch (e) {}
   }
 
@@ -912,6 +991,7 @@
     setDate: function (ds) { if (ds) { selDate = ds; renderSchedule(); } },
     setProvider: function (pv) { selProvider = pv || "All doctors"; renderSchedule(); },
     _neutralizeSelfHeal: neutralizeSelfHeal,
+    _killDup: killDupFull,
     _history: function () { return history.slice(); },
     revert: revert
   };
