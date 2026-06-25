@@ -43,7 +43,13 @@
     var el = toolsTarget();
     if (!el) return;
     safe(function () {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+      // NOTE: element.scrollIntoView({behavior:'smooth'}) and window.scrollTo({behavior:'smooth'})
+      // are no-ops on this page when the tab is backgrounded/throttled. A single INSTANT
+      // window.scrollTo is reliable in every case, so we compute the absolute target and use it.
+      var startY = window.pageYOffset || document.documentElement.scrollTop || 0;
+      var maxY = Math.max(0, (document.documentElement.scrollHeight || 0) - (window.innerHeight || 0));
+      var targetY = Math.min(maxY, Math.max(0, startY + el.getBoundingClientRect().top - 90)); // -90 clears the fixed header
+      window.scrollTo(0, targetY);
     });
   }
 
