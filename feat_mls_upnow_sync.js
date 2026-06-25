@@ -1,4 +1,4 @@
-/* feat_mls_upnow_sync.js  ->  window.__mlsUpNowSync  (upnowsync-1.0.0)
+/* feat_mls_upnow_sync.js  ->  window.__mlsUpNowSync  (upnowsync-1.1.0)
  *
  *  BUG (Complex Visit page)
  *  ------------------------
@@ -9,59 +9,65 @@
  *
  *  ROOT CAUSE
  *  ----------
- *  Two independent "who is up now" calculations:
+ *  Two independent "who is up now" calculations over an inconsistent list:
  *    - TOP / banner: _calLoadNextUp() picks via _calPickNowIdx(appts) over the
- *      FULL today list (window._heroTodayList) and sets #heroPtName + the banner.
+ *      FULL today list (window._heroTodayList) -> #heroPtName + the banner.
  *    - NEXT UP highlight: _renderTodayPatients() picks via _heroAutoPos(pending)
- *      over the UNSEEN-ONLY subset -- a different list / index space.
- *  When any patient has been seen, or the time-window logic differs, the two
- *  point at different appointments, so top and highlight diverge. (Manual card
- *  clicks go through _heroPickPatient, which sets BOTH, so that path is fine.)
+ *      over the UNSEEN-ONLY subset.
+ *  In live data the same person can appear twice in _heroTodayList: a "clean"
+ *  entry ("Thomas B.") and an appointment-code entry ("Cheryl W. EP10"). The top
+ *  may land on a clean/stale entry that has NO card in NEXT UP, while the cards
+ *  render the code entries -> top and highlight name different people. (Manual
+ *  card clicks go through _heroPickPatient, which sets BOTH, so that path is fine.)
  *
  *  FIX (additive, reversible, one source of truth)
  *  -----------------------------------------------
- *  Single source of truth = the active TOP patient (the name in #heroPtName,
- *  which the "Up now" banner reflects). After every NEXT UP render, this module
- *  makes the highlighted card match that top patient; and whenever the top
- *  patient changes (load / advance / any path that sets #heroPtName) it re-asserts
- *  the highlight. The reverse direction already holds: clicking a NEXT UP card
- *  runs _heroPickPatient, which sets the top to that patient and re-renders, after
- *  which top == highlight (this module is then a no-op for that paint).
+ *  One current patient, matched by PERSON (appointment-code suffix ignored):
+ *    1. If the TOP patient has a NEXT UP card -> move the highlight to that card
+ *       (the top is authoritative: "when the top loads/advances, the highlight
+ *       matches it").
+ *    2. If the TOP patient's card is just outside the visible window -> ask the
+ *       app to window onto it (set _heroSelIdx, re-render once), then highlight.
+ *    3. If the TOP patient has NO card at all (a stale duplicate) -> adopt the
+ *       currently-highlighted card into the TOP field + banner, so both agree on a
+ *       real, tappable patient.
+ *  Reverse direction already holds: clicking a NEXT UP card runs _heroPickPatient,
+ *  which sets the top to that patient and re-renders; this module then sees
+ *  agreement and is a no-op.
  *
  *  HOW
  *  ---
- *  - Wraps window._renderTodayPatients: runs the app's original render unchanged,
- *    then re-points the highlight to the top patient's card.
- *  - Watches #heroPtName (input) + a light interval, and a guarded MutationObserver
- *    on #heroToday, so the highlight tracks the top even if a paint happens without
- *    a name change (or a name change without a paint).
- *  - Highlight transfer is pure presentation: it moves the "UP NOW" label + the
- *    white "current" chip styling from whichever card the app marked to the card
- *    whose name matches the top. It maps a card to its appointment via the index in
- *    its existing onclick="_heroPickPatient(N)" -> window._heroTodayList[N].name.
- *    If the matching card is outside the visible 5-card window, it sets
- *    window._heroSelIdx to that index and re-renders once so the app brings it into
- *    view (guarded against recursion).
+ *  - Wraps window._renderTodayPatients (original render runs unchanged, then sync).
+ *  - Watches #heroPtName (input), a guarded MutationObserver on #heroToday, and a
+ *    light interval, so the highlight tracks the top through any path.
+ *  - Person match: strip a trailing appointment-code token (e.g. " EP10", " PO20",
+ *    " VSC1") and a trailing initial dot, then compare case-insensitively. A card
+ *    maps to its appointment via the index in its existing
+ *    onclick="_heroPickPatient(N)" -> window._heroTodayList[N].
  *
  *  SAFETY
  *  ------
  *  Additive. Idempotent. Fully reversible via window.__mlsUpNowSync.revert()
  *  (restores the original _renderTodayPatients, disconnects observers, repaints
- *  natively). It never pulls athenaOne, never clicks Save/Sign/Submit, never writes
- *  a chart, sends NOTHING to the extension. It only re-styles existing cards and
- *  drives the app's own renderer. No PHI is read, logged, or sent anywhere -- patient
- *  names are read from the live DOM/app state purely to match top<->card and are
- *  never persisted or transmitted. ASCII-only. Runs on prod AND staging (the bug is
- *  in the core renderer, present everywhere), and degrades to a silent no-op if the
- *  hero/NEXT UP elements are absent.
+ *  natively). Never pulls athenaOne, never clicks Save/Sign/Submit, never writes a
+ *  chart, sends NOTHING to the extension. It only re-styles existing cards, sets the
+ *  visible name field/banner to a card the app itself surfaced, and drives the app's
+ *  own renderer. It does NOT create or persist patient records (no upsertPatient /
+ *  setActivePtId). No PHI is logged or transmitted -- names are read from live app
+ *  state purely to match top<->card. ASCII source. Runs on prod AND staging (the bug
+ *  is in the core renderer), and is a silent no-op if the hero/NEXT UP elements are
+ *  absent.
  */
 ;(function () {
   "use strict";
-  var VERSION = "upnowsync-1.0.0";
-  try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed) return; } catch (e) { return; }
+  var VERSION = "upnowsync-1.1.0";
+  try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.version === VERSION) return; } catch (e) { return; }
+  try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.revert) { window.__mlsUpNowSync.revert(); } } catch (e) {}
 
   var HERO = "heroToday";
   var NAME_IN = "heroPtName";
+  var DOB_IN = "heroPtDob";
+  var BANNER = "heroPullStatus";
 
   var LABEL_STYLE = "font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px";
   var _busy = false;          /* guard: our own DOM writes / re-render */
@@ -70,13 +76,23 @@
   var _obs = null, _poll = null, _t = null;
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
-  function norm(s) { return String(s == null ? "" : s).trim().toLowerCase(); }
+  function lc(s) { return String(s == null ? "" : s).trim().toLowerCase(); }
+  /* person identity: drop a trailing appointment-code token + a trailing dot */
+  function person(s) {
+    s = String(s == null ? "" : s).trim();
+    s = s.replace(/\s+[A-Z]{2,}\d+\.?$/, "");   /* e.g. " EP10", " PO20", " VSC1", " NP20" */
+    return lc(s).replace(/\.+$/, "").trim();
+  }
+  function escHtml(s) {
+    try { if (typeof window.esc === "function") return window.esc(s); } catch (e) {}
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
   function heroBox() { return $(HERO); }
   function heroVisible() {
     try { var h = heroBox(); if (!h) return false; if (getComputedStyle(h).display === "none") return false; return true; }
     catch (e) { return false; }
   }
-  function topName() { try { var n = $(NAME_IN); return n ? norm(n.value) : ""; } catch (e) { return ""; } }
+  function topVal() { try { var n = $(NAME_IN); return n ? (n.value || "") : ""; } catch (e) { return ""; } }
 
   function chipNodes() {
     var box = heroBox(); if (!box) return [];
@@ -85,16 +101,15 @@
   }
   function chipIdx(chip) {
     try {
-      var oc = chip.getAttribute("onclick") || "";
-      var m = oc.match(/_heroPickPatient\((\d+)\)/);
+      var m = (chip.getAttribute("onclick") || "").match(/_heroPickPatient\((\d+)\)/);
       return m ? parseInt(m[1], 10) : -1;
     } catch (e) { return -1; }
   }
+  function nameAt(k) { try { return ((window._heroTodayList || [])[k] || {}).name || ""; } catch (e) { return ""; } }
+  function chipPerson(chip) { return person(nameAt(chipIdx(chip))); }
   function firstChildIsLabel(chip) {
-    try {
-      var c = chip.firstElementChild;
-      return !!(c && c.tagName === "SPAN" && /^\s*●/.test(c.textContent || ""));
-    } catch (e) { return false; }
+    try { var c = chip.firstElementChild; return !!(c && c.tagName === "SPAN" && /^\s*●/.test(c.textContent || "")); }
+    catch (e) { return false; }
   }
 
   /* make a chip look "current" (white) or not, managing the leading label span */
@@ -123,43 +138,78 @@
     } catch (e) {}
   }
 
-  /* core: make the highlighted card agree with the top patient */
+  /* set the TOP field + banner to a card the app itself surfaced (no persistence) */
+  function adoptTopFromChip(chip) {
+    var k = chipIdx(chip); if (k < 0) return;
+    var a = (window._heroTodayList || [])[k] || {};
+    if (!a.name) return;
+    try { var nm = $(NAME_IN); if (nm) nm.value = a.name; } catch (e) {}
+    try { var db = $(DOB_IN); if (db && a.dob) db.value = a.dob; } catch (e) {}
+    try { window._heroSelIdx = k; } catch (e) {}
+    try { if (typeof window._heroSyncName === "function") window._heroSyncName(); } catch (e) {}
+    try {
+      var el = $(BANNER);
+      if (el) {
+        var t = "";
+        try { if (typeof window._fmtApptTime === "function") t = window._fmtApptTime(a.time || ""); } catch (e) {}
+        el.innerHTML = "⏰ Up now: <b>" + escHtml(a.name) + "</b>" + (t ? (" at " + escHtml(t)) : "") +
+          " — loaded &amp; ready. Hit 🎙️ Start recording.";
+        el.style.display = "block";
+      }
+    } catch (e) {}
+  }
+
+  /* core: make the highlighted card and the top patient name the SAME person */
   function sync() {
     if (_busy) return;
     if (!heroVisible()) return;
-    var tn = topName(); if (!tn) return;
-    var list = (window._heroTodayList || []);
-    var targetIdx = -1;
-    for (var i = 0; i < list.length; i++) { if (norm((list[i] || {}).name) === tn) { targetIdx = i; break; } }
-    if (targetIdx < 0) return;                     /* top isn't one of today's cards (e.g. tomorrow / typed) */
-
     var chips = chipNodes(); if (!chips.length) return;
-    var cur = null, target = null, j;
-    for (j = 0; j < chips.length; j++) {
-      if (firstChildIsLabel(chips[j])) cur = chips[j];
-      if (chipIdx(chips[j]) === targetIdx) target = chips[j];
+
+    var cur = null, j;
+    for (j = 0; j < chips.length; j++) { if (firstChildIsLabel(chips[j])) { cur = chips[j]; break; } }
+
+    var tp = person(topVal());
+
+    if (tp) {
+      /* 1) top patient has a rendered card -> move highlight there (top wins) */
+      var target = null;
+      for (j = 0; j < chips.length; j++) { if (chipPerson(chips[j]) === tp) { target = chips[j]; break; } }
+      if (target) {
+        if (target === cur) return;          /* already in sync */
+        _busy = true;
+        try { if (cur) setCurrent(cur, false); setCurrent(target, true); } catch (e) {}
+        _busy = false;
+        return;
+      }
+
+      /* 2) top patient's card may be outside the visible window -> window onto it */
+      if (_depth < 1) {
+        var list = window._heroTodayList || [], li = -1;
+        for (j = 0; j < list.length; j++) {
+          var nm = (list[j] || {}).name || "";
+          if (person(nm) === tp && /\s+[A-Z]{2,}\d+\.?$/.test(nm)) { li = j; break; }  /* a real appt card */
+        }
+        if (li >= 0) {
+          _busy = true; _depth++;
+          try {
+            window._heroSelIdx = li; window._heroWinOff = 0;
+            if (typeof _origRender === "function") _origRender(window._heroTodayList || []);
+          } catch (e) {}
+          _busy = false;
+          try { sync(); } catch (e) {}
+          _depth = 0;
+          return;
+        }
+      }
+      /* 3) top patient has no card at all -> fall through to adopt the highlight */
     }
 
-    if (!target) {
-      /* matching card is outside the visible window -> ask the app to window onto it */
-      if (_depth >= 2) return;
-      _busy = true; _depth++;
-      try {
-        window._heroSelIdx = targetIdx;
-        window._heroWinOff = 0;
-        if (typeof _origRender === "function") _origRender(window._heroTodayList || []);
-      } catch (e) {}
+    /* 3) adopt: make the TOP follow the highlighted card so both agree */
+    if (cur && chipPerson(cur) !== tp) {
+      _busy = true;
+      try { adoptTopFromChip(cur); } catch (e) {}
       _busy = false;
-      try { sync(); } catch (e) {}     /* re-run now that the card should be in view */
-      _depth = 0;
-      return;
     }
-
-    if (target === cur) return;        /* already in sync */
-
-    _busy = true;
-    try { if (cur) setCurrent(cur, false); setCurrent(target, true); } catch (e) {}
-    _busy = false;
   }
 
   function scheduleSync() {
@@ -170,7 +220,7 @@
   function wrapRender() {
     try {
       if (typeof window._renderTodayPatients !== "function") return false;
-      if (window._renderTodayPatients.__mlsUpNowWrapped) return true;
+      if (window._renderTodayPatients.__mlsUpNowWrapped) { _origRender = _origRender || window._renderTodayPatients.__mlsUpNowOrig; return true; }
       _origRender = window._renderTodayPatients;
       var wrapped = function () {
         var r = _origRender.apply(this, arguments);
@@ -178,30 +228,30 @@
         return r;
       };
       wrapped.__mlsUpNowWrapped = true;
+      wrapped.__mlsUpNowOrig = _origRender;
       window._renderTodayPatients = wrapped;
       return true;
     } catch (e) { return false; }
   }
 
+  function bindName() {
+    try { var nm = $(NAME_IN); if (nm && !nm.__mlsUpNowBound) { nm.addEventListener("input", scheduleSync); nm.__mlsUpNowBound = true; } } catch (e) {}
+  }
+
   function boot() {
     var ok = wrapRender();
-    /* retry the wrap if the renderer isn't defined yet */
     if (!ok) { try { setTimeout(boot, 800); } catch (e) {} }
-
-    try {
-      var nm = $(NAME_IN);
-      if (nm && !nm.__mlsUpNowBound) { nm.addEventListener("input", scheduleSync); nm.__mlsUpNowBound = true; }
-    } catch (e) {}
-
+    bindName();
     try {
       _obs = new MutationObserver(function () { if (_busy) return; scheduleSync(); });
-      var box = heroBox();
-      _obs.observe(box || document.documentElement, { childList: true, subtree: true });
+      _obs.observe(heroBox() || document.documentElement, { childList: true, subtree: true });
     } catch (e) {}
-
-    /* safety net: late mounts, name set without a render, hero re-created */
-    try { _poll = setInterval(function () { if (!window._renderTodayPatients || !window._renderTodayPatients.__mlsUpNowWrapped) wrapRender(); try { var nm = $(NAME_IN); if (nm && !nm.__mlsUpNowBound) { nm.addEventListener("input", scheduleSync); nm.__mlsUpNowBound = true; } } catch (e) {} sync(); }, 1500); } catch (e) {}
-
+    try {
+      _poll = setInterval(function () {
+        if (!window._renderTodayPatients || !window._renderTodayPatients.__mlsUpNowWrapped) wrapRender();
+        bindName(); try { sync(); } catch (e) {}
+      }, 1500);
+    } catch (e) {}
     try { sync(); } catch (e) {}
   }
 
@@ -212,7 +262,7 @@
     try {
       if (_origRender && window._renderTodayPatients && window._renderTodayPatients.__mlsUpNowWrapped) {
         window._renderTodayPatients = _origRender;
-        try { window._renderTodayPatients(window._heroTodayList || []); } catch (e) {}  /* repaint natively */
+        try { window._renderTodayPatients(window._heroTodayList || []); } catch (e) {}
       }
     } catch (e) {}
     try { window.__mlsUpNowSync.installed = false; } catch (e) {}
