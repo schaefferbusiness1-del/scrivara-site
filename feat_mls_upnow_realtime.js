@@ -91,7 +91,7 @@
       var chips = box.querySelectorAll('button[onclick^="_heroPickPatient("]');
       for (var i = 0; i < chips.length; i++) {
         var c = chips[i], f = c.firstElementChild;
-        if (f && f.tagName === "SPAN" && /^\s*â/.test(f.textContent || "")) {
+        if (f && f.tagName === "SPAN" && /^\s*●/.test(f.textContent || "")) {
           try { c.removeChild(f); } catch (e) {}
           c.style.background = "rgba(255,255,255,.15)";
           c.style.border = "2px solid rgba(255,255,255,.30)";
@@ -215,4 +215,3 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
 })();
-
