@@ -1,12 +1,12 @@
 /* ============================================================================
- * feat_mls_chartautofill_guard.js  ->  window.__mlsChartFillGuard  (cfg-1.0.0)
+ * feat_mls_chartautofill_guard.js  ->  window.__mlsChartFillGuard  (cfg-1.0.1)
  * ---------------------------------------------------------------------------
  * BUG FIX (Bug Breaker): feat_mls_chartautofill.js auto-reads the open
  * athenaOne tab on load and fills the visit hero name (#heroPtName) + patient
  * label (#patientLabel). When the open athenaOne tab is NOT a patient chart
- * (e.g. the SIGN-IN / login page or the dashboard), its parser still extracts a
- * bogus "name" -- observed live: "In Athena", "Hint S'" -- and fills it into
- * those fields with a falsely-confident toast:
+ * (e.g. the SIGN-IN / login page or the dashboard), it extracts a bogus "name"
+ * -- observed live: "In Athena", "Hint S'" -- and fills it into those fields
+ * with a falsely-confident toast:
  *   'Filled "In Athena" from your open athenaOne chart - please verify ...'
  * A clinician could start a visit attached to that junk name.
  *
@@ -18,9 +18,12 @@
  *   1) wraps __mlsChartFill.parseIdentity to refuse to parse obvious non-chart
  *      / login pages, and to reject junk-name guesses (expanded junk-token set)
  *      BEFORE anything is filled or any toast is shown;
- *   2) scrubs any junk value already auto-filled into the live fields on this
- *      load -- never touching a field the user is editing, and never clearing a
- *      plausible real name.
+ *   2) scrubs junk values from the live fields on a short poll for the first
+ *      ~10s after load -- the athenaOne read is an extension round-trip that can
+ *      land a junk fill several seconds in, and the structured-banner fill path
+ *      bypasses the parser guard, so a one-shot scrub is not enough. The scrub
+ *      never touches a field the user is editing and never clears a plausible
+ *      real name.
  *
  * It does not write to athenaOne, does not auto-submit/sign/save, and is fully
  * reversible via window.__mlsChartFillGuard.revert().
@@ -29,7 +32,7 @@
   'use strict';
   try { if (window.__mlsChartFillGuard && window.__mlsChartFillGuard.installed) return; } catch (e) { return; }
 
-  var VERSION = 'cfg-1.0.0';
+  var VERSION = 'cfg-1.0.1';
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
 
   // Tokens that are never part of a real patient name (athenaOne chrome, login
@@ -74,7 +77,7 @@
     return true;
   }
 
-  // Clear junk already auto-filled into the live fields on this load.
+  // Clear junk already auto-filled into the live fields.
   function scrubFields() {
     ['heroPtName', 'patientLabel'].forEach(function (id) {
       var el = safe(function () { return document.getElementById(id); }, null);
@@ -88,20 +91,27 @@
     });
   }
 
-  // Install as soon as chartautofill exists; scrub current junk a couple of times early.
+  // Install as soon as chartautofill exists.
   var tries = 0;
   var iv = setInterval(function () {
     tries++;
     if (install() || tries > 60) { clearInterval(iv); }
   }, 150);
   install();
-  var t1 = setTimeout(scrubFields, 400);
-  var t2 = setTimeout(scrubFields, 1500);
+
+  // Scrub junk on a short poll for the first ~10s (covers slow extension reads
+  // and the structured-banner fill path that bypasses the parser guard).
+  var scrubN = 0;
+  var scrubIv = setInterval(function () {
+    scrubN++;
+    scrubFields();
+    if (scrubN > 25) { clearInterval(scrubIv); }
+  }, 400);
+  scrubFields();
 
   function revert() {
     safe(function () { clearInterval(iv); });
-    safe(function () { clearTimeout(t1); });
-    safe(function () { clearTimeout(t2); });
+    safe(function () { clearInterval(scrubIv); });
     safe(function () {
       var cf = window.__mlsChartFill;
       if (cf && cf.__origParseIdentity) {
