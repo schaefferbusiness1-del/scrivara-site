@@ -23,7 +23,7 @@
   "use strict";
   try { if (window.__mlsAssistantSelfFix && window.__mlsAssistantSelfFix.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.0.0", ASSET = "feat_mls_assistant_selffix.js";
+  var VERSION = "1.0.1", ASSET = "feat_mls_assistant_selffix.js";
 
   /* ---------------- tiny utils ---------------- */
   function S(v) { return v == null ? "" : String(v); }
@@ -137,11 +137,11 @@
     return {
       assistantPanel: info("#mlsAsstPanel"),
       heroToday: info("#heroToday"),
-      whosNextBox: info("#mlsWhosNextBox"),
-      wnGrid: info("#mlsWhosNextBox .wn-grid"),
-      wnChips: info("#mlsWhosNextBox .wn-chip"),
-      wnCount: info("#mlsWhosNextBox .wn-count"),
-      wnEmpty: info("#mlsWhosNextBox .wn-empty"),
+      whosNextHost: info("#heroToday"),
+      wnGrid: info("#heroToday .wn-grid"),
+      wnChips: info("#heroToday .wn-chip"),
+      wnCount: info("#heroToday .wn-count"),
+      wnEmpty: info("#heroToday .wn-empty"),
       ctxBar: info("#mlsCtxBar")
     };
   }
@@ -179,38 +179,39 @@
         detail: fileErrs[file] + " recent error(s) mention " + file + ". That module may be misbehaving; I can revert or re-apply it." });
     });
 
+    /* C/D/E. Who's Next picker detectors -- live structure:
+       #heroToday > .wn-hd (.wn-count) + .wn-grid (.wn-chip). */
+    var hero = $("heroToday");
+    var grid = hero ? hero.querySelector(".wn-grid") : qs(".wn-grid");
+    var countEl = hero ? hero.querySelector(".wn-count") : qs(".wn-count");
+    var emptyEl = hero ? hero.querySelector(".wn-empty") : qs(".wn-empty");
+    var chips = hero ? hero.querySelectorAll(".wn-chip").length : qsa(".wn-chip").length;
+    var num = countEl ? parseInt((S(countEl.textContent).match(/\d+/) || [])[0], 10) : NaN;
+
     /* C. count-vs-rendered-boxes mismatch (the "N seen / 0 shown" class of bug) */
-    var box = qs("#mlsWhosNextBox");
-    if (box) {
-      var chips = box.querySelectorAll(".wn-chip").length;
-      var countEl = box.querySelector(".wn-count");
-      var num = countEl ? parseInt((S(countEl.textContent).match(/\d+/) || [])[0], 10) : NaN;
-      if (!isNaN(num) && num > 0 && chips === 0) {
-        f.push({ sev: "error", handle: "__mlsWhosNext",
-          title: "Picker count/box mismatch",
-          detail: "The Who's Next picker reports ~" + num + " but renders 0 selectable boxes -- data present, not drawn. Re-running its render usually fixes this." });
-      }
+    if (!isNaN(num) && num > 0 && chips === 0) {
+      f.push({ sev: "error", handle: "__mlsWhosNext",
+        title: "Picker count/box mismatch",
+        detail: "The Who's Next picker reports ~" + num + " but renders 0 selectable boxes (.wn-chip) -- data present, not drawn. Re-running its render usually fixes this." });
     }
 
-    /* D. picker / strip missing from the DOM while its host exists */
-    if (dom.heroToday.present && !dom.whosNextBox.present && g.view === "visit") {
+    /* D. picker host present but the grid itself is not rendered */
+    if (hero && !grid && !emptyEl) {
       f.push({ sev: "error", handle: "__mlsWhosNext",
         title: "Who's Next picker missing",
-        detail: "The visit hero (#heroToday) is present but the picker (#mlsWhosNextBox) is not mounted. Re-applying the picker module should restore it." });
+        detail: "The visit hero (#heroToday) is present but the picker grid (.wn-grid) is not mounted. Re-applying the picker module should restore it." });
     }
 
-    /* E. data present in memory but not rendered */
-    if (g.calAppts && g.calAppts > 0 && box) {
-      var chips2 = box.querySelectorAll(".wn-chip").length;
-      if (chips2 === 0 && box.querySelector(".wn-empty")) {
-        f.push({ sev: "warn", handle: "__mlsWhosNext",
-          title: "Schedule in memory but picker empty",
-          detail: g.calAppts + " appointment(s) are in memory (_calAppts) but the picker shows none for the current scope. Often a doctor/day filter rather than a crash -- I can re-run the render or you can clear the doctor filter." });
-      }
+    /* E. data present in memory but the picker shows an empty state */
+    if (g.calAppts && g.calAppts > 0 && chips === 0 && emptyEl) {
+      f.push({ sev: "warn", handle: "__mlsWhosNext",
+        title: "Schedule in memory but picker empty",
+        detail: g.calAppts + " appointment(s) are in memory (_calAppts) but the picker shows none for the current scope. Often a doctor/day filter rather than a crash -- I can re-run the render or you can clear the doctor filter." });
     }
 
     /* F. duplicate / competing inserts */
-    ["mlsWhosNextBox", "mlsAsstPanel", "mlsCtxBar", "heroToday"].forEach(function (id) {
+    if (qsa(".wn-grid").length > 1) f.push({ sev: "warn", handle: "__mlsWhosNext", title: "Duplicate Who's Next grids", detail: qsa(".wn-grid").length + " .wn-grid pickers in the DOM (competing inserts). Reverting the duplicate-producing module clears it." });
+    ["mlsAsstPanel", "mlsCtxBar", "heroToday"].forEach(function (id) {
       var n = qsa("#" + id).length;
       if (n > 1) f.push({ sev: "warn", handle: null,
         title: "Duplicate element #" + id,
