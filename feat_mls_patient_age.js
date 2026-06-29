@@ -6,7 +6,9 @@
  * read-only "Age N" chip in two places:
  *   (A) live underneath any DOB input (the Complex hero #heroPtDob and the
  *       Simple-view "Enter manually" DOB field) -- it updates as the doctor
- *       types the date of birth, so age appears the instant a valid DOB exists;
+ *       types the date of birth AND whenever the app prefills / autofills the
+ *       field (e.g. the active patient, or DOB pulled from the open athenaOne
+ *       chart), so the age appears the instant a valid DOB exists;
  *   (B) on the active-patient context bar (#mlsCtxBar) whenever the active
  *       patient has a DOB, so age stays visible all visit long.
  * Purely derived + display-only: it reads a DOB that is already on screen / in
@@ -20,10 +22,10 @@
   if (window.__mlsPatientAge) return;
 
   var STYLE_ID = 'mls-age-style';
-  var chips = new Set();            // every chip element we create (for revert)
-  var inputMap = new WeakMap();     // input -> { chip, handler }
+  var chips = new Set();            // every element we create (for revert)
+  var inputMap = new WeakMap();     // input -> { chip, wrap, handler }
   var boundInputs = [];             // inputs we attached a handler to (for revert)
-  var obs = null, iv = null;
+  var obs = null, mountIv = null, refreshIv = null;
 
   /* ---- styling: matches app pill badges (Plus Jakarta Sans, 999px radius) ---- */
   function injectStyle() {
@@ -90,10 +92,11 @@
 
   function setChip(chip, age) {
     if (!chip) return;
-    if (age == null) { chip.style.display = 'none'; return; }
+    if (age == null) { if (chip.style.display !== 'none') chip.style.display = 'none'; return; }
     var t = chip.querySelector('.mls-age-txt');
-    if (t) t.textContent = ageLabel(age);
-    chip.style.display = 'inline-flex';
+    var lbl = ageLabel(age);
+    if (t && t.textContent !== lbl) t.textContent = lbl;
+    if (chip.style.display !== 'inline-flex') chip.style.display = 'inline-flex';
   }
 
   /* ---- (A) DOB inputs: live age hint beneath the field ---- */
@@ -107,7 +110,7 @@
     if (!inp || inputMap.has(inp) || !isDobInput(inp)) return;
     var chip = makeChip('mls-age-hint');
     chip.style.display = 'none';
-    // place as a block-level hint directly after the input (no horizontal overlap)
+    // block-level hint directly after the input (no horizontal overlap)
     var wrap = document.createElement('div');
     wrap.setAttribute('data-mls-age-wrap', '1');
     wrap.style.cssText = 'margin-top:6px;';
@@ -170,12 +173,24 @@
     setChip(chip, age);
   }
 
+  /* ---- value refresh: reflect prefilled / app-autofilled DOBs (no input event) ---- */
+  function refreshAll() {
+    try {
+      for (var i = 0; i < boundInputs.length; i++) {
+        var inp = boundInputs[i];
+        var rec = inputMap.get(inp);
+        if (rec) setChip(rec.chip, computeAge(inp.value));
+      }
+      syncCtx();
+    } catch (e) {}
+  }
+
   /* ---- wiring / lifecycle ---- */
   var applying = false;
   function tick() {
     if (applying) return;
     applying = true;
-    try { injectStyle(); scanInputs(document); syncCtx(); } catch (e) {}
+    try { injectStyle(); scanInputs(document); refreshAll(); } catch (e) {}
     applying = false;
   }
 
@@ -186,15 +201,19 @@
       obs.observe(document.body || document.documentElement,
         { childList: true, subtree: true });
     } catch (e) {}
+    // lightweight steady refresh so programmatic prefills/autofills (which fire
+    // no input event) still surface the age within ~1s. Cheap: a handful of
+    // string parses, only touches the DOM when a value actually changed.
+    if (!refreshIv) refreshIv = setInterval(refreshAll, 1000);
   }
 
-  // poll briefly for the app to mount, then rely on the observer
+  // poll briefly for the app to mount, then rely on the observer + steady refresh
   var tries = 0;
-  iv = setInterval(function () {
+  mountIv = setInterval(function () {
     tries++;
     tick();
-    if (obs || tries > 40) { clearInterval(iv); iv = null; }
     if (!obs && (document.getElementById('mlsCtxBar') || document.querySelector('input'))) start();
+    if (obs || tries > 40) { clearInterval(mountIv); mountIv = null; }
   }, 500);
 
   if (document.readyState !== 'loading') start();
@@ -204,8 +223,8 @@
     revert: function () {
       try { if (obs) obs.disconnect(); } catch (e) {}
       obs = null;
-      if (iv) { clearInterval(iv); iv = null; }
-      // remove input listeners
+      if (mountIv) { clearInterval(mountIv); mountIv = null; }
+      if (refreshIv) { clearInterval(refreshIv); refreshIv = null; }
       boundInputs.forEach(function (inp) {
         try {
           var rec = inputMap.get(inp);
@@ -216,7 +235,6 @@
         } catch (e) {}
       });
       boundInputs = [];
-      // remove every element we created
       chips.forEach(function (el) {
         try { if (el && el.parentNode) el.parentNode.removeChild(el); } catch (e) {}
       });
@@ -225,7 +243,7 @@
       try { delete window.__mlsPatientAge; } catch (e) { window.__mlsPatientAge = undefined; }
     },
     _info: function () {
-      return { inputs: boundInputs.length, chips: chips.size, observing: !!obs };
+      return { inputs: boundInputs.length, chips: chips.size, observing: !!obs, refreshing: !!refreshIv };
     }
   };
 })();
