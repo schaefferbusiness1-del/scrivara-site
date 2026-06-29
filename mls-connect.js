@@ -4403,3 +4403,5 @@
     if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
   }catch(e){ /* never break the app */ }
 })();
+
+;(function(){try{var A="feat_mls_cal_provider_roster.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629pr1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item66: calendar PROVIDERS roster shows ALL ~18 real providers (normalizes every window._calProviders entry shape into shared __mlsCalProvNames; item64 only read .name and dropped the raw machine strings) + month grid fills full width (forces #calSplitWrap to a single full-width column so item63's "Viewing:" bar no longer eats a grid cell / squishes the grid into the narrow right column) + click-to-scope with an HONEST empty-state (per-doctor lists only populate after a fresh per-provider re-pull since appts currently carry provider=null) -- additive, reversible (window.__mlsCalProviderRoster.revert()) */
