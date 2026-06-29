@@ -2215,6 +2215,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     return true; // async response
   });
+
+  // --- v1.40: publish the PROVEN read-all-visits engine so the Seamless overlay
+  //     router can reuse it directly (the overlay was previously bound to a
+  //     never-implemented name and so could never read the chart). Same cfg load,
+  //     same engine, same honest failures - additive, no behavior change here. ---
+  try {
+    self.__mlsOverlayReadVisits = function (appTabId, hint) {
+      return new Promise(function (resolve) {
+        try {
+          chrome.storage.local.get(['mlsAthenaVisitsCfg'], function (st) {
+            var cfg = {}; var stored = (st && st.mlsAthenaVisitsCfg) || {};
+            for (var k in ORCH_DEFAULT) cfg[k] = (stored[k] != null ? stored[k] : ORCH_DEFAULT[k]);
+            for (var k2 in stored) if (cfg[k2] == null) cfg[k2] = stored[k2];
+            runAllVisits(appTabId != null ? appTabId : null, hint || {}, cfg)
+              .then(resolve, function (e) { resolve({ ok: false, error: String((e && e.message) || e) }); });
+          });
+        } catch (e) { resolve({ ok: false, error: String((e && e.message) || e) }); }
+      });
+    };
+  } catch (e) {}
 })();
 
 
@@ -2412,6 +2432,83 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 })();
 
 
+// ---- v1.40: Athena "Sign & Save" driver (injected, runs per frame) ----------
+// USER-INITIATED ONLY - fired because the doctor clicked "Sign and Save" in MLS,
+// never autonomously. Self-contained for chrome.scripting injection.
+//   mode 'probe' = READ-ONLY: locate the Sign/Save control(s); click NOTHING.
+//   mode 'sign'  = click Sign & Save, confirm any dialog, then VERIFY the chart
+//                  actually signed/saved. Reports signed:true ONLY on positive
+//                  confirmation - it NEVER fabricates success.
+async function mlsAthenaSignSave(mode) {
+  mode = (mode === 'sign') ? 'sign' : 'probe';
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  function vis(el) { try { var r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden' && parseFloat(s.opacity || '1') > 0.05; } catch (e) { return false; } }
+  function txt(el) { try { return ((el && (el.textContent || el.value || (el.getAttribute && el.getAttribute('aria-label')))) || '').replace(/\s+/g, ' ').trim(); } catch (e) { return ''; } }
+  // Strict: the control must clearly mean "sign (and save/file)". Never destructive.
+  var SIGN_RE = /\bsign\s*(?:&|and)?\s*(?:save|file)\b|\bsave\s*(?:&|and)\s*sign\b/i;
+  var SIGN_ONLY_RE = /\bsign\b/i;
+  var BAD_RE = /cancel|delete|discard|remove|unsign|void|addend|amend|reopen|log\s*out|sign\s*out|sign\s*off\s*&?\s*next|next\s*patient|close\s*(?:without|encounter)|don'?t\s*save/i;
+  function findSignControls() {
+    var els = [].slice.call(document.querySelectorAll('button,[role=button],input[type=submit],input[type=button],a[role=button]')).filter(vis);
+    var hits = [];
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i], t = txt(el);
+      if (!t || t.length > 40 || BAD_RE.test(t)) continue;
+      var s = 0;
+      if (SIGN_RE.test(t)) s += 10; else if (SIGN_ONLY_RE.test(t)) s += 4; else continue;
+      if (/save|file/i.test(t)) s += 3;
+      hits.push({ el: el, t: t, s: s, len: t.length });
+    }
+    hits.sort(function (a, b) { return (b.s - a.s) || (a.len - b.len); });
+    return hits;
+  }
+  function signedIndicator() {
+    var body = (document.body && document.body.innerText || '');
+    if (/\bsigned\s*(?:by|on)\b|electronically\s*signed|note\s*signed|encounter\s*(?:signed|closed)|signed\s*(?:and|&)\s*(?:saved|filed)|successfully\s*signed|chart\s*closed/i.test(body)) return true;
+    var toast = [].slice.call(document.querySelectorAll('[role=status],[role=alert],.toast,.notification,.success,[class*=success],[class*=signed]')).filter(vis);
+    for (var i = 0; i < toast.length; i++) { if (/signed|filed|closed|success/i.test(txt(toast[i]))) return true; }
+    return false;
+  }
+  function clickEl(el) {
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    var o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+    ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) {
+      try { el.dispatchEvent(new (tp.indexOf('pointer') === 0 ? PointerEvent : MouseEvent)(tp, o)); } catch (e) {}
+    });
+    try { el.click(); } catch (e) {}
+  }
+
+  var controls = findSignControls();
+  var alreadySigned = signedIndicator();
+  var observed = { url: location.href, top: (function () { try { return window.top === window; } catch (e) { return false; } })(),
+    controlFound: !!controls.length, controlText: controls.length ? controls[0].t : '', controlCount: controls.length, alreadySigned: alreadySigned };
+
+  if (mode === 'probe') return { ok: true, mode: 'probe', ready: !!controls.length, observed: observed };
+
+  // ----- SIGN (clicks; user-initiated; never invoked autonomously) -----
+  if (alreadySigned) return { ok: true, signed: true, reason: 'already-signed', observed: observed };
+  if (!controls.length) return { ok: false, signed: false, reason: 'no-control', msg: 'Could not find a Sign & Save control on this Athena screen.', observed: observed };
+
+  clickEl(controls[0].el);
+  await sleep(700);
+  // a confirm dialog may appear -> click the AFFIRMATIVE sign/confirm button (not cancel)
+  var dlg = [].slice.call(document.querySelectorAll('[role=dialog],[role=alertdialog],.modal,.dialog,[class*=modal],[class*=dialog]')).filter(vis);
+  if (dlg.length) {
+    var btns = [];
+    dlg.forEach(function (d) { [].slice.call(d.querySelectorAll('button,[role=button],input[type=submit]')).filter(vis).forEach(function (b) { btns.push(b); }); });
+    var pick = null;
+    for (var i = 0; i < btns.length; i++) { var bt = txt(btns[i]); if (!bt || BAD_RE.test(bt)) continue; if (SIGN_RE.test(bt) || /\b(?:confirm|ok|yes|continue|accept)\b/i.test(bt)) { pick = btns[i]; if (SIGN_RE.test(bt)) break; } }
+    if (pick) { clickEl(pick); await sleep(800); }
+  }
+  // verify - REQUIRE a positive signed indicator. Control disappearing alone is NOT proof.
+  for (var w = 0; w < 10; w++) {
+    if (signedIndicator()) return { ok: true, signed: true, reason: 'confirmed', observed: observed };
+    await sleep(500);
+  }
+  return { ok: true, signed: false, reason: 'unconfirmed', msg: 'Clicked Sign & Save but could not confirm Athena finished signing - check the chart in Athena before relying on it.', observed: observed };
+}
+
 /* ===== v1.38: MLS Seamless Pop-up overlay router (appended) ===== */
 /* =========================================================================
    MLS Seamless Pop-up  —  background.js ADDITIONS  (v0.2.0)
@@ -2457,26 +2554,172 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // ---- defensive bind to existing service-worker internals ----------------
   function bind(name) { return (typeof self[name] === 'function') ? self[name] : null; }
+  function fn(name) { return (typeof self[name] === 'function') ? self[name] : null; }
+
+  // =====================================================================
+  // v1.40 ROOT-CAUSE FIX: the overlay was bound to adapter names that were
+  // NEVER implemented (findAthenaTab / readChartIdentity / runReadAllVisits /
+  // runPasteNote / callBackendNote). Every binding resolved to null, so STATUS
+  // always reported patientOpen:false and GO/GENERATE/WRITEBACK all failed -
+  // the overlay was permanently stuck on "Open a patient in Athena". These
+  // adapters wire the overlay to the PROVEN, in-production engines instead.
+  // All read-only except the existing gated note paste. NEVER Save/Sign here.
+  // =====================================================================
+
+  // find the signed-in athenaOne / EMR tab (reuse the proven picker)
+  function overlayFindEmrTab() {
+    return new Promise(function (resolve) {
+      try {
+        chrome.tabs.query({}, function (all) {
+          var picker = fn('mlsPickEmrTab');
+          resolve(picker ? (picker(all || []) || null) : ((all || []).filter(function (t) { return /athenahealth|athenanet|athenaone/i.test(t.url || ''); })[0] || null));
+        });
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  // read the OPEN chart's identity (read-only; best-scoring frame)
+  function overlayReadIdentity(tabId) {
+    var reader = fn('mlsReadChartIdentity');
+    if (!reader || typeof chrome.scripting === 'undefined' || tabId == null) return Promise.resolve(null);
+    return chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, func: reader })
+      .then(function (res) {
+        var best = null;
+        (res || []).forEach(function (m) { var r = m && m.result; if (r && r.name && (!best || (r.score || 0) > (best.score || 0))) best = r; });
+        return best ? { name: best.name, dob: best.dob || '', mrn: best.mrn || '', score: best.score || 0 } : null;
+      })
+      .catch(function () { return null; });
+  }
+
+  function overlayNoteText(noteObj) {
+    if (!noteObj) return '';
+    if (typeof noteObj === 'string') return noteObj;
+    var t = noteObj.soap || noteObj.text || noteObj.note || noteObj.content || '';
+    if (!t && noteObj.insurance) t = noteObj.insurance;
+    return String(t || '');
+  }
+
+  // verified, frame-scored paste of the note (PATIENT GATE already enforced by
+  // doWriteBack). Reuses the proven mlsFieldScanner + mlsNotePaster path. Never signs.
+  function overlayPasteNote(arg) {
+    var noteObj = (arg && arg.note != null) ? arg.note : arg;
+    var text = overlayNoteText(noteObj);
+    var scanner = fn('mlsFieldScanner'), paster = fn('mlsNotePaster'), segmenter = fn('mlsSegmentNote');
+    if (!text.trim()) return Promise.resolve({ error: 'Nothing to write.' });
+    if (!scanner || !paster || typeof chrome.scripting === 'undefined') return Promise.resolve({ error: 'Write path unavailable - reload the extension.' });
+    return overlayFindEmrTab().then(function (tab) {
+      if (!tab) return { error: 'No signed-in athenaOne tab is open.' };
+      var segs = segmenter ? segmenter(text) : [{ text: text, section: (noteObj && noteObj.section) || 'progress' }];
+      var sections = [];
+      var i = 0;
+      function step() {
+        if (i >= segs.length) return { sections: sections };
+        var seg = segs[i];
+        var last = { ok: false };
+        var attempt = 0;
+        function tryOnce() {
+          var measureP;
+          try { measureP = chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [seg.text, seg.section], func: scanner }); }
+          catch (e) { measureP = chrome.scripting.executeScript({ target: { tabId: tab.id }, args: [seg.text, seg.section], func: scanner }); }
+          return measureP.then(function (measure) {
+            var wf = null, bs = -1e12, wfScan = null;
+            (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bs) { bs = m.result.score; wf = (m.frameId != null ? m.frameId : 0); wfScan = m.result; } });
+            if (wf === null) { last = { ok: false, notfound: true, targetLabel: seg.section }; return new Promise(function (r) { setTimeout(r, 400); }).then(function () { return null; }); }
+            return chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [wf] }, args: [seg.text, seg.section, wfScan], func: paster })
+              .then(function (r) { last = (r && r[0] && r[0].result) || { ok: false }; return null; });
+          });
+        }
+        function loop() {
+          if (attempt >= 2 || (last.ok && last.confirmed)) {
+            sections.push({ section: last.chosenSection || last.targetLabel || seg.section, confirmed: !!last.confirmed, written: !!last.ok });
+            i++; return step();
+          }
+          attempt++;
+          return tryOnce().then(function () { if (last.ok && last.confirmed) { sections.push({ section: last.chosenSection || last.targetLabel || seg.section, confirmed: true, written: true }); i++; return step(); } return new Promise(function (r) { setTimeout(r, 380); }).then(loop); });
+        }
+        return loop();
+      }
+      return Promise.resolve(step());
+    });
+  }
+
+  // backend note generation (reuse the proven authenticated backend call)
+  function overlayBackendNote(req) {
+    var cb = fn('callBackend');
+    if (!cb) return Promise.reject(new Error('backend-unavailable'));
+    req = req || {};
+    var transcript = String(req.transcript || '');
+    var typed = String(req.typedNotes || '');
+    var combined = (transcript + (transcript && typed ? '\n\n' : '') + typed).trim();
+    return cb('/api/assist/note', { transcript: combined }).then(function (d) {
+      d = d || {};
+      if (d.error) throw new Error(d.error);
+      var n = d.note || d;
+      var text = n.soap || n.text || n.note || n.content || (typeof n === 'string' ? n : '');
+      return { soap: text, text: text, insurance: n.insurance || '', em_level: n.em_level || n.em || '', icd10: n.icd10 || n.icd || [], cpt: n.cpt || [] };
+    });
+  }
+
+  function overlayFocusTab(tabId) {
+    try { chrome.tabs.update(tabId, { active: true }, function (t) { try { if (t && t.windowId != null) chrome.windows.update(t.windowId, { focused: true }); } catch (e) {} }); } catch (e) {}
+    return Promise.resolve({ ok: true });
+  }
+
+  var matcher = fn('mlsMatchPatients');
   var ext = {
-    readAllVisits: bind('runReadAllVisits') || bind('mlsRunReadAllVisits'),
-    pasteNote:     bind('runPasteNote')     || bind('mlsRunPasteNote'),
-    readIdentity:  bind('readChartIdentity')|| bind('mlsReadChartIdentity'),
-    backendNote:   bind('callBackendNote')  || bind('mlsCallBackendNote'),
+    // read open patient + ALL visits - drive the PROVEN v1.34 visits engine
+    readAllVisits: (typeof self.__mlsOverlayReadVisits === 'function')
+      ? function (opts) { opts = opts || {}; return self.__mlsOverlayReadVisits((opts.appTabId != null ? opts.appTabId : null), {}); }
+      : (bind('runReadAllVisits') || bind('mlsRunReadAllVisits')),
+    pasteNote:     (fn('mlsNotePaster') ? overlayPasteNote : (bind('runPasteNote') || bind('mlsRunPasteNote'))),
+    readIdentity:  (fn('mlsReadChartIdentity') ? overlayReadIdentity : (bind('readChartIdentity'))),
+    backendNote:   (fn('callBackend') ? overlayBackendNote : (bind('callBackendNote') || bind('mlsCallBackendNote'))),
+    signSave:      (fn('mlsAthenaSignSave') ? overlaySignSave : null),
     validateCodes: bind('validateCodesViaApp'),
     saveVisits:    bind('saveVisitsViaApp'),
-    findTab:       bind('findAthenaTab')    || bind('mlsFindAthenaTab'),
-    focusTab:      bind('focusTab')         || bind('mlsFocusTab'),
-    namesMatch:    bind('namesMatch'),
-    dobsMatch:     bind('dobsMatch'),
-    normDob:       bind('normDob'),
+    findTab:       (fn('mlsPickEmrTab') ? overlayFindEmrTab : (bind('findAthenaTab') || bind('mlsFindAthenaTab'))),
+    focusTab:      overlayFocusTab,
+    // robust patient-gate helpers (reuse the conservative mlsMatchPatients logic)
+    namesMatch:    matcher ? function (a, b) { try { var m = matcher({ name: a }, { name: b }); return !!(m && m.nameMatch === true); } catch (e) { return false; } } : bind('namesMatch'),
+    dobsMatch:     matcher ? function (a, b) { try { var m = matcher({ dob: a }, { dob: b }); return !!(m && m.dobMatch === true); } catch (e) { return false; } } : bind('dobsMatch'),
+    normDob:       function (s) { var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (parseInt(y, 10) > 30 ? '19' : '20') + y; return ('0' + m[1]).slice(-2) + '/' + ('0' + m[2]).slice(-2) + '/' + y; },
     // Backend transcription of ONE complete §35 segment, using the doctor's JWT
     // (pulled from the mlsscribe tab, exactly as the rest of the worker does).
     // Contract: (Uint8Array|number[] bytes, mime) -> Promise<{ text }>.
-    // The backend transcription endpoint is UNCHANGED — each segment is already
+    // The backend transcription endpoint is UNCHANGED - each segment is already
     // a complete, decodable file (the §35 fix). If this internal isn't present,
     // recording degrades HONESTLY to type-only (no fabricated transcript).
     transcribeSegment: bind('transcribeSegmentViaBackend') || bind('uploadAudioSegment') || bind('mlsTranscribeSegment')
   };
+
+  // ---- v1.40 Sign & Save adapter: USER-INITIATED verified signing -----------
+  // Re-reads the OPEN chart identity, re-checks it against the identity LOCKED at
+  // "Go" (name + DOB), and only then injects the Sign & Save driver. Reports
+  // signed:true ONLY when Athena confirmed the save/sign. Never autonomous.
+  function overlaySignSave(opts) {
+    opts = opts || {};
+    var driver = fn('mlsAthenaSignSave');
+    if (!driver || typeof chrome.scripting === 'undefined') return Promise.resolve({ error: 'sign-unavailable', message: 'Sign path unavailable - reload the extension.' });
+    return overlayFindEmrTab().then(function (tab) {
+      if (!tab) return { error: 'no-tab', message: 'No signed-in athenaOne tab is open.' };
+      var mode = (opts.probe ? 'probe' : 'sign');
+      return chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: driver, args: [mode] })
+        .then(function (res) {
+          var rs = (res || []).map(function (x) { return x && x.result; }).filter(Boolean);
+          if (mode === 'probe') {
+            var ready = rs.find(function (r) { return r && r.ready; }) || rs[0] || { ok: false };
+            return ready;
+          }
+          var signed = rs.find(function (r) { return r && r.signed === true; });
+          if (signed) return { ok: true, signed: true, observed: signed.observed };
+          var clicked = rs.find(function (r) { return r && r.ok && r.reason === 'unconfirmed'; });
+          if (clicked) return { ok: true, signed: false, reason: 'unconfirmed', message: clicked.msg };
+          var none = rs.find(function (r) { return r && r.reason === 'no-control'; }) || rs[0] || { ok: false };
+          return { ok: false, signed: false, reason: (none && none.reason) || 'sign-failed', message: (none && none.msg) || 'Could not complete Sign & Save in Athena.' };
+        })
+        .catch(function (e) { return { error: 'sign-exec-failed', message: String((e && e.message) || e) }; });
+    });
+  }
 
   function progress(tabId, message, kind) {
     try { chrome.tabs.sendMessage(tabId, { type: 'MLS_OVL_PROGRESS', message: message, kind: kind || 'run' }); } catch (e) {}
@@ -2612,6 +2855,73 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (tab && ext.focusTab) ext.focusTab(tab.id);
         sendResponse({ ok: true });
       });
+      return true;
+    }
+
+    // ---------- SIGN & SAVE (USER-INITIATED ONLY; gated; verified) ----------
+    // Fires ONLY because the doctor clicked "Sign and Save" in MLS (the overlay
+    // "written" state, or the mlsscribe.com bridge) - never autonomously. Flow:
+    // re-confirm the patient gate (name + DOB) against the identity locked at Go
+    // OR the MLS active patient; (optionally) write the verified note; then
+    // auto-click Athena's Sign & Save and report "signed" ONLY if Athena confirms.
+    if (msg.type === 'MLS_OVL_SIGNSAVE') {
+      if (msg.userInitiated !== true) { sendResponse({ error: 'not-user-initiated', message: 'Sign & Save must be triggered by your own click.' }); return true; }
+      if (!ext.signSave) { sendResponse({ error: 'sign-unavailable', message: 'Sign path unavailable - reload the extension.' }); return true; }
+
+      // Read the MLS active patient (read-only) as a gate target fallback.
+      function readMlsActivePatient() {
+        var reader = (typeof self.mlsReadActivePatient === 'function') ? self.mlsReadActivePatient : null;
+        if (!reader || typeof chrome.scripting === 'undefined') return Promise.resolve(null);
+        return chrome.tabs.query({ url: ['https://mlsscribe.com/*', 'https://*.mlsscribe.com/*'] })
+          .then(function (mt) {
+            mt = mt || []; mt.sort(function (a, b) { return (b.lastAccessed || 0) - (a.lastAccessed || 0); });
+            var i = 0;
+            function next() {
+              if (i >= mt.length) return null;
+              var t = mt[i++];
+              return chrome.scripting.executeScript({ target: { tabId: t.id }, func: reader })
+                .then(function (r) { var v = r && r[0] && r[0].result; if (v && (v.name || v.dob)) return v; return next(); })
+                .catch(function () { return next(); });
+            }
+            return next();
+          }).catch(function () { return null; });
+      }
+
+      var locked = (tabId != null && sessions[tabId]) ? sessions[tabId].lockedIdentity : null;
+      var targetP = locked ? Promise.resolve(locked)
+        : (msg.mlsIdentity && msg.mlsIdentity.name) ? Promise.resolve(msg.mlsIdentity)
+        : readMlsActivePatient();
+
+      Promise.all([targetP, Promise.resolve(ext.findTab ? ext.findTab() : null)])
+        .then(function (pair) {
+          var target = pair[0], tab = pair[1];
+          var readP = (tab && ext.readIdentity) ? ext.readIdentity(tab.id) : Promise.resolve(null);
+          return readP.then(function (chartId) {
+            var confident = target && target.name && chartId && chartId.name && identitiesMatch(target, chartId);
+            if (!confident) {
+              progress(tabId, '⛔ Could not confirm this is the right patient - did NOT write or sign.', 'fail');
+              return { blocked: true, signed: false, mlsIdentity: target || null, chartIdentity: chartId || null,
+                       message: 'Patient gate failed (name + DOB) - refusing to sign this chart.' };
+            }
+            // optional verified note write FIRST (gate already satisfied)
+            var writeP = (msg.note != null && ext.pasteNote)
+              ? (progress(tabId, '✓ Confirmed - writing the note before signing...', 'ok'), ext.pasteNote({ note: msg.note }))
+              : Promise.resolve(null);
+            return writeP.then(function (wr) {
+              if (wr && wr.error) return { error: wr.error, signed: false, message: wr.error + ' - did NOT sign.' };
+              progress(tabId, 'Signing & saving in athenaOne...', 'run');
+              return ext.signSave({ probe: !!msg.probe }).then(function (r) {
+                r = r || {};
+                if (r.signed === true) progress(tabId, '✓ Athena confirmed - signed & saved.', 'ok');
+                else progress(tabId, (r.message || 'Could not confirm signing - check Athena before relying on it.'), 'warn');
+                if (wr && wr.sections) r.note = { sections: wr.sections };
+                return r;
+              });
+            });
+          });
+        })
+        .then(function (r) { sendResponse(r || { error: 'sign-failed', signed: false }); })
+        .catch(function (e) { sendResponse({ error: 'sign-failed', signed: false, message: String((e && e.message) || e) }); });
       return true;
     }
   });

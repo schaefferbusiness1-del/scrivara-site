@@ -17,7 +17,7 @@
   'use strict';
   if (typeof window !== 'undefined' && window.__mlsPopup && window.__mlsPopup.installed) return;
 
-  var VERSION = '0.2.0';
+  var VERSION = '0.3.0';
 
   // ---- environment detection (so the same file is unit-testable) ----------
   var hasChrome = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage);
@@ -73,6 +73,7 @@
       codes: null,             // validated codes from __mlsCodeSheet
       mismatch: null,          // {mlsIdentity, chartIdentity} when the gate blocks
       written: null,           // {sections[], codesAdded[], codesMissed[]}
+      signedConfirmed: false,  // true ONLY when Athena confirmed the sign+save
       narration: [],           // [{text, kind}]  kind: run|ok|warn|fail|note
       error: null,
       busy: false
@@ -212,10 +213,29 @@
       });
     }
 
+    // ---- STEP 7 (optional, USER-INITIATED): Sign & Save in Athena ----------
+    // Fires ONLY from the doctor's click here. Background re-checks the name+DOB
+    // gate and auto-clicks Athena's Sign & Save, reporting "signed" ONLY when
+    // Athena confirms the save/sign. Never fakes success, never autonomous.
+    function signSave() {
+      if (st.busy || st.signedConfirmed) return Promise.resolve();
+      st.busy = true; st.error = null;
+      narrate('Signing & saving in athenaOne...', 'run');
+      return tx.send({ type: 'MLS_OVL_SIGNSAVE', userInitiated: true }).then(function (r) {
+        st.busy = false; r = r || {};
+        if (r.signed === true) { st.signedConfirmed = true; narrate('✓ Athena confirmed - signed & saved.', 'ok'); }
+        else if (r.blocked) { narrate('⛔ ' + (r.message || 'Patient gate failed - nothing signed.'), 'fail'); }
+        else if (r.error) { st.error = r.error; narrate(r.message || 'Sign & Save unavailable.', 'fail'); }
+        else { narrate(r.message || 'Clicked Sign & Save but Athena didn’t confirm - check the chart before relying on it.', 'warn'); }
+        render();
+        return r;
+      });
+    }
+
     function reset() {
       st.state = 'idle'; st.patient = null; st.visitCount = null; st.transcript = '';
       st.typedNotes = ''; st.recording = false; st.note = null; st.codes = null;
-      st.mismatch = null; st.written = null; st.narration = []; st.error = null; st.busy = false;
+      st.mismatch = null; st.written = null; st.signedConfirmed = false; st.narration = []; st.error = null; st.busy = false;
       render();
     }
 
@@ -247,7 +267,7 @@
       refreshStatus: refreshStatus, connColor: connColor, canGo: canGo,
       go: go, startRecording: startRecording, stopRecording: stopRecording,
       setTypedNotes: setTypedNotes, hasContent: hasContent,
-      generate: generate, writeBack: writeBack, reset: reset, ingest: ingest
+      generate: generate, writeBack: writeBack, signSave: signSave, reset: reset, ingest: ingest
     };
   }
 
@@ -422,13 +442,19 @@
           break;
 
         case 'written':
-          body.appendChild(el('h2', 'mlsp-title', '✓ Draft written'));
+          body.appendChild(el('h2', 'mlsp-title', s.signedConfirmed ? '✓ Signed & saved' : '✓ Draft written'));
           body.appendChild(el('p', 'mlsp-sub', summaryLine(s)));
           renderNarration(body, s);
-          body.appendChild(el('p', 'mlsp-sub', 'MLS did not click Save or Sign. That’s your click.'));
-          body.appendChild(bigBtn('Review & Sign in Athena →', 'ghost', function () {
-            transport.send({ type: 'MLS_OVL_FOCUS_ATHENA' }); // brings tab forward, clicks nothing
-          }));
+          if (s.signedConfirmed) {
+            body.appendChild(el('p', 'mlsp-sub', 'Athena confirmed the note was signed & saved.'));
+          } else {
+            body.appendChild(el('p', 'mlsp-sub', 'The note is written (unsigned). You can sign & save it in Athena from here, or do it yourself.'));
+            body.appendChild(el('span', 'mlsp-writebadge', 'SIGNS THE CHART · ONLY ON YOUR CLICK'));
+            body.appendChild(bigBtn('🖊  Sign & Save in Athena', 'primary', function () { core.signSave(); }, s.busy));
+            body.appendChild(bigBtn('Just open Athena (I’ll sign) →', 'ghost', function () {
+              transport.send({ type: 'MLS_OVL_FOCUS_ATHENA' }); // brings tab forward, clicks nothing
+            }));
+          }
           var next = el('button', 'mlsp-btn secondary', '→ Next patient');
           next.addEventListener('click', function () { core.reset(); core.refreshStatus(); });
           body.appendChild(next);

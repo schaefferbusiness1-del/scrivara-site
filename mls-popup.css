@@ -74,8 +74,8 @@
 
 /* body */
 #mls-popup-root .mlsp-body { padding: 16px 16px 12px; }
-#mls-popup-root .mlsp-title { font-size: 17px; font-weight: 700; margin: 0 0 4px; }
-#mls-popup-root .mlsp-sub   { font-size: 13px; color: #64748b; margin: 0 0 14px; line-height: 1.45; }
+#mls-popup-root .mlsp-title { font-size: 17px; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
+#mls-popup-root .mlsp-sub   { font-size: 13px; color: #475569; margin: 0 0 14px; line-height: 1.45; }
 
 /* big buttons (>=48px tall, full width) */
 #mls-popup-root .mlsp-btn {
@@ -83,16 +83,22 @@
   border: none; border-radius: 12px; font-size: 16px; font-weight: 700;
   cursor: pointer; margin-top: 10px; text-align: center;
 }
-#mls-popup-root .mlsp-btn.primary   { background: #2f6bed; color: #fff; }
-#mls-popup-root .mlsp-btn.primary:hover:not(:disabled) { background: #2257cf; }
-#mls-popup-root .mlsp-btn.danger    { background: #dc2626; color: #fff; }
-#mls-popup-root .mlsp-btn.ghost     { background: #f1f5f9; color: #0f172a; }
-#mls-popup-root .mlsp-btn.ghost:hover { background: #e2e8f0; }
-#mls-popup-root .mlsp-btn:disabled  { opacity: .5; cursor: not-allowed; }
+#mls-popup-root .mlsp-btn.primary   { background: #1d4ed8; color: #ffffff; }
+#mls-popup-root .mlsp-btn.primary:hover:not(:disabled) { background: #1741b6; }
+#mls-popup-root .mlsp-btn.danger    { background: #dc2626; color: #ffffff; }
+#mls-popup-root .mlsp-btn.ghost     { background: #e2e8f0; color: #0f172a; border: 1px solid #cbd5e1; }
+#mls-popup-root .mlsp-btn.ghost:hover { background: #cbd5e1; }
+/* Disabled = clearly inactive but still LEGIBLE (no washed-out ghost text).
+   Solid light fill + dark slate text keeps contrast well above 4.5:1. */
+#mls-popup-root .mlsp-btn:disabled  {
+  opacity: 1; background: #e2e8f0; color: #475569;
+  border: 1px solid #cbd5e1; box-shadow: none; cursor: not-allowed;
+}
 #mls-popup-root .mlsp-btn.secondary {
-  min-height: 0; background: transparent; color: #2f6bed; font-weight: 600;
+  min-height: 0; background: transparent; color: #1d4ed8; font-weight: 600;
   font-size: 13px; padding: 8px; margin-top: 6px;
 }
+#mls-popup-root .mlsp-btn.secondary:disabled { background: transparent; border: none; color: #94a3b8; }
 
 /* write-intent badge */
 #mls-popup-root .mlsp-writebadge {

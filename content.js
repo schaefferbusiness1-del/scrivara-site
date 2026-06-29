@@ -17,7 +17,7 @@
   // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
   // so a malicious page can neither puppet the extension nor receive chart data, while
   // the doctor's any-page usage is fully preserved.
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -121,6 +121,26 @@
     if (d.type === 'mlsAppSearchProcedure') {
       try { _mlsSearchProcedure(d.params || {}, d.cfg || {}, origin); }
       catch (err) { reply({ source: 'mls-ext', type: 'mlsAppSearchResult', resp: { error: 'extension error' } }); }
+    }
+    // SIGN & SAVE (v1.40): the MLS web app's "Sign and Save" button asks the
+    // extension to (optionally) write the verified note into the open Athena
+    // chart and then auto-click Athena's Sign & Save. USER-INITIATED ONLY - this
+    // relay fires only from an explicit trusted-origin message; the background
+    // re-enforces the name+DOB patient gate and reports "signed" only on a
+    // confirmed save/sign. Never autonomous; never Save/Sign without this click.
+    if (d.type === 'mlsAppSignAndSave') {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'MLS_OVL_SIGNSAVE',
+          userInitiated: true,
+          note: (d.note != null ? d.note : null),
+          codes: (d.codes != null ? d.codes : null),
+          mlsIdentity: (d.mlsIdentity && typeof d.mlsIdentity === 'object') ? { name: mlsStr(d.mlsIdentity.name, 200), dob: mlsStr(d.mlsIdentity.dob, 40), mrn: mlsStr(d.mlsIdentity.mrn, 60) } : null,
+          probe: !!d.probe
+        }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppSignAndSaveResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppSignAndSaveResult', resp: { error: 'extension error' } }); }
     }
   });
   // Headless autopilot loop that enters a finished visit into the EMR encounter.
