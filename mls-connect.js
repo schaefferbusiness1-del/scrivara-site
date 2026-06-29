@@ -4321,3 +4321,85 @@
 ;(function(){try{var A="feat_mls_cal_athena_sync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629cas1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item63: Calendar<->athenaOne sync -- calendar always shows the pulled day (uncapped/newest-first read + empty-read retry + re-render), provider sent on the pull's POST so the backend provider column populates on re-pull, real doctor names in the calendar provider filter (kills "Provider N"/"Provider undefined"), render-layer de-dupe by patient+date+time+provider (legacy triples show once, no records deleted), garbled parser-noise rows suppressed at render, and a clear "Viewing: <day> -- N appointments (deduped)" state with provider scoping over STORED appointments -- additive, reversible (window.__mlsCalAthenaSync.revert()) */
 
 ;(function(){try{var A="feat_mls_cal_fullwidth_providers.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629fwp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item64: calendar full-width (CSS :has, Calendar view only -> min(1680px,96vw), snaps back to 1180px elsewhere) + accurate PROVIDERS roster from real stored provider names (honest "appears after a re-pull" note while null), click-to-scope calendar to that provider's patients, appt detail Provider shows real stored provider not Unassigned -- additive, reversible (window.__mlsCalFullwidthProviders.revert()) */
+
+;(function(){
+  /* ============================================================
+     MLS — auto-prompt Stripe payouts onboarding for not-ready doctors.
+     Appended to mls-connect.js (cache-busted, loads on every page).
+     Additive + reversible. Shows a friendly bottom banner that takes a
+     not-payout-ready clinician straight into Stripe Express onboarding in
+     ONE click, and exposes window.mlsEnsurePayouts(next) so any in-app
+     "get paid / receive payment" action can require onboarding first.
+     Reuses the existing global helpers defined inline in ScribeFlow.html
+     (backendMode, bkBase, bkToken, startConnectOnboard, toast).
+     Gated to clinicians only (the /api/connect/status route is clinician-
+     only, so attorneys / logged-out users never see the banner).
+     Revert: window.__mlsPayPrompt.revert()  (or remove this block).
+     ============================================================ */
+  try{
+    if(window.__mlsPayPrompt) return;
+    var BANNER_ID='mls_pay_autoprompt';
+    var DISMISS_KEY='mls_pay_prompt_dismissed';
+    function fnOk(){ return typeof startConnectOnboard==='function' && typeof bkBase==='function' && typeof bkToken==='function' && typeof backendMode==='function'; }
+    function getStatus(){
+      if(!fnOk() || !backendMode() || !bkToken()) return Promise.resolve(null);
+      return fetch(bkBase()+'/api/connect/status',{headers:{Authorization:'Bearer '+bkToken()}})
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .catch(function(){ return null; });
+    }
+    function removeBanner(){ var b=document.getElementById(BANNER_ID); if(b) b.remove(); }
+    function showBanner(partial){
+      if(document.getElementById(BANNER_ID) || !document.body) return;
+      var bar=document.createElement('div'); bar.id=BANNER_ID;
+      bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483000;background:#0f5132;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:14px;justify-content:center;flex-wrap:wrap;font:600 14px/1.4 system-ui,Segoe UI,Arial,sans-serif;box-shadow:0 -2px 14px rgba(0,0,0,.22)';
+      var msg=document.createElement('span');
+      msg.textContent = partial
+        ? 'Almost there — finish setting up payments so you get paid for your legal reports.'
+        : 'Turn on payments so you get paid (you keep 95%) for legal reports — about 2 minutes.';
+      var btn=document.createElement('button');
+      btn.textContent = partial ? 'Finish payment setup' : 'Set up payments';
+      btn.style.cssText='background:#fff;color:#0f5132;border:0;border-radius:8px;padding:9px 18px;font:700 14px system-ui;cursor:pointer';
+      btn.onclick=function(){ try{ startConnectOnboard(btn); }catch(e){ if(typeof toast==='function') toast('Could not open Stripe.','err'); } };
+      var x=document.createElement('button'); x.setAttribute('aria-label','Dismiss'); x.textContent='✕';
+      x.style.cssText='background:transparent;color:#fff;border:0;font-size:16px;cursor:pointer;opacity:.85';
+      x.onclick=function(){ try{ sessionStorage.setItem(DISMISS_KEY,'1'); }catch(e){} removeBanner(); };
+      bar.appendChild(msg); bar.appendChild(btn); bar.appendChild(x);
+      document.body.appendChild(bar);
+    }
+    var dismissed=false; try{ dismissed = sessionStorage.getItem(DISMISS_KEY)==='1'; }catch(e){}
+    function checkAndPrompt(force){
+      return getStatus().then(function(d){
+        if(!d) return;                 // not a clinician / not signed in -> no banner
+        if(d.ready){ removeBanner(); return; }
+        if(dismissed && !force) return;
+        showBanner(!!d.connected);
+      });
+    }
+    // Force-onboard guard any "receive/request payment" action can call:
+    //   mlsEnsurePayouts(function(){ /* proceed with the payment action */ });
+    window.mlsEnsurePayouts=function(next){
+      getStatus().then(function(d){
+        if(d && !d.ready){
+          if(typeof toast==='function') toast('Let’s turn on payments first.','ok');
+          try{ startConnectOnboard(); }catch(e){}
+        } else if(typeof next==='function'){ next(); }
+      });
+    };
+    window.__mlsPayPrompt={ check:checkAndPrompt, revert:function(){ removeBanner(); try{ delete window.mlsEnsurePayouts; }catch(e){} } };
+    function boot(){
+      // token/user are often set asynchronously after login — poll a few times.
+      setTimeout(function(){ checkAndPrompt(); },1200);
+      setTimeout(function(){ checkAndPrompt(); },4000);
+      // Returning from Stripe onboarding (?connect=done) — re-check and celebrate.
+      if(/[?&]connect=done/.test(location.search)){
+        var tries=0, iv=setInterval(function(){
+          tries++;
+          getStatus().then(function(d){ if(d&&d.ready){ removeBanner(); if(typeof toast==='function') toast('Payments are on — you’re ready to get paid.','ok'); clearInterval(iv); } });
+          if(tries>=8) clearInterval(iv);
+        },1500);
+      }
+      document.addEventListener('visibilitychange',function(){ if(!document.hidden) checkAndPrompt(); });
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+  }catch(e){ /* never break the app */ }
+})();
