@@ -27,7 +27,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.0.0", ASSET = "feat_mls_find_doctors.js", STYLE_ID = "mlsFindDocStyle", BTN_ID = "mlsFindDocBtn", MODAL_ID = "mlsFindDocModal";
+  var VERSION = "1.0.1", ASSET = "feat_mls_find_doctors.js", STYLE_ID = "mlsFindDocStyle", BTN_ID = "mlsFindDocBtn", MODAL_ID = "mlsFindDocModal";
   try { if (window.__mlsFindDoctors && window.__mlsFindDoctors.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -69,13 +69,18 @@
     try {
       var list = window._calProviders;
       if (!Array.isArray(list)) return;
-      var changed = false;
+      var seen = {}, out = [], changed = false;
       for (var i = 0; i < list.length; i++) {
-        var p = list[i];
-        if (p && typeof p === "object" && typeof p.name === "string" && p.name && !/^Provider\s/i.test(p.name)) continue; /* already good object */
-        var e = entryToProv(p, i);
-        if (e && e.name) { list[i] = { id: e.id, name: e.name, raw: e.raw, specialty: (p && p.specialty) || null }; changed = true; }
+        var e = entryToProv(list[i], i);
+        if (e && e.name) {
+          var key = e.name.toLowerCase();
+          if (seen[key]) { changed = true; continue; }   /* collapse duplicates -> prevents unbounded growth from roster re-append */
+          seen[key] = 1;
+          out.push({ id: e.id, name: e.name, raw: e.raw, specialty: (list[i] && list[i].specialty) || null });
+        } else { out.push(list[i]); }                    /* keep unrecognizable entries as-is (no data loss) */
       }
+      if (out.length !== list.length) changed = true;
+      if (changed) { list.length = 0; for (var j = 0; j < out.length; j++) list.push(out[j]); }
       return changed;
     } catch (e) {}
   }
