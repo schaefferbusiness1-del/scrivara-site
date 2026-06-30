@@ -221,3 +221,57 @@
   safe(install);
   try { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot(); } catch (e) { safe(boot); }
 })();
+
+/* ============================================================================
+ * item: route the hero "Pull today's patients" button onto TODAY's real day.
+ *
+ * Root cause: pullScheduleViaAssist() filed the parsed rows through the legacy
+ * _importPulledSchedule path. Rows with no per-row date fall back to the date
+ * PRINTED on the open athenaOne page (the open week's Saturday, e.g.
+ * 2026-07-04) instead of today, so "today's" patients landed on Jul 4 and the
+ * real day cell stayed empty.
+ *
+ * Fix: delegate that one button to window.__mlsSI.pull({date: <today EST>}).
+ * pull() reads the SAME athenaOne Day schedule via MLS Assist (v1.40), scopes
+ * to {date}, files each patient on today, refreshes the calendar / Today's
+ * patients (hero) / Who's-Next / picker / assistant, and still pulls each
+ * patient's chart history in the background.
+ *
+ * Scope: ONLY the hero "today" button is rerouted; the any-day picker is left
+ * untouched. Single-day correctness only -- multi-day week-stepping still needs
+ * the extension and is intentionally out of scope here.
+ * Additive + reversible: delete this block to restore the previous behaviour.
+ * ========================================================================== */
+(function () {
+  function estTodayKey() {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    } catch (e) { return new Date().toISOString().slice(0, 10); }
+  }
+  var prev = window.pullScheduleViaAssist;
+  function routedPull(btn) {
+    try {
+      if (window.__mlsSI && typeof window.__mlsSI.pull === 'function') {
+        var setS = function (m, kind) {
+          var el = document.getElementById('heroPullStatus');
+          if (el) { el.textContent = m; el.style.color = (kind === 'err') ? '#ffe0e0' : (kind === 'ok' ? '#d8ffe8' : 'rgba(255,255,255,.95)'); el.style.display = 'block'; }
+          else { try { toast(m, kind === 'err' ? 'err' : ''); } catch (e) {} }
+        };
+        if (btn) { btn.disabled = true; if (!btn.dataset._t) btn.dataset._t = btn.innerHTML; btn.innerHTML = '\u2026 reading Athena'; }
+        var done = function () { if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset._t || btn.innerHTML; } };
+        return Promise.resolve(window.__mlsSI.pull({ date: estTodayKey(), onStatus: setS })).then(done, done);
+      }
+    } catch (e) {}
+    return (typeof prev === 'function') ? prev.apply(this, arguments) : undefined;
+  }
+  routedPull.__mlsTodayRouted = true;
+  function apply() {
+    var cur = window.pullScheduleViaAssist;
+    if (typeof cur === 'function' && cur.__mlsTodayRouted) return;
+    if (typeof cur === 'function') prev = cur;
+    window.pullScheduleViaAssist = routedPull;
+  }
+  apply();
+  try { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply); } catch (e) {}
+  try { setTimeout(apply, 1500); } catch (e) {}
+})();
