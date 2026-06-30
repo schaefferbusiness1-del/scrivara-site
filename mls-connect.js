@@ -4433,3 +4433,96 @@
 (function(){try{var s=document.createElement('script');s.src='feat_mls_force_full_phone.js?v=20260630';s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* item68: restore WIDE calendar layout (appwidth_responsive complement for #calendarView) + honest, ACTIONABLE per-provider empty state. Additive, reversible, guarded; never modifies app fns, never reorders/drops loaders, never touches data. Root cause: appointments carry no provider/doctor_user_id (backend does not persist provider), so the per-provider filter matches nothing. Revert: window.__mlsCalWideHonest.revert() */ ;(function(){ 'use strict'; if (window.__mlsCalWideHonest) return; var API = { version:'cwh-1.0.0' }; var WIDTH_ID='__mlsCalWideHonestCss', ACT_CSS_ID='__mlsCalEmptyActionsCss', ACT_ID='mlsCalEmptyActions'; function $(id){ try{ return document.getElementById(id); }catch(e){ return null; } } function injectWidthCss(){ if ($(WIDTH_ID)) return; try{ var st=document.createElement('style'); st.id=WIDTH_ID; st.textContent='#appWrap.wrap:has(#calendarView[style*="block"]){max-width:min(1680px,95vw)!important;}'; (document.head||document.documentElement).appendChild(st); }catch(e){} } function injectActCss(){ if ($(ACT_CSS_ID)) return; try{ var s=document.createElement('style'); s.id=ACT_CSS_ID; s.textContent='.mlsCalEmptyActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}' +'.mlsCalEmptyBtn{font:inherit;font-size:13px;padding:7px 13px;border-radius:8px;border:1px solid rgba(120,140,170,.35);background:rgba(255,255,255,.06);color:inherit;cursor:pointer;line-height:1.2}' +'.mlsCalEmptyBtn.primary{background:#2563eb;border-color:#2563eb;color:#fff}' +'.mlsCalEmptyBtn:hover{filter:brightness(1.08)}'; (document.head||document.documentElement).appendChild(s); }catch(e){} } function showAll(){ try{ var chip=document.querySelector('#mlsCalRoster .mlsRosChip[data-prov=""]'); if(chip){ chip.click(); return; } var pf=$('calProvFilter'); if(pf){ pf.value=''; pf.dispatchEvent(new Event('change',{bubbles:true})); } }catch(e){} } function enhanceEmpty(){ try{ var box=$('mlsCalEmpty'); if(!box) return; if(box.querySelector('#'+ACT_ID)) return; var pf=$('calProvFilter'); var pfVal=pf?String(pf.value||''):''; if(!pfVal) return; injectActCss(); var bar=document.createElement('div'); bar.id=ACT_ID; bar.className='mlsCalEmptyActions'; var b1=document.createElement('button'); b1.type='button'; b1.className='mlsCalEmptyBtn primary'; b1.textContent='Show full schedule (All providers)'; b1.onclick=function(){ showAll(); }; bar.appendChild(b1); if(typeof window.pullScheduleViaAssist==='function'){ var b2=document.createElement('button'); b2.type='button'; b2.className='mlsCalEmptyBtn'; b2.textContent='Pull this schedule from athenaOne →'; b2.title='Read-only athenaOne pull. Patients link to a doctor only once the provider is stored on each appointment.'; b2.onclick=function(){ try{ window.pullScheduleViaAssist(); }catch(e){} }; bar.appendChild(b2); } box.appendChild(bar); }catch(e){} } var _t=null; function tick(){ injectWidthCss(); enhanceEmpty(); } function schedule(){ if(_t) return; _t=setTimeout(function(){ _t=null; tick(); },120); } var mo=null, iv=null; function start(){ tick(); try{ mo=new MutationObserver(schedule); mo.observe(document.body,{childList:true,subtree:true}); }catch(e){} try{ iv=setInterval(tick,2000); }catch(e){} } API.revert=function(){ try{ if(mo) mo.disconnect(); }catch(e){} try{ if(iv) clearInterval(iv); }catch(e){} [WIDTH_ID,ACT_CSS_ID].forEach(function(id){ var el=$(id); if(el&&el.parentNode) el.parentNode.removeChild(el); }); var b=$(ACT_ID); if(b&&b.parentNode) b.parentNode.removeChild(b); }; window.__mlsCalWideHonest=API; if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start(); })();
+
+
+/* ============================================================
+ * nav-reorg (nr-1.0.0)   [additive / reversible / idempotent]
+ * Relocates three top-nav tabs into the existing "Menu" dropdown
+ * (#mlsTbMenuPanel) and moves Analysis to the right-hand cluster
+ * next to AI Studio. Cooperates with feat_mls_apptabs_menu: it
+ * reuses that module's menu rows when present, and only adds a
+ * matching .mlsTbItem proxy row when one is absent. Moves are
+ * non-destructive (real tab nodes are kept + their click handlers
+ * preserved); the bar copies are merely hidden. Re-asserts on an
+ * interval like the app's sibling feat_* modules.
+ *
+ * Reverse: delete this IIFE. (On a live page also remove
+ * #mlsNavReorgCSS, the .mls-navreorg-off class on the three tabs,
+ * and any #mlsNavRow_* buttons.)
+ * ============================================================ */
+(function () {
+  'use strict';
+  if (window.__mlsNavReorg) return;
+  window.__mlsNavReorg = true;
+
+  var INTO_MENU = ['recs', 'legalreq', 'team'];
+  var META = {
+    recs:     { label: 'Recommendations', icon: '💡' }, /* light bulb */
+    legalreq: { label: 'Legal requests',  icon: '⚖️' }, /* scales */
+    team:     { label: 'Team',            icon: '👥' }  /* people */
+  };
+
+  /* additive stylesheet: hide relocated bar copies + keep menu rows tidy/centered */
+  (function css() {
+    if (document.getElementById('mlsNavReorgCSS')) return;
+    var s = document.createElement('style');
+    s.id = 'mlsNavReorgCSS';
+    s.textContent =
+      '#mlsRdNav .navtab.mls-navreorg-off{display:none !important;}' +
+      '.mainnav .navtab.mls-navreorg-off{display:none !important;}' +
+      '.mls-navreorg-off{display:none !important;}' +
+      '#mlsTbMenuPanel .mlsTbItem{justify-content:center;text-align:center;}';
+    (document.head || document.documentElement).appendChild(s);
+  })();
+
+  function closeMenu() {
+    var p = document.getElementById('mlsTbMenuPanel');
+    if (p) p.classList.remove('open');
+  }
+
+  function ensureRow(key) {
+    var panel = document.getElementById('mlsTbMenuPanel');
+    var real  = document.getElementById('nav_' + key);
+    if (!panel || !real) return;
+    var mine   = document.getElementById('mlsNavRow_' + key);
+    var theirs = document.getElementById('mlsTabMenuRow_' + key);
+    if (theirs) { if (mine) mine.remove(); return; }
+    if (mine) return;
+    var m = META[key] || { label: (real.textContent || '').trim(), icon: '' };
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'mlsNavRow_' + key;
+    b.className = 'mlsTbItem';
+    b.innerHTML = '<span style="margin-right:6px">' + m.icon + '</span>' + m.label;
+    b.addEventListener('click', function () {
+      var t = document.getElementById('nav_' + key);
+      if (t) t.click();
+      closeMenu();
+    });
+    panel.appendChild(b);
+  }
+
+  function reorg() {
+    var nav = document.querySelector('.mainnav');
+    if (!nav) return;
+    INTO_MENU.forEach(function (key) {
+      var real = document.getElementById('nav_' + key);
+      if (real) {
+        if (real.style.display !== 'none') real.style.display = 'none';
+        if (!real.classList.contains('mls-navreorg-off'))
+          real.classList.add('mls-navreorg-off');
+      }
+      ensureRow(key);
+    });
+    var a = document.getElementById('nav_analysis');
+    var s = document.getElementById('nav_studio');
+    if (a && s && s.parentNode && a.nextElementSibling !== s) {
+      s.parentNode.insertBefore(a, s);
+    }
+  }
+
+  function boot() { try { reorg(); } catch (e) {} }
+  boot();
+  [200, 600, 1500, 3000].forEach(function (d) { setTimeout(boot, d); });
+  setInterval(boot, 900);
+})();
