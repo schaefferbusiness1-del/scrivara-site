@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>MLS Patient Portal — DEMO (synthetic sample data only)</title>
+<!--
+  MLS Patient Portal — PUBLIC DEMO (synthetic sample data only). Additive, reversible, self-contained.
+  This page is NOT loaded by the clinician app (ScribeFlow*.html) and does NOT
+  reuse clinician authentication. Patient auth is fully separate.
+  All patient records here are SYNTHETIC test data. No PHI, no secrets, no API keys.
+  Isolation model: a logged-in patient can only ever read their OWN record. The
+  data accessor derives the patient id from the session ONLY; there is no code path
+  that returns the full patient list or another patient's record to the patient view.
+-->
+<style>
+  :root{
+    --bg:#0f172a; --panel:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --line:#e2e8f0; --brand:#1d4ed8; --brand2:#1e40af; --ok:#15803d;
+    --warn:#b45309; --danger:#b91c1c; --soft:#f1f5f9; --amber:#fffbeb; --amberline:#fcd34d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:#eef2f7}
+  .wrap{max-width:980px;margin:0 auto;padding:0 16px}
+  header.topbar{background:linear-gradient(90deg,var(--brand2),var(--brand));color:#fff}
+  header.topbar .wrap{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px}
+  .brand .logo{width:30px;height:30px;border-radius:8px;background:#fff;color:var(--brand);display:grid;place-items:center;font-weight:800}
+  .stagepill{font-size:11px;background:#fde68a;color:#7c2d12;padding:2px 8px;border-radius:999px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  .who{display:flex;align-items:center;gap:12px;font-size:13px}
+  .who button{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:6px 10px;cursor:pointer}
+  .who button:hover{background:rgba(255,255,255,.28)}
+
+  /* persistent medical disclaimer — always visible */
+  .disclaimer{position:sticky;top:0;z-index:50;background:var(--amber);border-bottom:1px solid var(--amberline);color:#7c2d12;font-size:13px;font-weight:600}
+  .disclaimer .wrap{padding:8px 16px;display:flex;gap:8px;align-items:center}
+  .disclaimer svg{flex:0 0 auto}
+
+  main{padding:22px 0 60px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin:0 0 16px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .card h2{margin:0 0 4px;font-size:16px}
+  .card .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+
+  .login-shell{max-width:440px;margin:8vh auto 0}
+  .field{margin:0 0 12px}
+  .field label{display:block;font-size:13px;font-weight:600;margin:0 0 6px}
+  .field input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px}
+  .field input:focus{outline:2px solid #bfdbfe;border-color:var(--brand)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--brand);color:#fff;border:0;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:600;cursor:pointer;width:100%}
+  .btn:hover{background:var(--brand2)}
+  .btn.secondary{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .err{color:var(--danger);font-size:13px;margin:8px 0 0;min-height:18px}
+  .demo-creds{margin-top:18px;border-top:1px dashed var(--line);padding-top:14px;font-size:12.5px;color:var(--muted)}
+  .demo-creds table{width:100%;border-collapse:collapse;margin-top:8px}
+  .demo-creds td{padding:4px 6px;border-bottom:1px solid var(--soft)}
+  .demo-creds .u{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--ink)}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted);font-weight:600}
+  .pill.ok{background:#dcfce7;color:var(--ok)} .pill.warn{background:#fef3c7;color:var(--warn)} .pill.bad{background:#fee2e2;color:var(--danger)}
+
+  table.data{width:100%;border-collapse:collapse;font-size:14px}
+  table.data th,table.data td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--soft);vertical-align:top}
+  table.data th{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .kv{display:flex;gap:8px;flex-wrap:wrap}
+  .kv span{background:var(--soft);border-radius:8px;padding:6px 10px;font-size:13px}
+  .muted{color:var(--muted)}
+
+  /* AI Q&A */
+  .ai-thread{border:1px solid var(--line);border-radius:12px;background:var(--soft);padding:12px;min-height:120px;max-height:340px;overflow:auto;margin-bottom:12px}
+  .msg{margin:0 0 10px;display:flex;gap:8px}
+  .msg .av{flex:0 0 auto;width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
+  .msg.user .av{background:#475569} .msg.ai .av{background:var(--brand)} .msg.sys .av{background:var(--warn)}
+  .msg .bubble{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:14px;max-width:100%}
+  .msg.sys .bubble{background:var(--amber);border-color:var(--amberline);color:#7c2d12}
+  .ai-input{display:flex;gap:8px}
+  .ai-input input{flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px}
+  .ai-input button{flex:0 0 auto;width:auto;padding:11px 16px}
+  .ai-note{font-size:12px;color:var(--muted);margin-top:8px}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:24px 0 40px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="logo">M</span> MLS Patient Portal <span class="stagepill">Demo</span></div>
+    <div class="who" id="whoBar">
+      <span id="whoName" class="muted"></span>
+      <button id="logoutBtn" class="hidden" type="button">Log out</button>
+    </div>
+  </div>
+</header>
+
+<!-- Persistent, always-visible medical disclaimer -->
+<div class="disclaimer">
+  <div class="wrap">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c2d12" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span>This is not medical advice — always confirm with your doctor. In an emergency call your local emergency number.</span>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ============ LOGIN VIEW ============ -->
+  <section id="loginView" class="card login-shell">
+    <h2>Sign in to your patient portal</h2>
+    <p class="sub">Your patient login is separate from your clinic's staff system. You will only ever see your own records.</p>
+    <form id="loginForm" autocomplete="off">
+      <div class="field">
+        <label for="u">Username</label>
+        <input id="u" name="u" type="text" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="p">Password</label>
+        <input id="p" name="p" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn" type="submit">Sign in</button>
+      <p id="loginErr" class="err" role="alert"></p>
+    </form>
+    <div class="demo-creds">
+      <strong>Synthetic demo accounts</strong> (demo only — no real patients):
+      <table>
+        <tr><td class="u">alice</td><td class="u">Demo!Alice24</td><td>Alice Nguyen</td></tr>
+        <tr><td class="u">robert</td><td class="u">Demo!Robert24</td><td>Robert Ellis</td></tr>
+        <tr><td class="u">maria</td><td class="u">Demo!Maria24</td><td>Maria Santos</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ PORTAL VIEW ============ -->
+  <section id="portalView" class="hidden">
+    <div class="card">
+      <h2 id="hello">Welcome</h2>
+      <p class="sub" id="helloSub"></p>
+      <div class="kv" id="patientFacts"></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Upcoming appointments</h2>
+        <p class="sub">Scheduled visits with your care team.</p>
+        <table class="data" id="apptTable"><tbody></tbody></table>
+      </div>
+      <div class="card">
+        <h2>Current medications</h2>
+        <p class="sub">As recorded by your clinician.</p>
+        <table class="data" id="medsTable"><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Visit history &amp; notes</h2>
+      <p class="sub">A summary of your past visits.</p>
+      <table class="data" id="visitsTable">
+        <thead><tr><th>Date</th><th>Type</th><th>Clinician</th><th>Summary</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Ask about your care</h2>
+      <p class="sub">Ask a question about <em>your</em> records (for example: "Can I take ibuprofen with my current medication?"). Answers are based only on your own record.</p>
+      <div class="ai-thread" id="aiThread"></div>
+      <form class="ai-input" id="aiForm">
+        <input id="aiQ" type="text" placeholder="Type your question…" autocomplete="off">
+        <button class="btn" type="submit" id="aiSend">Ask</button>
+      </form>
+      <p class="ai-note">Reminder: This is not medical advice — always confirm with your doctor. The assistant only uses your own record and cannot see any other patient's information.</p>
+    </div>
+  </section>
+
+  <footer>
+    MLS Patient Portal · Public demo · Synthetic sample data only · Not real patient data.
+  </footer>
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  /* =========================================================================
+     SYNTHETIC PATIENT STORE
+     In production this lives server-side and is queried per-authenticated-id.
+     Here it is an in-page demo store of SYNTHETIC patients. Passwords are stored
+     ONLY as SHA-256 hashes (no plaintext in the auth table). All data is fake.
+     ========================================================================= */
+  var PATIENTS = {
+    "pt_1001": {
+      id:"pt_1001", username:"alice", name:"Alice Nguyen", dob:"1989-03-14", mrn:"SYN-1001",
+      pwHash:"f0182bd8760b81d02d0da0f440744ba23768cfae48da784b134ef1b7f0ee9199",
+      meds:[
+        {name:"Lisinopril 10 mg", sig:"1 tablet by mouth daily", for:"Blood pressure"},
+        {name:"Metformin 500 mg", sig:"1 tablet twice daily with meals", for:"Blood sugar"}
+      ],
+      appts:[
+        {date:"2026-07-08 09:30", with:"Dr. Patel", type:"Follow-up — hypertension"},
+        {date:"2026-09-02 14:00", with:"Lab", type:"Fasting bloodwork"}
+      ],
+      visits:[
+        {date:"2026-05-19", type:"Office visit", clin:"Dr. Patel", summary:"BP 128/82. Continue current meds. Discussed low-sodium diet."},
+        {date:"2026-02-11", type:"Telehealth", clin:"Dr. Patel", summary:"Medication review. A1c improving. No new symptoms."}
+      ]
+    },
+    "pt_1002": {
+      id:"pt_1002", username:"robert", name:"Robert Ellis", dob:"1957-11-02", mrn:"SYN-1002",
+      pwHash:"dad5ed5b9fd8a064c7a5cb2569a4afe8c2b95241c5856c1d04414668b76b0568",
+      meds:[
+        {name:"Atorvastatin 20 mg", sig:"1 tablet at bedtime", for:"Cholesterol"},
+        {name:"Apixaban 5 mg", sig:"1 tablet twice daily", for:"Atrial fibrillation (blood thinner)"}
+      ],
+      appts:[
+        {date:"2026-07-15 11:00", with:"Dr. Okafor", type:"Cardiology follow-up"}
+      ],
+      visits:[
+        {date:"2026-06-01", type:"Office visit", clin:"Dr. Okafor", summary:"AFib stable on apixaban. Avoid NSAIDs due to bleeding risk."}
+      ]
+    },
+    "pt_1003": {
+      id:"pt_1003", username:"maria", name:"Maria Santos", dob:"1995-07-21", mrn:"SYN-1003",
+      pwHash:"1159a87bc7310624710e84c90969fa71568630dad56ca4705a17279e55eb1eac",
+      meds:[
+        {name:"Sertraline 50 mg", sig:"1 tablet each morning", for:"Mood"},
+        {name:"Albuterol inhaler", sig:"2 puffs as needed for wheeze", for:"Asthma"}
+      ],
+      appts:[
+        {date:"2026-07-03 10:15", with:"Dr. Lin", type:"Asthma check"}
+      ],
+      visits:[
+        {date:"2026-05-28", type:"Office visit", clin:"Dr. Lin", summary:"Asthma well controlled. Refilled inhaler. Continue sertraline."}
+      ]
+    }
+  };
+
+  // username -> id index used ONLY by the auth step (never exposed to portal view)
+  var USERNAME_INDEX = (function(){ var m={}; for(var k in PATIENTS){ m[PATIENTS[k].username]=k; } return m; })();
+
+  var BACKEND = "https://scrivara-backend.onrender.com"; // AI Q&A endpoint base
+
+  /* =========================================================================
+     SESSION + STRICT ISOLATION
+     - Session holds ONLY the authenticated patient id.
+     - readMyRecord() derives the id from the session itself.
+     - guardedRead(id) is the ONLY low-level reader; it refuses any id that is
+       not the session's id, and logs an audit event. There is no function that
+       returns the full list to the portal layer.
+     ========================================================================= */
+  var Session = { patientId:null };
+  var AUDIT = []; // in-memory only; never persisted, never sent anywhere
+
+  function audit(event, detail){
+    AUDIT.push({ t:new Date().toISOString(), event:event, detail:detail||null });
+  }
+
+  function guardedRead(requestedId){
+    if(!Session.patientId){ audit("DENY_NO_SESSION", requestedId); throw new Error("Not authenticated"); }
+    if(requestedId !== Session.patientId){
+      audit("DENY_CROSS_PATIENT", "requested="+requestedId+" session="+Session.patientId);
+      throw new Error("ACCESS DENIED: cross-patient read blocked");
+    }
+    // return a frozen deep copy so callers cannot mutate the store
+    return deepFreeze(JSON.parse(JSON.stringify(stripSecrets(PATIENTS[Session.patientId]))));
+  }
+
+  // The portal layer ONLY ever calls this. It takes NO id argument — isolation by design.
+  function readMyRecord(){ return guardedRead(Session.patientId); }
+
+  function stripSecrets(rec){
+    var c = {}; for(var k in rec){ if(k!=="pwHash") c[k]=rec[k]; } return c;
+  }
+  function deepFreeze(o){
+    if(o && typeof o==="object"){ Object.keys(o).forEach(function(k){ deepFreeze(o[k]); }); Object.freeze(o); }
+    return o;
+  }
+
+  async function sha256(text){
+    var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,"0");}).join("");
+  }
+
+  /* =========================================================================
+     AUTH (separate from clinician auth)
+     ========================================================================= */
+  async function authenticate(username, password){
+    var id = USERNAME_INDEX[String(username||"").trim().toLowerCase()];
+    if(!id) return false;
+    var rec = PATIENTS[id];
+    var h = await sha256(password);
+    if(h !== rec.pwHash) return false;
+    Session.patientId = id;          // the ONLY place the session id is set
+    audit("LOGIN", id);
+    return true;
+  }
+  function logout(){
+    audit("LOGOUT", Session.patientId);
+    Session.patientId = null;
+    clearAiThread();
+    show("loginView"); hide("portalView");
+    document.getElementById("whoName").textContent = "";
+    document.getElementById("logoutBtn").classList.add("hidden");
+    document.getElementById("p").value = "";
+  }
+
+  /* =========================================================================
+     RENDER (uses ONLY readMyRecord())
+     ========================================================================= */
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c];}); }
+
+  function renderPortal(){
+    var r = readMyRecord();
+    document.getElementById("hello").textContent = "Welcome, " + r.name.split(" ")[0];
+    document.getElementById("helloSub").textContent = "Here is your personal health summary.";
+    document.getElementById("patientFacts").innerHTML =
+      '<span>DOB: '+esc(r.dob)+'</span>'+
+      '<span>MRN: '+esc(r.mrn)+'</span>'+
+      '<span>Account: '+esc(r.username)+'</span>';
+
+    var ap = r.appts.length ? r.appts.map(function(a){
+      return '<tr><td><strong>'+esc(a.date)+'</strong><br><span class="muted">'+esc(a.type)+'</span></td><td>'+esc(a.with)+'</td></tr>';
+    }).join("") : '<tr><td class="muted">No upcoming appointments.</td></tr>';
+    document.querySelector("#apptTable tbody").innerHTML = ap;
+
+    document.querySelector("#medsTable tbody").innerHTML = r.meds.map(function(m){
+      return '<tr><td><strong>'+esc(m.name)+'</strong><br><span class="muted">'+esc(m.sig)+'</span></td><td>'+esc(m.for)+'</td></tr>';
+    }).join("");
+
+    document.querySelector("#visitsTable tbody").innerHTML = r.visits.map(function(v){
+      return '<tr><td>'+esc(v.date)+'</td><td>'+esc(v.type)+'</td><td>'+esc(v.clin)+'</td><td>'+esc(v.summary)+'</td></tr>';
+    }).join("");
+
+    document.getElementById("whoName").textContent = r.name;
+    document.getElementById("logoutBtn").classList.remove("hidden");
+  }
+
+  /* =========================================================================
+     AI Q&A — grounded ONLY in this patient's record; graceful degradation.
+     ========================================================================= */
+  function clearAiThread(){ document.getElementById("aiThread").innerHTML=""; }
+  function addMsg(role, text){
+    var t = document.getElementById("aiThread");
+    var av = role==="user"?"You":(role==="ai"?"AI":"!");
+    var d = document.createElement("div");
+    d.className = "msg "+role;
+    d.innerHTML = '<div class="av">'+av+'</div><div class="bubble">'+esc(text)+'</div>';
+    t.appendChild(d); t.scrollTop = t.scrollHeight;
+    return d;
+  }
+
+  function buildContextFromMyRecord(){
+    // Build the grounding context from ONLY the authenticated patient's record.
+    var r = readMyRecord();
+    var meds = r.meds.map(function(m){return "- "+m.name+" ("+m.sig+") for "+m.for;}).join("\n");
+    var vis  = r.visits.map(function(v){return "- "+v.date+" "+v.type+" w/ "+v.clin+": "+v.summary;}).join("\n");
+    return "PATIENT-SCOPED RECORD (the only data you may use; do not discuss any other patient).\n"+
+           "Name: "+r.name+"\nDOB: "+r.dob+"\n\nCurrent medications:\n"+meds+"\n\nRecent visits:\n"+vis;
+  }
+
+  /* ----- DEMO grounded responder (item68 build, synthetic data) -----------
+     The live LLM endpoint (/api/copilot) requires CLINICIAN auth and is NOT
+     patient-scoped, so for the patient portal it returns 401 -- the chat never
+     actually answered. Until a patient-scoped, server-side-ownership-enforced
+     chat endpoint exists (see window.__mlsPatientPortalChat.backendSpec), this
+     responder answers ONLY from the authenticated patient's OWN in-page record
+     via readMyRecord(). It NEVER invents clinical facts, NEVER reads another
+     patient, and deflects medical-advice questions to the provider.
+     ------------------------------------------------------------------------- */
+  function groundedLocalAnswer(question){
+    var r = readMyRecord();                       // session-scoped; cannot read others
+    var q = String(question||"").toLowerCase().trim();
+
+    // Explicit cross-patient intent -> refuse outright (never even attempt)
+    if(/\b(other|another|someone ?else|different)\b[^.?!]*\b(patient|person|people|record|chart|file)\b/.test(q)
+       || /\b(everyone|all patients|other patients|anybody else)\b/.test(q)){
+      return {kind:"refuse", text:"I can only answer questions about your own records. I can't see or discuss any other patient's information."};
+    }
+    // Medical-advice intent -> deflect, do not advise
+    if(/\b(can i take|is it safe|should i (take|stop|use)|drug interaction|interact|dosage|dose|side ?effect|overdose)\b/.test(q)){
+      return {kind:"deflect", text:"I can't give medical advice or judge whether something is safe for you -- please contact your provider's office. I can tell you what's recorded in your chart: your medications, appointments, and past visits."};
+    }
+    // Medications
+    if(/\b(medication|medications|meds|medicine|prescription|prescriptions|drug|drugs|taking|pills?)\b/.test(q)){
+      if(!r.meds.length) return {kind:"answer", text:"Your record doesn't list any current medications. Please confirm with your provider."};
+      return {kind:"answer", text:"Your current medications, as recorded by your clinician, are:\n"+r.meds.map(function(m){return "- "+m.name+" -- "+m.sig+" (for "+m.for+")";}).join("\n")};
+    }
+    // Appointments
+    if(/\b(appointment|appointments|appt|upcoming|next visit|scheduled|schedule)\b/.test(q) || /when.*(see|visit|come in|appointment)/.test(q)){
+      if(!r.appts.length) return {kind:"answer", text:"You have no upcoming appointments on file."};
+      return {kind:"answer", text:"Your upcoming appointments are:\n"+r.appts.map(function(a){return "- "+a.date+" -- "+a.type+" with "+a.with;}).join("\n")};
+    }
+    // Most recent visit
+    if(/\b(last visit|most recent|last time|recent visit|last seen|previous visit)\b/.test(q)){
+      if(!r.visits.length) return {kind:"answer", text:"There are no past visits in your record yet."};
+      var v0 = r.visits.slice().sort(function(a,b){return String(b.date).localeCompare(String(a.date));})[0];
+      return {kind:"answer", text:"Your most recent visit was on "+v0.date+" ("+v0.type+") with "+v0.clin+". Summary: "+v0.summary};
+    }
+    // Visit history / notes / "what did the doctor say"
+    if(/\b(visit|visits|history|notes?|summary|appointment history)\b/.test(q) || /what did (the |my )?(doctor|provider|dr|clinician)/.test(q)){
+      if(!r.visits.length) return {kind:"answer", text:"There are no past visits in your record yet."};
+      return {kind:"answer", text:"Here is what's recorded from your past visits:\n"+r.visits.map(function(v){return "- "+v.date+" ("+v.type+", "+v.clin+"): "+v.summary;}).join("\n")};
+    }
+    // Identity facts
+    if(/\b(date of birth|dob|birthday|born)\b/.test(q)) return {kind:"answer", text:"Your date of birth on file is "+r.dob+"."};
+    if(/\b(mrn|record number|medical record number)\b/.test(q)) return {kind:"answer", text:"Your medical record number (MRN) is "+r.mrn+"."};
+
+    // Nothing matched / not in record -> NEVER guess
+    return {kind:"unknown", text:"I can only answer from your own record -- your medications, upcoming appointments, and past visits. I don't see anything about that in your chart, so please contact your provider's office for anything else."};
+  }
+
+  async function askAI(question){
+    addMsg("user", question);
+    var pendingEl = addMsg("ai", "...thinking");
+    var bubble = pendingEl.querySelector(".bubble");
+    var cfg = window.__mlsPatientPortalChat || {};
+
+    // 1) Preferred path (OFF by default): a real, SERVER-SCOPED LLM answer. Only
+    //    used if a patient-scoped endpoint exists AND returns OK. Today the
+    //    endpoint is clinician-only (401), so this is disabled to avoid sending
+    //    record context to an endpoint that can't enforce patient ownership.
+    if(cfg.useBackendFirst){
+      try{
+        var resp = await fetch(BACKEND + "/api/copilot", {
+          method:"POST", headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ question:question, context:buildContextFromMyRecord(), history:[] })
+        });
+        if(resp.ok){
+          var data = await resp.json().catch(function(){ return {}; });
+          var reply = String((data && (data.reply || data.text || data.answer)) || "").trim();
+          if(reply){ bubble.textContent = reply; return; }
+        }
+      }catch(e){ /* fall through to grounded local answer */ }
+    }
+
+    // 2) Grounded fallback: deterministic answer from ONLY this patient's record.
+    var a = groundedLocalAnswer(question);
+    if(a.kind==="refuse" || a.kind==="deflect"){
+      pendingEl.className = "msg sys"; pendingEl.querySelector(".av").textContent = "!";
+    }
+    bubble.textContent = a.text;
+  }
+
+  /* Public handle: verification, runtime toggle, backend spec, revert note. */
+  window.__mlsPatientPortalChat = {
+    useBackendFirst: false,                 // flip to true once a secure patient endpoint exists
+    answerLocally: groundedLocalAnswer,     // exposed read-only for verification/automation
+    backendSpec: "REQUIRED for production: POST /api/patient/chat authenticated by a PATIENT "+
+                 "session cookie (separate from clinician JWT). The SERVER loads ONLY the "+
+                 "authenticated patient_id's records, builds the grounding context server-side, "+
+                 "and returns 403 for any request scoped to a different patient_id. Same ownership "+
+                 "check guards GET /api/patient/history. Client must NOT supply the record context.",
+    revert: "Additive, unlinked PUBLIC DEMO page (synthetic data only). Revert = delete patient-portal.html (parent fc42ec8)."
+  };
+
+  /* =========================================================================
+     ISOLATION PROBE (for verification — proves cross-patient reads are blocked)
+     Exposed read-only on window so a reviewer/automation can confirm isolation.
+     ========================================================================= */
+  window.__portalIsolationProbe = function(){
+    var out = { session: Session.patientId, ownReadOk:false, crossReadBlocked:false, listExposed:false, audit: AUDIT.slice(-6) };
+    try{ var mine = readMyRecord(); out.ownReadOk = !!(mine && mine.id===Session.patientId); }catch(e){ out.ownReadOk=false; }
+    // attempt to read a DIFFERENT patient explicitly — must throw
+    var otherId = Object.keys(PATIENTS).filter(function(k){return k!==Session.patientId;})[0];
+    try{ guardedRead(otherId); out.crossReadBlocked=false; }   // if this returns, isolation FAILED
+    catch(e){ out.crossReadBlocked=true; }
+    // confirm portal layer has no accessor returning the whole list
+    out.listExposed = (typeof window.getAllPatients==="function");
+    return out;
+  };
+
+  /* =========================================================================
+     WIRING
+     ========================================================================= */
+  function show(id){ document.getElementById(id).classList.remove("hidden"); }
+  function hide(id){ document.getElementById(id).classList.add("hidden"); }
+
+  document.getElementById("loginForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var err = document.getElementById("loginErr"); err.textContent="";
+    var u = document.getElementById("u").value;
+    var p = document.getElementById("p").value;
+    var ok = await authenticate(u, p);
+    if(!ok){ err.textContent = "Incorrect username or password."; return; }
+    hide("loginView"); show("portalView");
+    clearAiThread();
+    addMsg("ai", "Hi "+readMyRecord().name.split(" ")[0]+", you can ask me about your records below. Remember, this isn't medical advice — always confirm with your doctor.");
+    renderPortal();
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+
+  document.getElementById("aiForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    var q = document.getElementById("aiQ").value.trim();
+    if(!q) return;
+    document.getElementById("aiQ").value="";
+    askAI(q);
+  });
+
+})();
+</script>
+</body>
+</html>
