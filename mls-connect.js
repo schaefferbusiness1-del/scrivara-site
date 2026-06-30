@@ -4526,3 +4526,186 @@
   [200, 600, 1500, 3000].forEach(function (d) { setTimeout(boot, d); });
   setInterval(boot, 900);
 })();
+
+;/* ============================================================
+   MLS Guided Tour  —  window.__mlsTour  (revert: window.__mlsTour.revert())
+   Additive, self-contained, reversible. Old-doctor-friendly How-To walkthrough.
+   ============================================================ */
+(function(){
+  if (window.__mlsTour && window.__mlsTour.__live) return;
+  var SEEN_KEY = "mls_tour_seen_v1";
+  var Z = 2147483000;
+  var els = {};
+  var idx = 0, steps = [], typingTimer = null, moTimer = null;
+
+  function buildSteps(){
+    return [
+      { center:true, title:"Welcome to MLS \u{1F44B}",
+        body:"This is your AI scribe. In about a minute I’ll show you the few buttons you’ll actually use. You can stop any time — nothing here changes a patient’s record." },
+      { sel:"#heroPtName, #ptSearch", title:"1. Choose the patient",
+        body:"Everything starts here. Type the patient’s name (and date of birth just beside it). That’s all the computer needs to begin." },
+      { sel:"#heroRecBtn", title:"2. Press record, then just talk",
+        body:"Press this one button and have your normal visit — talk to the patient like always. MLS quietly listens in the background. No typing for you." },
+      { sel:"#phoneMicBtn", title:"3. No computer at the bedside? Use your phone",
+        body:"Tap here and a small square code appears on screen. Point your phone’s camera at it, and your phone becomes the microphone. Walk in and talk — the computer still hears the visit." },
+      { center:true, demo:true, title:"4. Now watch the computer write the note ✨",
+        body:"Here’s the part most doctors have never seen: you spoke, and MLS writes the whole note for you. Here is a sample it just wrote from a practice visit —" },
+      { sel:"#mlsTbMenuBtn", title:"5. Little AI helpers",
+        body:"Inside this Menu are small AI helpers. “✦ Ask” lets you ask MLS a question about the visit, and other helpers can tidy or add to the note — all optional." },
+      { center:true, title:"6. You are always the final word",
+        body:"MLS only drafts. You read it, change anything you like, and nothing is filed until you approve it. The doctor stays in charge, every single time." },
+      { sel:"#nav_calendar", title:"7. Your day’s schedule",
+        body:"Your appointments for the day live here, so you always know who’s coming next." },
+      { sel:"#nav_patients", title:"8. Past visits are saved here",
+        body:"Every patient and their previous notes are kept here. You can look back at any earlier visit whenever you need to." },
+      { sel:"#nav_help", title:"9. Help is always here",
+        body:"If you ever feel stuck, this Help button is always waiting for you." },
+      { center:true, title:"You’re ready — that’s the whole thing ✅",
+        body:"Pick a patient, press record, talk, and let MLS write it up. Want to see this tour again? Open the Menu and choose “How-To Guide” any time." }
+    ];
+  }
+
+  function injectStyle(){
+    var st = document.createElement("style"); st.id = "mlsTourStyle";
+    st.textContent =
+      "#mlsTourRoot{position:fixed;inset:0;z-index:"+Z+";font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}"+
+      "#mlsTourCatch{position:fixed;inset:0;background:transparent;}"+
+      ".mlsTourSpot{position:fixed;border-radius:12px;box-shadow:0 0 0 9999px rgba(15,23,42,.66);border:3px solid #38bdf8;transition:all .2s ease;pointer-events:none;}"+
+      ".mlsTourDim{position:fixed;inset:0;background:rgba(15,23,42,.66);}"+
+      ".mlsTourCard{position:fixed;max-width:430px;width:calc(100vw - 40px);background:#fff;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:24px 24px 18px;box-sizing:border-box;}"+
+      ".mlsTourCard h3{margin:0 0 10px;font-size:22px;line-height:1.25;color:#0f172a;font-weight:700;}"+
+      ".mlsTourCard p{margin:0;font-size:18px;line-height:1.5;color:#334155;}"+
+      ".mlsTourSample{margin:14px 0 4px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;padding:12px 14px;font-size:14px;line-height:1.45;color:#0f172a;white-space:pre-wrap;max-height:230px;overflow:auto;}"+
+      ".mlsTourSampleTag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:2px 8px;margin-bottom:8px;}"+
+      ".mlsTourFoot{display:flex;align-items:center;gap:10px;margin-top:18px;}"+
+      ".mlsTourFoot .sp{flex:1;}"+
+      ".mlsTourStep{font-size:14px;color:#64748b;}"+
+      ".mlsTourBtn{font-size:17px;font-weight:600;border-radius:10px;padding:11px 20px;border:0;cursor:pointer;}"+
+      ".mlsTourNext{background:#0284c7;color:#fff;}"+
+      ".mlsTourNext:hover{background:#0369a1;}"+
+      ".mlsTourBack{background:#e2e8f0;color:#0f172a;}"+
+      ".mlsTourSkip{background:transparent;color:#64748b;font-size:15px;text-decoration:underline;border:0;cursor:pointer;padding:6px;}";
+    document.head.appendChild(st); els.style = st;
+  }
+
+  var SAMPLE_NOTE =
+    "SAMPLE PATIENT — John Doe (demo, not a real patient)\n"+
+    "Visit: Follow-up, low back pain\n\n"+
+    "HPI: 58-year-old presents for follow-up of chronic low back pain, ongoing ~4 months. "+
+    "Pain rated 6/10, worse with prolonged sitting, eased by walking. No new numbness, weakness, or bowel/bladder changes.\n\n"+
+    "EXAM: Lumbar paraspinal tenderness, full strength in both legs, negative straight-leg raise.\n\n"+
+    "ASSESSMENT: Chronic mechanical low back pain, stable.\n"+
+    "PLAN: Continue home exercises; refer to physical therapy; follow up in 6 weeks.\n\n"+
+    "Suggested coding:  M54.5  ·  99213";
+
+  function resolveTarget(sel){
+    if(!sel) return null;
+    var parts = sel.split(",");
+    for(var i=0;i<parts.length;i++){
+      var e=document.querySelector(parts[i].trim());
+      if(e && e.offsetParent!==null && e.getClientRects().length && e.getBoundingClientRect().width>0) return e;
+    }
+    return null;
+  }
+
+  function ensureRoot(){
+    var r=document.getElementById("mlsTourRoot"); if(r) return r;
+    r=document.createElement("div"); r.id="mlsTourRoot";
+    var c=document.createElement("div"); c.id="mlsTourCatch"; r.appendChild(c);
+    document.body.appendChild(r); els.root=r; return r;
+  }
+
+  function render(){
+    var root=ensureRoot(); var step=steps[idx];
+    root.querySelectorAll(".mlsTourSpot,.mlsTourDim,.mlsTourCard").forEach(function(n){n.remove();});
+    var target = step.center ? null : resolveTarget(step.sel);
+    if(target){ try{ target.scrollIntoView({block:"center",inline:"nearest"}); }catch(e){} }
+
+    setTimeout(function(){
+      var card=document.createElement("div"); card.className="mlsTourCard";
+      var demoHtml = step.demo ? '<div class="mlsTourSampleTag">SAMPLE · written by MLS AI</div><div class="mlsTourSample" id="mlsTourSampleBox"></div>' : "";
+      card.innerHTML =
+        '<h3>'+step.title+'</h3><p>'+step.body+'</p>'+demoHtml+
+        '<div class="mlsTourFoot">'+
+          '<button class="mlsTourSkip" id="mlsTourSkip">Skip the tour</button>'+
+          '<span class="sp"></span>'+
+          '<span class="mlsTourStep">Step '+(idx+1)+' of '+steps.length+'</span>'+
+          (idx>0?'<button class="mlsTourBtn mlsTourBack" id="mlsTourBack">Back</button>':'')+
+          '<button class="mlsTourBtn mlsTourNext" id="mlsTourNext">'+(idx===steps.length-1?'Done':'Next')+'</button>'+
+        '</div>';
+
+      var t = step.center ? null : resolveTarget(step.sel);
+      if(t){
+        var rect=t.getBoundingClientRect(), pad=8;
+        var spot=document.createElement("div"); spot.className="mlsTourSpot";
+        spot.style.top=(rect.top-pad)+"px"; spot.style.left=(rect.left-pad)+"px";
+        spot.style.width=(rect.width+pad*2)+"px"; spot.style.height=(rect.height+pad*2)+"px";
+        root.appendChild(spot); root.appendChild(card);
+        var cw=Math.min(430,window.innerWidth-40), ch=card.offsetHeight||220;
+        var top, left=Math.min(Math.max(12,rect.left),window.innerWidth-cw-12);
+        if(rect.bottom+ch+20<window.innerHeight){ top=rect.bottom+16; }
+        else if(rect.top-ch-20>0){ top=rect.top-ch-16; }
+        else { top=Math.max(12,(window.innerHeight-ch)/2); left=Math.min(window.innerWidth-cw-12,rect.right+16); if(left<12||left+cw>window.innerWidth) left=(window.innerWidth-cw)/2; }
+        card.style.top=top+"px"; card.style.left=left+"px";
+      } else {
+        var dim=document.createElement("div"); dim.className="mlsTourDim";
+        root.appendChild(dim); root.appendChild(card);
+        card.style.top="50%"; card.style.left="50%"; card.style.transform="translate(-50%,-50%)";
+      }
+      card.querySelector("#mlsTourNext").onclick=next;
+      var bk=card.querySelector("#mlsTourBack"); if(bk) bk.onclick=back;
+      card.querySelector("#mlsTourSkip").onclick=function(){ finish(true); };
+      if(step.demo) typeSample();
+    }, target?170:0);
+  }
+
+  function typeSample(){
+    var box=document.getElementById("mlsTourSampleBox"); if(!box) return;
+    var i=0; box.textContent=""; clearInterval(typingTimer);
+    typingTimer=setInterval(function(){
+      box.textContent=SAMPLE_NOTE.slice(0,i); box.scrollTop=box.scrollHeight; i+=7;
+      if(i>SAMPLE_NOTE.length){ box.textContent=SAMPLE_NOTE; clearInterval(typingTimer); }
+    },18);
+  }
+
+  function next(){ if(idx>=steps.length-1){ finish(true); } else { idx++; render(); } }
+  function back(){ if(idx>0){ idx--; render(); } }
+  function finish(markSeen){ clearInterval(typingTimer); var r=document.getElementById("mlsTourRoot"); if(r) r.remove(); if(markSeen){ try{ localStorage.setItem(SEEN_KEY,"1"); }catch(e){} } }
+  function start(){ idx=0; steps=buildSteps(); ensureRoot(); render(); }
+
+  function closeAppMenu(){ try{ var p=document.getElementById("mlsTbMenuPanel"); if(p && getComputedStyle(p).display!=="none"){ document.getElementById("mlsTbMenuBtn").click(); } }catch(e){} }
+
+  function addMenuItem(){
+    var panel=document.getElementById("mlsTbMenuPanel");
+    if(!panel || document.getElementById("mlsTourMenuItem")) return;
+    var btn=document.createElement("button");
+    btn.id="mlsTourMenuItem"; btn.className="mlsTbItem";
+    btn.textContent="\u{1F4D8} How-To Guide";
+    btn.onclick=function(ev){ try{ev.stopPropagation();}catch(e){} start(); closeAppMenu(); };
+    var firstItem=panel.querySelector(".mlsTbItem");
+    if(firstItem && firstItem.parentNode===panel){ panel.insertBefore(btn, firstItem.nextSibling); } else { panel.appendChild(btn); }
+    els.menuItem=btn;
+  }
+  moTimer=setInterval(addMenuItem,1500); addMenuItem();
+
+  function maybeAutoLaunch(){
+    var seen; try{ seen=localStorage.getItem(SEEN_KEY); }catch(e){ seen="1"; }
+    if(!seen){ setTimeout(start,1200); }
+  }
+  if(document.readyState==="complete") maybeAutoLaunch(); else window.addEventListener("load",maybeAutoLaunch);
+
+  window.__mlsTour={
+    __live:true, start:start, open:start, finish:finish,
+    seen:function(){ try{return !!localStorage.getItem(SEEN_KEY);}catch(e){return true;} },
+    reset:function(){ try{localStorage.removeItem(SEEN_KEY);}catch(e){} },
+    revert:function(){
+      try{clearInterval(moTimer);}catch(e){} try{clearInterval(typingTimer);}catch(e){}
+      try{document.getElementById("mlsTourRoot")?.remove();}catch(e){}
+      try{document.getElementById("mlsTourStyle")?.remove();}catch(e){}
+      try{document.getElementById("mlsTourMenuItem")?.remove();}catch(e){}
+      try{delete window.__mlsTour;}catch(e){ window.__mlsTour=undefined; }
+      return "MLS guided tour reverted.";
+    }
+  };
+  injectStyle();
+})();
