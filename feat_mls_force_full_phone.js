@@ -9,12 +9,14 @@
    2) Surfaces the EXISTING phone-record control next to the Start button (#captureBtn) in
       the full view's recording card. Reuses #phoneMicBtn / window.startPhoneMic(). No new recorder.
    3) Surfaces the EXISTING phone-record pairing QR (#phoneMicQR) in the top-right of the
-      recording card. Mirrors the live QR; no duplicate QR mechanism.
+      recording card and PRE-GENERATES it on load (reusing window.startPhoneMic) so it is
+      visible and scannable immediately, with no extra click. Mirrors the live QR; no
+      duplicate QR mechanism. Retries generation until the live pairing code exists.
 */
 (function(){
   'use strict';
   if (window.__mlsFFP) return;
-  var S = { on:true, gen:false, sched:false, lastForce:0 };
+  var S = { on:true, tries:0, sched:false, lastForce:0 };
   window.__mlsFFP = S;
 
   function addStyle(){
@@ -55,9 +57,8 @@
     try {
       if (typeof window.startPhoneMic === 'function') {
         window.startPhoneMic();
-        S.gen = true;
-        setTimeout(syncQR, 900);
-        setTimeout(syncQR, 2200);
+        setTimeout(syncQR, 700);
+        setTimeout(syncQR, 1800);
       }
     } catch(e){}
   }
@@ -96,7 +97,7 @@
     }
   }
 
-  /* --- 3) QR top-right of the recording card --- */
+  /* --- 3) QR top-right of the recording card; pre-generated on load --- */
   function ensureQR(){
     var card = document.getElementById('captureCard');
     var startBtn = document.getElementById('captureBtn');
@@ -108,14 +109,15 @@
       box.innerHTML =
         '<div>&#128241; Record on phone</div>'
       + '<img id="mlsGpQrImg" alt="Scan to record on phone" style="display:none">'
-      + '<div class="h" id="mlsGpHint">Tap to show a scan code</div>'
+      + '<div class="h" id="mlsGpHint">Preparing scan code&#8230;</div>'
       + '<div class="c" id="mlsGpCode"></div>'
       + '<a id="mlsGpLink" target="_blank" rel="noopener"></a>';
       box.addEventListener('click', function(e){ if (e.target.tagName !== 'A') pair(); });
       card.appendChild(box);
     }
+    /* Pre-generate the pairing QR (reusing startPhoneMic). Retry until the live code exists. */
     var realQR = document.getElementById('phoneMicQR');
-    if (realQR && !realQR.src && !S.gen) pair(); /* auto-generate the pairing QR once */
+    if (realQR && !realQR.src && S.tries < 8) { S.tries++; pair(); }
     syncQR();
   }
 
@@ -138,7 +140,7 @@
   }
 
   function tick(){ try { addStyle(); forceFull(); ensureQR(); ensurePhoneOption(); syncQR(); } catch(e){} }
-  function schedule(){ if (S.sched) return; S.sched = true; setTimeout(function(){ S.sched = false; tick(); }, 250); }
+  function schedule(){ if (S.sched) return; S.sched = true; setTimeout(function(){ S.sched = false; tick(); }, 200); }
 
   function boot(){
     tick();
@@ -146,7 +148,7 @@
       var mo = new MutationObserver(schedule);
       mo.observe(document.body, { childList:true, subtree:true });
     } catch(e){}
-    setInterval(function(){ forceFull(); syncQR(); }, 1500);
+    setInterval(tick, 1500); /* self-heal: keep full view + phone option + QR present and current */
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
