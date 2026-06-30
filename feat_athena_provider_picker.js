@@ -294,8 +294,8 @@
   // user is interacting with the <select>.
   var _lastSig = null;
   function renderSig(pick) {
-    var opts = optionList().map(function (o) { return o.v + '' + o.t; }).join('');
-    return S(pick) + '' + opts + '' + hintFor(pick);
+    var opts = optionList().map(function (o) { return o.v + '' + o.t; }).join('');
+    return S(pick) + '' + opts + '' + hintFor(pick);
   }
   function selIsOpen(sel) { return !!(sel && document.activeElement === sel); }
   function renderDropdown() {
@@ -417,18 +417,22 @@
 
 
 /* ===================================================================== *
- * APPENDED MODULE: window.__mlsProviderTagFix  (v1.0.0)
+ * APPENDED MODULE: window.__mlsProviderTagFix  (v1.0.1)
  * Durable doctor-scoping via athena-as-source-of-truth + providerTags.
  * Real-name chip; Who's-Next + calendar scoped & consistent by day; full
  * H:MM times from start_at; DOB captured read-only on pull (HARD RULE: a
  * patient with no DOB is excluded, never shown blank/placeholder); OPEN/
  * FROZEN excluded; 5-card default + Show more/less. INERT when no tags.
- * Read-only re: athenaOne and charts. Reversible: __mlsProviderTagFix.revert().
+ * Attribution comes ONLY from the durable providerTags written by the
+ * authoritative per-doctor athena match; pulls NEVER tag (whole-practice
+ * pull -> blanket-tag would be a PHI breach), they only capture DOB for
+ * already-tagged patients. Read-only re: athenaOne and charts.
+ * Reversible: __mlsProviderTagFix.revert().
  * ===================================================================== */
 (function () {
   'use strict';
   try { if (window.__mlsProviderTagFix && window.__mlsProviderTagFix.installed) return; } catch (e) { return; }
-  var VERSION = '1.0.0', ASSET = 'feat_athena_provider_picker.js';
+  var VERSION = '1.0.1', ASSET = 'feat_athena_provider_picker.js';
   var TAGS_KEY = 'providerTags', DOB_KEY = 'providerDob', PICK_KEY = 'mlsTagPick', DEFAULT_SHOWN = 5;
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === 'function'; }
@@ -473,7 +477,7 @@
   function wrapCalendar() { if (_renderWrapped) return; if (!isFn(window.renderCalendar)) return; if (window.renderCalendar.__ptfWrapped) { _renderWrapped = true; return; } _origRender = window.renderCalendar; var w = function () { var self = this, args = arguments; if (!scopeOn()) return _origRender.apply(self, args); var full = window._calAppts; var doc = selectedDoctor(); var sn = surname(doc.name); var T = tags(); var subset = safe(function () { return (full || []).filter(function (a) { var pid = a && (a.patient_external_id || a.patientId || a.pid); var tg = pid != null ? T[pid] : null; return tg && (!sn || clean(tg).toLowerCase() === sn) && isRealName(a.name) && !!apptDob(a); }); }, full) || full; try { window._calAppts = subset; return _origRender.apply(self, args); } finally { window._calAppts = full; } }; w.__ptfWrapped = true; window.renderCalendar = w; _renderWrapped = true; }
   function refreshCalendar() { safe(function () { if (isFn(window.renderCalendar)) window.renderCalendar(); }); }
   var _origParse = null, _parseWrapped = false;
-  function wrapParse() { if (_parseWrapped) return; if (!isFn(window._parseScheduleText)) return; if (window._parseScheduleText.__ptfWrapped) { _parseWrapped = true; return; } _origParse = window._parseScheduleText; var f = function () { var self = this, args = arguments; return Promise.resolve(safe(function () { return _origParse.apply(self, args); })).then(function (arr) { safe(function () { if (!Array.isArray(arr)) return; var doc = realName() || scrapedName(); var sn = surname(doc); var dm = dobMap(), dC = false; var T = tags(), tC = false; var ca = safe(function () { return window._calAppts || []; }, []) || []; var idsByName = {}; ca.forEach(function (c) { var k = nameKey(c && c.name); var pid = c && (c.patient_external_id || c.patientId || c.pid); if (k && pid != null) { (idsByName[k] = idsByName[k] || []).push(pid); } }); arr.forEach(function (a) { if (!a || !isRealName(a.name)) return; var k = nameKey(a.name), d = clean(a.dob); if (k && d && dm[k] !== d) { dm[k] = d; dC = true; } if (k && sn && idsByName[k]) idsByName[k].forEach(function (pid) { if (T[pid] !== sn) { T[pid] = sn; tC = true; } }); }); if (dC) jset(DOB_KEY, dm); if (tC) jset(TAGS_KEY, T); setTimeout(rerender, 60); }); return arr; }); }; f.__ptfWrapped = true; window._parseScheduleText = f; _parseWrapped = true; }
+  function wrapParse() { if (_parseWrapped) return; if (!isFn(window._parseScheduleText)) return; if (window._parseScheduleText.__ptfWrapped) { _parseWrapped = true; return; } _origParse = window._parseScheduleText; var f = function () { var self = this, args = arguments; return Promise.resolve(safe(function () { return _origParse.apply(self, args); })).then(function (arr) { safe(function () { if (!Array.isArray(arr)) return; /* DOB capture ONLY (read-only). NEVER tag here: the pull is whole-practice, so blanket-tagging to the logged-in doctor would be a PHI breach. Attribution comes solely from the durable providerTags. Record DOB only for patients ALREADY tagged. */ var dm = dobMap(), dC = false; var T = tags(); var ca = safe(function () { return window._calAppts || []; }, []) || []; var taggedKeys = {}; ca.forEach(function (c) { var pid = c && (c.patient_external_id || c.patientId || c.pid); if (pid != null && T[pid]) { var k = nameKey(c && c.name); if (k) taggedKeys[k] = 1; } }); arr.forEach(function (a) { if (!a || !isRealName(a.name)) return; var k = nameKey(a.name), d = clean(a.dob); if (k && d && taggedKeys[k] && dm[k] !== d) { dm[k] = d; dC = true; } }); if (dC) jset(DOB_KEY, dm); setTimeout(rerender, 60); }); return arr; }); }; f.__ptfWrapped = true; window._parseScheduleText = f; _parseWrapped = true; }
   var _wnReverted = false;
   function takeOverWhosNext() { if (_wnReverted) return; safe(function () { if (window.__mlsWhosNext && window.__mlsWhosNext.installed && isFn(window.__mlsWhosNext.revert)) { window.__mlsWhosNext.revert(); _wnReverted = true; } }); }
   function rerender() { if (!hasTags()) return; takeOverWhosNext(); wrapCalendar(); wrapParse(); fixChip(); renderWhosNext(); }
