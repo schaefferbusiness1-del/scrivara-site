@@ -357,48 +357,100 @@
            "Name: "+r.name+"\nDOB: "+r.dob+"\n\nCurrent medications:\n"+meds+"\n\nRecent visits:\n"+vis;
   }
 
+  /* ----- STAGING grounded responder (item68, added 2026-06-29) -------------
+     The live LLM endpoint (/api/copilot) requires CLINICIAN auth and is NOT
+     patient-scoped, so for the patient portal it returns 401 -- the chat never
+     actually answered. Until a patient-scoped, server-side-ownership-enforced
+     chat endpoint exists (see window.__mlsPatientPortalChat.backendSpec), this
+     responder answers ONLY from the authenticated patient's OWN in-page record
+     via readMyRecord(). It NEVER invents clinical facts, NEVER reads another
+     patient, and deflects medical-advice questions to the provider.
+     ------------------------------------------------------------------------- */
+  function groundedLocalAnswer(question){
+    var r = readMyRecord();                       // session-scoped; cannot read others
+    var q = String(question||"").toLowerCase().trim();
+
+    // Explicit cross-patient intent -> refuse outright (never even attempt)
+    if(/\b(other|another|someone ?else|different)\b[^.?!]*\b(patient|person|people|record|chart|file)\b/.test(q)
+       || /\b(everyone|all patients|other patients|anybody else)\b/.test(q)){
+      return {kind:"refuse", text:"I can only answer questions about your own records. I can't see or discuss any other patient's information."};
+    }
+    // Medical-advice intent -> deflect, do not advise
+    if(/\b(can i take|is it safe|should i (take|stop|use)|drug interaction|interact|dosage|dose|side ?effect|overdose)\b/.test(q)){
+      return {kind:"deflect", text:"I can't give medical advice or judge whether something is safe for you -- please contact your provider's office. I can tell you what's recorded in your chart: your medications, appointments, and past visits."};
+    }
+    // Medications
+    if(/\b(medication|medications|meds|medicine|prescription|prescriptions|drug|drugs|taking|pills?)\b/.test(q)){
+      if(!r.meds.length) return {kind:"answer", text:"Your record doesn't list any current medications. Please confirm with your provider."};
+      return {kind:"answer", text:"Your current medications, as recorded by your clinician, are:\n"+r.meds.map(function(m){return "- "+m.name+" -- "+m.sig+" (for "+m.for+")";}).join("\n")};
+    }
+    // Appointments
+    if(/\b(appointment|appointments|appt|upcoming|next visit|scheduled|schedule)\b/.test(q) || /when.*(see|visit|come in|appointment)/.test(q)){
+      if(!r.appts.length) return {kind:"answer", text:"You have no upcoming appointments on file."};
+      return {kind:"answer", text:"Your upcoming appointments are:\n"+r.appts.map(function(a){return "- "+a.date+" -- "+a.type+" with "+a.with;}).join("\n")};
+    }
+    // Most recent visit
+    if(/\b(last visit|most recent|last time|recent visit|last seen|previous visit)\b/.test(q)){
+      if(!r.visits.length) return {kind:"answer", text:"There are no past visits in your record yet."};
+      var v0 = r.visits.slice().sort(function(a,b){return String(b.date).localeCompare(String(a.date));})[0];
+      return {kind:"answer", text:"Your most recent visit was on "+v0.date+" ("+v0.type+") with "+v0.clin+". Summary: "+v0.summary};
+    }
+    // Visit history / notes / "what did the doctor say"
+    if(/\b(visit|visits|history|notes?|summary|appointment history)\b/.test(q) || /what did (the |my )?(doctor|provider|dr|clinician)/.test(q)){
+      if(!r.visits.length) return {kind:"answer", text:"There are no past visits in your record yet."};
+      return {kind:"answer", text:"Here is what's recorded from your past visits:\n"+r.visits.map(function(v){return "- "+v.date+" ("+v.type+", "+v.clin+"): "+v.summary;}).join("\n")};
+    }
+    // Identity facts
+    if(/\b(date of birth|dob|birthday|born)\b/.test(q)) return {kind:"answer", text:"Your date of birth on file is "+r.dob+"."};
+    if(/\b(mrn|record number|medical record number)\b/.test(q)) return {kind:"answer", text:"Your medical record number (MRN) is "+r.mrn+"."};
+
+    // Nothing matched / not in record -> NEVER guess
+    return {kind:"unknown", text:"I can only answer from your own record -- your medications, upcoming appointments, and past visits. I don't see anything about that in your chart, so please contact your provider's office for anything else."};
+  }
+
   async function askAI(question){
     addMsg("user", question);
-    var pendingEl = addMsg("ai", "…thinking");
+    var pendingEl = addMsg("ai", "...thinking");
     var bubble = pendingEl.querySelector(".bubble");
+    var cfg = window.__mlsPatientPortalChat || {};
 
-    var body = {
-      question: question,
-      context: buildContextFromMyRecord(),   // ONLY this patient's data
-      history: []
-    };
-    // NOTE: intentionally NO clinician Authorization token — patient auth is separate.
-    try{
-      var resp = await fetch(BACKEND + "/api/copilot", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify(body)
-      });
-      if(!resp.ok){
-        pendingEl.className = "msg sys"; pendingEl.querySelector(".av").textContent = "!";
-        bubble.textContent = unavailableMessage(resp.status);
-        return;
-      }
-      var data = await resp.json().catch(function(){ return {}; });
-      var reply = (data && (data.reply || data.text || data.answer)) || "";
-      reply = String(reply).trim();
-      if(!reply){
-        pendingEl.className = "msg sys"; pendingEl.querySelector(".av").textContent = "!";
-        bubble.textContent = unavailableMessage("empty response");
-      }else{
-        bubble.textContent = reply;
-      }
-    }catch(e){
-      pendingEl.className = "msg sys"; pendingEl.querySelector(".av").textContent = "!";
-      bubble.textContent = unavailableMessage("network");
+    // 1) Preferred path (OFF by default): a real, SERVER-SCOPED LLM answer. Only
+    //    used if a patient-scoped endpoint exists AND returns OK. Today the
+    //    endpoint is clinician-only (401), so this is disabled to avoid sending
+    //    record context to an endpoint that can't enforce patient ownership.
+    if(cfg.useBackendFirst){
+      try{
+        var resp = await fetch(BACKEND + "/api/copilot", {
+          method:"POST", headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ question:question, context:buildContextFromMyRecord(), history:[] })
+        });
+        if(resp.ok){
+          var data = await resp.json().catch(function(){ return {}; });
+          var reply = String((data && (data.reply || data.text || data.answer)) || "").trim();
+          if(reply){ bubble.textContent = reply; return; }
+        }
+      }catch(e){ /* fall through to grounded local answer */ }
     }
+
+    // 2) Grounded fallback: deterministic answer from ONLY this patient's record.
+    var a = groundedLocalAnswer(question);
+    if(a.kind==="refuse" || a.kind==="deflect"){
+      pendingEl.className = "msg sys"; pendingEl.querySelector(".av").textContent = "!";
+    }
+    bubble.textContent = a.text;
   }
 
-  function unavailableMessage(status){
-    return "The AI assistant is temporarily unavailable right now, so I can't answer that. "+
-           "I won't guess. Please try again later, or for anything about your medications or symptoms, "+
-           "contact your doctor's office. (Reference: "+status+")";
-  }
+  /* Public handle: verification, runtime toggle, backend spec, revert note. */
+  window.__mlsPatientPortalChat = {
+    useBackendFirst: false,                 // flip to true once a secure patient endpoint exists
+    answerLocally: groundedLocalAnswer,     // exposed read-only for verification/automation
+    backendSpec: "REQUIRED for production: POST /api/patient/chat authenticated by a PATIENT "+
+                 "session cookie (separate from clinician JWT). The SERVER loads ONLY the "+
+                 "authenticated patient_id's records, builds the grounding context server-side, "+
+                 "and returns 403 for any request scoped to a different patient_id. Same ownership "+
+                 "check guards GET /api/patient/history. Client must NOT supply the record context.",
+    revert: "Additive, unlinked STAGING page. Revert = restore parent commit 40e99dd (one-file diff)."
+  };
 
   /* =========================================================================
      ISOLATION PROBE (for verification — proves cross-patient reads are blocked)
