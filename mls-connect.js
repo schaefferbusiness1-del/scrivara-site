@@ -4328,3 +4328,33 @@
 ;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sg1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: study groups (window.__mlsStudyGroups) */
 ;(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sa1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
 ;(function(){try{var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: stop-recording confirm popup (window.__mlsStopConfirm) */
+
+/* ============================================================================
+   FIX (additive, reversible): bridge Find Doctors selection -> Who's Next.
+   feat_mls_find_doctors.js records the picked provider in __mlsFindDoctors.chosen
+   and scopes the next athenaOne pull, but never tells Who's Next to re-render.
+   feat_mls_whosnext.js ALREADY scopes its boxes to __mlsFindDoctors.chosen (via
+   matchesDoctor) and ALREADY shows an honest empty-state -- but only when it is
+   (re)rendered. This watches __mlsFindDoctors.chosen and calls
+   __mlsWhosNext.reapply() on change, so picking a doctor immediately shows ONLY
+   that doctor's patients (once records carry a provider) or the honest empty-state.
+   Touches no loader. Adds no UI. Idempotent. Reversible: __mlsDocPickBridge.revert().
+   ============================================================================ */
+(function () {
+  if (window.__mlsDocPickBridge) return;
+  window.__mlsDocPickBridge = { installed: true, version: 1 };
+  function key(c) { try { return c ? (c.raw || c.name || "") : ""; } catch (e) { return ""; } }
+  var last;
+  function tick() {
+    try {
+      var fd = window.__mlsFindDoctors, wn = window.__mlsWhosNext;
+      if (!fd || !wn || typeof wn.reapply !== "function") return;
+      var k = key(fd.chosen);
+      if (k !== last) { last = k; try { wn.reapply(); } catch (e) {} }
+    } catch (e) {}
+  }
+  var iv = setInterval(tick, 500);
+  window.__mlsDocPickBridge.stop = function () { clearInterval(iv); };
+  window.__mlsDocPickBridge.revert = window.__mlsDocPickBridge.stop;
+  tick();
+})();
