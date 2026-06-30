@@ -4709,3 +4709,360 @@
   };
   injectStyle();
 })();
+;/* =========================================================
+   MLS Guided Tour v2 — EXPANDED interactive walkthrough
+   window.__mlsTour  (revert: window.__mlsTour.revert())
+   Additive. Supersedes the v1 How-To tour. Self-cleaning,
+   fully reversible. Drives the app's OWN nav/views but only
+   ever touches a clearly-labeled SAMPLE patient/widget and
+   snapshots+restores so nothing sticks. No real Athena write,
+   no real generation, no real PHI. Old-doctor-friendly.
+   ============================================================ */
+(function () {
+  'use strict';
+  if (window.__mlsTour && window.__mlsTour.__v2) return; // already installed
+
+  var SEEN_V1  = "mls_tour_seen_v1";
+  var SEEN_KEY = "mls_tour_seen_v2";
+  var Z = 2147483000;
+  var idx = 0, steps = [], typingTimer = null, menuTimer = null;
+  var snap = null;
+
+  /* ---- Suppress + tear down the old v1 tour if it is present ---- */
+  try { localStorage.setItem(SEEN_V1, "1"); } catch (e) {}      // stop v1 auto-launch
+  try {
+    if (window.__mlsTour && typeof window.__mlsTour.revert === "function" && !window.__mlsTour.__v2) {
+      window.__mlsTour.revert();   // removes v1 root/style/menu item + clears v1 timers
+    }
+  } catch (e) {}
+
+  /* ---- tiny helpers ---- */
+  function $(id) { return document.getElementById(id); }
+  function q(sel) { try { return document.querySelector(sel); } catch (e) { return null; } }
+  function viewKey() {
+    var v = Array.prototype.slice.call(document.querySelectorAll('[id$="View"]'))
+      .filter(function (e) { try { return getComputedStyle(e).display !== "none"; } catch (_) { return false; } })[0];
+    return v ? v.id.replace(/View$/, "").toLowerCase() : "visit";
+  }
+  function go(key) { try { if (typeof window.showView === "function") window.showView(key); } catch (e) {} }
+
+  /* ---- SAMPLE-only demo injectors (every one is reversible) ---- */
+  var SAMPLE_LABEL = "Sample Patient — John Doe";
+
+  function pullFillDemo() {
+    var box = $("heroPtName");
+    if (box && box.getAttribute("data-mlsTourPrev") === null) {
+      box.setAttribute("data-mlsTourPrev", box.value || "");
+      box.value = "John Doe (SAMPLE)";
+    }
+  }
+  function pullFillUndo() {
+    var box = $("heroPtName");
+    if (box && box.getAttribute("data-mlsTourPrev") !== null) {
+      box.value = box.getAttribute("data-mlsTourPrev");
+      box.removeAttribute("data-mlsTourPrev");
+    }
+  }
+  function topSyncDemo() {
+    var host = $("mlsRecentPts") || $("mlsCtxBar");
+    if (host && !$("mlsTourSampleChip")) {
+      var chip = document.createElement("span");
+      chip.id = "mlsTourSampleChip";
+      chip.textContent = "\u{1F464} " + SAMPLE_LABEL;
+      chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:#e0f2fe;color:#0369a1;border:1px solid #38bdf8;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:700;margin:0 4px;white-space:nowrap;";
+      host.insertBefore(chip, host.firstChild);
+    }
+  }
+  function topSyncUndo() { var c = $("mlsTourSampleChip"); if (c) c.remove(); }
+
+  function analysisDemo() {
+    var out = $("mls-sg-out");
+    if (out && out.getAttribute("data-mlsTourPrev") === null) {
+      out.setAttribute("data-mlsTourPrev", out.innerHTML);
+      out.style.display = "";
+      out.innerHTML =
+        '<div style="border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;padding:12px 14px;font-size:14px;color:#0f172a;line-height:1.5;">' +
+        '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:2px 8px;margin-bottom:8px;">SAMPLE — NOT REAL DATA</span><br>' +
+        '<b>Average pain score:</b> 6.2 → 3.8 after 6 visits<br>' +
+        '<b>Most common diagnosis:</b> Lumbar radiculopathy<br>' +
+        '<b>Patients improving:</b> 18 of 22' +
+        '</div>';
+    }
+  }
+  function analysisUndo() {
+    var out = $("mls-sg-out");
+    if (out && out.getAttribute("data-mlsTourPrev") !== null) {
+      out.innerHTML = out.getAttribute("data-mlsTourPrev");
+      out.removeAttribute("data-mlsTourPrev");
+    }
+  }
+
+  function widgetDemo() {
+    var host = $("studioSaved") || $("studioView");
+    if (host && !$("mlsTourSampleWidget")) {
+      var w = document.createElement("div");
+      w.id = "mlsTourSampleWidget";
+      w.style.cssText = "border:2px solid #38bdf8;border-radius:12px;background:#f0f9ff;padding:14px 16px;margin:8px 0;box-shadow:0 6px 18px rgba(56,189,248,.30);";
+      w.innerHTML =
+        '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:2px 8px;margin-bottom:8px;">SAMPLE WIDGET</span>' +
+        '<div style="font-size:16px;font-weight:800;color:#0f172a;">✨ Pain-Score Tracker</div>' +
+        '<div style="font-size:14px;color:#334155;margin-top:4px;">A little helper that charts each patient’s pain over time.</div>';
+      host.insertBefore(w, host.firstChild);
+    }
+  }
+  function widgetUndo() { var w = $("mlsTourSampleWidget"); if (w) w.remove(); }
+
+  function demoUndoAll() {
+    try { pullFillUndo(); } catch (e) {}
+    try { topSyncUndo(); } catch (e) {}
+    try { analysisUndo(); } catch (e) {}
+    try { widgetUndo(); } catch (e) {}
+  }
+
+  /* ---- the walkthrough steps (one idea per card, big text) ---- */
+  function buildSteps() {
+    return [
+      { center: true, title: "Welcome to MLS \u{1F44B}",
+        body: "I’m going to actually walk you around and show you the few things you’ll use. I’ll use a pretend patient named John Doe — nothing here touches a real chart, and I’ll put everything back exactly how it was when we finish." },
+
+      { sel: "#heroPtName", view: "visit", title: "1. It all starts with the patient",
+        body: "This box is where the patient’s name goes. Everything in MLS follows the patient you pick here." },
+
+      { sel: "#mlsChartFillBtn", view: "visit", title: "2. Pulling from Athena — the little blue box",
+        body: "See this little blue box? When you have a patient’s chart open in Athena, one tap pulls them in — you don’t type anything." },
+
+      { sel: "#heroPtName", view: "visit", title: "3. Watch the name fill in by itself",
+        body: "Watch — I’ll pull a sample patient for you. See how the name filled in here on its own? That came straight from the chart.",
+        on: function () { pullFillDemo(); } },
+
+      { sel: "#mlsCtxBar", view: "visit", title: "4. The patient appears at the top",
+        body: "And now that same patient shows up at the very top of the screen — from here it flows through the whole app, every screen stays in sync. (This one’s just a sample.)",
+        on: function () { pullFillDemo(); topSyncDemo(); } },
+
+      { sel: "#heroRecBtn", view: "visit", title: "5. Press record, then just talk",
+        body: "When you’re ready, press the green record button and have your normal visit. No typing — MLS listens and writes the note." },
+
+      { sel: "#phoneMicBtn", view: "visit", title: "6. No computer at the bedside? Use your phone",
+        body: "You can also record from your phone and the note shows up here on your computer. Whatever’s easier for you." },
+
+      { sel: "#nav_calendar", view: "calendar", title: "7. Here’s your Calendar",
+        body: "This is your whole day at a glance — I just switched you to it. Your appointments live here so you always know who’s next." },
+
+      { sel: "#ptNewBtn, #ptPullAthenaBtn", view: "patients", title: "8. Here are your Patients",
+        body: "And this is your patient list. The buttons that live up here are the ones you’ll use: “＋ New patient” to add someone, and “\u{1F4E5} Pull from Athena” to bring your schedule in." },
+
+      { sel: "#nav_studio", view: "studio", title: "9. This is AI Studio",
+        body: "AI Studio is where your smart helpers live. Let me show you two things in here." },
+
+      { sel: "#mls-sg-out", view: "studio", title: "10. The Analysis — it does the math for you",
+        body: "I’ve opened the Analysis. It reads across your notes and finds patterns — like how pain scores improve over visits — so you don’t do any counting yourself. (Sample numbers shown.)",
+        on: function () { analysisDemo(); } },
+
+      { sel: "#mlsTourSampleWidget", view: "studio", title: "11. Watch — I’ll add a helper for you",
+        body: "Here’s an AI widget. See it? It just appeared right here in your creations. You can build little helpers like this and they sit in AI Studio, ready when you need them. (This one’s a sample.)",
+        on: function () { widgetDemo(); } },
+
+      { sel: "#pushAllEmrBtn", view: "visit", title: "12. Sending the note back to Athena",
+        body: "When your note is finished, THIS button sends it back to Athena. You press it, you review what it wrote, and only after YOU approve does it go onto the chart. I’m not sending anything now — just showing you where it is." },
+
+      { sel: "#heroRecBtn", view: "visit", title: "13. You are always the final word",
+        body: "Nothing is ever saved to a real chart until you say yes. MLS drafts — you decide. You’re always in control." },
+
+      { sel: "#nav_history", view: "visit", title: "14. Past visits are saved here",
+        body: "Every visit you finish is kept under History, so you can look back any time." },
+
+      { sel: "#nav_help", view: "visit", title: "15. Help is always here",
+        body: "If you ever get stuck, the Help button is right here — and you can replay this walkthrough any time from the menu." },
+
+      { center: true, title: "You’re ready — that’s the whole thing ✅",
+        body: "I’m cleaning up now: the pretend patient, the sample helper, and everything I touched are being removed, and I’m putting your screen back exactly how it was. Press Done." }
+    ];
+  }
+
+  /* ---- styling (own ids so it never collides with v1) ---- */
+  function injectStyle() {
+    if ($("mlsTourStyleV2")) return;
+    var s = document.createElement("style");
+    s.id = "mlsTourStyleV2";
+    s.textContent =
+      ".mlsTourDimV2{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:" + Z + ";}" +
+      ".mlsTourSpotV2{position:fixed;border-radius:12px;box-shadow:0 0 0 9999px rgba(15,23,42,.55);border:3px solid #38bdf8;transition:all .25s ease;pointer-events:none;z-index:" + (Z + 1) + ";}" +
+      ".mlsTourCardV2{position:fixed;max-width:440px;width:calc(100vw - 40px);background:#fff;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:22px 22px 16px;box-sizing:border-box;z-index:" + (Z + 2) + ";}" +
+      ".mlsTourCardV2 .st{font-size:13px;font-weight:700;color:#94a3b8;margin:0 0 4px;}" +
+      ".mlsTourCardV2 h3{margin:0 0 10px;font-size:22px;line-height:1.25;color:#0f172a;font-weight:800;}" +
+      ".mlsTourCardV2 p{margin:0;font-size:18px;line-height:1.5;color:#334155;}" +
+      ".mlsTourBtns{display:flex;gap:8px;align-items:center;margin-top:18px;}" +
+      ".mlsTourBtns .sp{flex:1;}" +
+      ".mlsTourBtns button{font-size:15px;font-weight:700;border-radius:10px;padding:9px 16px;cursor:pointer;border:1px solid transparent;}" +
+      ".mlsTbNextV2{background:#2563eb;color:#fff;}" +
+      ".mlsTbBackV2{background:#f1f5f9;color:#0f172a;}" +
+      ".mlsTbSkipV2{background:transparent;color:#64748b;border:none;text-decoration:underline;}";
+    document.head.appendChild(s);
+  }
+
+  /* ---- root / render engine ---- */
+  function ensureRoot() {
+    injectStyle();
+    if ($("mlsTourRootV2")) return;
+    var root = document.createElement("div");
+    root.id = "mlsTourRootV2";
+    root.innerHTML =
+      '<div class="mlsTourDimV2" id="mlsTourDimV2"></div>' +
+      '<div class="mlsTourSpotV2" id="mlsTourSpotV2" style="display:none;"></div>' +
+      '<div class="mlsTourCardV2" id="mlsTourCardV2">' +
+      '<div class="st" id="mlsTourStepV2"></div>' +
+      '<h3 id="mlsTourTitleV2"></h3>' +
+      '<p id="mlsTourBodyV2"></p>' +
+      '<div class="mlsTourBtns">' +
+      '<button class="mlsTbSkipV2" id="mlsTourSkipV2">Skip</button>' +
+      '<span class="sp"></span>' +
+      '<button class="mlsTbBackV2" id="mlsTourBackV2">Back</button>' +
+      '<button class="mlsTbNextV2" id="mlsTourNextV2">Next</button>' +
+      '</div></div>';
+    document.body.appendChild(root);
+    $("mlsTourSkipV2").onclick = function () { finish(true, true); };
+    $("mlsTourBackV2").onclick = function () { back(); };
+    $("mlsTourNextV2").onclick = function () { next(); };
+  }
+
+  function placeCard(rect) {
+    var card = $("mlsTourCardV2");
+    if (!card) return;
+    var cw = card.offsetWidth || 440, ch = card.offsetHeight || 220;
+    var vw = window.innerWidth, vh = window.innerHeight, m = 16, left, top;
+    if (!rect) {
+      left = (vw - cw) / 2; top = (vh - ch) / 2;
+    } else {
+      top = rect.bottom + 14;
+      if (top + ch > vh - m) top = rect.top - ch - 14;
+      if (top < m) top = Math.max(m, (vh - ch) / 2);
+      left = rect.left + (rect.width / 2) - (cw / 2);
+      if (left < m) left = m;
+      if (left + cw > vw - m) left = vw - cw - m;
+    }
+    card.style.left = Math.round(left) + "px";
+    card.style.top = Math.round(top) + "px";
+  }
+
+  function render() {
+    var step = steps[idx];
+    if (!step) return;
+    if (step.view) go(step.view);
+    if (typeof step.on === "function") { try { step.on(); } catch (e) {} }
+    var stepEl = $("mlsTourStepV2"), titleEl = $("mlsTourTitleV2"), bodyEl = $("mlsTourBodyV2");
+    var backBtn = $("mlsTourBackV2"), nextBtn = $("mlsTourNextV2");
+    if (stepEl) stepEl.textContent = "Step " + (idx + 1) + " of " + steps.length;
+    if (titleEl) titleEl.textContent = step.title || "";
+    if (bodyEl) bodyEl.textContent = step.body || "";
+    if (backBtn) backBtn.style.visibility = idx === 0 ? "hidden" : "visible";
+    if (nextBtn) nextBtn.textContent = (idx === steps.length - 1) ? "Done" : "Next";
+    setTimeout(function () {
+      var spot = $("mlsTourSpotV2"), dim = $("mlsTourDimV2");
+      var target = step.center ? null : (step.sel ? q(step.sel) : null);
+      if (target) {
+        try { target.scrollIntoView({ block: "center", inline: "nearest" }); } catch (e) {}
+      }
+      setTimeout(function () {
+        if (target) {
+          var r = target.getBoundingClientRect();
+          if (r.width < 1 && r.height < 1) {
+            if (spot) spot.style.display = "none";
+            if (dim) dim.style.display = "block";
+            placeCard(null);
+            return;
+          }
+          var pad = 6;
+          if (spot) {
+            spot.style.display = "block";
+            spot.style.left = Math.max(2, r.left - pad) + "px";
+            spot.style.top = Math.max(2, r.top - pad) + "px";
+            spot.style.width = (r.width + pad * 2) + "px";
+            spot.style.height = (r.height + pad * 2) + "px";
+          }
+          if (dim) dim.style.display = "none";
+          placeCard(r);
+        } else {
+          if (spot) spot.style.display = "none";
+          if (dim) dim.style.display = "block";
+          placeCard(null);
+        }
+      }, target ? 180 : 0);
+    }, step.view ? 220 : 60);
+  }
+
+  function next() { if (idx < steps.length - 1) { idx++; render(); } else { finish(true, true); } }
+  function back() { if (idx > 0) { idx--; render(); } }
+
+  function restore() {
+    demoUndoAll();
+    try {
+      if (snap) {
+        if (snap.view) go(snap.view);
+        if (snap.scrollY != null) window.scrollTo(0, snap.scrollY);
+      }
+    } catch (e) {}
+  }
+
+  function finish(markSeen, doRestore) {
+    try { clearInterval(typingTimer); } catch (e) {}
+    var r = $("mlsTourRootV2"); if (r) r.remove();
+    if (doRestore !== false) restore();
+    if (markSeen) { try { localStorage.setItem(SEEN_KEY, "1"); } catch (e) {} }
+  }
+
+  function start() {
+    snap = { view: viewKey(), scrollY: window.scrollY || 0 };
+    try { var ov = $("mlsTourRoot"); if (ov) ov.remove(); } catch (e) {}
+    idx = 0; steps = buildSteps(); ensureRoot(); render();
+  }
+
+  /* ---- menu hook: re-add our own "How-To Guide" item ---- */
+  function closeAppMenu() {
+    try {
+      var p = $("mlsTbMenuPanel");
+      if (p && getComputedStyle(p).display !== "none") { var b = $("mlsTbMenuBtn"); if (b) b.click(); }
+    } catch (e) {}
+  }
+  function addMenuItem() {
+    var panel = $("mlsTbMenuPanel");
+    if (!panel || $("mlsTourMenuItemV2")) return;
+    var btn = document.createElement("button");
+    btn.id = "mlsTourMenuItemV2";
+    btn.className = "mlsTbItem";
+    btn.textContent = "\u{1F4D8} How-To Guide";
+    btn.onclick = function (ev) { try { ev.stopPropagation(); } catch (e) {} start(); closeAppMenu(); };
+    var first = panel.querySelector(".mlsTbItem");
+    if (first) panel.insertBefore(btn, first); else panel.appendChild(btn);
+  }
+  addMenuItem();
+  menuTimer = setInterval(addMenuItem, 900);
+
+  /* ---- first-visit auto-launch (gated on v2 key) ---- */
+  function maybeAutoLaunch() {
+    var seen; try { seen = localStorage.getItem(SEEN_KEY); } catch (e) { seen = "1"; }
+    if (!seen) { setTimeout(start, 1400); }
+  }
+  if (document.readyState === "complete") maybeAutoLaunch();
+  else window.addEventListener("load", maybeAutoLaunch);
+
+  /* ---- public API (extends + supersedes v1) ---- */
+  window.__mlsTour = {
+    __live: true,
+    __v2: true,
+    start: start,
+    open: start,
+    finish: function () { finish(true, true); },
+    seen: function () { try { return !!localStorage.getItem(SEEN_KEY); } catch (e) { return true; } },
+    reset: function () { try { localStorage.removeItem(SEEN_KEY); } catch (e) {} },
+    revert: function () {
+      try { clearInterval(menuTimer); } catch (e) {}
+      try { clearInterval(typingTimer); } catch (e) {}
+      try { var r = $("mlsTourRootV2"); if (r) r.remove(); } catch (e) {}
+      try { var st = $("mlsTourStyleV2"); if (st) st.remove(); } catch (e) {}
+      try { var mi = $("mlsTourMenuItemV2"); if (mi) mi.remove(); } catch (e) {}
+      try { demoUndoAll(); } catch (e) {}
+      try { if (snap && snap.view) go(snap.view); } catch (e) {}
+      try { delete window.__mlsTour; } catch (e) { window.__mlsTour = undefined; }
+    }
+  };
+})();
