@@ -4358,3 +4358,29 @@
   window.__mlsDocPickBridge.revert = window.__mlsDocPickBridge.stop;
   tick();
 })();
+
+/* ============================================================================
+   FIX (additive, reversible): hide the duplicate GENERIC-names provider card on
+   the calendar left rail. feat_mls_calendar_exact.js renders
+   #calendarView .cx-card.cx-prov (the cx-prov-list) with generic provider names,
+   duplicating the REAL-names roster from calendar_polish (item67). This hides
+   ONLY that duplicate card via CSS; the real-names roster + click-to-filter stay,
+   the calendar grid and full-width (appwidth) are untouched.
+   Reversible: window.__mlsCalProvDupHide.revert().
+   ============================================================================ */
+(function () {
+  if (window.__mlsCalProvDupHide) return;
+  var ID = "mls-cal-prov-dup-hide";
+  function inject() {
+    if (document.getElementById(ID)) return;
+    var st = document.createElement("style");
+    st.id = ID;
+    st.textContent = "#calendarView .cx-card.cx-prov{display:none !important;}";
+    (document.head || document.documentElement).appendChild(st);
+  }
+  inject();
+  window.__mlsCalProvDupHide = {
+    installed: true, version: 1,
+    revert: function () { var s = document.getElementById(ID); if (s) s.remove(); window.__mlsCalProvDupHide.installed = false; }
+  };
+})();
