@@ -4384,3 +4384,49 @@
     revert: function () { var s = document.getElementById(ID); if (s) s.remove(); window.__mlsCalProvDupHide.installed = false; }
   };
 })();
+
+;/* === item: DOB-sync on patient switch (additive, reversible: window.__mlsDobSync.revert()) ===
+   Fix: openPatient/setActivePtId updated the active patient + name but never re-synced the hero
+   "Date of birth" field (#heroPtDob), leaving the previously selected patient's DOB shown next to
+   the new patient's name (patient-safety: wrong DOB). Re-syncs DOB on every active-patient change;
+   blanks it when the new patient has no DOB; never stale. Idempotent. Drops/reorders no loaders. */
+(function(){
+  if (window.__mlsDobSync && window.__mlsDobSync.installed) return;
+  var orig = {};
+  function activeDob(){
+    try {
+      var id = (typeof getActivePtId === 'function') ? getActivePtId() : null;
+      if (!id) return null;
+      var ps = (typeof getPatients === 'function') ? getPatients() : [];
+      for (var i = 0; i < ps.length; i++){ if (ps[i] && ps[i].id === id){ return (ps[i].dob == null ? '' : String(ps[i].dob)); } }
+    } catch(e){}
+    return null;
+  }
+  function syncDob(){
+    try {
+      var d = activeDob(); if (d === null) return;
+      var el = document.getElementById('heroPtDob'); if (!el) return;
+      if ((el.value || '') === d) return;
+      el.value = d;
+      try { el.dispatchEvent(new Event('input',  { bubbles:true })); } catch(e){}
+      try { el.dispatchEvent(new Event('change', { bubbles:true })); } catch(e){}
+    } catch(e){}
+  }
+  function wrap(name){
+    if (typeof window[name] !== 'function') return;
+    if (window[name].__mlsDobWrapped) return;
+    var o = window[name]; orig[name] = o;
+    var w = function(){ var r = o.apply(this, arguments); try { setTimeout(syncDob, 0); } catch(e){ syncDob(); } return r; };
+    w.__mlsDobWrapped = true; window[name] = w;
+  }
+  function install(){ wrap('openPatient'); wrap('setActivePtId'); try { setTimeout(syncDob, 0); } catch(e){} }
+  try { document.addEventListener('mls:patientpicked', function(){ setTimeout(syncDob, 0); }); } catch(e){}
+  window.__mlsDobSync = {
+    installed: true, version: '1', sync: syncDob,
+    revert: function(){ try { for (var k in orig){ if (window[k] && window[k].__mlsDobWrapped){ window[k] = orig[k]; } } } catch(e){} this.installed = false; }
+  };
+  try { install(); } catch(e){}
+  try { setTimeout(install, 0); } catch(e){}
+  try { setTimeout(install, 1500); } catch(e){}
+  try { window.addEventListener('load', install); } catch(e){}
+})();
