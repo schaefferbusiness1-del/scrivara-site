@@ -224,6 +224,27 @@
     var menu = $("mlsTbMenuPanel") || $("mlsTbMenu"); if (!menu) return;
     var o = $("nav_orders");
     if (o) placeInMenu(o, menu);
+    try {
+      var __ask = null, __cw = null, __k = menu.children;
+      for (var __i = 0; __i < __k.length; __i++) {
+        var __tx = (__k[__i].textContent || "").trim();
+        if (/Ask$/.test(__tx)) __ask = __k[__i];
+        if (/Custom widget$/.test(__tx)) __cw = __k[__i];
+      }
+      if (__ask) {
+        var __an = __ask;
+        ["recs", "legalreq", "team"].forEach(function (kk) {
+          var __row = document.getElementById("mlsNavRow_" + kk);
+          if (__row && __row.parentNode === menu) {
+            if (__an.nextSibling !== __row) menu.insertBefore(__row, __an.nextSibling);
+            __an = __row;
+          }
+        });
+      }
+      if (__cw && o && o.parentElement === menu && __cw.nextSibling !== o) {
+        menu.insertBefore(o, __cw.nextSibling);
+      }
+    } catch (e) {}
     var a = $("nav_admin");
     if (a) {
       if (effectiveAdmin()) {
