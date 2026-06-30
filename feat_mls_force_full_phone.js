@@ -86,14 +86,21 @@
       var hint = document.getElementById('mlsGpHint');
       if (hint) hint.style.display = 'none';
     }
-    var link = pairLink();
+    /* Derive the code label AND link from the SAME source as the scannable image
+       (the QR's encoded phone.html?code= URL), so the image, the code label and
+       the link can never drift to two different pairing codes. Fall back to the
+       pair anchor only if the QR image has no encoded URL yet. */
+    var canonUrl = (realQR && realQR.src) ? (function(s){ try{ var i=s.indexOf('data='); if(i<0) return ''; var d=s.slice(i+5); var amp=d.indexOf('&'); if(amp>=0) d=d.slice(0,amp); return decodeURIComponent(d); }catch(e){ return ''; } })(realQR.src) : '';
+    if (!canonUrl) { var link = pairLink(); if (link) canonUrl = link.href; }
     var a = document.getElementById('mlsGpLink');
     var code = document.getElementById('mlsGpCode');
-    if (link && a) {
-      a.href = link.href;
-      a.textContent = stripProto(link.href);
-      var cd = codeFromUrl(link.href);
-      if (code && cd) code.textContent = 'Code ' + cd;
+    if (canonUrl && a) {
+      a.href = canonUrl;
+      a.textContent = stripProto(canonUrl);
+    }
+    if (canonUrl && code) {
+      var cd = codeFromUrl(canonUrl);
+      if (cd) code.textContent = 'Code ' + cd;
     }
   }
 
