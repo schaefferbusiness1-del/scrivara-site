@@ -18,8 +18,9 @@
  * app's own active-patient data when the doctor clicks the button. It NEVER
  * auto-submits, never presses Start/record, never writes/edits/deletes any
  * record, note or appointment, and never touches athenaOne. Fields stay fully
- * editable; the doctor reviews and starts as usual. Honest: if no patient is
- * active, the button disables itself rather than inventing data.
+ * editable; the doctor reviews and starts as usual. The de-identified label is
+ * kept PHI-free (initials only). Honest: if no patient is active, the button
+ * disables itself rather than inventing data.
  *
  * GUARDRAILS: additive & reversible (window.__mlsUseActivePt.revert()).
  * Self-contained IIFE, try/catch throughout. Idempotent mount that re-attaches
@@ -90,7 +91,6 @@
   // Find the "From open Athena chart" button to sit beside, else the name input.
   function anchorEl(){
     var name=heroNameInput(); if(!name) return null;
-    // look for sibling button referencing "Athena chart"
     var scope = name.closest('div') || name.parentNode;
     var hops=0, node=scope;
     while(node && hops<4){
@@ -107,13 +107,24 @@
     var ap=activePt();
     if(!ap) return;
     var n=ap.name||'', d=ap.dob||'';
+    var li=labelInput();
+    // Capture emptiness BEFORE filling the name: the app may auto-copy the full
+    // hero name into the de-identified label on the name 'input' event. We only
+    // set/override the label when the doctor had not typed their own.
+    var labelWasEmpty = !li || !String(li.value||'').trim();
     var filled=[];
     if(setField(heroNameInput(), n) && n) filled.push('name');
     if(d && setField(heroDobInput(), d)) filled.push('DOB');
-    var li=labelInput();
-    if(li && !String(li.value||'').trim()){ var ini=initialsOf(n); if(ini && setField(li, ini)) filled.push('label'); }
+    // Keep the de-identified label PHI-free: force initials, overriding any
+    // full-name auto-copy the app performs (the field says "no full PHI").
+    if(li && labelWasEmpty){
+      var ini=initialsOf(n);
+      if(ini){
+        setField(li, ini); filled.push('label');
+        setTimeout(function(){ try{ if(!String(li.value||'').trim() || li.value===n) setField(li, ini); }catch(e){} }, 90);
+      }
+    }
     try{ if(typeof window.toast==='function') window.toast(filled.length?('Filled '+filled.join(', ')+' from current patient — review, then Start.'):'No patient fields to fill.',''); }catch(e){}
-    // gentle focus so the doctor can immediately verify/start
     try{ var dob=heroDobInput(); if(dob && !String(dob.value||'').trim()) dob.focus(); }catch(e){}
   }
 
@@ -121,7 +132,6 @@
     var name=heroNameInput();
     var btn=byId(BTN_ID);
     if(!name || name.offsetParent===null){
-      // hero not visible — remove button if present
       if(btn && btn.parentNode) btn.parentNode.removeChild(btn);
       return;
     }
@@ -140,7 +150,6 @@
     } else if(name.parentNode && btn.parentNode!==name.parentNode){
       name.parentNode.appendChild(btn);
     }
-    // reflect availability of an active patient
     var ap=activePt();
     if(ap && (ap.name||ap.dob)){ btn.removeAttribute('disabled'); btn.title='Fill name + DOB from '+(ap.name||'the current patient'); }
     else { btn.setAttribute('disabled','disabled'); btn.title='No active patient to fill from'; }
