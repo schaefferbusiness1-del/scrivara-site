@@ -113,7 +113,7 @@
       + '<div class="c" id="mlsGpCode"></div>'
       + '<a id="mlsGpLink" target="_blank" rel="noopener"></a>';
       box.addEventListener('click', function(e){ if (e.target.tagName !== 'A') pair(); });
-      card.appendChild(box);
+      var __m=document.getElementById('visitHero')||card;if(__m&&getComputedStyle(__m).position==='static'){__m.style.position='relative';}__m.appendChild(box);
     }
     /* Pre-generate the pairing QR (reusing startPhoneMic). Retry until the live code exists. */
     var realQR = document.getElementById('phoneMicQR');
