@@ -464,3 +464,17 @@
     else start();
   } catch (e) { safe(start); }
 })();
+
+/* --- ADDITIVE LOADER (2026-07-01): recording backup module. Lives here because this file is
+   loaded on every page with a fresh cache-buster. The module itself is additive + reversible
+   (window.__mlsRecBackup.revert()); removing these lines fully retires it. --- */
+(function () {
+  try {
+    if (document.getElementById("mlsRecBackupLdr")) return;
+    var s = document.createElement("script");
+    s.id = "mlsRecBackupLdr";
+    s.src = "/feat_mls_record_backup.js?v=" + Date.now();
+    s.async = true;
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) {}
+})();
