@@ -273,10 +273,12 @@
     var now = Date.now();
     if (now - _lastRecoverOpen < DEBOUNCE_MS) return;
     _lastRecoverOpen = now;
-    // Best-effort: Part 1 has usually ALREADY opened the tab on the user's
-    // click that started this action; this async recovery path may be
-    // popup-blocked, which is fine - the honest line still renders.
-    try { openAthena(false); } catch (e) {}
+    /* FIX 2026-07-01: never auto-open a tab from this async recovery path. With several
+       athenaOne tabs open, a discarded/sleeping tab can make the load-time probe report a
+       brief disconnect, and doctors saw a surprise athena SIGN-IN tab pop up (the
+       "did it log me out?!" scare -- nobody was logged out). The honest prompt still
+       shows, and its "Reopen athenaOne" button opens the tab ON the user's click
+       (synchronous gesture -> never popup-blocked). */
     try { showPrompt(false); } catch (e) {}
   }
 
