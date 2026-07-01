@@ -504,6 +504,22 @@
       setPullStatus(detail || "athenaOne isn't connected yet \u2014 open your signed-in Day schedule, then pull.", false);
       return;
     }
+    /* FIX 2026-07-01: prefer the corrected importer (__mlsSI): it pulls the MODAL's day
+       (Tomorrow tab pulls TOMORROW, not always today), and reports the REAL import result
+       instead of guessing from a count-delta 1.8s later (the false "No new appointments"
+       message this modal used to show while the import was still POSTing). */
+    if (window.__mlsSI && typeof window.__mlsSI.pull === "function") {
+      var dk = null;
+      try {
+        if (typeof _modalScope === "string" && _modalScope.indexOf("date:") === 0) dk = _modalScope.slice(5);
+        else if (_modalScope === "tomorrow") { var _t = new Date(); _t.setDate(_t.getDate() + 1); dk = localDateStr(_t); }
+        else dk = localDateStr(new Date());
+      } catch (e) { dk = null; }
+      window.__mlsSI.pull({ date: dk, provider: (typeof _modalProvider !== "undefined" ? _modalProvider : ""), onStatus: function (m, k) { setPullStatus(m, k === "ok"); } })
+        .then(function () { paintModal(); })
+        .catch(function () { setPullStatus("Couldn't finish the import — open your athenaOne Day schedule and try again.", false); });
+      return;
+    }
     if (typeof window.pullScheduleViaAssist !== "function") { setPullStatus("Schedule pull is unavailable right now.", false); return; }
     setPullStatus("Reading your athenaOne Day schedule\u2026", false);
     var n0 = 0; try { n0 = (window._calAppts || []).length; } catch (e) {}
