@@ -95,6 +95,14 @@
     var box = F1.ownedBox; var tr = transcriptEl();
     if (!box || !tr) return;
     var v = txtval(box);
+    /* FIX 2026-07-01: MERGE dictation that landed in #transcript while the doctor was typing
+       in the box (the old code overwrote it -- spoken words were silently LOST). F1.lastT is
+       the last transcript text the box has seen; anything beyond it is the new spoken tail. */
+    var cur = txtval(tr);
+    if (F1.lastT != null && cur !== F1.lastT && cur.indexOf(F1.lastT) === 0) {
+      var tail = cur.slice(F1.lastT.length).replace(/^\s+/, '');
+      if (tail && v.indexOf(tail) === -1) { v = v.replace(/\s*$/, '') + ' ' + tail; safe(function () { box.value = v; }); }
+    }
     if (txtval(tr) !== v) {
       tr.value = v;
       safe(function () { tr.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -111,8 +119,11 @@
     if (!box || !tr) return;
     var tv = txtval(tr);
     if (tv === F1.lastT) return;            /* nothing new */
-    F1.lastT = tv;
+    /* FIX 2026-07-01: focus check must run BEFORE lastT advances -- otherwise dictation that
+       arrives while the doctor types is "consumed" without ever reaching the box, and the
+       next push overwrites it in #transcript. Leaving lastT put lets the push MERGE the tail. */
     if (document.activeElement === box) return; /* don't fight the typing caret */
+    F1.lastT = tv;
     if (txtval(box) !== tv) box.value = tv;
     safe(function () { window.__mlsProtoScratchText = txtval(box); });
   }
