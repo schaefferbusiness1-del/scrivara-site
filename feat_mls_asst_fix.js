@@ -85,7 +85,9 @@
    * ===================================================================== */
   var connOrig = null, connState = null, connSubs = [], connPoll = null,
       connFocusHandlers = [], connInstalled = false, connVis = null, connInFlight = null;
-  var PING_TIMEOUT_MS = 2500, SCHED_TIMEOUT_MS = 4000, POLL_MS = 4000;
+  /* FIX 2026-07-01: 4s was hammering the extension with a REAL schedule read every 4 seconds,
+     and (bridge has no request ids) those probe replies could cross with a user's pull. */
+  var PING_TIMEOUT_MS = 2500, SCHED_TIMEOUT_MS = 4000, POLL_MS = 30000;
 
   var COLOR = {
     "connected":    { color: "green", label: "athenaOne connected" },
@@ -159,6 +161,10 @@
 
   function connCheck() {
     if (connInFlight) return connInFlight;
+    /* FIX 2026-07-01: never fire a probe while a user pull is in flight -- the extension
+       bridge matches replies by TYPE only, so a probe's mlsAppScheduleResult could be taken
+       for the pull's (and vice versa). __mlsPullBusyAt is stamped by __mlsSI.pull(). */
+    if (Date.now() - (window.__mlsPullBusyAt || 0) < 45000) { return Promise.resolve(connState); }
     connInFlight = connRequest("mlsPing", "mlsPong", PING_TIMEOUT_MS).then(function (ping) {
       if (!ping.ok) { connInFlight = null; return connSetState("no-extension", "MLS Assist not detected -- load the extension and reload."); }
       return connRequest("mlsAppPullSchedule", "mlsAppScheduleResult", SCHED_TIMEOUT_MS).then(function (s) {
