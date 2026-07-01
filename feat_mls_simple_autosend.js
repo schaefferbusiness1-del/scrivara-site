@@ -40,7 +40,9 @@
   }
 
   function noteText() {
-    var ids = ['procNoteBody', 'noteBox', 'viewBody'];
+    /* FIX 2026-07-01: prefer the CLINICAL note; a leftover op-note draft in #procNoteBody
+       was hijacking the auto-send at Finish. */
+    var ids = ['noteBox', 'viewBody', 'procNoteBody'];
     for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) { var v = trim(el.value != null ? el.value : el.textContent); if (v) return { text: v, id: ids[i] }; } }
     return { text: '', id: '' };
   }
@@ -48,7 +50,9 @@
     t = String(t || '').toLowerCase();
     var hits = 0;
     ['informed consent', 'preoperative diagnos', 'postoperative diagnos', 'type of anesthesia', 'under anesthesia', 'sterile', 'injection was performed', 'description of procedure', 'fluorosc', 'epidural', 'medial branch'].forEach(function (s) { if (t.indexOf(s) >= 0) hits++; });
-    if (safe(function () { var p = document.getElementById('procNoteBody'); return p && trim(p.value != null ? p.value : p.textContent); }, '')) hits += 2;
+    /* FIX 2026-07-01: removed the blanket "+2 because #procNoteBody has any text" -- it routed
+       PLAIN clinical notes into the op-note template path whenever an old op-note draft
+       lingered. Classification now judges only the text actually being sent. */
     return hits >= 2;
   }
 
