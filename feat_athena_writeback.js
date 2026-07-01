@@ -427,6 +427,10 @@
     installed: true,
     version: VERSION,
     asset: ASSET,
+    /* FIX 2026-07-01: explicit safe recovery from a stuck 'running' latch (in addition to
+       the 3-minute auto-expiry). Clears only the in-page latch flag; it touches no note,
+       no patient data, and never talks to athenaOne. */
+    resetLatch: function () { try { running = false; runAt = 0; step('Write-back state was reset - you can send again.', 'warn'); } catch (e) {} return true; },
     writeNoteToChart: writeNoteToChart,   // the WRITE action (note -> open chart note field; never signs)
     _readChartIdentity: readChartIdentity, // read-only identity probe (testing/diagnostics)
     _currentNoteText: currentNoteText,
