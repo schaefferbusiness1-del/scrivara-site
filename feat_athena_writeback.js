@@ -55,7 +55,9 @@
   /* ---------- the note the doctor reviewed ---------- */
   function currentNoteText(explicit) {
     if (trim(explicit)) return String(explicit);
-    var ids = ['procNoteBody', 'noteBox', 'viewBody'];
+    /* FIX 2026-07-01: prefer the CLINICAL note -- a leftover op-note draft in #procNoteBody
+       was hijacking plain "write note to chart" clicks. Explicit notes still win outright. */
+    var ids = ['noteBox', 'viewBody', 'procNoteBody'];
     for (var i = 0; i < ids.length; i++) {
       var el = document.getElementById(ids[i]);
       if (el) {
@@ -107,6 +109,11 @@
   /* ---------- interactive action row (override / handoff), hosted in the §61 panel ---------- */
   function actionRow() {
     var p = tlPanel(); if (!p) return null;
+    /* FIX 2026-07-01: the MLS Assistant panel CSS-hides .mlsaa-tl (display:none !important).
+       When this row needs a HUMAN CLICK (mismatch override / Review & Sign), an invisible
+       row dead-locked writeback: buttons could never be clicked, 'running' stayed true, and
+       every later Send-to-Athena click silently no-oped. Inline !important re-shows it. */
+    try { p.style.setProperty('display', 'block', 'important'); } catch (e) {}
     var existing = p.querySelector('.mlswb-row'); if (existing) return existing;
     var row = document.createElement('div'); row.className = 'mlswb-row';
     var steps = p.querySelector('.mlsaa-steps');
@@ -291,10 +298,14 @@
   }
 
   /* ---------- entry point ---------- */
-  var running = false;
+  var running = false, runAt = 0;
   function writeNoteToChart(opts) {
     opts = opts || {};
-    if (running) return; running = true;
+    /* FIX 2026-07-01: self-healing latch -- if a previous run never called done() (e.g. an
+       override row the doctor never saw), the latch auto-expires after 3 minutes instead of
+       silently swallowing every future click until a page reload. */
+    if (running && (Date.now() - runAt) < 180000) { step('A write is already in progress — give it a moment (it un-jams itself after 3 min).', 'warn'); return; }
+    running = true; runAt = Date.now();
     var done = function () { running = false; };
     try {
       var note = currentNoteText(opts.note);
