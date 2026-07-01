@@ -189,7 +189,13 @@
           } else if (existing && a.dob && !existing.dob) { existing.dob = String(a.dob); safe(function () { window.upsertPatient(existing); }); }
 
           var startIso = null; if (/^\d\d:\d\d$/.test(nt)) startIso = wallToUtc(date, nt);
-          var body = { name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), patient_external_id: ext || null, appt_date: date, start_at: startIso };
+          /* FIX 2026-07-01: carry the per-appointment PROVIDER into storage. The extension
+             supplies it (a.provider e.g. "Matthew Schaeffer, MD") and the backend has a
+             provider column, but it was being dropped here -> every stored appt had provider
+             null -> doctor-scoped "Who's Next" excluded them (matchesDoctor returns false on
+             an empty provider) and showed a stale set instead. This is the "doctors assigned
+             to their correct patients" fix. */
+          var body = { name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), provider: String(a.provider || ""), patient_external_id: ext || null, appt_date: date, start_at: startIso };
           return safe(function () {
             return fetch(base + "/api/appointments", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body) })
               .then(function (r) { if (r.ok) { created++; days[date] = (days[date] || 0) + 1; } })
@@ -198,8 +204,34 @@
         });
       });
 
+      /* FIX 2026-07-01: build a name+date -> provider map from what we just imported, so we can
+         re-stamp provider onto the in-memory calendar AFTER loadCalendar (the backend may not
+         echo provider back on already-existing rows, and older rows were stored provider-null).
+         In-memory only -- never modifies a backend appointment record. */
+      var provByKey = {};
+      appts.forEach(function (a) {
+        var p = String(a.provider || "").trim(); if (!p) return;
+        var nm = String(a.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+        var dt = a._date || normDate(a.date) || target;
+        if (nm && dt) provByKey[nm + "|" + dt] = p;
+      });
+      function stampProviders() {
+        safe(function () {
+          var cal = window._calAppts; if (!Array.isArray(cal)) return;
+          for (var i = 0; i < cal.length; i++) {
+            var r = cal[i]; if (!r || (r.provider && String(r.provider).trim())) continue;
+            var nm = String(r.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+            var dt = r.appt_date || (r.start_at ? new Date(r.start_at).toISOString().slice(0, 10) : "");
+            var p = provByKey[nm + "|" + dt];
+            if (p) r.provider = p;
+          }
+        });
+      }
+
       return chain.then(function () {
         return Promise.resolve(safe(function () { return isFn(window.loadCalendar) ? window.loadCalendar() : null; })).then(function () {
+          stampProviders();
+          safe(function () { if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); });
           window._heroNowIdx = -1;
           var todayKey = estTodayKey();
           var todays = appts.filter(function (a) { return (a._date || normDate(a.date) || target) === todayKey && String(a.name || "").trim(); });
