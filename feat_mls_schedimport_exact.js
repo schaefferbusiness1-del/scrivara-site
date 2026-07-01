@@ -129,6 +129,19 @@
        date printed on the schedule page, then the requested/target day. This stops the old
        behaviour where every parsed row got one single fallback date (the whole week landing
        on today). */
+    /* FIX 2026-07-01: the structured extension read (lastResp.appts) always carries the
+       per-appointment provider ("Matthew Schaeffer, MD"), but the TEXT-parse path drops it.
+       Build a name -> provider map from that structured read so we can enrich every row below,
+       regardless of which parse path produced it. This is what makes doctor-scoping work. */
+    var respProv = {};
+    safe(function () {
+      var ra = (lastResp && lastResp.appts) || [];
+      ra.forEach(function (x) {
+        var nm = String((x && x.name) || "").trim().toLowerCase().replace(/\s+/g, " ");
+        var p = String((x && x.provider) || "").trim();
+        if (nm && p && !respProv[nm]) respProv[nm] = p;
+      });
+    });
     appts = appts.map(function (a) {
       var o = {}; for (var k in a) { if (a.hasOwnProperty(k)) o[k] = a[k]; }
       /* FIX 2026-07-01: the user's REQUESTED day (fallbackDay's first slot = opts.date) must
@@ -136,6 +149,10 @@
          July 4, 2026") made pageDate resolve to the wrong day, so day-scoped pulls filtered
          every row out ("patients land on July 4" / "0 imported"). Per-row dates still win. */
       o._date = normDate(a.date) || fallbackDay;
+      if (!String(o.provider || "").trim()) {
+        var _nm = String(o.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+        if (respProv[_nm]) o.provider = respProv[_nm];
+      }
       return o;
     });
     /* Day-scoped pull (Today / Tomorrow / a specific date): import ONLY that day's
@@ -232,10 +249,6 @@
         return Promise.resolve(safe(function () { return isFn(window.loadCalendar) ? window.loadCalendar() : null; })).then(function () {
           stampProviders();
           safe(function () { if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); });
-          /* FIX 2026-07-01: loadCalendar repopulates _calAppts asynchronously, so a single
-             stamp can run before the rows exist (or be overwritten). Re-stamp on short timers
-             so provider reliably lands regardless of loadCalendar's async timing. */
-          [700, 1800, 3500].forEach(function (ms) { setTimeout(function () { safe(function () { stampProviders(); if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); }); }, ms); });
           window._heroNowIdx = -1;
           var todayKey = estTodayKey();
           var todays = appts.filter(function (a) { return (a._date || normDate(a.date) || target) === todayKey && String(a.name || "").trim(); });
