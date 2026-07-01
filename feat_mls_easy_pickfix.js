@@ -317,6 +317,17 @@
   function advance() {
     if (_selIdx == null) { setHint("👆 Tap who you’re seeing first."); return; }
     var idx = _selIdx;
+    /* FIX 2026-07-01: re-verify the index still points at the SAME patient by name -- the
+       today-list can reorder between tap and advance (e.g. a pull finishing), and a stale
+       index would start the visit on the WRONG patient. Name match wins over raw index. */
+    safe(function () {
+      if (!_selName) return;
+      var g = gid("mlsProtoGrid"); if (!g) return;
+      var btns = [].slice.call(g.querySelectorAll("button"));
+      for (var i = 0; i < btns.length; i++) {
+        if (cardName(btns[i]) === _selName) { var ci = cardIndex(btns[i]); if (ci != null && ci !== idx) idx = ci; return; }
+      }
+    });
     // set the chosen patient active via the app's real path (also fills hero name)
     safe(function () { if (isFn(window._heroPickPatient)) window._heroPickPatient(idx); });
     // advance to record
