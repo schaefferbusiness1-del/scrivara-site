@@ -652,7 +652,9 @@
         SI.pull({ date: selDate, provider: selProvider, onStatus: function (msg, kind) { setPullStatus(msg, kind === "ok"); } })
           .then(function (res) {
             if (btn) btn.disabled = false;
-            try { var L = dayList(selDate, selProvider); wbMarkPulled(L.map(function (x) { return x.id; })); } catch (e) {}
+            /* FIX 2026-07-01: only stamp "pulled at" when the import actually created or
+               refreshed rows -- cards were claiming a pull that never happened. */
+            try { if (res && (res.created > 0 || res.skipped > 0)) { var L = dayList(selDate, selProvider); wbMarkPulled(L.map(function (x) { return x.id; })); } } catch (e) {}
             renderSchedule();
           })
           .catch(function () { if (btn) btn.disabled = false; setPullStatus("Couldn't finish the import - open your athenaOne Day schedule and try again.", false); });
