@@ -232,6 +232,10 @@
         return Promise.resolve(safe(function () { return isFn(window.loadCalendar) ? window.loadCalendar() : null; })).then(function () {
           stampProviders();
           safe(function () { if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); });
+          /* FIX 2026-07-01: loadCalendar repopulates _calAppts asynchronously, so a single
+             stamp can run before the rows exist (or be overwritten). Re-stamp on short timers
+             so provider reliably lands regardless of loadCalendar's async timing. */
+          [700, 1800, 3500].forEach(function (ms) { setTimeout(function () { safe(function () { stampProviders(); if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); }); }, ms); });
           window._heroNowIdx = -1;
           var todayKey = estTodayKey();
           var todays = appts.filter(function (a) { return (a._date || normDate(a.date) || target) === todayKey && String(a.name || "").trim(); });
