@@ -97,7 +97,10 @@
       for (var i = 0; i < a.length; i++) {
         var nm = String((a[i] && a[i].name) || "").trim();
         if (!nm) continue;
-        out.push({ name: nm, dob: "", date: "", time: normTime(a[i].time || ""), reason: "", provider: String(a[i].provider || "") });
+        /* FIX 2026-07-01: keep the DOB the extension already supplies (it was mapped to ""
+           here, so structured-read imports stored dob-less rows -- same dropped-field class
+           as the provider bug). */
+        out.push({ name: nm, dob: String(a[i].dob || ""), date: "", time: normTime(a[i].time || ""), reason: "", provider: String(a[i].provider || "") });
       }
       return out;
     }, []);
