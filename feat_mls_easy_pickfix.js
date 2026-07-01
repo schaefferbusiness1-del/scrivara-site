@@ -313,6 +313,41 @@
     claimStart();
   }
 
+  /* FIX 2026-07-01: _heroPickPatient fills the NAME but leaves the PREVIOUS patient's DOB
+     in #heroPtDob (seen live: auto-advance picked the 8:00 AM patient while the DOB field
+     kept the prior patient's DOB -- a wrong-patient-data risk at visit start). Wrap it so
+     the picked patient's REAL DOB (from the app's own records) is mirrored after every
+     pick; if the record has no DOB the field is cleared rather than left wrong. */
+  var _hppWrapT = null;
+  function wrapHeroPick() {
+    var f = window._heroPickPatient;
+    if (!isFn(f) || f.__ezpfDobSync) return !!(f && f.__ezpfDobSync);
+    var wrapped = function () {
+      var r = f.apply(this, arguments);
+      safe(function () {
+        var nameEl = gid("heroPtName"), dobEl = gid("heroPtDob");
+        if (!nameEl || !dobEl) return;
+        var nm = String(nameEl.value || "").trim().toLowerCase().replace(/\s+/g, " ");
+        if (!nm) return;
+        var pts = (isFn(window.getPatients) ? window.getPatients() : []) || [];
+        for (var i = 0; i < pts.length; i++) {
+          var p = pts[i];
+          if (String(p.name || "").trim().toLowerCase().replace(/\s+/g, " ") === nm) {
+            var d = String(p.dob || "");
+            if (dobEl.value !== d) { dobEl.value = d; safe(function () { dobEl.dispatchEvent(new Event("input", { bubbles: true })); dobEl.dispatchEvent(new Event("change", { bubbles: true })); }); }
+            return;
+          }
+        }
+      });
+      return r;
+    };
+    wrapped.__ezpfDobSync = true; wrapped.__orig = f;
+    window._heroPickPatient = wrapped;
+    return true;
+  }
+  _hppWrapT = setInterval(function () { if (wrapHeroPick() && _hppWrapT) { clearInterval(_hppWrapT); _hppWrapT = null; } }, 800);
+  safe(wrapHeroPick);
+
   // ---- advance to the record step for the selected patient + guarantee the textbox ----
   function advance() {
     if (_selIdx == null) { setHint("👆 Tap who you’re seeing first."); return; }
