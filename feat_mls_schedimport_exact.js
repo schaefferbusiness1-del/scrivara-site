@@ -131,7 +131,11 @@
        on today). */
     appts = appts.map(function (a) {
       var o = {}; for (var k in a) { if (a.hasOwnProperty(k)) o[k] = a[k]; }
-      o._date = normDate(a.date) || pageDate || fallbackDay;
+      /* FIX 2026-07-01: the user's REQUESTED day (fallbackDay's first slot = opts.date) must
+         outrank the date PRINTED on the athena page -- a week-range banner ("Week of June 28 -
+         July 4, 2026") made pageDate resolve to the wrong day, so day-scoped pulls filtered
+         every row out ("patients land on July 4" / "0 imported"). Per-row dates still win. */
+      o._date = normDate(a.date) || fallbackDay;
       return o;
     });
     /* Day-scoped pull (Today / Tomorrow / a specific date): import ONLY that day's
@@ -200,7 +204,7 @@
           var todayKey = estTodayKey();
           var todays = appts.filter(function (a) { return (a._date || normDate(a.date) || target) === todayKey && String(a.name || "").trim(); });
           safe(function () { if (isFn(window._renderTodayPatients)) window._renderTodayPatients(todays); });
-          safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.refresh)) window.__mlsPick.refresh(); });
+          safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.reapply)) window.__mlsPick.reapply(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
           return { created: created, skipped: skipped, days: days, target: target, scope: scopeDate || "" };
@@ -260,6 +264,9 @@
     opts = opts || {};
     var date = opts.date || estTodayKey();
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
+    /* FIX 2026-07-01: stamp "a user pull is in flight" so the connection prober pauses --
+       the extension bridge has no request ids, so probe replies and pull replies can cross. */
+    window.__mlsPullBusyAt = Date.now();
     if (!signedIn()) { onStatus("Sign in to import the schedule.", "err"); return Promise.resolve({ created: 0, reason: "signin" }); }
 
     onStatus("Looking for MLS Assist...", "");
@@ -281,7 +288,9 @@
             else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
             else onStatus("No patients scheduled for " + date + " in your open athenaOne tab. Open that day Day schedule (the patient grid) and pull again.", "err");
             /* also pull each patient's chart history in the background (non-blocking) */
-            safe(function () { if (isFn(window._pullAllHistories)) window._pullAllHistories(forced); });
+            /* FIX 2026-07-01: 'forced' was an undefined variable -- the ReferenceError was
+               swallowed by safe(), so chart histories were NEVER pulled after a day pull. */
+            safe(function () { if (isFn(window._pullAllHistories)) window._pullAllHistories(false); });
             return res;
           });
         });
