@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_provider_passthrough.js  ->  window.__mlsProv   (v1.0.0)   [item82]
+ * feat_mls_provider_passthrough.js  ->  window.__mlsProv   (v1.0.1)   [item82]
  *
  * COMPLETES THE PER-DOCTOR SCOPING CHAIN (prod fix).
  * Backend (scrivara-backend d9e9a0c/2592675, deployed + live-verified today):
@@ -28,7 +28,7 @@
 ;(function () {
   'use strict';
   try { if (window.__mlsProv && window.__mlsProv.installed) return; } catch (e) { return; }
-  var PR = { installed: true, v: '1.0.0', state: {}, _ivs: [], _nodes: [], _orig: {} };
+  var PR = { installed: true, v: '1.0.1', state: {}, _ivs: [], _nodes: [], _orig: {} };
   window.__mlsProv = PR;
 
   function $(id) { return document.getElementById(id); }
@@ -40,7 +40,10 @@
   function provKey() { try { return (typeof uns === 'function') ? uns('pullProvider') : 'pullProvider'; } catch (e) { return 'pullProvider'; } }
 
   function myName() {
-    try { if (window.bkUser && (bkUser.name || bkUser.full_name)) return String(bkUser.name || bkUser.full_name); } catch (e) {}
+    /* bkUser is a top-level let (not on window) - reference it bare, guarded */
+    try { if (typeof bkUser !== 'undefined' && bkUser && (bkUser.name || bkUser.full_name || bkUser.display_name)) return String(bkUser.name || bkUser.full_name || bkUser.display_name); } catch (e) {}
+    try { var r = (window._calProviders || [])[0]; if (r && r.name) return String(r.name); } catch (e) {}
+    try { var m = String((document.querySelector('header') || document.body).innerText || '').match(/Dr\.?\s+([A-Z][A-Za-z.\s]{2,40})/); if (m) return m[1].trim().split('\n')[0]; } catch (e) {}
     return '';
   }
   function rosterNames() {
@@ -108,12 +111,18 @@
   }
   function mountChip() {
     if ($('mlsProvChip')) { paintChip(); return; }
-    var pb = document.querySelector('button[onclick^="pullScheduleViaAssist"]');
-    if (!pb || !pb.parentElement) return;
+    /* anchor chain: pull button -> pull status line -> fixed bottom-left */
+    var anchor = document.querySelector('button[onclick^="pullScheduleViaAssist"]');
+    var mode = 'after';
+    if (!anchor) { anchor = $('heroPullStatus'); }
+    var fixed = false;
+    if (!anchor) { anchor = document.body; fixed = true; }
+    if (!anchor) return;
     var chip = document.createElement('span');
     chip.id = 'mlsProvChip';
+    if (fixed) chip.style.cssText = 'position:fixed;left:18px;bottom:18px;z-index:99995;background:linear-gradient(135deg,#0d3c78,#2168c9);border:0';
     chip.addEventListener('click', function (e) { e.stopPropagation(); buildMenu(chip); });
-    pb.insertAdjacentElement('afterend', chip);
+    if (fixed) anchor.appendChild(chip); else anchor.insertAdjacentElement('afterend', chip);
     remember(chip);
     paintChip();
   }
