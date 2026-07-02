@@ -5066,3 +5066,5 @@
     }
   };
 })();
+
+;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701fp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- pull progress panel + any-day pull clarity, op-prep procedure autodetect (removes "No procedure entered yet"), note model gpt-5o with honest fallback cascade, today-button blink cap, agenda chip primary + full label, day/week honest fallback list, Find-anything Pro (screens+menus+templates+patients), formatted note preview in text boxes, op-note fill-in-the-blanks restore. Revert: window.__mlsFixpack.revert() */
