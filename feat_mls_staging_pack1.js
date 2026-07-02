@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_staging_pack1.js  ->  window.__mlsPack1   (v1.0.0)   [item80 STAGING]
+ * feat_mls_staging_pack1.js  ->  window.__mlsPack1   (v1.0.1)   [item80]
  *
  * Three NEW features, staging-first (Michael picks what promotes to prod):
  *
@@ -32,7 +32,7 @@
 ;(function () {
   'use strict';
   try { if (window.__mlsPack1 && window.__mlsPack1.installed) return; } catch (e) { return; }
-  var P = { installed: true, v: '1.0.0', feats: {}, _ivs: [], _nodes: [], _orig: {} };
+  var P = { installed: true, v: '1.0.1', feats: {}, _ivs: [], _nodes: [], _orig: {} };
   window.__mlsPack1 = P;
 
   function $(id) { return document.getElementById(id); }
@@ -382,12 +382,17 @@
     function closeTunnel() { var ov = tunEl(); if (ov) ov.style.display = 'none'; }
     function mountTunnelLaunch() {
       if ($('mlsP1TunnelLaunch')) return;
+      /* v1.0.1: resilient anchor chain - show-more row, else the schedule date row, else a fixed launcher */
+      var row = null, fixed = false;
       var host = findBtnByText(/show more/i);
-      var row = host ? host.parentElement : null;
+      if (host) row = host.parentElement;
+      if (!row) { var di = document.querySelector('input[type="date"]'); if (di && di.offsetParent) row = di.parentElement; }
+      if (!row) { row = document.body; fixed = true; }
       if (!row) return;
       var b = document.createElement('button');
-      b.id = 'mlsP1TunnelLaunch'; b.type = 'button'; b.textContent = '🎯 Simple mode (tunnel)';
+      b.id = 'mlsP1TunnelLaunch'; b.type = 'button'; b.textContent = '\uD83C\uDFAF Simple mode (tunnel)';
       b.title = 'One thing at a time: Who -> Talk -> Generate -> Review -> Finish';
+      if (fixed) b.style.cssText = 'position:fixed;right:18px;bottom:128px;z-index:99995;border:0;border-radius:11px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;background:#10b981;color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.4)';
       b.onclick = function () { tun = { step: 0, name: '', dob: '' }; paintTunnel(); };
       row.appendChild(b); remember(b);
     }
