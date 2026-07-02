@@ -478,3 +478,16 @@
     (document.head || document.documentElement).appendChild(s);
   } catch (e) {}
 })();
+
+/* --- ADDITIVE LOADER (2026-07-01): UX pack 1 (pull progress, day-view fix, template tools,
+   agenda chip; window.__mlsUxPack1.revert() reverses it). --- */
+(function () {
+  try {
+    if (document.getElementById("mlsUxPack1Ldr")) return;
+    var s = document.createElement("script");
+    s.id = "mlsUxPack1Ldr";
+    s.src = "/feat_mls_uxpack1.js?v=" + Date.now();
+    s.async = true;
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) {}
+})();
