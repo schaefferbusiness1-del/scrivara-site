@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_fixpack_0701.js  ->  window.__mlsFixpack   (v1.0.0)   [item79]
+ * feat_mls_fixpack_0701.js  ->  window.__mlsFixpack   (v1.0.1)   [item79]
  *
  * PROD FIX-PACK (July 1, 2026) - nine additive, independently-guarded fixes
  * to things Michael is actively hitting on live. Each sub-fix is wrapped in
@@ -51,7 +51,7 @@
   'use strict';
   try { if (window.__mlsFixpack && window.__mlsFixpack.installed) return; } catch (e) { return; }
 
-  var FP = { installed: true, v: '1.0.0', fixes: {}, _obs: [], _ivs: [], _orig: {}, _nodes: [] };
+  var FP = { installed: true, v: '1.0.1', fixes: {}, _obs: [], _ivs: [], _orig: {}, _nodes: [] };
   window.__mlsFixpack = FP;
 
   function $(id) { return document.getElementById(id); }
@@ -320,6 +320,16 @@
   try {
     var MODELS = ['gpt-5o', 'gpt-5', 'gpt-5-mini', 'gpt-4o', 'gpt-4o-mini'];
     function modelKey() { try { return (typeof uns === 'function') ? uns('noteModel') : 'noteModel'; } catch (e) { return 'noteModel'; } }
+    /* one-time migration: stored legacy 4-series defaults move to gpt-5o (Michael's ask);
+       runs once, so a deliberate later choice in Settings is respected forever after. */
+    try {
+      var MIG = 'mlsFpModelMig1';
+      if (!localStorage.getItem(MIG)) {
+        var curM = localStorage.getItem(modelKey());
+        if (!curM || curM === 'gpt-4o' || curM === 'gpt-4o-mini') localStorage.setItem(modelKey(), 'gpt-5o');
+        localStorage.setItem(MIG, '1');
+      }
+    } catch (e) {}
     if (typeof window.getNoteModel === 'function' && !window.getNoteModel.__fpWrap) {
       FP._orig.getNoteModel = window.getNoteModel;
       var gnm = function () {
