@@ -340,10 +340,19 @@
       const r = await fetch('https://mlsscribe.com/extension-version.json?t=' + Date.now());
       const d = await r.json();
       if (d && d.version && mlsVerCmp(d.version, cur) > 0) {
-        const url = d.url || 'https://mlsscribe.com/assist.html';
+        // v1.42 fix #5: the version + url come from a fetched JSON, so treat them as untrusted.
+        // Only accept an https mlsscribe.com download URL, and build the banner from DOM nodes
+        // (no innerHTML) so a tampered feed can't inject markup or a javascript: link.
+        let url = 'https://mlsscribe.com/assist.html';
+        try { const uu = new URL(d.url); if (uu.protocol === 'https:' && (uu.hostname === 'mlsscribe.com' || uu.hostname === 'www.mlsscribe.com' || uu.hostname.endsWith('.mlsscribe.com'))) url = uu.href; } catch (e) {}
+        const safeVer = String(d.version).replace(/[^0-9.]/g, '').slice(0, 20);
         const bn = document.createElement('div');
         bn.style.cssText = 'background:#fff7e6;border:1px solid #f0d9a0;border-radius:8px;padding:8px 10px;margin:0 0 8px;font-size:12.5px;color:#8a5a00';
-        bn.innerHTML = '\u{1F504} <b>Update available</b> (v' + String(d.version).replace(/[<>&"]/g, '') + '). <a href="' + url + '" target="_blank" style="color:#1f7ae0;font-weight:700">Download</a>, then reload it at chrome://extensions.';
+        bn.appendChild(document.createTextNode('\u{1F504} '));
+        const bEl = document.createElement('b'); bEl.textContent = 'Update available'; bn.appendChild(bEl);
+        bn.appendChild(document.createTextNode(' (v' + safeVer + '). '));
+        const aEl = document.createElement('a'); aEl.textContent = 'Download'; aEl.setAttribute('href', url); aEl.setAttribute('target', '_blank'); aEl.setAttribute('rel', 'noopener noreferrer'); aEl.style.cssText = 'color:#1f7ae0;font-weight:700'; bn.appendChild(aEl);
+        bn.appendChild(document.createTextNode(', then reload it at chrome://extensions.'));
         const body = panel.querySelector('.body'); if (body) body.insertBefore(bn, body.firstChild);
         log('A newer version of MLS Assist is available.');
       }
@@ -354,7 +363,7 @@
     if (open) { log('Panel opened — capture is active.'); checkForUpdate(); }
   });
   $('.x').addEventListener('click', () => { panel.classList.remove('open'); stopRec(); });
-  chrome.runtime.onMessage.addListener((m, s, send) => { if (m && m.type === 'mlsOpenPanel') { panel.classList.add('open'); log('Opened MLS Assist from the toolbar.'); try { send && send({ ok: true }); } catch (e) {} } return true; });
+  chrome.runtime.onMessage.addListener((m, s, send) => { if (m && m.type === 'mlsOpenPanel') { panel.classList.add('open'); log('Opened MLS Assist from the toolbar.'); try { send && send({ ok: true }); } catch (e) {} return true; } return false; /* v1.42 fix #7: only hold the message port for messages we actually answer, so other messages don't error with "port closed before a response". */ });
 
   // --- live dictation (Web Speech API) ---
   let rec = null, recing = false;
@@ -364,17 +373,44 @@
   function startRec() {
     if (!SR) return;
     rec = new SR(); rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
-    let base = tx.value;
+    // v1.42 fix #1: append dictation to the CURRENT field value on every final result,
+    // so anything the doctor types while dictating is never overwritten.
     rec.onresult = (e) => {
       let finalTxt = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) finalTxt += e.results[i][0].transcript + ' ';
       }
-      if (finalTxt) { base += (base && !/\s$/.test(base) ? ' ' : '') + finalTxt.trim() + ' '; tx.value = base; }
+      if (finalTxt) {
+        const cur = tx.value;
+        tx.value = cur + (cur && !/\s$/.test(cur) ? ' ' : '') + finalTxt.trim() + ' ';
+        try { tx.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {}
+      }
     };
-    rec.onerror = (e) => log('Dictation: ' + (e.error || 'error'));
-    rec.onend = () => { if (recing) { try { rec.start(); } catch (e) {} } };
-    try { rec.start(); recing = true; recBtn.textContent = '⏹ Stop'; badge.classList.add('active'); log('Dictation started.'); } catch (e) { log('Could not start mic.'); }
+    // v1.42 fix #4: only flip to the recording state once capture ACTUALLY starts.
+    rec.onstart = () => { if (recing) { recBtn.textContent = '⏹ Stop'; badge.classList.add('active'); } };
+    rec.onerror = (e) => {
+      const err = (e && e.error) || 'error';
+      log('Dictation: ' + err);
+      // Permission / capture failures mean nothing is recording — clear the fake "recording" state.
+      if (err === 'not-allowed' || err === 'service-not-allowed' || err === 'audio-capture') {
+        recing = false; recBtn.textContent = '🎙 Dictate'; badge.classList.remove('active');
+      }
+    };
+    // v1.42 fix #2: Web Speech ends itself periodically; restart to stay continuous, but if the
+    // restart fails, say so honestly instead of leaving a live "Stop" button over a dead mic.
+    rec.onend = () => {
+      if (!recing) return;
+      setTimeout(() => {
+        if (!recing) return;
+        try { rec.start(); }
+        catch (err) {
+          recing = false; recBtn.textContent = '🎙 Dictate'; badge.classList.remove('active');
+          log('Dictation stopped unexpectedly — tap 🎙 Dictate to resume.');
+        }
+      }, 250);
+    };
+    try { recing = true; recBtn.textContent = '… starting'; rec.start(); log('Dictation started.'); }
+    catch (e) { recing = false; recBtn.textContent = '🎙 Dictate'; badge.classList.remove('active'); log('Could not start mic.'); }
   }
   function stopRec() {
     recing = false; if (rec) { try { rec.stop(); } catch (e) {} } recBtn.textContent = '🎙 Dictate'; badge.classList.remove('active');
@@ -925,7 +961,9 @@
     return false;
   }
   function post(origin, type, payload) {
-    try { var o = {}; for (var k in payload) o[k] = payload[k]; o.source = 'mls-ext'; o.type = type; window.postMessage(o, origin || '*'); } catch (e) {}
+    // v1.42 fix #6: never fall back to '*' — only reply to the specific trusted origin.
+    if (!origin || typeof origin !== 'string' || !trusted(origin)) return;
+    try { var o = {}; for (var k in payload) o[k] = payload[k]; o.source = 'mls-ext'; o.type = type; window.postMessage(o, origin); } catch (e) {}
   }
   window.addEventListener('message', function (ev) {
     var d = ev && ev.data;

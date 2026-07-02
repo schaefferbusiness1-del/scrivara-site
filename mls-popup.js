@@ -143,7 +143,7 @@
         else { setState('recording'); narrate('Say something or type a note first.', 'warn'); }
       });
     }
-    function setTypedNotes(t) { st.typedNotes = t || ''; render(); }
+    function setTypedNotes(t, silent) { st.typedNotes = t || ''; if (!silent) render(); } /* v1.42 fix #3: allow a silent update so typing in the overlay note box doesn't trigger a full re-render (which was stealing focus on every keystroke). */
     function hasContent() {
       return (st.transcript && st.transcript.trim().length > 0) ||
              (st.typedNotes && st.typedNotes.trim().length > 0);
@@ -394,7 +394,7 @@
           body.appendChild(el('h2', 'mlsp-title', s.patient ? s.patient.name : 'Patient ready'));
           body.appendChild(el('p', 'mlsp-sub', (s.visitCount || 0) + ' visit(s) on file'));
           var notes1 = el('textarea', 'mlsp-notes'); notes1.placeholder = 'Type a note (optional)…';
-          notes1.value = s.typedNotes; notes1.addEventListener('input', function (e) { core.setTypedNotes(e.target.value); });
+          notes1.value = s.typedNotes; notes1.addEventListener('input', function (e) { core.setTypedNotes(e.target.value, true); }); /* v1.42 fix #3: silent update — keep focus while typing */
           body.appendChild(notes1);
           body.appendChild(bigBtn('🎙  Record', 'primary', function () { core.startRecording(); }));
           var skip = el('button', 'mlsp-btn secondary', 'Skip recording → type a note');
