@@ -1,3 +1,27 @@
+/* feat_canon_provider — set the ONE canonical scheduling provider so doctor-scoping works everywhere.
+   The account login is "Michael Schaeffer" but the real athenaOne scheduling provider (and the doctor)
+   is "Matthew Schaeffer, MD" (confirmed by Michael 2026-07-03). The mismatch made "my patients"
+   filtering silently no-op. This forces getProviderName() + the stored identity keys to the real name.
+   Additive, reversible. */
+(function(){
+  "use strict";
+  if(window.__mlsCanonProvider) return; window.__mlsCanonProvider=true;
+  var CANON="Matthew Schaeffer, MD";
+  function fixKeys(){
+    try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i);
+      if(/::docname$|::pullProvider$|::providerName$|::providerDisplayName$/.test(k)){
+        var v=localStorage.getItem(k);
+        if(v==="Michael Schaeffer"||v===""||v==null) localStorage.setItem(k,CANON);
+      }
+    } }catch(e){}
+  }
+  function canon(){ return CANON; }
+  function apply(){ try{ if(window.getProviderName!==canon) window.getProviderName=canon; }catch(e){} }
+  fixKeys(); apply();
+  setInterval(apply, 4000);
+})();
+
+
 /* feat_pull_progress — clear, prominent progress indicator for the athenaOne pull so it's obvious
    the pull is actually running (the schedule scrape can take 20-60s across all providers).
    Shows a fixed top banner with a spinner the moment a pull is triggered, and switches to a
