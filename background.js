@@ -1078,6 +1078,27 @@ async function mlsSchedDomInline(doc, CFG){
     var provSet={},provOrder=[],credSet={};
     function np(p){p=cp(p);if(p&&/[A-Za-z]/.test(p)&&p.length<=60&&!provSet[p.toLowerCase()]){provSet[p.toLowerCase()]=1;provOrder.push(p);}if(p){var cm=p.match(RC);if(cm&&cm[1])credSet[cm[1].toUpperCase()]=1;}return p;}
     if(!doc||!doc.querySelectorAll)return out;
+    // === v1.48 STRUCTURE STRATEGY (athenaOne): appts are .PatientAppointment_appointment-container
+    // buttons (UNIQUE id) inside per-provider .ScheduleColumn_schedule-column sections. Dedup by button id
+    // (scroll-invariant); assign provider via the appt's ancestor column SECTION matched to its header by
+    // the SECTION's x-center. Far more reliable than per-cell coordinate bucketing on the virtualized grid. ===
+    try{
+      if(doc.querySelector && doc.querySelector('[class*="PatientAppointment_appointment-container"], [class*="ScheduleColumn_schedule-column"]')){
+        function _sleepS(ms){return new Promise(function(r){setTimeout(r,ms);});}
+        var _prS=(CFG&&CFG.provReSource)?new RegExp(CFG.provReSource):/^[A-Z][A-Za-z'’.\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD|CRNP)\b/;
+        var _prCS=/([A-Z][A-Za-z'’.\-]+_[A-Za-z][A-Za-z'’.\-]*_(?:MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD|CRNP))\b/;
+        function _nmS(t){t=cl(t);var m=t.match(/,\s*([A-Z][A-Za-z'’.\-]+(?:\s+[A-Z][A-Za-z'’.\-]*)?)\s*(?:\(|$)/);if(m)return cl(m[1]);var m2=t.match(/([A-Z][A-Za-z'’-]+)\s*,\s*([A-Z][A-Za-z'’-]+)/);if(m2)return cl(m2[0]);return '';}
+        function _hdrsS(){var hs=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _prS.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});var o=[],sn={};hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var mm=cl(e.textContent).match(_prCS);if(mm){var nm=mm[1];if(!sn[nm]){sn[nm]=1;o.push({nm:nm,cx:r.left+r.width/2});}}}}catch(_e){}});return o;}
+        var _byIdS={};
+        function _collectS(){var hdr=_hdrsS();[].slice.call(doc.querySelectorAll('[class*="ScheduleColumn_schedule-column"]')).forEach(function(col){var r;try{r=col.getBoundingClientRect();}catch(_e){return;}if(r.width<40)return;var ccx=r.left+r.width/2,best='',bd=1e9;hdr.forEach(function(h){var dd=Math.abs(ccx-h.cx);if(dd<bd){bd=dd;best=h.nm;}});var prov=(best&&bd<r.width)?best:'';[].slice.call(col.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).forEach(function(b){var id=b.id||cl(b.textContent);if(_byIdS[id])return;var t=cl(b.textContent);_byIdS[id]={prov:prov,time:ft(t),name:_nmS(t)};});});}
+        var _scS=null,_allS=[].slice.call(doc.querySelectorAll('*')),_dvS=(doc.defaultView||window);
+        for(var _si=0;_si<_allS.length;_si++){try{var _csS=_dvS.getComputedStyle(_allS[_si]);if(/(auto|scroll)/.test(_csS.overflowX)&&_allS[_si].scrollWidth>_allS[_si].clientWidth+50&&_allS[_si].clientWidth>300){if(!_scS||_allS[_si].scrollWidth>_scS.scrollWidth)_scS=_allS[_si];}}catch(_e){}}
+        if(_scS){var _frS=(CFG&&CFG.scrollStepFrac)||0.45,_wmS=(CFG&&CFG.scrollWaitMs)||820;var _spS=Math.max(160,Math.round(_scS.clientWidth*_frS));var _ogS=_scS.scrollLeft;for(var _xS=0;_xS<=_scS.scrollWidth;_xS+=_spS){_scS.scrollLeft=_xS;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));await _sleepS(_wmS);_collectS();}_scS.scrollLeft=0;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));await _sleepS(400);_collectS();_scS.scrollLeft=_ogS;}else{_collectS();}
+        try{var _dhS=doc.querySelector((CFG&&CFG.dateHdrSel)||'h1.fe_c_heading--subsection');if(_dhS){var _dS=new Date(cl(_dhS.textContent).replace(/^[A-Za-z]+,\s*/,''));if(!isNaN(_dS.getTime())){var _p2S=function(n){n=String(n);return n.length<2?'0'+n:n;};out.schedDate=_dS.getFullYear()+'-'+_p2S(_dS.getMonth()+1)+'-'+_p2S(_dS.getDate());}}}catch(_e){}
+        var _idsS=Object.keys(_byIdS);
+        if(_idsS.length){var _upS={};_idsS.forEach(function(id){var a=_byIdS[id];out.appts.push({time:a.time,name:a.name,provider:a.prov||''});if(a.prov)_upS[a.prov]=1;});out.providers=Object.keys(_upS);out.diag.via='structure-id';out.diag.strategy='structure-id';out.diag.apptCount=out.appts.length;out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice(0,20);if(out.appts.length)return out;}
+      }
+    }catch(_seS){out.diag.structErr=String(_seS&&_seS.message||_seS).slice(0,100);}
     // === v1.46 COORD STRATEGY (scroll-scrape): athenaOne Day grid VIRTUALIZES columns — only appts
     // in the visible viewport are in the DOM. So scroll the grid horizontally in steps and at each
     // step read the currently-visible provider headers + appt cells, bucketing each appt to the

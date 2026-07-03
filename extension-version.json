@@ -1,5 +1,5 @@
 {
-  "version": "1.47",
+  "version": "1.48",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.47 — (1) All-providers scrape: fires a scroll event + waits so athenaOne's virtualized day grid renders every provider's column before reading (fixes only 2-4 doctors coming through). (2) NEW auto-navigate: if the schedule grid isn't showing when you Pull, it opens athenaOne's Calendar menu and clicks the day view (e.g. Today's Appointments), then pulls — read-only navigation with a hard deny-list on any write/sign/bill/book control. Selectors, nav labels, and scroll timing are all tunable from the hosted config with no reinstall."
+  "notes": "v1.48 — RELIABLE all-providers pull. New structure-based scrape: reads athenaOne appointments by their unique appointment IDs inside each provider's schedule column (instead of guessing by screen position), so it dedupes perfectly and assigns every appointment to the correct doctor even on a busy, scrolled day grid. Falls back to the previous method if the layout differs. Also keeps v1.47 auto-navigate (now targets 'View Calendar') + config-tunable selectors."
 }
