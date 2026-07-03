@@ -1,5 +1,5 @@
 {
-  "version": "1.45",
+  "version": "1.46",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.45 — the schedule pull now captures ALL providers on the athenaOne Day view (coordinate-based reader), cleans provider names, and reads the schedule date. NEW: config-driven — the extension fetches its Athena selectors from mlsscribe.com/mls-assist-config.json, so future Athena changes can be fixed on the site without a Chrome Web Store update. Falls back to built-in defaults if the config is unavailable. Installable: MLS_Assist_v1.45.zip."
+  "notes": "v1.46 — schedule pull now SCROLLS across the whole athenaOne day grid to capture EVERY provider's appointments (fixes the 'only 2-3 doctors' bug caused by Athena virtualizing off-screen columns). Keeps v1.45 config-driven selectors + clean names + schedule-date capture. Falls back to the single-view read if no scroller is found."
 }

@@ -1002,12 +1002,12 @@ var mlsProv = (function () {
           results = await chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             args: [ (__mlsCfg && (__mlsCfg.schedule || __mlsCfg)) || null ],
-            func: (CFG) => { try { /* inject_dom.js — SELF-CONTAINED DOM schedule/provider reader.
+            func: async (CFG) => { try { /* inject_dom.js — SELF-CONTAINED DOM schedule/provider reader.
  * This exact function body is inlined into MLS Assist background.js's executeScript
  * `func` so it runs INSIDE the athenaOne schedule frame. It must reference nothing
  * outside itself. Returns { appts:[{time,name,provider}], providers:[...], diag:{} }.
  * Read-only; PHI (patient names) stays in the user's browser; diag is PHI-free. */
-function mlsSchedDomInline(doc, CFG){
+async function mlsSchedDomInline(doc, CFG){
   var out={appts:[],providers:[],diag:{strategy:'dom',via:'',tables:0,rowsScanned:0,apptCount:0,providerCount:0,providerNames:[],credsSeen:[]}};
   try{
     var RT=/\b(\d{1,2}):(\d{2})\s*([ap]\.?\s?m\.?)?\b/i, RTG=/\b\d{1,2}:\d{2}\s*(?:[ap]\.?\s?m\.?)?\b/gi;
@@ -1025,28 +1025,48 @@ function mlsSchedDomInline(doc, CFG){
     var provSet={},provOrder=[],credSet={};
     function np(p){p=cp(p);if(p&&/[A-Za-z]/.test(p)&&p.length<=60&&!provSet[p.toLowerCase()]){provSet[p.toLowerCase()]=1;provOrder.push(p);}if(p){var cm=p.match(RC);if(cm&&cm[1])credSet[cm[1].toUpperCase()]=1;}return p;}
     if(!doc||!doc.querySelectorAll)return out;
-    // === v1.44 COORD STRATEGY: athenaOne Day view is an absolute-positioned React grid (not a
-    // table); appointments are placed by x-coordinate. Bucket each appt to the provider column
-    // whose x-range contains it — captures ALL providers, incl. columns scrolled off-screen
-    // (still in DOM). Also reads the Day date header. Falls through to the old strategies if this
-    // isn't that kind of grid. ===
+    // === v1.46 COORD STRATEGY (scroll-scrape): athenaOne Day grid VIRTUALIZES columns — only appts
+    // in the visible viewport are in the DOM. So scroll the grid horizontally in steps and at each
+    // step read the currently-visible provider headers + appt cells, bucketing each appt to the
+    // column whose x-range contains it. Dedupe across steps by provider|time|name. Captures ALL
+    // providers. Falls through to the old strategies if this isn't that kind of grid. ===
     try{
       function mlsPad2(n){n=String(n);return n.length<2?('0'+n):n;}
       function mlsParseDate(s){try{var d=new Date(String(s).replace(/^[A-Za-z]+,\s*/,''));if(!isNaN(d.getTime()))return d.getFullYear()+'-'+mlsPad2(d.getMonth()+1)+'-'+mlsPad2(d.getDate());}catch(e){}return '';}
+      function mlsSleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
       var _dh=doc.querySelector((CFG&&CFG.dateHdrSel)||'h1.fe_c_heading--subsection');
       if(!_dh){var _hs=[].slice.call(doc.querySelectorAll('h1,h2,[class*="heading"],[class*="date"]'));for(var _i=0;_i<_hs.length;_i++){var _t0=cl(_hs[_i].textContent);if(/^[A-Z][a-z]+day,\s+[A-Z][a-z]+\s+\d{1,2},\s+20\d\d/.test(_t0)){_dh=_hs[_i];break;}}}
       if(_dh)out.schedDate=mlsParseDate(cl(_dh.textContent));
       var _provRe=(CFG&&CFG.provReSource)?new RegExp(CFG.provReSource):/^[A-Z][A-Za-z'’.\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD)\b/;
-      var _heads=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _provRe.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});
-      var _cols=[],_seenC={};
-      _heads.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520&&r.top<560){var nm=cp(cl(e.textContent));var key=Math.round(r.left/8);if(nm&&!_seenC[key]){_seenC[key]=1;_cols.push({name:nm,lo:r.left,rr:r.right});}}}catch(_e){}});
-      _cols.sort(function(a,b){return a.lo-b.lo;});
-      if(_cols.length>=2){
-        for(var _c=0;_c<_cols.length;_c++){var _nx=(_c+1<_cols.length)?_cols[_c+1].lo:(_cols[_c].rr+(_cols[_c].rr-_cols[_c].lo));_cols[_c].hi=(_cols[_c].rr<_nx)?_nx:_cols[_c].rr;}
-        var _cells=[].slice.call(doc.querySelectorAll('div,li,a')).filter(function(e){var t=cl(e.textContent);return ht(t)&&t.length>10&&t.length<140&&pn(t)&&e.querySelectorAll('*').length<=8;});
+      function _headCols(){
+        var hs=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _provRe.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});
+        var cols=[],seen={};
+        hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var nm=cp(cl(e.textContent));var key=nm.toLowerCase();if(nm&&!seen[key]){seen[key]=1;cols.push({name:nm,lo:r.left,rr:r.right});}}}catch(_e){}});
+        cols.sort(function(a,b){return a.lo-b.lo;});
+        for(var c=0;c<cols.length;c++){var nx=(c+1<cols.length)?cols[c+1].lo:(cols[c].rr+(cols[c].rr-cols[c].lo));cols[c].hi=(cols[c].rr<nx)?nx:cols[c].rr;}
+        return cols;
+      }
+      var _cols0=_headCols();
+      if(_cols0.length>=2){
+        var _scroller=null,_all=[].slice.call(doc.querySelectorAll('*')),_dv=(doc.defaultView||window);
+        for(var _s=0;_s<_all.length;_s++){try{var _cs=_dv.getComputedStyle(_all[_s]);if(/(auto|scroll)/.test(_cs.overflowX)&&_all[_s].scrollWidth>_all[_s].clientWidth+50&&_all[_s].clientWidth>300){if(!_scroller||_all[_s].scrollWidth>_scroller.scrollWidth)_scroller=_all[_s];}}catch(_e){}}
         var _seenA={};
-        _cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';for(var _k=0;_k<_cols.length;_k++){if(cx>=_cols[_k].lo-6&&cx<_cols[_k].hi){prov=_cols[_k].name;break;}}var key=Math.round(r.left/6)+'|'+Math.round(r.top/6);if(_seenA[key])return;_seenA[key]=1;out.appts.push({time:ft(t),name:cl(nm),provider:prov||''});}catch(_e){}});
-        if(out.appts.length){var _u={};out.appts.forEach(function(a){if(a.provider)_u[a.provider]=1;});out.providers=_cols.map(function(c){return c.name;}).filter(function(n){return _u[n];});if(!out.providers.length)out.providers=_cols.map(function(c){return c.name;});out.diag.via='coord';out.diag.strategy='coord';out.diag.apptCount=out.appts.length;out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice(0,20);return out;}
+        function _collect(){
+          var cols=_headCols();
+          var cells=[].slice.call(doc.querySelectorAll('div,li,a')).filter(function(e){var t=cl(e.textContent);return ht(t)&&t.length>10&&t.length<140&&pn(t)&&e.querySelectorAll('*').length<=8;});
+          cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}var tm=ft(t);var key=(prov||'')+'|'+tm+'|'+nm;if(_seenA[key])return;_seenA[key]=1;out.appts.push({time:tm,name:cl(nm),provider:prov||''});}catch(_e){}});
+        }
+        if(_scroller){
+          var _steps=Math.min(20,Math.ceil(_scroller.scrollWidth/Math.max(200,_scroller.clientWidth))+1);
+          var _orig=_scroller.scrollLeft;
+          for(var _st=0;_st<_steps;_st++){try{_scroller.scrollLeft=_st*_scroller.clientWidth;}catch(_e){}await mlsSleep(360);_collect();}
+          try{_scroller.scrollLeft=_orig;}catch(_e){}
+        } else { _collect(); }
+        var _u={};out.appts.forEach(function(a){if(a.provider)_u[a.provider]=1;});
+        out.providers=_cols0.map(function(c){return c.name;}).filter(function(n){return _u[n];});
+        if(!out.providers.length)out.providers=_cols0.map(function(c){return c.name;});
+        out.diag.via='coord-scroll';out.diag.strategy='coord-scroll';out.diag.apptCount=out.appts.length;out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice(0,20);out.diag.scrolled=!!_scroller;
+        if(out.appts.length) return out;
       }
     }catch(_ce){out.diag.coordErr=String(_ce&&_ce.message||_ce).slice(0,100);}
     var grids=[].slice.call(doc.querySelectorAll('table, [role="grid"], [role="table"]'));
@@ -1077,7 +1097,7 @@ function mlsSchedDomInline(doc, CFG){
   }catch(e){out.diag.err=String(e&&e.message||e).slice(0,120);}
   return out;
 }
- var T = (document.body && document.body.innerText || '').slice(0, 22000); var s = null; try { s = mlsSchedDomInline(document, CFG); } catch (e) { s = { diag: { err: String(e && e.message || e).slice(0,120) } }; } return { u: location.href, t: T, s: s }; } catch (e) { return { u: '', t: '', s: null }; } }
+ var T = (document.body && document.body.innerText || '').slice(0, 22000); var s = null; try { s = await mlsSchedDomInline(document, CFG); } catch (e) { s = { diag: { err: String(e && e.message || e).slice(0,120) } }; } return { u: location.href, t: T, s: s }; } catch (e) { return { u: '', t: '', s: null }; } }
           });
         } catch (e) {
           results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 22000), s: null }) });
