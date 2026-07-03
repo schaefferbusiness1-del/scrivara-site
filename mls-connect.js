@@ -1,3 +1,71 @@
+/* feat_patient_picker — quick patient picker. Turns the existing #ptSearch box into a
+   real autocomplete over EVERY patient the app has pulled (window._calAppts, ~600+), not just
+   today's. Type a name or DOB and pick from a dropdown; selecting fills the search box + DOB and
+   fires the app's own input/Enter so its native selectPatient() flow resolves it. Purely ADDITIVE
+   and non-invasive — it only types into the existing box like a human would, so it cannot corrupt
+   patient selection. Reversible (guard + removable dropdown; reload restores). */
+(function(){
+  "use strict";
+  if(window.__mlsPatientPicker) return; window.__mlsPatientPicker=true;
+  function patients(){
+    var a=window._calAppts||[]; var m={};
+    a.forEach(function(r){
+      var k=r.patient_external_id||((r.name||'')+'|'+(r.dob||'')); if(!k||!r.name) return;
+      var cur=m[k];
+      if(!cur){ m[k]={name:r.name, dob:r.dob||'', last:r.appt_date||'', visits:1, reason:r.reason||''}; }
+      else { cur.visits++; if((r.appt_date||'')>cur.last) cur.last=r.appt_date||''; if(!cur.dob&&r.dob) cur.dob=r.dob; }
+    });
+    return Object.keys(m).map(function(k){ return m[k]; });
+  }
+  var ALL=null;
+  function ensure(){ if(!ALL||!ALL.length) ALL=patients(); return ALL; }
+  function build(){
+    var ps=document.getElementById('ptSearch'); if(!ps) return false;
+    if(ps.__mlsPick) return true; ps.__mlsPick=1;
+    var host=ps.parentElement; if(getComputedStyle(host).position==='static') host.style.position='relative';
+    var dd=document.createElement('div'); dd.id='mls-pick-dd';
+    dd.style.cssText='position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:2147481000;background:#0f1530;border:1px solid rgba(120,140,220,.35);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);max-height:320px;overflow:auto;display:none;color:#e8ecff;font:13px system-ui,-apple-system,"Segoe UI",sans-serif';
+    host.appendChild(dd);
+    function hide(){ dd.style.display='none'; }
+    function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+    function render(q){
+      var list=ensure(); q=(q||'').trim().toLowerCase();
+      var rows = !q ? list.slice() : list.filter(function(p){ return (p.name||'').toLowerCase().indexOf(q)>=0 || (p.dob||'').toLowerCase().indexOf(q)>=0; });
+      rows.sort(function(a,b){ return (b.last||'').localeCompare(a.last||''); });
+      rows=rows.slice(0,14);
+      if(!rows.length){ dd.innerHTML='<div style="padding:12px 14px;opacity:.6">No pulled patient matches — the app will search normally.</div>'; dd.style.display='block'; return; }
+      dd.innerHTML='<div style="padding:7px 14px;font-size:11px;opacity:.55;border-bottom:1px solid rgba(120,140,220,.15)">'+list.length+' pulled patients · pick one</div>'+rows.map(function(p,i){
+        return '<div class="mls-pick-row" data-i="'+i+'" style="padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(120,140,220,.08)">'
+          +'<div><div style="font-weight:700">'+esc(p.name)+'</div><div style="font-size:11px;opacity:.6">'+(p.dob?('DOB '+esc(p.dob)):'DOB —')+(p.reason?(' · '+esc(p.reason)):'')+'</div></div>'
+          +'<div style="font-size:11px;opacity:.55;text-align:right">'+(p.last||'')+'<br>'+p.visits+' visit'+(p.visits>1?'s':'')+'</div></div>';
+      }).join('');
+      dd.style.display='block';
+      Array.prototype.forEach.call(dd.querySelectorAll('.mls-pick-row'),function(el){
+        el.onmouseenter=function(){ el.style.background='rgba(120,150,240,.15)'; };
+        el.onmouseleave=function(){ el.style.background='transparent'; };
+        el.onmousedown=function(ev){ ev.preventDefault(); var p=rows[+el.getAttribute('data-i')]; choose(p); };
+      });
+    }
+    function choose(p){
+      if(!p) return;
+      var dob=document.getElementById('ikDob');
+      if(dob && !dob.value && p.dob){dob.value=p.dob; dob.dispatchEvent(new Event('input',{bubbles:true})); dob.dispatchEvent(new Event('change',{bubbles:true})); }
+      ps.value=p.name;
+      ps.dispatchEvent(new Event('input',{bubbles:true}));
+      ps.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
+      ps.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
+      hide();
+    }
+    ps.addEventListener('focus',function(){ ALL=patients(); render(ps.value); });
+    ps.addEventListener('input',function(){ render(ps.value); });
+    ps.addEventListener('keydown',function(e){ if(e.key==='Escape') hide(); });
+    document.addEventListener('mousedown',function(e){ if(e.target!==ps && !dd.contains(e.target)) hide(); });
+    return true;
+  }
+  if(!build()){ var n=0, iv=setInterval(function(){ if(build()||++n>40) clearInterval(iv); }, 1000); }
+})();
+
+
 /* feat_mls_easy_wizard — turns MLS Easy's step tracker into a GUIDED, one-thing-at-a-time flow that
    leads the doctor through the visit and connects into the three boxes (Capture the visit ->
    Clinical note -> EMR fields), with Record wired in. Inspired by the guided flows doctors praise
