@@ -1,3 +1,41 @@
+/* feat_today_noblink — kill the distracting blink/pulse on the "Today" buttons (Michael: it's
+   annoying). Cosmetic, additive, reversible. Forces no CSS animation on the Today buttons and
+   strips any blink/pulse/flash/attention class or inline animation the app toggles when the
+   view is off "today". Debounced observer + a slow interval keep it enforced without churn. */
+(function(){"use strict";
+  if(window.__mlsNoTodayBlink)return; window.__mlsNoTodayBlink=true;
+  var CSS_SEL=".cx-todaybtn,.as-daybtn,.cx-navbtn.today,button.today,.today-btn";
+  var CLS_TEST=/\b(blink|pulse|flash|glow|throb|attention|alert|cblink|ezpulse|nudge|highlight)\b/i;
+  var CLS_REPL=/\b(blink|pulse|flash|glow|throb|attention|alert|cblink|ezpulse|nudge|highlight)\b/gi;
+  function isToday(e){try{return (e.textContent||"").replace(/\s+/g," ").trim()==="Today";}catch(_){return false;}}
+  function targets(){
+    var out=[];
+    try{[].slice.call(document.querySelectorAll(CSS_SEL)).forEach(function(e){out.push(e);});}catch(_){}
+    try{[].slice.call(document.querySelectorAll("button,[role=button]")).forEach(function(e){if(isToday(e))out.push(e);});}catch(_){}
+    return out;
+  }
+  try{
+    var st=document.getElementById("mls-no-today-blink")||document.createElement("style");
+    st.id="mls-no-today-blink";
+    st.textContent=CSS_SEL+"{animation:none !important;}"+CSS_SEL+"::before,"+CSS_SEL+"::after{animation:none !important;}";
+    (document.head||document.documentElement).appendChild(st);
+  }catch(e){}
+  function scrub(){
+    targets().forEach(function(e){
+      try{
+        if(typeof e.className==="string" && CLS_TEST.test(e.className)){ e.className=e.className.replace(CLS_REPL," ").replace(/\s+/g," ").trim(); }
+        if(e.style){ if(e.style.animation) e.style.animation="none"; if(e.style.animationName) e.style.animationName="none"; }
+      }catch(_){}
+    });
+  }
+  var pending=false;
+  function schedule(){ if(pending)return; pending=true; (window.requestAnimationFrame||setTimeout)(function(){pending=false; scrub();}); }
+  scrub();
+  try{ new MutationObserver(schedule).observe(document.documentElement,{subtree:true,attributes:true,attributeFilter:["class","style"],childList:true}); }catch(e){}
+  setInterval(scrub, 1500);
+})();
+
+
 
 /* ===== feat_pull_date_fix (inlined) ===== */
 /* feat_pull_date_fix — make pulled Athena appointments land on the DAY THEY WERE PULLED FOR, not
