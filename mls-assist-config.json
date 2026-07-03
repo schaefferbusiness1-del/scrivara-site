@@ -1,14 +1,14 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "schedule": {
     "dateHdrSel": "h1.fe_c_heading--subsection",
-    "provReSource": "^[A-Z][A-Za-z'’.\\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD)\\b",
+    "provReSource": "^[A-Z][A-Za-z'’.\\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD|CRNP)\\b",
     "scrollStepFrac": 0.55,
     "scrollWaitMs": 780
   },
   "nav": {
     "directLabels": ["calendar", "schedule", "scheduling", "day sheet", "front office"],
-    "subLabels": ["today's appointments", "view calendar", "provider schedule", "daily schedule", "today's schedule", "staff calendar", "department calendar", "schedule", "appointments"]
+    "subLabels": ["view calendar", "staff calendar", "department calendar", "provider schedule", "daily schedule", "today's schedule"]
   },
-  "navWaitMs": 3500
+  "navWaitMs": 4000
 }
