@@ -1,3 +1,67 @@
+/* feat_pull_month_btn — "Pull whole month" button (item: pull entire month). Sends the v1.49
+   mlsAppPullMonth bridge message to the extension, which walks athenaOne's View Calendar backward
+   day-by-day and scrapes each day (all doctors). Aggregates the returned appointments into the
+   app's calendar cache (window._calAppts, deduped) so the Days-worked / monthly report can use a
+   full month. Shows a progress banner. Additive, read-only to Athena. */
+(function(){
+  "use strict";
+  if(window.__mlsPullMonthBtn) return; window.__mlsPullMonthBtn=true;
+  function banner(txt, spin){
+    var b=document.getElementById('mls-month-progress');
+    if(!b){ b=document.createElement('div'); b.id='mls-month-progress';
+      b.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#0f172a;color:#fff;padding:12px 18px;border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.4);font:600 14px system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;gap:12px;max-width:92vw';
+      (document.body||document.documentElement).appendChild(b);
+      if(!document.getElementById('mls-mp-kf')){var st=document.createElement('style');st.id='mls-mp-kf';st.textContent='@keyframes mlsmpspin{to{transform:rotate(360deg)}}';document.head.appendChild(st);} }
+    b.innerHTML=(spin?'<span style="width:16px;height:16px;border:3px solid rgba(255,255,255,.3);border-top-color:#38bdf8;border-radius:50%;display:inline-block;animation:mlsmpspin .8s linear infinite"></span>':'✓ ')+'<span>'+txt+'</span>';
+    b.style.display='flex'; return b;
+  }
+  function pad2(n){n=String(n);return n.length<2?'0'+n:n;}
+  var running=false;
+  function pullMonth(){
+    if(running) return; running=true;
+    banner('Pulling the whole month from athenaOne — keep athenaOne open on View Calendar. This walks each day and can take a few minutes…', true);
+    var done=false;
+    function onMsg(e){
+      try{
+        var d=e.data; if(!d||d.source!=='mls-ext'||d.type!=='mlsAppPullMonthResult') return;
+        window.removeEventListener('message', onMsg); done=true; running=false;
+        var resp=d.resp||{};
+        if(!resp.ok){ banner('Month pull couldn’t read athenaOne — make sure it’s on Calendar ‣ View Calendar, then try again.', false); setTimeout(function(){var b=document.getElementById('mls-month-progress');if(b)b.style.display='none';},6000); return; }
+        var appts=resp.appts||[];
+        try{
+          var arr=window._calAppts||(window._calAppts=[]);
+          var seen={}; arr.forEach(function(a){ if(a) seen[(a.provider||'')+'|'+(a.appt_date||'')+'|'+(a.time||'')+'|'+(a.name||'')]=1; });
+          var added=0;
+          appts.forEach(function(a){ var k=(a.provider||'')+'|'+(a.appt_date||'')+'|'+(a.time||'')+'|'+(a.name||''); if(!seen[k]){ seen[k]=1; arr.push({provider:a.provider,appt_date:a.appt_date,time:a.time,name:a.name,start_at:(a.appt_date&&a.time)?a.appt_date:'',end_at:''}); added++; } });
+          try{ if(typeof window.renderWhosNext==='function') window.renderWhosNext(); }catch(_){}
+          banner('✓ Pulled '+appts.length+' appointments across '+(resp.daysPulled||0)+' days ('+added+' new). Days-worked/report now has the month.', false);
+        }catch(err){ banner('Month pull finished ('+appts.length+' appointments).', false); }
+        setTimeout(function(){var b=document.getElementById('mls-month-progress');if(b)b.style.display='none';},8000);
+      }catch(err){}
+    }
+    window.addEventListener('message', onMsg);
+    try{ window.postMessage({source:'mls-app', type:'mlsAppPullMonth', days:31}, location.origin); }catch(e){}
+    setTimeout(function(){ if(!done){ window.removeEventListener('message', onMsg); running=false; banner('Month pull timed out — athenaOne may have been busy. Try again with View Calendar open.', false); setTimeout(function(){var b=document.getElementById('mls-month-progress');if(b)b.style.display='none';},6000);} }, 600000);
+  }
+  function addBtn(){
+    if(document.getElementById('mls-pull-month-btn')) return true;
+    // anchor: the "Pull today's patients" quick action card's container
+    var anchor=null;
+    var spans=[].slice.call(document.querySelectorAll('span,div'));
+    for(var i=0;i<spans.length;i++){ var t=(spans[i].textContent||'').replace(/\s+/g,' ').trim(); if(/^Pull today's patients/i.test(t)&&t.length<40){ anchor=spans[i].closest('[class*=card],[class*=action],div'); break; } }
+    if(!anchor||!anchor.parentNode) return false;
+    var btn=document.createElement('button'); btn.id='mls-pull-month-btn'; btn.type='button';
+    btn.textContent='📅 Pull whole month';
+    btn.title='Walks athenaOne day-by-day and pulls the full month (for days-worked / reports). Keep athenaOne on View Calendar.';
+    btn.style.cssText='display:block;width:100%;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(120,120,180,.4);background:rgba(120,120,200,.12);color:inherit;font:600 13px system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer';
+    btn.addEventListener('click', pullMonth);
+    anchor.parentNode.insertBefore(btn, anchor.nextSibling);
+    return true;
+  }
+  if(!addBtn()){ var n=0; var iv=setInterval(function(){ if(addBtn()||++n>40) clearInterval(iv); }, 1200); }
+})();
+
+
 /* feat_opnote_quality — improve operative/procedure note generation (items 8/9/11). Wraps the app's
    global aiCallRaw() and, ONLY for operative-note prompts, appends a quality directive: follow the
    chosen template structure exactly, include real medication/solution names + concentrations +
