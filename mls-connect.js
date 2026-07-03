@@ -1,3 +1,20 @@
+/* ===== feat: MLS active-patient prominence + hide snapshot (2026-07-02) — make the selected patient's name at the top big/obvious with an ACTIVE PATIENT indicator; hide the confusing snapshot button. Additive+reversible: window.__mlsApName.revert() ===== */
+(function(){
+  'use strict';
+  if (window.__mlsApName) return;
+  var st = document.createElement('style');
+  st.id = 'mls-ap-name-css';
+  st.textContent =
+    '.mlsctx-id{align-items:flex-start!important;}'+
+    '.mlsctx-idtext{display:flex!important;flex-direction:column!important;font-size:20px!important;font-weight:800!important;line-height:1.15!important;color:#0d3c78!important;}'+
+    '.mlsctx-idtext::before{content:"● ACTIVE PATIENT";display:block!important;font-size:9.5px!important;font-weight:800!important;letter-spacing:.6px!important;color:#127a55!important;text-transform:uppercase!important;margin-bottom:2px!important;}'+
+    '.mlsctx-meta{font-size:12px!important;font-weight:600!important;color:#5b7186!important;}'+
+    '#mlsCtxApptChip{font-size:12px!important;font-weight:700!important;margin-top:1px!important;}'+
+    '#mlsSnapshotBtn{display:none!important;}';
+  (document.head||document.documentElement).appendChild(st);
+  window.__mlsApName = { revert: function(){ try{ st.remove(); }catch(e){} window.__mlsApName=null; } };
+})();
+
 /* ===== feat: MLS fab-layout fix (2026-07-02) — un-overlap bottom-right floating buttons (Add patient, Voice, MLS Agent) into a clean right-edge stack; MLS Agent gets its own clear home. Additive+reversible: window.__mlsFabLayout.revert() ===== */
 (function(){
   'use strict';
