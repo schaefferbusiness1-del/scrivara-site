@@ -1,3 +1,58 @@
+/* feat_mls_easy_wizard — turns MLS Easy's step tracker into a GUIDED, one-thing-at-a-time flow that
+   leads the doctor through the visit and connects into the three boxes (Capture the visit ->
+   Clinical note -> EMR fields), with Record wired in. Inspired by the guided flows doctors praise
+   (Abridge / Freed / DAX). ADDITIVE + REVERSIBLE: it enhances the existing tracker
+   (Patient -> Visit captured -> Note ready -> Ready to sign). Clicking a step (or Next) scrolls to
+   and spotlights the matching section and advances the flow. Keys off the app's own `button.mlsstp`
+   step buttons so it never touches separators or unrelated page chrome. A reload restores the app. */
+(function(){
+  "use strict";
+  if(window.__mlsEasyWizard) return; window.__mlsEasyWizard=true;
+  var STEPS=[
+    { find:function(){ return byHeading('Capture the visit')&&document.getElementById('phoneRecBtn') ? document.getElementById('phoneRecBtn').closest('[class*=card],section,div')||document.getElementById('phoneRecBtn') : (document.getElementById('mlsEasyPanel')||byHeading('Capture the visit')); },
+      hint:'Pick or confirm the patient, then hit ● Record to capture the visit.', next:'Capture the visit' },
+    { find:function(){ return byHeading('Capture the visit')||document.getElementById('mls-tx'); },
+      hint:'Record or paste the visit. When you stop, the clinical note generates.', next:'Review the note' },
+    { find:function(){ return byHeading('Clinical note')||document.getElementById('mls-note'); },
+      hint:'Review the AI note. Edit anything before it goes in the chart.', next:'Push to chart' },
+    { find:function(){ return byHeading('EMR')||byText(['Insert into chart','⤵ Insert into chart']); },
+      hint:'Push the note + EMR fields into the chart, then sign.', next:'Done' }
+  ];
+  function byHeading(txt){ var els=document.querySelectorAll('h1,h2,h3,h4,div,span,section,label'); for(var i=0;i<els.length;i++){var t=(els[i].textContent||'').replace(/\s+/g,' ').trim(); if(t.indexOf(txt)===0&&t.length<80&&els[i].children.length<=4){ return els[i].closest('[class*=card],section,div')||els[i]; } } return null; }
+  function byText(arr){ var els=document.querySelectorAll('div,span,button,section,label'); for(var i=0;i<els.length;i++){var t=(els[i].textContent||'').replace(/\s+/g,' ').trim(); for(var j=0;j<arr.length;j++){ if(t.indexOf(arr[j])===0&&t.length<80){ return els[i].closest('[class*=card],section,div')||els[i]; } } } return null; }
+  function stepBtns(){ var b=document.querySelectorAll('button.mlsstp'); if(b.length>=4) return Array.prototype.slice.call(b).slice(0,4); return null; }
+  var cur=0;
+  function spotlight(el){ if(!el) return; document.querySelectorAll('.mls-wiz-spot').forEach(function(e){ e.classList.remove('mls-wiz-spot'); }); el.classList.add('mls-wiz-spot'); try{ el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){ try{el.scrollIntoView();}catch(_){}} }
+  function go(i){
+    cur=Math.max(0,Math.min(STEPS.length-1,i));
+    var target=null; try{ target=STEPS[cur].find(); }catch(e){}
+    spotlight(target);
+    var nb=document.getElementById('mls-wiz-next'); if(nb){ nb.textContent=(cur<STEPS.length-1?('Next: '+STEPS[cur].next+' →'):'Finish ✓'); }
+    var hp=document.getElementById('mls-wiz-hint'); if(hp){ hp.textContent='Step '+(cur+1)+' of 4 — '+STEPS[cur].hint; }
+    var btns=stepBtns(); if(btns){ for(var c=0;c<btns.length;c++){ btns[c].style.transition='all .15s'; btns[c].style.opacity=(c===cur?'1':'.6'); btns[c].style.transform=(c===cur?'translateY(-1px)':'none'); } }
+  }
+  function build(){
+    if(document.getElementById('mls-wiz-bar')) return true;
+    var btns=stepBtns(); if(!btns) return false;
+    var container=btns[0].parentElement; if(!container) return false;
+    for(var c=0;c<btns.length;c++){ (function(ci){ var ch=btns[ci]; ch.style.cursor='pointer'; if(!ch.__mlsWiz){ ch.__mlsWiz=1; ch.addEventListener('click', function(){ go(ci); }, false); } })(c); }
+    var bar=document.createElement('div'); bar.id='mls-wiz-bar';
+    bar.style.cssText='display:flex;align-items:center;gap:12px;margin:10px 4px 4px;padding:10px 14px;border-radius:12px;background:rgba(96,120,224,.10);border:1px solid rgba(96,120,224,.30);flex-wrap:wrap';
+    var hint=document.createElement('span'); hint.id='mls-wiz-hint'; hint.style.cssText='font:600 13px system-ui,-apple-system,"Segoe UI",sans-serif;opacity:.92;flex:1;min-width:210px';
+    var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:8px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer';
+    back.addEventListener('click', function(){ go(cur-1); });
+    var next=document.createElement('button'); next.id='mls-wiz-next'; next.type='button'; next.style.cssText='padding:8px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer';
+    next.addEventListener('click', function(){ if(cur<STEPS.length-1) go(cur+1); else spotlight(STEPS[3].find()); });
+    bar.appendChild(hint); bar.appendChild(back); bar.appendChild(next);
+    (container.parentNode||container).insertBefore(bar, container.nextSibling);
+    if(!document.getElementById('mls-wiz-css')){ var st=document.createElement('style'); st.id='mls-wiz-css'; st.textContent='.mls-wiz-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important;transition:outline .2s,box-shadow .2s}'; document.head.appendChild(st); }
+    go(0);
+    return true;
+  }
+  if(!build()){ var n=0; var iv=setInterval(function(){ if(build()||++n>40) clearInterval(iv); }, 1200); }
+})();
+
+
 /* feat_mls_easy_wizard — turn MLS Easy's flow into a GUIDED step-by-step wizard that leads the
    doctor through the visit and connects into the three boxes (Capture the visit -> Clinical note ->
    EMR fields), with Record wired in. Inspired by the guided, one-thing-at-a-time flows doctors
