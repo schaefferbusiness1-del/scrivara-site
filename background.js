@@ -995,16 +995,19 @@ var mlsProv = (function () {
         const isRealAthena = /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(tab.url || '');
         // Read every frame WITH its URL so we can isolate the SCHEDULE/CALENDAR frame and
         // drop the noise (athenaText messaging, department lists) that would pollute parsing.
+        // v1.45: fetch hosted config (data, not code) so selectors are tunable via the site w/o a store update.
+        var __mlsCfg = null; try { var __cr = await fetch('https://mlsscribe.com/mls-assist-config.json?cb=' + Date.now()); if (__cr.ok) { __mlsCfg = await __cr.json(); } } catch (e) { __mlsCfg = null; }
         let results = [];
         try {
           results = await chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
-            func: () => { try { /* inject_dom.js — SELF-CONTAINED DOM schedule/provider reader.
+            args: [ (__mlsCfg && (__mlsCfg.schedule || __mlsCfg)) || null ],
+            func: (CFG) => { try { /* inject_dom.js — SELF-CONTAINED DOM schedule/provider reader.
  * This exact function body is inlined into MLS Assist background.js's executeScript
  * `func` so it runs INSIDE the athenaOne schedule frame. It must reference nothing
  * outside itself. Returns { appts:[{time,name,provider}], providers:[...], diag:{} }.
  * Read-only; PHI (patient names) stays in the user's browser; diag is PHI-free. */
-function mlsSchedDomInline(doc){
+function mlsSchedDomInline(doc, CFG){
   var out={appts:[],providers:[],diag:{strategy:'dom',via:'',tables:0,rowsScanned:0,apptCount:0,providerCount:0,providerNames:[],credsSeen:[]}};
   try{
     var RT=/\b(\d{1,2}):(\d{2})\s*([ap]\.?\s?m\.?)?\b/i, RTG=/\b\d{1,2}:\d{2}\s*(?:[ap]\.?\s?m\.?)?\b/gi;
@@ -1015,13 +1018,37 @@ function mlsSchedDomInline(doc){
     function cl(s){return String(s==null?'':s).replace(/\s+/g,' ').trim();}
     function ht(s){return RT.test(String(s));}
     function ft(s){var m=String(s).match(RTG);return m?cl(m[0]):'';}
-    function cp(s){var t=cl(s);t=t.replace(/[•‣▪●>*\-–—]+\s*$/g,'');t=t.replace(/[-–—:|(]*\s*\d+\s*appointments?\b.*$/i,'');t=t.replace(/\b\d+\s*appointments?\b/i,'');t=t.replace(/\(\s*\d+\s*\)\s*$/,'');t=t.replace(/[\s,;:|–—-]+$/,'');return cl(t);}
+    function cp(s){var t=cl(s);t=t.replace(/[•‣▪●>*\-–—]+\s*$/g,'');t=t.replace(/[-–—:|(]*\s*\d+\s*appointments?\b.*$/i,'');t=t.replace(/\b\d+\s*appointments?\b/i,'');t=t.replace(/\(\s*\d+\s*\)\s*$/,'');t=t.replace(/[\s,;:|–—-]+$/,'');t=t.replace(/\s*[Cc]lose\s*$/,'');return cl(t);}
     function lh(line){var t=cl(line);if(!t||t.length>80)return false;if(ht(t))return false;var hc=RC.test(t),ha=RA.test(t),hn=RN.test(t)||/[A-Z][a-z]+[ _][A-Z][a-z]+/.test(t);if((hc&&hn)||(ha&&hn))return true;if(hc&&RN.test(t)&&t.split(/\s+/).length<=5)return true;return false;}
     function pn(line){var t=cl(line);var mc=t.match(RN);if(mc)return cl(mc[0]);var af=t.replace(RTG,' ');var ws=af.split(/\s+/).filter(function(w){return /[A-Za-z]/.test(w);});var pk=[];for(var i=0;i<ws.length&&pk.length<3;i++){var w=ws[i].replace(/[^A-Za-z'’-]/g,'');if(!w)continue;if(STOP.test(w)||CI.test(w.toLowerCase())){if(pk.length)break;else continue;}if(/^[A-Z]/.test(w))pk.push(w);else if(pk.length)break;}return pk.join(' ');}
     function tx(el){try{return cl(el.textContent);}catch(e){return '';}}
     var provSet={},provOrder=[],credSet={};
     function np(p){p=cp(p);if(p&&/[A-Za-z]/.test(p)&&p.length<=60&&!provSet[p.toLowerCase()]){provSet[p.toLowerCase()]=1;provOrder.push(p);}if(p){var cm=p.match(RC);if(cm&&cm[1])credSet[cm[1].toUpperCase()]=1;}return p;}
     if(!doc||!doc.querySelectorAll)return out;
+    // === v1.44 COORD STRATEGY: athenaOne Day view is an absolute-positioned React grid (not a
+    // table); appointments are placed by x-coordinate. Bucket each appt to the provider column
+    // whose x-range contains it — captures ALL providers, incl. columns scrolled off-screen
+    // (still in DOM). Also reads the Day date header. Falls through to the old strategies if this
+    // isn't that kind of grid. ===
+    try{
+      function mlsPad2(n){n=String(n);return n.length<2?('0'+n):n;}
+      function mlsParseDate(s){try{var d=new Date(String(s).replace(/^[A-Za-z]+,\s*/,''));if(!isNaN(d.getTime()))return d.getFullYear()+'-'+mlsPad2(d.getMonth()+1)+'-'+mlsPad2(d.getDate());}catch(e){}return '';}
+      var _dh=doc.querySelector((CFG&&CFG.dateHdrSel)||'h1.fe_c_heading--subsection');
+      if(!_dh){var _hs=[].slice.call(doc.querySelectorAll('h1,h2,[class*="heading"],[class*="date"]'));for(var _i=0;_i<_hs.length;_i++){var _t0=cl(_hs[_i].textContent);if(/^[A-Z][a-z]+day,\s+[A-Z][a-z]+\s+\d{1,2},\s+20\d\d/.test(_t0)){_dh=_hs[_i];break;}}}
+      if(_dh)out.schedDate=mlsParseDate(cl(_dh.textContent));
+      var _provRe=(CFG&&CFG.provReSource)?new RegExp(CFG.provReSource):/^[A-Z][A-Za-z'’.\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD)\b/;
+      var _heads=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _provRe.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});
+      var _cols=[],_seenC={};
+      _heads.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520&&r.top<560){var nm=cp(cl(e.textContent));var key=Math.round(r.left/8);if(nm&&!_seenC[key]){_seenC[key]=1;_cols.push({name:nm,lo:r.left,rr:r.right});}}}catch(_e){}});
+      _cols.sort(function(a,b){return a.lo-b.lo;});
+      if(_cols.length>=2){
+        for(var _c=0;_c<_cols.length;_c++){var _nx=(_c+1<_cols.length)?_cols[_c+1].lo:(_cols[_c].rr+(_cols[_c].rr-_cols[_c].lo));_cols[_c].hi=(_cols[_c].rr<_nx)?_nx:_cols[_c].rr;}
+        var _cells=[].slice.call(doc.querySelectorAll('div,li,a')).filter(function(e){var t=cl(e.textContent);return ht(t)&&t.length>10&&t.length<140&&pn(t)&&e.querySelectorAll('*').length<=8;});
+        var _seenA={};
+        _cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';for(var _k=0;_k<_cols.length;_k++){if(cx>=_cols[_k].lo-6&&cx<_cols[_k].hi){prov=_cols[_k].name;break;}}var key=Math.round(r.left/6)+'|'+Math.round(r.top/6);if(_seenA[key])return;_seenA[key]=1;out.appts.push({time:ft(t),name:cl(nm),provider:prov||''});}catch(_e){}});
+        if(out.appts.length){var _u={};out.appts.forEach(function(a){if(a.provider)_u[a.provider]=1;});out.providers=_cols.map(function(c){return c.name;}).filter(function(n){return _u[n];});if(!out.providers.length)out.providers=_cols.map(function(c){return c.name;});out.diag.via='coord';out.diag.strategy='coord';out.diag.apptCount=out.appts.length;out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice(0,20);return out;}
+      }
+    }catch(_ce){out.diag.coordErr=String(_ce&&_ce.message||_ce).slice(0,100);}
     var grids=[].slice.call(doc.querySelectorAll('table, [role="grid"], [role="table"]'));
     out.diag.tables=grids.length;
     for(var g=0;g<grids.length&&!out.appts.length;g++){
@@ -1050,7 +1077,7 @@ function mlsSchedDomInline(doc){
   }catch(e){out.diag.err=String(e&&e.message||e).slice(0,120);}
   return out;
 }
- var T = (document.body && document.body.innerText || '').slice(0, 22000); var s = null; try { s = mlsSchedDomInline(document); } catch (e) { s = { diag: { err: String(e && e.message || e).slice(0,120) } }; } return { u: location.href, t: T, s: s }; } catch (e) { return { u: '', t: '', s: null }; } }
+ var T = (document.body && document.body.innerText || '').slice(0, 22000); var s = null; try { s = mlsSchedDomInline(document, CFG); } catch (e) { s = { diag: { err: String(e && e.message || e).slice(0,120) } }; } return { u: location.href, t: T, s: s }; } catch (e) { return { u: '', t: '', s: null }; } }
           });
         } catch (e) {
           results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 22000), s: null }) });
@@ -1074,7 +1101,7 @@ function mlsSchedDomInline(doc){
         frames.forEach((f) => { const s = scoreSched(f); if (s > best) { best = s; pick = f; } });
         pick = pick || { u: tab.url, t: '' };
         // Include the page title so the parser can anchor the date range of a multi-day view.
-        var __mlsTS = (typeof mlsProv!=='undefined') ? mlsProv.fromText((pick && pick.t) || '') : {appts:[],providers:[],diag:{}}; var __mlsM = (typeof mlsProv!=='undefined') ? mlsProv.merge(pick && pick.s, __mlsTS) : {appts:[],providers:[],diag:{}}; sendResponse({ ok: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: __mlsM.appts, providers: __mlsM.providers, providerDiag: __mlsM.providerDiag });
+        var __mlsTS = (typeof mlsProv!=='undefined') ? mlsProv.fromText((pick && pick.t) || '') : {appts:[],providers:[],diag:{}}; var __mlsM = (typeof mlsProv!=='undefined') ? mlsProv.merge(pick && pick.s, __mlsTS) : {appts:[],providers:[],diag:{}}; sendResponse({ ok: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: __mlsM.appts, providers: __mlsM.providers, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '' });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
