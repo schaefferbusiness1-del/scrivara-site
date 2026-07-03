@@ -1,4 +1,114 @@
 
+/* ===== feat_queue_fixes_0703 (inlined) ===== */
+/* feat_queue_fixes_0703 — three queue fixes (2026-07-03), all additive/reversible/guarded:
+   (A) item 6/5: Who's Next strip must reflect the REAL Athena calendar (window._calAppts) for the
+       viewing date + provider — NOT the stale 654-patient roster cache. Empty day => empty state.
+       Correct AM/PM times (America/New_York from start_at UTC).
+   (B) item 14: the "Upload templates" quick-action should OPEN the existing Templates panel
+       (openTemplates()), not a bare file picker.
+   (C) item 17: move the "Add a standard line to templates" block to the BOTTOM of the Templates modal. */
+(function(){
+  "use strict";
+  if(window.__mlsQFix0703) return; window.__mlsQFix0703=true;
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  /* ---------- (A) Who's Next reconcile ---------- */
+  function viewDate(){
+    var i=document.querySelector('.mlsnu-date')||document.querySelector('.as-date')||document.querySelector('input[type=date]');
+    return (i&&i.value)?i.value:null; // YYYY-MM-DD
+  }
+  function providerName(){ var d=document.querySelector('#mlsPtfBox .ptf-doc'); return d?(d.textContent||'').trim():''; }
+  function fmtTime(z){ try{ return new Date(z).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZone:'America/New_York'}); }catch(e){ return ''; } }
+  function fmtDob(d){ if(!d) return ''; var m=String(d).match(/(\d{4})-(\d{2})-(\d{2})/); return m?(m[2]+'/'+m[3]+'/'+m[1]):String(d); }
+  function todaysAppts(){
+    var date=viewDate(), prov=providerName();
+    var a=(window._calAppts||[]).filter(function(x){ return x&&x.appt_date===date && (!prov||(x.provider||'')===prov); });
+    a.sort(function(p,q){ return String(p.start_at||'').localeCompare(String(q.start_at||'')); });
+    return {date:date, prov:prov, list:a};
+  }
+  function sig(o){ return o.date+'|'+o.prov+'|'+o.list.length+'|'+o.list.map(function(x){return x.patient_external_id||x.name;}).join(','); }
+  function pick(x){
+    var fns=['_heroPickPatient','selectPatient','openPatient','calOpenPatientFor'];
+    for(var i=0;i<fns.length;i++){ try{ if(typeof window[fns[i]]==='function'){ window[fns[i]](x); return; } }catch(e){} }
+    try{ var nm=document.querySelector('#heroPtInput,input[placeholder*="First"],input[placeholder*="Patient name"]'); if(nm){ var d=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(nm),'value'); if(d&&d.set) d.set.call(nm,x.name||''); else nm.value=x.name||''; nm.dispatchEvent(new Event('input',{bubbles:true})); } }catch(e){}
+  }
+  function renderWN(){
+    try{
+      var box=document.getElementById('mlsPtfBox'); if(!box) return;
+      var o=todaysAppts(); if(!o.date) return;
+      var mySig=sig(o);
+      if(box.getAttribute('data-mlsfix')===mySig) return; // already canonical
+      var grid=box.querySelector('.ptf-grid'); var more=box.querySelector('.ptf-more'); var cnt=box.querySelector('.ptf-count');
+      if(cnt) cnt.textContent=o.list.length+' patient'+(o.list.length===1?'':'s');
+      if(more) more.style.display='none';
+      if(!grid){ grid=document.createElement('div'); grid.className='ptf-grid'; box.appendChild(grid); }
+      grid.innerHTML='';
+      if(o.list.length===0){
+        var e=document.createElement('div'); e.className='ptf-empty';
+        e.style.cssText='padding:10px 6px;color:#6b7a8c;font-size:13px';
+        e.textContent='No patients on the Athena calendar for this day.';
+        grid.appendChild(e);
+      } else {
+        o.list.forEach(function(x){
+          var c=document.createElement('div'); c.className='ptf-chip'; c.style.cursor='pointer';
+          c.innerHTML='<div class="ptf-nm" style="font-weight:700">'+esc(x.name||'Patient')+'</div><div class="ptf-sub" style="font-size:12px;opacity:.8">'+esc(fmtTime(x.start_at))+' / DOB '+esc(fmtDob(x.dob))+'</div>';
+          c.addEventListener('click',function(){ pick(x); });
+          grid.appendChild(c);
+        });
+      }
+      box.setAttribute('data-mlsfix',mySig);
+    }catch(e){}
+  }
+
+  /* ---------- (B) Upload-templates quick action -> open Templates panel ---------- */
+  function openTemplatesPanel(){
+    try{ if(typeof window.openTemplates==='function'){ window.openTemplates(); return true; } }catch(e){}
+    try{ var b=document.getElementById('templatesBtn'); if(b){ b.click(); return true; } }catch(e){}
+    return false;
+  }
+  document.addEventListener('click', function(ev){
+    try{
+      var t=ev.target && ev.target.closest ? ev.target.closest('button,a,[role=button]') : null;
+      if(!t) return;
+      var txt=(t.textContent||'').trim();
+      if(!/upload templates/i.test(txt)) return;
+      if(t.closest('#templatesModal')) return;           // leave the modal's own upload button alone
+      if(/\.txt|\.md|folder/i.test(txt)) return;          // that's the file-type-specific one
+      // this is the quick-action "📤 Upload templates" -> open the full panel instead
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      openTemplatesPanel();
+    }catch(e){}
+  }, true);
+
+  /* ---------- (C) Move "Add a standard line" block to bottom of Templates modal ---------- */
+  function moveStandardLine(){
+    try{
+      var modal=document.getElementById('templatesModal');
+      if(!modal || modal.getBoundingClientRect().width<5) return; // only when open/visible
+      // find heading "Add a standard line to templates"
+      var head=[].slice.call(modal.querySelectorAll('*')).find(function(el){
+        return /add a standard line to templates/i.test((el.childNodes[0]&&el.childNodes[0].textContent)||el.textContent||'') && el.children.length<6;
+      });
+      if(!head) return;
+      var card=head;
+      for(var i=0;i<6 && card && card.parentElement; i++){
+        if(card.querySelector && card.querySelector('textarea') && /save standard line/i.test(card.textContent||'')) break;
+        card=card.parentElement;
+      }
+      if(!card || card===modal) return;
+      var container=card.parentElement; if(!container) return;
+      if(card.getAttribute('data-mlsmoved')==='1') return;
+      if(container.lastElementChild!==card){ container.appendChild(card); }
+      card.setAttribute('data-mlsmoved','1');
+    }catch(e){}
+  }
+
+  setInterval(function(){ renderWN(); moveStandardLine(); }, 700);
+  try{ new MutationObserver(function(){ moveStandardLine(); }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+})();
+
+/* ===== end feat_queue_fixes_0703 ===== */
+
 /* ===== feat_days_worked (inlined) ===== */
 /* feat_days_worked — "Days worked / patient volume" tool on the Analysis page (2026-07-03, Dad's request:
    "how some doctors get paid"). Adds a card to #analysisView; opens a monthly table showing DAYS WORKED
