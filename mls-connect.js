@@ -1,4 +1,52 @@
 
+/* ===== feat_pull_cleanup (inlined) ===== */
+/* feat_pull_cleanup — clean up scraped Athena schedule data client-side (2026-07-03).
+   Fixes bug #2 from the first real clinic-day pull: provider names came in with the column-header
+   "× Close" control text appended (e.g. "Edwards_Lindsay_PA-CClose"). That broke provider-scoped
+   matching (Who's Next, Days worked/patient volume). This strips the trailing Close/× artifact from
+   provider names on window._calAppts (and the provider list) continuously + on load. Additive/safe.
+   NOTE: bugs #1 (wrong date stamp = app-today instead of the Athena schedule date) and #3 (only the
+   visible provider columns get scraped) are EXTENSION-side scrape fixes — the page can't read Athena
+   cross-origin — and are tracked for the next extension build. */
+(function(){
+  "use strict";
+  if(window.__mlsPullClean) return; window.__mlsPullClean=true;
+
+  function cleanProv(p){
+    if(p==null) return p;
+    var s=String(p);
+    // strip a trailing "Close" (column-header × Close button) and any stray control glyphs / whitespace
+    s=s.replace(/\s*Close\s*$/,'');
+    s=s.replace(/[×✕✖✗✘xX]\s*$/,'');
+    return s.replace(/\s+$/,'').trim();
+  }
+
+  function clean(){
+    try{
+      var a=window._calAppts;
+      if(Array.isArray(a)){
+        for(var i=0;i<a.length;i++){
+          var x=a[i];
+          if(x && x.provider){ var c=cleanProv(x.provider); if(c && c!==x.provider) x.provider=c; }
+        }
+      }
+      var pl=window._calProviders;
+      if(Array.isArray(pl)){
+        for(var j=0;j<pl.length;j++){
+          var p=pl[j];
+          if(typeof p==="string"){ var cs=cleanProv(p); if(cs!==p) pl[j]=cs; }
+          else if(p && typeof p==="object" && p.name){ var cn=cleanProv(p.name); if(cn!==p.name) p.name=cn; }
+        }
+      }
+    }catch(e){}
+  }
+
+  clean();
+  setInterval(clean, 2000);
+})();
+
+/* ===== end feat_pull_cleanup ===== */
+
 /* ===== feat_queue_fixes_0703 (inlined) ===== */
 /* feat_queue_fixes_0703 — three queue fixes (2026-07-03), all additive/reversible/guarded:
    (A) item 6/5: Who's Next strip must reflect the REAL Athena calendar (window._calAppts) for the
