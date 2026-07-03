@@ -1,3 +1,62 @@
+/* feat_pull_progress — clear, prominent progress indicator for the athenaOne pull so it's obvious
+   the pull is actually running (the schedule scrape can take 20-60s across all providers).
+   Shows a fixed top banner with a spinner the moment a pull is triggered, and switches to a
+   "✓ Pulled N appointments" confirmation when the calendar updates (or a safety timeout).
+   Additive, reversible, read-only. */
+(function(){
+  "use strict";
+  if(window.__mlsPullProgress) return; window.__mlsPullProgress=true;
+  var ID='mls-pull-progress';
+  try{ var st=document.createElement('style'); st.textContent='@keyframes mlsppspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }catch(e){}
+  function banner(){
+    var b=document.getElementById(ID);
+    if(!b){
+      b=document.createElement('div'); b.id=ID;
+      b.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#0f172a;color:#fff;padding:12px 18px;border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.4);font:600 14px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;display:none;align-items:center;gap:12px;max-width:92vw';
+      b.innerHTML='<span class="mlspp-spin" style="width:18px;height:18px;border:3px solid rgba(255,255,255,.28);border-top-color:#38bdf8;border-radius:50%;display:inline-block;animation:mlsppspin .8s linear infinite"></span><span class="mlspp-txt"></span>';
+      (document.body||document.documentElement).appendChild(b);
+    }
+    return b;
+  }
+  var pulling=false,startLen=0,startRef=null,startT=0,poll=null;
+  function start(){
+    if(pulling) return; pulling=true; startT=Date.now();
+    startRef=window._calAppts; startLen=(startRef&&startRef.length)||0;
+    var b=banner(); b.style.display='flex'; b.querySelector('.mlspp-spin').style.display='inline-block';
+    b.querySelector('.mlspp-txt').textContent='Pulling from athenaOne — reading the schedule across all providers…';
+    clearInterval(poll);
+    poll=setInterval(function(){
+      var arr=window._calAppts, len=(arr&&arr.length)||0, el=Date.now()-startT;
+      if((arr!==startRef || len!==startLen) && el>2500){ finish(len-startLen); }
+      else if(el>90000){ finish(null); }
+    },700);
+  }
+  function finish(added){
+    pulling=false; clearInterval(poll);
+    var b=banner(); b.querySelector('.mlspp-spin').style.display='none';
+    var t=b.querySelector('.mlspp-txt');
+    if(added===null){ t.textContent='Pull finished — check the schedule below.'; }
+    else if(added>0){ t.textContent='✓ Pulled '+added+' appointment'+(added===1?'':'s')+' from athenaOne.'; }
+    else { t.textContent='✓ athenaOne pull complete (already up to date).'; }
+    setTimeout(function(){ if(!pulling) b.style.display='none'; }, 4500);
+  }
+  function isPullTrigger(el){
+    if(!el) return false;
+    if(el.id==='pullChartBtn'||el.id==='mls-sg-athena') return true;
+    var t=(el.textContent||'').replace(/\s+/g,' ').trim();
+    if(t.length>60) return false;
+    return /pull from athenaone|pull visits from athena|pull the chart into mls|pull open athena patient/i.test(t);
+  }
+  document.addEventListener('click', function(ev){
+    try{
+      var el=ev.target && ev.target.closest ? ev.target.closest("button,a,[role=button],div,span") : null;
+      var hops=0;
+      while(el && hops<4){ if(isPullTrigger(el)){ start(); break; } el=el.parentElement; hops++; }
+    }catch(e){}
+  }, true);
+})();
+
+
 /* feat_wb_defaults — make athenaOne writeback work by DEFAULT so the "Show me where" teach flow is
    a last resort, not a gate (Michael: defaults should already work; teaching is last resort).
    (1) Ensures all four destinations have a default target section in mlsWbPrefs:default — including
