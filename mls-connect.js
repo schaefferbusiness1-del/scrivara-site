@@ -1,3 +1,68 @@
+/* feat_mls_easy_wizard — turn MLS Easy's flow into a GUIDED step-by-step wizard that leads the
+   doctor through the visit and connects into the three boxes (Capture the visit -> Clinical note ->
+   EMR fields), with Record wired in. Inspired by the guided, one-thing-at-a-time flows doctors
+   praise (Abridge / Freed / DAX). ADDITIVE + REVERSIBLE: it enhances the existing 4-step tracker
+   (Patient -> Visit captured -> Note ready -> Ready to sign) — clicking a step (or "Next") scrolls
+   to and spotlights the matching section and advances the flow. It never deletes the working layout;
+   a reload restores the original. */
+(function(){
+  "use strict";
+  if(window.__mlsEasyWizard) return; window.__mlsEasyWizard=true;
+  var STEPS=[
+    {label:/^patient/i,           find:function(){ return document.getElementById('mlsEasyPanel')||byText(['Patient name','Just talk']); }, hint:'Pick or confirm the patient, then hit Record.' },
+    {label:/visit captured/i,     find:function(){ return byHeading('Capture the visit')||document.getElementById('mls-tx'); }, hint:'Record or paste the visit. When you stop, the note generates.' },
+    {label:/note ready/i,         find:function(){ return byHeading('Clinical note')||document.getElementById('mls-note'); }, hint:'Review the AI note. Edit anything before signing.' },
+    {label:/ready to sign/i,      find:function(){ return byHeading('EMR')||byText(['Insert into chart','⤵ Insert into chart']); }, hint:'Push the note + fields into the chart, then sign.' }
+  ];
+  function byHeading(txt){ var els=document.querySelectorAll('h1,h2,h3,h4,div,span,section'); for(var i=0;i<els.length;i++){var t=(els[i].textContent||'').replace(/\s+/g,' ').trim(); if(t.indexOf(txt)===0&&t.length<80&&els[i].children.length<=3){ return els[i].closest('[class*=card],section,div')||els[i]; } } return null; }
+  function byText(arr){ var els=document.querySelectorAll('div,span,button,section'); for(var i=0;i<els.length;i++){var t=(els[i].textContent||'').replace(/\s+/g,' ').trim(); for(var j=0;j<arr.length;j++){ if(t.indexOf(arr[j])===0&&t.length<80){ return els[i].closest('[class*=card],section,div')||els[i]; } } } return null; }
+  function stepChips(){
+    // find the row that has all four step labels; return its 4 clickable children in order
+    var rows=document.querySelectorAll('div,ul,nav'); 
+    for(var i=0;i<rows.length;i++){ var t=(rows[i].textContent||'').replace(/\s+/g,' '); if(/patient/i.test(t)&&/visit captured/i.test(t)&&/note ready/i.test(t)&&/ready to sign/i.test(t)&&rows[i].children.length>=4&&rows[i].children.length<=8){ return rows[i]; } }
+    return null;
+  }
+  var cur=0;
+  function spotlight(el){
+    if(!el) return;
+    document.querySelectorAll('.mls-wiz-spot').forEach(function(e){ e.classList.remove('mls-wiz-spot'); });
+    el.classList.add('mls-wiz-spot');
+    try{ el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){ try{el.scrollIntoView();}catch(_){}}
+  }
+  function go(i){
+    cur=Math.max(0,Math.min(STEPS.length-1,i));
+    var target=null; try{ target=STEPS[cur].find(); }catch(e){}
+    spotlight(target);
+    // update the Next button label + hint
+    var nb=document.getElementById('mls-wiz-next'); if(nb){ nb.textContent=(cur<STEPS.length-1?('Next: '+['Record the visit','Review the note','Push to chart','Done'][cur]+' →'):'Finish ✓'); }
+    var hp=document.getElementById('mls-wiz-hint'); if(hp){ hp.textContent='Step '+(cur+1)+' of 4 — '+STEPS[cur].hint; }
+    // mark active chip
+    var row=stepChips(); if(row){ for(var c=0;c<row.children.length;c++){ row.children[c].style.opacity=(c===cur?'1':'.55'); row.children[c].style.transform=(c===cur?'scale(1.03)':'none'); } }
+  }
+  function build(){
+    if(document.getElementById('mls-wiz-bar')) return true;
+    var row=stepChips(); if(!row) return false;
+    // make each chip clickable to jump to that step
+    for(var c=0;c<Math.min(4,row.children.length);c++){ (function(ci){ var ch=row.children[ci]; ch.style.cursor='pointer'; ch.style.transition='all .15s'; if(!ch.__mlsWiz){ ch.__mlsWiz=1; ch.addEventListener('click', function(){ go(ci); }); } })(c); }
+    // guidance bar right under the step row
+    var bar=document.createElement('div'); bar.id='mls-wiz-bar';
+    bar.style.cssText='display:flex;align-items:center;gap:12px;margin:10px 0 6px;padding:10px 14px;border-radius:12px;background:rgba(120,120,200,.10);border:1px solid rgba(120,120,180,.28);flex-wrap:wrap';
+    var hint=document.createElement('span'); hint.id='mls-wiz-hint'; hint.style.cssText='font:500 13px system-ui,-apple-system,"Segoe UI",sans-serif;opacity:.9;flex:1;min-width:200px';
+    var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:8px 12px;border-radius:10px;border:1px solid rgba(120,120,180,.4);background:transparent;color:inherit;font:600 12px system-ui;cursor:pointer';
+    back.addEventListener('click', function(){ go(cur-1); });
+    var next=document.createElement('button'); next.id='mls-wiz-next'; next.type='button'; next.style.cssText='padding:8px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:700 12px system-ui;cursor:pointer';
+    next.addEventListener('click', function(){ if(cur<STEPS.length-1) go(cur+1); else { var t=STEPS[3].find(); spotlight(t); } });
+    bar.appendChild(hint); bar.appendChild(back); bar.appendChild(next);
+    row.parentNode.insertBefore(bar, row.nextSibling);
+    // spotlight CSS
+    if(!document.getElementById('mls-wiz-css')){ var st=document.createElement('style'); st.id='mls-wiz-css'; st.textContent='.mls-wiz-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important;transition:outline .2s,box-shadow .2s}'; document.head.appendChild(st); }
+    go(0);
+    return true;
+  }
+  if(!build()){ var n=0; var iv=setInterval(function(){ if(build()||++n>40) clearInterval(iv); }, 1200); }
+})();
+
+
 /* feat_pull_month_btn — "Pull whole month" button (item: pull entire month). Sends the v1.49
    mlsAppPullMonth bridge message to the extension, which walks athenaOne's View Calendar backward
    day-by-day and scrapes each day (all doctors). Aggregates the returned appointments into the
