@@ -1,1 +1,5 @@
-{"version": "1.42", "url": "https://mlsscribe.com/get-extension.html", "notes": "MLS Assist v1.42 - dictation no longer overwrites text you typed; honest recording state with auto-restart; the athenaOne overlay note box keeps focus while typing; update-banner link sanitized; postMessage replies only to the verified origin; message-port fix. Download, unzip, and load unpacked at chrome://extensions."}
+{
+  "version": "1.43",
+  "url": "https://mlsscribe.com/get-extension.html",
+  "notes": "v1.43 — the MLS Assist panel no longer duplicates on non-EMR tabs; the floating badge now appears only on athenaOne (and hosts you allowlist), never on mlsscribe.com or unrelated sites. athenaOne write-back and the toolbar opener are unchanged. Includes all prior v1.42 fixes."
+}

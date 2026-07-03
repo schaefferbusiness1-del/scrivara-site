@@ -324,8 +324,38 @@
     '</div>'
   ].join('');
 
-  document.documentElement.appendChild(badge);
+  // v1.43 — auto-show the floating "🩺 MLS Assist" badge ONLY where it belongs: athenaOne
+  // (the doctor's EMR) and any host the user explicitly allowlists. This stops the pill from
+  // appearing on random non-EMR tabs (Render, Gmail, news, etc.) and from DUPLICATING the MLS
+  // web app's own assistant on mlsscribe.com. The panel is still injected on every page and the
+  // toolbar icon (mlsOpenPanel) opens it anywhere, so nothing is disabled — athenaOne write-back
+  // is fully preserved. Set chrome.storage.local 'mlsBadgeHosts' (or window.__mlsBadgeHosts) to
+  // an array of extra EMR hostnames to auto-show elsewhere.
+  function _mlsAutoBadge() {
+    try {
+      var h = (location.hostname || '').toLowerCase();
+      if (!h) return false;
+      if (h === 'mlsscribe.com' || h === 'www.mlsscribe.com' || h.endsWith('.mlsscribe.com')) return false;
+      if (h === 'athenahealth.com' || h.endsWith('.athenahealth.com')) return true;
+      try { var ex = window.__mlsBadgeHosts; if (Array.isArray(ex) && ex.some(function (x) { x = String(x).toLowerCase(); return h === x || h.endsWith('.' + x); })) return true; } catch (e) {}
+      return false;
+    } catch (e) { return false; }
+  }
   document.documentElement.appendChild(panel);
+  if (_mlsAutoBadge()) {
+    document.documentElement.appendChild(badge);
+  } else {
+    // Not a known EMR page: load any user allowlist async, and show the badge without a reload
+    // if this host turns out to be allowlisted.
+    try {
+      chrome.storage && chrome.storage.local && chrome.storage.local.get(['mlsBadgeHosts'], function (r) {
+        try {
+          var list = (r && r.mlsBadgeHosts) || [];
+          if (list.length) { window.__mlsBadgeHosts = list; if (_mlsAutoBadge() && !document.getElementById('mls-assist-badge')) document.documentElement.appendChild(badge); }
+        } catch (e) {}
+      });
+    } catch (e) {}
+  }
 
   const $ = s => panel.querySelector(s);
   const tx = $('#mls-tx'), noteBox = $('#mls-note'), logBox = $('#mls-log');
