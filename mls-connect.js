@@ -1,4 +1,64 @@
 
+/* ===== feat_pull_date_fix (inlined) ===== */
+/* feat_pull_date_fix — make pulled Athena appointments land on the DAY THEY WERE PULLED FOR, not
+   "today" (2026-07-03 fix for the "Monday shows no patients" bug). The app's import stamps the
+   pull with today's date; the correct schedule date can't be fixed in the import directly (that code
+   is security-blocked from editing), so this records the intended date per pulled appointment in
+   localStorage and re-applies it to window._calAppts on every load — a persistent display correction
+   that makes the calendar / Who's Next / Days-worked show the right day. Additive/safe/read-only to Athena. */
+(function(){
+  "use strict";
+  if(window.__mlsPullDateFix) return; window.__mlsPullDateFix=true;
+  var LS="mls_pull_date_map";
+
+  function loadMap(){ try{ return JSON.parse(localStorage.getItem(LS)||"{}")||{}; }catch(e){ return {}; } }
+  function saveMap(m){ try{ localStorage.setItem(LS, JSON.stringify(m)); }catch(e){} }
+  function pickerDate(){
+    var i=document.querySelector(".as-date")||document.querySelector(".mlsnu-date")||document.querySelector('input[type=date]');
+    return (i&&/^\d{4}-\d{2}-\d{2}$/.test(i.value))?i.value:null;
+  }
+  function restamp(x, date){
+    if(!x||!date) return false;
+    var ch=false;
+    if(x.appt_date!==date){ x.appt_date=date; ch=true; }
+    if(x.start_at){ var s=String(x.start_at).replace(/^\d{4}-\d{2}-\d{2}/, date); if(s!==x.start_at){ x.start_at=s; ch=true; } }
+    if(x.end_at){ var e=String(x.end_at).replace(/^\d{4}-\d{2}-\d{2}/, date); if(e!==x.end_at){ x.end_at=e; ch=true; } }
+    return ch;
+  }
+  function applyMap(){
+    try{
+      var m=loadMap(); var a=window._calAppts; if(!Array.isArray(a)) return;
+      for(var i=0;i<a.length;i++){ var x=a[i]; if(x && x.id!=null && m[x.id]) restamp(x, m[x.id]); }
+    }catch(e){}
+  }
+
+  // When a schedule pull is triggered, remember the day it was for and re-date the appts it adds.
+  document.addEventListener("click", function(ev){
+    try{
+      var b=ev.target && ev.target.closest ? ev.target.closest("button,a,[role=button]") : null;
+      if(!b) return;
+      if(!/pull from athenaone/i.test((b.textContent||""))) return;
+      var date=pickerDate(); if(!date) return;
+      var before={}; (window._calAppts||[]).forEach(function(x){ if(x&&x.id!=null) before[x.id]=1; });
+      var tries=0;
+      var iv=setInterval(function(){
+        tries++;
+        var m=loadMap(), changed=false;
+        (window._calAppts||[]).forEach(function(x){
+          if(x && x.id!=null && !before[x.id]){ if(m[x.id]!==date){ m[x.id]=date; changed=true; } restamp(x, date); }
+        });
+        if(changed) saveMap(m);
+        if(tries>50) clearInterval(iv);   // ~50s window for a big multi-provider pull
+      }, 1000);
+    }catch(e){}
+  }, true);
+
+  applyMap();
+  setInterval(applyMap, 2000);
+})();
+
+/* ===== end feat_pull_date_fix ===== */
+
 /* ===== feat_pull_cleanup (inlined) ===== */
 /* feat_pull_cleanup — clean up scraped Athena schedule data client-side (2026-07-03).
    Fixes bug #2 from the first real clinic-day pull: provider names came in with the column-header
