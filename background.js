@@ -977,6 +977,48 @@ var mlsProv = (function () {
   return { fromText: mlsExtractScheduleFromText, fromDom: mlsExtractScheduleFromDom, merge: mlsMergeSchedule };
 })();
 
+  /* v1.47 AUTO-NAVIGATE (athenaOne-aware, two-step): when no schedule grid is showing,
+     load the day view before scraping. READ-ONLY navigation: a hard deny-list blocks any
+     write/sign/bill/book/reschedule control; only whitelisted schedule nav labels (or
+     schedule-ish hrefs) are clicked. On athenaOne the top-nav "Calendar" is a menu-opener,
+     so this (a) tries a direct schedule link/tab, else (b) clicks the Calendar menu-opener
+     and then, polling this frame, clicks the schedule sub-item (e.g. "Today's Appointments").
+     Runs per-frame via allFrames:true, so the frame that renders the submenu handles step 2.
+     All label lists + timing are config-tunable via mls-assist-config.json's `nav` block. */
+  async function mlsAthenaGotoSchedule(NAV){
+    try{
+      var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};
+      var cl=function(x){return String(x==null?'':x).replace(/\s+/g,' ').trim();};
+      var DENY=/save|sign|bill|charge|payment|checkout|delete|remove|cancel|submit|logout|log out|new appointment|book|create|reschedul|add\b/i;
+      var OPENER=(NAV&&NAV.openerReSource)?new RegExp(NAV.openerReSource):/OpenMenu\(\{\s*"MENUNAME":\s*"calendar"/;
+      var DIRECT=(NAV&&NAV.directLabels)||['calendar','schedule','scheduling','day sheet','front office'];
+      var SUB=(NAV&&NAV.subLabels)||["today's appointments","view calendar","provider schedule","daily schedule","today's schedule","staff calendar","department calendar",'schedule','appointments'];
+      var HREF=(NAV&&NAV.hrefReSource)?new RegExp(NAV.hrefReSource,'i'):/schedul|calendar|frontoffice|daysheet/i;
+      var maxPolls=(NAV&&NAV.subPolls)||6, pollMs=(NAV&&NAV.subPollMs)||400;
+      var did={};
+      function vis(e){var r;try{r=e.getBoundingClientRect();}catch(_e){return false;}return !!(r&&r.width>0&&r.height>0);}
+      function oc(e){try{return e.getAttribute('onclick')||'';}catch(_e){return '';}}
+      var els=[].slice.call(document.querySelectorAll('a,button,div,li,span,[role="tab"],[role="menuitem"],[onclick]'));
+      // STEP 1a: a real (non-menu) direct schedule link/tab in this frame
+      var directClicked=false;
+      for(var i=0;i<els.length;i++){var e=els[i];var t=cl(e.textContent).toLowerCase();if(!t||t.length>28||DENY.test(t))continue;var href='';try{href=e.getAttribute('href')||'';}catch(_e){}var lm=(DIRECT.indexOf(t)>=0 && !/OpenMenu/.test(oc(e)));var hm=!!href&&HREF.test(href);if((lm||hm)&&vis(e)){ e.click(); directClicked=true; did.direct=t; break; }}
+      // STEP 1b: else click the calendar menu-opener (athenaOne)
+      if(!directClicked){
+        for(var j=0;j<els.length;j++){var e2=els[j];if(OPENER.test(oc(e2))&&vis(e2)){ e2.click(); did.opener=cl(e2.textContent).slice(0,20); break; }}
+      }
+      // STEP 2: poll this frame for the schedule sub-item (rendered after the opener click, possibly by another frame's instance)
+      if(!directClicked){
+        for(var pp=0;pp<maxPolls;pp++){
+          await sleep(pollMs);
+          var cand=null, e3s=[].slice.call(document.querySelectorAll('a,div,li,span,td,[onclick]'));
+          for(var k=0;k<e3s.length;k++){var e3=e3s[k];var t3=cl(e3.textContent).toLowerCase();if(!t3||t3.length>30||e3.children.length>1||DENY.test(t3))continue;var idx=SUB.indexOf(t3);if(idx>=0&&vis(e3)){ if(!cand||idx<cand.idx)cand={el:e3,idx:idx,t:t3}; }}
+          if(cand){ cand.el.click(); did.sub=cand.t; break; }
+        }
+      }
+      return { clicked: !!(directClicked||did.sub), did: did };
+    }catch(e){ return {clicked:false,err:String(e&&e.message||e).slice(0,60)}; }
+  }
+
   if (msg.type === 'mlsAppScheduleRequest') {
     (async () => {
       try {
@@ -997,6 +1039,17 @@ var mlsProv = (function () {
         // drop the noise (athenaText messaging, department lists) that would pollute parsing.
         // v1.45: fetch hosted config (data, not code) so selectors are tunable via the site w/o a store update.
         var __mlsCfg = null; try { var __cr = await fetch('https://mlsscribe.com/mls-assist-config.json?cb=' + Date.now()); if (__cr.ok) { __mlsCfg = await __cr.json(); } } catch (e) { __mlsCfg = null; }
+        // v1.47 AUTO-NAVIGATE pre-step: only when NO frame currently shows a schedule grid,
+        // click the Calendar/Schedule nav and wait for the day view to load, then scrape below.
+        try {
+          var __det = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: function(){ try{ var d=document; var hdr=!!d.querySelector('h1.fe_c_heading--subsection'); var times=((d.body&&d.body.innerText||'').match(/\b\d{1,2}:\d{2}\s*[ap]\.?m/gi)||[]).length; return { grid: hdr || times>=4 }; }catch(e){ return { grid:false }; } } });
+          var __hasGrid = (__det||[]).some(function(r){ return r && r.result && r.result.grid; });
+          if (!__hasGrid) {
+            var __nav = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [ (__mlsCfg && __mlsCfg.nav) || null ], func: mlsAthenaGotoSchedule });
+            var __clicked = (__nav||[]).some(function(r){ return r && r.result && r.result.clicked; });
+            if (__clicked) { await new Promise(function(r){ setTimeout(r, (__mlsCfg && __mlsCfg.navWaitMs) || 3500); }); }
+          }
+        } catch (e) {}
         let results = [];
         try {
           results = await chrome.scripting.executeScript({
