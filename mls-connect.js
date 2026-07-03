@@ -1,3 +1,94 @@
+/* feat_opnote_quality — improve operative/procedure note generation (items 8/9/11). Wraps the app's
+   global aiCallRaw() and, ONLY for operative-note prompts, appends a quality directive: follow the
+   chosen template structure exactly, include real medication/solution names + concentrations +
+   volumes, use clear [BRACKET] fill-in-the-blanks for genuinely-missing values (never omit or
+   fabricate), and auto-detect the procedure from context instead of asking the user to type it.
+   Safe: captures the original, augments only matching string args (idempotent), calls it once. */
+(function(){
+  "use strict";
+  if(window.__mlsOpNoteQuality) return; window.__mlsOpNoteQuality=true;
+  var Q="\n\n[MLS QUALITY DIRECTIVE] Produce a complete, sign-ready operative/procedure note that follows the selected template's structure and headings EXACTLY. Auto-detect the procedure from the visit/schedule context — do not ask the user to type the procedure. State the specific medication/solution names, concentrations, and volumes used (e.g., \"80 mg triamcinolone\", \"4 mL of 0.25% bupivacaine\", \"1 mL Omnipaque contrast\", needle gauge, fluoroscopy/US guidance, laterality and spinal level). Where a required specific value is genuinely absent from the provided context, insert a clearly bracketed fill-in-the-blank such as [VOLUME], [CONCENTRATION], [MEDICATION], [LEVEL], or [LATERALITY] so the physician can complete it — never omit it and never invent a value.";
+  function wrap(name){
+    try{
+      var orig=window[name];
+      if(typeof orig!=='function' || orig.__mlsWrapped) return;
+      var w=function(){
+        try{
+          for(var i=0;i<arguments.length;i++){
+            var a=arguments[i];
+            if(typeof a==='string' && /operative note|op[- ]?note|procedure note|operative report|injection procedure|op\b.*note/i.test(a) && a.indexOf('[MLS QUALITY DIRECTIVE]')<0){
+              arguments[i]=a+Q;
+            }
+          }
+        }catch(e){}
+        return orig.apply(this,arguments);
+      };
+      w.__mlsWrapped=true;
+      window[name]=w;
+    }catch(e){}
+  }
+  wrap('aiCallRaw');
+})();
+/* feat_pkg_templates — ship a few well-structured starter op-note templates (item 13), ADDED only if
+   not already present (never overwrites or deletes the doctor's existing templates). Each is a proper
+   operative-note skeleton with [BRACKET] fill-ins so the physician completes the specifics. */
+(function(){
+  "use strict";
+  if(window.__mlsPkgTemplates) return; window.__mlsPkgTemplates=true;
+  function starter(name, keywords, body){ return {id:'pkg_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_'), name:name, keywords:keywords, text:body, created:Date.now()}; }
+  var PKG=[
+    starter("Caudal Epidural Steroid Injection","caudal, cesi, epidural, sacral hiatus",
+"PROCEDURE: Caudal epidural steroid injection.\nINDICATION: [DIAGNOSIS] with [SYMPTOMS] refractory to conservative care.\nCONSENT: Risks, benefits, and alternatives discussed; informed consent obtained.\nTECHNIQUE: The patient was placed prone. The sacral hiatus was identified under fluoroscopic guidance. The skin was prepped and draped in sterile fashion and anesthetized with [LOCAL ANESTHETIC]. A [GAUGE] needle was advanced into the caudal epidural space. Correct placement was confirmed with [VOLUME] of Omnipaque contrast showing appropriate epidural spread without vascular or intrathecal uptake. A solution of [STEROID DOSE] (e.g., triamcinolone) with [VOLUME] of [ANESTHETIC/SALINE] was injected.\nCOMPLICATIONS: None.\nDISPOSITION: The patient tolerated the procedure well and was discharged in stable condition with post-procedure instructions."),
+    starter("Lumbar Facet Joint Injection","facet, intra-articular, zygapophyseal, lumbar facet",
+"PROCEDURE: Lumbar intra-articular facet joint injection at [LEVELS], [LATERALITY].\nINDICATION: [DIAGNOSIS] consistent with facet-mediated pain.\nCONSENT: Risks, benefits, and alternatives discussed; informed consent obtained.\nTECHNIQUE: The patient was placed prone. Under fluoroscopic guidance the target facet joint(s) at [LEVELS] were identified. The skin was prepped, draped, and anesthetized with [LOCAL ANESTHETIC]. A [GAUGE] needle was advanced into the joint; intra-articular placement was confirmed with [VOLUME] of contrast. [STEROID DOSE] with [VOLUME] of [ANESTHETIC] was injected into each joint.\nCOMPLICATIONS: None.\nDISPOSITION: Tolerated well; discharged in stable condition with instructions."),
+    starter("Genicular Nerve Block","genicular, knee, genicular nerve, knee pain",
+"PROCEDURE: Genicular nerve block, [LATERALITY] knee ([superolateral, superomedial, inferomedial] genicular nerves).\nINDICATION: Chronic [LATERALITY] knee osteoarthritis pain refractory to conservative care.\nCONSENT: Risks, benefits, and alternatives discussed; informed consent obtained.\nTECHNIQUE: The patient was positioned supine. Under [fluoroscopic/ultrasound] guidance the superolateral, superomedial, and inferomedial genicular nerve targets were identified. The skin was prepped, draped, and anesthetized with [LOCAL ANESTHETIC]. A [GAUGE] needle was advanced to each target and, after negative aspiration, [VOLUME] of [ANESTHETIC] (with [STEROID DOSE] if applicable) was injected at each site.\nCOMPLICATIONS: None.\nDISPOSITION: Tolerated well; discharged in stable condition with instructions.")
+  ];
+  function apply(){
+    try{
+      if(typeof window.getTemplates!=='function' || typeof window.setTemplates!=='function') return false;
+      var cur=window.getTemplates()||[];
+      var have={}; cur.forEach(function(t){ if(t&&t.name) have[t.name.toLowerCase().trim()]=1; });
+      var add=PKG.filter(function(t){ return !have[t.name.toLowerCase().trim()]; });
+      if(!add.length) return true;
+      window.setTemplates(cur.concat(add));
+      try{ if(typeof window.renderTemplateList==='function') window.renderTemplateList(); }catch(e){}
+      return true;
+    }catch(e){ return false; }
+  }
+  if(!apply()){ var n=0; var iv=setInterval(function(){ if(apply()||++n>20) clearInterval(iv); }, 1500); }
+})();
+/* feat_asst_copilot_merge — fold the MLS Copilot chat INTO the MLS Assistant panel so the Assistant
+   is the single home with both the scribe workflow AND the ask-anything chat (Michael's option b).
+   Relocates Copilot's live nodes (thread, chips, input row w/ mic + send) so all existing wiring +
+   backend calls keep working, and hides the separate Copilot header launcher. Reversible (reload
+   restores the original layout). */
+(function(){
+  "use strict";
+  if(window.__mlsAsstCopilotMerge) return; window.__mlsAsstCopilotMerge=true;
+  function merge(){
+    try{
+      var body=document.querySelector('#mls-assist-panel .body');
+      var thread=document.getElementById('copilotThread'),
+          chips=document.getElementById('copilotChips'),
+          inputRow=document.getElementById('copilotInputRow');
+      if(!body||!thread||!inputRow) return false;
+      if(document.getElementById('mls-asst-copilot-sec')) return true;
+      var sec=document.createElement('div'); sec.id='mls-asst-copilot-sec';
+      sec.style.cssText='margin-top:16px;padding-top:14px;border-top:2px solid rgba(120,120,180,.28)';
+      var h=document.createElement('div'); h.style.cssText='font-weight:700;font-size:15px;margin-bottom:8px';
+      h.innerHTML='💬 Ask MLS Copilot <span style="opacity:.6;font-weight:400;font-size:13px">— ask anything about this patient or the app</span>';
+      sec.appendChild(h); sec.appendChild(thread); if(chips) sec.appendChild(chips); sec.appendChild(inputRow);
+      body.appendChild(sec);
+      return true;
+    }catch(e){ return false; }
+  }
+  function tidy(){ try{ var b=document.getElementById('askCopilotHdrBtn'); if(b) b.style.display='none'; }catch(e){} }
+  merge(); tidy();
+  try{ new MutationObserver(function(){ merge(); tidy(); }).observe(document.documentElement,{subtree:true,childList:true}); }catch(e){}
+})();
+
+
 /* feat_athena_msg_fix — stop the app falsely telling the user they're not signed in to athenaOne.
    The real cause is that athenaOne isn't on the multi-provider Day grid (Calendar > View Calendar),
    NOT that the session is logged out. This rewrites the misleading "No signed-in athenaOne tab is
