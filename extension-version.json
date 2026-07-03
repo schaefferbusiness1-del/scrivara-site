@@ -1,5 +1,5 @@
 {
-  "version": "1.46",
+  "version": "1.47",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.46 — schedule pull now SCROLLS across the whole athenaOne day grid to capture EVERY provider's appointments (fixes the 'only 2-3 doctors' bug caused by Athena virtualizing off-screen columns). Keeps v1.45 config-driven selectors + clean names + schedule-date capture. Falls back to the single-view read if no scroller is found."
+  "notes": "v1.47 — scroll-scrape now fires a scroll event + waits for each grid section to render, so it captures EVERY provider's appointments across the whole athenaOne day grid (fixes v1.46 getting 0/partial because programmatic scroll didn't trigger Athena's virtualized render). Config-driven selectors + clean names + schedule-date capture retained."
 }

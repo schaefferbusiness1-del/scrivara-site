@@ -324,7 +324,7 @@
     '</div>'
   ].join('');
 
-  // v1.46 — auto-show the floating "🩺 MLS Assist" badge ONLY where it belongs: athenaOne
+  // v1.47 — auto-show the floating "🩺 MLS Assist" badge ONLY where it belongs: athenaOne
   // (the doctor's EMR) and any host the user explicitly allowlists. This stops the pill from
   // appearing on random non-EMR tabs (Render, Gmail, news, etc.) and from DUPLICATING the MLS
   // web app's own assistant on mlsscribe.com. The panel is still injected on every page and the

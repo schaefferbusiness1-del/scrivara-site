@@ -1057,9 +1057,13 @@ async function mlsSchedDomInline(doc, CFG){
           cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}var tm=ft(t);var key=(prov||'')+'|'+tm+'|'+nm;if(_seenA[key])return;_seenA[key]=1;out.appts.push({time:tm,name:cl(nm),provider:prov||''});}catch(_e){}});
         }
         if(_scroller){
-          var _steps=Math.min(20,Math.ceil(_scroller.scrollWidth/Math.max(200,_scroller.clientWidth))+1);
+          var _frac=(CFG&&CFG.scrollStepFrac)||0.55;
+          var _waitMs=(CFG&&CFG.scrollWaitMs)||780;
+          var _stepPx=Math.max(200,Math.round(_scroller.clientWidth*_frac));
+          var _steps=Math.min(40,Math.ceil(_scroller.scrollWidth/_stepPx)+2);
           var _orig=_scroller.scrollLeft;
-          for(var _st=0;_st<_steps;_st++){try{_scroller.scrollLeft=_st*_scroller.clientWidth;}catch(_e){}await mlsSleep(360);_collect();}
+          for(var _st=0;_st<_steps;_st++){try{_scroller.scrollLeft=_st*_stepPx;_scroller.dispatchEvent(new Event('scroll',{bubbles:true}));}catch(_e){}await mlsSleep(_waitMs);_collect();}
+          try{_scroller.scrollLeft=0;_scroller.dispatchEvent(new Event('scroll',{bubbles:true}));}catch(_e){}await mlsSleep(400);_collect();
           try{_scroller.scrollLeft=_orig;}catch(_e){}
         } else { _collect(); }
         var _u={};out.appts.forEach(function(a){if(a.provider)_u[a.provider]=1;});
