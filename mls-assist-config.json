@@ -1,0 +1,8 @@
+{
+  "version": "1.0",
+  "note": "MLS Assist hosted config. Edit selectors/rules here to update extension behavior WITHOUT a Chrome Web Store submit — the extension fetches this each schedule pull. Data only, no code.",
+  "schedule": {
+    "dateHdrSel": "h1.fe_c_heading--subsection",
+    "provReSource": "^[A-Z][A-Za-z'’.\\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD)\\b"
+  }
+}
