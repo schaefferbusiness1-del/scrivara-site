@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Send Patient Portal Login — MLS</title>
+<style>
+  :root{--blue:#1f7ae0;--blue-d:#15528f;--ink:#0d2338;--muted:#5b6b7c;--line:#e4ebf3;--bg:#f4f8fd;--good:#127a55;--soft:#eef4fc}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.5}
+  .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 16px rgba(23,64,120,.09);width:100%;max-width:460px;padding:28px 26px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;color:var(--blue-d);font-size:17px}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(18,122,85,.15)}
+  h1{font-size:20px;margin:14px 0 4px}
+  p.sub{color:var(--muted);margin:0 0 18px;font-size:14px}
+  label{display:block;font-size:12.5px;font-weight:700;color:var(--blue-d);margin:14px 0 5px}
+  input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fbfdff;color:var(--ink)}
+  input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:20px}
+  .btn:hover{background:#1a6ccb}.btn[disabled]{opacity:.6;cursor:default}
+  .note{background:var(--soft);border:1px solid #d3e3f6;color:var(--blue-d);border-radius:10px;padding:11px 13px;font-size:13px;margin-top:16px}
+  .msg{border-radius:10px;padding:12px 14px;font-size:14px;margin-top:16px;display:none}
+  .msg.ok{background:#eaf7f0;border:1px solid #bce6cf;color:#0f6b49;display:block}
+  .msg.err{background:#fdecec;border:1px solid #f5c2c2;color:#a12626;display:block}
+  .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .foot{font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
+  a{color:var(--blue);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand"><span class="dot"></span>MLS — Patient Portal</div>
+    <h1>Send a patient their portal login</h1>
+    <p class="sub">The patient gets a secure email with a one-time link to sign in and view their records and chat with them. No password to remember.</p>
+
+    <div id="noauth" class="msg err" style="display:none">
+      You're not signed in to MLS in this browser. Open <a href="/ScribeFlow.html">MLS</a>, sign in, then reload this page.
+    </div>
+
+    <form id="f" autocomplete="off">
+      <label for="email">Patient email <span style="color:#c0392b">*</span></label>
+      <input id="email" type="email" required placeholder="patient@email.com" />
+      <label for="name">Patient name</label>
+      <input id="name" type="text" placeholder="Full name" />
+      <label for="dob">Date of birth</label>
+      <input id="dob" type="date" />
+      <label for="pid">Patient ID (optional)</label>
+      <input id="pid" type="text" placeholder="links the login to their records" />
+      <button class="btn" id="send" type="submit">Send portal login</button>
+    </form>
+
+    <div id="msg" class="msg"></div>
+    <div class="note">🔒 The link expires and can be used once. The patient sets up access from their own device. You can resend anytime.</div>
+    <p class="foot">Preview the portal: <a href="/patient-portal.html" target="_blank">patient-portal.html</a></p>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var API="https://scrivara-backend.onrender.com";
+  var $=function(id){return document.getElementById(id);};
+  var token=null;
+  try{ token=localStorage.getItem('sf_bk_token'); }catch(e){}
+  if(!token){ $('noauth').style.display='block'; }
+
+  // Prefill from URL params (so an in-app button can deep-link with the active patient)
+  try{
+    var p=new URLSearchParams(location.search);
+    if(p.get('email')) $('email').value=p.get('email');
+    if(p.get('name')) $('name').value=p.get('name');
+    if(p.get('dob')) $('dob').value=p.get('dob');
+    if(p.get('id')||p.get('pid')) $('pid').value=p.get('id')||p.get('pid');
+  }catch(e){}
+
+  function showMsg(text, ok){ var m=$('msg'); m.textContent=text; m.className='msg '+(ok?'ok':'err'); }
+
+  $('f').addEventListener('submit', function(e){
+    e.preventDefault();
+    var email=$('email').value.trim();
+    if(!email){ showMsg('Please enter the patient’s email.', false); return; }
+    if(!token){ showMsg('Not signed in to MLS — open MLS, sign in, and reload.', false); return; }
+    var body={ email:email, name:$('name').value.trim(), dob:$('dob').value, external_id:$('pid').value.trim(), mrn:$('pid').value.trim() };
+    var btn=$('send'); btn.disabled=true; var old=btn.textContent; btn.innerHTML='<span class="spin"></span> Sending…';
+    $('msg').className='msg';
+    fetch(API+'/api/patient/admin/send-portal-invite', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
+      body:JSON.stringify(body)
+    })
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
+    .then(function(res){
+      if(res.ok){ showMsg('✓ Portal login sent to '+email+'. They’ll get a secure one-time link to view their records.', true); $('f').reset(); }
+      else if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites (need an authorized/admin account). Try signing in again in MLS.', false); }
+      else { showMsg((res.j && (res.j.error||res.j.message)) || ('Could not send (error '+res.status+'). Please try again.'), false); }
+    })
+    .catch(function(){ showMsg('Network error — please try again.', false); })
+    .then(function(){ btn.disabled=false; btn.textContent=old; });
+  });
+})();
+</script>
+</body>
+</html>
