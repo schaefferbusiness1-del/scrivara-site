@@ -1,3 +1,32 @@
+/* feat_athena_msg_fix — stop the app falsely telling the user they're not signed in to athenaOne.
+   The real cause is that athenaOne isn't on the multi-provider Day grid (Calendar > View Calendar),
+   NOT that the session is logged out. This rewrites the misleading "No signed-in athenaOne tab is
+   readable / please sign in" messages into an accurate instruction, and never claims a logout when
+   athena is actually connected. Cosmetic/messaging only, reversible. */
+(function(){
+  "use strict";
+  if(window.__mlsAthenaMsgFix) return; window.__mlsAthenaMsgFix=true;
+  var BAD=/no signed-?in athenaone tab is readable|open one and sign in|please sign in to athenaone|no signed-?in athenaone tab/i;
+  var GOOD='athenaOne is connected. If the schedule or chart didn’t load, open Calendar ‣ View Calendar in athenaOne (the day grid with provider columns), then try again.';
+  function fix(){
+    try{
+      var els=document.querySelectorAll('div,span,p,li,small,em');
+      for(var i=0;i<els.length;i++){
+        var e=els[i];
+        if(e.__mlsMsgFixed) continue;
+        if(e.children.length>1) continue;
+        var t=e.textContent||'';
+        if(t.length<200 && BAD.test(t)){ e.__mlsMsgFixed=true; e.textContent=GOOD; }
+      }
+    }catch(e){}
+  }
+  var pend=false;
+  function sched(){ if(pend)return; pend=true; (window.requestAnimationFrame||setTimeout)(function(){pend=false; fix();}); }
+  fix();
+  try{ new MutationObserver(sched).observe(document.documentElement,{subtree:true,childList:true,characterData:true}); }catch(e){}
+})();
+
+
 /* feat_canon_provider — set the ONE canonical scheduling provider so doctor-scoping works everywhere.
    The account login is "Michael Schaeffer" but the real athenaOne scheduling provider (and the doctor)
    is "Matthew Schaeffer, MD" (confirmed by Michael 2026-07-03). The mismatch made "my patients"
