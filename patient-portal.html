@@ -75,8 +75,41 @@
   .disclaimer{font-size:11.5px;color:var(--muted);margin-top:8px;text-align:center}
   .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---------- Expandable records (tap to open) ---------- */
+  ul.list li.li-x{padding:0;cursor:pointer;-webkit-tap-highlight-color:rgba(31,122,224,.08)}
+  .li-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 2px}
+  li.li-x:active .li-head{background:var(--soft);border-radius:8px}
+  .li-chev{color:var(--muted);font-size:13px;transition:transform .18s;flex:none;padding-left:6px}
+  li.li-x[data-exp="1"] .li-chev{transform:rotate(90deg)}
+  .li-detail{max-height:0;overflow:hidden;transition:max-height .24s ease}
+  li.li-x[data-exp="1"] .li-detail{max-height:640px}
+  .li-detail-in{padding:2px 2px 12px}
+  .d-row{display:flex;gap:10px;font-size:13px;padding:5px 0;border-top:1px dashed var(--line)}
+  .d-row:first-child{border-top:none}
+  .d-k{color:var(--blue-d);font-weight:700;min-width:96px;text-transform:capitalize}
+  .d-v{color:var(--ink);flex:1;word-break:break-word}
+
+  /* ---------- Mobile / phones ---------- */
+  @media(max-width:600px){
+    html{-webkit-text-size-adjust:100%}
+    .wrap{padding:12px}
+    .top-in{padding:10px 12px;flex-wrap:wrap;gap:8px}
+    .who{order:3;width:100%;font-size:12.5px}
+    .brand{font-size:16px}
+    .sec{padding:15px 15px 6px}
+    .grid{gap:12px;margin-top:14px}
+    .msg{max-width:93%}
+    .login-card{padding:24px 18px}
+    input{font-size:16px}            /* prevents iOS auto-zoom on focus */
+    .li-head{padding:13px 2px}
+    .composer .btn{padding:12px 15px}
+    .chat{min-height:360px}
+  }
+
   @media print{
-    header.top .linkbtn, #demoBanner, .chat, .chips, .composer, .disclaimer, #login{display:none!important}
+    header.top .linkbtn, #demoBanner, .chat, .chips, .composer, .disclaimer, #login, .li-chev{display:none!important}
+    li.li-x[data-exp] .li-detail{max-height:none!important}
     body{background:#fff}
     .wrap{max-width:100%;padding:0}
     .grid{grid-template-columns:1fr!important}
@@ -180,22 +213,43 @@
   function hide(el){ el.classList.add("hide"); }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
 
+  function pkey(k){
+    var s=String(k).replace(/_/g," ");
+    if(/^icd10$/i.test(s)) return "ICD-10";
+    if(/^mrn$/i.test(s)) return "MRN";
+    if(/^dob$/i.test(s)) return "DOB";
+    if(/^sig$/i.test(s)) return "Sig";
+    return s;
+  }
+  function detailHTML(it){
+    var rows="";
+    for(var k in it){
+      if(!it.hasOwnProperty(k)) continue;
+      var v=it[k];
+      if(v==null || v==="") continue;
+      if(typeof v==="object"){ try{ v=JSON.stringify(v); }catch(e){ v=String(v); } }
+      rows += '<div class="d-row"><span class="d-k">'+esc(pkey(k))+'</span><span class="d-v">'+esc(String(v))+'</span></div>';
+    }
+    return rows;
+  }
   function itemHTML(it){
     if(it==null) return "";
-    if(typeof it === "string"){ return '<li><div class="li-title">'+esc(it)+'</div></li>'; }
-    if(typeof it !== "object"){ return '<li><div class="li-title">'+esc(String(it))+'</div></li>'; }
+    if(typeof it === "string"){ return '<li><div class="li-head"><div class="li-title">'+esc(it)+'</div></div></li>'; }
+    if(typeof it !== "object"){ return '<li><div class="li-head"><div class="li-title">'+esc(String(it))+'</div></div></li>'; }
     var title = it.name || it.title || it.description || it.problem || it.medication || it.drug || it.reason || it.type || it.chief_complaint || it.summary || "";
     var metaParts = [];
-    ["date","start","when","dob","time","provider","doctor","status","dose","dosage","sig","frequency","code","icd10","location","note"].forEach(function(k){
+    ["date","start","when","time","provider","doctor","status","dose","dosage","sig","frequency","code","icd10","location"].forEach(function(k){
       if(it[k]!=null && it[k]!=="" && String(it[k])!==title) metaParts.push(esc(String(it[k])));
     });
     if(!title){
       var vals=[]; for(var k in it){ if(it.hasOwnProperty(k) && (typeof it[k]==="string"||typeof it[k]==="number")) vals.push(esc(String(it[k]))); }
       title = vals.slice(0,2).join(" — ") || "Record";
-      metaParts = vals.slice(2,5);
     }
-    var meta = metaParts.length ? '<div class="li-meta">'+metaParts.join(" · ")+'</div>' : "";
-    return '<li><div class="li-title">'+esc(title)+'</div>'+meta+'</li>';
+    var meta = metaParts.length ? '<div class="li-meta">'+metaParts.slice(0,3).join(" · ")+'</div>' : "";
+    var detail = detailHTML(it);
+    if(!detail){ return '<li><div class="li-head"><div><div class="li-title">'+esc(title)+'</div>'+meta+'</div></div></li>'; }
+    return '<li class="li-x" data-exp="0"><div class="li-head"><div><div class="li-title">'+esc(title)+'</div>'+meta+'</div><span class="li-chev">▸</span></div>'+
+           '<div class="li-detail"><div class="li-detail-in">'+detail+'</div></div></li>';
   }
 
   function fill(listId, emptyId, countId, arr){
@@ -315,6 +369,14 @@
   }
   $("chatForm").addEventListener("submit", function(e){ e.preventDefault(); ask($("q").value); });
   $("chips").addEventListener("click", function(e){ if(e.target.classList.contains("chip")) ask(e.target.textContent); });
+
+  // Tap a record (visit, problem, medication, appointment) to expand its full detail.
+  document.addEventListener("click", function(e){
+    var head = e.target && e.target.closest ? e.target.closest("li.li-x .li-head") : null;
+    if(!head) return;
+    var li = head.closest("li.li-x");
+    if(li) li.setAttribute("data-exp", li.getAttribute("data-exp")==="1" ? "0" : "1");
+  });
 
   checkSession();
 })();
