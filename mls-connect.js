@@ -1,3 +1,47 @@
+/* feat_wb_defaults — make athenaOne writeback work by DEFAULT so the "Show me where" teach flow is
+   a last resort, not a gate (Michael: defaults should already work; teaching is last resort).
+   (1) Ensures all four destinations have a default target section in mlsWbPrefs:default — including
+   the previously-missing Diagnoses/ICD-10 (defaults to the encounter "Assessment" section).
+   (2) Rewrites the teach modal's misleading "No location taught for X yet" into a message that says
+   the default is active and teaching is optional. Additive, reversible, no clinical write occurs. */
+(function(){
+  "use strict";
+  if(window.__mlsWbDefaults) return; window.__mlsWbDefaults=true;
+  // 1) seed defaults for every destination (only fills gaps; never overwrites a user's setting)
+  try{
+    var K='mlsWbPrefs:default';
+    var d=JSON.parse(localStorage.getItem(K)||'{}')||{};
+    if(!d.note)   d.note={sectionName:'Clinical note'};
+    if(!d.opnote) d.opnote={tab:'PE',sectionName:'Procedure Documentation',template:'Injection Generic Template',addTemplate:true,clearFirst:true};
+    if(!d.cpt)    d.cpt={sectionName:'Orders / Procedure codes (CPT)'};
+    if(!d.dx)     d.dx={sectionName:'Assessment'};   // NEW: Diagnoses / ICD-10 default (encounter Assessment)
+    localStorage.setItem(K, JSON.stringify(d));
+  }catch(e){}
+  // 2) demote the teach "No location taught yet" wall to "using default (optional to teach)"
+  var RE=/No location taught for .* yet/i;
+  function patchTeachMsg(){
+    try{
+      var all=document.querySelectorAll('div,p,span,section,li');
+      for(var i=0;i<all.length;i++){
+        var e=all[i];
+        if(e.__mlsWbPatched) continue;
+        var t=e.textContent||'';
+        if(!RE.test(t)) continue;
+        var childHas=false;
+        for(var c=0;c<e.children.length;c++){ if(RE.test(e.children[c].textContent||'')){ childHas=true; break; } }
+        if(childHas) continue; // only patch the tightest container
+        e.__mlsWbPatched=true;
+        e.innerHTML='✓ Using your default location for this destination — teaching is optional. Use “Show me where” only if you want to override the default.';
+      }
+    }catch(e){}
+  }
+  var last=0, pend=false;
+  function schedule(){ if(pend) return; pend=true; (window.requestAnimationFrame||setTimeout)(function(){ pend=false; var n=Date.now(); if(n-last<300) return; last=n; patchTeachMsg(); }); }
+  patchTeachMsg();
+  try{ new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true,characterData:true}); }catch(e){}
+})();
+
+
 /* feat_today_noblink — kill the distracting blink/pulse on the "Today" buttons (Michael: it's
    annoying). Cosmetic, additive, reversible. Forces no CSS animation on the Today buttons and
    strips any blink/pulse/flash/attention class or inline animation the app toggles when the
