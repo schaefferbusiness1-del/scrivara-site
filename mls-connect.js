@@ -1,3 +1,17 @@
+/* ===== feat: MLS fab-layout fix (2026-07-02) — un-overlap bottom-right floating buttons (Add patient, Voice, MLS Agent) into a clean right-edge stack; MLS Agent gets its own clear home. Additive+reversible: window.__mlsFabLayout.revert() ===== */
+(function(){
+  'use strict';
+  if (window.__mlsFabLayout) return;
+  var st = document.createElement('style');
+  st.id = 'mls-fab-layout-css';
+  st.textContent =
+    '#mlsP1AgFab{position:fixed!important;right:18px!important;bottom:18px!important;left:auto!important;z-index:99997!important;box-shadow:0 6px 18px rgba(20,86,168,.35)!important;}'+
+    '#mlsAddPtLauncher{position:fixed!important;right:18px!important;bottom:72px!important;left:auto!important;z-index:99996!important;}'+
+    '#mlsVoiceFab{position:fixed!important;right:18px!important;bottom:126px!important;left:auto!important;z-index:99996!important;}';
+  (document.head||document.documentElement).appendChild(st);
+  window.__mlsFabLayout = { revert: function(){ try{ st.remove(); }catch(e){} window.__mlsFabLayout=null; } };
+})();
+
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_navfeat_keep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_navfeat_keep.js?v=20260626nfk1';s.setAttribute('data-mls-asset','feat_mls_navfeat_keep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item37: keep Legal requests/Team in nav unless actually toggled off in Settings (additive, reversible: window.__mlsNavFeatKeep.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_sched_datesync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_sched_datesync.js?v=20260626sds1';s.setAttribute('data-mls-asset','feat_mls_sched_datesync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item38: schedule-bar date sync + viewed-date indicator (additive, reversible: window.__mlsSchedDateSync.revert()) */
