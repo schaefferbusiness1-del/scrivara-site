@@ -1,4 +1,26 @@
 (function(){
+  if(window.__mlsTabsInEasy) return;
+  window.__mlsTabsInEasy=true;
+  var CSS="#mlsEasyTools{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}#mlsEasyTools .et-btn{cursor:pointer;flex:1 1 240px;min-width:0;display:flex;align-items:center;gap:9px;justify-content:center;border-radius:14px;padding:13px 16px;font:700 14px system-ui;color:#eef4ff;background:rgba(255,255,255,.07);border:1px solid rgba(160,190,255,.28)}#mlsEasyTools .et-btn:hover{filter:brightness(1.12)}#mlsEasyTools .et-prem{margin-left:2px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:2px 6px;border-radius:6px}@media(max-width:640px){#mlsEasyTools .et-btn{flex:1 1 100%}}";
+  function css(){if(document.getElementById('mlsTabsInEasyCss'))return;var s=document.createElement('style');s.id='mlsTabsInEasyCss';s.textContent=CSS;document.head.appendChild(s);}
+  var DEFS=[{id:'mlsPtab_reviews',icon:'\u2B50',label:'Reviews & reputation'},{id:'mlsPtab_send',icon:'\uD83D\uDCE4',label:'Send to patient'}];
+  function hideTabs(){ DEFS.forEach(function(d){ var t=document.getElementById(d.id); if(t) t.style.setProperty('display','none','important'); }); }
+  function build(){
+    var hero=document.getElementById('visitHero'); if(!hero) return false;
+    if(!document.getElementById('mlsPtab_reviews')&&!document.getElementById('mlsPtab_send')) return false;
+    css(); hideTabs();
+    var row=document.getElementById('mlsEasyTools');
+    if(!row){ row=document.createElement('div'); row.id='mlsEasyTools';
+      DEFS.forEach(function(d){ var b=document.createElement('button'); b.type='button'; b.className='et-btn'; b.setAttribute('data-target',d.id); b.innerHTML=d.icon+' '+d.label+'<span class="et-prem">PREMIUM</span>'; b.onclick=function(ev){ try{ev.stopPropagation();}catch(_){}; var t=document.getElementById(d.id); if(t) t.click(); }; row.appendChild(b); });
+    }
+    if(!row.parentNode){ var ck=document.getElementById('mlsCockpit'); if(ck&&ck.parentNode===hero){ if(ck.nextSibling) hero.insertBefore(row,ck.nextSibling); else hero.appendChild(row); } else { hero.insertBefore(row,hero.firstChild); } }
+    return true;
+  }
+  var n=0,iv=setInterval(function(){ build(); if(document.getElementById('mlsEasyTools')||++n>120){ /* keep re-hiding a bit longer */ } if(++n>150) clearInterval(iv); },600);
+  if(document.readyState!=='loading')build();
+})();
+
+(function(){
   if(window.__mlsEasyUnified) return;
   window.__mlsEasyUnified=true;
   var CSS="#mls-rt-bar{display:none!important}#mlsEwStack{display:none!important}#mlsCockpit{margin:0 0 16px;color:#eef4ff;font-family:system-ui,-apple-system,sans-serif}#mlsCockpit .ck-eyebrow{font-size:12px;letter-spacing:.5px;color:#8fb0e8;font-weight:700;text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;gap:7px}#mlsCockpit .ck-steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}#mlsCockpit .ck-step{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(150,180,240,.25);cursor:pointer;font-size:13px;font-weight:600;color:#c7d6f5;flex:1 1 auto;justify-content:center;min-width:118px}#mlsCockpit .ck-step .n{width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 auto}#mlsCockpit .ck-step.on{background:linear-gradient(135deg,#2f7cf6,#5b8dff);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(47,124,246,.4)}#mlsCockpit .ck-step.on .n{background:rgba(255,255,255,.25)}#mlsCockpit .ck-step.done{color:#8fe0b4}#mlsCockpit .ck-step.done .n{background:rgba(60,200,130,.3)}#mlsCockpit .ck-body{background:rgba(255,255,255,.05);border:1px solid rgba(150,180,240,.18);border-radius:16px;padding:16px 16px 18px}#mlsCockpit .ck-title{font-size:19px;font-weight:800;margin:0 0 3px}#mlsCockpit .ck-hint{font-size:13px;color:#a8bce6;margin:0 0 14px;line-height:1.45}#mlsCockpit .ck-actions{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}#mlsCockpit .ck-btn{cursor:pointer;border-radius:12px;padding:12px 15px;font-size:14px;font-weight:700;border:1px solid rgba(160,190,255,.3);background:rgba(255,255,255,.08);color:#eef4ff;display:flex;align-items:center;gap:7px}#mlsCockpit .ck-btn:hover{filter:brightness(1.08)}#mlsCockpit .ck-btn.primary{background:linear-gradient(135deg,#2f7cf6,#5b8dff);border-color:transparent;color:#fff;box-shadow:0 6px 18px rgba(47,124,246,.35);flex:1 1 220px;justify-content:center;font-size:15px;padding:14px 18px}#mlsCockpit .ck-nav{display:flex;gap:9px;justify-content:space-between}#mlsCockpit .ck-nav button{cursor:pointer;border-radius:12px;padding:11px 18px;font-size:14px;font-weight:700;border:1px solid rgba(160,190,255,.3);background:rgba(255,255,255,.06);color:#dce8ff}#mlsCockpit .ck-nav .next{background:#fff;color:#12325a;border:none}#mlsCockpit .ck-nav .next:disabled{opacity:.4}@media(max-width:640px){#mlsCockpit .ck-step{min-width:0;flex:1 1 44%;font-size:12px;padding:8px 6px}#mlsCockpit .ck-btn.primary{flex:1 1 100%}#mlsCockpit .ck-btn{flex:1 1 100%;justify-content:center}#mlsCockpit .ck-title{font-size:17px}}";
