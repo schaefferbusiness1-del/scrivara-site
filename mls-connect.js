@@ -38,7 +38,8 @@
     TABS.forEach(function(tab){
       var b=document.createElement('div'); b.id='mlsGtab_'+tab.id; b.className='navtab'; b.setAttribute('data-mls-gtab',tab.id); b.textContent=tab.label;
       b.onclick=function(e){ try{ e.stopPropagation(); }catch(_){ } showTab(tab); };
-      if(before) nav.insertBefore(b, before); else nav.appendChild(b);
+      var cont=(before&&before.parentNode)?before.parentNode:nav;
+      if(before&&before.parentNode) before.parentNode.insertBefore(b, before); else cont.appendChild(b);
     });
     nav.querySelectorAll('.navtab:not([data-mls-gtab])').forEach(function(t){
       if(t.getAttribute('data-mls-ghook')) return; t.setAttribute('data-mls-ghook','1');
