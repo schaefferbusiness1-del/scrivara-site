@@ -1,3 +1,16 @@
+/* feat_phonemic_recover — hotfix: the app's full-screen #phoneMicPage pairing overlay (fixed,
+   z9999) can get stuck showing over the whole app with only an empty pairing code and no way to
+   dismiss, which makes the program look gone. If it is covering the app with NO active numeric
+   pairing code, tuck it away so the app shows. Runs a few times as the app settles, then stops so it
+   never fights a real phone-pairing the user starts. Own guard; only ever touches #phoneMicPage. */
+(function(){
+  "use strict";
+  if(window.__mlsPmRecover) return; window.__mlsPmRecover=true;
+  function fix(){ try{ var pm=document.getElementById('phoneMicPage'); if(!pm) return; var cs=getComputedStyle(pm); if(cs.position!=='fixed'||cs.display==='none') return; var r=pm.getBoundingClientRect(); if(r.width<window.innerWidth*0.7||r.height<window.innerHeight*0.6) return; var code=(pm.textContent||'').replace(/[^0-9]/g,''); if(!code){ pm.style.display='none'; } }catch(e){} }
+  var n=0, iv=setInterval(function(){ fix(); if(++n>10) clearInterval(iv); }, 500);
+  fix();
+})();
+
 /* feat_easy_tabs2 — SAFE MLS Easy tabs (hotfix). Claims the wizard/tunnel guards FIRST so BOTH the
    old destructive "tunnel" AND the earlier tabs build (whose over-eager un-hide accidentally revealed
    the full-screen #phoneMicPage pairing overlay and covered the app) are disabled. This version NEVER
