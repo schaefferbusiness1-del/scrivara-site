@@ -1,3 +1,164 @@
+(function(){
+  if(window.__mlsEmrSections) return;
+  window.__mlsEmrSections = true;
+
+  // The 10 canonical EMR sections MLS Assist organizes a visit into.
+  var SECTIONS = [
+    {k:'history',   label:'History',          hints:['history of present illness','interval history','chief complaint','subjective','history','hpi','cc']},
+    {k:'exam',      label:'Physical exam',     hints:['physical examination','physical exam','on exam','objective','exam','pe']},
+    {k:'assessment',label:'Assessment',        hints:['assessment and plan','assessment','impression','diagnosis','dx']},
+    {k:'plan',      label:'Plan',              hints:['treatment plan','recommendations','plan']},
+    {k:'orders',    label:'Orders',            hints:['orders','labs ordered','order']},
+    {k:'rx',        label:'Prescriptions',     hints:['prescriptions','medications prescribed','medications','prescribe','rx','meds']},
+    {k:'referrals', label:'Referrals',         hints:['referrals','referral','refer to','consult']},
+    {k:'pt',        label:'PT orders',         hints:['physical therapy','pt orders','therapy orders','pt']},
+    {k:'imaging',   label:'Imaging orders',    hints:['imaging','radiology','x-ray','xray','mri','ct scan','ct','ultrasound']},
+    {k:'followup',  label:'Follow-up',         hints:['follow-up','follow up','return to clinic','next visit','rtc','f/u']}
+  ];
+
+  function noteText(){
+    var el = document.getElementById('mls-note');
+    if(el){ return (el.value!=null ? el.value : el.textContent) || ''; }
+    var tx = document.getElementById('mls-tx');
+    return tx ? ((tx.value!=null?tx.value:tx.textContent)||'') : '';
+  }
+
+  // Classify a header line to a section key, or null.
+  function classify(line){
+    var l = line.toLowerCase().replace(/[*_#>-]/g,'').trim();
+    for(var i=0;i<SECTIONS.length;i++){
+      var hs = SECTIONS[i].hints;
+      for(var j=0;j<hs.length;j++){
+        if(l.indexOf(hs[j])===0 || l===hs[j] || l.replace(/[:\s]+$/,'')===hs[j]) return SECTIONS[i].k;
+      }
+    }
+    return null;
+  }
+  function looksLikeHeader(line){
+    var t = line.trim();
+    if(!t) return false;
+    if(t.length>60) return false;
+    // header if short line ending in ':' OR is a known section name OR ALL CAPS-ish
+    if(/[:：]\s*$/.test(t)) return true;
+    if(classify(t)) return true;
+    var letters = t.replace(/[^A-Za-z]/g,'');
+    if(letters.length>=3 && letters===letters.toUpperCase()) return true;
+    return false;
+  }
+
+  // Split the note into {section->text} buckets using its own headers.
+  function organize(text){
+    var buckets = {}; SECTIONS.forEach(function(s){ buckets[s.k]=''; });
+    var lines = String(text||'').split(/\r?\n/);
+    var cur = null;
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(looksLikeHeader(line)){
+        var k = classify(line);
+        cur = k; // if header unknown, stop appending until next known header
+        continue;
+      }
+      if(cur && buckets.hasOwnProperty(cur)){
+        buckets[cur] += (buckets[cur]? '\n':'') + line;
+      }
+    }
+    // trim
+    SECTIONS.forEach(function(s){ buckets[s.k]=buckets[s.k].replace(/^\s+|\s+$/g,''); });
+    return buckets;
+  }
+
+  var confirmed = {};
+
+  function render(){
+    var host = document.getElementById('mlsEmrPanel');
+    if(host) host.parentNode.removeChild(host);
+    var text = noteText();
+    var buckets = organize(text);
+
+    host = document.createElement('div');
+    host.id = 'mlsEmrPanel';
+    host.setAttribute('style','position:fixed;inset:0;z-index:100000;background:rgba(6,10,24,.72);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px');
+    var hasAny = SECTIONS.some(function(s){ return buckets[s.k]; });
+
+    var cards = SECTIONS.map(function(s){
+      var val = buckets[s.k]||'';
+      var isConf = !!confirmed[s.k];
+      return '<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:12px;padding:12px 14px;margin-bottom:10px">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
+        +   '<b style="color:#e8ecff">'+s.label+'</b>'
+        +   '<label style="font-size:12px;color:#9fb0d8;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" data-emrk="'+s.k+'" '+(isConf?'checked':'')+'> confirm</label>'
+        + '</div>'
+        + '<textarea data-emrt="'+s.k+'" style="width:100%;margin-top:8px;min-height:'+(val?'64px':'40px')+';background:#141b3d;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:8px 10px;font:13px/1.5 system-ui;resize:vertical" placeholder="(nothing captured for '+s.label+' — add it, or leave blank)">'+ val.replace(/</g,'&lt;') +'</textarea>'
+        + '</div>';
+    }).join('');
+
+    host.innerHTML =
+      '<div style="max-width:760px;width:100%;background:#0b1020;border:1px solid rgba(120,140,220,.3);border-radius:16px;padding:18px 18px 14px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px">'
+      +   '<div style="font-size:17px;font-weight:800;color:#e8ecff">🗂️ EMR sections — review &amp; confirm</div>'
+      +   '<button id="mlsEmrClose" style="background:transparent;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:8px;padding:6px 10px;cursor:pointer">Close</button>'
+      + '</div>'
+      + '<div style="font-size:12.5px;color:#9fb0d8;margin-bottom:12px">'+(hasAny?'Organized from the current note. Edit anything, then <b>confirm</b> each section. Nothing is placed into the note until you confirm it.':'No sections detected in the note yet — generate the visit note first, then reopen. You can still type into any section below.')+'</div>'
+      + cards
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap">'
+      +   '<span id="mlsEmrCount" style="font-size:13px;color:#9fb0d8"></span>'
+      +   '<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      +     '<button id="mlsEmrAll" style="background:transparent;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer">Confirm all</button>'
+      +     '<button id="mlsEmrInsert" style="background:#16a34a;border:none;color:#fff;border-radius:10px;padding:10px 16px;font-weight:800;cursor:pointer">Insert confirmed into note</button>'
+      +   '</div>'
+      + '</div>'
+      + '<div style="font-size:11.5px;color:#9fb0d8;margin-top:8px">MLS never submits medical actions on its own. Review → confirm → send. Per-field placement into athenaOne (orders, Rx, referrals) is the next extension step.</div>'
+      + '</div>';
+
+    document.body.appendChild(host);
+
+    function updateCount(){
+      var n=0; SECTIONS.forEach(function(s){ if(confirmed[s.k]) n++; });
+      var c=document.getElementById('mlsEmrCount'); if(c) c.textContent = n+' / '+SECTIONS.length+' sections confirmed';
+    }
+    updateCount();
+
+    host.addEventListener('change', function(e){
+      var k = e.target.getAttribute && e.target.getAttribute('data-emrk');
+      if(k){ confirmed[k] = e.target.checked; updateCount(); }
+    });
+    document.getElementById('mlsEmrClose').onclick = function(){ host.parentNode.removeChild(host); };
+    host.addEventListener('click', function(e){ if(e.target===host) host.parentNode.removeChild(host); });
+    document.getElementById('mlsEmrAll').onclick = function(){
+      SECTIONS.forEach(function(s){ confirmed[s.k]=true; });
+      host.querySelectorAll('input[data-emrk]').forEach(function(cb){ cb.checked=true; });
+      updateCount();
+    };
+    document.getElementById('mlsEmrInsert').onclick = function(){
+      var parts=[];
+      SECTIONS.forEach(function(s){
+        if(!confirmed[s.k]) return;
+        var ta = host.querySelector('textarea[data-emrt="'+s.k+'"]');
+        var v = ta ? ta.value.trim() : '';
+        parts.push(s.label.toUpperCase()+':\n'+(v||'(none)'));
+      });
+      if(!parts.length){ alert('Confirm at least one section first.'); return; }
+      var out = parts.join('\n\n');
+      var note = document.getElementById('mls-note');
+      if(note){ if(note.value!=null){ note.value = out; note.dispatchEvent(new Event('input',{bubbles:true})); } else { note.textContent = out; } }
+      var btn=document.getElementById('mlsEmrInsert'); btn.textContent='Inserted ✓'; setTimeout(function(){ btn.textContent='Insert confirmed into note'; },1400);
+    };
+  }
+
+  function addButton(){
+    if(document.getElementById('mlsEmrBtn')) return;
+    var b=document.createElement('button');
+    b.id='mlsEmrBtn'; b.type='button'; b.textContent='🗂️ EMR sections';
+    b.setAttribute('style','position:fixed;left:12px;bottom:96px;z-index:99998;background:#3452d6;border:none;color:#fff;border-radius:11px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)');
+    b.onclick=function(){ confirmed={}; render(); };
+    document.body.appendChild(b);
+  }
+
+  var n=0, iv=setInterval(function(){ addButton(); if(++n>20) clearInterval(iv); }, 800);
+  if(document.readyState!=='loading') addButton();
+})();
+
+
 /* feat_patient_picker — quick patient picker (STAGING). Turns the existing #ptSearch box into a
    real autocomplete over EVERY patient the app has pulled (window._calAppts, ~600+), not just
    today's. Type a name or DOB and pick from a dropdown; selecting fills the search box + DOB and
