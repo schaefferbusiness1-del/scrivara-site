@@ -1,3 +1,99 @@
+/* feat_easy_realtabs — MLS Easy as REAL tabs: each tab shows one stage at a time. Patient · Capture ·
+   Note · Sign. Clicking Capture/Note/Sign shows ONLY that stage's box and hides the other two;
+   Patient shows everything. Supersedes the spotlight-only bar (claims the shared guard). SAFETY (this
+   is a live medical tool — an earlier hide-based version broke it): it hides ONLY the three specific
+   box cards anchored on #mls-tx / #mls-note / the EMR card, and ONLY after HARD VALIDATION that they
+   are three distinct, sized, sibling cards that are NOT the panel/body and don't contain each other.
+   If validation fails (e.g. boxes not rendered yet), the tab safely falls back to scroll+spotlight and
+   hides NOTHING. It never walks parent chains, never touches #phoneMicPage/#mlsEasyPanel/body, and
+   restores only what it hid. Reversible; a reload restores the app. */
+(function(){
+  "use strict";
+  if(window.__mlsEasyWizard) return;
+  window.__mlsEasyWizard=true; window.__mlsEasyTunnel=true; window.__mlsEasyTabsSafe=true; window.__mlsEasyRealTabs=true;
+  function byText(txt){ var e=document.querySelectorAll('h1,h2,h3,h4,div,span,section,label,button'); for(var i=0;i<e.length;i++){var t=(e[i].textContent||'').replace(/\s+/g,' ').trim(); if(t.indexOf(txt)===0&&t.length<80&&e[i].children.length<=4){ return e[i]; } } return null; }
+  // walk up from a content element to the nearest "card" that is a sibling in a multi-card row
+  function cardFromContent(el){ if(!el) return null; var c=el; for(var i=0;i<7&&c&&c.parentElement;i++){ var p=c.parentElement; if(p===document.body) break; if(p.children.length>=3 && p.children.length<=6){ return c; } c=p; } return el.closest('[class*=card],section')||el.parentElement; }
+  function boxes(){
+    var tx=document.getElementById('mls-tx'), note=document.getElementById('mls-note');
+    var cap=cardFromContent(tx), nt=cardFromContent(note);
+    var emr=null;
+    if(cap&&nt&&cap.parentElement===nt.parentElement){ // third sibling that is neither cap nor nt
+      var sibs=[].slice.call(cap.parentElement.children);
+      emr=sibs.filter(function(s){ return s!==cap&&s!==nt; })[0]||null;
+    }
+    if(!emr){ var e=byText('EMR')||byText('Insert into chart'); if(e) emr=cardFromContent(e); }
+    return {cap:cap, note:nt, emr:emr};
+  }
+  function sized(el){ if(!el) return false; var r=el.getBoundingClientRect(); return r.width>=150 && r.height>=40; }
+  function validate(b){
+    var cap=b.cap, nt=b.note, emr=b.emr, body=document.body, panel=document.getElementById('mlsEasyPanel');
+    if(!cap||!nt||!emr) return false;
+    if(cap===nt||nt===emr||cap===emr) return false;
+    if([cap,nt,emr].indexOf(body)>=0 || [cap,nt,emr].indexOf(panel)>=0) return false;
+    if(cap.contains(nt)||cap.contains(emr)||nt.contains(emr)||nt.contains(cap)||emr.contains(cap)||emr.contains(nt)) return false;
+    if(cap.contains(panel)||nt.contains(panel)||emr.contains(panel)) return false; // must not wrap the panel
+    if(!(sized(cap)&&sized(nt)&&sized(emr))) return false;
+    if(!(cap.parentElement===nt.parentElement && nt.parentElement===emr.parentElement)) return false;
+    return true;
+  }
+  var HIDDEN=[]; // track exactly what we hid, to restore precisely
+  function restoreHidden(){ HIDDEN.forEach(function(el){ try{ if(el.getAttribute('data-mls-hid')==='1'){ el.style.display=''; el.removeAttribute('data-mls-hid'); } }catch(e){} }); HIDDEN=[]; }
+  function hideOnly(showEl, allEls){
+    restoreHidden();
+    allEls.forEach(function(el){ if(el&&el!==showEl){ try{ el.setAttribute('data-mls-hid','1'); el.style.display='none'; HIDDEN.push(el); }catch(e){} } });
+    if(showEl){ try{ showEl.style.display=''; }catch(e){} }
+  }
+  var TABS=[
+    { label:'1 · Patient', hint:'Confirm the patient (use the picker), then hit ● Record.' },
+    { label:'2 · Capture', hint:'Record or paste the visit. When you stop, the note writes itself.' },
+    { label:'3 · Note',    hint:'Review the AI note — edit anything before it goes in the chart.' },
+    { label:'4 · Sign',    hint:'Push the note + EMR fields into athena, then sign.' }
+  ];
+  function stepBtns(){ var b=document.querySelectorAll('button.mlsstp'); return b.length>=4? Array.prototype.slice.call(b).slice(0,4):null; }
+  var cur=0;
+  function spot(el){ document.querySelectorAll('.mls-rt-spot').forEach(function(e){e.classList.remove('mls-rt-spot');}); if(el){ el.classList.add('mls-rt-spot'); try{ el.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} } }
+  function go(i){
+    cur=Math.max(0,Math.min(3,i));
+    var b=boxes(); var ok=validate(b); var all=[b.cap,b.note,b.emr];
+    var target=(cur===1?b.cap:cur===2?b.note:cur===3?b.emr:null);
+    if(cur===0){ restoreHidden(); spot(document.getElementById('mlsEasyPanel')); }
+    else if(ok){ hideOnly(target, all); spot(target); }
+    else { restoreHidden(); spot(target); } // safe fallback: show all, just spotlight
+    var pills=document.querySelectorAll('.mls-rt-pill');
+    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2563eb':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
+    var h=document.getElementById('mls-rt-hint'); if(h) h.textContent='Step '+(cur+1)+' of 4 — '+TABS[cur].hint+(cur>0&&!ok?' (showing all — boxes not ready to isolate yet)':'');
+    var nx=document.getElementById('mls-rt-next'); if(nx) nx.textContent=(cur<3?('Next: '+TABS[cur+1].label.split('· ')[1]+' →'):'Done ✓');
+    var sb=stepBtns(); if(sb){ for(var c=0;c<sb.length;c++) sb[c].style.opacity=(c===cur?'1':'.6'); }
+  }
+  function build(){
+    if(document.getElementById('mls-rt-bar')) return true;
+    var btns=stepBtns(); if(!btns) return false;
+    var container=btns[0].parentElement; if(!container) return false;
+    ['mls-tnl-bar','mls-wiz-bar','mls-tab-bar'].forEach(function(id){ var o=document.getElementById(id); if(o) o.remove(); });
+    for(var c=0;c<btns.length;c++){ (function(ci){ var b=btns[ci]; b.style.cursor='pointer'; if(!b.__rt){ b.__rt=1; b.addEventListener('click',function(){ go(ci); }); } })(c); }
+    var bar=document.createElement('div'); bar.id='mls-rt-bar';
+    bar.style.cssText='margin:10px 4px 4px;padding:10px 12px;border-radius:14px;background:rgba(96,120,224,.10);border:1px solid rgba(96,120,224,.30);font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:inherit';
+    var pillRow=document.createElement('div'); pillRow.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px';
+    TABS.forEach(function(t,idx){ var p=document.createElement('button'); p.type='button'; p.className='mls-rt-pill'; p.textContent=t.label;
+      p.style.cssText='padding:6px 12px;border-radius:999px;border:1px solid rgba(96,120,224,.4);background:transparent;color:inherit;font:600 12px system-ui;cursor:pointer;transition:all .15s';
+      p.addEventListener('click',function(){ go(idx); }); pillRow.appendChild(p); });
+    var ctrl=document.createElement('div'); ctrl.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    var hint=document.createElement('span'); hint.id='mls-rt-hint'; hint.style.cssText='flex:1;min-width:200px;font-weight:600;opacity:.92';
+    var showAll=document.createElement('button'); showAll.type='button'; showAll.textContent='▤ Show all'; showAll.title='Show every stage at once'; showAll.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer'; showAll.addEventListener('click',function(){ go(0); });
+    var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer'; back.addEventListener('click',function(){ go(cur-1); });
+    var next=document.createElement('button'); next.type='button'; next.id='mls-rt-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
+    ctrl.appendChild(hint); ctrl.appendChild(showAll); ctrl.appendChild(back); ctrl.appendChild(next);
+    bar.appendChild(pillRow); bar.appendChild(ctrl);
+    (container.parentNode||container).insertBefore(bar, container.nextSibling);
+    if(!document.getElementById('mls-rt-css')){ var st=document.createElement('style'); st.id='mls-rt-css'; st.textContent='.mls-rt-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important}'; document.head.appendChild(st); }
+    go(0);
+    return true;
+  }
+  if(!build()){ var n=0, iv=setInterval(function(){ if(build()||++n>40) clearInterval(iv); }, 1000); }
+})();
+
+
 /* feat_smart_ask — a smart, natural-language analytics layer over ALL pulled provider/patient data
    (window._calAppts). Exposes window.mlsAsk(question) -> {answer, detail} so the MLS Copilot, the
    study maker, and this "Ask your data" box can all answer questions like:
