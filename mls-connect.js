@@ -18,7 +18,7 @@
     if(!vw.querySelector('iframe')){ var f=document.createElement('iframe'); f.src=REVIEW_URL; f.style.cssText='width:100%;height:100%;border:0;background:#0b1020'; vw.appendChild(f); }
     show(vw); var t=document.getElementById('mlsPtab_reviews'); if(t)t.classList.add('on');
   }
-  function activePatient(){ try{ return window.activePatient||window._activePatient||{}; }catch(e){ return {}; } }
+  function activePatient(){ try{ var v=window.activePatient; if(typeof v==='function'){ return v()||{}; } return window._activePatient||(typeof v==='object'&&v?v:{}); }catch(e){ return {}; } }
   function buildSend(vw){
     var p=activePatient();
     vw.innerHTML='';
@@ -49,7 +49,7 @@
       if(!token){ msg.style.color='#ffcf8f'; msg.textContent='Not signed in to MLS — reload the app and try again.'; return; }
       msg.style.color='#9fb0d8'; msg.textContent='Sending...'; btn.disabled=true;
       var pp=activePatient();
-      fetch(BACKEND+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({email:email,name:pp.name||'',external_id:pp.patient_external_id||pp.external_id||'',dob:pp.dob||'',mrn:pp.mrn||''})})
+      fetch(BACKEND+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({email:email,name:pp.name||'',external_id:pp.id||pp.patient_external_id||pp.external_id||'',dob:pp.dob||'',mrn:pp.mrn||'',id:pp.id||''})})
         .then(function(r){ btn.disabled=false; if(r.ok){ msg.style.color='#9be8b8'; msg.textContent='Sent. The patient will get a secure login link by email.'; } else if(r.status===401||r.status===403){ msg.style.color='#ffcf8f'; msg.textContent='This account may not be allowed to send invites (needs the practice/admin login). Send from the admin account.'; } else { msg.style.color='#ffcf8f'; msg.textContent='Could not send (error '+r.status+'). Try again.'; } })
         .catch(function(){ btn.disabled=false; msg.style.color='#ffcf8f'; msg.textContent='Network error, try again.'; });
     };
