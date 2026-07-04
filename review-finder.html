@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MLS Reputation — Review Finder</title>
+<style>
+  :root{ --bg:#0b1020; --card:#0f1530; --card2:#141b3d; --line:rgba(120,140,220,.22); --ink:#e8ecff; --mut:#9fb0d8; --blue:#2563eb; --green:#16a34a; --amber:#d97706; --violet:#7c3aed; }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(160deg,#0b1020,#0d1226 60%,#0b1020);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
+  a{color:#8ab0ff}
+  .wrap{max-width:1040px;margin:0 auto;padding:26px 18px 80px}
+  .top{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#3452d6,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:20px}
+  h1{font-size:24px;margin:0}
+  .sub{color:var(--mut);font-size:13px;margin:2px 0 22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .card h2{font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:9px}
+  .card .hint{color:var(--mut);font-size:13px;margin:0 0 16px}
+  label{display:block;font-size:12px;color:var(--mut);margin:0 0 5px}
+  input,textarea,select{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 12px;font-size:14px;font-family:inherit}
+  textarea{min-height:90px;resize:vertical}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+  .btn{background:var(--blue);border:none;color:#fff;border-radius:11px;padding:11px 18px;font-weight:800;font-size:14px;cursor:pointer;transition:filter .15s}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:700}
+  .btn.green{background:var(--green)} .btn.violet{background:var(--violet)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .platforms{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .plat{background:var(--card2);border:1px solid var(--line);border-radius:13px;padding:13px}
+  .plat .ph{display:flex;align-items:center;gap:9px;justify-content:space-between}
+  .plat .nm{font-weight:800}
+  .plat .sub2{color:var(--mut);font-size:12px;margin:2px 0 10px}
+  .plat .cap{display:grid;grid-template-columns:1fr 74px 74px;gap:7px;margin-top:9px}
+  .chip{display:inline-block;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.4);color:#bcd0ff;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:700}
+  .chip.miss{background:rgba(217,119,6,.15);border-color:rgba(217,119,6,.45);color:#ffcf8f}
+  .chip.ok{background:rgba(22,163,74,.15);border-color:rgba(22,163,74,.45);color:#9be8b8}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  .kpi{background:var(--card2);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .kpi .n{font-size:26px;font-weight:800} .kpi .l{color:var(--mut);font-size:12px}
+  .stars{color:#ffb703;letter-spacing:2px}
+  .out{background:var(--card2);border-left:3px solid var(--blue);border-radius:9px;padding:12px 14px;white-space:pre-wrap;font-size:14px;margin-top:10px}
+  .quote{background:rgba(22,163,74,.08);border-left:3px solid var(--green);border-radius:8px;padding:9px 12px;margin:7px 0;font-size:13.5px}
+  .note{font-size:12px;color:var(--mut)}
+  .banner{background:rgba(217,119,6,.10);border:1px solid rgba(217,119,6,.35);border-radius:12px;padding:11px 14px;font-size:13px;color:#ffdcae;margin-bottom:16px}
+  .foot{color:var(--mut);font-size:12px;text-align:center;margin-top:26px;line-height:1.7}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:680px){ .two{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div class="logo">🔎</div><div><h1>Review Finder & Reputation</h1></div></div>
+  <p class="sub">Find every review your practice already has scattered across the web, pull it into one dashboard, and turn it into more patients — the compliant way. Part of <b>MLS Scribe</b>.</p>
+
+  <div class="banner">✅ Compliant by design: this tool <b>finds, summarizes, links, and helps you respond</b> to real reviews, and helps you <b>request new reviews from real patients</b>. It never fabricates reviews, never hides legitimate ones, and never auto-posts copied reviews to Google (that violates Google's policy and can get a listing suspended).</div>
+
+  <!-- 1. Doctor details -->
+  <div class="card">
+    <h2>🩺 Who are we scanning for?</h2>
+    <p class="hint">Enter the doctor + practice. Everything below auto-fills from this.</p>
+    <div class="grid">
+      <div><label>Doctor name</label><input id="dName" placeholder="Matthew Schaeffer, MD"></div>
+      <div><label>Specialty</label><input id="dSpec" placeholder="Orthopedics / Pain Management"></div>
+      <div><label>Practice name</label><input id="dPractice" placeholder="Premier Ortho"></div>
+      <div><label>City, State</label><input id="dCity" placeholder="Philadelphia, PA"></div>
+      <div><label>Google review link (optional)</label><input id="dGoogle" placeholder="https://g.page/r/…/review"></div>
+      <div><label>Website (optional)</label><input id="dSite" placeholder="https://…"></div>
+    </div>
+    <div class="row" style="margin-top:14px"><button class="btn" onclick="save()">💾 Save</button><span id="savedMsg" class="note"></span></div>
+  </div>
+
+  <!-- 2. Scan across the web -->
+  <div class="card">
+    <h2>🌐 Scan across the web</h2>
+    <p class="hint">Click each site to open a pre-filled search in a new tab. When you find the profile, paste its rating + review count to build your dashboard. Leave blank &amp; hit “No profile” to flag a gap you should claim.</p>
+    <div id="platforms" class="platforms"></div>
+  </div>
+
+  <!-- 3. Reputation dashboard -->
+  <div class="card">
+    <h2>📊 Reputation dashboard</h2>
+    <p class="hint">Live summary from what you’ve captured above.</p>
+    <div class="kpis" id="kpis"></div>
+    <div id="coverage" style="margin-top:14px"></div>
+  </div>
+
+  <div class="two">
+    <!-- 4. Positive quotes -->
+    <div class="card">
+      <h2>⭐ Pull positive quotes</h2>
+      <p class="hint">Paste review text (from any site). We surface the strongest positive lines for compliant testimonial use.</p>
+      <textarea id="qIn" placeholder="Paste one or more reviews here…"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn ghost" onclick="quotes()">Find positives</button></div>
+      <div id="qOut"></div>
+      <p class="note" style="margin-top:8px">Only use quotes as testimonials where the source platform + the patient allow it.</p>
+    </div>
+    <!-- 5. Respond to a tough review -->
+    <div class="card">
+      <h2>💬 Respond to a tough review</h2>
+      <p class="hint">Paste a negative review — get a calm, professional, HIPAA-safe response draft (no PHI, no arguing).</p>
+      <textarea id="rIn" placeholder="Paste the negative review…"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn ghost" onclick="respond()">Draft response</button><button class="btn ghost" onclick="flag()">Does it break the rules?</button></div>
+      <div id="rOut"></div>
+    </div>
+  </div>
+
+  <!-- 6. Get more reviews -->
+  <div class="card">
+    <h2>📣 Get more reviews (compliant)</h2>
+    <p class="hint">Generate a request to send real, satisfied patients — text or email, with your Google review link. In MLS Assist this can auto-offer after a signed visit.</p>
+    <div class="row"><button class="btn green" onclick="reqText()">Text template</button><button class="btn green" onclick="reqEmail()">Email template</button><button class="btn ghost" onclick="copyOut('reqOut')">Copy</button></div>
+    <div id="reqOut"></div>
+  </div>
+
+  <!-- 7. Site testimonials -->
+  <div class="card">
+    <h2>🗂️ Your website testimonials → more Google reviews</h2>
+    <p class="hint">Have testimonials on your own site? List them here to showcase them and, compliantly, invite those same patients to post the review on Google (we never copy it there for them).</p>
+    <textarea id="tIn" placeholder="One testimonial per line…"></textarea>
+    <div class="row" style="margin-top:10px"><button class="btn ghost" onclick="testimonials()">Build showcase + invites</button></div>
+    <div id="tOut"></div>
+  </div>
+
+  <div class="foot">
+    MLS Scribe — Review Finder. Compliance first: find, summarize, link, respond, and request from real patients only.<br>
+    Not affiliated with Google, Healthgrades, Vitals, Zocdoc, RateMDs, Yelp, or WebMD.
+  </div>
+</div>
+
+<script>
+var PLATFORMS=[
+  {k:'google', nm:'Google', sub:'Maps + Search — the big one', url:function(d){return 'https://www.google.com/search?q='+q(d.name+' '+d.spec+' '+d.city+' reviews');}},
+  {k:'gmaps', nm:'Google Maps', sub:'Your Business Profile', url:function(d){return 'https://www.google.com/maps/search/'+q(d.name+' '+d.city);}},
+  {k:'healthgrades', nm:'Healthgrades', sub:'Top doctor directory', url:function(d){return 'https://www.healthgrades.com/search?q='+q(d.name);}},
+  {k:'vitals', nm:'Vitals', sub:'Ratings + profiles', url:function(d){return 'https://www.vitals.com/search?q='+q(d.name);}},
+  {k:'zocdoc', nm:'Zocdoc', sub:'Booking + reviews', url:function(d){return 'https://www.zocdoc.com/search?q='+q(d.name);}},
+  {k:'ratemds', nm:'RateMDs', sub:'Patient ratings', url:function(d){return 'https://www.ratemds.com/search/?q='+q(d.name);}},
+  {k:'yelp', nm:'Yelp', sub:'Local reviews', url:function(d){return 'https://www.yelp.com/search?find_desc='+q(d.name)+'&find_loc='+q(d.city);}},
+  {k:'webmd', nm:'WebMD', sub:'Provider directory', url:function(d){return 'https://doctor.webmd.com/results?q='+q(d.name);}},
+  {k:'facebook', nm:'Facebook', sub:'Page reviews/recommends', url:function(d){return 'https://www.facebook.com/search/pages/?q='+q(d.name+' '+d.practice);}}
+];
+function q(s){return encodeURIComponent((s||'').trim());}
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function doc(){return {name:$('dName').value,spec:$('dSpec').value,practice:$('dPractice').value,city:$('dCity').value,google:$('dGoogle').value,site:$('dSite').value};}
+function copyText(t){ try{ navigator.clipboard.writeText(String(t||'')); }catch(e){} }
+function copyOut(id){ var el=$(id); copyText(el?el.innerText:''); }
+var CAP={}; // per-platform {rating, count, missing}
+function load(){ try{ var d=JSON.parse(localStorage.getItem('mlsRF')||'{}'); if(d.doc){ ['name','spec','practice','city','google','site'].forEach(function(k){ var el=$('d'+k.charAt(0).toUpperCase()+k.slice(1)); if(k==='name')el=$('dName'); if(el&&d.doc[k])el.value=d.doc[k]; }); } CAP=d.cap||{}; }catch(e){} }
+function save(){ try{ localStorage.setItem('mlsRF', JSON.stringify({doc:doc(),cap:CAP})); }catch(e){} $('savedMsg').textContent='Saved.'; setTimeout(function(){$('savedMsg').textContent='';},1500); renderPlatforms(); dash(); }
+function renderPlatforms(){
+  var d=doc();
+  $('platforms').innerHTML=PLATFORMS.map(function(p){
+    var c=CAP[p.k]||{};
+    var badge = c.missing ? '<span class="chip miss">no profile</span>' : (c.rating? '<span class="chip ok">'+esc(c.rating)+'★ · '+esc(c.count||'?')+'</span>' : '<span class="chip">not scanned</span>');
+    return '<div class="plat"><div class="ph"><div><div class="nm">'+p.nm+'</div><div class="sub2">'+p.sub+'</div></div>'+badge+'</div>'
+      +'<div class="row"><a class="btn ghost" style="text-decoration:none;font-size:12px;padding:7px 11px" target="_blank" rel="noopener" href="'+p.url(d)+'">Open search ↗</a></div>'
+      +'<div class="cap"><input placeholder="rating (e.g. 4.8)" value="'+esc(c.rating||'')+'" oninput="setCap(\''+p.k+'\',\'rating\',this.value)">'
+      +'<input placeholder="#" value="'+esc(c.count||'')+'" oninput="setCap(\''+p.k+'\',\'count\',this.value)">'
+      +'<button class="btn ghost" style="font-size:11px;padding:0" onclick="setCap(\''+p.k+'\',\'missing\',!('+(c.missing?'true':'false')+'))">'+(c.missing?'✓ gap':'No profile')+'</button></div></div>';
+  }).join('');
+}
+function setCap(k,f,v){ CAP[k]=CAP[k]||{}; if(f==='missing'){CAP[k].missing=v; if(v){CAP[k].rating='';CAP[k].count='';}} else {CAP[k][f]=v; CAP[k].missing=false;} save(); }
+function dash(){
+  var rated=PLATFORMS.filter(function(p){return CAP[p.k]&&CAP[p.k].rating;});
+  var totR=0, wsum=0, totC=0;
+  rated.forEach(function(p){ var c=CAP[p.k]; var r=parseFloat(c.rating)||0; var n=parseInt(c.count,10)||1; wsum+=r*n; totC+=n; totR++; });
+  var avg = totC? (wsum/totC) : 0;
+  var missing=PLATFORMS.filter(function(p){return CAP[p.k]&&CAP[p.k].missing;});
+  var covered=rated.length; var pct=Math.round(covered/PLATFORMS.length*100);
+  var stars = avg? '★'.repeat(Math.round(avg))+'☆'.repeat(5-Math.round(avg)) : '—';
+  $('kpis').innerHTML=
+    '<div class="kpi"><div class="n stars">'+(avg?avg.toFixed(1):'—')+'</div><div class="l">avg rating <span class="stars">'+stars+'</span></div></div>'
+    +'<div class="kpi"><div class="n">'+totC+'</div><div class="l">total reviews found</div></div>'
+    +'<div class="kpi"><div class="n">'+covered+' / '+PLATFORMS.length+'</div><div class="l">sites with a profile ('+pct+'%)</div></div>'
+    +'<div class="kpi"><div class="n" style="color:#ffcf8f">'+missing.length+'</div><div class="l">profiles to claim</div></div>';
+  $('coverage').innerHTML = missing.length? '<div class="out" style="border-left-color:var(--amber)"><b>Claim these profiles</b> — patients search here and you\'re not showing up: '+missing.map(function(p){return esc(PLATFORMS.filter(function(x){return x.k===p.k;})[0].nm);}).join(', ')+'.</div>' : (covered? '<div class="out" style="border-left-color:var(--green)">Good coverage. Keep review volume growing with the request tools below.</div>' : '');
+}
+function quotes(){
+  var t=$('qIn').value; var sents=t.split(/(?<=[.!?])\s+|\n+/).map(function(s){return s.trim();}).filter(Boolean);
+  var pos=/\b(great|excellent|amazing|wonderful|best|caring|kind|thorough|professional|highly recommend|recommend|helpful|friendly|listened|attentive|gentle|painless|life[- ]changing|fantastic|outstanding|compassionate|knowledgeable|patient|trust|comfortable|relief|better)\b/i;
+  var neg=/\b(rude|wait|worst|terrible|awful|never|refused|dismissive|pain|angry|billing|overcharg|cancel|late)\b/i;
+  var picks=sents.filter(function(s){return pos.test(s)&&!neg.test(s)&&s.length>15&&s.length<240;}).slice(0,8);
+  $('qOut').innerHTML = picks.length? picks.map(function(s){return '<div class="quote">“'+esc(s.replace(/^["'“”]+|["'“”]+$/g,''))+'”</div>';}).join('')+'<button class="btn ghost" style="margin-top:8px" onclick="copyText(\''+picks.join(' | ').replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\')">Copy all</button>' : '<div class="note" style="margin-top:8px">No clearly-positive lines detected — paste more review text.</div>';
+}
+function respond(){
+  var t=$('rIn').value.trim(); var d=doc();
+  var name=(d.practice||'our office');
+  var out="Thank you for taking the time to share your feedback. We're sorry your experience didn't meet the standard we hold ourselves to. We take concerns like this seriously and would like to make it right. Please reach out to "+name+" directly at your convenience so we can understand what happened and improve. We appreciate the opportunity to do better.";
+  $('rOut').innerHTML='<div class="out">'+esc(out)+'</div><div class="note" style="margin-top:6px">Never include patient details/PHI in a public reply. Take specifics offline.</div><button class="btn ghost" style="margin-top:8px" onclick="copyOut(\'rOut\')">Copy</button>';
+}
+function flag(){
+  var t=$('rIn').value.toLowerCase(); var reasons=[];
+  if(/https?:\/\/|www\.|\.com/.test(t)) reasons.push('contains a link (often disallowed)');
+  if(/(idiot|stupid|scam|fraud|liar|hate|kill|racist|\bslur\b)/.test(t)) reasons.push('abusive / offensive language');
+  if(/(never went|never seen|never a patient|competitor|didn\'t even go)/.test(t)) reasons.push('may be from a non-patient (fake)');
+  if(/(ssn|dob|phone number|address is)/.test(t)) reasons.push('discloses personal info');
+  $('rOut').innerHTML = reasons.length? '<div class="out" style="border-left-color:var(--amber)"><b>Possibly reportable</b> — you may be able to flag this to the platform for: '+reasons.map(esc).join('; ')+'. Report it in the platform\'s review tools; don\'t delete legitimate criticism.</div>' : '<div class="out" style="border-left-color:var(--green)">Nothing here clearly violates platform rules — best handled with a calm public response + an offline fix.</div>';
+}
+function reqText(){ var d=doc(); var link=d.google||'[your Google review link]'; $('reqOut').innerHTML='<div class="out">Hi! This is '+esc(d.practice||'the office')+'. It was great seeing you'+(d.name?' with '+esc(d.name):'')+'. If you have 30 seconds, a quick Google review really helps other patients find us: '+esc(link)+' — thank you!</div><div class="note" style="margin-top:6px">Send only to real, satisfied patients. Don\'t incentivize or filter by rating.</div>'; }
+function reqEmail(){ var d=doc(); var link=d.google||'[your Google review link]'; $('reqOut').innerHTML='<div class="out">Subject: How was your visit?\n\nHi [First name],\n\nThank you for trusting '+esc(d.practice||'our practice')+' with your care. If you had a good experience'+(d.name?' with '+esc(d.name):'')+', would you share it in a quick Google review? It takes under a minute and helps other patients:\n\n'+esc(link)+'\n\nWith appreciation,\n'+esc(d.practice||'The team')+'</div><div class="note" style="margin-top:6px">Real patients only. Never ask for or reward positive ratings specifically.</div>'; }
+function testimonials(){
+  var lines=$('tIn').value.split(/\n+/).map(function(s){return s.trim();}).filter(Boolean); var d=doc(); var link=d.google||'[your Google review link]';
+  if(!lines.length){ $('tOut').innerHTML='<div class="note">Paste testimonials above, one per line.</div>'; return; }
+  $('tOut').innerHTML='<div style="margin-top:6px">'+lines.slice(0,20).map(function(l){return '<div class="quote">“'+esc(l)+'”</div>';}).join('')+'</div>'
+    +'<div class="out" style="margin-top:12px"><b>Compliant next step:</b> these are yours to showcase on your site. To turn them into <i>Google</i> reviews, invite each of those same patients to re-post it themselves — never copy it there for them. Send: “You once shared such kind words about your care — would you mind posting a quick review on Google? '+esc(link)+'”.</div>';
+}
+load(); renderPlatforms(); dash();
+</script>
+</body>
+</html>
