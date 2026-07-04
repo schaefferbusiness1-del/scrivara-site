@@ -1,30 +1,53 @@
 (function(){
-  if(window.__mlsGrowthMenu) return;
-  window.__mlsGrowthMenu=true;
-  var LINKS=[
-    {t:'⭐ Reviews & Reputation', u:'/review-finder.html'},
-    {t:'📅 Easy Book — scheduling page', u:'/easy-book.html'},
-    {t:'🏥 Patient Portal', u:'/patient-portal.html'}
+  if(window.__mlsGrowthTabs) return;
+  window.__mlsGrowthTabs=true;
+  var TABS=[
+    {id:'reviews', label:'⭐ Reviews', url:'/review-finder.html'},
+    {id:'book',    label:'📅 Book',    url:'/easy-book.html'},
+    {id:'portal',  label:'🏥 Portal',  url:'/patient-portal.html'}
   ];
-  function make(link){
-    var b=document.createElement('button');
-    b.className='mlsTbItem'; b.type='button'; b.setAttribute('data-mls-growth','1');
-    b.textContent=link.t;
-    b.onclick=function(e){ try{ e.stopPropagation(); }catch(_){ } window.open(link.u,'_blank','noopener'); };
-    return b;
+  function ensureView(tab){
+    var id='mlsGView_'+tab.id, vw=document.getElementById(id);
+    if(vw) return vw;
+    vw=document.createElement('div'); vw.id=id; vw.setAttribute('data-mls-gview','1');
+    vw.style.cssText='display:none;position:fixed;left:0;right:0;bottom:0;z-index:5000;background:#0b1020';
+    var f=document.createElement('iframe'); f.setAttribute('data-src',tab.url); f.title=tab.label;
+    f.style.cssText='width:100%;height:100%;border:0;background:#0b1020';
+    vw.appendChild(f); document.body.appendChild(vw);
+    return vw;
+  }
+  function hideMine(){
+    document.querySelectorAll('[data-mls-gview]').forEach(function(v){ v.style.display='none'; });
+    document.querySelectorAll('[data-mls-gtab]').forEach(function(t){ t.classList.remove('on'); });
+  }
+  function showTab(tab){
+    hideMine();
+    var vw=ensureView(tab);
+    var nav=document.getElementById('mlsRdNav');
+    var top=nav?Math.round(nav.getBoundingClientRect().bottom):64;
+    vw.style.top=top+'px';
+    var f=vw.querySelector('iframe');
+    if(f && !f.src && f.getAttribute('data-src')) f.src=f.getAttribute('data-src');
+    vw.style.display='block';
+    var t=document.getElementById('mlsGtab_'+tab.id); if(t) t.classList.add('on');
   }
   function inject(){
-    var panel=document.getElementById('mlsTbMenuPanel');
-    if(!panel) return false;
-    if(panel.querySelector('[data-mls-growth]')) return true;
-    var items=panel.querySelectorAll('.mlsTbItem'), settings=null;
-    items.forEach(function(it){ if(/settings/i.test(it.textContent||'')) settings=it; });
-    LINKS.forEach(function(link){ var el=make(link); if(settings) panel.insertBefore(el, settings); else panel.appendChild(el); });
+    var nav=document.getElementById('mlsRdNav'); if(!nav) return false;
+    if(nav.querySelector('[data-mls-gtab]')) return true;
+    var before=document.getElementById('nav_help');
+    TABS.forEach(function(tab){
+      var b=document.createElement('div'); b.id='mlsGtab_'+tab.id; b.className='navtab'; b.setAttribute('data-mls-gtab',tab.id); b.textContent=tab.label;
+      b.onclick=function(e){ try{ e.stopPropagation(); }catch(_){ } showTab(tab); };
+      if(before) nav.insertBefore(b, before); else nav.appendChild(b);
+    });
+    nav.querySelectorAll('.navtab:not([data-mls-gtab])').forEach(function(t){
+      if(t.getAttribute('data-mls-ghook')) return; t.setAttribute('data-mls-ghook','1');
+      t.addEventListener('click', function(){ hideMine(); }, true);
+    });
     return true;
   }
-  var n=0, iv=setInterval(function(){ if(inject()|| ++n>60) clearInterval(iv); }, 700);
+  var n=0, iv=setInterval(function(){ inject(); if(++n>90) clearInterval(iv); }, 700);
   if(document.readyState!=='loading') inject();
-  document.addEventListener('click', function(){ setTimeout(inject, 250); }, true);
 })();
 
 
