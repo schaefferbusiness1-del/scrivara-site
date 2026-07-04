@@ -1,53 +1,71 @@
 (function(){
-  if(window.__mlsGrowthTabs) return;
-  window.__mlsGrowthTabs=true;
-  var TABS=[
-    {id:'reviews', label:'⭐ Reviews', url:'/review-finder.html'},
-    {id:'book',    label:'📅 Book',    url:'/easy-book.html'},
-    {id:'portal',  label:'🏥 Portal',  url:'/patient-portal.html'}
-  ];
-  function ensureView(tab){
-    var id='mlsGView_'+tab.id, vw=document.getElementById(id);
-    if(vw) return vw;
-    vw=document.createElement('div'); vw.id=id; vw.setAttribute('data-mls-gview','1');
-    vw.style.cssText='display:none;position:fixed;left:0;right:0;bottom:0;z-index:5000;background:#0b1020';
-    var f=document.createElement('iframe'); f.setAttribute('data-src',tab.url); f.title=tab.label;
-    f.style.cssText='width:100%;height:100%;border:0;background:#0b1020';
-    vw.appendChild(f); document.body.appendChild(vw);
-    return vw;
+  if(window.__mlsPatientReach) return;
+  window.__mlsPatientReach=true;
+  var BOOK_URL=location.origin+'/easy-book.html';
+  var REVIEW_URL='/review-finder.html';
+  var BACKEND='https://scrivara-backend.onrender.com';
+  function overlay(id){
+    var vw=document.getElementById(id); if(vw) return vw;
+    vw=document.createElement('div'); vw.id=id; vw.setAttribute('data-mls-pview','1');
+    vw.style.cssText='display:none;position:fixed;left:0;right:0;bottom:0;z-index:5000;background:#0b1020;overflow:auto';
+    document.body.appendChild(vw); return vw;
   }
-  function hideMine(){
-    document.querySelectorAll('[data-mls-gview]').forEach(function(v){ v.style.display='none'; });
-    document.querySelectorAll('[data-mls-gtab]').forEach(function(t){ t.classList.remove('on'); });
+  function hideMine(){ document.querySelectorAll('[data-mls-pview]').forEach(function(v){v.style.display='none';}); document.querySelectorAll('[data-mls-ptab]').forEach(function(t){t.classList.remove('on');}); }
+  function topPx(){ var nav=document.getElementById('mlsRdNav'); return nav?Math.round(nav.getBoundingClientRect().bottom):64; }
+  function show(vw){ hideMine(); vw.style.top=topPx()+'px'; vw.style.display='block'; }
+  function showReviews(){
+    var vw=overlay('mlsPView_reviews');
+    if(!vw.querySelector('iframe')){ var f=document.createElement('iframe'); f.src=REVIEW_URL; f.style.cssText='width:100%;height:100%;border:0;background:#0b1020'; vw.appendChild(f); }
+    show(vw); var t=document.getElementById('mlsPtab_reviews'); if(t)t.classList.add('on');
   }
-  function showTab(tab){
-    hideMine();
-    var vw=ensureView(tab);
-    var nav=document.getElementById('mlsRdNav');
-    var top=nav?Math.round(nav.getBoundingClientRect().bottom):64;
-    vw.style.top=top+'px';
-    var f=vw.querySelector('iframe');
-    if(f && !f.src && f.getAttribute('data-src')) f.src=f.getAttribute('data-src');
-    vw.style.display='block';
-    var t=document.getElementById('mlsGtab_'+tab.id); if(t) t.classList.add('on');
+  function activePatient(){ try{ return window.activePatient||window._activePatient||{}; }catch(e){ return {}; } }
+  function buildSend(vw){
+    var p=activePatient();
+    vw.innerHTML='';
+    var wrap=document.createElement('div');
+    wrap.style.cssText='max-width:720px;margin:0 auto;padding:24px 18px;color:#e8ecff;font:15px/1.5 system-ui,-apple-system,sans-serif';
+    wrap.innerHTML=
+      '<h2 style="font-size:20px;margin:0 0 4px">Send to your patients</h2>'
+      +'<p style="color:#9fb0d8;font-size:13px;margin:0 0 18px">These are patient-facing. Share the booking link publicly, and send a specific patient their private portal login.</p>'
+      +'<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:14px;padding:16px;margin-bottom:14px">'
+      +  '<b>Booking link</b><div style="font-size:12.5px;color:#9fb0d8;margin:2px 0 10px">Give this to patients or put it on your Google Business Profile and website so anyone can request an appointment.</div>'
+      +  '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mlsBookLink" readonly value="'+BOOK_URL+'" style="flex:1;min-width:220px;background:#141b3d;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:9px 11px"><button id="mlsCopyBook" style="background:#2563eb;border:none;color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">Copy link</button></div>'
+      +  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a href="sms:?&body='+encodeURIComponent('Book your appointment here: '+BOOK_URL)+'" style="text-decoration:none;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:8px;padding:9px 12px">Text a patient</a><a href="mailto:?subject='+encodeURIComponent('Book your appointment')+'&body='+encodeURIComponent('Hi,\n\nYou can request an appointment here: '+BOOK_URL+'\n\nThank you.')+'" style="text-decoration:none;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:8px;padding:9px 12px">Email a patient</a><button id="mlsCfgBook" style="background:transparent;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:8px;padding:9px 12px;cursor:pointer">Set up / preview page</button></div>'
+      +'</div>'
+      +'<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:14px;padding:16px">'
+      +  '<b>Patient portal access</b><div style="font-size:12.5px;color:#9fb0d8;margin:2px 0 10px">Email a specific patient a secure login to view their records and chat with them.'+(p&&p.name?(' Active patient: <b>'+String(p.name)+'</b>.'):'')+'</div>'
+      +  '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mlsPortalEmail" placeholder="patient@email.com" style="flex:1;min-width:220px;background:#141b3d;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:9px 11px"><button id="mlsSendPortal" style="background:#16a34a;border:none;color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">Send login</button></div>'
+      +  '<div id="mlsPortalMsg" style="font-size:13px;color:#9fb0d8;margin-top:8px"></div>'
+      +'</div>'
+      +'<div id="mlsCfgFrame"></div>';
+    vw.appendChild(wrap);
+    wrap.querySelector('#mlsCopyBook').onclick=function(){ var b=this; try{navigator.clipboard.writeText(BOOK_URL);}catch(e){} b.textContent='Copied'; setTimeout(function(){b.textContent='Copy link';},1400); };
+    wrap.querySelector('#mlsCfgBook').onclick=function(){ var c=wrap.querySelector('#mlsCfgFrame'); if(c.querySelector('iframe')){ c.innerHTML=''; return; } var f=document.createElement('iframe'); f.src=BOOK_URL; f.style.cssText='width:100%;height:70vh;border:1px solid rgba(120,140,220,.22);border-radius:12px;margin-top:14px;background:#0b1020'; c.appendChild(f); };
+    var em=wrap.querySelector('#mlsPortalEmail'); try{ if(p&&p.email) em.value=p.email; }catch(e){}
+    wrap.querySelector('#mlsSendPortal').onclick=function(){
+      var email=(em.value||'').trim(), msg=wrap.querySelector('#mlsPortalMsg'), btn=this;
+      if(!email){ msg.style.color='#ffcf8f'; msg.textContent='Enter the patient email first.'; return; }
+      var token=null; try{ token=localStorage.getItem('sf_bk_token'); }catch(e){}
+      if(!token){ msg.style.color='#ffcf8f'; msg.textContent='Not signed in to MLS — reload the app and try again.'; return; }
+      msg.style.color='#9fb0d8'; msg.textContent='Sending...'; btn.disabled=true;
+      var pp=activePatient();
+      fetch(BACKEND+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({email:email,name:pp.name||'',external_id:pp.patient_external_id||pp.external_id||'',dob:pp.dob||'',mrn:pp.mrn||''})})
+        .then(function(r){ btn.disabled=false; if(r.ok){ msg.style.color='#9be8b8'; msg.textContent='Sent. The patient will get a secure login link by email.'; } else if(r.status===401||r.status===403){ msg.style.color='#ffcf8f'; msg.textContent='This account may not be allowed to send invites (needs the practice/admin login). Send from the admin account.'; } else { msg.style.color='#ffcf8f'; msg.textContent='Could not send (error '+r.status+'). Try again.'; } })
+        .catch(function(){ btn.disabled=false; msg.style.color='#ffcf8f'; msg.textContent='Network error, try again.'; });
+    };
   }
+  function showSend(){ var vw=overlay('mlsPView_send'); buildSend(vw); show(vw); var t=document.getElementById('mlsPtab_send'); if(t)t.classList.add('on'); }
   function inject(){
     var nav=document.getElementById('mlsRdNav'); if(!nav) return false;
-    if(nav.querySelector('[data-mls-gtab]')) return true;
+    if(nav.querySelector('[data-mls-ptab]')) return true;
     var before=document.getElementById('nav_help');
-    TABS.forEach(function(tab){
-      var b=document.createElement('div'); b.id='mlsGtab_'+tab.id; b.className='navtab'; b.setAttribute('data-mls-gtab',tab.id); b.textContent=tab.label;
-      b.onclick=function(e){ try{ e.stopPropagation(); }catch(_){ } showTab(tab); };
-      var cont=(before&&before.parentNode)?before.parentNode:nav;
-      if(before&&before.parentNode) before.parentNode.insertBefore(b, before); else cont.appendChild(b);
-    });
-    nav.querySelectorAll('.navtab:not([data-mls-gtab])').forEach(function(t){
-      if(t.getAttribute('data-mls-ghook')) return; t.setAttribute('data-mls-ghook','1');
-      t.addEventListener('click', function(){ hideMine(); }, true);
-    });
+    function tab(id,label,fn){ var b=document.createElement('div'); b.id='mlsPtab_'+id; b.className='navtab'; b.setAttribute('data-mls-ptab',id); b.textContent=label; b.onclick=function(e){ try{e.stopPropagation();}catch(_){ } fn(); }; if(before&&before.parentNode) before.parentNode.insertBefore(b,before); else nav.appendChild(b); }
+    tab('reviews','⭐ Reviews', showReviews);
+    tab('send','📤 Send to patient', showSend);
+    nav.querySelectorAll('.navtab:not([data-mls-ptab])').forEach(function(t){ if(t.getAttribute('data-mls-phook')) return; t.setAttribute('data-mls-phook','1'); t.addEventListener('click',function(){ hideMine(); },true); });
     return true;
   }
-  var n=0, iv=setInterval(function(){ inject(); if(++n>90) clearInterval(iv); }, 700);
+  var n=0, iv=setInterval(function(){ inject(); if(++n>90) clearInterval(iv); },700);
   if(document.readyState!=='loading') inject();
 })();
 
