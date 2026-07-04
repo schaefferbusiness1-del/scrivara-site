@@ -19,6 +19,22 @@
     show(vw); var t=document.getElementById('mlsPtab_reviews'); if(t)t.classList.add('on');
   }
   function activePatient(){ try{ var v=window.activePatient; if(typeof v==='function'){ return v()||{}; } return window._activePatient||(typeof v==='object'&&v?v:{}); }catch(e){ return {}; } }
+  function isPrem(){ try{ if(typeof window.effectivePremium==='function') return !!window.effectivePremium(); var u=window.bkUser; return !!(u&&(u.premium||u.isAdmin)); }catch(e){ return false; } }
+  function badge(){ return '<span style="margin-left:6px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:2px 5px;border-radius:6px;vertical-align:middle">PREMIUM</span>'; }
+  function showUpsell(title,blurb){
+    var vw=overlay('mlsPView_upsell'); vw.innerHTML='';
+    var w=document.createElement('div');
+    w.style.cssText='max-width:620px;margin:0 auto;padding:48px 18px;color:#e8ecff;font:15px/1.55 system-ui,-apple-system,sans-serif;text-align:center';
+    w.innerHTML='<div style="font-size:30px;margin-bottom:6px">\u2728</div>'
+      +'<h2 style="font-size:22px;margin:0 0 8px">'+title+' is a Premium feature</h2>'
+      +'<p style="color:#9fb0d8;margin:0 auto 20px;max-width:460px">'+blurb+'</p>'
+      +'<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:14px;padding:18px;max-width:460px;margin:0 auto">'
+      +'<b>Upgrade to Premium</b><div style="font-size:13px;color:#9fb0d8;margin:6px 0 14px">Unlock patient outreach, reputation tools, AI Studio and more.</div>'
+      +'<a href="/index.html#pricing" target="_blank" style="display:inline-block;text-decoration:none;background:#2563eb;color:#fff;border-radius:9px;padding:11px 20px;font-weight:700">See Premium plans</a>'
+      +'</div>';
+    vw.appendChild(w); show(vw);
+  }
+  function gate(title,blurb,fn){ return function(){ if(isPrem()) return fn(); showUpsell(title,blurb); }; }
   function buildSend(vw){
     var p=activePatient();
     vw.innerHTML='';
@@ -59,9 +75,9 @@
     var nav=document.getElementById('mlsRdNav'); if(!nav) return false;
     if(nav.querySelector('[data-mls-ptab]')) return true;
     var before=document.getElementById('nav_help');
-    function tab(id,label,fn){ var b=document.createElement('div'); b.id='mlsPtab_'+id; b.className='navtab'; b.setAttribute('data-mls-ptab',id); b.textContent=label; b.onclick=function(e){ try{e.stopPropagation();}catch(_){ } fn(); }; if(before&&before.parentNode) before.parentNode.insertBefore(b,before); else nav.appendChild(b); }
-    tab('reviews','⭐ Reviews', showReviews);
-    tab('send','📤 Send to patient', showSend);
+    function tab(id,label,fn){ var b=document.createElement('div'); b.id='mlsPtab_'+id; b.className='navtab'; b.setAttribute('data-mls-ptab',id); b.innerHTML=label+badge(); b.onclick=function(e){ try{e.stopPropagation();}catch(_){ } fn(); }; if(before&&before.parentNode) before.parentNode.insertBefore(b,before); else nav.appendChild(b); }
+    tab('reviews','⭐ Reviews', gate('Reviews & Reputation','Find and manage your reputation across Google and the top review sites, pull positive quotes, and request more reviews from real patients.', showReviews));
+    tab('send','📤 Send to patient', gate('Send to patient','Share your booking link and email patients a secure portal login to view their records and chat with you.', showSend));
     nav.querySelectorAll('.navtab:not([data-mls-ptab])').forEach(function(t){ if(t.getAttribute('data-mls-phook')) return; t.setAttribute('data-mls-phook','1'); t.addEventListener('click',function(){ hideMine(); },true); });
     return true;
   }
