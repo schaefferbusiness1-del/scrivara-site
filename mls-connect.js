@@ -1,4 +1,46 @@
 (function(){
+  if(window.__mlsWizEasyLink) return;
+  window.__mlsWizEasyLink=true;
+  function el(id){ return document.getElementById(id); }
+  function clickId(id){ var e=el(id); if(e){ e.click(); return true; } return false; }
+  function byText(re,sel){ return [].find.call(document.querySelectorAll(sel||'button,a,div'),function(x){ return re.test((x.textContent||'').trim()) && x.offsetParent!==null && (x.textContent||'').length<60; }); }
+  function clickText(re,sel){ var e=byText(re,sel); if(e){ e.click(); return true; } return false; }
+  function focusId(id){ var e=el(id); if(e){ try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}; try{e.focus();}catch(_){}; return true; } return false; }
+  function scrollText(re){ var e=byText(re,'*'); if(e){ try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}; return true; } return false; }
+  function toast(msg){ var t=el('mlsWizToast'); if(!t){ t=document.createElement('div'); t.id='mlsWizToast'; t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s'; document.body.appendChild(t); } t.textContent=msg; t.style.opacity='1'; clearTimeout(t._h); t._h=setTimeout(function(){t.style.opacity='0';},1900); }
+  function act(fn,failMsg){ return function(){ var ok=false; try{ ok=fn(); }catch(e){ ok=false; } if(!ok) toast(failMsg||'That control is not ready yet on this step.'); }; }
+  var STEPS={
+    1:{ title:'Confirm your patient', btns:[
+        {label:'\u2935 Use current patient', primary:true, run:act(function(){return clickId('mlsUseActivePtBtn');},'No active patient yet - use the picker above.')},
+        {label:'\uD83D\uDCC4 From open Athena chart', run:act(function(){return clickId('mlsChartFillBtn');},'Open a chart in athenaOne first.')},
+        {label:'\uD83D\uDCE5 Pull today\u2019s patients', run:act(function(){return clickText(/Pull today.?s patients/i);},'Pull control not found.')}
+      ]},
+    2:{ title:'Capture the visit', btns:[
+        {label:'\uD83C\uDF99\uFE0F Start / stop recording', primary:true, run:act(function(){return clickId('heroRecBtn');},'Recorder not ready.')},
+        {label:'\uD83D\uDCF1 Record on phone', run:act(function(){return scrollText(/Record on phone/i);},'QR not found.')},
+        {label:'\uD83D\uDCCB Paste transcript', run:act(function(){return focusId('transcript');},'Transcript box not found.')}
+      ]},
+    3:{ title:'Review the note', btns:[
+        {label:'\u2728 Generate note', primary:true, run:act(function(){return clickId('genBtn');},'Generate button not found.')},
+        {label:'\uD83D\uDDC2 EMR sections', run:act(function(){return clickId('emrBtn');},'EMR sections not found.')},
+        {label:'\uD83D\uDCE4 Upload templates', run:act(function(){return clickId('mlsUplTplBtn');},'Upload templates not found.')}
+      ]},
+    4:{ title:'Finalize & send', btns:[
+        {label:'\uD83D\uDD8A Sign & Save in Athena', primary:true, run:act(function(){return clickText(/Sign\s*&\s*Save in Athena/i);},'Generate the note first, then sign.')},
+        {label:'\uD83D\uDCE7 Send portal login', run:act(function(){return clickId('mlsPortalInviteBtn');},'Send-portal control not found.')},
+        {label:'\uD83D\uDCC4 After-visit summary', run:act(function(){return clickText(/After.?visit summary/i);},'AVS not found.')}
+      ]}
+  };
+  function curStep(){ var h=el('mls-rt-hint'); if(!h) return 0; var m=(h.textContent||'').match(/Step\s*(\d)\s*of\s*4/i); return m?parseInt(m[1],10):0; }
+  function bar(){ var b=el('mlsWizBar'); if(b) return b; b=document.createElement('div'); b.id='mlsWizBar'; b.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 4px;padding:8px 10px;background:#f3f6ff;border:1px solid #d6e0f5;border-radius:12px'; return b; }
+  function mkBtn(cfg){ var e2=document.createElement('button'); e2.type='button'; e2.textContent=cfg.label; e2.style.cssText='cursor:pointer;border-radius:9px;padding:8px 13px;font:600 13px system-ui;'+(cfg.primary?'background:#2563eb;color:#fff;border:none':'background:#fff;color:#12325a;border:1px solid #c3d2ee'); e2.onmouseenter=function(){ e2.style.filter='brightness(.96)'; }; e2.onmouseleave=function(){ e2.style.filter='none'; }; e2.onclick=function(ev){ try{ev.stopPropagation();}catch(_){}; cfg.run(); }; return e2; }
+  function render(){ var step=curStep(); if(!step) return; var spec=STEPS[step]; if(!spec) return; var hint=el('mls-rt-hint'); if(!hint) return; var host=hint.parentNode; if(!host) return; var b=bar(); if(b.getAttribute('data-step')===String(step) && b.parentNode) return; b.setAttribute('data-step',String(step)); b.innerHTML=''; var lab=document.createElement('span'); lab.textContent=spec.title; lab.style.cssText='font:700 12px system-ui;color:#5570a8;margin-right:4px'; b.appendChild(lab); spec.btns.forEach(function(c){ b.appendChild(mkBtn(c)); }); if(!b.parentNode){ if(host.nextSibling) host.parentNode.insertBefore(b, host.nextSibling); else host.parentNode.appendChild(b); } }
+  function watch(){ var h=el('mls-rt-hint'); if(!h){ return false; } if(h.__mlsWizObs){ render(); return true; } h.__mlsWizObs=true; var mo=new MutationObserver(function(){ render(); }); mo.observe(h,{childList:true,characterData:true,subtree:true}); render(); return true; }
+  var n=0, iv=setInterval(function(){ if(watch() || ++n>120) clearInterval(iv); },600);
+  if(document.readyState!=='loading') watch();
+})();
+
+(function(){
   if(window.__mlsPatientReach) return;
   window.__mlsPatientReach=true;
   var BOOK_URL=location.origin+'/easy-book.html';
