@@ -1,4 +1,34 @@
 (function(){
+  if(window.__mlsGrowthMenu) return;
+  window.__mlsGrowthMenu=true;
+  var LINKS=[
+    {t:'⭐ Reviews & Reputation', u:'/review-finder.html'},
+    {t:'📅 Easy Book — scheduling page', u:'/easy-book.html'},
+    {t:'🏥 Patient Portal', u:'/patient-portal.html'}
+  ];
+  function make(link){
+    var b=document.createElement('button');
+    b.className='mlsTbItem'; b.type='button'; b.setAttribute('data-mls-growth','1');
+    b.textContent=link.t;
+    b.onclick=function(e){ try{ e.stopPropagation(); }catch(_){ } window.open(link.u,'_blank','noopener'); };
+    return b;
+  }
+  function inject(){
+    var panel=document.getElementById('mlsTbMenuPanel');
+    if(!panel) return false;
+    if(panel.querySelector('[data-mls-growth]')) return true;
+    var items=panel.querySelectorAll('.mlsTbItem'), settings=null;
+    items.forEach(function(it){ if(/settings/i.test(it.textContent||'')) settings=it; });
+    LINKS.forEach(function(link){ var el=make(link); if(settings) panel.insertBefore(el, settings); else panel.appendChild(el); });
+    return true;
+  }
+  var n=0, iv=setInterval(function(){ if(inject()|| ++n>60) clearInterval(iv); }, 700);
+  if(document.readyState!=='loading') inject();
+  document.addEventListener('click', function(){ setTimeout(inject, 250); }, true);
+})();
+
+
+(function(){
   if(window.__mlsEmrSections) return;
   window.__mlsEmrSections=true;
   var S=[
