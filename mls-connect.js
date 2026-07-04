@@ -1,3 +1,64 @@
+/* feat_easy_tabs — SAFE replacement for the MLS Easy guided bar. Claims the wizard/tunnel guards
+   FIRST so the older destructive "tunnel" (which could set display:none on app sections and hide the
+   whole program) NEVER runs. This version ONLY spotlights + scrolls to a stage — it never hides
+   anything, so it cannot make the app disappear. Four tabs (Patient · Capture · Note · Sign) across
+   the top of the step tracker; clicking a tab (or Next) scrolls to and outlines that stage's box.
+   Also defensively un-hides anything a previous tunnel left hidden. Additive + reversible. */
+(function(){
+  "use strict";
+  if(window.__mlsEasyWizard) return;
+  window.__mlsEasyWizard=true; window.__mlsEasyTunnel=true; window.__mlsEasyTabsSafe=true;
+  // DEFENSIVE: undo any leftover hides from a prior destructive tunnel (spotlight targets only).
+  try{ ['mlsEasyPanel','mls-tx','mls-note','phoneRecBtn'].forEach(function(id){ var e=document.getElementById(id); while(e){ if(e.style&&e.style.display==='none') e.style.display=''; e=e.parentElement; } }); }catch(e){}
+  var TABS=[
+    { label:'1 · Patient', find:function(){ return document.getElementById('mlsEasyPanel')||heading('Capture the visit'); }, hint:'Confirm the patient (use the picker), then hit ● Record.' },
+    { label:'2 · Capture', find:function(){ return heading('Capture the visit')||document.getElementById('mls-tx'); }, hint:'Record or paste the visit. When you stop, the note writes itself.' },
+    { label:'3 · Note',    find:function(){ return heading('Clinical note')||document.getElementById('mls-note'); }, hint:'Review the AI note — edit anything before it goes in the chart.' },
+    { label:'4 · Sign',    find:function(){ return heading('EMR')||textEl(['Insert into chart','⤵ Insert into chart']); }, hint:'Push the note + EMR fields into athena, then sign.' }
+  ];
+  function heading(txt){ var e=document.querySelectorAll('h1,h2,h3,h4,div,span,section,label'); for(var i=0;i<e.length;i++){var t=(e[i].textContent||'').replace(/\s+/g,' ').trim(); if(t.indexOf(txt)===0&&t.length<80&&e[i].children.length<=4){ return e[i].closest('[class*=card],section,div')||e[i]; } } return null; }
+  function textEl(arr){ var e=document.querySelectorAll('div,span,button,section,label'); for(var i=0;i<e.length;i++){var t=(e[i].textContent||'').replace(/\s+/g,' ').trim(); for(var j=0;j<arr.length;j++){ if(t.indexOf(arr[j])===0&&t.length<80){ return e[i].closest('[class*=card],section,div')||e[i]; } } } return null; }
+  function stepBtns(){ var b=document.querySelectorAll('button.mlsstp'); return b.length>=4? Array.prototype.slice.call(b).slice(0,4):null; }
+  var cur=0;
+  function spot(el){ if(!el) return; document.querySelectorAll('.mls-tab-spot').forEach(function(e){e.classList.remove('mls-tab-spot');}); el.classList.add('mls-tab-spot'); try{ el.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }
+  function go(i){
+    cur=Math.max(0,Math.min(TABS.length-1,i));
+    var t=null; try{ t=TABS[cur].find(); }catch(e){}
+    spot(t);
+    var pills=document.querySelectorAll('.mls-tab-pill');
+    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2563eb':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
+    var h=document.getElementById('mls-tab-hint'); if(h) h.textContent='Step '+(cur+1)+' of 4 — '+TABS[cur].hint;
+    var nx=document.getElementById('mls-tab-next'); if(nx) nx.textContent=(cur<3?('Next: '+TABS[cur+1].label.split('· ')[1]+' →'):'Done ✓');
+    var b=stepBtns(); if(b){ for(var c=0;c<b.length;c++) b[c].style.opacity=(c===cur?'1':'.6'); }
+  }
+  function build(){
+    if(document.getElementById('mls-tab-bar')) return true;
+    var btns=stepBtns(); if(!btns) return false;
+    var container=btns[0].parentElement; if(!container) return false;
+    var oldT=document.getElementById('mls-tnl-bar'); if(oldT) oldT.remove();
+    var oldW=document.getElementById('mls-wiz-bar'); if(oldW) oldW.remove();
+    for(var c=0;c<btns.length;c++){ (function(ci){ var b=btns[ci]; b.style.cursor='pointer'; b.style.display=''; if(!b.__tab){ b.__tab=1; b.addEventListener('click',function(){ go(ci); }); } })(c); }
+    var bar=document.createElement('div'); bar.id='mls-tab-bar';
+    bar.style.cssText='margin:10px 4px 4px;padding:10px 12px;border-radius:14px;background:rgba(96,120,224,.10);border:1px solid rgba(96,120,224,.30);font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:inherit';
+    var pillRow=document.createElement('div'); pillRow.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px';
+    TABS.forEach(function(t,idx){ var p=document.createElement('button'); p.type='button'; p.className='mls-tab-pill'; p.textContent=t.label;
+      p.style.cssText='padding:6px 12px;border-radius:999px;border:1px solid rgba(96,120,224,.4);background:transparent;color:inherit;font:600 12px system-ui;cursor:pointer;transition:all .15s';
+      p.addEventListener('click',function(){ go(idx); }); pillRow.appendChild(p); });
+    var ctrl=document.createElement('div'); ctrl.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    var hint=document.createElement('span'); hint.id='mls-tab-hint'; hint.style.cssText='flex:1;min-width:200px;font-weight:600;opacity:.92';
+    var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer'; back.addEventListener('click',function(){ go(cur-1); });
+    var next=document.createElement('button'); next.type='button'; next.id='mls-tab-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
+    ctrl.appendChild(hint); ctrl.appendChild(back); ctrl.appendChild(next);
+    bar.appendChild(pillRow); bar.appendChild(ctrl);
+    (container.parentNode||container).insertBefore(bar, container.nextSibling);
+    if(!document.getElementById('mls-tab-css')){ var st=document.createElement('style'); st.id='mls-tab-css'; st.textContent='.mls-tab-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important}'; document.head.appendChild(st); }
+    go(0);
+    return true;
+  }
+  if(!build()){ var n=0, iv=setInterval(function(){ if(build()||++n>40) clearInterval(iv); }, 1000); }
+})();
+
+
 /* feat_easy_tunnel — MLS Easy becomes a multi-tab "button tunnel" that ONLY affects MLS Easy.
    Four tabs (Patient · Capture · Note · Sign) across the top of the step tracker; clicking a tab
    (or the big Next button) focuses that stage — scrolls to it, spotlights it, and in TUNNEL MODE
