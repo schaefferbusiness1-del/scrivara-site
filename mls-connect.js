@@ -1,4 +1,58 @@
 (function(){
+  if(window.__mlsEasyWidgets) return;
+  window.__mlsEasyWidgets=true;
+  function el(id){return document.getElementById(id);}
+  function byText(re,sel){return [].find.call(document.querySelectorAll(sel||'button,a,div'),function(x){return re.test((x.textContent||'').trim())&&x.offsetParent!==null&&(x.textContent||'').length<60;});}
+  function clickId(id){var e=el(id);if(e){e.click();return true;}return false;}
+  function clickText(re,sel){var e=byText(re,sel);if(e){e.click();return true;}return false;}
+  function focusSel(sel){var e=document.querySelector(sel);if(e){try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}try{e.focus();}catch(_){}return true;}return false;}
+  function scrollText(re){var e=byText(re,'*');if(e){try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}return true;}return false;}
+  function toast(m){var t=el('mlsEwToast');if(!t){t=document.createElement('div');t.id='mlsEwToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;padding:10px 16px;border-radius:10px;font:13px system-ui;z-index:9000;opacity:0;transition:opacity .2s;box-shadow:0 6px 24px rgba(0,0,0,.3)';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1800);}
+  function A(fn,msg){return function(){var ok=false;try{ok=fn();}catch(e){ok=false;}if(!ok)toast(msg||'Not ready yet.');};}
+  var WIDS=[
+    {icon:'\uD83C\uDFAC',title:'Start a visit',sub:'Pick a patient, then record',btns:[
+      {t:'Use current patient',p:1,run:A(function(){return clickId('mlsUseActivePtBtn');},'Use the picker above first.')},
+      {t:'Start recording',run:A(function(){return clickId('heroRecBtn');},'Recorder not ready.')}]},
+    {icon:'\uD83D\uDCC5',title:'Today',sub:'Load your schedule',btns:[
+      {t:'Pull today\u2019s patients',p:1,run:A(function(){return clickText(/Pull today.?s patients/i);},'Pull control not found.')},
+      {t:'From Athena chart',run:A(function(){return clickId('mlsChartFillBtn');},'Open a chart first.')}]},
+    {icon:'\uD83D\uDCDD',title:'Notes & templates',sub:'Draft and organize',btns:[
+      {t:'Prep op note',p:1,run:A(function(){return clickText(/Prep op note/i);},'Prep op note not found.')},
+      {t:'EMR sections',run:A(function(){return clickId('emrBtn');},'EMR sections not found.')},
+      {t:'Upload templates',run:A(function(){return clickId('mlsUplTplBtn');},'Upload templates not found.')}]},
+    {icon:'\uD83D\uDCF1',title:'Record on phone',sub:'Scan the QR to dictate',btns:[
+      {t:'Show QR code',p:1,run:A(function(){return scrollText(/Record on phone/i);},'QR not found.')}]},
+    {icon:'\uD83D\uDCE4',title:'Send to patient',sub:'Booking link & portal login',btns:[
+      {t:'Send portal login',p:1,run:A(function(){return clickId('mlsPortalInviteBtn');},'Send-portal not found.')},
+      {t:'Open Send tab',run:A(function(){return clickId('mlsPtab_send');},'Send tab not found.')}]},
+    {icon:'\u2B50',title:'Reputation',sub:'Reviews across the web',btns:[
+      {t:'Open Reviews',p:1,run:A(function(){return clickId('mlsPtab_reviews');},'Reviews tab not found.')}]}
+  ];
+  function findCard(){var jt=[].find.call(document.querySelectorAll('h1'),function(e){return /Just talk/i.test(e.textContent);});if(!jt)return null;var c=jt;for(var i=0;i<6&&c;i++){var r=c.getBoundingClientRect();if(r.width>700&&r.height>250)return c;c=c.parentElement;}return null;}
+  function build(card){
+    if(el('mlsEwStack'))return;
+    var wrap=document.createElement('div');wrap.id='mlsEwStack';wrap.style.cssText='margin:0 0 14px;max-width:860px;width:100%';
+    var strip=document.createElement('div');strip.id='mlsEwStrip';strip.style.cssText='display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:2px 2px 6px;scrollbar-width:none';
+    strip.addEventListener('wheel',function(ev){if(Math.abs(ev.deltaY)>Math.abs(ev.deltaX)){strip.scrollLeft+=ev.deltaY;ev.preventDefault();}},{passive:false});
+    WIDS.forEach(function(w,idx){
+      var c=document.createElement('div');c.className='mls-ew-card';c.style.cssText='scroll-snap-align:center;flex:0 0 300px;min-width:300px;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.04));border:1px solid rgba(160,190,255,.25);border-radius:16px;padding:15px 16px;color:#eef4ff;backdrop-filter:blur(4px)';
+      var h=document.createElement('div');h.style.cssText='display:flex;align-items:center;gap:9px;margin-bottom:3px';h.innerHTML='<span style="font-size:22px">'+w.icon+'</span><b style="font-size:15px">'+w.title+'</b>';
+      var s=document.createElement('div');s.textContent=w.sub;s.style.cssText='font-size:12px;color:#b8c8ee;margin-bottom:11px';
+      var br=document.createElement('div');br.style.cssText='display:flex;gap:7px;flex-wrap:wrap';
+      w.btns.forEach(function(b){var bt=document.createElement('button');bt.type='button';bt.textContent=b.t;bt.style.cssText='cursor:pointer;border-radius:9px;padding:8px 12px;font:600 12.5px system-ui;'+(b.p?'background:#2f7cf6;color:#fff;border:none':'background:rgba(255,255,255,.10);color:#eef4ff;border:1px solid rgba(160,190,255,.3)');bt.onclick=function(ev){try{ev.stopPropagation();}catch(_){}b.run();};br.appendChild(bt);});
+      c.appendChild(h);c.appendChild(s);c.appendChild(br);strip.appendChild(c);
+    });
+    var dots=document.createElement('div');dots.id='mlsEwDots';dots.style.cssText='display:flex;gap:6px;justify-content:center;margin-top:9px';
+    WIDS.forEach(function(_,i){var d=document.createElement('div');d.className='mls-ew-dot';d.style.cssText='width:7px;height:7px;border-radius:50%;background:rgba(200,215,255,'+(i===0?'.95':'.32')+');cursor:pointer;transition:background .2s';d.onclick=function(){var card0=strip.children[i];if(card0)strip.scrollTo({left:card0.offsetLeft-strip.offsetLeft-((strip.clientWidth-card0.clientWidth)/2),behavior:'smooth'});};dots.appendChild(d);});
+    function upd(){var mid=strip.scrollLeft+strip.clientWidth/2;var best=0,bd=1e9;[].forEach.call(strip.children,function(ch,i){var cc=ch.offsetLeft-strip.offsetLeft+ch.clientWidth/2;var dd=Math.abs(cc-mid);if(dd<bd){bd=dd;best=i;}});[].forEach.call(dots.children,function(dd,i){dd.style.background='rgba(200,215,255,'+(i===best?'.95':'.32')+')';});}
+    strip.addEventListener('scroll',function(){window.requestAnimationFrame(upd);});
+    wrap.appendChild(strip);wrap.appendChild(dots);
+    card.insertBefore(wrap,card.firstChild);
+  }
+  var n=0,iv=setInterval(function(){var card=findCard();if(card){build(card);if(el('mlsEwStack'))clearInterval(iv);}if(++n>120)clearInterval(iv);},600);
+})();
+
+(function(){
   if(window.__mlsWizEasyLink) return;
   window.__mlsWizEasyLink=true;
   function el(id){ return document.getElementById(id); }
