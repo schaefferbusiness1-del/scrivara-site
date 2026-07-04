@@ -1,3 +1,109 @@
+/* feat_smart_ask — a smart, natural-language analytics layer over ALL pulled provider/patient data
+   (window._calAppts). Exposes window.mlsAsk(question) -> {answer, detail} so the MLS Copilot, the
+   study maker, and this "Ask your data" box can all answer questions like:
+     • "how many patients did I have this month?"   • "how many did Sarah have?"
+     • "what was my most common procedure?"          • "who saw the most patients this week?"
+   READ-ONLY: it only reads window._calAppts and appends its OWN button + panel to <body>. It never
+   touches, hides, or reparents any app element (lesson learned). Guarded + reversible. */
+(function(){
+  "use strict";
+  if(window.__mlsSmartAsk) return; window.__mlsSmartAsk=true;
+  function pool(){ return window._calAppts||[]; }
+  function meName(){ try{ if(typeof window.getProviderName==='function'){ var n=window.getProviderName(); if(n) return n; } }catch(e){} return 'Matthew Schaeffer, MD'; }
+  function pretty(p){ if(!p) return 'Unassigned'; if(p.indexOf('_')<0) return p; var m=p.split('_'); var cred=m.length>2?m.slice(2).join(' ').replace(/_/g,' '):''; return m[1]+' '+m[0]+(cred?', '+cred:''); }
+  function provKey(r){ return r.provider||r.doctor_user_id||'Unassigned'; }
+  function reasonText(r){ return (r.reason||r.appt_type||r.type||'').trim(); }
+  function providers(){ var s={}; pool().forEach(function(r){ var k=provKey(r); s[k]=(s[k]||0)+1; }); return Object.keys(s); }
+  function resolveProvider(q){
+    q=' '+q.toLowerCase()+' ';
+    if(/\b(i|me|my|mine|myself)\b/.test(q)){ var me=meName().toLowerCase(); var parts=me.replace(/,.*/,'').split(/\s+/); return {label:meName(), match:function(r){ var pp=pretty(provKey(r)).toLowerCase(); return parts.every(function(t){ return t.length<2||pp.indexOf(t)>=0; }); }}; }
+    if(/\b(everyone|all|practice|the whole|entire|total|combined)\b/.test(q)) return {label:'the whole practice', match:function(){ return true; }};
+    var provs=providers(); var best=null;
+    provs.forEach(function(k){ var pp=pretty(k).toLowerCase().replace(/,.*/,''); var toks=pp.split(/\s+/).filter(function(t){return t.length>=3;}); var hit=toks.some(function(t){ return new RegExp('\\b'+t.replace(/[^a-z]/g,'')+'\\b').test(q); }); if(hit){ best=k; } });
+    if(best) return {label:pretty(best), match:function(r){ return provKey(r)===best; }};
+    return null;
+  }
+  function resolveRange(q){
+    q=q.toLowerCase(); var now=new Date(); var y=now.getFullYear(), m=now.getMonth();
+    function ym(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+    if(/last month/.test(q)){ var lm=new Date(y,m-1,1); return {label:'last month', in:function(dt){ return dt.slice(0,7)===ym(lm); }}; }
+    if(/this month|month/.test(q)){ return {label:'this month', in:function(dt){ return dt.slice(0,7)===ym(now); }}; }
+    if(/this week|week/.test(q)){ var day=now.getDay(); var start=new Date(y,m,now.getDate()-day); var s=start.toISOString().slice(0,10); var e=new Date(start.getTime()+6*864e5).toISOString().slice(0,10); return {label:'this week', in:function(dt){ return dt>=s&&dt<=e; }}; }
+    if(/today/.test(q)){ var t=now.toISOString().slice(0,10); return {label:'today', in:function(dt){ return dt===t; }}; }
+    if(/this year|year/.test(q)){ return {label:'this year', in:function(dt){ return dt.slice(0,4)===String(y); }}; }
+    return {label:'all pulled dates', in:function(){ return true; }};
+  }
+  function filtered(q){
+    var prov=resolveProvider(q), range=resolveRange(q);
+    var rows=pool().filter(function(r){ if(!range.in(r.appt_date||'')) return false; if(prov&&!prov.match(r)) return false; return true; });
+    return {rows:rows, prov:prov, range:range};
+  }
+  function uniquePatients(rows){ var s={}; rows.forEach(function(r){ var k=r.patient_external_id||r.name; if(k) s[k]=1; }); return Object.keys(s).length; }
+  function topReason(rows){ var f={}; rows.forEach(function(r){ var t=reasonText(r); if(t) f[t]=(f[t]||0)+1; }); var best='',bc=0; Object.keys(f).forEach(function(k){ if(f[k]>bc){ bc=f[k]; best=k; } }); return {reason:best, count:bc}; }
+  function money(n){ return '$'+(n||0).toLocaleString(); }
+  function ask(q){
+    q=(q||'').trim(); if(!q) return {answer:'Ask me something like “how many patients did I have this month?”'};
+    var ql=q.toLowerCase();
+    var F=filtered(q); var rows=F.rows; var who=F.prov?F.prov.label:'the whole practice'; var when=F.range.label;
+    if(/most common|most frequent|top|commonest/.test(ql) && /procedure|reason|visit|type|do/.test(ql)){
+      var tr=topReason(rows);
+      if(!tr.reason) return {answer:'No procedure/reason text is recorded on those visits yet — pull more days or check the visit-reason field.'};
+      return {answer:'Most common for '+who+' ('+when+'): “'+tr.reason+'” — '+tr.count+' visit'+(tr.count>1?'s':'')+'.'};
+    }
+    if(/who (saw|had|has).*(most|busiest)|busiest|most patients/.test(ql)){
+      var byP={}; pool().filter(function(r){ return F.range.in(r.appt_date||''); }).forEach(function(r){ var k=provKey(r); (byP[k]=byP[k]||{}); var pid=r.patient_external_id||r.name; if(pid) byP[k][pid]=1; });
+      var bestP='',bn=0; Object.keys(byP).forEach(function(k){ var n=Object.keys(byP[k]).length; if(n>bn){ bn=n; bestP=k; } });
+      if(!bestP) return {answer:'No visits found for '+when+'.'};
+      return {answer:pretty(bestP)+' saw the most patients '+when+' — '+bn+'.'};
+    }
+    if(/revenue|money|bring in|billing|\$/.test(ql)){
+      var est=rows.length*175;
+      return {answer:'Estimated revenue for '+who+' ('+when+'): '+money(est)+' — '+rows.length+' visits × ~$175 (estimate; connect billing for exact).'};
+    }
+    if(/how many|number of|count|how much/.test(ql) && /visit|appointment|appt|saw|see/.test(ql)){
+      return {answer:who.charAt(0).toUpperCase()+who.slice(1)+' had '+rows.length+' visit'+(rows.length===1?'':'s')+' '+when+'.'};
+    }
+    if(/how many|number of|count/.test(ql) && /patient/.test(ql)){
+      var up=uniquePatients(rows);
+      return {answer:who.charAt(0).toUpperCase()+who.slice(1)+' had '+up+' patient'+(up===1?'':'s')+' '+when+' ('+rows.length+' visit'+(rows.length===1?'':'s')+').'};
+    }
+    var upd=uniquePatients(rows); var trd=topReason(rows);
+    return {answer:who.charAt(0).toUpperCase()+who.slice(1)+' — '+when+': '+upd+' patients across '+rows.length+' visits'+(trd.reason?('; most common: “'+trd.reason+'”'):'')+'.'};
+  }
+  window.mlsAsk=ask;
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  var CHIPS=['How many patients did I have this month?','What was my most common procedure?','Who saw the most patients this week?','How many visits this month?'];
+  function open(){
+    if(document.getElementById('mls-ask-ov')) return;
+    var ov=document.createElement('div'); ov.id='mls-ask-ov';
+    ov.style.cssText='position:fixed;left:16px;bottom:150px;z-index:2147483300;width:min(420px,92vw);background:#0f1530;border:1px solid rgba(120,140,220,.35);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.5);color:#e8ecff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden';
+    ov.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(120,140,220,.2);background:linear-gradient(90deg,#151d44,#0f1530)"><span style="font-size:16px">📊</span><b style="flex:1;font-size:14px">Ask your data</b><button id="mls-ask-x" style="background:transparent;border:1px solid rgba(200,210,255,.3);color:inherit;border-radius:8px;padding:4px 9px;cursor:pointer;font-weight:700">✕</button></div>'
+      +'<div style="padding:12px 14px"><div style="display:flex;gap:8px"><input id="mls-ask-q" placeholder="e.g. how many patients did Sarah have this month?" style="flex:1;background:#141b3d;border:1px solid rgba(120,140,220,.35);border-radius:10px;color:#e8ecff;padding:9px 11px;font-size:13px"><button id="mls-ask-go" style="background:#2563eb;border:none;color:#fff;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer">Ask</button></div>'
+      +'<div id="mls-ask-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+CHIPS.map(function(c,i){return '<button class="mls-ask-chip" data-i="'+i+'" style="background:transparent;border:1px solid rgba(120,140,220,.3);color:inherit;border-radius:999px;padding:5px 10px;font-size:11px;cursor:pointer;opacity:.85">'+esc(c)+'</button>';}).join('')+'</div>'
+      +'<div id="mls-ask-a" style="margin-top:12px;font-size:14px;line-height:1.5;min-height:20px"></div>'
+      +'<div style="margin-top:8px;font-size:11px;opacity:.5">Reads the patients you’ve pulled ('+pool().length+' appts loaded). Ask about you, another provider, or the whole practice.</div></div>';
+    document.body.appendChild(ov);
+    var q=document.getElementById('mls-ask-q');
+    function run(){ var r=ask(q.value); document.getElementById('mls-ask-a').innerHTML='<div style="background:#141b3d;border-left:3px solid #2563eb;border-radius:8px;padding:10px 12px">'+esc(r.answer)+'</div>'; }
+    document.getElementById('mls-ask-go').onclick=run;
+    q.addEventListener('keydown',function(e){ if(e.key==='Enter') run(); });
+    document.getElementById('mls-ask-x').onclick=function(){ ov.remove(); };
+    Array.prototype.forEach.call(ov.querySelectorAll('.mls-ask-chip'),function(b){ b.onclick=function(){ q.value=CHIPS[+b.getAttribute('data-i')]; run(); }; });
+    q.focus();
+  }
+  function addBtn(){
+    if(document.getElementById('mls-ask-btn')) return;
+    var b=document.createElement('button'); b.id='mls-ask-btn'; b.type='button'; b.textContent='📊 Ask your data';
+    b.title='Ask questions about your patients and providers';
+    b.style.cssText='position:fixed;left:16px;bottom:108px;z-index:2147482000;background:linear-gradient(90deg,#6d28d9,#7c3aed);color:#fff;border:none;border-radius:999px;padding:11px 18px;font:800 13px system-ui;cursor:pointer;box-shadow:0 8px 24px rgba(124,58,237,.4)';
+    b.onclick=open; document.body.appendChild(b);
+  }
+  if(document.body) addBtn();
+  var n=0, iv=setInterval(function(){ addBtn(); if(document.getElementById('mls-ask-btn')||++n>30) clearInterval(iv); }, 1000);
+})();
+
+
 /* feat_phonemic_recover — hotfix: the app's full-screen #phoneMicPage pairing overlay (fixed,
    z9999) can get stuck showing over the whole app with only an empty pairing code and no way to
    dismiss, which makes the program look gone. If it is covering the app with NO active numeric
