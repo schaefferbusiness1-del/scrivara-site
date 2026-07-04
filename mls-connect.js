@@ -1,4 +1,13 @@
 (function(){
+  if(window.__mlsHideAskDup) return;
+  window.__mlsHideAskDup=true;
+  /* Remove the duplicate 'Ask your data' FAB - it is already MLS Copilot in AI Studio */
+  function hide(){ var b=document.getElementById('mls-ask-btn'); if(b){ b.style.setProperty('display','none','important'); return true; } return false; }
+  var n=0,iv=setInterval(function(){ hide(); if(++n>150) clearInterval(iv); },700);
+  if(document.readyState!=='loading') hide();
+})();
+
+(function(){
   if(window.__mlsTabsInEasy) return;
   window.__mlsTabsInEasy=true;
   var CSS="#mlsEasyTools{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}#mlsEasyTools .et-btn{cursor:pointer;flex:1 1 240px;min-width:0;display:flex;align-items:center;gap:9px;justify-content:center;border-radius:14px;padding:13px 16px;font:700 14px system-ui;color:#eef4ff;background:rgba(255,255,255,.07);border:1px solid rgba(160,190,255,.28)}#mlsEasyTools .et-btn:hover{filter:brightness(1.12)}#mlsEasyTools .et-prem{margin-left:2px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:2px 6px;border-radius:6px}@media(max-width:640px){#mlsEasyTools .et-btn{flex:1 1 100%}}";
