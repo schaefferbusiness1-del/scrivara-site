@@ -1,4 +1,22 @@
 (function(){
+  if(window.__mlsVisitTidy) return;
+  window.__mlsVisitTidy=true;
+  /* Tidy the MLS Easy hero: drop the duplicate eyebrow + redundant instruction subtitle (the guided cockpit is the header now). Keep the 'Just talk' tagline + all functional controls. */
+  function tidy(){
+    var hero=document.getElementById('visitHero'); if(!hero) return false;
+    var jt=[].find.call(hero.querySelectorAll('h1'),function(e){return /Just talk/i.test(e.textContent);});
+    if(!jt) return false;
+    var prev=jt.previousElementSibling;
+    if(prev && /Ready for your next patient/i.test(prev.textContent||'') && (prev.textContent||'').length<70){ prev.style.setProperty('display','none','important'); }
+    var next=jt.nextElementSibling;
+    if(next && next.tagName==='P' && /Enter the patient/i.test(next.textContent||'')){ next.style.setProperty('display','none','important'); }
+    return true;
+  }
+  var n=0,iv=setInterval(function(){ tidy(); if(++n>60) clearInterval(iv); },700);
+  if(document.readyState!=='loading') tidy();
+})();
+
+(function(){
   if(window.__mlsHideAskDup) return;
   window.__mlsHideAskDup=true;
   /* Remove the duplicate 'Ask your data' FAB - it is already MLS Copilot in AI Studio */
