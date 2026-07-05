@@ -1,7 +1,24 @@
 (function(){
+  if(window.__mlsEasyCohesion) return; window.__mlsEasyCohesion=1;
+  var CSS=[
+    "#visitView.mls-cohere{background:linear-gradient(180deg,#0e2540 0%,#0c1f38 100%);border:1px solid rgba(120,150,220,.22);border-radius:20px;padding:14px 14px 18px;box-shadow:0 18px 50px rgba(6,14,28,.35)}",
+    "#visitView.mls-cohere #mlsCockpit{background:transparent!important;border:none!important;box-shadow:none!important;padding:4px 4px 2px!important}",
+    "#visitView.mls-cohere #mlsEasyTools{margin:4px 2px 10px}",
+    "#visitView.mls-cohere #mlsEasyTools .et-btn{color:#eef4ff!important;background:rgba(255,255,255,.10)!important;border:1px solid rgba(160,190,255,.34)!important}",
+    "#visitView.mls-cohere #visitHero{background:transparent!important;border:none!important;box-shadow:none!important;padding:2px 2px 6px!important}",
+    "#visitView.mls-cohere #captureCard,#visitView.mls-cohere #noteCard,#visitView.mls-cohere #emrCard{box-shadow:0 10px 34px rgba(0,0,0,.30)!important;border-radius:16px!important}",
+    "#visitView.mls-cohere #mlsAllergyStrip{margin:6px 2px}"
+  ].join("\n");
+  function ensureStyle(){ if(document.getElementById('mlsCohereCss'))return; var st=document.createElement('style'); st.id='mlsCohereCss'; st.textContent=CSS; (document.head||document.documentElement).appendChild(st); }
+  function apply(){ try{ ensureStyle(); var vv=document.getElementById('visitView'), ck=document.getElementById('mlsCockpit'); if(vv&&ck&&!vv.classList.contains('mls-cohere')) vv.classList.add('mls-cohere'); }catch(e){} }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',apply); }
+  apply(); setInterval(apply,1500);
+})();
+
+(function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-04-b6';
+  var MLS_APP_BUILD='2026-07-04-b7';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
