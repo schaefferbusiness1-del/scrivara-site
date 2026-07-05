@@ -1,4 +1,50 @@
 (function(){
+  if(window.__mlsQpAll) return; window.__mlsQpAll=1;
+  var CSS=[
+    "#mlsQpAll{margin:12px 2px 4px;border-top:1px solid rgba(160,190,255,.18);padding-top:10px}",
+    "#mlsQpAll .qpa-hd{font-weight:700;color:#eef4ff;font-size:13px;margin-bottom:2px;display:flex;align-items:center;gap:8px;justify-content:space-between}",
+    "#mlsQpAll .qpa-sub{color:#9fb3d6;font-size:11px;margin-bottom:8px}",
+    "#mlsQpAll .qpa-open{background:rgba(255,255,255,.10);color:#eef4ff;border:1px solid rgba(160,190,255,.34);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer}",
+    "#mlsQpAll .qpa-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto}",
+    "#mlsQpAll .qpa-row{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);border:1px solid rgba(160,190,255,.16);border-radius:10px;padding:7px 10px;cursor:pointer}",
+    "#mlsQpAll .qpa-row:hover{background:rgba(255,255,255,.10)}",
+    "#mlsQpAll .qpa-t{color:#bcd0f5;font-size:12px;font-weight:700;min-width:66px}",
+    "#mlsQpAll .qpa-n{color:#fff;font-size:13px;font-weight:600;flex:1}",
+    "#mlsQpAll .qpa-p{color:#9fb3d6;font-size:11px}",
+    "#mlsQpAll .qpa-badge{font-size:10px;color:#cfe0ff;background:rgba(120,150,220,.22);border-radius:999px;padding:2px 7px}"
+  ].join("\n");
+  function ensureCss(){ if(document.getElementById('mlsQpAllCss'))return; var st=document.createElement('style');st.id='mlsQpAllCss';st.textContent=CSS;(document.head||document.documentElement).appendChild(st); }
+  function selDate(){ var di=[].filter.call(document.querySelectorAll('input[type="date"]'),function(x){return x.offsetParent!==null;})[0]; return di?di.value:null; }
+  function fmtTime(iso){ try{ return new Date(iso).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }catch(e){ return ''; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function goCal(){ try{ var nav=document.getElementById('nav_calendar'); if(nav) nav.click(); }catch(e){} }
+  function build(){
+    try{
+      var vv=document.getElementById('visitView'); if(!vv||vv.offsetParent===null) return;
+      var host=document.getElementById('heroToday'); if(!host) return;
+      var date=selDate(); if(!date) return;
+      var appts=(window._calAppts||[]).filter(function(a){return (a.appt_date||'').slice(0,10)===date;});
+      appts.sort(function(a,b){return String(a.start_at||'').localeCompare(String(b.start_at||''));});
+      var panel=document.getElementById('mlsQpAll');
+      if(!appts.length){ if(panel) panel.remove(); return; }
+      var sig=date+'|'+appts.length;
+      if(panel && panel.getAttribute('data-sig')===sig) return;
+      if(!panel){ panel=document.createElement('div'); panel.id='mlsQpAll'; host.appendChild(panel); }
+      panel.setAttribute('data-sig',sig); ensureCss();
+      var rows=appts.map(function(a){
+        var prov=a.provider?esc(String(a.provider).replace(/Close$/,'').replace(/_/g,' ')):'Unassigned';
+        return '<div class="qpa-row"><span class="qpa-t">'+esc(fmtTime(a.start_at))+'</span><span class="qpa-n">'+esc(a.name||'(no name)')+'</span><span class="qpa-p">'+prov+'</span><span class="qpa-badge">'+esc(a.status||'')+'</span></div>';
+      }).join('');
+      panel.innerHTML='<div class="qpa-hd"><span>📋 All appointments this day · '+appts.length+'</span><button class="qpa-open" type="button">Open in Calendar →</button></div><div class="qpa-sub">Every patient booked this day across all providers — including ones not assigned to your name.</div><div class="qpa-list">'+rows+'</div>';
+      panel.querySelector('.qpa-open').onclick=goCal;
+      [].forEach.call(panel.querySelectorAll('.qpa-row'),function(r){ r.onclick=goCal; });
+    }catch(e){}
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',build); }
+  build(); setInterval(build, 1500);
+})();
+
+(function(){
   if(window.__mlsTplKwFix) return; window.__mlsTplKwFix=1;
   function normArr(kw){ if(Array.isArray(kw)) return kw; if(typeof kw==='string') return kw.split(/[,\n;]+/).map(function(s){return s.trim();}).filter(Boolean); return []; }
   function sanitize(){ try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(!/::templates$/.test(k)) continue; var raw=localStorage.getItem(k); if(!raw||raw.charAt(0)!=='[') continue; var arr; try{ arr=JSON.parse(raw); }catch(e){ continue; } if(!Array.isArray(arr)) continue; var changed=false; for(var j=0;j<arr.length;j++){ var t=arr[j]; if(!t||typeof t!=='object') continue; if(!Array.isArray(t.keywords)){ t.keywords=normArr(t.keywords); changed=true; } } if(changed) localStorage.setItem(k,JSON.stringify(arr)); } }catch(e){} }
@@ -72,7 +118,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-04-b10';
+  var MLS_APP_BUILD='2026-07-04-b11';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
