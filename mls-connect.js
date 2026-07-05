@@ -1,4 +1,31 @@
 (function(){
+  if(window.__mlsMenuPopX) return; window.__mlsMenuPopX=1;
+  function addReviewsMenu(){
+    var panel=document.getElementById('mlsTbMenuPanel'); if(!panel) return;
+    if(panel.querySelector('.mls-menu-reviews')) return;
+    var btn=document.createElement('button');
+    btn.className='mlsTbItem mls-menu-reviews';
+    btn.textContent='\u2b50 Reviews & reputation';
+    btn.onclick=function(){ try{ panel.style.display='none'; }catch(e){} var t=document.getElementById('mlsPtab_reviews'); if(t) t.click(); };
+    var items=panel.querySelectorAll('button.mlsTbItem'); var anchor=null;
+    for(var i=0;i<items.length;i++){ if(/recommendation/i.test(items[i].textContent||'')){ anchor=items[i]; break; } }
+    if(anchor&&anchor.nextSibling){ panel.insertBefore(btn,anchor.nextSibling); }
+    else if(items.length){ items[0].parentNode.insertBefore(btn, items[0].nextSibling); }
+    else { panel.appendChild(btn); }
+  }
+  function bindPopClose(){
+    var list=document.querySelectorAll('[id^="mlsPView_"]');
+    for(var i=0;i<list.length;i++){ (function(p){
+      if(p.__popCloseBound) return; p.__popCloseBound=1;
+      p.addEventListener('click',function(e){ if(e.target===p){ p.style.display='none'; try{showView('visit');}catch(e){} } });
+    })(list[i]); }
+  }
+  function tick(){ try{ addReviewsMenu(); bindPopClose(); }catch(e){} }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',tick); }
+  tick(); setInterval(tick,1500);
+})();
+
+(function(){
   if(window.__mlsSmartPopups) return; window.__mlsSmartPopups=1;
   var CSS=[
     "#visitView.mls-cohere .vx-grid{display:block!important}",
@@ -35,7 +62,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-04-b8';
+  var MLS_APP_BUILD='2026-07-04-b9';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
