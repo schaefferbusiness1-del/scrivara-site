@@ -35,7 +35,7 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.1';
+  var VERSION = 't3-1.0.2';
   var ivs = [], wrapped = [], nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -313,10 +313,10 @@
       safe(function () { if (isFn(pk.setPick)) pk.setPick('all'); });        /* disarm scope wrap persistently */
       safe(function () { if (isFn(pk.revert)) pk.revert(); });               /* unwrap renderCalendar + remove box */
     }
-    /* whosnext framework box (stale roster cache source) */
-    var wn = window.__mlsWhosNext;
-    if (wn && wn.installed && !retired.wn) { retired.wn = true; safe(function () { if (isFn(wn.revert)) wn.revert(); }); }
-    /* leftover box from either (renderWN in feat_queue_fixes_0703 no-ops once gone) */
+    /* the WhosNext framework stays: we ADOPT it as the chip renderer and feed it
+       the canonical store via _setPull (reverting it just got resurrected by the
+       docpick bridge). Its stale self-sourcing is overridden by our feed. */
+    /* leftover box from the old picker (renderWN in feat_queue_fixes_0703 no-ops once gone) */
     var box = $('mlsPtfBox'); if (box && box.parentNode) safe(function () { box.parentNode.removeChild(box); });
     /* native provider select must stay neutral: our scope owns filtering */
     var pf = $('calProvFilter'); if (pf && pf.value !== '') { pf.value = ''; safe(function () { if (isFn(window.renderCalendar)) window.renderCalendar(); }); }
@@ -481,7 +481,9 @@
     if (!force && sig === pickSig) return;
     pickSig = sig;
     S.set(6, 'run');
-    safe(function () { window._renderTodayPatients(list); });
+    var wn = window.__mlsWhosNext;
+    if (wn && wn.installed && isFn(wn._setPull)) safe(function () { wn._setPull(list); });
+    else safe(function () { window._renderTodayPatients(list); });
     S.set(6, 'ok');
     S.set(5, 'run'); S.set(5, 'ok');                                        /* Who's Next = same canonical surface now */
   }
@@ -528,6 +530,21 @@
         if (chips[i].querySelector('.t3p-tag')) continue;
         var tag = document.createElement('span'); tag.className = 't3p-tag'; tag.textContent = a.provider;
         chips[i].appendChild(tag);
+      }
+    }
+    /* WhosNext framework chips: 12-hour times + provider tag (idempotent) */
+    var wchips = box.querySelectorAll('.wn-chip');
+    for (var w = 0; w < wchips.length; w++) {
+      var mt = wchips[w].querySelector('.wn-mt');
+      if (mt && /^\d\d?:\d\d/.test((mt.textContent || '').trim()) && !mt.getAttribute('data-t3ampm')) {
+        mt.setAttribute('data-t3ampm', '1');
+        mt.textContent = mt.textContent.replace(/\b(\d\d?):(\d\d)\b/, function (s) { return ampm(s); });
+      }
+      if (!scope.pk && !wchips[w].querySelector('.t3p-tag')) {
+        var nmEl = wchips[w].querySelector('.wn-nm');
+        var row = null;
+        if (nmEl) { var nmTxt = (nmEl.textContent || '').trim().toLowerCase(); row = scoped.filter(function (x) { return String(x.name).trim().toLowerCase() === nmTxt; })[0]; }
+        if (row && row.provider) { var tg = document.createElement('span'); tg.className = 't3p-tag'; tg.textContent = row.provider; wchips[w].appendChild(tg); }
       }
     }
   }
@@ -660,6 +677,10 @@
   ivs.push(setInterval(tick, 900));
   ivs.push(setInterval(renderStrip, 300));
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { safe(tick); });
+  try { document.addEventListener('click', function (ev) {
+    var chip = ev.target && ev.target.closest ? ev.target.closest('.wn-chip') : null; if (!chip) return;
+    setTimeout(function () { safe(function () { var nm = $('heroPtName'); if (nm && String(nm.value || '').trim()) persistPick(nm.value.trim(), ($('heroPtDob') || {}).value || ''); S.set(7, 'run'); S.set(7, 'ok'); }); }, 120);
+  }, true); } catch (e) {}
   try { document.addEventListener('visibilitychange', function () { safe(tick); }); } catch (e) {}
   try { window.addEventListener('focus', function () { safe(tick); }); } catch (e) {}
   try { window.addEventListener('pageshow', function () { safe(tick); }); } catch (e) {}
