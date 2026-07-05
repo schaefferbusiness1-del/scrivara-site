@@ -189,16 +189,20 @@
         existingKeys["D:" + String(x.name || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + ld] = 1;
       });
 
-      var created = 0, skipped = 0, days = {};
+      var created = 0, skipped = 0, failed = 0, days = {};
+      var onEach = isFn(opts.onEach) ? opts.onEach : null;   /* task-1: per-appointment status callback */
       var chain = Promise.resolve();
       appts.forEach(function (a) {
         chain = chain.then(function () {
           var name = String(a.name || "").trim(); if (!name) return;
+          if (onEach) safe(function () { onEach("patient", { name: name }); });
           var date = a._date || normDate(a.date) || target;   /* the resolved per-appt date */
           var nt = normTime(a.time);
+          if (onEach) safe(function () { onEach("fields", { name: name, time: nt, provider: String(a.provider || "") }); });
           var key = apptKey(name, date, nt);
           var dayKey = "D:" + name.toLowerCase().replace(/\s+/g, " ") + "|" + date;
-          if (existingKeys[key] || existingKeys[dayKey]) { skipped++; return; }
+          if (onEach) safe(function () { onEach("dedupe", { name: name }); });
+          if (existingKeys[key] || existingKeys[dayKey]) { skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return; }
           existingKeys[key] = 1; existingKeys[dayKey] = 1;
 
           var ext = "", existing = null;
@@ -216,10 +220,14 @@
              an empty provider) and showed a stale set instead. This is the "doctors assigned
              to their correct patients" fix. */
           var body = { name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), provider: String(a.provider || ""), patient_external_id: ext || null, appt_date: date, start_at: startIso };
+          if (onEach) safe(function () { onEach("save", { name: name }); });
           return safe(function () {
             return fetch(base + "/api/appointments", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body) })
-              .then(function (r) { if (r.ok) { created++; days[date] = (days[date] || 0) + 1; } })
-              .catch(function () {});
+              .then(function (r) {
+                if (r.ok) { created++; days[date] = (days[date] || 0) + 1; if (onEach) safe(function () { onEach("saved", { name: name }); }); }
+                else { failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "HTTP " + r.status }); }); }
+              })
+              .catch(function () { failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); }); });
           }, Promise.resolve());
         });
       });
@@ -263,7 +271,7 @@
           safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.reapply)) window.__mlsPick.reapply(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
-          return { created: created, skipped: skipped, days: days, target: target, scope: scopeDate || "" };
+          return { created: created, skipped: skipped, failed: failed, days: days, target: target, scope: scopeDate || "" };
         });
       });
     });
