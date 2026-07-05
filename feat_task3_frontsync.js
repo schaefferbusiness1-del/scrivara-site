@@ -35,7 +35,7 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.0';
+  var VERSION = 't3-1.0.1';
   var ivs = [], wrapped = [], nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -193,6 +193,7 @@
     normalize: function () {
       if (swapping) return false;                                          /* never normalize a render-swapped subset */
       var a = window._calAppts; if (!Array.isArray(a)) return false;
+      if (Cal._full && a !== Cal._full && a.length < Cal._full.length * 0.9 && Cal._full.length > 20) return false; /* transient subset swap by another module: keep the real store */
       Cal._full = a;
       var seen = {}, provIdx = {}, keep = [], removed = [], i, x;
       for (i = 0; i < a.length; i++) {
@@ -319,6 +320,8 @@
     var box = $('mlsPtfBox'); if (box && box.parentNode) safe(function () { box.parentNode.removeChild(box); });
     /* native provider select must stay neutral: our scope owns filtering */
     var pf = $('calProvFilter'); if (pf && pf.value !== '') { pf.value = ''; safe(function () { if (isFn(window.renderCalendar)) window.renderCalendar(); }); }
+    /* hard-disarm the legacy per-doctor pick so the old tag-scope can never re-arm on a future boot */
+    safe(function () { if (isFn(window.uns) && localStorage.getItem(window.uns('mlsProvPick')) !== 'all') localStorage.setItem(window.uns('mlsProvPick'), 'all'); });
   }
 
   /* ==================== 4. GRID TRUTH (month / week / day / day panel) ==== */
@@ -331,21 +334,29 @@
     try { window._calAppts = sub; return fn.apply(self, args); }
     finally { window._calAppts = full; swapping = false; }
   }
+  var wrappedOnce = {};
   function wrapGlobal(name, stageK, post) {
+    if (wrappedOnce[name]) return false;                                   /* wrap exactly once per load: never build w3-over-w2 chains */
     var cur = window[name];
     if (!isFn(cur) || cur.__t3Wrapped) return false;
     var w = function () {
       var self = this, args = arguments;
       if (stageK) S.set(stageK, 'run');
-      var r;
+      var r, failed = null;
       try { r = withScopedAppts(cur, self, args); }
-      catch (e) { if (stageK) S.set(stageK, 'err', 'render'); throw e; }
-      if (stageK) S.set(stageK, 'ok');
-      if (post) safe(post);
-      return r;
+      catch (e) {
+        failed = e;
+        try { window.__mlsT3.lastErr = { fn: name, msg: String(e && e.message || e), ts: Date.now() }; } catch (e2) {}
+        try { console.warn('[mlsT3] ' + name + ' failed under scoped render, retrying pass-through:', e); } catch (e2) {}
+        try { r = cur.apply(self, args); failed = null; }                  /* auto-recover: plain native render, no swap */
+        catch (e3) { failed = e3; }
+      }
+      if (stageK) { if (failed) S.set(stageK, 'err', String(failed && failed.message || failed).slice(0, 60)); else S.set(stageK, 'ok'); }
+      if (!failed && post) safe(post);
+      return r;                                                            /* never rethrow: an enhancement must not break the app */
     };
     w.__t3Wrapped = 1; w.__t3Orig = cur;
-    window[name] = w;
+    window[name] = w; wrappedOnce[name] = true;
     wrapped.push([name, function () { if (window[name] === w) window[name] = cur; }]);
     return true;
   }
@@ -649,7 +660,11 @@
   ivs.push(setInterval(tick, 900));
   ivs.push(setInterval(renderStrip, 300));
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { safe(tick); });
+  try { document.addEventListener('visibilitychange', function () { safe(tick); }); } catch (e) {}
+  try { window.addEventListener('focus', function () { safe(tick); }); } catch (e) {}
+  try { window.addEventListener('pageshow', function () { safe(tick); }); } catch (e) {}
   safe(tick);
+  [400, 1200, 2500, 5000, 9000].forEach(function (ms) { setTimeout(function () { safe(tick); }, ms); });
 
   /* ==================== API / REVERT ====================================== */
   window.__mlsT3 = {
