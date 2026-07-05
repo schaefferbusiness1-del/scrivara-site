@@ -44,7 +44,9 @@
   }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',build); }
   build(); setInterval(build, 1500);
-})();\n\n(function(){
+})();
+
+(function(){
   if(window.__mlsTplKwFix) return; window.__mlsTplKwFix=1;
   function normArr(kw){ if(Array.isArray(kw)) return kw; if(typeof kw==='string') return kw.split(/[,\n;]+/).map(function(s){return s.trim();}).filter(Boolean); return []; }
   function sanitize(){ try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(!/::templates$/.test(k)) continue; var raw=localStorage.getItem(k); if(!raw||raw.charAt(0)!=='[') continue; var arr; try{ arr=JSON.parse(raw); }catch(e){ continue; } if(!Array.isArray(arr)) continue; var changed=false; for(var j=0;j<arr.length;j++){ var t=arr[j]; if(!t||typeof t!=='object') continue; if(!Array.isArray(t.keywords)){ t.keywords=normArr(t.keywords); changed=true; } } if(changed) localStorage.setItem(k,JSON.stringify(arr)); } }catch(e){} }
@@ -118,7 +120,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-04-b12';
+  var MLS_APP_BUILD='2026-07-04-b13';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
