@@ -1,3 +1,192 @@
+/* ============================================================================
+ * __mlsT6Stab — Task 6: reload / flicker / layout-jump stabilizer (b19).
+ * Root causes fixed (measured live 2026-07-05, BEFORE numbers):
+ *   RC1  48 loader sites cache-busted with ?v='+Date.now() => 52 JS files
+ *        re-downloaded EVERY page load; boot resource window 26.7s.
+ *        FIX: busters pinned to window.__MLS_AV (bump per deploy).
+ *   RC2  Boot veil (__mlsCalmBoot, feat_b18_qa.js) loads LAST of 164 scripts
+ *        and caps at 3.2s while boot runs ~27s => "many configurations".
+ *        FIX: this EARLY veil paints before any module churn, releases on
+ *        loader+mutation quiet, hard cap 8s, failsafe 9.5s. Supersedes
+ *        CalmBoot via __mlsCalmBootDone=1 (their module then no-ops).
+ *   RC3  Idempotent UI appliers re-run on ~50 phase-staggered intervals, so
+ *        a view reconfigures in bursts 0-3.75s AFTER it opens (measured:
+ *        patients view mutation bursts at 0/1.0/2.0/3.0/3.75s) => flicker,
+ *        buttons move, missed clicks.
+ *        FIX: setInterval wrapper + one synchronous "pulse" of all short-
+ *        period ticks the moment a top-level view's visibility flips.
+ *   RC4  Duplicate/racing GETs (/api/appointments x3 same URL at boot;
+ *        mic/calls polls every 2-3s) => loading states fight, re-renders.
+ *        FIX: in-flight coalescing + 1500ms micro-TTL for hot GET polls.
+ *   Also: transition/animation freeze while veiled; DOM-applier ticks skip
+ *   work while tab hidden (network pollers exempt); 3rd+ duplicate
+ *   registration of an identical (source,delay) interval is blocked.
+ * Additive + reversible: window.__mlsT6Stab.revert() undoes wrappers/pulse.
+ * READ-ONLY wrt Athena/patients: touches only timing, caching, veil DOM.
+ * ==========================================================================*/
+(function(){
+  "use strict";
+  if(window.__mlsT6Stab) return;
+  var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
+
+  /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
+  window.__MLS_AV = window.__MLS_AV || 'b19';
+
+  /* ================= RC2: EARLY BOOT VEIL ================= */
+  try{
+    window.__mlsCalmBootDone=1; /* supersede the late b18 veil cleanly */
+    if(!document.getElementById('mlsBootVeil') && !document.hidden){
+      var frz=document.createElement('style'); frz.id='mlsBootFreeze';
+      frz.textContent='html.mls-booting *{transition-duration:0s!important;animation-duration:0s!important}';
+      (document.head||document.documentElement).appendChild(frz);
+      document.documentElement.classList.add('mls-booting');
+      var veil=document.createElement('div'); veil.id='mlsBootVeil';
+      veil.style.cssText='position:fixed;inset:0;z-index:2147483602;background:linear-gradient(180deg,#0d1b33,#13264a);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .22s ease';
+      veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2f6bed;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#9fb4dd">Scribe</span></span></div>'+
+        '<div style="width:150px;height:4px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden"><div id="mlsBootBar" style="width:8%;height:100%;border-radius:99px;background:#5b8cff"></div></div>'+
+        '<div style="font:500 12px system-ui;color:#8ea6d4">Preparing your workspace…</div>';
+      (document.body||document.documentElement).appendChild(veil);
+      var t0=Date.now(), released=false, muts=0, lastMuts=0, loaded=0, lastLoadAt=Date.now();
+      /* count our injected asset scripts finishing (load OR error) */
+      var onRes=function(e){ try{ var t=e.target; if(t&&t.tagName==='SCRIPT'&&t.getAttribute&&t.getAttribute('data-mls-asset')){ loaded++; lastLoadAt=Date.now(); } }catch(_){}};
+      window.addEventListener('load',onRes,true); window.addEventListener('error',onRes,true);
+      var mo=new MutationObserver(function(ms){ muts+=ms.length; });
+      try{ mo.observe(document.documentElement,{childList:true,subtree:true,attributes:true}); }catch(_){}
+      var bar=veil.querySelector('#mlsBootBar');
+      var release=function(){
+        if(released) return; released=true;
+        ST.veilMs=Date.now()-t0;
+        try{ clearInterval(iv); }catch(_){ }
+        try{ mo.disconnect(); }catch(_){ }
+        window.removeEventListener('load',onRes,true); window.removeEventListener('error',onRes,true);
+        document.documentElement.classList.remove('mls-booting');
+        try{ pulseAll('boot-settle'); }catch(_){ }
+        if(bar) bar.style.width='100%';
+        setTimeout(function(){ veil.style.opacity='0'; setTimeout(function(){ try{ veil.remove(); frz.remove(); }catch(_){ } },260); },70);
+      };
+      var iv=setInterval(function(){
+        try{
+          var dt=Date.now()-t0;
+          var total=document.querySelectorAll('script[data-mls-asset]').length;
+          if(bar && total>0) bar.style.width=Math.min(94,8+Math.round(86*loaded/Math.max(total,1)))+'%';
+          var delta=muts-lastMuts; lastMuts=muts;
+          var loaderQuiet=(total>0 && loaded>=total-2) || (Date.now()-lastLoadAt>1200);
+          var login=false; try{ var lv=document.getElementById('loginView'); login=!!(lv&&lv.offsetParent!==null); }catch(_){ }
+          if(login && dt>=500) return release();
+          if(dt>=600 && loaderQuiet && delta<40) return release();
+          if(dt>=8000) return release();
+        }catch(_){ release(); }
+      },200);
+      setTimeout(release,8200); /* hard cap */
+      setTimeout(function(){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); document.documentElement.classList.remove('mls-booting'); }catch(_){ } },9500); /* absolute failsafe */
+    }
+  }catch(e){ try{ document.documentElement.classList.remove('mls-booting'); var v0=document.getElementById('mlsBootVeil'); if(v0) v0.remove(); }catch(_){ } }
+
+  /* ================= RC3: TICK REGISTRY + VIEW PULSE ================= */
+  var VIEWS=['intakeView','patientsView','visitView','historyView','recsView','ordersView','adminView','teamView','calendarView','analysisView','legalReqView','studioView','settingsModal','viewModal'];
+  var reg=[], seen={}, idKey={}, origSetInterval=window.setInterval, origClearInterval=window.clearInterval;
+  var wrapped=function(fn,delay){
+    var args=Array.prototype.slice.call(arguments,2);
+    if(typeof fn==='function' && delay>=200 && delay<=3500 && reg.length<500){
+      var key=null, src='';
+      try{ src=String(fn); if(src.indexOf('[native code]')===-1) key=src.slice(0,400)+'|'+delay; }catch(_){ key=null; }
+      if(key){
+        seen[key]=(seen[key]||0)+1;
+        if(seen[key]>2){ /* 3rd+ concurrently-active identical (source,delay): inert */
+          ST.dupesBlocked++; seen[key]--;
+          return origSetInterval.call(window,function(){},2147000000);
+        }
+      }
+      var isNet=/fetch\(|XMLHttpRequest|\.ajax\(|navigator\.sendBeacon/.test(src);
+      var run=function(){
+        if(ST.reverted) return fn.apply(this,arguments);
+        if(document.hidden && !isNet && delay<10000) return; /* skip pure-DOM work while hidden */
+        return fn.apply(this,arguments);
+      };
+      reg.push({f:fn,net:isNet});
+      var id=origSetInterval.apply(window,[run,delay].concat(args));
+      if(key) idKey[id]=key;
+      return id;
+    }
+    return origSetInterval.apply(window,arguments);
+  };
+  var wrappedClear=function(id){
+    try{ if(id!=null && idKey[id]){ if(seen[idKey[id]]>0) seen[idKey[id]]--; delete idKey[id]; } }catch(_){ }
+    return origClearInterval.apply(window,arguments);
+  };
+  try{ window.setInterval=wrapped; window.clearInterval=wrappedClear; }catch(_){ }
+
+  var lastSig='', lastPulse=0;
+  function viewSig(){
+    var s='';
+    for(var i=0;i<VIEWS.length;i++){ var el=document.getElementById(VIEWS[i]); s+=(el&&el.offsetParent!==null)?'1':'0'; }
+    return s;
+  }
+  function pulseAll(why){
+    var now=Date.now(); if(now-lastPulse<700) return; lastPulse=now;
+    ST.pulses++;
+    for(var i=0;i<reg.length;i++){ if(!reg[i].net){ try{ reg[i].f(); }catch(_){ } } }
+  }
+  var pending=false;
+  function onMaybeFlip(){
+    if(pending||ST.reverted) return; pending=true;
+    (window.requestAnimationFrame||setTimeout)(function(){
+      pending=false;
+      try{ var s=viewSig(); if(s!==lastSig){ lastSig=s; pulseAll('view-flip'); } }catch(_){ }
+    });
+  }
+  try{
+    var vmo=new MutationObserver(onMaybeFlip);
+    vmo.observe(document.documentElement,{attributes:true,attributeFilter:['class','style'],subtree:true,childList:true});
+    document.addEventListener('click',onMaybeFlip,true);
+    ST._vmo=vmo;
+  }catch(_){ }
+
+  /* ================= RC4: FETCH COALESCER (hot GET polls) ================= */
+  var HOT=/\/api\/(appointments|connect\/status|providers|intake\/pending|calls\/active|mic\/)/;
+  var TTL=1500, inflight={}, ttlCache={}, origFetch=window.fetch;
+  try{
+    window.fetch=function(input,init){
+      try{
+        if(ST.reverted) return origFetch.apply(window,arguments);
+        var url=(typeof input==='string')?input:(input&&input.url)||'';
+        var method=((init&&init.method)||(input&&input.method)||'GET').toUpperCase();
+        if(method!=='GET'||!HOT.test(url)) { ST.fetch.pass++; return origFetch.apply(window,arguments); }
+        var auth=''; try{ var h=(init&&init.headers)||{}; auth=(h.Authorization||h.authorization||(typeof h.get==='function'&&h.get('Authorization'))||''); }catch(_){ }
+        var key=url+'|'+auth;
+        var c=ttlCache[key];
+        if(c && (Date.now()-c.t)<TTL){ ST.fetch.ttlHits++; return c.p.then(function(r){ return r.clone(); }); }
+        if(inflight[key]){ ST.fetch.coalesced++; return inflight[key].then(function(r){ return r.clone(); }); }
+        /* master resolves to the ORIGINAL response; its body is never read —
+           every consumer (including the first caller) gets a fresh clone. */
+        var master=origFetch.apply(window,arguments).then(function(r){
+          delete inflight[key];
+          if(r && r.ok){ ttlCache[key]={t:Date.now(),p:master}; }
+          return r;
+        },function(err){ delete inflight[key]; throw err; });
+        inflight[key]=master;
+        return master.then(function(r){ return r.clone(); });
+      }catch(_){ return origFetch.apply(window,arguments); }
+    };
+  }catch(_){ }
+
+  /* housekeeping: drop stale TTL entries so the map never grows unbounded */
+  origSetInterval.call(window,function(){ try{ var n=Date.now(); for(var k in ttlCache){ if(n-ttlCache[k].t>TTL*4) delete ttlCache[k]; } }catch(_){ } },15000);
+
+  /* ================= revert ================= */
+  ST.revert=function(){
+    ST.reverted=true;
+    try{ window.setInterval=origSetInterval; window.clearInterval=origClearInterval; }catch(_){ }
+    try{ window.fetch=origFetch; }catch(_){ }
+    try{ ST._vmo&&ST._vmo.disconnect(); }catch(_){ }
+    try{ document.removeEventListener('click',onMaybeFlip,true); }catch(_){ }
+    reg=[]; seen={}; idKey={}; inflight={}; ttlCache={};
+    try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); document.documentElement.classList.remove('mls-booting'); }catch(_){ }
+    return 'T6 stabilizer reverted';
+  };
+})();
+
+
 (function(){
   if(window.__mlsCopilotInline) return; window.__mlsCopilotInline=1;
   function mount(){
@@ -155,7 +344,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-05-b18';
+  var MLS_APP_BUILD='2026-07-05-b19';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -2301,7 +2490,7 @@
    guarded with try/catch, never modifies existing app functions.
    ============================================================ */
 
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_note_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_note_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_note_detail.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_note_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_note_detail.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_visit_note_detail.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 
 /* ---- module: feat_cmdk.js ---- */
@@ -6305,25 +6494,25 @@
 })();
 
 ;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260618';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
-;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+Date.now();s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
+;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+(window.__MLS_AV||Date.now());s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */
-;(function(){try{['feat_addpatient.js','feat_cohort_visits.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})();
+;(function(){try{['feat_addpatient.js','feat_cohort_visits.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})();
 /* MLS - stabilize active-patient context bar badges (idempotent render; append-only, guarded) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="ctxbar-stabilize.js"]'))return;var s=document.createElement('script');s.src='ctxbar-stabilize.js?v='+Date.now();s.setAttribute('data-mls-asset','ctxbar-stabilize.js');s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="ctxbar-stabilize.js"]'))return;var s=document.createElement('script');s.src='ctxbar-stabilize.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','ctxbar-stabilize.js');s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_detail.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visit_detail.js');s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_detail.js"]'))return;var s=document.createElement('script');s.src='feat_visit_detail.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_visit_detail.js');s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* MLS — load patient/visit ease-of-use pass (append-only, guarded) */
-(function(){try{if(!document.querySelector('script[data-mls-asset="feat_ease.js"]')){var s=document.createElement('script');s.src='feat_ease.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_ease.js');s.async=false;(document.head||document.documentElement).appendChild(s);}}catch(e){}})();
+(function(){try{if(!document.querySelector('script[data-mls-asset="feat_ease.js"]')){var s=document.createElement('script');s.src='feat_ease.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_ease.js');s.async=false;(document.head||document.documentElement).appendChild(s);}}catch(e){}})();
 
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_guard.js"]'))return;var s=document.createElement('script');s.src='feat_athena_guard.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_guard.js');document.head.appendChild(s);}catch(e){}})(); /* MLS — athenaOne-open guard (block fake progress/saves when logged out) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_honest.js"]'))return;var s=document.createElement('script');s.src='feat_visits_honest.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visits_honest.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_guard.js"]'))return;var s=document.createElement('script');s.src='feat_athena_guard.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_guard.js');document.head.appendChild(s);}catch(e){}})(); /* MLS — athenaOne-open guard (block fake progress/saves when logged out) */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_honest.js"]'))return;var s=document.createElement('script');s.src='feat_visits_honest.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_visits_honest.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_counter_guard.js"]'))return;var s=document.createElement('script');s.src='feat_visits_counter_guard.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_visits_counter_guard.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_counter_guard.js"]'))return;var s=document.createElement('script');s.src='feat_visits_counter_guard.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_visits_counter_guard.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* loader: extended visit-history UI (timeline + overview + trends + filter/search/sort) — guarded, idempotent, cache-busted */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_history_ext.js"]'))return;var s=document.createElement('script');s.src='feat_visit_history_ext.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_visit_history_ext.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_history_ext.js"]'))return;var s=document.createElement('script');s.src='feat_visit_history_ext.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_visit_history_ext.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 
 /* ---- loader: mls-opnote-pro (op-note professional format + Save-as-PDF) ---- */
@@ -6332,59 +6521,59 @@
 /* ---- loader: mls-procedure-report (Analysis › 📊 Procedure Report: counts by type, Office/ASC place-of-service, RVU/$ totals, PDF/CSV) ---- */
 (function(){try{if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.js?v=20260619a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(!document.querySelector('script[data-mls-asset="feat_source_clarity.js"]')){var s=document.createElement('script');s.src='feat_source_clarity.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_source_clarity.js');document.head.appendChild(s);}}catch(e){}})();
+;(function(){try{if(!document.querySelector('script[data-mls-asset="feat_source_clarity.js"]')){var s=document.createElement('script');s.src='feat_source_clarity.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_source_clarity.js');document.head.appendChild(s);}}catch(e){}})();
 /* ---- loader: feat_athena_autopull (one-click open-chart auto-pull; fixes false name-match safety stop; additive, reversible) ---- */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_autopull.js"]'))return;var s=document.createElement('script');s.src='feat_athena_autopull.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_athena_autopull.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_autopull.js"]'))return;var s=document.createElement('script');s.src='feat_athena_autopull.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_athena_autopull.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: feat_athena_status_dot (always-on top-right Athena connection indicator; additive, reversible) ---- */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_dot.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_dot.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_athena_status_dot.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_dot.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_dot.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_athena_status_dot.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 
 /* ---- loader: feat_opnote_history_pdf (one-click PDF on op-note history rows) ---- */
 (function(){try{if(window.__mlsOpNoteHistPdfLoader)return;window.__mlsOpNoteHistPdfLoader=1;var s=document.createElement('script');s.src='feat_opnote_history_pdf.js?v=20260620a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy.js"]'))return;var s=document.createElement('script');s.src='feat_mls_easy.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_mls_easy.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy.js"]'))return;var s=document.createElement('script');s.src='feat_mls_easy.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_easy.js');document.head.appendChild(s);}catch(e){}})();
 /* ---- loader: feat_save_verify.js (save-integrity verification) ---- */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
 
 /* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: mls-template-stdline (reusable standard line for Templates tab) ---- */
-;(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+Date.now();s.setAttribute('data-mls-asset','mls-template-stdline.js');document.head.appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');document.head.appendChild(s);}catch(e){}})();
 
 /* ---- loader: feat_athena_actions.js (shared Athena-action treatment: live status / click-intent labels / destination-verify / self-recovery) ---- */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_actions.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_actions.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_actions.js');document.head.appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_actions.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_actions.js');document.head.appendChild(s);}catch(e){}})();
 
 
 /* ---- loader: feat_athena_writeback.js (WRITE finished note into the open Athena chart; verified paste; patient name+DOB gate; never Save/Sign) ---- */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_writeback.js"]'))return;var s=document.createElement('script');s.src='feat_athena_writeback.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_writeback.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_writeback.js"]'))return;var s=document.createElement('script');s.src='feat_athena_writeback.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_writeback.js');document.head.appendChild(s);}catch(e){}})();
 
 
 /* feat_athena_clarity.js */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_clarity.js"]'))return;var s=document.createElement('script');s.src='feat_athena_clarity.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_clarity.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_clarity.js"]'))return;var s=document.createElement('script');s.src='feat_athena_clarity.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_clarity.js');document.head.appendChild(s);}catch(e){}})();
 
 /* feat_athena_selfheal.js */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_selfheal.js"]'))return;var s=document.createElement('script');s.src='feat_athena_selfheal.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_selfheal.js');document.head.appendChild(s);}catch(e){}})();
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_patient_switcher.js"]'))return;var s=document.createElement('script');s.src='feat_patient_switcher.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_patient_switcher.js');document.head.appendChild(s);}catch(e){}})();
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_scope.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_scope.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_provider_scope.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_selfheal.js"]'))return;var s=document.createElement('script');s.src='feat_athena_selfheal.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_selfheal.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_patient_switcher.js"]'))return;var s=document.createElement('script');s.src='feat_patient_switcher.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_patient_switcher.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_scope.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_scope.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_provider_scope.js');document.head.appendChild(s);}catch(e){}})();
 
 
 /* feat_athena_ux_unify.js */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_ux_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_ux_unify.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_athena_ux_unify.js');document.head.appendChild(s);}catch(e){}})();
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_centerpiece.js"]'))return;var s=document.createElement('script');s.src='feat_mls_centerpiece.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_mls_centerpiece.js');document.head.appendChild(s);}catch(e){}})();
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_fab_layout.js"]'))return;var s=document.createElement('script');s.src='feat_fab_layout.js?v='+Date.now();s.setAttribute('data-mls-asset','feat_fab_layout.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_ux_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_ux_unify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_ux_unify.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_centerpiece.js"]'))return;var s=document.createElement('script');s.src='feat_mls_centerpiece.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_centerpiece.js');document.head.appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_fab_layout.js"]'))return;var s=document.createElement('script');s.src='feat_fab_layout.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_fab_layout.js');document.head.appendChild(s);}catch(e){}})();
 /* ---- loader feat_athena_provider_picker.js (Whose patients? doctor dropdown + provider-scoped schedule pull) ---- */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_picker.js"]'))return; var s=document.createElement('script'); s.src='/feat_athena_provider_picker.js?v='+Date.now(); s.setAttribute('data-mls-asset','feat_athena_provider_picker.js'); document.head.appendChild(s); }catch(e){}})();(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_contrast.js"]'))return; var s=document.createElement('script'); s.src='/feat_mls_easy_contrast.js?v='+Date.now(); s.setAttribute('data-mls-asset','feat_mls_easy_contrast.js'); document.head.appendChild(s); }catch(e){}})();(function(){try{if(document.querySelector('script[data-mls-asset="feat_after_visit_summary.js"]'))return; var s=document.createElement('script'); s.src='/feat_after_visit_summary.js?v='+Date.now(); s.setAttribute('data-mls-asset','feat_after_visit_summary.js'); document.head.appendChild(s); }catch(e){}})()
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_picker.js"]'))return; var s=document.createElement('script'); s.src='/feat_athena_provider_picker.js?v='+(window.__MLS_AV||Date.now()); s.setAttribute('data-mls-asset','feat_athena_provider_picker.js'); document.head.appendChild(s); }catch(e){}})();(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_contrast.js"]'))return; var s=document.createElement('script'); s.src='/feat_mls_easy_contrast.js?v='+(window.__MLS_AV||Date.now()); s.setAttribute('data-mls-asset','feat_mls_easy_contrast.js'); document.head.appendChild(s); }catch(e){}})();(function(){try{if(document.querySelector('script[data-mls-asset="feat_after_visit_summary.js"]'))return; var s=document.createElement('script'); s.src='/feat_after_visit_summary.js?v='+(window.__MLS_AV||Date.now()); s.setAttribute('data-mls-asset','feat_after_visit_summary.js'); document.head.appendChild(s); }catch(e){}})()
 /* ---- loader: feat_mls_protocol (MLS Easy protocol: auto-advance to NEXT UP Slide 2, record textbox, full ordered flow, provider-name-everywhere, sizing/readability; additive, reversible) ---- */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol.js"]'))return;var s=document.createElement('script');s.src='feat_mls_protocol.js?v='+Date.now();s.async=false;s.setAttribute('data-mls-asset','feat_mls_protocol.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol.js"]'))return;var s=document.createElement('script');s.src='feat_mls_protocol.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_protocol.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_protocol_pickfix.js?v=20260622';s.setAttribute('data-mls-asset','feat_mls_protocol_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{var A='mls-connection-truth.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{var A='mls-fabrication-sentinel.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='mls-connection-truth.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='mls-fabrication-sentinel.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_easy_pickfix.js?v=20260622c';s.setAttribute('data-mls-asset','feat_mls_easy_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_contrast_fix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_contrast_fix.js?v=20260622';s.setAttribute('data-mls-asset','feat_mls_contrast_fix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{['feat_opnote_history.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — history-aware op-note generation + real loading/ready indicator (append-only, guarded) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_roster.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_roster.js?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset','feat_athena_provider_roster.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{['feat_opnote_history.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — history-aware op-note generation + real loading/ready indicator (append-only, guarded) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_roster.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_roster.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_provider_roster.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_stdline_insert.js"]'))return;var s=document.createElement('script');s.src='/feat_stdline_insert.js?v=20260622';s.setAttribute('data-mls-asset','feat_stdline_insert.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_pdf_anyview.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_pdf_anyview.js?v=20260622';s.setAttribute('data-mls-asset','feat_opnote_pdf_anyview.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
@@ -6398,7 +6587,7 @@
   var A='feat_athena_truthcheck.js';
   if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
   var s=document.createElement('script');
-  s.src=A+'?v='+Date.now();
+  s.src=A+'?v='+(window.__MLS_AV||Date.now());
   s.setAttribute('data-mls-asset',A);
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
@@ -6412,7 +6601,7 @@
   var A='feat_athena_cardtips.js';
   if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
   var s=document.createElement('script');
-  s.src=A+'?v='+Date.now();
+  s.src=A+'?v='+(window.__MLS_AV||Date.now());
   s.setAttribute('data-mls-asset',A);
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
@@ -6423,7 +6612,7 @@
   var A='feat_mls_submit_checklist.js';
   if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
   var s=document.createElement('script');
-  s.src=A+'?v='+Date.now();
+  s.src=A+'?v='+(window.__MLS_AV||Date.now());
   s.setAttribute('data-mls-asset',A);
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
@@ -6432,7 +6621,7 @@
   var A='feat_athena_truthcheck_amber.js';
   if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
   var s=document.createElement('script');
-  s.src=A+'?v='+Date.now();
+  s.src=A+'?v='+(window.__MLS_AV||Date.now());
   s.setAttribute('data-mls-asset',A);
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
@@ -6441,25 +6630,25 @@
   var A='feat_athena_cardtips_mlsac.js';
   if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
   var s=document.createElement('script');
-  s.src=A+'?v='+Date.now();
+  s.src=A+'?v='+(window.__MLS_AV||Date.now());
   s.setAttribute('data-mls-asset',A);
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
 }catch(e){}})();
 
-;(function(){try{var A='feat_athena_narration.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_athena_narration.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_hardening.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_easy_hardening.js?v=20260622a';s.setAttribute('data-mls-asset','feat_mls_easy_hardening.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{var A='feat_athena_cardtips_noinfo.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_athena_cardtips_noinfo.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{var A='feat_stdline_autoinsert.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_stdline_autoinsert.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{var A='feat_autosave.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_autosave.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{['feat_patient_quicksearch.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})();
+;(function(){try{['feat_patient_quicksearch.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})();
 
-;(function(){try{['feat_fullhistory_pdf.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+Date.now();s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — Export full patient visit history as ONE PDF (additive, guarded, reversible) */
+;(function(){try{['feat_fullhistory_pdf.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — Export full patient visit history as ONE PDF (additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewpersist.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewpersist.js?v=20260623a';s.setAttribute('data-mls-asset','feat_mls_viewpersist.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260623a';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
@@ -6467,14 +6656,14 @@
   var A='feat_athena_signin_prompt.js';
   if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;
   var s=document.createElement('script');
-  s.src=A+'?v='+Date.now();
+  s.src=A+'?v='+(window.__MLS_AV||Date.now());
   s.setAttribute('data-mls-asset',A);
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
 }catch(e){}})();
 ;(function(){try{if(document.getElementById('mlsEasy4FixesLoader'))return;var s=document.createElement('script');s.id='mlsEasy4FixesLoader';s.src='feat_mls_easy_4fixes.js?v=20260623';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS Easy 4 fixes: dictation->record textbox, reliable Back, manual->active patient+banner+generation, prep-op-note on slide 2 */
 
-;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+Date.now();s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
