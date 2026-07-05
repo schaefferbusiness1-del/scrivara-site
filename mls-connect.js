@@ -1,4 +1,26 @@
 (function(){
+  if(window.__mlsVersionCheck) return;
+  window.__mlsVersionCheck=true;
+  var MLS_APP_BUILD='2026-07-04-b5';
+  window.__MLS_APP_BUILD=MLS_APP_BUILD;
+  var URL='https://mlsscribe.com/mls-connect.js';
+  var banner=null;
+  function showBanner(newv){
+    if(banner&&banner.parentNode) return;
+    banner=document.createElement('div'); banner.id='mlsVerBanner';
+    banner.style.cssText='position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:99999;background:#0d2138;color:#eef4ff;border:1px solid #2f7cf6;border-radius:14px;padding:11px 14px;display:flex;align-items:center;gap:12px;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45);max-width:92vw';
+    var sp=document.createElement('span'); sp.textContent='\u2728 A newer version of MLS is ready.'; banner.appendChild(sp);
+    var b=document.createElement('button'); b.textContent='Refresh'; b.style.cssText='cursor:pointer;background:#2f7cf6;color:#fff;border:none;border-radius:9px;padding:8px 14px;font-weight:700'; b.onclick=function(){ try{location.href=location.pathname+'?rv='+encodeURIComponent(newv);}catch(_){location.reload();} }; banner.appendChild(b);
+    var x=document.createElement('button'); x.textContent='\u00d7'; x.style.cssText='cursor:pointer;background:transparent;color:#9fb0d8;border:none;font-size:18px;line-height:1'; x.onclick=function(){ if(banner){banner.remove();banner=null;} }; banner.appendChild(x);
+    (document.body||document.documentElement).appendChild(banner);
+  }
+  function check(){ try{ fetch(URL+'?nc='+Date.now(),{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){ var m=t.match(/MLS_APP_BUILD='([^']+)'/); if(m&&m[1]&&m[1]!==MLS_APP_BUILD){ showBanner(m[1]); } }).catch(function(){}); }catch(_){} }
+  setTimeout(check, 8000);
+  setInterval(check, 180000);
+  window.addEventListener('focus', function(){ setTimeout(check, 1200); });
+})();
+
+(function(){
   if(window.__mlsVisitTidy) return;
   window.__mlsVisitTidy=true;
   /* Tidy the MLS Easy hero: drop the duplicate eyebrow + redundant instruction subtitle (the guided cockpit is the header now). Keep the 'Just talk' tagline + all functional controls. */
