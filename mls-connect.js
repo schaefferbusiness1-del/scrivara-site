@@ -1,9 +1,9 @@
 (function(){
   if(window.__mlsCardPolish) return; window.__mlsCardPolish=1;
   var CSS=[
-    "#visitView.mls-cohere .vx-grid > *{background:linear-gradient(180deg,#eaf0fc,#e2eafa)!important;border:1px solid rgba(120,150,220,.42)!important;box-shadow:0 10px 34px rgba(8,20,45,.40)!important;border-radius:16px!important;overflow:hidden}",
+    "#visitView.mls-cohere .vx-grid > *{background:linear-gradient(180deg,#dbe6fb,#cfdef7)!important;border:1px solid rgba(110,140,215,.55)!important;box-shadow:0 10px 34px rgba(8,20,45,.40)!important;border-radius:16px!important;overflow:hidden}",
     "#visitView.mls-cohere .vx-grid > *::before{content:'';display:block;height:4px;margin:-1px -1px 0;background:linear-gradient(90deg,#3b6fe0,#5b8cff)}",
-    "#visitView.mls-cohere #transcript,#visitView.mls-cohere textarea,#visitView.mls-cohere input[type=text]{background:#eef2fd!important;border:1px solid rgba(120,150,220,.30)!important}"
+    "#visitView.mls-cohere #transcript,#visitView.mls-cohere textarea,#visitView.mls-cohere input[type=text]{background:#e7effc!important;border:1px solid rgba(110,140,215,.40)!important}"
   ].join("\n");
   function ins(){ if(document.getElementById('mlsCardPolishCss'))return; var st=document.createElement('style'); st.id='mlsCardPolishCss'; st.textContent=CSS; (document.head||document.documentElement).appendChild(st); }
   ins();
@@ -133,7 +133,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-04-b15';
+  var MLS_APP_BUILD='2026-07-04-b16';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
