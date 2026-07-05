@@ -700,9 +700,9 @@
       var delta=muts-lastCount; lastCount=muts;
       var login=false;
       try{ var lv=document.getElementById('loginView'); login=!!(lv&&lv.offsetParent!==null); }catch(e){}
-      if(dt>=3200) return release();
+      if(dt>=2600) return release();
       if(login && dt>=700) return release();
-      if(dt>=450 && delta<26) return release();
+      if(dt>=450 && delta<90) return release();
     },220);
     window.addEventListener('error',function(){ if(Date.now()-t0>1200) release(); },true);
     /* absolute failsafe: the veil can never outlive 4s no matter what breaks */
