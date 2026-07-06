@@ -383,5 +383,78 @@
   checkSession();
 })();
 </script>
+<script>
+/* =====================================================================
+   __mlsPortalClaim (task-9, 2026-07-06) — one-time email-link setup flow.
+   Handles https://mlsscribe.com/patient-portal.html#claim=<token> links
+   sent by the backend portal-invite module (patientPortalInvite.js):
+     1. Reads the one-time token from the URL FRAGMENT (never sent to the
+        server in a URL / never in server logs) and scrubs it immediately.
+     2. POST /api/patient/auth/claim -> live patient session cookie.
+     3. First-login password setup (min 8 chars) via /auth/set-password.
+     4. Then drops the patient into their records as a normal session.
+   FEATURE-DETECTING + INERT: if the backend module isn't deployed yet the
+   claim call 404s and the patient sees a clear "use your username &
+   password" message. No other page behavior changes. No PHI in URLs.
+   ===================================================================== */
+(function(){
+  "use strict";
+  var API="https://scrivara-backend.onrender.com";
+  function $(id){ return document.getElementById(id); }
+  var m=(location.hash||"").match(/[#&]claim=([A-Za-z0-9_-]{20,64})/);
+  if(!m) return;
+  var token=m[1];
+  try{ history.replaceState(null,"",location.pathname); }catch(e){} // scrub token from the bar/history
+
+  var back=document.createElement("div");
+  back.id="mlsClaimBack";
+  back.style.cssText="position:fixed;inset:0;background:rgba(13,35,56,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  back.innerHTML=
+    '<div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:28px 26px;box-shadow:0 12px 44px rgba(0,0,0,.32)">'
+    +'<div style="display:flex;align-items:center;gap:9px;font-weight:800;color:#15528f;font-size:17px"><span style="width:11px;height:11px;border-radius:50%;background:#127a55;box-shadow:0 0 0 4px rgba(18,122,85,.15)"></span>MLS Patient Portal</div>'
+    +'<div id="mcBody" style="margin-top:16px;font-size:14.5px;color:#0d2338">Setting up your secure access…</div>'
+    +'</div>';
+  document.body.appendChild(back);
+  function body(html){ $("mcBody").innerHTML=html; }
+  function close(){ var b=$("mlsClaimBack"); if(b) b.remove(); }
+  var OKBTN='<button onclick="document.getElementById(\'mlsClaimBack\').remove()" style="display:block;width:100%;margin-top:16px;border:1px solid #e4ebf3;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;font-size:14px;padding:12px;cursor:pointer">OK — take me to sign in</button>';
+
+  function pwForm(username){
+    body(
+      '<div style="font-weight:700;color:#127a55">✓ You\'re verified.</div>'
+      +'<div style="margin:8px 0 4px;color:#5b6b7c;font-size:13.5px">Choose a password for your portal account'+(username?(' (<b>'+String(username).replace(/[<>&]/g,'')+'</b>)'):'')+'. You\'ll use it with your date of birth to sign in next time.</div>'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:12px 0 5px">New password (8+ characters)</label>'
+      +'<input id="mcP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:12px 0 5px">Repeat password</label>'
+      +'<input id="mcP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<div id="mcErr" style="display:none;background:#fdecec;border:1px solid #f5c2c2;color:#a12626;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<button id="mcGo" style="width:100%;border:none;border-radius:10px;background:#1f7ae0;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save password &amp; open my records</button>'
+    );
+    function err(t){ var e=$("mcErr"); e.style.display="block"; e.textContent=t; }
+    $("mcGo").onclick=function(){
+      var p1=$("mcP1").value, p2=$("mcP2").value;
+      if(p1.length<8){ err("Please choose a password of at least 8 characters."); return; }
+      if(p1!==p2){ err("The two passwords don't match."); return; }
+      var btn=$("mcGo"); btn.disabled=true; btn.textContent="Saving…";
+      fetch(API+"/api/patient/auth/set-password",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:p1})})
+        .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,j:j}; }); })
+        .then(function(res){
+          if(!res.ok){ btn.disabled=false; btn.textContent="Save password & open my records"; err((res.j&&res.j.error)||"Could not save the password — please try again."); return; }
+          close(); location.reload(); // checkSession() picks up the live session
+        })
+        .catch(function(){ btn.disabled=false; btn.textContent="Save password & open my records"; err("Network problem — please try again."); });
+    };
+  }
+
+  fetch(API+"/api/patient/auth/claim",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token})})
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
+    .then(function(res){
+      if(res.ok){ pwForm(res.j&&res.j.username); return; }
+      if(res.status===404){ body('This type of setup link isn\'t enabled yet. Please sign in with the <b>username and password</b> your care team gave you.'+OKBTN); return; }
+      body('⏳ '+(((res.j&&res.j.error)||'This link has expired or was already used.'))+'<div style="color:#5b6b7c;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
+    })
+    .catch(function(){ body('Network problem while setting up your access. Check your connection and re-open the link from your email.'+OKBTN); });
+})();
+</script>
 </body>
 </html>
