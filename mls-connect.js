@@ -1,3 +1,263 @@
+/* =========================================================================
+ * MLS Scribe — b33 "How to use" guide unifier  (__mlsHowToB33)
+ * ----------------------------------------------------------------------------
+ * WHAT: Ships ONE current, blue-styled "How to use MLS" guide modal and makes it
+ *       the single Help / How-to path. Reversibly hides/neutralises the DUPLICATE
+ *       / stale how-to guides that existed before:
+ *         (1) the stale ".howto" strip in #visitView ("1 Start visit 2 Stop 3
+ *             Generate note 4 Optimize coding 5 Review & sign" — old flow),
+ *         (2) the "Quick guide — how to use MLS" card set (.su_guide) buried in
+ *             the setup wizard (#setupModal / #su_step5).
+ *       The AI "MLS Help — ask anything" box (#helpModal / openMlsHelp) is a
+ *       FEATURE, not a static guide — it is PRESERVED and offered as a secondary
+ *       "Ask MLS a question" button inside the one guide.
+ *
+ * HOW (single path): the top-bar ❓ Help (#nav_help -> openMlsHelp) is re-routed
+ *       to open THIS guide. A 🚀-guide entry in setup opens THIS guide too. So a
+ *       doctor sees exactly one "How to use / Help" surface.
+ *
+ * SAFETY: additive, guarded IIFE. Never clobbers existing modules (Task-3 loader,
+ *       MLSStatus, __mlsT6Stab, __mlsBootLoader, __mlsUiCleanupB26,
+ *       __mlsEmrClarityB28, __mlsEasyMagicB30, __mlsWbConsole, __mlsEasyUnified,
+ *       __mlsEasyWizard, __mlsEasyTunnel, etc.). Nothing deleted. Fully
+ *       reversible: window.__mlsHowToB33_revert().
+ * ========================================================================== */
+(function () {
+  'use strict';
+  if (window.__mlsHowToB33) return;
+  window.__mlsHowToB33 = 1;
+
+  var CSS_ID   = 'mlsG33Css';
+  var MODAL_ID = 'mlsG33Modal';
+  var STALE_ID = 'mlsG33HideStale';        // <style> that hides the stale .howto strip
+  var SU_BTN   = 'mlsG33SuGuideBtn';        // injected "open full guide" btn in setup step 5
+  var SU_HIDE  = 'mlsG33SuHide';            // marker class on hidden .su_guide cards
+
+  /* ---- 1. styles (MLS Easy blue system) --------------------------------- */
+  function ensureCss() {
+    if (document.getElementById(CSS_ID)) return;
+    var s = document.createElement('style');
+    s.id = CSS_ID;
+    s.textContent = [
+      '#' + MODAL_ID + '{position:fixed;inset:0;z-index:100000;display:none;',
+      '  align-items:flex-start;justify-content:center;background:rgba(18,30,60,.55);',
+      '  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);overflow:auto;padding:32px 14px;}',
+      '#' + MODAL_ID + '.open{display:flex;}',
+      '#' + MODAL_ID + ' .g33-card{width:min(760px,100%);background:linear-gradient(180deg,#c2d4f4,#aec4ef);',
+      '  border:1px solid rgba(110,140,215,.55);border-radius:16px;',
+      '  box-shadow:0 18px 60px rgba(20,40,90,.35);overflow:hidden;color:#12203f;',
+      '  font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}',
+      '#' + MODAL_ID + ' .g33-top{height:5px;background:linear-gradient(90deg,#3b6fe0,#5b8cff);}',
+      '#' + MODAL_ID + ' .g33-head{display:flex;align-items:center;gap:10px;padding:16px 20px 4px;}',
+      '#' + MODAL_ID + ' .g33-head h2{margin:0;font-size:19px;font-weight:800;color:#16305f;flex:1;}',
+      '#' + MODAL_ID + ' .g33-x{cursor:pointer;border:0;background:rgba(255,255,255,.55);',
+      '  width:32px;height:32px;border-radius:9px;font-size:17px;line-height:1;color:#16305f;}',
+      '#' + MODAL_ID + ' .g33-x:hover{background:#fff;}',
+      '#' + MODAL_ID + ' .g33-sub{padding:0 20px 10px;color:#33507f;font-size:13px;}',
+      '#' + MODAL_ID + ' .g33-body{padding:6px 20px 8px;}',
+      '#' + MODAL_ID + ' .g33-step{background:#dbe6fb;border:1px solid rgba(110,140,215,.40);',
+      '  border-radius:12px;padding:12px 14px;margin:10px 0;}',
+      '#' + MODAL_ID + ' .g33-step h3{margin:0 0 4px;font-size:15px;color:#16305f;display:flex;',
+      '  gap:8px;align-items:center;font-weight:700;}',
+      '#' + MODAL_ID + ' .g33-step .n{background:linear-gradient(90deg,#3b6fe0,#5b8cff);color:#fff;',
+      '  width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;',
+      '  justify-content:center;font-size:12px;font-weight:800;flex:0 0 auto;}',
+      '#' + MODAL_ID + ' .g33-step p{margin:4px 0 0;color:#22375f;}',
+      '#' + MODAL_ID + ' .g33-step b{color:#16305f;}',
+      '#' + MODAL_ID + ' .g33-note{font-size:12.5px;color:#3a557f;}',
+      '#' + MODAL_ID + ' .g33-tag{display:inline-block;font-size:11px;font-weight:700;',
+      '  background:#25406f;color:#dbe6fb;border-radius:6px;padding:1px 7px;margin-left:6px;}',
+      '#' + MODAL_ID + ' .g33-foot{padding:12px 20px 20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}',
+      '#' + MODAL_ID + ' .g33-btn{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;',
+      '  font-size:13.5px;font-weight:700;}',
+      '#' + MODAL_ID + ' .g33-btn.primary{background:linear-gradient(90deg,#3b6fe0,#5b8cff);color:#fff;}',
+      '#' + MODAL_ID + ' .g33-btn.ghost{background:rgba(255,255,255,.6);color:#16305f;}',
+      '#' + MODAL_ID + ' .g33-btn.ghost:hover{background:#fff;}',
+      '#' + MODAL_ID + ' .g33-foot .sp{flex:1;}',
+      '#' + MODAL_ID + ' .g33-mob{font-size:12.5px;color:#33507f;padding:2px 2px 0;}',
+      '@media (max-width:640px){',
+      '  #' + MODAL_ID + '{padding:14px 8px;}',
+      '  #' + MODAL_ID + ' .g33-head h2{font-size:17px;}',
+      '  #' + MODAL_ID + ' .g33-foot{flex-direction:column;align-items:stretch;}',
+      '  #' + MODAL_ID + ' .g33-foot .sp{display:none;}',
+      '  #' + MODAL_ID + ' .g33-btn{width:100%;}',
+      '}',
+      /* the injected setup-step button */
+      '#' + SU_BTN + '{display:inline-flex;gap:8px;align-items:center;cursor:pointer;border:0;',
+      '  border-radius:10px;padding:11px 16px;margin:6px 0;font-size:13.5px;font-weight:700;',
+      '  background:linear-gradient(90deg,#3b6fe0,#5b8cff);color:#fff;}',
+      '.' + SU_HIDE + '{display:none !important;}'
+    ].join('');
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  /* ---- 2. the ONE current guide (authored from the live b32 UI) ---------- */
+  var STEPS = [
+    ['🔗', 'Connect athenaOne (one time)',
+      'On the MLS Easy home screen use <b>Connect to EMR</b> (HL7 FHIR / SMART on athenaOne). ' +
+      'When it is linked you will see a green <b>athenaOne connected</b> badge by the patient header ' +
+      'and in the status dock at the bottom-right. MLS only <b>reads</b> from athenaOne until you ' +
+      'explicitly confirm and send a note.'],
+    ['👤', 'Pick a patient',
+      'Three easy ways: (1) tap a name in the <b>Who’s Next</b> grid (the “Today” chips) to make ' +
+      'it the active patient instantly; (2) use <b>Pull today’s patients</b> / <b>From Athena chart</b> ' +
+      'to load your schedule; or (3) type the <b>Patient name</b> + <b>Date of birth</b> and press ' +
+      '<b>Use current patient</b>. The active patient always shows in the header up top — use ' +
+      '<b>Switch patient</b> to change.'],
+    ['🎙️', 'Record the visit',
+      'With a patient active, press <b>Start recording</b> and just talk through the visit normally. ' +
+      'MLS listens in the background and transcribes. Press <b>Stop</b> when you’re done. ' +
+      'No typing during the visit.'],
+    ['📝', 'Generate & review the note',
+      'MLS turns the conversation into a structured note in the <b>Note</b> card. Read it over and edit ' +
+      'anything you like — it’s your note. You can also <b>Prep op note</b> or apply your own ' +
+      '<b>templates</b> from the “Notes & templates” card.'],
+    ['🗂️', 'Review EMR sections & confirm',
+      'Open <b>EMR sections</b> to see the “review & confirm” window. A 5-step bar guides you: ' +
+      '<b>record → MLS auto-sorts → review & edit → confirm approved → insert to athenaOne</b>. ' +
+      'The <b>⚙ Writeback destination</b> gear (top-right of that window) sets where each section lands ' +
+      'in the chart. Tick the sections you approve. <b>Nothing is written until you confirm and Insert.</b>'],
+    ['🚀', 'Send the visit to athenaOne',
+      'When the note and sections look right, use <b>🚀 Send full visit to Athena</b> (or <b>Sign & Save</b>). ' +
+      'Your signature block is appended automatically. This is the only step that writes to the chart, and ' +
+      'it always waits for you.'],
+    ['📅', 'Calendar & schedule',
+      'The <b>Calendar</b> tab shows the month, a day panel and <b>Who’s Next</b>. Pick any day to see ' +
+      'that day’s patients, then tap one to jump straight into the visit with them loaded.'],
+    ['💡', 'MLS Copilot',
+      'Open <b>AI Studio</b> to ask MLS Copilot about your practice — e.g. “how many patients do I have,” ' +
+      '“who’s overdue,” “how busy is tomorrow.” Type your question in the card and it answers with ' +
+      'the details, and can open a chart or start a visit for you.'],
+    ['⭐', 'Reviews & reputation',
+      'The <b>Reviews</b> tab (also in the Menu) finds patient reviews and helps you reply — a simple way ' +
+      'to keep your online reputation healthy.'],
+    ['📱', 'Use it on your phone',
+      'Scan the <b>Record on phone</b> QR code (top-right of MLS Easy) to capture a visit from your phone. ' +
+      'Every screen also works in a narrow mobile browser — the cards stack into a single column.']
+  ];
+
+  function buildModal() {
+    if (document.getElementById(MODAL_ID)) return;
+    ensureCss();
+    var wrap = document.createElement('div');
+    wrap.id = MODAL_ID;
+    var stepsHtml = STEPS.map(function (s, i) {
+      return '<div class="g33-step"><h3><span class="n">' + (i + 1) + '</span>' +
+        s[0] + ' ' + s[1] + '</h3><p>' + s[2] + '</p></div>';
+    }).join('');
+    wrap.innerHTML =
+      '<div class="g33-card" role="dialog" aria-modal="true" aria-label="How to use MLS Scribe">' +
+        '<div class="g33-top"></div>' +
+        '<div class="g33-head"><h2>📖 How to use MLS Scribe</h2>' +
+          '<button class="g33-x" type="button" aria-label="Close" data-g33="close">×</button></div>' +
+        '<div class="g33-sub">MLS listens to your visit, writes the note, and — only when you confirm — ' +
+          'sends it to athenaOne. Here’s the whole flow in plain steps.</div>' +
+        '<div class="g33-body">' + stepsHtml +
+          '<div class="g33-mob">Tip: you can reopen this guide anytime from <b>❓ Help</b> in the top bar.</div>' +
+        '</div>' +
+        '<div class="g33-foot">' +
+          '<button class="g33-btn primary" type="button" data-g33="close">Got it</button>' +
+          '<button class="g33-btn ghost" type="button" data-g33="ask">💬 Ask MLS a question</button>' +
+          '<span class="sp"></span>' +
+        '</div>' +
+      '</div>';
+    (document.body || document.documentElement).appendChild(wrap);
+
+    wrap.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t === wrap) { closeGuide(); return; }                 // click-outside
+      var act = t.getAttribute && t.getAttribute('data-g33');
+      if (act === 'close') { closeGuide(); }
+      else if (act === 'ask') { openAsk(); }
+    });
+  }
+
+  function openGuide() { buildModal(); var m = document.getElementById(MODAL_ID); if (m) m.classList.add('open'); }
+  function closeGuide() { var m = document.getElementById(MODAL_ID); if (m) m.classList.remove('open'); }
+  function openAsk() {
+    closeGuide();
+    var f = window.__mlsG33_origHelp;
+    if (typeof f === 'function') { try { f(); } catch (e) {} }
+  }
+  window.__mlsHowToB33_open = openGuide;
+
+  // Esc closes
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      var m = document.getElementById(MODAL_ID);
+      if (m && m.classList.contains('open')) closeGuide();
+    }
+  });
+
+  /* ---- 3. make the guide the SINGLE Help/How-to path -------------------- */
+  function rerouteHelp() {
+    // Preserve the real AI "ask anything" opener exactly once.
+    if (!window.__mlsG33_origHelp && typeof window.openMlsHelp === 'function') {
+      window.__mlsG33_origHelp = window.openMlsHelp;
+    }
+    // Point the top-bar ❓ Help (nav_help onclick -> openMlsHelp()) at the guide.
+    if (window.openMlsHelp !== openGuide) window.openMlsHelp = openGuide;
+  }
+
+  /* ---- 4. reversibly retire the DUPLICATE / stale how-to guides --------- */
+  function hideStaleHowto() {
+    if (document.getElementById(STALE_ID)) return;
+    var s = document.createElement('style');
+    s.id = STALE_ID;
+    s.textContent = '#visitView .howto{display:none !important;}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function neutraliseSetupGuide() {
+    var step = document.getElementById('su_step5');
+    if (!step) return;
+    var cards = step.querySelectorAll('.su_guide');
+    if (!cards.length) return;
+    cards.forEach(function (c) { if (!c.classList.contains(SU_HIDE)) c.classList.add(SU_HIDE); });
+    if (!document.getElementById(SU_BTN)) {
+      var host = cards[0].parentElement || step;
+      var b = document.createElement('button');
+      b.id = SU_BTN; b.type = 'button';
+      b.innerHTML = '📖 Open the full how-to guide';
+      b.addEventListener('click', function (ev) { ev.preventDefault(); openGuide(); });
+      host.insertBefore(b, cards[0]);
+    }
+  }
+
+  /* ---- 5. keep it applied (idempotent) --------------------------------- */
+  function apply() {
+    try { rerouteHelp(); } catch (e) {}
+    try { hideStaleHowto(); } catch (e) {}
+    try { neutraliseSetupGuide(); } catch (e) {}
+  }
+  apply();
+  var iv = setInterval(apply, 1500);
+  var mo = null;
+  try {
+    mo = new MutationObserver(function () { apply(); });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+
+  /* ---- 6. full, clean revert ------------------------------------------- */
+  window.__mlsHowToB33_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { if (mo) mo.disconnect(); } catch (e) {}
+    // restore Help behaviour
+    if (window.__mlsG33_origHelp) { window.openMlsHelp = window.__mlsG33_origHelp; }
+    // un-hide stale strip
+    var st = document.getElementById(STALE_ID); if (st) st.remove();
+    // restore setup guide cards + remove injected btn
+    document.querySelectorAll('.' + SU_HIDE).forEach(function (c) { c.classList.remove(SU_HIDE); });
+    var b = document.getElementById(SU_BTN); if (b) b.remove();
+    // remove guide modal + css
+    var m = document.getElementById(MODAL_ID); if (m) m.remove();
+    var css = document.getElementById(CSS_ID); if (css) css.remove();
+    window.__mlsHowToB33 = 0;
+    return 'reverted __mlsHowToB33';
+  };
+})();
+
+
 /* __mlsEasyMagicB30 — MLS Easy guided-flow polish (queue item 3)
  * - Restyles the Step 1-4 bar (#mls-rt-bar) into a sticky, modern stepper.
  * - Step-driven focus: the card that matters for the current step gets a blue
@@ -750,7 +1010,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b32';
+  var MLS_APP_BUILD='2026-07-06-b33';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
