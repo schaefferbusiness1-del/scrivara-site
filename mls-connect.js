@@ -1,3 +1,143 @@
+/* __mlsEasyMagicB30 — MLS Easy guided-flow polish (queue item 3)
+ * - Restyles the Step 1-4 bar (#mls-rt-bar) into a sticky, modern stepper.
+ * - Step-driven focus: the card that matters for the current step gets a blue
+ *   focus ring; the others dim gently (hover restores them — nothing is hidden
+ *   or disabled, purely visual guidance).
+ * - Surfaces the buried "Send full visit to Athena" (#pushAllEmrBtn) as a clear
+ *   CTA in the stepper bar; clicking it triggers the real button (user-initiated
+ *   only) and scrolls the note card into view.
+ * - Mobile responsive (@media max-width:640px). Fully reversible:
+ *   window.__mlsEasyMagicB30_revert()
+ */
+(function(){
+  if(window.__mlsEasyMagicB30) return; window.__mlsEasyMagicB30 = 1;
+  var CLS = 'mlsB30';
+  var state = { obs:null, ctaBtn:null, styleEl:null, lastStep:0 };
+
+  var CSS = [
+  '#mls-rt-bar.'+CLS+'-bar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:14px;flex-wrap:wrap;',
+  '  padding:10px 16px;border-radius:14px;margin-bottom:14px;',
+  '  background:linear-gradient(90deg,rgba(30,48,110,.95),rgba(43,66,145,.95)) !important;',
+  '  box-shadow:0 6px 18px rgba(10,20,60,.35) !important;backdrop-filter:blur(6px);border:1px solid rgba(120,150,255,.25) !important;}',
+  '#mls-rt-bar.'+CLS+'-bar .mls-rt-pill{cursor:pointer;border-radius:999px;padding:5px 13px;font-weight:600;font-size:12.5px;',
+  '  background:rgba(255,255,255,.08);color:#c8d5f7;border:1px solid rgba(160,185,255,.25);transition:all .25s ease;}',
+  '#mls-rt-bar.'+CLS+'-bar .mls-rt-pill:hover{background:rgba(255,255,255,.16);color:#fff;}',
+  '#mls-rt-bar.'+CLS+'-bar .mls-rt-pill.'+CLS+'-active{background:linear-gradient(90deg,#4f7df9,#6a5cf0);color:#fff;',
+  '  border-color:transparent;box-shadow:0 2px 10px rgba(80,120,250,.55);transform:scale(1.06);}',
+  '#mls-rt-bar.'+CLS+'-bar .mls-rt-pill.'+CLS+'-done{background:rgba(70,200,140,.18);color:#8fe6bd;border-color:rgba(70,200,140,.35);}',
+  '#mls-rt-bar.'+CLS+'-bar #mls-rt-hint{font-size:13.5px;font-weight:600;color:#e8eeff !important;letter-spacing:.1px;}',
+  '.vx-grid .card.'+CLS+'-focus{box-shadow:0 0 0 2px rgba(90,130,250,.85),0 10px 28px rgba(40,70,180,.35)!important;',
+  '  transition:box-shadow .35s ease,opacity .35s ease;}',
+  '.vx-grid .card.'+CLS+'-dim{opacity:.55;transition:opacity .35s ease;}',
+  '.vx-grid .card.'+CLS+'-dim:hover,.vx-grid .card.'+CLS+'-dim:focus-within{opacity:1;}',
+  '.'+CLS+'-send{margin-left:auto;display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:0;border-radius:12px;',
+  '  padding:9px 16px;font-weight:700;font-size:13px;color:#fff;',
+  '  background:linear-gradient(90deg,#12b06a,#0e9d8f);box-shadow:0 3px 12px rgba(16,170,120,.45);transition:all .25s ease;}',
+  '.'+CLS+'-send:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(16,170,120,.6);}',
+  '.'+CLS+'-send small{display:block;font-weight:500;font-size:10px;opacity:.85;}',
+  '@keyframes '+CLS+'Pulse{0%{box-shadow:0 0 0 0 rgba(18,176,106,.7)}70%{box-shadow:0 0 0 14px rgba(18,176,106,0)}100%{box-shadow:0 0 0 0 rgba(18,176,106,0)}}',
+  '.'+CLS+'-pulse{animation:'+CLS+'Pulse 1.2s ease 2;}',
+  '@media (max-width:640px){',
+  '  #mls-rt-bar.'+CLS+'-bar{position:static;gap:8px;padding:10px;}',
+  '  #mls-rt-bar.'+CLS+'-bar #mls-rt-hint{font-size:12px;flex-basis:100%;}',
+  '  .'+CLS+'-send{margin-left:0;width:100%;justify-content:center;}',
+  '  .vx-grid .card.'+CLS+'-dim{opacity:.75;}',
+  '}'
+  ].join('\n');
+
+  function $(s){ return document.querySelector(s); }
+
+  function stepFromHint(){
+    var h = $('#mls-rt-hint'); if(!h) return 0;
+    var m = /Step\s+(\d)\s+of\s+4/i.exec(h.textContent||'');
+    return m ? +m[1] : 0;
+  }
+
+  function applyStep(){
+    var bar = $('#mls-rt-bar'); if(!bar) return;
+    bar.classList.add(CLS+'-bar');
+    var step = stepFromHint(); state.lastStep = step;
+    var pills = bar.querySelectorAll('.mls-rt-pill');
+    for(var i=0;i<pills.length;i++){
+      pills[i].classList.toggle(CLS+'-active', i===step-1);
+      pills[i].classList.toggle(CLS+'-done', step>0 && i<step-1);
+    }
+    var cap=$('#captureCard'), note=$('#noteCard'), emr=$('#emrCard');
+    var focus = (step>=3) ? note : cap;
+    [cap,note,emr].forEach(function(c){
+      if(!c) return;
+      c.classList.toggle(CLS+'-focus', step>0 && c===focus);
+      c.classList.toggle(CLS+'-dim',   step>0 && c!==focus);
+    });
+  }
+
+  function makeCta(){
+    var bar = $('#mls-rt-bar'), real = $('#pushAllEmrBtn');
+    if(!bar || !real || state.ctaBtn) return;
+    var b = document.createElement('button');
+    b.className = CLS+'-send';
+    b.type = 'button';
+    b.title = 'Writes the full finished visit note into athenaOne. Nothing is sent until you click this.';
+    b.innerHTML = '🚀 Send full visit to Athena';
+    b.addEventListener('click', function(){
+      var r = $('#pushAllEmrBtn');
+      if(!r){ b.textContent = 'Open a visit note first'; setTimeout(function(){ b.innerHTML='🚀 Send full visit to Athena'; },1800); return; }
+      var noteCard = $('#noteCard');
+      if(noteCard) noteCard.scrollIntoView({behavior:'smooth', block:'center'});
+      r.classList.add(CLS+'-pulse');
+      setTimeout(function(){ r.classList.remove(CLS+'-pulse'); }, 2600);
+      r.click();
+    });
+    bar.appendChild(b);
+    state.ctaBtn = b;
+  }
+
+  function boot(){
+    var bar = $('#mls-rt-bar');
+    if(!bar){ setTimeout(boot, 1500); return; }
+    if(!state.styleEl){
+      state.styleEl = document.createElement('style');
+      state.styleEl.id = CLS+'-style';
+      state.styleEl.textContent = CSS;
+      document.head.appendChild(state.styleEl);
+    }
+    applyStep(); makeCta();
+    var hint = $('#mls-rt-hint');
+    if(hint && !state.obs){
+      state.obs = new MutationObserver(function(){ applyStep(); makeCta(); });
+      state.obs.observe(hint, {childList:true, characterData:true, subtree:true});
+    }
+    if(!state.reObs){
+      state.reObs = new MutationObserver(function(){
+        if(!document.getElementById(CLS+'-style') && state.styleEl) document.head.appendChild(state.styleEl);
+        if(state.ctaBtn && !state.ctaBtn.isConnected) state.ctaBtn = null;
+        applyStep(); makeCta();
+      });
+      var vv = $('#visitView');
+      if(vv) state.reObs.observe(vv, {childList:true, subtree:false});
+    }
+  }
+
+  window.__mlsEasyMagicB30_revert = function(){
+    try{
+      if(state.obs) state.obs.disconnect();
+      if(state.reObs) state.reObs.disconnect();
+      if(state.styleEl && state.styleEl.parentNode) state.styleEl.parentNode.removeChild(state.styleEl);
+      if(state.ctaBtn && state.ctaBtn.parentNode) state.ctaBtn.parentNode.removeChild(state.ctaBtn);
+      var bar=$('#mls-rt-bar'); if(bar) bar.classList.remove(CLS+'-bar');
+      ['#captureCard','#noteCard','#emrCard'].forEach(function(s){
+        var c=$(s); if(c){ c.classList.remove(CLS+'-focus'); c.classList.remove(CLS+'-dim'); }
+      });
+      var pills=document.querySelectorAll('.mls-rt-pill');
+      for(var i=0;i<pills.length;i++){ pills[i].classList.remove(CLS+'-active'); pills[i].classList.remove(CLS+'-done'); }
+      window.__mlsEasyMagicB30 = 0;
+    }catch(e){}
+  };
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
 /* ===== MLS EMR-sections clarity b28 (additive, guarded, reversible) =====
    Prepended to scrivara-site/mls-connect.js (b28). Builds on b27's __mlsUiCleanupB26 (the
    "⚙ Writeback destination" gear inside #emrPanel) — does NOT touch it.
@@ -610,7 +750,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-05-b29';
+  var MLS_APP_BUILD='2026-07-06-b30';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
