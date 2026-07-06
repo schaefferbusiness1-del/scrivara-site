@@ -1,4 +1,229 @@
 /* =========================================================================
+ * MLS Scribe -- b46 agenda scope + version check  (__mlsR46B46)  2026-07-06
+ * Additive, guarded, reversible IIFE. UI-only. Athena READ-ONLY.
+ *
+ *  A) Today's Agenda truly provider-scoped (queue item 3): the #mlsAgendaChip
+ *     counter and the #mlsAgendaPop list previously counted EVERY provider's
+ *     appointments (e.g. 132) — now both scope to the selected provider from
+ *     #mlsProvChip using the same _calAppts data the calendar uses
+ *     (24 today for Matthew Schaeffer, MD). Fail-open: if no provider is
+ *     selected (or "All providers"), nothing changes.
+ *  B) Version-update detection (owner request): the web app and the MLS
+ *     Assistant report their versions to POST /api/versions/report; the
+ *     backend's GET /api/versions says what's newest. If the installed
+ *     assistant is OLD, a small friendly, dismissible, non-blocking banner
+ *     appears (bottom-center) with one-line update instructions, and a row
+ *     is added to Settings -> MLS Controls. Never blocks anything.
+ *
+ * Revert: window.__mlsR46B46_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsR46B46) return;
+  var API = 'https://scrivara-backend.onrender.com';
+  var cleanup = [];
+  function $(id) { return document.getElementById(id); }
+
+  /* ---------- shared helpers ---------- */
+  function todayLocal() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function activeProvider() {
+    var el = $('mlsProvChip');
+    var t = el ? (el.textContent || '').trim() : '';
+    if (!t || /^all\b/i.test(t)) return null;
+    return t;
+  }
+  function provAppts() {
+    var prov = activeProvider();
+    var A = window._calAppts;
+    if (!prov || !Array.isArray(A)) return null;
+    var td = todayLocal();
+    var mine = A.filter(function (a) {
+      return (a.day_local || a.appt_date) === td && (a.provider || '') === prov;
+    });
+    return mine.length ? { prov: prov, appts: mine } : null;
+  }
+  function t12(a) {
+    if (a.time_display) return a.time_display;
+    try {
+      var d = new Date(a.start_at);
+      var h = d.getHours(), m = ('0' + d.getMinutes()).slice(-2);
+      var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
+      return h + ':' + m + ' ' + ap;
+    } catch (e) { return ''; }
+  }
+
+  /* ---------- A) agenda chip + popup scoping ---------- */
+  function fixChip() {
+    try {
+      var chip = $('mlsAgendaChip');
+      var p = provAppts();
+      if (!chip || !p) return;
+      var seen = p.appts.filter(function (a) { return !!a.checked_in_at; }).length;
+      var want = '🗓 Today’s agenda (' + seen + '/' + p.appts.length + ')';
+      if (chip.textContent !== want) chip.textContent = want;
+      chip.title = 'Appointments today for ' + p.prov;
+    } catch (e) {}
+  }
+  function fixPop() {
+    try {
+      var pop = $('mlsAgendaPop');
+      var p = provAppts();
+      if (!pop || !p || pop.__r46done) return;
+      pop.__r46done = 1;
+      /* rebuild the list provider-scoped; keep it simple + readable */
+      var seen = p.appts.filter(function (a) { return !!a.checked_in_at; }).length;
+      var sorted = p.appts.slice().sort(function (a, b) { return new Date(a.start_at) - new Date(b.start_at); });
+      var now = Date.now();
+      var next = sorted.find(function (a) { return new Date(a.start_at).getTime() >= now && !a.checked_in_at; });
+      var rows = sorted.map(function (a) {
+        var badge = a.checked_in_at ? '<span style="background:#d8f5e2;color:#116635;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">seen</span>'
+          : (a === next ? '<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">next</span>'
+            : '<span style="background:#e2e8f5;color:#3c4a6b;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">upcoming</span>');
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid #edf1fa;font:13px system-ui;color:#16295b">'
+          + '<span style="min-width:64px;color:#4a5f8f">' + t12(a) + '</span>'
+          + '<span style="flex:1;font-weight:600">' + String(a.name || '(no name)').replace(/[<>&]/g, '') + '</span>' + badge + '</div>';
+      }).join('');
+      pop.innerHTML = '<div style="padding:10px 12px;font:11px system-ui;letter-spacing:.06em;color:#4a5f8f;display:flex;justify-content:space-between;align-items:center">'
+        + '<b>TODAY’S AGENDA · ' + p.prov.replace(/[<>&]/g, '') + '</b><span>' + seen + ' / ' + p.appts.length + ' seen</span></div>'
+        + '<div style="max-height:420px;overflow:auto">' + rows + '</div>';
+    } catch (e) {}
+  }
+  var popMo = new MutationObserver(function (muts) {
+    muts.forEach(function (mu) {
+      mu.addedNodes && mu.addedNodes.forEach(function (nd) {
+        if (nd.nodeType === 1 && (nd.id === 'mlsAgendaPop' || (nd.querySelector && nd.querySelector('#mlsAgendaPop')))) fixPop();
+      });
+    });
+  });
+  popMo.observe(document.body, { childList: true, subtree: true });
+  cleanup.push(function () { popMo.disconnect(); });
+
+  /* ---------- B) version check ---------- */
+  var VKEY = 'mls_vercheck_dismissed_v1';
+  function verNum(v) {
+    var m = String(v || '').match(/\d+(?:\.\d+)*/);
+    if (!m) return null;
+    return m[0].split('.').reduce(function (acc, p, i) { return acc + Number(p) / Math.pow(1000, i); }, 0);
+  }
+  function dismissed() {
+    try { return Date.now() - Number(localStorage.getItem(VKEY) || 0) < 24 * 3600 * 1000; } catch (e) { return false; }
+  }
+  function banner(msg, how) {
+    if ($('mlsR46VerBanner') || dismissed()) return;
+    var b = document.createElement('div');
+    b.id = 'mlsR46VerBanner';
+    b.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:2147483100;background:linear-gradient(180deg,#f2f6ff,#e6edfc);border:1px solid #c3d3f0;border-radius:14px;padding:12px 16px;max-width:520px;box-shadow:0 12px 32px rgba(10,25,60,.25);font:13px system-ui;color:#16295b;display:flex;gap:12px;align-items:center';
+    b.innerHTML = '<span style="font-size:20px">🔄</span><div style="flex:1"><b>' + msg + '</b><br><span style="color:#4a5f8f">' + how + '</span></div>'
+      + '<button id="mlsR46VerLater" style="background:#dbe7fb;color:#274b9f;border:1px solid #b9cdf2;border-radius:9px;padding:6px 12px;cursor:pointer;font-weight:600">Later</button>';
+    document.body.appendChild(b);
+    b.querySelector('#mlsR46VerLater').onclick = function () {
+      try { localStorage.setItem(VKEY, String(Date.now())); } catch (e) {}
+      b.remove();
+    };
+  }
+  function controlsRow(txt, cls) {
+    var rc = $('r44Controls');
+    if (!rc || $('mlsR46VerRow')) return;
+    var d = document.createElement('div');
+    d.className = 'mls-r44-row'; d.id = 'mlsR46VerRow';
+    d.innerHTML = '<label style="flex:1">🔄 MLS Assistant version</label><span class="mls-r44-badge ' + cls + '">' + txt + '</span>';
+    rc.appendChild(d);
+  }
+  var verState = { latest: null, installed: null, stale: false };
+  function checkVersions() {
+    fetch(API + '/api/versions').then(function (r) { return r.json(); }).then(function (v) {
+      if (!v || !v.ok) return;
+      verState.latest = v.assistant;
+      var inst = null;
+      try { inst = window.__mlsAsstFix && window.__mlsAsstFix.installed ? String(window.__mlsAsstFix.version || '') : null; } catch (e) {}
+      verState.installed = inst;
+      /* report what this client runs (no PHI, just versions) */
+      try {
+        fetch(API + '/api/versions/report', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ component: 'webapp', build: (window.MLS_APP_BUILD || 'unknown'), version: inst || 'not-installed' }) });
+      } catch (e) {}
+      var iN = verNum(inst), lN = verNum(v.assistant);
+      if (inst && iN != null && lN != null && iN < lN) {
+        verState.stale = true;
+        banner('A newer MLS Assistant is ready (v' + v.assistant + ' — you have v' + String(inst).replace(/[<>&]/g, '') + ').',
+          (v.howToUpdate && v.howToUpdate.assistant) || 'Reinstall MLS Assistant from mlsscribe.com — takes under a minute, nothing is lost.');
+      }
+    }).catch(function () {});
+  }
+  function keepControlsRow() {
+    if (!verState.latest) return;
+    if (verState.stale) controlsRow('v' + verState.installed + ' → v' + verState.latest + ' available', 'wait');
+    else if (verState.installed) controlsRow('v' + verState.installed + ' · up to date', 'on');
+    else controlsRow('not detected on this browser', 'wait');
+  }
+  setTimeout(checkVersions, 4000);
+  var iv = setInterval(function () { fixChip(); fixPop(); keepControlsRow(); }, 2000);
+  cleanup.push(function () { clearInterval(iv); });
+  fixChip();
+
+  /* ---------- C) installed-assistant version listener (v1.50 handshake) ----------
+     MLS Assist v1.50+ announces its installed version to this page via postMessage
+     ({source:'mls-ext', type:'mlsExtVersion'}) and answers mlsAppGetVersion. Stash it
+     on window.__mlsAsstFix so checkVersions() above can compare installed vs latest. */
+  function onExtVersion(ev) {
+    try {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsExtVersion' || !d.version) return;
+      if (ev.origin !== location.origin) return;
+      window.__mlsAsstFix = window.__mlsAsstFix || {};
+      window.__mlsAsstFix.installed = true;
+      window.__mlsAsstFix.version = String(d.version).slice(0, 20);
+    } catch (e) {}
+  }
+  window.addEventListener('message', onExtVersion);
+  cleanup.push(function () { window.removeEventListener('message', onExtVersion); });
+  try { window.postMessage({ source: 'mls-app', type: 'mlsAppGetVersion' }, location.origin); } catch (e) {}
+  setTimeout(function () { try { window.postMessage({ source: 'mls-app', type: 'mlsAppGetVersion' }, location.origin); } catch (e) {} }, 6000);
+
+  /* ---------- D) day-progress strip restore (owner: "counter strip disappeared") ----------
+     The top "X / Y seen" strip (feat_mls_dayprogress.js) hides itself because
+     window._heroTodayList went EMPTY after the Who's-Next takeover churn — the meter's
+     source of truth dried up while the same data still sits in _calAppts. Repopulate the
+     SAME shared source honestly from today's pulled schedule (name/time/provider only,
+     dedup by name+time). The strip then mounts by itself, and the b40 R3 pack keeps its
+     text provider-scoped ("X / Y seen", scoped to the selected doctor, honest
+     "all providers" fallback). Data-refill only — no new UI, no duplicate strip. */
+  function refillHeroToday() {
+    try {
+      if ((window._heroTodayList || []).length) return;
+      var A = window._calAppts || []; if (!A.length) return;
+      var td = todayLocal();
+      var out = [], dupes = {};
+      A.forEach(function (a) {
+        if (!a) return;
+        var dt = String(a.date || a.appt_date || '');
+        if (dt.indexOf(td) < 0) return;
+        var nm = String(a.patient || a.name || '').trim(); if (!nm) return;
+        var k = nm.toLowerCase() + '|' + String(a.time || '');
+        if (dupes[k]) return; dupes[k] = 1;
+        out.push({ name: nm, time: a.time || '', provider: a.provider || a.doctor || '' });
+      });
+      if (out.length) window._heroTodayList = out;
+    } catch (e) {}
+  }
+  refillHeroToday();
+  var heroIv = setInterval(refillHeroToday, 5000);
+  cleanup.push(function () { clearInterval(heroIv); });
+
+  window.__mlsR46B46 = { v: '1.1.0', state: verState };
+  window.__mlsR46B46_revert = function () {
+    cleanup.forEach(function (f) { try { f(); } catch (e) {} });
+    ['mlsR46VerBanner', 'mlsR46VerRow'].forEach(function (id) { var el = $(id); if (el) el.remove(); });
+    delete window.__mlsR46B46; delete window.__mlsR46B46_revert;
+    return 'reverted';
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe -- b45 polish hotfix  (__mlsR45Polish)  2026-07-06
  * Additive, guarded, reversible IIFE. UI-only. Athena READ-ONLY.
  *
@@ -854,7 +1079,7 @@
       var r = scopedToday(); if (!r.list.length) return;
       var seen = 0;
       if (typeof window._seenToday === "function") r.list.forEach(function (a) { try { if (window._seenToday(a.name)) seen++; } catch (e) {} });
-      var want = seen + " / " + r.list.length + " seen" + (r.scoped ? "" : " · all providers");
+      var want = seen + " / " + r.list.length + " seen · " + Math.max(0, r.list.length - seen) + " remaining" + (r.scoped ? "" : " · all providers");
       if (txtEl.textContent !== want) { txtEl.textContent = want; txtEl.title = r.scoped ? ("Your patients today (" + myName() + ")") : "No provider tags on today's visits yet — showing the whole practice"; }
       var fill = document.querySelector(".mdp-fill");
       if (fill) fill.style.width = (r.list.length ? Math.round(seen / r.list.length * 100) : 0) + "%";
@@ -3089,7 +3314,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b45';
+  var MLS_APP_BUILD='2026-07-06-b46';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -9238,7 +9463,7 @@
   } catch(e){}
 })();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260618';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260706b46';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 ;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+(window.__MLS_AV||Date.now());s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */
