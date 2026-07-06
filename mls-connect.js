@@ -99,14 +99,14 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b19';
+  window.__MLS_AV = window.__MLS_AV || 'b28';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
     window.__mlsCalmBootDone=1; /* supersede the late b18 veil cleanly */
     if(!document.getElementById('mlsBootVeil') && !document.hidden){
       var frz=document.createElement('style'); frz.id='mlsBootFreeze';
-      frz.textContent='html.mls-booting *{transition-duration:0s!important;animation-duration:0s!important}';
+      frz.textContent='html.mls-booting *{transition-duration:0s!important;animation-duration:0s!important}#mlsBootBar{width:100%!important;transform-origin:0 50%;transform:scaleX(.08);animation:mlsBootProg 7s cubic-bezier(.25,.6,.35,1) forwards!important;animation-duration:7s!important}#mlsBootVeil{animation:mlsBootGone .5s ease 10s forwards!important;animation-duration:.5s!important}@keyframes mlsBootProg{0%{transform:scaleX(.08)}30%{transform:scaleX(.52)}65%{transform:scaleX(.74)}100%{transform:scaleX(.93)}}@keyframes mlsBootGone{to{opacity:0;visibility:hidden}}';
       (document.head||document.documentElement).appendChild(frz);
       document.documentElement.classList.add('mls-booting');
       var veil=document.createElement('div'); veil.id='mlsBootVeil';
@@ -130,14 +130,14 @@
         window.removeEventListener('load',onRes,true); window.removeEventListener('error',onRes,true);
         document.documentElement.classList.remove('mls-booting');
         try{ pulseAll('boot-settle'); }catch(_){ }
-        if(bar) bar.style.width='100%';
+        if(bar){ try{ bar.style.setProperty('animation','none','important'); bar.style.transform='scaleX(1)'; }catch(_){ } bar.style.width='100%'; }
         setTimeout(function(){ veil.style.opacity='0'; setTimeout(function(){ try{ veil.remove(); frz.remove(); }catch(_){ } },260); },70);
       };
       var iv=setInterval(function(){
         try{
           var dt=Date.now()-t0;
           var total=document.querySelectorAll('script[data-mls-asset]').length;
-          if(bar && total>0) bar.style.width=Math.min(94,8+Math.round(86*loaded/Math.max(total,1)))+'%';
+          /* bar visual now CSS-driven (compositor) so it moves even if JS stalls */
           var delta=muts-lastMuts; lastMuts=muts;
           var loaderQuiet=(total>0 && loaded>=total-2) || (Date.now()-lastLoadAt>1200);
           var login=false; try{ var lv=document.getElementById('loginView'); login=!!(lv&&lv.offsetParent!==null); }catch(_){ }
@@ -413,7 +413,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-05-b27';
+  var MLS_APP_BUILD='2026-07-05-b28';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
