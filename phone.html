@@ -52,6 +52,9 @@
   .pill{ display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,.16); border-radius:999px; padding:6px 13px; font-size:13px; font-weight:600; }
   .foot{ text-align:center; font-size:11.5px; opacity:.7; margin-top:14px; }
   a{ color:#fff; }
+  /* task-9 polish: the __mlsPhoneGuard "Download my audio" rescue button was
+     inheriting unstyled UA defaults; give it the ghost look of the page. */
+  #pgDl{ background:rgba(255,255,255,.16); color:#fff; border:1px solid rgba(255,255,255,.4); max-width:340px; }
 </style>
 </head>
 <body>
@@ -204,7 +207,7 @@
   function saveClip(blob,mt){ idb().then(function(d){ if(!d) return; try{ d.transaction(ST,'readwrite').objectStore(ST).add({t:Date.now(),mt:mt,blob:blob}); pruneOld(d); }catch(e){} }); }
   function pruneOld(d){ try{ var cut=Date.now()-48*3600*1000; var st=d.transaction(ST,'readwrite').objectStore(ST); st.openCursor().onsuccess=function(ev){ var c=ev.target.result; if(!c) return; if(c.value.t<cut) c.delete(); c.continue(); }; }catch(e){} }
   function setStatus(txt,color){ try{ var s=document.getElementById('status'); if(s){ s.textContent=txt; s.style.color=color||''; } }catch(e){} }
-  function pendBadge(){ try{ var er=document.getElementById('recErr'); if(queue.length){ er.style.color='#b45309'; er.textContent='⏳ '+queue.length+' clip'+(queue.length===1?'':'s')+' waiting to send — kept safe on this phone, retrying…'; } else if(/waiting to send/.test(er.textContent||'')){ er.textContent=''; } }catch(e){} }
+  function pendBadge(){ try{ var er=document.getElementById('recErr'); if(queue.length){ er.style.color='#ffdcae'; er.textContent='⏳ '+queue.length+' clip'+(queue.length===1?'':'s')+' waiting to send — kept safe on this phone, retrying…'; } else if(/waiting to send/.test(er.textContent||'')){ er.textContent=''; } }catch(e){} }
 
   /* ---- 2) retry queue: wrap uploadChunk ---- */
   var _origUpload = window.uploadChunk;
@@ -225,7 +228,7 @@
         throw new Error('http '+rr.status);
       }catch(e){
         queue.push({blob:blob, mt:mimetype}); pendBadge();
-        if(active) setStatus('● Recording… (offline — clips saved on this phone)','#b45309');
+        if(active) setStatus('● Recording… (offline — clips saved on this phone)','#ffdcae');
       }
     };
     reader.readAsDataURL(blob);
