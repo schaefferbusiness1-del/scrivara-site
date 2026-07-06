@@ -160,7 +160,8 @@
     else controlsRow('not detected on this browser', 'wait');
   }
   setTimeout(checkVersions, 4000);
-  var iv = setInterval(function () { fixChip(); fixPop(); keepControlsRow(); }, 2000);
+  var _vLast = 0;  /* b47: RETRY the one-shot version check until it lands (cold backend = silent miss) */
+  var iv = setInterval(function () { fixChip(); fixPop(); if (!verState.latest && Date.now() - _vLast > 30000) { _vLast = Date.now(); checkVersions(); } keepControlsRow(); }, 2000);
   cleanup.push(function () { clearInterval(iv); });
   fixChip();
 
@@ -3314,7 +3315,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b46';
+  var MLS_APP_BUILD='2026-07-06-b47';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
