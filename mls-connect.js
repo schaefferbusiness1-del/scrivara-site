@@ -1,3 +1,57 @@
+/* ===== MLS UI cleanup b26 (additive, guarded, reversible) =====
+   Fix 1: consolidate Writeback-destination into EMR sections (gear), hide the duplicate standalone button.
+   Fix 2: remove duplicate top-right athenaOne-connected dot; tidy the overlapping bottom-right control cluster.
+   Fix 3: save-as-you-type in the Writeback-destination fields (fields already editable w/ correct per-doctor defaults).
+   Revert: window.__mlsUiCleanupB26_revert()  ===== */
+(function(){
+  if(window.__mlsUiCleanupB26) return; window.__mlsUiCleanupB26=1;
+  function css(){
+    if(document.getElementById('mlsUiCleanupB26Css')) return;
+    var s=document.createElement('style'); s.id='mlsUiCleanupB26Css';
+    s.textContent=[
+      '.mlswbc-launch{display:none !important;}',
+      '#mlsAthenaStatusDot{display:none !important;}',
+      '#mlsP1AgFab{right:16px !important;bottom:16px !important;left:auto !important;top:auto !important;}',
+      '#mlsAddPtLauncher{right:16px !important;bottom:70px !important;left:auto !important;top:auto !important;}',
+      '#mlsVoiceFab{right:16px !important;bottom:124px !important;left:auto !important;top:auto !important;}',
+      '#mlsScDock{right:16px !important;bottom:182px !important;left:auto !important;top:auto !important;}'
+    ].join('\n');
+    (document.head||document.documentElement).appendChild(s);
+  }
+  function injectGear(){
+    var panel=document.getElementById('emrPanel'); if(!panel) return;
+    var ai=document.getElementById('emrAi'); if(!ai||!ai.parentNode) return;
+    if(panel.querySelector('.mlsWbGear')) return;
+    var g=document.createElement('button');
+    g.type='button'; g.className='mlsWbGear';
+    g.textContent='\u2699 Writeback destination';
+    g.title='Configure where each section writes into athenaOne';
+    g.style.cssText='margin-right:8px;font:inherit;font-weight:700;padding:6px 12px;border-radius:8px;border:1px solid rgba(160,180,240,.5);background:rgba(120,150,230,.18);color:#cdddff;cursor:pointer;';
+    g.addEventListener('click',function(ev){ ev.preventDefault(); ev.stopPropagation(); try{ window.__mlsWbConsole && window.__mlsWbConsole.open(); }catch(e){} });
+    ai.parentNode.insertBefore(g, ai);
+  }
+  function layout(){
+    [['mlsP1AgFab',16],['mlsAddPtLauncher',70],['mlsVoiceFab',124],['mlsScDock',182]].forEach(function(p){
+      var el=document.getElementById(p[0]); if(!el) return;
+      try{ el.style.setProperty('right','16px','important'); el.style.setProperty('bottom',p[1]+'px','important'); el.style.setProperty('left','auto','important'); el.style.setProperty('top','auto','important'); }catch(e){}
+    });
+    var dot=document.getElementById('mlsAthenaStatusDot'); if(dot){ try{ dot.style.setProperty('display','none','important'); }catch(e){} }
+  }
+  function wireSayt(){
+    var modal=document.getElementById('mlsWbcModal'); if(!modal||modal.__mlsSayt) return; modal.__mlsSayt=1;
+    var t=null;
+    modal.addEventListener('input',function(ev){
+      var el=ev.target; if(!el||el.tagName!=='INPUT'||el.type==='checkbox') return;
+      clearTimeout(t); t=setTimeout(function(){ try{ el.dispatchEvent(new Event('change',{bubbles:true})); }catch(e){} },500);
+    }, true);
+  }
+  function tick(){ try{ css(); injectGear(); layout(); wireSayt(); }catch(e){} }
+  tick();
+  var iv=setInterval(tick,800);
+  var mo; try{ mo=new MutationObserver(function(){ injectGear(); wireSayt(); }); mo.observe(document.body,{childList:true}); }catch(e){}
+  window.__mlsUiCleanupB26_revert=function(){ try{clearInterval(iv);}catch(e){} try{mo&&mo.disconnect();}catch(e){} var s=document.getElementById('mlsUiCleanupB26Css'); if(s)s.remove(); var gs=document.querySelectorAll('.mlsWbGear'); for(var i=0;i<gs.length;i++){gs[i].remove();} window.__mlsUiCleanupB26=0; };
+})();
+
 (function(){
   if(window.__mlsBootLoader) return; window.__mlsBootLoader=1;
   var STAGES=['Connecting to your practice\u2026','Loading your schedule\u2026','Preparing your workspace\u2026','Almost ready\u2026'];
@@ -359,7 +413,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-05-b25';
+  var MLS_APP_BUILD='2026-07-05-b26';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
