@@ -138,7 +138,10 @@
       if (!v || !v.ok) return;
       verState.latest = v.assistant;
       var inst = null;
-      try { inst = window.__mlsAsstFix && window.__mlsAsstFix.installed ? String(window.__mlsAsstFix.version || '') : null; } catch (e) {}
+      /* b48: ONLY trust a version the extension ITSELF announced (mlsExtVersion handshake).
+         __mlsAsstFix.version is an app-side module version ('1.1.0') and caused a false
+         'update available' nag for owners already on the newest build. No handshake -> no banner. */
+      try { inst = window.__mlsExtReportedVersion || null; } catch (e) {}
       verState.installed = inst;
       /* report what this client runs (no PHI, just versions) */
       try {
@@ -177,6 +180,7 @@
       window.__mlsAsstFix = window.__mlsAsstFix || {};
       window.__mlsAsstFix.installed = true;
       window.__mlsAsstFix.version = String(d.version).slice(0, 20);
+      window.__mlsExtReportedVersion = String(d.version).slice(0, 20);
     } catch (e) {}
   }
   window.addEventListener('message', onExtVersion);
@@ -3315,7 +3319,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b47';
+  var MLS_APP_BUILD='2026-07-06-b48';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
