@@ -401,6 +401,21 @@
   "use strict";
   var API="https://scrivara-backend.onrender.com";
   function $(id){ return document.getElementById(id); }
+  /* Friendly banner for the backend redeem flow (GET /api/patient/auth/redeem
+     redirects here with ?invite=expired|invalid|unavailable|error on failure). */
+  try{
+    var iv=new URLSearchParams(location.search).get("invite");
+    if(iv){
+      history.replaceState(null,"",location.pathname);
+      var msgs={expired:"That sign-in link has expired or was already used. Ask your care team to send a fresh one — it only takes a moment.",invalid:"That sign-in link isn't valid. Ask your care team to send a new one.",unavailable:"The portal is briefly unavailable — please try your link again in a few minutes.",error:"Something went wrong opening your link. Please try again, or ask your care team for a new link."};
+      var bar=document.createElement("div");
+      bar.style.cssText="background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00;border-radius:10px;padding:11px 14px;font-size:13.5px;max-width:410px;margin:14px auto 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+      bar.textContent=msgs[iv]||msgs.error;
+      var login=document.getElementById("login");
+      if(login&&login.firstElementChild){ login.insertBefore(bar,login.firstElementChild); bar.style.margin="0 0 14px"; } else document.body.insertBefore(bar,document.body.firstChild);
+    }
+  }catch(e){}
+
   var m=(location.hash||"").match(/[#&]claim=([A-Za-z0-9_-]{20,64})/);
   if(!m) return;
   var token=m[1];
