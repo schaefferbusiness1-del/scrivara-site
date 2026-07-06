@@ -190,7 +190,10 @@
     })
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
     .then(function(res){
-      if(res.ok){ showMsg('✓ Portal invite emailed to '+d.email+'. They’ll get a secure one-time link (expires in 72 hours) to set up their own password.', true); $('f').reset(); return null; }
+      if(res.ok){
+        if(res.j && res.j.sent===false){ showMsg('Portal access + a secure one-time link were created, but the EMAIL could not be sent (mail service not configured). Ask your MLS admin to finish email setup, then resend.', false); }
+        else { showMsg('✓ Portal invite emailed to '+d.email+'. They’ll get a secure one-time sign-in link (expires in about 72 hours).', true); $('f').reset(); }
+        return null; }
       if(res.status===404){ return provisionFallback(d); } // email route not live yet
       if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites. Sign in to MLS again and retry.', false); return null; }
       showMsg((res.j && (res.j.error||res.j.message)) || ('Could not send (error '+res.status+'). Please try again.'), false); return null;
