@@ -1,4 +1,41 @@
 /* =========================================================================
+ * MLS Scribe -- b36 dock-left enforcement  (__mlsDockLeftB36)  2026-07-06
+ * The merged connection/status panel (#mlsScDock) must LIVE bottom-LEFT with
+ * the MLS Assistant (item 15). Two older modules (__mlsUiCleanupB26 layout()
+ * and the b34 dockDodge) keep re-anchoring it bottom-right via inline
+ * !important styles on their own timers. This module owns the dock position:
+ * it applies the left anchor and re-applies it the instant anything else
+ * rewrites the style attribute (same-frame, no visible flicker).
+ * Additive/reversible: window.__mlsDockLeftB36_revert().
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsDockLeftB36) return; window.__mlsDockLeftB36 = 1;
+  var WANT = "auto auto 64px 12px";
+  var obs = null;
+  function apply(d) { try { if (d.style.getPropertyValue("inset") !== WANT) d.style.setProperty("inset", WANT, "important"); } catch (e) {} }
+  function tick() {
+    try {
+      var d = document.getElementById("mlsScDock"); if (!d) return;
+      apply(d);
+      if (!d.__b36obs) {
+        d.__b36obs = 1;
+        obs = new MutationObserver(function () { apply(d); });
+        obs.observe(d, { attributes: true, attributeFilter: ["style"] });
+      }
+    } catch (e) {}
+  }
+  tick();
+  var iv = setInterval(tick, 1200);
+  window.__mlsDockLeftB36_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { obs && obs.disconnect(); } catch (e) {}
+    try { var d = document.getElementById("mlsScDock"); if (d) { d.__b36obs = 0; d.style.removeProperty("inset"); } } catch (e) {}
+    window.__mlsDockLeftB36 = 0;
+  };
+})();
+
+/* =========================================================================
  * MLS Scribe -- b35 ONE-assistant pack  (__mlsOneChatB35)   2026-07-06
  * ----------------------------------------------------------------------------
  * Additive / guarded / reversible: window.__mlsOneChatB35_revert().
@@ -1036,7 +1073,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b35';
+  window.__MLS_AV = window.__MLS_AV || 'b36';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -1350,7 +1387,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b35';
+  var MLS_APP_BUILD='2026-07-06-b36';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
