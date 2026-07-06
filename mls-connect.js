@@ -1,4 +1,466 @@
 /* =========================================================================
+ * MLS Scribe -- b49 pull truth & merge  (__mlsPullTruthB49)  2026-07-06
+ * Additive, guarded, reversible IIFE. Athena READ-ONLY (chart pulls navigate/
+ * read via MLS Assist v1.50's identity-gated capture; never writes).
+ *
+ *  A) PROVIDER PARSE FIX: b46's activeProvider() compared the RAW #mlsProvChip
+ *     text ("🩺 Pulling as: Matthew Schaeffer, MD ▾·🔍 find a doctor") against
+ *     appt.provider ("Matthew Schaeffer, MD") -> never matched -> agenda chip
+ *     stayed un-scoped (0/132). b49 extracts the real name and scopes the
+ *     agenda chip, agenda popover, and day-progress hero list to it (24 today).
+ *  B) SCHEDULE HYGIENE AT THE GATE (wraps _importPulledSchedule): strips
+ *     appointment-type prefixes ("EP "/"NP "...) off names, drops DOBs that are
+ *     in the future or equal to the appointment date (schedule-grid bleed),
+ *     and enriches truncated "First L." names from fuller same-day rows.
+ *  C) reconcileToday(): dedupes today's _calAppts rows (truncated matched to
+ *     full, richer row wins), upserts full-fidelity patient records (full name
+ *     + DOB) for the pulling-as provider's patients, merges/deletes the junk
+ *     truncated no-data stubs earlier pulls created (backed up first to
+ *     localStorage mls_b49_stub_backup_20260706), and rescans for cross-patient
+ *     summary contamination (first-name mismatch) -> clears + backs up.
+ *  D) pullChartsForToday(): sequential per-patient chart pull for the
+ *     pulling-as provider's TODAY list via the app's own calPullChartFor()
+ *     (which resolves/creates the patient, sets it active, and drives
+ *     pullPatientChartViaAssist -> MLS Assist v1.50 identity-gated capture).
+ *     Live progress card + honest per-patient DEPTH tally (visits/A&P/
+ *     performer/f-u/meds); wrong-chart / unverified failures are reported,
+ *     never silently filed. HISTORY DEPTH is the success criterion.
+ *  E) QUICK-PICK = ACTIVE PATIENT: clicking a Who's-Next chip (.wn-chip) or an
+ *     agenda quick-pick row (.qpa-row) now ALSO loads that patient as the
+ *     active patient (hero name+DOB inputs + _heroSyncName), so the top-of-page
+ *     header, capture label and DOB auto-fill all follow. Also aligns the
+ *     patients-strip provider picker to the pulling-as provider once per
+ *     session (only if the user hasn't picked one manually this session).
+ *  F) EMR PLACEMENT PREVIEW PROMINENCE: a visible "🗺 Preview EMR placement"
+ *     button on the note card + wizard bar opens the existing "EMR sections —
+ *     review & confirm" panel (same panel as the MLS Assistant entry).
+ *
+ * Revert: window.__mlsPullTruthB49_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsPullTruthB49) return;
+  var cleanup = [];
+  function $(id) { return document.getElementById(id); }
+  function S(x) { return x == null ? '' : String(x); }
+  function todayLocal() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+
+  /* ---------- name helpers ---------- */
+  var TYPE_PREFIX = /^(EP|NP|FU|F\/U|OV|PROC|WC|PT|INJ|XR)\s+(?=[A-Z])/;
+  function cleanName(n) {
+    n = S(n).replace(/\s+/g, ' ').trim();
+    var m = n.match(TYPE_PREFIX);
+    if (m) n = n.slice(m[0].length).trim();
+    return n;
+  }
+  function norm(s) { return S(s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function tokset(s) { return norm(s).split(' ').filter(function (x) { return x.length > 1; }).sort().join(' '); }
+  function isTrunc(n) { return /^[A-Za-z''-]+\s+[A-Za-z]\.?$/.test(S(n).trim()); }
+  function truncMatches(trunc, full) {
+    var t = norm(trunc).split(' '), f = norm(full).split(' ').filter(Boolean);
+    if (t.length < 2 || f.length < 2) return false;
+    if (t[0] !== f[0]) return false;
+    var init = t[t.length - 1].replace(/\./g, '');
+    var last = f[f.length - 1];
+    return init.length === 1 && last.charAt(0) === init;
+  }
+  function namesEqualish(a, b) {
+    if (!a || !b) return false;
+    if (tokset(a) && tokset(a) === tokset(b)) return true;
+    return isTrunc(a) ? truncMatches(a, b) : (isTrunc(b) ? truncMatches(b, a) : false);
+  }
+  function dobBogus(dob, apptDate) {
+    var m = S(dob).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (!m) return false;
+    var d = new Date(+m[3], +m[1] - 1, +m[2]);
+    if (d.getTime() > Date.now()) return true;
+    if (apptDate) {
+      var iso = m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+      if (iso === S(apptDate)) return true;
+    }
+    return false;
+  }
+
+  /* ---------- A) real provider from the "Pulling as" chip ---------- */
+  function provName() {
+    var el = $('mlsProvChip');
+    var t = el ? S(el.textContent) : '';
+    var m = t.match(/Pulling as:\s*([^▾·\n]+)/);
+    var p = m ? m[1].trim() : '';
+    return p || null;
+  }
+  function todaysRows(all) {
+    var td = todayLocal();
+    var A = Array.isArray(window._calAppts) ? window._calAppts : [];
+    var rows = A.filter(function (a) { return (a.day_local || a.appt_date) === td; });
+    if (all) return rows;
+    var prov = provName();
+    return prov ? rows.filter(function (a) { return S(a.provider).trim() === prov; }) : rows;
+  }
+  function fixAgenda() {
+    try {
+      var prov = provName(); if (!prov) return;
+      var mine = todaysRows(false);
+      if (!mine.length) return;
+      var chip = window.__mlsAgendaBtnB49 ? null : $('mlsAgendaChip');
+      if (chip) {
+        var seen = mine.filter(function (a) { return !!a.checked_in_at; }).length;
+        var want = '🗓 Today’s agenda (' + seen + '/' + mine.length + ')';
+        if (chip.textContent !== want) chip.textContent = want;
+        chip.title = 'Appointments today for ' + prov;
+      }
+      var hero = mine.slice().sort(function (a, b) { return new Date(a.start_at) - new Date(b.start_at); });
+      var seenKeys = {}, ded = [];
+      hero.forEach(function (a) {
+        var k = norm(cleanName(a.name)) + '|' + S(a.time_display || a.start_local);
+        if (!seenKeys[k]) { seenKeys[k] = 1; ded.push(a); }
+      });
+      window._heroTodayList = ded;
+    } catch (e) {}
+  }
+
+  /* ---------- B) hygiene at the import gate ---------- */
+  function sanitizeAppts(appts) {
+    try {
+      var list = Array.isArray(appts) ? appts : [];
+      var fulls = list.map(function (a) { return cleanName(a.name); }).filter(function (n) { return n && !isTrunc(n); });
+      list.forEach(function (a) {
+        if (!a) return;
+        var n = cleanName(a.name);
+        if (isTrunc(n)) {
+          var hits = fulls.filter(function (f) { return truncMatches(n, f); });
+          if (hits.length === 1) n = hits[0];
+        }
+        if (n && n !== a.name) a.name = n;
+        if (a.dob && dobBogus(a.dob, a.appt_date || a.date)) a.dob = '';
+      });
+      return list;
+    } catch (e) { return appts; }
+  }
+  var _importOrig = null;
+  function wrapImport() {
+    if (typeof window._importPulledSchedule !== 'function' || window._importPulledSchedule.__b49) return;
+    _importOrig = window._importPulledSchedule;
+    var w = function (appts) { return _importOrig.call(this, sanitizeAppts(appts)); };
+    w.__b49 = 1;
+    window._importPulledSchedule = w;
+  }
+
+  /* ---------- C) reconcile today's data ---------- */
+  function getPts() { try { return window.getPatients ? (window.getPatients() || []) : []; } catch (e) { return []; } }
+  function upsert(p) { try { if (window.upsertPatient) { window.upsertPatient(p); return true; } } catch (e) {} return false; }
+  function backup(key, items) {
+    try {
+      var k = 'mls_b49_' + key + '_backup_20260706';
+      var prev = JSON.parse(localStorage.getItem(k) || '[]');
+      localStorage.setItem(k, JSON.stringify(prev.concat(items)));
+    } catch (e) {}
+  }
+  function reconcileToday() {
+    var report = { rowFixes: 0, rowDupesDropped: 0, recordsUpserted: 0, stubsMerged: 0, stubsDeleted: 0, contamCleared: 0, details: [] };
+    var A = Array.isArray(window._calAppts) ? window._calAppts : [];
+    var td = todayLocal();
+    var fulls = A.filter(function (a) { return (a.day_local || a.appt_date) === td; })
+                 .map(function (a) { return cleanName(a.name); })
+                 .filter(function (n) { return n && !isTrunc(n); });
+    var keep = [], seen = {};
+    A.forEach(function (a) {
+      if ((a.day_local || a.appt_date) !== td) { keep.push(a); return; }
+      var n = cleanName(a.name);
+      if (isTrunc(n)) {
+        var hits = fulls.filter(function (f) { return truncMatches(n, f); });
+        if (hits.length === 1) n = hits[0];
+      }
+      if (n !== a.name) { a.name = n; report.rowFixes++; }
+      if (a.dob && dobBogus(a.dob, a.appt_date || a.date)) { a.dob = ''; report.rowFixes++; }
+      var k = S(a.provider) + '|' + S(a.time_display || a.start_local) + '|' + (norm(n).split(' ')[0] || '') + '|' + ((norm(n).split(' ')[1] || '').charAt(0));
+      if (seen[k]) {
+        var prev = seen[k];
+        var richer = (S(a.dob) && !S(prev.dob)) || (S(a.name).length > S(prev.name).length && !isTrunc(a.name));
+        if (richer) { keep[keep.indexOf(prev)] = a; seen[k] = a; }
+        report.rowDupesDropped++;
+        return;
+      }
+      seen[k] = a; keep.push(a);
+    });
+    window._calAppts = keep;
+
+    var mine = todaysRows(false);
+    mine.forEach(function (a) {
+      var nm = cleanName(a.name); if (!nm) return;
+      var pts = getPts();
+      var p = pts.find(function (x) { return tokset(x && x.name) === tokset(nm); }) ||
+              pts.find(function (x) { return namesEqualish(x && x.name, nm); });
+      if (!p) {
+        p = { id: 'p' + Date.now() + Math.random().toString(36).slice(2, 7), name: nm, dob: S(a.dob || ''),
+              problems: '', meds: '', allergies: '', summary: '', docs: [], source: 'schedule-pull',
+              created: Date.now(), updated: Date.now() };
+        if (upsert(p)) { report.recordsUpserted++; report.details.push('created ' + nm); }
+      } else {
+        var dirty = false;
+        if (isTrunc(p.name) && !isTrunc(nm)) { p.name = nm; dirty = true; }
+        if (!S(p.dob) && S(a.dob)) { p.dob = a.dob; dirty = true; }
+        if (dirty && upsert(p)) { report.recordsUpserted++; report.details.push('healed ' + nm); }
+      }
+    });
+
+    var dayStart = new Date(td + 'T00:00:00').getTime();
+    var pts2 = getPts();
+    var stubs = pts2.filter(function (p) {
+      return p && isTrunc(p.name) && !S(p.dob) && !S(p.summary) && !(p.visits && p.visits.length) &&
+             !(p.docs && p.docs.length) && (p.created || 0) >= dayStart;
+    });
+    if (stubs.length) {
+      backup('stubs', stubs);
+      var full = pts2.filter(function (p) { return p && !isTrunc(p.name); });
+      var removeIds = [];
+      stubs.forEach(function (st) {
+        var hits = full.filter(function (f) { return truncMatches(st.name, f.name); });
+        removeIds.push(st.id);
+        if (hits.length === 1) { report.stubsMerged++; report.details.push('merged stub ' + st.name + ' -> ' + hits[0].name); }
+        else { report.stubsDeleted++; }
+      });
+      try {
+        var arr = getPts().filter(function (p) { return removeIds.indexOf(p.id) < 0; });
+        if (window.savePatients) window.savePatients(arr);
+      } catch (e) {}
+    }
+
+    getPts().forEach(function (p) {
+      var s = S(p.summary); if (!s) return;
+      var m = s.match(/(?:^|\n)[^\n]*?(?:The patient,\s+|—\s*)?\b([A-Z][a-z]{2,})(?:\s+[A-Z][a-zA-Z'-]+)?\s+is\s+(?:a\s+patient|experiencing|being\s+(?:seen|evaluated))/);
+      if (!m) { var m2 = s.match(/The patient,\s+([A-Z][a-z]{2,})\b/); m = m2; }
+      if (!m) return;
+      var first = m[1].toLowerCase();
+      var ptoks = norm(p.name).split(' ');
+      if (ptoks.indexOf(first) >= 0) return;
+      backup('contam', [JSON.parse(JSON.stringify(p))]);
+      p.summary = ''; p.meds = ''; p.problems = ''; p.allergies = '';
+      if (upsert(p)) { report.contamCleared++; report.details.push('cleared contaminated summary on ' + p.name + ' (mentions "' + m[1] + '")'); }
+    });
+
+    fixAgenda();
+    return report;
+  }
+
+  /* ---------- D) sequential chart pull for today's provider list ---------- */
+  var pulling = false, stopFlag = false;
+  function card() {
+    var c = $('b49PullCard');
+    if (c) return c;
+    c = document.createElement('div');
+    c.id = 'b49PullCard';
+    c.style.cssText = 'position:fixed;right:16px;bottom:96px;z-index:2147483200;width:340px;max-height:46vh;overflow:auto;background:linear-gradient(180deg,#0f1c3d,#13234b);border:1px solid #3556a8;border-radius:14px;padding:12px 14px;font:12.5px system-ui;color:#dbe6fb;box-shadow:0 14px 40px rgba(5,15,45,.5)';
+    c.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b id="b49PullTitle">Chart pull</b><button id="b49PullStop" style="background:#4a1f2b;color:#ffc9d2;border:1px solid #a4506a;border-radius:8px;padding:3px 10px;cursor:pointer">Stop</button></div><div id="b49PullBody"></div>';
+    document.body.appendChild(c);
+    c.querySelector('#b49PullStop').onclick = function () { stopFlag = true; this.textContent = 'Stopping…'; };
+    return c;
+  }
+  function line(msg, color) {
+    var b = card().querySelector('#b49PullBody');
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:2px 0;border-bottom:1px solid rgba(120,150,220,.15);color:' + (color || '#dbe6fb');
+    d.textContent = msg;
+    b.appendChild(d); b.scrollTop = 1e6;
+  }
+  function findRec(nm) {
+    var pts = getPts();
+    return pts.find(function (x) { return tokset(x && x.name) === tokset(nm); }) ||
+           pts.find(function (x) { return namesEqualish(x && x.name, nm); }) || null;
+  }
+  function recStamp(nm) {
+    var p = findRec(nm);
+    return p ? (S(p.summary).length + ':' + ((p.visits || []).length) + ':' + (p.updated || 0)) : 'none';
+  }
+  /* DEPTH check — the whole point of the pull is HISTORY, not names. */
+  function depthOf(nm) {
+    var p = findRec(nm);
+    if (!p) return { rec: false, score: 0, label: 'no record' };
+    var blob = [S(p.summary), S(p.meds), S(p.problems)].concat((p.visits || []).map(function (v) { return S(v && v.raw); })).join('\n');
+    var d = {
+      rec: true,
+      dob: !!S(p.dob),
+      sumChars: S(p.summary).length,
+      visits: (p.visits || []).length,
+      performedBy: /performed by/i.test(blob),
+      ap: /assessment/i.test(blob),
+      followUp: /follow.?up/i.test(blob),
+      meds: !!S(p.meds) || /medication/i.test(blob),
+      procedure: /procedure|injection|block|ablation|esi|rfa|epidural|facet/i.test(blob)
+    };
+    d.score = (d.dob ? 1 : 0) + (d.sumChars > 200 ? 2 : 0) + (d.visits ? 2 : 0) + (d.performedBy ? 1 : 0) + (d.ap ? 1 : 0) + (d.followUp ? 1 : 0) + (d.meds ? 1 : 0);
+    d.label = d.score >= 7 ? 'DEEP' : (d.score >= 4 ? 'partial' : 'shallow');
+    return d;
+  }
+  function pullChartsForToday(opts) {
+    opts = opts || {};
+    if (pulling) return Promise.resolve({ already: true });
+    pulling = true; stopFlag = false;
+    var rows = todaysRows(false).slice().sort(function (a, b) { return new Date(a.start_at) - new Date(b.start_at); });
+    var seen = {}, list = [];
+    rows.forEach(function (a) { var k = tokset(cleanName(a.name)); if (k && !seen[k]) { seen[k] = 1; list.push(a); } });
+    var res = { total: list.length, ok: 0, failed: 0, blocked0: (window.__mlsVisitWire && window.__mlsVisitWire._blocked) || 0, outcomes: [] };
+    card().querySelector('#b49PullTitle').textContent = 'Chart pull — ' + (provName() || 'today') + ' (' + list.length + ')';
+    line('Starting per-patient chart pull (read-only)…', '#9fd0ff');
+    var i = 0;
+    function next() {
+      if (stopFlag || i >= list.length) return done();
+      var a = list[i++]; var nm = cleanName(a.name);
+      line(i + '/' + list.length + '  ' + nm + ' …');
+      var before = recStamp(nm);
+      var t0 = Date.now();
+      try { window.calPullChartFor(a.id); } catch (e) { res.failed++; res.outcomes.push({ name: nm, ok: false, why: 'driver error: ' + e.message }); line('   ⚠ driver error — ' + e.message, '#ffb3c0'); return setTimeout(next, 800); }
+      (function wait() {
+        var stamp = recStamp(nm);
+        var p = findRec(nm);
+        var gotSummary = p && S(p.summary).length > 120;
+        if (stamp !== before && gotSummary) {
+          var d = depthOf(nm);
+          res.ok++; res.outcomes.push({ name: nm, ok: true, ms: Date.now() - t0, depth: d });
+          line('   ✓ ' + d.label + ' (' + Math.round((Date.now() - t0) / 1000) + 's · ' + d.sumChars + ' chars · ' + d.visits + ' visit(s)' +
+            (d.performedBy ? ' · performer' : '') + (d.ap ? ' · A&P' : '') + (d.followUp ? ' · f/u' : '') + (d.meds ? ' · meds' : '') + ')',
+            d.label === 'DEEP' ? '#a8f0c0' : '#ffe9a8');
+          return setTimeout(next, 1200);
+        }
+        if (Date.now() - t0 > (opts.perPatientTimeoutMs || 75000)) {
+          res.failed++; res.outcomes.push({ name: nm, ok: false, why: 'timeout/no data filed (honest failure — check identity gate)' });
+          line('   ✗ nothing filed in ' + Math.round((Date.now() - t0) / 1000) + 's (honest failure)', '#ffd39f');
+          return setTimeout(next, 800);
+        }
+        setTimeout(wait, 1500);
+      })();
+    }
+    function done() {
+      var blockedNow = (window.__mlsVisitWire && window.__mlsVisitWire._blocked) || 0;
+      res.blockedDelta = blockedNow - res.blocked0;
+      res.deep = res.outcomes.filter(function (o) { return o.depth && o.depth.label === 'DEEP'; }).length;
+      line('Done: ' + res.ok + ' filed (' + res.deep + ' DEEP), ' + res.failed + ' failed' + (stopFlag ? ' (stopped)' : '') + ', identity-guard blocks: ' + res.blockedDelta, '#9fd0ff');
+      pulling = false;
+      window.__mlsPullTruthB49._lastPull = res;
+      try { fixAgenda(); } catch (e) {}
+    }
+    next();
+    return Promise.resolve(res);
+  }
+
+  /* ---------- E) quick-pick / Who's Next -> ACTIVE patient ---------- */
+  function setActiveByName(nm) {
+    nm = cleanName(nm); if (!nm) return false;
+    var p = findRec(nm);
+    var use = p ? p.name : nm;
+    var nameEl = $('heroPtName'), dobEl = $('heroPtDob');
+    if (nameEl) { nameEl.value = use; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
+    if (dobEl) { var d = p && S(p.dob); if (d) { dobEl.value = d; dobEl.dispatchEvent(new Event('input', { bubbles: true })); } }
+    try { if (typeof window._heroSyncName === 'function') window._heroSyncName(); } catch (e) {}
+    try {
+      var t = document.createElement('div');
+      t.textContent = '✓ Active patient: ' + use + (p && p.dob ? ' · DOB ' + p.dob : '');
+      t.style.cssText = 'position:fixed;bottom:150px;left:50%;transform:translateX(-50%);z-index:2147483300;background:#123a26;color:#c9f5d9;border:1px solid #2f7a4f;border-radius:10px;padding:8px 14px;font:13px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35)';
+      document.body.appendChild(t); setTimeout(function () { t.remove(); }, 2600);
+    } catch (e) {}
+    return true;
+  }
+  function chipName(el) {
+    var t = S(el.textContent).replace(/\s+/g, ' ').trim();
+    var m = t.match(/^(.*?)(?:\d{1,2}:\d{2}\s*[AP]M|🎂|DOB)/);
+    return (m ? m[1] : t).trim();
+  }
+  function onDocClick(ev) {
+    try {
+      var chip = ev.target.closest && ev.target.closest('.wn-chip');
+      if (chip) { setActiveByName(chipName(chip)); return; }
+      var row = ev.target.closest && ev.target.closest('.qpa-row');
+      if (row) {
+        var n = row.querySelector('.qpa-n');
+        if (n) setActiveByName(n.textContent);
+      }
+    } catch (e) {}
+  }
+  document.addEventListener('click', onDocClick, true);
+  cleanup.push(function () { document.removeEventListener('click', onDocClick, true); });
+
+  var alignedOnce = false;
+  function alignPicker() {
+    if (alignedOnce) return;
+    try {
+      var pp = window.__mlsProviderPicker; var prov = provName();
+      if (!pp || !prov || typeof pp.setPick !== 'function') return;
+      var cur = null; try { cur = pp.getPick && pp.getPick(); } catch (e) {}
+      var curName = cur && (cur.provider || cur.name || cur);
+      if (curName && S(curName).indexOf(prov.split(',')[0].split(' ').pop()) >= 0) { alignedOnce = true; return; }
+      if (window.__b49UserPicked) { alignedOnce = true; return; }
+      try { pp.setPick(prov); } catch (e) { try { pp.setPick({ provider: prov }); } catch (e2) {} }
+      try { pp.applyScope && pp.applyScope(); } catch (e) {}
+      alignedOnce = true;
+    } catch (e) {}
+  }
+  document.addEventListener('click', function (ev) {
+    try { if (ev.target.closest && ev.target.closest('#mlsT3PickHead')) window.__b49UserPicked = 1; } catch (e) {}
+  }, true);
+
+  /* ---------- F) EMR placement preview prominence ---------- */
+  function openEmrPreview() {
+    var b = $('emrBtn');
+    if (b) { b.click(); return true; }
+    var alt = document.querySelector('#mls-assist-panel button');
+    if (alt && /EMR sections/i.test(alt.textContent)) { alt.click(); return true; }
+    return false;
+  }
+  function ensurePreviewBtns() {
+    try {
+      var note = $('noteCard');
+      if (note && !$('b49EmrPrevBtn')) {
+        var btn = document.createElement('button');
+        btn.id = 'b49EmrPrevBtn';
+        btn.textContent = '🗺 Preview EMR placement — where each part of the note will be filed';
+        btn.style.cssText = 'display:block;width:100%;margin:10px 0;padding:10px 14px;background:linear-gradient(135deg,#1d4ed8,#4338ca);color:#fff;border:0;border-radius:10px;font:600 13.5px system-ui;cursor:pointer';
+        btn.onclick = function (e) { e.preventDefault(); openEmrPreview(); };
+        note.insertBefore(btn, note.firstChild);
+      }
+      var bar = $('mls-rt-bar');
+      if (bar && !$('b49EmrPrevMini')) {
+        var mini = document.createElement('button');
+        mini.id = 'b49EmrPrevMini';
+        mini.textContent = '🗺 EMR placement preview';
+        mini.style.cssText = 'margin-left:8px;padding:6px 12px;background:#24408f;color:#dbe6fb;border:1px solid #4a6ac0;border-radius:999px;font:600 12px system-ui;cursor:pointer';
+        mini.onclick = function (e) { e.preventDefault(); openEmrPreview(); };
+        bar.appendChild(mini);
+      }
+    } catch (e) {}
+  }
+
+  /* ---------- boot ---------- */
+  wrapImport();
+  var iv = setInterval(function () {
+    wrapImport(); fixAgenda(); ensurePreviewBtns(); alignPicker();
+  }, 2000);
+  cleanup.push(function () { clearInterval(iv); });
+
+  window.__mlsPullTruthB49 = {
+    version: '1.0.0',
+    reconcileToday: reconcileToday,
+    pullChartsForToday: pullChartsForToday,
+    setActiveByName: setActiveByName,
+    depthOf: depthOf,
+    sanitizeAppts: sanitizeAppts,
+    fixAgenda: fixAgenda,
+    openEmrPreview: openEmrPreview,
+    _provName: provName,
+    _todaysRows: todaysRows
+  };
+  window.__mlsPullTruthB49_revert = function () {
+    cleanup.forEach(function (f) { try { f(); } catch (e) {} });
+    if (_importOrig) window._importPulledSchedule = _importOrig;
+    ['b49PullCard', 'b49EmrPrevBtn', 'b49EmrPrevMini'].forEach(function (id) { var e = $(id); if (e) e.remove(); });
+    delete window.__mlsPullTruthB49; delete window.__mlsPullTruthB49_revert;
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe -- b49 agenda BUTTON provider-scope fix (__mlsAgendaBtnB49) 2026-07-06
  * Owner screenshot: the blue "Today's agenda (0/458)" button counted EVERY
  * provider (all of _heroTodayList) and seen stayed 0. b46 already scoped the
@@ -3444,7 +3906,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b49';
+  var MLS_APP_BUILD='2026-07-06-b50';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
