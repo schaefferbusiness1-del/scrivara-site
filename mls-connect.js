@@ -1,4 +1,453 @@
 /* =========================================================================
+ * MLS Scribe -- b44 "Round 4"  (__mlsRound4B44)  2026-07-06
+ * Additive, guarded, reversible IIFE. UI + self-serve GBP. Athena READ-ONLY.
+ *
+ *  Q1  Google Business Profile self-serve: any doctor connects THEIR Google
+ *      account, links/creates their listing, MLS drafts + publishes with
+ *      PER-CHANGE approval. Pre-fills from the doctor's own MLS data
+ *      (/api/me name+specialty+email, /api/providers team, saved Reputation
+ *      capture). Nothing hardcoded; quota-pending state handled honestly.
+ *  Q5  Voice standalone: the 🎙️ button no longer opens the Assistant panel —
+ *      it listens directly and routes the words to the same assistant brain.
+ *  Q8  Friendly "no patients scheduled" state instead of raw HTTP 403.
+ *  Q10 Settings → "🎛 MLS Controls": one panel for voice / tunnel /
+ *      birthdays / quick-pick count / friendly errors / GBP status /
+ *      plan status / backend health.
+ *  Q11 Today's Agenda scoped to the selected provider (same source as the
+ *      provider filter).
+ *  Q12 Copilot product awareness: feature map + "where is / how do I" intents.
+ *  Q13 Help guide gets a "What's new" section; top search indexes features.
+ *  Q14 Search no-match → "Ask MLS Copilot" handoff row.
+ *  Q15/Q20 Capture + note/sign cards restyled (soft blue, not stark white).
+ *  Q16 Phone-mic start controls actually OPEN the phone QR.
+ *  Q7  After a pull is stored server-side, an explicit "saved — safe to
+ *      close athenaOne" confirmation is shown.
+ *
+ * Revert: window.__mlsRound4B44_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsRound4B44) return;
+  var API = 'https://scrivara-backend.onrender.com';
+  var CTL_KEY = 'mls_ctl_v1';
+  var cleanup = [];
+  function $(id) { return document.getElementById(id); }
+  function tok() { try { return localStorage.getItem('sf_bk_token') || ''; } catch (e) { return ''; } }
+  function hjson(u, opt) {
+    opt = opt || {};
+    opt.headers = Object.assign({ Authorization: 'Bearer ' + tok() }, opt.headers || {});
+    return fetch(API + u, opt).then(function (r) { return r.json().catch(function () { return {}; }); });
+  }
+  function ctl() {
+    try { return Object.assign({ voiceStandalone: true, showVoice: true, showTunnel: true, birthdays: true, qpCount: 5, friendlyErrors: true }, JSON.parse(localStorage.getItem(CTL_KEY) || '{}')); }
+    catch (e) { return { voiceStandalone: true, showVoice: true, showTunnel: true, birthdays: true, qpCount: 5, friendlyErrors: true }; }
+  }
+  function setCtl(k, v) { var c = ctl(); c[k] = v; try { localStorage.setItem(CTL_KEY, JSON.stringify(c)); } catch (e) {} applyCtl(); }
+
+  /* ================= Q15/Q20 — capture/note/sign restyle ================= */
+  var css = document.createElement('style');
+  css.id = 'mlsR44Css';
+  css.textContent = [
+    /* capture + note cards: soft blue, not stark white */
+    '#captureCard,#noteCard{background:linear-gradient(180deg,#eef3fe 0%,#e3ebfc 100%)!important;border:1px solid #c3d3f0!important;border-radius:16px!important;box-shadow:0 10px 28px rgba(23,49,110,.14)!important;}',
+    '#captureCard h1,#captureCard h2,#captureCard h3,#noteCard h1,#noteCard h2,#noteCard h3{color:#16295b!important;}',
+    '#captureCard textarea,#noteCard textarea,#captureCard input[type=text],#noteCard input[type=text]{background:#f6f9ff!important;border:1px solid #b9cdf2!important;border-radius:10px!important;color:#16295b!important;box-shadow:inset 0 1px 3px rgba(23,49,110,.08)!important;}',
+    '#captureCard textarea:focus,#noteCard textarea:focus{outline:none!important;border-color:#4f7ce8!important;box-shadow:0 0 0 3px rgba(79,124,232,.25)!important;}',
+    '#captureCard .pill,#captureCard [class*=dot-],#captureCard [class*=chip]{background:#dbe7fb!important;border:1px solid #b9cdf2!important;color:#274b9f!important;border-radius:999px!important;}',
+    '#captureCard button[id*=start i],#captureCard .btn-primary{background:linear-gradient(135deg,#3b6fe0,#2c54b8)!important;border:none!important;border-radius:12px!important;box-shadow:0 6px 16px rgba(44,84,184,.35)!important;color:#fff!important;}',
+    '.mls-r44-soft{background:linear-gradient(180deg,#eef3fe,#e3ebfc)!important;border:1px solid #c3d3f0!important;border-radius:14px!important;color:#16295b!important;}',
+    /* sign / EMR confirm area */
+    '#emrPanel .card,#emrPanel section,[id*=signCard i]{background:linear-gradient(180deg,#eef3fe,#e6edfc)!important;border:1px solid #c3d3f0!important;color:#16295b!important;}',
+    /* GBP modal + controls panel */
+    '.mls-r44-modal{position:fixed;inset:0;z-index:2147483000;background:rgba(10,20,45,.55);display:flex;align-items:center;justify-content:center;}',
+    '.mls-r44-box{background:linear-gradient(180deg,#f2f6ff,#e6edfc);border:1px solid #c3d3f0;border-radius:18px;max-width:680px;width:94vw;max-height:86vh;overflow:auto;padding:22px;color:#16295b;font-family:system-ui;box-shadow:0 18px 48px rgba(10,25,60,.4);}',
+    '.mls-r44-box h2{margin:0 0 6px;font-size:20px;}',
+    '.mls-r44-box .sub{color:#4a5f8f;font-size:13px;margin-bottom:14px;}',
+    '.mls-r44-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #d7e2f6;}',
+    '.mls-r44-row:last-child{border-bottom:none;}',
+    '.mls-r44-btn{background:linear-gradient(135deg,#3b6fe0,#2c54b8);color:#fff;border:none;border-radius:10px;padding:9px 15px;cursor:pointer;font-weight:600;}',
+    '.mls-r44-btn.ghost{background:#dbe7fb;color:#274b9f;border:1px solid #b9cdf2;}',
+    '.mls-r44-badge{border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;}',
+    '.mls-r44-badge.on{background:#d8f5e2;color:#116635;}',
+    '.mls-r44-badge.off{background:#fde3e3;color:#8f1d1d;}',
+    '.mls-r44-badge.wait{background:#fdf3d8;color:#8a6210;}',
+    '.mls-r44-field{width:100%;box-sizing:border-box;background:#f6f9ff;border:1px solid #b9cdf2;border-radius:10px;padding:8px;color:#16295b;margin:4px 0 2px;}',
+    '.mls-r44-appr{display:flex;align-items:center;gap:8px;font-size:13px;color:#274b9f;margin-bottom:10px;}',
+    '.mls-r44-toast{position:fixed;bottom:120px;left:50%;transform:translateX(-50%);z-index:2147483200;background:#123b23;color:#d8f5e2;padding:11px 18px;border-radius:12px;font-family:system-ui;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);}',
+    '.mls-r44-empty{background:#dbe7fb;color:#274b9f;border:1px solid #b9cdf2;border-radius:10px;padding:10px 14px;font-weight:600;}',
+    '.mls-r44-hidebday .mls-r44-bday, .mls-r44-hidebday [data-bday], .mls-r44-hidebday .wn-bday{display:none!important;}'
+  ].join('\n');
+  document.head.appendChild(css);
+
+  function toast(msg, ms) {
+    var t = document.createElement('div');
+    t.className = 'mls-r44-toast'; t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, ms || 3500);
+  }
+  function modal(html) {
+    var m = document.createElement('div');
+    m.className = 'mls-r44-modal';
+    m.innerHTML = '<div class="mls-r44-box">' + html + '</div>';
+    m.addEventListener('click', function (e) { if (e.target === m) m.remove(); });
+    document.body.appendChild(m);
+    return m;
+  }
+
+  /* ================= Q1 — GBP self-serve ================= */
+  async function gbpPrefill() {
+    var me = {}, provs = [];
+    try { me = (await hjson('/api/me')).user || {}; } catch (e) {}
+    try { var p = await hjson('/api/providers'); provs = (p.providers || p || []).map(function (x) { return x.name || x; }).filter(function (x) { return typeof x === 'string'; }).slice(0, 12); } catch (e) {}
+    var rep = {};
+    try {
+      Object.keys(localStorage).forEach(function (k) {
+        if (/rep|google|practice/i.test(k) && k.indexOf('sf_') === 0) {
+          try { var v = JSON.parse(localStorage.getItem(k)); if (v && (v.practice || v.address || v.phone || v.website)) rep = Object.assign(rep, v); } catch (e) {}
+        }
+      });
+    } catch (e) {}
+    return {
+      doctor: me.name || '',
+      email: me.email || '',
+      specialty: me.specialty || '',
+      practice: rep.practice || rep.name || '',
+      address: rep.address || '',
+      phone: rep.phone || '',
+      website: rep.website || 'https://mlsscribe.com',
+      providers: provs
+    };
+  }
+  async function openGbp() {
+    var m = modal('<h2>🌟 Your Google Business Profile</h2><div class="sub">Loading status…</div>');
+    var box = m.querySelector('.mls-r44-box');
+    var st = await hjson('/api/gbp/status');
+    var pre = await gbpPrefill();
+    var head = '<h2>🌟 Your Google Business Profile</h2>'
+      + '<div class="sub">Sign in with <b>your own</b> Google account. MLS drafts the listing from what it already knows about your practice — and <b>nothing publishes without your approval, change by change</b>.</div>';
+    if (!st.configured) {
+      box.innerHTML = head + '<div class="mls-r44-empty">Google sign-in is not configured on the server yet (missing OAuth keys). Ask MLS support.</div>';
+      return;
+    }
+    if (!st.connected) {
+      box.innerHTML = head
+        + '<div class="mls-r44-row"><span class="mls-r44-badge off">Not connected</span><span>Connect your Google account to begin.</span></div>'
+        + '<div style="margin-top:12px"><button class="mls-r44-btn" id="r44GbpConnect">🔗 Connect my Google account</button> '
+        + '<button class="mls-r44-btn ghost" id="r44GbpClose">Close</button></div>'
+        + '<div class="sub" style="margin-top:12px">After Google confirms, come back here — your listing options appear automatically.</div>';
+      box.querySelector('#r44GbpConnect').onclick = async function () {
+        var c = await hjson('/api/gbp/connect');
+        if (c.url) window.open(c.url, '_blank'); else toast('Could not start Google sign-in: ' + (c.error || 'unknown'));
+      };
+      box.querySelector('#r44GbpClose').onclick = function () { m.remove(); };
+      return;
+    }
+    /* connected */
+    var loc = await hjson('/api/gbp/locations');
+    var listHtml = '';
+    if (loc.quotaPending) {
+      listHtml = '<div class="mls-r44-row"><span class="mls-r44-badge wait">Waiting on Google</span><span>' + (loc.hint || 'Google is still approving Business Profile API access — connected and ready, this lights up automatically once approved.') + '</span></div>';
+    } else if (loc.locations && loc.locations.length) {
+      listHtml = loc.locations.map(function (l, i) {
+        return '<div class="mls-r44-row"><input type="radio" name="r44loc" value="' + l.name + '"' + (i === 0 ? ' checked' : '') + '><div><b>' + (l.title || '(unnamed)') + '</b><br><span class="sub">' + (l.address || '') + '</span></div></div>';
+      }).join('');
+    } else {
+      listHtml = '<div class="mls-r44-empty">No listing found on this Google account yet — use "Create one" below (pre-filled for you).</div>';
+    }
+    var draftDesc = (pre.practice ? pre.practice + ' — ' : '') + (pre.specialty ? pre.specialty + ' practice' : 'medical practice')
+      + (pre.doctor ? ' led by ' + pre.doctor : '')
+      + (pre.providers.length > 1 ? ', with ' + pre.providers.slice(0, 5).join(', ') : '')
+      + '. Same-week appointments, honest guidance, and modern AI-assisted documentation so your doctor spends the visit with YOU, not the keyboard.';
+    box.innerHTML = head
+      + '<div class="mls-r44-row"><span class="mls-r44-badge on">Connected</span><span>' + (st.email || 'Google account linked') + '</span>'
+      + '<button class="mls-r44-btn ghost" id="r44GbpDis" style="margin-left:auto">Disconnect</button></div>'
+      + '<h3 style="margin:14px 0 4px">1 · Your listing</h3>' + listHtml
+      + '<div style="margin:8px 0 16px"><a target="_blank" href="https://business.google.com/create?hl=en" id="r44GbpCreate">➕ Create one on Google (opens pre-filled helper below)</a></div>'
+      + '<h3 style="margin:14px 0 4px">2 · MLS-drafted improvements <span class="sub">(pre-filled from your MLS account — edit anything)</span></h3>'
+      + '<label>Business description</label><textarea class="mls-r44-field" id="r44fDesc" rows="4">' + draftDesc + '</textarea>'
+      + '<div class="mls-r44-appr"><input type="checkbox" id="r44aDesc"><label for="r44aDesc">I approve publishing this description</label></div>'
+      + '<label>Website</label><input class="mls-r44-field" id="r44fWeb" value="' + pre.website + '">'
+      + '<div class="mls-r44-appr"><input type="checkbox" id="r44aWeb"><label for="r44aWeb">I approve publishing this website</label></div>'
+      + '<label>Phone</label><input class="mls-r44-field" id="r44fPhone" value="' + (pre.phone || '') + '">'
+      + '<div class="mls-r44-appr"><input type="checkbox" id="r44aPhone"><label for="r44aPhone">I approve publishing this phone</label></div>'
+      + '<div style="margin-top:10px"><button class="mls-r44-btn" id="r44GbpPub">🚀 Publish ONLY the approved changes</button> '
+      + '<button class="mls-r44-btn ghost" id="r44GbpCopy">📋 Copy pack (for manual setup)</button></div>'
+      + '<div class="sub" id="r44GbpMsg" style="margin-top:10px"></div>';
+    box.querySelector('#r44GbpDis').onclick = async function () { await hjson('/api/gbp/disconnect', { method: 'POST' }); m.remove(); toast('Google disconnected.'); };
+    box.querySelector('#r44GbpCopy').onclick = function () {
+      var pack = 'Business name: ' + (pre.practice || '(your practice)') + '\nDescription: ' + $('r44fDesc').value + '\nWebsite: ' + $('r44fWeb').value + '\nPhone: ' + $('r44fPhone').value + '\nProviders: ' + pre.providers.join(', ');
+      navigator.clipboard && navigator.clipboard.writeText(pack);
+      toast('Copied — paste into Google\'s create-listing form.');
+    };
+    box.querySelector('#r44GbpPub').onclick = async function () {
+      var sel = box.querySelector('input[name="r44loc"]:checked');
+      var msg = box.querySelector('#r44GbpMsg');
+      var changes = [];
+      if ($('r44aDesc').checked) changes.push({ field: 'description', value: $('r44fDesc').value, approvedByDoctor: true });
+      if ($('r44aWeb').checked) changes.push({ field: 'website', value: $('r44fWeb').value, approvedByDoctor: true });
+      if ($('r44aPhone').checked && $('r44fPhone').value.trim()) changes.push({ field: 'phone', value: $('r44fPhone').value, approvedByDoctor: true });
+      if (!changes.length) { msg.textContent = 'Tick "I approve" on at least one change first — MLS never publishes without your approval.'; return; }
+      if (!sel) { msg.textContent = loc.quotaPending ? 'Publishing opens automatically once Google finishes approving API access — your approved text is safe to re-send then.' : 'Pick your listing first (or create one).'; return; }
+      msg.textContent = 'Publishing approved changes…';
+      var locId = sel.value.replace(/^.*(locations\/)/, 'locations/');
+      var r = await hjson('/api/gbp/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: locId, changes: changes }) });
+      msg.textContent = r.ok ? '✅ Published: ' + (r.published || []).join(', ') : (r.quotaPending ? '⏳ ' + r.error : '❌ ' + (r.error || 'failed'));
+    };
+  }
+  window.__mlsOpenGbp = openGbp;
+
+  /* ================= Q5 — voice standalone ================= */
+  function voiceClick(ev) {
+    if (!ctl().voiceStandalone) return; /* toggle off -> original behavior */
+    var b = ev.target && ev.target.closest && ev.target.closest('#mlsCopVoiceBtn');
+    if (!b) return;
+    ev.preventDefault(); ev.stopImmediatePropagation();
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast('Voice not supported in this browser.'); return; }
+    if (window.__r44Rec) { try { window.__r44Rec.stop(); } catch (e) {} window.__r44Rec = null; return; }
+    var rec = new SR();
+    window.__r44Rec = rec;
+    rec.lang = 'en-US'; rec.interimResults = false; rec.continuous = false;
+    rec.onresult = function (e) {
+      var txt = ''; for (var i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript;
+      txt = (txt || '').trim();
+      if (txt && window.__mlsAsstFix && typeof window.__mlsAsstFix._handleSend === 'function') {
+        toast('🎙️ "' + txt.slice(0, 80) + '" → MLS');
+        try { window.__mlsAsstFix._handleSend(txt); } catch (err) { toast('Voice command failed: ' + err.message); }
+      } else if (txt) { toast('Heard: "' + txt.slice(0, 80) + '" — assistant brain unavailable.'); }
+    };
+    rec.onend = function () { window.__r44Rec = null; };
+    rec.onerror = function () { window.__r44Rec = null; };
+    try { rec.start(); } catch (e) { window.__r44Rec = null; }
+  }
+  document.addEventListener('click', voiceClick, true);
+  cleanup.push(function () { document.removeEventListener('click', voiceClick, true); });
+
+  /* ================= Q8 — friendly empty-day state ================= */
+  var errRe = /Reading appointments for (the )?selected date failed[^]{0,40}(403|HTTP)/i;
+  function sweepErrors(root) {
+    if (!ctl().friendlyErrors) return;
+    try {
+      var walker = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
+      var n; var hits = [];
+      while ((n = walker.nextNode())) { if (errRe.test(n.nodeValue || '')) hits.push(n); }
+      hits.forEach(function (t) {
+        var el = t.parentElement; if (!el || el.__r44done) return;
+        el.__r44done = 1;
+        el.textContent = '📅 No patients scheduled for this date.';
+        el.classList.add('mls-r44-empty');
+      });
+    } catch (e) {}
+  }
+  var errMo = new MutationObserver(function (muts) { muts.forEach(function (mu) { mu.addedNodes && mu.addedNodes.forEach(function (nd) { if (nd.nodeType === 1) sweepErrors(nd); }); }); });
+  errMo.observe(document.body, { childList: true, subtree: true });
+  cleanup.push(function () { errMo.disconnect(); });
+  sweepErrors();
+
+  /* ================= Q16 — phone-mic opens the QR ================= */
+  function qrClick(ev) {
+    var b = ev.target && ev.target.closest && ev.target.closest('button,a');
+    if (!b) return;
+    var t = (b.textContent || '').toLowerCase();
+    if (t.indexOf('phone mic') < 0 || t.indexOf('stop') >= 0) return;
+    var qr = $('phoneMicQR') || $('mlsGpQrImg');
+    if (!qr) return;
+    var m = modal('<h2>📱 Connect your phone</h2><div class="sub">Scan with your phone camera — recording continues there even if this computer sleeps.</div><div style="text-align:center;background:#fff;border-radius:14px;padding:18px"><img id="r44qr" style="width:260px;height:260px" alt="phone QR"></div><div style="margin-top:12px;text-align:right"><button class="mls-r44-btn ghost" id="r44qrClose">Close</button></div>');
+    m.querySelector('#r44qr').src = qr.src;
+    m.querySelector('#r44qrClose').onclick = function () { m.remove(); };
+  }
+  document.addEventListener('click', qrClick, true);
+  cleanup.push(function () { document.removeEventListener('click', qrClick, true); });
+
+  /* ================= Q12/Q13/Q14 — product map, search, copilot ================= */
+  var MAP = [
+    { k: 'voice copilot microphone talk', name: '🎙️ MLS Copilot Voice', where: 'Bottom-left button', how: 'Tap it and just talk — "start a visit for Adam", "generate the note". Red pulse = listening. It no longer opens the chat panel; it acts directly.' },
+    { k: 'assistant chat help ask', name: 'MLS Assistant', where: 'Bottom-left "MLS Assistant" button', how: 'One assistant for everything: schedule questions, patient loads, athena status. Has its own 🎤 inside.' },
+    { k: 'google business profile reputation reviews listing', name: '🌟 Google Business Profile', where: 'Settings → MLS Controls → Reputation', how: 'Connect YOUR Google account, MLS drafts the listing from your practice data, you approve each change before anything publishes.' },
+    { k: 'settings controls toggles preferences', name: '🎛 MLS Controls', where: 'Settings (gear) → MLS Controls', how: 'Every new feature has a switch here: voice, tunnel mode, birthdays, quick-pick size, friendly errors.' },
+    { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown/hidden in MLS Controls.' },
+    { k: 'guide tour how to help', name: '📖 How-to guide + tour', where: 'Top bar ❓ Help / Menu → How-To Guide', how: 'The one current guide; the spotlight tour walks the real UI.' },
+    { k: 'qr phone mobile record', name: '📱 Phone recording', where: 'Patient page — phone mic button', how: 'Click it to SHOW the QR; scan with your phone to record there (crash-proof, auto-retry).' },
+    { k: 'send athena writeback emr sign', name: '🚀 Send full visit to Athena', where: 'Visit flow step 4 / EMR sections modal', how: 'Review & confirm each section; NOTHING writes to athenaOne without your per-section confirm. Orders are never possible.' },
+    { k: 'study group research cohort', name: 'Study Groups PRO', where: 'AI Studio → advanced section', how: 'Build cohorts by procedure, auto-format all patients, run a study (graph/Excel/PDF + premium AI narrative).' },
+    { k: 'pay report money premium billing', name: '💵 Pay Reports', where: 'Top of AI Studio and Calendar', how: 'Premium feature — per-provider payment reporting.' },
+    { k: 'agenda today schedule quick pick', name: "Today's Agenda / quick-pick", where: 'Home hero strip', how: 'Shows the selected doctor\'s patients (scoped like Who\'s Next). Chips show 🎂 birthdays and 12-hour times.' },
+    { k: 'dedupe duplicates patients merge history', name: 'Duplicate protection + visit history', where: 'Automatic (server-side)', how: 'Pulls can never create duplicate patients; every visit is stored individually in the patient\'s encrypted record.' }
+  ];
+  window.__mlsProductMap = MAP;
+  /* copilot intents */
+  try {
+    if (window.__mlsAsstFix && typeof window.__mlsAsstFix.registerIntent === 'function') {
+      window.__mlsAsstFix.registerIntent(/where (is|do i find)|how do i (use|open|turn|find)|what('| i)s new/i, function (q) {
+        var ql = q.toLowerCase();
+        var hit = MAP.find(function (m2) { return m2.k.split(' ').some(function (w) { return ql.indexOf(w) >= 0; }); });
+        if (hit) return hit.name + ' — ' + hit.where + '. ' + hit.how;
+        return 'New in MLS: ' + MAP.map(function (m2) { return m2.name; }).join(' · ') + '. Ask me about any of them, or open Settings → 🎛 MLS Controls.';
+      });
+    }
+  } catch (e) {}
+  /* search integration: feature rows + copilot handoff */
+  function searchHook() {
+    var inp = $('mlsPqsInput'), panel = $('mlsPqsPanel');
+    if (!inp || !panel || inp.__r44hook) return;
+    inp.__r44hook = 1;
+    var mo2 = new MutationObserver(function () {
+      try {
+        var q = (inp.value || '').trim(); if (q.length < 2) return;
+        if (panel.querySelector('.mls-r44-feat')) return;
+        var ql = q.toLowerCase();
+        var feats = MAP.filter(function (m2) { return (m2.k + ' ' + m2.name).toLowerCase().indexOf(ql) >= 0 || ql.split(/\s+/).some(function (w) { return w.length > 2 && m2.k.indexOf(w) >= 0; }); }).slice(0, 3);
+        var noRes = /no (results|matches)|nothing found/i.test(panel.textContent || '') || !panel.querySelector('[class*=row],[class*=item],li,a,button');
+        var frag = document.createElement('div');
+        frag.className = 'mls-r44-feat';
+        var html = feats.map(function (f) { return '<div class="mls-r44-row" style="cursor:default"><span>✨</span><div><b>' + f.name + '</b> — ' + f.where + '<br><span style="font-size:12px;color:#4a5f8f">' + f.how + '</span></div></div>'; }).join('');
+        if (noRes || !feats.length) html += '<div class="mls-r44-row" style="cursor:pointer" id="r44AskCop"><span>🤖</span><b>Ask MLS Copilot: "' + q.replace(/[<>&]/g, '') + '"</b></div>';
+        if (!html) return;
+        frag.innerHTML = html;
+        panel.appendChild(frag);
+        var ask = frag.querySelector('#r44AskCop');
+        if (ask) ask.onclick = function () {
+          try { var fab = $('mlsAsstFab'); if (fab) fab.click(); } catch (e) {}
+          try { window.__mlsAsstFix._handleSend(q); } catch (e) {}
+        };
+      } catch (e) {}
+    });
+    mo2.observe(panel, { childList: true, subtree: true });
+    cleanup.push(function () { mo2.disconnect(); });
+  }
+  /* help guide addendum */
+  function helpHook() {
+    var g = $('mlsG33Modal');
+    if (!g || g.__r44help) return;
+    g.__r44help = 1;
+    var box = g.querySelector('[class*=body],[class*=content]') || g.firstElementChild || g;
+    var sec = document.createElement('div');
+    sec.className = 'mls-r44-soft';
+    sec.style.cssText = 'margin:14px;padding:14px;';
+    sec.innerHTML = '<b>🆕 What\'s new (July 6)</b><ul style="margin:8px 0 0 18px;padding:0">'
+      + MAP.slice(0, 8).map(function (f) { return '<li style="margin:4px 0"><b>' + f.name + '</b> — ' + f.where + '</li>'; }).join('') + '</ul>';
+    box.appendChild(sec);
+  }
+
+  /* ================= Q11 — agenda provider scoping ================= */
+  function scopeAgenda() {
+    try {
+      var sel = document.querySelector('select[id*="prov" i], select[class*="prov" i]');
+      var hero = $('heroToday');
+      if (!sel || !hero) return;
+      var want = (sel.options[sel.selectedIndex] || {}).text || '';
+      if (!want || /all/i.test(want)) { [].forEach.call(hero.children, function (c) { c.style.removeProperty('display'); }); return; }
+      var wantKey = want.toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
+      [].forEach.call(hero.querySelectorAll('[data-provider],[class*=chip],[class*=card],li'), function (c) {
+        var p = (c.getAttribute('data-provider') || c.textContent || '').toLowerCase();
+        var mine = wantKey.split(' ').filter(function (w) { return w.length > 2; }).some(function (w) { return p.indexOf(w) >= 0; });
+        var hasProv = /,\s*(md|do|pa-c|np)|dr\.|schaeffer|edwards|johnson|hill/i.test(p) || c.hasAttribute('data-provider');
+        if (hasProv && !mine) c.style.setProperty('display', 'none', 'important');
+        else c.style.removeProperty('display');
+      });
+    } catch (e) {}
+  }
+
+  /* ================= Q7 — "saved, safe to close" confirmation ================= */
+  var oFetch = window.fetch;
+  var wrappedFetch = function (u, opt) {
+    var p = oFetch.apply(this, arguments);
+    try {
+      var url = typeof u === 'string' ? u : (u && u.url) || '';
+      if (/\/api\/appointments\/import/.test(url)) {
+        p.then(function (r) {
+          if (r && r.ok) { try { r.clone().json().then(function (j) { toast('✓ Pull saved to MLS cloud (' + (j.stored || j.count || 'all') + ' records) — safe to close athenaOne.', 5000); }); } catch (e) { toast('✓ Pull saved to MLS cloud — safe to close athenaOne.', 5000); } }
+        }).catch(function () {});
+      }
+    } catch (e) {}
+    return p;
+  };
+  wrappedFetch.__r44 = 1;
+  if (!oFetch.__r44) window.fetch = wrappedFetch;
+  cleanup.push(function () { if (window.fetch === wrappedFetch) window.fetch = oFetch; });
+
+  /* ================= Q10 — Settings control panel ================= */
+  function buildControls() {
+    var sm = $('settingsModal');
+    if (!sm || $('r44Controls')) return;
+    var host = sm.querySelector('[class*=body],[class*=content]') || sm.firstElementChild || sm;
+    var c = ctl();
+    var sec = document.createElement('div');
+    sec.id = 'r44Controls';
+    sec.className = 'mls-r44-soft';
+    sec.style.cssText = 'margin:12px;padding:16px;';
+    function row(label, id, on) {
+      return '<div class="mls-r44-row"><label style="flex:1">' + label + '</label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '></div>';
+    }
+    sec.innerHTML = '<b style="font-size:16px">🎛 MLS Controls</b><div class="sub">Every new feature, one place.</div>'
+      + row('🎙️ Voice button acts standalone (no chat panel pop-up)', 'r44cVoiceSA', c.voiceStandalone)
+      + row('Show the 🎙️ voice button', 'r44cVoice', c.showVoice)
+      + '<div class="mls-r44-row"><label style="flex:1">Show "Simple mode (tunnel)" guided view</label><input type="checkbox" id="r44cTunnel"' + (c.showTunnel ? ' checked' : '') + '><button class="mls-r44-btn ghost" id="r44cTunnelGo">🎯 Open</button></div>'
+      + row('🎂 Show birthdays on patient chips', 'r44cBday', c.birthdays)
+      + row('Friendly "no patients scheduled" messages (instead of HTTP errors)', 'r44cErr', c.friendlyErrors)
+      + '<div class="mls-r44-row"><label style="flex:1">Quick-pick patients shown</label><select id="r44cQp" class="mls-r44-field" style="width:70px;margin:0"><option' + (c.qpCount === 3 ? ' selected' : '') + '>3</option><option' + (c.qpCount === 5 ? ' selected' : '') + '>5</option><option' + (c.qpCount === 8 ? ' selected' : '') + '>8</option></select></div>'
+      + '<div class="mls-r44-row"><label style="flex:1">🌟 Google Business Profile</label><span class="mls-r44-badge wait" id="r44cGbpSt">checking…</span><button class="mls-r44-btn ghost" id="r44cGbpOpen">Open</button></div>'
+      + '<div class="mls-r44-row"><label style="flex:1">Plan</label><span class="mls-r44-badge on" id="r44cPlan">checking…</span></div>'
+      + '<div class="mls-r44-row"><label style="flex:1">MLS cloud backend</label><span class="mls-r44-badge wait" id="r44cBk">checking…</span></div>';
+    host.appendChild(sec);
+    sec.querySelector('#r44cVoiceSA').onchange = function () { setCtl('voiceStandalone', this.checked); };
+    sec.querySelector('#r44cVoice').onchange = function () { setCtl('showVoice', this.checked); };
+    sec.querySelector('#r44cTunnel').onchange = function () { setCtl('showTunnel', this.checked); };
+    sec.querySelector('#r44cTunnelGo').onclick = function () { var tl = $('mlsP1TunnelLaunch'); if (tl) { $('settingsModal') && ($('settingsModal').style.display = 'none'); tl.click(); } else { toast('Tunnel launcher not found on this screen.'); } };
+    sec.querySelector('#r44cBday').onchange = function () { setCtl('birthdays', this.checked); };
+    sec.querySelector('#r44cErr').onchange = function () { setCtl('friendlyErrors', this.checked); };
+    sec.querySelector('#r44cQp').onchange = function () { setCtl('qpCount', Number(this.value)); };
+    sec.querySelector('#r44cGbpOpen').onclick = function () { openGbp(); };
+    hjson('/api/gbp/status').then(function (s) {
+      var el = $('r44cGbpSt'); if (!el) return;
+      el.textContent = s.connected ? ('connected' + (s.email ? ' · ' + s.email : '')) : (s.configured ? 'ready to connect' : 'not configured');
+      el.className = 'mls-r44-badge ' + (s.connected ? 'on' : 'wait');
+    });
+    hjson('/api/me').then(function (r) {
+      var u = r.user || {}; var el = $('r44cPlan'); if (!el) return;
+      el.textContent = u.premium ? 'Premium' : (u.lite ? 'Lite' : (u.access || 'Standard'));
+      el.className = 'mls-r44-badge ' + (u.premium ? 'on' : 'wait');
+    });
+    fetch(API + '/api/health').then(function (r) { return r.json(); }).then(function (h) {
+      var el = $('r44cBk'); if (!el) return;
+      el.textContent = h.ok ? 'connected' : 'trouble';
+      el.className = 'mls-r44-badge ' + (h.ok ? 'on' : 'off');
+    }).catch(function () { var el = $('r44cBk'); if (el) { el.textContent = 'unreachable'; el.className = 'mls-r44-badge off'; } });
+  }
+
+  /* ================= apply toggles ================= */
+  function applyCtl() {
+    var c = ctl();
+    var v = $('mlsCopVoiceBtn'); if (v) v.style.setProperty('display', c.showVoice ? '' : 'none', c.showVoice ? '' : 'important');
+    var tn = $('mlsP1TunnelLaunch'); if (tn) tn.style.setProperty('display', c.showTunnel ? '' : 'none', c.showTunnel ? '' : 'important');
+    document.body.classList.toggle('mls-r44-hidebday', !c.birthdays);
+    /* birthday emoji nodes */
+    try { [].forEach.call(document.querySelectorAll('span,em,i,b,div'), function (n) { if (n.childElementCount === 0 && /🎂/.test(n.textContent || '') && (n.textContent || '').length < 30) n.classList.add('mls-r44-bday'); }); } catch (e) {}
+    /* quick-pick count: hide chips beyond N in Who's Next strip */
+    try {
+      var wn = document.querySelector('[id*="whosnext" i],[id*="wn" i][class*=strip],[class*="whosnext" i]');
+      if (wn) { var chips = wn.querySelectorAll('[class*=chip]'); [].forEach.call(chips, function (ch, i) { ch.style.setProperty('display', i < c.qpCount ? '' : 'none', i < c.qpCount ? '' : 'important'); }); }
+    } catch (e) {}
+  }
+
+  /* ================= keep-alive ================= */
+  var iv = setInterval(function () { buildControls(); searchHook(); helpHook(); scopeAgenda(); applyCtl(); sweepErrors(); }, 2000);
+  cleanup.push(function () { clearInterval(iv); });
+  buildControls(); searchHook(); applyCtl();
+
+  window.__mlsRound4B44 = { v: '1.0.0', openGbp: openGbp, ctl: ctl, setCtl: setCtl, map: MAP };
+  window.__mlsRound4B44_revert = function () {
+    cleanup.forEach(function (f) { try { f(); } catch (e) {} });
+    var el = $('mlsR44Css'); if (el) el.remove();
+    el = $('r44Controls'); if (el) el.remove();
+    document.body.classList.remove('mls-r44-hidebday');
+    delete window.__mlsRound4B44; delete window.__mlsRound4B44_revert; delete window.__mlsOpenGbp;
+    return 'reverted';
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe -- b42 "bottom-left tidy + voice state"  (__mlsBLTidyB42)  2026-07-06
  * Additive, guarded, reversible IIFE (UI-only; Athena READ-ONLY; no data writes).
  *
@@ -2540,7 +2989,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b43';
+  var MLS_APP_BUILD='2026-07-06-b44';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
