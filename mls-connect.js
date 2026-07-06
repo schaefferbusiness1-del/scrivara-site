@@ -1,4 +1,198 @@
 /* =========================================================================
+ * MLS Scribe -- b42 "bottom-left tidy + voice state"  (__mlsBLTidyB42)  2026-07-06
+ * Additive, guarded, reversible IIFE (UI-only; Athena READ-ONLY; no data writes).
+ *
+ * 1) De-overlaps the bottom-left cluster (was: #mlsCopVoiceBtn hidden under
+ *    #mlsAsstFab and #_patientFace): lays out avatar -> voice -> assistant in
+ *    one spaced row (10px gaps) from left 12px. #mlsScDock / #mls-ask-btn are
+ *    NOT touched (b36 owns the dock anchoring).
+ * 2) Voice-button state indicator: idle = green ready dot; while the copilot
+ *    mic is actually listening = red pulsing button + blinking dot +
+ *    "Listening... tap to stop". Detection: SpeechRecognition start/end/stop
+ *    scoped to instances started from #mlsCopVoiceBtn / .mls-b35-mic clicks
+ *    (visit dictation is NOT affected and does not light the button).
+ *
+ * Revert: window.__mlsBLTidyB42_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsBLTidyB42) return;
+
+  var GAP = 10, LEFT0 = 12;
+  var ROW = ['_patientFace', 'mlsCopVoiceBtn', 'mlsAsstFab'];
+  var savedStyle = {};
+  var origBtnHTML = null;
+  var timers = [], obs = [];
+
+  function $(id) { return document.getElementById(id); }
+
+  function setImp(el, prop, val) {
+    if (el.style.getPropertyValue(prop) !== val ||
+        el.style.getPropertyPriority(prop) !== 'important') {
+      el.style.setProperty(prop, val, 'important');
+    }
+  }
+
+  /* ---- 1. row layout: avatar -> voice -> assistant, 10px gaps ---- */
+  function layout() {
+    try {
+      var x = LEFT0;
+      ROW.forEach(function (id) {
+        var el = $(id);
+        if (!el) return;
+        var cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        if (!(id in savedStyle)) savedStyle[id] = el.getAttribute('style');
+        setImp(el, 'left', x + 'px');
+        setImp(el, 'right', 'auto');
+        x += el.getBoundingClientRect().width + GAP;
+      });
+    } catch (e) {}
+  }
+
+  /* ---- 2. voice state indicator ---- */
+  var CSS_ID = 'mlsBL42Css';
+  function injectCss() {
+    if (document.getElementById(CSS_ID)) return;
+    var st = document.createElement('style');
+    st.id = CSS_ID;
+    st.textContent =
+      '#mlsCopVoiceBtn .mls-bl42-dot{display:inline-block;width:8px;height:8px;' +
+      'border-radius:50%;background:#4ade80;margin-right:7px;vertical-align:middle;' +
+      'box-shadow:0 0 4px #4ade80}' +
+      '#mlsCopVoiceBtn.mls-bl42-on{background:linear-gradient(90deg,#dc2626,#ef4444)!important;' +
+      'animation:mlsBL42Pulse 1.1s ease-in-out infinite}' +
+      '#mlsCopVoiceBtn.mls-bl42-on .mls-bl42-dot{background:#fff;box-shadow:none;' +
+      'animation:mlsBL42Blink .9s step-start infinite}' +
+      '@keyframes mlsBL42Pulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.55)}' +
+      '70%{box-shadow:0 0 0 12px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}' +
+      '@keyframes mlsBL42Blink{50%{opacity:.25}}';
+    document.head.appendChild(st);
+  }
+
+  function ensureDot() {
+    var b = $('mlsCopVoiceBtn');
+    if (!b) return;
+    if (origBtnHTML === null) origBtnHTML = b.innerHTML;
+    if (!b.querySelector('.mls-bl42-dot')) {
+      var s = document.createElement('span');
+      s.className = 'mls-bl42-dot';
+      b.insertBefore(s, b.firstChild);
+      if (!b.title) b.title = 'MLS Copilot Voice - tap to talk';
+    }
+  }
+
+  var listening = false;
+  function setListening(on) {
+    on = !!on;
+    if (on === listening) return;
+    listening = on;
+    var b = $('mlsCopVoiceBtn');
+    if (!b) return;
+    b.classList.toggle('mls-bl42-on', on);
+    if (on) {
+      b.innerHTML = '<span class="mls-bl42-dot"></span>Listening... tap to stop';
+      b.title = 'Listening - tap to stop';
+    } else {
+      b.innerHTML = origBtnHTML || b.innerHTML;
+      ensureDot();
+      b.title = 'MLS Copilot Voice - tap to talk';
+    }
+  }
+
+  /* arm on clicks of the voice entry points; flag SR instances started while armed */
+  var armedUntil = 0;
+  function onClick(ev) {
+    var t = ev.target;
+    if (t && t.closest && t.closest('#mlsCopVoiceBtn,.mls-b35-mic')) {
+      armedUntil = Date.now() + 4000;
+    }
+  }
+  document.addEventListener('click', onClick, true);
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var patched = null;
+  if (SR && SR.prototype && !SR.prototype.__mlsBL42) {
+    var pStart = SR.prototype.start, pStop = SR.prototype.stop, pAbort = SR.prototype.abort;
+    SR.prototype.__mlsBL42 = 1;
+    SR.prototype.start = function () {
+      if (Date.now() < armedUntil || this.__mlsBL42v) {
+        this.__mlsBL42v = true;
+        setListening(true);
+        if (!this.__mlsBL42h && this.addEventListener) {
+          this.__mlsBL42h = 1;
+          var self = this;
+          this.addEventListener('end', function () { if (self.__mlsBL42v) setListening(false); });
+          this.addEventListener('error', function () { if (self.__mlsBL42v) setListening(false); });
+        }
+      }
+      return pStart.apply(this, arguments);
+    };
+    SR.prototype.stop = function () {
+      if (this.__mlsBL42v) { this.__mlsBL42v = false; setListening(false); }
+      return pStop.apply(this, arguments);
+    };
+    SR.prototype.abort = function () {
+      if (this.__mlsBL42v) { this.__mlsBL42v = false; setListening(false); }
+      return pAbort.apply(this, arguments);
+    };
+    patched = { start: pStart, stop: pStop, abort: pAbort };
+  }
+
+  /* ---- boot + keep-alive (elements are created lazily / re-styled on timers) ---- */
+  function tick() { injectCss(); ensureDot(); layout(); }
+  timers.push(setInterval(tick, 1500));
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tick);
+  } else { tick(); }
+
+  var mo = new MutationObserver(function () { ensureDot(); layout(); });
+  function watch() {
+    ROW.forEach(function (id) {
+      var el = $(id);
+      if (el && !el.__mlsBL42w) {
+        el.__mlsBL42w = 1;
+        mo.observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+      }
+    });
+  }
+  watch();
+  timers.push(setInterval(watch, 2000));
+  obs.push(mo);
+
+  window.__mlsBLTidyB42 = {
+    v: '1.0.0', layout: layout, setListening: setListening,
+    get listening() { return listening; }
+  };
+
+  window.__mlsBLTidyB42_revert = function () {
+    timers.forEach(clearInterval);
+    obs.forEach(function (o) { o.disconnect(); });
+    document.removeEventListener('click', onClick, true);
+    if (patched && SR) {
+      SR.prototype.start = patched.start;
+      SR.prototype.stop = patched.stop;
+      SR.prototype.abort = patched.abort;
+      delete SR.prototype.__mlsBL42;
+    }
+    setListening(false);
+    var b = $('mlsCopVoiceBtn');
+    if (b && origBtnHTML !== null) b.innerHTML = origBtnHTML;
+    Object.keys(savedStyle).forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      if (savedStyle[id] == null) { el.removeAttribute('style'); }
+      else { el.setAttribute('style', savedStyle[id]); }
+    });
+    var css = document.getElementById(CSS_ID);
+    if (css) css.remove();
+    delete window.__mlsBLTidyB42;
+    delete window.__mlsBLTidyB42_revert;
+    return 'reverted';
+  };
+})();
+
+/* =========================================================================
  * MLS Scribe -- b41 Backend-sync truth  (__mlsSyncTruthB41)  2026-07-06
  * ROOT CAUSE (R3-7): the status dock's "Backend sync" row only ever updates
  * when a non-GET backend request happens. A normal day (schedule already
@@ -2345,7 +2539,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b41';
+  var MLS_APP_BUILD='2026-07-06-b42';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
