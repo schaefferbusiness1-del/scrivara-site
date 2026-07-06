@@ -1,3 +1,114 @@
+/* __mlsGuidedConvergeB31 — collapse the 3 competing "guided view" variants into ONE.
+ * KNOWN_BUGS #5. Additive / guarded / fully reversible. Never clobbers other modules.
+ *
+ * KEEP (the ONE guided experience): the #mls-rt-bar 4-step wizard (__mlsEasyWizard,
+ *   styled by __mlsEasyMagicB30). It wraps the REAL working components — patient picker /
+ *   active-patient header, #captureCard, #noteCard (Generate note), EMR fields + the b29
+ *   #emrPanel EMR-sections modal, and Sign & Save / #pushAllEmrBtn "Send full visit to
+ *   Athena". It is the live default and carries the most working wiring.
+ *
+ * RETIRE #1 — the "unified cockpit" (__mlsEasyUnified / #mlsCockpit). It hides #mls-rt-bar
+ *   and builds a parallel cockpit UI. On live it is DORMANT (never mounts). This module
+ *   neutralizes it defensively: (a) a CSS rule hides #mlsCockpit if it ever appears, and
+ *   (b) if the cockpit ever injects its own <style id="mlsCockpitCss"> (which force-hides
+ *   #mls-rt-bar / #mlsEwStack / #mlsVisitStepper), we disable that stylesheet and strip the
+ *   .mls-bridge-hidden class the cockpit adds — so the kept wizard can never be hidden.
+ *
+ * RETIRE #2 — "Simple mode (tunnel)" (#mlsP1TunnelLaunch → full-screen 5-step re-implementation).
+ *   Its single entry point is hidden, and clicks are re-routed to the kept wizard instead of
+ *   the full-screen tunnel, so a doctor only ever sees the ONE guided experience.
+ *
+ * Nothing the retired variants offered is lost: patient pick, capture, note gen, EMR modal
+ * and Send-to-Athena all live in the kept wizard surface.
+ *
+ * Revert everything at runtime: window.__mlsGuidedConvergeB31_revert()
+ */
+(function(){
+  if(window.__mlsGuidedConvergeB31) return; window.__mlsGuidedConvergeB31 = 1;
+  var ID = 'mlsB31gc';
+  var state = { styleEl:null, obs:null, iv:null, cockpitCssDisabled:[], trapBtn:null };
+
+  // Hide the retired surfaces via CSS so they are neutralized the instant they exist
+  // (no flash — CSS applies whenever the element is created).
+  var CSS = [
+    '#mlsCockpit{display:none!important}',
+    '#mlsP1TunnelLaunch{display:none!important}'
+  ].join('\n');
+
+  function ensureStyle(){
+    if(!state.styleEl || !state.styleEl.isConnected){
+      var s = document.createElement('style');
+      s.id = ID + '-style';
+      s.textContent = CSS;
+      document.head.appendChild(s);
+      state.styleEl = s;
+    }
+  }
+
+  // If the dormant cockpit ever mounts, defuse its effect on the kept wizard.
+  function defuseCockpit(){
+    var cs = document.getElementById('mlsCockpitCss');
+    if(cs && !cs.disabled){
+      try{ cs.disabled = true; if(state.cockpitCssDisabled.indexOf(cs)<0) state.cockpitCssDisabled.push(cs); }catch(_){}
+    }
+    var cp = document.getElementById('mlsCockpit');
+    if(cp && cp.style.display !== 'none'){ try{ cp.style.display = 'none'; }catch(_){} }
+    // undo anything the cockpit force-hid on the kept wizard surface
+    ['mls-rt-bar','mlsEwStack','mlsVisitStepper'].forEach(function(id){
+      var e = document.getElementById(id);
+      if(e && e.classList) e.classList.remove('mls-bridge-hidden');
+    });
+  }
+
+  // Re-route the (now hidden) tunnel launcher to the kept wizard, belt-and-suspenders.
+  function trapTunnel(){
+    var b = document.getElementById('mlsP1TunnelLaunch');
+    if(b && !b.__b31trap){
+      b.__b31trap = 1;
+      state.trapBtn = b;
+      b.addEventListener('click', function(ev){
+        try{ ev.stopImmediatePropagation(); ev.preventDefault(); }catch(_){}
+        var bar = document.getElementById('mls-rt-bar');
+        if(bar && bar.scrollIntoView) bar.scrollIntoView({behavior:'smooth', block:'center'});
+        var pill = document.querySelector('.mls-rt-pill'); if(pill) pill.click();
+      }, true);
+    }
+  }
+
+  function enforce(){ try{ ensureStyle(); defuseCockpit(); trapTunnel(); }catch(_){}}
+
+  function boot(){
+    enforce();
+    // React fast to lazily-created cockpit / tunnel nodes without heavy whole-page observing.
+    if(!state.obs){
+      var vv = document.getElementById('visitView') || document.body;
+      state.obs = new MutationObserver(function(){ enforce(); });
+      try{ state.obs.observe(vv, {childList:true, subtree:true}); }catch(_){}
+    }
+    // Low-frequency safety net for anything the observer scope misses.
+    if(!state.iv) state.iv = setInterval(enforce, 1500);
+  }
+
+  window.__mlsGuidedConvergeB31_revert = function(){
+    try{
+      if(state.obs){ state.obs.disconnect(); state.obs = null; }
+      if(state.iv){ clearInterval(state.iv); state.iv = null; }
+      if(state.styleEl && state.styleEl.parentNode) state.styleEl.parentNode.removeChild(state.styleEl);
+      state.styleEl = null;
+      state.cockpitCssDisabled.forEach(function(cs){ try{ cs.disabled = false; }catch(_){} });
+      state.cockpitCssDisabled = [];
+      var cp = document.getElementById('mlsCockpit'); if(cp) cp.style.display = '';
+      if(state.trapBtn){ try{ state.trapBtn.style.display=''; state.trapBtn.__b31trap = 0; }catch(_){} state.trapBtn=null; }
+      var tb = document.getElementById('mlsP1TunnelLaunch'); if(tb) tb.style.display='';
+      window.__mlsGuidedConvergeB31 = 0;
+    }catch(e){}
+  };
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+
 /* __mlsEasyMagicB30 — MLS Easy guided-flow polish (queue item 3)
  * - Restyles the Step 1-4 bar (#mls-rt-bar) into a sticky, modern stepper.
  * - Step-driven focus: the card that matters for the current step gets a blue
@@ -750,7 +861,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b30';
+  var MLS_APP_BUILD='2026-07-06-b31';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
