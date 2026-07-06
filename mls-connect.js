@@ -163,7 +163,10 @@
     } catch (e) { return null; }
   }
   function wrapFetch() {
-    if (window.fetch && window.fetch.__mlsB35) return;
+    /* b37 HOTFIX: wrap exactly ONCE per page. The old marker check re-wrapped every
+       time another module (feat_mls_provider_passthrough) layered its own wrapper on
+       top, and the two kept re-wrapping each other -> call-stack overflow. */
+    if (window.__mlsB35FetchWrapped) return; window.__mlsB35FetchWrapped = 1;
     var of = window.fetch;
     var f = function (input, init) {
       try {
@@ -199,7 +202,7 @@
   window.__mlsOneChatB35_revert = function () {
     try { clearInterval(iv); } catch (e) {}
     try { var s = $("mlsOneChatB35Css"); if (s) s.remove(); } catch (e) {}
-    try { if (window.fetch && window.fetch.__mlsB35) window.fetch = window.fetch.__orig; } catch (e) {}
+    try { if (window.fetch && window.fetch.__mlsB35) window.fetch = window.fetch.__orig; window.__mlsB35FetchWrapped = 0; } catch (e) {}
     try { var d = $("mlsScDock"); if (d) { d.style.removeProperty("left"); d.style.removeProperty("right"); d.style.removeProperty("bottom"); } } catch (e) {}
     try { [].forEach.call(document.querySelectorAll(".mls-b35-mic,.mls-b35-dot"), function (n) { n.remove(); }); } catch (e) {}
     window.__mlsOneChatB35 = 0;
@@ -1073,7 +1076,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b36';
+  window.__MLS_AV = window.__MLS_AV || 'b37';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -1387,7 +1390,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b36';
+  var MLS_APP_BUILD='2026-07-06-b37';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
