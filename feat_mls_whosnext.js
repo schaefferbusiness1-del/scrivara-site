@@ -1,4 +1,4 @@
-/* feat_mls_whosnext.js  ->  window.__mlsWhosNext  (v1.0.0)  [item55]
+/* feat_mls_whosnext.js  ->  window.__mlsWhosNext  (v1.1.0)  [item55 + DOB fix 2026-07-06]
  *
  * "Who's Next" picker (the blue NEXT-UP boxes), upgraded per Michael:
  *   1) Renamed heading to "Who's Next".
@@ -25,7 +25,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.0.0", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
+  var VERSION = "1.1.0", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
   try { if (window.__mlsWhosNext && window.__mlsWhosNext.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -77,14 +77,45 @@
   function chosenDoctor() { try { return (window.__mlsFindDoctors && window.__mlsFindDoctors.chosen) || null; } catch (e) { return null; } }
 
   /* ---------- selection ---------- */
+  /* v1.1.0: find the best chart match for an appt name. Athena pulls abbreviate
+     names ("Timothy O."), so exact matching alone fails; a "First L." pattern is
+     accepted only when it matches exactly ONE chart (never guesses on ambiguity). */
+  function chartFor(p) {
+    try {
+      var nm = S(p.name).trim().toLowerCase(), ps = (window.getPatients && window.getPatients()) || [];
+      for (var i = 0; i < ps.length; i++) { if (S(ps[i].name).trim().toLowerCase() === nm && (!p.dob || S(ps[i].dob) === S(p.dob))) return ps[i]; }
+      var m = nm.match(/^(\S+)\s+([a-z])\.?$/);
+      if (m) {
+        var hits = [];
+        for (var j = 0; j < ps.length; j++) { var t = S(ps[j].name).trim().toLowerCase().split(/\s+/); if (t.length > 1 && t[0] === m[1] && t[t.length - 1].charAt(0) === m[2]) hits.push(ps[j]); }
+        if (hits.length === 1) return hits[0];
+      }
+    } catch (e) {}
+    return null;
+  }
+  /* v1.1.0: best-known DOB for an appt: the appt row, else its (unique) chart,
+     else any other appointment of the same patient that captured a DOB. */
+  function bestDob(p, chart) {
+    if (p.dob) return p.dob;
+    try { if (chart && chart.dob) return chart.dob; } catch (e) {}
+    try {
+      var nm = S(p.name).trim().toLowerCase(), ap = window._calAppts || [];
+      for (var i = 0; i < ap.length; i++) { if (ap[i] && ap[i].dob && S(ap[i].name).trim().toLowerCase() === nm) return ap[i].dob; }
+    } catch (e) {}
+    return "";
+  }
   function pick(p) {
     try {
       var nm = $("heroPtName"); if (nm) { nm.value = p.name || ""; ["input", "change"].forEach(function (ev) { try { nm.dispatchEvent(new Event(ev, { bubbles: true })); } catch (e) {} }); }
-      var db = $("heroPtDob"); if (db && p.dob) { db.value = p.dob; ["input", "change"].forEach(function (ev) { try { db.dispatchEvent(new Event(ev, { bubbles: true })); } catch (e) {} }); }
+      var chart = chartFor(p);
+      var dob = bestDob(p, chart);
+      /* ALWAYS write the DOB field -- an empty write clears the PREVIOUS patient's
+         stale DOB instead of silently leaving a wrong value (v1.1.0 fix). */
+      var db = $("heroPtDob"); if (db) { db.value = dob || ""; ["input", "change"].forEach(function (ev) { try { db.dispatchEvent(new Event(ev, { bubbles: true })); } catch (e) {} }); }
       if (typeof window._heroSyncName === "function") window._heroSyncName();
       /* if this patient exists as a chart, open it too (read-only) */
-      try { var ps = (window.getPatients && window.getPatients()) || []; for (var i = 0; i < ps.length; i++) { if (S(ps[i].name).toLowerCase() === S(p.name).toLowerCase() && (!p.dob || S(ps[i].dob) === S(p.dob))) { if (window.openPatient) window.openPatient(ps[i].id); break; } } } catch (e) {}
-      try { if (window.toast) window.toast("Loaded " + (p.name || "patient"), ""); } catch (e) {}
+      try { if (chart && window.openPatient) window.openPatient(chart.id); } catch (e) {}
+      try { if (window.toast) window.toast(dob ? ("Loaded " + (p.name || "patient") + " - DOB " + dob) : ("Loaded " + (p.name || "patient") + " - no DOB on the pulled schedule; use From open Athena chart or type it"), ""); } catch (e) {}
     } catch (e) {}
   }
 
