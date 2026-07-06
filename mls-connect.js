@@ -1,4 +1,104 @@
 /* =========================================================================
+ * MLS Scribe -- b45 polish hotfix  (__mlsR45Polish)  2026-07-06
+ * Additive, guarded, reversible IIFE. UI-only. Athena READ-ONLY.
+ *
+ * 1) b44's Q15/Q20 capture/note/sign restyle was defeated by INLINE
+ *    `background:#fff !important` styles that the b17 card-polish module
+ *    writes directly onto #captureCard/#noteCard (inline+important beats
+ *    any stylesheet). Fix: enforce the soft-blue palette ON the inline
+ *    style itself (setProperty with 'important'), re-asserted via a
+ *    style-attribute MutationObserver + 1500 ms keep-alive, same pattern
+ *    b36/b42 use against competing layout timers.
+ * 2) Queue item: live transcript (#transcript) auto-scrolls as text
+ *    arrives — unless the doctor scrolled up to read (resumes when they
+ *    return to within 60 px of the bottom).
+ *
+ * Revert: window.__mlsR45Polish_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsR45Polish) return;
+  var cleanup = [];
+  var GRAD = 'linear-gradient(180deg,#eef3fe 0%,#e3ebfc 100%)';
+  var CARD_IDS = ['captureCard', 'noteCard'];
+
+  function paint(el) {
+    if (!el) return;
+    try {
+      if (el.style.getPropertyValue('background-image') !== GRAD.replace('linear-gradient', 'linear-gradient')) {
+        el.style.setProperty('background', GRAD, 'important');
+        el.style.setProperty('border', '1px solid #c3d3f0', 'important');
+        el.style.setProperty('border-radius', '16px', 'important');
+        el.style.setProperty('box-shadow', '0 10px 28px rgba(23,49,110,.14)', 'important');
+        el.style.setProperty('color', '#16295b', 'important');
+      }
+    } catch (e) {}
+  }
+  function paintAll() {
+    CARD_IDS.forEach(function (id) { paint(document.getElementById(id)); });
+    /* sign/EMR confirm surfaces (stylesheet from b44 already handles most;
+       enforce only where inline whites exist) */
+    try {
+      var ep = document.getElementById('emrPanel');
+      if (ep) [].forEach.call(ep.querySelectorAll('.card,section'), function (c) {
+        var bg = (c.getAttribute('style') || '');
+        if (/background:\s*rgb\(255,\s*255,\s*255\)/.test(bg)) paint(c);
+      });
+    } catch (e) {}
+  }
+
+  /* observers: re-assert if the b17 polish (or anything else) rewrites style */
+  var obs = [];
+  function watch(id) {
+    var el = document.getElementById(id);
+    if (!el || el.__r45watched) return;
+    el.__r45watched = 1;
+    var o = new MutationObserver(function () { paint(el); });
+    o.observe(el, { attributes: true, attributeFilter: ['style'] });
+    obs.push(o);
+  }
+
+  /* ---- transcript auto-scroll ---- */
+  var userUp = false;
+  function hookTranscript() {
+    var t = document.getElementById('transcript');
+    if (!t || t.__r45scroll) return;
+    t.__r45scroll = 1;
+    t.addEventListener('scroll', function () {
+      userUp = (t.scrollHeight - t.scrollTop - t.clientHeight) > 60;
+    }, { passive: true });
+    var mo = new MutationObserver(function () {
+      if (!userUp) { try { t.scrollTop = t.scrollHeight; } catch (e) {} }
+    });
+    mo.observe(t, { childList: true, subtree: true, characterData: true });
+    obs.push(mo);
+  }
+
+  var iv = setInterval(function () {
+    paintAll();
+    CARD_IDS.forEach(watch);
+    hookTranscript();
+  }, 1500);
+  cleanup.push(function () { clearInterval(iv); });
+  paintAll(); CARD_IDS.forEach(watch); hookTranscript();
+
+  window.__mlsR45Polish = { v: '1.0.0' };
+  window.__mlsR45Polish_revert = function () {
+    cleanup.forEach(function (f) { try { f(); } catch (e) {} });
+    obs.forEach(function (o) { try { o.disconnect(); } catch (e) {} });
+    CARD_IDS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) ['background', 'border', 'border-radius', 'box-shadow', 'color'].forEach(function (p) {
+        try { el.style.removeProperty(p); } catch (e) {}
+      });
+    });
+    delete window.__mlsR45Polish; delete window.__mlsR45Polish_revert;
+    return 'reverted';
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe -- b44 "Round 4"  (__mlsRound4B44)  2026-07-06
  * Additive, guarded, reversible IIFE. UI + self-serve GBP. Athena READ-ONLY.
  *
@@ -2989,7 +3089,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b44';
+  var MLS_APP_BUILD='2026-07-06-b45';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
