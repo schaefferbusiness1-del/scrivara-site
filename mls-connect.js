@@ -1,3 +1,200 @@
+/* ===== MLS EMR-sections clarity b28 (additive, guarded, reversible) =====
+   Prepended to scrivara-site/mls-connect.js (b28). Builds on b27's __mlsUiCleanupB26 (the
+   "⚙ Writeback destination" gear inside #emrPanel) — does NOT touch it.
+
+   Problem (KNOWN_BUGS #4): the "EMR sections – review & confirm" modal (#emrPanel) shows nine/ten
+   identical "(nothing captured for X)" boxes with a bare "confirm" checkbox each, and a one-line
+   hint. It's unclear what the modal is FOR, what "confirm" / "Confirm all" / "Insert confirmed" do,
+   how the ⚙ Writeback destination relates, and what the user should do next.
+
+   This module (UI-only, no functional/ID changes):
+   1. Flow stepper — a plain numbered header explaining the journey:
+      1 Record/generate → 2 MLS auto-sorts → 3 Review & edit → 4 Confirm approved → 5 Insert to athenaOne,
+      with a one-line note that confirmed sections write to athenaOne at the ⚙ Writeback destination.
+   2. Better empty state — when nothing is captured, hide the ten identical empty boxes and show one
+      clear call-to-action (+ an "or type sections manually" reveal). When content exists, show the
+      populated sections and COLLAPSE the empty ones (with a "show empty sections" toggle).
+   3. Clarify controls — hover tooltips on AI sort / Confirm all / Insert confirmed / Close / the gear
+      and every per-section "confirm" checkbox, explaining exactly what each does.
+   4. Tidy spacing, dark-modal-friendly blue accents consistent with the app.
+
+   Existing IDs/behaviour untouched: #emrAi #emrClose #emrAll #emrIns #emrBody #emrHint #emrCount,
+   the .mlsWbGear, textareas and confirm checkboxes all keep working. Purely presentational overlay.
+
+   Revert: window.__mlsEmrClarityB28_revert()
+   ===== */
+(function(){
+  if(window.__mlsEmrClarityB28) return; window.__mlsEmrClarityB28=1;
+
+  var STEPS=[
+    ['1','Record or generate','Dictate or generate the visit note'],
+    ['2','MLS auto-sorts','Content is split into the sections below'],
+    ['3','Review &amp; edit','Check each section, fix anything'],
+    ['4','Confirm approved','Tick “confirm” on the ones you approve'],
+    ['5','Insert to athenaOne','“Insert confirmed” writes them in']
+  ];
+
+  function css(){
+    if(document.getElementById('mlsEmrClarityB28Css')) return;
+    var s=document.createElement('style'); s.id='mlsEmrClarityB28Css';
+    s.textContent=[
+      /* stepper */
+      '#mlsEmrStepper{margin:2px 0 12px;padding:12px 14px;border:1px solid rgba(120,150,230,.35);',
+      '  border-radius:12px;background:linear-gradient(180deg,rgba(59,111,224,.14),rgba(59,111,224,.06));}',
+      '#mlsEmrStepRow{display:flex;flex-wrap:wrap;align-items:stretch;gap:6px;}',
+      '.mlsEmrStep{display:flex;align-items:center;gap:8px;flex:1 1 120px;min-width:120px;',
+      '  padding:7px 9px;border-radius:9px;background:rgba(120,150,230,.10);border:1px solid rgba(120,150,230,.22);}',
+      '.mlsEmrStepN{flex:0 0 auto;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;',
+      '  justify-content:center;font-weight:800;font-size:12px;color:#fff;',
+      '  background:linear-gradient(90deg,#3b6fe0,#5b8cff);}',
+      '.mlsEmrStep>span:last-child{display:flex;flex-direction:column;min-width:0;}',
+      '.mlsEmrStepT{display:block;font-weight:700;font-size:12.5px;color:#e8f0ff;line-height:1.15;}',
+      '.mlsEmrStepS{display:block;font-weight:500;font-size:11px;color:rgba(205,221,255,.72);line-height:1.15;margin-top:1px;}',
+      '.mlsEmrArrow{align-self:center;color:rgba(160,185,255,.65);font-weight:800;font-size:14px;flex:0 0 auto;}',
+      '#mlsEmrStepNote{margin-top:9px;font-size:11.5px;color:rgba(205,221,255,.82);line-height:1.35;}',
+      '#mlsEmrStepNote b{color:#cdddff;}',
+      '@media (max-width:640px){.mlsEmrArrow{display:none;}.mlsEmrStep{flex:1 1 46%;}}',
+      /* empty-state CTA */
+      '#mlsEmrCta{display:none;margin:4px 0 6px;padding:20px 18px;border:1px dashed rgba(120,150,230,.45);',
+      '  border-radius:12px;background:rgba(59,111,224,.06);text-align:center;}',
+      '#mlsEmrCta h4{margin:0 0 6px;font-size:15px;color:#e8f0ff;font-weight:800;}',
+      '#mlsEmrCta p{margin:0 auto;max-width:560px;font-size:12.5px;line-height:1.5;color:rgba(205,221,255,.85);}',
+      '#mlsEmrCta .mlsEmrSecList{color:#cdddff;font-weight:600;}',
+      '#mlsEmrCtaManual{margin-top:12px;display:inline-block;font-size:12px;font-weight:700;color:#cdddff;',
+      '  padding:6px 12px;border-radius:8px;border:1px solid rgba(160,180,240,.5);',
+      '  background:rgba(120,150,230,.18);cursor:pointer;}',
+      '#mlsEmrCtaManual:hover{background:rgba(120,150,230,.30);}',
+      /* section tidy + empty collapse */
+      '#emrBody .mlsEmrSec{transition:opacity .15s ease;}',
+      '#emrBody .mlsEmrSec.mlsEmrSecEmpty textarea{display:none !important;}',
+      '#emrBody .mlsEmrSec.mlsEmrSecEmpty{opacity:.5;}',
+      '#emrBody .mlsEmrSec.mlsEmrSecEmpty::after{content:"empty — nothing captured yet";',
+      '  display:block;font-size:11px;color:rgba(205,221,255,.6);font-style:italic;margin-top:-2px;}',
+      '.mlsEmrRevealEmpty #emrBody .mlsEmrSec.mlsEmrSecEmpty textarea{display:block !important;}',
+      '.mlsEmrRevealEmpty #emrBody .mlsEmrSec.mlsEmrSecEmpty{opacity:1;}',
+      '.mlsEmrRevealEmpty #emrBody .mlsEmrSec.mlsEmrSecEmpty::after{display:none;}',
+      /* the old one-line hint ("No sections detected yet…") is replaced by the stepper + CTA */
+      '#emrPanel #emrHint{display:none !important;}',
+      /* empty-state: hide the ten identical boxes, show the single CTA */
+      '.mlsEmrState-empty:not(.mlsEmrRevealEmpty) #emrBody{display:none !important;}',
+      '.mlsEmrState-empty:not(.mlsEmrRevealEmpty) #mlsEmrCta{display:block !important;}',
+      /* reveal toggle bar */
+      '#mlsEmrRevealBar{display:none;margin:8px 0 2px;text-align:center;}',
+      '#mlsEmrRevealBar button{font:inherit;font-size:12px;font-weight:700;color:#cdddff;cursor:pointer;',
+      '  padding:5px 12px;border-radius:8px;border:1px solid rgba(160,180,240,.4);background:rgba(120,150,230,.12);}',
+      '#mlsEmrRevealBar button:hover{background:rgba(120,150,230,.24);}',
+      '.mlsEmrState-has.mlsEmrHasEmpties #mlsEmrRevealBar{display:block;}'
+    ].join('\n');
+    (document.head||document.documentElement).appendChild(s);
+  }
+
+  function stepper(card){
+    if(card.querySelector('#mlsEmrStepper')) return;
+    var head=card.children[0]; if(!head) return;
+    var box=document.createElement('div'); box.id='mlsEmrStepper';
+    var row='<div id="mlsEmrStepRow">';
+    for(var i=0;i<STEPS.length;i++){
+      var st=STEPS[i];
+      row+='<div class="mlsEmrStep"><span class="mlsEmrStepN">'+st[0]+'</span>'
+         +'<span><span class="mlsEmrStepT">'+st[1]+'</span>'
+         +'<span class="mlsEmrStepS">'+st[2]+'</span></span></div>';
+      if(i<STEPS.length-1) row+='<span class="mlsEmrArrow">›</span>';
+    }
+    row+='</div>';
+    row+='<div id="mlsEmrStepNote">Confirmed sections are written into <b>athenaOne</b> at the '
+       +'destinations set under <b>⚙ Writeback destination</b> (top of this window). '
+       +'Nothing is sent until you tick <b>confirm</b> and press <b>Insert confirmed</b>.</div>';
+    box.innerHTML=row;
+    if(head.nextSibling) card.insertBefore(box, head.nextSibling); else card.appendChild(box);
+  }
+
+  function cta(card){
+    if(card.querySelector('#mlsEmrCta')) return;
+    var hint=card.querySelector('#emrHint'); if(!hint) return;
+    var c=document.createElement('div'); c.id='mlsEmrCta';
+    c.innerHTML='<h4>Nothing captured yet</h4>'
+      +'<p>Record or generate a note first. MLS automatically sorts the content into these sections: '
+      +'<span class="mlsEmrSecList">History, Physical exam, Assessment, Plan, Orders, Prescriptions, '
+      +'Referrals, PT orders, Imaging orders</span>. Then review each one, tick <b>confirm</b> on the '
+      +'sections you approve, and <b>Insert confirmed</b> writes them into athenaOne.</p>'
+      +'<span id="mlsEmrCtaManual" role="button" tabindex="0">Or type sections manually</span>';
+    hint.parentNode.insertBefore(c, hint.nextSibling);
+    var m=c.querySelector('#mlsEmrCtaManual');
+    if(m) m.addEventListener('click',function(){ card.classList.add('mlsEmrRevealEmpty'); });
+  }
+
+  function revealBar(card){
+    if(card.querySelector('#mlsEmrRevealBar')) return;
+    var body=card.querySelector('#emrBody'); if(!body) return;
+    var bar=document.createElement('div'); bar.id='mlsEmrRevealBar';
+    var btn=document.createElement('button'); btn.type='button'; btn.textContent='Show empty sections';
+    btn.addEventListener('click',function(){
+      var on=card.classList.toggle('mlsEmrRevealEmpty');
+      btn.textContent=on?'Hide empty sections':'Show empty sections';
+    });
+    bar.appendChild(btn);
+    if(body.nextSibling) card.insertBefore(bar, body.nextSibling); else card.appendChild(bar);
+  }
+
+  function tagSections(body){
+    var kids=body.children, empties=0, total=0;
+    for(var i=0;i<kids.length;i++){
+      var sec=kids[i]; if(sec.id==='mlsEmrRevealBar') continue;
+      var ta=sec.querySelector&&sec.querySelector('textarea'); if(!ta) continue;
+      total++;
+      sec.classList.add('mlsEmrSec');
+      var empty=!(ta.value&&ta.value.trim().length);
+      if(empty){ sec.classList.add('mlsEmrSecEmpty'); empties++; }
+      else sec.classList.remove('mlsEmrSecEmpty');
+    }
+    return {empties:empties,total:total};
+  }
+
+  var TIPS={
+    emrAi:'Automatically sort the recorded/generated note into the sections below.',
+    emrClose:'Close this window. Nothing is written to athenaOne.',
+    emrAll:'Tick every section’s “confirm” box at once. Review the content first.',
+    emrIns:'Write the confirmed sections into athenaOne at your ⚙ Writeback destinations. This is the only step that writes.'
+  };
+  function tooltips(card){
+    Object.keys(TIPS).forEach(function(id){ var e=document.getElementById(id); if(e&&!e.title) e.title=TIPS[id]; });
+    var gear=card.querySelector('.mlsWbGear'); if(gear&&!gear.title) gear.title='Set where each section writes into athenaOne (tab, section, template).';
+    var boxes=card.querySelectorAll('#emrBody input[type=checkbox]');
+    for(var i=0;i<boxes.length;i++){ var lab=boxes[i].closest('label')||boxes[i]; if(!lab.title) lab.title='Approve this section to be included when you press “Insert confirmed”.'; }
+  }
+
+  function state(card){
+    var body=card.querySelector('#emrBody'); if(!body) return;
+    var r=tagSections(body);
+    if(r.total>0 && r.empties===r.total){ card.classList.add('mlsEmrState-empty'); card.classList.remove('mlsEmrState-has'); }
+    else { card.classList.add('mlsEmrState-has'); card.classList.remove('mlsEmrState-empty'); }
+    if(r.empties>0) card.classList.add('mlsEmrHasEmpties'); else card.classList.remove('mlsEmrHasEmpties');
+  }
+
+  function tick(){
+    try{
+      var p=document.getElementById('emrPanel'); if(!p) return;
+      var card=p.children[0]; if(!card) return;
+      css(); stepper(card); cta(card); revealBar(card); tooltips(card); state(card);
+    }catch(e){}
+  }
+  tick();
+  var iv=setInterval(tick,800);
+  var mo; try{ mo=new MutationObserver(function(){ tick(); }); mo.observe(document.body,{childList:true,subtree:true}); }catch(e){}
+
+  window.__mlsEmrClarityB28_revert=function(){
+    try{clearInterval(iv);}catch(e){}
+    try{mo&&mo.disconnect();}catch(e){}
+    var s=document.getElementById('mlsEmrClarityB28Css'); if(s)s.remove();
+    ['mlsEmrStepper','mlsEmrCta','mlsEmrRevealBar'].forEach(function(id){ var e=document.getElementById(id); if(e)e.remove(); });
+    var p=document.getElementById('emrPanel'), card=p&&p.children[0];
+    if(card){ card.classList.remove('mlsEmrState-empty','mlsEmrState-has','mlsEmrHasEmpties','mlsEmrRevealEmpty');
+      var secs=card.querySelectorAll('.mlsEmrSec'); for(var i=0;i<secs.length;i++) secs[i].classList.remove('mlsEmrSec','mlsEmrSecEmpty'); }
+    window.__mlsEmrClarityB28=0;
+  };
+})();
+
+
 /* ===== MLS UI cleanup b26 (additive, guarded, reversible) =====
    Fix 1: consolidate Writeback-destination into EMR sections (gear), hide the duplicate standalone button.
    Fix 2: remove duplicate top-right athenaOne-connected dot; tidy the overlapping bottom-right control cluster.
@@ -413,7 +610,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-05-b28';
+  var MLS_APP_BUILD='2026-07-05-b29';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
