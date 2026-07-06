@@ -1,4 +1,61 @@
 /* =========================================================================
+ * MLS Scribe -- b41 Backend-sync truth  (__mlsSyncTruthB41)  2026-07-06
+ * ROOT CAUSE (R3-7): the status dock's "Backend sync" row only ever updates
+ * when a non-GET backend request happens. A normal day (schedule already
+ * imported, nothing new to save) makes ZERO such requests -- so the row sat
+ * idle forever and looked broken ("backend sync never works"). The backend
+ * itself is healthy (/api/health {ok:true}).
+ * FIX: a real health probe every 60s (and right after any pull) drives the
+ * row honestly: green "Connected -- checked h:mm AM/PM", amber on slow,
+ * red with the reason when the backend is actually unreachable. Applied
+ * straight to the dock row with an observer so the legacy renderer can't
+ * blank it. Reversible: window.__mlsSyncTruthB41_revert().
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsSyncTruthB41) return; window.__mlsSyncTruthB41 = 1;
+  var state = { cls: "chk", txt: "Checking the MLS backend…" };
+  function t12() { var d = new Date(); var h = d.getHours(), ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return h + ":" + ("0" + d.getMinutes()).slice(-2) + " " + ap; }
+  function base() { try { return window.bkBase ? window.bkBase() : "https://scrivara-backend.onrender.com"; } catch (e) { return "https://scrivara-backend.onrender.com"; } }
+  var _f = (window.fetch && window.fetch.__orig) || window.fetch;
+  function probe() {
+    var t0 = Date.now();
+    Promise.resolve().then(function () { return _f.call(window, base() + "/api/health"); })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok && j && j.ok, ms: Date.now() - t0 }; }); })
+      .then(function (x) {
+        if (x.ok) state = { cls: x.ms > 4000 ? "chk" : "ok", txt: (x.ms > 4000 ? "Connected (slow, " + Math.round(x.ms / 1000) + "s) — " : "Connected — ") + "checked " + t12() + ". New visits save automatically when a pull finds them." };
+        else state = { cls: "bad", txt: "Backend responded abnormally — checked " + t12() + "." };
+        paint();
+      })
+      .catch(function () { state = { cls: "bad", txt: "Cannot reach the MLS backend — checked " + t12() + ". Data will sync when the connection returns." }; paint(); });
+  }
+  function rowEl() {
+    var d = document.getElementById("mlsScDock"); if (!d) return null;
+    var els = d.querySelectorAll("div,span,li");
+    for (var i = 0; i < els.length; i++) { if ((els[i].textContent || "").trim().indexOf("Backend sync") === 0 && els[i].children.length < 5) return els[i]; }
+    return null;
+  }
+  function paint() {
+    try {
+      var row = rowEl(); if (!row) return;
+      var tag = row.querySelector(".b41-sync");
+      if (!tag) { tag = document.createElement("span"); tag.className = "b41-sync"; tag.style.cssText = "display:block;font:500 11px system-ui;opacity:.9;margin:1px 0 2px"; row.appendChild(tag); }
+      var color = state.cls === "ok" ? "#2ecc71" : state.cls === "bad" ? "#ff5f56" : "#f5b942";
+      var want = (state.cls === "ok" ? "🟢 " : state.cls === "bad" ? "🔴 " : "🟡 ") + state.txt;
+      if (tag.textContent !== want) { tag.textContent = want; tag.style.color = color; }
+    } catch (e) {}
+  }
+  probe();
+  var iv1 = setInterval(probe, 60000);
+  var iv2 = setInterval(paint, 1500);
+  window.__mlsSyncTruthB41_revert = function () {
+    try { clearInterval(iv1); clearInterval(iv2); } catch (e) {}
+    try { var t = document.querySelector("#mlsScDock .b41-sync"); if (t) t.remove(); } catch (e) {}
+    window.__mlsSyncTruthB41 = 0;
+  };
+})();
+
+/* =========================================================================
  * MLS Scribe -- b40 R3 fix pack  (__mlsR3PackB40)   2026-07-06
  * ----------------------------------------------------------------------------
  * (R3-2) "0 / 149 seen" day-progress pill now counts ONLY the selected /
@@ -1974,7 +2031,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b40';
+  window.__MLS_AV = window.__MLS_AV || 'b41';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -2288,7 +2345,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b40';
+  var MLS_APP_BUILD='2026-07-06-b41';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
