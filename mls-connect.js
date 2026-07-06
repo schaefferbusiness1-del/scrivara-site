@@ -1,4 +1,399 @@
 /* =========================================================================
+ * MLS Scribe -- b39 "MLS Copilot Voice"  (__mlsCopilotVoiceB39)  2026-07-06
+ * ----------------------------------------------------------------------------
+ * ONE voice entry point wired into the SAME single-assistant brain (item 12's
+ * __mlsAsstFix chat pipeline + the /api/copilot AI + local analytics). It is
+ * NOT another assistant: the button simply opens the MLS Assistant and starts
+ * dictation through its own in-chat mic, and new voice-friendly INTENTS are
+ * registered on the assistant's public registry so spoken commands drive the
+ * REAL app functions:
+ *   "start a visit (for <name>)"  -> loads the patient + starts recording
+ *   "stop recording"              -> stops the capture
+ *   "generate the note"           -> runs the real note generator
+ *   "send it to Athena"           -> OPENS the EMR review-&-confirm modal.
+ *                                    NOTHING is pushed until the doctor
+ *                                    confirms there (note-only writeback,
+ *                                    never orders -- safety rails intact).
+ * Additive / guarded / reversible: window.__mlsCopilotVoiceB39_revert().
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsCopilotVoiceB39) return; window.__mlsCopilotVoiceB39 = { v: "b39" };
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function toast(m) { try { if (window.toast) window.toast(m, ""); } catch (e) {} }
+
+  /* ---------- the button ---------- */
+  function css() {
+    if ($("mlsVoiceB39Css")) return;
+    var st = document.createElement("style"); st.id = "mlsVoiceB39Css";
+    st.textContent = [
+      "#mlsCopVoiceBtn{position:fixed;left:12px;bottom:14px;z-index:99997;display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font:800 14px system-ui;box-shadow:0 8px 24px rgba(124,58,237,.45);cursor:pointer}",
+      "#mlsCopVoiceBtn:hover{filter:brightness(1.1)}",
+      "#mlsCopVoiceBtn.listening{animation:mlsCvPulse 1s ease-in-out infinite}",
+      "@keyframes mlsCvPulse{50%{box-shadow:0 8px 34px rgba(220,60,60,.8)}}",
+      /* keep the assistant FAB above it */
+      "#mlsAsstFab{bottom:64px!important}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+  function ensureBtn() {
+    if ($("mlsCopVoiceBtn")) return;
+    var b = document.createElement("button");
+    b.id = "mlsCopVoiceBtn"; b.type = "button";
+    b.title = "Talk to MLS — start visits, ask anything, generate notes, all by voice";
+    b.innerHTML = "\u{1F399}️ MLS Copilot Voice";
+    b.onclick = function () {
+      try {
+        /* open the ONE assistant panel */
+        var p = $("mls-assist-panel");
+        if (!p || getComputedStyle(p).display === "none") { var f = $("mlsAsstFab"); if (f) f.click(); }
+        /* start its own in-chat mic (b35) — same brain, one thread */
+        var tries = 0, iv = setInterval(function () {
+          tries++;
+          var mic = document.querySelector("#mls-assist-panel .mls-b35-mic");
+          if (mic) { clearInterval(iv); mic.click(); b.classList.add("listening"); setTimeout(function () { b.classList.remove("listening"); }, 8000); }
+          else if (tries > 20) clearInterval(iv);
+        }, 150);
+      } catch (e) {}
+    };
+    (document.body || document.documentElement).appendChild(b);
+  }
+
+  /* ---------- voice-friendly intents on the ONE assistant brain ---------- */
+  var unregs = [], registered = false;
+  function findPatient(name) {
+    name = S(name).trim().toLowerCase(); if (!name) return null;
+    try {
+      var list = (window.__mlsWhosNext && window.__mlsWhosNext.activeList && window.__mlsWhosNext.activeList()) || [];
+      for (var i = 0; i < list.length; i++) if (S(list[i].name).toLowerCase().indexOf(name) >= 0) return list[i];
+    } catch (e) {}
+    try {
+      var ps = (window.getPatients && window.getPatients()) || [];
+      for (var j = 0; j < ps.length; j++) if (S(ps[j].name).toLowerCase().indexOf(name) >= 0) return { name: ps[j].name, dob: ps[j].dob || "" };
+    } catch (e) {}
+    return null;
+  }
+  function loadPatient(p) {
+    try {
+      var nm = $("heroPtName"); if (nm) { nm.value = p.name || ""; nm.dispatchEvent(new Event("input", { bubbles: true })); }
+      var db = $("heroPtDob"); if (db) { db.value = p.dob || ""; db.dispatchEvent(new Event("input", { bubbles: true })); }
+      if (typeof window._heroSyncName === "function") window._heroSyncName();
+    } catch (e) {}
+  }
+  function registerIntents() {
+    if (registered) return;
+    var fx = window.__mlsAsstFix;
+    if (!fx || typeof fx.registerIntent !== "function") return;
+    registered = true;
+    unregs.push(fx.registerIntent("voice-start-visit", function (q) {
+      var m = S(q).match(/^(?:please\s+)?(?:start|begin)\s+(?:a\s+|the\s+)?visit(?:\s+(?:for|with)\s+(.+))?$/i);
+      if (!m) return false;
+      try { if (typeof window.showView === "function") window.showView("visit"); } catch (e) {}
+      var who = m[1] ? findPatient(m[1]) : null;
+      if (m[1] && !who) { toast('Could not find "' + m[1] + '" on the schedule — tap their box in Who’s Next.'); return true; }
+      if (who) loadPatient(who);
+      try { if (typeof window.startCapture === "function") window.startCapture(); } catch (e) {}
+      toast("\u{1F399}️ Visit started" + (who ? (" for " + who.name) : "") + " — recording. Say “stop recording” when done.");
+      return true;
+    }, true));
+    unregs.push(fx.registerIntent("voice-stop-recording", function (q) {
+      if (!/^(?:please\s+)?(?:stop|end|finish)(?:\s+the)?\s+(?:recording|capture|visit)$/i.test(S(q).trim())) return false;
+      try { if (typeof window.stopCapture === "function") window.stopCapture(); } catch (e) {}
+      toast("⏹ Recording stopped. Say “generate the note” when ready.");
+      return true;
+    }, true));
+    unregs.push(fx.registerIntent("voice-generate-note", function (q) {
+      if (!/^(?:please\s+)?(?:generate|write|create|make)(?:\s+(?:the|my|a))?\s+note$/i.test(S(q).trim())) return false;
+      try { if (typeof window.showView === "function") window.showView("visit"); } catch (e) {}
+      try { if (typeof window.generateNote === "function") window.generateNote(); } catch (e) {}
+      toast("\u{1F4DD} Generating the note from your recording…");
+      return true;
+    }, true));
+    unregs.push(fx.registerIntent("voice-send-to-athena", function (q) {
+      if (!/^(?:please\s+)?send\s+(?:it|the\s+(?:visit|note)|everything)?\s*to\s+athena(?:one)?$/i.test(S(q).trim())) return false;
+      /* SAFETY: never auto-push. Open the review-&-confirm modal; the doctor
+         confirms + inserts there (note-only writeback path, no orders). */
+      try { var e = $("emrBtn"); if (e) e.click(); } catch (e2) {}
+      toast("\u{1F5C2}️ Review & confirm opened — nothing goes to Athena until you confirm it there.");
+      return true;
+    }, true));
+  }
+
+  function tick() { try { css(); ensureBtn(); registerIntents(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 1200);
+
+  window.__mlsCopilotVoiceB39_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { unregs.forEach(function (u) { try { u(); } catch (e) {} }); } catch (e) {}
+    try { var b = $("mlsCopVoiceBtn"); if (b) b.remove(); } catch (e) {}
+    try { var s = $("mlsVoiceB39Css"); if (s) s.remove(); } catch (e) {}
+    window.__mlsCopilotVoiceB39 = 0;
+  };
+})();
+
+/* =========================================================================
+ * MLS Scribe -- b39 Studio overhaul + ONE auto-start tour  (__mlsStudioTourB39)
+ * 2026-07-06. Additive / guarded / reversible: window.__mlsStudioTourB39_revert().
+ *
+ * (R2-1) ONE How-To: the two duplicate "How-To Guide" menu entries (v1
+ *   #mlsTourMenuItem + v2 #mlsTourMenuItemV2) are CSS-hidden; ONE new menu
+ *   entry opens the NEW comprehensive tour. The tour AUTO-STARTS the first
+ *   time someone loads the app (localStorage mls_tour_seen_v3), covers the
+ *   whole product, and never touches real data.
+ * (R2-2) AI Studio overhaul: Copilot + "Build a custom tool" move to the TOP
+ *   (they are the magic); the widget result appears right beneath them; the
+ *   Study Groups machinery becomes a clearly-labeled COLLAPSIBLE "advanced"
+ *   section at the bottom with a plain-English 1-2-3 explainer. All original
+ *   elements/IDs/handlers untouched -- only reordered/wrapped.
+ * (R2-3) Build-a-custom-tool upgrades: every successful build AUTO-SAVES to
+ *   "My creations" (nothing lost); an "✏️ Improve this tool" box under the
+ *   result iterates on the widget with one click; Enter-to-build; clearer
+ *   status. Uses the existing /api/widget/generate + saved-widget plumbing.
+ * SAFETY: UI only. No Athena writes, no orders, no PHI logged.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsStudioTourB39) return; window.__mlsStudioTourB39 = { v: "b39" };
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  /* ======================= CSS ======================= */
+  function css() {
+    if ($("mlsB39Css")) return;
+    var st = document.createElement("style"); st.id = "mlsB39Css";
+    st.textContent = [
+      /* ONE How-To menu entry: hide the two legacy tour items */
+      "#mlsTourMenuItem,#mlsTourMenuItemV2{display:none!important}",
+      /* Studio: study-groups advanced section */
+      "#mlsB39SgWrap{margin:18px 0 8px;border:1px solid var(--line,#dbe4f0);border-radius:14px;background:var(--card,#fff);overflow:hidden}",
+      "#mlsB39SgHead{display:flex;align-items:center;gap:10px;width:100%;padding:14px 18px;background:none;border:0;cursor:pointer;text-align:left;font:700 15px system-ui;color:var(--ink,#16233a)}",
+      "#mlsB39SgHead .b39-caret{margin-left:auto;transition:transform .2s}",
+      "#mlsB39SgWrap.open #mlsB39SgHead .b39-caret{transform:rotate(180deg)}",
+      "#mlsB39SgBody{display:none;padding:2px 16px 16px}",
+      "#mlsB39SgWrap.open #mlsB39SgBody{display:block}",
+      "#mlsB39SgSteps{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0 12px}",
+      "#mlsB39SgSteps span{font:600 12.5px system-ui;color:#3b5f9e;background:#eef4ff;border:1px solid #d5e2f8;border-radius:999px;padding:5px 12px}",
+      "#mlsB39SgWrap #mls-sg-root{margin:0!important}",
+      /* Improve-this-tool row */
+      "#mlsB39Improve{display:flex;gap:8px;margin-top:10px}",
+      "#mlsB39ImproveTx{flex:1;font:500 13.5px system-ui;padding:9px 12px;border:1px solid var(--line,#cdd9ea);border-radius:10px}",
+      "#mlsB39ImproveBtn{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;border:0;border-radius:10px;padding:9px 16px;font:700 13.5px system-ui;cursor:pointer}",
+      "#mlsB39ImproveBtn:disabled{opacity:.6}",
+      /* Tour */
+      "#mlsB39TourOv{position:fixed;inset:0;z-index:2147483200;background:rgba(8,16,34,.55);display:flex;align-items:flex-end;justify-content:center;pointer-events:auto}",
+      "#mlsB39TourCard{margin:0 16px 26px;max-width:560px;width:100%;background:linear-gradient(180deg,#102a49,#0d2138);border:1px solid rgba(140,170,240,.4);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.55);padding:20px 22px;color:#eaf1ff;font-family:system-ui}",
+      "#mlsB39TourCard h3{margin:0 0 6px;font-size:17px}",
+      "#mlsB39TourCard p{margin:0 0 14px;font-size:14px;line-height:1.55;color:#c8d6f2}",
+      "#mlsB39TourCard .b39-row{display:flex;align-items:center;gap:8px}",
+      "#mlsB39TourCard .b39-step{font-size:12px;color:#8ea6d4;margin-right:auto}",
+      "#mlsB39TourCard button{font:700 13px system-ui;border-radius:9px;padding:8px 15px;cursor:pointer;border:1px solid rgba(160,190,255,.4)}",
+      ".b39-skip{background:none;color:#9fb4dd}",
+      ".b39-back{background:rgba(255,255,255,.1);color:#eaf1ff}",
+      ".b39-next{background:#2f6bed;color:#fff;border-color:#2f6bed!important}",
+      ".mlsB39Spot{outline:3px solid #5b8cff!important;outline-offset:3px;border-radius:10px;box-shadow:0 0 0 6px rgba(91,140,255,.25)!important;transition:outline .15s}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  /* ======================= (R2-2) Studio reorder ======================= */
+  var _sgOpenKey = "mlsB39SgOpen";
+  function reorderStudio() {
+    try {
+      var sv = $("studioView"); if (!sv) return;
+      var sg = $("mls-sg-root"); if (!sg || $("mlsB39SgWrap")) { placeOrder(sv); return; }
+      /* wrap study groups in the collapsible advanced section */
+      var wrap = document.createElement("div"); wrap.id = "mlsB39SgWrap";
+      wrap.innerHTML =
+        '<button type="button" id="mlsB39SgHead">&#128202; Study Groups <span style="font:600 12px system-ui;color:#7d8ba1">&mdash; advanced: build a patient cohort, then run a study (graph + Excel + PDF)</span><span class="b39-caret">&#9662;</span></button>' +
+        '<div id="mlsB39SgBody"><div id="mlsB39SgSteps"><span>1&#65039;&#8419; Create or pick a group</span><span>2&#65039;&#8419; Add patients (type, paste a list, or pull from Athena)</span><span>3&#65039;&#8419; Run the study &mdash; you get a graph, an Excel file and a PDF</span></div></div>';
+      sg.parentNode.insertBefore(wrap, sg);
+      wrap.querySelector("#mlsB39SgBody").appendChild(sg);
+      var open = false; try { open = localStorage.getItem(_sgOpenKey) === "1"; } catch (e) {}
+      if (open) wrap.classList.add("open");
+      wrap.querySelector("#mlsB39SgHead").addEventListener("click", function () {
+        wrap.classList.toggle("open");
+        try { localStorage.setItem(_sgOpenKey, wrap.classList.contains("open") ? "1" : "0"); } catch (e) {}
+      });
+      placeOrder(sv);
+    } catch (e) {}
+  }
+  function placeOrder(sv) {
+    try {
+      /* target order: title -> pay -> copilot grid (anchor/card/right) -> result -> advanced SG */
+      var ids = ["mlsB39SgWrap", "studioResultCard"];
+      ids.forEach(function (id) { var el = $(id); if (el && el.parentNode === sv) sv.appendChild(el); });
+      /* result card should come BEFORE the advanced section */
+      var res = $("studioResultCard"), wrap = $("mlsB39SgWrap");
+      if (res && wrap && res.parentNode === sv && wrap.parentNode === sv) sv.insertBefore(res, wrap);
+      /* pay button right under the title strip */
+      var pay = sv.querySelector(".mls-b34-pay"), title = sv.querySelector(".sx-title");
+      if (pay && title && title.nextSibling !== pay) sv.insertBefore(pay, title.nextSibling);
+    } catch (e) {}
+  }
+
+  /* ======================= (R2-3) Build-a-tool upgrades ======================= */
+  var _origRender = null;
+  function toolUpgrades() {
+    try {
+      /* auto-save every successful build (wrap renderStudioWidget once) */
+      if (typeof window.renderStudioWidget === "function" && !window.renderStudioWidget.__b39) {
+        _origRender = window.renderStudioWidget;
+        var w = function (html, title) {
+          var r = _origRender.apply(this, arguments);
+          try {
+            if (html && typeof window.studioGetSaved === "function" && typeof window.studioSetSaved === "function") {
+              var arr = window.studioGetSaved();
+              var t = S(title || "Widget").slice(0, 80);
+              if (!arr.length || arr[0].html !== html) {
+                arr.unshift({ title: t, html: S(html), ts: Date.now(), auto: true });
+                window.studioSetSaved(arr);
+                if (typeof window.renderStudioSaved === "function") window.renderStudioSaved();
+              }
+            }
+          } catch (e) {}
+          try { ensureImprove(); } catch (e) {}
+          return r;
+        };
+        w.__b39 = true; window.renderStudioWidget = w;
+      }
+      /* Enter-to-build in the prompt box */
+      var ta = $("studioPrompt");
+      if (ta && !ta.__b39) {
+        ta.__b39 = 1;
+        ta.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); try { window.generateStudioWidget && window.generateStudioWidget(); } catch (e) {} }
+        });
+        ta.placeholder = (ta.placeholder || "") + "  (Ctrl+Enter builds it)";
+      }
+      ensureImprove();
+    } catch (e) {}
+  }
+  function ensureImprove() {
+    try {
+      var card = $("studioResultCard"); if (!card || $("mlsB39Improve")) return;
+      var row = document.createElement("div"); row.id = "mlsB39Improve";
+      row.innerHTML = '<input id="mlsB39ImproveTx" type="text" placeholder="&#9999;&#65039; Tell MLS what to change &mdash; e.g. add a search box, make the buttons bigger, chart it by month&hellip;"><button type="button" id="mlsB39ImproveBtn">&#10024; Improve it</button>';
+      card.appendChild(row);
+      function go() {
+        var tx = $("mlsB39ImproveTx"), btn = $("mlsB39ImproveBtn");
+        var req = S(tx && tx.value).trim(); if (!req) return;
+        var base = S(window.studioLastPrompt || ($("studioPrompt") || {}).value || "").trim();
+        var p = $("studioPrompt"); if (!p) return;
+        p.value = (base ? (base + ". ") : "") + "Now also: " + req;
+        if (btn) { btn.disabled = true; setTimeout(function () { btn.disabled = false; }, 4000); }
+        if (tx) tx.value = "";
+        try { window.generateStudioWidget && window.generateStudioWidget(); } catch (e) {}
+      }
+      $("mlsB39ImproveBtn").addEventListener("click", go);
+      $("mlsB39ImproveTx").addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
+    } catch (e) {}
+  }
+
+  /* ======================= (R2-1) THE tour ======================= */
+  var SEEN = "mls_tour_seen_v3";
+  var _tourIdx = 0, _spotEl = null;
+  var STEPS = [
+    { t: "\u{1F44B} Welcome to MLS Scribe", p: "This 2-minute tour shows you everything. You can leave any time and re-open it from Menu → How-To Guide. Nothing in the tour touches real patient data.", go: "visit" },
+    { t: "\u{1F7E2} athenaOne connection", p: "Bottom-left, next to the MLS Assistant, one status panel tells you the truth about your Athena connection, pulls, matching and writeback readiness. Green dot = connected. If it is red, open athenaOne in a tab and sign in — MLS sees it automatically.", sel: "#mlsScDock" },
+    { t: "\u{1F4CB} Who's Next — your day at a glance", p: "The blue boxes show the 5 patients closest to right now (12-hour times), each with their \u{1F382} birthday. Tap a box and MLS loads them — name and DOB auto-fill from the Athena schedule. “More” expands the whole day.", sel: "#heroToday", go: "visit" },
+    { t: "\u{1F399}️ Just talk — MLS writes the note", p: "Pick a patient, hit Start recording, and talk normally. MLS turns the conversation into a complete note. Prefer your phone? Scan the QR card to record from it.", sel: "#heroRecBtn" },
+    { t: "\u{1F9ED} The guided visit wizard", p: "The 4 steps across the top — Patient → Capture → Note → Sign — walk you through a full visit so you never wonder what's next.", sel: "#mls-rt-bar" },
+    { t: "\u{1F5C2}️ EMR sections — review & confirm", p: "After a note is generated, open EMR sections from inside the MLS Assistant. MLS auto-sorts your note into chart sections; you review, confirm, and only then does anything go to athenaOne. The ⚙ gear sets exactly WHERE each section lands.", sel: "#mlsAsstFab" },
+    { t: "\u{1F680} Send the visit to Athena", p: "One button pushes the confirmed visit into athenaOne. Nothing is ever sent without your confirm — and orders are never auto-created.", },
+    { t: "\u{1F4C5} Calendar", p: "Month, week and day views of the real pulled schedule, scoped to you or any provider. The Pay Reports button lives here too.", go: "calendar", sel: "#calendarView .mls-b34-pay" },
+    { t: "\u{1F4B5} Pay Reports (Premium)", p: "Per-provider patient counts, half-day credits, days × rate and clearly-labeled AI-estimated collections — with Excel export. Find it at the top of Calendar and AI Studio.", },
+    { t: "✨ AI Studio (Premium)", p: "Ask the MLS Copilot anything about your practice — it reads your own data. “Build a custom tool” turns a sentence into a working dashboard, calculator or worklist; every build saves to My creations, and the Improve box refines it.", go: "studio", sel: "#copilotCard" },
+    { t: "\u{1F4CA} Study Groups (advanced)", p: "Down at the bottom of AI Studio: build a named patient cohort, then run a study that outputs a graph, an Excel file and a PDF. Collapsed until you need it.", sel: "#mlsB39SgWrap" },
+    { t: "⭐ Reviews & reputation (Premium)", p: "MLS auto-finds your Google listings and reviews and helps you market the practice. Open it from Menu → Reviews & reputation.", },
+    { t: "\u{1F916} ONE assistant for everything", p: "The MLS Assistant (bottom-left) is your single helper: chat or tap \u{1F3A4} and talk. It pulls schedules, answers questions like “how many patients did Dr. X see this month”, opens charts, and can change where notes write back — just ask.", sel: "#mlsAsstFab" },
+    { t: "❓ Help, any time", p: "The Help button (top-right) opens the written step-by-step guide, and this tour is always in Menu → \u{1F4D8} How-To Guide. That's it — go see patients, MLS handles the paperwork. \u{1F389}", sel: "#nav_help" }
+  ];
+  function unspot() { try { if (_spotEl) _spotEl.classList.remove("mlsB39Spot"); _spotEl = null; } catch (e) {} }
+  function spot(sel) {
+    unspot();
+    if (!sel) return;
+    try {
+      var el = document.querySelector(sel); if (!el) return;
+      el.classList.add("mlsB39Spot"); _spotEl = el;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (e) {}
+  }
+  function showStep() {
+    var s = STEPS[_tourIdx]; if (!s) return endTour(true);
+    try { if (s.go && typeof window.showView === "function") window.showView(s.go); } catch (e) {}
+    var ov = $("mlsB39TourOv");
+    if (!ov) {
+      ov = document.createElement("div"); ov.id = "mlsB39TourOv";
+      ov.addEventListener("click", function (ev) { if (ev.target === ov) {/* keep open */} });
+      document.body.appendChild(ov);
+    }
+    ov.innerHTML = '<div id="mlsB39TourCard"><h3>' + esc(s.t) + '</h3><p>' + esc(s.p) + '</p>' +
+      '<div class="b39-row"><span class="b39-step">Step ' + (_tourIdx + 1) + ' of ' + STEPS.length + '</span>' +
+      '<button type="button" class="b39-skip">Skip tour</button>' +
+      (_tourIdx > 0 ? '<button type="button" class="b39-back">&#8592; Back</button>' : '') +
+      '<button type="button" class="b39-next">' + (_tourIdx === STEPS.length - 1 ? "Finish ✓" : "Next →") + '</button></div></div>';
+    ov.querySelector(".b39-skip").onclick = function () { endTour(true); };
+    var bk = ov.querySelector(".b39-back"); if (bk) bk.onclick = function () { _tourIdx = Math.max(0, _tourIdx - 1); showStep(); };
+    ov.querySelector(".b39-next").onclick = function () { _tourIdx++; if (_tourIdx >= STEPS.length) endTour(true); else showStep(); };
+    setTimeout(function () { spot(s.sel); }, s.go ? 450 : 0);
+  }
+  function startTour() { _tourIdx = 0; showStep(); }
+  function endTour(markSeen) {
+    unspot();
+    var ov = $("mlsB39TourOv"); if (ov) ov.remove();
+    if (markSeen) { try { localStorage.setItem(SEEN, "1"); } catch (e) {} }
+    try { if (typeof window.showView === "function") window.showView("visit"); } catch (e) {}
+  }
+  function menuItem() {
+    try {
+      var panel = $("mlsTbMenuPanel"); if (!panel || $("mlsB39MenuItem")) return;
+      var btn = document.createElement("button");
+      btn.id = "mlsB39MenuItem"; btn.className = "mlsTbItem"; btn.type = "button";
+      btn.innerHTML = "\u{1F4D8} How-To Guide";
+      btn.onclick = function () { try { panel.style.display = "none"; } catch (e) {} startTour(); };
+      panel.insertBefore(btn, panel.firstChild);
+    } catch (e) {}
+  }
+  var _autoTried = false;
+  function autoStart() {
+    if (_autoTried) return;
+    try {
+      if (localStorage.getItem(SEEN) === "1") { _autoTried = true; return; }
+      /* only when actually in the app (logged in, visit view exists and is painted) */
+      var vv = $("visitView"); var lv = $("loginView");
+      var inApp = vv && (!lv || lv.offsetParent === null);
+      if (!inApp) return;
+      if ($("mlsBootVeil") || $("sfGateLoading") && $("sfGateLoading").offsetParent !== null) return;
+      _autoTried = true;
+      setTimeout(startTour, 1200);
+    } catch (e) {}
+  }
+
+  /* ======================= ticks ======================= */
+  function tick() { try { css(); reorderStudio(); toolUpgrades(); menuItem(); autoStart(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 1000);
+
+  window.__mlsStudioTourB39.start = startTour;
+  window.__mlsStudioTourB39_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    endTour(false);
+    try { var s = $("mlsB39Css"); if (s) s.remove(); } catch (e) {}
+    try { var m = $("mlsB39MenuItem"); if (m) m.remove(); } catch (e) {}
+    try { var im = $("mlsB39Improve"); if (im) im.remove(); } catch (e) {}
+    try {
+      var wrap = $("mlsB39SgWrap"), sg = $("mls-sg-root");
+      if (wrap && sg) { wrap.parentNode.insertBefore(sg, wrap); wrap.remove(); }
+    } catch (e) {}
+    try { if (_origRender && window.renderStudioWidget && window.renderStudioWidget.__b39) window.renderStudioWidget = _origRender; } catch (e) {}
+    window.__mlsStudioTourB39 = 0;
+  };
+})();
+
+/* =========================================================================
  * MLS Scribe -- b36 dock-left enforcement  (__mlsDockLeftB36)  2026-07-06
  * The merged connection/status panel (#mlsScDock) must LIVE bottom-LEFT with
  * the MLS Assistant (item 15). Two older modules (__mlsUiCleanupB26 layout()
@@ -1076,7 +1471,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b38';
+  window.__MLS_AV = window.__MLS_AV || 'b39';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -1390,7 +1785,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b38';
+  var MLS_APP_BUILD='2026-07-06-b39';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;

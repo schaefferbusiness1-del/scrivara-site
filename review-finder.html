@@ -208,5 +208,129 @@ function testimonials(){
 }
 load(); renderPlatforms(); dash();
 </script>
+<script>
+/* =====================================================================
+   __mlsRepAuto (b40, 2026-07-06) — the AUTOMATIC reputation flow.
+   1) AUTO-SCAN: the moment the page opens (or you hit Save), MLS calls the
+      backend Google Places proxy and fills your live Google listing(s),
+      star rating, review count and latest reviews. Zero manual steps.
+   2) AI LISTING: paste/upload the doctor's resume & materials once; MLS
+      writes a strong, marketing-grade Google Business listing from the
+      real data (uses your signed-in MLS AI; same-origin token).
+   3) Optional MLS Marketing (paid) upsell.
+   Compliant: reads real reviews only; never fabricates or auto-posts.
+   ===================================================================== */
+(function(){
+  var BK='https://scrivara-backend.onrender.com';
+  function tok(){ try{ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }catch(e){ return ''; } }
+  function el(id){ return document.getElementById(id); }
+  function h(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function stars(r){ if(r==null) return ''; var n=Math.round(r); var out=''; for(var i=0;i<5;i++) out+= i<n?'★':'☆'; return out; }
+
+  /* ---------- inject the three new cards right under the doctor card ---------- */
+  var docCard = el('dName') ? el('dName').closest('.card') : null;
+  var host=document.createElement('div');
+  host.innerHTML =
+    '<div class="card" id="repLiveCard"><h2>🌐 Your live Google results <span class="chip ok" id="repLiveChip" style="display:none">auto-found</span></h2>'+
+    '<p class="hint">MLS finds your real Google listing(s) automatically — rating, review count and the latest reviews. Nothing to paste.</p>'+
+    '<div id="repLiveBody"><div class="note">Enter the practice (and city) above — results appear here automatically.</div></div>'+
+    '<div class="row" style="margin-top:10px"><button class="btn ghost" onclick="window.__repScan(true)">↻ Re-scan now</button><span class="note" id="repLiveNote"></span></div></div>'+
+
+    '<div class="card" id="repAiCard"><h2>✨ Your Google listing, written by MLS</h2>'+
+    '<p class="hint">Add the doctor’s resume / bio / anything that shows what makes the practice great (paste text or attach a .txt/.md file). MLS combines it with your REAL reviews and writes a listing that markets you.</p>'+
+    '<textarea id="repMat" placeholder="Paste the doctor’s resume, bio, awards, special training, services…"></textarea>'+
+    '<div class="row" style="margin-top:8px"><input type="file" id="repMatFile" accept=".txt,.md,.text" style="max-width:280px">'+
+    '<button class="btn violet" id="repGenBtn" onclick="window.__repGen()">✨ Write my Google listing</button><span class="note" id="repGenNote"></span></div>'+
+    '<div id="repGenOut"></div></div>'+
+
+    '<div class="card" id="repUpsell" style="border-color:rgba(124,58,237,.5)"><h2>🚀 Want MLS to run this for you?</h2>'+
+    '<p class="hint"><b>MLS Marketing (paid add-on):</b> we keep your listing optimized month after month, help you respond to every review, and run compliant review-request campaigns to real patients — so the practice grows while you see patients.</p>'+
+    '<div class="row"><button class="btn green" onclick="try{localStorage.setItem(\'mlsRepUpsell\',\'interested\');}catch(e){};this.textContent=\'✓ Noted — MLS will reach out\';this.disabled=true;">I’m interested</button><span class="note">No commitment — this just tells MLS you’d like details.</span></div></div>';
+  if(docCard && docCard.parentNode){ docCard.parentNode.insertBefore(host, docCard.nextSibling); }
+  else document.querySelector('.wrap').appendChild(host);
+
+  try{ el('repMatFile').addEventListener('change', function(){
+    var f=this.files&&this.files[0]; if(!f) return;
+    var rd=new FileReader(); rd.onload=function(){ try{ el('repMat').value=(el('repMat').value?el('repMat').value+'\n\n':'')+String(rd.result||'').slice(0,20000); }catch(e){} }; rd.readAsText(f);
+  }); }catch(e){}
+  try{ var saved=localStorage.getItem('mlsRepMat'); if(saved) el('repMat').value=saved; el('repMat').addEventListener('input', function(){ try{ localStorage.setItem('mlsRepMat', el('repMat').value.slice(0,40000)); }catch(e){} }); }catch(e){}
+
+  /* ---------- 1) auto-scan ---------- */
+  var lastData=null, scanning=false;
+  window.__repScan=function(force){
+    if(scanning) return; 
+    var d; try{ d=doc(); }catch(e){ d={}; }
+    var practice=(d.practice||'').trim(), doctor=(d.name||'').trim(), city=(d.city||'').trim();
+    if(!practice && !doctor){ el('repLiveBody').innerHTML='<div class="note">Enter the practice or doctor name above first.</div>'; return; }
+    scanning=true; el('repLiveNote').textContent='Scanning Google…';
+    var qs='practice='+encodeURIComponent(practice)+'&doctor='+encodeURIComponent(doctor)+'&city='+encodeURIComponent(city);
+    fetch(BK+'/api/reviews/find?'+qs).then(function(r){return r.json();}).then(function(j){
+      scanning=false; el('repLiveNote').textContent='';
+      if(!j||!j.ok){ el('repLiveBody').innerHTML='<div class="note">⚠️ '+h((j&&(j.detail||j.error))||'Could not reach the review service.')+'</div>'; return; }
+      lastData=j;
+      if(!j.listings||!j.listings.length){ el('repLiveBody').innerHTML='<div class="note">No Google listing found yet for “'+h(j.query)+'” — try adding the city, or claim your listing on Google Business Profile (a gap worth fixing!).</div>'; return; }
+      el('repLiveChip').style.display='inline-block';
+      var htmlOut=j.listings.map(function(L,i){
+        return '<div class="plat" style="margin-bottom:10px"><div class="ph"><span class="nm">'+(i===0?'⭐ ':'')+h(L.name)+'</span>'+(L.rating!=null?('<span class="chip ok">'+h(String(L.rating))+' ★ · '+h(String(L.count))+' reviews</span>'):'<span class="chip miss">no rating yet</span>')+'</div>'+
+          '<div class="sub2">'+h(L.address||'')+'</div>'+
+          (L.rating!=null?('<div class="stars">'+stars(L.rating)+'</div>'):'')+
+          (L.mapsUri?('<a href="'+h(L.mapsUri)+'" target="_blank" rel="noopener">Open on Google Maps ↗</a>'):'')+'</div>';
+      }).join('');
+      if(j.reviews&&j.reviews.length){
+        htmlOut+='<div style="margin-top:8px"><b>Latest Google reviews:</b>'+j.reviews.slice(0,5).map(function(rv){
+          return '<div class="quote">'+stars(rv.rating)+' “'+h((rv.text||'').slice(0,240))+'” <span class="note">— '+h(rv.author||'a patient')+(rv.when?(', '+h(rv.when)):'')+'</span></div>';
+        }).join('')+'</div>';
+      }
+      el('repLiveBody').innerHTML=htmlOut;
+      /* auto-fill the Google + Google Maps platform capture so KPIs/coverage light up */
+      try{
+        var P=j.listings[0];
+        if(P&&P.rating!=null&&typeof CAP==='object'){ ['google','gmaps'].forEach(function(k){ CAP[k]={r:P.rating,c:P.count,none:false}; }); if(typeof save==='function') save(); }
+      }catch(e){}
+    }).catch(function(){ scanning=false; el('repLiveNote').textContent=''; el('repLiveBody').innerHTML='<div class="note">⚠️ Network problem reaching the review service.</div>'; });
+  };
+
+  /* ---------- 2) AI listing ---------- */
+  window.__repGen=function(){
+    var t=tok();
+    var note=el('repGenNote'), out=el('repGenOut'), btn=el('repGenBtn');
+    if(!t){ note.textContent='Open this from inside MLS while signed in (the AI uses your MLS account).'; return; }
+    var d; try{ d=doc(); }catch(e){ d={}; }
+    var mat=(el('repMat').value||'').trim();
+    var revTxt=''; try{ revTxt=(lastData&&lastData.reviews||[]).slice(0,5).map(function(r){return '- "'+(r.text||'').slice(0,200)+'" ('+(r.rating||'?')+' stars)';}).join('\n'); }catch(e){}
+    var lst=''; try{ var P=lastData&&lastData.primary; if(P) lst=P.name+' | '+(P.address||'')+' | '+(P.rating||'?')+' stars, '+(P.count||0)+' reviews'; }catch(e){}
+    var prompt='Write an optimized Google Business Profile for this medical practice that markets it strongly but truthfully.\n'+
+      'Doctor: '+(d.name||'')+' | Specialty: '+(d.spec||'')+' | Practice: '+(d.practice||'')+' | City: '+(d.city||'')+' | Website: '+(d.site||'')+'\n'+
+      (lst?('Current Google listing: '+lst+'\n'):'')+
+      (revTxt?('Real patient reviews:\n'+revTxt+'\n'):'')+
+      (mat?('Doctor-provided materials (resume/bio):\n'+mat.slice(0,6000)+'\n'):'')+
+      'Output EXACTLY these sections, each starting with the header on its own line:\n'+
+      '== BUSINESS DESCRIPTION == (max 750 characters, patient-friendly, why choose this practice)\n'+
+      '== SERVICES == (bulleted list of services to add to the profile)\n'+
+      '== HIGHLIGHTS == (short attributes/selling points)\n'+
+      '== POSTS == (2 short Google-post drafts announcing what the practice offers)\n'+
+      '== REVIEW REPLIES == (a warm reply template for 5-star reviews and a professional HIPAA-safe reply template for critical reviews; never confirm someone is a patient)\n'+
+      'Truthful only; do not invent credentials that are not in the materials.';
+    btn.disabled=true; note.textContent='Writing your listing… (a few seconds)';
+    fetch(BK+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({prompt:prompt,system:'You are an expert healthcare marketing copywriter. Truthful, compliant, warm, specific.'})})
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+      .then(function(x){
+        btn.disabled=false; note.textContent='';
+        var text=(x.j&&(x.j.text||x.j.reply))||'';
+        if(!x.ok||!text){ note.textContent=(x.j&&x.j.error)||'The AI is busy — try again in a minute.'; return; }
+        var secs=text.split(/==\s*([A-Z ]+?)\s*==/).filter(function(s){return s.trim();});
+        var htmlOut='';
+        if(secs.length>=2){ for(var i=0;i+1<secs.length;i+=2){ var nm2=secs[i].trim(), body=secs[i+1].trim(); htmlOut+='<div class="out" style="margin-top:10px"><b>'+h(nm2.charAt(0)+nm2.slice(1).toLowerCase())+'</b> <button class="btn ghost" style="padding:3px 10px;font-size:11px;float:right" onclick="navigator.clipboard.writeText(this.parentNode.querySelector(\'pre\').textContent)">📋 Copy</button><pre style="white-space:pre-wrap;font:inherit;margin:8px 0 0">'+h(body)+'</pre></div>'; } }
+        else htmlOut='<div class="out" style="margin-top:10px"><pre style="white-space:pre-wrap;font:inherit;margin:0">'+h(text)+'</pre></div>';
+        htmlOut+='<div class="note" style="margin-top:8px">Paste each section into your Google Business Profile (business.google.com). MLS never auto-posts — you stay in control.</div>';
+        out.innerHTML=htmlOut;
+      }).catch(function(){ btn.disabled=false; note.textContent='Network problem — try again.'; });
+  };
+
+  /* auto-run on load (when details are saved) + after every Save */
+  try{ var _save=window.save; if(typeof _save==='function'){ window.save=function(){ var r=_save.apply(this,arguments); try{ window.__repScan(); }catch(e){} return r; }; } }catch(e){}
+  setTimeout(function(){ try{ window.__repScan(); }catch(e){} }, 400);
+})();
+</script>
 </body>
 </html>
