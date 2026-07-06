@@ -538,7 +538,15 @@
       var identity = res.identity || { name: res.name, dob: res.dob };
       var visits = res.visits || [];
       if (res._fallback && (!visits || !visits.length) && res._chart) {
-        // ingest whatever the single chart had
+        /* IDENTITY GUARD (2026-07-06): never ingest an open chart that
+           belongs to someone else. Verify any identity the chart declares
+           (name / DOB / leading "<Name> is a patient" in the summary). */
+        var cnm = (res._chart.name || res._chart.patientName || (S(res._chart.summary).match(/^\s*([A-Z][A-Za-z'-]+(?: [A-Z][A-Za-z'.-]+){1,3}) is a patient/) || [])[1] || '');
+        var cvv = verifyIdentity(p, { name: cnm || p.name, dob: res._chart.dob });
+        if ((cnm && !cvv.nameHit) || (cvv.dobPresent && !cvv.dobEqual)) {
+          throw new Error('Safety stop — the open athenaOne chart is ' + (cnm || 'a different patient') + ', not ' + S(p.name) + '. Nothing saved. Open the correct patient in athenaOne and try again.');
+        }
+        // ingest the identity-checked single chart
         var added = M().ingestChart(p, res._chart, 'athena-copy');
         st('Captured the open chart (' + added.length + ' entr' + (added.length === 1 ? 'y' : 'ies') + '). For a full per-visit pull, update MLS Assist.');
         return ensureAndDone(p, st, true);
@@ -612,13 +620,42 @@
     if (!isFn(window._savePatientChart)) return false;
     if (window._savePatientChart.__mlsWrapped) return true;
     var orig = window._savePatientChart;
+    var norm2 = function (s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); };
+    var tokset = function (s) { return norm2(s).split(' ').filter(function (x) { return x.length > 1; }).sort().join(' '); };
+    var chartIdent = function (chart) {
+      var nm = (chart && (chart.name || chart.patientName || chart.patient)) || '';
+      if (!nm && chart && chart.summary) { var m = String(chart.summary).match(/^\s*([A-Z][A-Za-z'-]+(?: [A-Z][A-Za-z'.-]+){1,3}) is a patient/); if (m) nm = m[1]; }
+      return { name: nm, dob: (chart && chart.dob) || '' };
+    };
+    var namesMatch = function (a, b) {
+      if (!a || !b) return true; /* nothing to compare -> cannot veto */
+      var ta = norm2(a).split(' ').filter(function (x) { return x.length > 1; });
+      var tb = norm2(b).split(' ').filter(function (x) { return x.length > 1; });
+      var overlap = ta.filter(function (x) { return tb.indexOf(x) >= 0; }).length;
+      return overlap >= 2 || (overlap >= 1 && Math.min(ta.length, tb.length) === 1);
+    };
     var wrapped = function (name, appt, chart) {
+      /* IDENTITY GUARD (2026-07-06): a schedule/bulk import once fed ONE open
+         chart to EVERY appointment name, filing the same patient's data into
+         62 charts. If the chart declares an identity that does not match the
+         target name, BLOCK the whole save for that patient. */
+      try {
+        var cid = chartIdent(chart);
+        if (chart && cid.name && !namesMatch(cid.name, name)) {
+          console.warn('[mls-visit-wire] BLOCKED cross-patient chart write: chart belongs to "' + cid.name + '" but target is "' + String(name) + '". Nothing saved for this patient.');
+          try { window.__mlsVisitWire._blocked = (window.__mlsVisitWire._blocked || 0) + 1; window.__mlsVisitWire._lastBlocked = { chart: cid.name, target: String(name), at: new Date().toISOString() }; } catch (e) {}
+          return null; /* the wrong chart must never touch this patient */
+        }
+      } catch (e) {}
       var r = orig.apply(this, arguments);
       try {
         if (chart && window.__mlsVisitModel) {
           var pts = isFn(window.getPatients) ? (window.getPatients() || []) : [];
-          var nm = String(name || '').trim().toLowerCase();
-          var p = pts.find(function (x) { return String(x && x.name || '').trim().toLowerCase() === nm; });
+          var want = tokset(name);
+          /* token-sorted match fixes "Last, First" vs "First Last" so pulled
+             visits actually land in the visit-history timeline */
+          var p = pts.find(function (x) { return tokset(x && x.name) === want; }) ||
+                  pts.find(function (x) { return namesMatch(x && x.name, name) && tokset(x && x.name).length; });
           if (p) window.__mlsVisitModel.ingestChart(p, chart, (appt && appt.source) || 'grab');
         }
       } catch (e) {}
