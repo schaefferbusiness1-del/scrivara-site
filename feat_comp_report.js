@@ -55,12 +55,26 @@
   function aggregate(resp) {
     var doctorName = {};
     (resp.doctors || []).forEach(function (d) { if (d && d.id != null) doctorName[String(d.id)] = d.name || ""; });
+    /* the app\u0027s own calendar (schedule pulls) carries the REAL provider per visit\n       even when the backend row has none -- prefer it (match by id, then name+date) */
+    var calProv = {};
+    safe(function () {
+      (window._calAppts || []).forEach(function (a) {
+        if (!a) return;
+        var pp = String(a.provider || a.provider_raw || "").trim();
+        if (!pp) return;
+        if (a.id != null) calProv["#" + a.id] = pp;
+        var dd = String(a.appt_date || a.day_local || "").slice(0, 10);
+        var nn = String(a.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+        if (dd && nn) calProv[nn + "|" + dd] = pp;
+      });
+    });
     var provs = {}; // provider -> { days: {date:{am,pm,unk}}, visits:[{date,reason}] }
     (resp.appointments || []).forEach(function (x) {
       if (!x || x.status === "cancelled" || x.status === "no_show") return;
-      var p = String(x.provider_name || doctorName[String(x.doctor_user_id)] || "Unassigned").trim() || "Unassigned";
       var d = String(x.appt_date || (x.start_at || "").slice(0, 10) || "").slice(0, 10);
       if (!d) return;
+      var nmKey = String(x.name || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + d;
+      var p = String(calProv["#" + x.id] || calProv[nmKey] || x.provider_name || doctorName[String(x.doctor_user_id)] || "Unassigned").trim() || "Unassigned";
       var pr = provs[p] || (provs[p] = { days: {}, visits: [] });
       var day = pr.days[d] || (pr.days[d] = { am: 0, pm: 0, unk: 0 });
       var h = nyHour(x.start_at);
