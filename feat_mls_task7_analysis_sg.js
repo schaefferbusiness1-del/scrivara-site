@@ -79,8 +79,7 @@
     ".t7-rm:hover{background:#fdeeed}",
     "#t7SgRename{height:28px;padding:0 9px;border-radius:7px;border:1px solid #dbe4ee;background:#fff;color:#5c6f87;font-size:12px;cursor:pointer;font-family:inherit}",
     "#t7SgRename:hover{color:#2f6bed;border-color:#bcd6fb}"
-  ].join("
-");
+  ].join("\n");
   var styleEl = document.createElement("style");
   styleEl.id = "t7Style";
   (document.head || document.documentElement).appendChild(styleEl);
