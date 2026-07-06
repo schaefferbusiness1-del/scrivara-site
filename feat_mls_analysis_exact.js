@@ -2,29 +2,29 @@
  *  STAGING ONLY (loaded by mls-connect.staging.js; on prod activated via prod-enable
  *  marker). Runtime-gated. Production app logic untouched.
  *
- *  Rebuilds #analysisView into the design's RESIZABLE / DRAGGABLE WIDGET DASHBOARD
- *  (design_renders/ScribeFlow Analysis.dc.html): a 4-col grid of tiles. Each tile is
- *  COLLAPSED by default -> a compact preview (icon, title, a headline stat read live from
- *  the app's own rendered data, a sub-label, "Expand"). Click / resize expands it in place
- *  to reveal the app's REAL card (real bodies/data/wired buttons), moved in BY ID. Drag a
- *  collapsed tile to reorder; drag the corner grip to resize (cols 1-4, rows 1-5). Order +
- *  sizes persist to localStorage 'mlsAxLayout'. The design's logic (sizes{cols,rows},
- *  expanded=cols>=2||rows>=3, toggle=>1x1/4x3, pointer-resize math, drag-reorder of order[])
- *  is ported to vanilla DOM.
+ *  ax-3.0.0 (2026-07-06): visual redesign + data-extraction fixes.
+ *   - FIX Baseline stat: card renders "wRVU (approx.) <n>" (label BEFORE number);
+ *     old regex /<n> wRVU/ never matched -> tile was stuck on "Open". New regex +
+ *     office-visits fallback regex (re2).
+ *   - FIX "Untitled" tile: mlsDWCard (Days worked / patient volume) has no h2/h3;
+ *     added a KNOWN entry so it gets a real title, icon and sub-label.
+ *   - Procedure Report: honest "View" action label (its card holds a button, not a stat).
+ *   - UI: colored accent bar per tile, soft hover lift, bigger stat, cleaner premium
+ *     pill, expanded tiles get a proper header strip (icon + title + Collapse) instead
+ *     of a floating button, subtler resize grip, refreshed page header.
+ *  Everything else (drag-reorder, corner resize, localStorage 'mlsAxLayout', DOM-driven
+ *  wrapping, MutationObserver refresh, revert()) is unchanged from ax-2.1.4.
  *
- *  DOM-DRIVEN: every .card in #analysisView is wrapped (known cards use a design-mapped
- *  icon/title/sub; any other card gets a generic tile) so no card is ever left loose. The
- *  real cards are MOVED into tile bodies (never cloned/deleted), which also hands layout
- *  ownership here: feat_mls_redesign.js's analysis grid keys off "#analysisView > .card"
- *  (now nested) so it self-disables. No fabrication: collapsed stats come from already-
- *  rendered body text; action tools show a neutral verb label, not a statistic.
+ *  DOM-DRIVEN: every .card in #analysisView is wrapped; real cards are MOVED into tile
+ *  bodies (never cloned/deleted). Collapsed stats come from already-rendered body text;
+ *  action tools show a neutral verb label, not a statistic. No fabrication.
  *
- *  Reversible: window.__mlsAx.revert() (cards back to #analysisView, no data loss).
- *  ASCII-only (emoji = HTML entities). Idempotent. View-isolated.
+ *  Reversible: window.__mlsAx.revert(). ASCII-only (emoji = HTML entities).
+ *  Idempotent. View-isolated.
  */
 ;(function () {
   "use strict";
-  var VERSION = "ax-2.1.4";
+  var VERSION = "ax-3.0.0";
   try { if (window.__mlsAx && window.__mlsAx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -36,7 +36,7 @@
   if (!isStaging()) { try { window.__mlsAx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
 
   var STYLE_ID = "axStyle", GRID_CLASS = "ax-grid", LS = "mlsAxLayout";
-  var GAP = 18, ROWH = 212, MAXROWS = 5;
+  var GAP = 18, ROWH = 216, MAXROWS = 5;
   var _obs = null, _t = null, _sched = null, _dragKey = null, _overKey = null;
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -44,19 +44,20 @@
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
   var KNOWN = {
-    mlsProcReport:   { icon: "&#128202;", iconBg: "#eef3fb", title: "Procedure Report",          sub: "procedures by type",          color: "#0f2540", src: "mlsProcReport",   re: /([\d,]+)\s*procedure/i, fallback: "Open" },
-    anaKeyTrends:    { icon: "&#128204;", iconBg: "#fdecec", title: "Key trends at a glance",     sub: "active patients, top dx",     color: "#0f2540", src: "anaKeyTrendsBody", re: /([\d,]+)\s*(?:active\s*)?patient/i, fallback: "Open" },
-    anaOutcomes:     { icon: "&#128227;", iconBg: "#fbf3e3", title: "Outcomes &amp; marketing",   sub: "patient satisfaction",        color: "#c2680f", src: "anaOutcomesBody",  re: /(\d{1,3}%)/, fallback: "Open" },
-    anaAsk:          { icon: "&#128270;", iconBg: "#f3eefb", title: "Ask your data",              sub: "volumes, trends, coding",     color: "#7c3aed", label: "Query", premium: true },
-    anaBaseline:     { icon: "&#128200;", iconBg: "#e7f5ee", title: "Baseline metrics",           sub: "wRVU and visit counts",       color: "#0f2540", src: "anaBaselineBody",  re: /([\d.]+)\s*wRVU/i, fallback: "Open" },
-    anaDoctorReview: { icon: "&#128202;", iconBg: "#eef3fb", title: "Doctor analysis &amp; review", sub: "per-provider AI feedback",  color: "#2f6bed", label: "Review" },
-    anaTeamGrades:   { icon: "&#127775;", iconBg: "#fef6e0", title: "Patient-experience ratings", sub: "graded visits",               color: "#1f7d5c", src: "anaTeamGradesBody", re: /([\d.]+\s*\/\s*5)/, fallback: "Open" },
-    anaReferral:     { icon: "&#129309;", iconBg: "#fef6e0", title: "Referral outcomes",          sub: "close the loop",              color: "#7c3aed", label: "Report", premium: true },
-    anaRegistry:     { icon: "&#128203;", iconBg: "#eef3fb", title: "Outcomes registry",          sub: "pain &amp; ODI trajectory",   color: "#7c3aed", label: "Build", premium: true },
-    anaRwe:          { icon: "&#128300;", iconBg: "#e7f5ee", title: "Research registry",          sub: "de-identified outcomes",      color: "#7c3aed", label: "Export" },
-    mlsRvuProd:      { icon: "&#128202;", iconBg: "#e7f5ee", title: "RVU Productivity",           sub: "from signed visits",          color: "#7c3aed", label: "wRVU", premium: true }
+    mlsProcReport:   { icon: "&#128202;", iconBg: "#eef3fb", accent: "#2f6bed", title: "Procedure Report",            sub: "procedures by type",         color: "#0f2540", src: "mlsProcReport",    re: /([\d,]+)\s*procedure/i, fallback: "View" },
+    anaKeyTrends:    { icon: "&#128204;", iconBg: "#fdecec", accent: "#e05252", title: "Key trends at a glance",      sub: "active patients, top dx",    color: "#0f2540", src: "anaKeyTrendsBody", re: /([\d,]+)\s*(?:active\s*)?patient/i, fallback: "View" },
+    anaOutcomes:     { icon: "&#128227;", iconBg: "#fbf3e3", accent: "#e0a028", title: "Outcomes &amp; marketing",    sub: "patient satisfaction",       color: "#c2680f", src: "anaOutcomesBody",  re: /(\d{1,3}%)/, fallback: "View" },
+    anaAsk:          { icon: "&#128270;", iconBg: "#f3eefb", accent: "#7c3aed", title: "Ask your data",               sub: "volumes, trends, coding",    color: "#7c3aed", label: "Query", premium: true },
+    anaBaseline:     { icon: "&#128200;", iconBg: "#e7f5ee", accent: "#12915e", title: "Baseline metrics",            sub: "wRVU and visit counts",      color: "#0f2540", src: "anaBaselineBody",  re: /wRVU\s*\(approx\.\)\s*([\d,]+(?:\.\d+)?)/i, re2: /Office visits\s*([\d,]+)/i, fallback: "View" },
+    anaDoctorReview: { icon: "&#128202;", iconBg: "#eef3fb", accent: "#2f6bed", title: "Doctor analysis &amp; review", sub: "per-provider AI feedback",  color: "#2f6bed", label: "Review" },
+    anaTeamGrades:   { icon: "&#127775;", iconBg: "#fef6e0", accent: "#1f7d5c", title: "Patient-experience ratings",  sub: "graded visits",              color: "#1f7d5c", src: "anaTeamGradesBody", re: /([\d.]+\s*\/\s*5)/, fallback: "View" },
+    anaReferral:     { icon: "&#129309;", iconBg: "#fef6e0", accent: "#7c3aed", title: "Referral outcomes",           sub: "close the loop",             color: "#7c3aed", label: "Report", premium: true },
+    anaRegistry:     { icon: "&#128203;", iconBg: "#eef3fb", accent: "#7c3aed", title: "Outcomes registry",           sub: "pain &amp; ODI trajectory",  color: "#7c3aed", label: "Build", premium: true },
+    anaRwe:          { icon: "&#128300;", iconBg: "#e7f5ee", accent: "#12915e", title: "Research registry",           sub: "de-identified outcomes",     color: "#7c3aed", label: "Export" },
+    mlsRvuProd:      { icon: "&#128202;", iconBg: "#e7f5ee", accent: "#12915e", title: "RVU Productivity",            sub: "from signed visits",         color: "#7c3aed", label: "wRVU", premium: true },
+    mlsDWCard:       { icon: "&#128197;", iconBg: "#eef3fb", accent: "#2f6bed", title: "Days worked &amp; volume",    sub: "per provider, by month",     color: "#0f2540", label: "Open" }
   };
-  var PREF = ["mlsProcReport", "anaKeyTrends", "anaOutcomes", "anaAsk", "anaBaseline", "anaDoctorReview", "anaTeamGrades", "anaReferral", "anaRegistry", "anaRwe", "mlsRvuProd"];
+  var PREF = ["anaKeyTrends", "anaBaseline", "anaOutcomes", "anaTeamGrades", "mlsProcReport", "mlsRvuProd", "mlsDWCard", "anaDoctorReview", "anaAsk", "anaReferral", "anaRegistry", "anaRwe"];
 
   function cleanTitle(card) {
     var h = card.querySelector("h2,h3,h1");
@@ -68,7 +69,7 @@
   function metaFor(card) {
     var id = card.id || "";
     if (KNOWN[id]) return KNOWN[id];
-    return { icon: "&#128202;", iconBg: "#eef3fb", title: cleanTitle(card), sub: "", color: "#0f2540", label: "Open" };
+    return { icon: "&#128202;", iconBg: "#eef3fb", accent: "#2f6bed", title: cleanTitle(card), sub: "", color: "#0f2540", label: "View" };
   }
 
   function cards() {
@@ -98,19 +99,30 @@
   function injectCSS() {
     var css = [
       "#analysisView." + GRID_CLASS + "{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;grid-auto-rows:" + ROWH + "px!important;gap:" + GAP + "px!important;grid-auto-flow:row dense!important;align-items:stretch!important;max-width:1320px;margin:0 auto}",
-      "#analysisView." + GRID_CLASS + " .ax-title{grid-column:1 / -1;display:block;margin:2px 0 12px}",
-      "#analysisView." + GRID_CLASS + " .ax-tile{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid #e8edf3;box-shadow:0 1px 2px rgba(15,37,64,.04);transition:box-shadow .18s ease,transform .18s ease;min-width:0}",
-      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp{border-color:#bcd6fb;box-shadow:0 18px 40px -20px rgba(13,33,56,.4)}",
+      "#analysisView." + GRID_CLASS + " .ax-title{grid-column:1 / -1;display:block;margin:2px 0 10px}",
+      "#analysisView." + GRID_CLASS + " .ax-tile{position:relative;border-radius:16px;overflow:hidden;background:#fff;border:1px solid #e6ecf4;box-shadow:0 1px 3px rgba(15,37,64,.05);transition:box-shadow .18s ease,transform .18s ease,border-color .18s ease;min-width:0}",
+      "#analysisView." + GRID_CLASS + " .ax-tile::before{content:'';position:absolute;left:0;top:0;right:0;height:3px;background:var(--ax-accent,#2f6bed);opacity:0;transition:opacity .18s ease}",
+      "#analysisView." + GRID_CLASS + " .ax-tile:hover{transform:translateY(-2px);border-color:#d5e2f2;box-shadow:0 10px 24px -12px rgba(15,37,64,.22)}",
+      "#analysisView." + GRID_CLASS + " .ax-tile:hover::before{opacity:1}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp{border-color:#bcd6fb;box-shadow:0 18px 40px -20px rgba(13,33,56,.4);transform:none}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp::before{opacity:1}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-drag{opacity:.5;background:#eef5ff;box-shadow:inset 0 0 0 2px #9cc0f5}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-over{box-shadow:inset 0 0 0 2px #2f6bed,0 12px 28px -16px rgba(47,107,237,.5);transform:translateY(-2px)}",
-      "#analysisView." + GRID_CLASS + " .ax-prev{width:100%;height:100%;text-align:left;background:transparent;border:none;padding:20px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;color:#0f2540}",
+      "#analysisView." + GRID_CLASS + " .ax-prev{width:100%;height:100%;text-align:left;background:transparent;border:none;padding:18px 20px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;color:#0f2540}",
+      "#analysisView." + GRID_CLASS + " .ax-prev .ax-cta{display:flex;align-items:center;gap:5px;color:#9aa8bb;font-size:12.5px;font-weight:600;margin-top:12px;transition:color .15s ease}",
+      "#analysisView." + GRID_CLASS + " .ax-tile:hover .ax-prev .ax-cta{color:#2f6bed}",
+      "#analysisView." + GRID_CLASS + " .ax-head{display:none;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #edf2f8;background:#fbfcfe}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp .ax-head{display:flex}",
+      "#analysisView." + GRID_CLASS + " .ax-head .ax-hicon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}",
+      "#analysisView." + GRID_CLASS + " .ax-head .ax-htitle{font-weight:700;font-size:14px;color:#0f2540;letter-spacing:-.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      "#analysisView." + GRID_CLASS + " .ax-collapse{flex:none;height:30px;padding:0 12px;border-radius:8px;border:1px solid #e0e8f1;background:#fff;color:#6b7d93;font-weight:600;font-size:12.5px;font-family:inherit;cursor:pointer}",
+      "#analysisView." + GRID_CLASS + " .ax-collapse:hover{background:#f3f6fb;color:#2f6bed;border-color:#c9dbf3}",
       "#analysisView." + GRID_CLASS + " .ax-body{display:flex;flex-direction:column;height:100%;min-height:0}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp .ax-body{height:calc(100% - 55px)}",
       "#analysisView." + GRID_CLASS + " .ax-body > .card{border:0!important;border-radius:0!important;box-shadow:none!important;margin:0!important;height:100%;overflow:auto;background:#fff!important}",
-      "#analysisView." + GRID_CLASS + " .ax-grip{position:absolute;right:3px;bottom:3px;width:20px;height:20px;cursor:nwse-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px;z-index:5;color:#b9c6d6}",
+      "#analysisView." + GRID_CLASS + " .ax-grip{position:absolute;right:3px;bottom:3px;width:20px;height:20px;cursor:nwse-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px;z-index:5;color:#d3dce7;opacity:0;transition:opacity .15s ease}",
+      "#analysisView." + GRID_CLASS + " .ax-tile:hover .ax-grip{opacity:1}",
       "#analysisView." + GRID_CLASS + " .ax-grip:hover{color:#2f6bed}",
-      "#analysisView." + GRID_CLASS + " .ax-collapse{display:none;position:absolute;right:14px;top:14px;z-index:6;height:32px;padding:0 12px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#6b7d93;font-weight:600;font-size:12.5px;font-family:inherit;cursor:pointer;box-shadow:0 2px 6px rgba(15,37,64,.08)}",
-      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp .ax-collapse{display:block}",
-      "#analysisView." + GRID_CLASS + " .ax-collapse:hover{background:#f3f6fb;color:#2f6bed}",
       "@media (max-width:1099px){#analysisView." + GRID_CLASS + "{grid-template-columns:repeat(3,minmax(0,1fr))!important}}",
       "@media (max-width:819px){#analysisView." + GRID_CLASS + "{grid-template-columns:repeat(2,minmax(0,1fr))!important}}",
       "@media (max-width:559px){#analysisView." + GRID_CLASS + "{grid-template-columns:1fr!important}}",
@@ -124,17 +136,22 @@
   function readStat(m) {
     if (m.label) return { text: m.label, isLabel: true };
     var body = m.src && $(m.src);
-    if (body && m.re) { var txt = (body.textContent || "").replace(/\s+/g, " "); var mm = m.re.exec(txt); if (mm && mm[1]) return { text: mm[1].replace(/\s*\/\s*/, "/"), isLabel: false }; }
-    return { text: m.fallback || "Open", isLabel: true };
+    if (body) {
+      var txt = (body.textContent || "").replace(/\s+/g, " ");
+      var mm = m.re ? m.re.exec(txt) : null;
+      if (!mm && m.re2) mm = m.re2.exec(txt);
+      if (mm && mm[1]) return { text: mm[1].replace(/\s*\/\s*/, "/"), isLabel: false };
+    }
+    return { text: m.fallback || "View", isLabel: true };
   }
   function buildPreview(prev, m) {
     var st = readStat(m);
-    var prem = m.premium ? '<span style="font-size:9px;font-weight:700;letter-spacing:.04em;color:#fff;background:linear-gradient(135deg,#7c3aed,#a855f7);padding:3px 8px;border-radius:20px">PREMIUM</span>' : "";
+    var prem = m.premium ? '<span style="font-size:9px;font-weight:700;letter-spacing:.05em;color:#7c3aed;background:#f3eefb;border:1px solid #e4d9f7;padding:3px 8px;border-radius:20px">PREMIUM</span>' : "";
     prev.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><span style="width:42px;height:42px;border-radius:11px;background:' + m.iconBg + ';display:flex;align-items:center;justify-content:center;font-size:19px">' + m.icon + '</span>' + prem + '</div>' +
-      '<div style="font-weight:700;font-size:15px;letter-spacing:-.01em;margin-bottom:auto">' + m.title + '</div>' +
-      '<div style="margin-top:12px"><div style="font-weight:800;font-size:' + (st.isLabel ? "18px" : "22px") + ';letter-spacing:-.01em;color:' + m.color + '">' + st.text + '</div>' + (m.sub ? '<div style="color:#9aa8bb;font-size:12px;margin-top:2px">' + m.sub + '</div>' : "") + '</div>' +
-      '<div style="display:flex;align-items:center;gap:5px;color:#2f6bed;font-size:12.5px;font-weight:600;margin-top:13px">Expand &#10530;</div>';
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="width:40px;height:40px;border-radius:11px;background:' + m.iconBg + ';display:flex;align-items:center;justify-content:center;font-size:18px">' + m.icon + '</span>' + prem + '</div>' +
+      '<div style="font-weight:700;font-size:14.5px;letter-spacing:-.01em;line-height:1.25;margin-bottom:auto">' + m.title + '</div>' +
+      '<div style="margin-top:10px"><div style="font-weight:800;font-size:' + (st.isLabel ? "16px" : "24px") + ';letter-spacing:-.015em;color:' + (st.isLabel ? "#5b6b7c" : m.color) + '">' + st.text + '</div>' + (m.sub ? '<div style="color:#9aa8bb;font-size:12px;margin-top:2px">' + m.sub + '</div>' : "") + '</div>' +
+      '<div class="ax-cta">Tap to expand &#10530;</div>';
   }
 
   function toggle(k) { if (isExpanded(k)) { STATE.sizes[k] = { cols: 1, rows: 1 }; } else { STATE.sizes[k] = { cols: Math.min(4, colCount()), rows: 3 }; } save(); render(); }
@@ -162,15 +179,18 @@
     var prev = mk("button"); prev.className = "ax-prev"; prev.type = "button";
     prev.addEventListener("click", function () { toggle(key); });
     tile.appendChild(prev);
+    var head = mk("div"); head.className = "ax-head";
+    head.innerHTML = '<span class="ax-hicon"></span><span class="ax-htitle"></span>';
+    var col = mk("button", null, "&#10529; Collapse");
+    col.className = "ax-collapse"; col.type = "button";
+    col.addEventListener("click", function (e) { e.stopPropagation(); toggle(key); });
+    head.appendChild(col);
+    tile.appendChild(head);
     var body = mk("div"); body.className = "ax-body"; tile.appendChild(body);
     var grip = mk("div", null, '<svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M9 3 3 9M9 7l-2 2"/></svg>');
     grip.className = "ax-grip"; grip.title = "Drag to resize";
     grip.addEventListener("pointerdown", function (e) { startResize(key, e); });
     tile.appendChild(grip);
-    var col = mk("button", null, "&#10529; Collapse");
-    col.className = "ax-collapse"; col.type = "button";
-    col.addEventListener("click", function (e) { e.stopPropagation(); toggle(key); });
-    tile.appendChild(col);
     tile.addEventListener("dragstart", function (e) { if (isExpanded(key)) { e.preventDefault(); return; } _dragKey = key; try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", key); } catch (x) {} tile.classList.add("ax-drag"); });
     tile.addEventListener("dragover", function (e) { e.preventDefault(); _overKey = key; reorderTo(key); });
     tile.addEventListener("drop", function (e) { e.preventDefault(); _dragKey = null; _overKey = null; save(); render(); });
@@ -184,7 +204,7 @@
     var t = mk("div"); t.className = "ax-title";
     t.innerHTML =
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.015em;margin:0">Analysis</h1>' +
-      '<p style="color:#9aa8bb;font-size:12.5px;margin:4px 0 0">Resizable dashboard. Tap a tile to grow it to full width; tap again to collapse.</p>';
+      '<p style="color:#9aa8bb;font-size:12.5px;margin:4px 0 0">Live practice metrics. Tap any tile to expand it; drag to reorder.</p>';
     v.insertBefore(t, v.firstChild);
   }
 
@@ -199,6 +219,7 @@
       var card = byId[k]; if (!card) return;
       var m = metaFor(card), tile = ensureTile(card);
       var body = tile.querySelector(".ax-body"), prev = tile.querySelector(".ax-prev");
+      tile.style.setProperty("--ax-accent", m.accent || "#2f6bed");
       if (card.parentElement !== body) body.appendChild(card);
       var sz = sizeOf(k), exp = isExpanded(k);
       tile.style.gridColumn = "span " + clamp(sz.cols, 1, nc);
@@ -206,9 +227,14 @@
       tile.classList.toggle("ax-exp", exp);
       tile.classList.toggle("ax-over", _overKey === k && _dragKey && _dragKey !== k);
       tile.setAttribute("draggable", exp ? "false" : "true");
-      var colBtn = tile.querySelector(".ax-collapse");
-      if (exp) { prev.style.display = "none"; body.style.display = "flex"; card.style.display = ""; if (colBtn) colBtn.style.display = "block"; }
-      else { buildPreview(prev, m); prev.style.display = "flex"; body.style.display = "none"; if (colBtn) colBtn.style.display = "none"; }
+      if (exp) {
+        var hi = tile.querySelector(".ax-head .ax-hicon"), ht = tile.querySelector(".ax-head .ax-htitle");
+        if (hi && hi.innerHTML !== m.icon) { hi.innerHTML = m.icon; hi.style.background = m.iconBg; }
+        if (ht && ht.innerHTML !== m.title) ht.innerHTML = m.title;
+        prev.style.display = "none"; body.style.display = "flex"; card.style.display = "";
+      } else {
+        buildPreview(prev, m); prev.style.display = "flex"; body.style.display = "none";
+      }
     });
     /* idempotent ordering: only re-append tiles when their order actually changed.
        Re-appending every tile on every render() detached/re-attached subtrees and
