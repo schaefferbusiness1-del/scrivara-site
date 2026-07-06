@@ -17,7 +17,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "sx-2.0.2";
+  var VERSION = "sx-2.1.0";
   try { if (window.__mlsSx && window.__mlsSx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -62,7 +62,28 @@
       "#studioView input,#studioView select,#studioView textarea{max-width:100%}",
       /* responsive: single column below 980, natural heights with bounded thread scroll */
       "@media (max-width:980px){#studioView." + GRID_CLASS + "{grid-template-columns:1fr;grid-template-rows:auto auto auto}#studioView." + GRID_CLASS + " #copilotCard{grid-column:1;grid-row:2;height:auto;max-height:none}#studioView #copilotThread{max-height:46vh}#studioView." + GRID_CLASS + " .sx-right{grid-column:1;grid-row:3;height:auto;max-height:none}#studioView #studioResultCard{grid-row:4}}",
-      "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
+      "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}",
+      /* ---- sx-2.1.0: Study Groups (#mls-sg-root from feat_mls_studygroups.js) used to land
+         in grid column 1 only (749px, pushed the title down). Give it its own full-width row
+         of three matched cards above the Copilot/Build row, and restyle its controls to the
+         app design. Pure CSS, additive. ---- */
+      "#studioView." + GRID_CLASS + "{grid-template-rows:auto auto 1fr!important}",
+      "#studioView." + GRID_CLASS + " .sx-title{grid-row:1}",
+      "#studioView." + GRID_CLASS + " #mls-sg-root{grid-column:1 / -1;grid-row:2;display:grid;grid-template-columns:1.2fr 1.4fr .8fr;gap:16px;align-items:stretch;min-width:0}",
+      "#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important;height:auto!important;min-height:520px}",
+      "#studioView." + GRID_CLASS + " .sx-right{grid-row:3!important;height:auto!important;min-height:520px}",
+      "#studioView #studioResultCard{grid-row:4!important}",
+      "#mls-sg-root .mls-sg-card{margin:0!important;background:#fff!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;padding:18px 20px!important;min-width:0}",
+      "#mls-sg-root .mls-sg-card h3{margin:0 0 4px!important;font-size:15px!important;font-weight:700!important;color:#0f2540!important}",
+      "#mls-sg-root .mls-sg-pill{background:#f3eefb;color:#7c3aed;border:1px solid #e4d9f7;border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;vertical-align:middle}",
+      "#mls-sg-root .mls-sg-muted{color:#6b7d93!important;font-size:12px!important}",
+      "#mls-sg-root input,#mls-sg-root select,#mls-sg-root textarea{border:1px solid #e0e8f1!important;background:#f8fafc!important;border-radius:10px!important;padding:9px 12px!important;font-size:13px!important;color:#0f2540!important}",
+      "#mls-sg-root textarea{min-height:64px!important}",
+      "#mls-sg-root .mls-sg-btn{border:0;border-radius:10px;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font-weight:600;font-size:12.5px;padding:9px 14px;cursor:pointer}",
+      "#mls-sg-root .mls-sg-btn.gray{background:#fff;color:#6b7d93;border:1px solid #e0e8f1}",
+      "#mls-sg-root .mls-sg-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}",
+      "@media (max-width:1100px){#studioView." + GRID_CLASS + " #mls-sg-root{grid-template-columns:1fr}}",
+      "@media (max-width:980px){#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important}#studioView." + GRID_CLASS + " .sx-right{grid-row:4!important}#studioView #studioResultCard{grid-row:5!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
