@@ -125,7 +125,7 @@
   }
 
   /* ---------------- UI ------------------------------------------------------ */
-  var S = { provs: null, ym: "", est: null };
+  var S = { provs: null, ym: "", est: null, sel: {} };
   function defaultMonth() { var d = new Date(); d.setMonth(d.getMonth() - 1); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2); }
 
   function css() {
@@ -191,6 +191,7 @@
     fetchAppts(monthRange(ym)).then(function (resp) {
       S.provs = aggregate(resp);
       var names = Object.keys(S.provs);
+      S.sel = {}; names.forEach(function (p) { S.sel[p] = true; });
       if (!names.length) { setStatus("No appointments found for " + ym + ". Pull that month from athena first (backfill), then rebuild."); document.getElementById("mlsCompBody").innerHTML = ""; return; }
       setStatus("");
       render();
@@ -201,7 +202,7 @@
 
   function calc() { // recon math from current cfg + estimates/overrides
     var cfg = loadCfg(); cfg.rates = cfg.rates || {}; cfg.coll = cfg.coll || {};
-    var names = Object.keys(S.provs).sort();
+    var names = Object.keys(S.provs).sort().filter(function (p) { return S.sel[p] !== false; });
     var out = { names: names, perProv: {}, rateTotal: 0, collTotal: 0, anyEstimate: false };
     names.forEach(function (p) {
       var agg = providerRows(S.provs[p]);
@@ -224,7 +225,12 @@
   function render() {
     var cfg = loadCfg(); cfg.rates = cfg.rates || {}; cfg.coll = cfg.coll || {};
     var r = calc(), b = document.getElementById("mlsCompBody"); if (!b) return;
-    var h = '<h3>Settings (saved on this device)</h3><div class="mlsCompCfg">';
+    var h = '<h3>Providers in this report (check who to include; totals combine only the checked ones)</h3><div class="mlsCompCfg">';
+    Object.keys(S.provs).sort().forEach(function (p) {
+      h += '<label><input type="checkbox" style="width:auto" data-prov="' + esc(p) + '"' + (S.sel[p] !== false ? ' checked' : '') + '> ' + esc(p) + '</label>';
+    });
+    h += '</div>';
+    h += '<h3>Settings (saved on this device)</h3><div class="mlsCompCfg">';
     r.names.forEach(function (p) {
       h += '<label>' + esc(p) + ' $/day <input data-rate="' + esc(p) + '" value="' + r.perProv[p].rate + '"></label>';
       h += '<label>' + esc(p) + ' actual collections <input data-coll="' + esc(p) + '" placeholder="(blank = AI est.)" value="' + esc(cfg.coll[p] == null ? "" : cfg.coll[p]) + '"></label>';
@@ -263,7 +269,10 @@
     b.innerHTML = h;
 
     // wire config inputs
-    Array.prototype.forEach.call(b.querySelectorAll(".mlsCompCfg input"), function (inp) {
+    Array.prototype.forEach.call(b.querySelectorAll('input[data-prov]'), function (cb) {
+      cb.addEventListener("change", function () { S.sel[cb.getAttribute("data-prov")] = cb.checked; render(); });
+    });
+    Array.prototype.forEach.call(b.querySelectorAll('.mlsCompCfg input:not([data-prov])'), function (inp) {
       inp.addEventListener("change", function () {
         var c = loadCfg(); c.rates = c.rates || {}; c.coll = c.coll || {};
         if (inp.getAttribute("data-rate")) c.rates[inp.getAttribute("data-rate")] = num(inp.value, 0);
