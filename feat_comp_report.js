@@ -328,11 +328,14 @@
     b.onclick = open;
     document.body.appendChild(b);
   }
+  safe(addButton); // immediate: loaders run at end of body, so body exists; do NOT rely on
+  // an interval for the first add (the site freezes intervals on hidden tabs).
   var tries = 0, iv = setInterval(function () {
     tries++;
     if (document.body) { addButton(); }
     if (tries > 20 || document.getElementById("mlsCompBtn")) clearInterval(iv);
   }, 1000);
+  document.addEventListener("visibilitychange", function () { safe(addButton); });
 
   window.__mlsComp = { open: open, close: close, version: "1.0.0" };
 })();
