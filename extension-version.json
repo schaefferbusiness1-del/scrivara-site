@@ -1,5 +1,5 @@
 {
-  "version": "1.48",
+  "version": "1.50",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.48 — RELIABLE all-providers pull. New structure-based scrape: reads athenaOne appointments by their unique appointment IDs inside each provider's schedule column (instead of guessing by screen position), so it dedupes perfectly and assigns every appointment to the correct doctor even on a busy, scrolled day grid. Falls back to the previous method if the layout differs. Also keeps v1.47 auto-navigate (now targets 'View Calendar') + config-tunable selectors."
+  "notes": "v1.50 — PER-PATIENT CAPTURE + IDENTITY GATE. Chart pulls now read the open patient's own identity and refuse to file another patient's chart (fixes schedule pulls writing one chart summary into every record). Captures now MERGE the clinical frames so the FULL ENCOUNTER SUMMARY (procedure name/date, performed by, assessment & plan, follow-up) and meds land in each patient's MLS summary/timeline. TITLE-aware athenaOne tab detection kills the false 'not connected' status. NEW patient picker in the overlay (one tap opens a chart from today's MLS schedule). Reports its version for the in-app update reminder."
 }

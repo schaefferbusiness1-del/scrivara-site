@@ -17,7 +17,7 @@
   'use strict';
   if (typeof window !== 'undefined' && window.__mlsPopup && window.__mlsPopup.installed) return;
 
-  var VERSION = '0.3.0';
+  var VERSION = '1.50';
 
   // ---- environment detection (so the same file is unit-testable) ----------
   var hasChrome = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage);
@@ -267,7 +267,19 @@
       refreshStatus: refreshStatus, connColor: connColor, canGo: canGo,
       go: go, startRecording: startRecording, stopRecording: stopRecording,
       setTypedNotes: setTypedNotes, hasContent: hasContent,
-      generate: generate, writeBack: writeBack, signSave: signSave, reset: reset, ingest: ingest
+      generate: generate, writeBack: writeBack, signSave: signSave, reset: reset, ingest: ingest,
+      /* v1.50 patient picker */
+      listPatients: function () { return tx.send({ type: 'MLS_OVL_LIST_PATIENTS' }); },
+      openPatient: function (name) {
+        return tx.send({ type: 'MLS_OVL_OPEN_PATIENT', name: name }).then(function (r) {
+          r = r || {};
+          if (r.identity && r.identity.name) narrate('Opened ' + r.identity.name + '.', 'ok');
+          else if (r.ok && r.opened) narrate('Opened the chart \u2014 confirming the patient\u2026', 'run');
+          else if (r.ok) narrate('Tried to open the chart \u2014 check the Athena tab.', 'warn');
+          else narrate(r.error || 'Could not open the chart.', 'fail');
+          return refreshStatus().then(function () { return r; });
+        });
+      }
     };
   }
 
@@ -278,7 +290,7 @@
 
   function mountDOM() {
     if (!hasDOM) return null;
-    if (!ATHENA_RE.test(location.host) && !ATHENA_RE.test(location.href)) return null;
+    if (!ATHENA_RE.test(location.host) && !ATHENA_RE.test(location.href) && !/athena/i.test(document.title || '')) return null;  /* v1.50 title-aware */
     if (document.getElementById('mls-popup-root')) return null;
 
     var root = document.createElement('div');
@@ -382,6 +394,35 @@
           body.appendChild(el('h2', 'mlsp-title', s.conn.patientOpen ? 'Ready' : 'Open a patient in Athena'));
           body.appendChild(el('p', 'mlsp-sub', 'Read this patient & pull their full history.'));
           body.appendChild(bigBtn('▶  Go', 'primary', function () { core.go(); }, !core.canGo()));
+          /* v1.50 patient picker: one-tap open from today's MLS schedule */
+          (function () {
+            var pickBtn = el('button', 'mlsp-btn secondary', '📋 Pick a patient (today’s schedule)');
+            pickBtn.style.cssText = 'display:block;width:100%;margin-top:6px';
+            pickBtn.addEventListener('click', function () {
+              pickBtn.disabled = true; pickBtn.textContent = 'Loading today’s schedule…';
+              core.listPatients().then(function (r) {
+                pickBtn.disabled = false; pickBtn.textContent = '📋 Pick a patient (today’s schedule)';
+                var old = body.querySelector('.mlsp-picklist'); if (old) old.remove();
+                var box = el('div', 'mlsp-picklist');
+                box.style.cssText = 'max-height:180px;overflow:auto;margin-top:8px;border:1px solid rgba(120,150,220,.35);border-radius:10px;padding:4px';
+                var list = (r && r.patients) || [];
+                if (!r || !r.ok || !list.length) {
+                  box.appendChild(el('p', 'mlsp-sub', (r && r.error) || 'No patients on today’s MLS schedule yet — open mlsscribe.com and Pull today’s patients first.'));
+                }
+                list.slice(0, 60).forEach(function (pt) {
+                  var row = el('button', 'mlsp-btn secondary', (pt.time ? pt.time + ' · ' : '') + pt.name);
+                  row.style.cssText = 'display:block;width:100%;text-align:left;margin:2px 0';
+                  row.addEventListener('click', function () {
+                    row.disabled = true; row.textContent = 'Opening ' + pt.name + '…';
+                    core.openPatient(pt.name).then(function () { try { box.remove(); } catch (e) {} });
+                  });
+                  box.appendChild(row);
+                });
+                body.appendChild(box);
+              });
+            });
+            body.appendChild(pickBtn);
+          })();
           if (core.connColor() !== 'green') body.appendChild(el('p', 'mlsp-sub', connHint(s)));
           break;
 

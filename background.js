@@ -551,8 +551,15 @@ async function callBackend(path, body) {
 // Find the signed-in EMR/Athena tab broadly (known Athena domains, else EMR-ish host keywords,
 // else the most-recently-active non-MLS http(s) tab). Shared by the Mode C search handlers; the
 // real resilience is content-based scoring inside the injected driver, not the tab URL.
+/* v1.50: TITLE-aware athena tab test — some athenaOne windows surface "athenaCollector
+   v26.x ..." / "athenaOne" only in the TAB TITLE (URL variants the regex misses), which made
+   the extension report a false "not connected". Title counts as athena too. */
+function mlsTabTitleAthena(t) {
+  return /athena\s*(one|net|collector|clinicals|health)|athenahealth|athenaone|athenanet/i.test((t && t.title) || '') && !/mlsscribe\.com/i.test((t && t.url) || '');
+}
 function mlsPickEmrTab(all) {
   return all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
+      || all.find((t) => mlsTabTitleAthena(t))
       || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''))
       || (function () { const c = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); return c[0]; })();
 }
@@ -1026,11 +1033,12 @@ var mlsProv = (function () {
         // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
         // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
         // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
-        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         // Find the EMR tab by KNOWN domains, else by EMR-looking host keywords, else the
         // most-recently-active non-MLS http(s) tab. Kept broad so an Athena domain/URL change
         // doesn't break us — the real work is content-based below.
         let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
+               || all.find((t) => mlsTabTitleAthena(t))  /* v1.50 title-aware */
                || all.find((t) => /athena|epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com/i.test(t.url || ''));
         // v1.38 truth fix: do NOT fall back to an unrelated most-recently-active tab and report it connected (phantom-tab bug).
         if (!tab) return sendResponse({ ok: false, reason: 'no-athena-tab', emr: 'none', host: '', id: msg.id, error: 'Open a signed-in athenaOne tab, then try again.' });
@@ -1217,7 +1225,7 @@ async function mlsSchedDomInline(doc, CFG){
         // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
         // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
         // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
-        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         // Same broad EMR-tab finder as the schedule path: known Athena domains, else EMR-ish
         // host keywords, else the most-recently-active non-MLS http(s) tab.
         let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
@@ -1276,7 +1284,7 @@ async function mlsSchedDomInline(doc, CFG){
         // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
         // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
         // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
-        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         const tab = mlsPickEmrTab(all);
         if (!tab) return sendResponse({ ok: false, error: 'Open your signed-in athenaOne in another tab (a procedure/claims report or charge-search screen), then try again.' });
         let results = [];
@@ -1298,7 +1306,7 @@ async function mlsSchedDomInline(doc, CFG){
         // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
         // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
         // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
-        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         const tab = (msg.tabId && all.find((t) => t.id === msg.tabId)) || mlsPickEmrTab(all);
         if (!tab) return sendResponse({ ok: false, error: 'No athenaOne tab found.' });
         let results = [];
@@ -1321,7 +1329,7 @@ async function mlsSchedDomInline(doc, CFG){
         // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
         // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
         // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
-        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
         const tab = (msg.tabId && all.find((t) => t.id === msg.tabId)) || mlsPickEmrTab(all);
         if (!tab) return sendResponse({ ok: false, error: 'No athenaOne tab found.' });
         let results = [];
@@ -1345,8 +1353,9 @@ async function mlsSchedDomInline(doc, CFG){
         // MLS fix: when MULTIPLE athenaOne tabs are open, prefer the SIGNED-IN app tab
         // (athenanet.athenahealth.com, schedule/dashboard) over a stray sign-in/auth tab
         // (anet.aws.caas.athenahealth.com / login), so the schedule read targets the real Day view.
-        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
-        let tab = all.find((t) => /athenahealth|athenanet|athena\.io|\.px\.athena/i.test(t.url || ''));
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        let tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
+               || all.find((t) => mlsTabTitleAthena(t));  /* v1.50 title-aware */
         if (!tab) { const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\//i.test(t.url || '')); cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); tab = cand[0]; }
         if (!tab) return sendResponse({ ok: false, error: 'Open the patient in your Athena tab, then try again.' });
         const want = String(msg.patient || '').trim();
@@ -1401,14 +1410,40 @@ async function mlsSchedDomInline(doc, CFG){
           }
         }
         let results = [];
-        try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 14000) }; } catch (e) { return { u: '', t: '' }; } } }); }
-        catch (e) { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 14000) }) }); }
-        const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
-        const score = (txt) => { const s = (txt || '').toLowerCase(); let n = 0; ['problem', 'medication', 'allerg', 'history', 'vital', 'diagnos', 'assessment', 'date of birth', 'dob', 'surg', 'imaging', 'mri', 'immuniz'].forEach((k) => { if (s.indexOf(k) >= 0) n++; }); return n; };
-        let pick = null, best = -1;
-        frames.forEach((f) => { const sc = score(f.t) * 1000 + Math.min(f.t.length, 13000) / 100; if (sc > best) { best = sc; pick = f; } });
-        pick = pick || { u: tab.url, t: '' };
-        sendResponse({ ok: true, text: (pick.t || '').slice(0, 16000), url: pick.u || tab.url, title: tab.title, opened: opened, frames: frames.length });
+        try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 18000) }; } catch (e) { return { u: '', t: '' }; } } }); }
+        catch (e) { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 18000) }) }); }
+        /* v1.50: drop messaging/nav/status noise frames (athenaText etc.) BEFORE scoring */
+        const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim() && !/stm\.esp|coordinator\/enterprise|globalnav\.esp|statusbar\.esp|schedulenavclose/i.test(r.u || ''));
+        const score = (txt) => { const s = (txt || '').toLowerCase(); let n = 0; ['problem', 'medication', 'allerg', 'history', 'vital', 'diagnos', 'assessment', 'date of birth', 'dob', 'surg', 'imaging', 'mri', 'immuniz'].forEach((k) => { if (s.indexOf(k) >= 0) n++; }); ['full encounter summary', 'encounter summary', 'performed by', 'reason for visit', 'follow-up', 'assessment & plan'].forEach((k) => { if (s.indexOf(k) >= 0) n += 3; }); if (/inbox|unread messages|message thread/.test(s)) n -= 4; return n; };
+        /* v1.50: MERGE the clinical frames instead of picking ONE — on athenaOne the
+           encounter summary (procedure name/date, performed by, assessment & plan,
+           follow-up) lives in a SMALL separate frame that single-frame picking dropped,
+           which is why pulled summaries were missing encounter-level detail. */
+        const ranked = frames.map((f) => ({ f: f, s: score(f.t) })).sort((a, b) => b.s - a.s);
+        const chosen = [];
+        let used = 0; const CAP = 26000;
+        ranked.forEach((r) => { if (r.s <= 0 || used >= CAP) return; chosen.push(r.f); used += Math.min((r.f.t || '').length, CAP - used); });
+        frames.forEach((f) => { if (/full encounter summary|encounter summary/i.test(f.t || '') && chosen.indexOf(f) < 0) chosen.unshift(f); });
+        let merged = ''; chosen.forEach((f) => { if (merged.length >= CAP) return; merged += (merged ? '\n\n===== (next chart frame) =====\n\n' : '') + (f.t || '').slice(0, Math.max(0, CAP - merged.length)); });
+        const pick = (ranked.length ? ranked[0].f : null) || { u: tab.url, t: '' };
+        /* v1.50 IDENTITY GATE: read the OPEN chart's own identity. If a specific patient was
+           requested and the open chart belongs to someone else, FAIL HONESTLY — never hand
+           back another patient's chart (this once filed one chart into 62 records). */
+        let ident = null;
+        try {
+          const idr = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsReadChartIdentity });
+          (idr || []).forEach((mm) => { const r = mm && mm.result; if (r && r.name && (!ident || (r.score || 0) > (ident.score || 0))) ident = r; });
+        } catch (e) {}
+        const nrm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+        const nMatch = (a, bb) => { if (!a || !bb) return true; const ta = nrm(a).split(' ').filter((x) => x.length > 1), tb = nrm(bb).split(' ').filter((x) => x.length > 1); const o = ta.filter((x) => tb.indexOf(x) >= 0).length; return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1); };
+        const V = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
+        if (want && ident && ident.name && !nMatch(ident.name, want)) {
+          return sendResponse({ ok: false, reason: 'wrong-chart', chartName: ident.name, chartDob: ident.dob || '', opened: opened, version: V, error: 'The open athenaOne chart is ' + ident.name + ', not ' + want + '. Nothing was captured for ' + want + '.' });
+        }
+        if (want && !opened && !(ident && ident.name)) {
+          return sendResponse({ ok: false, reason: 'unverified', opened: false, version: V, error: 'Could not open or verify ' + want + '\u2019s chart (no patient identity readable on the open page). Open the patient\u2019s chart in athenaOne, then pull again \u2014 nothing was captured.' });
+        }
+        sendResponse({ ok: true, text: merged.slice(0, 26000), url: pick.u || tab.url, title: tab.title, opened: opened, frames: frames.length, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', version: V });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -2926,7 +2961,20 @@ async function mlsAthenaSignSave(mode) {
           var idP = (athenaOpen && ext.readIdentity) ? ext.readIdentity(tab.id).catch(function () { return null; }) : Promise.resolve(null);
           return idP.then(function (id) {
             patientOpen = !!(id && id.name);
-            sendResponse({ athenaOpen: athenaOpen, mlsApp: true, patientOpen: patientOpen });
+            if (patientOpen || !athenaOpen || typeof chrome.scripting === 'undefined') {
+              sendResponse({ athenaOpen: athenaOpen, mlsApp: true, patientOpen: patientOpen, identity: (id && id.name) ? { name: id.name, dob: id.dob || '' } : null });
+              return;
+            }
+            /* v1.50 fallback: identity text can be unreadable in some athena skins, but an
+               open encounter/chart URL in ANY frame still proves a patient is open (fixes
+               the overlay being stuck on "Open a patient in Athena"). */
+            chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: function () { try { return location.href; } catch (e) { return ''; } } })
+              .then(function (res) {
+                var urls = (res || []).map(function (r) { return (r && r.result) || ''; });
+                var open2 = urls.some(function (u) { return /\/encounter\/\d+|\/chart\/|patientid=\d+|\/patient\//i.test(u || ''); });
+                sendResponse({ athenaOpen: athenaOpen, mlsApp: true, patientOpen: open2, identity: null });
+              })
+              .catch(function () { sendResponse({ athenaOpen: athenaOpen, mlsApp: true, patientOpen: false, identity: null }); });
           });
         })
         .catch(function () { sendResponse({ error: 'status-failed' }); });
@@ -3205,4 +3253,147 @@ async function mlsAthenaSignSave(mode) {
       });
     });
   }
+})();
+
+
+/* =========================================================================
+ * MLS Assist v1.50 — version reporting + patient picker  (APPEND-ONLY)
+ *  A) Version reporting: POSTs {component:'mls-assist', version} to the MLS
+ *     backend /api/versions/report on install/startup + every 12h, and the
+ *     content bridge announces the version to the MLS app page — powers the
+ *     app's update-reminder row in Settings -> MLS Controls. Fire-and-forget;
+ *     tolerates the endpoint not existing yet (older backend) silently.
+ *  B) Patient picker: MLS_OVL_LIST_PATIENTS reads TODAY'S schedule from the
+ *     open mlsscribe.com tab (no PHI leaves the browser); MLS_OVL_OPEN_PATIENT
+ *     clicks/searches that patient open in athenaOne (NAVIGATION ONLY — the
+ *     open helper only clicks patient-name elements / types into a patient
+ *     SEARCH box, never Save/Sign/order controls) and reports the open chart's
+ *     identity so the overlay can confirm the right patient is up.
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (typeof chrome === 'undefined' || !chrome.runtime) return;
+  if (self.__mlsV150Installed) return; self.__mlsV150Installed = true;
+  var VER = ''; try { VER = chrome.runtime.getManifest().version; } catch (e) {}
+
+  function reportVersion() {
+    try {
+      fetch('https://scrivara-backend.onrender.com/api/versions/report', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ component: 'mls-assist', version: VER })
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  try { chrome.runtime.onStartup.addListener(reportVersion); } catch (e) {}
+  try { chrome.runtime.onInstalled.addListener(reportVersion); } catch (e) {}
+  try {
+    if (chrome.alarms) {
+      chrome.alarms.create('mlsVersionReport', { periodInMinutes: 720 });
+      chrome.alarms.onAlarm.addListener(function (a) { if (a && a.name === 'mlsVersionReport') reportVersion(); });
+    }
+  } catch (e) {}
+  reportVersion();
+
+  /* ---- injected: read TODAY'S patients from the MLS app tab (read-only) ---- */
+  function mlsListTodayFn() {
+    try {
+      var out = [], seen = {};
+      var d = new Date(); var td = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+      var A = window._calAppts || [];
+      A.forEach(function (a) {
+        if (!a) return;
+        var dt = String(a.date || a.appt_date || '');
+        if (dt.indexOf(td) < 0) return;
+        var nm = String(a.patient || a.name || '').trim();
+        if (!nm || seen[nm.toLowerCase()]) return; seen[nm.toLowerCase()] = 1;
+        out.push({ name: nm.slice(0, 60), time: String(a.time || '').slice(0, 12), prov: String(a.provider || '').slice(0, 40) });
+      });
+      return out.slice(0, 120);
+    } catch (e) { return []; }
+  }
+
+  /* ---- injected: open ONE patient by name (same rules as the chart-request
+     opener: click a visible patient-name element, else type into a patient
+     SEARCH box — never a numeric/ID field, never action buttons) ---- */
+  function mlsV150OpenFn(name) {
+    try {
+      var parts = name.toLowerCase().replace(/[^a-z\s,]/g, '').split(/[\s,]+/).filter(Boolean);
+      if (!parts.length) return 'no';
+      var last = parts[parts.length - 1], first = parts[0];
+      var els = Array.prototype.slice.call(document.querySelectorAll('a,button,[role="link"],[role="button"],[onclick],td,li,span,div'));
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var t = (el.innerText || el.textContent || '').trim().toLowerCase();
+        if (t && t.length < 70 && t.indexOf(last) >= 0 && (parts.length < 2 || t.indexOf(first) >= 0)) {
+          var r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) { el.click(); return 'clicked'; }
+        }
+      }
+      var inputs = Array.prototype.slice.call(document.querySelectorAll('input[type="text"],input[type="search"],input:not([type])'));
+      for (var k = 0; k < inputs.length; k++) {
+        var inp = inputs[k];
+        var h = ((inp.placeholder || '') + ' ' + (inp.name || '') + ' ' + (inp.getAttribute('aria-label') || '') + ' ' + (inp.id || '')).toLowerCase();
+        var rr = inp.getBoundingClientRect(); var tp = (inp.type || '').toLowerCase();
+        if (rr.width <= 0 || rr.height <= 0) continue;
+        if (tp === 'number' || tp === 'tel' || tp === 'date' || tp === 'email' || tp === 'password') continue;
+        if ((inp.inputMode || '').toLowerCase() === 'numeric') continue;
+        if (/patient\s*id|patientid|\bid\b|\bmrn\b|chart\s*(id|no|num)|\bnpi\b|account|claim|invoice|\bnumber\b|ssn|\bdob\b/.test(h)) continue;
+        if (!/search|name|find|look\s*up|lookup|filter|patient/.test(h)) continue;
+        inp.focus(); inp.value = name;
+        inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+        ['keydown', 'keypress', 'keyup'].forEach(function (tpe) { inp.dispatchEvent(new KeyboardEvent(tpe, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); });
+        return 'searched';
+      }
+      return 'no';
+    } catch (e) { return 'no'; }
+  }
+
+  function readIdent(tabId) {
+    if (typeof mlsReadChartIdentity !== 'function' || typeof chrome.scripting === 'undefined') return Promise.resolve(null);
+    return chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, func: mlsReadChartIdentity })
+      .then(function (res) {
+        var best = null;
+        (res || []).forEach(function (m) { var r = m && m.result; if (r && r.name && (!best || (r.score || 0) > (best.score || 0))) best = r; });
+        return best ? { name: best.name, dob: best.dob || '' } : null;
+      }).catch(function () { return null; });
+  }
+
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || typeof msg.type !== 'string') return;
+
+    if (msg.type === 'MLS_OVL_LIST_PATIENTS') {
+      (async function () {
+        try {
+          var all = await chrome.tabs.query({});
+          var app = all.find(function (t) { return /mlsscribe\.com/i.test(t.url || ''); });
+          if (!app) return sendResponse({ ok: false, error: 'Open mlsscribe.com in another tab first (it holds today\u2019s schedule).' });
+          var res = await chrome.scripting.executeScript({ target: { tabId: app.id }, func: mlsListTodayFn });
+          var list = (res && res[0] && res[0].result) || [];
+          sendResponse({ ok: true, patients: list, version: VER });
+        } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+      })();
+      return true;
+    }
+
+    if (msg.type === 'MLS_OVL_OPEN_PATIENT') {
+      (async function () {
+        try {
+          var all = await chrome.tabs.query({});
+          var tab = (typeof mlsPickEmrTab === 'function') ? mlsPickEmrTab(all) : null;
+          if (!tab || !/athena/i.test(((tab.url || '') + ' ' + (tab.title || '')))) return sendResponse({ ok: false, error: 'No signed-in athenaOne tab is open.' });
+          var want = String(msg.name || '').trim().slice(0, 80);
+          if (!want) return sendResponse({ ok: false, error: 'No patient name given.' });
+          var opened = false, statuses = [];
+          try { var r1 = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsV150OpenFn, args: [want] }); statuses = (r1 || []).map(function (r) { return r && r.result; }); } catch (e) {}
+          if (statuses.indexOf('clicked') >= 0) { opened = true; await new Promise(function (r) { setTimeout(r, 1900); }); }
+          else if (statuses.indexOf('searched') >= 0) {
+            await new Promise(function (r) { setTimeout(r, 2600); });
+            try { var r2 = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsV150OpenFn, args: [want] }); if ((r2 || []).map(function (r) { return r && r.result; }).indexOf('clicked') >= 0) { opened = true; await new Promise(function (r) { setTimeout(r, 1900); }); } } catch (e) {}
+          }
+          var ident = await readIdent(tab.id);
+          sendResponse({ ok: true, opened: opened, identity: ident, version: VER });
+        } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+      })();
+      return true;
+    }
+  });
 })();

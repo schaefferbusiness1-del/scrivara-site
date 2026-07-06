@@ -54,7 +54,7 @@
     if (!mlsTrustedOrigin(e.origin)) return;
     var origin = e.origin;
     var reply = function (payload) { try { window.postMessage(payload, origin); } catch (err) {} };
-    if (d.type === 'mlsPing') { reply({ source: 'mls-ext', type: 'mlsPong' }); return; }
+    if (d.type === 'mlsPing') { var __v = ''; try { __v = chrome.runtime.getManifest().version; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', version: __v }); return; }
     if (d.type === 'mlsAppCapture') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsAppCaptureRequest' }, function (resp) {
@@ -1015,5 +1015,29 @@
         if (activeOrigin && Date.now() < activeUntil) post(activeOrigin, 'mlsAppSearchOpenProgress', { message: msg.message });
       }
     });
+  } catch (e) {}
+})();
+
+
+/* =========================================================================
+ * MLS Assist v1.50 — version announce to the MLS app  (APPEND-ONLY)
+ * On mlsscribe.com pages: announce the installed extension version via
+ * postMessage (and answer mlsAppGetVersion), so the app's Settings -> MLS
+ * Controls row and update-reminder banner know what's installed. No PHI.
+ * ========================================================================= */
+(function () {
+  'use strict';
+  try {
+    if (!/(^|\.)mlsscribe\.com$|^localhost$|^127\.0\.0\.1$/.test(location.hostname)) return;
+    var VER = ''; try { VER = chrome.runtime.getManifest().version; } catch (e) {}
+    if (!VER) return;
+    var say = function () { try { window.postMessage({ source: 'mls-ext', type: 'mlsExtVersion', version: VER }, location.origin); } catch (e) {} };
+    window.addEventListener('message', function (ev) {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-app' || d.type !== 'mlsAppGetVersion') return;
+      if (ev.origin !== location.origin) return;
+      say();
+    });
+    say(); setTimeout(say, 2500); setTimeout(say, 8000);
   } catch (e) {}
 })();
