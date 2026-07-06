@@ -29,7 +29,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.3.0", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
+  var VERSION = "1.3.1", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
   try { if (window.__mlsWhosNext && window.__mlsWhosNext.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -186,6 +186,12 @@
   }
 
   /* v1.3.0: minutes-of-day for an "HH:MM" time (clinic-local as pulled from Athena). */
+  /* v1.3.1: 12-hour AM/PM display everywhere (no military time in the UI). */
+  function fmt12(t) {
+    var m = S(t).match(/^(\d\d?):(\d\d)/); if (!m) return S(t);
+    var h = +m[1], ap = h >= 12 ? "PM" : "AM"; h = h % 12; if (h === 0) h = 12;
+    return h + ":" + m[2] + " " + ap;
+  }
   function timeMins(t) { var m = S(t).match(/^(\d\d?):(\d\d)/); return m ? (+m[1]) * 60 + (+m[2]) : null; }
   /* v1.3.0: index of the patient "up now" -- started within the last 30 min, else the
      next upcoming, else the day's last (mirrors the hero's _calPickNowIdx logic). */
@@ -246,7 +252,7 @@
         for (var i = 0; i < visible.length; i++) {
           var p = visible[i];
           var meta = [];
-          if (p.time) meta.push(esc(p.time));
+          if (p.time) meta.push(esc(fmt12(p.time)));
           if (p.reason) meta.push(esc(p.reason));
           var dob = bestDob(p, chartFor(p));
           var bd = '<span class="wn-bd' + (isBirthdayToday(dob) ? ' wn-bd-today' : '') + '">&#127874; ' + (dob ? esc(fmtDob(dob)) + (isBirthdayToday(dob) ? ' &middot; birthday today!' : '') : 'DOB &mdash;') + '</span>';
