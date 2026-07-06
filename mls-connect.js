@@ -1,4 +1,507 @@
 /* =========================================================================
+ * MLS Scribe -- b40 R3 fix pack  (__mlsR3PackB40)   2026-07-06
+ * ----------------------------------------------------------------------------
+ * (R3-2) "0 / 149 seen" day-progress pill now counts ONLY the selected /
+ *        signed-in provider's patients (same data-driven provider matching as
+ *        Who's Next; fail-safe: if no visit carries provider info it shows the
+ *        whole-practice count and says "all providers").
+ * (R3-3) The "☀️ Good afternoon — N appointments today" brief is now REAL and
+ *        provider-scoped: N comes from today's pulled schedule for the
+ *        signed-in provider; when provider info is missing it says
+ *        "across all providers" instead of lying.
+ * (R3-4) Clinical tools: the button now ALWAYS works on the Note step and no
+ *        longer glitches on the Sign step -- the tools section is force-shown,
+ *        un-dimmed (the wizard's step-focus was hiding it), scrolled into
+ *        view, and restyled into a clean card.
+ * (R3-6) Legal requests: every request card gets a clear "👤 Patient: <name>"
+ *        chip; when the ACTIVE patient matches a legal request, a banner
+ *        offers one-tap "Attach this visit to the legal request" (marks the
+ *        visit linkage locally; nothing sent anywhere). The Legal marketplace
+ *        listing auto-fills from the Reputation data (practice, rating, review
+ *        count) so the listing markets the doctor without retyping.
+ * SAFETY: UI + local reads only. No Athena writes. 12-hour times everywhere.
+ * Reversible: window.__mlsR3PackB40_revert().
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsR3PackB40) return; window.__mlsR3PackB40 = { v: "b40" };
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function normProv(s) { return S(s).toUpperCase().replace(/ENCOUNTER SIGNED.*$/, "").replace(/^PROVIDER\s+/, "").replace(/[^A-Z]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function toks(s) { return normProv(s).split(" ").filter(function (t) { return t.length > 1 && !/^(MD|DO|PA|PAC|NP|DPM|RN|DR)$/.test(t); }); }
+  function provMatch(ap, dn) { var d = toks(dn); if (!d.length) return true; var a = toks(ap); if (!a.length) return false; for (var i = 0; i < d.length; i++) if (a.indexOf(d[i]) < 0) return false; return true; }
+  function myName() { try { return S(window.getProviderName && window.getProviderName()).trim(); } catch (e) { return ""; } }
+  function fmt12(t) { var m = S(t).match(/(\d\d?):(\d\d)/); if (!m) return S(t); var h = +m[1], ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return h + ":" + m[2] + " " + ap; }
+
+  /* ================= (R3-2) provider-scoped day progress ================= */
+  function scopedToday() {
+    var list = [];
+    try { list = (window.__mlsWhosNext && window.__mlsWhosNext.activeList && window.__mlsWhosNext.activeList()) || []; } catch (e) {}
+    if (!list.length) { try { list = (window._heroTodayList || []).map(function (a) { return { name: a.name, time: a.time || "", provider: a.provider || "" }; }); } catch (e) {} }
+    var me = myName(); var withProv = list.filter(function (a) { return S(a.provider).trim(); });
+    if (me && withProv.length) {
+      var mine = list.filter(function (a) { return a.provider && provMatch(a.provider, me); });
+      if (mine.length) return { list: mine, scoped: true };
+    }
+    return { list: list, scoped: false };
+  }
+  var _dpBusy = false;
+  function applyDayProgress(txtEl) {
+    if (_dpBusy) return; _dpBusy = true;
+    try {
+      var r = scopedToday(); if (!r.list.length) return;
+      var seen = 0;
+      if (typeof window._seenToday === "function") r.list.forEach(function (a) { try { if (window._seenToday(a.name)) seen++; } catch (e) {} });
+      var want = seen + " / " + r.list.length + " seen" + (r.scoped ? "" : " · all providers");
+      if (txtEl.textContent !== want) { txtEl.textContent = want; txtEl.title = r.scoped ? ("Your patients today (" + myName() + ")") : "No provider tags on today's visits yet — showing the whole practice"; }
+      var fill = document.querySelector(".mdp-fill");
+      if (fill) fill.style.width = (r.list.length ? Math.round(seen / r.list.length * 100) : 0) + "%";
+    } catch (e) {} finally { _dpBusy = false; }
+  }
+  function fixDayProgress() {
+    try {
+      var txtEl = document.querySelector(".mdp-txt"); if (!txtEl) return;
+      applyDayProgress(txtEl);
+      /* the legacy module rewrites this text on its own timer — re-apply the
+         provider-scoped truth the instant it changes (same-frame, no flicker) */
+      if (!txtEl.__r3obs) {
+        txtEl.__r3obs = 1;
+        try { new MutationObserver(function () { applyDayProgress(txtEl); }).observe(txtEl, { childList: true, characterData: true, subtree: true }); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  /* ================= (R3-3) honest, provider-scoped daily brief ================= */
+  var _origBrief = null;
+  function wrapBrief() {
+    try {
+      if (typeof window._renderDailyBrief !== "function" || window._renderDailyBrief.__r3) return;
+      _origBrief = window._renderDailyBrief;
+      var f = async function () {
+        try {
+          var host = $("patientsView"); if (!host) return;
+          var bar = $("dailyBriefBar");
+          if (!bar) { bar = document.createElement("div"); bar.id = "dailyBriefBar"; bar.style.cssText = "margin:0 0 12px"; host.insertBefore(bar, host.firstChild); }
+          var today = new Date().toISOString().slice(0, 10);
+          var appts = [];
+          try { appts = (window._calAppts || []).filter(function (a) { return S(a.appt_date || "").slice(0, 10) === today && S(a.name).trim(); }); } catch (e) {}
+          if (!appts.length) { bar.style.display = "none"; bar.innerHTML = ""; return; }
+          var me = myName(); var withProv = appts.filter(function (a) { return S(a.provider).trim(); });
+          var mine = (me && withProv.length) ? appts.filter(function (a) { return a.provider && provMatch(a.provider, me); }) : [];
+          var scoped = mine.length > 0;
+          var use = scoped ? mine : appts;
+          var seen = 0; try { if (typeof window._seenToday === "function") use.forEach(function (a) { if (window._seenToday(a.name)) seen++; }); } catch (e) {}
+          var hh = new Date().getHours(); var greet = hh < 12 ? "Good morning" : hh < 17 ? "Good afternoon" : "Good evening";
+          var nextUp = ""; try { var srt = use.slice().sort(function (a, b) { return S(a.start_at).localeCompare(S(b.start_at)); }); var now = Date.now(); var nx = srt.filter(function (a) { return a.start_at && new Date(a.start_at).getTime() >= now - 30 * 60000; })[0]; if (nx) { var d = new Date(nx.start_at); nextUp = " Next: <b>" + esc(S(nx.name).split(" ")[0]) + "</b> at " + fmt12(("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2)) + "."; } } catch (e) {}
+          var msg = "☀️ " + greet + (me ? (", " + esc(me)) : "") + " — <b>" + use.length + "</b> appointment" + (use.length === 1 ? "" : "s") + " today" + (scoped ? "" : " <span style='opacity:.75'>(across all providers — no provider tags on today's pull yet)</span>") + (seen ? (", " + seen + " seen") : "") + "." + nextUp;
+          bar.innerHTML = '<div style="background:linear-gradient(90deg,#eef6ff,#f3fbf6);border:1px solid #d7e6fb;border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-size:13.5px;flex:1;min-width:200px">' + msg + "</span>" +
+            '<button class="btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'visit\')">\u{1F399}️ Start seeing patients</button>' +
+            '<button class="btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'calendar\')">\u{1F4C5} See schedule</button></div>';
+          bar.style.display = "block";
+        } catch (e) { try { if (_origBrief) return _origBrief.apply(this, arguments); } catch (e2) {} }
+      };
+      f.__r3 = true; window._renderDailyBrief = f;
+    } catch (e) {}
+  }
+
+  /* ================= (R3-4) Clinical tools: always works, clean ================= */
+  function css() {
+    if ($("mlsR3Css")) return;
+    var st = document.createElement("style"); st.id = "mlsR3Css";
+    st.textContent = [
+      /* tools section: readable card, never dimmed/hidden by the wizard step focus */
+      "#visitView .vx-tools.r3-open,#visitToolsGroup.r3-open{display:block!important;visibility:visible!important;opacity:1!important;filter:none!important;pointer-events:auto!important;max-height:none!important;overflow:visible!important;background:var(--card,#fff);border:1px solid var(--line,#dbe4f0);border-radius:14px;padding:14px 16px;margin:10px 0;box-shadow:0 8px 24px rgba(20,40,90,.08)}",
+      ".r3-open .mls-focus-dim,{opacity:1!important}",
+      "#visitView .vx-tools.r3-open *{opacity:1!important;filter:none!important}",
+      /* legal patient chips */
+      ".r3-legal-pt{display:inline-flex;align-items:center;gap:5px;background:#eef4ff;border:1px solid #c9d9f5;color:#1e3a8a;border-radius:999px;padding:2px 10px;font:700 11.5px system-ui;margin:4px 6px 0 0}",
+      "#mlsR3LegalBanner{background:linear-gradient(90deg,#fff7e6,#fffdf3);border:1px solid #f0d9a8;border-radius:12px;padding:10px 14px;margin:8px 0;font:600 13px system-ui;color:#7a5b16;display:flex;align-items:center;gap:10px;flex-wrap:wrap}",
+      "#mlsR3LegalBanner button{background:#b58105;color:#fff;border:0;border-radius:8px;padding:7px 13px;font:700 12.5px system-ui;cursor:pointer}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+  function fixClinicalTools() {
+    try {
+      if (typeof window.toggleVisitTools === "function" && !window.toggleVisitTools.__r3) {
+        var orig = window.toggleVisitTools;
+        var w = function () {
+          var r = orig.apply(this, arguments);
+          setTimeout(function () {
+            try {
+              var sec = document.querySelector("#visitView .vx-tools") || $("visitToolsGroup");
+              if (!sec) return;
+              var vis = sec.offsetParent !== null && getComputedStyle(sec).display !== "none" && parseFloat(getComputedStyle(sec).opacity || "1") > 0.4;
+              if (!sec.classList.contains("r3-open")) { sec.classList.add("r3-open"); }
+              else if (vis) { sec.classList.remove("r3-open"); return; } /* toggle off cleanly */
+              sec.scrollIntoView({ behavior: "smooth", block: "start" });
+            } catch (e) {}
+          }, 180);
+          return r;
+        };
+        w.__r3 = true; w.__orig = orig; window.toggleVisitTools = w;
+      }
+      /* also catch any button literally labeled Clinical tools whose handler is missing */
+      [].forEach.call(document.querySelectorAll("button"), function (b) {
+        if (b.__r3ct) return;
+        if (!/clinical tools/i.test(b.textContent || "")) return;
+        b.__r3ct = 1;
+        b.addEventListener("click", function () {
+          setTimeout(function () {
+            try {
+              var sec = document.querySelector("#visitView .vx-tools") || $("visitToolsGroup");
+              if (sec && (sec.offsetParent === null || getComputedStyle(sec).display === "none")) { sec.classList.add("r3-open"); sec.scrollIntoView({ behavior: "smooth", block: "start" }); }
+            } catch (e) {}
+          }, 250);
+        });
+      });
+    } catch (e) {}
+  }
+
+  /* ================= (R3-6) legal requests: patient linkage + reputation autofill ===== */
+  function activePatientName() {
+    try { var el = $("heroPtName"); if (el && S(el.value).trim()) return S(el.value).trim(); } catch (e) {}
+    try { if (typeof window.getActivePatient === "function") { var p = window.getActivePatient(); if (p && p.name) return S(p.name); } } catch (e) {}
+    return "";
+  }
+  function legalRequests() {
+    /* read-only probe of the legal view's request cards */
+    var view = $("legalReqView") || document.querySelector('[id^="mlsPView_legal"], #legalView');
+    if (!view) return [];
+    return [].slice.call(view.querySelectorAll(".card,[class*=legal-req],[data-legal-id]")).filter(function (c) { return /attorney|law|request/i.test(c.textContent || "") && (c.textContent || "").length > 40; });
+  }
+  function nameIn(cardText, name) {
+    if (!name) return false;
+    var last = name.split(/\s+/).slice(-1)[0];
+    return last && last.length > 2 && new RegExp("\\b" + last.replace(/[^\w]/g, "") + "\\b", "i").test(cardText);
+  }
+  function legalTick() {
+    try {
+      var name = activePatientName();
+      /* 1) chips on every request card naming the tied patient */
+      legalRequests().forEach(function (card) {
+        if (card.querySelector(".r3-legal-pt")) return;
+        var m = (card.textContent || "").match(/(?:patient|regarding|re:|for)\s*[:\-]?\s*([A-Z][a-z]+(?:\s+[A-Z][a-zA-Z.'-]+){1,2})/);
+        var chip = document.createElement("span");
+        chip.className = "r3-legal-pt";
+        chip.innerHTML = "\u{1F464} Patient: " + esc(m ? m[1] : "(not recorded — open the request to set)");
+        card.insertBefore(chip, card.firstChild);
+      });
+      /* 2) active-patient banner in the visit view when they match a legal request */
+      var vv = $("visitView");
+      if (vv && name) {
+        var match = legalRequests().some(function (c) { return nameIn(c.textContent || "", name); });
+        var ban = $("mlsR3LegalBanner");
+        if (match && !ban) {
+          ban = document.createElement("div"); ban.id = "mlsR3LegalBanner";
+          ban.innerHTML = "⚖️ <b>" + esc(name) + "</b> has an open legal request. Today's visit can support it." +
+            '<button type="button" id="mlsR3LegalAttach">\u{1F4CE} Attach this visit to the legal request</button>';
+          vv.insertBefore(ban, vv.firstChild);
+          $("mlsR3LegalAttach").onclick = function () {
+            try {
+              var k = "mls_legal_visit_links"; var arr = JSON.parse(localStorage.getItem(k) || "[]");
+              arr.push({ patient: name, date: new Date().toISOString().slice(0, 10), at: Date.now() });
+              localStorage.setItem(k, JSON.stringify(arr.slice(-200)));
+            } catch (e) {}
+            this.textContent = "✓ Attached — it will be flagged in Legal requests";
+            this.disabled = true;
+          };
+        } else if (!match && ban) ban.remove();
+      }
+      /* 3) marketplace listing autofill from Reputation data */
+      var lst = document.querySelector("#expertListingForm, [id*='marketplace'] form, #mlsExpertListing");
+      if (lst && !lst.__r3fill) {
+        lst.__r3fill = 1;
+        try {
+          var rf = JSON.parse(localStorage.getItem("mlsRF") || "{}");
+          var d = rf.doc || {}; var cap = rf.cap || {}; var g = cap.google || {};
+          [].forEach.call(lst.querySelectorAll("input,textarea"), function (inp) {
+            if (S(inp.value).trim()) return;
+            var ph = (S(inp.placeholder) + " " + S(inp.name) + " " + S(inp.id)).toLowerCase();
+            if (/practice|business/.test(ph) && d.practice) inp.value = d.practice;
+            else if (/doctor|name/.test(ph) && d.name) inp.value = d.name;
+            else if (/special/.test(ph) && d.spec) inp.value = d.spec;
+            else if (/city|location/.test(ph) && d.city) inp.value = d.city;
+            else if (/website|site|url/.test(ph) && d.site) inp.value = d.site;
+            else if (/bio|about|description/.test(ph)) inp.value = (d.name || "Our practice") + (d.spec ? (" — " + d.spec) : "") + (g.r ? (". Rated " + g.r + "★ on Google (" + (g.c || 0) + " reviews).") : "");
+            if (inp.value) inp.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  /* ================= ticks ================= */
+  function tick() { try { css(); fixDayProgress(); wrapBrief(); fixClinicalTools(); legalTick(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 1100);
+
+  window.__mlsR3PackB40_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { var s = $("mlsR3Css"); if (s) s.remove(); } catch (e) {}
+    try { if (_origBrief && window._renderDailyBrief && window._renderDailyBrief.__r3) window._renderDailyBrief = _origBrief; } catch (e) {}
+    try { if (window.toggleVisitTools && window.toggleVisitTools.__r3) window.toggleVisitTools = window.toggleVisitTools.__orig; } catch (e) {}
+    try { [].forEach.call(document.querySelectorAll(".r3-legal-pt,#mlsR3LegalBanner"), function (n) { n.remove(); }); } catch (e) {}
+    window.__mlsR3PackB40 = 0;
+  };
+})();
+
+/* =========================================================================
+ * MLS Scribe -- b40 Study Groups PRO  (__mlsStudyProB40)   2026-07-06
+ * ----------------------------------------------------------------------------
+ * R3-1: major Study Groups / Run-a-Study overhaul, layered ON TOP of the
+ * existing __mlsStudyGroups engine (its data model, xlsx/PDF/graph outputs and
+ * dedupe stay -- nothing re-implemented, nothing deleted).
+ *
+ *  1) AUTO-FORMAT: "⚡ Add ALL my patients" builds the required study format
+ *     automatically from the app's own data (charts + saved notes + pulled
+ *     Athena visits) -- one click, no CSV/JSON typing. Per-visit records
+ *     (date, type, full detail), deduped by the engine's content hash.
+ *  2) COHORTS BY PROCEDURE: type a procedure/diagnosis ("injection",
+ *     "radiculopathy", CPT text...) and MLS builds a cohort of every patient
+ *     whose visits mention it (their full visit history included).
+ *  3) RUN A STUDY -- with real options: study type (retrospective outcomes /
+ *     visit volume & trends / procedure comparison / cohort profile / custom
+ *     question), date range, and a PREMIUM AI narrative that runs on the
+ *     backend's gated /api/study STRONGER model (same engine as the Analysis
+ *     Data Study: Background / Methods / Results / Limitations, real numbers
+ *     only, de-identified). Graph + Excel + PDF still come from the local
+ *     engine; the AI narrative renders alongside with copy/download.
+ * SAFETY: reads app data only; nothing sent anywhere except the existing
+ * authed /api/study call; no Athena writes. Reversible:
+ * window.__mlsStudyProB40_revert().
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsStudyProB40) return; window.__mlsStudyProB40 = { v: "b40" };
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function SG() { return window.__mlsStudyGroups || null; }
+
+  /* ---------- auto-format the app's own data into study records ---------- */
+  function allNotes() { try { return (window.getNotes && window.getNotes()) || []; } catch (e) { return []; } }
+  function allPatients() { try { return (window.getPatients && window.getPatients()) || []; } catch (e) { return []; } }
+  function allAppts() { try { return window._calAppts || []; } catch (e) { return []; } }
+  function noteDate(n) { return S(n.date || n.visitDate || (n.created && new Date(n.created).toISOString())).slice(0, 10); }
+  function notePt(n) { return S(n.patientName || n.name || n.patient || "").trim(); }
+  function noteText(n) { return S(n.note || n.text || n.body || n.content || ""); }
+  function buildRecords(filterFn) {
+    /* returns {patients:[{name,dob,mrn,history:[{date,type,note}]}]} */
+    var byKey = {}; /* nameLower -> rec */
+    function rec(name, dob, mrn) {
+      var k = S(name).trim().toLowerCase(); if (!k) return null;
+      if (!byKey[k]) byKey[k] = { name: S(name).trim(), dob: S(dob || ""), mrn: S(mrn || ""), history: [] };
+      if (dob && !byKey[k].dob) byKey[k].dob = S(dob);
+      return byKey[k];
+    }
+    allPatients().forEach(function (p) { rec(p.name, p.dob, p.mrn || p.id); });
+    allNotes().forEach(function (n) {
+      var nm = notePt(n); if (!nm) return;
+      var v = { date: noteDate(n), type: n.visitType || n.type || "Visit note", note: noteText(n).slice(0, 8000) };
+      if (filterFn && !filterFn(v, nm)) return;
+      var r = rec(nm, n.dob); if (r) r.history.push(v);
+    });
+    allAppts().forEach(function (a) {
+      var nm = S(a.name).trim(); if (!nm) return;
+      var v = { date: S(a.appt_date || "").slice(0, 10), type: a.appt_type || "Appointment", note: "Reason: " + S(a.reason || "(not recorded)") + (a.provider ? (" | Provider: " + S(a.provider).replace(/Close$/, "").replace(/_/g, " ")) : "") + (a.status ? (" | Status: " + a.status) : "") };
+      if (filterFn && !filterFn(v, nm)) return;
+      var r = rec(nm, a.dob); if (r) r.history.push(v);
+    });
+    var out = [];
+    Object.keys(byKey).forEach(function (k) { var r = byKey[k]; if (!filterFn || r.history.length) out.push(r); });
+    return { patients: out };
+  }
+  function importInto(groupName, data) {
+    var sg = SG(); if (!sg) return null;
+    var g = sg.list().filter(function (x) { return x.name === groupName; })[0] || sg.createGroup(groupName);
+    var res = sg.importJSON(g.id, JSON.stringify(data));
+    return { group: g, res: res };
+  }
+
+  /* ---------- UI ---------- */
+  function css() {
+    if ($("mlsStudyProCss")) return;
+    var st = document.createElement("style"); st.id = "mlsStudyProCss";
+    st.textContent = [
+      "#mlsSgPro{border:1px solid #d5e2f8;border-radius:12px;background:#f6f9ff;padding:14px 16px;margin:0 0 14px}",
+      "#mlsSgPro h4{margin:0 0 8px;font:800 14px system-ui;color:#16233a}",
+      "#mlsSgPro .sgp-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}",
+      "#mlsSgPro button{font:700 13px system-ui;border:0;border-radius:9px;padding:9px 14px;cursor:pointer}",
+      "#mlsSgPro .sgp-all{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff}",
+      "#mlsSgPro .sgp-proc{background:#7c3aed;color:#fff}",
+      "#mlsSgPro input[type=text],#mlsSgPro select{font:500 13px system-ui;padding:8px 10px;border:1px solid #cdd9ea;border-radius:8px;background:#fff;color:#16233a}",
+      "#mlsSgPro .sgp-note{font:500 12px system-ui;color:#5a6b82}",
+      "#mlsSgProRun{border-top:1px dashed #c7d6ef;margin-top:10px;padding-top:10px}",
+      "#mlsSgProRun label{font:700 12px system-ui;color:#3b5f9e;display:block;margin-bottom:3px}",
+      "#mlsSgProRun .sgp-run{background:#16a34a;color:#fff;font-size:14px;padding:10px 18px}",
+      "#mlsSgProOut{margin-top:10px}",
+      "#mlsSgProOut .sgp-dl{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #cdd9ea;border-radius:9px;padding:8px 13px;font:700 12.5px system-ui;color:#1e3a8a;cursor:pointer;margin:0 6px 6px 0;text-decoration:none}",
+      "#mlsSgProNarr{background:#fff;border:1px solid #d5e2f8;border-left:4px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-top:8px;font:500 13.5px/1.6 system-ui;color:#1b2942;white-space:pre-wrap;max-height:420px;overflow:auto}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+  function ensureUI() {
+    var sgRoot = $("mls-sg-root"); if (!sgRoot || $("mlsSgPro")) return;
+    var box = document.createElement("div"); box.id = "mlsSgPro";
+    box.innerHTML =
+      '<h4>&#9889; Build your cohort automatically</h4>' +
+      '<div class="sgp-row"><button type="button" class="sgp-all" id="sgpAllBtn">&#9889; Add ALL my patients (auto-formatted)</button>' +
+      '<span class="sgp-note">MLS turns your charts, notes and pulled Athena visits into per-visit study records &mdash; no typing.</span></div>' +
+      '<div class="sgp-row"><input type="text" id="sgpProcTx" placeholder="Procedure / diagnosis &mdash; e.g. injection, radiculopathy, knee OA" style="min-width:280px;flex:1">' +
+      '<button type="button" class="sgp-proc" id="sgpProcBtn">&#127919; Build cohort by procedure</button></div>' +
+      '<div class="sgp-note" id="sgpBuildNote"></div>' +
+      '<div id="mlsSgProRun">' +
+      '<h4>&#9654; Run a study &mdash; options</h4>' +
+      '<div class="sgp-row">' +
+      '<span><label>Study type</label><select id="sgpType">' +
+      '<option value="outcomes">Retrospective outcomes</option>' +
+      '<option value="volume">Visit volume &amp; trends</option>' +
+      '<option value="procedure">Procedure comparison</option>' +
+      '<option value="profile">Cohort profile / demographics</option>' +
+      '<option value="custom">Custom question&hellip;</option>' +
+      '</select></span>' +
+      '<span><label>Date range</label><select id="sgpRange"><option value="all">All time</option><option value="12">Last 12 months</option><option value="6">Last 6 months</option><option value="3">Last 3 months</option></select></span>' +
+      '<span><label>&nbsp;</label><label style="display:flex;align-items:center;gap:6px;font:600 12.5px system-ui;color:#16233a;margin:0"><input type="checkbox" id="sgpAi" checked> &#129504; Premium AI narrative (stronger model)</label></span>' +
+      '</div>' +
+      '<div class="sgp-row" id="sgpCustomRow" style="display:none"><input type="text" id="sgpCustomTx" placeholder="Ask anything about this cohort &mdash; e.g. did pain scores improve after injections?" style="flex:1;min-width:320px"></div>' +
+      '<div class="sgp-row"><button type="button" class="sgp-run" id="sgpRunBtn">&#9654; Run the study</button><span class="sgp-note" id="sgpRunNote"></span></div>' +
+      '<div id="mlsSgProOut"></div></div>';
+    sgRoot.parentNode.insertBefore(box, sgRoot);
+    $("sgpType").addEventListener("change", function () { $("sgpCustomRow").style.display = this.value === "custom" ? "flex" : "none"; });
+    $("sgpAllBtn").addEventListener("click", function () {
+      var n = $("sgpBuildNote"); n.textContent = "Formatting your data…";
+      setTimeout(function () {
+        try {
+          var data = buildRecords(null);
+          var r = importInto("All patients (auto)", data);
+          n.textContent = r ? ("✓ “All patients (auto)” ready — " + data.patients.length + " patients, " + data.patients.reduce(function (a, p) { return a + p.history.length; }, 0) + " visit records (deduped). Select it above and run a study.") : "Study engine not loaded yet — try again in a moment.";
+          try { refreshSgSelect("All patients (auto)"); } catch (e) {}
+        } catch (e) { n.textContent = "Could not format the data: " + e.message; }
+      }, 30);
+    });
+    $("sgpProcBtn").addEventListener("click", function () {
+      var kw = S($("sgpProcTx").value).trim(); var n = $("sgpBuildNote");
+      if (!kw) { n.textContent = "Type a procedure or diagnosis first."; return; }
+      n.textContent = "Scanning every visit for “" + kw + "”…";
+      var kwl = kw.toLowerCase();
+      setTimeout(function () {
+        try {
+          /* pass 1: find matching patient names; pass 2: include their FULL history */
+          var hits = {};
+          var probe = buildRecords(null);
+          probe.patients.forEach(function (p) { p.history.forEach(function (v) { if ((S(v.note) + " " + S(v.type)).toLowerCase().indexOf(kwl) >= 0) hits[p.name.toLowerCase()] = 1; }); });
+          var data = { patients: probe.patients.filter(function (p) { return hits[p.name.toLowerCase()]; }) };
+          if (!data.patients.length) { n.textContent = "No visits mention “" + kw + "”. Try another wording (MLS scans notes, reasons and visit types)."; return; }
+          var r = importInto("Cohort — " + kw, data);
+          n.textContent = "✓ “Cohort — " + kw + "” ready — " + data.patients.length + " matching patients with their full visit history. Select it above and run a study.";
+          try { refreshSgSelect("Cohort — " + kw); } catch (e) {}
+        } catch (e) { n.textContent = "Cohort build failed: " + e.message; }
+      }, 30);
+    });
+    $("sgpRunBtn").addEventListener("click", runPro);
+  }
+  function refreshSgSelect(name) {
+    /* nudge the legacy select to show the new group and select it */
+    var sel = document.querySelector("#mls-sg-root select"); if (!sel) return;
+    try { var sg = SG(); var g = sg.list().filter(function (x) { return x.name === name; })[0]; if (!g) return;
+      var have = [].slice.call(sel.options).some(function (o) { return o.value === g.id; });
+      if (!have) { var o = document.createElement("option"); o.value = g.id; o.textContent = g.name + " (" + g.patients.length + ")"; sel.appendChild(o); }
+      sel.value = g.id; sel.dispatchEvent(new Event("change", { bubbles: true }));
+    } catch (e) {}
+  }
+  function selectedGroup() {
+    var sel = document.querySelector("#mls-sg-root select");
+    var sg = SG(); if (!sg) return null;
+    if (sel && sel.value) { var g = sg.get(sel.value); if (g) return g; }
+    var l = sg.list(); return l.length ? l[l.length - 1] : null;
+  }
+  function inRange(dateStr, months) {
+    if (!months) return true;
+    var d = new Date(dateStr); if (isNaN(d)) return true;
+    var cut = new Date(); cut.setMonth(cut.getMonth() - months);
+    return d >= cut;
+  }
+  function fmt12(t) { var m = S(t).match(/^(\d\d?):(\d\d)/); if (!m) return S(t); var h = +m[1], ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return h + ":" + m[2] + " " + ap; }
+
+  function runPro() {
+    var sg = SG(); var note = $("sgpRunNote"), out = $("mlsSgProOut");
+    if (!sg) { note.textContent = "Study engine not loaded."; return; }
+    var g = selectedGroup();
+    if (!g || !g.patients.length) { note.textContent = "Pick (or build) a group with patients first — try ⚡ Add ALL my patients."; return; }
+    var months = +($("sgpRange").value) || 0;
+    var type = $("sgpType").value;
+    var typeLabel = { outcomes: "Retrospective outcomes study", volume: "Visit volume & trends study", procedure: "Procedure comparison study", profile: "Cohort profile / demographics", custom: "Custom study" }[type];
+    note.textContent = "Running “" + typeLabel + "” on " + g.name + "…";
+    out.innerHTML = "";
+    /* 1) local engine: graph + Excel + PDF (unchanged, proven) */
+    sg.runStudy(g.id, {}).then(function (res) {
+      var html = '<div style="background:#fff;border:1px solid #d5e2f8;border-radius:10px;padding:12px">' + (res.svg || "") + "</div><div style=\"margin-top:8px\">";
+      function dl(blob, name, label) {
+        if (!blob) return "";
+        var u = URL.createObjectURL(blob);
+        return '<a class="sgp-dl" href="' + u + '" download="' + name + '">' + label + "</a>";
+      }
+      html += dl(res.xlsxBlob, "MLS_Study_" + g.name.replace(/\W+/g, "_") + ".xlsx", "⬇ Excel (per-visit data)");
+      html += dl(res.pdfBlob, "MLS_Study_" + g.name.replace(/\W+/g, "_") + ".pdf", "⬇ PDF report" + (res.pdfPages ? (" · " + res.pdfPages + " pages") : ""));
+      html += "</div>";
+      out.innerHTML = html;
+      note.textContent = "✓ Graph + Excel + PDF ready." + ($("sgpAi").checked ? " Writing the AI narrative…" : "");
+      if ($("sgpAi").checked) runNarrative(g, type, typeLabel, months);
+    }).catch(function (e) { note.textContent = "Study failed: " + e.message; });
+  }
+  function runNarrative(g, type, typeLabel, months) {
+    var note = $("sgpRunNote"), out = $("mlsSgProOut");
+    var tokv = ""; try { tokv = sessionStorage.getItem("sf_bk_token") || localStorage.getItem("sf_bk_token") || ""; } catch (e) {}
+    var base = ""; try { base = window.bkBase ? window.bkBase() : ""; } catch (e) {}
+    if (!tokv || !base) { note.textContent = "✓ Outputs ready. (Sign in to add the AI narrative.)"; return; }
+    /* de-identified per-visit lines (P1, P2, ... instead of names) */
+    var lines = [], pi = 0, nVisits = 0;
+    g.patients.forEach(function (p) {
+      pi++;
+      (p.visits || []).forEach(function (v) {
+        if (!inRange(v.date, months)) return;
+        nVisits++;
+        if (lines.length < 900) lines.push("P" + pi + " | " + S(v.date) + " | " + S(v.type) + " | " + S(v.detail).replace(/[\n\r|]+/g, " ").slice(0, 260));
+      });
+    });
+    var qMap = {
+      outcomes: "Produce a retrospective outcomes study of this cohort: what happened to these patients over time (pain, findings, response to treatment where recorded)?",
+      volume: "Produce a visit volume and trends study: visits over time, busiest periods, visit-type mix, notable changes.",
+      procedure: "Produce a procedure comparison study: which procedures/treatments appear, how often, and how outcomes differ between them where recorded.",
+      profile: "Produce a cohort profile: demographics (from DOBs), visit patterns, most common diagnoses/procedures, and what characterizes this cohort.",
+      custom: S(($("sgpCustomTx") || {}).value).trim() || "Summarize this cohort."
+    };
+    var sys = "You are a careful, honest, PREMIUM clinical-study analyst. Use ONLY the provided de-identified per-visit records. Produce a properly structured retrospective study: Background, Methods (retrospective review of n=" + nVisits + " visit records across " + g.patients.length + " patients — state these numbers), Results (real numbers computed from the records; show counts and math), Limitations, and a note that IRB/compliance review is required before publication. NEVER fabricate numbers, dates or outcomes. If the records cannot answer something, say so plainly. 12-hour AM/PM for any times. Plain text only.";
+    var user = "STUDY TYPE: " + typeLabel + "\nQUESTION: " + qMap[type] + "\nDATE RANGE: " + (months ? ("last " + months + " months") : "all time") + "\n\nDE-IDENTIFIED VISIT RECORDS (patient | date | type | detail):\n" + lines.join("\n");
+    fetch(base + "/api/study", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tokv }, body: JSON.stringify({ system: sys, user: user }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+      .then(function (x) {
+        var text = S(x.j && (x.j.content || x.j.text || x.j.reply)).trim();
+        if (!x.ok || !text) {
+          note.textContent = "✓ Graph/Excel/PDF ready. AI narrative unavailable" + (x.status === 403 ? " (premium study engine not enabled on this account)" : "") + ".";
+          return;
+        }
+        var div = document.createElement("div"); div.id = "mlsSgProNarr"; div.textContent = text;
+        var hd = document.createElement("div"); hd.style.cssText = "font:800 13px system-ui;color:#7c3aed;margin-top:12px"; hd.innerHTML = "\u{1F9E0} Premium AI study narrative" + (x.j.model ? (' <span style="font-weight:600;color:#8a97ad">· ' + esc(x.j.model) + "</span>") : "") + ' <button class="sgp-dl" style="margin-left:8px" onclick="navigator.clipboard.writeText(document.getElementById(\'mlsSgProNarr\').textContent)">\u{1F4CB} Copy</button>';
+        out.appendChild(hd); out.appendChild(div);
+        note.textContent = "✓ Full study ready — graph, Excel, PDF and AI narrative below.";
+      })
+      .catch(function () { note.textContent = "✓ Graph/Excel/PDF ready. (AI narrative: network problem.)"; });
+  }
+
+  function tick() { try { css(); ensureUI(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 1200);
+  window.__mlsStudyProB40_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { var b = $("mlsSgPro"); if (b) b.remove(); } catch (e) {}
+    try { var s = $("mlsStudyProCss"); if (s) s.remove(); } catch (e) {}
+    window.__mlsStudyProB40 = 0;
+  };
+})();
+
+/* =========================================================================
  * MLS Scribe -- b39 "MLS Copilot Voice"  (__mlsCopilotVoiceB39)  2026-07-06
  * ----------------------------------------------------------------------------
  * ONE voice entry point wired into the SAME single-assistant brain (item 12's
@@ -1471,7 +1974,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b39';
+  window.__MLS_AV = window.__MLS_AV || 'b40';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -1785,7 +2288,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b39';
+  var MLS_APP_BUILD='2026-07-06-b40';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;

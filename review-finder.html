@@ -60,9 +60,9 @@
     <h2>🩺 Who are we scanning for?</h2>
     <p class="hint">Enter the doctor + practice. Everything below auto-fills from this.</p>
     <div class="grid">
-      <div><label>Doctor name</label><input id="dName" placeholder="Matthew Schaeffer, MD"></div>
+      <div><label>Doctor name</label><input id="dName" placeholder="Jane Smith, MD"></div>
       <div><label>Specialty</label><input id="dSpec" placeholder="Orthopedics / Pain Management"></div>
-      <div><label>Practice name</label><input id="dPractice" placeholder="Premier Ortho"></div>
+      <div><label>Practice name</label><input id="dPractice" placeholder="Main Street Spine &amp; Ortho"></div>
       <div><label>City, State</label><input id="dCity" placeholder="Philadelphia, PA"></div>
       <div><label>Google review link (optional)</label><input id="dGoogle" placeholder="https://g.page/r/…/review"></div>
       <div><label>Website (optional)</label><input id="dSite" placeholder="https://…"></div>
@@ -268,7 +268,18 @@ load(); renderPlatforms(); dash();
       scanning=false; el('repLiveNote').textContent='';
       if(!j||!j.ok){ el('repLiveBody').innerHTML='<div class="note">⚠️ '+h((j&&(j.detail||j.error))||'Could not reach the review service.')+'</div>'; return; }
       lastData=j;
-      if(!j.listings||!j.listings.length){ el('repLiveBody').innerHTML='<div class="note">No Google listing found yet for “'+h(j.query)+'” — try adding the city, or claim your listing on Google Business Profile (a gap worth fixing!).</div>'; return; }
+      if(!j.listings||!j.listings.length){
+        el('repLiveBody').innerHTML=
+          '<div class="note">No Google listing found for “'+h(j.query)+'” (double-check spelling / add the city).</div>'+
+          '<div class="plat" style="margin-top:10px;border-color:rgba(22,163,74,.5)">'+
+          '<div class="nm">✨ No listing? MLS will help you CREATE one.</div>'+
+          '<div class="sub2">A Google Business Profile is free and is how new patients find you. MLS pre-fills everything from what you entered above (and your resume materials below) — you approve before anything goes live.</div>'+
+          '<div class="row" style="margin-top:8px">'+
+          '<a class="btn green" style="text-decoration:none" href="https://business.google.com/create" target="_blank" rel="noopener">🚀 Start my Google listing ↗</a>'+
+          '<button class="btn ghost" onclick="window.__repCopyPack()">📋 Copy my pre-filled info</button></div>'+
+          '<div class="note" style="margin-top:6px">Coming with MLS Marketing: sign in with Google once and MLS creates and maintains the listing for you — every change doctor-approved before it publishes.</div>'+
+          '</div>';
+        return; }
       el('repLiveChip').style.display='inline-block';
       var htmlOut=j.listings.map(function(L,i){
         return '<div class="plat" style="margin-bottom:10px"><div class="ph"><span class="nm">'+(i===0?'⭐ ':'')+h(L.name)+'</span>'+(L.rating!=null?('<span class="chip ok">'+h(String(L.rating))+' ★ · '+h(String(L.count))+' reviews</span>'):'<span class="chip miss">no rating yet</span>')+'</div>'+
@@ -325,6 +336,21 @@ load(); renderPlatforms(); dash();
         htmlOut+='<div class="note" style="margin-top:8px">Paste each section into your Google Business Profile (business.google.com). MLS never auto-posts — you stay in control.</div>';
         out.innerHTML=htmlOut;
       }).catch(function(){ btn.disabled=false; note.textContent='Network problem — try again.'; });
+  };
+
+  /* pre-filled info pack for creating a brand-new Google Business Profile */
+  window.__repCopyPack=function(){
+    var d; try{ d=doc(); }catch(e){ d={}; }
+    var mat=(el('repMat')&&el('repMat').value||'').slice(0,1500);
+    var pack='GOOGLE BUSINESS PROFILE — pre-filled by MLS\n'+
+      'Business name: '+(d.practice||d.name||'')+'\n'+
+      'Category: '+(d.spec||'Medical practice')+'\n'+
+      'Doctor: '+(d.name||'')+'\n'+
+      'City: '+(d.city||'')+'\n'+
+      'Website: '+(d.site||'')+'\n'+
+      (mat?('About (from your materials):\n'+mat+'\n'):'');
+    try{ navigator.clipboard.writeText(pack); }catch(e){}
+    alert('Copied — paste as you go through Google’s listing steps.');
   };
 
   /* auto-run on load (when details are saved) + after every Save */
