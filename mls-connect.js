@@ -1,4 +1,129 @@
 /* =========================================================================
+ * MLS Scribe -- b49 agenda BUTTON provider-scope fix (__mlsAgendaBtnB49) 2026-07-06
+ * Owner screenshot: the blue "Today's agenda (0/458)" button counted EVERY
+ * provider (all of _heroTodayList) and seen stayed 0. b46 already scoped the
+ * chip + popup, but its activeProvider() compared #mlsProvChip.textContent
+ * with equality against appt.provider — the chip now reads
+ * "🩺 Pulling as: Matthew Schaeffer, MD ▾·🔍 find a doctor", so the equality
+ * never matches and b46's fix silently no-ops (fail-open by design); the
+ * item77 popover module's all-provider count showed instead (458 then,
+ * 132 tonight; the selected doctor has 24 today).
+ *
+ * Fix (minimal, isolated): resolve the provider by SUBSTRING match against
+ * the real provider names present in window._calAppts (longest match wins),
+ * then keep the #mlsAgendaChip button text and the #mlsAgendaPop list scoped
+ * to that provider's TODAY-only appointments — the SAME _calAppts source the
+ * calendar and b46 use. seen = checked_in_at OR _seenToday(name) (the
+ * counter-strip's source). Fail-open: no provider resolved, or "All
+ * providers" => nothing changes. UI-only. Athena READ-ONLY. No PHI leaves
+ * the page.
+ * Revert: window.__mlsAgendaBtnB49_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsAgendaBtnB49) return;
+  var cleanup = [];
+  function $(id) { return document.getElementById(id); }
+  function todayLocal() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function resolveProvider() {
+    var el = $('mlsProvChip'); if (!el) return null;
+    var t = (el.textContent || '').trim(); if (!t) return null;
+    if (/all providers/i.test(t)) return null;
+    var A = window._calAppts; if (!Array.isArray(A)) return null;
+    var seenP = {}, best = null;
+    for (var i = 0; i < A.length; i++) {
+      var p = A[i] && A[i].provider; if (!p || seenP[p]) continue; seenP[p] = 1;
+      if (t.indexOf(p) >= 0 && (!best || p.length > best.length)) best = p;
+    }
+    return best;
+  }
+  function provToday() {
+    var prov = resolveProvider(); if (!prov) return null;
+    var A = window._calAppts; var td = todayLocal();
+    var mine = A.filter(function (a) {
+      if (!a || (a.provider || '') !== prov) return false;
+      var dl = String(a.day_local || a.appt_date || '');
+      return dl === td || dl.indexOf(td) === 0;
+    });
+    return mine.length ? { prov: prov, appts: mine } : null;
+  }
+  function isSeen(a) {
+    if (a && a.checked_in_at) return true;
+    try { if (typeof window._seenToday === 'function' && window._seenToday(a.name)) return true; } catch (e) {}
+    return false;
+  }
+  function t12(a) {
+    if (a.time_display) return a.time_display;
+    try {
+      var d = new Date(a.start_at);
+      var h = d.getHours(), m = ('0' + d.getMinutes()).slice(-2);
+      var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
+      return h + ':' + m + ' ' + ap;
+    } catch (e) { return ''; }
+  }
+  /* ---------- button (chip) ---------- */
+  function fixChip() {
+    try {
+      var chip = $('mlsAgendaChip');
+      var p = provToday();
+      if (!chip || !p) return;
+      var seen = p.appts.filter(isSeen).length;
+      var want = '🗓 Today’s agenda (' + seen + '/' + p.appts.length + ')';
+      if (chip.textContent !== want) chip.textContent = want;
+      chip.title = 'Appointments today for ' + p.prov + ' — ' + seen + ' of ' + p.appts.length + ' seen. Click to view & jump.';
+    } catch (e) {}
+  }
+  /* ---------- popup ---------- */
+  function fixPop() {
+    try {
+      var pop = $('mlsAgendaPop');
+      var p = provToday();
+      if (!pop || !p) return;
+      var seen = p.appts.filter(isSeen).length;
+      var sig = (p.prov + '|' + p.appts.length + '|' + seen).replace(/"/g, '');
+      if (pop.firstElementChild && pop.firstElementChild.getAttribute('data-b49') === sig) return;
+      var sorted = p.appts.slice().sort(function (a, b) { return new Date(a.start_at) - new Date(b.start_at); });
+      var now = Date.now();
+      var next = sorted.find(function (a) { return new Date(a.start_at).getTime() >= now && !isSeen(a); });
+      var rows = sorted.map(function (a) {
+        var badge = isSeen(a) ? '<span style="background:#d8f5e2;color:#116635;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">seen</span>'
+          : (a === next ? '<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">next</span>'
+            : '<span style="background:#e2e8f5;color:#3c4a6b;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">upcoming</span>');
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid #edf1fa;font:13px system-ui;color:#16295b">'
+          + '<span style="min-width:64px;color:#4a5f8f">' + t12(a) + '</span>'
+          + '<span style="flex:1;font-weight:600">' + String(a.name || '(no name)').replace(/[<>&]/g, '') + '</span>' + badge + '</div>';
+      }).join('');
+      pop.innerHTML = '<div data-b49="' + sig + '" style="padding:10px 12px;font:11px system-ui;letter-spacing:.06em;color:#4a5f8f;display:flex;justify-content:space-between;align-items:center">'
+        + '<b>TODAY’S AGENDA · ' + p.prov.replace(/[<>&]/g, '') + '</b><span>' + seen + ' / ' + p.appts.length + ' seen</span></div>'
+        + '<div style="max-height:420px;overflow:auto">' + rows + '</div>';
+    } catch (e) {}
+  }
+  /* Re-apply right after the item77 module rebuilds the popup on chip click */
+  function onDocClick(ev) {
+    try {
+      var chip = $('mlsAgendaChip');
+      if (chip && (ev.target === chip || chip.contains(ev.target))) setTimeout(fixPop, 0);
+    } catch (e) {}
+  }
+  document.addEventListener('click', onDocClick, true);
+  cleanup.push(function () { document.removeEventListener('click', onDocClick, true); });
+  var iv = setInterval(function () { fixChip(); fixPop(); }, 1500);
+  cleanup.push(function () { clearInterval(iv); });
+  fixChip();
+
+  window.__mlsAgendaBtnB49 = { v: '1.0.0' };
+  window.__mlsAgendaBtnB49_revert = function () {
+    cleanup.forEach(function (f) { try { f(); } catch (e) {} });
+    delete window.__mlsAgendaBtnB49; delete window.__mlsAgendaBtnB49_revert;
+    return 'reverted';
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe -- b46 agenda scope + version check  (__mlsR46B46)  2026-07-06
  * Additive, guarded, reversible IIFE. UI-only. Athena READ-ONLY.
  *
@@ -3319,7 +3444,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b48';
+  var MLS_APP_BUILD='2026-07-06-b49';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
