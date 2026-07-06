@@ -45,6 +45,7 @@
         if (!(id in savedStyle)) savedStyle[id] = el.getAttribute('style');
         setImp(el, 'left', x + 'px');
         setImp(el, 'right', 'auto');
+        if (id === '_patientFace') setImp(el, 'bottom', '12px');
         x += el.getBoundingClientRect().width + GAP;
       });
     } catch (e) {}
@@ -2539,7 +2540,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b42';
+  var MLS_APP_BUILD='2026-07-06-b43';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
