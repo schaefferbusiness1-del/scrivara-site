@@ -1,4 +1,4 @@
-/* feat_mls_whosnext.js  ->  window.__mlsWhosNext  (v1.2.0)  [b34 batch 2026-07-06]
+/* feat_mls_whosnext.js  ->  window.__mlsWhosNext  (v1.3.0)  [b34/b35 batch 2026-07-06]
  *
  * "Who's Next" picker (the blue NEXT-UP boxes), upgraded per Michael:
  *   1) Renamed heading to "Who's Next".
@@ -29,7 +29,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.2.0", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
+  var VERSION = "1.3.0", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
   try { if (window.__mlsWhosNext && window.__mlsWhosNext.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -185,6 +185,22 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
+  /* v1.3.0: minutes-of-day for an "HH:MM" time (clinic-local as pulled from Athena). */
+  function timeMins(t) { var m = S(t).match(/^(\d\d?):(\d\d)/); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  /* v1.3.0: index of the patient "up now" -- started within the last 30 min, else the
+     next upcoming, else the day's last (mirrors the hero's _calPickNowIdx logic). */
+  function nowIdx(list) {
+    var n = new Date(), nowM = n.getHours() * 60 + n.getMinutes();
+    var timed = []; for (var i = 0; i < list.length; i++) { var m = timeMins(list[i].time); if (m != null) timed.push({ i: i, m: m }); }
+    if (!timed.length) return 0;
+    timed.sort(function (a, b) { return a.m - b.m; });
+    var cur = null;
+    for (var k = 0; k < timed.length; k++) { if (timed[k].m <= nowM && timed[k].m >= nowM - 30) cur = timed[k]; }
+    if (cur) return cur.i;
+    for (var j = 0; j < timed.length; j++) { if (timed[j].m >= nowM) return timed[j].i; }
+    return timed[timed.length - 1].i;
+  }
+
   /* ---------- render into #heroToday ---------- */
   var _expanded = false;     /* v1.2.0: 5-at-a-time window, "More" expands */
   var _autoOff = false;      /* v1.2.0: user pressed "show all" while auto-scoped */
@@ -211,7 +227,12 @@
       var CAP = 60, moreN = 0;
       if (shown.length > CAP) { moreN = shown.length - CAP; shown = shown.slice(0, CAP); }
       var LIMIT = 5;
-      var visible = _expanded ? shown : shown.slice(0, LIMIT);
+      /* v1.3.0: auto-show the 5 patients nearest to NOW (clinic-local schedule times) */
+      var start = 0;
+      if (!_expanded && shown.length > LIMIT) {
+        start = Math.max(0, Math.min(nowIdx(shown) - 1, shown.length - LIMIT));
+      }
+      var visible = _expanded ? shown : shown.slice(start, start + LIMIT);
       var hiddenN = shown.length - visible.length;
       host.style.display = "block";
       var html = '<div class="wn-hd"><span class="wn-title">&#128203; Who&#39;s Next</span>';
@@ -231,7 +252,7 @@
           var bd = '<span class="wn-bd' + (isBirthdayToday(dob) ? ' wn-bd-today' : '') + '">&#127874; ' + (dob ? esc(fmtDob(dob)) + (isBirthdayToday(dob) ? ' &middot; birthday today!' : '') : 'DOB &mdash;') + '</span>';
           html += '<button type="button" class="wn-chip" data-wn-i="' + i + '"><span class="wn-nm">' + esc(p.name) + '</span>' + (meta.length ? '<span class="wn-mt">' + meta.join(" &middot; ") + '</span>' : '') + bd + '</button>';
         }
-        if (hiddenN > 0) html += '<button type="button" class="wn-more" data-wn-more="1">&#9662; More (' + hiddenN + ')</button>';
+        if (hiddenN > 0) html += '<button type="button" class="wn-more" data-wn-more="1">&#9662; More &middot; all ' + shown.length + ' patients</button>';
         else if (_expanded && shown.length > LIMIT) html += '<button type="button" class="wn-more" data-wn-more="1">&#9652; Show less</button>';
         html += '</div>';
       }

@@ -1,4 +1,175 @@
 /* =========================================================================
+ * MLS Scribe -- b35 ONE-assistant pack  (__mlsOneChatB35)   2026-07-06
+ * ----------------------------------------------------------------------------
+ * Additive / guarded / reversible: window.__mlsOneChatB35_revert().
+ * Ships (per Michael):
+ *  (12) ONE assistant button + ONE chat. The MLS Assistant panel (bottom-left)
+ *       is the single assistant: the duplicate floating entry points (the
+ *       bottom-right "MLS Agent" FAB and the floating voice-mic FAB) are
+ *       retired (hidden reversibly; their capabilities live in the one chat).
+ *       - Voice: a mic button INSIDE the assistant chat input dictates and
+ *         sends (same speech engine, one home).
+ *       - Analytics: questions like "how many patients did <provider> see"
+ *         are answered INSTANTLY from the locally pulled schedule data
+ *         (window.mlsAsk) via a transparent /api/copilot interceptor -- the
+ *         answer streams into the SAME chat thread; anything else falls
+ *         through to the real backend AI (which the assistant already has,
+ *         incl. the writeback-redirect intent that changes WHERE items are
+ *         placed in athenaOne via __mlsWbRouter).
+ *  (15) The merged connection/status panel (#mlsScDock -- Athena connection,
+ *       pull, patient matching, writeback readiness, backend sync, calendar,
+ *       MLS Easy, EMR section) now LIVES bottom-LEFT with the MLS Assistant
+ *       (no more bottom-right overlap; single indicator, item 5 finalized).
+ *       A live status dot mirrors it on the assistant button.
+ *  (13-guard) Watchdog: feat_athena_provider_picker's legacy "takeover"
+ *       reverts the Who's-Next picker at boot; if that happens and no
+ *       replacement UI exists, Who's Next is auto-restored.
+ * SAFETY: UI/wiring only. Athena READ-ONLY. No writeback, no orders.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsOneChatB35) return; window.__mlsOneChatB35 = { v: "b35" };
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+
+  /* ---------- CSS: retire duplicate assistant entry points ------------------ */
+  function css() {
+    if ($("mlsOneChatB35Css")) return;
+    var st = document.createElement("style"); st.id = "mlsOneChatB35Css";
+    st.textContent = [
+      "#mlsP1AgFab{display:none!important}",            /* duplicate 'MLS Agent' FAB -> one assistant */
+      "#mlsVoiceFab{display:none!important}",           /* floating mic -> mic inside the one chat */
+      ".mls-b35-mic{background:rgba(47,107,237,.9);border:none;color:#fff;border-radius:9px;padding:7px 10px;font-size:14px;cursor:pointer;margin-right:6px}",
+      ".mls-b35-mic.rec{background:#d33;animation:mlsB35pulse 1s ease-in-out infinite}",
+      "@keyframes mlsB35pulse{50%{filter:brightness(1.35)}}",
+      ".mls-b35-dot{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;border:2px solid #0d1b33;background:#9aa7b8}",
+      ".mls-b35-dot.ok{background:#2ecc71}.mls-b35-dot.bad{background:#ff5f56}.mls-b35-dot.chk{background:#f5b942}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  /* ---------- (15) status dock lives bottom-left with the assistant --------- */
+  function dockLeft() {
+    try {
+      var d = $("mlsScDock"); if (!d) return;
+      d.style.setProperty("left", "12px", "important");
+      d.style.setProperty("right", "auto", "important");
+      /* sit just above the bottom-left button stack (Pay/EMR retired, so this is clean) */
+      d.style.setProperty("bottom", "64px", "important");
+    } catch (e) {}
+  }
+  /* mirror the dock's status dot on the assistant FAB (visible even when dock minimized) */
+  function fabDot() {
+    try {
+      var fab = $("mlsAsstFab"); if (!fab) return;
+      if (getComputedStyle(fab).position === "static") fab.style.position = "relative";
+      var dot = fab.querySelector(".mls-b35-dot");
+      if (!dot) { dot = document.createElement("span"); dot.className = "mls-b35-dot"; fab.appendChild(dot); }
+      var src = document.querySelector("#mlsScDock .sc-dot");
+      var cls = "mls-b35-dot";
+      if (src) { if (src.classList.contains("ok")) cls += " ok"; else if (src.classList.contains("bad")) cls += " bad"; else if (src.classList.contains("chk")) cls += " chk"; }
+      if (dot.className !== cls) dot.className = cls;
+    } catch (e) {}
+  }
+
+  /* ---------- (12) mic inside the one chat ---------------------------------- */
+  var rec = null, recOn = false;
+  function ensureMic() {
+    try {
+      var p = $("mls-assist-panel"); if (!p) return;
+      var ta = p.querySelector(".as-input textarea") || p.querySelector("textarea");
+      if (!ta || !ta.parentElement || ta.parentElement.querySelector(".mls-b35-mic")) return;
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) return;
+      var b = document.createElement("button"); b.type = "button"; b.className = "mls-b35-mic";
+      b.title = "Dictate to the assistant"; b.innerHTML = "&#127908;";
+      b.onclick = function () {
+        try {
+          if (recOn) { try { rec.stop(); } catch (e) {} return; }
+          rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false;
+          var finalTxt = "";
+          rec.onresult = function (ev) {
+            var t = ""; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+            ta.value = t; try { ta.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {}
+            if (ev.results[ev.results.length - 1].isFinal) finalTxt = t;
+          };
+          rec.onend = function () {
+            recOn = false; b.classList.remove("rec");
+            if (finalTxt.trim()) {
+              /* send through the assistant's own pipeline */
+              try { if (window.__mlsAsstFix && typeof window.__mlsAsstFix._handleSend === "function") { window.__mlsAsstFix._handleSend(finalTxt.trim()); ta.value = ""; } } catch (e) {}
+            }
+          };
+          rec.onerror = function () { recOn = false; b.classList.remove("rec"); };
+          recOn = true; b.classList.add("rec"); rec.start();
+        } catch (e) { recOn = false; b.classList.remove("rec"); }
+      };
+      ta.parentElement.insertBefore(b, ta);
+    } catch (e) {}
+  }
+
+  /* ---------- (12) instant local analytics in the SAME chat thread ---------- */
+  /* Transparent /api/copilot interceptor: when the question is clearly an
+     analytics question about the pulled schedule and window.mlsAsk (the local
+     smart-ask layer over window._calAppts) produces a concrete answer, answer
+     locally (fast, exact, works even when the AI service is rate-limited).
+     Everything else passes through to the real backend untouched. */
+  var _origFetch = window.fetch;
+  function analyticsAnswer(q) {
+    try {
+      if (!q || typeof window.mlsAsk !== "function") return null;
+      if (!/(how many|number of|count|most common|most frequent|busiest|who saw|revenue|how much)/i.test(q)) return null;
+      if (!/(patient|visit|appointment|appt|procedure|reason|revenue|see|saw)/i.test(q)) return null;
+      var a = window.mlsAsk(q);
+      var ans = a && S(a.answer).trim();
+      if (!ans || /ask me something/i.test(ans)) return null;
+      return ans + "  — computed live from your pulled athenaOne schedule.";
+    } catch (e) { return null; }
+  }
+  function wrapFetch() {
+    if (window.fetch && window.fetch.__mlsB35) return;
+    var of = window.fetch;
+    var f = function (input, init) {
+      try {
+        var url = (typeof input === "string") ? input : (input && input.url) || "";
+        if (/\/api\/copilot(\?|$)/.test(url) && init && init.body) {
+          var q = ""; try { q = (JSON.parse(init.body) || {}).question || ""; } catch (e) {}
+          var ans = analyticsAnswer(q);
+          if (ans) return Promise.resolve(new Response(JSON.stringify({ reply: ans }), { status: 200, headers: { "Content-Type": "application/json" } }));
+        }
+      } catch (e) {}
+      return of.apply(this, arguments);
+    };
+    f.__mlsB35 = true; f.__orig = of;
+    window.fetch = f;
+  }
+
+  /* ---------- Who's-Next takeover watchdog ----------------------------------- */
+  function wnGuard() {
+    try {
+      var wn = window.__mlsWhosNext;
+      if (!wn || wn.installed || typeof wn.reapply !== "function") return;
+      /* only restore when the legacy picker's replacement box is NOT present */
+      if ($("mlsPtfBox")) return;
+      wn.installed = true; wn.reapply();
+    } catch (e) {}
+  }
+
+  /* ---------- ticks ----------------------------------------------------------- */
+  function tick() { try { css(); dockLeft(); fabDot(); ensureMic(); wrapFetch(); wnGuard(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 900);
+
+  window.__mlsOneChatB35_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { var s = $("mlsOneChatB35Css"); if (s) s.remove(); } catch (e) {}
+    try { if (window.fetch && window.fetch.__mlsB35) window.fetch = window.fetch.__orig; } catch (e) {}
+    try { var d = $("mlsScDock"); if (d) { d.style.removeProperty("left"); d.style.removeProperty("right"); d.style.removeProperty("bottom"); } } catch (e) {}
+    try { [].forEach.call(document.querySelectorAll(".mls-b35-mic,.mls-b35-dot"), function (n) { n.remove(); }); } catch (e) {}
+    window.__mlsOneChatB35 = 0;
+  };
+})();
+
+/* =========================================================================
  * MLS Scribe -- b34 fix pack  (__mlsFixPackB34)   2026-07-06
  * ----------------------------------------------------------------------------
  * Additive / guarded / reversible: window.__mlsFixPackB34_revert().
@@ -865,7 +1036,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b34';
+  window.__MLS_AV = window.__MLS_AV || 'b35';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -1179,7 +1350,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b34';
+  var MLS_APP_BUILD='2026-07-06-b35';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -7618,7 +7789,7 @@
 ;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ag1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77 (STAGING): Today's agenda popover in the patient bar -- full ordered schedule (seen/up-now/upcoming) sharing Day-Progress's source of truth; click a row to load that patient via _heroPickPatient; navigation-only (additive, reversible: window.__mlsAgenda.revert()) */
 ;(function(){try{var A="feat_mls_visit_useactivept.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ua2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item78 (STAGING): "Use current patient" autofill on the Visit hero -- one click fills name+DOB+de-identified label from the active patient (no auto-submit, no record writes) (additive, reversible: window.__mlsUseActivePt.revert()) */
 ;(function(){try{var A="feat_mls_find_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630fd1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Find Doctors button + provider picker (additive, reversible: window.__mlsFindDoctors) */
-;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706wn3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
+;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706wn4";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
 ;(function(){try{var A="feat_mls_wb_console.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630wbc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: writeback console "change where things go" button (additive, reversible: window.__mlsWbConsole) */
 ;(function(){try{var A="feat_mls_settings_wb.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630swb1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Settings writeback entry (additive, reversible: window.__mlsSettingsWb) */
 ;(function(){try{var A="feat_mls_assistant_selffix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630asf1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Assistant self-diagnose/fix (additive, reversible: window.__mlsAssistantSelfFix) */
