@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
+<meta name="referrer" content="no-referrer" />
 <title>Send Patient Portal Login — MLS</title>
 <style>
   :root{--blue:#1f7ae0;--blue-d:#15528f;--ink:#0d2338;--muted:#5b6b7c;--line:#e4ebf3;--bg:#f4f8fd;--good:#127a55;--soft:#eef4fc}
@@ -20,6 +21,7 @@
   input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
   .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:20px}
   .btn:hover{background:#1a6ccb}.btn[disabled]{opacity:.6;cursor:default}
+  .btn.ghost{background:var(--soft);color:var(--blue-d);margin-top:10px;border:1px solid var(--line)}
   .note{background:var(--soft);border:1px solid #d3e3f6;color:var(--blue-d);border-radius:10px;padding:11px 13px;font-size:13px;margin-top:16px}
   .msg{border-radius:10px;padding:12px 14px;font-size:14px;margin-top:16px;display:none}
   .msg.ok{background:#eaf7f0;border:1px solid #bce6cf;color:#0f6b49;display:block}
@@ -28,6 +30,27 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   .foot{font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
   a{color:var(--blue);text-decoration:none}
+  /* ---- confirm modal ---- */
+  .modalBack{position:fixed;inset:0;background:rgba(10,30,60,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .modalBack.show{display:flex}
+  .modal{background:#fff;border-radius:16px;max-width:420px;width:100%;padding:24px 22px;box-shadow:0 12px 44px rgba(0,0,0,.32)}
+  .modal h2{font-size:17px;color:var(--blue-d);margin:0 0 6px}
+  .confirmBox{background:var(--soft);border:1px solid #d3e3f6;border-radius:12px;padding:14px 16px;margin:12px 0;font-size:15px}
+  .confirmBox b{font-size:16.5px}
+  .confirmBox .row{display:flex;gap:8px;font-size:13.5px;color:var(--muted);margin-top:4px}
+  .confirmBox .row b{font-size:13.5px;color:var(--ink)}
+  .warn{font-size:12.5px;color:#8a5a00;background:#fff7e6;border:1px solid #ffe0a3;border-radius:9px;padding:9px 12px;margin-top:10px}
+  .modalBtns{display:flex;gap:8px;margin-top:16px}
+  .modalBtns .btn{margin-top:0}
+  .modalBtns .cancel{flex:1;background:var(--soft);color:var(--blue-d);border:1px solid var(--line)}
+  .modalBtns .go{flex:2}
+  /* ---- credentials result ---- */
+  .cred{background:#f7fafe;border:1px dashed #b9cdf2;border-radius:12px;padding:14px;margin-top:14px}
+  .cred .kv{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .cred .kv:last-child{border-bottom:none}
+  .cred .kv b{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+  .copybtn{border:1px solid var(--line);background:#fff;color:var(--blue-d);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;flex:none}
+  .copybtn:hover{background:var(--soft)}
 </style>
 </head>
 <body>
@@ -35,7 +58,7 @@
   <div class="card">
     <div class="brand"><span class="dot"></span>MLS — Patient Portal</div>
     <h1>Send a patient their portal login</h1>
-    <p class="sub">The patient gets a secure email with a one-time link to sign in and view their records and chat with them. No password to remember.</p>
+    <p class="sub">Give a patient secure access to view their own records and chat with them. MLS confirms the patient identity with you before anything is created or sent.</p>
 
     <div id="noauth" class="msg err" style="display:none">
       You're not signed in to MLS in this browser. Open <a href="/ScribeFlow.html">MLS</a>, sign in, then reload this page.
@@ -44,18 +67,41 @@
     <form id="f" autocomplete="off">
       <label for="email">Patient email <span style="color:#c0392b">*</span></label>
       <input id="email" type="email" required placeholder="patient@email.com" />
-      <label for="name">Patient name</label>
-      <input id="name" type="text" placeholder="Full name" />
-      <label for="dob">Date of birth</label>
-      <input id="dob" type="date" />
-      <label for="pid">Patient ID (optional)</label>
-      <input id="pid" type="text" placeholder="links the login to their records" />
-      <button class="btn" id="send" type="submit">Send portal login</button>
+      <label for="name">Patient full name <span style="color:#c0392b">*</span></label>
+      <input id="name" type="text" required placeholder="First Last" />
+      <label for="dob">Date of birth <span style="color:#c0392b">*</span></label>
+      <input id="dob" type="date" required />
+      <label for="pid">Patient chart ID <span style="color:#c0392b">*</span></label>
+      <input id="pid" type="text" required placeholder="the patient ID from their MLS chart" />
+      <button class="btn" id="send" type="submit">Review &amp; send portal login</button>
     </form>
 
     <div id="msg" class="msg"></div>
-    <div class="note">🔒 The link expires and can be used once. The patient sets up access from their own device. You can resend anytime.</div>
-    <p class="foot">Preview the portal: <a href="/patient-portal.html" target="_blank">patient-portal.html</a></p>
+    <div id="credBox" class="cred" style="display:none"></div>
+    <div class="note">🔒 Access is limited to this one patient's own records, protected by password + date of birth, with sessions that expire automatically. You can disable access anytime from MLS.</div>
+    <p class="foot">Preview the portal: <a href="/patient-portal.html" target="_blank" rel="noopener">patient-portal.html</a></p>
+  </div>
+</div>
+
+<!-- Explicit patient identity confirmation (required before ANY send/create) -->
+<div class="modalBack" id="confirmBack" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+  <div class="modal">
+    <h2 id="cTitle">⚠️ Confirm the patient</h2>
+    <div style="font-size:13.5px;color:var(--muted)">You are about to create portal access for:</div>
+    <div class="confirmBox">
+      <b id="cName">—</b>
+      <div class="row"><span>Date of birth:</span><b id="cDob">—</b></div>
+      <div class="row"><span>Chart ID:</span><b id="cPid">—</b></div>
+      <div class="row"><span>Login sent to:</span><b id="cEmail">—</b></div>
+    </div>
+    <div class="warn">Wrong patient = their records go to the wrong person. Double-check the name and date of birth above against the chart before continuing.</div>
+    <label for="cType" style="margin-top:14px">Type the patient's <b>last name</b> to confirm</label>
+    <input id="cType" type="text" autocomplete="off" placeholder="last name" />
+    <div id="cErr" class="msg err" style="margin-top:10px"></div>
+    <div class="modalBtns">
+      <button class="btn cancel" type="button" id="cCancel">Cancel</button>
+      <button class="btn go" type="button" id="cGo" disabled>Confirm — create &amp; send</button>
+    </div>
   </div>
 </div>
 
@@ -68,38 +114,127 @@
   try{ token=localStorage.getItem('sf_bk_token'); }catch(e){}
   if(!token){ $('noauth').style.display='block'; }
 
-  // Prefill from URL params (so an in-app button can deep-link with the active patient)
+  // Prefill ONCE from URL params (in-app deep link), then SCRUB the URL so no
+  // patient details (PHI) linger in the address bar, browser history, or logs.
   try{
     var p=new URLSearchParams(location.search);
     if(p.get('email')) $('email').value=p.get('email');
     if(p.get('name')) $('name').value=p.get('name');
     if(p.get('dob')) $('dob').value=p.get('dob');
     if(p.get('id')||p.get('pid')) $('pid').value=p.get('id')||p.get('pid');
+    if([...p.keys()].length){ history.replaceState(null,'',location.pathname); }
   }catch(e){}
 
   function showMsg(text, ok){ var m=$('msg'); m.textContent=text; m.className='msg '+(ok?'ok':'err'); }
+  function hideMsg(){ $('msg').className='msg'; $('msg').textContent=''; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function fmtDob(iso){
+    // display as MM/DD/YYYY for the confirmation step (matches US charts)
+    var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? (m[2]+'/'+m[3]+'/'+m[1]) : String(iso||'—');
+  }
+  function lastNameOf(full){
+    var parts=String(full||'').trim().replace(/\s+/g,' ').split(' ');
+    return (parts.length?parts[parts.length-1]:'').toLowerCase().replace(/[^a-z'-]/g,'');
+  }
+  function genPassword(){
+    // 14 chars, unambiguous alphabet, crypto-random
+    var abc='abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    var out=''; var buf=new Uint32Array(14);
+    (window.crypto||{getRandomValues:function(a){for(var i=0;i<a.length;i++)a[i]=Math.floor(Math.random()*4294967296);}}).getRandomValues(buf);
+    for(var i=0;i<buf.length;i++) out+=abc[buf[i]%abc.length];
+    return out;
+  }
 
+  // ---------- explicit confirmation modal ----------
+  var pending=null;
+  function openConfirm(data){
+    pending=data;
+    $('cName').textContent=data.name;
+    $('cDob').textContent=fmtDob(data.dob);
+    $('cPid').textContent=data.external_id;
+    $('cEmail').textContent=data.email;
+    $('cType').value=''; $('cGo').disabled=true; $('cErr').className='msg err'; $('cErr').style.display='none';
+    $('confirmBack').classList.add('show');
+    setTimeout(function(){ try{ $('cType').focus(); }catch(e){} },100);
+  }
+  function closeConfirm(){ $('confirmBack').classList.remove('show'); pending=null; }
+  $('cCancel').addEventListener('click', closeConfirm);
+  $('confirmBack').addEventListener('click', function(e){ if(e.target===$('confirmBack')) closeConfirm(); });
+  $('cType').addEventListener('input', function(){
+    var want=pending?lastNameOf(pending.name):'';
+    var got=String($('cType').value||'').trim().toLowerCase().replace(/[^a-z'-]/g,'');
+    $('cGo').disabled = !(want && got===want);
+  });
+  $('cGo').addEventListener('click', function(){ if(pending && !$('cGo').disabled){ var d=pending; closeConfirm(); doSend(d); } });
+
+  // ---------- submit → validate → confirm ----------
   $('f').addEventListener('submit', function(e){
-    e.preventDefault();
-    var email=$('email').value.trim();
-    if(!email){ showMsg('Please enter the patient’s email.', false); return; }
+    e.preventDefault(); hideMsg(); $('credBox').style.display='none';
+    var email=$('email').value.trim(), name=$('name').value.trim(), dob=$('dob').value, pid=$('pid').value.trim();
+    if(!email||!name||!dob||!pid){ showMsg('Please fill in the patient email, full name, date of birth, and chart ID.', false); return; }
     if(!token){ showMsg('Not signed in to MLS — open MLS, sign in, and reload.', false); return; }
-    var body={ email:email, name:$('name').value.trim(), dob:$('dob').value, external_id:$('pid').value.trim(), mrn:$('pid').value.trim() };
+    if(name.trim().split(/\s+/).length<2){ showMsg('Please enter the patient’s FULL name (first and last) so it can be confirmed.', false); return; }
+    openConfirm({ email:email, name:name, dob:dob, external_id:pid });
+  });
+
+  // ---------- send: prefer the email-link route; fall back to direct provisioning ----------
+  function doSend(d){
     var btn=$('send'); btn.disabled=true; var old=btn.textContent; btn.innerHTML='<span class="spin"></span> Sending…';
-    $('msg').className='msg';
+    // 1) Preferred: backend emails a secure one-time link (route ships with the
+    //    portal-invite backend module). If it isn't deployed yet -> 404 -> fallback.
     fetch(API+'/api/patient/admin/send-portal-invite', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
-      body:JSON.stringify(body)
+      body:JSON.stringify({ email:d.email, name:d.name, dob:d.dob, external_id:d.external_id })
     })
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
     .then(function(res){
-      if(res.ok){ showMsg('✓ Portal login sent to '+email+'. They’ll get a secure one-time link to view their records.', true); $('f').reset(); }
-      else if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites (need an authorized/admin account). Try signing in again in MLS.', false); }
-      else { showMsg((res.j && (res.j.error||res.j.message)) || ('Could not send (error '+res.status+'). Please try again.'), false); }
+      if(res.ok){ showMsg('✓ Portal invite emailed to '+d.email+'. They’ll get a secure one-time link (expires in 72 hours) to set up their own password.', true); $('f').reset(); return null; }
+      if(res.status===404){ return provisionFallback(d); } // email route not live yet
+      if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites. Sign in to MLS again and retry.', false); return null; }
+      showMsg((res.j && (res.j.error||res.j.message)) || ('Could not send (error '+res.status+'). Please try again.'), false); return null;
     })
     .catch(function(){ showMsg('Network error — please try again.', false); })
     .then(function(){ btn.disabled=false; btn.textContent=old; });
+  }
+
+  // 2) Fallback: provision username+password against the LIVE /api/patient/admin/invite
+  //    route, then show the credentials ONCE for the doctor to give the patient.
+  function provisionFallback(d){
+    var username=d.email.toLowerCase();
+    var password=genPassword();
+    return fetch(API+'/api/patient/admin/invite', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
+      body:JSON.stringify({ external_id:d.external_id, username:username, password:password, dob:d.dob })
+    })
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
+    .then(function(res){
+      if(res.ok){
+        showMsg('✓ Portal access created for '+d.name+'. Give them the login below — it is shown only once.', true);
+        var msgText='Your patient portal is ready.\n\nWebsite: https://mlsscribe.com/patient-portal.html\nUsername: '+username+'\nTemporary password: '+password+'\n\nSign in with your date of birth. Please keep this private.';
+        $('credBox').style.display='block';
+        $('credBox').innerHTML=
+          '<div style="font-weight:800;color:var(--blue-d);margin-bottom:6px">🔑 One-time login for '+esc(d.name)+'</div>'
+          +'<div class="kv"><span>Portal</span><b>mlsscribe.com/patient-portal.html</b><button class="copybtn" data-copy="https://mlsscribe.com/patient-portal.html">Copy</button></div>'
+          +'<div class="kv"><span>Username</span><b>'+esc(username)+'</b><button class="copybtn" data-copy="'+esc(username)+'">Copy</button></div>'
+          +'<div class="kv"><span>Password</span><b>'+esc(password)+'</b><button class="copybtn" data-copy="'+esc(password)+'">Copy</button></div>'
+          +'<div class="kv"><span>+ their date of birth at sign-in</span><b></b><button class="copybtn" data-copy="'+esc(msgText)+'">📋 Copy full invite message</button></div>'
+          +'<div style="font-size:12px;color:var(--muted);margin-top:8px">Hand these to the patient through a channel you trust (in person, their phone number on file, or your secure messaging). This page does not store them.</div>';
+        $('f').reset();
+      }
+      else if(res.status===404){ showMsg('No chart with ID "'+d.external_id+'" was found in your practice. Check the patient ID in MLS and try again.', false); }
+      else if(res.status===409){ showMsg((res.j&&res.j.error)||'An account already exists for this patient (or the username is taken). If they lost access, disable the old account in MLS first.', false); }
+      else if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to create portal access. Sign in to MLS again and retry.', false); }
+      else { showMsg((res.j && (res.j.error||res.j.message)) || ('Could not create access (error '+res.status+'). Please try again.'), false); }
+    });
+  }
+
+  document.addEventListener('click', function(e){
+    var b=e.target && e.target.closest ? e.target.closest('.copybtn') : null;
+    if(!b) return;
+    try{ navigator.clipboard.writeText(b.getAttribute('data-copy')||''); var t=b.textContent; b.textContent='✓ Copied'; setTimeout(function(){ b.textContent=t; },1200); }catch(err){}
   });
 })();
 </script>
