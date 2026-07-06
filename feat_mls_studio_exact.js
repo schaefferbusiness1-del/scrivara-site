@@ -17,7 +17,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "sx-2.1.0";
+  var VERSION = "sx-2.2.0-prod";
   try { if (window.__mlsSx && window.__mlsSx.installed) return; } catch (e) { return; }
   function isStaging() {
     try {
@@ -26,7 +26,8 @@
     } catch (e) {}
     return false;
   }
-  if (!isStaging()) { try { window.__mlsSx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
+  /* b34: PROD-ENABLED via marker set by __mlsFixPackB34 (window.__MLS_SX_PROD). */
+  if (!isStaging() && window.__MLS_SX_PROD !== 1) { try { window.__mlsSx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
 
   var STYLE_ID = "sxStyle", GRID_CLASS = "sx-grid";
   var _obs = null, _t = null, _sched = null;

@@ -1,4 +1,173 @@
 /* =========================================================================
+ * MLS Scribe -- b34 fix pack  (__mlsFixPackB34)   2026-07-06
+ * ----------------------------------------------------------------------------
+ * Additive / guarded / reversible: window.__mlsFixPackB34_revert().
+ * Items shipped in this module:
+ *  (1) Boot "Signing into your workspace" veil: replace the outdated square-"M"
+ *      logo with the CURRENT app logo (the auth-screen gradient waveform mark).
+ *  (2) Pay Reports: retire the floating bottom-left button; add a
+ *      "Pay Reports (Premium feature)" button inside AI Studio + Calendar.
+ *      Same real opener (window.__mlsComp.open) -- nothing re-implemented.
+ *  (3) Enable the AI Studio design-exact rebuild (feat_mls_studio_exact.js)
+ *      on PROD via the prod-enable marker (it was staging-gated).
+ *  (4) Provider identity is DATA-DRIVEN: defuses the legacy hardcoded-canon
+ *      block and resolves getProviderName() from the real Athena provider
+ *      roster / stored identity (no clinician names hardcoded in code).
+ *  (5) Single connection indicator: the bottom-right status dock no longer
+ *      overlaps the MLS Agent panel (dock shifts aside while the panel is
+ *      open) and duplicate connection pills are suppressed.
+ *  (6) The bottom-left "EMR sections" button now lives INSIDE the MLS
+ *      Assistant panel (standalone button hidden, real handler preserved).
+ * SAFETY: UI only. Athena READ-ONLY. No writeback, no orders, no PHI logged.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsFixPackB34) return; window.__mlsFixPackB34 = { v: "b34" };
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function unsGet(n) { try { if (typeof window.uns !== "function") return ""; return S(localStorage.getItem(window.uns(n)) || ""); } catch (e) { return ""; } }
+
+  /* ---------- (3) prod-enable marker for the AI Studio exact rebuild ------- */
+  window.__MLS_SX_PROD = 1;
+
+  /* ---------- (4) data-driven provider identity ---------------------------- */
+  /* Pre-set the legacy module's guard so its hardcoded-canon block never
+     installs (it checks `if(window.__mlsCanonProvider) return;`). */
+  window.__mlsCanonProvider = true;
+  function prettyProv(p) {
+    p = S(p).replace(/Close$/, "").trim(); if (!p) return "";
+    if (p.indexOf("_") < 0) return p;
+    var m = p.split("_"); var cred = m.length > 2 ? m.slice(2).join(" ").replace(/_/g, " ") : "";
+    return (m[1] + " " + m[0] + (cred ? ", " + cred : "")).trim();
+  }
+  function roster() {
+    try { var a = JSON.parse(unsGet("mlsSchedProviders") || "[]"); return Array.isArray(a) ? a.map(prettyProv).filter(Boolean) : []; } catch (e) { return []; }
+  }
+  function accountName() {
+    var nm = unsGet("docname") || unsGet("providerName") || "";
+    if (!nm) { try { var el = document.querySelector('[class*="tb-user"],[id*="topbarUser"],[class*="userName"]'); if (el) nm = el.textContent || ""; } catch (e) {} }
+    return S(nm).replace(/^Dr\.?\s+/i, "").replace(/,.*$/, "").trim();
+  }
+  function surname(nm) { var t = S(nm).trim().split(/\s+/); return (t[t.length - 1] || "").toUpperCase().replace(/[^A-Z]/g, ""); }
+  function resolveProviderName() {
+    /* 1) roster (real Athena provider data) entry matching the account surname */
+    var sn = surname(accountName());
+    if (sn) {
+      var hits = roster().filter(function (p) { return p.toUpperCase().indexOf(sn) >= 0; });
+      if (hits.length === 1) return hits[0];
+      if (hits.length > 1) { var md = hits.filter(function (p) { return /(,|\s)MD\b/i.test(p); }); if (md.length === 1) return md[0]; return hits[0]; }
+    }
+    /* 2) stored provider identity (user/app data, not code) */
+    var stored = unsGet("providerName") || unsGet("docname");
+    if (stored) return stored;
+    /* 3) the account display name itself */
+    return accountName();
+  }
+  var provFn = function () { return resolveProviderName(); };
+  provFn.__mlsB34 = 1;
+  function applyProv() { try { if (!window.getProviderName || !window.getProviderName.__mlsB34) window.getProviderName = provFn; } catch (e) {} }
+  applyProv();
+
+  /* ---------- (1) boot veil: current logo ---------------------------------- */
+  var MARK = '<svg viewBox="0 0 56 56" width="34" height="34" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB34" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB34)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg>';
+  function fixVeilLogo() {
+    try {
+      var v = $("mlsBootVeil"); if (!v || v.__mlsB34Logo) return;
+      var sp = null, spans = v.querySelectorAll("span");
+      for (var i = 0; i < spans.length; i++) { if (S(spans[i].textContent).trim() === "M") { sp = spans[i]; break; } }
+      if (!sp) return;
+      sp.style.background = "none"; sp.style.borderRadius = "0";
+      sp.innerHTML = MARK; v.__mlsB34Logo = 1;
+    } catch (e) {}
+  }
+
+  /* ---------- (2)(5)(6) CSS ------------------------------------------------- */
+  function css() {
+    if ($("mlsFixPackB34Css")) return;
+    var st = document.createElement("style"); st.id = "mlsFixPackB34Css";
+    st.textContent = [
+      "#mlsCompBtn{display:none!important}",                       /* (2) retire floating Pay Report */
+      "#emrBtn{display:none!important}",                           /* (6) retire standalone EMR sections */
+      "#mlsScDock{transition:right .25s ease}",                    /* (5) smooth dodge */
+      ".mls-b34-pay{display:inline-flex;align-items:center;gap:8px;margin:10px 0 12px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer}",
+      ".mls-b34-pay:hover{filter:brightness(1.08)}",
+      ".mls-b34-pay .b34-prem{font-size:10px;font-weight:800;letter-spacing:.5px;background:linear-gradient(135deg,#b98aff,#7c4dff);border-radius:999px;padding:2px 8px}",
+      ".mls-b34-emr-wrap{padding:8px 12px 2px}",
+      ".mls-b34-emr{width:100%;background:#3452d6;border:none;color:#fff;border-radius:11px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25)}",
+      ".mls-b34-emr:hover{filter:brightness(1.1)}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  /* ---------- (2) Pay Reports buttons in AI Studio + Calendar --------------- */
+  function payBtn() {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "mls-b34-pay";
+    b.setAttribute("data-tip", "Monthly pay / compensation report (Premium feature)");
+    b.innerHTML = "&#128181; Pay Reports <span class=\"b34-prem\">PREMIUM FEATURE</span>";
+    b.onclick = function () { try { if (window.__mlsComp && window.__mlsComp.open) window.__mlsComp.open(); } catch (e) {} };
+    return b;
+  }
+  function injectPay() {
+    ["studioView", "calendarView"].forEach(function (vid) {
+      try {
+        var v = $(vid); if (!v || v.querySelector(".mls-b34-pay")) return;
+        v.insertBefore(payBtn(), v.firstChild);
+      } catch (e) {}
+    });
+  }
+
+  /* ---------- (6) EMR sections inside the MLS Assistant panel --------------- */
+  function injectEmr() {
+    try {
+      var panel = $("mls-assist-panel"); if (!panel || panel.querySelector(".mls-b34-emr")) return;
+      var wrap = document.createElement("div"); wrap.className = "mls-b34-emr-wrap";
+      var b = document.createElement("button"); b.type = "button"; b.className = "mls-b34-emr";
+      b.innerHTML = "&#128450;&#65039; EMR sections &mdash; review &amp; confirm";
+      b.onclick = function () { try { var e = $("emrBtn"); if (e) e.click(); } catch (e2) {} };
+      wrap.appendChild(b);
+      /* place right under the big "Open athenaOne in new tab" button when present */
+      var anchor = null, btns = panel.querySelectorAll("button");
+      for (var i = 0; i < btns.length; i++) { if (/open athenaone in new tab/i.test(btns[i].textContent || "")) { anchor = btns[i]; break; } }
+      if (anchor && anchor.parentElement === panel) panel.insertBefore(wrap, anchor.nextSibling);
+      else if (anchor && anchor.parentElement) anchor.parentElement.insertBefore(wrap, anchor.nextSibling);
+      else panel.insertBefore(wrap, panel.children[1] || null);
+    } catch (e) {}
+  }
+
+  /* ---------- (5) one connection indicator, no overlap ----------------------- */
+  function dockDodge() {
+    try {
+      var d = $("mlsScDock"); if (!d) return;
+      var ag = $("mlsP1Ag");
+      var open = !!(ag && ag.offsetParent !== null && getComputedStyle(ag).display !== "none");
+      d.style.setProperty("right", open ? "356px" : "16px", "important");
+      /* suppress any stray duplicate athena connection pill outside the dock */
+      var dots = document.querySelectorAll("#mlsAthenaStatusDot");
+      for (var i = 0; i < dots.length; i++) dots[i].style.display = "none";
+    } catch (e) {}
+  }
+
+  /* ---------- ticks ---------------------------------------------------------- */
+  function tick() { try { css(); fixVeilLogo(); injectPay(); injectEmr(); dockDodge(); applyProv(); } catch (e) {} }
+  tick();
+  var fast = setInterval(fixVeilLogo, 80); setTimeout(function () { try { clearInterval(fast); } catch (e) {} }, 15000);
+  var iv = setInterval(tick, 900);
+  var mo; try { mo = new MutationObserver(function () { fixVeilLogo(); }); mo.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+
+  window.__mlsFixPackB34_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { clearInterval(fast); } catch (e) {}
+    try { mo && mo.disconnect(); } catch (e) {}
+    try { var s = $("mlsFixPackB34Css"); if (s) s.remove(); } catch (e) {}
+    try { [].forEach.call(document.querySelectorAll(".mls-b34-pay,.mls-b34-emr-wrap"), function (n) { n.remove(); }); } catch (e) {}
+    try { var d = $("mlsScDock"); if (d) d.style.removeProperty("right"); } catch (e) {}
+    try { if (window.getProviderName && window.getProviderName.__mlsB34) delete window.getProviderName; } catch (e) {}
+    window.__mlsFixPackB34 = 0;
+  };
+})();
+
+/* =========================================================================
  * MLS Scribe — b33 "How to use" guide unifier  (__mlsHowToB33)
  * ----------------------------------------------------------------------------
  * WHAT: Ships ONE current, blue-styled "How to use MLS" guide modal and makes it
@@ -696,7 +865,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b32';
+  window.__MLS_AV = window.__MLS_AV || 'b34';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -1010,7 +1179,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b33';
+  var MLS_APP_BUILD='2026-07-06-b34';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -7359,7 +7528,7 @@
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_analysis_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_analysis_exact.js?v=20260706ax7';s.setAttribute('data-mls-asset','feat_mls_analysis_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_analysis_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260706sx4';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260706sx5';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_help_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_help_exact.js?v=20260624hpx1';s.setAttribute('data-mls-asset','feat_mls_help_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_help_exact.js (STAGING ONLY) — additive, reversible */
 
@@ -7449,7 +7618,7 @@
 ;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ag1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77 (STAGING): Today's agenda popover in the patient bar -- full ordered schedule (seen/up-now/upcoming) sharing Day-Progress's source of truth; click a row to load that patient via _heroPickPatient; navigation-only (additive, reversible: window.__mlsAgenda.revert()) */
 ;(function(){try{var A="feat_mls_visit_useactivept.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ua2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item78 (STAGING): "Use current patient" autofill on the Visit hero -- one click fills name+DOB+de-identified label from the active patient (no auto-submit, no record writes) (additive, reversible: window.__mlsUseActivePt.revert()) */
 ;(function(){try{var A="feat_mls_find_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630fd1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Find Doctors button + provider picker (additive, reversible: window.__mlsFindDoctors) */
-;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706wn2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
+;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706wn3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
 ;(function(){try{var A="feat_mls_wb_console.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630wbc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: writeback console "change where things go" button (additive, reversible: window.__mlsWbConsole) */
 ;(function(){try{var A="feat_mls_settings_wb.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630swb1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Settings writeback entry (additive, reversible: window.__mlsSettingsWb) */
 ;(function(){try{var A="feat_mls_assistant_selffix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630asf1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Assistant self-diagnose/fix (additive, reversible: window.__mlsAssistantSelfFix) */

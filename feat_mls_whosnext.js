@@ -1,23 +1,27 @@
-/* feat_mls_whosnext.js  ->  window.__mlsWhosNext  (v1.1.0)  [item55 + DOB fix 2026-07-06]
+/* feat_mls_whosnext.js  ->  window.__mlsWhosNext  (v1.2.0)  [b34 batch 2026-07-06]
  *
  * "Who's Next" picker (the blue NEXT-UP boxes), upgraded per Michael:
  *   1) Renamed heading to "Who's Next".
- *   2) Boxes ALWAYS match the count -- renders every patient in the active list (no more
- *      "6 seen / 0 shown"; the original _renderTodayPatients hid "seen" patients into a
- *      count and rendered nothing).
+ *   2) Boxes ALWAYS match the count -- renders every patient in the active list.
  *   3) Doctor scoping: when a doctor is picked in Find Doctors, the boxes show ONLY that
  *      doctor's patients, and the picked doctor's name is shown on the picker.
+ *   v1.2.0 (b34 batch):
+ *   4) DEFAULT provider scope comes from the ACTUAL provider data (the pulled Athena
+ *      schedule provider strings + the account provider identity resolved by
+ *      window.getProviderName, which is roster/data-driven as of b34 -- NO hardcoded
+ *      clinician names anywhere in this file). Fail-safe: if no row carries a provider
+ *      signal, or none match, it shows ALL patients and says so honestly.
+ *   5) Shows 5 patients at a time with a "More" control that expands into a scrollable
+ *      grid ("Show less" collapses back).
+ *   6) ALWAYS shows the patient's birthday on every box (cake icon + DOB; highlighted
+ *      when today is their birthday; a dash when no DOB is known from any source).
  *
  * WHY in-memory pull data: the backend GET /api/appointments returns only the oldest ~500
- * rows (ignores paging/sort) and never returns today's freshly-saved appts, and stores NO
- * provider on appts (doctor_user_id is null for all). The MLS Assist schedule PULL, however,
- * returns each patient WITH a provider. So this module captures the last pull's parsed list
- * (name/time/dob/reason/provider/date) and renders Who's Next from it -- which is the only
- * source that has BOTH today's patients AND a provider to scope by. Falls back to the app's
- * _calAppts (most recent day) when no pull has happened yet this session.
+ * rows and stores NO provider on appts. The MLS Assist schedule PULL returns each patient
+ * WITH a provider. So this module captures the last pull's parsed list and renders Who's
+ * Next from it. Falls back to _calAppts (most recent day) when no pull happened yet.
  *
- * It becomes the single window._renderTodayPatients implementation (so the pull, the 60s
- * refresh, and the item53 painter all route through it -> no tug-of-war, no recursion).
+ * It becomes the single window._renderTodayPatients implementation.
  *
  * SAFETY: read-only; never writes a chart, never writes/deletes athenaOne or backend data;
  * selecting a box only loads the patient's name/DOB into the hero. ASCII-only. Idempotent.
@@ -25,7 +29,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.1.0", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
+  var VERSION = "1.2.0", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
   try { if (window.__mlsWhosNext && window.__mlsWhosNext.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -35,21 +39,20 @@
   /* ---------- provider normalization + matching (for doctor scoping) ---------- */
   function normProv(s) {
     return S(s).toUpperCase()
-      .replace(/ENCOUNTER SIGNED.*$/, "")          /* drop "Encounter signed-off by ..." noise */
+      .replace(/ENCOUNTER SIGNED.*$/, "")
       .replace(/^PROVIDER\s+/, "")
       .replace(/[^A-Z]+/g, " ").replace(/\s+/g, " ").trim();
   }
-  function tokens(s) { return normProv(s).split(" ").filter(function (t) { return t.length > 1 && !/^(MD|DO|PA|PAC|NP|DPM|RN)$/.test(t); }); }
+  function tokens(s) { return normProv(s).split(" ").filter(function (t) { return t.length > 1 && !/^(MD|DO|PA|PAC|NP|DPM|RN|DR)$/.test(t); }); }
   function matchesDoctor(apptProvider, docName) {
     var dn = tokens(docName); if (!dn.length) return true;
     var ap = tokens(apptProvider); if (!ap.length) return false;
-    /* require all the doctor's name tokens to be present in the appt provider string */
     for (var i = 0; i < dn.length; i++) if (ap.indexOf(dn[i]) < 0) return false;
     return true;
   }
 
   /* ---------- data sources ---------- */
-  var _pull = null;   /* last pull parsed appts: [{name,time,dob,reason,provider,date}] */
+  var _pull = null;
   function dOf(a) { return a.appt_date || a.date || S(a.start_at).slice(0, 10); }
   function hhmm(a) {
     if (/^\d\d?:\d\d/.test(S(a.time))) return ("0" + a.time).slice(-5);
@@ -65,10 +68,8 @@
     return ap.filter(function (a) { return dOf(a) === day && S(a.name).trim(); })
       .map(function (a) { return { name: a.name, dob: a.dob || "", reason: a.reason || "", time: hhmm(a), provider: a.provider || "" }; });
   }
-  /* the active list = last pull if present (has today + provider), else _calAppts most-recent day */
   function activeList() {
     var src = (_pull && _pull.length) ? _pull.slice() : calSmart();
-    /* de-dupe by name+time, drop blank names */
     var seen = {}, out = [];
     src.forEach(function (a) { var nm = S(a.name).trim(); if (!nm) return; var k = nm.toLowerCase() + "|" + S(a.time); if (seen[k]) return; seen[k] = 1; out.push({ name: nm, dob: a.dob || "", reason: a.reason || "", time: hhmm(a), provider: a.provider || "" }); });
     out.sort(function (a, b) { return S(a.time).localeCompare(S(b.time)); });
@@ -76,10 +77,14 @@
   }
   function chosenDoctor() { try { return (window.__mlsFindDoctors && window.__mlsFindDoctors.chosen) || null; } catch (e) { return null; } }
 
-  /* ---------- selection ---------- */
-  /* v1.1.0: find the best chart match for an appt name. Athena pulls abbreviate
-     names ("Timothy O."), so exact matching alone fails; a "First L." pattern is
-     accepted only when it matches exactly ONE chart (never guesses on ambiguity). */
+  /* v1.2.0: the signed-in provider, resolved from REAL data (roster / stored identity),
+     never a hardcoded name. Empty string when unknown -> no auto-scope (fail-safe). */
+  function dataProvider() {
+    try { if (typeof window.getProviderName === "function") return S(window.getProviderName() || "").trim(); } catch (e) {}
+    return "";
+  }
+
+  /* ---------- chart match + DOB (unchanged from v1.1.0) ---------- */
   function chartFor(p) {
     try {
       var nm = S(p.name).trim().toLowerCase(), ps = (window.getPatients && window.getPatients()) || [];
@@ -93,8 +98,6 @@
     } catch (e) {}
     return null;
   }
-  /* v1.1.0: best-known DOB for an appt: the appt row, else its (unique) chart,
-     else any other appointment of the same patient that captured a DOB. */
   function bestDob(p, chart) {
     if (p.dob) return p.dob;
     try { if (chart && chart.dob) return chart.dob; } catch (e) {}
@@ -104,18 +107,49 @@
     } catch (e) {}
     return "";
   }
+  /* v1.2.0: birthday helpers -- ALWAYS show a birthday line on each box. */
+  function dobParts(dob) {
+    var s = S(dob).trim(); if (!s) return null;
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return { y: +m[1], mo: +m[2], d: +m[3] };
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/); if (m) return { y: +m[3], mo: +m[1], d: +m[2] };
+    return null;
+  }
+  function isBirthdayToday(dob) {
+    var p = dobParts(dob); if (!p) return false;
+    var n = new Date(); return (n.getMonth() + 1) === p.mo && n.getDate() === p.d;
+  }
+  function fmtDob(dob) {
+    var p = dobParts(dob); if (!p) return S(dob).trim();
+    return ("0" + p.mo).slice(-2) + "/" + ("0" + p.d).slice(-2) + (p.y ? "/" + p.y : "");
+  }
   function pick(p) {
     try {
       var nm = $("heroPtName"); if (nm) { nm.value = p.name || ""; ["input", "change"].forEach(function (ev) { try { nm.dispatchEvent(new Event(ev, { bubbles: true })); } catch (e) {} }); }
       var chart = chartFor(p);
       var dob = bestDob(p, chart);
-      /* ALWAYS write the DOB field -- an empty write clears the PREVIOUS patient's
-         stale DOB instead of silently leaving a wrong value (v1.1.0 fix). */
       var db = $("heroPtDob"); if (db) { db.value = dob || ""; ["input", "change"].forEach(function (ev) { try { db.dispatchEvent(new Event(ev, { bubbles: true })); } catch (e) {} }); }
       if (typeof window._heroSyncName === "function") window._heroSyncName();
-      /* if this patient exists as a chart, open it too (read-only) */
       try { if (chart && window.openPatient) window.openPatient(chart.id); } catch (e) {}
-      try { if (window.toast) window.toast(dob ? ("Loaded " + (p.name || "patient") + " - DOB " + dob) : ("Loaded " + (p.name || "patient") + " - no DOB on the pulled schedule; use From open Athena chart or type it"), ""); } catch (e) {}
+      /* v1.2.0: DOB comes from the Athena-sourced data (pull row / chart / other appts).
+         If none of those know it, say CLEARLY that an Athena login/lookup is needed. */
+      dobBanner(p, dob);
+      try { if (window.toast) window.toast(dob ? ("Loaded " + (p.name || "patient") + " - DOB " + dob) : ("Loaded " + (p.name || "patient") + " - DOB not available locally"), ""); } catch (e) {}
+    } catch (e) {}
+  }
+  /* v1.2.0: inline banner under the DOB field: green when the birthday auto-filled
+     from Athena-sourced data, amber "sign in to athenaOne" when it is unknown. */
+  function dobBanner(p, dob) {
+    try {
+      var db = $("heroPtDob"); if (!db || !db.parentElement) return;
+      var el = $("mlsWnDobNote");
+      if (!el) { el = document.createElement("div"); el.id = "mlsWnDobNote"; el.style.cssText = "margin-top:4px;font:600 11.5px system-ui;line-height:1.35"; db.parentElement.appendChild(el); }
+      if (dob) {
+        el.style.color = "#bff0c9";
+        el.innerHTML = "&#127874; Birthday auto-filled from the Athena-sourced schedule: <b>" + esc(fmtDob(dob)) + "</b>" + (isBirthdayToday(dob) ? " &middot; <b>birthday today!</b>" : "");
+      } else {
+        el.style.color = "#ffd78a";
+        el.innerHTML = "&#9888;&#65039; No birthday on file locally for <b>" + esc(p.name || "this patient") + "</b> &mdash; sign in to athenaOne (or open their Athena chart) to look it up.";
+      }
     } catch (e) {}
   }
 
@@ -123,63 +157,94 @@
   function injectCSS() {
     var s = $(STYLE_ID); if (s) return;
     s = document.createElement("style"); s.id = STYLE_ID;
-    s.textContent = [
-      "#mlsPickComplexWrap,#mlsPickSmartWrap{display:none!important}",            /* keep the white duplicate grids retired */
-      "#" + BOX_ID + "{margin:2px 0 4px}",
-      "#" + BOX_ID + " .wn-hd{display:flex;align-items:center;gap:8px;margin:2px 0 8px;flex-wrap:wrap}",
-      "#" + BOX_ID + " .wn-title{font-size:12px;font-weight:800;letter-spacing:.3px;opacity:.95}",
-      "#" + BOX_ID + " .wn-doc{font-size:11px;font-weight:700;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:2px 9px;color:#fff}",
-      "#" + BOX_ID + " .wn-doc b{font-weight:800}",
-      "#" + BOX_ID + " .wn-clear{font-size:11px;color:#dbe7ff;background:none;border:0;cursor:pointer;text-decoration:underline;padding:0}",
-      "#" + BOX_ID + " .wn-count{font-size:11.5px;opacity:.82;margin-left:auto}",
-      "#" + BOX_ID + " .wn-grid{display:flex;gap:8px;flex-wrap:wrap}",
-      "#" + BOX_ID + " .wn-chip{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:120px;max-width:220px;text-align:left;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);color:#fff;border-radius:11px;padding:8px 11px;cursor:pointer;font-family:inherit}",
-      "#" + BOX_ID + " .wn-chip:hover{background:rgba(255,255,255,.27)}",
-      "#" + BOX_ID + " .wn-chip .wn-nm{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}",
-      "#" + BOX_ID + " .wn-chip .wn-mt{font-size:11px;opacity:.85}",
-      "#" + BOX_ID + " .wn-empty{font-size:12px;opacity:.85;padding:8px 2px}"
-    ].join("\n");
+    var roots = ["#" + BOX_ID, "#heroToday"];
+    var css = ["#mlsPickComplexWrap,#mlsPickSmartWrap{display:none!important}"];
+    roots.forEach(function (R) {
+      css = css.concat([
+        R + "{margin:2px 0 4px}",
+        R + " .wn-hd{display:flex;align-items:center;gap:8px;margin:2px 0 8px;flex-wrap:wrap}",
+        R + " .wn-title{font-size:12px;font-weight:800;letter-spacing:.3px;opacity:.95}",
+        R + " .wn-doc{font-size:11px;font-weight:700;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:2px 9px;color:#fff}",
+        R + " .wn-doc b{font-weight:800}",
+        R + " .wn-clear{font-size:11px;color:#dbe7ff;background:none;border:0;cursor:pointer;text-decoration:underline;padding:0}",
+        R + " .wn-count{font-size:11.5px;opacity:.82;margin-left:auto}",
+        R + " .wn-grid{display:flex;gap:8px;flex-wrap:wrap}",
+        R + " .wn-grid.wn-scroll{max-height:300px;overflow-y:auto;padding-right:4px}",
+        R + " .wn-chip{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:120px;max-width:220px;text-align:left;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);color:#fff;border-radius:11px;padding:8px 11px;cursor:pointer;font-family:inherit}",
+        R + " .wn-chip:hover{background:rgba(255,255,255,.27)}",
+        R + " .wn-chip .wn-nm{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}",
+        R + " .wn-chip .wn-mt{font-size:11px;opacity:.85}",
+        R + " .wn-chip .wn-bd{font-size:10.5px;opacity:.8}",
+        R + " .wn-chip .wn-bd.wn-bd-today{opacity:1;color:#ffe9a8;font-weight:800}",
+        R + " .wn-more{background:rgba(255,255,255,.14);border:1px dashed rgba(255,255,255,.45);color:#fff;border-radius:11px;padding:8px 14px;cursor:pointer;font-weight:800;font-size:12px;font-family:inherit;align-self:center}",
+        R + " .wn-more:hover{background:rgba(255,255,255,.25)}",
+        R + " .wn-empty{font-size:12px;opacity:.85;padding:8px 2px}"
+      ]);
+    });
+    s.textContent = css.join("\n");
     (document.head || document.documentElement).appendChild(s);
   }
 
   /* ---------- render into #heroToday ---------- */
+  var _expanded = false;     /* v1.2.0: 5-at-a-time window, "More" expands */
+  var _autoOff = false;      /* v1.2.0: user pressed "show all" while auto-scoped */
   function render() {
     try {
       injectCSS();
       var host = $("heroToday"); if (!host) return;
       var list = activeList();
       var doc = chosenDoctor();
-      var shown = list, filteredOut = 0;
+      var shown = list, filteredOut = 0, autoDoc = "";
       if (doc) {
         var f = list.filter(function (a) { return matchesDoctor(a.provider, doc.name || doc.raw); });
         filteredOut = list.length - f.length;
         shown = f;
+      } else if (!_autoOff) {
+        /* v1.2.0: default scope = the signed-in provider, from real data only.
+           Fail-safe: apply only when at least one row genuinely matches. */
+        var dp = dataProvider();
+        if (dp) {
+          var g = list.filter(function (a) { return a.provider && matchesDoctor(a.provider, dp); });
+          if (g.length > 0 && g.length < list.length) { shown = g; filteredOut = list.length - g.length; autoDoc = dp; }
+        }
       }
       var CAP = 60, moreN = 0;
       if (shown.length > CAP) { moreN = shown.length - CAP; shown = shown.slice(0, CAP); }
+      var LIMIT = 5;
+      var visible = _expanded ? shown : shown.slice(0, LIMIT);
+      var hiddenN = shown.length - visible.length;
       host.style.display = "block";
       var html = '<div class="wn-hd"><span class="wn-title">&#128203; Who&#39;s Next</span>';
       if (doc) html += '<span class="wn-doc">&#129658; <b>' + esc(doc.name || doc.raw) + '</b></span><button type="button" class="wn-clear" data-wn-clear="1">show all</button>';
+      else if (autoDoc) html += '<span class="wn-doc">&#129658; <b>' + esc(autoDoc) + '</b> (your patients)</span><button type="button" class="wn-clear" data-wn-autoclear="1">show all</button>';
       html += '<span class="wn-count">' + shown.length + (shown.length === 1 ? " patient" : " patients") + (moreN ? (" &middot; +" + moreN + " more, pick a doctor to narrow") : "") + '</span></div>';
       if (!shown.length) {
         html += '<div class="wn-empty">' + (doc ? ("No " + esc(doc.name || doc.raw) + " patients in the current schedule. ") : "No patients loaded yet. ") + 'Pull the day schedule from athenaOne to populate this.</div>';
       } else {
-        html += '<div class="wn-grid">';
-        for (var i = 0; i < shown.length; i++) {
-          var p = shown[i];
+        html += '<div class="wn-grid' + (_expanded ? ' wn-scroll' : '') + '">';
+        for (var i = 0; i < visible.length; i++) {
+          var p = visible[i];
           var meta = [];
           if (p.time) meta.push(esc(p.time));
           if (p.reason) meta.push(esc(p.reason));
-          html += '<button type="button" class="wn-chip" data-wn-i="' + i + '"><span class="wn-nm">' + esc(p.name) + '</span>' + (meta.length ? '<span class="wn-mt">' + meta.join(" &middot; ") + '</span>' : '') + '</button>';
+          var dob = bestDob(p, chartFor(p));
+          var bd = '<span class="wn-bd' + (isBirthdayToday(dob) ? ' wn-bd-today' : '') + '">&#127874; ' + (dob ? esc(fmtDob(dob)) + (isBirthdayToday(dob) ? ' &middot; birthday today!' : '') : 'DOB &mdash;') + '</span>';
+          html += '<button type="button" class="wn-chip" data-wn-i="' + i + '"><span class="wn-nm">' + esc(p.name) + '</span>' + (meta.length ? '<span class="wn-mt">' + meta.join(" &middot; ") + '</span>' : '') + bd + '</button>';
         }
+        if (hiddenN > 0) html += '<button type="button" class="wn-more" data-wn-more="1">&#9662; More (' + hiddenN + ')</button>';
+        else if (_expanded && shown.length > LIMIT) html += '<button type="button" class="wn-more" data-wn-more="1">&#9652; Show less</button>';
         html += '</div>';
       }
       host.innerHTML = html;
       /* wire */
       var chips = host.querySelectorAll("[data-wn-i]");
-      for (var c = 0; c < chips.length; c++) chips[c].addEventListener("click", function () { var idx = +this.getAttribute("data-wn-i"); if (shown[idx]) pick(shown[idx]); });
+      for (var c = 0; c < chips.length; c++) chips[c].addEventListener("click", function () { var idx = +this.getAttribute("data-wn-i"); if (visible[idx]) pick(visible[idx]); });
       var clr = host.querySelector("[data-wn-clear]");
       if (clr) clr.addEventListener("click", function () { try { if (window.__mlsFindDoctors) window.__mlsFindDoctors.chosen = null; } catch (e) {} render(); });
+      var aclr = host.querySelector("[data-wn-autoclear]");
+      if (aclr) aclr.addEventListener("click", function () { _autoOff = true; render(); });
+      var mr = host.querySelector("[data-wn-more]");
+      if (mr) mr.addEventListener("click", function () { _expanded = !_expanded; render(); });
     } catch (e) {}
   }
 
@@ -202,7 +267,7 @@
     try {
       if (window._renderTodayPatients && window._renderTodayPatients.__wnRender) return;
       var fn = function (appts) { try { render(); } catch (e) {} };
-      fn.__wnRender = true; fn.__mlsUnrGuard = true; fn.__mlsUpNowWrapped = true;   /* block upnow re-wrap/recursion */
+      fn.__wnRender = true; fn.__mlsUnrGuard = true; fn.__mlsUpNowWrapped = true;
       window._renderTodayPatients = fn;
     } catch (e) {}
   }
