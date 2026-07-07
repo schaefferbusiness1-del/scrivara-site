@@ -85,6 +85,24 @@
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: { error: 'extension error' } }); }
     }
+    // v1.51: navigate the athena schedule to a specific DATE (read-only navigation;
+    // probe:true just reports whether hands-free date-nav is available on this view).
+    if (d.type === 'mlsAppGotoDate') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', resp: { error: 'extension error' } }); }
+    }
+    // v1.51: reviews scrape driver (reputation lane) — background opens each PUBLIC
+    // review URL in a background tab, runs the reader, returns normalized data. No PHI.
+    if (d.type === 'mlsAppScrapeReviews') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppScrapeReviewsRequest', targets: (Array.isArray(d.targets) ? d.targets : []).slice(0, 12) }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppScrapeResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppScrapeResult', resp: { error: 'extension error' } }); }
+    }
     // Open + read ONE PATIENT'S CHART from Athena. If a patient name is passed, the
     // background tries to click that patient (e.g. in the schedule) to open the chart,
     // then reads the frame that looks most like a clinical chart (not the schedule).
@@ -111,7 +129,9 @@
     // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign --
     // it stops and hands off to the doctor to review + sign in Athena.
     if (d.type === 'mlsAppPushVisit') {
-      try { _mlsPushVisit(mlsStr(d.goal, 4000), origin); }
+      /* v1.51: the app may attach {patient:{name,dob}} — the push then VERIFIES the
+         open athena encounter belongs to that patient before typing anything. */
+      try { _mlsPushVisit(mlsStr(d.goal, 4000), origin, (d.patient && d.patient.name) ? { name: mlsStr(d.patient.name, 120), dob: mlsStr(d.patient.dob, 20) } : null); }
       catch (err) { reply({ source: 'mls-ext', type: 'mlsAppPushResult', resp: { error: 'extension error' } }); }
     }
     // READ-ONLY autopilot (Mode C): DRIVE an athenaOne procedure/claims search, run it, and
@@ -145,12 +165,39 @@
   });
   // Headless autopilot loop that enters a finished visit into the EMR encounter.
   function _bg(type, payload) { return new Promise(function (res) { try { chrome.runtime.sendMessage(Object.assign({ type: type }, payload || {}), function (r) { res(r || {}); }); } catch (e) { res({}); } }); }
-  async function _mlsPushVisit(goal, trustedOrigin) {
+  async function _mlsPushVisit(goal, trustedOrigin, patient) {
     // v1.26: results/progress go ONLY to the trusted MLS origin that initiated the push,
     // never '*' -- so a hostile page can't observe the autopilot's PHI-bearing progress.
     var _to = trustedOrigin || 'https://mlsscribe.com';
     var post = function (type, payload) { try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), _to); } catch (e) {} };
     if (!goal) { post('mlsAppPushResult', { resp: { error: 'Nothing to push.' } }); return; }
+    /* v1.51 WRITEBACK TARGETING GATE: verify the OPEN athena encounter belongs to
+       the patient this push is FOR, before the autopilot types a single character.
+       Wrong chart open → refuse loudly, nothing written. If the app didn't send a
+       patient (older build), we still ANNOUNCE whose chart is open so the doctor
+       sees the target. The stop-before-Save/Sign rule downstream is unchanged. */
+    try {
+      var idr = await _bg('mlsAssistChartIdentity');
+      var openId = (idr && idr.ok && idr.identity) ? idr.identity : null;
+      if (patient && patient.name && openId && openId.name) {
+        var _nn = function (s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (x) { return x.length > 1; }); };
+        var ta = _nn(patient.name), tb = _nn(openId.name);
+        var ov = ta.filter(function (x) { return tb.indexOf(x) >= 0; }).length;
+        var match = ov >= 2 || (ov >= 1 && Math.min(ta.length, tb.length) === 1);
+        if (!match) {
+          post('mlsAppPushResult', { resp: { ok: false, reason: 'wrong-chart',
+            error: 'The open athenaOne encounter belongs to ' + openId.name + ', not ' + patient.name + '. NOTHING was written. Open ' + patient.name + '’s encounter in Athena, then push again.' } });
+          return;
+        }
+        post('mlsAppPushProgress', { msg: '✓ Verified: the open athena encounter is ' + openId.name + (openId.dob ? (' (DOB ' + openId.dob + ')') : '') + ' — entering the visit there.' });
+      } else if (openId && openId.name) {
+        post('mlsAppPushProgress', { msg: 'Entering into the OPEN athena encounter: ' + openId.name + ' — make sure that is the right patient.' });
+      } else if (patient && patient.name) {
+        post('mlsAppPushResult', { resp: { ok: false, reason: 'unverified',
+          error: 'Could not verify whose encounter is open in athenaOne. Open ' + patient.name + '’s encounter (the chart page, not a list), then push again. NOTHING was written.' } });
+        return;
+      }
+    } catch (e) { /* identity probe crashed — fall through with the announce-only behavior */ }
     var history = [], lastSig = '', sameN = 0;
     post('mlsAppPushProgress', { msg: 'Starting — reading the Athena encounter…' });
     try {

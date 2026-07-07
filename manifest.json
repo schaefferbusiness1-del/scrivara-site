@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MLS Assist",
-  "version": "1.50",
+  "version": "1.51",
   "description": "AI scribe + supervised autopilot for any web EMR. Captures visits, drafts notes, and acts on screen with your approval.",
   "permissions": [
     "storage",
@@ -47,7 +47,8 @@
       ],
       "js": [
         "content.js",
-        "mls-popup.js"
+        "mls-popup.js",
+        "ext_reviews_reader.js"
       ],
       "css": [
         "content.css",

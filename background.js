@@ -309,6 +309,128 @@ function mlsReadChartIdentity() {
   return { name: name, dob: dob, mrn: mrn, score: score };
 }
 
+/* ---- v1.51: DOB capture for schedule reads (worker-scope, pure, testable) ----
+ * athenaOne shows DOB on schedule rows / hover cards / list views. The DOM
+ * scraper returns {time,name,provider}; this pass scans the frame TEXT for a
+ * plausible DOB on the same line as (or the line after) each patient's name
+ * and attaches it. Conservative: no match -> no dob (never guessed). */
+function mlsPlausibleDob(s) {
+  var m = /^([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{4})$/.exec(String(s || '').trim());
+  if (!m) return '';
+  var y = +m[3], mo = +m[1], d = +m[2];
+  if (y < 1900 || mo < 1 || mo > 12 || d < 1 || d > 31) return '';
+  var now = new Date();
+  if (y > now.getFullYear()) return '';
+  /* a "DOB" equal to today is almost always the schedule date bleeding through */
+  var today = (now.getMonth() + 1) + '/' + now.getDate() + '/' + now.getFullYear();
+  if ((mo + '/' + d + '/' + y) === today) return '';
+  return ('0' + mo).slice(-2) + '/' + ('0' + d).slice(-2) + '/' + y;
+}
+function mlsAttachDobs(appts, text) {
+  try {
+    if (!appts || !appts.length || !text) return appts || [];
+    var lines = String(text).split(/\r?\n/).slice(0, 4000);
+    var lo = lines.map(function (l) { return l.toLowerCase(); });
+    var DATE_RE = /\b([01]?\d[\/\-\.][0-3]?\d[\/\-\.]\d{4})\b/g;
+    appts.forEach(function (a) {
+      if (!a || a.dob || !a.name) return;
+      var t = String(a.name).toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (x) { return x.length > 1; });
+      if (t.length < 1) return;
+      var first = t[0], last = t[t.length - 1];
+      for (var i = 0; i < lo.length; i++) {
+        if (lo[i].indexOf(last) < 0) continue;
+        if (t.length > 1 && lo[i].indexOf(first) < 0) continue;
+        /* same line, else the immediate next line (athena wraps DOB under the name) */
+        var hay = lines[i] + ' ' + (lines[i + 1] || '');
+        var m2, found = '';
+        DATE_RE.lastIndex = 0;
+        while ((m2 = DATE_RE.exec(hay))) { var ok = mlsPlausibleDob(m2[1]); if (ok) { found = ok; break; } }
+        if (found) { a.dob = found; break; }
+      }
+    });
+  } catch (e) {}
+  return appts;
+}
+
+/* ---- v1.51: schedule DATE navigation (injected; runs inside athena frames) ----
+ * Best-effort by design: PROBE reports whether hands-free date-nav controls are
+ * recognizable on this page; non-probe tries them and the caller VERIFIES by
+ * re-reading the displayed date. The app (b57 pull engine) falls back to guided
+ * follow-mode whenever this reports unsupported/failed — honesty over bravado. */
+function mlsAthenaReadHeaderDate() {
+  try {
+    var t = (document.body && document.body.innerText || '').slice(0, 8000);
+    var M = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+    var m = /(sunday|monday|tuesday|wednesday|thursday|friday|saturday)[a-z]*[,.]?\s{0,3}([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/i.exec(t);
+    if (m) { var mo = M[String(m[2]).toLowerCase()]; if (mo) return m[4] + '-' + ('0' + mo).slice(-2) + '-' + ('0' + m[3]).slice(-2); }
+    var iso = /\b(20\d\d)-(\d{2})-(\d{2})\b/.exec(t); if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+    var us = /\b([01]?\d)\/([0-3]?\d)\/(20\d\d)\b/.exec(t); if (us) return us[3] + '-' + ('0' + us[1]).slice(-2) + '-' + ('0' + us[2]).slice(-2);
+    return '';
+  } catch (e) { return ''; }
+}
+async function mlsAthenaGotoDate(target, probe) {
+  /* target = 'YYYY-MM-DD' */
+  var out = { found: false, via: '', done: false, schedDate: '' };
+  try {
+    function visible(el) { try { var r = el.getBoundingClientRect(); return r.width > 2 && r.height > 2; } catch (e) { return false; } }
+    function hdr() {
+      var t = (document.body && document.body.innerText || '').slice(0, 8000);
+      var M = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+      var m = /(sunday|monday|tuesday|wednesday|thursday|friday|saturday)[a-z]*[,.]?\s{0,3}([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/i.exec(t);
+      if (m) { var mo = M[String(m[2]).toLowerCase()]; if (mo) return m[4] + '-' + ('0' + mo).slice(-2) + '-' + ('0' + m[3]).slice(-2); }
+      return '';
+    }
+    /* strategy 1: a visible date input near the schedule */
+    var inputs = Array.prototype.slice.call(document.querySelectorAll('input'));
+    var di = null;
+    for (var i = 0; i < inputs.length; i++) {
+      var el = inputs[i]; if (!visible(el)) continue;
+      var tp = (el.type || '').toLowerCase();
+      var h = ((el.id || '') + ' ' + (el.name || '') + ' ' + (el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.className || '')).toLowerCase();
+      if (tp === 'date') { di = el; break; }
+      if ((tp === 'text' || tp === '') && /\bdate\b|caldate|scheddate|datepicker/.test(h) && !/dob|birth/.test(h)) { di = el; break; }
+    }
+    var arrows = Array.prototype.slice.call(document.querySelectorAll('a,button,[role="button"]')).filter(function (el) {
+      if (!visible(el)) return false;
+      var lab = ((el.getAttribute('aria-label') || '') + ' ' + (el.title || '') + ' ' + (el.id || '') + ' ' + (el.className || '')).toLowerCase();
+      return /next\s*day|prev(ious)?\s*day|day\s*(forward|back)|nextday|prevday/.test(lab);
+    });
+    var cur = hdr();
+    out.schedDate = cur;
+    if (di) out.via = 'input'; else if (arrows.length >= 1 && cur) out.via = 'arrows';
+    out.found = !!out.via;
+    if (probe || !out.found) return out;
+    if (out.via === 'input') {
+      var mm = target.slice(5, 7), dd = target.slice(8, 10), yy = target.slice(0, 4);
+      var val = ((di.type || '').toLowerCase() === 'date') ? target : (mm + '/' + dd + '/' + yy);
+      di.focus(); di.value = val;
+      di.dispatchEvent(new Event('input', { bubbles: true })); di.dispatchEvent(new Event('change', { bubbles: true }));
+      ['keydown', 'keypress', 'keyup'].forEach(function (tpx) { di.dispatchEvent(new KeyboardEvent(tpx, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); });
+      out.done = true;
+      return out;
+    }
+    /* arrows: click toward the target, re-reading the header each step */
+    var guard = 0;
+    while (guard++ < 45) {
+      cur = hdr(); if (!cur) break;
+      if (cur === target) { out.done = true; out.schedDate = cur; return out; }
+      var dir = cur < target ? 1 : -1;
+      var btn = null;
+      for (var k = 0; k < arrows.length; k++) {
+        var lab2 = ((arrows[k].getAttribute('aria-label') || '') + ' ' + (arrows[k].title || '') + ' ' + (arrows[k].id || '') + ' ' + (arrows[k].className || '')).toLowerCase();
+        var isNext = /next|forward/.test(lab2);
+        if ((dir === 1 && isNext) || (dir === -1 && !isNext)) { btn = arrows[k]; break; }
+      }
+      if (!btn) break;
+      btn.click();
+      await new Promise(function (r) { setTimeout(r, 700); });
+    }
+    out.schedDate = hdr();
+    out.done = (out.schedDate === target);
+    return out;
+  } catch (e) { out.error = String((e && e.message) || e); return out; }
+}
+
 // ---- Patient identity reader: MLS active patient (injected, runs on mlsscribe.com tab) ----
 function mlsReadActivePatient() {
   function pick(o, keys) { for (var i = 0; i < keys.length; i++) { if (o && o[keys[i]] != null && String(o[keys[i]]).trim()) return String(o[keys[i]]).trim(); } return ''; }
@@ -1026,6 +1148,81 @@ var mlsProv = (function () {
     }catch(e){ return {clicked:false,err:String(e&&e.message||e).slice(0,60)}; }
   }
 
+  /* ---- v1.51: hands-free schedule DATE navigation (read-only nav) ---- */
+  if (msg.type === 'mlsAppGotoDateRequest') {
+    (async () => {
+      try {
+        const date = String(msg.date || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return sendResponse({ ok: false, supported: false, error: 'bad date' });
+        const all = await chrome.tabs.query({});
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        const tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || '')) || all.find((t) => mlsTabTitleAthena(t));
+        if (!tab) return sendResponse({ ok: false, supported: false, error: 'No athenaOne tab open.' });
+        const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [date, !!msg.probe], func: mlsAthenaGotoDate });
+        const hits = (res || []).map((r) => r && r.result).filter(Boolean);
+        const found = hits.find((h) => h.found) || null;
+        if (msg.probe) return sendResponse({ ok: true, supported: !!found, via: (found && found.via) || '' });
+        if (!found) return sendResponse({ ok: false, supported: false, error: 'No date control recognized on this athena view — move Athena to the day by hand (follow mode).' });
+        /* verify by re-reading the displayed date after the page settles */
+        await new Promise((r) => setTimeout(r, 3000));
+        const chk = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaReadHeaderDate });
+        const dates = (chk || []).map((r) => (r && r.result) || '').filter(Boolean);
+        const onTarget = dates.indexOf(date) >= 0;
+        return sendResponse({ ok: onTarget, supported: true, via: found.via, schedDate: onTarget ? date : (dates[0] || ''), error: onTarget ? '' : ('athena is showing ' + (dates[0] || 'an unreadable date') + ' instead of ' + date + '.') });
+      } catch (e) { sendResponse({ ok: false, supported: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
+  /* ---- v1.51: reviews scrape driver (reputation lane; public pages, no PHI) ---- */
+  if (msg.type === 'mlsAppScrapeReviewsRequest') {
+    (async () => {
+      try {
+        const targets = Array.isArray(msg.targets) ? msg.targets.slice(0, 12) : [];
+        if (!targets.length) return sendResponse({ ok: false, error: 'No review pages to read.' });
+        const results = [];
+        for (const t0 of targets) {
+          const url = String((t0 && t0.url) || t0 || '');
+          if (!/^https:\/\//i.test(url)) { results.push({ url, ok: false, error: 'not https' }); continue; }
+          let tab = null;
+          try {
+            tab = await chrome.tabs.create({ url, active: false });
+            await new Promise((res) => {
+              let done = false; const to = setTimeout(() => { if (!done) { done = true; res(); } }, 20000);
+              const li = (id, info) => { if (id === tab.id && info && info.status === 'complete' && !done) { done = true; clearTimeout(to); chrome.tabs.onUpdated.removeListener(li); res(); } };
+              chrome.tabs.onUpdated.addListener(li);
+            });
+            await new Promise((r) => setTimeout(r, 2500));
+            const resp = await new Promise((res) => {
+              let d = false; const to = setTimeout(() => { if (!d) { d = true; res(null); } }, 25000);
+              try { chrome.tabs.sendMessage(tab.id, { type: 'mlsExtReadReviews' }, (r2) => { void chrome.runtime.lastError; if (!d) { d = true; clearTimeout(to); res(r2 || null); } }); }
+              catch (e) { if (!d) { d = true; clearTimeout(to); res(null); } }
+            });
+            results.push({ url, ok: !!(resp && resp.ok !== false && (resp.listing || resp.reviews)), data: resp || null, error: resp ? '' : 'reader did not answer' });
+          } catch (e) { results.push({ url, ok: false, error: String((e && e.message) || e) }); }
+          finally { try { if (tab) await chrome.tabs.remove(tab.id); } catch (e2) {} }
+          await new Promise((r) => setTimeout(r, 2500)); /* politeness gap between sites */
+        }
+        sendResponse({ ok: true, results, version: (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '' });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
+  /* ---- v1.51: assisted-capture relay (reader → background → mlsscribe tab) ---- */
+  if (msg.type === 'mlsExtScrapeCaptured') {
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ url: '*://mlsscribe.com/*' });
+        for (const t of tabs) {
+          try {
+            await chrome.scripting.executeScript({ target: { tabId: t.id }, args: [msg.resp || null],
+              func: (resp) => { try { window.postMessage({ source: 'mls-ext', type: 'mlsAppScrapeCaptured', resp: resp }, '*'); } catch (e) {} } });
+          } catch (e) {}
+        }
+        sendResponse({ ok: true, relayed: tabs.length });
+      } catch (e) { sendResponse({ ok: false }); }
+    })();
+    return true;
+  }
   if (msg.type === 'mlsAppScheduleRequest') {
     (async () => {
       try {
@@ -1207,7 +1404,7 @@ async function mlsSchedDomInline(doc, CFG){
         frames.forEach((f) => { const s = scoreSched(f); if (s > best) { best = s; pick = f; } });
         pick = pick || { u: tab.url, t: '' };
         // Include the page title so the parser can anchor the date range of a multi-day view.
-        var __mlsTS = (typeof mlsProv!=='undefined') ? mlsProv.fromText((pick && pick.t) || '') : {appts:[],providers:[],diag:{}}; var __mlsM = (typeof mlsProv!=='undefined') ? mlsProv.merge(pick && pick.s, __mlsTS) : {appts:[],providers:[],diag:{}}; sendResponse({ ok: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: __mlsM.appts, providers: __mlsM.providers, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '' });
+        var __mlsTS = (typeof mlsProv!=='undefined') ? mlsProv.fromText((pick && pick.t) || '') : {appts:[],providers:[],diag:{}}; var __mlsM = (typeof mlsProv!=='undefined') ? mlsProv.merge(pick && pick.s, __mlsTS) : {appts:[],providers:[],diag:{}}; sendResponse({ ok: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '' });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -1444,6 +1641,22 @@ async function mlsSchedDomInline(doc, CFG){
           return sendResponse({ ok: false, reason: 'unverified', opened: false, version: V, error: 'Could not open or verify ' + want + '\u2019s chart (no patient identity readable on the open page). Open the patient\u2019s chart in athenaOne, then pull again \u2014 nothing was captured.' });
         }
         sendResponse({ ok: true, text: merged.slice(0, 26000), url: pick.u || tab.url, title: tab.title, opened: opened, frames: frames.length, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', version: V });
+      } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    })();
+    return true;
+  }
+  /* ---- v1.51: read the OPEN athena chart's identity (for the writeback pre-gate) ---- */
+  if (msg.type === 'mlsAssistChartIdentity') {
+    (async () => {
+      try {
+        const all = await chrome.tabs.query({});
+        all.sort(function(a,b){function sc(t){var u=(t.url||"").toLowerCase();var s=0;if(/athenanet\.athenahealth\.com/.test(u))s+=100;if(/athena/i.test((t.title||"")))s+=60;if(/\/ax\/|dashboard|schedul|calendar|frontoffice|globalframeset/.test(u))s+=40;if(/aws\.caas|\/login|sign-?in|\/auth|\/oauth|accounts\./.test(u))s-=200;if(t.active)s+=5;return s;}return sc(b)-sc(a);});
+        const tab = all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || '')) || all.find((t) => mlsTabTitleAthena(t));
+        if (!tab) return sendResponse({ ok: false, error: 'no athena tab' });
+        let ident = null;
+        const idr = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsReadChartIdentity });
+        (idr || []).forEach((mm) => { const r = mm && mm.result; if (r && r.name && (!ident || (r.score || 0) > (ident.score || 0))) ident = r; });
+        sendResponse({ ok: true, identity: ident ? { name: ident.name, dob: ident.dob || '' } : null });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -2985,13 +3198,29 @@ async function mlsAthenaSignSave(mode) {
     if (msg.type === 'MLS_OVL_GO') {
       if (!ext.readAllVisits) { sendResponse({ ok: false, message: 'Reader unavailable — reload the extension.' }); return true; }
       progress(tabId, 'Reading the open patient…', 'run');
-      ext.readAllVisits({ onProgress: function (m) { progress(tabId, m, 'run'); } })
-        .then(function (r) {
-          r = r || {};
-          if (!r.ok) { sendResponse({ ok: false, message: r.message || "Couldn't read this chart's visits — nothing saved." }); return; }
-          if (tabId != null && r.identity) sess(tabId).lockedIdentity = r.identity;   // LOCK identity
-          if (ext.saveVisits) { try { ext.saveVisits(r.visits, r.identity); } catch (e) {} }   // persist via app brain
-          sendResponse({ ok: true, identity: r.identity, visits: r.visits, savedCount: (r.visits || []).length });
+      /* v1.51 STALE-BINDING FIX: verify a patient chart is ACTUALLY open before
+         reading/locking — a GO with no chart open used to bind whatever the
+         reader last saw (live repro: locked "Corbin M." while Katz was wanted). */
+      Promise.resolve()
+        .then(function () { return ext.findTab ? ext.findTab() : null; })
+        .then(function (tab) {
+          if (!tab) return { block: 'No athenaOne tab is open — open athenaOne first.' };
+          return (ext.readIdentity ? ext.readIdentity(tab.id).catch(function () { return null; }) : Promise.resolve(null))
+            .then(function (id) {
+              if (!id || !id.name) return { block: 'No patient chart is open in athenaOne — open the patient, then press Go. Nothing was read.' };
+              return { ok: true };
+            });
+        })
+        .then(function (pre) {
+          if (pre && pre.block) { sendResponse({ ok: false, message: pre.block }); return; }
+          return ext.readAllVisits({ onProgress: function (m) { progress(tabId, m, 'run'); } })
+            .then(function (r) {
+              r = r || {};
+              if (!r.ok) { sendResponse({ ok: false, message: r.message || "Couldn't read this chart's visits — nothing saved." }); return; }
+              if (tabId != null && r.identity) sess(tabId).lockedIdentity = r.identity;   // LOCK identity
+              if (ext.saveVisits) { try { ext.saveVisits(r.visits, r.identity); } catch (e) {} }   // persist via app brain
+              sendResponse({ ok: true, identity: r.identity, visits: r.visits, savedCount: (r.visits || []).length });
+            });
         })
         .catch(function () { sendResponse({ ok: false, message: "Couldn't read this chart's visits — nothing saved." }); });
       return true;

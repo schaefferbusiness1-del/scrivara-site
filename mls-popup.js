@@ -85,6 +85,15 @@
     function clearNarr() { st.narration = []; }
 
     // ---- connection / readiness (read-only, passive) --------------------
+    /* v1.51: token-overlap name match (same rule as the writeback gate) */
+    function mlspNameMatch(a, b) {
+      if (!a || !b) return true;
+      var ta = String(a).toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (x) { return x.length > 1; });
+      var tb = String(b).toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (x) { return x.length > 1; });
+      var o = ta.filter(function (x) { return tb.indexOf(x) >= 0; }).length;
+      return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1);
+    }
+    var _lastConnSig = '';
     function refreshStatus() {
       return tx.send({ type: 'MLS_OVL_STATUS' }).then(function (r) {
         r = r || {};
@@ -94,7 +103,28 @@
           mlsApp: !!r.mlsApp,
           patientOpen: !!r.patientOpen
         };
-        render();
+        st.liveIdentity = r.identity || null;
+        /* v1.51 STALE-BINDING FIX: if the chart open in athenaOne is not the
+           patient this pill locked onto (or no chart is open anymore), DROP the
+           stale lock instead of offering Record under the wrong identity.
+           Never fires mid-recording — the writeback hard gate still protects. */
+        var changed = false;
+        if (st.patient && st.patient.name && !st.busy && !st.recording && st.state !== 'idle') {
+          var lid = st.liveIdentity;
+          var mismatch = !!(lid && lid.name && !mlspNameMatch(lid.name, st.patient.name));
+          var gone = !st.conn.patientOpen;
+          if (mismatch || gone) {
+            st.state = 'idle'; st.patient = null; st.visitCount = null; st.error = null;
+            narrate(mismatch
+              ? ('athenaOne is now on ' + lid.name + ' — press Go to read this patient.')
+              : 'The patient chart was closed in athenaOne — open a patient, then press Go.', 'warn');
+            changed = true;
+          }
+        }
+        /* render only when something changed — a fixed-interval full render
+           steals focus from the overlay note box (v1.42 regression class) */
+        var sig = JSON.stringify(st.conn) + '|' + ((st.liveIdentity && st.liveIdentity.name) || '');
+        if (changed || sig !== _lastConnSig) { _lastConnSig = sig; render(); }
         return st.conn;
       });
     }
@@ -133,8 +163,18 @@
     // ---- STEP 2: Record (reuses §35 recorder via offscreen doc in BG) ----
     function startRecording() {
       if (st.state !== 'ready' && st.state !== 'recording') return Promise.resolve();
-      st.recording = true; setState('recording'); narrate('Recording…', 'run');
-      return tx.send({ type: 'MLS_OVL_RECORD_START' });
+      /* v1.51: NEVER start Record under a non-matching identity — re-check the
+         OPEN chart right now, not whatever was locked earlier. */
+      return refreshStatus().then(function () {
+        if (st.state !== 'ready' && st.state !== 'recording') return; /* stale lock was just dropped */
+        var lid = st.liveIdentity;
+        if (st.patient && st.patient.name && lid && lid.name && !mlspNameMatch(lid.name, st.patient.name)) {
+          narrate('athenaOne is on ' + lid.name + ', not ' + st.patient.name + ' — open the right chart and press Go first. Nothing was recorded.', 'fail');
+          return;
+        }
+        st.recording = true; setState('recording'); narrate('Recording…', 'run');
+        return tx.send({ type: 'MLS_OVL_RECORD_START' });
+      });
     }
     function stopRecording() {
       st.recording = false;
@@ -576,6 +616,9 @@
     // first paint + status
     paint(core.st);
     core.refreshStatus();
+    /* v1.51: keep the pill honest — re-check the OPEN chart every 5s (read-only,
+       passive; re-renders only on change so it never steals typing focus). */
+    try { setInterval(function () { core.refreshStatus(); }, 5000); } catch (e) {}
 
     return {
       installed: true, version: VERSION, core: core,
