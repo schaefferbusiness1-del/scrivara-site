@@ -1,4 +1,440 @@
 /* =========================================================================
+ * MLS Scribe -- NOTE-GENERATION GROUNDING + CLASS-AWARE MATCHING
+ * (__mlsNoteGroundV1)  v1.1.0  SAFETY- & QUALITY-CRITICAL
+ * authored 2026-07-07 against LIVE b57/b59 sources + LIVE_REPRO_NOTEGEN doc.
+ * Additive / guarded / reversible IIFE. Prepend to the TOP of mls-connect.js.
+ * Revert: window.__mlsNoteGroundV1_revert(). SHIP FIRST in this folder.
+ *
+ * GOAL (Michael's bar): good notes EVERY time, matching correct BOTH ways --
+ *   - NORMAL notes (office / follow-up / SOAP / pre-op / consult): pick the
+ *     right NORMAL template and produce a complete note grounded in the
+ *     transcript (+ the chart context generateNote already carries).
+ *   - PROCEDURE notes: when the transcript shows a procedure actually
+ *     happened, pick the right PROCEDURE template and fill it from what was
+ *     dictated -- never canned consent/technique/complications.
+ *
+ * THE LIVE BUG this replaces (b59 repro): office-visit knee-pain transcript ->
+ * pickTemplateForVisit chose "Genicular Nerve Block" on one keyword ("knee";
+ * 9 of 12 templates keywordless) -> applyTemplateToNote told the AI to match
+ * the template exactly -> fabricated procedure note.
+ *
+ * WHAT v1.1.0 DOES (all client-side; /api/complete is a generic endpoint so
+ * this is the right seam; no backend change):
+ *
+ *  A. VISIT-TYPE CLASSIFIER (deterministic): transcript -> one of
+ *     procedure | pre-op | consult | follow-up | office. Procedure requires
+ *     >=2 independent performed-procedure markers (consent, sterile prep,
+ *     needle, imaging guidance, injectate, "performed", "tolerated").
+ *     Templates are classified into the same classes by name/keywords/body.
+ *
+ *  B. CLASS-AWARE AUTO-PICK (replaces the auto path of
+ *     resolveActiveTemplate, honoring the same toggles):
+ *       - candidates = templates of the SAME class as the transcript
+ *         (unclassifiable keywordless imports are never candidates);
+ *       - scored by real keyword hits + name hits + class bonus;
+ *       - PROCEDURE class additionally requires >=1 true keyword hit so the
+ *         RIGHT procedure template wins (genicular vs ESI) -- no hit, no
+ *         auto-pick (the doctor chooses; nothing is guessed);
+ *       - office-class transcripts may fall back to a generic SOAP/office
+ *         template; they can NEVER receive a procedure template;
+ *       - if auto-choose is OFF, the doctor's explicit active template is
+ *         respected but still class-gated (a procedure template never
+ *         auto-applies to a non-procedure transcript; honest toast).
+ *
+ *  C. GROUNDED APPLY (wraps applyTemplateToNote; manual path included):
+ *     canned clinical-assertion lines are stripped from the template to bare
+ *     section headings before the AI sees it (structure in, nothing
+ *     fabricatable out). Content actually dictated survives -- it comes from
+ *     the transcript, not the template.
+ *
+ *  D. POST-APPLY FABRICATION AUDIT: a reformat that introduces procedure
+ *     assertions unsupported by the pre-apply note + transcript is REJECTED
+ *     and #noteBox is restored (the save path reads #noteBox.value for the
+ *     active format, HTML:10807). Residual edge (documented): let-scoped
+ *     currentSoap is unreachable; a format toggle after a rejection can
+ *     resurface rejected text -- layers B+C exist so that state is never
+ *     produced. Permanent fix = 1-line ScribeFlow.html noteBox->currentSoap
+ *     sync (flagged, not required now).
+ *
+ *  E. KEYWORD BACKFILL (one shot/session, <=9, throttled, additive-only) via
+ *     the app's own aiCallRaw -> POST /api/complete, so keyword matching is
+ *     real for the split-imported templates.
+ *
+ *  F. explain(text) -- feeds the Templates "Test matching" panel: shows the
+ *     detected visit class, the chosen template + reason (or why none), the
+ *     original matcher's pick for comparison. selfTest() -- repro-based
+ *     decision test for BOTH directions (office must not get a procedure
+ *     template; a real procedure transcript must get the RIGHT procedure
+ *     template) -- runnable offline and in the live console.
+ *
+ * SAFETY: athenaOne untouched. No new endpoints. No PHI logged. ASCII-only,
+ * ES5 + promise chains.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsNoteGroundV1) return;
+  var API = { v: "ngv1-1.1.0" };
+  window.__mlsNoteGroundV1 = API;
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function isFn(f) { return typeof f === "function"; }
+  function toast(msg, kind) { try { if (isFn(window.toast)) window.toast(msg, kind || ""); } catch (e) {} }
+  var timers = [];
+  var _lastWarnAt = 0;
+  function warnOnce(msg) {
+    var now = Date.now();
+    if (now - _lastWarnAt < 8000) return;
+    _lastWarnAt = now;
+    toast(msg, "err");
+  }
+  function logKey() { try { return isFn(window.uns) ? window.uns("tplProcLog") : "mls_tplProcLog"; } catch (e) { return "mls_tplProcLog"; } }
+  function logEvent(kind, name, ok, msg) {
+    try {
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem(logKey()) || "[]"); } catch (e) { arr = []; }
+      if (!Array.isArray(arr)) arr = [];
+      arr.unshift({ when: Date.now(), kind: S(kind), name: S(name).slice(0, 80), ok: !!ok, msg: S(msg).slice(0, 200) });
+      localStorage.setItem(logKey(), JSON.stringify(arr.slice(0, 100)));
+    } catch (e) {}
+  }
+  function tplsAll() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
+
+  /* =====================================================================
+   * A. classification vocabulary
+   * ===================================================================== */
+  var PROC_NAME_RE = /\b(block|injection|inject|ablation|rfa|radiofrequency|rhizotomy|epidural|esi|transforaminal|interlaminar|caudal|kyphoplasty|vertebroplasty|discogram|discography|stimulator|denervation|joint\s+inj|trigger\s*point|op\s*note|operative|procedure)\b/i;
+  var MARKERS = [
+    { key: "consent", re: /\binformed consent\b|\bconsent (was |were )?(obtained|signed|reviewed)\b/i },
+    { key: "sterile-prep", re: /\bprepped and draped\b|\bsterile (fashion|technique|conditions)\b|\baseptic\b/i },
+    { key: "needle", re: /\bneedle\b|\bgauge\b|\b\d{2}\s?g\b/i },
+    { key: "image-guidance", re: /\bfluoroscop\w*\b|\bultrasound[- ]guid\w*\b|\bunder (us|xray|x-ray) guidance\b/i },
+    { key: "injectate", re: /\blidocaine\b|\bbupivacaine\b|\bropivacaine\b|\btriamcinolone\b|\bkenalog\b|\bdepo-?medrol\b|\bmethylprednisolone\b|\bdexamethasone\b|\bcontrast\b|\bomnipaque\b/i },
+    { key: "performed", re: /\bprocedure (was )?performed\b|\bwe performed\b|\bwas injected\b|\binjected under\b|\bneedle (was )?(advanced|placed|inserted)\b/i },
+    { key: "tolerated", re: /\btolerated the procedure\b|\btolerated (it|this) well\b/i },
+    { key: "complications", re: /\bcomplications?\s*:?\s*(none|no immediate|nil)\b/i },
+    { key: "disposition", re: /\bdischarged (home )?(in )?(a )?stable\b|\bdisposition\s*:\s*discharged\b/i }
+  ];
+  var PREOP_RE = /\bpre-?op(erative)?\b|\bsurgical clearance\b|\bcleared for surgery\b|\bscheduled for (surgery|the procedure)\b|\banesthesia (evaluation|clearance)\b|\brisk stratification\b/i;
+  var CONSULT_RE = /\bconsult(ation)?\b|\breferred (by|from|to me)\b|\breferral (from|for)\b|\bthank you for (referring|the referral)\b|\bsecond opinion\b/i;
+  var FOLLOWUP_RE = /\bfollow-?up\b|\breturns? (for|today|to clinic)\b|\brecheck\b|\bsince (his|her|the|their) last visit\b|\bdoing well on\b|\bresponse to (treatment|therapy|the injection)\b|\bprogress (note|visit)\b/i;
+  var SOAP_TPL_RE = /\bsoap\b|\boffice visit\b|\bnew patient\b|\bclinic note\b|\be\/?m\b|\bevaluation\b|\bh&p\b|\bhistory and physical\b/i;
+
+  function markerHits(text) {
+    var t = S(text); var hits = [];
+    for (var i = 0; i < MARKERS.length; i++) { if (MARKERS[i].re.test(t)) hits.push(MARKERS[i].key); }
+    return hits;
+  }
+  /* transcript -> class. procedure > pre-op > consult > follow-up > office */
+  function classifyTranscript(text) {
+    var t = S(text);
+    var ev = markerHits(t);
+    if (ev.length >= 2) return { cls: "procedure", evidence: ev };
+    if (PREOP_RE.test(t)) return { cls: "pre-op", evidence: ev };
+    if (CONSULT_RE.test(t)) return { cls: "consult", evidence: ev };
+    if (FOLLOWUP_RE.test(t)) return { cls: "follow-up", evidence: ev };
+    return { cls: "office", evidence: ev };
+  }
+  /* template -> class (name + keywords + body) */
+  function classifyTemplate(t) {
+    if (!t) return "unknown";
+    var name = S(t.name), kws = (t.keywords || []).join(" ");
+    var head = name + " " + kws;
+    if (PROC_NAME_RE.test(name) || markerHits(S(t.text).slice(0, 2500)).length >= 3) return "procedure";
+    if (PREOP_RE.test(head)) return "pre-op";
+    if (CONSULT_RE.test(head)) return "consult";
+    if (FOLLOWUP_RE.test(head)) return "follow-up";
+    if (SOAP_TPL_RE.test(head)) return "office";
+    /* body shape: classic SOAP headings -> office-class generic */
+    var body = S(t.text).slice(0, 1200);
+    if (/\bSUBJECTIVE\b[\s\S]*\bOBJECTIVE\b[\s\S]*\bASSESSMENT\b/i.test(body)) return "office";
+    return "unknown";
+  }
+  function kwScore(visitText, t) {
+    var hay = S(visitText).toLowerCase();
+    var score = 0, kwHits = 0;
+    var kws = (t && t.keywords) || [];
+    for (var i = 0; i < kws.length; i++) { var k = S(kws[i]).toLowerCase(); if (k && hay.indexOf(k) !== -1) { score += 2; kwHits++; } }
+    var words = S(t && t.name).toLowerCase().split(/\s+/);
+    for (var j = 0; j < words.length; j++) { if (words[j].length > 2 && hay.indexOf(words[j]) !== -1) score += 1; }
+    return { score: score, kwHits: kwHits };
+  }
+
+  /* =====================================================================
+   * B. class-aware pick + class gate
+   * ===================================================================== */
+  var CLASS_BONUS = 3;
+  function classAwarePick(visitText) {
+    var tc = classifyTranscript(visitText);
+    var list = tplsAll();
+    /* two tiers:
+       1) SAME-CLASS MATCH -- requires real textual signal (>=1 keyword/name
+          hit; procedure class requires >=1 TRUE keyword hit so the RIGHT
+          procedure template wins or nothing is guessed);
+       2) GENERIC OFFICE FALLBACK -- for NON-procedure transcripts only, an
+          office-class template may format the note even without textual
+          overlap (a generic SOAP shell is safe by design; sanitize+audit
+          still guard the apply). NEVER a procedure template. */
+    var bestSame = null, bestSameScore = -1, bestSameSc = null;
+    var bestFb = null, bestFbScore = -1;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i]; if (!t) continue;
+      var tcls = classifyTemplate(t);
+      if (tcls === "unknown") continue;                      /* unclassifiable imports never auto-pick */
+      var sc = kwScore(visitText, t);
+      if (tcls === tc.cls) {
+        if (tc.cls === "procedure" && sc.kwHits < 1) continue;
+        if (sc.score < 1) {
+          /* same class but zero textual signal: usable only as office fallback */
+          if (tcls === "office" && sc.score > bestFbScore) { bestFbScore = sc.score; bestFb = t; }
+          continue;
+        }
+        var s = sc.score + CLASS_BONUS;
+        if (s > bestSameScore) { bestSameScore = s; bestSame = t; bestSameSc = sc; }
+      } else if (tcls === "office" && tc.cls !== "procedure") {
+        if (sc.score > bestFbScore) { bestFbScore = sc.score; bestFb = t; }
+      }
+    }
+    if (bestSame) {
+      return { tpl: bestSame, cls: tc, score: bestSameScore, kwHits: bestSameSc.kwHits,
+        reason: "class \u201C" + tc.cls + "\u201D match, score " + bestSameScore + (tc.cls === "procedure" ? " (procedure evidence: " + tc.evidence.join(", ") + ")" : "") };
+    }
+    if (tc.cls !== "procedure" && bestFb) {
+      return { tpl: bestFb, cls: tc, score: bestFbScore, kwHits: 0,
+        reason: "no dedicated \u201C" + tc.cls + "\u201D template matched \u2014 using the generic office format \u201C" + S(bestFb.name) + "\u201D" };
+    }
+    return { tpl: null, cls: tc,
+      reason: tc.cls === "procedure"
+        ? "procedure transcript, but no procedure template matched by keywords \u2014 pick one manually (nothing is guessed)"
+        : "no template of class \u201C" + tc.cls + "\u201D (or generic office) available \u2014 note stays as generated" };
+  }
+  /* gate for the explicit active-template path (auto-choose OFF) */
+  function gateActive(visitText, tpl) {
+    if (!tpl) return { allow: false, reason: "no active template" };
+    var tcls = classifyTemplate(tpl);
+    var tc = classifyTranscript(visitText);
+    if (tcls === "procedure" && tc.cls !== "procedure") {
+      return { allow: false, reason: "active template \u201C" + S(tpl.name) + "\u201D is a procedure template but this transcript reads as " + tc.cls + " (procedure evidence " + tc.evidence.length + "/2)" };
+    }
+    return { allow: true, reason: "active template (auto-choose off), class " + tcls };
+  }
+
+  var _origResolve = null;
+  function wrapResolve() {
+    try {
+      if (_origResolve || !isFn(window.resolveActiveTemplate) || window.resolveActiveTemplate.__ngv1) return;
+      _origResolve = window.resolveActiveTemplate;
+      var w = function (visitText) {
+        try {
+          var useOn = isFn(window.useTemplatesOn) ? window.useTemplatesOn() : false;
+          if (!useOn) return null;                            /* mirror original OFF path */
+          var autoOn = isFn(window.templateAutoOn) ? window.templateAutoOn() : false;
+          if (autoOn) {
+            var pick = classAwarePick(S(visitText));
+            if (pick.tpl) {
+              toast("Matched " + pick.cls.cls + " template: " + S(pick.tpl.name), "");
+              logEvent("class-pick", pick.tpl.name, true, pick.reason);
+              return pick.tpl;
+            }
+            logEvent("class-pick", "(none)", true, pick.reason);
+            /* fall through to the explicit active template, gated below */
+          }
+          var act = null;
+          try { act = isFn(window.getTemplateById) && isFn(window.getActiveTemplateId) ? window.getTemplateById(window.getActiveTemplateId()) : null; } catch (e2) {}
+          if (!act) return null;
+          var d = gateActive(S(visitText), act);
+          if (d.allow) return act;
+          warnOnce("Template \u201C" + S(act.name) + "\u201D NOT applied \u2014 " + d.reason + ". Note kept exactly as generated.");
+          logEvent("gate-block", act.name, true, d.reason);
+          return null;
+        } catch (e) {
+          /* absolute fail-safe: never let template logic break note generation */
+          return null;
+        }
+      };
+      w.__ngv1 = 1;
+      window.resolveActiveTemplate = w;
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * C + D. grounded apply + fabrication audit
+   * ===================================================================== */
+  function isHeadingLine(line) {
+    var l = S(line).trim();
+    if (!l) return false;
+    if (l.length <= 48 && /:\s*$/.test(l)) return true;
+    if (l.length <= 40 && l === l.toUpperCase() && /[A-Z]/.test(l)) return true;
+    return false;
+  }
+  function sanitizeTplText(text) {
+    var lines = S(text).split(/\r?\n/), out = [], stripped = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (isHeadingLine(line)) { out.push(line); continue; }
+      if (markerHits(line).length) {
+        var m = /^(\s*[A-Za-z][A-Za-z /&()-]{1,38}:)/.exec(line);
+        out.push(m ? m[1] : "");
+        stripped++;
+        continue;
+      }
+      out.push(line);
+    }
+    return { text: out.join("\n"), stripped: stripped };
+  }
+
+  var _origApply = null;
+  function wrapApply() {
+    try {
+      if (_origApply || !isFn(window.applyTemplateToNote) || window.applyTemplateToNote.__ngv1) return;
+      _origApply = window.applyTemplateToNote;
+      var w = function (template, visitText) {
+        var self = this, args = arguments;
+        return Promise.resolve().then(function () {
+          if (!template || !template.text) return _origApply.apply(self, args);
+          var san = sanitizeTplText(template.text);
+          var safeTpl = { id: template.id, name: template.name, keywords: template.keywords, text: san.text };
+          if (san.stripped) logEvent("sanitize", template.name, true, san.stripped + " canned assertion line(s) stripped before AI apply");
+          var nb = $("noteBox");
+          var pre = nb ? S(nb.value) : "";
+          return Promise.resolve(_origApply.call(self, safeTpl, visitText)).then(function (r) {
+            try {
+              var nb2 = $("noteBox"); if (!nb2) return r;
+              var post = S(nb2.value);
+              if (!post || post === pre) return r;
+              var source = pre + "\n" + S(visitText);
+              var bad = [];
+              for (var i = 0; i < MARKERS.length; i++) {
+                if (MARKERS[i].re.test(post) && !MARKERS[i].re.test(source)) bad.push(MARKERS[i].key);
+              }
+              if (bad.length) {
+                nb2.value = pre;
+                try { nb2.dispatchEvent(new Event("input", { bubbles: true })); } catch (e2) {}
+                warnOnce("\u26A0 Template formatting REJECTED \u2014 it added procedure details not in this visit (" + bad.join(", ") + "). The note was restored exactly as generated.");
+                logEvent("audit-reject", template.name, true, "blocked markers: " + bad.join(", "));
+              }
+            } catch (e) {}
+            return r;
+          });
+        });
+      };
+      w.__ngv1 = 1;
+      window.applyTemplateToNote = w;
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * E. keyword backfill (one shot per session, additive only)
+   * ===================================================================== */
+  var _backfillDone = false;
+  function backfillKeywords() {
+    if (_backfillDone) return;
+    _backfillDone = true;
+    try {
+      if (!isFn(window.getTemplates) || !isFn(window.setTemplates) || !isFn(window.aiCallRaw)) return;
+      var empty = (window.getTemplates() || []).filter(function (t) { return t && !(t.keywords && t.keywords.length); }).slice(0, 9);
+      if (!empty.length) return;
+      var done = 0, failed = 0, qi = 0;
+      function one() {
+        if (qi >= empty.length) {
+          if (done) toast("\uD83C\uDFF7 Auto-tagged " + done + " template" + (done === 1 ? "" : "s") + " with matching keywords" + (failed ? " (" + failed + " failed \u2014 retry from Templates)" : "") + ".", "ok");
+          logEvent("kw-backfill", "session", failed === 0, done + " ok, " + failed + " failed");
+          return;
+        }
+        var t = empty[qi++];
+        var sys = "You tag clinical note templates for keyword matching. Given ONE template, return ONLY a JSON array (no prose, no code fence) of 5-10 short lowercase keywords/phrases for the visit type this template fits. The FIRST keyword must be the note class: one of \"procedure\", \"pre-op\", \"consult\", \"follow-up\", \"office\". Then key procedure/visit words. Never include patient names.";
+        var user = "TEMPLATE NAME: " + S(t.name) + "\n\nTEMPLATE TEXT (excerpt):\n" + S(t.text).slice(0, 4000);
+        var key = ""; try { key = isFn(window.getKey) ? (window.getKey() || "") : ""; } catch (e) {}
+        window.aiCallRaw(sys, user, key, { freeform: true }).then(function (raw) {
+          var s = S(raw).replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+          var arr = null;
+          try { arr = JSON.parse(s); } catch (e) { try { var m = s.match(/\[[\s\S]*\]/); if (m) arr = JSON.parse(m[0]); } catch (e2) {} }
+          var kws = Array.isArray(arr) ? arr.map(function (k) { return S(k).toLowerCase().trim(); }).filter(function (k) { return k && k.length < 40; }).slice(0, 12) : [];
+          if (kws.length) {
+            var list = window.getTemplates() || [];
+            for (var i = 0; i < list.length; i++) { if (list[i] && list[i].id === t.id && !(list[i].keywords && list[i].keywords.length)) list[i].keywords = kws; }
+            window.setTemplates(list);
+            done++;
+          } else failed++;
+        })["catch"](function () { failed++; }).then(function () { setTimeout(one, 2500); });
+      }
+      one();
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * F. explain() + repro self-test (both directions)
+   * ===================================================================== */
+  API.classifyTranscript = classifyTranscript;
+  API.classifyTemplate = classifyTemplate;
+  API.explain = function (visitText) {
+    var tc = classifyTranscript(visitText);
+    var res = { transcript: { cls: tc.cls, procedureMarkers: tc.evidence }, toggles: {}, original: null, chosen: null, gated: null };
+    try { res.toggles.useTemplates = isFn(window.useTemplatesOn) ? window.useTemplatesOn() : null; } catch (e) {}
+    try { res.toggles.autoChoose = isFn(window.templateAutoOn) ? window.templateAutoOn() : null; } catch (e) {}
+    try {
+      var orig = isFn(window.pickTemplateForVisit) ? window.pickTemplateForVisit(visitText) : null;
+      res.original = orig ? { name: orig.name, cls: classifyTemplate(orig) } : null;
+    } catch (e) {}
+    try {
+      var pick = classAwarePick(S(visitText));
+      res.chosen = pick.tpl ? { name: pick.tpl.name, cls: classifyTemplate(pick.tpl), reason: pick.reason, score: pick.score } : { name: null, reason: pick.reason };
+      /* compat shape for existing consumers (tpf panel v1) */
+      res.gated = pick.tpl
+        ? { name: pick.tpl.name, allow: true, reason: pick.reason, score: pick.score || 0, templateClass: classifyTemplate(pick.tpl) }
+        : { name: null, allow: false, reason: pick.reason, score: 0, templateClass: "none" };
+    } catch (e) { res.gated = { name: null, allow: false, reason: "matcher error", score: 0, templateClass: "none" }; }
+    return res;
+  };
+
+  var REPRO_OFFICE = "Patient is here for a new visit for right knee pain for about three weeks after increasing his running. " +
+    "No injury he can recall. Pain is anterior, worse with stairs and after sitting. No locking or giving way, no swelling at rest. " +
+    "Exam: no effusion, full range of motion, tenderness over the patellar tendon, negative Lachman and McMurray, stable ligaments. " +
+    "Assessment: patellofemoral pain / patellar tendinopathy. Plan: relative rest, ice, ibuprofen 600 mg with food as needed, " +
+    "quad strengthening, referral to physical therapy, return in six weeks, sooner if swelling or instability.";
+  var REPRO_PROC = "Consent was obtained. The patient was placed supine and the right knee was prepped and draped in sterile fashion. " +
+    "Under ultrasound guidance a 25 gauge needle was advanced to the superior lateral genicular nerve and 1 mL of 0.25% bupivacaine " +
+    "with 10 mg triamcinolone was injected; repeated at the superior medial and inferior medial targets. The patient tolerated the procedure well. Complications: none.";
+
+  API.selfTest = function () {
+    var out = { pass: false, office: null, procedureControl: null, detail: "" };
+    var eo = API.explain(REPRO_OFFICE);
+    out.office = eo;
+    /* office direction: whatever is chosen must NOT be a procedure template */
+    var officeSafe = !(eo.chosen && eo.chosen.name && eo.chosen.cls === "procedure");
+    /* procedure direction: a real procedure transcript should choose a
+       procedure-class template when one matches by keywords */
+    var ep = API.explain(REPRO_PROC);
+    out.procedureControl = ep;
+    var procRight = !!(ep.chosen && (ep.chosen.name === null || ep.chosen.cls === "procedure"));
+    out.pass = officeSafe && procRight;
+    out.detail = (officeSafe ? "office: SAFE (" + (eo.chosen && eo.chosen.name ? "picked " + eo.chosen.cls + " \u201C" + eo.chosen.name + "\u201D" : "no template; note as generated") + ")"
+                             : "office: FAIL picked procedure \u201C" + eo.chosen.name + "\u201D") +
+      " | procedure: " + (procRight ? (ep.chosen && ep.chosen.name ? "picked \u201C" + ep.chosen.name + "\u201D \u2014 " + ep.chosen.reason : "no pick (no matching procedure template by keywords)") : "FAIL picked non-procedure \u201C" + ep.chosen.name + "\u201D");
+    return out;
+  };
+
+  /* =====================================================================
+   * boot
+   * ===================================================================== */
+  function tick() { try { wrapResolve(); wrapApply(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 900);
+  timers.push(iv);
+  var bf = setTimeout(backfillKeywords, 9000);
+  timers.push(bf);
+
+  window.__mlsNoteGroundV1_revert = function () {
+    try { timers.forEach(function (t) { clearInterval(t); clearTimeout(t); }); } catch (e) {}
+    try { if (_origResolve) window.resolveActiveTemplate = _origResolve; } catch (e) {}
+    try { if (_origApply) window.applyTemplateToNote = _origApply; } catch (e) {}
+    window.__mlsNoteGroundV1 = 0;
+    return "reverted";
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe — EASY tuning pass: the effortless Visit tab  (__mlsEasyV32)
  * v3.2.0  2026-07-07 — supersedes the live b57 __mlsEasyV31 (verified: v3.1
  * shipped verbatim at the top of the b57 bundle, guard `if
@@ -10832,7 +11268,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b60';
+  var MLS_APP_BUILD='2026-07-07-b61';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
