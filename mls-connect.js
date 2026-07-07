@@ -63,7 +63,7 @@
   'use strict';
   if (window.__mlsEasyV31) return;
 
-  var VER = '3.1.0';
+  var VER = '3.1.1'; /* 3.1.1: month-pull data guard — skip OPEN/truncated names, first+last dedupe key */
 
   /* ---------------- kill switch (always defined, even when dormant) ------- */
   function easyEnabled() {
@@ -1039,6 +1039,8 @@
           var ld = x.appt_date || ''; if (!ld) { try { var dd = new Date(x.start_at); ld = ymd(dd); } catch (e) {} }
           map[apptKey(x.name, ld, lt)] = 1;
           map['D:' + String(x.name || '').trim().toLowerCase().replace(/\s+/g, ' ') + '|' + ld] = 1;
+          var nt = String(x.name || '').trim().toLowerCase().split(/\s+/);
+          if (nt.length > 1) map['N:' + nt[0] + '|' + nt[nt.length - 1].replace(/\./g, '') + '|' + ld] = 1;
         });
         P.existing = map;
       });
@@ -1046,10 +1048,17 @@
   function providerFor(row, filter) { return (filter && filter !== 'all') ? filter : String(row.provider || '').trim(); }
   function saveRow(dayKey, row, filter) {
     var name = String(row.name || '').trim(); if (!name) return Promise.resolve('skip');
+    /* 3.1.1 data guard: never save placeholder slots or truncated display names
+       (the multi-provider Day view abbreviates to "First L." — saving those
+       creates duplicate patients/appointments that can never match a chart). */
+    if (/^open$/i.test(name)) return Promise.resolve('badname');
+    if (/^\S+ [A-Z]\.$/.test(name)) return Promise.resolve('badname');
     var key = apptKey(name, dayKey, row.time);
     var dayOnlyKey = 'D:' + name.toLowerCase().replace(/\s+/g, ' ') + '|' + dayKey;
-    if (P.existing[key] || P.existing[dayOnlyKey]) return Promise.resolve('dup');
-    P.existing[key] = 1; P.existing[dayOnlyKey] = 1;
+    var nt2 = name.toLowerCase().split(/\s+/);
+    var nKey = nt2.length > 1 ? ('N:' + nt2[0] + '|' + nt2[nt2.length - 1].replace(/\./g, '') + '|' + dayKey) : '';
+    if (P.existing[key] || P.existing[dayOnlyKey] || (nKey && P.existing[nKey])) return Promise.resolve('dup');
+    P.existing[key] = 1; P.existing[dayOnlyKey] = 1; if (nKey) P.existing[nKey] = 1;
     var pts = safe(function () { return (isFn(window.getPatients) ? window.getPatients() : []) || []; }, []);
     var ext = ''; var found = pts.find(function (x) { return String(x.name || '').trim().toLowerCase() === name.toLowerCase(); });
     if (found) { ext = found.id; if (row.dob && !found.dob && isFn(window.upsertPatient)) { found.dob = String(row.dob); safe(function () { window.upsertPatient(found); }); } }
@@ -1132,20 +1141,20 @@
         P.found += rows.length;
         plog(pd + ': ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' found' + (filter !== 'all' ? (' (provider: ' + filter + ')') : ''));
         pCounts();
-        var i = 0, saved = 0, dup = 0, failed = 0;
+        var i = 0, saved = 0, dup = 0, failed = 0, bad = 0;
         function next() {
           if (P.cancelled) return Promise.resolve();
           if (i >= rows.length) return Promise.resolve();
           var row = rows[i++];
           pSet('ez3PullNow2', 'Saving ' + i + '/' + rows.length + ': ' + row.name + (row.time ? (' at ' + row.time) : '') + (row.provider ? (' — ' + row.provider) : ''));
           return saveRow(dayKey, row, filter).then(function (res) {
-            if (res === 'created') { saved++; P.saved++; } else if (res === 'dup') { dup++; P.dups++; } else if (res === 'failed') { failed++; P.failedRows++; }
+            if (res === 'created') { saved++; P.saved++; } else if (res === 'dup') { dup++; P.dups++; } else if (res === 'failed') { failed++; P.failedRows++; } else if (res === 'badname') { bad++; }
             return next();
           });
         }
         return next().then(function () {
-          P.dayStatus[dayKey] = { status: 'done', found: rows.length, saved: saved, skipped: dup, failed: failed };
-          plog(pd + ': saved ' + saved + ', already on calendar ' + dup + (failed ? (', NOT saved ' + failed + ' (needs retry)') : ''), failed ? 'err' : 'ok');
+          P.dayStatus[dayKey] = { status: 'done', found: rows.length, saved: saved, skipped: dup, failed: failed, badnames: bad };
+          plog(pd + ': saved ' + saved + ', already on calendar ' + dup + (bad ? (', skipped ' + bad + ' truncated/placeholder name' + (bad === 1 ? '' : 's') + ' (athena view abbreviates — pull that day per-provider for full names)') : '') + (failed ? (', NOT saved ' + failed + ' (needs retry)') : ''), failed ? 'err' : 'ok');
           if (failed) { P.dayStatus[dayKey].status = 'failed'; P.dayStatus[dayKey].error = failed + ' appointment' + (failed === 1 ? '' : 's') + ' did not save'; P.failedDays.push(dayKey); }
           pCounts(); return 'done';
         });
@@ -6850,7 +6859,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b57';
+  var MLS_APP_BUILD='2026-07-07-b58';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
