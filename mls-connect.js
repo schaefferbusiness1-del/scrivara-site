@@ -1,4 +1,212 @@
 /* =========================================================================
+ * MLS Scribe — EASY CONSOLIDATION build N+1: the "silencer"  (__mlsEasyOne)
+ * v1.0.0  2026-07-07 — authored against LIVE b55 source (fetched read-only:
+ * scratchpad\mls-connect.LIVE-b55-download.js + ScribeFlow.LIVE-b55.html).
+ *
+ * WHAT THIS DOES (and nothing else): stops the legacy MLS-Easy layer cake
+ * (ARCHITECTURE_MAP §2 layers C–J + the __mlsVx visit design shell + the
+ * visit-stepper satellites) from EVER BUILDING, so __mlsEasyV3 (live since
+ * b55) is the one Easy surface. Mechanism = the guard PRE-SEED trick already
+ * proven live in b55 on the b54 in-place module: this module is prepended, so
+ * it runs before every legacy IIFE, and each of those IIFEs bails at its own
+ * first-line `if (window.__X) return;`. Nothing is deleted; no layer's code
+ * is touched; no timers to fight because the layers never start.
+ *
+ * Guards pre-seeded (each verified in the live b55 source at these lines):
+ *   __mlsEasyUnified   B:5311  cockpit D            plain truthy
+ *   __mlsEasyWidgets   B:5365  swipe strip E        plain truthy
+ *   __mlsEasyWizard    B:5639/5851/5910/5972/6113/6168 — all SIX wizard
+ *                              variants share this one guard (first-wins)
+ *   __mlsEasyTunnel    B:5640  claimed by realtabs  plain truthy
+ *   __mlsEasyTabsSafe  B:5640  claimed by realtabs  plain truthy
+ *   __mlsEasyRealTabs  B:5640  claimed by realtabs  plain truthy
+ *   __mlsWizEasyLink   B:5419  wizbar G             plain truthy
+ *   __mlsTabsInEasy    B:5289  premium row H        plain truthy
+ *   __mlsEasyCohesion  B:5223  cohesion J           plain truthy
+ *   __mlsEasyMagicB30  B:4502  b30 magic I          truthy (module uses 1/0)
+ *   __mlsEasyInplace   B:1028  b54 in-place C       {installed:true} shape
+ *                              (belt-and-braces — live v3 already seeds it)
+ *   __mlsVx            assets\feat_mls_visit_exact.js:27 — {installed:true}
+ *                              shape (satellites load AFTER the bundle, so a
+ *                              prepended seed beats them)
+ *   __mlsVisitStepper  assets\feat_mls_visit_stepper.js:16 — {__live:true}
+ *                              shape (its loader is ALSO blocked below)
+ *
+ * Satellite loaders blocked (inert marker <script type="text/plain"
+ * data-mls-asset="..."> satisfies each loader's own querySelector guard,
+ * verified shape at B:11429/11461/11467/11536/11690/11691):
+ *   feat_mls_easy.js, feat_mls_easy_pickfix.js, feat_mls_easy_hardening.js,
+ *   feat_mls_easy_contrast.js, feat_mls_visit_stepper.js,
+ *   feat_mls_visit_stepper_orderfix.js
+ *   (feat_mls_easy_v2.js has NO loader in b55 — nothing to block.)
+ *
+ * CSS-hidden (static markup + satellite-injected leftovers that no silenced
+ * flag controls): the "Just talk" hero #visitHero (ScribeFlow.html:1446–1473)
+ * + its .howto strip (:1475), the green "Simple mode (tunnel)" launcher
+ * #mlsP1TunnelLaunch (created by feat_mls_staging_pack1.js), the injected
+ * 📤 Upload-templates button #mlsUplTplBtn (B:7127), the hero-anchored pull
+ * buttons #mls-pull-month-btn / #mls-pull-lastmonth-btn (their functions move
+ * into MLS Easy staff-prep in build N+2; until then the v3 staff screen still
+ * proxies them — hidden buttons stay programmatically clickable), and
+ * defensive rules for #mlsVisitStepper / #mls-rt-bar / #mlsEwStack /
+ * #mlsCockpit / #mlsWizBar / #mlsEasyTools / .mlsB30-send / .mls-bridge-hidden
+ * (replacing the hiding that cockpit D's own CSS used to provide, B:5313).
+ *
+ * WHAT IT DOES NOT TOUCH: the engine (#captureBtn/#genBtn/#noteBox/#signBtn/
+ * #pushAllEmrBtn, calStartVisit/calPullChartFor, _calAppts), every safety
+ * interlock, the EMR modal + b28 clarity, b49 pull truth, b51/b53 satellites'
+ * LOGIC (only their hero-anchored buttons are hidden), voice, supervision,
+ * calendar/patients/history, and __mlsEasyV3 itself.
+ *
+ * KILL SWITCH / DORMANCY (checked before anything happens):
+ *   - the app-wide classic switch (?classic=1 / ?mlseasy=classic /
+ *     localStorage 'mls.easyV2.enabled'==='0') — classic now means the WHOLE
+ *     old world returns: hero + every legacy layer, exactly as before b55.
+ *   - its own switch: ?easyone=0 or localStorage 'mls.easyOne.enabled'==='0'
+ *     (console easyOneOff() / easyOneOn()) — turns ONLY the silencer off
+ *     while leaving v3 on, for A/B debugging at the gate.
+ * Revert: window.__mlsEasyOne_revert() — removes the CSS + loader markers and
+ * deletes every flag THIS module set (never one something else set). NOTE:
+ * like every pre-seed revert, silenced bundle layers only rebuild on the next
+ * reload (their IIFEs already ran and bailed this load).
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsEasyOne) return;
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  function classicOn() {
+    try {
+      var qs = location.search || '';
+      if (/[?&]classic=1(&|$)/.test(qs)) return true;
+      if (/[?&]mlseasy=classic(&|$)/.test(qs)) return true;
+    } catch (e) {}
+    return lsGet('mls.easyV2.enabled') === '0';
+  }
+  function silencerOff() {
+    try { if (/[?&]easyone=0(&|$)/.test(location.search || '')) return true; } catch (e) {}
+    return lsGet('mls.easyOne.enabled') === '0';
+  }
+
+  window.easyOneOff = function () {
+    lsSet('mls.easyOne.enabled', '0');
+    try { if (typeof window.__mlsEasyOne_revert === 'function') window.__mlsEasyOne_revert(); } catch (e) {}
+    try { location.reload(); } catch (e) {}
+    return 'Legacy-layer silencer OFF — reloading with the old layers back.';
+  };
+  window.easyOneOn = function () {
+    lsSet('mls.easyOne.enabled', '1');
+    try { location.reload(); } catch (e) {}
+    return 'Legacy-layer silencer ON — reloading.';
+  };
+
+  if (classicOn() || silencerOff()) {
+    window.__mlsEasyOne = { version: '1.0.0', dormant: true, reason: classicOn() ? 'classic' : 'easyone-off' };
+    return;
+  }
+
+  var cleanup = [];
+  var seeded = []; /* flags WE set — revert removes only these */
+
+  function seed(name, value) {
+    try {
+      if (window[name]) return; /* something already claimed it — leave it */
+      window[name] = value;
+      seeded.push(name);
+    } catch (e) {}
+  }
+
+  /* ---- 1. pre-seed the bundle-layer guards (plain truthy, per B: lines) --- */
+  seed('__mlsEasyUnified', true);
+  seed('__mlsEasyWidgets', true);
+  seed('__mlsEasyWizard', true);
+  seed('__mlsEasyTunnel', true);
+  seed('__mlsEasyTabsSafe', true);
+  seed('__mlsEasyRealTabs', true);
+  seed('__mlsWizEasyLink', true);
+  seed('__mlsTabsInEasy', true);
+  seed('__mlsEasyCohesion', true);
+  seed('__mlsEasyMagicB30', 1);
+
+  /* ---- 2. object-shaped guards ------------------------------------------ */
+  /* b54 in-place: guard checks .installed (B:1028). Live v3 also seeds this;
+     seed() is a no-op if it already did. */
+  seed('__mlsEasyInplace', {
+    installed: true, version: 'silenced-by-easyOne',
+    enable: function () {}, disable: function () {}, revert: function () {}, reenhance: function () {}
+  });
+  /* visit design shell: guard checks .installed (feat_mls_visit_exact.js:27);
+     the satellite loads after the bundle so this seed always wins. */
+  seed('__mlsVx', {
+    installed: true, skipped: 'silenced-by-easyOne', version: 'silenced',
+    revert: function () {}
+  });
+  /* visit stepper: guard checks .__live (feat_mls_visit_stepper.js:16). */
+  seed('__mlsVisitStepper', { __live: true, __reverted: false, silenced: 'easyOne', revert: function () {} });
+
+  /* ---- 3. block the dead easy/stepper satellite loaders ------------------ */
+  var BLOCK = ['feat_mls_easy.js', 'feat_mls_easy_pickfix.js', 'feat_mls_easy_hardening.js',
+               'feat_mls_easy_contrast.js', 'feat_mls_visit_stepper.js', 'feat_mls_visit_stepper_orderfix.js'];
+  var markers = [];
+  BLOCK.forEach(function (asset) {
+    try {
+      if (document.querySelector('script[data-mls-asset="' + asset + '"]')) return; /* already loaded/blocked */
+      var m = document.createElement('script');
+      m.type = 'text/plain'; /* inert — never executes, but satisfies the loader's guard */
+      m.setAttribute('data-mls-asset', asset);
+      m.setAttribute('data-mls-easyone-block', '1');
+      (document.head || document.documentElement).appendChild(m);
+      markers.push(m);
+    } catch (e) {}
+  });
+  cleanup.push(function () { markers.forEach(function (m) { try { m.remove(); } catch (e) {} }); });
+
+  /* ---- 4. CSS: hide the static hero + orphaned/leftover legacy UI -------- */
+  var css = document.createElement('style');
+  css.id = 'mlsEasyOneCss';
+  css.textContent =
+    /* the "Just talk" hero block + its howto strip (ScribeFlow.html:1446/1475) */
+    '#visitHero{display:none !important;}' +
+    '.howto{display:none !important;}' +
+    /* legacy launchers / injected hero buttons */
+    '#mlsP1TunnelLaunch{display:none !important;}' +
+    '#mlsUplTplBtn{display:none !important;}' +
+    '#mls-pull-month-btn{display:none !important;}' +
+    '#mls-pull-lastmonth-btn{display:none !important;}' +
+    /* defensive: everything cockpit D used to hide (B:5313) now that D is
+       silenced, plus the silenced layers' own roots in case a future build
+       re-orders modules */
+    '#mlsVisitStepper{display:none !important;}' +
+    '#mls-rt-bar{display:none !important;}' +
+    '#mlsEwStack{display:none !important;}' +
+    '#mlsCockpit{display:none !important;}' +
+    '#mlsWizBar{display:none !important;}' +
+    '#mlsEasyTools{display:none !important;}' +
+    '.mlsB30-send{display:none !important;}' +
+    '.mls-bridge-hidden{display:none !important;}';
+  (document.head || document.documentElement).appendChild(css);
+  cleanup.push(function () { css.remove(); });
+
+  /* ---- public API + revert ---------------------------------------------- */
+  window.__mlsEasyOne = {
+    version: '1.0.0',
+    dormant: false,
+    seeded: seeded.slice(),
+    blocked: BLOCK.slice()
+  };
+  window.__mlsEasyOne_revert = function () {
+    cleanup.forEach(function (f) { try { f(); } catch (e) {} });
+    seeded.forEach(function (name) { try { delete window[name]; } catch (e) { try { window[name] = undefined; } catch (e2) {} } });
+    delete window.__mlsEasyOne;
+    delete window.__mlsEasyOne_revert;
+    return 'EasyOne silencer reverted — reload the page to rebuild the legacy layers.';
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe — MLS EASY v3 focused workspace (__mlsEasyV3) v3.0.0  2026-07-07
  *
  * SUPERSEDES: the b54 in-place easy module (feat_mls_easy_inplace) and the
@@ -5239,7 +5447,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b55';
+  var MLS_APP_BUILD='2026-07-07-b56';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
