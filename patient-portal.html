@@ -471,5 +471,268 @@
     .catch(function(){ body('Network problem while setting up your access. Check your connection and re-open the link from your email.'+OKBTN); });
 })();
 </script>
+<script>
+/* =====================================================================
+   __mlsPortalRequests (v1, 2026-07-07) — SAFE request routing + AI guard.
+   Adds a "Requests & messages" card to the signed-in portal so patients can:
+     • Request a prescription refill
+     • Request / schedule an appointment
+     • Ask about injection timing
+     • Ask a pain-medicine question
+     • Message the office
+   EVERY request is ROUTED TO THE OFFICE — nothing is approved, diagnosed,
+   prescribed or auto-actioned here. The portal AI answers GENERAL questions
+   about the patient's own records only; this module also installs a guard
+   that intercepts sensitive chat (refills, dose changes, injections, pain
+   meds, "should I…", symptoms/diagnosis) BEFORE it ever reaches the model
+   and routes it to the office instead.
+   Backend: POST /api/patient/request  (credentialed patient session)
+     body { type, category, ...fields, message, submittedAt }
+     -> { ok:true, ref? }.  If the route isn't deployed yet (404) or the
+     network fails, the patient gets a graceful "please call the office"
+     fallback with the office phone — nothing is silently lost.
+   No Athena. No PHI in URLs. READ-ONLY toward records.
+   ===================================================================== */
+(function(){
+  "use strict";
+  var API="https://scrivara-backend.onrender.com";
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+  function isDemo(){ var b=$("demoBanner"); return !!(b && !b.classList.contains("hide")); }
+  function office(){
+    var c={}; try{ c=JSON.parse(localStorage.getItem("mlsEasyBook")||"{}"); }catch(e){}
+    try{ if(window.MLS_OFFICE) c=Object.assign({},c,window.MLS_OFFICE); }catch(e){}
+    return { phone:c.phone||"", email:c.email||"", practice:c.practice||"your care team" };
+  }
+  function tel(p){ return String(p||"").replace(/[^0-9+]/g,""); }
+
+  /* ---- read the patient's own medication names from the rendered list ---- */
+  function medNames(){
+    var out=[]; try{
+      var lis=document.querySelectorAll("#meds li");
+      lis.forEach(function(li){ var t=li.querySelector(".li-title"); if(t && t.textContent.trim()) out.push(t.textContent.trim()); });
+    }catch(e){}
+    return out;
+  }
+
+  /* ---- inject styles ---- */
+  var st=document.createElement("style");
+  st.textContent=
+    ".reqgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:4px}"+
+    ".reqbtn{display:flex;align-items:center;gap:9px;text-align:left;background:#fbfdff;border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-size:14px;font-weight:700;color:var(--blue-d);cursor:pointer}"+
+    ".reqbtn:hover{background:var(--soft)}"+
+    ".reqbtn .ic{font-size:20px}"+
+    ".reqbtn small{display:block;font-weight:500;color:var(--muted);font-size:11.5px;margin-top:2px}"+
+    ".mlsm-back{position:fixed;inset:0;background:rgba(13,35,56,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px}"+
+    ".mlsm{background:#fff;border-radius:16px;max-width:460px;width:100%;max-height:92vh;overflow:auto;padding:22px 22px;box-shadow:0 12px 44px rgba(0,0,0,.32)}"+
+    ".mlsm h3{margin:0 0 4px;color:var(--blue-d);font-size:18px}"+
+    ".mlsm .safe{background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00;border-radius:10px;padding:10px 12px;font-size:12.5px;margin:10px 0}"+
+    ".mlsm label{margin-top:12px}"+
+    ".mlsm textarea{width:100%;min-height:70px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fbfdff;color:var(--ink);resize:vertical}"+
+    ".mlsm select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fbfdff;color:var(--ink)}"+
+    ".mlsm .rowb{display:flex;gap:8px;margin-top:16px}"+
+    ".mlsm .rowb .btn{margin-top:0}.mlsm .cancel{flex:1;background:var(--soft);color:var(--blue-d);border:1px solid var(--line)}.mlsm .go{flex:2}"+
+    ".mlsm .res{border-radius:10px;padding:12px 14px;font-size:13.5px;margin-top:14px}"+
+    ".mlsm .res.ok{background:#eaf7f0;border:1px solid #bce6cf;color:#0f6b49}"+
+    ".mlsm .res.warn{background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00}"+
+    ".mlsm .callbtn{display:inline-block;margin-top:8px;background:var(--good);color:#fff;text-decoration:none;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px}";
+  document.head.appendChild(st);
+
+  /* ---- the request-type definitions ---- */
+  var TYPES={
+    refill:{ icon:"💊", title:"Request a prescription refill", cat:"Refill request",
+      safe:"Your care team reviews and approves every refill — refills are never approved automatically here. For controlled or pain medication, the office may ask you to come in. If this is urgent, please call.",
+      fields:function(){
+        var meds=medNames();
+        var opts='<option value="">— choose a medication —</option>'+meds.map(function(m){return '<option>'+esc(m)+'</option>';}).join('')+'<option value="__other">Other / not listed</option>';
+        return '<label>Which medication?</label><select id="mReqMed">'+opts+'</select>'+
+               '<label>Pharmacy (name &amp; location)</label><textarea id="mReqPharm" placeholder="e.g. CVS on Main St, Anytown"></textarea>'+
+               '<label>Anything the office should know? (optional — no need for sensitive detail)</label><textarea id="mReqNote" placeholder="e.g. down to my last few doses"></textarea>';
+      },
+      collect:function(){ var med=$("mReqMed").value; if(med==="__other") med=""; return { medication:med, pharmacy:($("mReqPharm").value||"").trim(), note:($("mReqNote").value||"").trim() }; },
+      valid:function(d){ return !!(d.medication || d.note); }, need:"Please choose a medication (or add a note)." },
+
+    appointment:{ icon:"📅", title:"Request an appointment", cat:"Appointment request",
+      safe:"This sends a request — a team member confirms the exact time with you. For a medical emergency, call 911.",
+      extra:'<div style="margin-top:12px;font-size:13px">Prefer the full booking form? <a href="easy-book.html">Open Book an appointment ↗</a></div>',
+      fields:function(){
+        return '<label>Reason for the visit (briefly)</label><textarea id="mReqReason" placeholder="What would you like to be seen for?"></textarea>'+
+               '<label>Preferred time of day</label><select id="mReqWhen"><option>Any time</option><option>Morning</option><option>Afternoon</option><option>Evening</option></select>'+
+               '<label>How soon? </label><select id="mReqUrg"><option>Routine</option><option>As soon as possible (non-emergency)</option></select>';
+      },
+      collect:function(){ return { reason:($("mReqReason").value||"").trim(), timeOfDay:$("mReqWhen").value, urgency:$("mReqUrg").value }; },
+      valid:function(d){ return !!d.reason; }, need:"Please add a brief reason for the visit." },
+
+    injection:{ icon:"💉", title:"Ask about injection timing", cat:"Injection-timing question",
+      safe:"MLS can’t tell you when your next injection should be — the timing of injections is decided by your care team based on your plan and history. This sends your question to the office; they’ll advise you.",
+      fields:function(){
+        return '<label>Which injection / procedure?</label><textarea id="mReqProc" placeholder="e.g. lumbar epidural steroid injection"></textarea>'+
+               '<label>Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fbfdff">'+
+               '<label>Your question</label><textarea id="mReqQ" placeholder="e.g. am I due for my next one? how long should I wait?"></textarea>';
+      },
+      collect:function(){ return { procedure:($("mReqProc").value||"").trim(), lastDate:$("mReqLast").value, question:($("mReqQ").value||"").trim() }; },
+      valid:function(d){ return !!(d.procedure || d.question); }, need:"Please add the injection/procedure or your question." },
+
+    pain:{ icon:"🩹", title:"Pain-medicine question", cat:"Pain-medicine request",
+      safe:"⚠️ For safety, pain-medicine and controlled-substance decisions are made only by your care team — never through this portal or its AI. This routes your message to the office. If you are in a medical emergency or crisis, call 911 now.",
+      fields:function(){
+        return '<label>How can the office help? (please don’t include sensitive detail)</label><textarea id="mReqPain" placeholder="e.g. I have a question about my pain-management plan"></textarea>';
+      },
+      collect:function(){ return { message:($("mReqPain").value||"").trim() }; },
+      valid:function(d){ return !!d.message; }, need:"Please add a short message for the office." },
+
+    message:{ icon:"✉️", title:"Message the office", cat:"Office message",
+      safe:"A team member will read this and follow up. Please don’t include sensitive medical, financial, or ID details — just enough to route your message. For emergencies call 911.",
+      fields:function(){
+        return '<label>Your message</label><textarea id="mReqMsg" placeholder="How can we help?"></textarea>';
+      },
+      collect:function(){ return { message:($("mReqMsg").value||"").trim() }; },
+      valid:function(d){ return !!d.message; }, need:"Please type a message." }
+  };
+
+  /* ---- modal ---- */
+  var back=null;
+  function closeModal(){ if(back){ back.remove(); back=null; } }
+  function openReq(key, prefillMsg){
+    var T=TYPES[key]; if(!T) return;
+    closeModal();
+    back=document.createElement("div"); back.className="mlsm-back";
+    back.addEventListener("click", function(e){ if(e.target===back) closeModal(); });
+    var pre = prefillMsg ? '<div style="font-size:13px;color:var(--muted);margin-top:8px">Prefilled from your message: “'+esc(prefillMsg)+'”</div>' : '';
+    back.innerHTML=
+      '<div class="mlsm" role="dialog" aria-modal="true">'+
+      '<h3>'+T.icon+' '+esc(T.title)+'</h3>'+
+      '<div class="safe">'+T.safe+'</div>'+ pre +
+      '<div id="mReqFields">'+T.fields()+'</div>'+ (T.extra||'') +
+      '<div id="mReqRes"></div>'+
+      '<div class="rowb"><button class="btn cancel" type="button" id="mReqCancel">Cancel</button>'+
+      '<button class="btn go" type="button" id="mReqSend">Send to '+esc(office().practice)+'</button></div>'+
+      '</div>';
+    document.body.appendChild(back);
+    if(prefillMsg){ // seed the main free-text field where present
+      var seed=$("mReqNote")||$("mReqReason")||$("mReqQ")||$("mReqPain")||$("mReqMsg");
+      if(seed && !seed.value) seed.value=prefillMsg;
+    }
+    $("mReqCancel").addEventListener("click", closeModal);
+    $("mReqSend").addEventListener("click", function(){ submitReq(key); });
+  }
+
+  function submitReq(key){
+    var T=TYPES[key];
+    var data=T.collect();
+    var res=$("mReqRes");
+    if(!T.valid(data)){ res.className="res warn"; res.textContent=T.need; return; }
+    var btn=$("mReqSend"); btn.disabled=true; var old=btn.textContent; btn.textContent="Sending…";
+    if(isDemo()){
+      setTimeout(function(){ res.className="res warn"; res.innerHTML="You're previewing sample data. Sign in to your real portal account to send requests to the office."; btn.disabled=false; btn.textContent=old; }, 400);
+      return;
+    }
+    var payload=Object.assign({ type:key, category:T.cat, submittedAt:new Date().toISOString() }, data);
+    fetch(API+"/api/patient/request",{ method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) })
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
+      .then(function(x){
+        if(x.ok && x.j && x.j.ok!==false){
+          res.className="res ok";
+          res.innerHTML="✓ Sent to "+esc(office().practice)+". They’ll follow up with you"+(key==="refill"?" once a provider reviews it":"")+". <b>This is a request, not an approval.</b>"+(x.j.ref?(" Reference: "+esc(String(x.j.ref))):"");
+          btn.textContent="Sent"; setTimeout(closeModal, 2600); return;
+        }
+        if(x.status===401){ res.className="res warn"; res.textContent="Your session ended — please sign in again, then resend."; btn.disabled=false; btn.textContent=old; return; }
+        // 404 (route not deployed) or other error -> graceful office fallback
+        officeFallback(res, key, payload); btn.disabled=false; btn.textContent=old;
+      })
+      .catch(function(){ officeFallback(res, key, payload); btn.disabled=false; btn.textContent=old; });
+  }
+
+  function officeFallback(res, key, payload){
+    var o=office();
+    var html="Online requests aren’t available right now. Please contact "+esc(o.practice)+" directly and they’ll help you";
+    html+= key==="pain" ? " — pain-medicine questions are always handled by the office." : ".";
+    if(o.phone){ html+='<br><a class="callbtn" href="tel:'+esc(tel(o.phone))+'">📞 Call '+esc(o.phone)+'</a>'; }
+    else { html+='<br>Call the office using the number on your appointment paperwork.'; }
+    res.className="res warn"; res.innerHTML=html;
+  }
+  window.__mlsOpenReq=openReq; // exposed for the chat guard + card buttons
+
+  /* ---- inject the "Requests & messages" card into the signed-in view ---- */
+  function injectCard(){
+    if($("mlsReqCard")) return;
+    var grid=document.querySelector("#app .grid"); if(!grid) return;
+    var card=document.createElement("div");
+    card.className="card sec"; card.id="mlsReqCard"; card.style.marginBottom="16px";
+    card.innerHTML=
+      '<h2 style="font-size:14px;letter-spacing:.2px;color:var(--blue-d);margin:0 0 4px;display:flex;align-items:center;gap:8px">🙋 Requests &amp; messages</h2>'+
+      '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">Ask for a refill, appointment, or send the office a note. Everything here goes to <b>'+esc(office().practice)+'</b> — a real person reviews it. Nothing is approved automatically, and MLS never gives medical advice.</p>'+
+      '<div class="reqgrid">'+
+        '<button class="reqbtn" data-req="refill"><span class="ic">💊</span><span>Refill<small>Request a prescription refill</small></span></button>'+
+        '<button class="reqbtn" data-req="appointment"><span class="ic">📅</span><span>Appointment<small>Request / schedule a visit</small></span></button>'+
+        '<button class="reqbtn" data-req="injection"><span class="ic">💉</span><span>Injection timing<small>Ask when you’re due</small></span></button>'+
+        '<button class="reqbtn" data-req="pain"><span class="ic">🩹</span><span>Pain medicine<small>Route to the office</small></span></button>'+
+        '<button class="reqbtn" data-req="message"><span class="ic">✉️</span><span>Message the office<small>Send a general note</small></span></button>'+
+      '</div>';
+    grid.parentNode.insertBefore(card, grid);
+    card.addEventListener("click", function(e){ var b=e.target.closest?e.target.closest(".reqbtn"):null; if(b) openReq(b.getAttribute("data-req")); });
+  }
+  // #app flips from .hide to shown on login/demo — watch for it, and try now.
+  injectCard();
+  try{
+    var app=$("app");
+    var mo=new MutationObserver(function(){ if(app && !app.classList.contains("hide")) injectCard(); });
+    if(app) mo.observe(app,{attributes:true,attributeFilter:["class"]});
+  }catch(e){}
+
+  /* ---- CHAT SAFETY GUARD: intercept sensitive questions before the model ---- */
+  // General questions about the patient's OWN records still flow to the AI.
+  // These patterns route to the office instead (never diagnosed/approved here).
+  var GUARD=[
+    { key:"refill",      re:/\b(refill|re-?fill|renew(al)?|out of (my )?(meds|medication|pills|prescription)|running (low|out)|more of my (med|pill|prescription))\b/i },
+    { key:"pain",        re:/\b(pain ?(med|medicine|medication|pill|management|contract)|narcotic|opioid|oxycodone|oxycontin|percocet|vicodin|hydrocodone|norco|tramadol|morphine|adderall|xanax|valium|ativan|klonopin|benzo|controlled substance)\b/i },
+    { key:"injection",   re:/\b(injection|cortisone|steroid shot|epidural|nerve block|when.*(shot|injection)|due for.*(shot|injection)|next (shot|injection))\b/i },
+    { key:"appointment", re:/\b((book|schedule|make|set ?up|request|need|get) (an? |my )?(appointment|visit|follow ?up)|be seen|come in for)\b/i },
+    { key:"message",     re:/\b(should i (take|stop|start|increase|decrease|change|split|double)|increase|decrease|adjust|change) (my )?(dose|dosage|medication|meds?)\b|\b(prescribe|diagnos|what'?s wrong with me|do i have|is (this|it) (normal|serious|dangerous)|are these symptoms)\b/i }
+  ];
+  function sensitiveOf(text){ for(var i=0;i<GUARD.length;i++){ if(GUARD[i].re.test(text)) return GUARD[i].key; } return null; }
+
+  function addChatMsg(text, who){
+    var logEl=document.getElementById("chatLog"); if(!logEl) return;
+    var d=document.createElement("div"); d.className="msg "+who;
+    if(who==="ai-html"){ d.className="msg ai"; d.innerHTML=text; } else { d.textContent=text; }
+    logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight;
+  }
+
+  function handleGuarded(text){
+    var key=sensitiveOf(text); if(!key) return false;
+    addChatMsg(text,"me");
+    var labels={refill:"a refill request",pain:"a pain-medicine question",injection:"an injection-timing question",appointment:"an appointment request",message:"something your care team should handle"};
+    var reply="That sounds like "+labels[key]+". For your safety I don’t diagnose, prescribe, or approve medication or injections — but I can pass this straight to your care team, who will follow up. Want me to open a quick request?";
+    var btn='<div style="margin-top:9px"><button type="button" class="chip" data-guard="'+key+'" style="font-weight:700">Open '+({refill:"refill request",pain:"office message",injection:"injection question",appointment:"appointment request",message:"office message"}[key])+' →</button></div>';
+    addChatMsg(reply+btn,"ai-html");
+    return true;
+  }
+
+  // Capturing listeners run BEFORE the page's own submit/click handlers, so we
+  // can stop the question from reaching the general AI when it's sensitive.
+  var form=document.getElementById("chatForm");
+  if(form){
+    form.addEventListener("submit", function(e){
+      var inp=document.getElementById("q"); var v=inp?inp.value.trim():"";
+      if(v && sensitiveOf(v)){ e.preventDefault(); e.stopImmediatePropagation(); if(inp) inp.value=""; handleGuarded(v); }
+    }, true);
+  }
+  var chips=document.getElementById("chips");
+  if(chips){
+    chips.addEventListener("click", function(e){
+      var c=e.target.closest?e.target.closest(".chip"):null; if(!c) return;
+      var v=c.textContent.trim();
+      if(sensitiveOf(v)){ e.preventDefault(); e.stopImmediatePropagation(); handleGuarded(v); }
+    }, true);
+  }
+  // buttons inside guard replies open the matching request modal
+  document.addEventListener("click", function(e){
+    var g=e.target.closest?e.target.closest("[data-guard]"):null; if(!g) return;
+    openReq(g.getAttribute("data-guard"));
+  });
+})();
+</script>
+
 </body>
 </html>
