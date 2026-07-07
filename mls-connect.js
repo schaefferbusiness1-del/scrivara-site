@@ -4666,7 +4666,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-06-b52';
+  var MLS_APP_BUILD='2026-07-07-b53';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -11886,3 +11886,6 @@
 
 
 ;(function(){try{var A="feat_mls_lastmonth_b51.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706b51";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b51: Pull Last Month button + honest relabel of the rolling pull button - see feat_mls_lastmonth_b51.js header. Revert: window.__mlsLastMonthB51.revert() */
+
+
+;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260707b53";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Revert: window.__mlsPatientLock.revert() */
