@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Google Business Profile — guided setup · MLS Scribe</title>
+<!-- ==========================================================================
+  gbp-setup.html — MLS guided Google Business Profile creation (v1.0.0)
+  Authoring lane reputation-awards, 2026-07-07. Standalone satellite page for
+  scrivara-site (same pattern as review-finder.html / send-portal-invite.html).
+
+  WHAT IT IS: a hand-holding, step-by-step wizard that walks a non-technical
+  doctor through creating (or claiming) their Google Business Profile:
+  every field pre-filled and copy-buttoned, the optimized listing text written
+  by MLS AI from their scraped reviews + pasted resume/CV, every Google page
+  deep-linked. THE DOCTOR performs the actual Google account creation, sign-in
+  and verification (their identity) — MLS never touches their password and
+  says so on screen.
+
+  DATA IT READS (all local): localStorage mlsRF (review-finder details),
+  mlsEasyBook (office contact), mlsRFScrapeCache (scraped reviews from
+  __mlsRepScrape), sf_bk_token (only for the AI-writing step).
+  DATA IT WRITES: localStorage mlsGbpGuide (wizard progress) only.
+  BACKEND: POST /api/widget/ai (existing, Bearer) for the AI step — nothing else.
+  NO Athena, NO PHI, nothing auto-publishes anywhere.
+=========================================================================== -->
+<style>
+:root{--ink:#15243c;--sub:#5b6b83;--line:#dbe3f0;--teal:#19b8a6;--blue:#2f6bed;--bg:#f4f7fc}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:880px;margin:0 auto;padding:18px 16px 60px}
+header.mls{display:flex;align-items:center;gap:12px;padding:6px 0 16px}
+.mark{width:40px;height:40px;border-radius:11px;background:linear-gradient(140deg,var(--teal),var(--blue));display:flex;align-items:center;justify-content:center;flex:none}
+.mark svg{width:26px;height:26px}
+h1{font-size:20px;margin:0}
+.tag{font-size:12.5px;color:var(--sub)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 2px 10px rgba(21,36,60,.04)}
+.card h2{font-size:16.5px;margin:0 0 8px}
+.note{font-size:12.5px;color:var(--sub)}
+.safe{background:#effaf3;border:1px solid #bfe8cf;color:#116b3e;border-radius:10px;padding:9px 12px;font-size:12.5px;margin:10px 0}
+.warn{background:#fff7e8;border:1px solid #f0d9a8;color:#7a5a12;border-radius:10px;padding:9px 12px;font-size:12.5px;margin:10px 0}
+.steps{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.step{border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12.5px;cursor:pointer;background:#fff}
+.step.on{background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff;border-color:transparent;font-weight:700}
+.step.done{background:#effaf3;border-color:#bfe8cf;color:#116b3e}
+label{display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px}
+input[type=text],textarea,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:14px;font-family:inherit}
+textarea{min-height:84px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row>div{flex:1;min-width:220px}
+.btn{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:13.5px}
+.btn.primary{background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff}
+.btn.ghost{background:#eef2fa;color:#24406e}
+.btn.link{background:#fff;border:1px solid var(--line);color:var(--ink)}
+.copybox{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;background:#fbfcff;position:relative;font-size:13.5px;white-space:pre-wrap;word-break:break-word}
+.copybox .cb{position:absolute;top:6px;right:6px}
+.cb{cursor:pointer;border:0;border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:700;background:#e8effc;color:#1c4fa0}
+.check{display:flex;gap:8px;align-items:flex-start;margin:7px 0;font-size:13.5px}
+.check input{margin-top:3px}
+.navrow{display:flex;justify-content:space-between;margin-top:14px}
+a{color:var(--blue)}
+.kpi{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:4px 6px 4px 0;font-size:13px}
+@media(max-width:640px){.wrap{padding:12px 10px 50px}.btn{width:100%;margin-top:6px}.navrow{flex-direction:column;gap:8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mls">
+    <div class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12h3l2.5 7L13 4l2.5 12L18 9h3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div>
+      <h1>Google Business Profile — guided setup</h1>
+      <div class="tag">MLS walks you through every step. You stay in control of your Google account — MLS never sees your password.</div>
+    </div>
+  </header>
+
+  <div class="steps" id="stepBar"></div>
+  <div id="stage"></div>
+
+  <div class="note" style="margin-top:18px">Part of MLS Reputation · <a href="review-finder.html">← Back to Review Finder</a> · Your progress saves automatically on this device.</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var LS_KEY = 'mlsGbpGuide';
+  var BK = 'https://scrivara-backend.onrender.com';
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function jget(k) { try { return JSON.parse(lsGet(k) || 'null'); } catch (e) { return null; } }
+
+  /* ---------------- state ---------------- */
+  var S = jget(LS_KEY) || { step: 0, mode: '', checks: {}, f: {} };
+  function save() { lsSet(LS_KEY, JSON.stringify(S)); }
+
+  /* prefill from review-finder + easy-book + scrape cache */
+  function prefill() {
+    if (S.f.__seeded) return;
+    var rf = jget('mlsRF'); var eb = jget('mlsEasyBook'); var sc = jget('mlsRFScrapeCache');
+    var d = (rf && rf.doc) || {};
+    S.f.doctor = S.f.doctor || d.name || '';
+    S.f.practice = S.f.practice || d.practice || '';
+    S.f.city = S.f.city || d.city || '';
+    S.f.website = S.f.website || d.site || '';
+    S.f.phone = S.f.phone || (eb && eb.phone) || '';
+    S.f.category = S.f.category || '';
+    S.f.address = S.f.address || '';
+    S.f.hours = S.f.hours || 'Mon–Fri 8:00 AM – 5:00 PM';
+    if (sc && sc.payload) S.scrape = { at: sc.at };
+    S.f.__seeded = true; save();
+  }
+  function scrapeData() { var sc = jget('mlsRFScrapeCache'); return sc && sc.payload ? sc.payload : null; }
+
+  var CATS = ['Pain management physician', 'Orthopedic surgeon', 'Physiatrist (Physical Medicine & Rehabilitation)', 'Sports medicine physician', 'Neurosurgeon', 'Family practice physician', 'Internist', 'Chiropractor', 'Medical clinic (practice-wide listing)'];
+
+  var STEPS = ['Your details', 'Find or create', 'Google account', 'Fill the listing', 'AI listing text', 'Verify', 'Publish & next'];
+
+  function copyText(t, btn) {
+    function done() { if (btn) { var o = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(function () { btn.textContent = o; }, 1200); } }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done, function () { fallbackCopy(t); done(); }); return; }
+    } catch (e) {}
+    fallbackCopy(t); done();
+  }
+  function fallbackCopy(t) {
+    try {
+      var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    } catch (e) {}
+  }
+  window.__gbpCopy = function (id, btn) { var el = $(id); if (el) copyText(el.getAttribute('data-raw') || el.textContent || '', btn); };
+
+  function copybox(id, text) {
+    return '<div class="copybox" id="' + id + '" data-raw="' + esc(text) + '">' + esc(text) +
+           '<button class="cb" onclick="__gbpCopy(\'' + id + '\', this)">Copy</button></div>';
+  }
+  function checkRow(key, label) {
+    var on = S.checks[key] ? ' checked' : '';
+    return '<label class="check"><input type="checkbox" data-ck="' + key + '"' + on + '> <span>' + label + '</span></label>';
+  }
+
+  /* ---------------- step renderers ---------------- */
+  function step0() {
+    prefill();
+    var opts = '<option value="">Choose the closest category…</option>', i;
+    for (i = 0; i < CATS.length; i++) opts += '<option' + (S.f.category === CATS[i] ? ' selected' : '') + '>' + CATS[i] + '</option>';
+    return '<div class="card"><h2>1 · Your details</h2>' +
+      '<div class="note">Everything below pre-fills the Google forms for you. Pulled from your Review Finder details where possible.</div>' +
+      '<div class="row"><div><label>Doctor’s full name (with credentials)</label><input type="text" id="fDoctor" value="' + esc(S.f.doctor) + '" placeholder="Matthew Schaeffer, MD"></div>' +
+      '<div><label>Practice name</label><input type="text" id="fPractice" value="' + esc(S.f.practice) + '"></div></div>' +
+      '<div class="row"><div><label>Business category</label><select id="fCategory">' + opts + '</select></div>' +
+      '<div><label>Phone</label><input type="text" id="fPhone" value="' + esc(S.f.phone) + '"></div></div>' +
+      '<label>Street address (as patients should see it)</label><input type="text" id="fAddress" value="' + esc(S.f.address) + '" placeholder="123 Main St, Suite 200, West Chester, PA 19380">' +
+      '<div class="row"><div><label>City</label><input type="text" id="fCity" value="' + esc(S.f.city) + '"></div>' +
+      '<div><label>Website</label><input type="text" id="fWebsite" value="' + esc(S.f.website) + '"></div></div>' +
+      '<label>Office hours</label><input type="text" id="fHours" value="' + esc(S.f.hours) + '">' +
+      '<div class="warn">⚠ A personal <b>doctor</b> profile and a <b>practice</b> profile are two different Google listings. This wizard sets up the one you pick in step 2 — and never mixes their ratings.</div>' +
+      '</div>';
+  }
+  function saveStep0() {
+    S.f.doctor = $('fDoctor').value; S.f.practice = $('fPractice').value; S.f.category = $('fCategory').value;
+    S.f.phone = $('fPhone').value; S.f.address = $('fAddress').value; S.f.city = $('fCity').value;
+    S.f.website = $('fWebsite').value; S.f.hours = $('fHours').value; save();
+  }
+
+  function step1() {
+    var sc = scrapeData(); var found = '';
+    if (sc && sc.listings && sc.listings.length) {
+      var i, L, rows = '';
+      for (i = 0; i < sc.listings.length; i++) {
+        L = sc.listings[i];
+        if (L.source !== 'google') continue;
+        rows += '<span class="kpi">' + esc(L.name || '') + (L.rating != null ? ' · ' + L.rating + '★' : '') +
+                (L.reviewCount != null ? ' (' + L.reviewCount + ')' : '') + ' · ' + (L.scope === 'doctor' ? 'DOCTOR listing' : L.scope === 'practice' ? 'PRACTICE listing' : 'unverified') + '</span>';
+      }
+      if (rows) found = '<div class="safe">✓ MLS already found these Google listings when it scanned your reviews:</div>' + rows;
+    }
+    var q = encodeURIComponent(((S.f.doctor || '') + ' ' + (S.f.practice || '') + ' ' + (S.f.city || '')).replace(/^\s+|\s+$/g, ''));
+    return '<div class="card"><h2>2 · Does your listing already exist?</h2>' + found +
+      '<div class="note" style="margin-top:8px">Search Google Maps for yourself. If a card for <b>you</b> (not just your practice) appears, you’ll <b>claim</b> it; if nothing appears, you’ll <b>create</b> one. Practices often already have a listing — your personal doctor listing is usually the missing one.</div>' +
+      '<div class="row" style="margin:10px 0"><a class="btn link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/' + q + '">↗ Search Google Maps for me</a></div>' +
+      '<label class="check"><input type="radio" name="mode" value="claim"' + (S.mode === 'claim' ? ' checked' : '') + '> <span><b>It exists</b> — I’ll claim it (on the listing, click “Own this business?” / “Claim this business”)</span></label>' +
+      '<label class="check"><input type="radio" name="mode" value="create"' + (S.mode === 'create' ? ' checked' : '') + '> <span><b>Nothing there</b> — I’ll create a new profile</span></label>' +
+      '</div>';
+  }
+
+  function step2() {
+    return '<div class="card"><h2>3 · Your Google account</h2>' +
+      '<div class="safe">🔒 <b>You</b> do this part — it’s your identity. MLS never asks for, sees, or stores your Google password. Do this on your own screen.</div>' +
+      '<div class="note">A Business Profile hangs off a normal Google account. Use an account the <b>practice controls</b> (not a personal Gmail you might lose access to).</div>' +
+      checkRow('acct1', 'I have a Google account for the practice (or my professional email is already a Google account). If not: <a target="_blank" rel="noopener" href="https://accounts.google.com/signup">create one here ↗</a> — use your practice email, your real name, and a strong password you save in your password manager.') +
+      checkRow('acct2', 'I can sign in to it right now (test at <a target="_blank" rel="noopener" href="https://accounts.google.com">accounts.google.com ↗</a>).') +
+      checkRow('acct3', 'Recovery phone + recovery email are set (Google asks during signup — don’t skip; it’s how you get back in).') +
+      '</div>';
+  }
+
+  function step3() {
+    var url = S.mode === 'claim'
+      ? 'https://www.google.com/maps/search/' + encodeURIComponent(((S.f.doctor || S.f.practice) + ' ' + (S.f.city || '')).replace(/^\s+|\s+$/g, ''))
+      : 'https://business.google.com/create';
+    var head = S.mode === 'claim'
+      ? 'Open your listing on Google Maps, click <b>“Own this business?”</b> (or “Claim this business”), sign in, and Google walks you to the same form fields below.'
+      : 'Open <b>business.google.com/create</b>, sign in with the account from step 3, and paste each field as Google asks for it.';
+    return '<div class="card"><h2>4 · Fill the listing — copy each field</h2>' +
+      '<div class="note">' + head + '</div>' +
+      '<div class="row" style="margin:10px 0"><a class="btn primary" target="_blank" rel="noopener" href="' + url + '">↗ Open Google and start</a></div>' +
+      '<label>Business name (exactly this — no taglines, Google rejects keyword-stuffed names)</label>' +
+      copybox('cbName', S.f.doctor ? (S.f.doctor + (S.f.practice ? ' — ' + S.f.practice : '')) : S.f.practice) +
+      '<label>Category</label>' + copybox('cbCat', S.f.category || 'Pain management physician') +
+      '<label>Address</label>' + copybox('cbAddr', S.f.address) +
+      '<label>Phone</label>' + copybox('cbPhone', S.f.phone) +
+      '<label>Website</label>' + copybox('cbSite', S.f.website) +
+      '<label>Hours</label>' + copybox('cbHours', S.f.hours) +
+      checkRow('form1', 'Every field above is pasted into Google’s form.') +
+      checkRow('form2', 'I picked “Yes” for “patients visit this location” (so the address shows).') +
+      '</div>';
+  }
+
+  function step4() {
+    return '<div class="card"><h2>5 · Your listing text, written by MLS</h2>' +
+      '<div class="note">MLS writes the profile description, services and first post from your <b>real scraped reviews</b> plus your resume/CV — truthful, compliant, and it will <b>never</b> present a practice-wide rating as your personal one.</div>' +
+      '<label>Paste your resume / bio / fellowships / special training (optional but makes it much better)</label>' +
+      '<textarea id="aiMat" placeholder="Board-certified in… Fellowship at… Special interests…">' + esc(S.f.resume || '') + '</textarea>' +
+      '<div class="row" style="margin-top:8px"><button class="btn primary" id="aiGo">✨ Write my listing</button><span class="note" id="aiNote"></span></div>' +
+      '<div id="aiOut">' + (S.aiOut ? renderAiOut(S.aiOut) : '') + '</div>' +
+      '</div>';
+  }
+  function renderAiOut(txt) {
+    /* split on our requested section markers; fall back to one box */
+    var parts = String(txt).split(/\n(?=#{2,3}\s)/), h = '', i;
+    if (parts.length < 2) return '<label>Generated listing text</label>' + copybox('aiAll', txt);
+    for (i = 0; i < parts.length; i++) {
+      var p = parts[i].replace(/^#{2,3}\s*/, '');
+      var nl = p.indexOf('\n');
+      var title = nl > 0 ? p.slice(0, nl) : 'Section ' + (i + 1);
+      var body = nl > 0 ? p.slice(nl + 1).replace(/^\s+|\s+$/g, '') : p;
+      h += '<label>' + esc(title) + '</label>' + copybox('aiSec' + i, body);
+    }
+    return h;
+  }
+  function aiPrompt() {
+    var sc = scrapeData();
+    var revLines = '', i, n = 0;
+    if (sc && sc.reviews) {
+      for (i = 0; i < sc.reviews.length && n < 12; i++) {
+        var r = sc.reviews[i];
+        if (!r.text) continue;
+        revLines += '- [' + r.scope + ' / ' + r.source + (r.rating != null ? ' / ' + r.rating + ' stars' : '') + '] ' + r.text.slice(0, 240) + '\n';
+        n++;
+      }
+    }
+    var sum = sc ? sc.summary : null;
+    return 'Write Google Business Profile content for this doctor. Sections, each starting with "## <title>":\n' +
+      '## Business description (max 750 characters)\n## Services (bulleted)\n## First post (a short welcome post)\n## Q&A seeds (3 common patient questions with answers)\n## Photo checklist (what photos to upload)\n\n' +
+      'Doctor: ' + S.f.doctor + '\nPractice: ' + S.f.practice + '\nCategory: ' + S.f.category + '\nCity: ' + S.f.city + '\nWebsite: ' + S.f.website + '\n' +
+      (sum ? ('Verified ratings — doctor-specific: ' + (sum.doctor.rating != null ? sum.doctor.rating + ' stars over ' + (sum.doctor.reviewCount || 0) + ' reviews' : 'none found') +
+      '; practice-wide: ' + (sum.practice.rating != null ? sum.practice.rating + ' stars' : 'none found') + '.\n') : '') +
+      (revLines ? ('Real patient review excerpts (with scope tags):\n' + revLines) : '') +
+      (S.f.resume ? ('Resume/bio:\n' + S.f.resume.slice(0, 4000) + '\n') : '') +
+      '\nRULES: truthful only — never invent credentials, outcomes or reviews. NEVER state or imply a practice-wide rating is the doctor’s personal rating; only cite the doctor-scope rating for the doctor. No patient names. Warm, specific, plain language.';
+  }
+  function wireStep4() {
+    var go = $('aiGo'); if (!go) return;
+    go.onclick = function () {
+      S.f.resume = $('aiMat').value; save();
+      var tok = '';
+      try { tok = sessionStorage.getItem('sf_bk_token') || localStorage.getItem('sf_bk_token') || ''; } catch (e) {}
+      var note = $('aiNote');
+      if (!tok) { note.textContent = 'Sign in to MLS first (open the MLS app, then reload this page) — the AI writer uses your MLS account.'; return; }
+      note.textContent = 'Writing…';
+      fetch(BK + '/api/widget/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({ prompt: aiPrompt(), system: 'You are an expert healthcare marketing copywriter. Truthful, compliant, warm, specific. Follow the scope rules exactly.' }) })
+        .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+        .then(function (j) {
+          var t = j && (j.text || j.reply || j.content);
+          if (!t) { note.textContent = 'Could not generate right now — try again in a minute.'; return; }
+          S.aiOut = String(t); save(); note.textContent = 'Done — copy each section into Google.';
+          $('aiOut').innerHTML = renderAiOut(S.aiOut);
+        }, function () { note.textContent = 'Network problem — try again.'; });
+    };
+  }
+
+  function step5() {
+    return '<div class="card"><h2>6 · Verification</h2>' +
+      '<div class="note">Google must confirm you really are the business before the listing goes public. It offers one or more of these — pick whichever appears:</div>' +
+      '<div class="kpi">📬 Postcard — arrives in ~5 days with a 5-digit code</div>' +
+      '<div class="kpi">📞 Phone / text code</div>' +
+      '<div class="kpi">🎥 Video call / video recording of your office</div>' +
+      '<div class="safe">🔒 The code goes from Google to <b>you</b>. MLS never needs it — don’t share it with anyone.</div>' +
+      checkRow('ver1', 'I requested verification (Google shows “verification pending”).') +
+      checkRow('ver2', 'I entered the code when it arrived (listing shows “Verified” / a green check).') +
+      '<div class="note">Waiting on a postcard? You can prepare everything in the next step meanwhile.</div>' +
+      '</div>';
+  }
+
+  function step6() {
+    return '<div class="card"><h2>7 · Publish & make it work for you</h2>' +
+      checkRow('pub1', 'Description, services, hours, photos are filled in (from step 5) and the profile is live — search yourself on Google Maps to confirm.') +
+      checkRow('pub2', 'I saved my Google review link (Business Profile → “Ask for reviews”) — paste it into MLS Review Finder’s links box so MLS tracks it.') +
+      checkRow('pub3', 'Review requests: ask every patient the same way (a card or text with your review link). Never pay for, fake, or cherry-pick reviews — it violates Google’s rules and can get the listing removed.') +
+      '<div class="safe">✓ When Google approves MLS’s Business Profile API access, you can also connect this listing inside MLS (Settings → MLS Controls → Google) so MLS can publish updates for you — each change approved by you first.</div>' +
+      '<div class="row" style="margin-top:10px"><a class="btn primary" href="review-finder.html">→ Back to Review Finder (watch your reviews grow)</a></div>' +
+      '</div>';
+  }
+
+  /* ---------------- shell ---------------- */
+  function render() {
+    var bar = '', i;
+    for (i = 0; i < STEPS.length; i++) {
+      var cls = 'step' + (i === S.step ? ' on' : (i < S.step ? ' done' : ''));
+      bar += '<span class="' + cls + '" data-go="' + i + '">' + (i + 1) + ' · ' + STEPS[i] + '</span>';
+    }
+    $('stepBar').innerHTML = bar;
+    var body = [step0, step1, step2, step3, step4, step5, step6][S.step]();
+    var nav = '<div class="navrow">' +
+      (S.step > 0 ? '<button class="btn ghost" id="navBack">← Back</button>' : '<span></span>') +
+      (S.step < STEPS.length - 1 ? '<button class="btn primary" id="navNext">Next →</button>' : '<span class="note">All done 🎉 — your profile is in your hands now.</span>') +
+      '</div>';
+    $('stage').innerHTML = body + nav;
+    wire();
+  }
+  function wire() {
+    var i, chips = document.querySelectorAll('[data-go]');
+    for (i = 0; i < chips.length; i++) {
+      chips[i].onclick = (function (n) { return function () { commit(); S.step = n; save(); render(); }; })(parseInt(chips[i].getAttribute('data-go'), 10));
+    }
+    var cks = document.querySelectorAll('[data-ck]');
+    for (i = 0; i < cks.length; i++) {
+      cks[i].onchange = function () { S.checks[this.getAttribute('data-ck')] = this.checked; save(); };
+    }
+    var radios = document.querySelectorAll('input[name=mode]');
+    for (i = 0; i < radios.length; i++) { radios[i].onchange = function () { S.mode = this.value; save(); }; }
+    var nb = $('navBack'); if (nb) nb.onclick = function () { commit(); S.step--; save(); render(); };
+    var nn = $('navNext'); if (nn) nn.onclick = function () {
+      commit();
+      if (S.step === 1 && !S.mode) { alert('Pick one: claim the existing listing, or create a new one.'); return; }
+      S.step++; save(); render();
+    };
+    if (S.step === 4) wireStep4();
+  }
+  function commit() {
+    if (S.step === 0 && $('fDoctor')) saveStep0();
+    if (S.step === 4 && $('aiMat')) { S.f.resume = $('aiMat').value; save(); }
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
