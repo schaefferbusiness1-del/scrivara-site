@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MLS Doctor Awards — Excellence in Patient Care</title>
+<meta name="description" content="The MLS Doctor Award recognizes physicians with outstanding verified patient reviews and documentation excellence. See this year's honorees.">
+<!-- ==========================================================================
+  mls-doctor-awards.html — public MLS Doctor Award site (v1.0.0)
+  Authoring lane reputation-awards, 2026-07-07. Standalone satellite page for
+  scrivara-site (GitHub Pages). PUBLIC marketing asset.
+
+  DATA: window.MLS_AWARDS embedded JSON (edit the block below to add honorees).
+  If a backend route GET /api/awards ever ships ({ok,awards:[...]}), the page
+  uses it and falls back to the embedded list on any failure.
+  The seeded honoree entry is SAMPLE/FOUNDING data — Michael must approve the
+  entry (and every future entry: doctor's written consent) before deploy.
+  Review excerpts: max ONE short quote per source, with source attribution —
+  never bulk-republishing platform content. No PHI anywhere. No login.
+=========================================================================== -->
+<style>
+:root{--ink:#132447;--sub:#5a6a84;--line:#dfe6f2;--gold:#c9a227;--goldsoft:#f7efd8;--teal:#19b8a6;--blue:#2f6bed;--bg:#f7f9fd}
+*{box-sizing:border-box}
+body{margin:0;font-family:Georgia,'Times New Roman',serif;color:var(--ink);background:var(--bg)}
+.sans{font-family:system-ui,'Segoe UI',Arial,sans-serif}
+.wrap{max-width:1020px;margin:0 auto;padding:0 18px}
+header.top{background:#fff;border-bottom:1px solid var(--line)}
+.toprow{display:flex;align-items:center;gap:10px;padding:14px 0}
+.mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,var(--teal),var(--blue));display:flex;align-items:center;justify-content:center;flex:none}
+.mark svg{width:22px;height:22px}
+.brand{font-size:15px;font-weight:700;letter-spacing:.02em}
+.hero{background:linear-gradient(180deg,#10203f,#1d3a6e);color:#fff;text-align:center;padding:58px 18px 64px}
+.laurel{width:92px;height:92px;margin:0 auto 14px;display:block}
+h1{font-size:38px;margin:0 0 10px;letter-spacing:.01em}
+.hero p{max-width:640px;margin:0 auto;font-size:17px;line-height:1.55;color:#dfe7f7}
+.year{display:inline-block;margin-top:16px;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:7px 18px;font-size:13.5px;letter-spacing:.14em}
+section{padding:44px 0}
+h2{font-size:26px;margin:0 0 6px}
+.sub{color:var(--sub);font-size:15px;margin:0 0 22px;max-width:680px}
+.crit{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.crit .c{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}
+.crit .c b{display:block;font-size:15.5px;margin-bottom:6px}
+.crit .c span{font-size:13.5px;color:var(--sub);line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px}
+.doc{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 3px 14px rgba(19,36,71,.05)}
+.doc .head{display:flex;gap:14px;padding:18px 18px 10px;align-items:center}
+.ava{width:58px;height:58px;border-radius:50%;background:linear-gradient(140deg,var(--teal),var(--blue));color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;flex:none}
+.doc h3{margin:0;font-size:18px}
+.doc .meta{font-size:12.5px;color:var(--sub)}
+.badgeline{display:flex;align-items:center;gap:8px;background:var(--goldsoft);border-top:1px solid #eadfb8;border-bottom:1px solid #eadfb8;padding:8px 18px;font-size:12.5px;color:#7a611a;font-weight:700}
+.badgeline svg{width:16px;height:16px;flex:none}
+.doc .body{padding:12px 18px 16px;font-size:14px;line-height:1.55}
+.stars{color:var(--gold);font-size:15px;letter-spacing:.06em}
+.quote{border-left:3px solid var(--gold);margin:10px 0 4px;padding:4px 0 4px 12px;font-style:italic;color:#3c4c68;font-size:13.5px}
+.quote .src{display:block;font-style:normal;font-size:11.5px;color:var(--sub);margin-top:4px}
+.more{cursor:pointer;border:0;background:#eef2fa;color:#24406e;border-radius:9px;padding:8px 13px;font-weight:700;font-size:12.5px}
+.profile{display:none;border-top:1px dashed var(--line);margin-top:10px;padding-top:10px}
+.profile.on{display:block}
+.how ol{max-width:680px;padding-left:20px;line-height:1.7;font-size:15px}
+.how li{margin:8px 0}
+.cta{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.btn{display:inline-block;text-decoration:none;background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff;border-radius:11px;padding:13px 22px;font-weight:800;font-size:14.5px;border:0;cursor:pointer}
+.embed{background:#0f1c36;color:#cfe0ff;border-radius:12px;padding:14px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;position:relative;margin-top:12px}
+.embed button{position:absolute;top:8px;right:8px;border:0;border-radius:7px;padding:5px 10px;font-size:11px;cursor:pointer;background:#2f6bed;color:#fff;font-weight:700}
+footer{border-top:1px solid var(--line);background:#fff;padding:26px 0 40px;font-size:12.5px;color:var(--sub)}
+footer .wrap{display:flex;gap:14px;flex-wrap:wrap;justify-content:space-between;align-items:center}
+.disc{max-width:640px;line-height:1.5}
+@media(max-width:640px){h1{font-size:28px}.hero{padding:40px 14px 46px}}
+</style>
+</head>
+<body>
+
+<header class="top sans"><div class="wrap toprow">
+  <div class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12h3l2.5 7L13 4l2.5 12L18 9h3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div class="brand">MLS Scribe · Doctor Awards</div>
+</div></header>
+
+<div class="hero">
+  <svg class="laurel" viewBox="0 0 100 100" fill="none" aria-hidden="true">
+    <path d="M27 78c-11-8-16-22-13-36 6 3 10 8 12 14M14 42c1-8 5-15 11-20 2 6 2 12 0 18M25 22c4-6 10-10 17-11-1 6-4 11-9 15" stroke="#c9a227" stroke-width="3.4" stroke-linecap="round"/>
+    <path d="M73 78c11-8 16-22 13-36-6 3-10 8-12 14M86 42c-1-8-5-15-11-20-2 6-2 12 0 18M75 22c-4-6-10-10-17-11 1 6 4 11 9 15" stroke="#c9a227" stroke-width="3.4" stroke-linecap="round"/>
+    <path d="M50 24l6.2 12.6 13.9 2-10 9.8 2.4 13.8L50 55.7l-12.5 6.5 2.4-13.8-10-9.8 13.9-2L50 24z" fill="#c9a227"/>
+  </svg>
+  <h1>MLS Doctor Awards</h1>
+  <p>Recognizing physicians whose patients say it best — outstanding verified patient reviews, exceptional communication, and documentation excellence.</p>
+  <div class="year sans" id="awardYear">HONOREES · 2026</div>
+</div>
+
+<section><div class="wrap">
+  <h2>What the award means</h2>
+  <p class="sub">The MLS Doctor Award is earned, not bought. Honorees are verified against public patient reviews across the web — always separating a doctor's own reviews from their practice's — and confirmed directly with the practice before listing.</p>
+  <div class="crit sans">
+    <div class="c"><b>⭐ Verified patient reviews</b><span>A doctor-specific rating of 4.8★ or higher across public review platforms (Google, Healthgrades, Vitals and more), with enough reviews to be meaningful.</span></div>
+    <div class="c"><b>🩺 Doctor-specific, not practice-wide</b><span>Only reviews naming the doctor count toward the doctor's award. A practice's rating is never presented as the physician's own.</span></div>
+    <div class="c"><b>📋 Documentation excellence</b><span>Honorees use modern documentation practices so visit time is spent with the patient, not the keyboard.</span></div>
+    <div class="c"><b>✔ Practice-confirmed</b><span>Every listing is confirmed with the practice, and every profile is approved by the doctor before it appears here.</span></div>
+  </div>
+</div></section>
+
+<section style="padding-top:0"><div class="wrap">
+  <h2>Honorees</h2>
+  <p class="sub" id="dirSub">This year's recognized physicians.</p>
+  <div class="grid sans" id="dirGrid"></div>
+</div></section>
+
+<section style="padding-top:0"><div class="wrap how">
+  <h2>How a doctor gets listed</h2>
+  <ol>
+    <li><b>Measure.</b> Run the free <a href="review-finder.html">MLS Review Finder</a> — it gathers your reviews from across the web and shows your doctor-specific rating, separated from your practice's.</li>
+    <li><b>Qualify.</b> Meet the criteria above (4.8★+ doctor-specific, sufficient review volume, profile accuracy).</li>
+    <li><b>Nominate.</b> Send your Review Finder summary to <a href="mailto:michael@mlsscribe.com">michael@mlsscribe.com</a> (or nominate a colleague — we'll verify with them first).</li>
+    <li><b>Verify.</b> MLS re-checks the public sources independently and confirms the details with your practice. Written consent from the doctor is required.</li>
+    <li><b>Get your badge.</b> Approved honorees appear here with a profile and receive the award badge for their website and waiting room.</li>
+  </ol>
+  <div class="cta sans">
+    <div><b style="font-size:17px">Think you qualify?</b><br><span style="color:var(--sub);font-size:13.5px">Start with a free scan of your reviews — it takes about a minute.</span></div>
+    <a class="btn" href="review-finder.html">Check my reviews free →</a>
+  </div>
+  <h2 style="margin-top:34px">The badge, on your site</h2>
+  <p class="sub">Honorees may embed the award badge. It links back to your profile here.</p>
+  <div class="embed sans" id="embedBox"><button onclick="copyEmbed(this)">Copy</button><span id="embedCode"></span></div>
+</div></section>
+
+<footer class="sans"><div class="wrap">
+  <div>© <span id="fy">2026</span> MLS Scribe · <a href="https://mlsscribe.com">mlsscribe.com</a> · <a href="mailto:michael@mlsscribe.com">michael@mlsscribe.com</a></div>
+  <div class="disc">The MLS Doctor Award reflects publicly available patient reviews and practice-confirmed information at the time of listing. It is not a ranking of clinical outcomes and is not medical advice. Review excerpts are quoted from the named public platforms and remain subject to their terms. Listings are free; the award cannot be purchased.</div>
+</div></footer>
+
+<script id="awardsData" type="application/json">
+{
+  "year": 2026,
+  "awards": [
+    {
+      "id": "matthew-schaeffer-md",
+      "name": "Matthew Schaeffer, MD",
+      "specialty": "Interventional Spine & Pain Management",
+      "practice": "Chester County Spine Care",
+      "city": "West Chester, PA",
+      "doctorRating": 5.0,
+      "doctorReviewCount": 12,
+      "sources": ["google", "healthgrades"],
+      "bio": "Dr. Schaeffer is an interventional spine and pain management physician serving the West Chester and Kennett Square communities. Patients consistently highlight his clear explanations, unhurried visits, and the time he spends making sure every question is answered before a procedure is considered.",
+      "quotes": [
+        { "text": "He actually listened and explained every option before we decided anything.", "source": "Google review (doctor-specific)" }
+      ],
+      "founding": true,
+      "sample": true
+    }
+  ]
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function initials(name) {
+    var parts = String(name || '').replace(/,.*/, '').split(/\s+/), out = '', i;
+    for (i = 0; i < parts.length && out.length < 2; i++) { if (parts[i]) out += parts[i].charAt(0).toUpperCase(); }
+    return out || 'MD';
+  }
+  function stars(r) {
+    if (r == null) return '';
+    var full = Math.round(r), s = '', i;
+    for (i = 0; i < 5; i++) s += (i < full) ? '★' : '☆';
+    return s;
+  }
+
+  var DATA = null;
+  try { DATA = JSON.parse($('awardsData').textContent); } catch (e) { DATA = { year: 2026, awards: [] }; }
+
+  function badgeSvgSmall() {
+    return '<svg viewBox="0 0 100 100" fill="none"><path d="M50 24l6.2 12.6 13.9 2-10 9.8 2.4 13.8L50 55.7l-12.5 6.5 2.4-13.8-10-9.8 13.9-2L50 24z" fill="#c9a227"/></svg>';
+  }
+
+  function card(a) {
+    var h = '';
+    h += '<div class="doc" id="doc_' + esc(a.id) + '">';
+    h += '<div class="head"><div class="ava">' + esc(initials(a.name)) + '</div><div>';
+    h += '<h3>' + esc(a.name) + '</h3><div class="meta">' + esc(a.specialty || '') + (a.city ? ' · ' + esc(a.city) : '') + '</div></div></div>';
+    h += '<div class="badgeline">' + badgeSvgSmall() + ' MLS DOCTOR AWARD · ' + esc(DATA.year) + (a.founding ? ' · FOUNDING HONOREE' : '') + '</div>';
+    h += '<div class="body">';
+    if (a.doctorRating != null) {
+      h += '<div><span class="stars">' + stars(a.doctorRating) + '</span> <b>' + a.doctorRating.toFixed(1) + '</b>' +
+           ' <span class="meta">doctor-specific, ' + (a.doctorReviewCount || 0) + ' verified public reviews' +
+           (a.sources && a.sources.length ? ' (' + esc(a.sources.join(', ')) + ')' : '') + '</span></div>';
+    }
+    if (a.quotes && a.quotes.length) {
+      h += '<div class="quote">“' + esc(a.quotes[0].text) + '”<span class="src">— ' + esc(a.quotes[0].source) + '</span></div>';
+    }
+    h += '<button class="more" data-p="' + esc(a.id) + '">View profile</button>';
+    h += '<div class="profile" id="prof_' + esc(a.id) + '">';
+    h += '<p style="margin:6px 0">' + esc(a.bio || '') + '</p>';
+    if (a.practice) h += '<div class="meta"><b>Practice:</b> ' + esc(a.practice) + '</div>';
+    var q, i;
+    if (a.quotes) { for (i = 1; i < a.quotes.length; i++) { q = a.quotes[i]; h += '<div class="quote">“' + esc(q.text) + '”<span class="src">— ' + esc(q.source) + '</span></div>'; } }
+    h += '<div class="meta" style="margin-top:8px">Doctor-specific reviews only — practice-wide ratings are tracked separately and never counted as the doctor’s.</div>';
+    h += '</div></div></div>';
+    return h;
+  }
+
+  function render(list) {
+    var g = $('dirGrid'), h = '', i;
+    var real = [], samples = [];
+    for (i = 0; i < list.length; i++) { (list[i].sample ? samples : real).push(list[i]); }
+    var use = real.length ? real : samples;
+    if (!use.length) { g.innerHTML = '<div class="meta">Honoree announcements coming soon.</div>'; return; }
+    for (i = 0; i < use.length; i++) h += card(use[i]);
+    g.innerHTML = h;
+    $('dirSub').textContent = use.length + (use.length === 1 ? ' physician has' : ' physicians have') + ' earned the ' + DATA.year + ' MLS Doctor Award.';
+    var btns = g.querySelectorAll('.more');
+    for (i = 0; i < btns.length; i++) {
+      btns[i].onclick = function () {
+        var p = $('prof_' + this.getAttribute('data-p'));
+        if (!p) return;
+        var on = p.className.indexOf(' on') >= 0;
+        p.className = on ? 'profile' : 'profile on';
+        this.textContent = on ? 'View profile' : 'Hide profile';
+      };
+    }
+    injectJsonLd(use);
+  }
+
+  function injectJsonLd(list) {
+    var items = [], i;
+    for (i = 0; i < list.length; i++) {
+      items.push({ '@type': 'ListItem', position: i + 1,
+        item: { '@type': 'Physician', name: list[i].name, medicalSpecialty: list[i].specialty || undefined,
+                address: list[i].city || undefined, url: 'https://mlsscribe.com/mls-doctor-awards.html#doc_' + list[i].id } });
+    }
+    var ld = { '@context': 'https://schema.org', '@type': 'ItemList', name: 'MLS Doctor Awards ' + DATA.year, itemListElement: items };
+    var s = document.createElement('script'); s.type = 'application/ld+json';
+    try { s.textContent = JSON.stringify(ld); document.head.appendChild(s); } catch (e) {}
+  }
+
+  /* embed snippet */
+  function embedFor() {
+    return '<a href="https://mlsscribe.com/mls-doctor-awards.html" title="MLS Doctor Award ' + DATA.year + '" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;border:1px solid #c9a227;border-radius:10px;padding:8px 14px;font-family:Arial,sans-serif;font-size:13px;color:#132447;background:#fdf9ec"><span style="color:#c9a227;font-size:16px">★</span> MLS Doctor Award · ' + DATA.year + '</a>';
+  }
+  $('embedCode').textContent = embedFor();
+  window.copyEmbed = function (btn) {
+    var t = $('embedCode').textContent;
+    function done() { btn.textContent = 'Copied ✓'; setTimeout(function () { btn.textContent = 'Copy'; }, 1200); }
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done, function () {}); return; } } catch (e) {}
+    try { var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done(); } catch (e) {}
+  };
+
+  $('awardYear').textContent = 'HONOREES · ' + DATA.year;
+  $('fy').textContent = String(DATA.year);
+
+  /* render the embedded list IMMEDIATELY; backend (if it ever ships) upgrades it */
+  render(DATA.awards);
+  try {
+    fetch('https://scrivara-backend.onrender.com/api/awards').then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) {
+        if (j && j.ok && j.awards && j.awards.length) { DATA.awards = j.awards; if (j.year) DATA.year = j.year; render(DATA.awards); }
+      }, function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
