@@ -1,53 +1,41 @@
 
-/* ---- module: feat_mls_easy_v2.js ---- */
+/* ---- module: feat_mls_easy_inplace.js ---- */
 
-/* ===== MLS Easy V2 — full-screen doctor-first rebuild =====
-   Complete visual + workflow rebuild of MLS Easy: Patient -> Record -> Generate -> Review -> Send.
-   Self-contained, guarded, reversible IIFE. NEVER reimplements recording/note-generation/pull/
-   writeback logic — it only calls the real existing global functions/DOM the classic UI already
-   uses (getPatients, activePatient, setActivePtId, MLSCal, startCapture/stopCapture, generateNote,
-   regenerateNote, currentNoteText, #noteBox, #transcript, #mlsNoteStyle, saveCurrentNote, signNote,
-   pushEntireVisitToAthena/pushToAthena, __mlsAthenaAutoPull, __mlsProviderPicker). All calls are
-   try/catch guarded (never throws into host app). Exposes window.__mlsEasyV2 {installed, version,
-   enable, disable, revert, state}.
+/* ===== MLS Easy In-Place Redesign =====
+   Correction of feat_mls_easy_v2.js: that module took over the whole screen as a
+   separate full-screen "page". That was the WRONG direction — this module instead
+   restructures the REAL, EXISTING embedded "MLS EASY" panel (#heroToday / .wn-grid
+   Who's Next list inside #visitHero) in place. Same colors, same real buttons —
+   just a different layout: the quick patient picker becomes the dominant element,
+   and each patient row expands inline to reveal its action buttons underneath.
 
-   KILL SWITCH (instant, no redeploy needed):
-     - URL:  add  ?classic=1  to the address bar and reload -> legacy MLS Easy comes back.
-     - Console (one word): run  classic()  in devtools -> flips flag + reloads to legacy.
-     - window.mlsEasyClassic() / window.mlsEasyV2On() also available.
-     - Persisted via localStorage key 'mls.easyV2.enabled' ('0' = classic, anything else = V2).
-   Default: ON (V2 is the new default MLS Easy experience). */
+   Never reimplements capture/note/writeback logic. Only:
+     - restyles existing elements via injected CSS (reversible, no !important abuse
+       beyond overriding the app's own inline-ish styles where necessary)
+     - adds a SECOND, non-blocking click listener to each real .wn-chip (the app's
+       own click handler still runs untouched — this only adds an expand affordance)
+     - forwards clicks to the REAL existing buttons: #captureBtn (Start Recording),
+       #mlsChartFillBtn (Pull chart context), generateNote() (Generate Note),
+       .mlsB30-send (Send to Athena)
+
+   KILL SWITCH: same one already shipped — add ?classic=1 to the URL, or run
+   classic() in the console, to fully disable ALL MLS Easy enhancements and see
+   the untouched legacy panel. localStorage key 'mls.easyV2.enabled' ('0' = off).
+
+   Revert: window.__mlsEasyInplace.revert() */
 
 (function () {
   'use strict';
-  try { if (window.__mlsEasyV2 && window.__mlsEasyV2.installed) return; } catch (e) { return; }
+  try { if (window.__mlsEasyInplace && window.__mlsEasyInplace.installed) return; } catch (e) { return; }
 
-  var VERSION = '2.0.3';
-  var LS_ON = 'mls.easyV2.enabled';
-  var LS_ROOM = 'mls.easyV2.room';           // 'doctor' | 'staff'
-  var LS_PT = 'mls.easyV2.lastPatientId';
+  var VERSION = '1.1.0';
+  var LS_ON = 'mls.easyV2.enabled'; // reuse the same kill-switch flag already shipped/documented
 
-  /* ---------------- tiny safe-call utilities (house convention) ---------------- */
-  function safe(fn, d) { try { return fn(); } catch (e) { try { console.warn('[MLSEasyV2]', e && e.message || e); } catch (e2) {} return d; } }
+  function safe(fn, d) { try { return fn(); } catch (e) { try { console.warn('[MLSEasyInplace]', e && e.message || e); } catch (e2) {} return d; } }
   function qs(sel, root) { return (root || document).querySelector(sel); }
   function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
   function on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
-  function callFirst(names, args) {
-    for (var i = 0; i < names.length; i++) {
-      var parts = names[i].split('.');
-      var obj = window;
-      var ok = true;
-      for (var j = 0; j < parts.length - 1; j++) { obj = obj && obj[parts[j]]; if (!obj) { ok = false; break; } }
-      if (!ok) continue;
-      var fn = obj && obj[parts[parts.length - 1]];
-      if (typeof fn === 'function') {
-        var r = safe(function () { return fn.apply(obj, args || []); }, undefined);
-        return { called: names[i], result: r };
-      }
-    }
-    return { called: null, result: undefined };
-  }
   function clickFirstByText(candidates) {
     var els = qsa('button,a,[role="button"]');
     for (var c = 0; c < candidates.length; c++) {
@@ -59,26 +47,7 @@
     }
     return null;
   }
-  function fmtClock(sec) {
-    sec = Math.max(0, Math.floor(sec || 0));
-    var m = Math.floor(sec / 60), s = sec % 60;
-    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
-  }
-  function fmtWhen(v) {
-    if (!v) return '';
-    var d = new Date(v);
-    if (isNaN(d)) return String(v);
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
-  function initials(name) {
-    name = String(name || '').trim();
-    if (!name) return '?';
-    var parts = name.split(/\s+/).filter(Boolean);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
 
-  /* ---------------- kill switch ---------------- */
   function isClassic() {
     var byUrl = safe(function () {
       var u = new URL(location.href);
@@ -89,672 +58,277 @@
   }
   function goClassic() {
     safe(function () { localStorage.setItem(LS_ON, '0'); });
-    teardown();
+    revert();
     safe(function () { location.reload(); });
     return 'Switched to classic MLS Easy — reloading…';
   }
   function goV2() {
     safe(function () { localStorage.setItem(LS_ON, '1'); });
     safe(function () { location.reload(); });
-    return 'Switching to MLS Easy V2 — reloading…';
+    return 'Re-enabling MLS Easy enhancements — reloading…';
   }
-  window.classic = goClassic;         // literal one-word console kill switch
+  window.classic = goClassic;
   window.mlsEasyClassic = goClassic;
   window.mlsEasyV2On = goV2;
 
-  /* ---------------- data accessors (read-only wrappers around real app state) ---------------- */
-  function getScopeLabel() {
-    return safe(function () { return window.MLSCal && window.MLSCal.getScope && window.MLSCal.getScope(); }, null);
-  }
-  function getAllRows() {
-    return safe(function () { return (window.MLSCal && window.MLSCal.rows && window.MLSCal.rows()) || []; }, []);
-  }
-  function isSameLocalDay(iso, dateObj) {
-    if (!iso) return false;
-    var d = new Date(iso);
-    if (isNaN(d)) return String(iso).slice(0, 10) === dateObj.toISOString().slice(0, 10);
-    return d.getFullYear() === dateObj.getFullYear() && d.getMonth() === dateObj.getMonth() && d.getDate() === dateObj.getDate();
-  }
-  function rowsForDate(dateObj) {
-    var rows = getAllRows();
-    return rows.filter(function (r) {
-      var key = r.day_local || r.appt_date || r.start_at || r.start_local;
-      return isSameLocalDay(key, dateObj);
-    }).sort(function (a, b) {
-      return (new Date(a.start_at || a.start_local || 0)) - (new Date(b.start_at || b.start_local || 0));
-    });
-  }
-  // __mlsWhosNext.activeList() is the SAME data source the classic "Who's Next" strip
-  // uses and is reliably today+provider scoped (verified live). MLSCal.rows()/._full can
-  // lag or be scoped to a different window, so prefer Who's Next and fall back to the
-  // calendar rows only if that module isn't present.
-  function getWhosNextRows() {
-    return safe(function () {
-      var wn = window.__mlsWhosNext;
-      var list = wn && wn.activeList && wn.activeList();
-      if (!Array.isArray(list)) return null;
-      return list.map(function (r) {
-        return {
-          id: r.id, name: r.name, dob: r.dob, reason: r.reason,
-          provider: r.provider, time_display: r.time || r.time_display,
-          start_at: r.start_at || r.start_local || null, status: r.status || ''
-        };
-      });
-    }, null);
-  }
-  function todayRows() {
-    var wn = getWhosNextRows();
-    if (wn) return wn;
-    return rowsForDate(new Date());
-  }
-  function tomorrowRows() { var d = new Date(); d.setDate(d.getDate() + 1); return rowsForDate(d); }
-  function nextUpRow() {
-    var rows = todayRows();
-    var now = Date.now();
-    var upcoming = rows.filter(function (r) {
-      var t = new Date(r.start_at || r.start_local || 0).getTime();
-      return !isNaN(t) && t >= now - 15 * 60 * 1000; // include just-started visits
-    });
-    return upcoming[0] || rows[0] || null;
-  }
-  // Who's Next rows don't always carry a numeric patient id; resolve one from the
-  // patient roster by name+DOB so setActivePtId/selectPatient still work correctly.
-  function resolvePatientId(row) {
-    if (!row) return null;
-    if (row.id) return row.id;
-    return safe(function () {
-      var all = window.getPatients ? window.getPatients() : [];
-      var match = all.filter(function (p) { return p.name === row.name && (!row.dob || p.dob === row.dob); })[0];
-      return match ? match.id : null;
-    }, null);
-  }
-  function getActivePatientRow() {
-    var ap = safe(function () { return window.activePatient && window.activePatient(); }, null);
-    if (ap && (ap.name || ap.id)) return ap;
-    return nextUpRow();
-  }
-  function uniqueProviders() {
-    var fromPicker = safe(function () { return window.__mlsProviderPicker && window.__mlsProviderPicker.cachedProviders; }, null);
-    if (Array.isArray(fromPicker) && fromPicker.length) return fromPicker;
-    var rows = getAllRows(), seen = {}, out = [];
-    rows.forEach(function (r) {
-      var key = r.provider_key || r.provider || r.provider_raw;
-      var label = r.provider || r.provider_raw || key;
-      if (key && !seen[key]) { seen[key] = 1; out.push({ pk: key, label: label }); }
-    });
-    return out;
-  }
-
-  /* ---------------- CSS (scoped) ---------------- */
-  var CSS_ID = 'mlsEasyV2Css';
+  /* ---------------- CSS (scoped to real, existing elements — additive/override only) ---------------- */
+  var CSS_ID = 'mlsEasyInplaceCss';
   var CSS = ''
-    + '@import url(https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Newsreader:ital,wght@0,500;1,500&display=swap);'
-    + '#mlsEasyV2Root *{box-sizing:border-box;}'
-    + '#mlsEasyV2Root{position:fixed;inset:0;z-index:2147483647;background:#eef2f7;font-family:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,sans-serif;color:#0f2540;display:flex;flex-direction:column;}'
-    + '#mlsEasyV2Root .ez-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:linear-gradient(180deg,#0d2138,#102a48);color:#fff;}'
-    + '#mlsEasyV2Root .ez-brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.2px;}'
-    + '#mlsEasyV2Root .ez-brand .dot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#2f6bed,#2257cf);}'
-    + '#mlsEasyV2Root .ez-tabs{display:flex;gap:4px;background:rgba(255,255,255,.08);padding:4px;border-radius:12px;}'
-    + '#mlsEasyV2Root .ez-tab{border:0;background:transparent;color:#cfe0f5;font-weight:700;font-size:13px;padding:7px 14px;border-radius:9px;cursor:pointer;}'
-    + '#mlsEasyV2Root .ez-tab.on{background:#fff;color:#0f2540;}'
-    + '#mlsEasyV2Root .ez-headright{display:flex;align-items:center;gap:10px;}'
-    + '#mlsEasyV2Root .ez-iconbtn{border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:#e8f0fb;border-radius:10px;padding:7px 10px;font-size:12px;cursor:pointer;}'
-    + '#mlsEasyV2Root .ez-body{flex:1 1 auto;overflow:auto;padding:20px;display:flex;justify-content:center;}'
-    + '#mlsEasyV2Root .ez-wrap{width:100%;max-width:860px;display:flex;flex-direction:column;gap:16px;}'
-    + '#mlsEasyV2Root .ez-card{background:#fff;border:1px solid #e4ebf3;border-radius:20px;padding:22px;box-shadow:0 12px 40px -18px rgba(13,33,56,.3);}'
-    + '#mlsEasyV2Root h1.ez-h{font-family:"Newsreader",serif;font-style:italic;font-weight:500;font-size:28px;margin:0 0 4px;}'
-    + '#mlsEasyV2Root .ez-sub{color:#5c7290;font-size:14px;margin:0 0 14px;}'
-    + '#mlsEasyV2Root .ez-pt{display:flex;align-items:center;gap:14px;}'
-    + '#mlsEasyV2Root .ez-avatar{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;flex:0 0 auto;}'
-    + '#mlsEasyV2Root .ez-ptname{font-size:22px;font-weight:800;margin:0;}'
-    + '#mlsEasyV2Root .ez-ptmeta{color:#5c7290;font-size:13px;margin-top:2px;}'
-    + '#mlsEasyV2Root .ez-big{display:block;width:100%;border:0;border-radius:16px;padding:22px 20px;font-size:19px;font-weight:800;cursor:pointer;color:#fff;margin-top:18px;min-height:64px;}'
-    + '#mlsEasyV2Root .ez-big.rec{background:linear-gradient(135deg,#2f6bed,#2257cf);}'
-    + '#mlsEasyV2Root .ez-big.stop{background:linear-gradient(135deg,#e24545,#c22d2d);}'
-    + '#mlsEasyV2Root .ez-big.go{background:linear-gradient(135deg,#1f9d6b,#178a5c);}'
-    + '#mlsEasyV2Root .ez-big:active{transform:translateY(1px);}'
-    + '#mlsEasyV2Root .ez-secrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}'
-    + '#mlsEasyV2Root .ez-sec{border:1px solid #dce6f2;background:#f5f8fc;color:#284566;font-weight:600;font-size:13px;padding:10px 14px;border-radius:12px;cursor:pointer;min-height:44px;}'
-    + '#mlsEasyV2Root .ez-sec:hover{background:#eaf1fa;}'
-    + '#mlsEasyV2Root .ez-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;}'
-    + '#mlsEasyV2Root .ez-badge.blue{background:#e7f0ff;color:#1d4ed8;}'
-    + '#mlsEasyV2Root .ez-badge.green{background:#e6f7ee;color:#16a34a;}'
-    + '#mlsEasyV2Root .ez-badge.amber{background:#fef3e2;color:#b45309;}'
-    + '#mlsEasyV2Root .ez-badge.red{background:#fdeaea;color:#c22d2d;}'
-    + '#mlsEasyV2Root .ez-badge.gray{background:#eef1f5;color:#5c7290;}'
-    + '#mlsEasyV2Root .ez-timer{font-family:monospace;font-size:44px;font-weight:800;text-align:center;letter-spacing:2px;color:#c22d2d;margin:6px 0 2px;}'
-    + '#mlsEasyV2Root .ez-recdot{width:11px;height:11px;border-radius:50%;background:#e24545;display:inline-block;margin-right:8px;animation:ezpulse 1.1s infinite;}'
-    + '@keyframes ezpulse{0%{opacity:1;}50%{opacity:.35;}100%{opacity:1;}}'
-    + '#mlsEasyV2Root .ez-transcript{background:#f5f8fc;border:1px solid #dce6f2;border-radius:14px;padding:14px;font-size:13.5px;line-height:1.5;color:#33455e;min-height:110px;max-height:220px;overflow:auto;white-space:pre-wrap;margin-top:10px;}'
-    + '#mlsEasyV2Root textarea.ez-note{width:100%;min-height:280px;border:1px solid #dce6f2;border-radius:14px;padding:16px;font-size:14.5px;line-height:1.55;color:#0f2540;font-family:inherit;resize:vertical;}'
-    + '#mlsEasyV2Root textarea.ez-note:disabled{background:#f8fafc;color:#33455e;}'
-    + '#mlsEasyV2Root select.ez-select{border:1px solid #dce6f2;border-radius:12px;padding:9px 12px;font-size:13px;font-weight:600;color:#284566;background:#fff;min-height:40px;}'
-    + '#mlsEasyV2Root .ez-toprow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}'
-    + '#mlsEasyV2Root .ez-ghost{border:1px solid #dce6f2;background:#fff;color:#284566;font-weight:700;font-size:13px;padding:9px 14px;border-radius:12px;cursor:pointer;min-height:40px;}'
-    + '#mlsEasyV2Root .ez-ghost.warn{border-color:#f3caca;color:#c22d2d;}'
-    + '#mlsEasyV2Root .ez-home-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}'
-    + '#mlsEasyV2Root .ez-home-tile{background:#fff;border:1px solid #e4ebf3;border-radius:18px;padding:20px;cursor:pointer;box-shadow:0 8px 24px -16px rgba(13,33,56,.25);}'
-    + '#mlsEasyV2Root .ez-home-tile:hover{border-color:#b9cdea;}'
-    + '#mlsEasyV2Root .ez-home-tile .t{font-size:15.5px;font-weight:800;margin-bottom:3px;}'
-    + '#mlsEasyV2Root .ez-home-tile .d{font-size:12.5px;color:#5c7290;}'
-    + '#mlsEasyV2Root .ez-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #e6ecf4;border-radius:14px;background:#fff;cursor:pointer;margin-bottom:8px;}'
-    + '#mlsEasyV2Root .ez-row:hover{border-color:#b9cdea;}'
-    + '#mlsEasyV2Root .ez-row .nm{font-weight:700;font-size:14.5px;}'
-    + '#mlsEasyV2Root .ez-row .mt{font-size:12px;color:#5c7290;}'
-    + '#mlsEasyV2Root .ez-row .sp{flex:1;}'
-    + '#mlsEasyV2Root .ez-rowexp{border:1px solid #dce6f2;border-radius:14px;padding:14px;background:#f7fafd;margin:-4px 0 12px;}'
-    + '#mlsEasyV2Root .ez-search{width:100%;padding:12px 14px;border:1px solid #dce6f2;border-radius:14px;font-size:14px;margin-bottom:12px;}'
-    + '#mlsEasyV2Root .ez-pullrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;}'
-    + '#mlsEasyV2Root .ez-empty{text-align:center;color:#5c7290;padding:30px 10px;font-size:14px;}'
-    + '#mlsEasyV2Root .ez-modal-bg{position:fixed;inset:0;background:rgba(15,37,64,.55);z-index:2147483100;display:flex;align-items:center;justify-content:center;padding:16px;}'
-    + '#mlsEasyV2Root .ez-modal{background:#fff;border-radius:18px;padding:24px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);}'
-    + '#mlsEasyV2Root .ez-modal h3{margin:0 0 8px;font-size:18px;}'
-    + '#mlsEasyV2Root .ez-modal p{color:#33455e;font-size:13.5px;line-height:1.5;}'
-    + '#mlsEasyV2Root .ez-inputlbl{font-size:12px;font-weight:700;color:#5c7290;margin:10px 0 4px;display:block;}'
-    + '#mlsEasyV2Root input.ez-input,#mlsEasyV2Root input[type=date].ez-input{width:100%;padding:11px 12px;border:1px solid #dce6f2;border-radius:12px;font-size:14px;}'
+    + '#mlsEasyInplaceParent{display:flex !important;flex-direction:column !important;align-items:stretch !important;}'
+    + '#mlsEasyInplaceParent > *{order:1;}'
+    + '#mlsEasyInplaceParent > #heroToday{order:-2 !important;margin-bottom:12px;}'
+    + '#heroToday .wn-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 2px 12px;}'
+    + '#heroToday .wn-title{font-size:18px !important;font-weight:800 !important;letter-spacing:.2px;}'
+    + '#heroToday .wn-count{font-size:12px;opacity:.8;}'
+    + '#heroToday .wn-grid{display:flex !important;flex-direction:column !important;flex-wrap:nowrap !important;gap:9px !important;max-height:600px !important;overflow:auto !important;padding-right:4px;}'
+    + '#heroToday .wn-chip{width:100% !important;max-width:100% !important;min-width:0 !important;flex:none !important;flex-basis:100% !important;box-sizing:border-box;display:flex !important;flex-direction:row !important;align-items:center !important;justify-content:flex-start !important;gap:12px;padding:15px 17px !important;font-size:15.5px !important;border-radius:14px !important;text-align:left !important;transition:background .12s ease,border-color .12s ease;}'
+    + '#heroToday .wn-chip > *{flex:none;}'
+    + '#heroToday .wn-chip .wn-nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+    + '#heroToday .wn-chip:hover{background:rgba(255,255,255,.24) !important;}'
+    + '#heroToday .wn-chip.ez2-active{background:rgba(255,255,255,.3) !important;border-color:rgba(255,255,255,.6) !important;}'
+    + '#heroToday .wn-chip .wn-nm{font-size:15.5px !important;font-weight:800 !important;max-width:none !important;}'
+    + '#heroToday .wn-chip .wn-mt{font-size:12.5px !important;opacity:.85;}'
+    + '#heroToday .wn-chip .wn-bd{font-size:11px !important;opacity:.75;}'
+    + '#heroToday .ez2-chevron{margin-left:auto;font-size:13px;opacity:.7;flex:none;}'
+    + '#heroToday .wn-more{width:100%;box-sizing:border-box;margin-top:2px;}'
+    + '.ez2-quickpull{border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.12);color:#fff;font-weight:700;font-size:12px;padding:6px 11px;border-radius:9px;cursor:pointer;margin-left:auto;}'
+    + '.ez2-quickpull:hover{background:rgba(255,255,255,.22);}'
+    + '.ez2-actions{display:none;flex-direction:column;gap:9px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.24);border-radius:14px;padding:13px;margin:-3px 0 2px;}'
+    + '.ez2-actions.open{display:flex;}'
+    + '.ez2-actions .ez2-row{display:flex;gap:8px;flex-wrap:wrap;}'
+    + '.ez2-actions button{flex:1 1 140px;border:0;border-radius:10px;padding:11px 12px;font-weight:700;font-size:13px;cursor:pointer;color:#fff;}'
+    + '.ez2-actions .ez2-rec{background:linear-gradient(135deg,#3b6fe0,#2c54b8);}'
+    + '.ez2-actions .ez2-sec{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32) !important;}'
+    + '.ez2-actions .ez2-send{background:linear-gradient(135deg,#1f9d6b,#178a5c);}'
+    + '.ez2-actions .ez2-safety{font-size:11.5px;color:rgba(255,255,255,.78);line-height:1.4;}'
+    + '.ez2-modal-bg{position:fixed;inset:0;background:rgba(13,33,56,.6);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;}'
+    + '.ez2-modal{background:#fff;border-radius:16px;padding:22px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:inherit;}'
+    + '.ez2-modal h3{margin:0 0 8px;font-size:17px;color:#0f2540;}'
+    + '.ez2-modal p{margin:0;color:#33455e;font-size:13.5px;line-height:1.5;}'
+    + '.ez2-modal-row{display:flex;gap:8px;margin-top:18px;}'
+    + '.ez2-modal-row button{flex:1;border:0;border-radius:10px;padding:11px 12px;font-weight:700;font-size:13.5px;cursor:pointer;}'
+    + '.ez2-modal-cancel{background:#eef1f5;color:#284566;}'
+    + '.ez2-modal-confirm{background:linear-gradient(135deg,#1f9d6b,#178a5c);color:#fff;}'
     + '@media (max-width:720px){'
-    + '  #mlsEasyV2Root .ez-body{padding:12px;}'
-    + '  #mlsEasyV2Root .ez-card{padding:16px;border-radius:16px;}'
-    + '  #mlsEasyV2Root .ez-home-grid{grid-template-columns:1fr;}'
-    + '  #mlsEasyV2Root .ez-pullrow{grid-template-columns:1fr;}'
-    + '  #mlsEasyV2Root h1.ez-h{font-size:22px;}'
-    + '  #mlsEasyV2Root .ez-timer{font-size:36px;}'
-    + '  #mlsEasyV2Root .ez-tabs{display:none;}'
+    + '  #heroToday .wn-grid{max-height:60vh !important;}'
+    + '  #heroToday .wn-chip{padding:13px 14px !important;}'
+    + '  .ez2-actions button{flex:1 1 100%;}'
     + '}';
 
   function injectCss() {
-    if (document.getElementById(CSS_ID)) return;
-    var st = document.createElement('style');
-    st.id = CSS_ID; st.textContent = CSS;
-    document.head.appendChild(st);
-  }
-
-  /* ---------------- state ---------------- */
-  var STATE = {
-    screen: 'home',            // home | doctorIdle | doctorRecording | doctorReview | choosePatient | staffPrep | settings
-    room: safe(function () { return localStorage.getItem(LS_ROOM); }, null) || 'doctor',
-    recStartedAt: null,
-    timerHandle: null,
-    transcriptHandle: null,
-    noteEdited: false,
-    pullBusy: false,
-    pullMsg: '',
-  };
-
-  var root = null, body = null;
-
-  function setScreen(s) { STATE.screen = s; render(); }
-
-  /* ---------------- recording lifecycle ---------------- */
-  function beginRecording() {
-    callFirst(['startCapture']);
-    STATE.recStartedAt = Date.now();
-    setScreen('doctorRecording');
-    STATE.timerHandle = setInterval(function () {
-      var el = qs('#ezTimer');
-      if (el) el.textContent = fmtClock((Date.now() - STATE.recStartedAt) / 1000);
-    }, 500);
-    STATE.transcriptHandle = setInterval(function () {
-      var live = qs('#transcript');
-      var mirror = qs('#ezTranscriptMirror');
-      if (live && mirror && 'value' in live) {
-        var v = live.value || '';
-        if (mirror.textContent !== v) { mirror.textContent = v; mirror.scrollTop = mirror.scrollHeight; }
-      }
-    }, 700);
-  }
-  function stopTimers() {
-    if (STATE.timerHandle) { clearInterval(STATE.timerHandle); STATE.timerHandle = null; }
-    if (STATE.transcriptHandle) { clearInterval(STATE.transcriptHandle); STATE.transcriptHandle = null; }
-  }
-  function endRecordingAndGenerate() {
-    stopTimers();
-    callFirst(['stopCapture']);
-    setScreen('doctorReview');
-    STATE.noteEdited = false;
-    safe(function () {
-      var r = callFirst(['generateNote']);
-      syncNoteFromReal();
-    });
-  }
-  function syncNoteFromReal() {
-    var el = qs('#ezNoteText');
-    if (!el) return;
-    var txt = safe(function () { return (window.currentNoteText && window.currentNoteText()) || (qs('#noteBox') && qs('#noteBox').value) || ''; }, '');
-    el.value = txt;
-  }
-  function pushEditsToReal() {
-    var el = qs('#ezNoteText');
-    var real = qs('#noteBox');
-    if (el && real) {
-      real.value = el.value;
-      safe(function () { real.dispatchEvent(new Event('input', { bubbles: true })); });
-      safe(function () { real.dispatchEvent(new Event('change', { bubbles: true })); });
+    var st = document.getElementById(CSS_ID);
+    if (!st) {
+      st = document.createElement('style');
+      st.id = CSS_ID;
     }
-  }
-  function regenerate() {
-    pushEditsToReal();
-    var r = callFirst(['regenerateNote', 'generateNote']);
-    setTimeout(syncNoteFromReal, 400);
-  }
-  function changeStyle(val) {
-    var sel = qs('#mlsNoteStyle');
-    if (sel) { sel.value = val; safe(function () { sel.dispatchEvent(new Event('change', { bubbles: true })); }); }
+    // Always refresh content too, in case a stale tag from an earlier version of this
+    // module (or a hot-reinstall during testing) was left behind with old CSS text.
+    st.textContent = CSS;
+    // (Re-)append to the end of <body> every time (NOT <head>): the app itself adds
+    // some of its own <style> tags directly into <body> (confirmed via live inspection),
+    // and document order always ranks everything in <body> after everything in <head>
+    // regardless of insertion time — so re-appending to <head> could never win an
+    // equal-specificity tie against a body-located app stylesheet, no matter how often
+    // we did it. Appending to the very end of <body> guarantees we win every tie.
+    document.body.appendChild(st);
   }
 
-  /* ---------------- send-to-athena safety confirm ---------------- */
-  function openSendConfirm() {
-    pushEditsToReal();
-    var pt = getActivePatientRow() || {};
-    var name = pt.name || qs('#heroPtName') && qs('#heroPtName').value || 'this patient';
-    var dob = pt.dob || (qs('#heroPtDob') && qs('#heroPtDob').value) || '';
+  /* ---------------- real-function bridges (never reimplemented) ---------------- */
+  function startRecordingFor(chip) {
+    var btn = document.getElementById('captureBtn');
+    if (btn) { safe(function () { btn.click(); }); return true; }
+    return false;
+  }
+  function pullChartFor(chip) {
+    var btn = document.getElementById('mlsChartFillBtn');
+    if (btn) { safe(function () { btn.click(); }); return true; }
+    return !!clickFirstByText(['from open athena chart', 'open athena chart']);
+  }
+  function generateNoteFor(chip) {
+    var r = safe(function () { return typeof window.generateNote === 'function' ? (window.generateNote(), true) : false; }, false);
+    if (r) return true;
+    return !!clickFirstByText(['generate note']);
+  }
+  // Custom in-page confirm modal instead of window.confirm(): native confirm() blocks
+  // the whole render/JS thread (freezes automated testing AND can behave inconsistently
+  // for real users across browsers/extensions), so use a real DOM modal that matches the
+  // app's own visual language instead.
+  var ez2ModalRoot = null;
+  function closeSendConfirmModal() {
+    if (ez2ModalRoot && ez2ModalRoot.parentNode) ez2ModalRoot.parentNode.removeChild(ez2ModalRoot);
+    ez2ModalRoot = null;
+  }
+  function openSendConfirmModal(name, cb) {
+    closeSendConfirmModal();
     var bg = document.createElement('div');
-    bg.className = 'ez-modal-bg';
-    bg.innerHTML = '<div class="ez-modal">'
+    bg.className = 'ez2-modal-bg';
+    bg.innerHTML = '<div class="ez2-modal">'
       + '<h3>Confirm send to Athena</h3>'
-      + '<p>You are about to write this note into <b>' + esc(name) + '</b>' + (dob ? ' (DOB ' + esc(dob) + ')' : '') + '’s Athena chart as an <b>unsigned draft</b>. You will still need to review and sign it in Athena.</p>'
-      + '<div style="display:flex;gap:8px;margin-top:16px;">'
-      + '<button class="ez-ghost" id="ezCancelSend" style="flex:1;">Cancel</button>'
-      + '<button class="ez-big go" id="ezConfirmSend" style="margin-top:0;flex:1;padding:12px;">Yes, send to ' + esc((name.split(' ')[0]) || 'chart') + '</button>'
+      + '<p>Send this visit note to <b>' + esc(name || 'this patient') + '</b>’s Athena chart as an <b>unsigned draft</b>? You will still need to review and sign it in Athena.</p>'
+      + '<div class="ez2-modal-row">'
+      + '<button type="button" class="ez2-modal-cancel">Cancel</button>'
+      + '<button type="button" class="ez2-modal-confirm">Yes, send</button>'
       + '</div></div>';
-    (root || document.body).appendChild(bg);
-    on(qs('#ezCancelSend', bg), 'click', function () { bg.remove(); });
-    on(qs('#ezConfirmSend', bg), 'click', function () {
-      bg.remove();
-      var r = callFirst(['pushEntireVisitToAthena', 'pushToAthena']);
-      toast(r.called ? 'Sent to Athena as unsigned draft.' : 'Could not find the send-to-Athena action — try the classic view.', r.called ? 'ok' : 'warn');
+    document.body.appendChild(bg);
+    ez2ModalRoot = bg;
+    on(qs('.ez2-modal-cancel', bg), 'click', function () { closeSendConfirmModal(); cb(false); });
+    on(qs('.ez2-modal-confirm', bg), 'click', function () { closeSendConfirmModal(); cb(true); });
+    on(bg, 'click', function (e) { if (e.target === bg) { closeSendConfirmModal(); cb(false); } });
+  }
+  function sendToAthenaFor(chip, name) {
+    openSendConfirmModal(name, function (confirmed) {
+      if (!confirmed) return;
+      var btn = qs('.mlsB30-send');
+      if (btn) { safe(function () { btn.click(); }); return; }
+      clickFirstByText(['send full visit to athena', 'send to athena']);
     });
   }
-  function toast(msg, kind) {
-    var d = document.createElement('div');
-    d.textContent = msg;
-    d.style.cssText = 'position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:' + (kind === 'warn' ? '#c22d2d' : '#15293f') + ';color:#fff;padding:10px 16px;border-radius:12px;z-index:2147483200;font-size:13px;font-family:"Plus Jakarta Sans",sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);';
-    (root || document.body).appendChild(d);
-    setTimeout(function () { d.remove(); }, 2600);
+
+  /* ---------------- per-row inline expand ---------------- */
+  function closeAllActions(except) {
+    qsa('.ez2-actions.open').forEach(function (p) { if (p !== except) p.classList.remove('open'); });
+  }
+  function ensureActionsPanel(chip) {
+    var next = chip.nextElementSibling;
+    if (next && next.classList && next.classList.contains('ez2-actions')) return next;
+    var name = safe(function () { return (chip.querySelector('.wn-nm') || {}).textContent || ''; }, '');
+    var panel = document.createElement('div');
+    panel.className = 'ez2-actions';
+    panel.innerHTML = ''
+      + '<div class="ez2-row">'
+      + '<button type="button" class="ez2-rec" data-a="rec">● Start Recording</button>'
+      + '<button type="button" class="ez2-sec" data-a="chart">Pull Chart Context</button>'
+      + '</div>'
+      + '<div class="ez2-row">'
+      + '<button type="button" class="ez2-sec" data-a="note">Generate Note</button>'
+      + '<button type="button" class="ez2-send" data-a="send">Send to Athena</button>'
+      + '</div>'
+      + '<div class="ez2-safety">Patient context: <b class="ez2-ptname"></b>. Selecting this row sets it as the active patient before any action runs.</div>';
+    chip.parentNode.insertBefore(panel, chip.nextSibling);
+    on(qs('[data-a="rec"]', panel), 'click', function (ev) { ev.stopPropagation(); startRecordingFor(chip); });
+    on(qs('[data-a="chart"]', panel), 'click', function (ev) { ev.stopPropagation(); pullChartFor(chip); });
+    on(qs('[data-a="note"]', panel), 'click', function (ev) { ev.stopPropagation(); generateNoteFor(chip); });
+    on(qs('[data-a="send"]', panel), 'click', function (ev) {
+      ev.stopPropagation();
+      var live = safe(function () { return window.activePatient && window.activePatient(); }, null);
+      sendToAthenaFor(chip, live && live.name || name);
+    });
+    return panel;
+  }
+  function refreshPanelName(panel) {
+    var live = safe(function () { return window.activePatient && window.activePatient(); }, null);
+    var el = qs('.ez2-ptname', panel);
+    if (el) el.textContent = (live && live.name) || '—';
+  }
+  function bindChip(chip) {
+    if (chip.dataset.ez2Bound) return;
+    chip.dataset.ez2Bound = '1';
+    var chevron = document.createElement('span');
+    chevron.className = 'ez2-chevron';
+    chevron.textContent = '▾';
+    chip.appendChild(chevron);
+    on(chip, 'click', function () {
+      qsa('.wn-chip.ez2-active').forEach(function (c) { c.classList.remove('ez2-active'); });
+      chip.classList.add('ez2-active');
+      var panel = ensureActionsPanel(chip);
+      var willOpen = !panel.classList.contains('open');
+      closeAllActions(willOpen ? panel : null);
+      setTimeout(function () {
+        if (willOpen) { panel.classList.add('open'); refreshPanelName(panel); }
+        else { panel.classList.remove('open'); }
+      }, 60); // let the app's own native click handler resolve the patient first
+    });
   }
 
-  /* ---------------- patient selection ---------------- */
-  function choosePatientRow(row) {
-    if (!row) return;
-    var pid = resolvePatientId(row);
-    safe(function () { pid && window.setActivePtId && window.setActivePtId(pid); });
-    safe(function () { pid && window.selectPatient && window.selectPatient(pid); });
-    safe(function () { pid && localStorage.setItem(LS_PT, String(pid)); });
-    var nameEl = qs('#heroPtName'); if (nameEl && row.name) { nameEl.value = row.name; safe(function () { nameEl.dispatchEvent(new Event('input', { bubbles: true })); }); }
-    var dobEl = qs('#heroPtDob'); if (dobEl && row.dob) { dobEl.value = row.dob; safe(function () { dobEl.dispatchEvent(new Event('input', { bubbles: true })); }); }
-    setScreen('doctorIdle');
+  /* ---------------- quick "pull today's patients" shortcut in the header ---------------- */
+  function ensureQuickPull(hd) {
+    if (qs('.ez2-quickpull', hd)) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ez2-quickpull';
+    btn.textContent = 'Pull today’s patients';
+    btn.addEventListener('click', function () {
+      clickFirstByText(["pull today's patients", 'pull today’s patients']);
+    });
+    hd.appendChild(btn);
   }
 
-  /* ---------------- pull actions ---------------- */
-  function doPull(kind) {
-    STATE.pullBusy = true; STATE.pullMsg = 'Pulling ' + kind + '…'; render();
-    function done(msg, ok) { STATE.pullBusy = false; STATE.pullMsg = msg; render(); toast(msg, ok ? 'ok' : 'warn'); }
-    if (kind === 'today') {
-      var r = callFirst(['__mlsAthenaAutoPull.run']);
-      if (r.called) { setTimeout(function () { done('Today’s patients pulled.', true); }, 900); return; }
-      var btn = clickFirstByText(["pull today's patients", 'pull today’s patients']);
-      setTimeout(function () { done(btn ? 'Pulling today’s patients…' : 'Couldn’t find the pull action — try Classic view.', !!btn); }, 900);
-      return;
+  /* ---------------- auto-expand Who's Next to show all patients (once, state-aware) ---------------- */
+  function autoExpandMore() {
+    var more = qs('.wn-more');
+    if (more && /more/i.test(more.textContent || '')) {
+      safe(function () { more.click(); });
     }
-    if (kind === 'tomorrow' || kind === 'custom') {
-      var dateInput = qs('input[type="date"]');
-      if (!dateInput) { done('No date control found — use Classic view for this pull.', false); return; }
-      var d = kind === 'tomorrow' ? (function () { var x = new Date(); x.setDate(x.getDate() + 1); return x; })() : (STATE.customDate ? new Date(STATE.customDate) : new Date());
-      dateInput.value = d.toISOString().slice(0, 10);
-      safe(function () { dateInput.dispatchEvent(new Event('input', { bubbles: true })); dateInput.dispatchEvent(new Event('change', { bubbles: true })); });
-      var btn2 = clickFirstByText(['pull', 'from athena chart']);
-      setTimeout(function () { done(btn2 ? 'Pull triggered for ' + d.toDateString() + '.' : 'Set the date but couldn’t find the pull button — use Classic view.', !!btn2); }, 900);
-      return;
-    }
-    if (kind === 'month' || kind === 'lastMonth') {
-      if (kind === 'lastMonth') {
-        var dateInput2 = qs('input[type="date"]');
-        if (dateInput2) {
-          var x2 = new Date(); x2.setMonth(x2.getMonth() - 1, 1);
-          dateInput2.value = x2.toISOString().slice(0, 10);
-          safe(function () { dateInput2.dispatchEvent(new Event('input', { bubbles: true })); dateInput2.dispatchEvent(new Event('change', { bubbles: true })); });
-        }
-      }
-      var btn3 = clickFirstByText(['pull whole month', 'pull month']);
-      setTimeout(function () { done(btn3 ? (kind === 'lastMonth' ? 'Pulling last month…' : 'Pulling current month…') : 'Couldn’t find the month-pull control — use Classic view.', !!btn3); }, 1000);
-      return;
-    }
-    done('Unknown pull type.', false);
   }
 
-  /* ---------------- shared: patient row component (markup string) ---------------- */
-  function statusBadge(status) {
-    var s = String(status || '').toLowerCase();
-    if (/check|arrived|room/.test(s)) return '<span class="ez-badge green">' + esc(status) + '</span>';
-    if (/cancel|no.?show/.test(s)) return '<span class="ez-badge red">' + esc(status || 'Cancelled') + '</span>';
-    if (/wait|pending|open/.test(s)) return '<span class="ez-badge amber">' + esc(status || 'Waiting') + '</span>';
-    return '<span class="ez-badge gray">' + esc(status || 'Scheduled') + '</span>';
-  }
-  function rowHtml(r, idx) {
-    var time = r.time_display || fmtWhen(r.start_at || r.start_local);
-    return '<div class="ez-row" data-row-idx="' + idx + '">'
-      + '<div class="ez-avatar" style="width:38px;height:38px;font-size:13px;">' + esc(initials(r.name)) + '</div>'
-      + '<div><div class="nm">' + esc(r.name || 'Unnamed patient') + '</div>'
-      + '<div class="mt">' + esc(time || '') + (r.provider ? ' · ' + esc(r.provider) : '') + (r.reason ? ' · ' + esc(r.reason) : '') + '</div></div>'
-      + '<div class="sp"></div>' + statusBadge(r.status)
-      + '</div>';
-  }
-
-  /* ---------------- render: screens ---------------- */
-  function renderHeader() {
-    var scope = getScopeLabel();
-    return '<div class="ez-head">'
-      + '<div class="ez-brand"><span class="dot"></span> MLS Easy</div>'
-      + '<div class="ez-tabs">'
-      + '<button class="ez-tab' + (STATE.room === 'doctor' ? ' on' : '') + '" data-room="doctor">Doctor room</button>'
-      + '<button class="ez-tab' + (STATE.room === 'staff' ? ' on' : '') + '" data-room="staff">Staff prep</button>'
-      + '</div>'
-      + '<div class="ez-headright">'
-      + (scope && scope.label ? '<span style="font-size:12px;color:#cfe0f5;">' + esc(scope.label) + '</span>' : '')
-      + '<button class="ez-iconbtn" id="ezSettingsBtn" title="Settings">⚙</button>'
-      + '<button class="ez-iconbtn" id="ezExitBtn" title="Full app">Full app →</button>'
-      + '</div></div>';
-  }
-
-  function renderHome() {
-    var pt = getActivePatientRow();
-    return '<div class="ez-wrap">'
-      + '<div class="ez-card">'
-      + '<h1 class="ez-h">Ready when you are.</h1>'
-      + '<p class="ez-sub">' + (pt ? 'Next up: ' + esc(pt.name) + (pt.time_display ? ' · ' + esc(pt.time_display) : '') : 'No patient queued yet — pull today’s schedule to get started.') + '</p>'
-      + '<button class="ez-big go" id="ezStartNext">Start next patient →</button>'
-      + '</div>'
-      + '<div class="ez-home-grid">'
-      + '<div class="ez-home-tile" id="ezChoosePt"><div class="t">Choose patient</div><div class="d">Pick from today’s schedule</div></div>'
-      + '<div class="ez-home-tile" id="ezPullToday"><div class="t">Pull today’s patients</div><div class="d">Import schedule from Athena (read-only)</div></div>'
-      + '<div class="ez-home-tile" id="ezPrepNotes"><div class="t">Prep notes</div><div class="d">Pre-draft procedure notes</div></div>'
-      + '<div class="ez-home-tile" id="ezViewCompleted"><div class="t">View completed notes</div><div class="d">Open visit history</div></div>'
-      + '</div></div>';
-  }
-
-  function renderDoctorIdle() {
-    var pt = getActivePatientRow() || {};
-    return '<div class="ez-wrap">'
-      + '<div class="ez-card">'
-      + '<div class="ez-toprow"><span class="ez-badge blue">Current patient</span>' + (pt.time_display ? '<span class="ez-badge gray">' + esc(pt.time_display) + '</span>' : '') + '</div>'
-      + '<div class="ez-pt" style="margin-top:14px;">'
-      + '<div class="ez-avatar">' + esc(initials(pt.name)) + '</div>'
-      + '<div><p class="ez-ptname">' + esc(pt.name || 'No patient selected') + '</p>'
-      + '<div class="ez-ptmeta">' + [pt.provider, pt.reason, pt.dob ? 'DOB ' + pt.dob : ''].filter(Boolean).map(esc).join(' · ') + '</div></div>'
-      + '</div>'
-      + '<button class="ez-big rec" id="ezStartRec"' + (pt.name ? '' : ' disabled style="opacity:.5;cursor:not-allowed;"') + '>● Start Recording</button>'
-      + '<div class="ez-secrow">'
-      + '<button class="ez-sec" id="ezChangePt">Change patient</button>'
-      + '<button class="ez-sec" id="ezOpenChart">Open Athena chart</button>'
-      + '<button class="ez-sec" id="ezViewHistory">View history</button>'
-      + '<button class="ez-sec" id="ezSettingsBtn2">Settings</button>'
-      + '</div></div></div>';
-  }
-
-  function renderDoctorRecording() {
-    var pt = getActivePatientRow() || {};
-    return '<div class="ez-wrap">'
-      + '<div class="ez-card">'
-      + '<div class="ez-toprow"><span class="ez-badge blue">' + esc(pt.name || 'Recording') + '</span><span class="ez-badge red"><span class="ez-recdot"></span>Recording</span></div>'
-      + '<div class="ez-timer" id="ezTimer">00:00</div>'
-      + '<div class="ez-sub" style="text-align:center;">Live transcript</div>'
-      + '<div class="ez-transcript" id="ezTranscriptMirror"></div>'
-      + '<button class="ez-big stop" id="ezStopRec">■ Stop &amp; Generate Note</button>'
-      + '</div></div>';
-  }
-
-  function renderDoctorReview() {
-    var pt = getActivePatientRow() || {};
-    var styleSel = qs('#mlsNoteStyle');
-    var styleOpts = styleSel ? qsa('option', styleSel).map(function (o) { return '<option value="' + esc(o.value) + '"' + (o.selected ? ' selected' : '') + '>' + esc(o.text) + '</option>'; }).join('') : '<option>Balanced</option>';
-    return '<div class="ez-wrap">'
-      + '<div class="ez-card">'
-      + '<div class="ez-toprow">'
-      + '<span class="ez-badge blue">' + esc(pt.name || 'Review note') + '</span>'
-      + '<select class="ez-select" id="ezStyleSel">' + styleOpts + '</select>'
-      + '</div>'
-      + '<textarea class="ez-note" id="ezNoteText"></textarea>'
-      + '<div class="ez-secrow">'
-      + '<button class="ez-sec" id="ezRegenerate">↻ Regenerate</button>'
-      + '<button class="ez-sec" id="ezSaveDraft">Save draft</button>'
-      + '<button class="ez-sec" id="ezCopyNote">Copy</button>'
-      + '</div>'
-      + '<button class="ez-big go" id="ezSendAthena">Send to Athena →</button>'
-      + '</div></div>';
-  }
-
-  // Results are rendered into their own container (#ezChooseResults) separate from the
-  // <input> itself. This lets the search handler patch just the results list on every
-  // keystroke without touching/recreating the input node — recreating the input (as a
-  // full-screen re-render would) drops focus mid-keystroke and swallows fast typing.
-  function renderChooseResultsHtml(rows, q) {
-    q = (q || '').toLowerCase();
-    var filtered = q ? rows.filter(function (r) { return (r.name || '').toLowerCase().indexOf(q) !== -1; }) : rows;
-    return filtered.length ? filtered.map(rowHtml).join('') : '<div class="ez-empty">No patients match. Try Staff Prep &rarr; Pull today’s patients.</div>';
-  }
-  function renderChoosePatient() {
-    var rows = todayRows();
-    return '<div class="ez-wrap"><div class="ez-card">'
-      + '<h1 class="ez-h" style="font-size:20px;">Choose a patient</h1>'
-      + '<input class="ez-search" id="ezSearchInput" placeholder="Search today’s patients by name…" value="' + esc(STATE.searchQ || '') + '">'
-      + '<div id="ezChooseResults">' + renderChooseResultsHtml(rows, STATE.searchQ) + '</div>'
-      + '</div></div>';
-  }
-
-  function renderStaffPrep() {
-    var rows = todayRows();
-    var providers = uniqueProviders();
-    var scope = getScopeLabel();
-    return '<div class="ez-wrap">'
-      + '<div class="ez-card">'
-      + '<h1 class="ez-h" style="font-size:20px;">Pull schedule</h1>'
-      + '<div class="ez-pullrow">'
-      + '<button class="ez-sec" id="ezPullT">Pull today’s patients</button>'
-      + '<button class="ez-sec" id="ezPullTm">Pull tomorrow’s patients</button>'
-      + '<button class="ez-sec" id="ezPullMo">Pull current month</button>'
-      + '<button class="ez-sec" id="ezPullLm">Pull last month</button>'
-      + '</div>'
-      + '<div style="margin-top:10px;">'
-      + '<label class="ez-inputlbl">Custom date</label>'
-      + '<div style="display:flex;gap:8px;">'
-      + '<input type="date" class="ez-input" id="ezCustomDate" style="flex:1;">'
-      + '<button class="ez-ghost" id="ezPullCustom">Pull</button>'
-      + '</div></div>'
-      + '<div style="margin-top:14px;">'
-      + '<label class="ez-inputlbl">Provider</label>'
-      + '<select class="ez-select" id="ezProviderSel" style="width:100%;">'
-      + '<option value="">' + esc((scope && scope.label) || 'All providers') + '</option>'
-      + providers.map(function (p) { return '<option value="' + esc(p.pk) + '">' + esc(p.label) + '</option>'; }).join('')
-      + '</select></div>'
-      + (STATE.pullBusy || STATE.pullMsg ? '<div class="ez-sub" style="margin-top:10px;">' + esc(STATE.pullMsg) + '</div>' : '')
-      + '</div>'
-      + '<div class="ez-card">'
-      + '<div class="ez-toprow"><h1 class="ez-h" style="font-size:18px;">Today’s schedule (' + rows.length + ')</h1>'
-      + '<button class="ez-ghost" id="ezPrepNotesStaff">Prep notes</button></div>'
-      + (rows.length ? rows.map(rowHtml).join('') : '<div class="ez-empty">No patients pulled yet. Use Pull today’s patients above.</div>')
-      + '</div></div>';
-  }
-
-  function renderSettings() {
-    return '<div class="ez-wrap"><div class="ez-card">'
-      + '<h1 class="ez-h" style="font-size:20px;">Settings</h1>'
-      + '<p class="ez-sub">MLS Easy V2 &middot; version ' + VERSION + '</p>'
-      + '<button class="ez-ghost warn" id="ezGoClassic">Switch to classic MLS Easy</button>'
-      + '<p class="ez-sub" style="margin-top:14px;">Emergency revert: add <code>?classic=1</code> to the URL, or run <code>classic()</code> in the browser console — works instantly, no reload of code required.</p>'
-      + '</div></div>';
-  }
-
-  /* ---------------- master render ---------------- */
-  function render() {
-    if (!body) return;
-    var html = renderHeader() + '<div class="ez-body"><div id="ezScreenMount"></div></div>';
-    body.innerHTML = html;
-    var mount = qs('#ezScreenMount', body);
-    var screenHtml = '';
-    if (STATE.room === 'staff' && STATE.screen !== 'settings') { screenHtml = renderStaffPrep(); }
-    else {
-      switch (STATE.screen) {
-        case 'doctorIdle': screenHtml = renderDoctorIdle(); break;
-        case 'doctorRecording': screenHtml = renderDoctorRecording(); break;
-        case 'doctorReview': screenHtml = renderDoctorReview(); break;
-        case 'choosePatient': screenHtml = renderChoosePatient(); break;
-        case 'settings': screenHtml = renderSettings(); break;
-        default: screenHtml = renderHome();
-      }
-    }
-    mount.innerHTML = screenHtml;
-    if (STATE.screen === 'doctorReview') { syncNoteFromReal(); }
-    wireEvents();
-  }
-
-  /* ---------------- events ---------------- */
-  function wireEvents() {
-    qsa('[data-room]').forEach(function (b) {
-      on(b, 'click', function () { STATE.room = b.getAttribute('data-room'); safe(function () { localStorage.setItem(LS_ROOM, STATE.room); }); if (STATE.room === 'doctor' && STATE.screen === 'staffPrep') STATE.screen = 'home'; render(); });
-    });
-    on(qs('#ezSettingsBtn'), 'click', function () { setScreen('settings'); });
-    on(qs('#ezSettingsBtn2'), 'click', function () { setScreen('settings'); });
-    on(qs('#ezExitBtn'), 'click', function () { teardown(); });
-    on(qs('#ezGoClassic'), 'click', goClassic);
-
-    // home
-    on(qs('#ezStartNext'), 'click', function () { setScreen('doctorIdle'); });
-    on(qs('#ezChoosePt'), 'click', function () { setScreen('choosePatient'); });
-    on(qs('#ezPullToday'), 'click', function () { doPull('today'); });
-    on(qs('#ezPrepNotes'), 'click', function () { clickFirstByText(['prep op note']); });
-    on(qs('#ezViewCompleted'), 'click', function () { safe(function () { window.showView && window.showView('history'); }); teardown(false); });
-
-    // doctor idle
-    on(qs('#ezStartRec'), 'click', beginRecording);
-    on(qs('#ezChangePt'), 'click', function () { setScreen('choosePatient'); });
-    on(qs('#ezOpenChart'), 'click', function () { clickFirstByText(['from open athena chart', 'open athena chart']); });
-    on(qs('#ezViewHistory'), 'click', function () { safe(function () { window.showView && window.showView('history'); }); teardown(false); });
-
-    // recording
-    on(qs('#ezStopRec'), 'click', endRecordingAndGenerate);
-
-    // review
-    on(qs('#ezStyleSel'), 'change', function (e) { changeStyle(e.target.value); });
-    on(qs('#ezNoteText'), 'input', function () { STATE.noteEdited = true; });
-    on(qs('#ezNoteText'), 'blur', pushEditsToReal);
-    on(qs('#ezRegenerate'), 'click', regenerate);
-    on(qs('#ezSaveDraft'), 'click', function () { pushEditsToReal(); var r = callFirst(['saveCurrentNote'], [true]); toast('Draft saved.'); });
-    on(qs('#ezCopyNote'), 'click', function () { pushEditsToReal(); callFirst(['copyNote']); toast('Copied.'); });
-    on(qs('#ezSendAthena'), 'click', openSendConfirm);
-
-    // choose patient — patch only the results container on each keystroke so the
-    // input itself is never recreated (see renderChooseResultsHtml comment above).
-    on(qs('#ezSearchInput'), 'input', function (e) {
-      STATE.searchQ = e.target.value;
-      var container = qs('#ezChooseResults');
-      if (container) { container.innerHTML = renderChooseResultsHtml(todayRows(), STATE.searchQ); wireRowClicks(container); }
-    });
-    wireRowClicks(body);
-
-    // staff prep
-    on(qs('#ezPullT'), 'click', function () { doPull('today'); });
-    on(qs('#ezPullTm'), 'click', function () { doPull('tomorrow'); });
-    on(qs('#ezPullMo'), 'click', function () { doPull('month'); });
-    on(qs('#ezPullLm'), 'click', function () { doPull('lastMonth'); });
-    on(qs('#ezPullCustom'), 'click', function () { STATE.customDate = qs('#ezCustomDate').value; doPull('custom'); });
-    on(qs('#ezProviderSel'), 'change', function (e) {
-      var pk = e.target.value;
-      var providers = uniqueProviders();
-      var match = providers.filter(function (p) { return p.pk === pk; })[0];
-      safe(function () { window.__mlsProviderPicker && window.__mlsProviderPicker.setPick && window.__mlsProviderPicker.setPick(match || null); });
-      safe(function () { window.MLSCal && window.MLSCal.setScope && window.MLSCal.setScope(match || null); });
-      render();
-    });
-    on(qs('#ezPrepNotesStaff'), 'click', function () { clickFirstByText(['prep op note']); });
-  }
-
-  // Shared row-click wiring for both Choose Patient (choose/select) and Staff Prep
-  // (expand inline). Scoped to a container so it can be re-run against just the
-  // patched #ezChooseResults div without re-wiring the whole screen.
-  function wireRowClicks(container) {
-    qsa('[data-row-idx]', container).forEach(function (el) {
-      on(el, 'click', function () {
-        var rows = STATE.room === 'staff' ? todayRows() : (todayRows().filter(function (r) { return !STATE.searchQ || (r.name || '').toLowerCase().indexOf((STATE.searchQ || '').toLowerCase()) !== -1; }));
-        var row = rows[parseInt(el.getAttribute('data-row-idx'), 10)];
-        if (STATE.room === 'staff') { toggleRowExpand(el, row); } else { choosePatientRow(row); }
-      });
-    });
-  }
-
-  function toggleRowExpand(rowEl, row) {
-    var existing = rowEl.nextElementSibling;
-    if (existing && existing.classList && existing.classList.contains('ez-rowexp')) { existing.remove(); return; }
-    qsa('.ez-rowexp').forEach(function (e) { e.remove(); });
-    var exp = document.createElement('div');
-    exp.className = 'ez-rowexp';
-    exp.innerHTML = '<div class="ez-secrow" style="margin-top:0;">'
-      + '<button class="ez-sec" data-a="rec">Start Recording</button>'
-      + '<button class="ez-sec" data-a="chart">Pull Chart Context</button>'
-      + '<button class="ez-sec" data-a="note">Generate Note</button>'
-      + '<button class="ez-sec" data-a="send">Send to Athena</button>'
-      + '</div><div class="ez-sub" style="margin-top:8px;">Safety status: patient context set to <b>' + esc(row.name || '') + '</b> before any action runs.</div>';
-    rowEl.parentNode.insertBefore(exp, rowEl.nextSibling);
-    on(qs('[data-a="rec"]', exp), 'click', function () { choosePatientRow(row); STATE.room = 'doctor'; beginRecording(); });
-    on(qs('[data-a="chart"]', exp), 'click', function () { choosePatientRow(row); clickFirstByText(['from open athena chart']); });
-    on(qs('[data-a="note"]', exp), 'click', function () { choosePatientRow(row); STATE.room = 'doctor'; setScreen('doctorReview'); callFirst(['generateNote']); setTimeout(syncNoteFromReal, 400); });
-    on(qs('[data-a="send"]', exp), 'click', function () { choosePatientRow(row); STATE.room = 'doctor'; openSendConfirm(); });
-  }
-
-  /* ---------------- mount / teardown ---------------- */
-  var HIDDEN_WHILE_ACTIVE = ['#mlsAsstFab', '#mlsCopVoiceBtn'];
-  var savedDisplay = {};
-  function hideFloatingChrome() {
-    HIDDEN_WHILE_ACTIVE.forEach(function (sel) {
-      safe(function () {
-        var el = qs(sel);
-        if (el) { savedDisplay[sel] = el.style.display; el.style.display = 'none'; }
-      });
-    });
-  }
-  function restoreFloatingChrome() {
-    HIDDEN_WHILE_ACTIVE.forEach(function (sel) {
-      safe(function () {
-        var el = qs(sel);
-        if (el) { el.style.display = savedDisplay[sel] || ''; }
-      });
-    });
-  }
-  function mount() {
+  /* ---------------- master enhance pass (idempotent, safe to call repeatedly) ---------------- */
+  function enhance() {
+    if (isClassic()) return;
+    var heroToday = document.getElementById('heroToday');
+    if (!heroToday) return;
     injectCss();
-    root = document.createElement('div');
-    root.id = 'mlsEasyV2Root';
-    root.innerHTML = '<div id="ezBody"></div>';
-    document.documentElement.appendChild(root);
-    body = qs('#ezBody', root);
-    hideFloatingChrome();
-    STATE.screen = 'home';
-    render();
-  }
-  function teardown(hard) {
-    stopTimers();
-    restoreFloatingChrome();
-    if (root && root.parentNode) root.parentNode.removeChild(root);
-    root = null; body = null;
+    var parent = heroToday.parentElement;
+    if (parent && !parent.id) parent.id = 'mlsEasyInplaceParent';
+    if (parent && parent.id !== 'mlsEasyInplaceParent') {
+      // parent already has some other id (unlikely) — wrap logic still expects the marker id,
+      // so mirror it via a class instead to avoid clobbering an existing id.
+      parent.classList.add('mlsEasyInplaceParentFallback');
+    }
+    var hd = qs('.wn-hd', heroToday);
+    if (hd) ensureQuickPull(hd);
+    autoExpandMore();
+    qsa('.wn-chip', heroToday).forEach(bindChip);
   }
 
-  /* ---------------- init ---------------- */
+  /* ---------------- observe for SPA re-renders ---------------- */
+  var mo = null;
+  var scheduled = false;
+  function scheduleEnhance() {
+    if (scheduled) return;
+    scheduled = true;
+    setTimeout(function () { scheduled = false; safe(enhance); }, 150);
+  }
+  function startObserving() {
+    mo = new MutationObserver(function () { scheduleEnhance(); });
+    // Observe documentElement (not just body): the app continuously appends new
+    // <style> tags to <head> on its own renders, and if we only watched <body> we'd
+    // never notice head changing, so our injected stylesheet would fall behind the
+    // app's own tags in source order and silently lose cascade ties again.
+    safe(function () { mo.observe(document.documentElement, { childList: true, subtree: true }); });
+  }
+
+  function revert() {
+    safe(function () { mo && mo.disconnect(); });
+    mo = null;
+    safe(function () {
+      qsa('#' + CSS_ID).forEach(function (n) { n.remove(); });
+    });
+    safe(function () {
+      qsa('.ez2-actions').forEach(function (p) { p.remove(); });
+      qsa('.ez2-chevron').forEach(function (c) { c.remove(); });
+      qsa('.ez2-quickpull').forEach(function (b) { b.remove(); });
+      qsa('[data-ez2-bound]').forEach(function (c) { delete c.dataset.ez2Bound; });
+      closeSendConfirmModal();
+    });
+  }
+
   function init() {
-    if (document.getElementById('mlsEasyV2Root')) return;
-    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', mount); }
-    else { mount(); }
+    if (isClassic()) return;
+    safe(enhance);
+    startObserving();
   }
 
-  window.__mlsEasyV2 = {
+  window.__mlsEasyInplace = {
     installed: true,
     version: VERSION,
     enable: goV2,
     disable: goClassic,
-    revert: teardown,
-    open: function () { if (!root) mount(); },
-    state: function () { return STATE; }
+    revert: revert,
+    reenhance: function () { safe(enhance); }
   };
 
-  if (!isClassic()) { safe(init); }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
+  else { safe(init); }
 })();
 
 
@@ -4666,7 +4240,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b53';
+  var MLS_APP_BUILD='2026-07-07-b54';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
