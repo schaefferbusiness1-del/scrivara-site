@@ -50,6 +50,26 @@
   .foot{color:var(--mut);font-size:12px;text-align:center;margin-top:26px;line-height:1.7}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:680px){ .two{grid-template-columns:1fr} }
+  /* --- auto-reputation additions (v1) --- */
+  .scopebadge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800;letter-spacing:.2px}
+  .scopebadge.doctor{background:#eaf1ff;border:1px solid #bcd2fb;color:#15528f}
+  .scopebadge.practice{background:#f2ecff;border:1px solid #d8c9f7;color:#5b32b0}
+  .scopebadge.unknown{background:#eef1f5;border:1px solid #d7dee7;color:#5b6b7c}
+  .grp{margin-top:14px}
+  .grp .lbl{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);margin:0 0 8px;display:flex;align-items:center;gap:8px}
+  .srcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
+  .srccell{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px}
+  .srccell .sn{font-weight:800;color:var(--blue-d)}
+  .srccell .ss{font-size:11px;margin-top:2px}
+  .dot2{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .dot2.ok{background:var(--green)} .dot2.off{background:#c7cfd9} .dot2.err{background:#e0533a}
+  .loadrow{display:flex;align-items:center;gap:9px;color:var(--mut);font-size:13px}
+  .lspin{width:15px;height:15px;border:2px solid rgba(31,122,224,.25);border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:lsp .7s linear infinite}
+  @keyframes lsp{to{transform:rotate(360deg)}}
+  details.manual > summary{cursor:pointer;font-weight:800;color:var(--blue-d);font-size:15px;list-style:none}
+  details.manual > summary::-webkit-details-marker{display:none}
+  details.manual > summary::before{content:'▸ ';color:var(--mut)}
+  details.manual[open] > summary::before{content:'▾ '}
 </style>
 </head>
 <body>
@@ -74,20 +94,26 @@
     <div class="row" style="margin-top:14px"><button class="btn" onclick="save()">💾 Save</button><span id="savedMsg" class="note"></span></div>
   </div>
 
-  <!-- 2. Scan across the web -->
-  <div class="card">
-    <h2>🌐 Scan across the web</h2>
-    <p class="hint">Click each site to open a pre-filled search in a new tab. When you find the profile, paste its rating + review count to build your dashboard. Leave blank &amp; hit “No profile” to flag a gap you should claim.</p>
-    <div id="platforms" class="platforms"></div>
-  </div>
+  <!-- OPTIONAL manual tools (collapsed by default — the automatic results above are primary) -->
+  <details class="manual card">
+    <summary>Manual capture &amp; open-a-search tools (optional)</summary>
+    <p class="hint" style="margin-top:12px">The automatic results above already pull your real ratings. Use these only if you want to hand-check a specific directory or record a rating the auto-scan can’t reach yet.</p>
 
-  <!-- 3. Reputation dashboard -->
-  <div class="card">
-    <h2>📊 Reputation dashboard</h2>
-    <p class="hint">Live summary from what you’ve captured above.</p>
-    <div class="kpis" id="kpis"></div>
-    <div id="coverage" style="margin-top:14px"></div>
-  </div>
+    <!-- 2. Scan across the web -->
+    <div class="card" style="box-shadow:none;margin-top:6px">
+      <h2>🌐 Scan across the web</h2>
+      <p class="hint">Click each site to open a pre-filled search in a new tab. When you find the profile, paste its rating + review count. Leave blank &amp; hit “No profile” to flag a gap you should claim.</p>
+      <div id="platforms" class="platforms"></div>
+    </div>
+
+    <!-- 3. Reputation dashboard (manual) -->
+    <div class="card" style="box-shadow:none">
+      <h2>📊 Manual capture summary</h2>
+      <p class="hint">Summary of only what you typed in by hand above (kept separate from the automatic results).</p>
+      <div class="kpis" id="kpis"></div>
+      <div id="coverage" style="margin-top:14px"></div>
+    </div>
+  </details>
 
   <div class="two">
     <!-- 4. Positive quotes -->
@@ -214,15 +240,20 @@ load(); renderPlatforms(); dash();
 </script>
 <script>
 /* =====================================================================
-   __mlsRepAuto (b40, 2026-07-06) — the AUTOMATIC reputation flow.
-   1) AUTO-SCAN: the moment the page opens (or you hit Save), MLS calls the
-      backend Google Places proxy and fills your live Google listing(s),
-      star rating, review count and latest reviews. Zero manual steps.
-   2) AI LISTING: paste/upload the doctor's resume & materials once; MLS
-      writes a strong, marketing-grade Google Business listing from the
-      real data (uses your signed-in MLS AI; same-origin token).
-   3) Optional MLS Marketing (paid) upsell.
-   Compliant: reads real reviews only; never fabricates or auto-posts.
+   __mlsRepAuto2 (v1, 2026-07-07) — AUTOMATIC, multi-source reputation.
+   Codes to the LIVE backend route src/routes/reviewsFind.js:
+     GET/POST /api/reviews/find?doctor=&practice=&city=&specialty=&links=
+     -> { ok, query, summary:{doctor,practice}, listings[], reviews[],
+          sources{}, manualLinks[] }
+   Every listing/review carries scope:'doctor'|'practice'|'unknown'.
+   HARD RULE: a PRACTICE-wide rating is NEVER shown as the doctor's own
+   personal rating. Doctor vs practice are always split + labelled.
+   Sources beyond Google (Healthgrades, Vitals, WebMD, RateMDs, Zocdoc)
+   are shown with an honest per-source status from `sources`, and a
+   MANUAL LINK INPUT lets the doctor paste any profile URL today.
+   Fully automatic: runs on load + after Save; graceful loading / empty /
+   error / offline states. Compliant: reads real reviews only; never
+   fabricates, never auto-posts.
    ===================================================================== */
 (function(){
   var BK='https://scrivara-backend.onrender.com';
@@ -230,97 +261,175 @@ load(); renderPlatforms(); dash();
   function el(id){ return document.getElementById(id); }
   function h(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function stars(r){ if(r==null) return ''; var n=Math.round(r); var out=''; for(var i=0;i<5;i++) out+= i<n?'★':'☆'; return out; }
+  var SRC_NAMES={google:'Google',healthgrades:'Healthgrades',vitals:'Vitals',webmd:'WebMD',ratemds:'RateMDs',zocdoc:'Zocdoc',yelp:'Yelp',facebook:'Facebook',website:'Practice website'};
+  function srcName(k){ return SRC_NAMES[k]||(k?k.charAt(0).toUpperCase()+k.slice(1):'Source'); }
+  function scopeBadge(sc){ sc=sc||'unknown'; var lab={doctor:'Doctor',practice:'Practice-wide',unknown:'Unverified match'}[sc]||'Unverified match'; return '<span class="scopebadge '+sc+'">'+lab+'</span>'; }
 
-  /* ---------- inject the three new cards right under the doctor card ---------- */
+  /* ---------- inject the new cards right under the doctor card ---------- */
   var docCard = el('dName') ? el('dName').closest('.card') : null;
   var host=document.createElement('div');
   host.innerHTML =
-    '<div class="card" id="repLiveCard"><h2>🌐 Your live Google results <span class="chip ok" id="repLiveChip" style="display:none">auto-found</span></h2>'+
-    '<p class="hint">MLS finds your real Google listing(s) automatically — rating, review count and the latest reviews. Nothing to paste.</p>'+
-    '<div id="repLiveBody"><div class="note">Enter the practice (and city) above — results appear here automatically.</div></div>'+
-    '<div class="row" style="margin-top:10px"><button class="btn ghost" onclick="window.__repScan(true)">↻ Re-scan now</button><span class="note" id="repLiveNote"></span></div></div>'+
+    '<div class="card" id="repLiveCard"><h2>🌐 Your reputation across the web <span class="chip ok" id="repLiveChip" style="display:none">auto-found</span></h2>'+
+    '<p class="hint">MLS pulls your REAL ratings and latest reviews automatically — from Google today, and from Healthgrades, Vitals, WebMD, RateMDs &amp; Zocdoc as those connect. Doctor-specific and practice-wide ratings are always shown <b>separately</b>.</p>'+
+    '<div id="repLiveBody"><div class="loadrow"><span class="lspin"></span> Enter the practice/doctor above — results appear here automatically.</div></div>'+
+    '<div id="repSources"></div>'+
+    '<div class="grp"><div class="lbl">➕ Add a profile link (Healthgrades, Vitals, WebMD, RateMDs, Zocdoc, your website…)</div>'+
+    '<p class="note" style="margin:0 0 6px">Paste any profile URL — one per line. MLS files it under the right site and (as those APIs connect) pulls its rating too. Handy for directories the auto-scan can\'t reach yet.</p>'+
+    '<textarea id="repLinks" placeholder="https://www.healthgrades.com/physician/...&#10;https://www.vitals.com/doctors/...&#10;https://www.zocdoc.com/doctor/..."></textarea>'+
+    '<div class="row" style="margin-top:8px"><button class="btn ghost" onclick="window.__repScan(true)">↻ Save links &amp; re-scan</button><span class="note" id="repLiveNote"></span></div></div></div>'+
 
     '<div class="card" id="repAiCard"><h2>✨ Your Google listing, written by MLS</h2>'+
-    '<p class="hint">Add the doctor’s resume / bio / anything that shows what makes the practice great (paste text or attach a .txt/.md file). MLS combines it with your REAL reviews and writes a listing that markets you.</p>'+
-    '<textarea id="repMat" placeholder="Paste the doctor’s resume, bio, awards, special training, services…"></textarea>'+
+    '<p class="hint">Add the doctor’s resume / bio / anything that shows what makes the practice great (paste text or attach a .txt/.md file). MLS combines it with your REAL reviews and writes a marketing-quality listing draft — you approve before anything goes live.</p>'+
+    '<textarea id="repMat" placeholder="Paste the doctor’s resume, bio, fellowships, awards, special training, services offered…"></textarea>'+
     '<div class="row" style="margin-top:8px"><input type="file" id="repMatFile" accept=".txt,.md,.text" style="max-width:280px">'+
     '<button class="btn violet" id="repGenBtn" onclick="window.__repGen()">✨ Write my Google listing</button><span class="note" id="repGenNote"></span></div>'+
     '<div id="repGenOut"></div></div>'+
 
-    '<div class="card" id="repUpsell" style="border-color:rgba(124,58,237,.5)"><h2>🚀 Want MLS to run this for you?</h2>'+
-    '<p class="hint"><b>MLS Marketing (paid add-on):</b> we keep your listing optimized month after month, help you respond to every review, and run compliant review-request campaigns to real patients — so the practice grows while you see patients.</p>'+
-    '<div class="row"><button class="btn green" onclick="try{localStorage.setItem(\'mlsRepUpsell\',\'interested\');}catch(e){};this.textContent=\'✓ Noted — MLS will reach out\';this.disabled=true;">I’m interested</button><span class="note">No commitment — this just tells MLS you’d like details.</span></div></div>';
+    '<div class="card" id="repUpsell" style="border-color:rgba(124,58,237,.5)"><h2>🚀 Optional: let MLS run marketing for you</h2>'+
+    '<p class="hint"><b>MLS Marketing (paid add-on)</b> — separate from everything above, which is free. If you want it, MLS keeps your listing optimized month after month, drafts replies to every review, and runs compliant review-request campaigns to real patients, plus optional paid ads. Everything stays doctor-approved before it publishes.</p>'+
+    '<div class="row"><button class="btn green" onclick="try{localStorage.setItem(\'mlsRepUpsell\',\'interested\');}catch(e){};this.textContent=\'✓ Noted — MLS will reach out\';this.disabled=true;">Tell me more</button><span class="note">No commitment — this just flags that you’d like details.</span></div></div>';
   if(docCard && docCard.parentNode){ docCard.parentNode.insertBefore(host, docCard.nextSibling); }
   else document.querySelector('.wrap').appendChild(host);
 
+  /* resume file -> textarea; persist materials + links */
   try{ el('repMatFile').addEventListener('change', function(){
     var f=this.files&&this.files[0]; if(!f) return;
-    var rd=new FileReader(); rd.onload=function(){ try{ el('repMat').value=(el('repMat').value?el('repMat').value+'\n\n':'')+String(rd.result||'').slice(0,20000); }catch(e){} }; rd.readAsText(f);
+    var rd=new FileReader(); rd.onload=function(){ try{ el('repMat').value=(el('repMat').value?el('repMat').value+'\n\n':'')+String(rd.result||'').slice(0,20000); try{localStorage.setItem('mlsRepMat', el('repMat').value.slice(0,40000));}catch(e){} }catch(e){} }; rd.readAsText(f);
   }); }catch(e){}
-  try{ var saved=localStorage.getItem('mlsRepMat'); if(saved) el('repMat').value=saved; el('repMat').addEventListener('input', function(){ try{ localStorage.setItem('mlsRepMat', el('repMat').value.slice(0,40000)); }catch(e){} }); }catch(e){}
+  try{ var savedM=localStorage.getItem('mlsRepMat'); if(savedM) el('repMat').value=savedM; el('repMat').addEventListener('input', function(){ try{ localStorage.setItem('mlsRepMat', el('repMat').value.slice(0,40000)); }catch(e){} }); }catch(e){}
+  try{ var savedL=localStorage.getItem('mlsRFLinks'); if(savedL) el('repLinks').value=savedL; el('repLinks').addEventListener('input', function(){ try{ localStorage.setItem('mlsRFLinks', el('repLinks').value.slice(0,4000)); }catch(e){} }); }catch(e){}
 
-  /* ---------- 1) auto-scan ---------- */
+  function linksArr(){ try{ return (el('repLinks').value||'').split(/[\n,]+/).map(function(s){return s.trim();}).filter(function(u){return /^https?:\/\//i.test(u);}); }catch(e){ return []; } }
+
+  /* ---------- render helpers ---------- */
+  function summaryHTML(sum, dName){
+    sum=sum||{}; var d=sum.doctor||{}, p=sum.practice||{};
+    var out='<div class="kpis" style="margin-bottom:4px">';
+    // Doctor's OWN rating — only from doctor-scoped listings.
+    out+='<div class="kpi"><div class="n stars">'+(d.rating!=null?d.rating.toFixed(1):'—')+'</div>'+
+      '<div class="l">'+scopeBadge('doctor')+' '+h(dName||'the doctor')+'’s own rating'+(d.reviewCount?(' · '+d.reviewCount+' reviews'):'')+'</div></div>';
+    // Practice-wide rating — clearly NOT the doctor's personal rating.
+    out+='<div class="kpi"><div class="n stars">'+(p.rating!=null?p.rating.toFixed(1):'—')+'</div>'+
+      '<div class="l">'+scopeBadge('practice')+' practice-wide rating'+(p.reviewCount?(' · '+p.reviewCount+' reviews'):'')+'</div></div>';
+    out+='</div>';
+    if(d.rating==null && p.rating!=null){ out+='<div class="note" style="margin:2px 0 6px">Only a <b>practice-wide</b> rating was found so far — this reflects the whole office, not '+h(dName||'the doctor')+' personally. Add the doctor’s own profile links below to surface their individual rating.</div>'; }
+    return out;
+  }
+  function listingsHTML(listings, dName){
+    if(!listings||!listings.length) return '';
+    var order={doctor:0,practice:1,unknown:2};
+    listings=listings.slice().sort(function(a,b){ return (order[a.scope]||2)-(order[b.scope]||2) || ((b.reviewCount||0)-(a.reviewCount||0)); });
+    var groups={doctor:[],practice:[],unknown:[]};
+    listings.forEach(function(L){ (groups[L.scope]||groups.unknown).push(L); });
+    var titles={doctor:'👤 '+(dName?h(dName)+'’s own listings':'Doctor’s own listings'),practice:'🏥 Practice-wide listings',unknown:'❓ Possible matches (unverified — check these are you)'};
+    var out='';
+    ['doctor','practice','unknown'].forEach(function(sc){
+      var g=groups[sc]; if(!g.length) return;
+      out+='<div class="grp"><div class="lbl">'+titles[sc]+'</div>';
+      out+=g.map(function(L){
+        var rc=(L.rating!=null)?('<span class="chip ok">'+h(String(L.rating))+' ★ · '+h(String(L.reviewCount||0))+' reviews</span>'):'<span class="chip miss">no rating yet</span>';
+        return '<div class="plat" style="margin-bottom:8px"><div class="ph"><span class="nm">'+h(L.name||'(unnamed)')+' '+scopeBadge(L.scope)+'</span>'+rc+'</div>'+
+          '<div class="sub2">'+h(srcName(L.source))+(L.address?(' · '+h(L.address)):'')+'</div>'+
+          (L.rating!=null?('<div class="stars">'+stars(L.rating)+'</div>'):'')+
+          (L.url?('<a href="'+h(L.url)+'" target="_blank" rel="noopener">Open profile ↗</a>'):'')+'</div>';
+      }).join('');
+      out+='</div>';
+    });
+    return out;
+  }
+  function reviewsHTML(reviews){
+    if(!reviews||!reviews.length) return '';
+    var out='<div class="grp"><div class="lbl">💬 Latest reviews (real, pulled live)</div>';
+    out+=reviews.slice(0,8).map(function(rv){
+      return '<div class="quote">'+stars(rv.rating)+' '+scopeBadge(rv.scope)+' <span class="chip">'+h(srcName(rv.source))+'</span><br>“'+h((rv.text||'').slice(0,260))+'” '+
+        '<span class="note">— '+h(rv.author||'a patient')+(rv.relativeTime?(', '+h(rv.relativeTime)):'')+(rv.listingName?(' · on '+h(rv.listingName)):'')+'</span></div>';
+    }).join('');
+    out+='</div>';
+    return out;
+  }
+  function sourcesHTML(sources, manualLinks){
+    var cells='';
+    var keys=['google','healthgrades','vitals','webmd','ratemds','zocdoc'];
+    keys.forEach(function(k){
+      var s=(sources&&sources[k])||{status:'not_configured'};
+      var dot='off', txt='';
+      if(s.status==='ok'){ dot='ok'; txt='Connected · '+(s.listings||0)+' listing(s)'; }
+      else if(s.status==='error'){ dot='err'; txt='Lookup error'; }
+      else { dot='off'; txt='Not connected yet'; }
+      cells+='<div class="srccell"><div class="sn"><span class="dot2 '+dot+'"></span>'+h(srcName(k))+'</div><div class="ss" style="color:var(--mut)">'+h(txt)+'</div></div>';
+    });
+    // manual links echoed back, classified by the backend
+    if(manualLinks&&manualLinks.length){
+      manualLinks.forEach(function(m){
+        cells+='<div class="srccell"><div class="sn"><span class="dot2 ok"></span>'+h(srcName(m.source))+' (you added)</div><div class="ss"><a href="'+h(m.url)+'" target="_blank" rel="noopener">open link ↗</a></div></div>';
+      });
+    }
+    return '<div class="grp"><div class="lbl">🔌 Where MLS is looking</div><div class="srcgrid">'+cells+'</div>'+
+      '<p class="note" style="margin-top:6px">Google is live now. The other directories light up automatically once their API key is added on the server (no page change needed) — until then, paste their profile links below.</p></div>';
+  }
+
+  /* ---------- 1) auto-scan (the whole reputation flow) ---------- */
   var lastData=null, scanning=false;
   window.__repScan=function(force){
-    if(scanning) return; 
+    if(scanning) return;
     var d; try{ d=doc(); }catch(e){ d={}; }
-    var practice=(d.practice||'').trim(), doctor=(d.name||'').trim(), city=(d.city||'').trim();
-    if(!practice && !doctor){ el('repLiveBody').innerHTML='<div class="note">Enter the practice or doctor name above first.</div>'; return; }
-    scanning=true; el('repLiveNote').textContent='Scanning Google…';
-    var qs='practice='+encodeURIComponent(practice)+'&doctor='+encodeURIComponent(doctor)+'&city='+encodeURIComponent(city);
+    var practice=(d.practice||'').trim(), doctor=(d.name||'').trim(), city=(d.city||'').trim(), specialty=(d.spec||'').trim();
+    if(!practice && !doctor){ el('repLiveBody').innerHTML='<div class="note">Enter the practice or doctor name above first — then MLS scans automatically.</div>'; el('repSources').innerHTML=''; return; }
+    scanning=true; el('repLiveNote').textContent='';
+    el('repLiveBody').innerHTML='<div class="loadrow"><span class="lspin"></span> Scanning the web for your real reviews…</div>';
+    var links=linksArr();
+    var qs='doctor='+encodeURIComponent(doctor)+'&practice='+encodeURIComponent(practice)+'&city='+encodeURIComponent(city)+'&specialty='+encodeURIComponent(specialty);
+    if(links.length) qs+='&links='+encodeURIComponent(links.join(','));
     fetch(BK+'/api/reviews/find?'+qs).then(function(r){return r.json();}).then(function(j){
-      scanning=false; el('repLiveNote').textContent='';
-      if(!j||!j.ok){ el('repLiveBody').innerHTML='<div class="note">⚠️ '+h((j&&(j.detail||j.error))||'Could not reach the review service.')+'</div>'; return; }
+      scanning=false;
+      if(!j||!j.ok){ el('repLiveBody').innerHTML='<div class="note">⚠️ '+h((j&&(j.message||j.error))||'Could not reach the review service. Your details are saved — try Re-scan in a moment.')+'</div>'; return; }
       lastData=j;
-      if(!j.listings||!j.listings.length){
-        el('repLiveBody').innerHTML=
-          '<div class="note">No Google listing found for “'+h(j.query)+'” (double-check spelling / add the city).</div>'+
+      var dName=(j.query&&j.query.doctor)||doctor;
+      var hasListings=j.listings&&j.listings.length;
+      var body='';
+      if(hasListings){
+        el('repLiveChip').style.display='inline-block';
+        body+=summaryHTML(j.summary, dName);
+        body+=listingsHTML(j.listings, dName);
+        body+=reviewsHTML(j.reviews);
+      } else {
+        body+='<div class="note">No listing found yet for “'+h(dName||practice)+'” (check spelling / add the city, or paste a profile link below).</div>'+
           '<div class="plat" style="margin-top:10px;border-color:rgba(22,163,74,.5)">'+
-          '<div class="nm">✨ No listing? MLS will help you CREATE one.</div>'+
-          '<div class="sub2">A Google Business Profile is free and is how new patients find you. MLS pre-fills everything from what you entered above (and your resume materials below) — you approve before anything goes live.</div>'+
+          '<div class="nm">✨ No Google listing? MLS will help you CREATE one.</div>'+
+          '<div class="sub2">A Google Business Profile is free and is how new patients find you. MLS pre-fills everything from your details above (and the resume materials below) — you approve before anything goes live.</div>'+
           '<div class="row" style="margin-top:8px">'+
           '<a class="btn green" style="text-decoration:none" href="https://business.google.com/create" target="_blank" rel="noopener">🚀 Start my Google listing ↗</a>'+
-          '<button class="btn ghost" onclick="window.__repCopyPack()">📋 Copy my pre-filled info</button></div>'+
-          '<div class="note" style="margin-top:6px">Coming with MLS Marketing: sign in with Google once and MLS creates and maintains the listing for you — every change doctor-approved before it publishes.</div>'+
-          '</div>';
-        return; }
-      el('repLiveChip').style.display='inline-block';
-      var htmlOut=j.listings.map(function(L,i){
-        return '<div class="plat" style="margin-bottom:10px"><div class="ph"><span class="nm">'+(i===0?'⭐ ':'')+h(L.name)+'</span>'+(L.rating!=null?('<span class="chip ok">'+h(String(L.rating))+' ★ · '+h(String(L.count))+' reviews</span>'):'<span class="chip miss">no rating yet</span>')+'</div>'+
-          '<div class="sub2">'+h(L.address||'')+'</div>'+
-          (L.rating!=null?('<div class="stars">'+stars(L.rating)+'</div>'):'')+
-          (L.mapsUri?('<a href="'+h(L.mapsUri)+'" target="_blank" rel="noopener">Open on Google Maps ↗</a>'):'')+'</div>';
-      }).join('');
-      if(j.reviews&&j.reviews.length){
-        htmlOut+='<div style="margin-top:8px"><b>Latest Google reviews:</b>'+j.reviews.slice(0,5).map(function(rv){
-          return '<div class="quote">'+stars(rv.rating)+' “'+h((rv.text||'').slice(0,240))+'” <span class="note">— '+h(rv.author||'a patient')+(rv.when?(', '+h(rv.when)):'')+'</span></div>';
-        }).join('')+'</div>';
+          '<button class="btn ghost" onclick="window.__repCopyPack()">📋 Copy my pre-filled info</button></div></div>';
       }
-      el('repLiveBody').innerHTML=htmlOut;
-      /* auto-fill the Google + Google Maps platform capture so KPIs/coverage light up */
-      try{
-        var P=j.listings[0];
-        /* task-9 fix: the dashboard reads {rating,count,missing} — the old
-           {r,c,none} shape never lit up the KPIs / coverage after auto-scan. */
-        if(P&&P.rating!=null&&typeof CAP==='object'){ ['google','gmaps'].forEach(function(k){ CAP[k]={rating:String(P.rating),count:String(P.count==null?'':P.count),missing:false}; }); if(typeof save==='function') save(); }
-      }catch(e){}
-    }).catch(function(){ scanning=false; el('repLiveNote').textContent=''; el('repLiveBody').innerHTML='<div class="note">⚠️ Network problem reaching the review service.</div>'; });
+      el('repLiveBody').innerHTML=body;
+      el('repSources').innerHTML=sourcesHTML(j.sources, j.manualLinks);
+    }).catch(function(){ scanning=false; el('repLiveBody').innerHTML='<div class="note">⚠️ Network problem reaching the review service. Your details are saved locally — hit Re-scan when you’re back online.</div>'; });
   };
 
-  /* ---------- 2) AI listing ---------- */
+  /* ---------- 2) AI listing (real shape) ---------- */
   window.__repGen=function(){
     var t=tok();
     var note=el('repGenNote'), out=el('repGenOut'), btn=el('repGenBtn');
     if(!t){ note.textContent='Open this from inside MLS while signed in (the AI uses your MLS account).'; return; }
     var d; try{ d=doc(); }catch(e){ d={}; }
     var mat=(el('repMat').value||'').trim();
-    var revTxt=''; try{ revTxt=(lastData&&lastData.reviews||[]).slice(0,5).map(function(r){return '- "'+(r.text||'').slice(0,200)+'" ('+(r.rating||'?')+' stars)';}).join('\n'); }catch(e){}
-    var lst=''; try{ var P=lastData&&lastData.primary; if(P) lst=P.name+' | '+(P.address||'')+' | '+(P.rating||'?')+' stars, '+(P.count||0)+' reviews'; }catch(e){}
+    var dName=d.name||'';
+    var sumTxt='', lstTxt='', revTxt='';
+    try{
+      var S=lastData&&lastData.summary; if(S){
+        if(S.doctor&&S.doctor.rating!=null) sumTxt+='Doctor’s OWN rating: '+S.doctor.rating+' stars ('+(S.doctor.reviewCount||0)+' reviews).\n';
+        if(S.practice&&S.practice.rating!=null) sumTxt+='Practice-wide rating (NOT the doctor’s personal rating): '+S.practice.rating+' stars ('+(S.practice.reviewCount||0)+' reviews).\n';
+      }
+    }catch(e){}
+    try{ lstTxt=(lastData&&lastData.listings||[]).slice(0,5).map(function(L){return '- ['+L.scope+'] '+L.name+(L.address?(', '+L.address):'')+(L.rating!=null?(' — '+L.rating+'★ / '+(L.reviewCount||0)+' reviews'):'');}).join('\n'); }catch(e){}
+    try{ revTxt=(lastData&&lastData.reviews||[]).slice(0,6).map(function(r){return '- ['+r.scope+'] "'+(r.text||'').slice(0,200)+'" ('+(r.rating||'?')+' stars)';}).join('\n'); }catch(e){}
     var prompt='Write an optimized Google Business Profile for this medical practice that markets it strongly but truthfully.\n'+
       'Doctor: '+(d.name||'')+' | Specialty: '+(d.spec||'')+' | Practice: '+(d.practice||'')+' | City: '+(d.city||'')+' | Website: '+(d.site||'')+'\n'+
-      (lst?('Current Google listing: '+lst+'\n'):'')+
-      (revTxt?('Real patient reviews:\n'+revTxt+'\n'):'')+
+      (sumTxt?('Ratings found:\n'+sumTxt):'')+
+      (lstTxt?('Listings found (scope in brackets):\n'+lstTxt+'\n'):'')+
+      (revTxt?('Real patient reviews (scope in brackets):\n'+revTxt+'\n'):'')+
       (mat?('Doctor-provided materials (resume/bio):\n'+mat.slice(0,6000)+'\n'):'')+
+      'IMPORTANT: a practice-wide rating is the whole office’s, not the doctor’s personal rating — never claim it as the doctor’s own.\n'+
       'Output EXACTLY these sections, each starting with the header on its own line:\n'+
       '== BUSINESS DESCRIPTION == (max 750 characters, patient-friendly, why choose this practice)\n'+
       '== SERVICES == (bulleted list of services to add to the profile)\n'+
@@ -337,9 +446,9 @@ load(); renderPlatforms(); dash();
         if(!x.ok||!text){ note.textContent=(x.j&&x.j.error)||'The AI is busy — try again in a minute.'; return; }
         var secs=text.split(/==\s*([A-Z ]+?)\s*==/).filter(function(s){return s.trim();});
         var htmlOut='';
-        if(secs.length>=2){ for(var i=0;i+1<secs.length;i+=2){ var nm2=secs[i].trim(), body=secs[i+1].trim(); htmlOut+='<div class="out" style="margin-top:10px"><b>'+h(nm2.charAt(0)+nm2.slice(1).toLowerCase())+'</b> <button class="btn ghost" style="padding:3px 10px;font-size:11px;float:right" onclick="navigator.clipboard.writeText(this.parentNode.querySelector(\'pre\').textContent)">📋 Copy</button><pre style="white-space:pre-wrap;font:inherit;margin:8px 0 0">'+h(body)+'</pre></div>'; } }
+        if(secs.length>=2){ for(var i=0;i+1<secs.length;i+=2){ var nm2=secs[i].trim(), b2=secs[i+1].trim(); htmlOut+='<div class="out" style="margin-top:10px"><b>'+h(nm2.charAt(0)+nm2.slice(1).toLowerCase())+'</b> <button class="btn ghost" style="padding:3px 10px;font-size:11px;float:right" onclick="navigator.clipboard.writeText(this.parentNode.querySelector(\'pre\').textContent)">📋 Copy</button><pre style="white-space:pre-wrap;font:inherit;margin:8px 0 0">'+h(b2)+'</pre></div>'; } }
         else htmlOut='<div class="out" style="margin-top:10px"><pre style="white-space:pre-wrap;font:inherit;margin:0">'+h(text)+'</pre></div>';
-        htmlOut+='<div class="note" style="margin-top:8px">Paste each section into your Google Business Profile (business.google.com). MLS never auto-posts — you stay in control.</div>';
+        htmlOut+='<div class="note" style="margin-top:8px">Review it, then paste each section into your Google Business Profile (business.google.com). MLS never auto-posts — you stay in control.</div>';
         out.innerHTML=htmlOut;
       }).catch(function(){ btn.disabled=false; note.textContent='Network problem — try again.'; });
   };
