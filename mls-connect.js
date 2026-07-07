@@ -1,3 +1,1002 @@
+/* =========================================================================
+ * MLS Scribe — MLS EASY v3 focused workspace (__mlsEasyV3) v3.0.0  2026-07-07
+ *
+ * SUPERSEDES: the b54 in-place easy module (feat_mls_easy_inplace) and the
+ * last-gen rebuild (__mlsEasyRebuild). This is ONE clean full-screen focused
+ * workspace — no duplicate MLS Assistant boxes, no "Simple Mode Tunnel" text,
+ * no debug/green labels, no dead buttons.
+ *
+ * -------------------------------------------------------------------------
+ * THE BUG THIS FIXES (four expanded-row buttons forwarded to WRONG targets):
+ *   Start Recording ...... calStartVisit(apptId) THEN #captureBtn
+ *                          (per-appointment activation — NOT a bare #captureBtn
+ *                           click on a timeout; that races patient context)
+ *   Pull Chart Context ... calPullChartFor(apptId)  (read-only pull for THIS
+ *                          row's patient — NOT #mlsChartFillBtn, which fills
+ *                          from whatever chart is open = wrong-patient risk)
+ *   Generate Note ........ #genBtn by id, with a text-regex fallback
+ *                          (/generate note/i) that is guarded by mine()+vis()
+ *                          (NOT b54's guardless clickFirstByText)
+ *   Send to Athena ....... #pushAllEmrBtn (opens the b29 EMR review-&-confirm
+ *                          modal — NOT .mlsB30-send)
+ * -------------------------------------------------------------------------
+ *
+ * It DRIVES the app's REAL, proven pipeline — it never re-implements it and it
+ * NEVER invents a backend call:
+ *   - per-appt activation ......... window.calStartVisit(apptId)
+ *   - read-only chart pull ........ window.calPullChartFor(apptId)
+ *   - open patient record ......... window.calOpenPatientFor(apptId)
+ *   - recording (start/stop) ...... #captureBtn (the app's own stop-confirm
+ *                                   dialog still gates every stop)
+ *   - live transcript preview ..... #transcript
+ *   - note generation ............. #genBtn -> #noteBox
+ *   - copy for Athena ............. #copyEmrBtn
+ *   - send to Athena .............. #pushAllEmrBtn (review-&-confirm ONLY;
+ *                                   nothing is ever written from this module)
+ *   - visit patient label (truth).. #patientLabel
+ *   - schedule data ............... window._calAppts (calendar cache; rows
+ *                                   carry .id .name .dob .provider .reason
+ *                                   .appt_date .patient_external_id)
+ *   - schedule pulls .............. the real "Pull today's patients" /
+ *                                   "Pull whole month" buttons (proxied ONLY
+ *                                   when present)
+ *   - prep notes .................. openOpPrepSmart() / openOpPrepForPatient()
+ *   - provider picker (app) ....... #mlsProvChip
+ *   - identity guard signal ....... window.__mlsVisitWire
+ *
+ * TWO MODES kept strictly separate:
+ *   (A) Doctor room (default) — current patient centered, one huge obvious
+ *       primary action at a time (Start Recording -> Stop & Generate Note ->
+ *       Review -> Send to Athena); small secondary actions grouped nearby.
+ *       Doctors NEVER see admin/pull tools here.
+ *   (B) Staff prep — Pull Today / Tomorrow / This month / Last month / Custom
+ *       range, provider selector, pull status + errors, schedule list, prep
+ *       notes.
+ *
+ * SAFETY (absolute): athenaOne is READ-ONLY. No order path. Send ends at the
+ * app's own review/confirm screen. Patient context is LOCKED to the selected
+ * patient through record -> generate -> writeback; a name/DOB/destination
+ * confirmation is shown before any writeback and a mismatch BLOCKS the send.
+ * Nothing is auto-submitted or signed. No PHI leaves the page. 12-hour AM/PM.
+ *
+ * KILL SWITCH (preserved, same flags as the b54 in-place module): ?classic=1
+ * or ?mlseasy=classic in the URL, classic()/mlsEasyClassic() in the console,
+ * or localStorage 'mls.easyV2.enabled'==='0' keeps this dormant.
+ * Re-enable: easyV2on()/mlsEasyV2On(). Full revert: window.__mlsEasyV3_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsEasyV3) return;
+
+  var VER = '3.0.0';
+
+  /* ---------------- kill switch (always defined, even when dormant) --------
+   * Same switch the b54 in-place module shipped (verified in live b54 source):
+   * ?classic=1 OR ?mlseasy=classic OR localStorage 'mls.easyV2.enabled'==='0'.
+   * Console: classic() / mlsEasyClassic() to disable, easyV2on() / mlsEasyV2On()
+   * to re-enable (aliases kept so existing docs + muscle memory still work). */
+  function easyEnabled() {
+    try {
+      var qs = location.search || '';
+      if (/[?&]classic=1(&|$)/.test(qs)) return false;
+      if (/[?&]mlseasy=classic(&|$)/.test(qs)) return false;
+    } catch (e) {}
+    try { if (localStorage.getItem('mls.easyV2.enabled') === '0') return false; } catch (e) {}
+    return true;
+  }
+  function goClassic() {
+    try { localStorage.setItem('mls.easyV2.enabled', '0'); } catch (e) {}
+    try { if (typeof window.__mlsEasyV3_revert === 'function') window.__mlsEasyV3_revert(); } catch (e) {}
+    try { location.reload(); } catch (e) {}
+    return 'Classic mode: MLS Easy disabled. Reloading…';
+  }
+  function goEasyOn() {
+    try { localStorage.setItem('mls.easyV2.enabled', '1'); } catch (e) {}
+    try { location.reload(); } catch (e) {}
+    return 'MLS Easy re-enabled. Reloading…';
+  }
+  window.classic = goClassic;
+  window.mlsEasyClassic = goClassic;
+  window.easyV2on = goEasyOn;
+  window.mlsEasyV2On = goEasyOn;
+  if (!easyEnabled()) {
+    // Stay completely dormant so the classic app shows. Mark loaded so a second
+    // copy can't double-run, but build no UI and re-route nothing.
+    window.__mlsEasyV3 = { version: VER, dormant: true };
+    return;
+  }
+
+  window.__mlsEasyV3 = { version: VER };
+  var cleanup = [];
+
+  /* ---------------- supersede prior easy modules -------------------------- *
+   * This module is prepended (runs FIRST). Verified against the LIVE b54
+   * source (fetched read-only 2026-07-07): feat_mls_easy_inplace's IIFE bails
+   * at `if (window.__mlsEasyInplace && window.__mlsEasyInplace.installed)
+   * return;` and its revert is the METHOD window.__mlsEasyInplace.revert().
+   * So: (1) if it somehow already ran (console-injection/testing), revert it;
+   * (2) either way, pre-seed the guard object WITH installed:true so the
+   * in-place IIFE (defined later in the file) self-disables. Because it bails
+   * before its window.classic/mlsEasyV2On assignments (source lines ~70-72),
+   * this module's own kill-switch functions (defined above) stand. */
+  try {
+    var prevInplace = window.__mlsEasyInplace;
+    if (prevInplace && typeof prevInplace.revert === 'function') prevInplace.revert();
+  } catch (e) {}
+  try {
+    window.__mlsEasyInplace = {
+      installed: true, version: 'superseded-by-mlsEasyV3', supersededBy: 'mlsEasyV3',
+      enable: goEasyOn, disable: goClassic, revert: function () {}, reenhance: function () {}
+    };
+  } catch (e) {}
+  /* last-gen full-screen rebuild — never shipped in b54; revert if a console
+     test left it on the page (no-op otherwise). */
+  try { if (typeof window.__mlsEasyRebuild_revert === 'function') window.__mlsEasyRebuild_revert(); } catch (e) {}
+
+  /* ---------------- state ------------------------------------------------- */
+  var S = {
+    open: false, mode: 'doctor', screen: 'home',
+    appt: null, locked: null,            // locked = {id,name,dob,key} context lock
+    phase: 'idle', recStart: 0, genClickedAt: 0,
+    expanded: null,                      // expanded row KEY (stable across paging)
+    editing: false, lastWarn: '',
+    showCount: 5,                        // "5 patients at a time"
+    providerFilter: null,               // null = follow app; '' = all; else name
+    staffRange: 'today', customFrom: '', customTo: ''
+  };
+
+  /* ---------------- small utils ------------------------------------------ */
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function todayLocal() { return ymd(new Date()); }
+  function tomorrowLocal() { var d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); }
+  function monthRange(offset) {
+    var d = new Date(), y = d.getFullYear(), m = d.getMonth() + (offset || 0);
+    return { from: ymd(new Date(y, m, 1)), to: ymd(new Date(y, m + 1, 0)) };
+  }
+  function t12(a) {
+    if (a && a.time_display) return a.time_display;
+    if (a && a.start_local) { var mm = String(a.start_local).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
+      var h = +mm[1], mn = mm[2], ap = mm[3]; if (!ap) { ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; }
+      return h + ':' + mn + ' ' + ap.toUpperCase(); } }
+    try { var dt = new Date(a.start_at); var hh = dt.getHours(), m2 = ('0' + dt.getMinutes()).slice(-2);
+      var ap2 = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12; if (hh === 0) hh = 12; return hh + ':' + m2 + ' ' + ap2;
+    } catch (e) { return ''; }
+  }
+  function normTokens(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/).filter(Boolean).sort(); }
+  function nameMatch(a, b) {
+    var A = normTokens(a), B = normTokens(b);
+    if (!A.length || !B.length) return false;
+    var short_ = A.length <= B.length ? A : B, long_ = A.length <= B.length ? B : A;
+    return short_.every(function (t) { return long_.indexOf(t) >= 0; });
+  }
+  function appts() { return Array.isArray(window._calAppts) ? window._calAppts : []; }
+  function toast(m) {
+    var t = $('ez3Toast');
+    if (!t) { t = document.createElement('div'); t.id = 'ez3Toast'; document.body.appendChild(t); cleanup.push(function () { t.remove(); }); }
+    t.textContent = m; t.className = 'on'; clearTimeout(t._h); t._h = setTimeout(function () { t.className = ''; }, 2600);
+  }
+
+  /* ---- provider scoping (from the DATA, never hardcoded) ------------------ */
+  function resolveAppProvider() {
+    var el = $('mlsProvChip'); if (!el) return null;
+    var t = (el.textContent || '').trim(); if (!t || /all providers/i.test(t)) return null;
+    var seen = {}, best = null;
+    appts().forEach(function (a) {
+      var p = a && a.provider; if (!p || seen[p]) return; seen[p] = 1;
+      if (t.indexOf(p) >= 0 && (!best || p.length > best.length)) best = p;
+    });
+    return best;
+  }
+  function providerList() {
+    var seen = {}, out = [];
+    appts().forEach(function (a) { var p = a && a.provider; if (p && !seen[p]) { seen[p] = 1; out.push(p); } });
+    out.sort(); return out;
+  }
+  function activeProvider() { return S.providerFilter != null ? S.providerFilter : resolveAppProvider(); }
+
+  /* ---- schedule rows ----------------------------------------------------- */
+  function sortKey(a) {
+    var m = String(a.start_local || '').match(/^(\d{1,2}):(\d{2})/);
+    if (m) return ('0' + m[1]).slice(-2) + ':' + m[2];
+    try { var d = new Date(a.start_at); if (!isNaN(d)) return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); } catch (e) {}
+    return '99:99';
+  }
+  function apptDay(a) { return String((a && (a.day_local || a.appt_date)) || '').slice(0, 10); }
+  function rowsInRange(fromStr, toStr) {
+    var prov = activeProvider(), seen = {};
+    var rows = appts().filter(function (a) {
+      if (!a) return false;
+      var d = apptDay(a); if (!d) return false;
+      if (d < fromStr || d > toStr) return false;
+      if (prov && (a.provider || '') !== prov) return false;
+      var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
+      return true;
+    });
+    rows.sort(function (x, y) {
+      var dx = apptDay(x), dy = apptDay(y);
+      if (dx !== dy) return dx < dy ? -1 : 1;
+      return sortKey(x).localeCompare(sortKey(y));
+    });
+    return rows;
+  }
+  function dayRows(dayStr) { return rowsInRange(dayStr, dayStr); }
+  function rowKey(a) {
+    return String((a && a.patient_external_id) || '') + '|' + ((a && a.name) || '') + '|' +
+           ((a && a.dob) || '') + '|' + apptDay(a) + '|' + (a && a.start_local || t12(a));
+  }
+  function isSeen(a) {
+    if (a && a.checked_in_at) return true;
+    try { if (typeof window._seenToday === 'function' && window._seenToday(a.name)) return true; } catch (e) {}
+    return false;
+  }
+  function statusOf(a) {
+    return isSeen(a) ? (a.checked_in_at ? 'Checked in' : 'Seen')
+                     : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked'));
+  }
+  function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
+  function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
+  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(d)) : '🎂 DOB —'; }
+  function nextPatient() {
+    var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
+    if (!rows.length) return null;
+    var now = Date.now();
+    var upcoming = rows.filter(function (a) { try { return new Date(a.start_at).getTime() >= now - 30 * 60000; } catch (e) { return true; } });
+    return (upcoming[0] || rows[0]);
+  }
+
+  /* ---- live-visit bridges + guards --------------------------------------- */
+  function activeName() {
+    var l = $('patientLabel');
+    if (l && (l.value || '').trim()) return l.value.trim();
+    try { var p = window.activePatient && window.activePatient(); return (p && p.name) || ''; } catch (e) { return ''; }
+  }
+  function guardInfo() {
+    var w = window.__mlsVisitWire || {};
+    return { on: !!window.__mlsVisitWire, blocked: (typeof w._blocked === 'number' ? w._blocked : 0) };
+  }
+  function captureBtn() { return $('captureBtn'); }
+  function isRecording() { var b = captureBtn(); return !!(b && /stop/i.test(b.textContent || '')); }
+  function noteText() { var n = $('noteBox'); return n ? (n.value || '') : ''; }
+
+  /* mine()/vis() guards — used by the #genBtn text fallback so we never grab
+     our own overlay's button or an invisible/disabled one. */
+  function vis(e) { return !!(e && e.offsetParent !== null && !e.disabled); }
+  function mine(x) { return !!(x && x.closest && x.closest('#mlsEz3')); }
+  function byTextGuarded(re) {
+    var list = document.querySelectorAll('button,a,[role=button]');
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i]; if (mine(x) || !vis(x)) continue;
+      var t = (x.textContent || '').trim();
+      if (t.length < 60 && re.test(t)) return x;
+    }
+    return null;
+  }
+  function genBtnResolve() { var g = $('genBtn'); if (vis(g)) return g; return byTextGuarded(/generate note/i); }
+  function findBtnByText(re) { return byTextGuarded(re); }
+  function styleChipHosts() {
+    var out = [], card = $('captureCard'); if (!card) return out;
+    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+      var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
+      if (b) out.push({ label: t, el: b });
+    });
+    return out;
+  }
+
+  /* =======================================================================
+   *  CSS — polished medical product look, mobile-first
+   * ===================================================================== */
+  var css = document.createElement('style');
+  css.id = 'mlsEz3Css';
+  css.textContent = [
+    '#mlsEz3{position:fixed;inset:0;z-index:2147481200;display:none;flex-direction:column;',
+      'background:radial-gradient(1200px 600px at 50% -10%,#15315f 0%,#0d1a35 55%,#0b1428 100%);',
+      'color:#eef4ff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;}',
+    '#mlsEz3.on{display:flex;}',
+    '#mlsEz3 *{box-sizing:border-box;}',
+    '#mlsEz3Head{display:flex;align-items:center;gap:10px;padding:12px 16px;flex:0 0 auto;',
+      'border-bottom:1px solid rgba(255,255,255,.10);background:rgba(9,17,35,.55);}',
+    '#mlsEz3Head .ttl{font-weight:800;font-size:17px;letter-spacing:.2px;display:flex;align-items:center;gap:7px;}',
+    '#mlsEz3Head .sp{flex:1;}',
+    '.ez3-hbtn{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.06);color:#dce7fb;',
+      'border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;transition:.12s;}',
+    '.ez3-hbtn:hover{background:rgba(255,255,255,.12);}',
+    '.ez3-hbtn.on{background:#2f6df6;border-color:#2f6df6;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
+    '#mlsEz3Body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 16px 56px;}',
+    '.ez3-wrap{max-width:720px;margin:0 auto;}',
+    '.ez3-h1{font-size:23px;font-weight:800;margin:4px 0 6px;text-align:center;letter-spacing:.2px;}',
+    '.ez3-sub{font-size:13.5px;color:#a7bce4;text-align:center;margin:0 0 16px;}',
+    /* provider quick-selecter (big blue, data-sourced) */
+    '.ez3-prov{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 16px;}',
+    '.ez3-prov label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
+    '.ez3-prov select{appearance:none;-webkit-appearance:none;border:0;border-radius:14px;cursor:pointer;',
+      'background:linear-gradient(135deg,#2f6df6,#2350bf);color:#fff;font-size:15px;font-weight:800;',
+      'padding:12px 40px 12px 16px;box-shadow:0 8px 24px rgba(23,58,140,.45);max-width:70vw;',
+      'background-image:linear-gradient(135deg,#2f6df6,#2350bf);}',
+    '.ez3-prov .selwrap{position:relative;}',
+    '.ez3-prov .selwrap:after{content:"▾";position:absolute;right:15px;top:50%;transform:translateY(-50%);',
+      'color:#fff;pointer-events:none;font-size:13px;}',
+    /* huge primary buttons */
+    '.ez3-big{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:82px;',
+      'border:0;border-radius:20px;font-size:20px;font-weight:800;cursor:pointer;margin:0 0 14px;',
+      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2f6df6,#2350bf);flex-direction:column;',
+      'box-shadow:0 12px 34px rgba(23,58,140,.5);transition:transform .08s;text-align:center;}',
+    '.ez3-big:active{transform:scale(.986);}',
+    '.ez3-big small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
+    '.ez3-big.rec{background:linear-gradient(135deg,#e11d48,#b0122f);animation:ez3Pulse 1.6s infinite;}',
+    '.ez3-big.ok{background:linear-gradient(135deg,#059669,#047857);box-shadow:0 12px 34px rgba(4,120,87,.45);}',
+    '.ez3-big.dim{background:#1c2c50;color:#8ea3ce;cursor:default;box-shadow:none;}',
+    '@keyframes ez3Pulse{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.5)}50%{box-shadow:0 0 0 16px rgba(225,29,72,0)}}',
+    '.ez3-row2{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:0 0 14px;}',
+    '.ez3-sm{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.07);color:#dce7fb;',
+      'border-radius:12px;padding:11px 15px;font-size:13.5px;font-weight:700;cursor:pointer;transition:.12s;}',
+    '.ez3-sm:hover{background:rgba(255,255,255,.14);}',
+    '.ez3-sm.pri{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);border-radius:18px;',
+      'padding:16px;margin:0 0 14px;}',
+    '.ez3-pt{font-size:27px;font-weight:800;text-align:center;margin:2px 0 4px;line-height:1.15;}',
+    '.ez3-badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:6px 0 2px;}',
+    '.ez3-badge{font-size:12.5px;font-weight:700;padding:4px 11px;border-radius:999px;',
+      'background:rgba(47,109,246,.20);border:1px solid rgba(47,109,246,.5);color:#cfe0fc;}',
+    '.ez3-badge.g{background:rgba(5,150,105,.20);border-color:rgba(5,150,105,.55);color:#b9f3dd;}',
+    '.ez3-badge.a{background:rgba(234,179,8,.16);border-color:rgba(234,179,8,.45);color:#fbe7a2;}',
+    '.ez3-badge.dob{background:rgba(168,85,247,.16);border-color:rgba(168,85,247,.5);color:#e6d4ff;}',
+    '.ez3-timer{font-size:36px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0;}',
+    '.ez3-tx{background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-radius:12px;',
+      'padding:10px 12px;font-size:13px;color:#c7d6f2;max-height:118px;overflow-y:auto;white-space:pre-wrap;}',
+    '.ez3-note{width:100%;min-height:320px;background:#f8fbff;color:#132039;border:1px solid #c9d8f3;',
+      'border-radius:12px;padding:14px;font-size:14.5px;line-height:1.5;font-family:inherit;}',
+    '.ez3-note[readonly]{background:#eef4fe;}',
+    /* patient rows */
+    '.ez3-list{display:flex;flex-direction:column;gap:9px;}',
+    '.ez3-prow{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);border-radius:15px;overflow:hidden;transition:.12s;}',
+    '.ez3-prow.open{border-color:rgba(47,109,246,.55);background:rgba(47,109,246,.08);}',
+    '.ez3-prow>.hd{display:flex;align-items:center;gap:12px;padding:13px 15px;cursor:pointer;}',
+    '.ez3-prow .who{flex:1;min-width:0;}',
+    '.ez3-prow .nm{font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.ez3-prow .dob{display:block;font-size:11.5px;color:#c6b8ea;margin-top:2px;}',
+    '.ez3-prow .meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;}',
+    '.ez3-prow .tm{font-weight:700;font-size:13.5px;color:#cfe0fc;white-space:nowrap;}',
+    '.ez3-prow .sub{font-size:12px;color:#a7bce4;padding:0 15px 11px;}',
+    '.ez3-prow .ex{display:none;padding:6px 15px 15px;border-top:1px dashed rgba(255,255,255,.14);}',
+    '.ez3-prow.open .ex{display:block;}',
+    '.ez3-exgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:11px 0 8px;}',
+    '.ez3-exbtn{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eef4ff;',
+      'border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;',
+      'flex-direction:column;align-items:center;gap:4px;transition:.12s;min-height:60px;justify-content:center;text-align:center;}',
+    '.ez3-exbtn:hover{background:rgba(255,255,255,.15);}',
+    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2f6df6,#2350bf);border-color:transparent;}',
+    '.ez3-exbtn.send{background:linear-gradient(135deg,#059669,#047857);border-color:transparent;}',
+    '.ez3-exbtn small{font-size:10.5px;font-weight:600;opacity:.85;}',
+    '.ez3-safety{font-size:12px;color:#9fd8bd;margin-top:6px;display:flex;gap:6px;align-items:flex-start;}',
+    '.ez3-safety.off{color:#f0c987;}',
+    '.ez3-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px 0;}',
+    '.ez3-chip{border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfe0fc;border-radius:999px;',
+      'padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}',
+    '.ez3-chip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-empty{text-align:center;color:#a7bce4;font-size:14px;padding:26px 12px;line-height:1.6;}',
+    '.ez3-status{font-size:12.5px;color:#a7bce4;text-align:center;margin:8px 0 0;line-height:1.6;}',
+    '.ez3-warnbar{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
+      'border-radius:12px;padding:10px 13px;font-size:13px;margin:0 0 12px;}',
+    '.ez3-back{background:none;border:0;color:#8fb3f7;font-size:14px;font-weight:700;cursor:pointer;padding:6px 2px;margin-bottom:2px;}',
+    '.ez3-more{width:100%;border:1px dashed rgba(255,255,255,.28);background:transparent;color:#bcd0f5;',
+      'border-radius:12px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:10px;}',
+    '.ez3-more:hover{background:rgba(255,255,255,.06);}',
+    /* segmented range control (staff) */
+    '.ez3-seg{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:2px 0 12px;}',
+    '.ez3-seg button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#dce7fb;',
+      'border-radius:999px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;}',
+    '.ez3-seg button.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-daterow{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:0 0 12px;}',
+    '.ez3-daterow input{border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.25);color:#eef4ff;',
+      'border-radius:10px;padding:9px 10px;font-size:13px;font-family:inherit;}',
+    /* confirm modal */
+    '.ez3-modal{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;',
+      'background:rgba(6,12,26,.72);padding:18px;}',
+    '.ez3-modal-card{max-width:460px;width:100%;background:#0f1e3c;border:1px solid rgba(120,150,240,.35);',
+      'border-radius:18px;padding:20px;box-shadow:0 26px 70px rgba(0,0,0,.55);}',
+    '.ez3-modal-h{font-size:18px;font-weight:800;margin:0 0 12px;text-align:center;}',
+    '.ez3-warn{background:rgba(225,29,72,.16);border:1px solid rgba(225,29,72,.55);color:#ffc9d4;',
+      'border-radius:12px;padding:11px 13px;font-size:13px;margin:0 0 12px;font-weight:600;}',
+    '.ez3-crow{display:flex;justify-content:space-between;gap:12px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.08);font-size:14.5px;}',
+    '.ez3-crow span{color:#a7bce4;}',
+    '.ez3-crow b{text-align:right;}',
+    '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
+    '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
+    /* launcher chip + toast */
+    '#mlsEz3Launch{border:1px solid rgba(47,109,246,.55);background:linear-gradient(135deg,#2f6df6,#2350bf);',
+      'color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:800;cursor:pointer;',
+      'margin-left:8px;vertical-align:middle;box-shadow:0 4px 14px rgba(23,58,140,.35);}',
+    '#mlsEz3Launch.fx{position:fixed;top:10px;right:12px;z-index:2147481100;}',
+    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;',
+      'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
+      'z-index:2147481300;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
+    '#ez3Toast.on{opacity:1;}',
+    '@media (max-width:700px){',
+      '#mlsEz3Body{padding:14px 11px 64px;}',
+      '.ez3-big{min-height:90px;font-size:21px;}',
+      '.ez3-pt{font-size:23px;}',
+      '.ez3-h1{font-size:20px;}',
+      '.ez3-prov select{font-size:16px;padding:14px 42px 14px 16px;}',
+    '}'
+  ].join('');
+  document.head.appendChild(css);
+  cleanup.push(function () { css.remove(); });
+
+  /* =======================================================================
+   *  overlay shell
+   * ===================================================================== */
+  var ov = document.createElement('div');
+  ov.id = 'mlsEz3';
+  ov.innerHTML =
+    '<div id="mlsEz3Head">' +
+      '<span class="ttl">⚡ MLS Easy</span>' +
+      '<span class="sp"></span>' +
+      '<button type="button" class="ez3-hbtn" id="ez3ModeDoc">🩺 Doctor</button>' +
+      '<button type="button" class="ez3-hbtn" id="ez3ModeStaff">🗂 Staff prep</button>' +
+      '<button type="button" class="ez3-hbtn" id="ez3Close" title="Back to the full app">✕ Exit</button>' +
+    '</div>' +
+    '<div id="mlsEz3Body"><div class="ez3-wrap" id="ez3Wrap"></div></div>';
+  document.body.appendChild(ov);
+  cleanup.push(function () { ov.remove(); });
+
+  function wrap() { return $('ez3Wrap'); }
+  function openOv(screen) { S.open = true; S.screen = screen || S.screen || 'home'; ov.classList.add('on'); render(); startPoll(); }
+  function closeOv() { S.open = false; ov.classList.remove('on'); closeConfirm(); stopPoll(); }
+  $('ez3Close').onclick = closeOv;
+  $('ez3ModeDoc').onclick = function () { S.mode = 'doctor'; if (S.screen === 'staff') S.screen = 'home'; render(); };
+  $('ez3ModeStaff').onclick = function () { S.mode = 'staff'; S.screen = 'staff'; render(); };
+
+  /* Proxy an app control that opens app-layer UI: hide the overlay first so the
+     app's own modal/picker is visible and usable. */
+  function handOff(fn, msg) { closeOv(); try { fn(); } catch (e) {} if (msg) toast(msg); }
+
+  /* ---- provider quick-selecter markup (data-sourced) --------------------- */
+  function provSelectHtml() {
+    var list = providerList();
+    if (!list.length) return '';
+    var cur = activeProvider();
+    var opts = '<option value="__all"' + ((S.providerFilter === '' ) ? ' selected' : '') + '>All providers</option>';
+    list.forEach(function (p) {
+      opts += '<option value="' + esc(p) + '"' + (cur === p ? ' selected' : '') + '>' + esc(p) + '</option>';
+    });
+    return '<div class="ez3-prov"><label>Provider</label>' +
+           '<div class="selwrap"><select id="ez3Prov">' + opts + '</select></div></div>';
+  }
+  function wireProvSelect() {
+    var sel = $('ez3Prov'); if (!sel) return;
+    sel.onchange = function () {
+      var v = sel.value; S.providerFilter = (v === '__all') ? '' : v; S.showCount = 5; render();
+    };
+  }
+
+  /* =======================================================================
+   *  phase machine (doctor room)
+   * ===================================================================== */
+  function computePhase() {
+    if (isRecording()) { if (S.phase !== 'rec') { S.phase = 'rec'; if (!S.recStart) S.recStart = Date.now(); } return; }
+    if (S.phase === 'rec') { S.phase = 'stopped'; S.recStart = 0; }
+    var n = noteText();
+    if (S.genClickedAt && Date.now() - S.genClickedAt < 120000 && n.trim().length < 30) { S.phase = 'gen'; return; }
+    if (n.trim().length >= 30) { S.phase = 'note'; S.genClickedAt = 0; return; }
+    if (S.phase !== 'stopped') S.phase = 'idle';
+  }
+  function fmtTimer() {
+    var s = Math.max(0, Math.floor((Date.now() - S.recStart) / 1000));
+    return ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+
+  /* =======================================================================
+   *  context lock + patient activation (THE fix path)
+   * ===================================================================== */
+  function lockPatient(a) { S.locked = { id: a.id, name: a.name || '', dob: dobOf(a), key: rowKey(a) }; }
+
+  /* Activate THIS row's patient via the real per-appointment path, verify the
+     visit label matches before doing anything, then optionally record/generate. */
+  function lockAndStart(a, opts) {
+    opts = opts || {};
+    S.appt = a; lockPatient(a); S.editing = false; S.genClickedAt = 0; S.lastWarn = '';
+    S.mode = 'doctor'; S.screen = 'doctor';
+    try { if (typeof window.calStartVisit === 'function') window.calStartVisit(a.id); } catch (e) {}
+    if (S.open) render();
+    var tries = 0;
+    (function check() {
+      tries++;
+      var an = activeName();
+      var ok = !(an && a.name) || nameMatch(an, a.name);
+      if (!ok && tries < 4) { setTimeout(check, 900); return; } /* activation can be async */
+      if (!ok) {
+        S.lastWarn = 'The open visit is labeled “' + an + '”, not “' + (a.name || '') +
+                     '”. Nothing was started — pick the patient again.';
+        if (S.open) render(); return;
+      }
+      S.lastWarn = '';
+      if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
+      if (opts.generate) { var g = genBtnResolve(); if (g) { S.genClickedAt = Date.now(); g.click(); S.phase = 'gen'; } }
+      if (S.open) { openOv('doctor'); } else { render(); }
+    })();
+    if (S.open) render();
+  }
+
+  /* =======================================================================
+   *  renderers
+   * ===================================================================== */
+  function render() {
+    $('ez3ModeDoc').classList.toggle('on', S.mode === 'doctor');
+    $('ez3ModeStaff').classList.toggle('on', S.mode === 'staff');
+    if (!wrap()) return;
+    if (S.mode === 'staff') { renderStaff(); return; }
+    if (S.screen === 'choose') renderChoose();
+    else if (S.screen === 'doctor') renderDoctor();
+    else renderHome();
+  }
+
+  function homeStatus() {
+    var prov = activeProvider(), rows = dayRows(todayLocal());
+    var seen = rows.filter(isSeen).length, g = guardInfo();
+    var bits = [];
+    bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
+    bits.push(seen + ' / ' + rows.length + ' seen today');
+    if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
+    return bits.join(' · ');
+  }
+
+  function renderHome() {
+    var nx = nextPatient(), rows = dayRows(todayLocal());
+    var h = '<div class="ez3-h1">MLS Easy</div>' +
+            '<p class="ez3-sub">Pick a patient, record, generate the note, send. Nothing else in the way.</p>';
+    h += provSelectHtml();
+    if (nx) {
+      h += '<button type="button" class="ez3-big" id="ez3Next">▶ Start next patient' +
+           '<small>' + esc(nx.name) + ' · ' + esc(t12(nx)) + ' · ' + dobLabelPlain(nx) + '</small></button>';
+    } else if (rows.length) {
+      h += '<button type="button" class="ez3-big dim" disabled>🎉 All ' + rows.length + ' patients seen today</button>';
+    } else {
+      h += '<button type="button" class="ez3-big dim" disabled>No patients pulled for today yet' +
+           '<small>Ask the front desk to “Pull today’s patients” (Staff prep)</small></button>';
+    }
+    h += '<button type="button" class="ez3-big ok" id="ez3Choose">👥 Choose patient' +
+         (rows.length ? '<small>' + rows.length + ' on today’s schedule</small>' : '') + '</button>';
+    h += '<div class="ez3-row2">' +
+         (findBtnByText(/pull today.?s patients/i) ? '<button type="button" class="ez3-sm" id="ez3PullToday">📥 Pull today’s patients</button>' : '') +
+         (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
+         '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
+         '</div>';
+    h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
+    wrap().innerHTML = h;
+    wireProvSelect();
+    var b;
+    if ((b = $('ez3Next'))) b.onclick = function () { lockAndStart(nx, { record: false }); };
+    $('ez3Choose').onclick = function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; render(); };
+    if ((b = $('ez3PullToday'))) b.onclick = pullTodayProxy;
+    if ((b = $('ez3Prep'))) b.onclick = openPrep;
+    $('ez3Hist').onclick = openHistory;
+  }
+  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(d)) : 'DOB —'; }
+  function hasPrep() { return typeof window.openOpPrepSmart === 'function' || typeof window.openOpPrep === 'function'; }
+  function openPrep() {
+    if (typeof window.openOpPrepSmart === 'function') handOff(function () { window.openOpPrepSmart(); });
+    else if (typeof window.openOpPrep === 'function') handOff(function () { window.openOpPrep(); });
+    else toast('Prep notes control not available on this build.');
+  }
+  function openHistory() {
+    handOff(function () {
+      if (typeof window.showView === 'function') window.showView('history');
+      else { var n = $('nav_history'); if (n) n.click(); }
+    }, 'Completed notes / history opened in the full app.');
+  }
+  function pullTodayProxy() {
+    var p = findBtnByText(/pull today.?s patients/i);
+    if (!p) { toast('Pull control not found on this build.'); return; }
+    handOff(function () { p.click(); }, 'Pulling today’s schedule — tap ⚡ MLS Easy when it’s done.');
+  }
+
+  /* ---- patient rows (clean, DOB always, expand-in-place) ------------------ */
+  function rowHtml(a) {
+    var st = statusOf(a), cls = st === 'Booked' ? 'a' : 'g', k = rowKey(a), open = (S.expanded === k);
+    var g = guardInfo();
+    return '<div class="ez3-prow' + (open ? ' open' : '') + '" data-k="' + esc(k) + '">' +
+      '<div class="hd" data-hd="' + esc(k) + '">' +
+        '<div class="who"><span class="nm">' + esc(a.name || 'Unknown') + '</span>' +
+          '<span class="dob">' + dobLabel(a) + '</span></div>' +
+        '<div class="meta"><span class="tm">🕐 ' + esc(t12(a)) + '</span>' +
+          '<span class="ez3-badge ' + cls + '">' + esc(st) + '</span></div>' +
+      '</div>' +
+      '<div class="sub">🩺 ' + esc(a.provider || '—') + ' · ' + esc(visitType(a)) + '</div>' +
+      '<div class="ex">' +
+        '<div class="ez3-exgrid">' +
+          '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
+          '<button type="button" class="ez3-exbtn" data-act="chart" data-k="' + esc(k) + '">📖 Pull Chart Context<small>Read-only, this patient</small></button>' +
+          '<button type="button" class="ez3-exbtn" data-act="gen" data-k="' + esc(k) + '">✨ Generate Note<small>From the captured visit</small></button>' +
+          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">🚀 Send to Athena<small>Review &amp; confirm</small></button>' +
+        '</div>' +
+        '<div class="ez3-safety' + (g.on ? '' : ' off') + '">🛡 <span>' + (g.on ?
+          'Identity guards active — a chart that doesn’t match this patient is blocked. Recording, the note, and any send stay locked to ' + esc(a.name || 'this patient') + '.' :
+          'Identity-guard module not detected on this load — double-check the patient label before sending.') + '</span></div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderChoose() {
+    var all = dayRows(todayLocal());
+    var shown = all.slice(0, S.showCount);
+    var h = '<button type="button" class="ez3-back" id="ez3Back">‹ Home</button>' +
+            '<div class="ez3-h1">Today’s patients</div>';
+    h += provSelectHtml();
+    h += '<p class="ez3-sub">' + homeStatus() + '</p>';
+    if (!all.length) {
+      h += '<div class="ez3-empty">No patients on today’s pulled schedule.<br>Front desk: open <b>Staff prep</b> and tap 📥 Pull today’s patients.</div>';
+    } else {
+      h += '<div class="ez3-list">' + shown.map(rowHtml).join('') + '</div>';
+      if (all.length > S.showCount) {
+        h += '<button type="button" class="ez3-more" id="ez3More">▾ Show ' + Math.min(5, all.length - S.showCount) +
+             ' more (' + (all.length - S.showCount) + ' left)</button>';
+      }
+    }
+    wrap().innerHTML = h;
+    wireProvSelect();
+    $('ez3Back').onclick = function () { S.screen = 'home'; render(); };
+    var m = $('ez3More'); if (m) m.onclick = function () { S.showCount += 5; render(); };
+    wireRows(shown);
+  }
+
+  function wireRows(rows) {
+    var byKey = {}; rows.forEach(function (a) { byKey[rowKey(a)] = a; });
+    [].slice.call(wrap().querySelectorAll('[data-hd]')).forEach(function (hd) {
+      hd.onclick = function () { var k = hd.getAttribute('data-hd'); S.expanded = (S.expanded === k ? null : k); render(); };
+    });
+    [].slice.call(wrap().querySelectorAll('.ez3-exbtn[data-act]')).forEach(function (b) {
+      b.onclick = function (ev) {
+        ev.stopPropagation();
+        var a = byKey[b.getAttribute('data-k')]; if (!a) return;
+        var act = b.getAttribute('data-act');
+        if (act === 'rec') {                                   /* Start Recording */
+          lockAndStart(a, { record: true });
+        } else if (act === 'chart') {                          /* Pull Chart Context (read-only, THIS patient) */
+          if (typeof window.calPullChartFor === 'function') handOff(function () { window.calPullChartFor(a.id); }, 'Chart context pulled (read-only) for ' + (a.name || 'this patient') + '.');
+          else toast('Chart-context pull not available on this build.');
+        } else if (act === 'gen') {                            /* Generate Note (#genBtn, guarded fallback) */
+          lockAndStart(a, { generate: true });
+        } else if (act === 'send') {                           /* Send to Athena (#pushAllEmrBtn) */
+          lockPatient(a); S.appt = a; requestSend(a);
+        }
+      };
+    });
+  }
+
+  /* ---- doctor room (one huge action at a time) --------------------------- */
+  function renderDoctor() {
+    computePhase();
+    var a = S.appt, an = activeName();
+    var nm = (a && a.name) || an || 'No patient selected';
+    var h = '<button type="button" class="ez3-back" id="ez3Back">‹ Home</button>';
+    if (S.lastWarn) h += '<div class="ez3-warnbar">⚠️ ' + esc(S.lastWarn) + '</div>';
+    h += '<div class="ez3-card">' +
+      '<div class="ez3-pt">' + esc(nm) + '</div>' +
+      '<div class="ez3-badges">' +
+        (a ? '<span class="ez3-badge">🕐 ' + esc(t12(a)) + '</span>' +
+             '<span class="ez3-badge dob">' + dobLabel(a) + '</span>' +
+             '<span class="ez3-badge">' + esc(visitType(a)) + '</span>' +
+             '<span class="ez3-badge ' + (isSeen(a) ? 'g' : 'a') + '">' + esc(statusOf(a)) + '</span>' : '') +
+        (activeProvider() ? '<span class="ez3-badge">🩺 ' + esc(activeProvider()) + '</span>' : '') +
+      '</div>' +
+    '</div>';
+
+    if (!a) {
+      h += '<button type="button" class="ez3-big ok" id="ez3PickBig">👥 Choose a patient<small>Then record, generate, review, send</small></button>';
+    } else if (S.phase === 'rec') {
+      h += '<div class="ez3-card"><div class="ez3-timer">🔴 ' + fmtTimer() + '</div>' +
+           '<div class="ez3-tx" id="ez3Tx"></div></div>' +
+           '<button type="button" class="ez3-big rec" id="ez3Stop">⏹ Stop &amp; Generate Note</button>' +
+           '<p class="ez3-status">Recording — put the device down. Stopping asks you to confirm, then the note writes itself.</p>';
+    } else if (S.phase === 'gen') {
+      h += '<button type="button" class="ez3-big dim" disabled>✨ Generating the note…</button>' +
+           '<p class="ez3-status">MLS is writing the note for ' + esc(nm) + '. It appears here the moment it’s ready.</p>';
+    } else if (S.phase === 'note') {
+      h += '<div class="ez3-card">' +
+             '<textarea class="ez3-note" id="ez3Note" ' + (S.editing ? '' : 'readonly') + '></textarea>' +
+             '<div class="ez3-chips" id="ez3StyleChips"></div>' +
+             '<div class="ez3-row2" style="margin:10px 0 0">' +
+               '<button type="button" class="ez3-sm" id="ez3Edit">' + (S.editing ? '✅ Done editing' : '✏️ Edit note') + '</button>' +
+               '<button type="button" class="ez3-sm" id="ez3Regen">🔄 Regenerate</button>' +
+               '<button type="button" class="ez3-sm" id="ez3Copy">📋 Copy for Athena</button>' +
+             '</div>' +
+           '</div>' +
+           '<button type="button" class="ez3-big ok" id="ez3Send">🚀 Send to Athena' +
+             '<small>Opens Athena’s review &amp; confirm screen — nothing is written until you confirm there</small></button>' +
+           '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3NextPt">➡ Next patient</button></div>';
+    } else { /* idle / stopped */
+      var stopped = S.phase === 'stopped';
+      var tx = ($('transcript') && $('transcript').value) || '';
+      if (stopped || tx.trim().length > 10) {
+        h += '<button type="button" class="ez3-big" id="ez3Gen">✨ Generate Note' +
+             '<small>' + (tx.trim().length > 10 ? 'From the captured visit' : 'Transcript is empty — record or paste first') + '</small></button>' +
+             '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3Rec2">🎙 Record more</button></div>';
+      } else {
+        h += '<button type="button" class="ez3-big" id="ez3Rec">🎙 Start Recording<small>' + esc(nm) + '</small></button>';
+      }
+    }
+
+    /* small secondary actions grouped nearby */
+    h += '<div class="ez3-row2" style="margin-top:6px">' +
+         '<button type="button" class="ez3-sm" id="ez3Change">👥 Change patient</button>' +
+         (a && typeof window.calPullChartFor === 'function' ? '<button type="button" class="ez3-sm" id="ez3Chart2">📖 Open chart</button>' : '') +
+         (a && typeof window.openOpPrepForPatient === 'function' ? '<button type="button" class="ez3-sm" id="ez3Prep2">💉 Prep note</button>' : '') +
+         '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
+         '</div>';
+    wrap().innerHTML = h;
+
+    var b;
+    $('ez3Back').onclick = function () { S.screen = 'home'; render(); };
+    if ((b = $('ez3PickBig'))) b.onclick = function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; render(); };
+    if ((b = $('ez3Rec')))  b.onclick = function () { if (!S.appt) { toast('Pick a patient first.'); return; } lockAndStart(S.appt, { record: true }); };
+    if ((b = $('ez3Rec2'))) b.onclick = function () { var c = captureBtn(); if (c) { c.click(); setTimeout(render, 400); } };
+    if ((b = $('ez3Stop'))) b.onclick = stopAndGenerate;
+    if ((b = $('ez3Gen')))  b.onclick = function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } S.genClickedAt = Date.now(); g.click(); S.phase = 'gen'; render(); };
+    if ((b = $('ez3Regen'))) b.onclick = function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } S.genClickedAt = Date.now(); g.click(); S.phase = 'gen'; render(); };
+    if ((b = $('ez3Copy'))) b.onclick = function () {
+      var c = $('copyEmrBtn'); if (c) { c.click(); b.textContent = '✅ Copied'; setTimeout(function () { try { b.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
+      else toast('Copy control not found.');
+    };
+    if ((b = $('ez3Send'))) b.onclick = function () { requestSend(S.appt); };
+    if ((b = $('ez3NextPt'))) b.onclick = function () { var nx = nextPatient(); if (nx) lockAndStart(nx, { record: false }); else { S.screen = 'home'; render(); } };
+    if ((b = $('ez3Edit'))) b.onclick = function () { S.editing = !S.editing; render(); };
+    if ((b = $('ez3Change'))) b.onclick = function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; render(); };
+    if ((b = $('ez3Chart2'))) b.onclick = function () { if (S.appt && typeof window.calPullChartFor === 'function') handOff(function () { window.calPullChartFor(S.appt.id); }, 'Chart opened (read-only) for ' + (S.appt.name || 'this patient') + '.'); };
+    if ((b = $('ez3Prep2'))) b.onclick = function () { if (S.appt) handOff(function () { window.openOpPrepForPatient(S.appt.name); }); };
+    if ((b = $('ez3Hist2'))) b.onclick = openHistory;
+
+    /* note textarea <-> real #noteBox two-way sync */
+    var ta = $('ez3Note');
+    if (ta) {
+      ta.value = noteText();
+      ta.addEventListener('input', function () {
+        var n = $('noteBox');
+        if (n) { n.value = ta.value; try { n.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
+      });
+    }
+    var chipHost = $('ez3StyleChips');
+    if (chipHost) {
+      styleChipHosts().forEach(function (c) {
+        var el = document.createElement('button');
+        el.type = 'button'; el.className = 'ez3-chip' + (/\bon\b|\bactive\b|\bsel\b/.test(c.el.className) ? ' on' : '');
+        el.textContent = c.label;
+        el.onclick = function () { c.el.click(); setTimeout(render, 250); };
+        chipHost.appendChild(el);
+      });
+    }
+    syncTx();
+  }
+
+  function syncTx() {
+    var box = $('ez3Tx'), t = $('transcript');
+    if (box && t) { var v = t.value || ''; box.textContent = v ? ('…' + v.slice(-500)) : 'Listening — the live transcript preview appears here.'; box.scrollTop = box.scrollHeight; }
+  }
+
+  /* ---- stop -> (confirm) -> generate -> review --------------------------- */
+  var stopIv = null;
+  function stopAndGenerate() {
+    var c = captureBtn(); if (!c) { toast('Recorder not found.'); return; }
+    /* the app's own stop-confirm dialog gates this — hand off so it's visible */
+    handOff(function () { c.click(); }, 'Confirm the stop — MLS Easy returns and writes the note automatically.');
+    watchStopThenGen();
+  }
+  function watchStopThenGen() {
+    var t0 = Date.now(), genTried = false;
+    if (stopIv) clearInterval(stopIv);
+    stopIv = setInterval(function () {
+      if (Date.now() - t0 > 180000) { clearInterval(stopIv); stopIv = null; return; }
+      if (isRecording()) return;                       /* still recording / confirm pending / cancelled */
+      if (!genTried && noteText().trim().length < 30) { /* app didn't auto-generate — click gen once */
+        genTried = true; var g = genBtnResolve(); if (g) { S.genClickedAt = Date.now(); g.click(); }
+      }
+      if (noteText().trim().length >= 30) {
+        clearInterval(stopIv); stopIv = null; S.phase = 'note'; S.genClickedAt = 0; openOv('doctor');
+      }
+    }, 900);
+  }
+  cleanup.push(function () { if (stopIv) clearInterval(stopIv); });
+
+  /* ---- send-to-Athena with name/DOB/destination confirm ------------------ */
+  function requestSend(a) {
+    if (noteText().trim().length < 30) { toast('Generate the note first — there’s nothing to send yet.'); return; }
+    var p = $('pushAllEmrBtn'); if (!p) { toast('Send control (#pushAllEmrBtn) not found on this build.'); return; }
+    var locked = S.locked || (a ? { name: a.name || '', dob: dobOf(a) } : { name: activeName(), dob: '' });
+    var an = activeName();
+    var match = !(locked.name && an) || nameMatch(an, locked.name);
+    openConfirm({
+      name: locked.name || an || '—',
+      dob: locked.dob || (a ? dobOf(a) : ''),
+      activeName: an,
+      mismatch: !match,
+      onYes: function () { handOff(function () { p.click(); }, 'Opened Athena’s review & confirm screen — confirm there to file the note.'); }
+    });
+  }
+  function openConfirm(cfg) {
+    closeConfirm();
+    var m = document.createElement('div'); m.className = 'ez3-modal'; m.id = 'ez3Confirm';
+    m.innerHTML = '<div class="ez3-modal-card">' +
+      '<div class="ez3-modal-h">Confirm before sending to Athena</div>' +
+      (cfg.mismatch ? '<div class="ez3-warn">⚠️ The open visit is labeled “' + esc(cfg.activeName || '—') +
+        '”, which does <b>not</b> match this patient. Sending is blocked. Re-select the patient and try again.</div>' : '') +
+      '<div class="ez3-crow"><span>Patient</span><b>' + esc(cfg.name || '—') + '</b></div>' +
+      '<div class="ez3-crow"><span>DOB</span><b>' + (cfg.dob ? esc(cfg.dob) : '—') + '</b></div>' +
+      '<div class="ez3-crow"><span>Destination</span><b>athenaOne — review &amp; confirm</b></div>' +
+      '<p class="ez3-modal-note">Nothing is written to the chart until you confirm on Athena’s own review screen. ' +
+        'MLS never submits or signs an order.</p>' +
+      '<div class="ez3-modal-btns">' +
+        '<button type="button" class="ez3-sm" id="ez3ConfCancel">Cancel</button>' +
+        (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
+      '</div></div>';
+    ov.appendChild(m);
+    $('ez3ConfCancel').onclick = closeConfirm;
+    var y = $('ez3ConfYes'); if (y) y.onclick = function () { closeConfirm(); if (cfg.onYes) cfg.onYes(); };
+  }
+  function closeConfirm() { var m = $('ez3Confirm'); if (m) m.remove(); }
+
+  /* =======================================================================
+   *  staff prep mode
+   * ===================================================================== */
+  function staffRangeBounds() {
+    if (S.staffRange === 'today') return { from: todayLocal(), to: todayLocal(), label: 'Today' };
+    if (S.staffRange === 'tomorrow') return { from: tomorrowLocal(), to: tomorrowLocal(), label: 'Tomorrow' };
+    if (S.staffRange === 'month') { var m = monthRange(0); m.label = 'This month'; return m; }
+    if (S.staffRange === 'lastmonth') { var l = monthRange(-1); l.label = 'Last month'; return l; }
+    if (S.staffRange === 'custom') return { from: S.customFrom || todayLocal(), to: S.customTo || S.customFrom || todayLocal(), label: 'Custom' };
+    return { from: todayLocal(), to: todayLocal(), label: 'Today' };
+  }
+  function renderStaff() {
+    var rb = staffRangeBounds();
+    var all = rowsInRange(rb.from, rb.to);
+    var shown = all.slice(0, S.showCount);
+    var todayBtn = findBtnByText(/pull today.?s patients/i);
+    var monthBtn = findBtnByText(/pull whole month/i);
+    var prog = $('mls-month-progress');
+    var errEl = document.querySelector('.mls-pull-error, #mlsPullError');
+
+    var h = '<div class="ez3-h1">Staff prep</div>' +
+            '<p class="ez3-sub">Pull schedules, scope by provider, prep notes. Doctors don’t see this screen.</p>';
+    h += provSelectHtml();
+
+    /* real pull actions (only shown when the real control exists) */
+    h += '<div class="ez3-card"><div class="ez3-row2" style="margin:0 0 4px">' +
+      (todayBtn ? '<button type="button" class="ez3-sm pri" id="ez3sPullToday">📥 Pull today’s patients</button>' : '') +
+      (monthBtn ? '<button type="button" class="ez3-sm" id="ez3sPullMonth">📅 Pull whole month</button>' : '') +
+      '<button type="button" class="ez3-sm" id="ez3sProv">🩺 Change provider (app)</button>' +
+      (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3sPrep">💉 Prep notes</button>' : '') +
+      '</div>' +
+      (!todayBtn && !monthBtn ? '<p class="ez3-status">Pull buttons aren’t on this screen right now — open the calendar/schedule view, then reopen Staff prep.</p>' : '') +
+      '<p class="ez3-status" id="ez3sStatus">' + staffStatus(prog, errEl) + '</p>' +
+      '</div>';
+
+    /* view scope (filters the already-pulled schedule; not a new fetch) */
+    h += '<div class="ez3-h1" style="font-size:16px;text-align:left;margin-top:4px">Schedule</div>';
+    h += '<div class="ez3-seg" id="ez3Seg">' +
+      seg('today', 'Today') + seg('tomorrow', 'Tomorrow') + seg('month', 'This month') +
+      seg('lastmonth', 'Last month') + seg('custom', 'Custom range') + '</div>';
+    if (S.staffRange === 'custom') {
+      h += '<div class="ez3-daterow">' +
+        '<input type="date" id="ez3From" value="' + esc(S.customFrom) + '"> <span>to</span> ' +
+        '<input type="date" id="ez3To" value="' + esc(S.customTo) + '"></div>';
+    }
+    h += '<p class="ez3-sub" style="margin:0 0 10px">' + esc(rb.label) +
+         (rb.from === rb.to ? ' · ' + esc(rb.from) : ' · ' + esc(rb.from) + ' → ' + esc(rb.to)) +
+         ' · ' + all.length + ' appointment' + (all.length === 1 ? '' : 's') +
+         (activeProvider() ? ' · scoped to ' + esc(activeProvider()) : ' · all providers') + '</p>';
+    if (!all.length) {
+      h += '<div class="ez3-empty">Nothing in this range yet.<br>' +
+        (todayBtn ? 'Tap 📥 Pull today’s patients above to fetch from Athena.' : 'Pull the schedule from the calendar view, then it shows here.') +
+        '</div>';
+    } else {
+      h += '<div class="ez3-list">' + shown.map(rowHtml).join('') + '</div>';
+      if (all.length > S.showCount) {
+        h += '<button type="button" class="ez3-more" id="ez3More">▾ Show ' + Math.min(5, all.length - S.showCount) +
+             ' more (' + (all.length - S.showCount) + ' left)</button>';
+      }
+    }
+    wrap().innerHTML = h;
+    wireProvSelect();
+    var b;
+    if ((b = $('ez3sPullToday'))) b.onclick = pullTodayProxy;
+    if ((b = $('ez3sPullMonth'))) b.onclick = function () { var mm = findBtnByText(/pull whole month/i); if (mm) handOff(function () { mm.click(); }, 'Month pull started — progress shows at the top.'); };
+    if ((b = $('ez3sProv'))) b.onclick = function () { var c = $('mlsProvChip'); if (c) handOff(function () { c.click(); }, 'Pick the doctor, then tap ⚡ MLS Easy to come back.'); else toast('Provider picker not found.'); };
+    if ((b = $('ez3sPrep'))) b.onclick = openPrep;
+    [].slice.call(wrap().querySelectorAll('#ez3Seg button[data-r]')).forEach(function (el) {
+      el.onclick = function () { S.staffRange = el.getAttribute('data-r'); S.showCount = 5; render(); };
+    });
+    var f = $('ez3From'), tt = $('ez3To');
+    if (f) f.onchange = function () { S.customFrom = f.value; S.showCount = 5; render(); };
+    if (tt) tt.onchange = function () { S.customTo = tt.value; S.showCount = 5; render(); };
+    var m = $('ez3More'); if (m) m.onclick = function () { S.showCount += 5; render(); };
+    wireRows(shown);
+  }
+  function seg(r, label) { return '<button type="button" data-r="' + r + '" class="' + (S.staffRange === r ? 'on' : '') + '">' + label + '</button>'; }
+  function staffStatus(prog, errEl) {
+    var g = guardInfo(), bits = [];
+    bits.push(guardInfo().on ? '🛡 guards on' + (g.blocked ? ' (' + g.blocked + ' blocked)' : '') : '🛡 guards not detected');
+    if (prog && (prog.textContent || '').trim()) bits.push('📡 ' + esc(prog.textContent.trim().slice(0, 120)));
+    if (errEl && (errEl.textContent || '').trim()) bits.push('⚠️ ' + esc(errEl.textContent.trim().slice(0, 120)));
+    return bits.join('<br>');
+  }
+
+  /* =======================================================================
+   *  poll loop
+   * ===================================================================== */
+  var pollIv = null;
+  function startPoll() {
+    if (pollIv) return;
+    pollIv = setInterval(function () {
+      if (!S.open) return;
+      if (S.mode === 'doctor' && S.screen === 'doctor') {
+        var before = S.phase; computePhase();
+        if (S.phase !== before) render();
+        else if (S.phase === 'rec') { var tm = wrap().querySelector('.ez3-timer'); if (tm) tm.textContent = '🔴 ' + fmtTimer(); syncTx(); }
+      } else if (S.screen === 'home') { var st = $('ez3HomeStatus'); if (st) st.innerHTML = homeStatus(); }
+    }, 700);
+  }
+  function stopPoll() { if (pollIv) { clearInterval(pollIv); pollIv = null; } }
+  cleanup.push(stopPoll);
+
+  /* =======================================================================
+   *  launcher chip + re-route legacy launchers to THIS workspace
+   * ===================================================================== */
+  function mountLauncher() {
+    if ($('mlsEz3Launch')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.id = 'mlsEz3Launch'; btn.textContent = '⚡ MLS Easy';
+    btn.title = 'Open the focused MLS Easy workspace';
+    btn.onclick = function () { S.mode = 'doctor'; openOv('home'); };
+    var anchor = $('mlsAgendaChip') || $('mlsEzRbLaunch');
+    if (anchor && anchor.parentElement) anchor.insertAdjacentElement('afterend', btn);
+    else { btn.classList.add('fx'); document.body.appendChild(btn); }
+    /* remove any leftover last-gen launcher so there is exactly one chip */
+    var old = $('mlsEzRbLaunch'); if (old) old.remove();
+  }
+  mountLauncher();
+  var keepIv = setInterval(mountLauncher, 3000);
+  cleanup.push(function () { clearInterval(keepIv); var b = $('mlsEz3Launch'); if (b) b.remove(); });
+
+  /* Capture-phase re-route: the visible "Simple mode (tunnel)" launcher and any
+     legacy easy launcher open THIS workspace. Original handlers are left intact
+     (we just stop the event first). */
+  function launcherTrap(ev) {
+    var t = ev.target && ev.target.closest &&
+      ev.target.closest('#mlsP1TunnelLaunch,#mlsEzRbLaunch,#mlsEasyInplaceLaunch,#mlsEasyLaunch,[data-mls-easy-launch]');
+    if (!t || t.id === 'mlsEz3Launch') return;
+    ev.preventDefault(); ev.stopPropagation();
+    S.mode = 'doctor'; openOv('home');
+  }
+  document.addEventListener('click', launcherTrap, true);
+  cleanup.push(function () { document.removeEventListener('click', launcherTrap, true); });
+
+  /* Esc hides the shell (never interrupts recording — the app keeps recording) */
+  function escClose(ev) { if (ev.key === 'Escape' && S.open) { if ($('ez3Confirm')) closeConfirm(); else closeOv(); } }
+  document.addEventListener('keydown', escClose, true);
+  cleanup.push(function () { document.removeEventListener('keydown', escClose, true); });
+
+  /* =======================================================================
+   *  public API + revert
+   * ===================================================================== */
+  window.__mlsEasyV3 = {
+    version: VER,
+    open: function (screen) { S.mode = 'doctor'; openOv(screen || 'home'); },
+    openStaff: function () { S.mode = 'staff'; S.screen = 'staff'; openOv('staff'); },
+    close: closeOv,
+    state: function () { return { mode: S.mode, screen: S.screen, phase: S.phase, open: S.open, locked: S.locked }; }
+  };
+  window.__mlsEasyV3_revert = function () {
+    try { closeOv(); } catch (e) {}
+    cleanup.forEach(function (f) { try { f(); } catch (e) {} });
+    try { delete window.__mlsEasyV3; } catch (e) { window.__mlsEasyV3 = undefined; }
+    try { delete window.__mlsEasyV3_revert; } catch (e) { window.__mlsEasyV3_revert = undefined; }
+    return 'MLS Easy v3 reverted (classic app + prior modules untouched).';
+  };
+})();
+
+
 
 /* ---- module: feat_mls_easy_inplace.js ---- */
 
@@ -4240,7 +5239,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b54';
+  var MLS_APP_BUILD='2026-07-07-b55';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
