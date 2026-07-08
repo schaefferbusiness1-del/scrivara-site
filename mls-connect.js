@@ -1,3 +1,103 @@
+/* =========================================================================
+ * MLS Scribe — SUMMARY SANITIZER v2 + RETROACTIVE SCRUB  (__mlsSanitizeV2) v2.0.0  2026-07-08 (b94)
+ *
+ * User-caught: some summaries STILL contain athenaOne sketchpad markup — e.g.
+ * O'HARE, Dillon: IFRAME / SECTION / SVGJOTTERCONTAINERID / JOTTERSTROKES /
+ * stroke / stroke-opacity / stroke-width / path — incl. quoted object-literal
+ * props ('stroke-width': 2,). The b87 detector was CASE-SENSITIVE + function/brace
+ * focused, so it false-negatived these (hasCode false -> the scrub skipped them).
+ * 8 summaries affected. This upgrades the detector (case-insensitive + SVG/sketchpad
+ * tokens + hyphenated stroke-*/fill-* + QUOTED-KEY object props + svg-attr:value +
+ * a clinical-guarded contiguity pass), PATCHES the shared window.__mlsSummarySanitize
+ * .strip/hasCode so the continuous scrub + ingest wraps use it, and RETROACTIVELY
+ * scrubs ALL patients on a light heartbeat until clean. Validated live pre-deploy:
+ * corpus 1118 patients -> 8 polluted -> 8 cleaned fully -> 0 still dirty -> 0 clinical
+ * loss (clinical-term counts identical before/after). Revert: __mlsSanitizeV2_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsSanitizeV2) return; } catch (e) { return; }
+  window.__mlsSanitizeV2 = { version: '2.0.0', cleaned: 0, passes: 0 };
+
+  function isClinical(t) {
+    return /assessment|diagnos|medication|prescription|complaint|\bproblem|radicul|cervical|lumbar|thoracic|reason|encounter|history|allerg|surg|follow|discussion|\bplan\b|mri|x-?ray|injection|patient|visit|\bpain\b|spine|nerve|\bdisc\b|stenosis|refer|physical|therapy|\bexam|impression|subjective|objective|diabet|hypertens|depress|anxiety|asthma|arthr|fracture|edema|weakness|numbness|tingling|bilateral|chronic|acute|mg\b|daily|prescri|reviewed|recommend|counsel/i.test(t);
+  }
+  function isCode(t) {
+    if (!t) return false;
+    if (/[{}]/.test(t)) return true;
+    if (/=>|=\s*function|\bfunction\s*\(|\bvar\s+\w+\s*=|\blet\s+\w+\s*=|\bconst\s+\w+\s*=|\breturn\s+[\[{"'`\w]|\.prototype\b|\.push\s*\(|\bnew\s+[A-Z]\w*\s*\(/.test(t)) return true;
+    if (/\bwindow\.\w|\bdocument\.\w|attachevent|addeventlistener|getelementbyid|createelement/i.test(t)) return true;
+    if (/svgjotter|jotterstrokes?|svgjottercontainerid|vmljson|\braphael\b|putsketchpad|sketchpaddata|issafari|\bjotter\b/i.test(t)) return true;
+    if (/<\/?(iframe|svg|rect|circle|ellipse|polyline|polygon|path|g|defs|clippath|line|image)\b|\biframe\b/i.test(t)) return true;
+    if (/^(stroke|fill)-\w+/i.test(t)) return true;
+    if (/^['"][\w$-]{1,40}['"]\s*:/.test(t)) return true;
+    if (/^(stroke(-\w+)?|fill(-\w+)?|opacity|transform|viewbox|cx|cy|rx|ry|points|paint-order|vector-effect|font(-\w+)?)\s*:\s*['"#\d\-]/i.test(t)) return true;
+    if (/^(stroke|fill|opacity|path|points|viewbox|transform|d|cx|cy|rx|ry|x1|y1|x2|y2|width|height|clip-path|xmlns)\s+(#[0-9a-f]{3,8}\b|none\b|url\(|matrix|translate|rotate|scale|-?\d|[mlczhvsqta][\d,.\-\s])/i.test(t)) return true;
+    if (/["'(]?\s*[MmLlCcSsQqTtAaZzHhVv]\s*-?\d[\d.,\-\s]{15,}/.test(t)) return true;
+    if (/(-?\d+(\.\d+)?[,\s]+){8,}/.test(t)) return true;
+    return false;
+  }
+  function svgishKV(t) {
+    if (!t || t.length >= 70) return false;
+    var w = t.split(/\s+/); if (w.length > 4) return false;
+    if (/[.:;]/.test(t)) return false;
+    if (isClinical(t)) return false;
+    var key = w[0] || '';
+    return /^[A-Z][A-Z0-9_]{3,}$/.test(key) ||
+      /^(stroke|fill|path|points|type|opacity|section|iframe|svg|rect|circle|polyline|polygon|d|cx|cy|rx|ry|x|y|width|height|transform|viewbox|xmlns|group|layer|shape|color)$/i.test(key);
+  }
+  function hasCode(s) {
+    s = String(s || '');
+    return /svgjotter|jotterstrokes?|svgjottercontainerid|vmljson|\braphael\b|putsketchpad|sketchpaddata|issafari|\bjotter\b|<\/?(iframe|svg|rect|circle|polyline|polygon|path|clippath)\b|\biframe\b|=\s*function|\bfunction\s*\(|window\.\w+\s*=|document\.\w+|\.prototype\b|[{}]|stroke-(opacity|width|linecap|linejoin|dasharray)|fill-opacity/i.test(s);
+  }
+  function strip(text) {
+    var s = String(text == null ? '' : text);
+    if (!s) return s;
+    if (!hasCode(s)) return s;
+    s = s.replace(/<script[\s\S]*?<\/script>/gi, '\n').replace(/<style[\s\S]*?<\/style>/gi, '\n').replace(/<!--[\s\S]*?-->/g, '\n');
+    var lines = s.split(/\r?\n/);
+    var mark = lines.map(function (ln) { return isCode(ln.trim()); });
+    var changed = true, passes = 0;
+    while (changed && passes < 6) {
+      changed = false; passes++;
+      for (var i = 0; i < lines.length; i++) {
+        if (mark[i]) continue;
+        var t = lines[i].trim(); if (!t) continue;
+        if (svgishKV(t) && ((i > 0 && mark[i - 1]) || (i < lines.length - 1 && mark[i + 1]))) { mark[i] = true; changed = true; }
+      }
+    }
+    var kept = [];
+    for (var j = 0; j < lines.length; j++) { if (mark[j]) continue; kept.push(lines[j]); }
+    return kept.join('\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function patch() {
+    try {
+      var S = window.__mlsSummarySanitize;
+      if (S && S.strip !== strip) { S.strip = strip; S.hasCode = hasCode; S.isCode = isCode; S.v2 = true; }
+    } catch (e) {}
+  }
+  function scrubAll() {
+    try {
+      var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+      if (!ps.length) return;
+      var fixed = 0;
+      for (var i = 0; i < ps.length; i++) {
+        var p = ps[i]; var s = p && p.summary;
+        if (typeof s === 'string' && s.length > 80 && hasCode(s)) {
+          var c = strip(s);
+          if (c && c !== s) { p.summary = c; fixed++; try { if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } catch (e) {} }
+        }
+      }
+      if (fixed) { window.__mlsSanitizeV2.cleaned += fixed; try { console.log('[MLS sanitize v2] retroactively cleaned ' + fixed + ' summar' + (fixed === 1 ? 'y' : 'ies')); } catch (e) {} try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {} }
+    } catch (e) {}
+  }
+  function tick() { window.__mlsSanitizeV2.passes++; patch(); scrubAll(); }
+  var iv = null; try { iv = setInterval(tick, 2500); } catch (e) {} tick();
+
+  window.__mlsSanitizeV2.strip = strip; window.__mlsSanitizeV2.hasCode = hasCode; window.__mlsSanitizeV2.isCode = isCode; window.__mlsSanitizeV2._scrub = scrubAll;
+  window.__mlsSanitizeV2_revert = function () { try { if (iv) clearInterval(iv); } catch (e) {} try { delete window.__mlsSanitizeV2; } catch (e) {} };
+})();
+
 /* =============================================================================
  * __mlsMenuToggleFix v1.0.0   (easy-round2 · URGENT — menu double-click bug)
  * -----------------------------------------------------------------------------
@@ -23193,7 +23293,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b93';
+  var MLS_APP_BUILD='2026-07-08-b94';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
