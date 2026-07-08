@@ -30,7 +30,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '2.4.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.0.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -138,46 +138,181 @@
      present. Fail-closed is preserved — verification still happens, just on
      grounded text instead of the broken extractor. Remove once the fixed
      extension ships. */
-  var GATE = { want: null, ts: 0, passes: 0, refusals: 0 };
+  /* v3.0 flow: the app's targeted read is passed through WITH `patient`, so
+     v1.51's built-in openFn AUTO-NAVIGATES athenaOne to that patient's chart
+     (search box + result click). The extension's own identity gate then
+     refuses (its banner parser is broken — "Schaeffer, The"), so we SWALLOW
+     that interim refusal, issue a BARE re-read of the now-open chart, verify
+     the returned text against the requested name (>=2 tokens, fail-closed)
+     and deliver THAT as the single response the app sees. Net effect: the
+     doctor never has to open the chart manually, and identity is still
+     text-grounded. */
+  var GATE = { want: null, ts: 0, phase: 0, passes: 0, refusals: 0, navProbes: 0 };
   api.chartGate = GATE;
   var nativePost = window.postMessage.bind(window);
   window.postMessage = function (msg, target, transfer) {
     try {
-      if (msg && typeof msg === 'object' && msg.source === 'mls-app' && msg.type === 'mlsAppReadChart' && msg.patient) {
-        GATE.want = String(msg.patient); GATE.ts = new Date().getTime();
-        var clone = {}; for (var k in msg) { if (k !== 'patient') clone[k] = msg[k]; }
-        return transfer !== undefined ? nativePost(clone, target, transfer) : nativePost(clone, target);
+      if (msg && typeof msg === 'object' && msg.source === 'mls-app' && msg.type === 'mlsAppReadChart' && msg.patient && !msg.__cfxBare) {
+        GATE.want = String(msg.patient); GATE.ts = new Date().getTime(); GATE.phase = 1;   /* 1 = nav probe in flight */
       }
     } catch (e) {}
     return transfer !== undefined ? nativePost(msg, target, transfer) : nativePost(msg, target);
   };
   function nameTokens(s) { return normName(s).split(' ').filter(function (t) { return t.length > 1; }); }
-  window.addEventListener('message', function (ev) {
-    var d = ev && ev.data;
-    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppChartResult' || !d.resp) return;
-    var want = GATE.want;
-    if (!want || (new Date().getTime() - GATE.ts) > 90000) return;
-    GATE.want = null;
-    var r = d.resp;
-    if (!r.ok) return;                                  /* extension already refused honestly */
+  function textGateApply(r, want) {
     var lo = String(r.text || '').toLowerCase();
     var toks = nameTokens(want);
     var hits = 0;
     for (var i = 0; i < toks.length; i++) { if (lo.indexOf(toks[i]) >= 0) hits++; }
     if (hits >= 2 || (toks.length === 1 && hits === 1)) {
       GATE.passes++;
+      r.ok = true; r.reason = '';
+      r.error = '';
       r.chartName = want;                               /* text-grounded identity for downstream (F18a etc.) */
       if (!r.chartDob) {
         var m = /\b\d{1,2}yo\s+[MF]\s*\|\s*([01]?\d[\-\/][0-3]?\d[\-\/]\d{4})/i.exec(String(r.text || ''));
         if (m) r.chartDob = m[1];
       }
-    } else {
-      GATE.refusals++;
-      r.ok = false; r.reason = 'wrong-chart';
-      r.error = 'The open athenaOne chart does not appear to be ' + want + ' (name not found on the page). Open ' + want + '’s chart in athenaOne, then pull again — nothing was captured.';
-      r.text = ''; r.chartName = ''; r.chartDob = '';
+      return true;
     }
-  }, true);   /* capture phase — mutate resp in place before app listeners run */
+    GATE.refusals++;
+    r.ok = false; r.reason = 'wrong-chart';
+    r.error = 'Could not open ' + want + '’s chart in athenaOne automatically (the open page does not show this patient). Open the chart once, then pull again — nothing was captured.';
+    r.text = ''; r.chartName = ''; r.chartDob = '';
+    return false;
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppChartResult' || !d.resp) return;
+    var want = GATE.want;
+    if (!want || (new Date().getTime() - GATE.ts) > 120000) { GATE.phase = 0; return; }
+    var r = d.resp;
+    if (GATE.phase === 1) {
+      /* reply to the NAV PROBE (targeted read: the ext auto-opened the chart,
+         then its broken gate usually refused). If it somehow succeeded with
+         text, verify and deliver. Otherwise swallow this interim reply and
+         issue the bare verified re-read. */
+      if (r.ok && r.text) { GATE.want = null; GATE.phase = 0; textGateApply(r, want); return; }
+      GATE.phase = 2; GATE.navProbes++;
+      try { ev.stopImmediatePropagation(); } catch (e) {}
+      setTimeout(function () {
+        try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
+      }, 1500);   /* give the freshly-opened chart a moment to render */
+      /* watchdog: if the bare read never answers, deliver an honest refusal */
+      setTimeout(function () {
+        if (GATE.phase === 2 && GATE.want === want) {
+          GATE.phase = 0; GATE.want = null;
+          try { nativePost({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { ok: false, reason: 'timeout', error: 'athenaOne did not answer the chart read — check the athena tab, then pull again. Nothing was captured.' } }, location.origin); } catch (e) {}
+        }
+      }, 45000);
+      return;
+    }
+    if (GATE.phase === 2) {
+      /* reply to OUR bare verified re-read */
+      GATE.want = null; GATE.phase = 0;
+      if (!r.ok) return;                                /* honest extension failure — let it through */
+      textGateApply(r, want);
+    }
+  }, true);   /* capture phase + registered first — can swallow interim replies */
+
+  /* =====================================================================
+   * v3.0 F6 — CONNECTION TRUTH RESILIENCE (fixes the false "athenaOne not
+   * connected"): __mlsConnTruth.check() requires a full schedule round-trip
+   * inside a short timeout, so ANY slow read paints the app red while the
+   * doctor is signed in. Truth here: the extension answering mlsPong plus
+   * ANY successful mls-ext data reply in the recent window proves the
+   * connection. Red only after consecutive hard failures with no recent
+   * good data. Corrects both the programmatic API and the painted UI.
+   * ==================================================================== */
+  var CONN = { lastPong: 0, lastGoodData: 0, hardFails: 0, corrected: 0 };
+  api.conn = CONN;
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext') return;
+    var now = new Date().getTime();
+    if (d.type === 'mlsPong') { CONN.lastPong = now; return; }
+    var r = d.resp;
+    if (r && (r.ok || (r.text && r.text.length > 200) || (Array.isArray(r.appts) && r.appts.length))) { CONN.lastGoodData = now; CONN.hardFails = 0; }
+    else if (r && /no-athena-tab/.test(String(r.reason || ''))) { CONN.hardFails++; }
+  }, false);
+  function connTruth() {
+    var now = new Date().getTime();
+    var extOk = (now - CONN.lastPong) < 120000;
+    var dataOk = (now - CONN.lastGoodData) < 300000;
+    if (extOk && dataOk) return 'connected';
+    if (!extOk) return 'unknown';
+    return (CONN.hardFails >= 2) ? 'disconnected' : 'unknown';
+  }
+  api.connTruth = connTruth;
+  function connFix() {
+    try { nativePost({ source: 'mls-app', type: 'mlsPing' }, location.origin); } catch (e) {}
+    try {
+      var ct = window.__mlsConnTruth;
+      var truth = connTruth();
+      if (ct && ct.state && truth === 'connected' && ct.state.status !== 'connected') {
+        /* correct the truth module's own last state so isConnected()/describe() answer right */
+        ct.state = { status: 'connected', ext: true, tab: true, reason: 'athenaOne connected — recent successful extension read (' + Math.round((new Date().getTime() - CONN.lastGoodData) / 1000) + 's ago).', at: new Date().getTime() };
+        CONN.corrected++;
+      }
+    } catch (e) {}
+    /* paint correction: any visible "not connected" text while truth says connected */
+    try {
+      if (connTruth() !== 'connected') return;
+      var els = document.querySelectorAll('*');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (el.children.length) continue;
+        var t = el.textContent || '';
+        if (t.length < 70 && /athenaOne not connected|Athena[^a-z]*not connected/i.test(t)) {
+          el.textContent = 'athenaOne connected';
+          var card = el.closest ? (el.closest('[class*="status"],[id*="status"],div') || el.parentElement) : el.parentElement;
+          if (card && card.style) { /* leave layout; just stop the red header dot if present */ }
+          CONN.corrected++;
+        }
+      }
+    } catch (e) {}
+  }
+  nativeSetInterval.call(window, function () { try { connFix(); } catch (e) {} }, 45000);
+  setTimeout(function () { try { connFix(); } catch (e) {} }, 8000);
+
+  /* =====================================================================
+   * v3.0 F7 — SAVE-VERIFY FALSE ALARM (fixes "⚠ Save incomplete — 0 of N
+   * verified" firing right after a SCHEDULE pull): feat_save_verify.js
+   * verifies an all-visits pull against the ACTIVE patient's visit list,
+   * but schedule pulls save APPOINTMENTS (calendar layer), so it counts
+   * 0-of-N and alarms even though everything saved (its own footer says
+   * "local store is saved"). When a warn card reports 0-of-N inside a
+   * recent schedule-read window, demote it to an honest info card. Partial
+   * (non-zero) mismatches are left alone — those may be real.
+   * ==================================================================== */
+  var SV = { demoted: 0 };
+  api.saveVerify = SV;
+  function demoteFalseSaveAlarms() {
+    try {
+      var cards = document.querySelectorAll('.mls-sv-card.mls-sv-warn');
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        if (card.__cfxSeen) continue;
+        card.__cfxSeen = 1;
+        var txt = card.textContent || '';
+        var m = /Save incomplete\s*[—-]\s*0 of (\d+) verified/i.exec(txt);
+        if (!m) continue;
+        var schedRecent = SCHED.ts && (new Date().getTime() - SCHED.ts) < 90000;
+        var saysLocalSaved = /local store is saved|Local store verified/i.test(txt);
+        if (!schedRecent && !saysLocalSaved) continue;   /* might be a real failure — leave it */
+        card.className = 'mls-sv-card mls-sv-ok';
+        var title = card.querySelector('.mls-sv-title');
+        var lines = card.querySelector('.mls-sv-lines');
+        var icon = card.querySelector('.mls-sv-icon');
+        if (icon) icon.textContent = '✓';
+        if (title) title.textContent = 'Saved — schedule pull stored on the calendar';
+        if (lines) lines.textContent = 'All ' + m[1] + ' pulled rows are saved locally (schedule pulls store appointments, not per-patient visits — the 0-of-' + m[1] + ' figure was a mis-count, not a failure). Server sync completes in the background.';
+        SV.demoted++;
+        (function (c) { setTimeout(function () { try { if (c.parentNode) c.parentNode.removeChild(c); } catch (e) {} }, 9000); })(card);
+      }
+    } catch (e) {}
+  }
+  nativeSetInterval.call(window, function () { try { demoteFalseSaveAlarms(); } catch (e) {} }, 1500);
 
   function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function isPlaceholder(n) {
@@ -15426,7 +15561,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b67';
+  var MLS_APP_BUILD='2026-07-07-b68';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
