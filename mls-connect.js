@@ -1,4 +1,522 @@
 /* =========================================================================
+ * MLS Scribe — INDIVIDUAL VISITS SWEEP  (__mlsVisitSweep) v1.0.0  2026-07-08
+ *
+ * CONTEXT (read before touching this file — the situation is NOT "no bulk
+ * per-visit capture exists yet"; a background per-visit sweep for TODAY
+ * already shipped live in b80 and this module extends it, it does not
+ * replace or duplicate it):
+ *
+ *   __mlsImportChainFix v3.7.0 (b80 lines 511-627, guard __mlsImportChainFix)
+ *   already drives a sequential, identity-gated, dedup-safe per-visit capture
+ *   for TODAY's pulled patients: its api.pullAllHistories(prefix) loop
+ *   (b80:555-605) calls the basic chart read via calPullChartFor-equivalent
+ *   mlsAppReadChart, then — on success — ALSO selects that patient and calls
+ *   window.__mlsCopyVisits.run() (b80:581-601, comment: "v3.7: after the
+ *   history read, ALSO attempt the per-visit capture"). __mlsCopyVisits.run()
+ *   (scratchpad\live-assets\feat_visits.js:422-605) is the real engine: it
+ *   drives the extension's mlsAppReadAllVisits bridge (confirmed present in
+ *   the CURRENTLY LOADED extension v1.51, dispatch-work\extension-v151\src\
+ *   content.js:907-935 / background.js:2892, "reuse" — no extension update
+ *   needed), verifies name+DOB via verifyIdentity() (feat_visits.js:433-443,
+ *   strict nameHit+dobPresent+dobEqual gate, never saves on a mismatch), and
+ *   saves each visit via __mlsVisitModel.addVisit() (feat_visits.js:107-131),
+ *   which dedupes on the model's own _visitKey = date|type|firstCPT
+ *   (feat_visits.js:65-71) so re-pulls never duplicate a visit. This whole
+ *   chain is already wired to the ONE live "📚 Pull all histories (today)"
+ *   button (#cfxBulkHistBtn, b80:606-619).
+ *
+ *   Downstream AI/Study Groups wiring is ALSO already live and needs no
+ *   further work (verified, not re-guessed): F13 (b80:8571-8645) wraps
+ *   buildPatientContext() to append an "INDIVIDUAL PRIOR VISITS" block from
+ *   p.visits[] (b80:8580-8606) and wraps studioDataSnapshot() to fold
+ *   p.visits[] into visitDates/visitCount/pulledVisits for Study Groups
+ *   (b80:8608-8644). F12 (b80:8485-8518) folds a bounded pulledVisits[]
+ *   into copilotSnapshot() for the assistant. None of this needed touching.
+ *
+ * WHAT WAS ACTUALLY MISSING (verified by reading, not assumed — this module
+ * closes exactly these two gaps and nothing else):
+ *
+ *   GAP A — MONTH leg. The user asked for "day AND month". The only DAY
+ *   trigger for the visit-capable sweep is #cfxBulkHistBtn. The MONTH
+ *   trigger, "📅 Pull whole month" / #mls-pull-month-btn (feat_pull_month_btn,
+ *   b80:21114-21175), calls pullMonth() (b80:21133-21158), which ONLY sends
+ *   the extension's mlsAppPullMonth bridge and merges the returned rows into
+ *   window._calAppts (b80:21144-21150, object literal has no visit/chart
+ *   step at all) — it never calls calPullChartFor, mlsAppReadChart, or
+ *   __mlsCopyVisits.run() for any of the month's patients. Confirmed via
+ *   `grep -n "pullChartsForToday(" MILESTONES_2026-07-07\mls-connect.
+ *   b80.DEPLOYED.js` returning ONLY the function's own definition (b80:16521)
+ *   and zero call sites anywhere else in the bundle — that b49 driver is
+ *   dead/orphaned code, never invoked by any button; it is NOT what powers
+ *   #cfxBulkHistBtn (that is __mlsImportChainFix.pullAllHistories, a
+ *   different, newer implementation). So there was no month-scale trigger
+ *   for chart-or-visit capture of any kind before this module.
+ *
+ *   GAP B — silent failure swallowing. __mlsImportChainFix's own loop
+ *   (b80:593-601) calls __mlsCopyVisits.run() and on REJECTION just calls
+ *   proceed() with no counting: `Promise.resolve(window.__mlsCopyVisits.run(
+ *   function(){})).then(function(r){...}, proceed);` — the reject handler
+ *   is literally `proceed`, the same "move to next patient" function used on
+ *   success. A safety-stop (wrong chart / DOB mismatch / no-ext) during the
+ *   per-visit step today produces ZERO trace: not in BULK.refused (that only
+ *   counts the earlier basic-chart-read step), not in BULK.visits, nowhere.
+ *   This violates the "no silent failures" requirement — a patient the
+ *   extension can't resolve during the VISIT step currently just disappears.
+ *
+ *   GAP C (found while fixing A) — day_local compatibility. __mlsImportChain
+ *   Fix.apptNamesFor(prefix) (b80:526-539) filters _calAppts strictly on
+ *   `a.day_local` (b80:531-532: `if (String(a.day_local).indexOf(prefix)
+ *   !== 0) return;`) with NO fallback to `a.appt_date` (contrast with b49's
+ *   own todaysRows(), b80:16318-16325, which uses `a.day_local || a.appt_date`
+ *   everywhere else in this codebase). But pullMonth()'s row-merge
+ *   (b80:21148) pushes bare objects shaped
+ *   `{provider,appt_date,time,name,start_at,end_at:''}` — NO day_local key
+ *   at all. Net effect: even after wiring a month trigger, rows that exist
+ *   ONLY because of a month pull (not already present via the normal
+ *   calendar/day sync, which does carry day_local) would be silently
+ *   invisible to pullAllHistories's own patient-name scan. This module
+ *   normalizes day_local = appt_date on any _calAppts row missing it,
+ *   immediately after a month pull lands, before triggering the sweep.
+ *
+ * WHAT THIS MODULE DOES (both additive wraps/hooks; nothing above is edited)
+ *   1) Wraps window.__mlsCopyVisits.run (non-destructively, once) to keep an
+ *      honest, queryable tally: window.__mlsVisitSweep.stats — calls, ok,
+ *      newVisits (delta of p.visits.length before/after — genuinely NEW,
+ *      distinct from already-present/deduped), identityBlocked (rejections
+ *      whose message starts with "Safety stop"), otherFailed (no-ext/
+ *      timeout/etc.), plus a byPatient[] log capped at 200 entries. This
+ *      applies to BOTH the existing day sweep and the new month sweep,
+ *      since both ultimately call the same __mlsCopyVisits.run().
+ *   2) Adds a MONTH trigger: listens for the SAME broadcast
+ *      'mlsAppPullMonthResult' message pullMonth() already listens for
+ *      (b80:21137-21153) — postMessage is broadcast to every listener, so
+ *      this is additive and does not touch pullMonth's own handler. On a
+ *      successful result, normalizes day_local (GAP C), derives the YYYY-MM
+ *      prefix from the returned appointments, and calls the ALREADY-LIVE
+ *      window.__mlsImportChainFix.pullAllHistories(ym) — the exact same
+ *      engine #cfxBulkHistBtn uses, with its own built-in one-at-a-time
+ *      pacing (b80:571-604, setTimeout 2500ms and a 120s per-patient visits
+ *      watchdog) and its own re-entrancy guard (BULK.running). This module
+ *      adds NO new write path and NO new identity/dedup logic of its own.
+ *   3) Reports an honest end-of-run tally via window.toast() (the same
+ *      house toast used throughout b80) once a sweep (day OR month)
+ *      finishes: "swept N patients — X visits added, Y already on file,
+ *      Z identity-guard blocks, W other failures". Detected by polling
+ *      __mlsImportChainFix.bulk.running only WHILE a sweep is active (no
+ *      idle-time polling).
+ *   4) No new floating button, no new persistent card — deliberately, to
+ *      avoid adding a fourth element to the bottom-right cluster (see
+ *      dispatch-work\individual-visits-sweep\feat_mls_bottomright_cluster_
+ *      fix.module.js and FINAL_REPORT.md Job 3 for the existing collision
+ *      there). The month sweep piggybacks on the existing "📅 Pull whole
+ *      month" button; the day sweep piggybacks on the existing
+ *      #cfxBulkHistBtn. Progress surfaces only via toast() (ephemeral,
+ *      consistent with both engines' own existing progress style) plus the
+ *      always-queryable window.__mlsVisitSweep.stats object.
+ *
+ * SAFETY (unchanged guarantees — nothing new is introduced here)
+ *   - Athena stays READ-ONLY: this module posts no new bridge messages of
+ *     its own; it only listens to broadcasts and calls two ALREADY-LIVE
+ *     functions (__mlsCopyVisits.run, __mlsImportChainFix.pullAllHistories).
+ *   - Identity gate: unchanged, still verifyIdentity() inside
+ *     __mlsCopyVisits.run (feat_visits.js:433-443) — a wrong/mismatched
+ *     chart still saves NOTHING; this module only OBSERVES the outcome for
+ *     tallying, it never weakens or bypasses the gate.
+ *   - Dedup: unchanged, still __mlsVisitModel._visitKey inside addVisit
+ *     (feat_visits.js:65-71, 107-131) — a re-pull (today then month, or a
+ *     re-run) still cannot duplicate a visit.
+ *   - Patient-level dedup (name+DOB): unchanged, handled upstream by
+ *     __mlsImportChainFix's own name/DOB reconciliation and by b49's
+ *     reconcileToday()/F18 merges elsewhere in the codebase — this module
+ *     does not create or touch patient records, only visit records.
+ *
+ * Requires: window.__mlsCopyVisits and window.__mlsImportChainFix (both
+ * live in b80; this module waits for them and no-ops harmlessly forever if
+ * they are ever removed). No edits to any existing file.
+ * Revert: window.__mlsVisitSweep_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsVisitSweep) return;
+
+  var isFn = function (f) { return typeof f === 'function'; };
+  var S = function (x) { return (x == null ? '' : String(x)); };
+
+  function toast(msg, kind) {
+    try { if (isFn(window.toast)) { window.toast(msg, kind || ''); return; } } catch (e) {}
+    try {
+      var d = document.createElement('div');
+      d.textContent = msg;
+      d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:2147483647;font-size:13px;max-width:90vw;text-align:center';
+      document.body.appendChild(d);
+      setTimeout(function () { try { d.remove(); } catch (e2) {} }, 4200);
+    } catch (e3) {}
+  }
+
+  function activeP() { try { return isFn(window.activePatient) ? window.activePatient() : null; } catch (e) { return null; } }
+
+  /* -----------------------------------------------------------------------
+   * Part 1 — honest tally wrap around __mlsCopyVisits.run
+   * ------------------------------------------------------------------- */
+  var stats = {
+    calls: 0, ok: 0, newVisits: 0, alreadyPresent: 0,
+    identityBlocked: 0, otherFailed: 0, byPatient: []
+  };
+  function logOutcome(entry) {
+    stats.byPatient.push(entry);
+    if (stats.byPatient.length > 200) stats.byPatient.shift();
+  }
+  function wrapCopyVisits() {
+    var cv = window.__mlsCopyVisits;
+    if (!cv || !isFn(cv.run) || cv.run.__mlsSweepWrapped) return !!(cv && cv.run && cv.run.__mlsSweepWrapped);
+    var origRun = cv.run;
+    var wrapped = function (onStatus) {
+      var p = activeP();
+      var before = (p && Array.isArray(p.visits)) ? p.visits.length : 0;
+      var pname = (p && p.name) || '(no active patient)';
+      stats.calls++;
+      var t0 = Date.now();
+      return origRun.call(cv, onStatus).then(function (result) {
+        var p2 = activeP();
+        var after = (p2 && Array.isArray(p2.visits)) ? p2.visits.length : before;
+        var added = Math.max(0, after - before);
+        stats.ok++;
+        if (added > 0) { stats.newVisits += added; } else { stats.alreadyPresent++; }
+        logOutcome({ name: pname, ok: true, newVisits: added, ms: Date.now() - t0, at: new Date().toISOString() });
+        return result;
+      }, function (err) {
+        var msg = (err && err.message) || String(err || 'unknown error');
+        if (/^Safety stop/i.test(msg)) stats.identityBlocked++; else stats.otherFailed++;
+        logOutcome({ name: pname, ok: false, why: msg, ms: Date.now() - t0, at: new Date().toISOString() });
+        throw err;
+      });
+    };
+    wrapped.__mlsSweepWrapped = true;
+    wrapped.__mlsSweepOrig = origRun;
+    cv.run = wrapped;
+    return true;
+  }
+
+  /* -----------------------------------------------------------------------
+   * Part 2 — end-of-run honest summary toast (day OR month sweep)
+   * watches __mlsImportChainFix.bulk.running, ONLY while a sweep is active.
+   * ------------------------------------------------------------------- */
+  var watchTid = null;
+  var snapshotAtStart = null;
+  function fmtSummary(delta) {
+    var bits = [];
+    bits.push(delta.calls + ' patient' + (delta.calls === 1 ? '' : 's') + ' swept');
+    bits.push(delta.newVisits + ' new visit' + (delta.newVisits === 1 ? '' : 's'));
+    if (delta.alreadyPresent) bits.push(delta.alreadyPresent + ' already on file');
+    if (delta.identityBlocked) bits.push(delta.identityBlocked + ' identity-guard block' + (delta.identityBlocked === 1 ? '' : 's'));
+    if (delta.otherFailed) bits.push(delta.otherFailed + ' other failure' + (delta.otherFailed === 1 ? '' : 's'));
+    return '🗂 Individual-visit sweep done — ' + bits.join(', ') + '.';
+  }
+  function snap() {
+    return { calls: stats.calls, ok: stats.ok, newVisits: stats.newVisits, alreadyPresent: stats.alreadyPresent, identityBlocked: stats.identityBlocked, otherFailed: stats.otherFailed };
+  }
+  function watchForCompletion(label) {
+    var icf = window.__mlsImportChainFix;
+    if (!icf || !icf.bulk) return;
+    if (watchTid) return; /* already watching */
+    snapshotAtStart = snap();
+    watchTid = setInterval(function () {
+      try {
+        var running = !!(window.__mlsImportChainFix && window.__mlsImportChainFix.bulk && window.__mlsImportChainFix.bulk.running);
+        if (!running) {
+          clearInterval(watchTid); watchTid = null;
+          var now = snap();
+          var delta = {
+            calls: now.calls - snapshotAtStart.calls,
+            newVisits: now.newVisits - snapshotAtStart.newVisits,
+            alreadyPresent: now.alreadyPresent - snapshotAtStart.alreadyPresent,
+            identityBlocked: now.identityBlocked - snapshotAtStart.identityBlocked,
+            otherFailed: now.otherFailed - snapshotAtStart.otherFailed
+          };
+          if (delta.calls > 0) toast(fmtSummary(delta), 'ok');
+          else toast('🗂 ' + (label || 'Sweep') + ' finished — no charts were readable, nothing filed.', '');
+        }
+      } catch (e) {}
+    }, 1500);
+  }
+
+  /* -----------------------------------------------------------------------
+   * Part 3 — MONTH leg: listen for the month pull's own broadcast result,
+   * normalize day_local, then trigger the already-live pullAllHistories(ym)
+   * for that month. Purely additive: does not touch pullMonth()'s own
+   * listener/logic (b80:21133-21158), just reacts to the same message.
+   * ------------------------------------------------------------------- */
+  function normalizeDayLocal(prefix) {
+    var fixed = 0;
+    try {
+      var arr = window._calAppts;
+      if (!Array.isArray(arr)) return 0;
+      arr.forEach(function (a) {
+        if (!a) return;
+        if (!a.day_local && a.appt_date) { a.day_local = a.appt_date; fixed++; }
+      });
+    } catch (e) {}
+    return fixed;
+  }
+  function monthPrefixFromAppts(appts) {
+    for (var i = 0; i < (appts || []).length; i++) {
+      var d = appts[i] && appts[i].appt_date;
+      if (d && /^\d{4}-\d{2}/.test(d)) return String(d).slice(0, 7);
+    }
+    return '';
+  }
+  function startMonthSweep(ym) {
+    var icf = window.__mlsImportChainFix;
+    if (!icf || !isFn(icf.pullAllHistories)) { toast('⚠ Individual-visit month sweep unavailable (chart-pull engine not loaded).', ''); return; }
+    if (icf.bulk && icf.bulk.running) { toast('A history/visit sweep is already running (' + icf.bulk.done + '/' + icf.bulk.total + ') — the month sweep will start after it finishes.', '');
+      var tries = 0;
+      var waitTid = setInterval(function () {
+        tries++;
+        if (!icf.bulk.running) { clearInterval(waitTid); kickoff(); }
+        else if (tries > 400) { clearInterval(waitTid); toast('⚠ Month visit sweep skipped — the prior sweep never finished.', ''); }
+      }, 1500);
+      return;
+    }
+    kickoff();
+    function kickoff() {
+      toast('🗂 Also sweeping individual visits for ' + ym + ' in the background (read-only, one patient at a time)…', '');
+      watchForCompletion('Month visit sweep');
+      try { icf.pullAllHistories(ym); } catch (e) { toast('⚠ Month visit sweep failed to start: ' + ((e && e.message) || e), ''); }
+    }
+  }
+  function onMonthPullMessage(ev) {
+    try {
+      var d = ev && ev.data;
+      if (!d || d.type !== 'mlsAppPullMonthResult') return;
+      var resp = d.resp || {};
+      if (!resp.ok) return; /* the schedule pull itself failed — nothing to sweep */
+      var appts = resp.appts || [];
+      if (!appts.length) return;
+      normalizeDayLocal();
+      var ym = monthPrefixFromAppts(appts);
+      if (!ym) return;
+      /* small delay so window._calAppts (mutated by pullMonth's own handler,
+         registered before this one) has definitely settled first */
+      setTimeout(function () { startMonthSweep(ym); }, 800);
+    } catch (e) {}
+  }
+
+  /* -----------------------------------------------------------------------
+   * Part 4 — also watch the DAY sweep (#cfxBulkHistBtn) for completion so
+   * the same honest end-of-run toast applies there too. One-shot click
+   * listener in the capture phase; does not change the button's own
+   * behavior, only observes it.
+   * ------------------------------------------------------------------- */
+  function onDocClick(ev) {
+    try {
+      var t = ev.target;
+      var btn = t && t.closest ? t.closest('#cfxBulkHistBtn') : null;
+      if (!btn) return;
+      setTimeout(function () { watchForCompletion('Today visit sweep'); }, 300);
+    } catch (e) {}
+  }
+
+  /* -----------------------------------------------------------------------
+   * Boot / defer until both dependencies exist (house pattern)
+   * ------------------------------------------------------------------- */
+  var cleanupFns = [];
+  function boot() {
+    var okWrap = wrapCopyVisits();
+    var haveChain = !!window.__mlsImportChainFix;
+    return okWrap && haveChain;
+  }
+  if (!boot()) {
+    var n = 0;
+    var bootIv = setInterval(function () { if (boot() || ++n > 120) clearInterval(bootIv); }, 500);
+    cleanupFns.push(function () { clearInterval(bootIv); });
+  }
+  window.addEventListener('message', onMonthPullMessage, false);
+  document.addEventListener('click', onDocClick, true);
+  cleanupFns.push(function () { window.removeEventListener('message', onMonthPullMessage, false); });
+  cleanupFns.push(function () { document.removeEventListener('click', onDocClick, true); });
+
+  window.__mlsVisitSweep = {
+    version: '1.0.0',
+    stats: stats,
+    sweepMonth: startMonthSweep,          /* manual/console entry point, e.g. __mlsVisitSweep.sweepMonth('2026-07') */
+    _normalizeDayLocal: normalizeDayLocal,
+    _monthPrefixFromAppts: monthPrefixFromAppts
+  };
+  window.__mlsVisitSweep_revert = function () {
+    try {
+      var cv = window.__mlsCopyVisits;
+      if (cv && cv.run && cv.run.__mlsSweepWrapped && cv.run.__mlsSweepOrig) cv.run = cv.run.__mlsSweepOrig;
+    } catch (e) {}
+    if (watchTid) { try { clearInterval(watchTid); } catch (e) {} watchTid = null; }
+    cleanupFns.forEach(function (f) { try { f(); } catch (e) {} });
+    delete window.__mlsVisitSweep;
+    delete window.__mlsVisitSweep_revert;
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe — BOTTOM-RIGHT CLUSTER FIX  (__mlsBRClusterFix) v1.0.0 2026-07-08
+ *
+ * THE COLLISION (verified against the live b80 bundle, cited line numbers
+ * below — not guessed):
+ *
+ *   Four separate modules, authored at different times, each stake out the
+ *   bottom-right corner without knowing about each other:
+ *
+ *   1) __mlsFabLayout (b80:22252-22264, 2026-07-02) — one-shot CSS:
+ *        #mlsP1AgFab   right:18px bottom:18px
+ *        #mlsAddPtLauncher right:18px bottom:72px   <- the floating "+"
+ *        #mlsVoiceFab  right:18px bottom:126px
+ *
+ *   2) __mlsUiCleanupB26 (b80:19717-19769, b26) — CONTINUOUSLY re-asserts
+ *      (setInterval 800ms AND a MutationObserver, b80:19749-19767) inline
+ *      styles with '!important' on the SAME four ids, at a slightly
+ *      different offset:
+ *        #mlsP1AgFab       right:16px bottom:16px
+ *        #mlsAddPtLauncher right:16px bottom:70px   <- wins for real (below)
+ *        #mlsVoiceFab      right:16px bottom:124px
+ *        #mlsScDock        right:16px bottom:182px
+ *      Because this is applied via el.style.setProperty(prop,val,'important')
+ *      on every tick, it beats any external stylesheet rule regardless of
+ *      that rule's own !important (inline authority wins ties at equal
+ *      importance). So #mlsAddPtLauncher's REAL live position is
+ *      right:16px / bottom:70px, not b80:22260's right:18/bottom:72 (that
+ *      rule is now dead code, harmlessly overridden every 800ms).
+ *
+ *   3) __mlsOneChatB35 (b80:18805-18825) — one-shot CSS that HIDES two of
+ *      the four ids entirely as part of the "ONE assistant" consolidation:
+ *        #mlsP1AgFab {display:none!important}   -- duplicate MLS Agent FAB, retired
+ *        #mlsVoiceFab{display:none!important}   -- floating mic retired, folded into the one chat
+ *      So in practice only #mlsAddPtLauncher (the "+") and, when opened,
+ *      #mlsScDock are ever visible from this whole family. The app's real
+ *      single assistant is #mlsAsstFab, confirmed BOTTOM-LEFT (b80:18380
+ *      "#mlsAsstFab{bottom:64px!important}" plus the guide-tour copy at
+ *      b80:18655: "The MLS Assistant (bottom-left) is your single helper").
+ *
+ *   4) Two NEWER, uncoordinated additions land directly on top of
+ *      #mlsAddPtLauncher's real right:16/bottom:70 footprint, neither aware
+ *      of it nor of each other:
+ *        #cfxBulkHistBtn  ("📚 Pull all histories (today)") — one-shot
+ *          inline style, b80:611-616: right:14px bottom:64px
+ *          z-index:2147483000 (the HIGHEST z-index found anywhere in this
+ *          collision — it renders on top of everything below it).
+ *        #mlsPrfDockChip  ("📊 Athena status") — one-shot CSS, b80:8366-8391
+ *          (part of pullrec's F10 status-dock relocation): right:14px
+ *          bottom:58px z-index:2147480900. Its own comment says it was
+ *          designed to "sit directly under/with the MLS Assistant bubble
+ *          (extension badge, bottom-right)" — an anchor assumption that no
+ *          longer holds, because the extension's own #mls-assist-badge /
+ *          #mls-assist-panel are suppressed BY DEFAULT on the app page
+ *          (b80:3993-3994: "html:not(.uc1-show-ext) #mls-assist-badge
+ *          {display:none!important}", confirmed live per MORNING_STATUS'
+ *          "ui-cleanup-v1 ... confirmed live" audit — default state has no
+ *          .uc1-show-ext class, so the extension pill should not be
+ *          rendering there today at all; window.__mlsUiCleanupV1's own
+ *          debugShowExt()/debugHideExt() toggle it, b80:4089/4092).
+ *
+ *   THE MATH — assuming ~34-40px tall pill/FAB elements (consistent with
+ *   the padding/font values in each element's own inline style), the actual
+ *   occupied vertical bands (measured from the viewport bottom, right
+ *   column) are:
+ *     #mlsPrfDockChip   [58 , ~92]
+ *     #cfxBulkHistBtn   [64 , ~100]
+ *     #mlsAddPtLauncher [70 , ~120]
+ *   All three overlap in the y=[70,92] range, at right offsets 14px/14px/
+ *   16px — 2px apart, i.e. effectively the same column. That is the exact
+ *   "clipping/cutting each other off" the screenshot shows. (#mlsScDock is
+ *   usually display:none — F10's applyDock(), feat_visits-adjacent code —
+ *   and only enters the picture when a user explicitly opens the status
+ *   dock; it is not part of the steady-state collision and this fix leaves
+ *   its ownership exactly where it already is, contested between b26 and
+ *   __mlsOneChatB35's dockLeft(), b80:18827-18834 — out of scope here.)
+ *
+ *   NOTE ON THE "MLS ASSISTANT BUBBLE" IN THE SCREENSHOT: per the source
+ *   evidence above, the TRUE extension badge (#mls-assist-badge) should be
+ *   hidden by default today. If the screenshot genuinely still shows a
+ *   distinct pill that is the extension's own UI (not #mlsPrfDockChip,
+ *   which could visually read as an "assistant-ish" status bubble at a
+ *   glance), that would mean either (a) ui-cleanup-v1's hide isn't holding
+ *   for some reason (worth a human check: run
+ *   `!!document.getElementById('mls-assist-badge')` and check its computed
+ *   display in DevTools), or (b) the extension injects via a mechanism this
+ *   page-level CSS selector can't reach (e.g. a shadow root under a
+ *   differently-named host element). Per the job instructions this module
+ *   does NOT touch the extension's own DOM at all — it only coordinates
+ *   layout among elements this codebase owns, and gives them a berth well
+ *   above the low corner so they clear the extension's badge regardless of
+ *   which of the above is true. Flagged in FINAL_REPORT.md for a human to
+ *   glance at tomorrow; not something a layout-only fix can resolve blind.
+ *
+ * THE FIX (CSS-only, one-shot injection — no polling, because neither
+ * #cfxBulkHistBtn nor #mlsPrfDockChip is re-asserted by any interval/
+ * MutationObserver anywhere in the bundle; both are created exactly once
+ * — b80:607-619's mountBulkBtn() and b80:8366-8391/8392-8399's
+ * ensureDockChip(), each internally guarded by
+ * `if (document.getElementById(...)) return;`. A plain stylesheet rule
+ * with !important, added at any time, holds indefinitely since nothing
+ * else ever re-touches these two ids' inline styles again after creation.)
+ *
+ *   - #mlsAddPtLauncher (the "+") is left COMPLETELY untouched: it is
+ *     continuously fought over and won by __mlsUiCleanupB26's 800ms loop;
+ *     trying to reposition it here would either be instantly overwritten
+ *     or would mean fighting a live re-assertion loop, which
+ *     ARCHITECTURE_MAP §7.6 already documents as a losing, churny pattern.
+ *   - #cfxBulkHistBtn moves to right:16px / bottom:128px — clears
+ *     #mlsAddPtLauncher's real [70,120] band with an ~8px gap, same right
+ *     edge as the AddPtLauncher/b26 column for a clean single visual line.
+ *   - #mlsPrfDockChip moves to right:16px / bottom:174px — clears
+ *     #cfxBulkHistBtn's new [128,164] band with a ~10px gap.
+ *   - Both keep their own z-index (already far above everything else in
+ *     the app, so still un-obscured); only position changes.
+ *   - A narrow-viewport (<=480px) media query tightens the column
+ *     (right:10px, bottom:118px/158px) — the offsets are pixel, not
+ *     percentage, based, so they hold correctly at any width down to
+ *     ~320px; the media query only trims the gaps slightly so the stack
+ *     reads tighter on a ~375px phone, per ARCHITECTURE_MAP §8.3's
+ *     "mobile ~375px" testing bar.
+ *   - #mlsScDock, #mlsP1AgFab, #mlsVoiceFab, and the extension's own
+ *     #mls-assist-badge/#mls-assist-panel are NOT touched by this module,
+ *     exactly per the job's constraints (no extension DOM, no functional
+ *     changes, position/z-index only).
+ *
+ * Additive, reversible, CSS-only. No click handlers changed. No Athena
+ * interaction. Revert: window.__mlsBRClusterFix_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsBRClusterFix) return;
+
+  var CSS_ID = 'mlsBRClusterFixCss';
+  function inject() {
+    if (document.getElementById(CSS_ID)) return;
+    var st = document.createElement('style');
+    st.id = CSS_ID;
+    st.textContent = [
+      /* desktop / default */
+      '#cfxBulkHistBtn{right:16px!important;bottom:128px!important;left:auto!important;top:auto!important;}',
+      '#mlsPrfDockChip{right:16px!important;bottom:174px!important;left:auto!important;top:auto!important;}',
+      /* narrow viewports: tighten the column, still no overlap with #mlsAddPtLauncher's right:16/bottom:70 footprint */
+      '@media (max-width:480px){',
+      '  #cfxBulkHistBtn{right:10px!important;bottom:118px!important;}',
+      '  #mlsPrfDockChip{right:10px!important;bottom:158px!important;}',
+      '}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(st);
+  }
+  inject();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject);
+
+  window.__mlsBRClusterFix = { version: '1.0.0' };
+  window.__mlsBRClusterFix_revert = function () {
+    try { var s = document.getElementById(CSS_ID); if (s) s.remove(); } catch (e) {}
+    delete window.__mlsBRClusterFix;
+    delete window.__mlsBRClusterFix_revert;
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe — IMPORT CHAIN FIX + IMPORT HYGIENE  (__mlsImportChainFix) v2.2.0  2026-07-07
  *
  * PART 1 — chain fix (v2.1, unchanged): window._importPulledSchedule is
@@ -20129,7 +20647,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b80';
+  var MLS_APP_BUILD='2026-07-08-b81';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
