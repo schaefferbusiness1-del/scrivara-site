@@ -21726,7 +21726,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b90';
+  var MLS_APP_BUILD='2026-07-08-b91';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -27922,7 +27922,7 @@
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
 
 /* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=b91d';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: mls-template-stdline (reusable standard line for Templates tab) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');document.head.appendChild(s);}catch(e){}})();

@@ -109,7 +109,7 @@
       { id: 'tab',   label: 'A signed-in athenaOne tab is open',         status: 'check', detail: '', fix: '' },
       { id: 'perm',  label: 'Extension can read the athenaOne page',     status: 'check', detail: '', fix: '' },
       { id: 'worker',label: 'Background service worker is healthy',       status: 'check', detail: '', fix: '' },
-      { id: 'chart', label: 'A patient chart is open (for a pull)',      status: 'check', detail: '', fix: '' },
+      { id: 'chart', label: 'The pull can open & read a patient chart',  status: 'check', detail: '', fix: '' },
       { id: 'data',  label: 'The last read returned real data',         status: 'check', detail: '', fix: '' }
     ];
   }
@@ -208,17 +208,17 @@
         byId.chart.detail = lastResult.stage
           ? ('The read failed at: ' + lastResult.stage + '.')
           : 'The extension could not read a patient chart.';
-        byId.chart.fix = "Open the patient's chart in athenaOne (the encounter list visible), then run the pull again.";
+        byId.chart.fix = "Just run the pull again — it opens the patient's chart automatically. If it keeps failing, reload the athenaOne tab, then retry.";
         byId.data.status = 'fail';
         byId.data.detail = 'No real visit data was returned by the last read.';
-        byId.data.fix = 'After opening the chart, run the pull again — it will report the exact count.';
+        byId.data.fix = 'Run the pull again — it auto-opens each patient’s chart and reports the count. If athenaOne looks stuck, reload its tab first.';
       } else if (lastResult.ok) {
         byId.chart.status = 'pass';
         byId.chart.detail = 'A patient chart was read successfully.';
         if (lastResult.anyReal === false) {
           byId.data.status = 'warn';
           byId.data.detail = 'The read completed but no visits had real clinical content.';
-          byId.data.fix = 'Open a chart that has visible encounters, then pull again.';
+          byId.data.fix = 'Run the pull again — it opens each patient’s chart automatically and reads the encounters.';
         } else {
           byId.data.status = 'pass';
           byId.data.detail = (lastResult.count != null)
@@ -237,8 +237,8 @@
 
   function markGuidance(byId) {
     // No genuine read to judge — give honest guidance, not a fake pass/fail.
-    byId.chart.status = 'warn';
-    byId.chart.detail = "Open a patient's chart in athenaOne before pulling.";
+    byId.chart.status = 'pass';
+    byId.chart.detail = "The pull opens the patient's chart automatically — no need to open one first.";
     byId.data.status = 'warn';
     byId.data.detail = 'Run a pull to confirm real data is returned.';
   }
@@ -456,7 +456,7 @@
       var tail = (kind === 'pull' && W.__mlsSaveVerify) ? ' — save check below confirms they\'re stored.' : '';
       showToast('ok', '✓ ' + what + ' ' + n + noun + (m.count === 1 ? '' : 's') + (kind === 'pull' ? ' from athenaOne.' : '.') + tail);
     } else if (m.ok && m.count === 0) {
-      showToast('info', 'ℹ The read completed but found 0 ' + (kind === 'pull' ? 'visits' : 'results') + '. Open the right chart, then try again.');
+      showToast('info', 'ℹ The read completed but found 0 ' + (kind === 'pull' ? 'visits' : 'results') + '. The pull opens the chart automatically — re-run it, or this patient may simply have no visits yet.');
       // soft auto-trigger so the user sees why
       autoTrigger({ ok: true, count: 0, anyReal: false });
     } else {
