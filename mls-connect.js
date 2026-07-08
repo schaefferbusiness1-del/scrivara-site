@@ -325,7 +325,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '3.3.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.4.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -445,14 +445,46 @@
   var GATE = { want: null, ts: 0, phase: 0, passes: 0, refusals: 0, navProbes: 0 };
   api.chartGate = GATE;
   var nativePost = window.postMessage.bind(window);
+  /* v3.4: a targeted read is NOT forwarded to the extension at all (its
+     targeted path has the broken identity gate AND wedge-prone auto-open
+     injections). Instead: (1) v1.51's NATIVE search-and-open bridge
+     (mlsAppSearchOpenPatient — types the name into athena's search bar and
+     opens the chart; verified live, works for off-schedule patients too),
+     then (2) a bare read of the now-open chart, text-gated as before. The
+     doctor never opens a chart manually. */
   window.postMessage = function (msg, target, transfer) {
     try {
       if (msg && typeof msg === 'object' && msg.source === 'mls-app' && msg.type === 'mlsAppReadChart' && msg.patient && !msg.__cfxBare) {
-        GATE.want = String(msg.patient); GATE.ts = new Date().getTime(); GATE.phase = 1;   /* 1 = nav probe in flight */
+        GATE.want = String(msg.patient); GATE.ts = new Date().getTime(); GATE.phase = 1; GATE.navProbes++;
+        nativePost({ source: 'mls-app', type: 'mlsAppSearchOpenPatient', name: GATE.want }, location.origin);
+        /* fallback: if search-open never answers, try the bare read anyway */
+        setTimeout(function () {
+          if (GATE.phase === 1 && GATE.want) {
+            GATE.phase = 2;
+            nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin);
+          }
+        }, 25000);
+        return undefined;                                /* swallow the original targeted send */
       }
     } catch (e) {}
     return transfer !== undefined ? nativePost(msg, target, transfer) : nativePost(msg, target);
   };
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppSearchOpenResult') return;
+    if (GATE.phase !== 1 || !GATE.want) return;
+    GATE.phase = 2;
+    var want = GATE.want;
+    setTimeout(function () {
+      try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
+    }, 2500);   /* let the freshly-opened chart render */
+    setTimeout(function () {                             /* watchdog: bare read never answered */
+      if (GATE.phase === 2 && GATE.want === want) {
+        GATE.phase = 0; GATE.want = null;
+        try { nativePost({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { ok: false, reason: 'timeout', error: 'athenaOne did not answer the chart read — check the athena tab, then pull again. Nothing was captured.' } }, location.origin); } catch (e) {}
+      }
+    }, 45000);
+  }, true);
   function nameTokens(s) { return normName(s).split(' ').filter(function (t) { return t.length > 1; }); }
   function textGateApply(r, want) {
     var lo = String(r.text || '').toLowerCase();
@@ -15949,7 +15981,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b72';
+  var MLS_APP_BUILD='2026-07-07-b73';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
