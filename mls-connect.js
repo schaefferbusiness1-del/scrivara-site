@@ -1,3 +1,96 @@
+/* =============================================================================
+ * MLS Scribe -- FORMATTED-VIEW (LIVE) BODY CONTRAST  (__mlsFmtLiveContrast) v1.0.0  2026-07-08 (b97)
+ *
+ * URGENT doctor-blocking fix. The "Formatted view (live)" SOAP panel
+ * (.mls-fp-fmt, built by feat_mls_fixpack_0701.js) renders its body text --
+ * paragraphs (<div style="margin:3px 0">) and bullet items (<li>) -- with NO
+ * color of its own. fmtHtml() only colors the <h4> section headings (#0d3c78,
+ * readable); every body/list text node just INHERITS whatever color its mount
+ * container carries. Where that inherited color resolves light, the SOAP
+ * content under SUBJECTIVE/OBJECTIVE/ASSESSMENT/PLAN renders near-white on the
+ * panel's white .fmt-body background and is effectively invisible.
+ *
+ * __mlsContrastFix2 (b92) only forced .mlsf-note descendants dark -- a
+ * DIFFERENT component (__mlsFormat's copy/EMR preview) -- so it never touched
+ * .mls-fp-fmt. This gives the live formatted-view body an EXPLICIT dark color
+ * (#1c2740, ~13:1 on white, WCAG AAA) via BOTH a late-injected !important
+ * <style> AND inline-on-interval -- inline !important beats any other module's
+ * stylesheet OR inline rule regardless of satellite load order, and covers
+ * EVERY body text node, not just one class. Section headings (<h4>) keep their
+ * dark blue #0d3c78; the blue .fmt-bar header (white on gradient) is untouched.
+ *
+ * CSS-only, additive, reversible. No behavior change. Revert:
+ * window.__mlsFmtLiveContrast_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  if (window.__mlsFmtLiveContrast) return;
+  window.__mlsFmtLiveContrast = true;
+
+  var BODY = '#1c2740';
+  var HEAD = '#0d3c78';
+  var STYLE_ID = 'mlsFmtLiveContrastStyle';
+
+  function addStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    var css =
+      '.mls-fp-fmt .fmt-body,' +
+      '.mls-fp-fmt .fmt-body div,' +
+      '.mls-fp-fmt .fmt-body p,' +
+      '.mls-fp-fmt .fmt-body li,' +
+      '.mls-fp-fmt .fmt-body ul,' +
+      '.mls-fp-fmt .fmt-body ol,' +
+      '.mls-fp-fmt .fmt-body span{color:' + BODY + ' !important}' +
+      '.mls-fp-fmt .fmt-body h4{color:' + HEAD + ' !important}';
+    var st = document.createElement('style');
+    st.id = STYLE_ID;
+    st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function applyInline() {
+    try {
+      var bodies = document.querySelectorAll('.mls-fp-fmt .fmt-body');
+      for (var i = 0; i < bodies.length; i++) {
+        var body = bodies[i];
+        body.style.setProperty('color', BODY, 'important');
+        var kids = body.querySelectorAll('*');
+        for (var j = 0; j < kids.length; j++) {
+          var el = kids[j];
+          if (el.tagName === 'H4') el.style.setProperty('color', HEAD, 'important');
+          else el.style.setProperty('color', BODY, 'important');
+        }
+      }
+    } catch (e) {}
+  }
+
+  function boot() {
+    addStyle();
+    applyInline();
+    window.__mlsFmtLiveContrast_iv = setInterval(applyInline, 800);
+  }
+
+  window.__mlsFmtLiveContrast_revert = function () {
+    try { clearInterval(window.__mlsFmtLiveContrast_iv); } catch (e) {}
+    var st = document.getElementById(STYLE_ID);
+    if (st && st.parentNode) st.parentNode.removeChild(st);
+    try {
+      var bodies = document.querySelectorAll('.mls-fp-fmt .fmt-body');
+      for (var i = 0; i < bodies.length; i++) {
+        bodies[i].style.removeProperty('color');
+        var kids = bodies[i].querySelectorAll('*');
+        for (var j = 0; j < kids.length; j++) kids[j].style.removeProperty('color');
+      }
+    } catch (e) {}
+    delete window.__mlsFmtLiveContrast;
+    delete window.__mlsFmtLiveContrast_revert;
+    return 'reverted';
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
 /* =========================================================================
  * MLS Scribe — SUMMARY SANITIZER v2 + RETROACTIVE SCRUB  (__mlsSanitizeV2) v2.0.0  2026-07-08 (b94)
  *
@@ -23330,7 +23423,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b96';
+  var MLS_APP_BUILD='2026-07-08-b97';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
