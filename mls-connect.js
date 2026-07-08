@@ -1,4 +1,70 @@
 /* =========================================================================
+ * MLS Scribe — CONTRAST FIX 2  (__mlsContrastFix2) v1.0.0  2026-07-08 (b92)
+ *
+ * Two tiny high-value contrast fixes the doctor is blocked on:
+ *  1) Formatted view (live) SOAP BODY text rendered near-invisible light-gray on
+ *     white. Root cause (from ux-fixes FIX 3): the note body uses color:var(--text)
+ *     but --text is never defined. ux-fixes FIX 3 forces #1c2740 on
+ *     .mlsf-note/.mlsf-p/.mlsf-list li/.mlsf-sub — but the bullet text can sit in a
+ *     DEEPER child (a <span> inside the <li>) that those selectors miss. This
+ *     broadens the same fix to .mlsf-note * (every descendant) via BOTH a !important
+ *     <style> AND inline-on-interval (inline beats other modules' inline light).
+ *  2) Provider dropdown/select options render white-on-white (only the highlighted
+ *     one readable). Force option text dark in normal + hover/checked states.
+ *
+ * CSS-only, additive, reversible. No behavior change. Revert:
+ * window.__mlsContrastFix2_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsContrastFix2) return; } catch (e) { return; }
+  window.__mlsContrastFix2 = { version: '1.0.0', ticks: 0 };
+  var C = '#1c2740';
+
+  try {
+    var st = document.createElement('style');
+    st.id = 'mlsContrastFix2';
+    st.textContent =
+      /* 1) SOAP body + every descendant: dark on white (beats the undefined --text light fallback) */
+      '.mlsf-note,.mlsf-note *{color:' + C + ' !important}' +
+      '.mlsf-note{background:#ffffff !important}' +
+      /* define the missing tokens so any leftover color:var(--text)/var(--accent) resolves dark */
+      ':root{--text:' + C + ';--accent:#2f5fd0}' +
+      /* 2) provider / all select options readable in normal + hover + selected */
+      'select{color:' + C + ' !important}' +
+      'select option,option{color:' + C + ' !important;background-color:#ffffff !important}' +
+      'select option:hover,select option:checked,option:hover,option:checked{color:' + C + ' !important;background-color:#eaf2fd !important}';
+    (document.head || document.documentElement).appendChild(st);
+  } catch (e) {}
+
+  /* inline-on-interval for the SOAP body — inline !important outranks any other
+     module's selector-based !important, and covers deep bullet spans. */
+  function apply() {
+    try {
+      var els = document.querySelectorAll('.mlsf-note, .mlsf-note *');
+      for (var i = 0; i < els.length; i++) {
+        var t = els[i].tagName;
+        if (t === 'SCRIPT' || t === 'STYLE') continue;
+        try { els[i].style.setProperty('color', C, 'important'); } catch (e) {}
+      }
+      var notes = document.querySelectorAll('.mlsf-note');
+      for (var j = 0; j < notes.length; j++) { try { notes[j].style.setProperty('background', '#ffffff', 'important'); } catch (e) {} }
+      if (els.length) window.__mlsContrastFix2.ticks++;
+    } catch (e) {}
+  }
+  var iv = null; try { iv = setInterval(apply, 1500); } catch (e) {} apply();
+
+  window.__mlsContrastFix2_revert = function () {
+    try { if (iv) clearInterval(iv); } catch (e) {}
+    try { var s = document.getElementById('mlsContrastFix2'); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e) {}
+    try {
+      var els = document.querySelectorAll('.mlsf-note, .mlsf-note *');
+      for (var i = 0; i < els.length; i++) { try { els[i].style.removeProperty('color'); } catch (e) {} }
+    } catch (e) {}
+    try { delete window.__mlsContrastFix2; } catch (e) {}
+  };
+})();
+/* =========================================================================
  * MLS Scribe — DAY / MONTH CHART-HISTORY PULL  (__mlsDayHistoryPull) v1.1.0  2026-07-08 (b89)
  *
  * v1.1.0 robustness pass (anchored on the PROVEN pieces; same flow, no re-architecture):
@@ -21726,7 +21792,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b91';
+  var MLS_APP_BUILD='2026-07-08-b92';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
