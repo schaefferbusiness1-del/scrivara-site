@@ -1,3 +1,5 @@
+;(function(){try{var A="feat_mls_review_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708rr1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* reputation lane: auto-review doctor trigger */
+
 /* ============================================================
  * mls_settings_cleanup_v1.js  ->  window.__mlsSettingsCleanupV1
  *
@@ -19498,7 +19500,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b76';
+  var MLS_APP_BUILD='2026-07-08-b77';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
