@@ -7,8 +7,8 @@
  * props ('stroke-width': 2,). The b87 detector was CASE-SENSITIVE + function/brace
  * focused, so it false-negatived these (hasCode false -> the scrub skipped them).
  * 8 summaries affected. This upgrades the detector (case-insensitive + SVG/sketchpad
- * tokens + hyphenated stroke-*/fill-* + QUOTED-KEY object props + svg-attr:value +
- * a clinical-guarded contiguity pass), PATCHES the shared window.__mlsSummarySanitize
+ * tokens + hyphenated stroke- and fill- attrs + QUOTED-KEY object props + attr:value
+ * + a clinical-guarded contiguity pass), PATCHES the shared window.__mlsSummarySanitize
  * .strip/hasCode so the continuous scrub + ingest wraps use it, and RETROACTIVELY
  * scrubs ALL patients on a light heartbeat until clean. Validated live pre-deploy:
  * corpus 1118 patients -> 8 polluted -> 8 cleaned fully -> 0 still dirty -> 0 clinical
