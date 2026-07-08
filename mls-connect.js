@@ -325,7 +325,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '3.1.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.2.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -474,6 +474,7 @@
         var m = /\b\d{1,2}yo\s+[MF]\s*\|\s*([01]?\d[\-\/][0-3]?\d[\-\/]\d{4})/i.exec(String(r.text || ''));
         if (m) r.chartDob = m[1];
       }
+      try { if (api.__onGatePass) api.__onGatePass(want, r.chartDob || '', r.text || ''); } catch (e) {}
       return true;
     }
     GATE.refusals++;
@@ -662,6 +663,83 @@
     api.hygiene.installed = true;
     guard();   /* record __prf as seen + stamp immediately */
   }
+
+  /* =====================================================================
+   * v3.2 F8 — FILE CHART TEXT INTO THE RIGHT PATIENT (history → AI):
+   * two deterministic sources produce verified chart text + identity:
+   *   (a) the extension PANEL's "Pull from chart → MLS" capture relay
+   *       ('mlsAppScrapeCaptured' / capture results) — its content-script
+   *       parser reads the athena banner correctly, but the app's handler
+   *       mis-filed captures (created a patient named after the PROVIDER);
+   *   (b) a text-gate PASS on a chart read (r.chartName/r.chartDob/r.text).
+   * This files them through the app's own _savePatientChart() against the
+   * NORM-NAME-matched existing patient, with a hard guard: if both sides
+   * have a DOB and they differ, NOTHING is filed (never cross-file).
+   * ==================================================================== */
+  var F8 = { filed: 0, refusedDob: 0, noMatch: 0 };
+  api.fileChart = F8;
+  function parseChartSections(raw) {
+    var t = String(raw || '');
+    function sec(names) {
+      for (var i = 0; i < names.length; i++) {
+        var re = new RegExp(names[i] + '\\s*\\n([\\s\\S]{0,400}?)(\\n[A-Z][A-Za-z &]{3,30}\\n|$)');
+        var m = re.exec(t);
+        if (m && m[1] && !/none recorded/i.test(m[1])) return m[1].replace(/\s+/g, ' ').trim().slice(0, 300);
+      }
+      return '';
+    }
+    return {
+      problems: sec(['Problems']),
+      meds: sec(['Medications']),
+      allergies: sec(['Allergies']),
+      summary: t.slice(0, 4000)
+    };
+  }
+  function fileChartText(name, dob, rawText) {
+    try {
+      if (!name || !rawText || String(rawText).length < 200) return false;
+      var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+      var key = normName(name);
+      var p = null;
+      for (var i = 0; i < ps.length; i++) { if (ps[i] && normName(ps[i].name) === key) { p = ps[i]; break; } }
+      if (!p) { F8.noMatch++; return false; }                       /* never create records here */
+      var nd = String(dob || '').replace(/[^0-9]/g, ''), pd = String(p.dob || '').replace(/[^0-9]/g, '');
+      if (nd && pd && nd !== pd && nd.slice(-4) !== pd.slice(-4)) { F8.refusedDob++; return false; }
+      var chart = parseChartSections(rawText);
+      if (dob) chart.dob = String(dob);
+      if (typeof window._savePatientChart === 'function') {
+        window._savePatientChart(p.name, null, chart);
+        F8.filed++;
+        try { if (typeof window.toast === 'function') window.toast('✓ ' + p.name + '’s Athena chart filed to their MLS record (history now reaches the AI).', 'ok'); } catch (e) {}
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  api.fileChartText = fileChartText;
+  /* (a) panel capture relay — runs FIRST (capture phase), pre-empts the buggy handler */
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext') return;
+    var isCap = (d.type === 'mlsAppScrapeCaptured' || d.type === 'mlsAppCaptureResult');
+    if (!isCap) return;
+    var r = d.resp || {};
+    var nm = r.name || r.patient || (r.identity && r.identity.name) || '';
+    var db = r.dob || (r.identity && r.identity.dob) || '';
+    var tx = r.text || r.pageText || '';
+    if (nm && tx && fileChartText(nm, db, tx)) {
+      try { ev.stopImmediatePropagation(); } catch (e) {}          /* keep the app's mis-filing handler away */
+    }
+  }, true);
+  /* (b) text-gate pass — file if the app hasn't within 5 s */
+  api.__onGatePass = function (want, dob, text) {
+    setTimeout(function () {
+      try {
+        if (typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(want)) return;
+        fileChartText(want, dob, text);
+      } catch (e) {}
+    }, 5000);
+  };
 
   window.__mlsImportChainFix_revert = function () {
     try { if (window.setInterval && window.setInterval.__mlsChainFix) window.setInterval = nativeSetInterval; } catch (e) {}
@@ -15869,7 +15947,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b70';
+  var MLS_APP_BUILD='2026-07-07-b71';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
