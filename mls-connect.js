@@ -1,4 +1,180 @@
 /* =========================================================================
+ * MLS Scribe — DAY / MONTH CHART-HISTORY PULL  (__mlsDayHistoryPull) v1.0.0  2026-07-08 (b86)
+ *
+ * Pulls EVERY patient's chart history for a day (or month) into the app, so the
+ * AI has each patient's real clinical context to generate their summary.
+ *
+ * WHY this exists (proven live this session):
+ *  - The per-visit reader (mlsAppReadAllVisits) is BROKEN on athenaOne v26.3: its
+ *    frame-scoring reads the athenaText / Letters UI frames, returning identical
+ *    junk "visits" with a mis-extracted identity. (Do NOT use it for the day pull.)
+ *  - mlsAppReadChart WORKS: it excludes the noise frames, targets the clinical
+ *    frame, and returns the real chart text + the CORRECT patient name. Verified:
+ *    Brian Gentile -> cervical content; Gary Bell -> lumbar content; no junk.
+ *  - The bulk loop could not iterate past patient #1 because nothing returned
+ *    athenaOne from an open chart back to the schedule. mlsAppGoHome (ext v1.55+)
+ *    clicks the athenaOne Home logo AND foregrounds the athena tab (un-throttles
+ *    the read + avoids the freeze), so each patient's schedule row is on screen
+ *    and the read runs at full speed.
+ *
+ * THE LOOP (sequential, dedup'd, identity-gated, retry-on-error-and-continue):
+ *   for each patient on the day (or month), not already pulled:
+ *     goHome  -> athenaOne clinical schedule (foreground)
+ *     readChart(name) -> opens the patient's chart + reads real clinical text
+ *     verify the returned chartName matches the patient (skip on mismatch)
+ *     ingestChart -> saves the real chart context onto the patient record
+ *   report honest "X of N patients pulled".
+ *
+ * REQUIRES ext v1.55+ (mlsAppGoHome). On older ext it detects the missing bridge
+ * and tells the doctor to update MLS Assist rather than silently pulling nothing.
+ * READ-ONLY in athenaOne (open + read only; never Save/Sign). Reversible: delete
+ * this module. Revert: window.__mlsDayHistoryPull_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsDayHistoryPull) return; } catch (e) { return; }
+
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function say(m) { try { if (typeof window.toast === 'function') window.toast(m, ''); } catch (e) {} try { console.log('[MLS day-pull]', m); } catch (e) {} }
+
+  // one bridge round-trip: post {type,...payload}; resolve on respType (its .resp) or timeout
+  function bridge(type, payload, respType, timeout) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
+      try { window.addEventListener('message', h, false); } catch (e) {}
+      try { window.postMessage(Object.assign({ type: type, source: 'mls-app', from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
+      setTimeout(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); }, timeout || 15000);
+    });
+  }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function getPatients() { try { return (typeof window.getPatients === 'function') ? (window.getPatients() || []) : []; } catch (e) { return []; } }
+  function findPatient(name) { var k = nrm(name); var ps = getPatients(); for (var i = 0; i < ps.length; i++) { var pn = nrm(ps[i].name); if (pn && (pn === k || pn.indexOf(k) >= 0 || k.indexOf(pn) >= 0)) return ps[i]; } return null; }
+  function summaryOf(p) { try { return String((p && p.summary) || ''); } catch (e) { return ''; } }
+  function isRealChart(s) { return /assessment|diagnos|medication|prescription|chief complaint|problem|radicul|cervical|lumbar|reason for visit|encounter|history/i.test(s) && !/no conversations|install athena|colleagues load all/i.test(s); }
+  function hasPulled(p) { var s = summaryOf(p); return s.length > 300 && /pulled from athena/i.test(s); }
+
+  var PLACEHOLDER = /^(frozen|open|available|ht|wt|bp|held|blocked|lunch|break|no exam|tbd|walk\s*in|placeholder)$/i;
+  function isPlaceholder(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || /,?\s*(md|do|pa-?c|np|staff|rn|ma|tech)\b/i.test(name || ''); }
+
+  // gather the unique real patient NAMES scheduled under a day/month prefix
+  function namesFor(prefix) {
+    var out = [], seen = {};
+    try {
+      var arr = (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []);
+      (arr || []).forEach(function (a) {
+        if (!a || !a.name || !a.day_local) return;
+        if (String(a.day_local).indexOf(prefix) !== 0) return;
+        if (isPlaceholder(a.name)) return;
+        var k = nrm(a.name); if (!k || seen[k]) return; seen[k] = 1;
+        out.push(String(a.name));
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  var BUSY = false;
+  var STATE = { running: false, total: 0, done: 0, ok: 0, skipped: 0, failed: 0, current: '', rows: [] };
+  api_state();
+  function api_state() { window.__mlsDayHistoryPull = window.__mlsDayHistoryPull || {}; window.__mlsDayHistoryPull.state = STATE; }
+
+  // pull ONE patient's chart context (goHome -> readChart -> verify -> ingest). Returns a result row.
+  function pullOne(name) {
+    return (async function () {
+      var row = { name: name, opened: false, chartName: '', ok: false, reason: '' };
+      // 1) re-ground: return athenaOne to the clinical schedule (foregrounds the tab)
+      var gh = await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 15000);
+      if (gh && gh.__timeout) { row.reason = 'no-gohome'; row._noBridge = true; return row; }
+      await wait(2600); // let the clinical schedule render its patient rows
+      // 2) open + read the chart (retry once)
+      var r = null;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        r = await bridge('mlsAppReadChart', { patient: name }, 'mlsAppChartResult', 75000);
+        if (r && r.ok && r.text && r.text.length >= 400) break;
+        if (attempt === 0) { await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 15000); await wait(2600); }
+      }
+      if (!r || !r.ok || !r.text || r.text.length < 400) { row.reason = 'read-failed'; return row; }
+      row.opened = true; row.chartName = r.chartName || '';
+      // 3) identity gate: the chart athenaOne returned must be THIS patient
+      var kt = nrm(name), kc = nrm(r.chartName || '');
+      var overlap = kt.split(' ').filter(function (x) { return x.length > 1 && kc.indexOf(x) >= 0; }).length;
+      var idOk = !kc || overlap >= 2 || kc.indexOf(kt) >= 0 || kt.indexOf(kc) >= 0;
+      if (!idOk) { row.reason = 'identity-mismatch:' + (r.chartName || '?'); return row; }
+      // 4) find the app record + ingest the real chart context
+      var p = findPatient(name);
+      if (!p) { row.reason = 'no-record'; return row; }
+      try {
+        var M = window.__mlsVisitModel;
+        if (M && typeof M.ingestChart === 'function') { M.ingestChart(p, { text: r.text, summary: r.text, name: r.chartName || name, dob: r.chartDob || '' }, 'athena-copy'); }
+        else if (typeof window._savePatientChart === 'function') { p.summary = '— Pulled from Athena —\n' + r.text; window._savePatientChart(p); }
+      } catch (e) { row.reason = 'ingest:' + ((e && e.message) || e); return row; }
+      row.ok = isRealChart(summaryOf(p));
+      if (!row.ok) row.reason = 'thin-after-ingest';
+      return row;
+    })();
+  }
+
+  function run(prefix, label) {
+    if (BUSY) { say('A history pull is already running (' + STATE.done + '/' + STATE.total + ').'); return Promise.resolve('already-running'); }
+    prefix = String(prefix || '').trim();
+    if (!prefix) { var d = new Date(); prefix = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+    var names = namesFor(prefix);
+    var todo = names.filter(function (n) { var p = findPatient(n); return !(p && hasPulled(p)); });
+    var already = names.length - todo.length;
+    STATE.running = true; STATE.total = todo.length; STATE.done = 0; STATE.ok = 0; STATE.skipped = 0; STATE.failed = 0; STATE.current = ''; STATE.rows = [];
+    BUSY = true;
+    say('📚 Pulling chart history for ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + ' (' + (label || prefix) + ')' + (already ? ' — ' + already + ' already have it.' : '.'));
+    if (!todo.length) { BUSY = false; STATE.running = false; say('✅ Every scheduled patient for ' + (label || prefix) + ' already has chart history.'); return Promise.resolve('nothing-to-do'); }
+    return (async function () {
+      for (var i = 0; i < todo.length; i++) {
+        var name = todo[i]; STATE.current = name;
+        say('📖 (' + (i + 1) + '/' + todo.length + ') ' + name + '…');
+        var row;
+        try { row = await pullOne(name); } catch (e) { row = { name: name, ok: false, reason: 'error:' + ((e && e.message) || e) }; }
+        STATE.rows.push(row); STATE.done++;
+        if (row && row._noBridge) {
+          BUSY = false; STATE.running = false;
+          say('⚠️ This needs MLS Assist v1.55+ (Settings → Get the extension) so it can move athenaOne back to the schedule between patients. Nothing else was changed.');
+          return 'needs-ext-v155';
+        }
+        if (row && row.ok) STATE.ok++; else STATE.failed++;
+        try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
+        try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
+        await wait(900);
+      }
+      BUSY = false; STATE.running = false; STATE.current = '';
+      say('📚 Day history pull finished: ' + STATE.ok + ' of ' + todo.length + ' patients pulled' + (STATE.failed ? ' (' + STATE.failed + ' could not be read — open those charts once and re-run)' : '') + '.');
+      return { total: todo.length, ok: STATE.ok, failed: STATE.failed, rows: STATE.rows };
+    })();
+  }
+
+  function mountBtn() {
+    try {
+      // hide the OLD "Pull all histories (today)" button — it uses the broken per-visit
+      // reader (junk frames); this chart-context pull replaces it.
+      try { var old = document.getElementById('cfxBulkHistBtn'); if (old) old.style.display = 'none'; } catch (e) {}
+      if (document.getElementById('mlsDayHistBtn')) return;
+      var b = document.createElement('button');
+      b.id = 'mlsDayHistBtn'; b.type = 'button';
+      b.textContent = '📚 Pull day histories';
+      b.title = 'Pull each of today’s patients’ chart history from athenaOne (for AI summaries).';
+      b.style.cssText = 'position:fixed;right:14px;bottom:98px;z-index:2147483000;background:#0d3c78;color:#fff;border:0;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)';
+      b.onclick = function () { run('', 'today'); };
+      document.body.appendChild(b);
+    } catch (e) {}
+  }
+  var _iv = null; try { _iv = setInterval(mountBtn, 1500); } catch (e) {} mountBtn();
+
+  window.__mlsDayHistoryPull = {
+    version: '1.0.0', state: STATE,
+    pullDay: function (dateStr) { return run(dateStr || '', dateStr || 'today'); },
+    pullMonth: function (monthStr) { return run(String(monthStr || '').slice(0, 7), (String(monthStr || '').slice(0, 7) || 'this month')); },
+    _pullOne: pullOne, _namesFor: namesFor
+  };
+  window.__mlsDayHistoryPull_revert = function () { try { if (_iv) clearInterval(_iv); } catch (e) {} try { var b = document.getElementById('mlsDayHistBtn'); if (b) b.remove(); } catch (e) {} try { delete window.__mlsDayHistoryPull; } catch (e) {} };
+})();
+/* =========================================================================
  * MLS Scribe — RUN RE-WRAP CYCLE GUARD  (__mlsRunCycleGuard) v1.0.0  2026-07-08
  *
  * FIX: window.__mlsCopyVisits.run threw "RangeError: Maximum call stack size
@@ -20364,7 +20540,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b85';
+  var MLS_APP_BUILD='2026-07-08-b86';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
