@@ -1,3 +1,1765 @@
+/* ============================================================
+ * mls_settings_cleanup_v1.js  ->  window.__mlsSettingsCleanupV1
+ *
+ * PURPOSE (Settings page audit + tidy, per Michael's request):
+ *   1) The "🎛 MLS Controls" panel (built by __mlsRound4B44, id
+ *      #r44Controls) is appended as a raw, unstyled div AFTER the
+ *      Settings modal's Save/Close footer row, and is NOT one of the
+ *      .set-section blocks the tab system (mlsBuildSettingsTabs) scans.
+ *      Result: it renders below the sticky footer, outside every tab,
+ *      unstyled against the live navy/white settings redesign
+ *      (feat_mls_settings_exact.js, prod-enabled) -- the single
+ *      messiest thing in Settings today. It also silently hosts the
+ *      ONLY "installed vs latest MLS Assist version" indicator in the
+ *      app (injected by the b46 version-check module as a row inside
+ *      #r44Controls), so today that indicator is effectively invisible.
+ *      FIX: convert it into a real .set-section (proper heading, moved
+ *      above the footer) so it gets its own tab and its version row is
+ *      actually visible.
+ *   2) The "athenahealth direct API" block under Integrations
+ *      (#athStatus / athPractice / athClient / athSecret / athBase) is
+ *      permanently-inert scaffolding -- its own code comments say
+ *      "Always 'not connected' -- honest scaffolding; no live link
+ *      exists" and its "Push to Athena" button is permanently disabled
+ *      ("Pending API access"). That is a dead button by definition.
+ *      FIX: collapse the whole block into a closed <details> under an
+ *      "Advanced" label and hide the dead Push button. Nothing is
+ *      deleted -- credentials still save via the same saveAthenaSettings()
+ *      for any practice that wants to pre-stage them.
+ *   3) The MLS Assist extension download card (the actually-live,
+ *      working integration) sits BELOW the dead athenahealth scaffold.
+ *      FIX: promote it to the first field in Integrations.
+ *   4) Contrast: the live redesign (feat_mls_settings_exact.js, stx-2.0.0)
+ *      hardcodes every section description to #6b7d93 !important, which
+ *      measures 4.22:1 on the white card at 13px -- below WCAG AA (4.5:1)
+ *      for normal text. The base app's plain .note helper text inherits
+ *      var(--muted) (#5b6b7e), 5.45:1 -- passes AA but not AAA. FIX: a
+ *      scoped stylesheet override raises both to #3d5066 (~8.3:1, AAA)
+ *      inside #settingsModal only. Intentionally-colored callouts (the
+ *      amber/green/red .note boxes that already set their own inline
+ *      color) are left untouched via a :not([style*="color"]) guard.
+ *
+ * Everything here is additive/reversible DOM surgery on elements the
+ * base app and other MLS modules already own -- no element is deleted,
+ * only hidden/reparented/restyled, matching this codebase's convention
+ * (see __mlsRound4B44_revert, __mlsStx.revert, etc.). Idempotent via
+ * data-scv-* marker attributes. No athenaOne access, no backend calls,
+ * no patient data touched.
+ *
+ * Revert: window.__mlsSettingsCleanupV1_revert()
+ * ============================================================ */
+(function () {
+  'use strict';
+  if (window.__mlsSettingsCleanupV1) return;
+
+  var VERSION = 'scv-1.0.0';
+  var _saved = { athLabel: null, athField: null, athDetails: null, pushBtn: null, r44Orig: null };
+
+  function $(id) { return document.getElementById(id); }
+  function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
+  function closest(el, sel) {
+    while (el && el.nodeType === 1) { if (el.matches && el.matches(sel)) return el; el = el.parentElement; }
+    return null;
+  }
+
+  /* ---------- 1) tidy the "MLS Controls" panel into a real tab ---------- */
+  function tidyR44Controls() {
+    return safe(function () {
+      var rc = $('r44Controls');
+      if (!rc || rc.getAttribute('data-scv-tidied') === '1') return false;
+      var modal = $('settingsModal');
+      var body = modal && modal.querySelector('.modal');
+      var footer = body && body.querySelector(':scope > .row');
+      if (!body || !footer) return false;
+
+      /* Replace the raw <b>/.sub header with the same set-head/set-desc
+         markup every other section uses, so it matches visually and the
+         tab-bar builder (mlsBuildSettingsTabs) picks up a clean label. */
+      var oldHeader = rc.querySelector('b');
+      var oldSub = rc.querySelector('.sub');
+      _saved.r44Orig = { header: oldHeader, sub: oldSub };
+      if (oldHeader) oldHeader.remove();
+      if (oldSub) oldSub.remove();
+
+      var head = document.createElement('p');
+      head.className = 'set-head';
+      head.textContent = '🎛️ MLS Controls';
+      var desc = document.createElement('p');
+      desc.className = 'set-desc';
+      desc.textContent = 'Optional extras for this browser: the voice button, quick-pick count, birthday chips, the legacy guided-visit view, and your MLS Assist extension version.';
+      rc.insertBefore(desc, rc.firstChild);
+      rc.insertBefore(head, rc.firstChild);
+
+      /* Drop the special blue-card look in favor of the standard white
+         section styling (the live navy/white redesign overrides most of
+         it anyway with !important -- this just avoids fighting it). */
+      rc.classList.remove('mls-r44-soft');
+      rc.classList.add('set-section');
+      rc.style.cssText = '';
+
+      /* Move it up among the tabbed sections, right before the Save/Close
+         footer, instead of dangling after it. */
+      body.insertBefore(rc, footer);
+
+      rc.setAttribute('data-scv-tidied', '1');
+      safe(function () { if (typeof window.mlsBuildSettingsTabs === 'function') window.mlsBuildSettingsTabs(); });
+      return true;
+    });
+  }
+
+  /* ---------- 2) collapse the dead athenahealth-direct-API scaffold ---------- */
+  function declutterAthenaScaffold() {
+    return safe(function () {
+      var status = $('athStatus');
+      if (!status) return false;
+      var field = closest(status, '.field');
+      if (!field || field.getAttribute('data-scv-collapsed') === '1') return false;
+
+      var label = field.querySelector('label');
+      var details = document.createElement('details');
+      details.className = 'field';
+      details.setAttribute('data-scv-collapsed', '1');
+      details.style.cssText = field.style.cssText;
+
+      var summary = document.createElement('summary');
+      summary.style.cssText = 'cursor:pointer;font-size:15px;font-weight:700;color:inherit;list-style:none;display:flex;align-items:center;gap:8px';
+      summary.innerHTML = '🔗 athenahealth direct API '
+        + '<span style="font-weight:400;font-size:11.5px;color:#3d5066;background:#f0f3f8;border-radius:999px;padding:2px 9px">advanced · optional</span>';
+      details.appendChild(summary);
+
+      var note = document.createElement('p');
+      note.className = 'note';
+      note.style.margin = '8px 0 0';
+      note.textContent = 'Not required. Today’s EMR read/write goes through the MLS Assist extension below. These fields only pre-stage credentials for a future direct athenahealth API partnership.';
+      details.appendChild(note);
+
+      if (label) label.remove();
+      while (field.firstChild) details.appendChild(field.firstChild);
+      field.parentNode.replaceChild(details, field);
+
+      var pushBtn = details.querySelector('[onclick*="pushToAthena"]');
+      if (pushBtn) { pushBtn.style.display = 'none'; }
+
+      _saved.athField = field;
+      _saved.athDetails = details;
+      _saved.athLabel = label;
+      _saved.pushBtn = pushBtn;
+      return true;
+    });
+  }
+
+  /* ---------- 3) promote the extension-download card to the top of Integrations ---------- */
+  function promoteExtensionCard() {
+    return safe(function () {
+      var modal = $('settingsModal');
+      if (!modal) return false;
+      var sections = modal.querySelectorAll('.set-section');
+      var integrations = null;
+      for (var i = 0; i < sections.length; i++) {
+        var head = sections[i].querySelector('.set-head');
+        if (head && /integration/i.test(head.textContent || '')) { integrations = sections[i]; break; }
+      }
+      if (!integrations) return false;
+      if (integrations.getAttribute('data-scv-reordered') === '1') return false;
+
+      var fields = integrations.querySelectorAll(':scope > .field');
+      var extField = null;
+      for (var j = 0; j < fields.length; j++) {
+        if (/MLS Assist browser extension/i.test(fields[j].textContent || '')) { extField = fields[j]; break; }
+      }
+      var firstField = integrations.querySelector(':scope > .field, :scope > details.field');
+      if (extField && firstField && firstField !== extField) {
+        integrations.insertBefore(extField, firstField);
+      }
+      integrations.setAttribute('data-scv-reordered', '1');
+      return true;
+    });
+  }
+
+  /* ---------- 4) high-contrast text, scoped to #settingsModal only ---------- */
+  var CONTRAST_CSS_ID = 'scvContrastCss';
+  function injectHighContrastCSS() {
+    return safe(function () {
+      if ($(CONTRAST_CSS_ID)) return false;
+      var css = [
+        /* Beat feat_mls_settings_exact.js's !important #6b7d93 (4.22:1, fails AA @13px).
+           Doubled .set-desc class raises specificity so this wins regardless of
+           stylesheet injection order; no element here ever sets its own color inline,
+           so !important is safe. Result: ~8.3:1 (AAA). */
+        '#settingsModal .modal .set-desc.set-desc,',
+        '#settingsModal .modal .set-section .set-desc.set-desc{color:#3d5066!important}',
+        /* Plain (uncolored) .note helper text inherits var(--muted), ~5.45:1 (passes AA,
+           not AAA). Raise it too, but only where no inline color is already set --
+           the intentional amber/green/red callout boxes (2FA, key-saved, connected-to-
+           server, etc.) set their own inline color and must keep it untouched, so no
+           !important here: this only wins over the base var(--muted) rule via
+           specificity + not() targeting, never over an inline color. */
+        '#settingsModal .modal p.note:not([style*="color"]),',
+        '#settingsModal .modal .field .note:not([style*="color"]),',
+        '#settingsModal .modal .set-section .note:not([style*="color"]){color:#3d5066}'
+      ].join('\n');
+      var s = document.createElement('style');
+      s.id = CONTRAST_CSS_ID;
+      s.textContent = css;
+      (document.head || document.documentElement).appendChild(s);
+      return true;
+    });
+  }
+
+  /* ---------- boot / observe (matches this codebase's re-assertion pattern) ---------- */
+  var timer = null, mo = null;
+  function passAll() {
+    var didWork = false;
+    if (injectHighContrastCSS()) didWork = true;
+    if (tidyR44Controls()) didWork = true;
+    if (declutterAthenaScaffold()) didWork = true;
+    if (promoteExtensionCard()) didWork = true;
+    return didWork;
+  }
+  function boot() {
+    passAll();
+    timer = setInterval(passAll, 1500);
+    safe(function () {
+      mo = new MutationObserver(function () { passAll(); });
+      mo.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    });
+  }
+
+  window.__mlsSettingsCleanupV1 = { version: VERSION, installed: true, run: passAll };
+  window.__mlsSettingsCleanupV1_revert = function () {
+    safe(function () { if (timer) clearInterval(timer); });
+    safe(function () { if (mo) mo.disconnect(); });
+    safe(function () { var css = $(CONTRAST_CSS_ID); if (css) css.remove(); });
+
+    /* undo (2): unwrap the details back into the original .field */
+    safe(function () {
+      if (_saved.athDetails && _saved.athField && _saved.athDetails.parentNode) {
+        var d = _saved.athDetails, f = _saved.athField;
+        if (_saved.athLabel) f.appendChild(_saved.athLabel);
+        while (d.lastChild) { if (d.lastChild.tagName !== 'SUMMARY') f.appendChild(d.lastChild); else d.removeChild(d.lastChild); }
+        d.parentNode.replaceChild(f, d);
+        if (_saved.pushBtn) _saved.pushBtn.style.display = '';
+      }
+    });
+
+    /* undo (1): best-effort -- restore original header nodes, drop our classes/attrs.
+       (Original DOM position within .modal is not restored; harmless, it is still a
+       valid tabbed section.) */
+    safe(function () {
+      var rc = $('r44Controls');
+      if (rc) {
+        rc.querySelectorAll('.set-head, .set-desc').forEach(function (n) { n.remove(); });
+        if (_saved.r44Orig && _saved.r44Orig.header) rc.insertBefore(_saved.r44Orig.header, rc.firstChild);
+        if (_saved.r44Orig && _saved.r44Orig.sub) rc.insertBefore(_saved.r44Orig.sub, rc.firstChild.nextSibling);
+        rc.classList.remove('set-section');
+        rc.classList.add('mls-r44-soft');
+        rc.removeAttribute('data-scv-tidied');
+        safe(function () { if (typeof window.mlsBuildSettingsTabs === 'function') window.mlsBuildSettingsTabs(); });
+      }
+    });
+
+    delete window.__mlsSettingsCleanupV1;
+    delete window.__mlsSettingsCleanupV1_revert;
+    return 'reverted';
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+
+/* feat_analysis_clarity_b56 — Analysis-screen clarity + data-scope fix (2026-07-07)
+ *  Michael's bug list, Analysis tab ONLY (top-nav "Analysis" / #analysisView).
+ *  The Visit / MLS-Easy tab is owned by a separate rework — this module never
+ *  touches anything outside #analysisView (plus its own modal overlay).
+ *
+ *  1) EXPLAIN CONTROLS — "Explain RVUs", "Explain Work RVUs", "RVUs vs Work
+ *     RVUs", "Why this matters" pill buttons injected next to the two RVU
+ *     metric cards (#mlsRvuProd "RVU Productivity" and #anaBaseline "Baseline
+ *     metrics"), each opening a plain-English, medically-accurate modal.
+ *     Short inline helper text is added under the confusing numbers themselves.
+ *
+ *  2) DATA-SCOPE FIX — the RVU Productivity headline KPIs blend EVERY
+ *     provider's notes (mls-rvu.js gatherNotes() has no provider filter), so a
+ *     single doctor's view (e.g. Matt) silently mixed with the whole practice.
+ *     This module adds a labeled scope selector at the top of the Analysis
+ *     page: "Whole practice" vs "One provider" + provider dropdown. In
+ *     provider mode it renders a clearly-labeled provider-only wRVU panel
+ *     (computed from window.__mlsRVU._gather rows filtered by provider) and
+ *     visually marks the blended practice-wide section as such. Every
+ *     Analysis card also gets a persistent scope chip ("Practice-wide, all
+ *     providers" / "Split by provider" / "Provider-scoped") so nothing is
+ *     ambiguous. #anaBaseline is a server-side practice aggregate with no
+ *     per-provider parameter — it gets an honest "always whole-practice"
+ *     notice in provider mode (true split = backend change, see FINAL_REPORT).
+ *
+ *  v1.1.0 — PERFORMANCE + POLISH (Michael: "Analysis takes FOREVER to load and
+ *  still looks off"):
+ *   3) FAST LOAD. Root causes verified in source: showView('analysis') runs
+ *      renderAnaKeyTrends() SYNCHRONOUSLY on the click (full-panel compute via
+ *      copilotSnapshot over every patient+note — main-thread jank before first
+ *      paint), and loadAnalysisBaseline() re-fetches /api/records/summary from the
+ *      Render backend on EVERY tab open with no cache, blanking the biggest card
+ *      to a spinner for the whole round-trip. Fixes (wrappers; originals kept on
+ *      fn.__orig): renderAnaKeyTrends → instant skeleton + deferred compute +
+ *      60s memo; loadAnalysisBaseline → last-good result cached in sessionStorage
+ *      and painted back INSTANTLY over the spinner with an honest "updating from
+ *      the clinic server…" chip while the real fetch refreshes it. Skeleton
+ *      shimmer replaces bare "Loading…" text. performance.now() instrumentation
+ *      records ms-to-first-paint and ms-to-baseline-data — see
+ *      __mlsAnaClarity.perfReport() — so the deploy gate can capture honest
+ *      before/after numbers (before = run once after __mlsAnaClarity.revert()).
+ *   4) UI POLISH. Scoped to #analysisView; coexists with the live ax tile layout
+ *      (feat_mls_analysis_exact, prod-enabled via the staging marker) and task7's
+ *      grid fixes: readable high-contrast text (no light-gray-on-white), one
+ *      consistent card chrome in the non-ax fallback (no doubled chrome inside ax
+ *      tiles), consistent heading hierarchy/spacing, unified chip/pill styling,
+ *      and the scope bar re-seated under the ax page header so the RVU explain
+ *      buttons + provider-vs-practice toggle read as designed-in.
+ *
+ *  Additive, guarded, reversible, view-isolated. No writes, no Athena, no
+ *  backend calls. Never removes or rewrites existing DOM — only inserts
+ *  marked nodes ([data-mls-anaclar]) and one CSS class on #mlsRvuProd.
+ *  Revert: window.__mlsAnaClarity.revert()
+ */
+;(function () {
+  'use strict';
+  if (window.__mlsAnaClarity && window.__mlsAnaClarity.installed) return;
+
+  var VERSION = 'anaclar-1.1.0';
+  var MARK = 'data-mls-anaclar';           // every injected node carries this
+  var PROVMODE_CLASS = 'mls-anaclar-provmode';
+  var _obs = null, _timer = null, _debounce = null;
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function fmt(n) { return (n == null || isNaN(n)) ? '—' : (Math.round(n * 100) / 100).toFixed(2); }
+  function money(n) { return (n == null || isNaN(n)) ? '—' : ('$' + (Math.round(n * 100) / 100).toFixed(2)); }
+  function curEmail() {
+    try { if (window.bkUser && window.bkUser.email) return window.bkUser.email; } catch (e) {}
+    return '_';
+  }
+  function LS_KEY() { return 'sf_u::' + curEmail() + '::mlsAnaScope'; }
+
+  // ------------------------------------------------------------ scope state
+  function loadScope() {
+    var s = null;
+    try { s = JSON.parse(localStorage.getItem(LS_KEY()) || 'null'); } catch (e) { s = null; }
+    if (!s || (s.mode !== 'practice' && s.mode !== 'provider')) s = { mode: 'practice', provider: null };
+    return s;
+  }
+  var SCOPE = loadScope();
+  function saveScope() { try { localStorage.setItem(LS_KEY(), JSON.stringify(SCOPE)); } catch (e) {} }
+
+  // Union of every provider name the front-end already knows about.
+  function providerList() {
+    var seen = {}, out = [];
+    function add(name) {
+      var n = String(name == null ? '' : name).trim();
+      if (!n || n === '?' || n.toLowerCase() === 'this provider') return;
+      var k = n.toLowerCase();
+      if (!seen[k]) { seen[k] = 1; out.push(n); }
+    }
+    try {
+      if (window.__mlsRVU && typeof window.__mlsRVU._gather === 'function')
+        window.__mlsRVU._gather(true).forEach(function (r) { add(r.provider); });
+    } catch (e) {}
+    try {
+      (window._calAppts || []).forEach(function (a) { if (a) add(a.provider); });
+    } catch (e) {}
+    try {
+      var sel = $('analysisDoc');
+      if (sel) Array.prototype.forEach.call(sel.options, function (o) { add(o.textContent); });
+    } catch (e) {}
+    out.sort(function (a, b) { return a.localeCompare(b); });
+    return out;
+  }
+
+  // ------------------------------------------------------------------- CSS
+  function injectCSS() {
+    if ($('mlsAnaClarityCSS')) return;
+    var css = ''
+      + '.mls-anaclar-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;'
+      + 'letter-spacing:.03em;padding:2px 9px;border-radius:999px;margin-left:8px;vertical-align:middle;'
+      + 'white-space:nowrap;line-height:1.7;text-transform:uppercase}'
+      + '.mls-anaclar-chip.pw{background:#e8f0fe;color:#1d4ed8;border:1px solid #bfd3f8}'
+      + '.mls-anaclar-chip.prov{background:#e7f5ee;color:#12734b;border:1px solid #b7e0cb}'
+      + '.mls-anaclar-chip.split{background:#f3eefb;color:#6d28d9;border:1px solid #d9c9f5}'
+      + '.mls-anaclar-exprow{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 2px}'
+      + '.mls-anaclar-expbtn{border:1px solid #c9d8ee;background:#f4f8fe;color:#1d4ed8;border-radius:999px;'
+      + 'padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.5}'
+      + '.mls-anaclar-expbtn:hover{background:#e8f0fe}'
+      + '.mls-anaclar-hint{font-size:12px;color:#5b6b85;margin:6px 0 2px;line-height:1.45}'
+      + '.mls-anaclar-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:99985;display:flex;'
+      + 'align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}'
+      + '.mls-anaclar-modal{background:#fff;color:#15233d;width:640px;max-width:96vw;max-height:88vh;overflow:auto;'
+      + 'border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.35)}'
+      + '.mls-anaclar-mh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;'
+      + 'border-bottom:1px solid #dbe2ec;position:sticky;top:0;background:#fff;z-index:2}'
+      + '.mls-anaclar-mh h3{margin:0;font-size:16.5px}'
+      + '.mls-anaclar-x{border:none;background:transparent;font-size:20px;cursor:pointer;color:#5b6b85;line-height:1}'
+      + '.mls-anaclar-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px 18px 0}'
+      + '.mls-anaclar-tab{border:1px solid #dbe2ec;background:#fff;color:#3b4c66;border-radius:999px;'
+      + 'padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}'
+      + '.mls-anaclar-tab.on{background:#2563eb;border-color:#2563eb;color:#fff}'
+      + '.mls-anaclar-mb{padding:14px 18px 18px;font-size:14px;line-height:1.6}'
+      + '.mls-anaclar-mb p{margin:0 0 10px}'
+      + '.mls-anaclar-mb .eg{background:#f4f7fb;border:1px solid #dbe2ec;border-radius:10px;padding:10px 12px;'
+      + 'font-size:13px;margin:10px 0}'
+      + '#mlsAnaScopeBar{border:1px solid #cfe0f5;background:#f4f9ff;border-radius:12px;padding:12px 14px;'
+      + 'margin:0 0 14px;font-family:inherit}'
+      + '#mlsAnaScopeBar .ttl{font-weight:800;font-size:13px;color:#15528f;margin-right:10px}'
+      + '.mls-anaclar-seg{display:inline-flex;border:1px solid #c9d8ee;border-radius:9px;overflow:hidden;'
+      + 'vertical-align:middle;background:#fff}'
+      + '.mls-anaclar-seg button{border:none;background:#fff;padding:6px 13px;font-size:12.5px;cursor:pointer;'
+      + 'color:#3b4c66;font-weight:700;font-family:inherit}'
+      + '.mls-anaclar-seg button.on{background:#2563eb;color:#fff}'
+      + '#mlsAnaScopeSel{margin-left:10px;border:1px solid #c9d8ee;border-radius:8px;padding:5px 8px;'
+      + 'font-size:13px;font-family:inherit;max-width:240px;vertical-align:middle}'
+      + '#mlsAnaScopeCaption{font-size:12.5px;color:#3b5468;margin-top:8px;line-height:1.5}'
+      + '#mlsAnaRvuProvPanel{border:2px solid #12915e;border-radius:12px;padding:12px 14px;margin:10px 0;'
+      + 'background:#f2faf6}'
+      + '#mlsAnaRvuProvPanel .ph{font-weight:800;font-size:14px;color:#0d6b45;margin-bottom:8px}'
+      + '#mlsAnaRvuProvPanel .kw{display:flex;flex-wrap:wrap;gap:10px}'
+      + '#mlsAnaRvuProvPanel .k{flex:1 1 130px;min-width:120px;border:1px solid #b7e0cb;border-radius:10px;'
+      + 'padding:9px 11px;background:#fff}'
+      + '#mlsAnaRvuProvPanel .k .v{font-size:20px;font-weight:800;color:#0d6b45;font-variant-numeric:tabular-nums}'
+      + '#mlsAnaRvuProvPanel .k .l{font-size:10.5px;color:#5b6b85;text-transform:uppercase;letter-spacing:.03em;margin-top:2px}'
+      + '#mlsAnaRvuProvPanel .pnote{font-size:11.5px;color:#3f5c4e;margin-top:8px}'
+      + '#mlsAnaRvuPwLabel{font-weight:800;font-size:12px;color:#1d4ed8;background:#e8f0fe;'
+      + 'border:1px solid #bfd3f8;border-radius:8px;padding:6px 10px;margin:12px 0 4px;display:block}'
+      + '#mlsRvuProd.' + PROVMODE_CLASS + ' .mlsrvu-kpis,'
+      + '#mlsRvuProd.' + PROVMODE_CLASS + ' .mlsrvu-bars{opacity:.62}'
+      + '#mlsAnaBaseNote{border:1px solid #f0e0b8;background:#fff8ec;color:#7a5a12;border-radius:10px;'
+      + 'padding:9px 12px;font-size:12.5px;margin:8px 0;line-height:1.5}'
+      /* ---- v1.1 perf: skeleton shimmer + refresh chip ---- */
+      + '.mls-anaclar-skel{display:flex;flex-direction:column;gap:8px;padding:4px 0}'
+      + '.mls-anaclar-skel i{display:block;height:14px;border-radius:7px;'
+      + 'background:linear-gradient(90deg,#eef2f8 25%,#e2e9f4 37%,#eef2f8 63%);'
+      + 'background-size:400% 100%;animation:mlsAnaShimmer 1.2s ease infinite}'
+      + '@keyframes mlsAnaShimmer{0%{background-position:100% 0}100%{background-position:0 0}}'
+      + '.mls-anaclar-refresh{margin-top:8px;font-size:12px;font-weight:600;color:#2f5f9e;'
+      + 'background:#eef4fd;border:1px solid #d5e3f7;border-radius:8px;padding:6px 10px;display:inline-block}'
+      /* ---- v1.1 polish: readable high-contrast text (no light-gray-on-white) ---- */
+      + '#analysisView .sub{color:#3d4e64!important;font-size:13.5px!important;line-height:1.55!important}'
+      + '#analysisView .mini{color:#46586f!important}'
+      + '#analysisView .empty{color:#46586f!important}'
+      + '#analysisView .mlsrvu-note,#analysisView .mlsrvu-foot{color:#46586f!important}'
+      + '#analysisView .mlsrvu-kpi .l{color:#46586f!important}'
+      + '#analysisView h2{color:#13233d!important;letter-spacing:-.2px}'
+      + '#analysisView .code-disclaim{color:#6b5518!important;background:#fffaf0;'
+      + 'border:1px solid #f0e3c0;border-radius:8px;padding:6px 10px;font-size:11.5px}'
+      /* consistent card chrome in the plain fallback; never doubled inside ax tiles */
+      + '#analysisView:not(.ax-grid)>.card{border:1px solid #dde6f2!important;border-radius:14px!important;'
+      + 'box-shadow:0 2px 10px -6px rgba(15,37,64,.22)!important;padding:16px 18px!important;margin:0 0 16px!important}'
+      + '#analysisView.ax-grid .ax-body>.card{border:none!important;box-shadow:none!important}'
+      /* scope bar: white card with accent edge, full-width row inside the ax grid */
+      + '#mlsAnaScopeBar{background:#fff;border:1px solid #dde6f2;border-left:4px solid #2563eb;'
+      + 'border-radius:12px;box-shadow:0 2px 10px -6px rgba(15,37,64,.18)}'
+      + '#analysisView.ax-grid>#mlsAnaScopeBar{grid-column:1/-1}';
+    var s = document.createElement('style');
+    s.id = 'mlsAnaClarityCSS';
+    s.setAttribute(MARK, '1');
+    s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  // ------------------------------------------------- plain-English explainers
+  var TOPICS = [
+    { id: 'rvu', btn: 'Explain RVUs', title: 'What is an RVU?', html:
+      '<p>An <b>RVU (Relative Value Unit)</b> is Medicare’s standard yardstick for how much a '
+      + 'medical service “counts.” Every billable service (every CPT code) is assigned a '
+      + 'number of RVUs — a longer, more complex service gets more RVUs than a quick one.</p>'
+      + '<p>A <b>total RVU</b> has three parts: <b>physician work</b> (your time, skill, and effort), '
+      + '<b>practice expense</b> (staff, space, equipment), and <b>malpractice cost</b>. Medicare payment '
+      + 'is roughly: total RVUs × a dollar “conversion factor” (about $33.40 in 2026), with a '
+      + 'geographic adjustment.</p>'
+      + '<div class="eg">Example: a level-4 established office visit (99214) is about <b>3.85 total RVUs</b> '
+      + '(non-facility) ≈ $129 from Medicare before adjustments.</div>' },
+    { id: 'wrvu', btn: 'Explain Work RVUs', title: 'What is a Work RVU (wRVU)?', html:
+      '<p>A <b>work RVU (wRVU)</b> is just the <b>physician-work slice</b> of the total RVU — the '
+      + 'time, technical skill, mental effort, and stress of doing the service itself, <i>before</i> any '
+      + 'overhead. It measures <b>your</b> work, not the office’s costs.</p>'
+      + '<p>Productivity dashboards and most employment contracts count <b>wRVUs</b>, because they reflect '
+      + 'the doctor’s own effort regardless of who the payer is or what the clinic’s overhead costs.</p>'
+      + '<div class="eg">Examples: 99213 = <b>1.30 wRVU</b> · 99214 = <b>1.92 wRVU</b> · lumbar '
+      + 'transforaminal epidural (64483) = <b>1.90 wRVU</b>.</div>' },
+    { id: 'vs', btn: 'RVUs vs Work RVUs', title: 'RVUs vs Work RVUs — the difference', html:
+      '<p><b>Total RVU = work RVU + practice expense + malpractice.</b> The total tracks roughly the full '
+      + 'payment for a service; the <b>wRVU</b> tracks only your personal physician work.</p>'
+      + '<p>Two services can pay about the same overall but have very different wRVUs, if one relies more on '
+      + 'equipment and staff (higher practice expense) and less on physician time.</p>'
+      + '<div class="eg">99214: <b>1.92 wRVU</b> out of <b>3.85 total</b> — about half is your work, '
+      + 'the rest is overhead and malpractice.</div>'
+      + '<p>Tip: when an administrator says “RVUs,” they very often mean <b>wRVUs</b> — '
+      + 'worth asking which one.</p>' },
+    { id: 'why', btn: 'Why this matters', title: 'Why these numbers matter to you', html:
+      '<p><b>1. Pay.</b> Many physician contracts pay a set dollar amount per wRVU, or set annual wRVU '
+      + 'targets and bonuses. These numbers are how your productivity is measured and compensated.</p>'
+      + '<p><b>2. Coding accuracy.</b> Your wRVU-per-visit shows whether your coding matches the work you '
+      + 'actually do — chronic under-coding shows up here as a low number.</p>'
+      + '<p><b>3. Honest limits.</b> The dollar figures on this screen are <b>estimates</b> from the Medicare '
+      + 'conversion factor — they are not your actual collections, and nothing on this screen bills '
+      + 'anything. Use them for trends, not accounting.</p>' }
+  ];
+
+  function openExplain(topicId) {
+    closeExplain();
+    injectCSS();
+    var ov = document.createElement('div');
+    ov.className = 'mls-anaclar-ov';
+    ov.id = 'mlsAnaExpOv';
+    ov.setAttribute(MARK, '1');
+    ov.addEventListener('click', function (e) { if (e.target === ov) closeExplain(); });
+    var cur = TOPICS.filter(function (t) { return t.id === topicId; })[0] || TOPICS[0];
+    var tabs = TOPICS.map(function (t) {
+      return '<button class="mls-anaclar-tab' + (t.id === cur.id ? ' on' : '') + '" data-topic="' + t.id + '">' + esc(t.btn) + '</button>';
+    }).join('');
+    ov.innerHTML =
+      '<div class="mls-anaclar-modal" role="dialog" aria-label="RVU explanations">'
+      + '<div class="mls-anaclar-mh"><h3>💡 ' + esc(cur.title) + '</h3>'
+      + '<button class="mls-anaclar-x" id="mlsAnaExpClose" aria-label="Close">✕</button></div>'
+      + '<div class="mls-anaclar-tabs">' + tabs + '</div>'
+      + '<div class="mls-anaclar-mb" id="mlsAnaExpBody">' + cur.html + '</div>'
+      + '</div>';
+    document.body.appendChild(ov);
+    $('mlsAnaExpClose').onclick = closeExplain;
+    ov.querySelectorAll('.mls-anaclar-tab').forEach(function (b) {
+      b.onclick = function () { openExplain(b.getAttribute('data-topic')); };
+    });
+    document.addEventListener('keydown', escClose, true);
+  }
+  function escClose(e) { if (e.key === 'Escape') closeExplain(); }
+  function closeExplain() {
+    var o = $('mlsAnaExpOv'); if (o) o.remove();
+    document.removeEventListener('keydown', escClose, true);
+  }
+
+  function explainRowHTML(rowId) {
+    return '<div class="mls-anaclar-exprow" id="' + rowId + '" ' + MARK + '="1">'
+      + TOPICS.map(function (t) {
+        return '<button type="button" class="mls-anaclar-expbtn" data-topic="' + t.id + '">💡 ' + esc(t.btn) + '</button>';
+      }).join('')
+      + '</div>';
+  }
+  function wireExplainRow(row) {
+    if (!row) return;
+    row.querySelectorAll('.mls-anaclar-expbtn').forEach(function (b) {
+      b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); openExplain(b.getAttribute('data-topic')); };
+    });
+  }
+
+  // Insert the explain-button row + inline helper into a card, after its heading.
+  function addExplainToCard(card, rowId, hintId, hintText) {
+    if (!card) return;
+    if (!$(rowId)) {
+      var head = card.querySelector('h2,h3') || card.firstElementChild;
+      var holder = document.createElement('div');
+      holder.setAttribute(MARK, '1');
+      holder.innerHTML = explainRowHTML(rowId)
+        + (hintText ? '<div class="mls-anaclar-hint" id="' + hintId + '" ' + MARK + '="1">' + hintText + '</div>' : '');
+      if (head && head.parentNode === card) card.insertBefore(holder, head.nextSibling);
+      else card.insertBefore(holder, card.firstChild);
+    }
+    wireExplainRow($(rowId));
+  }
+
+  // Helper text directly under the "wRVU (approx.)" number in Baseline metrics.
+  function annotateBaselineTiles() {
+    var body = $('anaBaselineBody'); if (!body) return;
+    if (body.querySelector('[data-mls-anaclar-tile]')) return;
+    var labels = body.querySelectorAll('div');
+    for (var i = 0; i < labels.length; i++) {
+      var el = labels[i];
+      if (el.children.length === 0 && /^wRVU \(approx\.\)$/.test((el.textContent || '').trim())) {
+        var tile = el.parentNode; if (!tile) return;
+        var note = document.createElement('div');
+        note.className = 'mls-anaclar-hint';
+        note.setAttribute(MARK, '1');
+        note.setAttribute('data-mls-anaclar-tile', '1');
+        note.innerHTML = '= <b>work</b> RVUs: the physician-work credit only, estimated from E/M '
+          + 'office-visit levels (procedures not included). Not dollars — see “Explain Work RVUs” above.';
+        tile.appendChild(note);
+        return;
+      }
+    }
+  }
+
+  // ------------------------------------------------------------- scope chips
+  // Persistent labels so every card says whose data it shows.
+  var CHIPS = [
+    { id: 'anaKeyTrends',   cls: 'pw',    txt: '🏥 Practice-wide · all providers' },
+    { id: 'anaOutcomes',    cls: 'pw',    txt: '🏥 Practice-wide · all providers' },
+    { id: 'anaRwe',         cls: 'pw',    txt: '🏥 Practice-wide · all providers' },
+    { id: 'anaAsk',         cls: 'pw',    txt: '🏥 Practice-wide records' },
+    { id: 'anaBaseline',    cls: 'pw',    txt: '🏥 Practice-wide · all providers' },
+    { id: 'mlsProcReport',  cls: 'pw',    txt: '🏥 Practice-wide · all providers' },
+    { id: 'mlsDWCard',      cls: 'split', txt: '👥 Split by provider + combined' },
+    { id: 'anaTeamGrades',  cls: 'split', txt: '👥 Split by provider' },
+    { id: 'anaDoctorReview',cls: 'prov',  txt: '👤 Provider-scoped · pick a doctor' }
+  ];
+  function chipFor(card, cls, txt, chipId) {
+    if (!card || card.querySelector('#' + chipId)) return;
+    var head = card.querySelector('h2,h3');
+    var chip = document.createElement('span');
+    chip.id = chipId;
+    chip.className = 'mls-anaclar-chip ' + cls;
+    chip.setAttribute(MARK, '1');
+    chip.textContent = txt;
+    if (head) head.appendChild(chip);
+    else card.insertBefore(chip, card.firstChild);
+  }
+  function labelCards() {
+    CHIPS.forEach(function (c) { chipFor($(c.id), c.cls, c.txt, 'mlsAnaChip_' + c.id); });
+    // RVU Productivity chip is dynamic (depends on the selected scope).
+    var rvuCard = $('mlsRvuProd');
+    if (rvuCard) {
+      var old = $('mlsAnaChip_mlsRvuProd');
+      var provMode = SCOPE.mode === 'provider' && SCOPE.provider;
+      var want = provMode
+        ? { cls: 'prov', txt: '👤 Provider view: ' + SCOPE.provider }
+        : { cls: 'pw', txt: '🏥 Practice-wide · all providers combined' };
+      if (old && old.getAttribute('data-scope-txt') !== want.txt) { old.remove(); old = null; }
+      if (!old) {
+        chipFor(rvuCard, want.cls, want.txt, 'mlsAnaChip_mlsRvuProd');
+        var chip = $('mlsAnaChip_mlsRvuProd');
+        if (chip) chip.setAttribute('data-scope-txt', want.txt);
+      }
+    }
+  }
+
+  // ---------------------------------------------------- v1.1 performance layer
+  var PERF = { open: 0, firstPaintMs: null, baselineMs: null };
+  function perfNow() { try { return performance.now(); } catch (e) { return Date.now(); } }
+  function CACHE_KEY() { return 'sf_u::' + curEmail() + '::mlsAnaCache.baseline'; }
+  function skeletonHTML(rows) {
+    var bars = '';
+    for (var i = 0; i < rows; i++) bars += '<i style="width:' + (88 - i * 14) + '%"></i>';
+    return '<div class="mls-anaclar-skel" ' + MARK + '="1">' + bars + '</div>';
+  }
+  function cleanHTML(box) {
+    try {
+      var c = box.cloneNode(true);
+      c.querySelectorAll('[' + MARK + ']').forEach(function (n) { n.remove(); });
+      return c.innerHTML;
+    } catch (e) { return box.innerHTML; }
+  }
+  function timeLabel() {
+    var d = new Date(), h = d.getHours(), m = ('0' + d.getMinutes()).slice(-2), ap = h >= 12 ? 'PM' : 'AM';
+    return (h % 12 || 12) + ':' + m + ' ' + ap;
+  }
+
+  function wrapLoaders() {
+    // Baseline: /api/records/summary was re-fetched on EVERY tab open with the card
+    // blanked to a spinner for the whole round-trip. Paint the last-good result back
+    // instantly (sessionStorage, per user, this tab only) and refresh behind it.
+    if (typeof window.loadAnalysisBaseline === 'function' && !window.loadAnalysisBaseline.__anaclar) {
+      var origB = window.loadAnalysisBaseline;
+      var wb = function (force) {
+        var t0 = perfNow();
+        var box = $('anaBaselineBody');
+        var cached = null;
+        try { cached = JSON.parse(sessionStorage.getItem(CACHE_KEY()) || 'null'); } catch (e) {}
+        var p = origB.apply(this, arguments);   // blanks to its spinner, then fetches
+        if (box && cached && cached.html && !force) {
+          setTimeout(function () {
+            // restore only over the in-flight spinner — never over fresh data or an error
+            if (/Loading metrics/i.test(box.textContent || '')) {
+              box.innerHTML = cached.html +
+                '<div class="mls-anaclar-refresh" ' + MARK + '="1">🔄 Updating from the clinic server… showing data loaded at ' +
+                esc(cached.at || '?') + '</div>';
+            }
+          }, 0);
+        }
+        Promise.resolve(p).then(function () {
+          PERF.baselineMs = Math.round(perfNow() - t0);
+          if (box && box.querySelector('table') && !box.querySelector('.mls-anaclar-refresh')) {
+            try { sessionStorage.setItem(CACHE_KEY(), JSON.stringify({ html: cleanHTML(box), at: timeLabel() })); } catch (e) {}
+          }
+        }, function () {});
+        return p;
+      };
+      wb.__anaclar = 1; wb.__orig = origB;
+      window.loadAnalysisBaseline = wb;
+    }
+    // Key trends: was a SYNCHRONOUS full-panel compute on the tab click (blocks first
+    // paint). Keep existing content (or show a skeleton), defer the compute off the
+    // click, and memo the rendered result for 60 s.
+    if (typeof window.renderAnaKeyTrends === 'function' && !window.renderAnaKeyTrends.__anaclar) {
+      var origK = window.renderAnaKeyTrends;
+      var memo = { html: '', ts: 0 };
+      var wk = function () {
+        var box = $('anaKeyTrendsBody');
+        if (box && memo.html && (Date.now() - memo.ts) < 60000) { box.innerHTML = memo.html; return; }
+        var hasReal = box && !/Reading your data|Loading/i.test(box.textContent || '') &&
+          box.children.length && !box.querySelector('.mls-anaclar-skel');
+        if (box && !hasReal) box.innerHTML = skeletonHTML(3);
+        setTimeout(function () {
+          try { origK(); } catch (e) {}
+          try {
+            var b2 = $('anaKeyTrendsBody');
+            if (b2 && b2.children.length && !b2.querySelector('.mls-anaclar-skel')) { memo.html = b2.innerHTML; memo.ts = Date.now(); }
+          } catch (e) {}
+        }, 40);
+      };
+      wk.__anaclar = 1; wk.__orig = origK;
+      window.renderAnaKeyTrends = wk;
+    }
+  }
+  function unwrapLoaders() {
+    try { if (window.loadAnalysisBaseline && window.loadAnalysisBaseline.__anaclar) window.loadAnalysisBaseline = window.loadAnalysisBaseline.__orig; } catch (e) {}
+    try { if (window.renderAnaKeyTrends && window.renderAnaKeyTrends.__anaclar) window.renderAnaKeyTrends = window.renderAnaKeyTrends.__orig; } catch (e) {}
+  }
+  // honest before/after evidence: ms from the Analysis tab click to the next paint,
+  // and ms until the baseline data landed — read via __mlsAnaClarity.perfReport()
+  function perfCapture(ev) {
+    try {
+      var t = ev.target;
+      if (t && t.closest && t.closest('#nav_analysis')) {
+        PERF.open = perfNow(); PERF.firstPaintMs = null;
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            if (PERF.open) PERF.firstPaintMs = Math.round(perfNow() - PERF.open);
+          });
+        });
+      }
+    } catch (e) {}
+  }
+
+  // -------------------------------------------------------------- scope bar
+  function renderScopeBar() {
+    var view = $('analysisView'); if (!view) return;
+    var bar = $('mlsAnaScopeBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'mlsAnaScopeBar';
+      bar.setAttribute(MARK, '1');
+      view.insertBefore(bar, view.firstChild);
+    }
+    // seat the bar under the ax page header when the ax tile layout is active
+    try {
+      var axt = view.querySelector('.ax-title');
+      if (axt && axt.parentNode === view && axt.nextElementSibling !== bar) view.insertBefore(bar, axt.nextElementSibling);
+    } catch (e) {}
+    var provs = providerList();
+    if (SCOPE.mode === 'provider' && SCOPE.provider && provs.indexOf(SCOPE.provider) < 0) provs.unshift(SCOPE.provider);
+    var sig = SCOPE.mode + '|' + (SCOPE.provider || '') + '|' + provs.join(',');
+    if (bar.getAttribute('data-sig') === sig) return;
+    bar.setAttribute('data-sig', sig);
+    var opts = provs.map(function (p) {
+      return '<option value="' + esc(p) + '"' + (p === SCOPE.provider ? ' selected' : '') + '>' + esc(p) + '</option>';
+    }).join('');
+    var caption;
+    if (SCOPE.mode === 'provider' && SCOPE.provider) {
+      caption = '👤 <b>Provider view: ' + esc(SCOPE.provider) + '.</b> Cards marked '
+        + '<span class="mls-anaclar-chip prov" style="margin:0 2px">Provider view</span> show only this '
+        + 'provider’s visits. Cards marked '
+        + '<span class="mls-anaclar-chip pw" style="margin:0 2px">Practice-wide</span> always combine '
+        + '<b>all</b> providers and are labeled so you never mix the two.';
+    } else {
+      caption = '🏥 <b>Whole practice.</b> Numbers combine <b>all</b> providers. '
+        + 'Switch to “One provider” to see a single doctor (e.g. just Matt or just Sarah) by themselves.';
+    }
+    bar.innerHTML =
+      '<span class="ttl">📊 Whose data am I looking at?</span>'
+      + '<span class="mls-anaclar-seg" id="mlsAnaScopeSeg">'
+      + '<button type="button" data-m="practice"' + (SCOPE.mode === 'practice' ? ' class="on"' : '') + '>🏥 Whole practice</button>'
+      + '<button type="button" data-m="provider"' + (SCOPE.mode === 'provider' ? ' class="on"' : '') + '>👤 One provider</button>'
+      + '</span>'
+      + (SCOPE.mode === 'provider'
+        ? (provs.length
+          ? '<select id="mlsAnaScopeSel" aria-label="Provider">' + opts + '</select>'
+          : '<span class="mls-anaclar-hint" style="display:inline;margin-left:10px">No provider names found yet — pull patients or sign visits first.</span>')
+        : '')
+      + '<div id="mlsAnaScopeCaption">' + caption + '</div>';
+    var seg = $('mlsAnaScopeSeg');
+    if (seg) seg.querySelectorAll('button').forEach(function (b) {
+      b.onclick = function () {
+        SCOPE.mode = b.getAttribute('data-m');
+        if (SCOPE.mode === 'provider' && !SCOPE.provider) SCOPE.provider = providerList()[0] || null;
+        saveScope(); applyAll();
+      };
+    });
+    var sel = $('mlsAnaScopeSel');
+    if (sel) sel.onchange = function () { SCOPE.provider = sel.value || null; saveScope(); applyAll(); };
+  }
+
+  // ------------------------------------ provider-scoped RVU Productivity view
+  function applyRvuScope() {
+    var card = $('mlsRvuProd'); if (!card) return;
+    var provMode = SCOPE.mode === 'provider' && SCOPE.provider;
+    var unlocked = !!card.querySelector('.mlsrvu-kpis'); // premium + has data
+    var panel = $('mlsAnaRvuProvPanel'), pwLabel = $('mlsAnaRvuPwLabel');
+    if (!provMode || !unlocked) {
+      card.classList.remove(PROVMODE_CLASS);
+      if (panel) panel.remove();
+      if (pwLabel) pwLabel.remove();
+      return;
+    }
+    var rows = [];
+    try {
+      if (window.__mlsRVU && typeof window.__mlsRVU._gather === 'function') rows = window.__mlsRVU._gather(false) || [];
+    } catch (e) { rows = []; }
+    var want = String(SCOPE.provider).trim().toLowerCase();
+    var mine = rows.filter(function (r) { return String(r.provider || '').trim().toLowerCase() === want; });
+    var w = 0, dollars = 0, anyD = false;
+    mine.forEach(function (r) { w += (r.w || 0); if (r.dollars != null) { dollars += r.dollars; anyD = true; } });
+    var html =
+      '<div class="ph">👤 ' + esc(SCOPE.provider) + ' only — signed visits '
+      + '<span class="mls-anaclar-chip prov" style="margin-left:6px">Provider view</span></div>'
+      + '<div class="kw">'
+      + '<div class="k"><div class="v">' + fmt(w) + '</div><div class="l">Total wRVU</div></div>'
+      + '<div class="k"><div class="v">' + mine.length + '</div><div class="l">Signed visits</div></div>'
+      + '<div class="k"><div class="v">' + (mine.length ? fmt(w / mine.length) : '—') + '</div><div class="l">wRVU / visit</div></div>'
+      + (anyD ? '<div class="k"><div class="v">' + money(dollars) + '</div><div class="l">est. Medicare ($)</div></div>' : '')
+      + '</div>'
+      + '<div class="pnote">Counted from ' + esc(SCOPE.provider) + '’s signed, coded visits only — '
+      + 'no other provider’s work is mixed in. Dollar figure is a Medicare estimate, not collections.'
+      + (mine.length ? '' : ' <b>No signed coded visits found for this provider yet.</b>') + '</div>';
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'mlsAnaRvuProvPanel';
+      panel.setAttribute(MARK, '1');
+      var anchor = card.querySelector('.mlsrvu-kpis');
+      if (anchor && anchor.parentNode === card) card.insertBefore(panel, anchor);
+      else card.appendChild(panel);
+    }
+    if (panel.getAttribute('data-sig') !== want + '|' + mine.length + '|' + fmt(w)) {
+      panel.setAttribute('data-sig', want + '|' + mine.length + '|' + fmt(w));
+      panel.innerHTML = html;
+    }
+    if (!$('mlsAnaRvuPwLabel')) {
+      pwLabel = document.createElement('span');
+      pwLabel.id = 'mlsAnaRvuPwLabel';
+      pwLabel.setAttribute(MARK, '1');
+      pwLabel.innerHTML = '🏥 Everything below is <b>PRACTICE-WIDE</b> — all providers combined, '
+        + 'not just ' + esc(SCOPE.provider) + '. See the “By provider” table for the split.';
+      var kpis = card.querySelector('.mlsrvu-kpis');
+      if (kpis && kpis.parentNode === card) card.insertBefore(pwLabel, kpis);
+    }
+    card.classList.add(PROVMODE_CLASS);
+  }
+
+  // Honest notice on the server-side Baseline card (cannot be split client-side).
+  function applyBaselineScope() {
+    var card = $('anaBaseline'); if (!card) return;
+    var note = $('mlsAnaBaseNote');
+    if (SCOPE.mode === 'provider' && SCOPE.provider) {
+      if (!note) {
+        note = document.createElement('div');
+        note.id = 'mlsAnaBaseNote';
+        note.setAttribute(MARK, '1');
+        var head = card.querySelector('h2,h3');
+        if (head && head.parentNode === card) card.insertBefore(note, head.nextSibling);
+        else card.insertBefore(note, card.firstChild);
+      }
+      note.innerHTML = '⚠️ <b>This card is always whole-practice.</b> The clinic server computes these '
+        + 'numbers for all providers combined and can’t yet split them per doctor — so they are '
+        + '<b>not</b> filtered to ' + esc(SCOPE.provider) + '. A per-provider version needs a server-side update.';
+    } else if (note) note.remove();
+  }
+
+  // ------------------------------------------------------------------ engine
+  function applyAll() {
+    try {
+      wrapLoaders();   // idempotent; retried each tick in case a loader lands late
+      var view = $('analysisView'); if (!view) return;
+      injectCSS();
+      renderScopeBar();
+      labelCards();
+      addExplainToCard($('mlsRvuProd'), 'mlsAnaExpRow_rvu', 'mlsAnaHint_rvu',
+        '<b>wRVU</b> = “work RVU” — the credit for the physician-work part of each visit; '
+        + 'it’s the number most pay formulas use. Tap a 💡 button for plain English.');
+      addExplainToCard($('anaBaseline'), 'mlsAnaExpRow_base', 'mlsAnaHint_base',
+        'Confused by “wRVU (approx.)” below? It’s the physician-work credit from your '
+        + 'office-visit codes — not dollars. Tap a 💡 button for plain English.');
+      annotateBaselineTiles();
+      applyRvuScope();
+      applyBaselineScope();
+    } catch (e) {}
+  }
+
+  function schedule() {
+    if (_debounce) return;
+    _debounce = setTimeout(function () { _debounce = null; applyAll(); }, 250);
+  }
+
+  function boot() {
+    document.addEventListener('click', perfCapture, true);
+    applyAll();
+    try {
+      _obs = new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          var t = muts[i].target;
+          if (t && t.nodeType === 1 && (t.id === 'analysisView' || (t.closest && t.closest('#analysisView')))) {
+            // ignore mutations we caused ourselves (marked nodes)
+            if (t.getAttribute && t.getAttribute(MARK)) continue;
+            schedule(); return;
+          }
+        }
+      });
+      _obs.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {}
+    // fallback sweep, same cadence as the other Analysis modules
+    _timer = setInterval(function () {
+      try { if ($('analysisView') && !$('mlsAnaScopeBar')) applyAll(); } catch (e) {}
+    }, 1500);
+  }
+
+  function revert() {
+    try { if (_obs) { _obs.disconnect(); _obs = null; } } catch (e) {}
+    try { if (_timer) { clearInterval(_timer); _timer = null; } } catch (e) {}
+    try { if (_debounce) { clearTimeout(_debounce); _debounce = null; } } catch (e) {}
+    try { document.removeEventListener('click', perfCapture, true); } catch (e) {}
+    try { unwrapLoaders(); } catch (e) {}
+    try { closeExplain(); } catch (e) {}
+    try {
+      document.querySelectorAll('[' + MARK + ']').forEach(function (n) { n.remove(); });
+    } catch (e) {}
+    try { var c = $('mlsRvuProd'); if (c) c.classList.remove(PROVMODE_CLASS); } catch (e) {}
+    try { window.__mlsAnaClarity.installed = false; } catch (e) {}
+  }
+
+  window.__mlsAnaClarity = {
+    installed: true,
+    version: VERSION,
+    revert: revert,
+    apply: applyAll,
+    explain: openExplain,
+    perfReport: function () {
+      return { msFirstPaintAfterTabClick: PERF.firstPaintMs, msBaselineDataLanded: PERF.baselineMs };
+    },
+    scope: function () { return { mode: SCOPE.mode, provider: SCOPE.provider }; },
+    setScope: function (mode, provider) {
+      if (mode === 'practice' || mode === 'provider') SCOPE.mode = mode;
+      if (provider !== undefined) SCOPE.provider = provider;
+      saveScope(); applyAll();
+    },
+    providers: providerList
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+
+/* feat_studygroups_fix_b58 — make STUDY GROUPS actually work end to end (2026-07-08)
+ *  Michael's ask: cohort building (all-patients / by-procedure / manual / pull-from-
+ *  Athena) must actually populate a group, and "Run the study" must actually produce
+ *  the graph + Excel + PDF — wired to the real pulled Athena visits/notes.
+ *
+ *  Authored against LIVE b57 (mls-connect.js + ScribeFlow.html + satellites
+ *  feat_mls_studygroups.js / feat_mls_task7_analysis_sg.js, all fetched read-only).
+ *
+ *  WHAT WAS BROKEN (verified in live source):
+ *   1) feat_mls_studygroups.js athenaHook() probes five function names that do not
+ *      exist anywhere (doFindInAthena, doAutoSearchAthena, _assistReadAthenaTab*,
+ *      pullChartFromAthena, mlsPullAthenaChart) so "📥 Pull visits from Athena"
+ *      ALWAYS reports "stubbed" and never pulls anything — even though the app's
+ *      real read-only chain (window._assistReadChart → _parsePatientChart →
+ *      _savePatientChart) and the already-pulled data (getNotes(), _calAppts,
+ *      patient.summary "Recent visits/Prior history" blocks) are all reachable.
+ *   2) __mlsStudyProB40's green "Run the study" calls sg.runStudy(groupId, {})
+ *      UNFILTERED — the Study-type and Date-range selectors change nothing in the
+ *      graph/Excel/PDF (only the AI narrative respects the range). The engine's own
+ *      blue "Run study" button is the same.
+ *   3) The engine's analyze() extracts a pain-score trend from visit details but no
+ *      output ever shows it — so "Retrospective outcomes" had no outcomes graph.
+ *
+ *  WHAT THIS MODULE DOES (all additive, guarded, reversible):
+ *   A) REAL "Pull visits from Athena": replaces the stub handler. For each patient
+ *      in the group it (1) harvests every visit already stored in MLS — signed/saved
+ *      notes, calendar appointments, and the "Recent visits"/"Prior history" bullets
+ *      of a pulled Athena chart — and (2) when the MLS Assist extension chain is
+ *      available and the patient has no imported chart yet, performs the app's own
+ *      READ-ONLY live chart read (same code path as bulk pull; never writes to
+ *      Athena). Everything merges into the group through the engine's own
+ *      hash-dedupe. Honest per-source tally at the end.
+ *   B) SCOPED STUDY RUNS: wraps __mlsStudyGroups.runStudy so BOTH run buttons
+ *      respect the Study-type + Date-range selectors. Graph output now includes the
+ *      pain-trend line chart (real parsed scores) alongside visits-per-month; the
+ *      Excel gains a Summary scope block + Pain-trend sheet; the PDF cover states
+ *      study type, date range and counts. Empty-range runs are refused with an
+ *      honest message instead of silently producing an all-time study.
+ *   C) TRUTH IN UI: removes the stale "Athena auto-extraction is stubbed" warning
+ *      and replaces it with the real capability status.
+ *   D) PER-VISIT DATA SHAPE (v1.1.0 — coordinated with the pull-pipeline lane and
+ *      ARCHITECTURE_MAP.md §5/§6): pulled Athena history lands via _savePatientChart
+ *      as "Recent visits:" bullets ("• MM/DD/YYYY — reason") in patient.summary plus
+ *      ONE lump note (cc:'Athena chart import'). The harvest now SPLITS those bullets
+ *      into individual dated visit records and EXCLUDES the lump note (whose date is
+ *      the import day, not a visit date). "⚡ Add ALL my patients" and "🎯 Build
+ *      cohort by procedure" are intercepted (their b40 implementations are
+ *      closure-bound and turn a patient's whole pulled history into one lump record
+ *      dated the import day) and rebuilt on the same per-visit harvest, so cohorts
+ *      and studies run on REAL individual pulled visits. Forward-compatible: if the
+ *      pull lane later saves visits as individual notes, they flow in through the
+ *      normal note path automatically.
+ *
+ *  v1.2.0 — AI STUDIO STABILITY (same view as Study Groups):
+ *   E1 CUSTOM-TOOL GLITCH FIX. Root cause verified in live b57: __mlsStudioTourB39's
+ *      1-second tick calls placeOrder() which UNCONDITIONALLY re-parents
+ *      #studioResultCard (sv.appendChild + sv.insertBefore) every tick — and
+ *      re-parenting an <iframe> reloads its srcdoc, so a freshly built custom tool
+ *      visibly restarts ~once per second and loses all internal state ("repeatedly
+ *      glitches out"). Fix: shadow #studioView's own appendChild/insertBefore with
+ *      no-op elimination — a move that would land a child exactly where it already
+ *      sits (element order) is skipped; genuine moves pass through untouched. After
+ *      the first correct placement every b39 tick becomes a true no-op and the
+ *      widget iframe is never reloaded again. Also dedupes the "My creations" list
+ *      (b39's auto-save only checks arr[0], so re-opening saved widgets alternately
+ *      accumulated duplicates), preserving pinned flags.
+ *   E2 GIANT PAY REPORTS BUTTON REMOVED from the Study Groups view: the b34 pack
+ *      injects .mls-b34-pay as a stray child of #studioView; in the live sx grid
+ *      (align-items:stretch) it auto-flows into the row reserved for Study Groups
+ *      and stretches to the full height of the expanded section — the "big giant"
+ *      button. Hidden via CSS inside #studioView only (display:none keeps b34's
+ *      re-inject guard satisfied — no ping-pong; Calendar's Pay Reports button is
+ *      untouched). #mlsB39SgWrap is pinned to a clean full-width grid row.
+ *
+ *  SAFETY: athenaOne is READ-ONLY here — the only extension call used is the
+ *  app's own _assistReadChart (mlsAppReadChart). No write/push/sign function is
+ *  referenced. No PHI leaves the browser except the existing authed /api/study
+ *  narrative call (unchanged, de-identified, premium-gated).
+ *  Revert: window.__mlsSgFix.revert()
+ */
+;(function () {
+  'use strict';
+  if (window.__mlsSgFix && window.__mlsSgFix.installed) return;
+
+  var VERSION = 'sgfix-1.2.0';
+  var MARK = 'data-mls-sgfix';
+  var CDN_XLSX = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  var CDN_JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  var _tick = null;
+  var _origAthenaClick = null, _origRunClick = null;
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? '' : String(x); }
+  function esc(s) {
+    return S(s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function SG() { var s = window.__mlsStudyGroups; return (s && s.__live) ? s : null; }
+  function withTimeout(p, ms, label) {
+    return new Promise(function (res, rej) {
+      var done = false;
+      var t = setTimeout(function () { if (!done) { done = true; rej(new Error((label || 'step') + ' timed out')); } }, ms);
+      Promise.resolve(p).then(function (v) { if (!done) { done = true; clearTimeout(t); res(v); } },
+        function (e) { if (!done) { done = true; clearTimeout(t); rej(e); } });
+    });
+  }
+  /* jsPDF's built-in fonts choke on emoji/smart quotes — sanitize for PDF text. */
+  function pdfSafe(s) {
+    return S(s).replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+      .replace(/[–—]/g, '-').replace(/•/g, '*').replace(/[^\x20-\xFF\n\t]/g, ' ');
+  }
+  /* normalize any of YYYY-MM-DD / MM/DD/YYYY / M-D-YYYY to YYYY-MM-DD ('' if hopeless) */
+  function ymd(s) {
+    s = S(s).trim();
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (m) return m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+    return '';
+  }
+  function digits(s) { return S(s).replace(/\D+/g, ''); }
+  function sameDob(a, b) {
+    var da = digits(a), db = digits(b);
+    if (!da || !db) return true;                    // missing on either side = don't block
+    if (da.length === 8 && db.length === 8) {
+      // could be MMDDYYYY vs YYYYMMDD — compare both orientations
+      return da === db || (da.slice(4) + da.slice(0, 4)) === db || da === (db.slice(4) + db.slice(0, 4));
+    }
+    return da === db;
+  }
+  function normName(s) { return S(s).trim().toLowerCase().replace(/\s+/g, ' '); }
+
+  /* --------------------------- app-data access (read-only) --------------------------- */
+  function appPatients() { try { return (window.getPatients && window.getPatients()) || []; } catch (e) { return []; } }
+  function appNotes() { try { return (window.getNotes && window.getNotes()) || []; } catch (e) { return []; } }
+  function appAppts() { try { return window._calAppts || []; } catch (e) { return []; } }
+  function findAppPatient(name, dob) {
+    var n = normName(name); if (!n) return null;
+    var pts = appPatients(), i;
+    for (i = 0; i < pts.length; i++) {
+      if (normName(pts[i].name) === n && sameDob(dob, pts[i].dob)) return pts[i];
+    }
+    for (i = 0; i < pts.length; i++) { if (normName(pts[i].name) === n) return pts[i]; }
+    return null;
+  }
+
+  /* The lump chart-import note carries the WHOLE pulled history dated the IMPORT day —
+     as a study record it would be one bogus-dated visit, so it is excluded; its
+     individual visits come back in via the summary bullets below. */
+  function isChartImportNote(nt) { return /athena chart import/i.test(S(nt && nt.cc)); }
+
+  /* Split patient.summary into individual pulled-Athena visit records.
+     _savePatientChart (the pull pipeline's canonical sink) writes blocks like:
+       — Pulled from Athena 7/6/2026 —
+       <chart summary>
+       Prior history:
+       • <PMH item>              (chart-level, NOT a visit — kept out of visit counts)
+       Recent visits:
+       • MM/DD/YYYY — reason     (ONE study record per bullet, dated the VISIT date) */
+  function athenaVisitRecords(summary) {
+    var out = [], mode = '';
+    String(summary || '').split('\n').forEach(function (line) {
+      var t = line.trim();
+      if (/^Recent visits:/i.test(t)) { mode = 'visits'; return; }
+      if (/^Prior history:/i.test(t)) { mode = 'history'; return; }
+      if (/^[—\-]+\s*Pulled from Athena/i.test(t)) { mode = ''; return; }
+      if (mode !== 'visits') return;
+      if (t === '') { mode = ''; return; }
+      var m = t.match(/^[•*]\s*(.+)$/); if (!m) return;
+      var body = m[1];
+      var dm = body.match(/^(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})\s*[—\-–:]*\s*(.*)$/);
+      if (dm) out.push({ date: ymd(dm[1]), type: 'Athena visit', detail: S(dm[2] || dm[1]).slice(0, 500), source: 'athena-visit' });
+      else out.push({ date: '', type: 'Athena visit', detail: body.slice(0, 500), source: 'athena-visit' });
+    });
+    return out;
+  }
+
+  /* One-pass indexes so whole-roster cohort builds aren't O(patients × notes). */
+  function buildCtx() {
+    var notesIdx = {}, apptsIdx = {}, ptsIdx = {}, ptsById = {};
+    appPatients().forEach(function (p) {
+      if (!p) return;
+      var k = normName(p.name);
+      if (k) (ptsIdx[k] = ptsIdx[k] || []).push(p);
+      if (p.id) ptsById[p.id] = p;
+    });
+    appNotes().forEach(function (nt) {
+      if (!nt || isChartImportNote(nt)) return;
+      var k = '';
+      if (nt.patientId && ptsById[nt.patientId]) k = normName(ptsById[nt.patientId].name);
+      if (!k) k = normName(nt.patient || nt.patientName || nt.name);
+      if (k) (notesIdx[k] = notesIdx[k] || []).push(nt);
+    });
+    appAppts().forEach(function (a) {
+      if (!a) return;
+      var k = normName(a.name);
+      if (k) (apptsIdx[k] = apptsIdx[k] || []).push(a);
+    });
+    return { notesIdx: notesIdx, apptsIdx: apptsIdx, ptsIdx: ptsIdx };
+  }
+  function ctxPatient(ctx, name, dob) {
+    var arr = ctx.ptsIdx[normName(name)] || [];
+    for (var i = 0; i < arr.length; i++) { if (sameDob(dob, arr[i].dob)) return arr[i]; }
+    return arr[0] || null;
+  }
+
+  /* Harvest every INDIVIDUAL visit MLS knows for one patient: saved notes,
+     calendar appointments, and the per-visit bullets of pulled Athena charts. */
+  function harvestVisits(name, dob, ctx) {
+    ctx = ctx || buildCtx();
+    var out = [], n = normName(name);
+    var ap = ctxPatient(ctx, name, dob);
+    (ctx.notesIdx[n] || []).forEach(function (nt) {
+      var d = ymd(nt.date || nt.visitDate || (nt.created ? new Date(nt.created).toISOString() : ''));
+      out.push({ date: d, type: S(nt.cc || nt.visitType || nt.kind || 'Visit note'),
+        detail: S(nt.text || nt.soap || nt.note || '').slice(0, 8000), source: 'mls-note' });
+    });
+    (ctx.apptsIdx[n] || []).forEach(function (a) {
+      out.push({ date: ymd(a.appt_date), type: S(a.appt_type || 'Appointment'),
+        detail: 'Reason: ' + S(a.reason || '(not recorded)') +
+          (a.provider ? (' | Provider: ' + S(a.provider).replace(/Close$/, '').replace(/_/g, ' ')) : '') +
+          (a.status ? (' | Status: ' + a.status) : ''), source: 'mls-appt' });
+    });
+    if (ap && ap.summary) out = out.concat(athenaVisitRecords(ap.summary));
+    return out;
+  }
+
+  /* Live READ-ONLY chart read via the app's own chain (extension mlsAppReadChart). */
+  function liveChainAvailable() {
+    return typeof window._assistReadChart === 'function' &&
+      typeof window._parsePatientChart === 'function' &&
+      typeof window._savePatientChart === 'function';
+  }
+  function hasImported(name) {
+    try { return typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(name); }
+    catch (e) { return false; }
+  }
+  function livePull(name) {
+    return withTimeout(window._assistReadChart(name, function () {}), 45000, 'Athena read')
+      .then(function (rd) { return window._parsePatientChart(rd && rd.text); })
+      .then(function (chart) {
+        if (chart && (chart.problems || chart.meds || chart.allergies || chart.summary ||
+          (chart.history && chart.history.length) || (chart.visits && chart.visits.length))) {
+          window._savePatientChart(name, null, chart);  // app-local save; Athena untouched
+          return true;
+        }
+        return false;
+      });
+  }
+
+  /* ------------------------ A) real "Pull visits from Athena" ------------------------ */
+  function pullReal(groupId) {
+    var sg = SG(); if (!sg) return Promise.reject(new Error('study engine not loaded'));
+    var g = sg.get(groupId); if (!g) return Promise.reject(new Error('group not found'));
+    var st = $('mls-sg-athena-status');
+    function say(m) { if (st) st.textContent = m; }
+    var i = 0, addedVisits = 0, live = 0, stored = 0, empty = 0;
+    var canLive = liveChainAvailable();
+    var ctx = buildCtx();
+    function next() {
+      if (i >= g.patients.length) {
+        var bits = [];
+        if (live) bits.push(live + ' read live from Athena (read-only)');
+        if (stored) bits.push(stored + ' from data already in MLS');
+        say(addedVisits
+          ? ('✓ Added ' + addedVisits + ' new visit record(s) across ' + g.patients.length + ' patient(s)' +
+            (bits.length ? ' — ' + bits.join(', ') : '') + '. Nothing was written to Athena.')
+          : ('No new visits found' + (empty ? ' (' + empty + ' patient(s) have no data in MLS yet' +
+            (canLive ? ' and no readable Athena chart' : ' — connect MLS Assist + open athenaOne for live reads') + ')' : '') +
+            '. Pull patients/months on the Visit tab first, then retry.'));
+        return Promise.resolve({ visits: addedVisits, patients: g.patients.length });
+      }
+      var pt = g.patients[i++];
+      say('Pulling ' + i + '/' + g.patients.length + ' (' + pt.name + ')…');
+      var pre = Promise.resolve(false);
+      if (canLive && !hasImported(pt.name)) {
+        pre = livePull(pt.name).then(function (ok) { if (ok) live++; return ok; }, function () { return false; });
+      }
+      return pre.then(function (didLive) {
+        // a live read just updated this patient's chart — reindex so its new visits are seen
+        var vs = harvestVisits(pt.name, pt.dob, didLive ? null : ctx).filter(function (v) { return v.date || v.detail; });
+        if (!vs.length) { empty++; return next(); }
+        var before = 0;
+        try { var cur = sg.get(groupId).patients.filter(function (x) { return x.id === pt.id; })[0]; before = (cur && cur.visits) ? cur.visits.length : 0; } catch (e) {}
+        sg.addPatient(groupId, { name: pt.name, dob: pt.dob, mrn: pt.mrn, visits: vs });  // engine hash-dedupes
+        try {
+          var after = sg.get(groupId).patients.filter(function (x) { return x.id === pt.id; })[0];
+          var n = ((after && after.visits) ? after.visits.length : 0) - before;
+          if (n > 0) { addedVisits += n; stored++; }
+        } catch (e) {}
+        return new Promise(function (r) { setTimeout(r, 60); }).then(next);
+      });
+    }
+    return next();
+  }
+
+  /* ----------------------- B) scoped study run (type + date range) ----------------------- */
+  function uiScope() {
+    var months = 0, type = 'volume';
+    try { months = +(($('sgpRange') || {}).value) || 0; } catch (e) {}
+    try { type = ($('sgpType') || {}).value || 'volume'; } catch (e) {}
+    var labels = { outcomes: 'Retrospective outcomes', volume: 'Visit volume & trends',
+      procedure: 'Procedure comparison', profile: 'Cohort profile / demographics', custom: 'Custom question' };
+    return { months: months, type: type, typeLabel: labels[type] || 'Study',
+      rangeLabel: months ? ('last ' + months + ' months') : 'all time' };
+  }
+  function inRange(dateStr, months) {
+    if (!months) return true;
+    var d = new Date(dateStr); if (isNaN(d)) return true;   // undated records stay in (honest: they can't be excluded)
+    var cut = new Date(); cut.setMonth(cut.getMonth() - months);
+    return d >= cut;
+  }
+  function filteredClone(group, months) {
+    var g = JSON.parse(JSON.stringify(group));
+    if (months) g.patients.forEach(function (p) {
+      p.visits = (p.visits || []).filter(function (v) { return inRange(v.date, months); });
+    });
+    return g;
+  }
+
+  function painSVG(pain, w, h) {
+    if (!pain || pain.length < 2) return '';
+    w = w || 640; h = h || 220;
+    var pad = 40, dated = pain.filter(function (p) { return p.date; });
+    if (dated.length < 2) return '';
+    var n = dated.length, step = (w - pad * 2) / (n - 1);
+    var pts = dated.map(function (p, idx) {
+      var x = pad + idx * step, y = pad + (1 - Math.min(10, Math.max(0, p.score)) / 10) * (h - pad * 2);
+      return { x: x, y: y, p: p };
+    });
+    var poly = pts.map(function (q) { return q.x.toFixed(1) + ',' + q.y.toFixed(1); }).join(' ');
+    var dots = pts.map(function (q) {
+      return '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="3" fill="#dc2626">' +
+        '<title>' + esc(q.p.date + ': pain ' + q.p.score + '/10') + '</title></circle>';
+    }).join('');
+    var grid = '';
+    for (var gv = 0; gv <= 10; gv += 2) {
+      var gy = pad + (1 - gv / 10) * (h - pad * 2);
+      grid += '<line x1="' + pad + '" y1="' + gy.toFixed(1) + '" x2="' + (w - pad) + '" y2="' + gy.toFixed(1) + '" stroke="#eef2f7"></line>' +
+        '<text x="' + (pad - 6) + '" y="' + (gy + 3).toFixed(1) + '" font-size="8" text-anchor="end" fill="#64748b">' + gv + '</text>';
+    }
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '">' +
+      '<rect width="' + w + '" height="' + h + '" fill="#ffffff"></rect>' +
+      '<text x="' + (w / 2) + '" y="18" font-size="12" font-weight="bold" text-anchor="middle" fill="#0f172a">Pain scores over time — ' +
+      esc(dated.length + ' scores parsed from visit notes (0–10)') + '</text>' + grid +
+      '<polyline points="' + poly + '" fill="none" stroke="#dc2626" stroke-width="2"></polyline>' + dots +
+      '<text x="' + (dated.length ? pad : 0) + '" y="' + (h - 8) + '" font-size="8" fill="#64748b">' + esc(dated[0].date) + '</text>' +
+      '<text x="' + (w - pad) + '" y="' + (h - 8) + '" font-size="8" text-anchor="end" fill="#64748b">' + esc(dated[dated.length - 1].date) + '</text>' +
+      '</svg>';
+  }
+
+  function getXLSX() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (typeof window.loadSheetJs === 'function') return window.loadSheetJs();
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = CDN_XLSX; s.setAttribute(MARK, '1');
+      s.onload = function () { window.XLSX ? res(window.XLSX) : rej(new Error('SheetJS unavailable')); };
+      s.onerror = function () { rej(new Error('Failed to load SheetJS')); };
+      document.head.appendChild(s);
+    });
+  }
+  function getJsPDF() {
+    var have = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (have) return Promise.resolve(have);
+    if (typeof window.loadJsPdf === 'function') {
+      return Promise.resolve(window.loadJsPdf()).then(function (ns) {
+        return (ns && ns.jsPDF) || (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      });
+    }
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = CDN_JSPDF; s.setAttribute(MARK, '1');
+      s.onload = function () { var j = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; j ? res(j) : rej(new Error('jsPDF unavailable')); };
+      s.onerror = function () { rej(new Error('Failed to load jsPDF')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function scopedRun(sg, groupId) {
+    var group = sg.get(groupId);
+    if (!group) return Promise.reject(new Error('group not found'));
+    var scope = uiScope();
+    var g = filteredClone(group, scope.months);
+    var a = sg.analyze(g);
+    if (scope.months && !a.visitCount) {
+      return Promise.reject(new Error('No visits fall in the ' + scope.rangeLabel +
+        ' for "' + group.name + '" — widen the date range (or add visits) and run again.'));
+    }
+    var scopeLine = scope.typeLabel + ' · ' + scope.rangeLabel + ' · ' +
+      a.patientCount + ' patients, ' + a.visitCount + ' visits';
+    var svg = '<div style="font:700 12px system-ui;color:#3b5f9e;margin:0 0 6px" ' + MARK + '="1">📐 Scope: ' +
+      esc(scopeLine) + '</div>' + sg.chartSVG(a);
+    var pv = painSVG(a.pain);
+    if (pv) svg += '<div style="height:8px"></div>' + pv;
+    else if (scope.type === 'outcomes') svg += '<div style="font:600 11.5px system-ui;color:#9a3412;margin-top:6px" ' + MARK + '="1">' +
+      'No pain scores (0–10) could be parsed from these visit notes yet — the outcomes trend chart appears once notes contain them.</div>';
+    var result = { group: g, analysis: a, svg: svg, scope: scope };
+
+    var jobs = [];
+    jobs.push(getXLSX().then(function (XLSX) {
+      var wb = XLSX.utils.book_new();
+      var summary = [
+        ['MLS Study Group report'],
+        ['Group', group.name],
+        ['Study type', scope.typeLabel],
+        ['Date range', scope.rangeLabel],
+        ['Generated', new Date().toLocaleString()],
+        [],
+        ['Patients', a.patientCount],
+        ['Total visits (in range)', a.visitCount],
+        ['Avg visits / patient', a.avgVisits.toFixed(2)],
+        [],
+        ['Visit types'], ['Type', 'Count']
+      ].concat(Object.keys(a.byType).map(function (t) { return [t, a.byType[t]]; }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'Summary');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sg.visitRows(a)), 'Visits');
+      if (a.pain && a.pain.length) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
+          [['Date', 'Pain score (0-10)']].concat(a.pain.map(function (p) { return [p.date, p.score]; }))), 'Pain trend');
+      }
+      result.xlsxBlob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })],
+        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }).catch(function () {
+      var rows = sg.visitRows(a).map(function (r) {
+        return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
+      }).join('\n');
+      result.xlsxBlob = new Blob([rows], { type: 'text/csv' });
+      result.xlsxFallback = true;
+    }));
+
+    jobs.push(getJsPDF().then(function (jsPDF) {
+      var doc = new jsPDF({ unit: 'pt', format: 'letter' });
+      var W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 48, maxPages = 100, pages = 1;
+      function addPage() { if (pages >= maxPages) return false; doc.addPage(); pages++; return true; }
+      doc.setFontSize(20); doc.text('MLS Study Group Report', M, 90);
+      doc.setFontSize(13); doc.text(pdfSafe(group.name), M, 120);
+      doc.setFontSize(11); doc.text(pdfSafe(scope.typeLabel + '  |  ' + scope.rangeLabel), M, 140);
+      doc.setFontSize(10); doc.setTextColor(90);
+      doc.text('Generated ' + new Date().toLocaleString(), M, 160);
+      doc.text(a.patientCount + ' patients   |   ' + a.visitCount + ' visits in range   |   avg ' +
+        a.avgVisits.toFixed(1) + ' visits/patient', M, 176);
+      doc.setTextColor(0);
+      var y = 210; doc.setFontSize(13); doc.text('Visit type breakdown', M, y); y += 18; doc.setFontSize(10);
+      Object.keys(a.byType).forEach(function (t) {
+        doc.text(pdfSafe('* ' + t + ': ' + a.byType[t]), M + 8, y); y += 14;
+        if (y > H - M) { if (!addPage()) return; y = M; }
+      });
+      if (a.pain && a.pain.length > 1) {
+        y += 8; if (y > H - M - 40) { addPage(); y = M; }
+        doc.setFontSize(13); doc.text('Pain trend (parsed from notes)', M, y); y += 16; doc.setFontSize(10);
+        doc.text(pdfSafe(a.pain.length + ' scores; first ' + a.pain[0].score + '/10 (' + a.pain[0].date +
+          '), last ' + a.pain[a.pain.length - 1].score + '/10 (' + a.pain[a.pain.length - 1].date + ')'), M + 8, y);
+      }
+      a.patients.forEach(function (p) {
+        if (pages >= maxPages) return;
+        if (!addPage()) return; y = M;
+        doc.setFontSize(13); doc.text(pdfSafe(p.name) + (p.dob ? '  (DOB ' + pdfSafe(p.dob) + ')' : ''), M, y); y += 8;
+        doc.setDrawColor(200); doc.line(M, y, W - M, y); y += 16; doc.setFontSize(9);
+        (p.visits || []).forEach(function (v) {
+          if (pages >= maxPages) return;
+          doc.setFont(undefined, 'bold');
+          doc.text(pdfSafe((v.date || 'n/d') + '  -  ' + (v.type || 'Visit') + '  [' + (v.source || '') + ']'), M, y);
+          y += 13; doc.setFont(undefined, 'normal');
+          var lines = doc.splitTextToSize(pdfSafe(v.detail || '(no detail)'), W - M * 2);
+          for (var li = 0; li < lines.length; li++) {
+            if (y > H - M) { if (!addPage()) return; y = M; }
+            doc.text(lines[li], M, y); y += 12;
+          }
+          y += 8; if (y > H - M) { if (!addPage()) return; y = M; }
+        });
+      });
+      result.pdfBlob = doc.output('blob'); result.pdfPages = pages;
+    }).catch(function (e) { result.pdfError = e.message; }));
+
+    return Promise.all(jobs).then(function () { return result; });
+  }
+
+  function wrapEngine() {
+    var sg = SG(); if (!sg || sg.__sgfixWrapped) return;
+    var orig = sg.runStudy;
+    if (typeof orig !== 'function') return;
+    sg.__sgfixOrigRun = orig;
+    sg.runStudy = function (groupId, opts) {
+      if (opts && opts.__sgfixBypass) return orig.call(sg, groupId, opts);
+      return scopedRun(sg, groupId);
+    };
+    sg.pullFromAthenaReal = pullReal;
+    sg.__sgfixWrapped = true;
+  }
+
+  /* --------------------- button rebinds (engine assigns via .onclick) --------------------- */
+  function bindAthenaBtn() {
+    var b = $('mls-sg-athena');
+    if (!b || b.__sgfix) return;
+    if (_origAthenaClick == null) _origAthenaClick = b.onclick || null;
+    b.__sgfix = true;
+    b.onclick = function () {
+      var sel = $('mls-sg-group'); var id = sel && sel.value;
+      var st = $('mls-sg-athena-status');
+      if (!id) { if (st) st.textContent = 'Create/select a group first.'; return; }
+      pullReal(id).then(function () {
+        try { // refresh the engine's patient list (visit counts changed)
+          if (sel) sel.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (e) {}
+      }).catch(function (e) { if (st) st.textContent = 'Pull failed: ' + e.message; });
+    };
+  }
+  function bindRunBtn() {
+    // engine's own blue button calls its closure runStudy directly — rebind so it
+    // goes through the scoped wrapper; replicates the original handler's rendering.
+    var b = $('mls-sg-run');
+    if (!b || b.__sgfix) return;
+    if (_origRunClick == null) _origRunClick = b.onclick || null;
+    b.__sgfix = true;
+    b.onclick = function () {
+      var sg = SG(); if (!sg) return;
+      var sel = $('mls-sg-group'); var id = sel && sel.value;
+      var rs = $('mls-sg-runstatus'), out = $('mls-sg-out');
+      if (!id) { if (rs) rs.textContent = 'Create/select a group first.'; return; }
+      if (rs) rs.textContent = 'Running study…';
+      sg.runStudy(id, {}).then(function (res) {
+        if (out) out.innerHTML = res.svg;
+        if (rs) rs.textContent = 'Done — ' + res.analysis.visitCount + ' visits analyzed' +
+          (res.scope ? ' (' + res.scope.typeLabel + ', ' + res.scope.rangeLabel + ')' : '') +
+          (res.pdfPages ? ', PDF ' + res.pdfPages + 'pp' : '') +
+          (res.xlsxFallback ? ' (xlsx→CSV fallback)' : '') +
+          (res.pdfError ? ' · PDF error: ' + res.pdfError : '') + '.';
+        var ax = $('mls-sg-xlsx');
+        if (ax && res.xlsxBlob) { ax.href = URL.createObjectURL(res.xlsxBlob); ax.download = (res.group.name || 'study') + (res.xlsxFallback ? '.csv' : '.xlsx'); ax.style.display = ''; }
+        var ap = $('mls-sg-pdf');
+        if (ap && res.pdfBlob) { ap.href = URL.createObjectURL(res.pdfBlob); ap.download = (res.group.name || 'study') + '.pdf'; ap.style.display = ''; }
+      }).catch(function (e) { if (rs) rs.textContent = 'Study failed: ' + e.message; });
+    };
+  }
+
+  /* -------- D) per-visit cohort builders (intercept the b40 lump-note builders) -------- */
+  function buildAll(ctx) {
+    ctx = ctx || buildCtx();
+    var list = [];
+    appPatients().forEach(function (p) {
+      if (!p || !S(p.name).trim()) return;
+      list.push({ name: S(p.name).trim(), dob: S(p.dob || ''), mrn: S(p.mrn || p.id || ''),
+        visits: harvestVisits(p.name, p.dob, ctx) });
+    });
+    return list;
+  }
+  function buildByKeyword(kw) {
+    var ctx = buildCtx();
+    var kwl = S(kw).toLowerCase();
+    return buildAll(ctx).filter(function (rec) {
+      var hit = rec.visits.some(function (v) {
+        return (S(v.detail) + ' ' + S(v.type)).toLowerCase().indexOf(kwl) >= 0;
+      });
+      if (hit) return true;
+      var ap = ctxPatient(ctx, rec.name, rec.dob);   // chart-level: problems + pulled summary (PMH)
+      return !!(ap && (S(ap.problems) + ' ' + S(ap.summary)).toLowerCase().indexOf(kwl) >= 0);
+    });
+  }
+  function importIntoGroup(sg, groupName, list) {
+    var g = null;
+    sg.list().forEach(function (x) { if (x.name === groupName) g = x; });
+    if (!g) g = sg.createGroup(groupName);
+    var bySrc = {};
+    list.forEach(function (rec) {
+      sg.addPatient(g.id, { name: rec.name, dob: rec.dob, mrn: rec.mrn, visits: rec.visits });
+      rec.visits.forEach(function (v) { bySrc[v.source] = (bySrc[v.source] || 0) + 1; });
+    });
+    return { group: sg.get(g.id), bySrc: bySrc };
+  }
+  function srcLabel(bySrc) {
+    var names = { 'athena-visit': 'pulled Athena visits', 'mls-note': 'saved notes', 'mls-appt': 'appointments' };
+    return Object.keys(bySrc).map(function (k) { return bySrc[k] + ' ' + (names[k] || k); }).join(', ');
+  }
+  function groupVisitTotal(g) {
+    var t = 0; (g.patients || []).forEach(function (p) { t += (p.visits ? p.visits.length : 0); }); return t;
+  }
+  function refreshGroupSelect(g) {
+    var sel = $('mls-sg-group'); if (!sel || !g) return;
+    var i, have = false;
+    for (i = 0; i < sel.options.length; i++) { if (sel.options[i].value === g.id) have = true; }
+    if (!have) { var o = document.createElement('option'); o.value = g.id; sel.appendChild(o); }
+    for (i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === g.id) sel.options[i].textContent = g.name + ' (' + g.patients.length + ')';
+    }
+    sel.value = g.id;
+    try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+  }
+  /* Document-capture interception: b40's #sgpAllBtn/#sgpProcBtn handlers are
+     closure-bound addEventListener's on the buttons and can't be unbound — a
+     capture listener on document fires first and stops them. (task7's router
+     doesn't touch these two ids — no interplay.) */
+  function cohortCapture(ev) {
+    try {
+      var t = ev.target; if (!t || !t.closest) return;
+      var isAll = t.closest('#sgpAllBtn'), isProc = t.closest('#sgpProcBtn');
+      if (!isAll && !isProc) return;
+      ev.stopImmediatePropagation(); ev.preventDefault();
+      var noteEl = $('sgpBuildNote');
+      function say(m) { if (noteEl) noteEl.textContent = m; }
+      var sg = SG();
+      if (!sg) { say('Study engine not loaded yet — try again in a moment.'); return; }
+      if (isAll) {
+        say('Formatting your data into individual per-visit study records…');
+        setTimeout(function () {
+          try {
+            var r = importIntoGroup(sg, 'All patients (auto)', buildAll(null));
+            say('✓ “All patients (auto)” ready — ' + r.group.patients.length + ' patients, ' +
+              groupVisitTotal(r.group) + ' individual visit records (deduped' +
+              (Object.keys(r.bySrc).length ? '; harvested: ' + srcLabel(r.bySrc) : '') +
+              '). Select it above and run a study.');
+            refreshGroupSelect(r.group);
+          } catch (e) { say('Could not format the data: ' + e.message); }
+        }, 30);
+        return;
+      }
+      var kw = S(($('sgpProcTx') || {}).value).trim();
+      if (!kw) { say('Type a procedure or diagnosis first.'); return; }
+      say('Scanning every individual visit record for “' + kw + '”…');
+      setTimeout(function () {
+        try {
+          var list = buildByKeyword(kw);
+          if (!list.length) {
+            say('No visit records or charts mention “' + kw + '”. Try another wording — MLS scans notes, ' +
+              'appointment reasons, visit types, problem lists and pulled Athena visits.');
+            return;
+          }
+          var r = importIntoGroup(sg, 'Cohort — ' + kw, list);
+          say('✓ “Cohort — ' + kw + '” ready — ' + r.group.patients.length +
+            ' matching patients with their full per-visit history' +
+            (Object.keys(r.bySrc).length ? ' (harvested: ' + srcLabel(r.bySrc) + ')' : '') +
+            '. Select it above and run a study.');
+          refreshGroupSelect(r.group);
+        } catch (e) { say('Cohort build failed: ' + e.message); }
+      }, 30);
+    } catch (e) {}
+  }
+
+  /* ------- E) AI Studio stability: widget-iframe reload storm + giant Pay Reports ------- */
+  var _svPatched = null;
+  function injectStudioCSS() {
+    if ($('mlsSgFixCSS')) return;
+    var s = document.createElement('style');
+    s.id = 'mlsSgFixCSS';
+    s.setAttribute(MARK, '1');
+    s.textContent =
+      /* E2: Pay Reports does not belong in the Study Groups view. display:none (not
+         removal) keeps b34's injectPay guard satisfied so it never re-injects.
+         Calendar's copy of the button is untouched. */
+      '#studioView .mls-b34-pay{display:none!important}'
+      /* the collapsible Study Groups section gets its own clean full-width grid row */
+      + '#studioView.sx-grid>#mlsB39SgWrap{grid-column:1/-1;align-self:start}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+  function patchStudioMoves() {
+    var sv = $('studioView');
+    if (!sv || sv.__sgfixMoves) return;
+    sv.__sgfixMoves = 1; _svPatched = sv;
+    /* b39's placeOrder re-parents #studioResultCard every 1000 ms tick; re-parenting
+       an iframe reloads its srcdoc → the built tool restarts once per second.
+       Shadow the view's OWN insertion methods (instance property over prototype)
+       with pure no-op elimination: skip any move that leaves element order exactly
+       as it already is; genuine moves pass straight through to the prototype. */
+    sv.appendChild = function (node) {
+      try {
+        if (node && node.nodeType === 1 && node.parentNode === sv) {
+          if (node === sv.lastElementChild) return node;
+          if (node.id === 'studioResultCard') {
+            var wrap = document.getElementById('mlsB39SgWrap');
+            /* b39 always follows this appendChild with insertBefore(result, wrap) —
+               if the card already sits right before the wrap, the round-trip is a
+               pure no-op pair; skip it so the iframe never reloads */
+            if (wrap && wrap.parentNode === sv && node.nextElementSibling === wrap) return node;
+          }
+        }
+      } catch (e) {}
+      return Node.prototype.appendChild.apply(sv, arguments);
+    };
+    sv.insertBefore = function (node, ref) {
+      try {
+        if (node && node.nodeType === 1 && node.parentNode === sv) {
+          if (ref == null && node === sv.lastElementChild) return node;
+          if (ref && node.nextElementSibling === ref) return node;   // element order already correct
+          if (ref && node.nextSibling === ref) return node;          // exact position already
+        }
+      } catch (e) {}
+      return Node.prototype.insertBefore.apply(sv, arguments);
+    };
+  }
+  function unpatchStudioMoves() {
+    try {
+      if (_svPatched) {
+        delete _svPatched.appendChild;
+        delete _svPatched.insertBefore;
+        delete _svPatched.__sgfixMoves;
+        _svPatched = null;
+      }
+    } catch (e) {}
+  }
+  /* b39's auto-save only compares against arr[0], so alternately re-opening two saved
+     widgets unshifted a duplicate every time — dedupe by html, newest kept, pinned
+     flags preserved onto the survivor. */
+  function wrapRenderWidget() {
+    if (typeof window.renderStudioWidget !== 'function' || window.renderStudioWidget.__sgfix) return;
+    var orig = window.renderStudioWidget;
+    var w = function () {
+      var r = orig.apply(this, arguments);
+      try {
+        if (typeof window.studioGetSaved === 'function' && typeof window.studioSetSaved === 'function') {
+          var arr = window.studioGetSaved(), seen = {}, out = [], changed = false;
+          for (var i = 0; i < arr.length; i++) {
+            var k = String((arr[i] && arr[i].html) || '');
+            if (seen[k] != null) { if (arr[i] && arr[i].pinned) out[seen[k]].pinned = true; changed = true; continue; }
+            seen[k] = out.length; out.push(arr[i]);
+          }
+          if (changed) {
+            window.studioSetSaved(out);
+            if (typeof window.renderStudioSaved === 'function') window.renderStudioSaved();
+          }
+        }
+      } catch (e) {}
+      return r;
+    };
+    w.__sgfix = 1; w.__orig = orig;
+    window.renderStudioWidget = w;
+  }
+  function unwrapRenderWidget() {
+    try {
+      if (window.renderStudioWidget && window.renderStudioWidget.__sgfix && window.renderStudioWidget.__orig) {
+        window.renderStudioWidget = window.renderStudioWidget.__orig;
+      }
+    } catch (e) {}
+  }
+
+  /* --------------------------- C) truth in UI --------------------------- */
+  function fixStubWarning() {
+    var root = $('mls-sg-root'); if (!root) return;
+    var warns = root.querySelectorAll('.mls-sg-warn');
+    for (var i = 0; i < warns.length; i++) {
+      if (/stubbed/i.test(warns[i].textContent || '') && !warns[i].__sgfix) {
+        warns[i].__sgfix = true;
+        warns[i].innerHTML = '📡 <b>Pull from Athena is live.</b> It gathers each group patient’s visits from your saved '
+          + 'notes, calendar appointments and pulled Athena charts'
+          + (liveChainAvailable() ? ', and reads charts live from athenaOne (read-only, via MLS Assist) when a patient has none yet'
+            : ' — connect the MLS Assist extension and keep athenaOne open to also read charts live')
+          + '. It never writes to Athena.';
+        warns[i].style.background = '#eef8f1'; warns[i].style.borderColor = '#cdeadb'; warns[i].style.color = '#1f7d5c';
+      }
+    }
+  }
+  function addScopeHint() {
+    if ($('sgpScopeHint')) return;
+    var runRow = $('sgpRunBtn') && $('sgpRunBtn').parentNode;
+    if (!runRow) return;
+    var d = document.createElement('div');
+    d.id = 'sgpScopeHint'; d.setAttribute(MARK, '1');
+    d.style.cssText = 'font:500 11.5px system-ui;color:#5a6b82;margin:2px 0 4px';
+    d.textContent = 'Graph, Excel and PDF now follow the Study type + Date range above (not just the AI narrative).';
+    runRow.parentNode.insertBefore(d, runRow);
+  }
+
+  /* ------------------------------------ engine ------------------------------------ */
+  function tick() {
+    try {
+      wrapEngine();
+      injectStudioCSS();
+      patchStudioMoves();
+      wrapRenderWidget();
+      if ($('mls-sg-root')) { bindAthenaBtn(); bindRunBtn(); fixStubWarning(); addScopeHint(); }
+    } catch (e) {}
+  }
+
+  function revert() {
+    try { if (_tick) { clearInterval(_tick); _tick = null; } } catch (e) {}
+    try { document.removeEventListener('click', cohortCapture, true); } catch (e) {}
+    try { unpatchStudioMoves(); } catch (e) {}
+    try { unwrapRenderWidget(); } catch (e) {}
+    try {
+      var sg = window.__mlsStudyGroups;
+      if (sg && sg.__sgfixWrapped && sg.__sgfixOrigRun) {
+        sg.runStudy = sg.__sgfixOrigRun;
+        delete sg.__sgfixOrigRun; delete sg.__sgfixWrapped; delete sg.pullFromAthenaReal;
+      }
+    } catch (e) {}
+    try { var a = $('mls-sg-athena'); if (a && a.__sgfix) { a.onclick = _origAthenaClick; a.__sgfix = false; } } catch (e) {}
+    try { var r = $('mls-sg-run'); if (r && r.__sgfix) { r.onclick = _origRunClick; r.__sgfix = false; } } catch (e) {}
+    try {
+      document.querySelectorAll('[' + MARK + ']').forEach(function (n) { n.remove(); });
+    } catch (e) {}
+    try { window.__mlsSgFix.installed = false; } catch (e) {}
+  }
+
+  window.__mlsSgFix = {
+    installed: true,
+    version: VERSION,
+    revert: revert,
+    pull: pullReal,
+    harvest: harvestVisits,     // exposed for console testing
+    buildAll: buildAll,         // per-visit "Add ALL my patients" builder
+    buildByKeyword: buildByKeyword,
+    athenaVisitRecords: athenaVisitRecords,
+    scope: uiScope
+  };
+
+  function boot() {
+    tick();
+    _tick = setInterval(tick, 1500);
+    document.addEventListener('click', cohortCapture, true);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+
 /* =========================================================================
  * MLS Scribe -- OP-NOTE SKELETON-FILL + ACCURATE OP-TEMPLATE AUTO-SELECT
  * (__mlsOpNotesFix)  v1.0.0  QUALITY-CRITICAL
@@ -17736,7 +19498,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b75';
+  var MLS_APP_BUILD='2026-07-08-b76';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
