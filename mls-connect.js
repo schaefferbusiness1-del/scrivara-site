@@ -30,7 +30,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '2.2.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 } };
+  var api = { version: '2.3.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -69,10 +69,58 @@
     try {
       if (d.resp && d.resp.ok && Object.prototype.toString.call(d.resp.appts) === '[object Array]') {
         SCHED.appts = d.resp.appts.slice(0, 400); SCHED.ts = new Date().getTime();
+        api.backfill.lastReplyRows = SCHED.appts.length;
+        api.backfill.lastReplyWithDob = SCHED.appts.filter(function (r) { return r && r.dob; }).length;
+        setTimeout(backfillFromStash, 1200);   /* let the pull path finish saving first */
       }
     } catch (e) {}
   }
   window.addEventListener('message', onExtMsg, false);
+
+  /* v2.3 BACKFILL: the base pull path dedupes upstream and NEVER calls the
+     import fn for rows already on the calendar, so import-time enrichment can
+     never heal EXISTING rows. Whenever a structured v1.51 reply arrives, fill
+     MISSING dob (never overwrite; skip names with conflicting DOBs in the
+     reply) onto stored appointments + patient records, then persist. */
+  function dobNameMap() {
+    var byName = {}, bad = {};
+    (SCHED.appts || []).forEach(function (r) {
+      if (!r || !r.name || !r.dob) return;
+      var k = normName(r.name); if (!k) return;
+      if (byName[k] && byName[k] !== String(r.dob)) { bad[k] = 1; api.backfill.conflicts++; return; }
+      byName[k] = String(r.dob);
+    });
+    Object.keys(bad).forEach(function (k) { delete byName[k]; });
+    return byName;
+  }
+  function backfillFromStash() {
+    try {
+      if (!SCHED.appts || !SCHED.appts.length) return;
+      api.backfill.runs++;
+      var byName = dobNameMap();
+      if (!Object.keys(byName).length) return;
+      /* appointments (in-memory calendar rows) */
+      try {
+        var arr = (typeof window._calAppts === 'function') ? window._calAppts() : window._calAppts;
+        (arr || []).forEach(function (a) {
+          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.backfill.apptDobs++; } }
+        });
+      } catch (e) {}
+      /* patient records (the dedup key + what the UI shows) */
+      try {
+        var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+        var changed = 0;
+        ps.forEach(function (p) {
+          if (p && !p.dob && p.name) { var d = byName[normName(p.name)]; if (d) { p.dob = d; p.updated = new Date().getTime(); changed++; api.backfill.patientDobs++; } }
+        });
+        if (changed && typeof window.savePatients === 'function') window.savePatients(ps);
+      } catch (e) {}
+    } catch (e) {}
+  }
+  api.backfillNow = function () {
+    try { window.postMessage({ source: 'mls-app', type: 'mlsAppPullSchedule' }, location.origin); } catch (e) {}
+    return 'requested — check __mlsImportChainFix.backfill in ~5s';
+  };
 
   function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function isPlaceholder(n) {
@@ -4015,7 +4063,7 @@
   /* ---------- install (retry until the base-app globals exist) ---------- */
   var tries = 0;
   function installAll() {
-    var ready = isFn(window.upsertPatient) && isFn(window.startCapture) && isFn(window.pullScheduleViaAssist) && isFn(window._importPulledSchedule) && isFn(window._savePatientChart) && isFn(window.aiCallRaw) && isFn(window.stopCapture) && isFn(window._pullAllHistories); /* b65: wait for the LATE inline globals too - the one-shot install used to fire between inline blocks and skip half the wrappers */
+    var ready = isFn(window.upsertPatient) && isFn(window.startCapture) && isFn(window.pullScheduleViaAssist) && isFn(window._importPulledSchedule) && isFn(window._savePatientChart) && isFn(window.aiCallRaw) && isFn(window.stopCapture) && isFn(window._pullAllHistories); /* b65: wait for the LATE inline globals too */
     if (!ready && ++tries < 40) { setTimeout(installAll, 500); return; }
     safe(installF1); safe(installF2); safe(installF3); safe(installF4); safe(installF5);
     safe(installF6); safe(installF7); safe(installF8); safe(installF10); safe(installF11);
@@ -15321,7 +15369,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b65';
+  var MLS_APP_BUILD='2026-07-07-b66';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
