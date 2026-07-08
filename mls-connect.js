@@ -325,7 +325,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '3.4.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.5.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -477,7 +477,7 @@
     var want = GATE.want;
     setTimeout(function () {
       try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
-    }, 2500);   /* let the freshly-opened chart render */
+    }, 5000);   /* let the freshly-opened chart render (2.5s raced athena's SPA — verified live) */
     setTimeout(function () {                             /* watchdog: bare read never answered */
       if (GATE.phase === 2 && GATE.want === want) {
         GATE.phase = 0; GATE.want = null;
@@ -552,7 +552,21 @@
     }
     if (GATE.phase === 2) {
       /* reply to OUR bare verified re-read */
-      GATE.want = null; GATE.phase = 0;
+      if (r.ok && !GATE.retried) {
+        /* dry-run the gate; on a name miss, retry ONCE (athena SPA still rendering) */
+        var lo = String(r.text || '').toLowerCase();
+        var toks = nameTokens(want); var hits = 0;
+        for (var i2 = 0; i2 < toks.length; i2++) { if (lo.indexOf(toks[i2]) >= 0) hits++; }
+        if (hits < 2 && !(toks.length === 1 && hits === 1)) {
+          GATE.retried = 1;
+          try { ev.stopImmediatePropagation(); } catch (e) {}
+          setTimeout(function () {
+            try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
+          }, 4000);
+          return;
+        }
+      }
+      GATE.want = null; GATE.phase = 0; GATE.retried = 0;
       if (!r.ok) return;                                /* honest extension failure — let it through */
       textGateApply(r, want);
     }
@@ -15981,7 +15995,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b73';
+  var MLS_APP_BUILD='2026-07-07-b74';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
