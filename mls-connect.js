@@ -1,3 +1,839 @@
+/* =============================================================================
+ * __mlsUxChromeFixes v1.0.0
+ * -----------------------------------------------------------------------------
+ * TWO focused, independent, additive/guarded fixes for the app "chrome"
+ * (cross-view navigation + the persistent Athena connectivity indicator).
+ * Prepend ABOVE the live mls-connect.js bundle (real \n\n join), like every
+ * other guarded module in this codebase. Nothing here deletes data, wraps
+ * window.fetch, or touches athenaOne.
+ *
+ * ---------------------------------------------------------------------------
+ * FIX A — close the one confirmed navigational dead-end: #b49PullCard
+ * ---------------------------------------------------------------------------
+ * A full audit of every modal/overlay/panel in the live app (nav router,
+ * MLS Easy v3's #ez3Back home/patients back nav, EMR sectioned-writeback
+ * modal #emrPanel/#emrClose, Templates modal, "How to use MLS" guide,
+ * Switch-patient, chart-pull receipt modal, patient profile, Settings,
+ * Calendar day-peek #calDayPanel, Supervision/Study/Tour overlays, and the
+ * dozen other shared `.modal-x`-convention dialogs) found that essentially
+ * every one of them already has a visible close/back control. The ONE real
+ * gap: `#b49PullCard` (b49's per-patient chart-pull progress card, built by
+ * `card()` inside the __mlsPullTruthB49 module) has a "Stop" button that only
+ * sets a stop flag — nothing ever hides or removes the card itself, so once
+ * shown it persists on screen until the page is reloaded.
+ *
+ * Note on real-world impact: `pullChartsForToday()` (the function that builds
+ * this card) currently has ZERO call sites anywhere in the live bundle or any
+ * UI control (confirmed by grep — dispatch-work\individual-visits-sweep\
+ * GAP_ANALYSIS.md item 8 independently reaches the same conclusion; the
+ * button doctors actually use, "📚 Pull all histories (today)", is a
+ * different, newer implementation — __mlsImportChainFix.pullAllHistories —
+ * that narrates progress via toast()-style messages, not a persistent card).
+ * So this specific dead-end is not reachable through today's UI. It is fixed
+ * anyway, for correctness and as defense-in-depth: it is live, loaded code
+ * that WILL show this card the moment anything calls it (a future button, a
+ * console invocation, a revived call site), and a progress card with no way
+ * to dismiss it is a real bug regardless of how it gets triggered.
+ *
+ * Fix: a short interval finds the card once it exists and, if it hasn't
+ * already been decorated, moves the existing "Stop" button into a small
+ * flex wrapper alongside a new "✕" close button — preserving the card's
+ * `justify-content:space-between` two-slot header layout exactly (title on
+ * the left, [Stop][✕] grouped on the right) rather than appending a third
+ * loose child that would visually displace Stop. "✕" only hides the card
+ * (`display:none`); it never touches `stopFlag`, so Stop's existing
+ * "cancel the pull" behavior is completely unchanged.
+ *
+ * ---------------------------------------------------------------------------
+ * FIX B — ONE Athena connectivity indicator (retire the duplicates)
+ * ---------------------------------------------------------------------------
+ * Live inventory today (confirmed against build b80, i.e. AFTER ui-cleanup-v1
+ * already shipped its own partial consolidation — these are surfaces that
+ * lane did not address, not surfaces it failed to hide):
+ *
+ *   1. #mlsAthenaStatusDot   — floating dot, top-right (feat_athena_status_dot.js).
+ *      Fully independent: runs its own mlsPing + mlsAppPullSchedule probes on
+ *      a 7s loop, only ANDs in __mlsConnTruth.isConnected() at the end. Only
+ *      CSS-hidden today (3 separate `display:none!important` rules stacked
+ *      from 3 different lanes) — the probing loop itself never stopped.
+ *   2. #mlsScDock            — "athenaOne connected" dock, bottom-left
+ *      (feat_mls_status_center.js, DOCK_ID='mlsScDock'). NOT hidden by
+ *      ui-cleanup-v1 (that lane's own research incorrectly concluded this
+ *      element didn't exist). Fully live, fought over by three separate
+ *      repositioning loops (b26/b34/b35), landing bottom-left today.
+ *   3. #mlsPrfDockChip        — "📊 Athena status" toggle chip, bottom-right
+ *      of #mlsScDock (__mlsPullRecFix F10). Pure text proxy of #mlsScDock's
+ *      own content; mounts only after MutationObserver confirms the dock
+ *      exists. Fully live, untouched by ui-cleanup-v1.
+ *   4. .mls-sync chip inside the patient/context card ("Athena · connected")
+ *      — decorated by feat_mls_athena_chip_conn.js (idle state) and
+ *      feat_mls_athena_chip_conn_all.js (non-idle red state). Both read
+ *      window.__mlsConnTruth.describe() directly and overwrite the chip's
+ *      text/color. Fully live, untouched by ui-cleanup-v1.
+ *   5. #mlsAsstPanel .as-status — bottom-left MLS Assistant panel strip
+ *      (feat_mls_assistant_exact.js). Reads __mlsConnTruth directly. This is
+ *      the surface ui-cleanup-v1's own code/report already designated as
+ *      "the" keeper. THIS MODULE LEAVES IT COMPLETELY ALONE.
+ *   6. The extension's own #mls-assist-badge/#mls-assist-panel — injected by
+ *      the Chrome extension's content script, already correctly CSS-hidden
+ *      on the app page by ui-cleanup-v1. Not touched here (out of scope —
+ *      that's extension-injected DOM, not app code).
+ *
+ * Decision: keep #5 (#mlsAsstPanel .as-status) as the ONE indicator — it
+ * already reads the shared truth source, it's already the documented intent
+ * of the prior consolidation pass, and its 3 states (connected / checking /
+ * not-connected, per __mlsConnTruth's own model) map directly onto the
+ * "connected / not connected / working" the spec asks for.
+ *
+ * Surfaces #1 and #4 are neutralized by PRE-SEEDING their own installed-guard
+ * globals (window.__mlsAthenaStatusDot / __mlsAthenaChipConn /
+ * __mlsAthenaChipConnAll) so those satellite IIFEs see "already installed"
+ * and never build anything in the first place — no probing loop ever starts,
+ * no chip decoration ever runs. This is safe because none of the three owns
+ * any shared state another kept surface depends on (confirmed by reading
+ * each source file directly). This works because this module is PREPENDED
+ * (runs synchronously, first) while those three are dynamically-injected
+ * <script> tags near the very end of the bundle's own loader block — by the
+ * time their network request even resolves, the guard is already set. This
+ * is the exact "silencer" technique ARCHITECTURE_MAP.md §8.3 documents as
+ * already proven live (__mlsEasyV3 pre-seeding __mlsEasyInplace's guard).
+ *
+ * Surface #2 (#mlsScDock) and #3 (#mlsPrfDockChip) are CSS-hidden instead of
+ * guard-disabled, because feat_mls_status_center.js does more than build the
+ * dock — it also HARDENS the shared window.__mlsConnTruth (evidence + retry
+ * logic so one slow probe doesn't flip the app to a false "disconnected").
+ * The kept indicator (#5) reads __mlsConnTruth directly, so disabling this
+ * module outright would make the ONE surviving indicator quietly flakier —
+ * a regression nobody asked for. So the module keeps running (the hardening
+ * stays), only its dock UI is suppressed (display:none!important + a
+ * periodic inline re-assertion, since three other modules keep repositioning
+ * the dock with direct style writes and it is cheap insurance against any of
+ * them ever flipping display back on).
+ *
+ * Also de-dupes the repeated "MLS Assist extension not detected" family of
+ * toasts (ISSUES.md documents four near-identical legacy call sites) by
+ * wrapping the shared window.toast() with a short per-message cooldown,
+ * scoped to text that looks like an Athena/MLS-Assist connectivity notice —
+ * every other toast in the app passes through completely unchanged.
+ *
+ * Kill switch: window.__mlsUxChromeFixes_revert(). Full note on limits: the
+ * three pre-seeded satellites already decided (in their own IIFE) not to
+ * install by the time revert() runs — deleting the guard afterward cannot
+ * retroactively start them. Undoing FIX B all the way back to today's
+ * (cluttered) live behavior requires a page reload after calling revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsUxChromeFixes) { return; }
+
+  var api = { ver: '1.0.0', pullCardClosed: 0, dockHidden: 0, toastDeduped: 0 };
+  window.__mlsUxChromeFixes = api;
+
+  function safe(fn, fallback) {
+    try { return fn(); } catch (e) { return fallback; }
+  }
+
+  /* ==========================================================================
+   * FIX A — #b49PullCard dead-end close button
+   * ========================================================================== */
+
+  var pullCardTimer = setInterval(function () {
+    safe(function () {
+      var c = document.getElementById('b49PullCard');
+      if (!c || c.getAttribute('data-mls-ux-closable') === '1') { return; }
+      var head = c.firstElementChild;               /* the flex title+Stop header row */
+      var stopBtn = c.querySelector('#b49PullStop');
+      if (!head || !stopBtn) { return; }
+
+      var wrap = document.createElement('span');
+      wrap.style.cssText = 'display:flex;align-items:center;gap:6px';
+      stopBtn.parentNode.insertBefore(wrap, stopBtn);
+      wrap.appendChild(stopBtn);                     /* moves Stop in place; header stays a clean 2-slot row */
+
+      var x = document.createElement('button');
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Close');
+      x.title = 'Close';
+      x.textContent = '✕';
+      x.style.cssText = 'background:transparent;color:#dbe6fb;border:0;font-size:15px;line-height:1;cursor:pointer;padding:2px 5px';
+      x.onclick = function () { c.style.display = 'none'; };
+      wrap.appendChild(x);
+
+      c.setAttribute('data-mls-ux-closable', '1');
+      api.pullCardClosed++;
+    });
+  }, 2000);
+  api._pullCardTimer = pullCardTimer;
+
+  /* ==========================================================================
+   * FIX B — ONE Athena connectivity indicator
+   * ========================================================================== */
+
+  function preseed(name) {
+    if (!window[name]) {
+      safe(function () {
+        window[name] = { installed: true, skipped: 'consolidated-into-one-athena-status-indicator' };
+      });
+    }
+  }
+  preseed('__mlsAthenaStatusDot');
+  preseed('__mlsAthenaChipConn');
+  preseed('__mlsAthenaChipConnAll');
+
+  safe(function () {
+    if (!document.getElementById('mlsUxStatusOneCss')) {
+      var css = document.createElement('style');
+      css.id = 'mlsUxStatusOneCss';
+      css.textContent =
+        '#mlsScDock{display:none!important}' +
+        '#mlsPrfDockChip{display:none!important}';
+      (document.head || document.documentElement).appendChild(css);
+    }
+  });
+
+  var dockHideTimer = setInterval(function () {
+    safe(function () {
+      var d = document.getElementById('mlsScDock');
+      if (d && d.style.display !== 'none') { d.style.setProperty('display', 'none', 'important'); api.dockHidden++; }
+      var c = document.getElementById('mlsPrfDockChip');
+      if (c && c.style.display !== 'none') { c.style.setProperty('display', 'none', 'important'); api.dockHidden++; }
+    });
+  }, 2000);
+  api._dockHideTimer = dockHideTimer;
+
+  /* Dedupe the repeated "extension not detected"-style connectivity toasts.
+     Only touches messages that look like an Athena/MLS-Assist connectivity
+     notice; every other call to toast() is passed through unmodified. */
+  var origToast = null;
+  safe(function () {
+    if (typeof window.toast === 'function' && !window.toast.__mlsUxDeduped) {
+      origToast = window.toast;
+      var lastShown = {};
+      var wrapped = function (msg, kind) {
+        try {
+          var s = String(msg || '');
+          if (/athena|mls assist/i.test(s) && /(not detected|not connected|disconnect)/i.test(s)) {
+            var now = new Date().getTime();
+            if (lastShown[s] && (now - lastShown[s]) < 15000) { api.toastDeduped++; return; }
+            lastShown[s] = now;
+          }
+        } catch (e) {}
+        return origToast.apply(this, arguments);
+      };
+      wrapped.__mlsUxDeduped = true;
+      window.toast = wrapped;
+    }
+  });
+
+  window.__mlsUxChromeFixes_revert = function () {
+    safe(function () { clearInterval(pullCardTimer); });
+    safe(function () {
+      var c = document.getElementById('b49PullCard');
+      var stopBtn = c && c.querySelector('#b49PullStop');
+      if (stopBtn && stopBtn.parentNode && stopBtn.parentNode !== c.firstElementChild) {
+        var wrap = stopBtn.parentNode;
+        wrap.parentNode.insertBefore(stopBtn, wrap);   /* put Stop back directly in the header row */
+        wrap.parentNode.removeChild(wrap);              /* drops the wrapper + the injected ✕ with it */
+      }
+      if (c) { c.removeAttribute('data-mls-ux-closable'); }
+    });
+    safe(function () { clearInterval(dockHideTimer); });
+    safe(function () { var s = document.getElementById('mlsUxStatusOneCss'); if (s && s.parentNode) { s.parentNode.removeChild(s); } });
+    safe(function () { if (origToast) { window.toast = origToast; } });
+    safe(function () { delete window.__mlsAthenaStatusDot; });
+    safe(function () { delete window.__mlsAthenaChipConn; });
+    safe(function () { delete window.__mlsAthenaChipConnAll; });
+    delete window.__mlsUxChromeFixes;
+    delete window.__mlsUxChromeFixes_revert;
+    /* Note: the three pre-seeded satellites already ran their own
+       "already installed, bail" check before this revert executed — clearing
+       the guard here cannot make them retroactively install themselves.
+       A page reload is required to fully restore today's live behavior. */
+  };
+})();
+/* =============================================================================
+ * __mlsUxVisitFlow v1.0.0
+ * -----------------------------------------------------------------------------
+ * TWO focused, independent, additive/guarded fixes to the real visit engine
+ * (the base #captureCard / #transcript / #noteBox pipeline every layer in the
+ * app ultimately proxies to). Prepend ABOVE the live mls-connect.js bundle
+ * (real \n\n join), like every other guarded module in this codebase.
+ *
+ * ---------------------------------------------------------------------------
+ * FIX 2 — "Paste transcript" alternative to audio recording
+ * ---------------------------------------------------------------------------
+ * Ground truth (ScribeFlow.LIVE-b60.html, confirmed unchanged at b61/current):
+ *   - #transcript (:1552) is already a plain, unrestricted <textarea> — typing
+ *     or pasting into it works today with zero code changes; its placeholder
+ *     already says "No microphone? Type or paste the visit conversation
+ *     here." and its label (:1545) already has a small "(you can also type or
+ *     paste)" hint.
+ *   - generateNote() (:12341-12343) reads ONLY
+ *     `document.getElementById('transcript').value.trim()` — no other flag
+ *     or variable gates it. Whatever is in the box when Generate Note is
+ *     clicked IS the transcript, recorded or pasted, no distinction.
+ *   - So the note-generation pipeline already treats a pasted transcript
+ *     identically to a recorded one; nothing about the pipeline needed to
+ *     change. The gap is pure discoverability: there is no explicit, visible
+ *     "paste instead of recording" control anywhere — only a small text hint
+ *     easy to miss next to a large, prominent "▶ Start Visit" button.
+ *   - The one real hazard: recognition's onresult handler (:11259-11266)
+ *     OVERWRITES #transcript's value on every result
+ *     (`document.getElementById('transcript').value=(finalText+interim)`).
+ *     Pasting WHILE actively recording would get clobbered by the next
+ *     speech result. startCapture() (:11833) does the opposite safely --
+ *     it reseeds `finalText` FROM the box's current value, so pasting BEFORE
+ *     pressing Start Visit is preserved as the prefix recognition appends to.
+ *     This fix therefore only ever opens the paste affordance when NOT
+ *     currently recording (detected via #captureBtn's own 'recording' CSS
+ *     class, the same signal the base app itself uses to swap the button's
+ *     label between "▶ Start Visit" and "Recording… Stop Visit").
+ *
+ * Placement: the new "📋 Paste transcript instead" button is added ONCE,
+ * directly beside the real #captureBtn inside #captureCard — the single
+ * engine control every layer-cake surface (MLS Easy v3's row actions, the
+ * base hero, any older cockpit/wizard remnants) already proxies/clicks
+ * through to. Per ARCHITECTURE_MAP.md §8.1 ("exactly one control per
+ * function"), adding a second paste button next to one of the many Record
+ * *proxies* would just be one more duplicate control of the kind this whole
+ * task is trying to reduce elsewhere (see feat_mls_ux_chrome.module.js FIX
+ * B) — a single button on the real card is reachable regardless of which
+ * layer currently surfaces that card, with no risk of drifting out of sync
+ * with a legacy code path.
+ *
+ * Clicking it (when not recording): scrolls/focuses #transcript, applies a
+ * brief highlighted outline + a small dismissible tip ("Paste the visit
+ * conversation below, then click ✨ Generate Note."), and does nothing else —
+ * no separate textarea, no forked state, no auto-submit. The doctor pastes,
+ * then clicks the SAME #genBtn (✨ Generate Note) they would after recording,
+ * which flows into the SAME Review & Sign & Send pipeline untouched.
+ *
+ * ---------------------------------------------------------------------------
+ * FIX 3 — Formatted-view (SOAP) body-text contrast
+ * ---------------------------------------------------------------------------
+ * __mlsFormat (the module that renders the "Formatted view (live)" SOAP
+ * display, b80:24469-24741) styles body paragraphs/list items/sub-labels
+ * with `color:var(--text,#1f2937)` and headings with
+ * `color:var(--accent,#2f5fd0)` (b80:24598-24607) — but neither `--text` nor
+ * `--accent` is EVER defined as a real custom property anywhere in the app
+ * (only --ink/--muted/--surface/--line are real tokens), so both always
+ * render at their hard fallback. `__mlsEasyV32` already ships a same-selector
+ * !important override at b80:5619-5624 (color:#1c2740 on the body/list/sub
+ * selectors, matching the intent of this fix) -- but it can still lose a
+ * load-order race: `feat_mls_notetools_exact.js` loads even later
+ * (b80:26492, its own header comment literally says "note+tools
+ * legibility"), and this exact class of regression is already documented in
+ * this codebase (b80:816: "Beat feat_mls_settings_exact.js's !important
+ * #6b7d93 (4.22:1, fails AA @13px)" -- the *_exact suite has shipped
+ * low-contrast text before). That file isn't available to inspect locally,
+ * so rather than add a fourth stylesheet into an unpredictable cascade race,
+ * this sets color directly on the note-content elements via inline style
+ * with 'important' priority -- which always wins over ANY external
+ * stylesheet rule regardless of script load order, because inline
+ * !important outranks selector-based !important in the cascade. A short
+ * interval re-applies it (cheap, scoped query only), so it survives the
+ * content re-rendering on every new note. Headings (.mlsf-h) are
+ * deliberately left untouched -- the spec asks to keep them styled as-is,
+ * only the body/list/sub-label text needs darkening.
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsUxVisitFlow) { return; }
+
+  var api = { ver: '1.0.0', pasteClicks: 0, contrastPasses: 0 };
+  window.__mlsUxVisitFlow = api;
+
+  function safe(fn, fallback) {
+    try { return fn(); } catch (e) { return fallback; }
+  }
+
+  function toastSafe(msg, kind) {
+    safe(function () { if (typeof window.toast === 'function') { window.toast(msg, kind); } });
+  }
+
+  /* ==========================================================================
+   * FIX 2 — Paste transcript
+   * ========================================================================== */
+
+  var NOTE_CONTRAST_COLOR = '#1c2740';   /* matches __mlsEasyV32's own existing choice, for visual consistency */
+
+  function ensurePasteCss() {
+    if (document.getElementById('mlsUxPasteCss')) { return; }
+    var s = document.createElement('style');
+    s.id = 'mlsUxPasteCss';
+    s.textContent =
+      '#transcript.mlsUxPasteReady{outline:3px solid #2f7fd0!important;outline-offset:2px;transition:outline-color .3s ease}' +
+      '.mlsUxPasteTip{font-size:12.5px;color:#1c5aa8;background:#eaf2fd;border:1px solid #bcd6f5;border-radius:8px;padding:6px 10px;margin:0 0 6px;display:flex;align-items:center;gap:6px}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  var tipTimer = null;
+  function dismissPasteTip() {
+    safe(function () {
+      var ta = document.getElementById('transcript');
+      if (ta) { ta.classList.remove('mlsUxPasteReady'); }
+      var tip = document.getElementById('mlsUxPasteTip');
+      if (tip && tip.parentNode) { tip.parentNode.removeChild(tip); }
+    });
+  }
+
+  function isRecordingNow() {
+    return safe(function () {
+      var btn = document.getElementById('captureBtn');
+      return !!(btn && btn.classList.contains('recording'));
+    }, false);
+  }
+
+  function pasteTranscript() {
+    api.pasteClicks++;
+    if (isRecordingNow()) {
+      toastSafe('Stop the recording first, then paste the transcript.', 'err');
+      return;
+    }
+    var ta = document.getElementById('transcript');
+    if (!ta) { return; }
+    ensurePasteCss();
+    safe(function () { ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    safe(function () { ta.focus(); });
+    ta.classList.add('mlsUxPasteReady');
+
+    if (!document.getElementById('mlsUxPasteTip') && ta.parentNode) {
+      var tip = document.createElement('div');
+      tip.id = 'mlsUxPasteTip';
+      tip.className = 'mlsUxPasteTip';
+      tip.textContent = 'Paste the visit conversation below, then click ✨ Generate Note.';
+      ta.parentNode.insertBefore(tip, ta);
+    }
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(dismissPasteTip, 8000);
+    safe(function () { ta.addEventListener('input', dismissPasteTip, { once: true }); });
+  }
+  window.__mlsPasteTranscript = pasteTranscript;
+
+  function ensurePasteButton() {
+    safe(function () {
+      var cap = document.getElementById('captureBtn');
+      if (!cap || document.getElementById('mlsPasteTranscriptBtn')) { return; }
+      var btn = document.createElement('button');
+      btn.id = 'mlsPasteTranscriptBtn';
+      btn.type = 'button';
+      btn.className = 'btn-ghost';
+      btn.style.cssText = 'margin-left:8px';
+      btn.textContent = '📋 Paste transcript instead';
+      btn.onclick = pasteTranscript;
+      cap.parentNode.insertBefore(btn, cap.nextSibling);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ensurePasteButton, { once: true });
+  } else {
+    ensurePasteButton();
+  }
+  /* Cheap insurance: if #captureCard is (re)built later by a design-shell
+     module that moves elements by id (e.g. feat_mls_visit_exact.js), a short
+     retry window covers it without needing a permanent observer. */
+  var pasteBtnTries = 0;
+  var pasteBtnRetry = setInterval(function () {
+    pasteBtnTries++;
+    ensurePasteButton();
+    if (document.getElementById('mlsPasteTranscriptBtn') || pasteBtnTries > 40) { clearInterval(pasteBtnRetry); }
+  }, 500);
+
+  /* ==========================================================================
+   * FIX 3 — Formatted-view (SOAP) body-text contrast
+   * ========================================================================== */
+
+  function applyNoteContrast() {
+    safe(function () {
+      var textEls = document.querySelectorAll('.mlsf-note .mlsf-p, .mlsf-note .mlsf-list li, .mlsf-note .mlsf-sub');
+      for (var i = 0; i < textEls.length; i++) {
+        textEls[i].style.setProperty('color', NOTE_CONTRAST_COLOR, 'important');
+      }
+      var notes = document.querySelectorAll('.mlsf-note');
+      for (var j = 0; j < notes.length; j++) {
+        notes[j].style.setProperty('color', NOTE_CONTRAST_COLOR, 'important');
+        notes[j].style.setProperty('background', '#ffffff', 'important');
+      }
+      if (textEls.length || notes.length) { api.contrastPasses++; }
+    });
+  }
+  var contrastTimer = setInterval(applyNoteContrast, 1500);
+  applyNoteContrast();
+
+  window.__mlsUxVisitFlow_revert = function () {
+    safe(function () { clearInterval(contrastTimer); });
+    safe(function () { clearInterval(pasteBtnRetry); });
+    safe(function () { clearTimeout(tipTimer); });
+    safe(function () { dismissPasteTip(); });
+    safe(function () { var b = document.getElementById('mlsPasteTranscriptBtn'); if (b && b.parentNode) { b.parentNode.removeChild(b); } });
+    safe(function () { var s = document.getElementById('mlsUxPasteCss'); if (s && s.parentNode) { s.parentNode.removeChild(s); } });
+    safe(function () {
+      var textEls = document.querySelectorAll('.mlsf-note .mlsf-p, .mlsf-note .mlsf-list li, .mlsf-note .mlsf-sub');
+      for (var i = 0; i < textEls.length; i++) { textEls[i].style.removeProperty('color'); }
+      var notes = document.querySelectorAll('.mlsf-note');
+      for (var j = 0; j < notes.length; j++) { notes[j].style.removeProperty('color'); notes[j].style.removeProperty('background'); }
+    });
+    delete window.__mlsPasteTranscript;
+    delete window.__mlsUxVisitFlow;
+    delete window.__mlsUxVisitFlow_revert;
+  };
+})();
+/* =============================================================================
+ * __mlsUxPhoneMicRestore v1.0.0
+ * -----------------------------------------------------------------------------
+ * Restores a directly-reachable "record from phone" entry point inside the
+ * MLS Easy v3 (ez3) per-patient room screen, and fixes a closely related gap
+ * discovered while investigating this: this same lane's earlier "📋 Paste
+ * transcript instead" button (feat_mls_ux_visitflow.module.js FIX 2) has the
+ * IDENTICAL root cause and was, until this file, just as unreachable. Load
+ * order relative to this lane's other two modules does not matter, but this
+ * file must ship in the same page as feat_mls_ux_visitflow.module.js for the
+ * paste-transcript half to have something to call.
+ *
+ * ---------------------------------------------------------------------------
+ * ROOT CAUSE (re-verified against a fresh live-bundle fetch, build b82 --
+ * dispatch-work\backlog-sweep\_scratch\{mls-connect.LIVE.js, ScribeFlow.LIVE.html})
+ * ---------------------------------------------------------------------------
+ * Nothing was deleted or broken. #phoneMicBtn (ScribeFlow.html:1520,
+ * onclick="startPhoneMic()") and startPhoneMic() itself (ScribeFlow.html:11874
+ * -- POSTs /api/mic/start, fills #phoneMicCode/#phoneMicLink/#phoneMicQR,
+ * shows #phoneMicPanel) are both fully intact and byte-for-byte unchanged.
+ * The button has ALWAYS lived inside a collapsed "⚙️ More options" accordion
+ * (#captureMore, style="display:none", toggled by #captureMoreBtn's
+ * toggleCaptureMore() -- ScribeFlow.html:1497-1538, function body confirmed
+ * at :21099) alongside the specialty-template picker and problem-list context
+ * box -- long-standing base-app structure, not a recent change.
+ *
+ * What actually changed the doctor's experience is MLS Easy v3 becoming the
+ * dominant, effectively-exclusive workspace. ez3 unconditionally hides the
+ * WHOLE engine card behind its OWN, separate "Advanced tools" toggle
+ * (__mlsEasyV32's injected stylesheet):
+ *   '#captureCard,#noteCard,#emrCard,#outcomesCard{display:none;}'
+ *   'body.ez3adv #captureCard,#noteCard,#emrCard,#outcomesCard{display:block;}'
+ * So today, reaching Phone Mic requires: open ez3's "🔧 Advanced tools"
+ * (reveals #captureCard -- itself easy to never notice, since ez3's own
+ * curated secondary-action row -- Change patient / Open chart / Prep note /
+ * History -- makes no mention of it) → THEN ALSO open "⚙️ More options"
+ * inside the now-revealed card → THEN see the button. Two undiscoverable
+ * toggles stacked on top of each other reads, correctly, as "the button is
+ * gone" even though every line of code behind it still works exactly as
+ * before.
+ *
+ * The exact same collapse also swallows this lane's own "📋 Paste transcript
+ * instead" button -- it sits directly beside the real #captureBtn, itself
+ * inside the now-hidden #captureCard. That fix was correctly wired to the
+ * real note-generation pipeline, but under ez3 (the default, dominant view)
+ * it is exactly as unreachable as Phone Mic was -- undermining its own "put
+ * it alongside the Record option clearly" goal. Fixed here alongside Phone
+ * Mic since it is the identical root cause, found while investigating this
+ * ticket rather than left as a silent latent gap.
+ *
+ * ---------------------------------------------------------------------------
+ * THE FIX
+ * ---------------------------------------------------------------------------
+ * Adds ONE small, persistent row -- "📱 Phone mic" and "📋 Paste transcript"
+ * -- directly under ez3's per-patient room screen, styled with the SAME
+ * ez3-sm / ez3-row2 classes ez3's own secondary actions already use (e.g.
+ * "👥 Wrong patient? Switch") for visual consistency; no new CSS invented.
+ * Both buttons are thin proxies -- clicking them drives the exact real
+ * controls a doctor would eventually reach manually, in the same order,
+ * using the app's OWN reveal mechanisms rather than reimplementing or
+ * relocating anything:
+ *   1. If the engine card isn't already revealed (body.ez3adv absent), click
+ *      ez3's REAL "#ez3Adv" toggle button -- this IS "🔧 Advanced tools"
+ *      itself, so S.advOpen / the body class / the button's own label / its
+ *      built-in scrollIntoView(#captureCard) all stay perfectly in sync,
+ *      because the real handler runs, not a re-implementation of it. If
+ *      already open, this just re-scrolls to #captureCard directly instead
+ *      (clicking #ez3Adv again would TOGGLE IT SHUT).
+ *   2. Phone Mic only: if "⚙️ More options" (#captureMore) is still
+ *      collapsed, clicks the real #captureMoreBtn (real toggleCaptureMore())
+ *      -- then clicks the real #phoneMicBtn (runs the real startPhoneMic()
+ *      unmodified) and scrolls #phoneMicPanel into view once populated.
+ *   3. Paste transcript only: calls this lane's own
+ *      window.__mlsPasteTranscript() (feat_mls_ux_visitflow.module.js) --
+ *      already handles scroll/focus/highlight/tip/recording-guard; nothing
+ *      about it is reimplemented here.
+ *
+ * Placement, not fighting the re-render: ez3 rebuilds its whole per-patient
+ * screen from an HTML string on nearly every click (`wrap().innerHTML = h`,
+ * where wrap() === document.getElementById('ez3Wrap')) -- a node placed
+ * INSIDE that container would be wiped out on the next click. This row is
+ * inserted as #ez3Wrap's next DOM SIBLING (immediately below the whole room
+ * screen, outside the string-rebuilt subtree), so it survives every
+ * re-render untouched; a periodic check (800ms) only ever needs to re-create
+ * it if #ez3Wrap's parent itself gets torn down and rebuilt (e.g. a
+ * Doctor/Staff mode switch).
+ *
+ * Visibility is gated on "#ez3Change" existing inside #ez3Wrap -- confirmed
+ * by reading every one of the 5 duplicate copies of this module's lineage
+ * live in the bundle (first-guard-wins; #ez3Change's id is identical across
+ * all 5) that this id only ever renders on the per-patient DOCTOR ROOM
+ * screen, never on Choose-patient/Home/Staff-prep -- so this row only shows
+ * where "Record" itself is meaningful, and is removed (not just hidden) the
+ * moment the doctor leaves that screen.
+ *
+ * Kill switch: window.__mlsUxPhoneMicRestore_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsUxPhoneMicRestore) { return; }
+
+  var api = { ver: '1.0.0', phoneMicOpens: 0, pasteOpens: 0 };
+  window.__mlsUxPhoneMicRestore = api;
+
+  function safe(fn, fallback) {
+    try { return fn(); } catch (e) { return fallback; }
+  }
+  function toastSafe(msg, kind) {
+    safe(function () { if (typeof window.toast === 'function') { window.toast(msg, kind); } });
+  }
+
+  /* Reveals #captureCard the same way a doctor clicking "🔧 Advanced tools"
+     would -- runs ez3's REAL handler via a real click (never reimplements
+     its state/scroll logic) -- then calls back once settled. */
+  function revealEngineCard(afterFn) {
+    var already = safe(function () { return document.body.classList.contains('ez3adv'); }, false);
+    if (already) {
+      safe(function () {
+        var cc = document.getElementById('captureCard');
+        if (cc && cc.scrollIntoView) { cc.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      });
+      setTimeout(afterFn, 250);
+      return;
+    }
+    var advBtn = document.getElementById('ez3Adv');
+    if (advBtn) {
+      safe(function () { advBtn.click(); });   /* real handler: flips S.advOpen, syncs body.ez3adv, re-renders, scrolls #captureCard */
+      setTimeout(afterFn, 550);
+      return;
+    }
+    /* No ez3 Advanced-tools toggle found on this screen (classic mode, or
+       #captureCard already unconditionally visible) -- proceed directly. */
+    setTimeout(afterFn, 0);
+  }
+
+  function startPhoneMicFromEasy() {
+    api.phoneMicOpens++;
+    revealEngineCard(function () {
+      var more = document.getElementById('captureMore');
+      var needsMore = !!(more && more.style.display === 'none');
+      if (needsMore) {
+        var moreBtn = document.getElementById('captureMoreBtn');
+        safe(function () { if (moreBtn) { moreBtn.click(); } });   /* real toggleCaptureMore() */
+      }
+      setTimeout(function () {
+        var pmBtn = document.getElementById('phoneMicBtn');
+        if (!pmBtn) { toastSafe('Phone mic control not found on this build.', 'err'); return; }
+        safe(function () { pmBtn.click(); });   /* real startPhoneMic(), unmodified */
+        setTimeout(function () {
+          safe(function () {
+            var panel = document.getElementById('phoneMicPanel');
+            if (panel && panel.scrollIntoView) { panel.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          });
+        }, 350);
+      }, needsMore ? 300 : 0);
+    });
+  }
+
+  function pasteTranscriptFromEasy() {
+    api.pasteOpens++;
+    revealEngineCard(function () {
+      if (typeof window.__mlsPasteTranscript === 'function') {
+        window.__mlsPasteTranscript();
+      } else {
+        toastSafe('Paste-transcript control not found on this build.', 'err');
+      }
+    });
+  }
+  window.__mlsStartPhoneMicFromEasy = startPhoneMicFromEasy;
+  window.__mlsPasteTranscriptFromEasy = pasteTranscriptFromEasy;
+
+  var ROW_ID = 'mlsUxEz3ExtraRow';
+  function isDoctorRoomScreen(wrapEl) {
+    return !!(wrapEl && wrapEl.querySelector('#ez3Change'));
+  }
+
+  function ensureRow() {
+    safe(function () {
+      var wrapEl = document.getElementById('ez3Wrap');
+      if (!wrapEl) { return; }
+      var existing = document.getElementById(ROW_ID);
+      if (!isDoctorRoomScreen(wrapEl)) {
+        if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
+        return;
+      }
+      if (existing) { return; }   /* already present, nothing to do */
+
+      var row = document.createElement('div');
+      row.id = ROW_ID;
+      row.className = 'ez3-row2';
+      row.style.cssText = 'margin-top:6px';
+
+      var pmBtn = document.createElement('button');
+      pmBtn.type = 'button';
+      pmBtn.className = 'ez3-sm';
+      pmBtn.textContent = '📱 Phone mic';
+      pmBtn.onclick = startPhoneMicFromEasy;
+      row.appendChild(pmBtn);
+
+      var ptBtn = document.createElement('button');
+      ptBtn.type = 'button';
+      ptBtn.className = 'ez3-sm';
+      ptBtn.textContent = '📋 Paste transcript';
+      ptBtn.onclick = pasteTranscriptFromEasy;
+      row.appendChild(ptBtn);
+
+      wrapEl.parentNode.insertBefore(row, wrapEl.nextSibling);
+    });
+  }
+
+  var rowTimer = setInterval(ensureRow, 800);
+  ensureRow();
+
+  window.__mlsUxPhoneMicRestore_revert = function () {
+    safe(function () { clearInterval(rowTimer); });
+    safe(function () { var r = document.getElementById(ROW_ID); if (r && r.parentNode) { r.parentNode.removeChild(r); } });
+    delete window.__mlsStartPhoneMicFromEasy;
+    delete window.__mlsPasteTranscriptFromEasy;
+    delete window.__mlsUxPhoneMicRestore;
+    delete window.__mlsUxPhoneMicRestore_revert;
+  };
+})();
+/* =============================================================================
+ * __mlsUxPatientsStability v1.0.0
+ * -----------------------------------------------------------------------------
+ * Fixes a layout-instability bug on the PATIENTS view: certain rows reflow
+ * and shift the ENTIRE page horizontally, repeatedly. CSS-only, additive,
+ * reversible. Prepend ABOVE the live mls-connect.js bundle, alongside this
+ * lane's other modules (order does not matter — this file has no
+ * cross-file references).
+ *
+ * ---------------------------------------------------------------------------
+ * ROOT CAUSE (verified against a fresh live-bundle fetch, build b82 --
+ * dispatch-work\backlog-sweep\_scratch\ScribeFlow.LIVE.html)
+ * ---------------------------------------------------------------------------
+ * TWO structural gaps combine to produce a "whole page shift," not just a
+ * local row wobble:
+ *
+ * 1. NO SCROLLBAR-GUTTER RESERVATION ANYWHERE IN THE APP (confirmed absent --
+ *    grepped for scrollbar-gutter / overflow-y:scroll on html or body: zero
+ *    hits). The Patients list (#ptList, HTML:1368) has no CSS of its own and
+ *    is NOT an independently-scrolling container -- confirmed: #ptSplitWrap
+ *    (its parent, HTML:1305) only ever becomes `display:grid` in split view
+ *    when a patient is active (line 746 of the injected CSS), and #ptList
+ *    itself carries no overflow/height rule at all. So the rows flow
+ *    directly in the PAGE's own document flow, and the BROWSER's page-level
+ *    vertical scrollbar is what turns on/off as the list's total rendered
+ *    height crosses the viewport threshold. On Windows Chrome (this app's
+ *    required browser, per the MLS Assist extension) the default scrollbar
+ *    is non-overlay and consumes real horizontal layout space (~15-17px) --
+ *    every time it appears or disappears, the page's available width
+ *    changes by that amount, and everything shifts sideways. This is the
+ *    direct mechanism behind "a whole page shift."
+ *
+ * 2. NOTHING STOPS A ROW'S HEIGHT FROM FLUCTUATING BETWEEN RENDERS.
+ *    `.pt-item` (HTML:574) has no min-height -- its height is 100%
+ *    content-dependent. `.pt-main .t` (name, HTML:588) and `.pt-main .s`
+ *    (demographics, HTML:589) have no overflow-wrap/word-break -- an
+ *    unbroken long string (a name or context value with no spaces) can
+ *    force that ONE row -- and, since there is no horizontal scroll
+ *    container either, potentially the page -- wider than intended, with
+ *    nothing to contain it. `_ptItemHtml()` (HTML:9417-9446) rebuilds a
+ *    row's full markup fresh every render from live data (name, demographics,
+ *    a truncated problem/reason line, and 1-4 status chips -- Athena-import
+ *    badge, "Seen X"/"New patient", note count, doc count) -- so any row
+ *    whose underlying data is being updated by a background process
+ *    (chart-pull enrichment, DOB backfill, dedupe/merge, an in-progress
+ *    draft note changing that patient's note count) will render at a
+ *    slightly different height the next time `renderPatients()` runs.
+ *    `renderPatients()` (HTML:9363-9416) itself is called from many
+ *    different places across the app (patient select/deselect/delete,
+ *    quick-visit, several cohort-import flows in the bundle, and the
+ *    Patients tab's own render hook every time it becomes active) -- so
+ *    "keeps happening, every time" is consistent with ordinary, frequent
+ *    use of the app, not a rare edge case.
+ *
+ * Put together: whichever 1-2 patients in the current roster happen to sit
+ * right at a height-fluctuation edge (longest content, or content that's
+ * actively being updated in the background) are the ones whose re-render
+ * tips the page's total height across the scrollbar's on/off threshold --
+ * "two of the lines keep bugging out" is the visible symptom of exactly
+ * that pair repeatedly being the tipping point. This is a plausible,
+ * evidence-grounded explanation for WHY those two specific rows, but not a
+ * claim of certainty about which exact background process updates their
+ * data at any given moment -- the fix below does not depend on knowing
+ * that, because it removes the STRUCTURAL vulnerability itself rather than
+ * chasing whichever process happens to trigger it on a given day.
+ *
+ * ---------------------------------------------------------------------------
+ * THE FIX (CSS only -- no JS behavior changes, nothing to poll or re-assert)
+ * ---------------------------------------------------------------------------
+ * 1. `scrollbar-gutter: stable` on html/body -- the page always reserves the
+ *    scrollbar's track width, whether or not a scrollbar is currently drawn.
+ *    This alone eliminates the "whole page shift" symptom regardless of what
+ *    causes the list's total height to change -- the fix does not require
+ *    finding or stopping every possible content-changing trigger. `@supports`
+ *    fallback to `overflow-y: scroll` for any engine that doesn't honor
+ *    `scrollbar-gutter` (Chrome has supported it since 2021; this app
+ *    already requires Chrome for the MLS Assist extension, so this is
+ *    effectively belt-and-suspenders, not a real compatibility need today).
+ * 2. `min-height` on `.pt-item` -- a FLOOR, not a cap: sparse rows (a brand
+ *    new patient with no demographics/context/chips yet) render at a
+ *    consistent minimum height instead of visibly growing taller the moment
+ *    real data lands, without preventing genuinely content-heavy rows from
+ *    being taller than the floor.
+ * 3. `overflow-wrap: break-word` on the name/demographics text -- an
+ *    unbroken long string can no longer force a row (or the page) wider;
+ *    it wraps at the row's edge like any other long word would.
+ * 4. `overflow-x: hidden` on `#patientsView`/`.pt-list` as a defensive
+ *    backstop -- with (3) already breaking any pathological unbroken
+ *    string, this should rarely if ever actually clip anything; it only
+ *    guards against a row somehow still rendering wider than its container.
+ *
+ * Kill switch: window.__mlsUxPatientsStability_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsUxPatientsStability) { return; }
+
+  var api = { ver: '1.0.0' };
+  window.__mlsUxPatientsStability = api;
+
+  function safe(fn, fallback) {
+    try { return fn(); } catch (e) { return fallback; }
+  }
+
+  safe(function () {
+    if (document.getElementById('mlsUxPatientsStabilityCss')) { return; }
+    var css = document.createElement('style');
+    css.id = 'mlsUxPatientsStabilityCss';
+    css.textContent =
+      /* 1) root fix: page width never changes whether or not the vertical
+         scrollbar is currently needed. */
+      'html,body{scrollbar-gutter:stable;}' +
+      '@supports not (scrollbar-gutter:stable){ html,body{overflow-y:scroll;} }' +
+
+      /* 2) row-level containment */
+      '#patientsView .pt-item{min-height:84px;box-sizing:border-box;}' +
+      '#patientsView .pt-main .t,#patientsView .pt-main .s{overflow-wrap:break-word;word-break:break-word;}' +
+
+      /* 3) defensive horizontal clipping backstop */
+      '#patientsView{overflow-x:hidden;}' +
+      '#patientsView .pt-list{overflow-x:hidden;}';
+    (document.head || document.documentElement).appendChild(css);
+  });
+
+  window.__mlsUxPatientsStability_revert = function () {
+    safe(function () {
+      var s = document.getElementById('mlsUxPatientsStabilityCss');
+      if (s && s.parentNode) { s.parentNode.removeChild(s); }
+    });
+    delete window.__mlsUxPatientsStability;
+    delete window.__mlsUxPatientsStability_revert;
+  };
+})();
 /* =========================================================================
  * MLS Scribe — CHART-SUMMARY SANITIZER  (__mlsSummarySanitize) v1.0.0  2026-07-08 (b87)
  *
@@ -20664,7 +21500,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b87';
+  var MLS_APP_BUILD='2026-07-08-b88';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -24804,11 +25640,15 @@
   try {
     var VER = null;
     function applyBadge(){
-      if (!VER) return false;
-      var spans = document.getElementsByTagName('span'), did = false, want = 'Latest: v' + VER;
+      var loaded = null; try { loaded = window.__mlsExtReportedVersion || (window.__mlsAsstFix && window.__mlsAsstFix.version) || null; } catch (e) {}
+      if (!VER && !loaded) return false;
+      // b88: show the INSTALLED extension version (what the doctor actually loaded) when it
+      // is known via the handshake; fall back to latest-available from extension-version.json.
+      var want = loaded ? ('Installed: v' + String(loaded).replace(/^v/i, '')) : ('Latest: v' + VER);
+      var spans = document.getElementsByTagName('span'), did = false;
       for (var i = 0; i < spans.length; i++) {
         var s = spans[i], t = (s.textContent || '').trim();
-        if (!/^Latest:\s*v?\d/i.test(t)) continue;        // looks like a "Latest: vX.Y" badge
+        if (!/^(?:Latest|Installed):\s*v?\d/i.test(t)) continue;   // a "Latest/Installed: vX.Y" badge
         var p = s, ok = false;                            // confirm it's the MLS Assist extension card
         for (var j = 0; j < 4 && p && p !== document.body && p !== document.documentElement; j++) {
           if (/MLS Assist browser extension/i.test(p.textContent || '')) { ok = true; break; }

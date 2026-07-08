@@ -1,5 +1,5 @@
 {
-  "version": "1.51",
+  "version": "1.55",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.51 — REQUIRED UPDATE. Fixes chart history binding (chart pulls re-bind to the open patient and refuse stale identities), adds DOB capture on schedule reads, hands-free month pulls, and write-target verification before any writeback, plus the new reviews reader. These fixes only work after you download and load this update."
+  "notes": "v1.55 — adds the hands-free day/month history pull (returns athenaOne to the schedule between patients and foregrounds the read so it doesn't stall), on top of v1.54's chart-history binding, DOB capture, and write-target verification. Load this update, then use 'Pull day histories'."
 }
