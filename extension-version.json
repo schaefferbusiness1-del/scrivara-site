@@ -1,5 +1,5 @@
 {
-  "version": "1.50",
+  "version": "1.51",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.50 — PER-PATIENT CAPTURE + IDENTITY GATE. Chart pulls now read the open patient's own identity and refuse to file another patient's chart (fixes schedule pulls writing one chart summary into every record). Captures now MERGE the clinical frames so the FULL ENCOUNTER SUMMARY (procedure name/date, performed by, assessment & plan, follow-up) and meds land in each patient's MLS summary/timeline. TITLE-aware athenaOne tab detection kills the false 'not connected' status. NEW patient picker in the overlay (one tap opens a chart from today's MLS schedule). Reports its version for the in-app update reminder."
+  "notes": "v1.51 — REQUIRED UPDATE. Fixes chart history binding (chart pulls re-bind to the open patient and refuse stale identities), adds DOB capture on schedule reads, hands-free month pulls, and write-target verification before any writeback, plus the new reviews reader. These fixes only work after you download and load this update."
 }
