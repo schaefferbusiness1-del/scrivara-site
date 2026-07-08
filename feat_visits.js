@@ -439,7 +439,16 @@
     var overlap = t1.filter(function (x) { return t2.indexOf(x) >= 0 && x.length > 1; }).length;
     var nameHit = !!(n1 && n2 && (n1 === n2 || n1.indexOf(n2) >= 0 || n2.indexOf(n1) >= 0 || overlap >= 2));
     var dobPresent = !!(d1 && d2), dobEqual = dobPresent && d1 === d2;
-    return { ok: !!(nameHit && dobEqual), nameHit: nameHit, dobPresent: dobPresent, dobEqual: dobEqual, chartName: identity.name, chartDob: identity.dob };
+    // b84: the extension's identity phase can return an athenaOne HEADER LABEL (e.g.
+    // "Care Team", "Provider", "Pharmacy") in place of the patient name — a mis-extraction,
+    // NOT a different patient. When the DOB matches EXACTLY and the chart "name" is a known
+    // non-patient label (or empty), accept. A real, different person's name still blocks
+    // (nameHit stays false and a real name is not in the label list) — wrong-patient guard intact.
+    var NONPT = /^(care\s*team|provider|pharmacy|insurance|contact|global\s*period|aip\s*enrolled|appointments?|primary|referring|guarantor|billing|care|team|next|home)$/;
+    var nameIsLabel = (!n2) || NONPT.test(n2);
+    var okStrict = nameHit && dobEqual;
+    var okDobLabel = dobEqual && dobPresent && nameIsLabel;
+    return { ok: !!(okStrict || okDobLabel), nameHit: nameHit, dobPresent: dobPresent, dobEqual: dobEqual, chartName: identity.name, chartDob: identity.dob, via: (okStrict ? 'name+dob' : (okDobLabel ? 'dob+label' : 'none')) };
   }
 
   // ---- extension bridge helpers ----------------------------------------------

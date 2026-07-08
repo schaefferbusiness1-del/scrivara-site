@@ -77,7 +77,7 @@
                    + "Make sure the patient's athenaOne chart is open in a signed-in tab, then update "
                    + "MLS Assist to v1.33 (Settings → Get the extension) and reload. "
                    + "If this patient truly has no past visits in athenaOne, that's expected.";
-    var MAXMS = 30000;
+    var MAXMS = 90000; /* b84: the real per-encounter walk takes ~55-60s with the v1.54 tab-foreground read; 30s cut it off and falsely reported "nothing saved" while the save was still pending. */
 
     /* ---------- wrappers (each idempotent) ---------- */
     function wrapAddVisit(M) {
