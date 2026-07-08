@@ -30,7 +30,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '3.6.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.6.1', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -160,7 +160,7 @@
   window.postMessage = function (msg, target, transfer) {
     try {
       if (msg && typeof msg === 'object' && msg.source === 'mls-app' && msg.type === 'mlsAppReadChart' && msg.patient && !msg.__cfxBare) {
-        GATE.want = String(msg.patient); GATE.ts = new Date().getTime(); GATE.phase = 1; GATE.navProbes++;
+        GATE.want = String(msg.patient); GATE.ts = new Date().getTime(); GATE.phase = 1; GATE.navProbes++; GATE.reformatted = 0;
         nativePost({ source: 'mls-app', type: 'mlsAppSearchOpenPatient', name: GATE.want }, location.origin);
         /* fallback: if search-open never answers, try the bare read anyway */
         setTimeout(function () {
@@ -174,11 +174,25 @@
     } catch (e) {}
     return transfer !== undefined ? nativePost(msg, target, transfer) : nativePost(msg, target);
   };
+  function lastFirst(name) {
+    var t = String(name || '').trim().split(/\s+/);
+    if (t.length < 2) return name;
+    return t[t.length - 1] + ', ' + t.slice(0, t.length - 1).join(' ');
+  }
   window.addEventListener('message', function (ev) {
     var d = ev && ev.data;
     if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppSearchOpenResult') return;
     if (GATE.phase !== 1 || !GATE.want) return;
-    GATE.phase = 2;
+    /* v3.6.1: athenaOne's patient search wants "LAST, FIRST" — a plain
+       "First Last" query can return "No matching patient". Retry once
+       reformatted before falling through to the bare read. */
+    if (!d.ok && !GATE.reformatted && /no matching patient/i.test(String(d.error || ''))) {
+      GATE.reformatted = 1;
+      var rf = lastFirst(GATE.want);
+      try { nativePost({ source: 'mls-app', type: 'mlsAppSearchOpenPatient', name: rf }, location.origin); } catch (e) {}
+      return;
+    }
+    GATE.phase = 2; GATE.reformatted = 0;
     var want = GATE.want;
     setTimeout(function () {
       try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
@@ -20095,7 +20109,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b78';
+  var MLS_APP_BUILD='2026-07-08-b79';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
