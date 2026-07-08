@@ -1,3 +1,225 @@
+/* =========================================================================
+ * MLS Scribe — DAY / MONTH CHART-HISTORY PULL  (__mlsDayHistoryPull) v1.1.0  2026-07-08 (b89)
+ *
+ * v1.1.0 robustness pass (anchored on the PROVEN pieces; same flow, no re-architecture):
+ *  - Prepended ABOVE the v1.0.0 module -> loads first, sets window.__mlsDayHistoryPull,
+ *    so v1.0.0's guard bails and THIS version wins.
+ *  - Per patient: mlsAppGoHome (RETRY, foregrounds athena -> clinical schedule) ->
+ *    mlsAppSearchOpenPatient (the PROVEN v1.53 schedule-click open, RETRY) ->
+ *    mlsAppReadChart (read the open chart) -> sanitize + ingest.
+ *  - A transient goHome/open timeout is a PER-PATIENT skip, NOT a global abort
+ *    (the v1.0.0 bug: one goHome timeout stopped the whole day). One global
+ *    pre-check confirms the v1.55 bridge before the loop.
+ *  - Longer settle waits (the app tab is throttled while athena is foreground, so
+ *    waits fire late = safe) let the schedule / chart finish loading before we click/read.
+ *  - Sanitizes the read text (strips leaked athena JS) before ingest; the b87
+ *    continuous scrub is the belt-and-suspenders cleaner for the app's own auto-save.
+ *  - Tally checks the summary AFTER a delay (the app auto-saves async) so a real
+ *    save isn't mislabeled "thin".
+ * READ-ONLY in athenaOne. Revert: window.__mlsDayHistoryPull_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.version === '1.1.0') return; } catch (e) { return; }
+
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function say(m) { try { if (typeof window.toast === 'function') window.toast(m, ''); } catch (e) {} try { console.log('[MLS day-pull]', m); } catch (e) {} }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function bridge(type, payload, respType, timeout) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
+      try { window.addEventListener('message', h, false); } catch (e) {}
+      try { window.postMessage(Object.assign({ type: type, source: 'mls-app', from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
+      setTimeout(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); }, timeout || 15000);
+    });
+  }
+  function strip(t) { try { return window.__mlsSummarySanitize ? window.__mlsSummarySanitize.strip(t) : t; } catch (e) { return t; } }
+  function hasCode(t) { try { return window.__mlsSummarySanitize ? window.__mlsSummarySanitize.hasCode(t) : false; } catch (e) { return false; } }
+
+  function getPatients() { try { return (typeof window.getPatients === 'function') ? (window.getPatients() || []) : []; } catch (e) { return []; } }
+  function findPatient(name) { var k = nrm(name); var ps = getPatients(); for (var i = 0; i < ps.length; i++) { var pn = nrm(ps[i].name); if (pn && (pn === k || pn.indexOf(k) >= 0 || k.indexOf(pn) >= 0)) return ps[i]; } return null; }
+  function summaryOf(p) { try { return String((p && p.summary) || ''); } catch (e) { return ''; } }
+  function isRealChart(s) { return s.length > 400 && /assessment|diagnos|medication|prescription|chief complaint|problem|radicul|cervical|lumbar|reason for visit|encounter|history|allerg|surg/i.test(s); }
+  function hasPulled(p) { var s = summaryOf(p); return s.length > 400 && /pulled from athena/i.test(s) && isRealChart(s); }
+
+  var PLACEHOLDER = /^(frozen|open|available|ht|wt|bp|held|blocked|lunch|break|no exam|tbd|walk\s*in|placeholder)$/i;
+  function isPlaceholder(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || /,?\s*(md|do|pa-?c|np|staff|rn|ma|tech)\b/i.test(name || ''); }
+  function namesFor(prefix) {
+    var out = [], seen = {};
+    try {
+      var arr = (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []);
+      (arr || []).forEach(function (a) {
+        if (!a || !a.name || !a.day_local) return;
+        if (String(a.day_local).indexOf(prefix) !== 0) return;
+        if (isPlaceholder(a.name)) return;
+        var k = nrm(a.name); if (!k || seen[k]) return; seen[k] = 1;
+        out.push(String(a.name));
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  var BUSY = false;
+  var STATE = { running: false, total: 0, done: 0, ok: 0, failed: 0, current: '', rows: [] };
+
+  // return athenaOne to the clinical schedule (retry — foregrounds the tab)
+  function ground() {
+    return (async function () {
+      for (var a = 0; a < 3; a++) {
+        var gh = await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 18000);
+        if (gh && !gh.__timeout && (gh.ok || gh.clicked)) { await wait(4500); return true; }
+        await wait(1800);
+      }
+      return false;
+    })();
+  }
+
+  // pull ONE patient: ground -> search-open (proven) -> read -> sanitize+ingest. Never global-aborts.
+  function pullOne(name) {
+    return (async function () {
+      var row = { name: name, opened: false, chartName: '', ok: false, reason: '' };
+      if (!(await ground())) { row.reason = 'gohome-failed'; return row; }
+      // open via the proven schedule-click search-open, retry (re-ground between tries)
+      var opened = false;
+      for (var a = 0; a < 2 && !opened; a++) {
+        var op = await bridge('mlsAppSearchOpenPatient', { name: name }, 'mlsAppSearchOpenResult', 22000);
+        if (op && op.opened) { opened = true; break; }
+        if (a === 0) { await ground(); }
+      }
+      if (!opened) { row.reason = 'open-failed'; return row; }
+      await wait(2600); // chart render
+      // read the open chart (retry once)
+      var r = null;
+      for (var b = 0; b < 2; b++) {
+        r = await bridge('mlsAppReadChart', { patient: name }, 'mlsAppChartResult', 75000);
+        if (r && r.ok && r.text && r.text.length >= 400) break;
+        await wait(1500);
+      }
+      if (!r || !r.ok || !r.text || r.text.length < 400) { row.reason = 'read-failed'; return row; }
+      row.chartName = r.chartName || '';
+      // identity gate
+      var kt = nrm(name), kc = nrm(r.chartName || '');
+      var overlap = kt.split(' ').filter(function (x) { return x.length > 1 && kc.indexOf(x) >= 0; }).length;
+      if (kc && overlap < 2 && kc.indexOf(kt) < 0 && kt.indexOf(kc) < 0) { row.reason = 'identity-mismatch:' + (r.chartName || '?'); return row; }
+      var p = findPatient(name);
+      if (!p) { row.reason = 'no-record'; return row; }
+      var cleanText = strip(r.text);
+      try {
+        var M = window.__mlsVisitModel;
+        if (M && typeof M.ingestChart === 'function') { M.ingestChart(p, { text: cleanText, summary: cleanText, name: r.chartName || name, dob: r.chartDob || '' }, 'athena-copy'); }
+      } catch (e) { row.reason = 'ingest:' + ((e && e.message) || e); return row; }
+      // the app's own chart-result handler auto-saves the summary async; wait, then let the
+      // b87 continuous scrub clean it, then verify.
+      await wait(1800);
+      try { if (window.__mlsSummarySanitize && p && typeof p.summary === 'string' && hasCode(p.summary)) { p.summary = strip(p.summary); if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } } catch (e) {}
+      row.ok = isRealChart(summaryOf(p));
+      if (!row.ok) row.reason = row.reason || 'thin-after-ingest';
+      return row;
+    })();
+  }
+
+  function run(prefix, label) {
+    if (BUSY) { say('A history pull is already running (' + STATE.done + '/' + STATE.total + ').'); return Promise.resolve('already-running'); }
+    prefix = String(prefix || '').trim();
+    if (!prefix) { var d = new Date(); prefix = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+    return (async function () {
+      // GLOBAL pre-check: confirm the v1.55 go-home bridge before we start
+      say('📚 Preparing the day history pull…');
+      var pre = await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 18000);
+      if (pre && pre.__timeout) { say('⚠️ MLS Assist needs v1.55+ (Settings → Get the extension) to move athenaOne between patients. Nothing was changed.'); return 'needs-ext-v155'; }
+      var names = namesFor(prefix);
+      var todo = names.filter(function (n) { var p = findPatient(n); return !(p && hasPulled(p)); });
+      var already = names.length - todo.length;
+      STATE.running = true; STATE.total = todo.length; STATE.done = 0; STATE.ok = 0; STATE.failed = 0; STATE.current = ''; STATE.rows = [];
+      BUSY = true;
+      say('📚 Pulling chart history for ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + ' (' + (label || prefix) + ')' + (already ? ' — ' + already + ' already have it.' : '.'));
+      if (!todo.length) { BUSY = false; STATE.running = false; say('✅ Every scheduled patient for ' + (label || prefix) + ' already has chart history.'); return 'nothing-to-do'; }
+      for (var i = 0; i < todo.length; i++) {
+        var name = todo[i]; STATE.current = name;
+        say('📖 (' + (i + 1) + '/' + todo.length + ') ' + name + '…');
+        var row;
+        try { row = await pullOne(name); } catch (e) { row = { name: name, ok: false, reason: 'error:' + ((e && e.message) || e) }; }
+        STATE.rows.push(row); STATE.done++;
+        if (row && row.ok) STATE.ok++; else STATE.failed++;   // NEVER global-abort — always continue
+        try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
+        try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
+        await wait(600);
+      }
+      BUSY = false; STATE.running = false; STATE.current = '';
+      say('📚 Day history pull finished: ' + STATE.ok + ' of ' + todo.length + ' patients pulled' + (STATE.failed ? ' (' + STATE.failed + ' could not be read — re-run to retry those)' : '') + '.');
+      return { total: todo.length, ok: STATE.ok, failed: STATE.failed, rows: STATE.rows };
+    })();
+  }
+
+  function mountBtn() {
+    try {
+      try { var old = document.getElementById('cfxBulkHistBtn'); if (old) old.style.display = 'none'; } catch (e) {}
+      if (document.getElementById('mlsDayHistBtn')) return;
+      var b = document.createElement('button');
+      b.id = 'mlsDayHistBtn'; b.type = 'button';
+      b.textContent = '📚 Pull day histories';
+      b.title = 'Pull each of today’s patients’ chart history from athenaOne (for AI summaries).';
+      b.style.cssText = 'position:fixed;right:14px;bottom:98px;z-index:2147483000;background:#0d3c78;color:#fff;border:0;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)';
+      b.onclick = function () { run('', 'today'); };
+      document.body.appendChild(b);
+    } catch (e) {}
+  }
+  var _iv = null; try { _iv = setInterval(mountBtn, 1500); } catch (e) {} mountBtn();
+
+  window.__mlsDayHistoryPull = {
+    version: '1.1.0', state: STATE,
+    pullDay: function (dateStr) { return run(dateStr || '', dateStr || 'today'); },
+    pullMonth: function (monthStr) { return run(String(monthStr || '').slice(0, 7), (String(monthStr || '').slice(0, 7) || 'this month')); },
+    _pullOne: pullOne, _namesFor: namesFor, _ground: ground
+  };
+  window.__mlsDayHistoryPull_revert = function () { try { if (_iv) clearInterval(_iv); } catch (e) {} try { var b = document.getElementById('mlsDayHistBtn'); if (b) b.remove(); } catch (e) {} try { delete window.__mlsDayHistoryPull; } catch (e) {} };
+})();
+/* =========================================================================
+ * MLS Scribe — CONTINUOUS SUMMARY SCRUB  (__mlsContinuousScrub) v1.0.0  2026-07-08 (b89)
+ *
+ * b87's summary sanitizer wraps ingestChart/_savePatientChart + does a ONE-TIME
+ * scrub. But the app's OWN chart-result handler auto-saves the raw read text into
+ * patient.summary asynchronously (bypassing those wraps), so day-pulled summaries
+ * came through with leaked athenaOne page JS again. This runs the scrub CONTINUOUSLY
+ * (light heartbeat): any patient .summary that still contains code gets stripped to
+ * clean clinical text and persisted. Path-agnostic — cleans whatever wrote the code.
+ * Uses window.__mlsSummarySanitize (b87). Idempotent (strip is stable, so a cleaned
+ * summary won't be re-touched). Revert: window.__mlsContinuousScrub_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsContinuousScrub) return; } catch (e) { return; }
+  window.__mlsContinuousScrub = { version: '1.0.0', cleaned: 0 };
+
+  function scrub() {
+    try {
+      var S = window.__mlsSummarySanitize;
+      if (!S || typeof S.strip !== 'function' || typeof S.hasCode !== 'function') return;
+      var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+      if (!ps.length) return;
+      var fixed = 0;
+      for (var i = 0; i < ps.length; i++) {
+        var p = ps[i]; var s = p && p.summary;
+        if (typeof s === 'string' && s.length > 80 && S.hasCode(s)) {
+          var c = S.strip(s);
+          if (c && c !== s) {
+            p.summary = c; fixed++;
+            try { if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } catch (e) {}
+          }
+        }
+      }
+      if (fixed) {
+        window.__mlsContinuousScrub.cleaned += fixed;
+        try { console.log('[MLS scrub] cleaned code out of ' + fixed + ' summar' + (fixed === 1 ? 'y' : 'ies')); } catch (e) {}
+        try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  var iv = null; try { iv = setInterval(scrub, 2500); } catch (e) {} scrub();
+  window.__mlsContinuousScrub_revert = function () { try { if (iv) clearInterval(iv); } catch (e) {} try { delete window.__mlsContinuousScrub; } catch (e) {} };
+})();
 /* =============================================================================
  * __mlsUxChromeFixes v1.0.0
  * -----------------------------------------------------------------------------
@@ -21500,7 +21722,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b88';
+  var MLS_APP_BUILD='2026-07-08-b89';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
