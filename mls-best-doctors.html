@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MLS Best Doctors — patient-rated, earned, transparent</title>
+<meta name="description" content="A directory of doctors with earned patient-experience ratings, computed from real de-identified visit sentiment. Ratings cannot be bought or edited.">
+<!-- ==========================================================================
+  mls-best-doctors.html — PUBLIC directory + per-doctor profile (v1.0.0)
+  Authoring lane best-doctors, 2026-07-08. Standalone satellite page.
+
+  TWO VIEWS in one file:
+    * directory  (default)          -> GET /api/best-doctors?q=&specialty=&city=&sort=
+    * profile    (?doctor=<slug>)   -> GET /api/best-doctors/profile/:slug
+
+  INTEGRITY, SURFACED TO PATIENTS:
+    * The star rating is EARNED from real de-identified visit sentiment and is
+      computed on the server — it cannot be bought, edited, or inflated.
+    * Being LISTED is a paid subscription; that is disclosed on every view and
+      kept visually separate from the earned rating. Paid placement never
+      reorders or boosts the rating.
+    * Only AGGREGATE numbers + the doctor's own public business info are shown —
+      never any patient identity, visit detail, or transcript content.
+  No PHI. No Athena. Public business data only.
+=========================================================================== -->
+<style>
+:root{--ink:#15243c;--sub:#5b6b83;--line:#dbe3f0;--teal:#19b8a6;--blue:#2f6bed;--gold:#c9a227;--bg:#f4f7fc;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink)}
+a{color:var(--blue)}
+.wrap{max-width:1040px;margin:0 auto;padding:18px 16px 70px}
+header.mls{display:flex;align-items:center;gap:12px;padding:8px 0 6px}
+.mark{width:44px;height:44px;border-radius:12px;background:linear-gradient(140deg,var(--teal),var(--blue));display:flex;align-items:center;justify-content:center;flex:none}
+.mark svg{width:28px;height:28px}
+h1{font-size:23px;margin:0}
+.tag{font-size:12.5px;color:var(--sub)}
+.disc{background:#fff7e6;border:1px solid #f0dca8;border-radius:12px;padding:11px 14px;font-size:12.5px;color:#7a5b17;margin:14px 0}
+.disc b{color:#5f4610}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.controls input,.controls select{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;background:#fff}
+.controls input{flex:1;min-width:150px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 2px 10px rgba(21,36,60,.04);display:flex;flex-direction:column;gap:8px}
+.card h3{margin:0;font-size:17px}
+.spec{font-size:12.5px;color:var(--sub)}
+.stars{color:var(--gold);font-size:17px;letter-spacing:1px}
+.starnum{font-weight:800;color:var(--ink);margin-left:4px}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px}
+.pill.sub{background:#eef4ff;color:#274b8f;border:1px solid #cfe0ff}
+.pill.prog{background:#f0f4f8;color:#5b6b83;border:1px solid var(--line)}
+.pill.earn{background:#e9f9f4;color:#0d6a5b;border:1px solid #b7ecdf}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card a.view{margin-top:auto;align-self:flex-start;font-weight:800;text-decoration:none;font-size:13.5px}
+.empty{padding:40px 10px;text-align:center;color:var(--sub)}
+/* profile view */
+.prof{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;margin-top:14px}
+.prof .top{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.avatar{width:76px;height:76px;border-radius:16px;background:linear-gradient(140deg,#dfeaff,#eaf7f4);display:flex;align-items:center;justify-content:center;font-size:30px;color:#2f6bed;font-weight:800;flex:none;overflow:hidden}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.bigstars{font-size:30px;color:var(--gold);letter-spacing:2px}
+.dims{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.dim{background:#f7faff;border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+.dim .n{font-size:11.5px;color:var(--sub);text-transform:capitalize}
+.dim .bar{height:7px;border-radius:5px;background:#e4ebf5;margin-top:6px;overflow:hidden}
+.dim .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--blue))}
+.dim .v{font-size:12.5px;font-weight:800;margin-top:5px}
+.sect{margin-top:20px}
+.sect h2{font-size:16px;margin:0 0 8px}
+.hl{border-left:3px solid var(--teal);background:#f7faff;border-radius:0 10px 10px 0;padding:9px 12px;margin:8px 0;font-size:13.5px}
+.hl .meta{font-size:11.5px;color:var(--sub);margin-top:3px}
+.links a{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;text-decoration:none;color:var(--ink);font-weight:700;font-size:13px;margin:4px 6px 0 0;background:#fff}
+.back{display:inline-block;margin:4px 0 6px;font-weight:800;text-decoration:none;font-size:13.5px}
+.method{font-size:12px;color:var(--sub);margin-top:8px}
+.foot{font-size:11.5px;color:var(--sub);margin-top:26px;line-height:1.55;border-top:1px solid var(--line);padding-top:14px}
+.hide{display:none}
+/* paid-placement disclosure + labels (kept visually distinct from the earned rating) */
+.placedisc{background:#f3f0fb;border:1px solid #ddd3f2;border-radius:12px;padding:10px 13px;font-size:12px;color:#4b3b7a;margin:0 0 14px}
+.sponsored-band{margin:6px 0 20px}
+.band-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#7a5b17;text-transform:uppercase;letter-spacing:.5px;margin:0 0 8px}
+.band-head .i{background:#fff2d6;border:1px solid #f0dca8;border-radius:6px;padding:2px 8px;color:#8a6410}
+.card.promo{border-color:#e6d6a6;box-shadow:0 2px 12px rgba(150,120,20,.10)}
+.card.featured{border-color:#e0c877;background:linear-gradient(180deg,#fffdf6,#fff)}
+/* the paid badge is a RIBBON, deliberately not gold-stars, so it never reads as a rating */
+.adbadge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:900;letter-spacing:.4px;text-transform:uppercase;border-radius:6px;padding:3px 8px;border:1px solid}
+.adbadge.featured{background:#fff2d6;color:#8a6410;border-color:#e7d49a}
+.adbadge.promoted{background:#eef1f6;color:#5b6b83;border-color:#d7deea}
+.adbadge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.7}
+.whatsthis{font-size:11px;color:var(--sub);text-decoration:underline dotted;cursor:help}
+@media(max-width:560px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mls">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13c3-1 5-1 8 0s5 1 8 0" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="2.4" fill="#fff"/></svg></div>
+    <div>
+      <h1>MLS Best Doctors</h1>
+      <div class="tag">Earned patient-experience ratings — computed from real, de-identified visit sentiment.</div>
+    </div>
+  </header>
+
+  <div class="disc" id="disclosure"><b>How this works:</b> Loading…</div>
+  <div class="placedisc" id="placedisc"></div>
+
+  <!-- DIRECTORY VIEW -->
+  <div id="dirView">
+    <div class="controls">
+      <input id="q" type="search" placeholder="Search doctor name">
+      <select id="specialty"><option value="">All specialties</option></select>
+      <input id="city" type="search" placeholder="City" style="max-width:180px">
+      <select id="sort">
+        <option value="relevance">Sort: featured &amp; top rated</option>
+        <option value="rating">Sort: top rated (earned only)</option>
+        <option value="reviews">Sort: most reviews</option>
+        <option value="name">Sort: name</option>
+      </select>
+    </div>
+    <!-- SPONSORED / FEATURED band: paid placement, clearly labeled + separated -->
+    <div id="featuredBand" class="sponsored-band hide">
+      <div class="band-head"><span class="i">Sponsored</span> Featured listings — paid placement</div>
+      <div id="featuredGrid" class="grid"></div>
+    </div>
+    <div id="grid" class="grid"></div>
+    <div id="dirEmpty" class="empty hide"></div>
+  </div>
+
+  <!-- PROFILE VIEW -->
+  <div id="profView" class="hide"></div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var BK = 'https://scrivara-backend.onrender.com';
+  try { if (window.MLS_BACKEND_URL) BK = window.MLS_BACKEND_URL; } catch (e) {}
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function qp(name) { try { return new URLSearchParams(location.search).get(name) || ''; } catch (e) { return ''; } }
+  function starStr(n) { if (n == null) return ''; var full = Math.round(n); var s = ''; for (var i = 0; i < 5; i++) s += (i < full ? '★' : '☆'); return s; }
+  function jget(url) { return fetch(BK + url, { headers: { 'Accept': 'application/json' } }).then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw j; }); }); }
+
+  var FOOT = 'MLS Best Doctors ratings are computed automatically from de-identified patient-visit sentiment using a fixed, published method. They are not editable by the doctor and cannot be purchased. A subscription can raise a listing’s position and add Sponsored/Featured placement — always labeled as paid — but never changes the star rating. Use “Top rated (earned only)” to sort by merit with no paid influence. External review counts (where shown) come from public review sites and are labeled separately from the earned rating.';
+  var SPONSORED_TIP = 'Sponsored/Featured/Promoted = paid placement. It affects position and visibility only, never the star rating.';
+
+  function LINK_LABELS() { return { google: 'Google', healthgrades: 'Healthgrades', vitals: 'Vitals', webmd: 'WebMD', ratemds: 'RateMDs', zocdoc: 'Zocdoc' }; }
+
+  /* ---------------- DIRECTORY ---------------- */
+  function loadDirectory() {
+    $('foot').textContent = FOOT;
+    var url = '/api/best-doctors?sort=' + encodeURIComponent($('sort').value)
+      + '&q=' + encodeURIComponent($('q').value)
+      + '&specialty=' + encodeURIComponent($('specialty').value)
+      + '&city=' + encodeURIComponent($('city').value);
+    jget(url).then(function (j) {
+      $('disclosure').innerHTML = '<b>How this works:</b> ' + esc(j.disclosure || '');
+      $('placedisc').innerHTML = j.placementDisclosure ? ('<b>Paid placement:</b> ' + esc(j.placementDisclosure)) : '';
+      if (j.live === false) {
+        $('featuredBand').className = 'sponsored-band hide';
+        $('grid').innerHTML = '';
+        $('dirEmpty').className = 'empty';
+        $('dirEmpty').innerHTML = esc(j.message || 'The directory is not open yet.') + '<br><span class="tag">Check back soon.</span>';
+        return;
+      }
+      // specialties dropdown (once)
+      if (j.specialties && !$('specialty').getAttribute('data-filled')) {
+        var cur = $('specialty').value, html = '<option value="">All specialties</option>';
+        for (var i = 0; i < j.specialties.length; i++) html += '<option>' + esc(j.specialties[i]) + '</option>';
+        $('specialty').innerHTML = html; $('specialty').value = cur; $('specialty').setAttribute('data-filled', '1');
+      }
+      // Sponsored / Featured band (labeled + separated from the organic list)
+      var feat = j.featured || [];
+      if (feat.length) {
+        $('featuredBand').className = 'sponsored-band';
+        $('featuredGrid').innerHTML = cardsHtml(feat);
+      } else { $('featuredBand').className = 'sponsored-band hide'; }
+      renderGrid(j.doctors || []);
+    }).then(null, function () {
+      $('grid').innerHTML = '';
+      $('dirEmpty').className = 'empty';
+      $('dirEmpty').textContent = 'Could not load the directory right now.';
+    });
+  }
+
+  function ratingPill(d) {
+    if (d.rating) return '<span class="pill earn">★ ' + esc(String(d.rating.stars)) + ' earned</span>';
+    var p = d.ratingProgress || {};
+    return '<span class="pill prog">Rating in progress' + (p.needed ? (' (' + (p.countedVisits || 0) + '/' + p.needed + ')') : '') + '</span>';
+  }
+  // The paid-placement label — a ribbon, deliberately NOT the gold stars, so it
+  // can never be mistaken for the earned rating.
+  function adBadge(d) {
+    var pr = d.promotion || {};
+    if (!pr.sponsored || !pr.label) return '';
+    var cls = (pr.placement === 'featured') ? 'featured' : 'promoted';
+    return '<span class="adbadge ' + cls + '" title="' + esc(SPONSORED_TIP) + '"><span class="dot"></span>' + esc(pr.label) + '</span>';
+  }
+
+  function cardsHtml(docs) {
+    var html = '';
+    for (var i = 0; i < docs.length; i++) {
+      var d = docs[i];
+      var loc = [d.city, d.state].filter(Boolean).join(', ');
+      var pr = d.promotion || {};
+      var cardCls = 'card' + (pr.placement === 'featured' ? ' featured' : (pr.sponsored ? ' promo' : ''));
+      html += '<div class="' + cardCls + '">'
+        + (adBadge(d) ? ('<div class="row">' + adBadge(d) + '</div>') : '')
+        + '<h3>' + esc(d.name) + '</h3>'
+        + '<div class="spec">' + esc(d.specialty || '') + (loc ? (' · ' + esc(loc)) : '') + '</div>'
+        + (d.rating ? ('<div class="row"><span class="stars">' + starStr(d.rating.stars) + '</span><span class="starnum">' + esc(String(d.rating.stars)) + '</span><span class="tag">(' + (d.rating.countedVisits || 0) + ' rated visits)</span></div>') : '')
+        + '<div class="row">' + ratingPill(d)
+        + (d.externalReviews && d.externalReviews.count ? (' <span class="pill sub">' + (d.externalReviews.rating ? (d.externalReviews.rating + '★ ') : '') + d.externalReviews.count + ' web reviews</span>') : '')
+        + '</div>'
+        + '<a class="view" href="?doctor=' + encodeURIComponent(d.slug) + '">View profile →</a>'
+        + '</div>';
+    }
+    return html;
+  }
+
+  function renderGrid(docs) {
+    if (!docs.length) { $('grid').innerHTML = ''; $('dirEmpty').className = 'empty'; $('dirEmpty').textContent = 'No doctors match your search.'; return; }
+    $('dirEmpty').className = 'empty hide';
+    $('grid').innerHTML = cardsHtml(docs);
+  }
+
+  /* ---------------- PROFILE ---------------- */
+  function loadProfile(slug) {
+    $('dirView').className = 'hide';
+    $('profView').className = '';
+    $('foot').textContent = FOOT;
+    jget('/api/best-doctors/profile/' + encodeURIComponent(slug)).then(function (j) {
+      var d = j.doctor || {};
+      $('disclosure').innerHTML = '<b>How this works:</b> ' + esc(j.disclosure || d.disclosure || '');
+      renderProfile(d);
+    }).then(null, function () {
+      $('profView').innerHTML = '<a class="back" href="mls-best-doctors.html">← Back to directory</a><div class="empty">This profile is not available.</div>';
+    });
+  }
+
+  function dimBlock(dims) {
+    if (!dims) return '';
+    var order = ['warmth', 'listening', 'clarity', 'empathy', 'rapport'], html = '', i;
+    for (i = 0; i < order.length; i++) {
+      var k = order[i], v = dims[k]; if (v == null) continue;
+      html += '<div class="dim"><div class="n">' + k + '</div><div class="bar"><i style="width:' + Math.max(0, Math.min(100, v)) + '%"></i></div><div class="v">' + esc(String(Math.round(v))) + ' / 100</div></div>';
+    }
+    return html ? ('<div class="dims">' + html + '</div>') : '';
+  }
+
+  function renderProfile(d) {
+    var loc = [d.city, d.state].filter(Boolean).join(', ');
+    var initials = (d.name || '?').replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || 'Dr';
+    var html = '<a class="back" href="mls-best-doctors.html">← Back to directory</a>'
+      + '<div class="prof">'
+      + '<div class="top">'
+      + '<div class="avatar">' + (d.photo ? ('<img src="' + esc(d.photo) + '" alt="">') : esc(initials)) + '</div>'
+      + '<div style="flex:1;min-width:200px">'
+      + '<h1 style="margin:0 0 2px">' + esc(d.name) + '</h1>'
+      + '<div class="spec">' + esc(d.specialty || '') + (loc ? (' · ' + esc(loc)) : '') + '</div>';
+    if (d.rating) {
+      html += '<div class="row" style="margin-top:8px"><span class="bigstars">' + starStr(d.rating.stars) + '</span>'
+        + '<span class="starnum" style="font-size:22px">' + esc(String(d.rating.stars)) + '</span>'
+        + '<span class="pill earn">Earned from ' + (d.rating.countedVisits || 0) + ' rated visits</span></div>';
+    } else {
+      var p = d.ratingProgress || {};
+      html += '<div class="row" style="margin-top:8px"><span class="pill prog">Earned rating in progress'
+        + (p.needed ? (' — ' + (p.countedVisits || 0) + ' of ' + p.needed + ' visits' ) : '') + '</span></div>';
+    }
+    var pr = d.promotion || {};
+    html += '<div class="row" style="margin-top:6px">'
+      + (pr.sponsored && pr.label ? adBadge(d) : '<span class="pill sub">Subscribed listing</span>')
+      + '</div>'
+      + '</div></div>';
+
+    if (d.rating && d.rating.dimensions) {
+      html += '<div class="sect"><h2>What patients experience</h2>' + dimBlock(d.rating.dimensions)
+        + '<div class="method">Each dimension is the average, across this doctor’s rated visits, of a de-identified transcript sentiment score. '
+        + '<a href="' + BK + '/api/ratings/methodology" target="_blank" rel="noopener">See the exact method →</a></div></div>';
+    }
+
+    if (d.bio) html += '<div class="sect"><h2>About</h2><div style="font-size:14px;line-height:1.55">' + esc(d.bio) + '</div></div>';
+
+    if (d.externalHighlights && d.externalHighlights.length) {
+      html += '<div class="sect"><h2>From public reviews</h2>';
+      for (var i = 0; i < d.externalHighlights.length; i++) {
+        var h = d.externalHighlights[i];
+        html += '<div class="hl">' + esc(h.text) + '<div class="meta">' + (h.rating ? (h.rating + '★ · ') : '') + esc(h.author || 'Verified reviewer') + (h.source ? (' · ' + esc(h.source)) : '') + '</div></div>';
+      }
+      html += '<div class="method">These are public reviews from third-party sites, shown separately from the earned MLS rating.</div></div>';
+    }
+
+    var L = d.reviewLinks || {}, labels = LINK_LABELS(), lk = '';
+    for (var key in labels) { if (labels.hasOwnProperty(key) && L[key]) lk += '<a href="' + esc(L[key]) + '" target="_blank" rel="noopener">' + labels[key] + ' ↗</a>'; }
+    if (lk) html += '<div class="sect"><h2>Read or leave a review</h2><div class="links">' + lk + '</div></div>';
+
+    html += '</div>';
+    $('profView').innerHTML = html;
+  }
+
+  /* ---------------- boot ---------------- */
+  var slug = qp('doctor');
+  if (slug) { loadProfile(slug); }
+  else {
+    loadDirectory();
+    var deb;
+    function onChange() { clearTimeout(deb); deb = setTimeout(loadDirectory, 220); }
+    $('q').addEventListener('input', onChange);
+    $('city').addEventListener('input', onChange);
+    $('specialty').addEventListener('change', loadDirectory);
+    $('sort').addEventListener('change', loadDirectory);
+  }
+})();
+</script>
+</body>
+</html>
