@@ -1,4 +1,76 @@
 /* =========================================================================
+ * MLS Scribe — RUN RE-WRAP CYCLE GUARD  (__mlsRunCycleGuard) v1.0.0  2026-07-08
+ *
+ * FIX: window.__mlsCopyVisits.run threw "RangeError: Maximum call stack size
+ * exceeded" on a fresh load, which broke the visit-history SAVE (the bulk
+ * "Pull all histories" -> __mlsImportChainFix -> __mlsCopyVisits.run, and the
+ * per-visit save) — so pulled visits were READ but never SAVED (0 visits).
+ *
+ * ROOT CAUSE (verified live via the overflow stack trace):
+ *   feat_visits_honest.js wraps __mlsCopyVisits.run and marks its wrapper
+ *     `.__honestWrapped = true` (idempotency guard: bail if __honestWrapped).
+ *   feat_source_clarity.js wraps __mlsCopyVisits.run and marks its wrapper
+ *     `.__mlsSrcWrapped = true` (idempotency guard: bail if __mlsSrcWrapped).
+ *   The two modules DON'T recognize each other's marker, and each re-applies
+ *   its wrap on a heartbeat. So every heartbeat each one re-wraps the other's
+ *   wrapper. feat_source_clarity keeps its original in a MODULE-LEVEL
+ *   `_origRun` that is OVERWRITTEN on every re-wrap, so its older wrappers end
+ *   up calling the NEWEST inner wrapper -> a call CYCLE -> stack overflow the
+ *   moment run() is invoked.
+ *
+ * THE FIX (additive, reversible, no behavior change to a healthy run):
+ *   On a fast heartbeat, stamp BOTH markers (__honestWrapped + __mlsSrcWrapped)
+ *   onto the current __mlsCopyVisits.run. Because this guard is prepended (it
+ *   runs BEFORE the satellites load) and ticks quickly, it stamps the run
+ *   before/at the first wrap, so BOTH modules' idempotency guards bail and
+ *   neither re-wraps -> the cycle can never form. run() stays callable and the
+ *   base read+save path runs normally.
+ *   (Same pre-seed-the-guard technique the bundle already uses elsewhere, e.g.
+ *   __mlsEasyV3 pre-seeding legacy guards and __mlsImportChainFix stand-down
+ *   markers for the setInterval re-wrap hazard.)
+ *
+ * SAFETY: read-only; only sets two boolean marker properties. Never calls run,
+ * never touches Athena, never changes the note/writeback/identity paths.
+ * Revert: window.__mlsRunCycleGuard_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsRunCycleGuard) return; } catch (e) { return; }
+  window.__mlsRunCycleGuard = { version: '1.0.0', stamps: 0 };
+
+  function stamp(fn) {
+    if (typeof fn !== 'function') return false;
+    var did = false;
+    try { if (!fn.__honestWrapped) { fn.__honestWrapped = true; did = true; } } catch (e) {}
+    try { if (!fn.__mlsSrcWrapped) { fn.__mlsSrcWrapped = true; did = true; } } catch (e) {}
+    return did;
+  }
+
+  function tick() {
+    try {
+      var cv = window.__mlsCopyVisits;
+      if (!cv) return;
+      // Pin the run wrapper so neither honest nor clarity re-wraps it.
+      if (typeof cv.run === 'function' && stamp(cv.run)) { window.__mlsRunCycleGuard.stamps++; }
+      // _saveVisits is also wrapped by feat_visits_honest (single wrap, no cycle),
+      // but stamp it too for belt-and-suspenders against any future clash.
+      if (typeof cv._saveVisits === 'function') { stamp(cv._saveVisits); }
+    } catch (e) {}
+  }
+
+  var iv = null;
+  try { iv = setInterval(tick, 60); } catch (e) {}
+  tick();
+
+  window.__mlsRunCycleGuard_revert = function () {
+    try { if (iv) clearInterval(iv); } catch (e) {}
+    try { delete window.__mlsRunCycleGuard; } catch (e) {}
+    try { delete window.__mlsRunCycleGuard_revert; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe — BOTTOM-RIGHT CLUSTER FIX  (__mlsBRClusterFix) v1.0.0 2026-07-08
  *
  * THE COLLISION (verified against the live b80 bundle, cited line numbers
@@ -20290,7 +20362,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b82';
+  var MLS_APP_BUILD='2026-07-08-b83';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
