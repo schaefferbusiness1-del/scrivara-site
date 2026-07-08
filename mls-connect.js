@@ -30,7 +30,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '3.6.1', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.7.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -578,7 +578,27 @@
       bulkSay('📖 (' + i + '/' + todo.length + ') Opening ' + name + '’s chart in athenaOne…');
       pullOneHistory(name).then(function (ok) {
         BULK.done++; if (ok) BULK.ok++; else BULK.refused++;
-        setTimeout(next, 2500);
+        /* v3.7: after the history read, ALSO attempt the per-visit capture
+           (__mlsCopyVisits.run walks EVERY encounter via the extension,
+           strict name+DOB verify, saves into the visit-aware model). It
+           needs the chart's Encounters/Visits view to be readable — when it
+           is not (briefing view), it refuses honestly and we move on. */
+        if (!ok || !window.__mlsCopyVisits || typeof window.__mlsCopyVisits.run !== 'function') { setTimeout(next, 2500); return; }
+        try {
+          var ps2 = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+          var key2 = normName(name), p2 = null;
+          for (var j = 0; j < ps2.length; j++) { if (ps2[j] && normName(ps2[j].name) === key2) { p2 = ps2[j]; break; } }
+          if (p2 && typeof window.selectPatient === 'function') window.selectPatient(p2.id);
+        } catch (e) {}
+        var moved = false;
+        var proceed = function () { if (!moved) { moved = true; setTimeout(next, 2500); } };
+        try {
+          Promise.resolve(window.__mlsCopyVisits.run(function () {})).then(function (r) {
+            if (r && (r.saved || (r.visits && r.visits.length))) { BULK.visits = (BULK.visits || 0) + (r.saved || r.visits.length); }
+            proceed();
+          }, proceed);
+        } catch (e) { proceed(); }
+        setTimeout(proceed, 120000);   /* visits watchdog */
       });
     })();
     return 'started ' + todo.length;
@@ -20109,7 +20129,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b79';
+  var MLS_APP_BUILD='2026-07-08-b80';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
