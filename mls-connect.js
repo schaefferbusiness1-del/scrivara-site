@@ -1,3 +1,1744 @@
+/* =========================================================================
+ * MLS Scribe -- OP-NOTE SKELETON-FILL + ACCURATE OP-TEMPLATE AUTO-SELECT
+ * (__mlsOpNotesFix)  v1.0.0  QUALITY-CRITICAL
+ * authored 2026-07-07 against LIVE b61 sources (ScribeFlow.LIVE-verify.html +
+ *   mls-connect.LIVE-verify.js) and the already-live b61 grounding module
+ *   __mlsNoteGroundV1 (dispatch-work\bugfix-templates-prep\mls_notegen_grounding_v1.js).
+ * Additive / guarded / reversible IIFE. Prepend to the TOP of mls-connect.js,
+ *   ABOVE the b61 grounding block (so this wraps the outer seam first).
+ * Revert: window.__mlsOpNotesFix_revert().  Deploys AFTER the core-loop fixes.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY (Michael: "OP NOTES still aren't good"):
+ *   The b61 grounding module made office visits SAFE (never fabricate a
+ *   procedure note) by, on a matched template, stripping the template's canned
+ *   clinical lines to bare headings and rejecting any reformat that invents
+ *   procedure assertions. That is exactly right for an OFFICE visit. But for a
+ *   GENUINE procedure with the doctor's REAL op template it is too blunt:
+ *     - selection: b61's procedure auto-pick needs >=1 TRUE keyword hit, and
+ *       most op templates were split-imported with keywords:[] -> the RIGHT op
+ *       template (genicular vs ESI vs a specific procedure) often never wins;
+ *     - fill: stripping the op template to headings + a generic reformat throws
+ *       away the doctor's own boilerplate structure, so the op note reads thin
+ *       and the note is NOT built as a proper filled skeleton.
+ *   Meanwhile the schedule-prep path already does the RIGHT thing (_genOpNote:
+ *   keep the template skeleton + standard values, fill case fields, mark only
+ *   truly-varying unknowns as [[blanks]]) -- but only from the procedure NAME +
+ *   chart, never from the live transcript, and only inside #opPrepModal.
+ *
+ * WHAT THIS SHIPS (all client-side; /api/complete is a generic system+user
+ * endpoint, the same seam b61 and _genOpNote use -- NO backend change):
+ *
+ *  1. ACCURATE OP-TEMPLATE AUTO-SELECT (build on b61's classifier):
+ *     when the transcript classifies as a PROCEDURE, rank op-class templates
+ *     with the app's own body-scanning scorer (mirrors _opRankTemplates: tokens
+ *     over name + keywords + first 600 chars of the template BODY, with
+ *     procedure-word + laterality/level bonuses). Because it scans the BODY,
+ *     the right op template wins even when keywords:[] -- the gap b61 left.
+ *     A non-procedure transcript NEVER enters this branch, so office visits are
+ *     untouched (they flow to b61 exactly as today).
+ *
+ *  2. SKELETON FILL (the core): for a genuine procedure + a confident op
+ *     template, build the note by FILLING the op template's structure from the
+ *     real transcript + chart -- keep the template's headings, section order and
+ *     its own standard boilerplate values; fill patient/date/procedure/level/
+ *     laterality and any dictated specifics; insert a clearly-marked [[key]]
+ *     placeholder (never fabrication) for any case-varying detail that was NOT
+ *     dictated and is NOT a template standard (consent/technique/med dose/
+ *     contrast/EBL/complications...). A fabrication audit rejects any invented
+ *     procedure assertion not supported by transcript + prior note + template.
+ *     Assigned "standard lines" (window.__mlsStdLine) are carried in by direct
+ *     insertion (so b61's audit can never strip the doctor's own line).
+ *
+ *  3. "ADD ANY WORD TO AN OP NOTE" made reliable: a compact "Add a line/word to
+ *     this op note" inserter is attached directly beneath every op-note surface
+ *     (generate-time #noteBox op notes, the #procNoteBody procedure-note card,
+ *     and every #opPrepModal draft row) -- so the doctor types ANY word/phrase
+ *     and it is woven into THAT exact note (AI weave when available, deterministic
+ *     placement otherwise) and CONFIRMED present before "Added" is shown. This
+ *     removes the two live failure modes: (a) the existing standard-lines insert
+ *     resolves only #procNoteBody/#noteBox/#viewBody and so misses op-prep rows,
+ *     and (b) it required pre-saving a "standard line" in Templates just to add
+ *     one word. Reuses window.__mlsStdLineAuto / __mlsStdLine engines when live.
+ *
+ * COORDINATION WITH b61 (must not regress): this module ONLY takes over the
+ *   procedure -> op-template case, which b61 handles conservatively (block
+ *   fabrication). Everything else -- office/follow-up/consult/pre-op, the OFF
+ *   path, and any procedure with no confident op template -- is delegated
+ *   UNCHANGED to the original maybeApplyTemplate (i.e. straight into b61). So an
+ *   office visit can still never become an op note.
+ *
+ * SAFETY: athenaOne untouched. No new endpoints. No PHI logged. ASCII-only,
+ *   ES5 + promise chains (parse-validates under the JScript engine). Writes only
+ *   the in-app note textareas (#noteBox save path reads #noteBox.value for the
+ *   active format, HTML:10807). Same documented residual as b61: currentSoap is
+ *   let-scoped/unreachable, so a SOAP<->insurance toggle after a fill can
+ *   re-render stale text; op notes are authored/signed in soap format so this is
+ *   the same accepted posture. Permanent fix = the same 1-line ScribeFlow.html
+ *   noteBox->currentSoap sync b61 flagged.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsOpNotesFix) return;
+  var API = { v: "opnf-1.0.0" };
+  window.__mlsOpNotesFix = API;
+
+  /* ---------- tiny helpers ---------- */
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function isFn(f) { return typeof f === "function"; }
+  function toast(msg, kind) { try { if (isFn(window.toast)) window.toast(msg, kind || ""); } catch (e) {} }
+  var timers = [];
+  var _lastWarnAt = 0;
+  function warnOnce(msg) {
+    var now = Date.now();
+    if (now - _lastWarnAt < 8000) return;
+    _lastWarnAt = now;
+    toast(msg, "err");
+  }
+  function logKey() { try { return isFn(window.uns) ? window.uns("opNoteFixLog") : "mls_opNoteFixLog"; } catch (e) { return "mls_opNoteFixLog"; } }
+  function logEvent(kind, name, ok, msg) {
+    try {
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem(logKey()) || "[]"); } catch (e) { arr = []; }
+      if (!Array.isArray(arr)) arr = [];
+      arr.unshift({ when: Date.now(), kind: S(kind), name: S(name).slice(0, 80), ok: !!ok, msg: S(msg).slice(0, 200) });
+      localStorage.setItem(logKey(), JSON.stringify(arr.slice(0, 100)));
+    } catch (e) {}
+  }
+  function tplsAll() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
+  function useTemplatesOn() { try { return isFn(window.useTemplatesOn) ? !!window.useTemplatesOn() : false; } catch (e) { return false; } }
+  function templateAutoOn() { try { return isFn(window.templateAutoOn) ? !!window.templateAutoOn() : false; } catch (e) { return false; } }
+
+  /* =====================================================================
+   * A. classification -- reuse b61's classifier when present, else a local
+   *    copy so this module is self-contained and offline-testable.
+   * ===================================================================== */
+  var PROC_NAME_RE = /\b(block|injection|inject|ablation|rfa|radiofrequency|rhizotomy|epidural|esi|transforaminal|interlaminar|caudal|kyphoplasty|vertebroplasty|discogram|discography|stimulator|denervation|joint\s+inj|trigger\s*point|op\s*note|operative|procedure|genicular|bursa|facet|medial\s+branch|sacroiliac)\b/i;
+  var MARKERS = [
+    { key: "consent", re: /\binformed consent\b|\bconsent (was |were )?(obtained|signed|reviewed)\b/i },
+    { key: "sterile-prep", re: /\bprepped and draped\b|\bsterile (fashion|technique|conditions)\b|\baseptic\b/i },
+    { key: "needle", re: /\bneedle\b|\bgauge\b|\b\d{2}\s?g\b/i },
+    { key: "image-guidance", re: /\bfluoroscop\w*\b|\bultrasound[- ]guid\w*\b|\bunder (us|xray|x-ray) guidance\b/i },
+    { key: "injectate", re: /\blidocaine\b|\bbupivacaine\b|\bropivacaine\b|\btriamcinolone\b|\bkenalog\b|\bdepo-?medrol\b|\bmethylprednisolone\b|\bdexamethasone\b|\bcontrast\b|\bomnipaque\b/i },
+    { key: "performed", re: /\bprocedure (was )?performed\b|\bwe performed\b|\bwas injected\b|\binjected under\b|\bneedle (was )?(advanced|placed|inserted)\b/i },
+    { key: "tolerated", re: /\btolerated the procedure\b|\btolerated (it|this) well\b/i },
+    { key: "complications", re: /\bcomplications?\s*:?\s*(none|no immediate|nil)\b/i },
+    { key: "disposition", re: /\bdischarged (home )?(in )?(a )?stable\b|\bdisposition\s*:\s*discharged\b/i }
+  ];
+  function b61() { try { return window.__mlsNoteGroundV1 || null; } catch (e) { return null; } }
+  function markerHits(text) {
+    var t = S(text); var hits = [];
+    for (var i = 0; i < MARKERS.length; i++) { if (MARKERS[i].re.test(t)) hits.push(MARKERS[i].key); }
+    return hits;
+  }
+  /* transcript -> {cls, evidence}. Prefer the b61 classifier so both modules
+     agree exactly; fall back to a local marker count (>=2 => procedure). */
+  function classifyTranscript(text) {
+    var g = b61();
+    if (g && isFn(g.classifyTranscript)) {
+      try { var r = g.classifyTranscript(text); if (r && r.cls) return r; } catch (e) {}
+    }
+    var ev = markerHits(text);
+    return { cls: ev.length >= 2 ? "procedure" : "office", evidence: ev };
+  }
+  /* template -> class. Prefer b61's classifier; fall back to a local test. */
+  function classifyTemplate(t) {
+    if (!t) return "unknown";
+    var g = b61();
+    if (g && isFn(g.classifyTemplate)) {
+      try { var c = g.classifyTemplate(t); if (c) return c; } catch (e) {}
+    }
+    var name = S(t.name), kws = (t.keywords || []).join(" ");
+    if (PROC_NAME_RE.test(name) || markerHits(S(t.text).slice(0, 2500)).length >= 3) return "procedure";
+    return "unknown";
+  }
+  function isOpTemplate(t) { return classifyTemplate(t) === "procedure"; }
+
+  /* =====================================================================
+   * B. accurate op-template ranking (mirrors the app's _opRankTemplates:
+   *    tokens over name + keywords + first 600 chars of BODY, so a
+   *    keywordless split-imported op template still matches). Returns the
+   *    best op-class template with its score.
+   * ===================================================================== */
+  var PROC_WORD_RE = /(l[1-5]|s1|si|epidural|facet|medial|branch|rhizotomy|ablation|rfa|esi|transforaminal|interlaminar|caudal|kyphoplasty|discogram|sacroiliac|stimulator|injection|block|bursa|trigger|genicular|denervation|vertebroplasty)/;
+  var LEVEL_KEYS = ["left", "right", "bilateral", "l1", "l2", "l3", "l4", "l5", "s1", "c5", "c6", "c7", "t12", "genicular", "superior", "medial", "lateral", "inferior"];
+  function opScore(procText, t) {
+    var procL = S(procText).toLowerCase();
+    var toks = procL.replace(/[^a-z0-9 ]/g, " ").split(/\s+/);
+    var hay = ((S(t.name)) + " " + ((t.keywords || []).join(" ")) + " " + S(t.text).slice(0, 600)).toLowerCase();
+    var score = 0, hits = 0, i;
+    for (i = 0; i < toks.length; i++) {
+      var w = toks[i]; if (!w || w.length < 2) continue;
+      if (hay.indexOf(w) >= 0) { score += (PROC_WORD_RE.test(w) ? 3 : 1); hits++; }
+    }
+    for (i = 0; i < LEVEL_KEYS.length; i++) {
+      var k = LEVEL_KEYS[i];
+      if (procL.indexOf(k) >= 0 && hay.indexOf(k) >= 0) score += 2;
+    }
+    return { score: score, hits: hits };
+  }
+  /* choose the op template for a procedure transcript, honoring the toggles */
+  function chooseOpTemplate(transcript) {
+    var list = tplsAll();
+    if (!list.length) return { tpl: null, reason: "no templates saved" };
+    var autoOn = templateAutoOn();
+    if (!autoOn) {
+      /* auto-choose OFF -> respect the explicit active template, but only if it
+         is itself an op/procedure template (else defer to b61's gate). */
+      var act = null;
+      try { act = isFn(window.getTemplateById) && isFn(window.getActiveTemplateId) ? window.getTemplateById(window.getActiveTemplateId()) : null; } catch (e) {}
+      if (act && isOpTemplate(act)) return { tpl: act, score: 99, reason: "active op template (auto-choose off): " + S(act.name) };
+      return { tpl: null, reason: "auto-choose off and the active template is not an op template" };
+    }
+    var best = null, bestScore = 0, bestHits = 0;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i]; if (!t) continue;
+      if (!isOpTemplate(t)) continue;                 /* only op-class templates compete */
+      var sc = opScore(transcript, t);
+      if (sc.hits < 1) continue;                       /* need real textual signal -- never guess */
+      if (sc.score > bestScore) { bestScore = sc.score; best = t; bestHits = sc.hits; }
+    }
+    if (best) return { tpl: best, score: bestScore, hits: bestHits, reason: "best op template by body match, score " + bestScore };
+    return { tpl: null, reason: "procedure transcript, but no op template matched by content -- pick one manually (nothing guessed)" };
+  }
+
+  /* =====================================================================
+   * C. skeleton fill -- fill the op template structure from transcript +
+   *    chart, keep boilerplate, mark undictated case-varying details as
+   *    [[blanks]]. Grounded, no fabrication.
+   * ===================================================================== */
+  function chartCtx() {
+    try {
+      var nm = "";
+      try { var lbl = $("patientLabel"); nm = lbl ? S(lbl.value).trim() : ""; } catch (e0) {}
+      if (!nm) { try { var ap = isFn(window.activePatient) ? window.activePatient() : null; if (ap) nm = S(ap.name); } catch (e1) {} }
+      var ctx = {};
+      try { if (isFn(window._opPatientCtx) && nm) ctx = window._opPatientCtx(nm) || {}; } catch (e2) {}
+      ctx.name = nm;
+      try { if (!ctx.provider && isFn(window.getName)) ctx.provider = S(window.getName()); } catch (e3) {}
+      try { if (!ctx.spec && isFn(window.getSpec)) ctx.spec = S(window.getSpec()); } catch (e4) {}
+      return ctx;
+    } catch (e) { return {}; }
+  }
+  function knownFactLines(ctx) {
+    var known = [];
+    if (ctx.name) known.push("name: " + ctx.name);
+    if (ctx.sex) known.push("sex: " + ctx.sex);
+    if (ctx.dob) known.push("date of birth: " + ctx.dob);
+    if (ctx.age != null && ctx.age !== "") known.push("age: " + ctx.age);
+    if (ctx.bmi != null && ctx.bmi !== "") known.push("BMI: " + ctx.bmi);
+    if (ctx.mrn) known.push("MRN: " + ctx.mrn);
+    if (ctx.provider) known.push("provider: " + ctx.provider + (ctx.spec ? (" (" + ctx.spec + ")") : ""));
+    return known;
+  }
+  function buildSkeletonPrompt(templateText, baseNote, transcript, ctx) {
+    var known = knownFactLines(ctx);
+    var sys = "You draft an OPERATIVE / PROCEDURE NOTE by FILLING IN the physician's OWN operative-note TEMPLATE (a skeleton) using ONLY what was actually dictated in the TRANSCRIPT, already written in the DRAFT NOTE, or listed in KNOWN PATIENT FACTS. "
+      + "Keep the template's EXACT structure, section headings, order, wording and its standard boilerplate values. "
+      + "Fill the patient name, date, the specific procedure with its laterality and spinal levels, and any details that were actually dictated (needle, medication/dose, contrast, guidance, findings, complications, disposition). "
+      + "CRITICAL -- ground everything: do NOT invent, assume, or carry over from a different case ANY clinical detail. If a template field or section is case-varying and was NOT dictated and is NOT already a standard value in the template, insert a clearly-marked [[snake_case_key]] placeholder AND list it in \"missing\" -- NEVER fabricate consent, technique specifics, medications, doses, contrast, blood loss, or complications. "
+      + "BE CONSERVATIVE with placeholders: if the TEMPLATE already states a standard value (routine consent language, a standard prep/technique sentence, a default dose), KEEP the template's value rather than blanking it. Only blank a detail that truly changes patient-to-patient and was not provided. "
+      + "Never place a [[placeholder]] for a KNOWN PATIENT FACT. Each placeholder key is unique and appears once. Use snake_case keys (needle_size, contrast_volume, sedation, ebl). "
+      + "Return ONLY JSON, no prose, no code fence: {\"note\":\"<full operative note text with [[key]] placeholders where needed>\",\"missing\":[{\"key\":\"needle_size\",\"label\":\"Needle size / gauge\",\"example\":\"22g 3.5in\"}]}.";
+    var user = "TEMPLATE (the physician's own operative note -- match its structure & style exactly):\n\"\"\"\n" + S(templateText).slice(0, 9000) + "\n\"\"\"\n\n"
+      + "TRANSCRIPT (what was actually dictated in this case -- the source of truth):\n\"\"\"\n" + S(transcript).slice(0, 8000) + "\n\"\"\"\n\n"
+      + "DRAFT NOTE (already generated for this visit -- also a valid source):\n\"\"\"\n" + S(baseNote).slice(0, 6000) + "\n\"\"\""
+      + (known.length ? ("\n\nKNOWN PATIENT FACTS (already in our chart -- fill these in, do NOT blank them):\n- " + known.join("\n- ")) : "");
+    return { sys: sys, user: user };
+  }
+  function parseJsonNote(raw) {
+    var s = S(raw).replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/, "").trim();
+    var obj = null;
+    try { obj = JSON.parse(s); } catch (e) {
+      try { var m = s.match(/\{[\s\S]*\}/); if (m) obj = JSON.parse(m[0]); } catch (e2) {}
+    }
+    if (!obj || typeof obj !== "object") return { note: S(raw), missing: [] };
+    return { note: S(obj.note || ""), missing: (obj.missing && obj.missing.length) ? obj.missing : [] };
+  }
+  /* carry the doctor's assigned standard lines in by DIRECT insertion (so b61's
+     audit can never strip them) */
+  function carryStandardLines(noteText, tplId) {
+    try {
+      var SL = window.__mlsStdLine;
+      if (!SL || !isFn(SL.linesForTemplate) || !isFn(SL.insertLineIntoText)) return noteText;
+      var lines = SL.linesForTemplate(tplId) || [];
+      var out = noteText;
+      for (var i = 0; i < lines.length; i++) {
+        var txt = lines[i] && lines[i].text;
+        if (txt && S(txt).trim()) out = SL.insertLineIntoText(out, S(txt).trim());
+      }
+      return out;
+    } catch (e) { return noteText; }
+  }
+  /* fabrication audit: a procedure MARKER present in the filled note but absent
+     from transcript + prior note + the template body is an invention -> reject */
+  function auditFilled(filled, source) {
+    var bad = [];
+    for (var i = 0; i < MARKERS.length; i++) {
+      if (MARKERS[i].re.test(filled) && !MARKERS[i].re.test(source)) bad.push(MARKERS[i].key);
+    }
+    return bad;
+  }
+  function countBlanks(text) {
+    try { var m = S(text).match(/\[\[[a-z0-9_]+\]\]/gi); return m ? m.length : 0; } catch (e) { return 0; }
+  }
+  /* fill the chosen op template into #noteBox. returns a Promise. */
+  function fillOpSkeleton(tpl, transcript) {
+    return new Promise(function (resolve) {
+      try {
+        if (!window.Promise || !isFn(window.aiCallRaw)) { resolve({ ok: false, reason: "no-ai" }); return; }
+        var nb = $("noteBox");
+        var base = nb ? S(nb.value) : "";
+        var ctx = chartCtx();
+        var p = buildSkeletonPrompt(S(tpl.text || ""), base, transcript, ctx);
+        var key = ""; try { key = isFn(window.getKey) ? (window.getKey() || "") : ""; } catch (e) {}
+        Promise.resolve(window.aiCallRaw(p.sys, p.user, key, { freeform: true })).then(function (raw) {
+          try {
+            var parsed = parseJsonNote(raw);
+            var note = S(parsed.note).trim();
+            if (!note) { resolve({ ok: false, reason: "empty" }); return; }
+            /* audit BEFORE inserting standard lines (they are the doctor's own,
+               always allowed) so an invented assertion is caught. */
+            var source = base + "\n" + S(transcript) + "\n" + S(tpl.text || "");
+            var bad = auditFilled(note, source);
+            if (bad.length) {
+              warnOnce("Op-note draft REJECTED -- it added procedure details not dictated (" + bad.join(", ") + "). The note was kept exactly as generated.");
+              logEvent("op-audit-reject", tpl.name, false, "invented markers: " + bad.join(", "));
+              resolve({ ok: false, reason: "audit", bad: bad });
+              return;
+            }
+            note = carryStandardLines(note, tpl.id);
+            var nb2 = $("noteBox");
+            if (nb2) {
+              nb2.value = note;
+              try { nb2.dispatchEvent(new Event("input", { bubbles: true })); } catch (e2) {}
+            }
+            var blanks = countBlanks(note);
+            toast("Op note drafted from your '" + S(tpl.name) + "' template"
+              + (blanks ? (" -- " + blanks + " blank" + (blanks === 1 ? "" : "s") + " marked [[like_this]] to fill; nothing was invented.") : " -- nothing was invented."), "ok");
+            logEvent("op-skeleton-fill", tpl.name, true, blanks + " blanks");
+            resolve({ ok: true, blanks: blanks, template: tpl.name });
+          } catch (e3) { resolve({ ok: false, reason: "parse" }); }
+        })["catch"](function () { resolve({ ok: false, reason: "ai-error" }); });
+      } catch (e) { resolve({ ok: false, reason: "exception" }); }
+    });
+  }
+
+  /* =====================================================================
+   * D. wrap maybeApplyTemplate -- take over ONLY the procedure->op case,
+   *    delegate everything else to the original (i.e. into b61) unchanged.
+   * ===================================================================== */
+  var _origMaybe = null;
+  function wrapMaybe() {
+    try {
+      if (_origMaybe || !isFn(window.maybeApplyTemplate) || window.maybeApplyTemplate.__opnf) return;
+      _origMaybe = window.maybeApplyTemplate;
+      var w = function (visitText) {
+        var self = this, args = arguments;
+        return Promise.resolve().then(function () {
+          try {
+            if (!useTemplatesOn()) return _origMaybe.apply(self, args);   /* OFF path: unchanged */
+            var tc = classifyTranscript(S(visitText));
+            if (tc.cls !== "procedure") return _origMaybe.apply(self, args); /* office/etc -> b61 */
+            var pick = chooseOpTemplate(S(visitText));
+            if (!pick.tpl) {
+              /* genuine procedure but no confident op template -> let b61 handle
+                 (it will not fabricate; note stays as generated). */
+              logEvent("op-pick", "(none)", true, pick.reason);
+              return _origMaybe.apply(self, args);
+            }
+            logEvent("op-pick", pick.tpl.name, true, pick.reason);
+            return fillOpSkeleton(pick.tpl, S(visitText)).then(function (r) {
+              if (r && r.ok) return;                       /* filled -> done, do NOT run b61 too */
+              return _origMaybe.apply(self, args);         /* fill declined/rejected -> b61 safety net */
+            });
+          } catch (e) {
+            try { return _origMaybe.apply(self, args); } catch (e2) { return; }
+          }
+        });
+      };
+      w.__opnf = 1;
+      window.maybeApplyTemplate = w;
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * E. "ADD ANY WORD TO AN OP NOTE" -- a reliable inserter attached to every
+   *    op-note surface, targeting the exact box it sits under.
+   * ===================================================================== */
+  var ADD_HOST = "mls-opaddword";
+  function looksOpText(text) {
+    var t = S(text); if (!t.trim()) return false;
+    if (markerHits(t).length >= 2) return true;
+    return /\b(pre[\s-]?operative diagnosis|post[\s-]?operative diagnosis|operative note|procedure note|description of procedure|procedure performed|operation performed|time-?out|medications injected|estimated blood loss)\b/i.test(t);
+  }
+  function boxText(el) {
+    if (!el) return "";
+    if ("value" in el && typeof el.value === "string") return el.value;
+    return el.textContent || "";
+  }
+  function writeBoxText(el, val) {
+    if (!el) return;
+    if ("value" in el && typeof el.value === "string") el.value = val; else el.textContent = val;
+    try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {}
+    try { el.dispatchEvent(new Event("change", { bubbles: true })); } catch (e2) {}
+  }
+  function isPresentIn(text, line) {
+    try { var SL = window.__mlsStdLine; if (SL && isFn(SL.isPresent)) return !!SL.isPresent(text, line); } catch (e) {}
+    var n = function (s) { return S(s).replace(/\s+/g, " ").trim().toLowerCase(); };
+    return n(text).indexOf(n(line)) !== -1;
+  }
+  function deterministicPlace(text, line) {
+    try { var SL = window.__mlsStdLine; if (SL && isFn(SL.insertLineIntoText)) return SL.insertLineIntoText(text, line); } catch (e) {}
+    text = S(text); line = S(line).trim();
+    if (!line || isPresentIn(text, line)) return text;
+    var sep = /\n/.test(text) ? "\n" : (text.trim() ? "  " : "");
+    return text.replace(/\s+$/, "") + sep + line;
+  }
+  /* weave one line into a SPECIFIC box; AI-weave when the stdline-auto engine is
+     live, else deterministic; confirm before claiming success. Promise. */
+  function addLineToBox(box, line, btn) {
+    return new Promise(function (resolve) {
+      line = S(line).trim();
+      if (!box) { flash(btn, "Open a note first", false); resolve({ ok: false }); return; }
+      if (!line) { flash(btn, "Type something first", false); resolve({ ok: false }); return; }
+      var before = boxText(box);
+      if (isPresentIn(before, line)) { flash(btn, "Already in note", true); resolve({ ok: true, reason: "already" }); return; }
+      setWorking(btn);
+      var AI = window.__mlsStdLineAuto;
+      var weave = (AI && isFn(AI.aiWeave)) ? AI.aiWeave(before, line) : Promise.resolve(null);
+      Promise.resolve(weave).then(function (w) {
+        var cand = (w && w.text) ? w.text : null;
+        if (cand == null) {
+          var det = deterministicPlace(before, line);
+          if (det !== before && isPresentIn(det, line)) cand = det;
+        }
+        if (cand == null) { flash(btn, "Couldn't add", false); resolve({ ok: false }); return; }
+        var now = boxText(box);
+        if (isPresentIn(now, line)) { flash(btn, "Already in note", true); resolve({ ok: true }); return; }
+        writeBoxText(box, cand);
+        if (isPresentIn(boxText(box), line)) { flash(btn, "Added", true); resolve({ ok: true }); }
+        else { writeBoxText(box, before); flash(btn, "Not added", false); resolve({ ok: false }); }
+      })["catch"](function () {
+        var det = deterministicPlace(before, line);
+        if (det !== before) { writeBoxText(box, det); if (isPresentIn(boxText(box), line)) { flash(btn, "Added", true); resolve({ ok: true }); return; } writeBoxText(box, before); }
+        flash(btn, "Couldn't add", false); resolve({ ok: false });
+      });
+    });
+  }
+  function flash(btn, msg, ok) {
+    if (!btn) { toast(msg, ok ? "ok" : "err"); return; }
+    if (btn.__opnfPrev == null) btn.__opnfPrev = btn.textContent;
+    btn.textContent = msg;
+    btn.style.opacity = "1";
+    clearTimeout(btn.__opnfT);
+    btn.__opnfT = setTimeout(function () { btn.textContent = btn.__opnfPrev != null ? btn.__opnfPrev : msg; btn.__opnfPrev = null; btn.__opnfBusy = false; }, ok ? 1200 : 1800);
+  }
+  function setWorking(btn) { if (!btn) return; if (btn.__opnfPrev == null) btn.__opnfPrev = btn.textContent; btn.__opnfBusy = true; btn.textContent = "Adding..."; }
+
+  var ADD_STYLE_ID = "mls-opaddword-style";
+  function injectAddStyle() {
+    if ($(ADD_STYLE_ID)) return;
+    var css = "." + ADD_HOST + "{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0 2px;}"
+      + "." + ADD_HOST + " input{flex:1;min-width:160px;font-size:12.5px;padding:6px 9px;border:1px solid var(--line,#c9d6e5);border-radius:7px;color:var(--ink,#13283f);background:var(--card,#fff);}"
+      + "." + ADD_HOST + " button{border:0;border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;background:#1f6f3f;color:#fff;}"
+      + "." + ADD_HOST + " button:hover{filter:brightness(1.07);}"
+      + "." + ADD_HOST + " .opnf-lbl{font-size:11px;color:var(--muted,#5a6c82);}";
+    var st = document.createElement("style");
+    st.id = ADD_STYLE_ID; st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+  }
+  /* build one inserter row bound to a resolver that returns the target box */
+  function makeAdder(resolveBox) {
+    var row = document.createElement("div");
+    row.className = ADD_HOST;
+    var lbl = document.createElement("span"); lbl.className = "opnf-lbl"; lbl.textContent = "+ Add to op note:";
+    var inp = document.createElement("input");
+    inp.type = "text"; inp.placeholder = "type any word, phrase or line...";
+    var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Add";
+    function go() {
+      var box = null; try { box = resolveBox(); } catch (e) {}
+      addLineToBox(box, inp.value, btn).then(function (r) { if (r && r.ok && r.reason !== "already") inp.value = ""; });
+    }
+    btn.addEventListener("click", go);
+    inp.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
+    row.appendChild(lbl); row.appendChild(inp); row.appendChild(btn);
+    return row;
+  }
+  /* attach an inserter after a textarea, once, when it holds/expects an op note */
+  function decorateBox(ta, force) {
+    try {
+      if (!ta || ta.__opnfAdded) return;
+      if (!force && !looksOpText(boxText(ta))) return;
+      var row = makeAdder(function () { return ta; });
+      if (ta.parentNode) ta.parentNode.insertBefore(row, ta.nextSibling);
+      ta.__opnfAdded = row;
+    } catch (e) {}
+  }
+  function sweepAdders() {
+    try {
+      injectAddStyle();
+      /* op-prep draft rows: #opPrepNote_<i> -- always an op note surface */
+      var pre = document.querySelectorAll("textarea[id^='opPrepNote_']");
+      for (var i = 0; i < pre.length; i++) decorateBox(pre[i], true);
+      /* dedicated procedure-note card */
+      var pn = $("procNoteBody"); if (pn) decorateBox(pn, true);
+      /* generate-time main note box -- only when it currently reads as an op note */
+      var nb = $("noteBox"); if (nb) {
+        if (looksOpText(boxText(nb))) decorateBox(nb, true);
+        else if (nb.__opnfAdded) { try { nb.__opnfAdded.parentNode.removeChild(nb.__opnfAdded); } catch (e0) {} nb.__opnfAdded = null; }
+      }
+    } catch (e) {}
+  }
+  var _addObs = null, _addDeb = null;
+  function startAddObserver() {
+    if (_addObs) return;
+    _addObs = new MutationObserver(function () { clearTimeout(_addDeb); _addDeb = setTimeout(sweepAdders, 60); });
+    try { _addObs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    var iv = setInterval(sweepAdders, 1500); timers.push(iv);
+    sweepAdders();
+  }
+
+  /* =====================================================================
+   * F. explain() + offline self-test (both directions)
+   * ===================================================================== */
+  API.classifyTranscript = classifyTranscript;
+  API.classifyTemplate = classifyTemplate;
+  API.chooseOpTemplate = chooseOpTemplate;
+  API.opScore = opScore;
+  API.buildSkeletonPrompt = buildSkeletonPrompt;
+  API.parseJsonNote = parseJsonNote;
+  API.auditFilled = auditFilled;
+  API.countBlanks = countBlanks;
+  API.explain = function (transcript) {
+    var tc = classifyTranscript(transcript);
+    var out = { transcript: { cls: tc.cls, procedureMarkers: tc.evidence }, toggles: {}, opPick: null, willFill: false };
+    try { out.toggles.useTemplates = useTemplatesOn(); out.toggles.autoChoose = templateAutoOn(); } catch (e) {}
+    if (tc.cls === "procedure") {
+      var pick = chooseOpTemplate(transcript);
+      out.opPick = pick.tpl ? { name: pick.tpl.name, score: pick.score, reason: pick.reason } : { name: null, reason: pick.reason };
+      out.willFill = !!pick.tpl;
+    } else {
+      out.opPick = { name: null, reason: "not a procedure transcript -- delegated to b61 (never an op note)" };
+    }
+    return out;
+  };
+
+  var REPRO_OFFICE = "Patient is here for a new visit for right knee pain for about three weeks after increasing his running. "
+    + "No injury he can recall. Exam: no effusion, full range of motion, tenderness over the patellar tendon, negative Lachman and McMurray. "
+    + "Assessment: patellofemoral pain. Plan: relative rest, ice, ibuprofen, physical therapy, return in six weeks.";
+  var REPRO_PROC = "Informed consent was obtained. The patient was placed supine and the right knee was prepped and draped in sterile fashion. "
+    + "Under ultrasound guidance a 25 gauge needle was advanced to the superior lateral genicular nerve and 1 mL of 0.25% bupivacaine with 10 mg triamcinolone was injected; "
+    + "repeated at the superior medial and inferior medial targets. The patient tolerated the procedure well. Complications: none.";
+
+  API.selfTest = function () {
+    var out = { pass: false, office: null, procedure: null, detail: "" };
+    var eo = API.explain(REPRO_OFFICE); out.office = eo;
+    var ep = API.explain(REPRO_PROC); out.procedure = ep;
+    /* office must NEVER be classified procedure / never enter the op branch */
+    var officeSafe = eo.transcript.cls !== "procedure" && !eo.willFill;
+    /* procedure must be detected; op-pick is data-dependent (needs an op
+       template in the store), so "no pick" is acceptable, a NON-null pick must
+       be an op-class template. */
+    var procDetected = ep.transcript.cls === "procedure";
+    var procPickOk = !ep.opPick.name || classifyTemplate(pickTplByName(ep.opPick.name)) === "procedure";
+    out.pass = officeSafe && procDetected && procPickOk;
+    out.detail = "office: " + (officeSafe ? "SAFE (class " + eo.transcript.cls + ", no op fill)" : "FAIL (would fill)")
+      + " | procedure: " + (procDetected ? "detected" : "NOT detected")
+      + (ep.opPick.name ? (", picked op template '" + ep.opPick.name + "'") : (", no op template picked (" + ep.opPick.reason + ")"));
+    return out;
+  };
+  function pickTplByName(nm) { var l = tplsAll(); for (var i = 0; i < l.length; i++) { if (l[i] && l[i].name === nm) return l[i]; } return null; }
+
+  /* also expose the add-word inserter for tests / manual use */
+  API.addLineToBox = addLineToBox;
+  API.looksOpText = looksOpText;
+  API.sweepAdders = sweepAdders;
+
+  /* =====================================================================
+   * boot
+   * ===================================================================== */
+  function tick() { try { wrapMaybe(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 900); timers.push(iv);
+  if (document.readyState === "loading") {
+    try { document.addEventListener("DOMContentLoaded", startAddObserver, { once: true }); } catch (e) { startAddObserver(); }
+  } else {
+    startAddObserver();
+  }
+
+  window.__mlsOpNotesFix_revert = function () {
+    try { timers.forEach(function (t) { clearInterval(t); clearTimeout(t); }); } catch (e) {}
+    try { if (_addObs) { _addObs.disconnect(); _addObs = null; } } catch (e2) {}
+    try { if (_origMaybe) window.maybeApplyTemplate = _origMaybe; } catch (e3) {}
+    try {
+      var rows = document.querySelectorAll("." + ADD_HOST);
+      for (var i = 0; i < rows.length; i++) { if (rows[i].parentNode) rows[i].parentNode.removeChild(rows[i]); }
+      var st = $(ADD_STYLE_ID); if (st && st.parentNode) st.parentNode.removeChild(st);
+    } catch (e4) {}
+    window.__mlsOpNotesFix = 0;
+    return "reverted";
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe -- Templates + Prep bugfix pack v1  (__mlsTplPrepFix)
+ * authored 2026-07-07 against LIVE b57 (mls-connect.js 993,424 B +
+ * ScribeFlow.LIVE-b57.html). Additive / guarded / reversible IIFE.
+ * Prepend to the TOP of mls-connect.js. Revert: window.__mlsTplPrepFix_revert()
+ *
+ * SCOPE: the Templates modal (#templatesModal) and the op-note prep modal
+ * (#opPrepModal) ONLY. Deliberately does NOT touch #visitView / #mlsEz3 --
+ * the Visit-tab v3.1 rework is another lane's scope.
+ *
+ * Items (Michael's list):
+ *  (1) TEMPLATES REPROCESS. Old templates were processed by an older AI pass
+ *      and carry no status. A "Template health" card is added to the
+ *      Templates modal: per-template STATUS (re-processed OK / failed /
+ *      legacy-never-reprocessed / flagged by heuristics: too short,
+ *      unreadable extraction, zero keywords), plus per-template actions:
+ *        - Re-process: re-runs the REAL splitter (POST /api/templates/split,
+ *          the same endpoint the upload flow uses, HTML:10509) on the stored
+ *          template text; result is PREVIEWED and only applied on click.
+ *        - AI keywords: generates matching keywords via the app's own
+ *          aiCallRaw() (-> POST /api/complete) -- split-imported templates
+ *          have keywords:[] which cripples auto-matching.
+ *        - Delete (confirm-guarded), and a Re-upload button that opens the
+ *          existing full multi-file pipeline (#tplMultiFileInput).
+ *      Outcomes are stamped on the template object (t.tpf={status,at,msg})
+ *      so status persists (and follows the account via the app's own
+ *      setTemplates() -> syncPrefsToServer()). A capped local log is kept in
+ *      localStorage uns('tplProcLog').
+ *      NOTE: bare "Choose File" inputs are ALREADY styled globally by
+ *      __mlsEasyV31 (b57, ::file-selector-button) -- not duplicated here.
+ *  (2) TEMPLATE MATCHING preview/test. A "Test matching" panel (inside the
+ *      health card) takes a visit/procedure description (chips: pre-op,
+ *      follow-up, SOAP, procedure, specialty) and shows -- using the app's
+ *      REAL matchers, not a reimplementation --
+ *        - what op-note prep would auto-match (_opRankTemplates, top 3 with
+ *          scores, honest "none" when top score is 0), and
+ *        - what note formatting at Generate time would use
+ *          (pickTemplateForVisit + the useTemplates/templateAuto toggles +
+ *          active template fallback, mirroring resolveActiveTemplate).
+ *      BUG FIX: _opNewRow (HTML:9948) assigns the top-RANKED template to each
+ *      prep row without checking score>0, so an unmatched procedure silently
+ *      got the wrong template. It is wrapped: rank[0].score<=0 -> tplId=''
+ *      (the row honestly shows "-- pick a template --").
+ *  (3) PREP ALL SCHEDULED PATIENTS reliability. The op-prep modal gets:
+ *        - a WHOLE-MONTH mode (month picker + button in the existing day row)
+ *          building rows from _calAppts for every day of the chosen month via
+ *          the app's own _opApptsForDay/_opNewRow (per-day date strings kept);
+ *        - a reliable Draft-all runner that intercepts #opPrepGenAllBtn
+ *          (capture phase): pre-matches templates (score>0) per row, runs the
+ *          REAL opPrepGenerateOne(i) sequentially with one retry + backoff,
+ *          a Stop button, a live progress bar, and a per-patient ledger
+ *          (drafted with N blanks / failed / skipped-no-template), ending in
+ *          an honest summary.
+ *      SAFETY: the runner only calls opPrepGenerateOne -> drafts saved to
+ *      History (local notes + POST /api/records). NOTHING here touches
+ *      #pushAllEmrBtn or any Athena writeback path -- prepped notes are NEVER
+ *      sent to Athena automatically (that already-true property is now stated
+ *      in the UI too).
+ *
+ * REAL ENDPOINTS USED (nothing invented): POST /api/templates/split (upload
+ * splitter, server.js:2005) - POST /api/complete via window.aiCallRaw
+ * (server.js:792) - POST /api/records via the app's own draft-save path.
+ * No backend changes required.
+ *
+ * SAFETY: athenaOne READ-ONLY; no writeback, no orders, no signing. Drafts
+ * only. No PHI logged (log stores patient-free event text + template names).
+ * ASCII-only source (emoji via \u escapes). ES5 + promise chains (no
+ * async/await) so offline parse-validation works.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsTplPrepFix) return;
+  var API = { v: "tpf-1.0.0" };
+  window.__mlsTplPrepFix = API;
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function isFn(f) { return typeof f === "function"; }
+  function toast(msg, kind) { try { if (isFn(window.toast)) window.toast(msg, kind || ""); } catch (e) {} }
+  var timers = [], docListeners = [];
+
+  /* ---------- template store helpers (always through the app's own fns) --- */
+  function tplList() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
+  function tplSave(list) { try { if (isFn(window.setTemplates)) window.setTemplates(list); } catch (e) {} }
+  function tplById(id) { try { return isFn(window.getTemplateById) ? window.getTemplateById(id) : null; } catch (e) { return null; } }
+  function rerenderAppLists() {
+    try { if (isFn(window.renderTemplateList)) window.renderTemplateList(); } catch (e) {}
+    try { if (isFn(window.renderTemplateActiveSelect)) window.renderTemplateActiveSelect(); } catch (e) {}
+  }
+
+  /* ---------- capped, patient-free processing log -------------------------- */
+  function logKey() { try { return isFn(window.uns) ? window.uns("tplProcLog") : "mls_tplProcLog"; } catch (e) { return "mls_tplProcLog"; } }
+  function logEvent(kind, name, ok, msg) {
+    try {
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem(logKey()) || "[]"); } catch (e) { arr = []; }
+      if (!Array.isArray(arr)) arr = [];
+      arr.unshift({ when: Date.now(), kind: S(kind), name: S(name).slice(0, 80), ok: !!ok, msg: S(msg).slice(0, 160) });
+      localStorage.setItem(logKey(), JSON.stringify(arr.slice(0, 100)));
+    } catch (e) {}
+  }
+
+  /* ---------- per-template status ------------------------------------------ */
+  function stamp(t, status, msg) {
+    try {
+      var list = tplList();
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && list[i].id === t.id) {
+          list[i].tpf = { status: status, at: Date.now(), msg: S(msg).slice(0, 160) };
+          tplSave(list);
+          return;
+        }
+      }
+    } catch (e) {}
+  }
+  function healthOf(t) {
+    /* honest heuristics -- never fabricates a success */
+    var txt = S(t.text), len = txt.length;
+    var letters = (txt.match(/[A-Za-z]/g) || []).length;
+    if (t.tpf && t.tpf.status === "ok") return { cls: "ok", label: "\u2713 re-processed " + new Date(t.tpf.at).toLocaleDateString() };
+    if (t.tpf && t.tpf.status === "failed") return { cls: "bad", label: "\u2717 re-process failed" + (t.tpf.msg ? " \u2014 " + t.tpf.msg : "") };
+    if (len < 200) return { cls: "warn", label: "\u26A0 very short (" + len + " chars) \u2014 likely a bad extraction; re-upload or re-process" };
+    if (len > 0 && letters / len < 0.45) return { cls: "warn", label: "\u26A0 text looks unreadable \u2014 re-upload the original file" };
+    if (!(t.keywords && t.keywords.length)) return { cls: "warn", label: "\u26A0 no keywords \u2014 auto-matching is weak; run AI keywords or re-process" };
+    return { cls: "legacy", label: "\u25CB processed by an earlier AI pass \u2014 re-process to refresh" };
+  }
+
+  /* ---------- backend helpers (the app's own base/token fns) --------------- */
+  function bkBase() { try { return isFn(window.bkBase) ? window.bkBase() : "https://scrivara-backend.onrender.com"; } catch (e) { return "https://scrivara-backend.onrender.com"; } }
+  function bkToken() { try { return isFn(window.bkToken) ? window.bkToken() : ""; } catch (e) { return ""; } }
+
+  /* Re-run the REAL splitter on stored text. Resolves {ok, templates[], msg}. */
+  function splitText(text) {
+    return Promise.resolve().then(function () {
+      if (!bkToken()) return { ok: false, msg: "Sign in first \u2014 template processing runs on your clinician account." };
+      return fetch(bkBase() + "/api/templates/split", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + bkToken() },
+        body: JSON.stringify({ text: S(text).slice(0, 9000) })
+      }).then(function (r) {
+        return r.json()["catch"](function () { return {}; }).then(function (d) {
+          if (r.status === 403) return { ok: false, msg: "available on clinician accounts only (403)" };
+          if (!r.ok) return { ok: false, msg: "server error " + r.status };
+          var arr = (d && d.templates) || [];
+          if (!arr.length) return { ok: false, msg: "the AI found no template in the stored text" };
+          return { ok: true, templates: arr };
+        });
+      })["catch"](function (e) { return { ok: false, msg: "network error \u2014 " + (e && e.message ? e.message : "unreachable") }; });
+    });
+  }
+
+  /* Generate matching keywords via the app's own AI path (POST /api/complete). */
+  function genKeywords(t) {
+    return Promise.resolve().then(function () {
+      if (!isFn(window.aiCallRaw)) return { ok: false, msg: "AI path unavailable on this build" };
+      var sys = "You tag clinical note templates for keyword matching. Given ONE template, return ONLY a JSON array (no prose, no code fence) of 5-10 short lowercase keywords/phrases a scheduler or doctor would use for the visit type this template fits (e.g. [\"pre-op\",\"preoperative\",\"clearance\"] or [\"transforaminal\",\"epidural\",\"esi\",\"l4-l5\",\"steroid injection\"]). Include the note TYPE (pre-op / follow-up / soap / procedure name / specialty) and key procedure words. Never include patient names.";
+      var user = "TEMPLATE NAME: " + S(t.name) + "\n\nTEMPLATE TEXT (excerpt):\n" + S(t.text).slice(0, 4000);
+      var key = ""; try { if (isFn(window.getKey)) key = window.getKey() || ""; } catch (e) {}
+      return window.aiCallRaw(sys, user, key, { freeform: true }).then(function (raw) {
+        var s = S(raw).replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+        var arr = null;
+        try { arr = JSON.parse(s); } catch (e) { try { var m = s.match(/\[[\s\S]*\]/); if (m) arr = JSON.parse(m[0]); } catch (e2) {} }
+        if (!Array.isArray(arr) || !arr.length) return { ok: false, msg: "AI returned no keyword list" };
+        var kws = arr.map(function (k) { return S(k).toLowerCase().trim(); }).filter(function (k) { return k && k.length < 40; }).slice(0, 12);
+        if (!kws.length) return { ok: false, msg: "no usable keywords" };
+        return { ok: true, keywords: kws };
+      })["catch"](function (e) { return { ok: false, msg: "AI error \u2014 " + (e && e.message ? e.message : "failed") }; });
+    });
+  }
+
+  /* =====================================================================
+   * CSS
+   * ===================================================================== */
+  function css() {
+    if ($("mlsTpfCss")) return;
+    var st = document.createElement("style"); st.id = "mlsTpfCss";
+    st.textContent = [
+      "#tpfPanel{background:linear-gradient(135deg,#f2f7ff,#f6f2ff);border:1px solid #dfe6fb;border-radius:12px;padding:13px 14px;margin:0 0 14px}",
+      "#tpfPanel h4{margin:0 0 2px;font-size:14px;color:#16233a}",
+      "#tpfPanel .tpf-sub{font-size:12px;color:#5a6b80;margin:0 0 9px}",
+      "#tpfPanel .tpf-actions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}",
+      "#tpfPanel .tpf-actions button{font-size:12.5px;padding:7px 12px;border-radius:9px;border:1px solid #c9d5ea;background:#fff;cursor:pointer;font-weight:600;color:#1c3a6e}",
+      "#tpfPanel .tpf-actions button:hover{background:#eef4ff}",
+      ".tpf-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid #e3e9f6;border-radius:9px;padding:7px 10px;margin-bottom:6px;background:#fff}",
+      ".tpf-row .tpf-name{flex:1;min-width:150px;font-size:12.5px;font-weight:700;color:#16233a}",
+      ".tpf-row .tpf-meta{font-size:11px;color:#5a6b80}",
+      ".tpf-badge{font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px}",
+      ".tpf-badge.ok{background:#e7f7ee;color:#127a43;border:1px solid #bfe6cf}",
+      ".tpf-badge.bad{background:#fdeaea;color:#a12c2c;border:1px solid #f0bcbc}",
+      ".tpf-badge.warn{background:#fff5df;color:#8a6414;border:1px solid #eed9a0}",
+      ".tpf-badge.legacy{background:#eef1f6;color:#5a6b80;border:1px solid #d9e0ec}",
+      ".tpf-row button{font-size:11.5px;padding:5px 9px;border-radius:8px;border:1px solid #c9d5ea;background:#fff;cursor:pointer}",
+      ".tpf-row button:hover{background:#eef4ff}",
+      ".tpf-row button.tpf-del{color:#a12c2c}",
+      ".tpf-prev{width:100%;background:#f6f9ff;border:1px dashed #c9d5ea;border-radius:8px;padding:8px 10px;font-size:11.5px;color:#33456a}",
+      ".tpf-prev button{margin-left:8px}",
+      "#tpfMatch{margin-top:11px;border-top:1px dashed #cfd9ee;padding-top:10px}",
+      "#tpfMatch input[type=text]{width:100%;box-sizing:border-box;font-size:13px;padding:8px 11px;border:1px solid #c9d5ea;border-radius:9px;margin:6px 0}",
+      "#tpfMatch .tpf-chips{display:flex;gap:6px;flex-wrap:wrap}",
+      "#tpfMatch .tpf-chips button{font-size:11.5px;border-radius:999px;border:1px solid #c9d5ea;background:#fff;padding:4px 11px;cursor:pointer;color:#1c3a6e}",
+      "#tpfMatch .tpf-chips button:hover{background:#eef4ff}",
+      "#tpfMatchOut{margin-top:8px;font-size:12px;color:#33456a}",
+      "#tpfMatchOut .tpf-win{background:#e7f7ee;border:1px solid #bfe6cf;border-radius:8px;padding:7px 10px;margin:4px 0;font-weight:700;color:#127a43}",
+      "#tpfMatchOut .tpf-cand{border:1px solid #e3e9f6;border-radius:8px;padding:5px 10px;margin:3px 0;background:#fff}",
+      /* op-prep additions */
+      "#tpfLedger{margin:8px 0 4px;border:1px solid #dfe6fb;border-radius:10px;background:#fbfcff;padding:10px 12px;display:none}",
+      "#tpfLedger.on{display:block}",
+      "#tpfLedger .tpf-lhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:6px}",
+      "#tpfLedger .tpf-lhead b{font-size:12.5px;color:#16233a}",
+      "#tpfBar{flex:1;min-width:120px;height:8px;background:#e6ecf8;border-radius:6px;overflow:hidden}",
+      "#tpfBarIn{height:100%;width:0%;background:linear-gradient(90deg,#2f6bed,#19b8a6);transition:width .3s}",
+      "#tpfStop{font-size:11.5px;border-radius:8px;border:1px solid #e0b4b4;background:#fff;color:#a12c2c;padding:4px 10px;cursor:pointer}",
+      "#tpfLedgerList{max-height:180px;overflow:auto;font-size:11.5px;line-height:1.5}",
+      "#tpfLedgerList .ok{color:#127a43}",
+      "#tpfLedgerList .bad{color:#a12c2c}",
+      "#tpfLedgerList .skip{color:#8a6414}",
+      "#tpfLedgerList .pend{color:#5a6b80}",
+      "#tpfSafety{font-size:11px;color:#127a43;margin-top:5px;font-weight:600}",
+      ".tpf-month{display:inline-flex;gap:6px;align-items:center}",
+      ".tpf-month input[type=month]{font-size:12.5px;padding:5px 8px;border:1px solid #c9d5ea;border-radius:8px}",
+      ".tpf-month button{font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid #c9d5ea;background:#fff;cursor:pointer;font-weight:600;color:#1c3a6e}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  /* =====================================================================
+   * (2) _opNewRow wrap: never auto-assign a template that scored 0
+   * ===================================================================== */
+  var _origOpNewRow = null;
+  function wrapOpNewRow() {
+    try {
+      if (_origOpNewRow || !isFn(window._opNewRow) || window._opNewRow.__tpf) return;
+      _origOpNewRow = window._opNewRow;
+      var w = function (name, reason, dob, dateStr) {
+        var row = _origOpNewRow.apply(this, arguments);
+        try {
+          if (row && row.tplId && isFn(window._opRankTemplates)) {
+            var rank = window._opRankTemplates(row.proc || reason || "");
+            if (!(rank && rank[0] && rank[0].score > 0)) row.tplId = "";
+          }
+        } catch (e) {}
+        return row;
+      };
+      w.__tpf = 1;
+      window._opNewRow = w;
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * (1) Template health panel in #templatesModal
+   * ===================================================================== */
+  var busyIds = {};   /* templateId -> true while working */
+  var previews = {};  /* templateId -> {name,text} pending apply */
+
+  function reprocessOne(id) {
+    var t = tplById(id); if (!t || busyIds[id]) return;
+    busyIds[id] = true; renderPanel();
+    splitText(t.text).then(function (res) {
+      busyIds[id] = false;
+      if (!res.ok) {
+        stamp(t, "failed", res.msg);
+        logEvent("reprocess", t.name, false, res.msg);
+        toast("Re-process failed \u2014 " + res.msg, "err");
+      } else {
+        /* PREVIEW, never silent-overwrite */
+        var best = res.templates[0];
+        previews[id] = { name: S(best.name || t.name).slice(0, 120), text: S(best.text || "") };
+        logEvent("reprocess", t.name, true, "AI returned " + res.templates.length + " candidate(s); preview shown");
+      }
+      renderPanel();
+    });
+  }
+  function applyPreview(id) {
+    var p = previews[id]; var t = tplById(id); if (!p || !t) return;
+    var list = tplList();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === id) {
+        list[i].name = p.name || list[i].name;
+        list[i].text = p.text || list[i].text;
+        list[i].tpf = { status: "ok", at: Date.now(), msg: "re-processed with the current AI" };
+      }
+    }
+    tplSave(list);
+    delete previews[id];
+    rerenderAppLists(); renderPanel();
+    toast("Template updated with the current AI \u2014 regenerating keywords\u2026", "ok");
+    keywordsOne(id); /* fresh text -> fresh keywords */
+  }
+  function keywordsOne(id) {
+    var t = tplById(id); if (!t || busyIds[id]) return;
+    busyIds[id] = true; renderPanel();
+    genKeywords(t).then(function (res) {
+      busyIds[id] = false;
+      if (!res.ok) {
+        logEvent("keywords", t.name, false, res.msg);
+        toast("Keywords failed \u2014 " + res.msg, "err");
+      } else {
+        var list = tplList();
+        for (var i = 0; i < list.length; i++) { if (list[i] && list[i].id === id) list[i].keywords = res.keywords; }
+        tplSave(list);
+        logEvent("keywords", t.name, true, res.keywords.join(", "));
+        toast("Keywords set: " + res.keywords.slice(0, 5).join(", ") + "\u2026", "ok");
+        rerenderAppLists();
+      }
+      renderPanel();
+    });
+  }
+  function deleteOne(id) {
+    var t = tplById(id); if (!t) return;
+    var okGo = false;
+    try { okGo = window.confirm('Delete the template "' + S(t.name) + '"? You can re-upload the original file any time.'); } catch (e) {}
+    if (!okGo) return;
+    try { if (isFn(window.deleteTemplate)) window.deleteTemplate(id); else { tplSave(tplList().filter(function (x) { return x.id !== id; })); rerenderAppLists(); } } catch (e) {}
+    logEvent("delete", t.name, true, "");
+    renderPanel();
+  }
+  function reprocessFlagged() {
+    var flagged = tplList().filter(function (t) { var h = healthOf(t); return h.cls === "warn" || h.cls === "legacy" || h.cls === "bad"; });
+    if (!flagged.length) { toast("Nothing flagged \u2014 all templates look current.", "ok"); return; }
+    var i = 0;
+    (function next() {
+      if (i >= flagged.length) { toast("Re-processed " + flagged.length + " template(s) \u2014 review the previews below.", "ok"); return; }
+      var t = flagged[i++]; if (busyIds[t.id]) return next();
+      busyIds[t.id] = true; renderPanel();
+      splitText(t.text).then(function (res) {
+        busyIds[t.id] = false;
+        if (res.ok) { previews[t.id] = { name: S(res.templates[0].name || t.name).slice(0, 120), text: S(res.templates[0].text || "") }; logEvent("reprocess", t.name, true, "preview ready"); }
+        else { stamp(t, "failed", res.msg); logEvent("reprocess", t.name, false, res.msg); }
+        renderPanel();
+        setTimeout(next, 400);
+      });
+    })();
+  }
+
+  /* ---------- (2) test-matching panel -------------------------------------- */
+  var CHIPS = [
+    "Pre-op evaluation",
+    "Follow-up visit",
+    "SOAP office visit",
+    "Left L4-L5 transforaminal epidural steroid injection",
+    "New specialty consult"
+  ];
+  function runMatchTest(text) {
+    var out = $("tpfMatchOut"); if (!out) return;
+    text = S(text).trim();
+    if (!text) { out.innerHTML = '<span style="color:#5a6b80">Type a visit or procedure description (or tap a chip) to see which template each matcher would pick.</span>'; return; }
+    var h = "";
+    /* A: op-note prep matcher (the real ranker) */
+    h += '<div style="font-weight:700;margin-top:2px">\uD83D\uDC89 Op-note prep would match:</div>';
+    try {
+      if (!isFn(window._opRankTemplates)) h += '<div class="tpf-cand">matcher not available on this build</div>';
+      else {
+        var rank = window._opRankTemplates(text).slice(0, 3);
+        if (!(rank[0] && rank[0].score > 0)) h += '<div class="tpf-cand">\u2014 none (score 0) \u2014 the prep row would ask you to pick a template manually</div>';
+        else rank.forEach(function (r, i) {
+          if (!r || !r.tpl) return;
+          var line = esc(r.tpl.name || "Template") + ' <span style="color:#5a6b80">(score ' + r.score + ")</span>";
+          h += i === 0 ? '<div class="tpf-win">\u2192 ' + line + "</div>" : '<div class="tpf-cand">' + line + "</div>";
+        });
+      }
+    } catch (e) { h += '<div class="tpf-cand">matcher error</div>'; }
+    /* B: generate-time formatting (mirrors resolveActiveTemplate honestly) */
+    h += '<div style="font-weight:700;margin-top:7px">\u2728 Note formatting at Generate would use:</div>';
+    try {
+      var useOn = isFn(window.useTemplatesOn) ? window.useTemplatesOn() : false;
+      var autoOn = isFn(window.templateAutoOn) ? window.templateAutoOn() : false;
+      var act = null; try { act = tplById(isFn(window.getActiveTemplateId) ? window.getActiveTemplateId() : ""); } catch (e2) {}
+      if (!useOn) h += '<div class="tpf-cand">\u2014 nothing: the "Use templates when generating" toggle is OFF</div>';
+      else if (autoOn && isFn(window.pickTemplateForVisit)) {
+        var picked = window.pickTemplateForVisit(text);
+        if (picked) h += '<div class="tpf-win">\u2192 ' + esc(picked.name || "Template") + " (auto-chosen by keywords)</div>";
+        else if (act) h += '<div class="tpf-cand">no keyword match \u2192 falls back to the active template: <b>' + esc(act.name) + "</b></div>";
+        else h += '<div class="tpf-cand">no keyword match and no active template \u2192 note is left as generated</div>';
+      } else if (act) h += '<div class="tpf-win">\u2192 ' + esc(act.name) + " (the active template; auto-choose is OFF)</div>";
+      else h += '<div class="tpf-cand">auto-choose is OFF and no active template is set \u2192 note is left as generated</div>';
+    } catch (e) { h += '<div class="tpf-cand">matcher error</div>'; }
+    /* C: the safety gate's verdict (mls_notegen_grounding_v1.js, when shipped) */
+    try {
+      var NG = window.__mlsNoteGroundV1;
+      if (NG && typeof NG.explain === "function") {
+        var ex = NG.explain(text);
+        h += '<div style="font-weight:700;margin-top:7px">\uD83D\uDEE1 Safety gate verdict:</div>';
+        h += '<div class="tpf-cand">transcript reads as: <b>' + esc(ex.transcript.cls) + '</b>' +
+          (ex.transcript.procedureMarkers.length ? ' (markers: ' + esc(ex.transcript.procedureMarkers.join(", ")) + ')' : '') + '</div>';
+        if (ex.gated && ex.gated.allow) h += '<div class="tpf-win">\u2192 would apply \u201C' + esc(ex.gated.name) + '\u201D \u2014 ' + esc(ex.gated.reason) + '</div>';
+        else h += '<div class="tpf-cand">\u2192 NO template auto-applies \u2014 ' + esc(ex.gated ? ex.gated.reason : 'no match') + ' (note stays exactly as generated)</div>';
+      }
+    } catch (e) {}
+    h += '<div style="color:#5a6b80;margin-top:6px;font-size:11px">Tip: keyword matching is what makes this reliable \u2014 use \uD83C\uDFF7 AI keywords above on any template with none.</div>';
+    out.innerHTML = h;
+  }
+
+  /* ---------- panel render -------------------------------------------------- */
+  function renderPanel() {
+    var panel = $("tpfPanel"); if (!panel) return;
+    var list = tplList();
+    var rows = "";
+    if (!list.length) rows = '<div class="tpf-meta">No templates saved yet \u2014 upload some with the buttons above.</div>';
+    list.forEach(function (t) {
+      if (!t) return;
+      var h = healthOf(t);
+      var busy = !!busyIds[t.id];
+      rows += '<div class="tpf-row" data-tpf="' + esc(t.id) + '">' +
+        '<span class="tpf-name">' + esc(t.name || "Template") + ' <span class="tpf-meta">(' + S(t.text).length + " chars \u00B7 " + ((t.keywords || []).length) + " keywords)</span></span>" +
+        '<span class="tpf-badge ' + h.cls + '">' + esc(h.label) + "</span>" +
+        (busy ? '<span class="tpf-meta">\u23F3 working\u2026</span>'
+          : '<button type="button" data-act="re">\uD83D\uDD01 Re-process</button>' +
+            '<button type="button" data-act="kw">\uD83C\uDFF7 AI keywords</button>' +
+            '<button type="button" data-act="del" class="tpf-del">\uD83D\uDDD1 Delete</button>');
+      var p = previews[t.id];
+      if (p) {
+        rows += '<div class="tpf-prev">\u2728 Current-AI result: <b>' + esc(p.name) + "</b> (" + p.text.length + " chars) \u2014 " +
+          esc(p.text.replace(/\s+/g, " ").slice(0, 110)) + "\u2026" +
+          '<button type="button" data-act="apply">\u2705 Apply</button>' +
+          '<button type="button" data-act="dismiss">Keep the old one</button></div>';
+      }
+      rows += "</div>";
+    });
+    panel.querySelector("#tpfRows").innerHTML = rows;
+  }
+
+  function buildPanel() {
+    try {
+      var modal = $("templatesModal"); if (!modal || $("tpfPanel")) return;
+      var anchor = $("tplList"); if (!anchor || !anchor.parentElement) return;
+      var panel = document.createElement("div"); panel.id = "tpfPanel";
+      panel.innerHTML =
+        "<h4>\uD83E\uDDF0 Template health \u2014 status, re-process &amp; matching test</h4>" +
+        '<p class="tpf-sub">Templates processed by an earlier AI pass can be re-run through the current AI. Nothing is overwritten without your click, and deleting never touches your original files \u2014 re-upload any time.</p>' +
+        '<div class="tpf-actions">' +
+        '<button type="button" id="tpfReupload">\uD83D\uDCE4 Re-upload files</button>' +
+        '<button type="button" id="tpfReAll">\uD83D\uDD01 Re-process all flagged</button>' +
+        '<button type="button" id="tpfMatchBtn">\uD83D\uDD0E Test matching</button>' +
+        "</div>" +
+        '<div id="tpfRows"></div>' +
+        '<div id="tpfMatch" style="display:none">' +
+        "<b style=\"font-size:12.5px;color:#16233a\">\uD83D\uDD0E Which template would a visit match?</b>" +
+        '<div class="tpf-chips">' + CHIPS.map(function (c) { return '<button type="button" data-chip="' + esc(c) + '">' + esc(c) + "</button>"; }).join("") + "</div>" +
+        '<input type="text" id="tpfMatchIn" placeholder="Describe the visit or procedure \u2014 e.g. pre-op clearance, right SI joint injection\u2026">' +
+        '<div id="tpfMatchOut"></div>' +
+        "</div>";
+      anchor.parentElement.insertBefore(panel, anchor);
+      /* wire */
+      panel.addEventListener("click", function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest("button") : null; if (!b) return;
+        if (b.id === "tpfReupload") { var fi = $("tplMultiFileInput"); if (fi) fi.click(); return; }
+        if (b.id === "tpfReAll") { reprocessFlagged(); return; }
+        if (b.id === "tpfMatchBtn") { var m = $("tpfMatch"); if (m) { m.style.display = m.style.display === "none" ? "block" : "none"; runMatchTest(($("tpfMatchIn") || {}).value || ""); } return; }
+        var chip = b.getAttribute("data-chip");
+        if (chip) { var inp = $("tpfMatchIn"); if (inp) { inp.value = chip; } runMatchTest(chip); return; }
+        var row = b.closest ? b.closest(".tpf-row") : null; if (!row) return;
+        var id = row.getAttribute("data-tpf"); var act = b.getAttribute("data-act");
+        if (act === "re") reprocessOne(id);
+        else if (act === "kw") keywordsOne(id);
+        else if (act === "del") deleteOne(id);
+        else if (act === "apply") applyPreview(id);
+        else if (act === "dismiss") { delete previews[id]; renderPanel(); }
+      });
+      var inp2 = panel.querySelector("#tpfMatchIn");
+      if (inp2) inp2.addEventListener("input", function () { runMatchTest(inp2.value); });
+      renderPanel();
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * (3) op-prep: whole-month mode + reliable Draft-all with ledger
+   * ===================================================================== */
+  var RUN = { on: false, stop: false };
+
+  function monthDays(ym) {
+    /* ym = "YYYY-MM" -> ["YYYY-MM-01", ...] for the real month length */
+    var m = /^(\d{4})-(\d{2})$/.exec(S(ym)); if (!m) return [];
+    var y = +m[1], mo = +m[2];
+    var last = new Date(y, mo, 0).getDate();
+    var out = [];
+    for (var d = 1; d <= last; d++) out.push(m[1] + "-" + m[2] + "-" + ("0" + d).slice(-2));
+    return out;
+  }
+  function openMonth(ym) {
+    try {
+      if (!isFn(window._opApptsForDay) || !isFn(window._opNewRow) || !isFn(window.opPrepRender)) { toast("Op-prep is not available on this build.", "err"); return; }
+      if (!ym) { var n = new Date(); ym = n.getFullYear() + "-" + ("0" + (n.getMonth() + 1)).slice(-2); }
+      var rows = [], days = monthDays(ym), usedDays = 0;
+      days.forEach(function (key) {
+        var appts = window._opApptsForDay(key) || [];
+        if (appts.length) usedDays++;
+        appts.forEach(function (a) {
+          rows.push(window._opNewRow(a.name, a.reason, a.dob, isFn(window._opDayStr) ? window._opDayStr(key) : key));
+        });
+      });
+      window._opPrepMode = "all";
+      window._opPrepDay = "";        /* month mode: the day label stays blank; our ledger header carries the month */
+      window._opPrep = rows;
+      var modal = $("opPrepModal"); if (modal) modal.classList.add("show");
+      window.opPrepRender();
+      ensurePrepUi();
+      var lbl = $("opPrepDayLbl");
+      var nice = ""; try { nice = new Date(ym + "-15T12:00").toLocaleDateString(undefined, { month: "long", year: "numeric" }); } catch (e) { nice = ym; }
+      if (lbl) lbl.textContent = "Whole month \u2014 " + nice + " (" + rows.length + " patient visit" + (rows.length === 1 ? "" : "s") + " across " + usedDays + " day" + (usedDays === 1 ? "" : "s") + ")";
+      if (!rows.length) toast("No pulled appointments for " + nice + " yet \u2014 pull that month first (Staff prep \u2192 month pull), then reopen.", "err");
+    } catch (e) {}
+  }
+
+  function ledgerEl() { return $("tpfLedger"); }
+  function setBar(pct) { var b = $("tpfBarIn"); if (b) b.style.width = Math.max(0, Math.min(100, pct)) + "%"; }
+  function paintLedger(states, doneN, total, headline) {
+    var box = ledgerEl(); if (!box) return;
+    box.classList.add("on");
+    var head = box.querySelector(".tpf-lstat"); if (head) head.textContent = headline || "";
+    setBar(total ? (doneN / total) * 100 : 0);
+    var listEl = $("tpfLedgerList"); if (!listEl) return;
+    listEl.innerHTML = states.map(function (s) {
+      var cls = s.st === "ok" ? "ok" : s.st === "fail" ? "bad" : s.st === "skip" ? "skip" : "pend";
+      var mark = s.st === "ok" ? "\u2713" : s.st === "fail" ? "\u2717" : s.st === "skip" ? "\u2298" : (s.st === "run" ? "\u23F3" : "\u00B7");
+      return '<div class="' + cls + '">' + mark + " " + esc(s.name) + (s.day ? ' <span style="opacity:.7">(' + esc(s.day) + ")</span>" : "") + (s.msg ? " \u2014 " + esc(s.msg) : "") + "</div>";
+    }).join("");
+  }
+
+  function draftAll() {
+    if (RUN.on) { toast("Draft-all is already running \u2014 use Stop first.", "err"); return; }
+    var rows = window._opPrep || [];
+    if (!rows.length) { toast("No patients loaded \u2014 pick a day or month first.", "err"); return; }
+    if (!tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
+    if (rows.length > 40) {
+      var goBig = false;
+      try { goBig = window.confirm("Draft " + rows.length + " op notes? This runs one AI call per patient (roughly " + Math.ceil(rows.length * 8 / 60) + "\u2013" + Math.ceil(rows.length * 15 / 60) + " minutes). Drafts save to History only \u2014 nothing is sent to Athena. Continue?"); } catch (e) {}
+      if (!goBig) return;
+    }
+    RUN.on = true; RUN.stop = false;
+    var states = rows.map(function (r) {
+      var day = ""; try { day = S(r.dateStr).replace(/^[A-Za-z]+,\s*/, "").replace(/,\s*\d{4}$/, ""); } catch (e) {}
+      return { name: (r.appt && r.appt.name) || "Patient", day: day, st: "pend", msg: "" };
+    });
+    var okN = 0, failN = 0, skipN = 0, i = 0, total = rows.length;
+    function headline() {
+      return "Drafting " + Math.min(i, total) + "/" + total + " \u00B7 \u2713 " + okN + " \u00B7 \u2717 " + failN + " \u00B7 \u2298 " + skipN;
+    }
+    paintLedger(states, 0, total, headline());
+    function tryRow(idx) {
+      return Promise.resolve().then(function () { return window.opPrepGenerateOne(idx); }).then(function () {
+        var r = (window._opPrep || [])[idx];
+        return !!(r && r.gen && S(r.note).trim());
+      })["catch"](function () { return false; });
+    }
+    function step() {
+      if (RUN.stop || i >= total) return finish();
+      var idx = i, row = rows[idx];
+      /* make sure the row has a genuinely-matching template before we spend an AI call */
+      if (row && !row.tplId && isFn(window._opRankTemplates)) {
+        try { var rank = window._opRankTemplates(row.proc || (row.appt && row.appt.reason) || ""); if (rank && rank[0] && rank[0].score > 0) row.tplId = rank[0].tpl.id; } catch (e) {}
+      }
+      var tpl = row ? tplById(row.tplId) : null;
+      if (!tpl) {
+        states[idx].st = "skip"; states[idx].msg = "no matching template \u2014 pick one on the card, then Draft it alone";
+        skipN++; i++;
+        paintLedger(states, i, total, headline());
+        return setTimeout(step, 60);
+      }
+      states[idx].st = "run"; paintLedger(states, i, total, headline());
+      tryRow(idx).then(function (ok1) {
+        if (ok1) return true;
+        if (RUN.stop) return false;
+        /* one retry after a backoff (handles transient AI/rate-limit failures) */
+        return new Promise(function (res) { setTimeout(res, 4000); }).then(function () { return tryRow(idx); });
+      }).then(function (ok) {
+        var r = (window._opPrep || [])[idx];
+        if (ok) {
+          okN++;
+          var nb = (r && r.missing ? r.missing.length : 0);
+          states[idx].st = "ok"; states[idx].msg = "drafted with " + tpl.name + (nb ? " \u00B7 " + nb + " blank" + (nb === 1 ? "" : "s") + " to fill" : "") + " \u00B7 saved as draft";
+        } else if (RUN.stop) {
+          states[idx].st = "pend"; states[idx].msg = "stopped before finishing";
+        } else {
+          failN++;
+          states[idx].st = "fail"; states[idx].msg = "AI draft failed twice \u2014 re-try this one from its card";
+        }
+        i++;
+        paintLedger(states, i, total, headline());
+        setTimeout(step, 350);
+      });
+    }
+    function finish() {
+      RUN.on = false;
+      var el = $("opPrepStatus");
+      var summary = (RUN.stop ? "\u23F9 Stopped: " : "\u2705 Done: ") + okN + " drafted \u00B7 " + failN + " failed \u00B7 " + skipN + " skipped (no template) of " + total + ".";
+      paintLedger(states, total, total, summary);
+      if (el) el.textContent = summary + " Drafts are in History \u2014 nothing was sent to Athena.";
+      logEvent("draft-all", "prep run", failN === 0, summary);
+    }
+    step();
+  }
+
+  /* intercept the existing Draft-all button (capture phase beats its inline onclick) */
+  function onGenAllCapture(ev) {
+    try {
+      var t = ev.target;
+      if (t && t.closest && t.closest("#opPrepGenAllBtn")) {
+        ev.stopPropagation(); ev.preventDefault();
+        draftAll();
+      }
+    } catch (e) {}
+  }
+  document.addEventListener("click", onGenAllCapture, true);
+  docListeners.push(["click", onGenAllCapture, true]);
+
+  function ensurePrepUi() {
+    try {
+      var modal = $("opPrepModal"); if (!modal) return;
+      /* month controls into the existing day row */
+      var dayRow = $("opPrepDayRow");
+      if (dayRow && !$("tpfMonthBtn")) {
+        var wrap = document.createElement("span"); wrap.className = "tpf-month";
+        var now = new Date(); var ymNow = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2);
+        wrap.innerHTML = '<input type="month" id="tpfMonthIn" value="' + ymNow + '" max="' + ymNow + '">' +
+          '<button type="button" id="tpfMonthBtn">\uD83D\uDDD3 Whole month</button>';
+        dayRow.appendChild(wrap);
+        wrap.querySelector("#tpfMonthBtn").onclick = function () { openMonth(($("tpfMonthIn") || {}).value || ""); };
+      }
+      /* ledger under the Draft-all row */
+      if (!$("tpfLedger")) {
+        var genBtn = $("opPrepGenAllBtn");
+        var row = genBtn && genBtn.closest ? genBtn.closest(".row") : null;
+        if (row && row.parentElement) {
+          var led = document.createElement("div"); led.id = "tpfLedger";
+          led.innerHTML = '<div class="tpf-lhead"><b>Draft-all progress</b><span class="tpf-lstat" style="font-size:11.5px;color:#5a6b80"></span>' +
+            '<div id="tpfBar"><div id="tpfBarIn"></div></div>' +
+            '<button type="button" id="tpfStop">\u23F9 Stop</button></div>' +
+            '<div id="tpfLedgerList"></div>' +
+            '<div id="tpfSafety">\uD83D\uDD12 Prep drafts save to each patient\u2019s History only \u2014 nothing is ever sent to Athena automatically.</div>';
+          row.parentElement.insertBefore(led, row.nextSibling);
+          led.querySelector("#tpfStop").onclick = function () { RUN.stop = true; toast("Stopping after the current patient\u2026", ""); };
+        }
+      }
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * ticks
+   * ===================================================================== */
+  function tick() {
+    try { css(); wrapOpNewRow(); buildPanel(); ensurePrepUi(); } catch (e) {}
+  }
+  tick();
+  var iv = setInterval(tick, 1300);
+  timers.push(iv);
+
+  API.openMonth = openMonth;
+  API.draftAll = draftAll;
+  API.testMatch = runMatchTest;
+
+  /* =====================================================================
+   * full revert
+   * ===================================================================== */
+  window.__mlsTplPrepFix_revert = function () {
+    try { timers.forEach(function (t) { clearInterval(t); }); } catch (e) {}
+    try { docListeners.forEach(function (l) { document.removeEventListener(l[0], l[1], l[2]); }); } catch (e) {}
+    try { if (_origOpNewRow) window._opNewRow = _origOpNewRow; } catch (e) {}
+    try { ["mlsTpfCss", "tpfPanel", "tpfLedger"].forEach(function (id) { var n = $(id); if (n) n.remove(); }); } catch (e) {}
+    try { var m = document.querySelector(".tpf-month"); if (m) m.remove(); } catch (e) {}
+    window.__mlsTplPrepFix = 0;
+    return "reverted";
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe -- ONE how-to guide v2.1 for the consolidated layout
+ * (__mlsHowToV2)  authored 2026-07-07; content RE-VERIFIED against LIVE b61
+ * (v3.2/3.3/3.4 __mlsEasyV32 effortless Visit tab: auto-pull on entry,
+ * time-aware header, tap-and-go rows, quick-select strip, re-homed premium
+ * buttons). Additive / guarded / reversible IIFE.
+ * Prepend to the TOP of mls-connect.js. Revert: window.__mlsHowToV2_revert()
+ *
+ * WHY: every existing how-to surface teaches a RETIRED layout.
+ *   - Menu rows #mlsTourMenuItem (tour v1) and #mlsTourMenuItemV2 (tour v2)
+ *     spotlight #heroPtName/#heroRecBtn -- static hero controls the b56
+ *     silencer CSS-hides; their walkthroughs point at invisible elements.
+ *   - #mlsB39MenuItem (b39 spotlight tour) walks the old cockpit-era layout
+ *     (ghost #mlsScDock, b34 pay buttons, wizard bars) -- silenced/gone.
+ *   - The b33 guide modal behind the top-bar ? Help teaches the pre-v3 flow.
+ *   - ui-cleanup-v1's guide was removed from that pack (uc1-1.1.0); this
+ *     module owns the ONE guide (and defensively hides #mlsUC1HowTo).
+ *
+ * WHAT THIS SHIPS: ONE menu row ("How to use MLS") + ONE doctor-facing guide
+ * matching the b61 screen exactly: the day auto-loads -> tap your patient ->
+ * "Start Recording -- <name>" -> "Stop & Generate Note" -> Review (edit /
+ * Review & Sign, MLS-only) -> "Send to Athena" (Athena's own review &
+ * confirm; orders never sent) -- plus Doctor|Staff modes, the Staff-prep
+ * month picker, and the re-homed premium buttons.
+ * The top-bar ? Help (#nav_help) opens the SAME guide via a capture-phase
+ * click intercept (stopImmediatePropagation; window.openMlsHelp is NOT
+ * re-assigned -- __mlsHowToB33 re-asserts that global every 1.5 s and must
+ * not be fought). "Ask MLS a question" calls the preserved real AI help
+ * (__mlsG33_origHelp). Old tour rows are CSS-hidden, not removed --
+ * everything restores on revert.
+ *
+ * SAFETY: UI only. No network. No Athena interaction. No PHI.
+ * ASCII-only source (emoji via \u escapes). ES5 only.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsHowToV2) return;
+  window.__mlsHowToV2 = { v: "howto2-1.1.0" };
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  var timers = [], docListeners = [], hiddenRows = [];
+
+  /* ---------------- CSS ---------------- */
+  function css() {
+    if ($("mlsHowTo2Css")) return;
+    var st = document.createElement("style"); st.id = "mlsHowTo2Css";
+    st.textContent = [
+      /* one guide entry: retire every stale tour/guide row (reversible) */
+      "#mlsTourMenuItem,#mlsTourMenuItemV2,#mlsB39MenuItem,#mlsUC1HowTo{display:none!important}",
+      "#mlsHowTo2Row{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;padding:10px 12px;border-radius:8px;background:transparent;border:0;color:#eaf2ff;font:600 14px system-ui;cursor:pointer}",
+      "#mlsHowTo2Row:hover{background:rgba(255,255,255,.07)}",
+      /* the guide modal */
+      "#mlsHowTo2{position:fixed;inset:0;z-index:2147483400;display:none;align-items:center;justify-content:center;background:rgba(8,16,34,.58);padding:18px}",
+      "#mlsHowTo2.open{display:flex}",
+      "#mlsHowTo2 .h2-card{width:100%;max-width:680px;max-height:88vh;overflow:auto;background:linear-gradient(180deg,#ffffff,#f6f9ff);border:1px solid #d8e4f6;border-radius:18px;box-shadow:0 26px 70px rgba(8,18,40,.45);padding:24px 26px;color:#16233a;font:14px/1.55 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif}",
+      "#mlsHowTo2 h2{margin:0;font-size:20px;color:#0f2540;display:flex;align-items:center;gap:10px}",
+      "#mlsHowTo2 .h2-sub{margin:4px 0 16px;color:#5a6b80;font-size:13px}",
+      "#mlsHowTo2 .h2-x{margin-left:auto;background:#eef3fb;border:0;border-radius:9px;width:32px;height:32px;font-size:17px;color:#3d5168;cursor:pointer;flex:0 0 auto}",
+      "#mlsHowTo2 .h2-step{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid #e3ecf9;border-radius:12px;background:#fff;margin-bottom:8px}",
+      "#mlsHowTo2 .h2-n{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font:800 13px/26px system-ui;text-align:center}",
+      "#mlsHowTo2 .h2-step b{display:block;font-size:14px;color:#0f2540}",
+      "#mlsHowTo2 .h2-step span{font-size:12.5px;color:#4a5b72}",
+      "#mlsHowTo2 .h2-step .h2-btn{display:inline-block;font-size:11px;font-weight:800;background:#eef3fb;border:1px solid #d3e0f4;border-radius:7px;padding:1px 7px;color:#1c3a6e;white-space:nowrap}",
+      "#mlsHowTo2 .h2-box{margin:14px 0 4px;font-size:12.5px;color:#4a5b72;background:#f2f6fd;border:1px solid #e3ecf9;border-radius:12px;padding:10px 14px}",
+      "#mlsHowTo2 .h2-box b{color:#0f2540}",
+      "#mlsHowTo2 .h2-safe{margin-top:10px;font-size:12px;color:#127a43;background:#eefaf3;border:1px solid #bfe6cf;border-radius:10px;padding:8px 12px;font-weight:600}",
+      "#mlsHowTo2 .h2-foot{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}",
+      "#mlsHowTo2 .h2-foot button{border:0;border-radius:10px;padding:10px 15px;font:700 13px system-ui;cursor:pointer}",
+      ".h2-b-ask{background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff}",
+      ".h2-b-close{background:transparent;color:#5a6b80;margin-left:auto}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  /* -------- guide content (matches the b61 v3.2+ screen exactly) ---------- */
+  function guideHtml() {
+    return '' +
+      '<div class="h2-card" role="dialog" aria-modal="true" aria-label="How to use MLS Scribe">' +
+      '<h2>\uD83D\uDCD6 How to use MLS Scribe' +
+      '<button type="button" class="h2-x" aria-label="Close">\u00D7</button></h2>' +
+      '<div class="h2-sub">The Visit tab does the whole visit, one big button at a time. You are always the final word.</div>' +
+
+      '<div class="h2-step"><span class="h2-n">1</span><div><b>Your day loads itself</b>' +
+      '<span>Open the <b>Visit</b> tab. MLS pulls today\u2019s patients automatically (\u201CGetting today\u2019s patients ready\u2026\u201D) and the header shows who\u2019s <b>now</b> and who\u2019s next \u2014 with a gentle nudge if you\u2019re running behind. The doctor picker scopes the list to you.</span></div></div>' +
+
+      '<div class="h2-step"><span class="h2-n">2</span><div><b>Tap your patient \u2014 recording is one tap</b>' +
+      '<span>The big button already reads <span class="h2-btn">\uD83C\uDF99 Start Recording \u2014 [patient name]</span> for whoever is up now. Tap it and have your normal visit \u2014 just talk. Or tap any patient row (or the quick-select strip) to jump to their room. Identity guards lock everything to that patient; <span class="h2-btn">Wrong patient? Switch</span> is right there, and switching mid-recording is blocked until you stop.</span></div></div>' +
+
+      '<div class="h2-step"><span class="h2-n">3</span><div><b>Stop &amp; Generate</b>' +
+      '<span>When the visit is over, tap <span class="h2-btn">\u23F9 Stop &amp; Generate Note</span>. MLS confirms, then writes the full note and shows it right there.</span></div></div>' +
+
+      '<div class="h2-step"><span class="h2-n">4</span><div><b>Review</b>' +
+      '<span>Read the note. <span class="h2-btn">\u270F\uFE0F Edit note</span> to change anything, <span class="h2-btn">\uD83D\uDD04 Regenerate</span> for a fresh draft. <span class="h2-btn">\u2714 Review &amp; Sign</span> signs and saves the note in MLS \u2014 it never signs anything in Athena (or <span class="h2-btn">Send without signing</span>). One tap away: <span class="h2-btn">\uD83D\uDCE4 Send to patient</span>, <span class="h2-btn">\uD83E\uDD16 Ask Copilot</span>, <span class="h2-btn">\uD83D\uDCA1 Recommendations</span>.</span></div></div>' +
+
+      '<div class="h2-step"><span class="h2-n">5</span><div><b>Send to Athena</b>' +
+      '<span>Tap <span class="h2-btn">\uD83D\uDE80 Send to Athena</span>. Athena\u2019s own review &amp; confirm screen opens \u2014 nothing is written to the chart until you confirm it there, and orders are never sent. Then <span class="h2-btn">\u27A1 Next patient</span>.</span></div></div>' +
+
+      '<div class="h2-box"><b>\uD83D\uDDC2 Doctor | Staff \u2014 the pill at the top of the Visit tab.</b><br>' +
+      '<b>Doctor room</b> (default) is the five steps above.<br>' +
+      '<b>Staff prep</b> is for the front desk: pull <b>today\u2019s</b> schedule from Athena, or use the <b>month picker</b> to pull any whole month (scoped to one doctor or all) with live progress and retry. It also holds <span class="h2-btn">\u2B50 Reviews &amp; reputation</span> and <span class="h2-btn">\uD83D\uDC89 Prep notes</span> \u2014 draft op notes ahead of time for today, tomorrow, or a whole month: MLS matches each scheduled procedure to your uploaded templates, drafts every note, and saves them to History as drafts. <u>Prepped drafts are never sent to Athena automatically.</u></div>' +
+
+      '<div class="h2-box"><b>Where the rest lives:</b><br>' +
+      '\uD83D\uDCC4 <b>Templates</b> (top bar) \u2014 upload your note/op-note forms; the health card shows each template\u2019s status, re-processes old ones with the current AI, and the matching tester shows which template each visit type will use.<br>' +
+      '\uD83D\uDD27 <b>Advanced tools</b> (bottom of the Visit tab) \u2014 the classic capture/note cards when you need them.<br>' +
+      '\uD83D\uDCDA <b>History</b> \u2014 every note and draft, per patient.<br>' +
+      '\u2753 <b>Help</b> (top bar) \u2014 this guide, any time.</div>' +
+
+      '<div class="h2-safe">\uD83D\uDD12 MLS drafts; you decide. Nothing is filed, signed, or ordered in Athena without your explicit confirm on Athena\u2019s own screen.</div>' +
+
+      '<div class="h2-foot">' +
+      '<button type="button" class="h2-b-ask">\uD83D\uDCAC Ask MLS a question</button>' +
+      '<button type="button" class="h2-b-close">Close</button>' +
+      '</div></div>';
+  }
+
+  function ensureGuide() {
+    var g = $("mlsHowTo2");
+    if (g) return g;
+    g = document.createElement("div"); g.id = "mlsHowTo2";
+    g.innerHTML = guideHtml();
+    g.addEventListener("click", function (ev) { if (ev.target === g) closeGuide(); });
+    g.querySelector(".h2-x").onclick = closeGuide;
+    g.querySelector(".h2-b-close").onclick = closeGuide;
+    g.querySelector(".h2-b-ask").onclick = function () {
+      closeGuide();
+      try {
+        if (typeof window.__mlsG33_origHelp === "function") { window.__mlsG33_origHelp(); return; }
+        if (typeof window.openMlsHelp === "function") window.openMlsHelp();
+      } catch (e) {}
+    };
+    (document.body || document.documentElement).appendChild(g);
+    return g;
+  }
+  function openGuide() { try { ensureGuide().classList.add("open"); } catch (e) {} }
+  function closeGuide() { try { var g = $("mlsHowTo2"); if (g) g.classList.remove("open"); } catch (e) {} }
+
+  function onKeydown(e) {
+    if (e.key === "Escape") { var g = $("mlsHowTo2"); if (g && g.classList.contains("open")) closeGuide(); }
+  }
+  document.addEventListener("keydown", onKeydown);
+  docListeners.push(["keydown", onKeydown, false]);
+
+  /* ? Help -> this ONE guide. Capture phase + stopImmediatePropagation so the
+     inline onclick (b33 guide) AND any other capture handler never fire.
+     window.openMlsHelp itself is untouched (b33 re-asserts it on a timer). */
+  function onHelpCapture(ev) {
+    try {
+      var t = ev.target;
+      if (t && t.closest && t.closest("#nav_help")) {
+        ev.stopImmediatePropagation(); ev.stopPropagation(); ev.preventDefault();
+        openGuide();
+      }
+    } catch (e) {}
+  }
+  document.addEventListener("click", onHelpCapture, true);
+  docListeners.push(["click", onHelpCapture, true]);
+
+  /* ---------------- ONE menu row ---------------- */
+  function menuRow() {
+    try {
+      var panel = $("mlsTbMenuPanel"); if (!panel) return;
+      var kids = panel.querySelectorAll("button,.mlsTbItem");
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (k.id === "mlsHowTo2Row" || k.getAttribute("data-h2-hid")) continue;
+        if (/how.?to|how to use/i.test(S(k.textContent))) {
+          k.setAttribute("data-h2-hid", "1");
+          k.style.setProperty("display", "none", "important");
+          hiddenRows.push(k);
+        }
+      }
+      if ($("mlsHowTo2Row")) return;
+      var btn = document.createElement("button");
+      btn.id = "mlsHowTo2Row"; btn.className = "mlsTbItem"; btn.type = "button";
+      btn.innerHTML = "\uD83D\uDCD6 How to use MLS";
+      btn.onclick = function (ev) {
+        try { ev.stopPropagation(); } catch (e) {}
+        try { panel.style.display = "none"; } catch (e) {}
+        openGuide();
+      };
+      panel.insertBefore(btn, panel.firstChild);
+    } catch (e) {}
+  }
+
+  /* ---------------- ticks ---------------- */
+  function tick() { try { css(); menuRow(); } catch (e) {} }
+  tick();
+  var iv = setInterval(tick, 1400);
+  timers.push(iv);
+
+  window.__mlsHowToV2.open = openGuide;
+
+  /* ---------------- full revert ---------------- */
+  window.__mlsHowToV2_revert = function () {
+    try { timers.forEach(function (t) { clearInterval(t); }); } catch (e) {}
+    try { docListeners.forEach(function (l) { document.removeEventListener(l[0], l[1], l[2]); }); } catch (e) {}
+    try { ["mlsHowTo2Css", "mlsHowTo2", "mlsHowTo2Row"].forEach(function (id) { var n = $(id); if (n) n.remove(); }); } catch (e) {}
+    try { hiddenRows.forEach(function (k) { k.style.removeProperty("display"); k.removeAttribute("data-h2-hid"); }); } catch (e) {}
+    window.__mlsHowToV2 = 0;
+    return "reverted";
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe -- UI cleanup pack v1  (__mlsUiCleanupV1)   authored 2026-07-07
+ * ----------------------------------------------------------------------------
+ * Additive / guarded / reversible IIFE. Prepend to the TOP of mls-connect.js.
+ * Revert everything: window.__mlsUiCleanupV1_revert()
+ *
+ * Authored against live b54; RE-VERIFIED against live 2026-07-07-b61
+ * (all target selectors confirmed present: #mlsBootVeil creator, b34 CSS
+ * hides, #mlsAsstPanel/.as-status, .sx-title, #authScreen .auth-logo .mark).
+ *
+ * Items shipped (Michael's 2026-07-07 list):
+ *  (1) LOGIN LOGO: the boot "Signing into your workspace" veil (#mlsBootVeil,
+ *      created by __mlsT6Stab) and the #authScreen .auth-logo marks still show
+ *      the OLD dark-teal mark (svMarkA / b34's svMarkB34). They are replaced
+ *      with the CURRENT in-app logo -- the header mark from feat_mls_redesign.js
+ *      (rounded tile, linear-gradient(140deg,#19b8a6,#2f6bed), white waveform
+ *      "M3 12h3l2.5 7L13 4l2.5 12L18 9h3"). Pre-empts __mlsFixPackB34's own
+ *      veil swap by setting veil.__mlsB34Logo=1 first.
+ *  (2) PAY REPORTS: the floating bottom-left #mlsCompBtn (feat_comp_report.js)
+ *      stays retired, and b34's .mls-b34-pay buttons are hidden too (they were
+ *      auto-placed as the FIRST grid child of the rebuilt #studioView.sx-grid,
+ *      punching a hole in the layout). New clearly-labelled
+ *      "Pay Reports -- PREMIUM FEATURE" buttons are placed in the AI Studio
+ *      title strip (.sx-title, grid-aware) and at the top of #calendarView.
+ *      Same real opener (window.__mlsComp.open) -- nothing re-implemented.
+ *  (3) ONE STATUS INDICATOR: the bottom-right box is the MLS Assist browser
+ *      extension's in-page UI (#mls-assist-badge / #mls-assist-panel -- its
+ *      content script matches <all_urls>, so it also injects into the app
+ *      page). It duplicates the app's own MLS Assistant (bottom-left,
+ *      #mlsAsstPanel), whose .as-status strip + FAB dot are already driven by
+ *      the honest __mlsConnTruth probe. On the APP page the extension surfaces
+ *      are hidden (CSS, reversible; untouched on athenaOne pages -- this file
+ *      never runs there). Stray duplicate dots are hidden too
+ *      (#mlsAthenaStatusDot, and b35's .mls-b35-dot whose data source
+ *      #mlsScDock never exists -> it was stuck grey forever).
+ *      Debug helper: window.__mlsUiCleanupV1.debugShowExt() un-hides the
+ *      extension UI without reverting anything else.
+ *  (4) EMR BUTTON INSIDE THE ASSISTANT: b34 hid #emrBtn but injected its
+ *      replacement into "#mls-assist-panel" -- that id is the EXTENSION's
+ *      panel, not the app assistant (#mlsAsstPanel). A real
+ *      "EMR sections -- review & confirm" button is added INSIDE #mlsAsstPanel
+ *      (right under the status strip); it clicks the real (hidden) #emrBtn so
+ *      the existing modal + handlers are reused untouched.
+ *  (5) HOW-TO GUIDE: REMOVED from this pack in v1.1.0. The ONE guide (menu
+ *      dedupe + #nav_help intercept + b61-layout content) now ships as
+ *      dispatch-work\bugfix-templates-prep\mls_howto_guide_v2.js
+ *      (__mlsHowToV2), which supersedes the stale b54-flow guide that used
+ *      to live here. Deploy that module alongside this one.
+ *  (6) AI STUDIO: the design-exact rebuild (feat_mls_studio_exact.js
+ *      sx-2.2.0-prod) is ALREADY prod-enabled (data:-marker at mls-connect.js
+ *      line ~10570 + __MLS_SX_PROD=1 from b34). This module completes the page:
+ *      Pay Reports (Premium) lands in the title strip per item (2), and the
+ *      stray auto-placed b34 button that broke the grid is removed. No other
+ *      blind changes; verification steps are in FINAL_REPORT.md.
+ *
+ * SAFETY: UI only. athenaOne READ-ONLY -- no writes, no orders, no writeback
+ * changes, no logout, nothing auto-opened. No PHI read, stored, or logged.
+ * No network calls. All hides are CSS/display-level and reversible. ASCII-only
+ * source (emoji via \u escapes).
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsUiCleanupV1) return;
+  window.__mlsUiCleanupV1 = { v: "uc1-1.1.0" };
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  var timers = [], observers = [];
+  var savedAuthLogos = [];   /* [{el, html}] for revert */
+
+  /* =====================================================================
+   * (1) CURRENT LOGO -- the header mark from feat_mls_redesign.js
+   * ===================================================================== */
+  var _gradSeq = 0;
+  function markSvg(size) {
+    /* rounded gradient tile + white waveform, one self-contained svg */
+    var gid = "uc1MarkGrad" + (++_gradSeq);
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 38 38" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0.85" y2="1">' +
+      '<stop offset="0" stop-color="#19b8a6"/><stop offset="1" stop-color="#2f6bed"/>' +
+      '</linearGradient></defs>' +
+      '<rect x="0" y="0" width="38" height="38" rx="10" fill="url(#' + gid + ')"/>' +
+      '<svg x="8" y="8" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M3 12h3l2.5 7L13 4l2.5 12L18 9h3"/></svg></svg>';
+  }
+
+  function fixVeilLogo() {
+    try {
+      var v = $("mlsBootVeil"); if (!v || v.__uc1Logo) return;
+      v.__mlsB34Logo = 1;                 /* pre-empt b34's own (older) swap */
+      var target = null;
+      /* the square-"M" span from __mlsT6Stab's veil */
+      var spans = v.querySelectorAll("span");
+      for (var i = 0; i < spans.length; i++) {
+        if (S(spans[i].textContent).trim() === "M") { target = spans[i]; break; }
+      }
+      /* or b34's already-swapped old-palette mark, if it somehow won the race */
+      if (!target) {
+        var old = v.querySelector("svg defs [id^='svMark']");
+        if (old) { var sv = old.closest ? old.closest("svg") : null; if (sv && sv.parentElement) target = sv.parentElement; }
+      }
+      if (!target) return;
+      target.style.background = "none";
+      target.style.borderRadius = "0";
+      target.style.boxShadow = "none";
+      target.innerHTML = markSvg(34);
+      v.__uc1Logo = 1;
+    } catch (e) {}
+  }
+
+  function fixAuthLogos() {
+    try {
+      var marks = document.querySelectorAll("#authScreen .auth-logo .mark");
+      for (var i = 0; i < marks.length; i++) {
+        var m = marks[i];
+        if (m.getAttribute("data-uc1-logo")) continue;
+        savedAuthLogos.push({ el: m, html: m.innerHTML });
+        m.innerHTML = markSvg(44);
+        m.setAttribute("data-uc1-logo", "1");
+      }
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * shared CSS
+   * ===================================================================== */
+  function css() {
+    if ($("mlsUiCleanupV1Css")) return;
+    var st = document.createElement("style"); st.id = "mlsUiCleanupV1Css";
+    st.textContent = [
+      /* (2) Pay Reports: keep the floater retired; replace b34's buttons
+         (they auto-place as the first sx-grid child and break the layout) */
+      "#mlsCompBtn{display:none!important}",
+      ".mls-b34-pay{display:none!important}",
+      ".uc1-pay{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;font:600 13.5px/1 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer;white-space:nowrap}",
+      ".uc1-pay:hover{filter:brightness(1.08)}",
+      ".uc1-pay .uc1-prem{font-size:9.5px;font-weight:800;letter-spacing:.05em;background:linear-gradient(135deg,#7c3aed,#a855f7);border-radius:999px;padding:3px 9px}",
+      ".uc1-pay-wrap{display:flex;justify-content:flex-end;margin:0 0 12px}",
+      /* (3) ONE status indicator on the APP page:
+         hide the extension's duplicate in-page UI (badge bottom-right 18/18 +
+         its panel) and stray duplicate dots. The app's own MLS Assistant
+         (#mlsAsstPanel .as-status + #mlsAsstFab .dot, driven by __mlsConnTruth)
+         is the single source of truth. Reversible; athenaOne pages untouched. */
+      "html:not(.uc1-show-ext) #mls-assist-badge{display:none!important}",
+      "html:not(.uc1-show-ext) #mls-assist-panel{display:none!important}",
+      "#mlsAthenaStatusDot{display:none!important}",
+      "#mlsAsstFab .mls-b35-dot{display:none!important}",  /* fed by the non-existent #mlsScDock -> stuck grey */
+      /* (4) EMR sections: standalone floater stays retired; b34's misplaced
+         injection (.mls-b34-emr-wrap went into the EXTENSION panel) hidden */
+      "#emrBtn{display:none!important}",
+      ".mls-b34-emr-wrap{display:none!important}",
+      ".uc1-emr-wrap{flex-shrink:0;padding:9px 14px 2px}",
+      ".uc1-emr{width:100%;background:#3452d6;border:none;color:#fff;border-radius:11px;padding:10px 14px;font:800 13px/1.3 'Plus Jakarta Sans',system-ui,sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.18)}",
+      ".uc1-emr:hover{filter:brightness(1.1)}",
+      ".uc1-emr .uc1-emr-sub{display:block;font:500 10.5px/1.3 system-ui;opacity:.85;margin-top:2px}"
+      /* (5) how-to guide CSS removed -- __mlsHowToV2 owns the ONE guide now */
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  /* =====================================================================
+   * (2) Pay Reports (Premium) -> AI Studio title strip + Calendar top
+   * ===================================================================== */
+  function openPayReports() {
+    try {
+      if (window.__mlsComp && typeof window.__mlsComp.open === "function") { window.__mlsComp.open(); return; }
+      var b = $("mlsCompBtn"); if (b) { b.click(); return; }
+      alert("Pay Reports is still loading \u2014 give it a moment and try again.");
+    } catch (e) {}
+  }
+  function payBtn() {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "uc1-pay";
+    b.title = "Monthly pay / compensation report \u2014 Premium feature";
+    b.innerHTML = "\uD83D\uDCB5 Pay Reports <span class=\"uc1-prem\">PREMIUM FEATURE</span>";
+    b.onclick = openPayReports;
+    return b;
+  }
+  function injectPay() {
+    try {
+      /* AI Studio: into the rebuilt title strip when present (grid-aware);
+         otherwise a right-aligned wrap at the top of the view */
+      var sv = $("studioView");
+      if (sv && !sv.querySelector(".uc1-pay")) {
+        var strip = sv.querySelector(":scope > .sx-title");
+        if (strip) strip.appendChild(payBtn());
+        else {
+          var w = document.createElement("div"); w.className = "uc1-pay-wrap";
+          w.appendChild(payBtn()); sv.insertBefore(w, sv.firstChild);
+        }
+      }
+      /* Calendar: right-aligned wrap at the top of the view */
+      var cv = $("calendarView");
+      if (cv && !cv.querySelector(".uc1-pay")) {
+        var w2 = document.createElement("div"); w2.className = "uc1-pay-wrap";
+        w2.appendChild(payBtn()); cv.insertBefore(w2, cv.firstChild);
+      }
+    } catch (e) {}
+  }
+
+  /* =====================================================================
+   * (4) EMR sections button INSIDE the app's MLS Assistant panel
+   * ===================================================================== */
+  function openEmrSections() {
+    try {
+      var e = $("emrBtn"); if (e) { e.click(); return true; }
+      var btns = document.querySelectorAll("button");
+      for (var i = 0; i < btns.length; i++) {
+        if (/^EMR sections$/i.test(S(btns[i].textContent).trim())) { btns[i].click(); return true; }
+      }
+    } catch (e2) {}
+    return false;
+  }
+  function injectEmr() {
+    try {
+      var panel = $("mlsAsstPanel");           /* the APP assistant -- NOT the extension's #mls-assist-panel */
+      if (!panel || panel.querySelector(".uc1-emr")) return;
+      var status = panel.querySelector(".as-status");
+      var wrap = document.createElement("div"); wrap.className = "uc1-emr-wrap";
+      var b = document.createElement("button"); b.type = "button"; b.className = "uc1-emr";
+      b.innerHTML = "\uD83D\uDDC2\uFE0F EMR sections \u2014 review &amp; confirm" +
+        "<span class=\"uc1-emr-sub\">Sort the note into chart sections. Nothing goes to athenaOne without your per-section confirm.</span>";
+      b.onclick = function () {
+        openEmrSections();
+        try { panel.classList.remove("open"); } catch (e) {}
+      };
+      wrap.appendChild(b);
+      if (status && status.parentElement === panel) panel.insertBefore(wrap, status.nextSibling);
+      else panel.insertBefore(wrap, panel.children[1] || null);
+    } catch (e) {}
+  }
+
+  /* (5) how-to guide: removed in v1.1.0 -- shipped as __mlsHowToV2
+     (dispatch-work\bugfix-templates-prep\mls_howto_guide_v2.js) instead. */
+
+  /* =====================================================================
+   * (3) debug helper: un-hide the extension UI without a full revert
+   * ===================================================================== */
+  window.__mlsUiCleanupV1.debugShowExt = function () {
+    try { document.documentElement.classList.add("uc1-show-ext"); return "extension UI visible again (uc1-show-ext)"; } catch (e) { return "failed"; }
+  };
+  window.__mlsUiCleanupV1.debugHideExt = function () {
+    try { document.documentElement.classList.remove("uc1-show-ext"); return "extension UI hidden (default)"; } catch (e) { return "failed"; }
+  };
+  /* =====================================================================
+   * ticks
+   * ===================================================================== */
+  function tick() {
+    try { css(); fixVeilLogo(); fixAuthLogos(); injectPay(); injectEmr(); } catch (e) {}
+  }
+  tick();
+  /* fast pass for the boot veil (it appears within the first seconds only) */
+  var fast = setInterval(fixVeilLogo, 80);
+  setTimeout(function () { try { clearInterval(fast); } catch (e) {} }, 15000);
+  timers.push(fast);
+  var iv = setInterval(tick, 1100);
+  timers.push(iv);
+  var mo = null;
+  try {
+    mo = new MutationObserver(function () { fixVeilLogo(); });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+    observers.push(mo);
+  } catch (e) {}
+
+  /* =====================================================================
+   * full revert
+   * ===================================================================== */
+  window.__mlsUiCleanupV1_revert = function () {
+    try { timers.forEach(function (t) { clearInterval(t); }); } catch (e) {}
+    try { observers.forEach(function (o) { o.disconnect(); }); } catch (e) {}
+    try { var s = $("mlsUiCleanupV1Css"); if (s) s.remove(); } catch (e) {}
+    try {
+      [].forEach.call(document.querySelectorAll(".uc1-pay-wrap,.uc1-emr-wrap"), function (n) { n.remove(); });
+      [].forEach.call(document.querySelectorAll(".sx-title .uc1-pay"), function (n) { n.remove(); });
+    } catch (e) {}
+    try {
+      savedAuthLogos.forEach(function (r) { r.el.innerHTML = r.html; r.el.removeAttribute("data-uc1-logo"); });
+    } catch (e) {}
+    try { document.documentElement.classList.remove("uc1-show-ext"); } catch (e) {}
+    window.__mlsUiCleanupV1 = 0;
+    return "reverted";
+  };
+})();
+
+
 /* =============================================================================
  * __mlsOpenSwitchFix v1.1.0
  * -----------------------------------------------------------------------------
@@ -15995,7 +17736,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b74';
+  var MLS_APP_BUILD='2026-07-08-b75';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
