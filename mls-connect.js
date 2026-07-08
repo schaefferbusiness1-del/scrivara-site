@@ -1566,39 +1566,51 @@
   };
 })();
 /* =========================================================================
- * MLS Scribe — DAY / MONTH CHART-HISTORY PULL  (__mlsDayHistoryPull) v1.1.0  2026-07-08 (b89)
+ * MLS Scribe - DAY / MONTH CHART-HISTORY PULL  (__mlsDayHistoryPull) v1.2.0  2026-07-08 (b95)
  *
- * v1.1.0 robustness pass (anchored on the PROVEN pieces; same flow, no re-architecture):
- *  - Prepended ABOVE the v1.0.0 module -> loads first, sets window.__mlsDayHistoryPull,
- *    so v1.0.0's guard bails and THIS version wins.
- *  - Per patient: mlsAppGoHome (RETRY, foregrounds athena -> clinical schedule) ->
- *    mlsAppSearchOpenPatient (the PROVEN v1.53 schedule-click open, RETRY) ->
- *    mlsAppReadChart (read the open chart) -> sanitize + ingest.
- *  - A transient goHome/open timeout is a PER-PATIENT skip, NOT a global abort
- *    (the v1.0.0 bug: one goHome timeout stopped the whole day). One global
- *    pre-check confirms the v1.55 bridge before the loop.
- *  - Longer settle waits (the app tab is throttled while athena is foreground, so
- *    waits fire late = safe) let the schedule / chart finish loading before we click/read.
- *  - Sanitizes the read text (strips leaked athena JS) before ingest; the b87
- *    continuous scrub is the belt-and-suspenders cleaner for the app's own auto-save.
- *  - Tally checks the summary AFTER a delay (the app auto-saves async) so a real
- *    save isn't mislabeled "thin".
+ * v1.2.0 (replaces the v1.1.0 block in place; verified live against athenaOne v26.3):
+ *  - IDENTITY FIX: the extension's chartName extractor can grab an ADDRESS fragment
+ *    (e.g. "RD, KENNETT" from ".. MCFARLAN RD, KENNETT SQUARE PA" in the chart text)
+ *    instead of the patient, which made EVERY save fail identity. When chartName does
+ *    not match, identity is now verified from the chart TEXT (the patient's full name
+ *    tokens must appear - the banner is part of the read) PLUS the schedule row's DOB
+ *    (must exactly match the banner DOB the extension extracts correctly). A different
+ *    real person's name / a DOB mismatch still refuses. Fail-closed as before.
+ *  - VISIT-FILING FIX: files each pull as a per-visit record via __mlsVisitModel.addVisit
+ *    (persists). The old ingestChart batch path silently LOST the visit: addVisit was
+ *    called with persist:false on a re-fetched localStorage clone, then ingestChart
+ *    upserted the outer object that never received the visit.
+ *  - Saves under the SCHEDULED patient name, never the extractor's chartName.
+ *  - Ensures the summary lands even if the app's async chart handler doesn't fire
+ *    ("Pulled from Athena <date>" block, the app's own convention).
+ *  - THROTTLING FIX: waits/timeouts run on a Web-Worker timer. Chrome's intensive
+ *    throttling clamps background main-thread timers to ~1/min (athena is foregrounded
+ *    during reads, so the app tab is background), which stalled the v1.1.0 loop for
+ *    10+ minutes per patient. Worker timers are exempt.
  * READ-ONLY in athenaOne. Revert: window.__mlsDayHistoryPull_revert().
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.version === '1.1.0') return; } catch (e) { return; }
+  try { if (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.version === '1.2.0') return; } catch (e) { return; }
 
   function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function dg(s) { return String(s == null ? '' : s).replace(/\D/g, ''); }
   function say(m) { try { if (typeof window.toast === 'function') window.toast(m, ''); } catch (e) {} try { console.log('[MLS day-pull]', m); } catch (e) {} }
-  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  var _wkUrl = null;
+  try { _wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
+  function wait(ms) {
+    return new Promise(function (r) {
+      if (_wkUrl) { try { var w = new Worker(_wkUrl); w.onmessage = function () { try { w.terminate(); } catch (e) {} r(); }; w.postMessage(ms); return; } catch (e) {} }
+      setTimeout(r, ms);
+    });
+  }
   function bridge(type, payload, respType, timeout) {
     return new Promise(function (resolve) {
       var done = false;
       function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
       try { window.addEventListener('message', h, false); } catch (e) {}
       try { window.postMessage(Object.assign({ type: type, source: 'mls-app', from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
-      setTimeout(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); }, timeout || 15000);
+      wait(timeout || 15000).then(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); });
     });
   }
   function strip(t) { try { return window.__mlsSummarySanitize ? window.__mlsSummarySanitize.strip(t) : t; } catch (e) { return t; } }
@@ -1610,13 +1622,18 @@
   function isRealChart(s) { return s.length > 400 && /assessment|diagnos|medication|prescription|chief complaint|problem|radicul|cervical|lumbar|reason for visit|encounter|history|allerg|surg/i.test(s); }
   function hasPulled(p) { var s = summaryOf(p); return s.length > 400 && /pulled from athena/i.test(s) && isRealChart(s); }
 
+  function calRows() { try { return (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []); } catch (e) { return []; } }
+  function apptRowFor(name) { var k = nrm(name); var arr = calRows(); for (var i = 0; i < arr.length; i++) { var a = arr[i]; if (a && a.name && nrm(a.name) === k) return a; } return null; }
+  function apptDobFor(name) { var a = apptRowFor(name); return (a && a.dob) || ''; }
+  function apptDayFor(name) { var a = apptRowFor(name); return (a && a.day_local) ? String(a.day_local).slice(0, 10) : ''; }
+  function todayKey() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+
   var PLACEHOLDER = /^(frozen|open|available|ht|wt|bp|held|blocked|lunch|break|no exam|tbd|walk\s*in|placeholder)$/i;
   function isPlaceholder(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || /,?\s*(md|do|pa-?c|np|staff|rn|ma|tech)\b/i.test(name || ''); }
   function namesFor(prefix) {
     var out = [], seen = {};
     try {
-      var arr = (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []);
-      (arr || []).forEach(function (a) {
+      (calRows() || []).forEach(function (a) {
         if (!a || !a.name || !a.day_local) return;
         if (String(a.day_local).indexOf(prefix) !== 0) return;
         if (isPlaceholder(a.name)) return;
@@ -1630,7 +1647,7 @@
   var BUSY = false;
   var STATE = { running: false, total: 0, done: 0, ok: 0, failed: 0, current: '', rows: [] };
 
-  // return athenaOne to the clinical schedule (retry — foregrounds the tab)
+  // return athenaOne to the clinical schedule (retry - foregrounds the tab)
   function ground() {
     return (async function () {
       for (var a = 0; a < 3; a++) {
@@ -1642,49 +1659,71 @@
     })();
   }
 
-  // pull ONE patient: ground -> search-open (proven) -> read -> sanitize+ingest. Never global-aborts.
+  // pull ONE patient: ground -> search-open (proven) -> read -> verify identity -> file visit + summary.
   function pullOne(name) {
     return (async function () {
       var row = { name: name, opened: false, chartName: '', ok: false, reason: '' };
       if (!(await ground())) { row.reason = 'gohome-failed'; return row; }
-      // open via the proven schedule-click search-open, retry (re-ground between tries)
       var opened = false;
       for (var a = 0; a < 2 && !opened; a++) {
         var op = await bridge('mlsAppSearchOpenPatient', { name: name }, 'mlsAppSearchOpenResult', 22000);
         if (op && op.opened) { opened = true; break; }
         if (a === 0) { await ground(); }
       }
+      row.opened = opened;
       if (!opened) { row.reason = 'open-failed'; return row; }
       await wait(2600); // chart render
-      // read the open chart (retry once)
       var r = null;
       for (var b = 0; b < 2; b++) {
-        /* b90: read-only (empty patient) — search-open already opened the chart, so we
-           must NOT let readChart run its heavy all-<div> openFn scan across the open
-           2.3MB clinical frame (that scan froze athenaOne mid-pull). Empty patient =>
-           the handler skips the open entirely and just reads the current chart. */
+        /* read-only (empty patient): search-open already opened the chart; the heavy
+           openFn scan across the 2.3MB clinical frame froze athenaOne mid-pull. */
         r = await bridge('mlsAppReadChart', { patient: '' }, 'mlsAppChartResult', 75000);
         if (r && r.ok && r.text && r.text.length >= 400) break;
         await wait(1500);
       }
       if (!r || !r.ok || !r.text || r.text.length < 400) { row.reason = 'read-failed'; return row; }
       row.chartName = r.chartName || '';
-      // identity gate
+      /* identity gate (v1.2.0): chartName match OR (full-name tokens in the chart text
+         AND exact DOB match against the schedule row). Fail-closed otherwise. */
       var kt = nrm(name), kc = nrm(r.chartName || '');
       var overlap = kt.split(' ').filter(function (x) { return x.length > 1 && kc.indexOf(x) >= 0; }).length;
-      if (kc && overlap < 2 && kc.indexOf(kt) < 0 && kt.indexOf(kc) < 0) { row.reason = 'identity-mismatch:' + (r.chartName || '?'); return row; }
+      var idOk = !!kc && (overlap >= 2 || kc.indexOf(kt) >= 0 || kt.indexOf(kc) >= 0);
+      if (!idOk) {
+        var txt = nrm(r.text || '');
+        var toks = kt.split(' ').filter(function (x) { return x.length > 1; });
+        var hits = 0; for (var ti = 0; ti < toks.length; ti++) { if (txt.indexOf(toks[ti]) >= 0) hits++; }
+        var adob = dg(apptDobFor(name)), cdob = dg(r.chartDob || '');
+        var dobOk = !!(adob && cdob && adob === cdob);
+        idOk = (hits >= Math.min(2, toks.length)) && (adob ? dobOk : (toks.length >= 2 && hits === toks.length));
+      }
+      if (!idOk) { row.reason = 'identity-mismatch:' + (r.chartName || '?'); return row; }
       var p = findPatient(name);
       if (!p) { row.reason = 'no-record'; return row; }
       var cleanText = strip(r.text);
       try {
         var M = window.__mlsVisitModel;
-        if (M && typeof M.ingestChart === 'function') { M.ingestChart(p, { text: cleanText, summary: cleanText, name: r.chartName || name, dob: r.chartDob || '' }, 'athena-copy'); }
+        var vday = apptDayFor(name) || todayKey();
+        if (M && typeof M.addVisit === 'function') {
+          M.addVisit(p.id, { type: 'Chart summary', date: vday, raw: cleanText }, { source: 'athena-copy' });
+        } else if (M && typeof M.ingestChart === 'function') {
+          M.ingestChart(p, { text: cleanText, summary: cleanText, name: name, dob: r.chartDob || '' }, 'athena-copy');
+        }
       } catch (e) { row.reason = 'ingest:' + ((e && e.message) || e); return row; }
-      // the app's own chart-result handler auto-saves the summary async; wait, then let the
-      // b87 continuous scrub clean it, then verify.
       await wait(1800);
-      try { if (window.__mlsSummarySanitize && p && typeof p.summary === 'string' && hasCode(p.summary)) { p.summary = strip(p.summary); if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } } catch (e) {}
-      row.ok = isRealChart(summaryOf(p));
+      try {
+        var p2 = findPatient(name) || p;
+        var cur = summaryOf(p2);
+        if (!isRealChart(cur)) {
+          var dn = new Date(); var ds = (dn.getMonth() + 1) + '/' + dn.getDate() + '/' + dn.getFullYear();
+          p2.summary = (cur ? cur + '\n' : '') + 'Pulled from Athena ' + ds + '\n' + cleanText;
+          if (typeof window.upsertPatient === 'function') window.upsertPatient(p2);
+        }
+        if (r.chartDob && !p2.dob) { p2.dob = r.chartDob; if (typeof window.upsertPatient === 'function') window.upsertPatient(p2); }
+      } catch (e) {}
+      try { var p3 = findPatient(name); if (window.__mlsSummarySanitize && p3 && typeof p3.summary === 'string' && hasCode(p3.summary)) { p3.summary = strip(p3.summary); if (typeof window.upsertPatient === 'function') window.upsertPatient(p3); } } catch (e) {}
+      var pf = findPatient(name);
+      row.visits = (pf && pf.visits || []).length;
+      row.ok = isRealChart(summaryOf(pf));
       if (!row.ok) row.reason = row.reason || 'thin-after-ingest';
       return row;
     })();
@@ -1693,32 +1732,31 @@
   function run(prefix, label) {
     if (BUSY) { say('A history pull is already running (' + STATE.done + '/' + STATE.total + ').'); return Promise.resolve('already-running'); }
     prefix = String(prefix || '').trim();
-    if (!prefix) { var d = new Date(); prefix = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+    if (!prefix) { prefix = todayKey(); }
     return (async function () {
-      // GLOBAL pre-check: confirm the v1.55 go-home bridge before we start
-      say('📚 Preparing the day history pull…');
+      say('Preparing the day history pull...');
       var pre = await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 18000);
-      if (pre && pre.__timeout) { say('⚠️ MLS Assist needs v1.55+ (Settings → Get the extension) to move athenaOne between patients. Nothing was changed.'); return 'needs-ext-v155'; }
+      if (pre && pre.__timeout) { say('MLS Assist needs v1.55+ (Settings -> Get the extension) to move athenaOne between patients. Nothing was changed.'); return 'needs-ext-v155'; }
       var names = namesFor(prefix);
-      var todo = names.filter(function (n) { var p = findPatient(n); return !(p && hasPulled(p)); });
+      var todo = names.filter(function (n) { var p = findPatient(n); return !(p && hasPulled(p) && (p.visits || []).length); });
       var already = names.length - todo.length;
       STATE.running = true; STATE.total = todo.length; STATE.done = 0; STATE.ok = 0; STATE.failed = 0; STATE.current = ''; STATE.rows = [];
       BUSY = true;
-      say('📚 Pulling chart history for ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + ' (' + (label || prefix) + ')' + (already ? ' — ' + already + ' already have it.' : '.'));
-      if (!todo.length) { BUSY = false; STATE.running = false; say('✅ Every scheduled patient for ' + (label || prefix) + ' already has chart history.'); return 'nothing-to-do'; }
+      say('Pulling chart history for ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + ' (' + (label || prefix) + ')' + (already ? ' - ' + already + ' already have it.' : '.'));
+      if (!todo.length) { BUSY = false; STATE.running = false; say('Every scheduled patient for ' + (label || prefix) + ' already has chart history.'); return 'nothing-to-do'; }
       for (var i = 0; i < todo.length; i++) {
         var name = todo[i]; STATE.current = name;
-        say('📖 (' + (i + 1) + '/' + todo.length + ') ' + name + '…');
+        say('(' + (i + 1) + '/' + todo.length + ') ' + name + '...');
         var row;
         try { row = await pullOne(name); } catch (e) { row = { name: name, ok: false, reason: 'error:' + ((e && e.message) || e) }; }
         STATE.rows.push(row); STATE.done++;
-        if (row && row.ok) STATE.ok++; else STATE.failed++;   // NEVER global-abort — always continue
+        if (row && row.ok) STATE.ok++; else STATE.failed++;   // NEVER global-abort - always continue
         try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
         try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
         await wait(600);
       }
       BUSY = false; STATE.running = false; STATE.current = '';
-      say('📚 Day history pull finished: ' + STATE.ok + ' of ' + todo.length + ' patients pulled' + (STATE.failed ? ' (' + STATE.failed + ' could not be read — re-run to retry those)' : '') + '.');
+      say('Day history pull finished: ' + STATE.ok + ' of ' + todo.length + ' patients pulled' + (STATE.failed ? ' (' + STATE.failed + ' could not be read - re-run to retry those)' : '') + '.');
       return { total: todo.length, ok: STATE.ok, failed: STATE.failed, rows: STATE.rows };
     })();
   }
@@ -1739,14 +1777,13 @@
   var _iv = null; try { _iv = setInterval(mountBtn, 1500); } catch (e) {} mountBtn();
 
   window.__mlsDayHistoryPull = {
-    version: '1.1.0', state: STATE,
+    version: '1.2.0', state: STATE,
     pullDay: function (dateStr) { return run(dateStr || '', dateStr || 'today'); },
     pullMonth: function (monthStr) { return run(String(monthStr || '').slice(0, 7), (String(monthStr || '').slice(0, 7) || 'this month')); },
     _pullOne: pullOne, _namesFor: namesFor, _ground: ground
   };
   window.__mlsDayHistoryPull_revert = function () { try { if (_iv) clearInterval(_iv); } catch (e) {} try { var b = document.getElementById('mlsDayHistBtn'); if (b) b.remove(); } catch (e) {} try { delete window.__mlsDayHistoryPull; } catch (e) {} };
-})();
-/* =========================================================================
+})();/* =========================================================================
  * MLS Scribe — CONTINUOUS SUMMARY SCRUB  (__mlsContinuousScrub) v1.0.0  2026-07-08 (b89)
  *
  * b87's summary sanitizer wraps ingestChart/_savePatientChart + does a ONE-TIME
@@ -23293,7 +23330,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b94';
+  var MLS_APP_BUILD='2026-07-08-b95';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
