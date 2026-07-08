@@ -1,135 +1,75 @@
 /* =========================================================================
- * MLS Scribe — IMPORT CHAIN FIX  (__mlsImportChainFix) v1.0.0  2026-07-07
+ * MLS Scribe — IMPORT CHAIN FIX  (__mlsImportChainFix) v2.1.0  2026-07-07
  *
- * ROOT CAUSE (live b61/b62): window._importPulledSchedule is wrapped by
- * THREE independent modules, two of which re-wrap on ETERNAL intervals and
- * store their original in a single module-level variable:
- *   - b49 pull-truth (`wrapImport`, every 2 s, marker __b49, saves _importOrig)
- *   - provider passthrough (every 5 s, marker __provWrap, saves PR._orig.importSched)
+ * ROOT CAUSE (live since ~Jul 2, verified 2026-07-07): window._importPulledSchedule
+ * is wrapped by THREE independent modules, two of which re-wrap on ETERNAL
+ * setInterval loops and store their original in a single module-level variable:
+ *   - b49 pull-truth (`wrapImport`, every 2 s; stands down only if outer has __b49)
+ *   - provider passthrough (`installWraps`, every 5 s; stands down only if __provWrap)
  *   - pullrec fix v1.4.2 (installs once, marker __prf)
  * When any wrapper WITHOUT a given marker lands on top, that module re-wraps
- * and CLOBBERS its saved original to point at the current outer function.
- * b49's first wrapper keeps calling the shared `_importOrig` variable, which
- * now points back UP the chain → "RangeError: Maximum call stack size
- * exceeded" on every import (stack: provWrap ↔ w, verified live 2026-07-07).
- * Net effect on live: schedule imports silently dead; DOBs never save.
+ * and CLOBBERS its saved original to point at the current outer function —
+ * producing a cycle (stack: provWrap ↔ w). Because the pullrec layer defers
+ * through Promise.resolve, the cycle can also spin as an INFINITE MICROTASK
+ * LOOP (frozen tab) instead of a clean RangeError. Net effect: schedule
+ * imports dead; pulled DOBs never save; occasional full-tab freezes.
  *
- * FIX (additive, reversible):
- *  1. MARKER UNIFICATION — once a layer has been seen installed (own marker
- *     on some chain function), keep that marker present on every future
- *     outermost function, so the eternal re-wrap loops stand down instead of
- *     clobbering. Never pre-marks: each layer still installs exactly once.
- *  2. BASE SNAPSHOT — the first function sighted (this module boots before
- *     the inline declaration) is the pristine base import.
- *  3. CYCLE REPAIR — on each identity change of the outer function, probe
- *     once with an empty batch; if it throws RangeError, rebuild a clean
- *     chain: OPEN-slot drop + v1.51 structured-row DOB enrichment (local
- *     re-implementation) + b49's public sanitizeAppts + the base snapshot.
+ * FIX v2.1 (deterministic, race-free, no calls into app code):
+ *   This module boots FIRST in the bundle, so it wraps window.setInterval
+ *   before the re-wrap loops register theirs. The wrapper runs a tiny GUARD
+ *   synchronously before EVERY interval callback: it records which layers
+ *   have installed (own __b49/__provWrap/__prf on any sighted value) and
+ *   stamps every already-installed layer's marker onto the CURRENT outer
+ *   function. Because the guard executes in the same task, immediately
+ *   before b49's/provPass's own re-wrap check, those checks can never see
+ *   an unmarked outer — each layer installs exactly once, in any order, and
+ *   the clobber cycle can never form.
+ *   (v1's identity-change probe called the import chain directly and could
+ *   itself enter the microtask loop — retired. An accessor trap is
+ *   impossible: the base is a global function DECLARATION, whose binding is
+ *   non-configurable.)
  *
  * No Athena interaction. No writes. Revert: window.__mlsImportChainFix_revert()
  * ========================================================================= */
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '1.0.0', base: null, seen: {}, marked: 0, probes: 0, repairs: 0, lastError: '' };
+  var api = { version: '2.1.0', seen: {}, stamped: 0, guards: 0 };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
-  var lastFn = null;
-  var timers = [];
 
-  /* ---- v1.51 structured schedule rows (passive stash, same contract as F18b) ---- */
-  var SCHED = { appts: null, ts: 0 };
-  function onExtMsg(ev) {
-    var d = ev && ev.data;
-    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppScheduleResult') return;
-    try {
-      if (d.resp && d.resp.ok && Object.prototype.toString.call(d.resp.appts) === '[object Array]') {
-        SCHED.appts = d.resp.appts.slice(0, 400); SCHED.ts = new Date().getTime();
-      }
-    } catch (e) {}
-  }
-  window.addEventListener('message', onExtMsg, false);
-
-  function normName(s) {
-    return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-  function isPlaceholderName(n) {
-    var t = String(n || '').replace(/[^a-z]/gi, '').toLowerCase();
-    return t === 'open' || t === 'openslot' || t === 'block' || t === 'blocked' || t === 'hold' || t === 'lunch';
-  }
-  function enrich(appts) {
-    try {
-      if (!SCHED.appts || !SCHED.appts.length) return;
-      if ((new Date().getTime() - SCHED.ts) > 120000) return;
-      var byName = {};
-      SCHED.appts.forEach(function (r) {
-        if (r && r.name && r.dob) { var k = normName(r.name); if (k && !byName[k]) byName[k] = String(r.dob); }
-      });
-      (appts || []).forEach(function (a) {
-        if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) a.dob = d; }
-      });
-    } catch (e) {}
-  }
-
-  function cleanChain(appts) {
-    /* fallback import used ONLY after a detected cycle: base + the critical hygiene layers */
-    try {
-      if (appts && appts.length) {
-        for (var i = appts.length - 1; i >= 0; i--) {
-          if (appts[i] && isPlaceholderName(appts[i].name)) appts.splice(i, 1);
-        }
-      }
-      enrich(appts);
-      try {
-        var b49 = window.__mlsPullTruthB49;
-        if (b49 && typeof b49.sanitizeAppts === 'function') appts = b49.sanitizeAppts(appts) || appts;
-      } catch (e) {}
-    } catch (e) {}
-    return api.base.apply(this, [appts]);
-  }
-
-  function markSeen(f) {
-    for (var i = 0; i < MARKS.length; i++) {
-      var m = MARKS[i];
-      try { if (Object.prototype.hasOwnProperty.call(f, m) && f[m]) api.seen[m] = 1; } catch (e) {}
-    }
-  }
-  function unify(f) {
-    for (var i = 0; i < MARKS.length; i++) {
-      var m = MARKS[i];
-      if (api.seen[m] && !f[m]) { try { f[m] = 1; api.marked++; } catch (e) {} }
-    }
-  }
-  function probeAndRepair(f) {
-    api.probes++;
-    try { f.call(window, []); return; }                    /* healthy: empty batch is a no-op */
-    catch (e) {
-      var cyclic = e && (String(e.message || e).indexOf('call stack') >= 0 || e instanceof RangeError);
-      api.lastError = String(e && e.message || e).slice(0, 120);
-      if (!cyclic || !api.base) return;
-      api.repairs++;
-      var fixed = function (appts) { return cleanChain.call(this, appts); };
-      for (var i = 0; i < MARKS.length; i++) { try { fixed[MARKS[i]] = 1; } catch (e2) {} }
-      fixed.__chainfix = 1;
-      window._importPulledSchedule = fixed;
-      lastFn = fixed;
-      try { if (typeof window.toast === 'function') window.toast('Import pipeline self-healed (wrapper cycle removed).', ''); } catch (e3) {}
-    }
-  }
-  function tick() {
+  function guard() {
+    api.guards++;
     var f = window._importPulledSchedule;
     if (typeof f !== 'function') return;
-    if (!api.base) { api.base = f; lastFn = f; return; }    /* first sighting = pristine base */
-    markSeen(f);
-    unify(f);
-    if (f !== lastFn) { lastFn = f; probeAndRepair(f); }
+    var i, m;
+    for (i = 0; i < MARKS.length; i++) {
+      m = MARKS[i];
+      try { if (Object.prototype.hasOwnProperty.call(f, m) && f[m]) api.seen[m] = 1; } catch (e) {}
+    }
+    for (i = 0; i < MARKS.length; i++) {
+      m = MARKS[i];
+      if (api.seen[m] && !f[m]) { try { f[m] = 1; api.stamped++; } catch (e) {} }
+    }
   }
-  timers.push(setInterval(tick, 150));
-  tick();
+
+  var nativeSetInterval = window.setInterval;
+  var wrapped = function (fn) {
+    var args = Array.prototype.slice.call(arguments);
+    if (typeof fn === 'function') {
+      args[0] = function () { try { guard(); } catch (e) {} return fn.apply(this, arguments); };
+    }
+    return nativeSetInterval.apply(window, args);
+  };
+  try { wrapped.__mlsChainFix = 1; } catch (e) {}
+  window.setInterval = wrapped;
+
+  /* backstop for assignments made outside interval callbacks */
+  var backstop = nativeSetInterval.call(window, function () { try { guard(); } catch (e) {} }, 400);
 
   window.__mlsImportChainFix_revert = function () {
-    timers.forEach(function (t) { clearInterval(t); });
-    try { window.removeEventListener('message', onExtMsg, false); } catch (e) {}
+    try { if (window.setInterval && window.setInterval.__mlsChainFix) window.setInterval = nativeSetInterval; } catch (e) {}
+    try { clearInterval(backstop); } catch (e) {}
     delete window.__mlsImportChainFix; delete window.__mlsImportChainFix_revert;
   };
 })();
@@ -15332,7 +15272,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b63';
+  var MLS_APP_BUILD='2026-07-07-b64';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
