@@ -30,7 +30,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '2.3.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '2.4.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -121,6 +121,63 @@
     try { window.postMessage({ source: 'mls-app', type: 'mlsAppPullSchedule' }, location.origin); } catch (e) {}
     return 'requested — check __mlsImportChainFix.backfill in ~5s';
   };
+
+  /* v2.4 CHART-READ TEXT GATE (app-side workaround for the extension v1.51
+     identity-extractor bug): the extension's targeted chart read compares the
+     requested patient against an identity scraped with regexes that cannot
+     parse athenaOne's ALL-CAPS banner ("Adam J SCHAEFFER · 03-24-2006"), so
+     EVERY targeted read refuses "wrong-chart" with a garbage name
+     ("Schaeffer, The") — history pulls and Easy "Open chart" are dead.
+     Workaround: strip the `patient` field from outgoing mlsAppReadChart
+     bridge messages (the BARE read succeeds and returns the full chart text)
+     and enforce the identity APP-SIDE instead: the reply is accepted only if
+     the chart text itself contains >=2 of the requested patient's name
+     tokens (the banner text is part of innerText, ALL-CAPS folds to
+     lowercase); otherwise the reply is converted to the same wrong-chart
+     refusal shape. DOB is lifted from the text next to the age/sex chip when
+     present. Fail-closed is preserved — verification still happens, just on
+     grounded text instead of the broken extractor. Remove once the fixed
+     extension ships. */
+  var GATE = { want: null, ts: 0, passes: 0, refusals: 0 };
+  api.chartGate = GATE;
+  var nativePost = window.postMessage.bind(window);
+  window.postMessage = function (msg, target, transfer) {
+    try {
+      if (msg && typeof msg === 'object' && msg.source === 'mls-app' && msg.type === 'mlsAppReadChart' && msg.patient) {
+        GATE.want = String(msg.patient); GATE.ts = new Date().getTime();
+        var clone = {}; for (var k in msg) { if (k !== 'patient') clone[k] = msg[k]; }
+        return transfer !== undefined ? nativePost(clone, target, transfer) : nativePost(clone, target);
+      }
+    } catch (e) {}
+    return transfer !== undefined ? nativePost(msg, target, transfer) : nativePost(msg, target);
+  };
+  function nameTokens(s) { return normName(s).split(' ').filter(function (t) { return t.length > 1; }); }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppChartResult' || !d.resp) return;
+    var want = GATE.want;
+    if (!want || (new Date().getTime() - GATE.ts) > 90000) return;
+    GATE.want = null;
+    var r = d.resp;
+    if (!r.ok) return;                                  /* extension already refused honestly */
+    var lo = String(r.text || '').toLowerCase();
+    var toks = nameTokens(want);
+    var hits = 0;
+    for (var i = 0; i < toks.length; i++) { if (lo.indexOf(toks[i]) >= 0) hits++; }
+    if (hits >= 2 || (toks.length === 1 && hits === 1)) {
+      GATE.passes++;
+      r.chartName = want;                               /* text-grounded identity for downstream (F18a etc.) */
+      if (!r.chartDob) {
+        var m = /\b\d{1,2}yo\s+[MF]\s*\|\s*([01]?\d[\-\/][0-3]?\d[\-\/]\d{4})/i.exec(String(r.text || ''));
+        if (m) r.chartDob = m[1];
+      }
+    } else {
+      GATE.refusals++;
+      r.ok = false; r.reason = 'wrong-chart';
+      r.error = 'The open athenaOne chart does not appear to be ' + want + ' (name not found on the page). Open ' + want + '’s chart in athenaOne, then pull again — nothing was captured.';
+      r.text = ''; r.chartName = ''; r.chartDob = '';
+    }
+  }, true);   /* capture phase — mutate resp in place before app listeners run */
 
   function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function isPlaceholder(n) {
@@ -15369,7 +15426,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b66';
+  var MLS_APP_BUILD='2026-07-07-b67';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
