@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Share your experience</title>
+<!-- ==========================================================================
+  patient-review.html — PATIENT-facing review helper (v1.0.0)
+  Authoring lane reputation-awards, 2026-07-07. Standalone satellite page.
+
+  COMPLIANCE-FIRST DESIGN (read FINAL_REPORT "Compliance guardrails"):
+    - The PATIENT writes and posts their own review, on the platform THEY choose.
+    - MLS offers an optional AI-suggested STARTING DRAFT (from the visit) that
+      the patient edits in their OWN words. MLS never posts as/for the patient
+      and never fabricates a review.
+    - NO incentives. NO review-gating: the public review options are ALWAYS
+      shown regardless of sentiment; a private "tell the office" option is
+      offered IN ADDITION, never as a filter/substitute.
+    - Tokenized link; no PHI in the URL; the draft carries no clinical detail.
+
+  DATA: request context from (1) ?t=<token> -> GET /api/reviews/request/:token
+    (flagged backend), (2) inline params (?draft=&practice=&doctor=&g=&hg=...)
+    (3) localStorage.mlsReviewReq (local handoff from the doctor module in demo).
+  Status self-report -> POST /api/reviews/request/:token/status (flagged; the
+    patient tells us "I posted it" — platforms don't allow verifying it, so it
+    is explicitly self-reported). No Athena, no PHI stored.
+=========================================================================== -->
+<style>
+:root{--ink:#15243c;--sub:#5b6b83;--line:#dbe3f0;--teal:#19b8a6;--blue:#2f6bed;--gold:#c9a227;--bg:#f4f7fc}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:680px;margin:0 auto;padding:20px 16px 70px}
+header.mls{display:flex;align-items:center;gap:12px;padding:6px 0 10px}
+.mark{width:40px;height:40px;border-radius:11px;background:linear-gradient(140deg,var(--teal),var(--blue));display:flex;align-items:center;justify-content:center;flex:none}
+.mark svg{width:26px;height:26px}
+h1{font-size:21px;margin:0}
+.tag{font-size:12.5px;color:var(--sub)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 2px 10px rgba(21,36,60,.04)}
+.card h2{font-size:16.5px;margin:0 0 6px}
+.note{font-size:12.5px;color:var(--sub)}
+.own{background:#eef4ff;border:1px solid #cfe0ff;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#274b8f;margin:8px 0}
+.stars{font-size:30px;letter-spacing:4px;cursor:pointer;user-select:none}
+.stars span{color:#d6ddea}
+.stars span.on{color:var(--gold)}
+textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:10px;padding:11px;font-size:15px;font-family:inherit;line-height:1.5}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.btn{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:14px}
+.btn.primary{background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff}
+.btn.ghost{background:#eef2fa;color:#24406e}
+.btn.small{padding:8px 12px;font-size:12.5px;font-weight:700}
+.plat{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.plat a{display:flex;align-items:center;gap:8px;text-decoration:none;border:1px solid var(--line);border-radius:11px;padding:11px 14px;font-weight:700;font-size:14px;color:var(--ink);background:#fff}
+.plat a .em{font-size:17px}
+.plat a.hint{border-style:dashed;color:var(--sub);font-weight:600}
+.selfrep{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.priv{border-top:1px dashed var(--line);margin-top:14px;padding-top:12px}
+a{color:var(--blue)}
+.foot{font-size:11.5px;color:var(--sub);margin-top:18px;line-height:1.5}
+@media(max-width:560px){.btn{width:100%;margin-top:6px}.plat a{flex:1;justify-content:center}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mls">
+    <div class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12h3l2.5 7L13 4l2.5 12L18 9h3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div><h1 id="hTitle">Share your experience</h1><div class="tag" id="hSub">Your words, your choice — thank you for taking a moment.</div></div>
+  </header>
+
+  <div class="card">
+    <div class="note" id="introLine">If you had a good visit, a short review helps other patients find care. It’s completely optional, takes a minute, and there’s no reward either way.</div>
+
+    <h2 style="margin-top:12px">How was your visit?</h2>
+    <div class="stars" id="stars" aria-label="rating"><span data-v="1">&#9733;</span><span data-v="2">&#9733;</span><span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span></div>
+
+    <div id="reviewBlock">
+      <h2 style="margin-top:14px">Your review</h2>
+      <div class="own">✍️ <b>This is yours.</b> Below is a suggested starting point — please edit it into your own words (or clear it and start fresh). Only post what’s true for you. You post it yourself, on whichever site you like.</div>
+      <textarea id="draft" placeholder="Write a sentence or two about your experience…"></textarea>
+      <div class="tools">
+        <button class="btn ghost small" id="btnCopy">📋 Copy</button>
+        <button class="btn ghost small" id="btnBlank">Start blank</button>
+        <button class="btn ghost small" id="btnStarter">Another starting point</button>
+        <span class="note" id="copyNote"></span>
+      </div>
+
+      <h2 style="margin-top:16px">Post it where you like</h2>
+      <div class="note">Opens the site in a new tab. You’ll paste your review and post it under your own account — that keeps it real and within each site’s rules.</div>
+      <div class="plat" id="platforms"></div>
+
+      <div class="selfrep">
+        <span class="note">Posted it?</span>
+        <button class="btn ghost small" id="btnPosted">✓ I posted my review</button>
+        <button class="btn ghost small" id="btnDecline">No thanks</button>
+        <span class="note" id="repNote"></span>
+      </div>
+    </div>
+
+    <div class="priv" id="privBlock">
+      <div class="note">Prefer to tell the office directly instead — or as well? That never replaces the public options above; it just reaches the care team.</div>
+      <div class="tools"><button class="btn ghost small" id="btnPriv">✉️ Share private feedback with the office</button></div>
+      <div id="privForm" style="display:none;margin-top:8px">
+        <textarea id="privMsg" style="min-height:80px" placeholder="Your message to the office…"></textarea>
+        <div class="tools"><button class="btn primary small" id="btnPrivSend">Send to the office</button><span class="note" id="privNote"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot" id="footNote"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var BK = 'https://scrivara-backend.onrender.com';
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function qp(k){ try{ var m=location.search.match(new RegExp('[?&]'+k+'=([^&]*)')); return m?decodeURIComponent(m[1].replace(/\+/g,' ')):''; }catch(e){ return ''; } }
+  function jget(k){ try{ return JSON.parse(localStorage.getItem(k)||'null'); }catch(e){ return null; } }
+
+  var TOKEN = qp('t') || qp('token');
+  /* context: {practice, doctor, city, draft, links:{google,healthgrades,vitals,webmd,ratemds,zocdoc,website}, placeId} */
+  var CTX = { practice:'', doctor:'', city:'', draft:'', links:{}, placeId:'' };
+
+  var STARTERS = [
+    'I had a good experience with {doctor}. They took the time to listen and explained things clearly.',
+    'The care I received at {practice} was excellent — the team was kind and I never felt rushed.',
+    'I would recommend {doctor}. I felt heard, and all my questions were answered.'
+  ];
+  var starterIdx = 0;
+  function fillTokens(s){ return String(s||'').replace(/\{doctor\}/g, CTX.doctor||'my doctor').replace(/\{practice\}/g, CTX.practice||'this office'); }
+
+  function platformDefs(){
+    var L = CTX.links || {};
+    var city = CTX.city || '';
+    var q = encodeURIComponent(((CTX.practice||CTX.doctor)+' '+city).replace(/^\s+|\s+$/g,''));
+    var googleWrite = CTX.placeId ? ('https://search.google.com/local/writereview?placeid='+encodeURIComponent(CTX.placeId))
+                    : (L.google || ('https://www.google.com/maps/search/'+q));
+    return [
+      { key:'google', em:'🔵', label:'Google', url:googleWrite, primary:true },
+      { key:'healthgrades', em:'🩺', label:'Healthgrades', url:L.healthgrades||'' },
+      { key:'vitals', em:'❤️', label:'Vitals', url:L.vitals||'' },
+      { key:'webmd', em:'🩺', label:'WebMD', url:L.webmd||'' },
+      { key:'ratemds', em:'⭐', label:'RateMDs', url:L.ratemds||'' },
+      { key:'zocdoc', em:'📅', label:'Zocdoc', url:L.zocdoc||'' }
+    ];
+  }
+  function renderPlatforms(){
+    var defs = platformDefs(), h='', i, any=false;
+    for(i=0;i<defs.length;i++){
+      var d=defs[i];
+      if(!d.url){ if(d.primary){ h+='<a class="hint" href="#" onclick="return false">'+d.em+' '+esc(d.label)+' (ask the office for the link)</a>'; } continue; }
+      any=true;
+      h+='<a href="'+esc(d.url)+'" target="_blank" rel="noopener" data-plat="'+esc(d.key)+'"><span class="em">'+d.em+'</span> '+esc(d.label)+'</a>';
+    }
+    if(!any && !h) h='<span class="note">Ask the office where to post — they’ll share a direct link.</span>';
+    $('platforms').innerHTML=h;
+    var links=$('platforms').querySelectorAll('a[data-plat]'), j;
+    for(j=0;j<links.length;j++){ links[j].onclick=function(){ status('opened', this.getAttribute('data-plat')); }; }
+  }
+
+  /* -------- status (self-reported, non-verifiable) -------- */
+  function status(kind, platform){
+    if(!TOKEN) return; /* nothing to track without a request token */
+    try{
+      fetch(BK+'/api/reviews/request/'+encodeURIComponent(TOKEN)+'/status',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({status:kind, platform:platform||'', at:''})}).then(function(){},function(){});
+    }catch(e){}
+  }
+
+  /* -------- copy -------- */
+  function copyDraft(){
+    var t=$('draft').value, note=$('copyNote');
+    function ok(){ note.textContent='Copied — now paste it on the site.'; setTimeout(function(){note.textContent='';},1800); }
+    try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(ok,function(){ fallback(t); ok(); }); return; } }catch(e){}
+    fallback(t); ok();
+  }
+  function fallback(t){ try{ var ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }catch(e){} }
+
+  /* -------- private feedback (never gates the public path) -------- */
+  function sendPrivate(){
+    var msg=$('privMsg').value, note=$('privNote');
+    if(!msg){ note.textContent='Write a note first.'; return; }
+    note.textContent='Sending…';
+    if(!TOKEN){ note.textContent='Thank you — please share this with the office directly.'; return; }
+    try{
+      fetch(BK+'/api/reviews/request/'+encodeURIComponent(TOKEN)+'/feedback',{method:'POST',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:msg.slice(0,2000)})})
+        .then(function(r){ note.textContent=(r&&r.ok)?'Sent to the office — thank you.':'Saved — thank you.'; },function(){ note.textContent='Thank you.'; });
+    }catch(e){ note.textContent='Thank you.'; }
+  }
+
+  /* -------- load context -------- */
+  function applyCtx(){
+    $('hSub').textContent = CTX.doctor ? ('A quick note about your visit with '+CTX.doctor+(CTX.practice?' at '+CTX.practice:'')) : ($('hSub').textContent);
+    $('draft').value = CTX.draft ? fillTokens(CTX.draft) : fillTokens(STARTERS[0]);
+    renderPlatforms();
+    $('footNote').innerHTML = 'You’re in control: edit freely, post only if you want, on whatever site you choose. MLS never posts for you and never writes a review in your name. This is optional and there’s no reward for leaving one.';
+  }
+  function loadByToken(){
+    try{
+      fetch(BK+'/api/reviews/request/'+encodeURIComponent(TOKEN)).then(function(r){ return r.ok?r.json():null; },function(){ return null; })
+        .then(function(j){
+          if(j&&j.ok){ CTX.practice=j.practice||CTX.practice; CTX.doctor=j.doctor||CTX.doctor; CTX.city=j.city||CTX.city; CTX.draft=j.draft||CTX.draft; CTX.links=j.links||CTX.links; CTX.placeId=j.placeId||CTX.placeId; }
+          applyCtx(); status('opened','');
+        }, function(){ applyCtx(); });
+    }catch(e){ applyCtx(); }
+  }
+
+  (function init(){
+    /* inline params + localStorage handoff (demo / no-backend) */
+    var ls = jget('mlsReviewReq') || {};
+    CTX.practice = qp('practice') || ls.practice || '';
+    CTX.doctor   = qp('doctor')   || ls.doctor   || '';
+    CTX.city     = qp('city')     || ls.city     || '';
+    CTX.draft    = qp('draft')    || ls.draft    || '';
+    CTX.placeId  = qp('placeid')  || ls.placeId  || '';
+    CTX.links = ls.links || {};
+    var mapKeys=[['g','google'],['hg','healthgrades'],['vt','vitals'],['wm','webmd'],['rm','ratemds'],['zd','zocdoc'],['site','website']];
+    for(var i=0;i<mapKeys.length;i++){ var v=qp(mapKeys[i][0]); if(v) CTX.links[mapKeys[i][1]]=v; }
+
+    /* stars — cosmetic + used only to tailor copy tone; NEVER gates the public options */
+    var cur=0;
+    function paintStars(n){ var sp=$('stars').children,i; for(i=0;i<sp.length;i++){ sp[i].className=(i<n)?'on':''; } }
+    $('stars').onclick=function(e){ var t=e.target; if(!t.getAttribute) return; var v=parseInt(t.getAttribute('data-v'),10); if(!v) return; cur=v; paintStars(v);
+      /* low rating: gently surface the private option TOO — but keep public options fully visible (no gating) */
+      if(v<=3){ $('privForm').style.display='block'; $('introLine').textContent='Thanks for the honest feedback. You can still post publicly if you like — and the office would value hearing more directly.'; }
+    };
+
+    $('btnCopy').onclick=copyDraft;
+    $('btnBlank').onclick=function(){ $('draft').value=''; $('draft').focus(); };
+    $('btnStarter').onclick=function(){ starterIdx=(starterIdx+1)%STARTERS.length; $('draft').value=fillTokens(STARTERS[starterIdx]); };
+    $('btnPosted').onclick=function(){ status('posted',''); $('repNote').textContent='Thank you so much!'; };
+    $('btnDecline').onclick=function(){ status('declined',''); $('repNote').textContent='No problem — thanks for your time.'; };
+    $('btnPriv').onclick=function(){ var f=$('privForm'); f.style.display=(f.style.display==='none')?'block':'none'; };
+    $('btnPrivSend').onclick=sendPrivate;
+
+    if(TOKEN) loadByToken(); else applyCtx();
+  })();
+})();
+</script>
+</body>
+</html>

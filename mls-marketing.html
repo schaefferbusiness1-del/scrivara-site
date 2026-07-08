@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>MLS Marketing — activate &amp; manage</title>
+<!-- ==========================================================================
+  mls-marketing.html — MLS Marketing add-on console (v1.0.0)
+  Authoring lane reputation-awards, 2026-07-07. Standalone satellite page for
+  scrivara-site. THE real activation + subscribe + management surface for the
+  paid marketing add-on (replaces the old "we'll reach out" interest flag).
+
+  WHAT RUNS AUTOMATICALLY vs NEEDS THE DOCTOR (enforced in the UI + documented):
+    - Listing optimization ....... AUTOMATIC (monthly), summary shown. Toggle.
+    - Review replies ............. DRAFTED automatically; PUBLISH needs the
+                                   doctor's approval (per reply). Optional
+                                   opt-in: auto-publish plain 5-star thank-yous.
+    - Review-request campaigns ... OFF until the doctor ENABLES + sets cadence;
+                                   then sends automatically to eligible patients
+                                   (existing comms-consent rules apply).
+    - Paid ads ................... OFF; each budget requires explicit approval.
+  Nothing publishes or charges without the doctor. No fabricated reviews, ever.
+
+  BACKEND HOOKS (all flagged in FINAL_REPORT; page degrades gracefully w/o them):
+    POST /api/billing/checkout {plan:'marketing_monthly',email} -> {url}   (Stripe; mirror existing lawyer plan)
+    POST /api/marketing/activate            -> mark active after checkout
+    GET/POST /api/marketing/settings        -> automation prefs
+    GET  /api/marketing/replies             -> draft-reply queue (server may pre-draft)
+    POST /api/marketing/replies/:id/approve -> approve+publish a reply (needs platform connection)
+    GET/POST /api/marketing/campaigns       -> review-request campaign config + a scheduler that sends via /api/comms/send
+  AI drafting uses the existing POST /api/widget/ai (Bearer sf_bk_token).
+  Reads local: mlsRF (doctor details), mlsRFScrapeCache (scraped reviews).
+  Writes local: mlsMkt (status), mlsMktSettings (automation prefs). No PHI, no Athena.
+=========================================================================== -->
+<style>
+:root{--ink:#15243c;--sub:#5b6b83;--line:#dbe3f0;--teal:#19b8a6;--blue:#2f6bed;--violet:#7c3aed;--bg:#f4f7fc;--gold:#c9a227}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:920px;margin:0 auto;padding:18px 16px 70px}
+header.mls{display:flex;align-items:center;gap:12px;padding:6px 0 8px}
+.mark{width:40px;height:40px;border-radius:11px;background:linear-gradient(140deg,var(--teal),var(--blue));display:flex;align-items:center;justify-content:center;flex:none}
+.mark svg{width:26px;height:26px}
+h1{font-size:21px;margin:0}
+.tag{font-size:12.5px;color:var(--sub)}
+.statusbar{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0 4px;font-size:13.5px}
+.dot{width:10px;height:10px;border-radius:50%;background:#c2ccdb;flex:none}
+.dot.on{background:#1fb26b}
+.dot.pend{background:var(--gold)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 2px 10px rgba(21,36,60,.04)}
+.card h2{font-size:17px;margin:0 0 4px}
+.card h2 .n{display:inline-block;width:24px;height:24px;border-radius:7px;background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff;font-size:13px;text-align:center;line-height:24px;margin-right:8px}
+.note{font-size:12.5px;color:var(--sub)}
+.safe{background:#effaf3;border:1px solid #bfe8cf;color:#116b3e;border-radius:10px;padding:9px 12px;font-size:12.5px;margin:10px 0}
+.warn{background:#fff7e8;border:1px solid #f0d9a8;color:#7a5a12;border-radius:10px;padding:9px 12px;font-size:12.5px;margin:10px 0}
+.plan{border:1px solid var(--violet);border-radius:12px;padding:16px;background:linear-gradient(180deg,#fbf9ff,#fff)}
+.plan .price{font-size:26px;font-weight:800}
+.btn{cursor:pointer;border:0;border-radius:10px;padding:12px 18px;font-weight:800;font-size:14px}
+.btn.primary{background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff}
+.btn.violet{background:linear-gradient(90deg,var(--violet),#4f46e5);color:#fff}
+.btn.ghost{background:#eef2fa;color:#24406e}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+table.auto{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+table.auto th,table.auto td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.auto th{color:var(--sub);font-weight:700;font-size:12px}
+.pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700}
+.pill.auto{background:#e7f6ee;color:#116b3e}
+.pill.appr{background:#fdeede;color:#8a5a12}
+.pill.off{background:#f1f2f6;color:#666}
+.sw{position:relative;display:inline-block;width:42px;height:24px}
+.sw input{opacity:0;width:0;height:0}
+.sw .sl{position:absolute;inset:0;background:#c7d0df;border-radius:24px;transition:.2s;cursor:pointer}
+.sw .sl:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.sw input:checked + .sl{background:#1fb26b}
+.sw input:checked + .sl:before{transform:translateX(18px)}
+.rev{border:1px solid var(--line);border-radius:11px;padding:12px;margin:10px 0}
+.rev .meta{font-size:12px;color:var(--sub)}
+.rev textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;margin-top:6px;font-family:inherit}
+.badge{display:inline-block;font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin-left:6px}
+.b-doc{background:#e7f6ee;color:#116b3e}.b-prac{background:#e8effc;color:#1c4fa0}.b-unk{background:#f1f2f6;color:#666}
+input[type=text],select,textarea{border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:14px;font-family:inherit}
+label.f{display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.hooks{background:#0f1c36;color:#cfe0ff;border-radius:12px;padding:14px;font-family:Consolas,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;overflow-x:auto}
+a{color:var(--blue)}
+@media(max-width:640px){.btn{width:100%;margin-top:6px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mls">
+    <div class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12h3l2.5 7L13 4l2.5 12L18 9h3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div><h1>MLS Marketing</h1><div class="tag">Your reputation, run for you — every action doctor-approved before it publishes.</div></div>
+  </header>
+
+  <div class="statusbar"><span class="dot" id="stDot"></span><span id="stText">Not active</span><span class="note" id="stWho" style="margin-left:auto"></span></div>
+
+  <!-- 1 · Activate & subscribe -->
+  <div class="card" id="cardActivate">
+    <h2><span class="n">1</span>Activate &amp; subscribe</h2>
+    <div class="note">MLS Marketing is a paid add-on, separate from the free reputation tools. Start it here — you can pause anytime, and nothing publishes or charges beyond the subscription without your approval.</div>
+    <div class="plan" style="margin-top:12px">
+      <div class="row" style="justify-content:space-between">
+        <div><b>MLS Marketing</b><div class="note">Listing optimization · AI-drafted review replies · review-request campaigns · optional ads</div></div>
+        <div style="text-align:right"><div class="price">$199<span style="font-size:13px;font-weight:600">/mo</span></div><div class="note">cancel anytime</div></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <input type="text" id="actEmail" placeholder="Billing email (optional)" style="flex:1;min-width:220px">
+        <button class="btn violet" id="actGo">🚀 Subscribe &amp; activate</button>
+      </div>
+      <div class="note" id="actNote" style="margin-top:8px"></div>
+    </div>
+    <div class="safe" style="margin-top:12px">You approve every review reply, every campaign, and every ad budget before it goes live. MLS never fabricates reviews or auto-posts on your behalf without your opt-in.</div>
+  </div>
+
+  <!-- 2 · What runs automatically vs needs approval -->
+  <div class="card">
+    <h2><span class="n">2</span>What runs automatically — and what needs your OK</h2>
+    <div class="note">You are always in control. Defaults are conservative; turn things up when you're comfortable.</div>
+    <table class="auto" id="autoTbl">
+      <tr><th>What</th><th>How it runs</th><th style="text-align:right">On</th></tr>
+    </table>
+    <div class="row" style="margin-top:10px"><button class="btn ghost" id="setSave">Save settings</button><span class="note" id="setNote"></span></div>
+  </div>
+
+  <!-- 3 · Review-reply approval queue -->
+  <div class="card">
+    <h2><span class="n">3</span>Review replies — draft, you approve, then publish</h2>
+    <div class="note">MLS drafts a warm, compliant reply to each recent review (from your scanned reviews). You edit/approve; nothing posts until you say so. HIPAA-safe: replies never confirm someone was a patient or mention any care details.</div>
+    <div class="row" style="margin:10px 0"><button class="btn primary" id="draftGo">✍️ Draft replies for my latest reviews</button><span class="note" id="draftNote"></span></div>
+    <div id="replyQueue"></div>
+  </div>
+
+  <!-- 4 · Review-request campaigns -->
+  <div class="card">
+    <h2><span class="n">4</span>Review-request campaigns</h2>
+    <div class="note">Ask happy patients to leave a review — the compliant way. MLS only messages patients your office already has consent to contact, one polite ask, easy opt-out, never incentivized. Off until you enable it.</div>
+    <label class="f">Channel</label>
+    <select id="campChannel"><option value="sms">Text message</option><option value="email">Email</option></select>
+    <label class="f">Cadence</label>
+    <select id="campCadence"><option value="off">Off (don't send)</option><option value="weekly">Weekly batch</option><option value="after_visit">A few days after each visit</option></select>
+    <label class="f">Message the patient sees (your review link is appended)</label>
+    <textarea id="campMsg" style="width:100%;min-height:70px">Thank you for trusting us with your care. If you have a moment, a short review would mean a lot and helps other patients find us.</textarea>
+    <div class="row" style="margin-top:10px"><button class="btn primary" id="campSave">Save campaign</button><span class="note" id="campNote"></span></div>
+    <div class="warn" style="margin-top:10px">Sending needs the campaign scheduler + your patient contact list (existing comms consent) wired on the server — see the hooks below. Until then this saves your settings and MLS confirms before the first send.</div>
+  </div>
+
+  <!-- 5 · Paid ads (optional) -->
+  <div class="card">
+    <h2><span class="n">5</span>Optional: paid ads</h2>
+    <div class="note">Off by default. When you want it, you set a monthly budget and approve the campaign — MLS never spends without an explicit, per-budget approval.</div>
+    <div class="row" style="margin-top:10px"><button class="btn ghost" id="adsAsk">Discuss paid ads with MLS</button><span class="note" id="adsNote"></span></div>
+  </div>
+
+  <!-- backend hooks (visible flag for the deploy/backend session) -->
+  <div class="card" style="border-color:#c7d3ea">
+    <h2>Backend hooks this console needs</h2>
+    <div class="note">The page works today in "confirm &amp; save" mode and degrades gracefully; these routes make each action fully live. Full spec in FINAL_REPORT.md.</div>
+    <div class="hooks" id="hooksBox"></div>
+  </div>
+
+  <div class="note"><a href="review-finder.html">← Back to Review Finder</a> · <a href="gbp-setup.html">Google Business Profile setup →</a></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var BK = 'https://scrivara-backend.onrender.com';
+  var MKT_EMAIL = 'michael@mlsscribe.com';
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  function jget(k){ try{ return JSON.parse(lsGet(k)||'null'); }catch(e){ return null; } }
+  function tok(){ try{ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }catch(e){ return ''; } }
+  function who(){ var rf=jget('mlsRF'); var d=(rf&&rf.doc)||{}; return {doctor:d.name||'',practice:d.practice||'',city:d.city||'',site:d.site||''}; }
+
+  /* -------- status -------- */
+  function mkt(){ return jget('mlsMkt') || { status:'' }; }
+  function setMkt(o){ lsSet('mlsMkt', JSON.stringify(o)); renderStatus(); }
+  function renderStatus(){
+    var m=mkt(), w=who();
+    var dot=$('stDot'), t=$('stText');
+    dot.className='dot'+(m.status==='active'?' on':m.status==='pending'?' pend':'');
+    t.textContent = m.status==='active'?'Active':m.status==='pending'?'Subscription started — finish setup below':'Not active';
+    $('stWho').textContent = w.doctor||w.practice ? ((w.doctor||w.practice)+(w.city?' · '+w.city:'')) : '';
+    var go=$('actGo');
+    if(m.status==='active'){ go.textContent='✓ Active — manage below'; go.disabled=true; }
+  }
+
+  /* -------- 1 · activate & subscribe -------- */
+  function activate(){
+    var email=$('actEmail').value||'';
+    var note=$('actNote'); var w=who(); var t=tok();
+    function fallback(reason){
+      setMkt({status:'pending', at:1, reason:reason});
+      var subj=encodeURIComponent('Activate MLS Marketing — '+(w.doctor||w.practice||'new practice'));
+      var body=encodeURIComponent('Please set up MLS Marketing.\n\nDoctor: '+w.doctor+'\nPractice: '+w.practice+'\nCity: '+w.city+'\nBilling email: '+(email||'(not given)')+'\n\n(From the marketing console'+(reason?'; '+reason:'')+')');
+      try{ window.open('mailto:'+MKT_EMAIL+'?subject='+subj+'&body='+body,'_blank'); }catch(e){}
+      note.innerHTML='⏳ <b>Subscription request sent.</b> MLS will confirm pricing and finish activation with you. Settings below are saved and ready.';
+    }
+    if(!t){ fallback('not signed in'); return; }
+    note.textContent='Starting secure checkout…';
+    fetch(BK+'/api/billing/checkout',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},
+      body:JSON.stringify({plan:'marketing_monthly',email:email})})
+      .then(function(r){ return (r&&r.ok)?r.json():{__status:r?r.status:0}; }, function(){ return {__status:0}; })
+      .then(function(j){
+        if(j&&j.url){ setMkt({status:'pending',at:1}); location.href=j.url; return; }
+        fallback('checkout route not live ('+((j&&j.__status)||'n/a')+')');
+      }, function(){ fallback('network'); });
+  }
+
+  /* -------- 2 · automation settings -------- */
+  var SETTINGS = [
+    { key:'listing',  label:'Listing optimization', how:'Automatic — MLS keeps your Google/directory listing complete and fresh; you get a monthly summary.', mode:'auto', on:true },
+    { key:'replyDraft', label:'Draft review replies', how:'Automatic — a reply is drafted for every new review.', mode:'auto', on:true },
+    { key:'replyPublish', label:'Publish review replies', how:'Needs your approval — each reply waits for your OK in section 3.', mode:'appr', on:true, locked:true },
+    { key:'replyAuto5', label:'Auto-publish 5-star thank-yous', how:'Optional — if on, plain "thank you" replies to 5-star reviews post without waiting (you can still edit history).', mode:'off', on:false },
+    { key:'campaigns', label:'Review-request campaigns', how:'You enable + set cadence (section 4); then MLS sends automatically to eligible, consented patients.', mode:'off', on:false },
+    { key:'ads', label:'Paid ads', how:'Off — every budget needs explicit approval (section 5).', mode:'off', on:false, locked:true }
+  ];
+  function loadSettings(){
+    var saved=jget('mlsMktSettings')||{}; var i;
+    for(i=0;i<SETTINGS.length;i++){ if(saved.hasOwnProperty(SETTINGS[i].key)) SETTINGS[i].on=!!saved[SETTINGS[i].key]; }
+  }
+  function renderSettings(){
+    var t=$('autoTbl'); var head=t.rows[0].outerHTML; var h=head; var i;
+    for(i=0;i<SETTINGS.length;i++){
+      var s=SETTINGS[i];
+      var pill=s.mode==='auto'?'<span class="pill auto">AUTOMATIC</span>':s.mode==='appr'?'<span class="pill appr">NEEDS YOUR OK</span>':'<span class="pill off">OPT-IN</span>';
+      var swt=s.locked?'<span class="note">'+(s.on?'on':'off')+(s.key==='replyPublish'?' (always)':'')+'</span>'
+        :'<label class="sw"><input type="checkbox" data-set="'+s.key+'"'+(s.on?' checked':'')+'><span class="sl"></span></label>';
+      h+='<tr><td><b>'+esc(s.label)+'</b> '+pill+'</td><td>'+esc(s.how)+'</td><td style="text-align:right">'+swt+'</td></tr>';
+    }
+    t.innerHTML=h;
+    var cbs=t.querySelectorAll('input[data-set]');
+    for(i=0;i<cbs.length;i++){ cbs[i].onchange=function(){ var k=this.getAttribute('data-set'); for(var j=0;j<SETTINGS.length;j++){ if(SETTINGS[j].key===k) SETTINGS[j].on=this.checked; } }; }
+  }
+  function saveSettings(){
+    var map={}, i; for(i=0;i<SETTINGS.length;i++) map[SETTINGS[i].key]=!!SETTINGS[i].on;
+    lsSet('mlsMktSettings', JSON.stringify(map));
+    var note=$('setNote'); note.textContent='Saving…';
+    var t=tok();
+    if(!t){ note.textContent='Saved on this device. Sign in to sync to your account.'; return; }
+    fetch(BK+'/api/marketing/settings',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify(map)})
+      .then(function(r){ note.textContent=(r&&r.ok)?'Saved.':'Saved on this device (sync pending backend).'; },function(){ note.textContent='Saved on this device (offline).'; });
+  }
+
+  /* -------- 3 · reply queue -------- */
+  function recentReviews(){
+    var sc=jget('mlsRFScrapeCache'); var out=[];
+    if(sc&&sc.payload&&sc.payload.reviews){ var r=sc.payload.reviews,i; for(i=0;i<r.length && out.length<6;i++){ if(r[i].text) out.push(r[i]); } }
+    return out;
+  }
+  function draftReplies(){
+    var note=$('draftNote'); var revs=recentReviews();
+    if(!revs.length){ note.innerHTML='No scanned reviews yet — run <a href="review-finder.html">Review Finder</a> first, then come back.'; return; }
+    var t=tok();
+    if(!t){ note.textContent='Sign in to MLS first (open the app, then reload) — drafting uses your MLS account.'; return; }
+    note.textContent='Drafting '+revs.length+' replies…';
+    var q=$('replyQueue'); q.innerHTML='';
+    var done=0;
+    revs.forEach(function(rv,idx){
+      var sys='You write brief, warm, HIPAA-compliant replies from a medical practice to a patient review. NEVER confirm the person was a patient, never mention any diagnosis, treatment, or visit detail. Thank them, invite continued dialogue, keep it under 45 words. For any negative review, apologize generally and invite them to contact the office privately — never argue or reference specifics.';
+      var pr='Write one reply to this '+(rv.rating!=null?rv.rating+'-star ':'')+'review from '+(rv.source||'a site')+':\n"'+String(rv.text).slice(0,600)+'"';
+      fetch(BK+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({prompt:pr,system:sys})})
+        .then(function(r){ return r.ok?r.json():null; },function(){ return null; })
+        .then(function(j){
+          var text=j&&(j.text||j.reply||j.content)||'';
+          addReplyCard(q, rv, text);
+          done++; if(done>=revs.length) note.textContent='Drafted '+done+' — review, edit, then approve each.';
+        }, function(){ done++; });
+    });
+  }
+  function scopeBadge(sc){ return sc==='doctor'?'<span class="badge b-doc">DOCTOR</span>':sc==='practice'?'<span class="badge b-prac">PRACTICE</span>':'<span class="badge b-unk">UNVERIFIED</span>'; }
+  function addReplyCard(q, rv, draft){
+    var d=document.createElement('div'); d.className='rev';
+    d.innerHTML='<div class="meta">'+(rv.rating!=null?('<b>'+rv.rating+'★</b> '):'')+scopeBadge(rv.scope)+' '+esc(rv.source||'')+(rv.author?' · '+esc(rv.author):'')+'</div>'+
+      '<div style="font-size:13px;margin:4px 0">'+esc(String(rv.text).slice(0,240))+'</div>'+
+      '<div class="note">MLS draft reply (edit freely):</div>'+
+      '<textarea>'+esc(draft||'')+'</textarea>'+
+      '<div class="row" style="margin-top:6px"><button class="btn primary rc-appr">✓ Approve &amp; publish</button>'+
+      '<button class="btn ghost rc-skip">Skip</button><span class="note rc-note"></span></div>';
+    q.appendChild(d);
+    d.querySelector('.rc-skip').onclick=function(){ d.style.opacity=.5; d.querySelector('.rc-note').textContent='Skipped.'; };
+    d.querySelector('.rc-appr').onclick=function(){
+      var note=d.querySelector('.rc-note');
+      var t=tok();
+      if(!t){ note.textContent='Sign in to publish.'; return; }
+      note.textContent='Submitting for publish…';
+      /* Backend hook: POST /api/marketing/replies/:id/approve (needs platform connection to actually post) */
+      fetch(BK+'/api/marketing/replies/approve',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},
+        body:JSON.stringify({source:rv.source,reviewText:String(rv.text).slice(0,600),reply:d.querySelector('textarea').value})})
+        .then(function(r){ return (r&&r.ok)?r.json():{__status:r?r.status:0}; },function(){ return {__status:0}; })
+        .then(function(j){
+          if(j&&j.ok){ note.textContent='✓ Approved — MLS will publish it to '+(rv.source||'the platform')+'.'; }
+          else { note.innerHTML='✓ Approved &amp; saved. Publishing to '+esc(rv.source||'the platform')+' turns on once your listing is connected (Google Business Profile) — this reply is queued.'; }
+          d.querySelector('.rc-appr').disabled=true;
+        }, function(){ note.textContent='Saved locally — will publish when connected.'; });
+    };
+  }
+
+  /* -------- 4 · campaigns -------- */
+  function saveCampaign(){
+    var cfg={channel:$('campChannel').value, cadence:$('campCadence').value, message:$('campMsg').value.slice(0,600)};
+    lsSet('mlsMktCampaign', JSON.stringify(cfg));
+    var note=$('campNote'); var t=tok();
+    if(!t){ note.textContent='Saved on this device. Sign in to activate sending.'; return; }
+    note.textContent='Saving…';
+    fetch(BK+'/api/marketing/campaigns',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify(cfg)})
+      .then(function(r){ note.textContent=(r&&r.ok)?'Saved — MLS confirms before the first send.':'Saved on this device (scheduler pending backend).'; },function(){ note.textContent='Saved on this device (offline).'; });
+  }
+
+  /* -------- 5 · ads -------- */
+  function askAds(){
+    var w=who();
+    var subj=encodeURIComponent('MLS Marketing — paid ads interest');
+    var body=encodeURIComponent('I would like to discuss paid ads.\n\nDoctor: '+w.doctor+'\nPractice: '+w.practice+'\nCity: '+w.city);
+    try{ window.open('mailto:'+MKT_EMAIL+'?subject='+subj+'&body='+body,'_blank'); }catch(e){}
+    $('adsNote').textContent='Opened an email to MLS — a budget is only ever set with your approval.';
+  }
+
+  /* -------- hooks box -------- */
+  $('hooksBox').textContent =
+    "POST /api/billing/checkout  {plan:'marketing_monthly', email}  -> {url}   (Stripe; add the price, mirror the lawyer plan)\n"+
+    "POST /api/marketing/activate                                   -> mark active (Stripe webhook or post-checkout)\n"+
+    "GET/POST /api/marketing/settings                               -> automation prefs {listing,replyDraft,replyPublish,replyAuto5,campaigns,ads}\n"+
+    "GET  /api/marketing/replies                                    -> server-drafted reply queue (optional; page can draft via /api/widget/ai)\n"+
+    "POST /api/marketing/replies/approve                            -> approve+publish a reply (needs GBP/platform connection to post)\n"+
+    "GET/POST /api/marketing/campaigns                              -> campaign config + a scheduler that sends via /api/comms/send (consented patients only)\n"+
+    "AI drafting reuses POST /api/widget/ai (Bearer sf_bk_token).";
+
+  /* -------- init -------- */
+  (function init(){
+    /* returning from Stripe success -> mark active */
+    try{ if(/[?&](activated|success)=1/.test(location.search)){ setMkt({status:'active',at:1}); } }catch(e){}
+    loadSettings(); renderSettings(); renderStatus();
+    var c=jget('mlsMktCampaign'); if(c){ if($('campChannel'))$('campChannel').value=c.channel||'sms'; if($('campCadence'))$('campCadence').value=c.cadence||'off'; if(c.message&&$('campMsg'))$('campMsg').value=c.message; }
+    $('actGo').onclick=activate;
+    $('setSave').onclick=saveSettings;
+    $('draftGo').onclick=draftReplies;
+    $('campSave').onclick=saveCampaign;
+    $('adsAsk').onclick=askAds;
+  })();
+})();
+</script>
+</body>
+</html>

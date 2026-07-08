@@ -210,6 +210,35 @@
   var API = "https://scrivara-backend.onrender.com";
   var DEMO = false;
 
+  /* portal-send-fix (2026-07-07): BEARER patient session.
+     The portal page (mlsscribe.com) and the API (scrivara-backend.onrender.com)
+     are cross-site, and the cookie session was set SameSite=Strict with a
+     preflight that doesn't allow credentials — so browsers silently dropped
+     the session and sign-in never worked. When the backend's PORTAL_SESSION
+     patch is live it returns the signed session token in the login/claim
+     response (and the email-link redeem redirects with #session=<tok>); we
+     hold it in sessionStorage and send it as an Authorization header, which
+     today's CORS already allows. Cookie path kept as a legacy fallback. */
+  var PSESS = null, FIRSTTIME = false;
+  try{ PSESS = sessionStorage.getItem("mls_patient_session") || null; }catch(e){}
+  try{ FIRSTTIME = sessionStorage.getItem("mls_patient_setup") === "1"; }catch(e){}
+  try{
+    var mS = (location.hash||"").match(/[#&]session=([A-Za-z0-9._~-]{20,600})/);
+    if(mS){
+      PSESS = mS[1]; try{ sessionStorage.setItem("mls_patient_session", PSESS); }catch(e){}
+      // &setup=1 → this account was just created from an invite and still has a
+      // random placeholder password: the patient MUST choose their own now, or
+      // they lose access when this session expires.
+      if(/[#&]setup=1\b/.test(location.hash||"")){ FIRSTTIME = true; try{ sessionStorage.setItem("mls_patient_setup","1"); }catch(e){} }
+      history.replaceState(null, "", location.pathname + location.search); // scrub token from the bar/history
+    }
+  }catch(e){}
+  function setSess(t){
+    PSESS = t || null;
+    try{ if(t) sessionStorage.setItem("mls_patient_session", t); else sessionStorage.removeItem("mls_patient_session"); }catch(e){}
+  }
+  window.__mlsPortalSess = { get:function(){ return PSESS; }, set:setSess };
+
   var $ = function(id){ return document.getElementById(id); };
   function show(el){ el.classList.remove("hide"); }
   function hide(el){ el.classList.add("hide"); }
@@ -274,8 +303,14 @@
 
   function api(path, opts){
     opts = opts || {};
-    opts.credentials = "include";
     opts.headers = Object.assign({"Content-Type":"application/json"}, opts.headers||{});
+    if(PSESS){
+      // Bearer mode: no credentialed CORS needed — works with today's server config.
+      opts.headers["Authorization"] = "Bearer " + PSESS;
+      opts.credentials = "omit";
+    } else {
+      opts.credentials = "include"; // legacy cookie path (needs the backend CORS/samesite fix)
+    }
     return fetch(API+path, opts);
   }
 
@@ -293,6 +328,7 @@
   function checkSession(){
     api("/api/patient/me").then(function(r){
       if(r.ok){ enterApp(); loadRecords().catch(function(){}); addSys("Hi! Ask me anything about your records below."); }
+      else if(r.status===401 && PSESS){ setSess(null); } // stale bearer token — clear so a fresh sign-in starts clean
     }).catch(function(){});
   }
 
@@ -301,20 +337,48 @@
     var btn=$("loginBtn"); var errBox=$("loginErr"); hide(errBox);
     btn.disabled=true; var old=btn.textContent; btn.innerHTML='<span class="spin"></span> Signing in…';
     var body = { username:$("u").value.trim(), password:$("p").value, dob:$("d").value };
-    api("/api/patient/auth/login", { method:"POST", body:JSON.stringify(body) })
+    function fail(msg){ errBox.textContent = msg || "Sign in failed. Please try again."; show(errBox); }
+    function sessionBlocked(){
+      // Credentials were CORRECT but the browser can't keep a session: the
+      // legacy cookie is cross-site (SameSite=Strict / preflight without
+      // allow-credentials) and the backend didn't return a bearer token yet.
+      errBox.textContent = "Your details are correct, but the browser couldn't keep you signed in (cross-site cookies are blocked between this page and the MLS server). The office needs to apply the MLS portal-session update on the server — please let them know. [code: PORTAL-SESSION]";
+      show(errBox);
+    }
+    // 1) Bearer-mode attempt: NO credentials → no credentialed preflight → not
+    //    blocked by the current server CORS config.
+    fetch(API+"/api/patient/auth/login", { method:"POST", credentials:"omit", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) })
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
-        if(!res.ok){ throw new Error((res.j && (res.j.error||res.j.message)) || "Sign in failed. Please check your details."); }
-        DEMO=false; enterApp();
-        addSys("You're signed in. Ask me anything about your records below.");
-        return loadRecords();
+        if(!res.ok){ fail((res.j && (res.j.error||res.j.message)) || "Sign in failed. Please check your details."); return null; }
+        var tok = res.j && (res.j.session || res.j.token);
+        if(tok){
+          setSess(tok);
+          DEMO=false; enterApp();
+          addSys("You're signed in. Ask me anything about your records below.");
+          return loadRecords().catch(function(){ addSys("Your records are taking a moment to load — pull to refresh or reload the page."); });
+        }
+        // 2) Backend not yet returning a bearer token — try the legacy cookie
+        //    path (works only once the server CORS/samesite fix is deployed).
+        return api("/api/patient/auth/login", { method:"POST", body:JSON.stringify(body) })
+          .then(function(r2){ if(!r2.ok) throw 0; return null; })
+          .then(function(){
+            DEMO=false; enterApp();
+            addSys("You're signed in. Ask me anything about your records below.");
+            return loadRecords().catch(function(err2){
+              // signed in per the server, but the session cookie never came back
+              hide($("app")); show($("login"));
+              sessionBlocked();
+            });
+          })
+          .catch(function(){ sessionBlocked(); });
       })
-      .catch(function(err){ errBox.textContent = (err && err.message) || "Sign in failed. Please try again."; show(errBox); })
+      .catch(function(){ fail("Network error — please check your connection and try again."); })
       .then(function(){ btn.disabled=false; btn.textContent=old; });
   });
 
   $("logoutBtn").addEventListener("click", function(){
-    api("/api/patient/auth/logout",{method:"POST"}).catch(function(){}).then(function(){ location.reload(); });
+    api("/api/patient/auth/logout",{method:"POST"}).catch(function(){}).then(function(){ setSess(null); location.reload(); });
   });
 
   $("printBtn").addEventListener("click", function(){ try{ window.print(); }catch(e){} });
@@ -379,6 +443,57 @@
     var li = head.closest("li.li-x");
     if(li) li.setAttribute("data-exp", li.getAttribute("data-exp")==="1" ? "0" : "1");
   });
+
+  /* ---------- first-time password setup (invite-link flow) ----------
+     Shown when the redeem redirect carried &setup=1: the account exists and is
+     bound server-side to this patient's chart, but its password is still a
+     random placeholder. REQUIRED — without their own password the patient
+     loses access when this session expires. */
+  function showPwSetup(){
+    if(document.getElementById("mlsPwSetup")) return;
+    var back=document.createElement("div");
+    back.id="mlsPwSetup";
+    back.style.cssText="position:fixed;inset:0;background:rgba(13,35,56,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    back.innerHTML=
+      '<div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:28px 26px;box-shadow:0 12px 44px rgba(0,0,0,.32)">'
+      +'<div style="display:flex;align-items:center;gap:9px;font-weight:800;color:#15528f;font-size:17px"><span style="width:11px;height:11px;border-radius:50%;background:#127a55;box-shadow:0 0 0 4px rgba(18,122,85,.15)"></span>Welcome to your patient portal</div>'
+      +'<div style="margin:10px 0 2px;font-size:14.5px;color:#0d2338">✓ Your secure link worked — you\'re connected to <b>your own</b> records.</div>'
+      +'<div style="margin:6px 0 2px;color:#5b6b7c;font-size:13.5px">One quick step: choose a password. You\'ll use it (with your email and date of birth) to sign in from now on.</div>'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:14px 0 5px">New password (8+ characters)</label>'
+      +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:12px 0 5px">Repeat password</label>'
+      +'<input id="pwsP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<div id="pwsErr" style="display:none;background:#fdecec;border:1px solid #f5c2c2;color:#a12626;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<button id="pwsGo" style="width:100%;border:none;border-radius:10px;background:#1f7ae0;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save my password</button>'
+      +'<div style="font-size:12px;color:#5b6b7c;margin-top:10px;text-align:center">This can\'t be skipped — it\'s what keeps your records private to you.</div>'
+      +'</div>';
+    document.body.appendChild(back);
+    function perr(t){ var e=document.getElementById("pwsErr"); e.style.display="block"; e.textContent=t; }
+    document.getElementById("pwsGo").onclick=function(){
+      var p1=document.getElementById("pwsP1").value, p2=document.getElementById("pwsP2").value;
+      if(p1.length<8){ perr("Please choose a password of at least 8 characters."); return; }
+      if(p1!==p2){ perr("The two passwords don't match."); return; }
+      var b=document.getElementById("pwsGo"); b.disabled=true; b.textContent="Saving…";
+      api("/api/patient/auth/set-password",{method:"POST",body:JSON.stringify({password:p1})})
+        .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
+        .then(function(res){
+          if(res.ok){
+            FIRSTTIME=false; try{ sessionStorage.removeItem("mls_patient_setup"); }catch(e){}
+            back.remove();
+            addSys("✓ Password saved. Next time, sign in with your email, this password, and your date of birth.");
+            return;
+          }
+          b.disabled=false; b.textContent="Save my password";
+          if(res.status===404){ // backend PATCH A applied without the set-password route
+            perr("Password setup isn't available yet on the server. You're signed in for now — please ask your care team for a sign-in password before you leave the portal.");
+            return;
+          }
+          perr((res.j&&res.j.error)||"Could not save the password — please try again.");
+        })
+        .catch(function(){ b.disabled=false; b.textContent="Save my password"; perr("Network problem — please try again."); });
+    };
+  }
+  if(FIRSTTIME && PSESS){ showPwSetup(); }
 
   checkSession();
 })();
@@ -451,7 +566,9 @@
       if(p1.length<8){ err("Please choose a password of at least 8 characters."); return; }
       if(p1!==p2){ err("The two passwords don't match."); return; }
       var btn=$("mcGo"); btn.disabled=true; btn.textContent="Saving…";
-      fetch(API+"/api/patient/auth/set-password",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:p1})})
+      var spHdrs={"Content-Type":"application/json"}, spCreds="include";
+      try{ var spTok=window.__mlsPortalSess&&window.__mlsPortalSess.get(); if(spTok){ spHdrs.Authorization="Bearer "+spTok; spCreds="omit"; } }catch(e){}
+      fetch(API+"/api/patient/auth/set-password",{method:"POST",credentials:spCreds,headers:spHdrs,body:JSON.stringify({password:p1})})
         .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,j:j}; }); })
         .then(function(res){
           if(!res.ok){ btn.disabled=false; btn.textContent="Save password & open my records"; err((res.j&&res.j.error)||"Could not save the password — please try again."); return; }
@@ -464,6 +581,8 @@
   fetch(API+"/api/patient/auth/claim",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token})})
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
     .then(function(res){
+      // portal-send-fix: capture the bearer session token if the patched backend returns one
+      try{ var st=res.j&&(res.j.session||res.j.token); if(res.ok&&st&&window.__mlsPortalSess) window.__mlsPortalSess.set(st); }catch(e){}
       if(res.ok){ pwForm(res.j&&res.j.username); return; }
       if(res.status===404){ body('This type of setup link isn\'t enabled yet. Please sign in with the <b>username and password</b> your care team gave you.'+OKBTN); return; }
       body('⏳ '+(((res.j&&res.j.error)||'This link has expired or was already used.'))+'<div style="color:#5b6b7c;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
@@ -628,7 +747,9 @@
       return;
     }
     var payload=Object.assign({ type:key, category:T.cat, submittedAt:new Date().toISOString() }, data);
-    fetch(API+"/api/patient/request",{ method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) })
+    var rqHdrs={"Content-Type":"application/json"}, rqCreds="include";
+    try{ var rqTok=window.__mlsPortalSess&&window.__mlsPortalSess.get(); if(rqTok){ rqHdrs.Authorization="Bearer "+rqTok; rqCreds="omit"; } }catch(e){}
+    fetch(API+"/api/patient/request",{ method:"POST", credentials:rqCreds, headers:rqHdrs, body:JSON.stringify(payload) })
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
       .then(function(x){
         if(x.ok && x.j && x.j.ok!==false){

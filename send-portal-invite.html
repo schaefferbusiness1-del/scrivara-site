@@ -22,14 +22,33 @@
   .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:20px}
   .btn:hover{background:#1a6ccb}.btn[disabled]{opacity:.6;cursor:default}
   .btn.ghost{background:var(--soft);color:var(--blue-d);margin-top:10px;border:1px solid var(--line)}
+  .btn.green{background:#16a34a}.btn.green:hover{background:#128940}
   .note{background:var(--soft);border:1px solid #d3e3f6;color:var(--blue-d);border-radius:10px;padding:11px 13px;font-size:13px;margin-top:16px}
   .msg{border-radius:10px;padding:12px 14px;font-size:14px;margin-top:16px;display:none}
   .msg.ok{background:#eaf7f0;border:1px solid #bce6cf;color:#0f6b49;display:block}
   .msg.err{background:#fdecec;border:1px solid #f5c2c2;color:#a12626;display:block}
+  .diag{font-size:11.5px;color:var(--muted);margin-top:6px;font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
   .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   .foot{font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
   a{color:var(--blue);text-decoration:none}
+  /* ---- chart picker ---- */
+  .picker{background:#f7fafe;border:1px solid #d3e3f6;border-radius:12px;padding:14px;margin-top:6px}
+  .picker .ttl{font-weight:800;color:var(--blue-d);font-size:13.5px;display:flex;align-items:center;gap:7px}
+  .picker .hint{font-size:12.5px;color:var(--muted);margin:3px 0 9px}
+  .pkrow{display:flex;gap:8px}
+  .pkrow input{flex:1;margin:0}
+  .pkrow button{flex:none;width:auto;margin:0;padding:11px 14px;font-size:14px}
+  .pkres{margin-top:9px;max-height:230px;overflow-y:auto}
+  .pkhit{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-top:7px;cursor:pointer}
+  .pkhit:hover{border-color:var(--blue);background:#fbfdff}
+  .pkhit .nm{font-weight:700;font-size:14px}
+  .pkhit .mt{font-size:12px;color:var(--muted)}
+  .pkhit .em{font-size:11.5px;font-weight:700;flex:none}
+  .pkhit .em.has{color:#0f6b49}.pkhit .em.no{color:#8a5a00}
+  .pknote{font-size:12px;color:var(--muted);margin-top:8px}
+  .chartchip{display:none;background:#eaf7f0;border:1px solid #bce6cf;border-radius:10px;padding:10px 12px;font-size:13px;color:#0f6b49;margin-top:12px}
+  .chartchip b{font-size:14px}
   /* ---- confirm modal ---- */
   .modalBack{position:fixed;inset:0;background:rgba(10,30,60,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
   .modalBack.show{display:flex}
@@ -64,6 +83,23 @@
       You're not signed in to MLS in this browser. Open <a href="/ScribeFlow.html">MLS</a>, sign in, then reload this page.
     </div>
 
+    <!-- ⚡ Chart picker: pulls the patient (and their email on file) straight from the
+         clinician's own MLS charts. Fixes the two most common send failures: hand-typed
+         chart IDs that don't match any server chart, and name formats that don't match
+         the chart record (the server compares both before sending anything). -->
+    <div class="picker" id="picker" style="display:none">
+      <div class="ttl">⚡ Pick from your charts <span style="font-weight:400;color:var(--muted);font-size:11.5px">(recommended)</span></div>
+      <div class="hint">Search your MLS patients by name, DOB or MRN — MLS fills everything below straight from the chart, including the email on file, so the send can't mismatch.</div>
+      <div class="pkrow">
+        <input id="pkq" type="text" placeholder="Start typing the patient's name…" autocomplete="off" />
+        <button class="btn ghost" type="button" id="pkGo" style="margin-top:0">Search</button>
+      </div>
+      <div class="pkres" id="pkres"></div>
+      <div class="pknote" id="pknote"></div>
+    </div>
+
+    <div class="chartchip" id="chartchip"></div>
+
     <form id="f" autocomplete="off">
       <label for="email">Patient email <span style="color:#c0392b">*</span></label>
       <input id="email" type="email" required placeholder="patient@email.com" />
@@ -72,11 +108,13 @@
       <label for="dob">Date of birth <span style="color:#c0392b">*</span></label>
       <input id="dob" type="date" required />
       <label for="pid">Patient chart ID <span style="color:#c0392b">*</span></label>
-      <input id="pid" type="text" required placeholder="the patient ID from their MLS chart" />
+      <input id="pid" type="text" required placeholder="use “Pick from your charts” above to fill this correctly" />
+      <button class="btn green" id="autoSend" type="button" style="display:none">⚡ Auto-send to the email on file</button>
       <button class="btn" id="send" type="submit">Review &amp; send portal login</button>
     </form>
 
     <div id="msg" class="msg"></div>
+    <div id="diag" class="diag"></div>
     <div id="credBox" class="cred" style="display:none"></div>
     <div class="note">🔒 Access is limited to this one patient's own records, protected by password + date of birth, with sessions that expire automatically. You can disable access anytime from MLS.</div>
     <div class="note" style="background:#eaf7f0;border-color:#bce6cf;color:#0f6b49">✉️ When the office's email is set up, MLS emails the patient a secure one-time link (expires in ~72 hours). Until then, MLS creates the login and shows it once here for you to hand over — either way works.</div>
@@ -111,23 +149,28 @@
   "use strict";
   var API="https://scrivara-backend.onrender.com";
   var $=function(id){return document.getElementById(id);};
+  /* FIX (portal-send-fix): the app writes sf_bk_token to BOTH sessionStorage and
+     localStorage — read both (the old page read only localStorage). */
   var token=null;
-  try{ token=localStorage.getItem('sf_bk_token'); }catch(e){}
+  try{ token=sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token'); }catch(e){}
   if(!token){ $('noauth').style.display='block'; }
+  else { $('picker').style.display='block'; }
 
   // Prefill ONCE from URL params (in-app deep link), then SCRUB the URL so no
   // patient details (PHI) linger in the address bar, browser history, or logs.
+  var deepId='';
   try{
     var p=new URLSearchParams(location.search);
     if(p.get('email')) $('email').value=p.get('email');
     if(p.get('name')) $('name').value=p.get('name');
     if(p.get('dob')) $('dob').value=p.get('dob');
-    if(p.get('id')||p.get('pid')) $('pid').value=p.get('id')||p.get('pid');
+    if(p.get('id')||p.get('pid')){ $('pid').value=p.get('id')||p.get('pid'); deepId=$('pid').value; }
     if([...p.keys()].length){ history.replaceState(null,'',location.pathname); }
   }catch(e){}
 
   function showMsg(text, ok){ var m=$('msg'); m.textContent=text; m.className='msg '+(ok?'ok':'err'); }
-  function hideMsg(){ $('msg').className='msg'; $('msg').textContent=''; }
+  function hideMsg(){ $('msg').className='msg'; $('msg').textContent=''; diag(''); }
+  function diag(t){ try{ $('diag').textContent=t?('detail: '+t):''; }catch(e){} }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function fmtDob(iso){
     // display as MM/DD/YYYY for the confirmation step (matches US charts)
@@ -146,6 +189,115 @@
     for(var i=0;i<buf.length;i++) out+=abc[buf[i]%abc.length];
     return out;
   }
+
+  /* ================= ⚡ chart picker / auto-fill / auto-send =================
+     Pulls the clinician's own patients from the LIVE backend so the send uses
+     the chart's exact external_id, exact name and the email on file. Uses
+     GET /api/patients/search (server-side, cheap) and falls back to a one-time
+     GET /api/patients + client-side filter if search isn't available. */
+  var ALL=null;             // cached full list (fallback path only)
+  var picked=null;          // {external_id,name,dob,email,mrn}
+  function chartEmail(d){
+    d=d||{};
+    var e=d.email||d.patient_email||d.contact_email||(d.contact&&d.contact.email)||'';
+    e=String(e).trim();
+    if(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return {email:e, src:'chart'};
+    /* Fallback: pre-visit intakes embed "Email: x@y.com" in the chart summary
+       (attachIntake merges the intake block into p.summary) — the only place
+       most charts carry an email today, since the Athena chart parse doesn't
+       extract one yet. Labeled "from intake" so the doctor knows provenance. */
+    var s=String(d.summary||'');
+    var m=s.match(/Email:\s*([^@\s]+@[^@\s]+\.[A-Za-z]{2,})/i) || s.match(/\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/);
+    if(m) return {email:m[1], src:'intake'};
+    return {email:'', src:''};
+  }
+  function rowToHit(r){
+    var d=(r&&r.data)||{};
+    var em=chartEmail(d);
+    return { external_id:String(r.external_id||d.id||''), name:String(d.name||r.label||'').trim(),
+             dob:String(d.dob||'').slice(0,10), email:em.email, emailSrc:em.src, mrn:String(d.mrn||'') };
+  }
+  function bearer(){ return { 'Authorization':'Bearer '+token }; }
+  function searchCharts(q){
+    return fetch(API+'/api/patients/search?q='+encodeURIComponent(q)+'&limit=20',{headers:bearer()})
+      .then(function(r){ if(!r.ok) throw {status:r.status}; return r.json(); })
+      .then(function(j){ return (j.patients||j.results||[]).map(rowToHit); })
+      .catch(function(e){
+        if(e && (e.status===401||e.status===403)) throw e;
+        // fallback: fetch the full list once, filter locally
+        if(ALL){ return filterAll(q); }
+        return fetch(API+'/api/patients',{headers:bearer()})
+          .then(function(r){ if(!r.ok) throw {status:r.status}; return r.json(); })
+          .then(function(j){ ALL=(j.patients||[]).map(rowToHit); return filterAll(q); });
+      });
+  }
+  function filterAll(q){
+    q=q.toLowerCase();
+    return ALL.filter(function(h){
+      return h.name.toLowerCase().indexOf(q)>=0 || h.external_id.toLowerCase().indexOf(q)>=0 ||
+             h.mrn.toLowerCase().indexOf(q)>=0 || h.dob.indexOf(q)>=0;
+    }).slice(0,20);
+  }
+  function renderHits(hits){
+    var box=$('pkres');
+    if(!hits.length){ box.innerHTML=''; $('pknote').textContent='No matching chart. Check the spelling — only patients saved in MLS (synced to the cloud) can get portal access.'; return; }
+    $('pknote').textContent='';
+    box.innerHTML=hits.map(function(h,i){
+      return '<div class="pkhit" data-i="'+i+'"><div><div class="nm">'+esc(h.name||'(no name on chart)')+'</div>'
+        +'<div class="mt">DOB '+esc(h.dob?fmtDob(h.dob):'—')+' · chart '+esc(h.external_id)+'</div></div>'
+        +'<span class="em '+(h.email?'has':'no')+'">'+(h.email?(h.emailSrc==='intake'?'✉ email from intake':'✉ email on file'):'no email on file')+'</span></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.pkhit'), function(el){
+      el.addEventListener('click', function(){ pick(hits[parseInt(el.getAttribute('data-i'),10)]); });
+    });
+  }
+  function pick(h){
+    picked=h;
+    $('name').value=h.name; $('dob').value=h.dob; $('pid').value=h.external_id;
+    if(h.email) $('email').value=h.email;
+    $('pkres').innerHTML=''; $('pknote').textContent='';
+    var chip=$('chartchip');
+    chip.style.display='block';
+    chip.innerHTML='✓ Loaded from chart: <b>'+esc(h.name)+'</b> · DOB '+esc(fmtDob(h.dob))+' · chart '+esc(h.external_id)
+      +(h.email?(' · '+(h.emailSrc==='intake'?'email from their pre-visit intake':'email on file')+': <b>'+esc(h.email)+'</b>'
+        +(h.emailSrc==='intake'?' <span style="color:#8a5a00">(from intake — glance at it before sending)</span>':''))
+        :' · <span style="color:#8a5a00">no email on file — enter one below</span>');
+    $('autoSend').style.display=h.email?'flex':'none';
+    hideMsg();
+    if(!h.email){ try{ $('email').focus(); }catch(e){} }
+  }
+  var searching=false;
+  function doSearch(){
+    var q=($('pkq').value||'').trim();
+    if(q.length<2 || searching) return;
+    searching=true; $('pknote').textContent='Searching your charts…';
+    searchCharts(q).then(function(hits){ searching=false; renderHits(hits); })
+      .catch(function(e){ searching=false; $('pkres').innerHTML='';
+        $('pknote').textContent=(e&&(e.status===401||e.status===403))?'Your MLS session expired — sign in to MLS again, then reload this page.':'Could not reach MLS to search charts — check your connection and try again.'; });
+  }
+  $('pkGo').addEventListener('click', doSearch);
+  var deb=null;
+  $('pkq').addEventListener('input', function(){ clearTimeout(deb); deb=setTimeout(doSearch, 450); });
+  $('pkq').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doSearch(); } });
+  // deep link ?id=<chart id> → load that chart automatically
+  if(token && deepId){
+    searchCharts(deepId).then(function(hits){
+      var hit=null;
+      for(var i=0;i<hits.length;i++){ if(hits[i].external_id===deepId){ hit=hits[i]; break; } }
+      if(!hit && hits.length===1) hit=hits[0];
+      if(hit) pick(hit);
+    }).catch(function(){});
+  }
+
+  // ⚡ Auto-send: zero typing, NOT zero confirmation — the same wrong-patient
+  // confirm modal still gates the actual send. Doctor-initiated, one patient
+  // at a time; MLS never emails anyone without this click + confirmation.
+  $('autoSend').addEventListener('click', function(){
+    hideMsg(); $('credBox').style.display='none';
+    if(!picked || !picked.email){ showMsg('Pick a chart with an email on file first.', false); return; }
+    if(!token){ showMsg('Not signed in to MLS — open MLS, sign in, and reload.', false); return; }
+    openConfirm({ email:picked.email, name:picked.name, dob:picked.dob, external_id:picked.external_id });
+  });
 
   // ---------- explicit confirmation modal ----------
   var pending=null;
@@ -181,9 +333,9 @@
 
   // ---------- send: prefer the email-link route; fall back to direct provisioning ----------
   function doSend(d){
-    var btn=$('send'); btn.disabled=true; var old=btn.textContent; btn.innerHTML='<span class="spin"></span> Sending…';
-    // 1) Preferred: backend emails a secure one-time link (route ships with the
-    //    portal-invite backend module). If it isn't deployed yet -> 404 -> fallback.
+    var btn=$('send'); btn.disabled=true; $('autoSend').disabled=true; var old=btn.textContent; btn.innerHTML='<span class="spin"></span> Sending…';
+    function done(){ btn.disabled=false; $('autoSend').disabled=false; btn.textContent=old; }
+    // 1) Preferred: backend emails a secure one-time link (portal-invite module).
     fetch(API+'/api/patient/admin/send-portal-invite', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
@@ -192,15 +344,23 @@
     .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
     .then(function(res){
       if(res.ok){
-        if(res.j && res.j.sent===false){ showMsg('Portal access + a secure one-time link were created, but the EMAIL could not be sent (mail service not configured). Ask your MLS admin to finish email setup, then resend.', false); }
-        else { showMsg('✓ Portal invite emailed to '+d.email+'. They’ll get a secure one-time sign-in link (expires in about 72 hours).', true); $('f').reset(); }
+        if(res.j && res.j.sent===false){ showMsg('Portal access + a secure one-time link were created, but the EMAIL could not be sent (mail service not configured on the server). Ask your MLS admin to add RESEND_API_KEY / MAIL_FROM on the backend, then resend.', false); diag('send-portal-invite → ok, sent:false (mail env missing)'); }
+        else { showMsg('✓ Portal invite emailed to '+d.email+'. They’ll get a secure one-time sign-in link (expires in about 72 hours). When they open it they confirm their date of birth, set a password, and land in their own records.', true); $('f').reset(); $('chartchip').style.display='none'; $('autoSend').style.display='none'; picked=null; }
         return null; }
-      if(res.status===404){ return provisionFallback(d); } // email route not live yet
-      if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites. Sign in to MLS again and retry.', false); return null; }
-      showMsg((res.j && (res.j.error||res.j.message)) || ('Could not send (error '+res.status+'). Please try again.'), false); return null;
+      if(res.status===404 && res.j && res.j.error){
+        // route is live, but the CHART wasn't matched (missing or name/DOB mismatch)
+        showMsg('MLS couldn’t match that chart: '+res.j.error+'. Use “Pick from your charts” above so the chart ID, name and DOB come straight from the chart — and make sure the patient is saved in MLS (synced to the cloud), not only on this device.', false);
+        diag('send-portal-invite → 404 '+JSON.stringify(res.j)); return null;
+      }
+      if(res.status===404){ return provisionFallback(d); } // email route not mounted at all
+      if(res.status===400){ showMsg('The server rejected the request as incomplete (error 400). If all four fields are filled, this is the known owner-lookup bug — ask your MLS admin to apply the portal-invite backend patch (owner chain must include u.uid).', false); diag('send-portal-invite → 400 '+JSON.stringify(res.j)); return null; }
+      if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites. Sign in to MLS again (as the practice/admin account) and retry.', false); diag('send-portal-invite → '+res.status); return null; }
+      if(res.status===409){ showMsg((res.j&&res.j.error)||'A portal account already exists for this patient or email. If they lost access, disable the old account in MLS first, then resend.', false); diag('send-portal-invite → 409'); return null; }
+      if(res.status===502){ showMsg('The invite was created but the email could not be sent (mail service problem). Try again in a minute, or ask your MLS admin to check the mail configuration (RESEND_API_KEY / MAIL_FROM).', false); diag('send-portal-invite → 502'); return null; }
+      showMsg((res.j && (res.j.error||res.j.message)) || ('Could not send (error '+res.status+'). Please try again.'), false); diag('send-portal-invite → '+res.status); return null;
     })
     .catch(function(){ showMsg('Network error — please try again.', false); })
-    .then(function(){ btn.disabled=false; btn.textContent=old; });
+    .then(done, done);
   }
 
   // 2) Fallback: provision username+password against the LIVE /api/patient/admin/invite
@@ -226,12 +386,13 @@
           +'<div class="kv"><span>Password</span><b>'+esc(password)+'</b><button class="copybtn" data-copy="'+esc(password)+'">Copy</button></div>'
           +'<div class="kv"><span>+ their date of birth at sign-in</span><b></b><button class="copybtn" data-copy="'+esc(msgText)+'">📋 Copy full invite message</button></div>'
           +'<div style="font-size:12px;color:var(--muted);margin-top:8px">Hand these to the patient through a channel you trust (in person, their phone number on file, or your secure messaging). This page does not store them.</div>';
-        $('f').reset();
+        $('f').reset(); $('chartchip').style.display='none'; $('autoSend').style.display='none'; picked=null;
       }
-      else if(res.status===404){ showMsg('No chart with ID "'+d.external_id+'" was found in your practice. Check the patient ID in MLS and try again.', false); }
-      else if(res.status===409){ showMsg((res.j&&res.j.error)||'An account already exists for this patient (or the username is taken). If they lost access, disable the old account in MLS first.', false); }
-      else if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to create portal access. Sign in to MLS again and retry.', false); }
-      else { showMsg((res.j && (res.j.error||res.j.message)) || ('Could not create access (error '+res.status+'). Please try again.'), false); }
+      else if(res.status===404){ showMsg('No chart with ID "'+d.external_id+'" was found in your practice. Use “Pick from your charts” above so the ID comes straight from the chart — and make sure the patient is saved in MLS (synced to the cloud), not only on this device.', false); diag('admin/invite → 404'); }
+      else if(res.status===400){ showMsg('The server rejected the request (error 400). If all fields are filled, this is the known owner-lookup bug — ask your MLS admin to apply the portal-invite backend patch (owner chain must include u.uid).', false); diag('admin/invite → 400 '+JSON.stringify(res.j)); }
+      else if(res.status===409){ showMsg((res.j&&res.j.error)||'An account already exists for this patient (or the username is taken). If they lost access, disable the old account in MLS first.', false); diag('admin/invite → 409'); }
+      else if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to create portal access. Sign in to MLS again and retry.', false); diag('admin/invite → '+res.status); }
+      else { showMsg((res.j && (res.j.error||res.j.message)) || ('Could not create access (error '+res.status+'). Please try again.'), false); diag('admin/invite → '+res.status); }
     });
   }
 
