@@ -92,7 +92,11 @@
       // read the open chart (retry once)
       var r = null;
       for (var b = 0; b < 2; b++) {
-        r = await bridge('mlsAppReadChart', { patient: name }, 'mlsAppChartResult', 75000);
+        /* b90: read-only (empty patient) — search-open already opened the chart, so we
+           must NOT let readChart run its heavy all-<div> openFn scan across the open
+           2.3MB clinical frame (that scan froze athenaOne mid-pull). Empty patient =>
+           the handler skips the open entirely and just reads the current chart. */
+        r = await bridge('mlsAppReadChart', { patient: '' }, 'mlsAppChartResult', 75000);
         if (r && r.ok && r.text && r.text.length >= 400) break;
         await wait(1500);
       }
@@ -21722,7 +21726,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b89';
+  var MLS_APP_BUILD='2026-07-08-b90';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
