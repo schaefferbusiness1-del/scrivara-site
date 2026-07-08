@@ -23330,7 +23330,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b95';
+  var MLS_APP_BUILD='2026-07-08-b96';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -25909,7 +25909,7 @@
     var cls='ok', txt;
     if(st.errors>0){ cls='err'; txt='Athena · '+st.errors+' error'+(st.errors>1?'s':''); }
     else if(st.last){ cls='ok'; txt='Athena · '+(st.last.dir==='pull'?'pulled ':'synced ')+timeAgo(st.last.ts); }
-    else { cls='idle'; txt='Athena · idle'; }
+    else { var conn=false; try { conn=!!(window.__mlsExtReportedVersion); } catch(e){} var pulling=false; try { pulling=!!(window.__mlsDayHistoryPull&&window.__mlsDayHistoryPull.state&&window.__mlsDayHistoryPull.state.running); } catch(e){} if(pulling){ cls='ok'; txt='Athena · syncing…'; } else if(conn){ cls='ok'; txt='Athena · connected'; } else { cls='idle'; txt='Athena · not connected'; } }
     return '<span class="mls-sync mls-sync-'+cls+'" data-tip="Athena sync status — click for details">'
       +'<span class="mls-sync-dot"></span>'+esc(txt)+'</span>';
   }
