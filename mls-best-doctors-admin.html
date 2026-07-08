@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>MLS Best Doctors — your listing & earned rating</title>
+<!-- ==========================================================================
+  mls-best-doctors-admin.html — DOCTOR console (v1.0.0)
+  Authoring lane best-doctors, 2026-07-08. Clinician-authed (sf_bk_token).
+
+  Lets a doctor:
+    * SEE their EARNED rating (read-only) + the exact method — with the plain
+      statement that they cannot edit or buy it.
+    * Edit their PUBLIC profile (name, specialty, city, bio, photo, review links).
+    * OPT IN to the directory and ATTEST the patient consent/notice surface.
+    * See listing status (what's missing) + subscription status (link to billing).
+    * Optionally publish external-review highlights captured by the review-finder.
+
+  It NEVER exposes a control to set/raise the rating — there is no such endpoint.
+  Degrades gracefully when the backend routes aren't live yet. No PHI, no Athena.
+=========================================================================== -->
+<style>
+:root{--ink:#15243c;--sub:#5b6b83;--line:#dbe3f0;--teal:#19b8a6;--blue:#2f6bed;--gold:#c9a227;--bg:#f4f7fc;--card:#fff;--ok:#0d6a5b;--warn:#9a6a10}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink)}
+a{color:var(--blue)}
+.wrap{max-width:820px;margin:0 auto;padding:18px 16px 70px}
+header.mls{display:flex;align-items:center;gap:12px;padding:6px 0 4px}
+.mark{width:42px;height:42px;border-radius:12px;background:linear-gradient(140deg,var(--teal),var(--blue));display:flex;align-items:center;justify-content:center;flex:none}
+.mark svg{width:26px;height:26px}
+h1{font-size:21px;margin:0}
+.tag{font-size:12.5px;color:var(--sub)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 2px 10px rgba(21,36,60,.04)}
+.card h2{font-size:16.5px;margin:0 0 8px}
+.note{font-size:12.5px;color:var(--sub)}
+.locked{background:#eef4ff;border:1px solid #cfe0ff;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#274b8f;margin:6px 0}
+.bigrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.bigstars{font-size:34px;color:var(--gold);letter-spacing:2px}
+.starnum{font-size:26px;font-weight:800}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;border-radius:999px;padding:3px 10px}
+.pill.ok{background:#e9f9f4;color:var(--ok);border:1px solid #b7ecdf}
+.pill.warn{background:#fff5e2;color:var(--warn);border:1px solid #f0dca8}
+.dims{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:12px}
+.dim{background:#f7faff;border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+.dim .n{font-size:11.5px;color:var(--sub);text-transform:capitalize}
+.dim .bar{height:7px;border-radius:5px;background:#e4ebf5;margin-top:6px;overflow:hidden}
+.dim .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--blue))}
+.dim .v{font-size:12px;font-weight:800;margin-top:5px}
+label{display:block;font-size:12px;font-weight:700;margin:12px 0 4px}
+input,textarea,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px;font-size:14px;font-family:inherit;background:#fff}
+textarea{min-height:84px;line-height:1.5}
+.two{display:flex;gap:10px;flex-wrap:wrap}
+.two>div{flex:1;min-width:150px}
+.check{display:flex;gap:9px;align-items:flex-start;margin:12px 0}
+.check input{width:18px;height:18px;margin-top:2px;flex:none}
+.check label{margin:0;font-weight:600;font-size:13px}
+.btn{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:14px}
+.btn.primary{background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff}
+.btn.ghost{background:#eef2fa;color:#24406e}
+.status{border-radius:10px;padding:11px 13px;font-size:13px;margin-top:8px}
+.status.good{background:#e9f9f4;color:var(--ok);border:1px solid #b7ecdf}
+.status.bad{background:#fff5e2;color:var(--warn);border:1px solid #f0dca8}
+.popt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin:8px 0;cursor:pointer}
+.popt.sel{border-color:var(--blue);background:#f5f9ff}
+.popt.disabled{opacity:.6;cursor:not-allowed}
+.popt input{width:18px;height:18px;margin-top:2px;flex:none}
+.popt .t{font-weight:800;font-size:14px}
+.popt .t .tag2{font-size:11px;font-weight:800;color:#8a6410;background:#fff2d6;border:1px solid #e7d49a;border-radius:6px;padding:1px 7px;margin-left:6px}
+.popt .b{font-size:12px;color:var(--sub);margin-top:2px}
+.popt .lk{font-size:11.5px;color:var(--warn);margin-top:4px}
+.vis{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:8px}
+.vis table{border-collapse:collapse;width:100%;font-size:12.5px}
+.vis th,.vis td{text-align:left;padding:7px 9px;border-bottom:1px solid #eef2f8}
+.vis th{position:sticky;top:0;background:#f7faff}
+.muted td{color:#9aa8bd}
+.foot{font-size:11.5px;color:var(--sub);margin-top:22px;line-height:1.55}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mls">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13c3-1 5-1 8 0s5 1 8 0" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="2.4" fill="#fff"/></svg></div>
+    <div><h1>Your Best Doctors listing</h1><div class="tag">Your earned patient-experience rating and public profile.</div></div>
+  </header>
+
+  <div id="signin" class="card hide"><h2>Sign in to MLS first</h2><div class="note">Open this from inside MLS (you must be signed in) to manage your listing.</div></div>
+
+  <!-- EARNED RATING (read-only) -->
+  <div id="ratingCard" class="card">
+    <h2>Your earned rating</h2>
+    <div class="locked">🔒 This number is <b>earned</b>, computed on the server from your real, de-identified visit sentiment. You cannot edit, set, or buy it — and neither can we. A subscription pays only to be <i>listed</i>.</div>
+    <div id="ratingBody"><div class="note">Loading…</div></div>
+    <div class="note" style="margin-top:10px"><a id="methodLink" href="#" target="_blank" rel="noopener">See exactly how this is calculated →</a></div>
+  </div>
+
+  <!-- LISTING STATUS -->
+  <div class="card">
+    <h2>Listing status</h2>
+    <div id="statusBody"><div class="note">Loading…</div></div>
+  </div>
+
+  <!-- PROFILE EDITOR -->
+  <div class="card">
+    <h2>Public profile</h2>
+    <div class="note">This is the only thing you control — your public business info. It never affects the rating.</div>
+    <label>Display name</label><input id="displayName" maxlength="120" placeholder="Dr. Jane Smith">
+    <div class="two">
+      <div><label>Specialty</label><input id="specialty" maxlength="80" placeholder="Interventional Pain / PM&amp;R"></div>
+      <div><label>City</label><input id="city" maxlength="80" placeholder="West Chester"></div>
+      <div><label>State</label><input id="state" maxlength="40" placeholder="PA"></div>
+    </div>
+    <label>Short bio (optional)</label><textarea id="bio" maxlength="1200" placeholder="A sentence or two patients would find helpful. No clinical claims."></textarea>
+    <label>Photo URL (optional, https)</label><input id="photoUrl" maxlength="400" placeholder="https://…">
+    <label>Review destination links (optional, one per line — Google/Healthgrades/Vitals/WebMD/RateMDs/Zocdoc)</label>
+    <textarea id="reviewLinks" placeholder="https://g.page/...&#10;https://www.healthgrades.com/..."></textarea>
+
+    <div class="check"><input type="checkbox" id="directoryOptin"><label for="directoryOptin"><b>List me in the public MLS Best Doctors directory.</b> My profile + earned rating may be shown publicly. (Requires an active subscription.)</label></div>
+    <div class="check"><input type="checkbox" id="consentAck"><label for="consentAck"><b>Patient-consent attestation.</b> I present my patients a notice that their visit may contribute, de-identified and in aggregate only, to quality/experience metrics, and that they may opt out — and I have confirmed this is permitted for my practice. <span class="note">(Required before publishing. See the consent &amp; legal notice below.)</span></label></div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn primary" id="saveBtn">Save profile</button>
+      <button class="btn ghost" id="reviewsBtn" title="Publish review highlights captured by the Review Finder">Pull my public reviews</button>
+      <span class="note" id="saveNote" style="align-self:center"></span>
+    </div>
+    <div id="saveStatus"></div>
+  </div>
+
+  <!-- PLACEMENT / VISIBILITY (paid — position only, never the rating) -->
+  <div class="card">
+    <h2>Placement &amp; visibility <span class="note" style="font-weight:600">(paid — position only)</span></h2>
+    <div class="locked">📣 Placement changes where you appear and adds a labeled <b>Sponsored/Featured</b> badge — it moves your <b>position</b>, and <b>never</b> your star rating. Patients always see that these listings are paid, and can sort by “Top rated (earned only)” to remove all paid influence.</div>
+    <div id="placementOptions"><div class="note">Loading…</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn primary" id="placeSaveBtn">Save placement</button>
+      <span class="note" id="placeNote" style="align-self:center"></span>
+    </div>
+    <div id="placeStatus"></div>
+  </div>
+
+  <!-- RECENT VISITS (numbers only) -->
+  <div class="card">
+    <h2>Recent rated visits</h2>
+    <div class="note">Per-visit scores (numbers only — never any patient identity or visit content). Ask us to exclude a visit if a patient requests it.</div>
+    <div id="visitsBody" class="vis"></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var BK = (function () { try { return (window.bkBase && window.bkBase()) || 'https://scrivara-backend.onrender.com'; } catch (e) { return 'https://scrivara-backend.onrender.com'; } })();
+  try { if (window.MLS_BACKEND_URL) BK = window.MLS_BACKEND_URL; } catch (e) {}
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function tok() { try { return sessionStorage.getItem('sf_bk_token') || localStorage.getItem('sf_bk_token') || ''; } catch (e) { return ''; } }
+  function starStr(n) { if (n == null) return ''; var full = Math.round(n), s = '', i; for (i = 0; i < 5; i++) s += (i < full ? '★' : '☆'); return s; }
+  function hdr() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() }; }
+
+  $('methodLink').href = BK + '/api/ratings/methodology';
+  $('foot').textContent = 'Ratings are computed automatically from de-identified visit sentiment by a fixed, published method (mls-vsr). They are immutable to you. Being listed is a paid subscription and is disclosed publicly. Only aggregate numbers are ever published — never patient identity, visit detail, or transcript text.';
+
+  if (!tok()) { $('signin').className = 'card'; }
+
+  /* ---------- load rating + profile + status ---------- */
+  function loadAll() {
+    if (!tok()) return;
+    fetch(BK + '/api/best-doctors/profile', { headers: hdr() })
+      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) {
+        if (!j || !j.ok) { $('statusBody').innerHTML = '<div class="status bad">The Best Doctors service is not available yet. Your changes will be saved once it is live.</div>'; return; }
+        fillProfile(j.profile || {});
+        fillRating(j.rating || {});
+        fillStatus(j);
+        fillPlacement(j.placement || {});
+      }, function () {});
+    fetch(BK + '/api/ratings/me', { headers: hdr() })
+      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) { if (j && j.ok) { fillRating(j.rating || {}); fillVisits(j.visits || [], j.totals || {}); } }, function () {});
+  }
+
+  function fillRating(rating) {
+    var body = $('ratingBody');
+    if (rating.published) {
+      body.innerHTML = '<div class="bigrow"><span class="bigstars">' + starStr(rating.stars) + '</span>'
+        + '<span class="starnum">' + esc(String(rating.stars)) + ' / 5</span>'
+        + '<span class="pill ok">Published • ' + (rating.countedVisits || 0) + ' rated visits</span></div>'
+        + dimBlock(rating.dimensions);
+    } else {
+      var need = rating.minVisits || '?', have = rating.countedVisits || 0;
+      body.innerHTML = '<div class="bigrow"><span class="pill warn">Earned rating in progress</span>'
+        + '<span class="note">' + have + ' of ' + need + ' counted visits. Your public rating appears once you reach ' + need + ' — this floor keeps a rating from being set by a handful of visits.</span></div>'
+        + dimBlock(rating.dimensions);
+    }
+  }
+  function dimBlock(dims) {
+    if (!dims) return '';
+    var order = ['warmth', 'listening', 'clarity', 'empathy', 'rapport'], html = '', i;
+    for (i = 0; i < order.length; i++) { var k = order[i], v = dims[k]; if (v == null) continue;
+      html += '<div class="dim"><div class="n">' + k + '</div><div class="bar"><i style="width:' + Math.max(0, Math.min(100, v)) + '%"></i></div><div class="v">' + esc(String(Math.round(v))) + ' / 100</div></div>'; }
+    return html ? ('<div class="dims">' + html + '</div>') : '';
+  }
+
+  function fillProfile(p) {
+    $('displayName').value = p.displayName || '';
+    $('specialty').value = p.specialty || '';
+    $('city').value = p.city || '';
+    $('state').value = p.state || '';
+    $('bio').value = p.bio || '';
+    $('photoUrl').value = p.photoUrl || '';
+    var L = p.reviewLinks || {}, lines = [];
+    for (var k in L) { if (L.hasOwnProperty(k) && L[k]) lines.push(L[k]); }
+    $('reviewLinks').value = lines.join('\n');
+    $('directoryOptin').checked = !!p.directoryOptin;
+    $('consentAck').checked = !!p.consentAck;
+  }
+
+  function fillStatus(j) {
+    var st = j.status || {}, reasons = st.reasons || [];
+    var labels = {
+      directory_not_public_yet: 'The public directory is not open yet (pending final legal/ethical sign-off).',
+      no_active_subscription: 'No active MLS subscription — <a href="mls-marketing.html">start one</a> to be listed.',
+      not_opted_in: 'You have not opted in to the directory (checkbox above).',
+      consent_not_attested: 'The patient-consent attestation is not checked.',
+      profile_incomplete: 'Add at least your display name and specialty.'
+    };
+    var html;
+    if (st.listable) {
+      html = '<div class="status good">✅ You are listed. <a href="' + esc(j.publicUrl || 'mls-best-doctors.html') + '" target="_blank" rel="noopener">View your public profile →</a></div>';
+    } else {
+      html = '<div class="status bad">Your listing is not live yet. To go live:<ul style="margin:6px 0 0 18px;padding:0">';
+      for (var i = 0; i < reasons.length; i++) html += '<li>' + (labels[reasons[i]] || esc(reasons[i])) + '</li>';
+      html += '</ul></div>';
+    }
+    html += '<div class="note" style="margin-top:8px">Subscription: ' + (st.subscribed ? '<b style="color:var(--ok)">active</b>' : '<b style="color:var(--warn)">inactive</b> — <a href="mls-marketing.html">manage billing</a>') + '. A subscription buys placement only; it never changes your rating.</div>';
+    $('statusBody').innerHTML = html;
+  }
+
+  function fillVisits(visits, totals) {
+    if (!visits.length) { $('visitsBody').innerHTML = '<div class="note" style="padding:10px">No rated visits yet. Complete and sign visits in MLS — each one is scored automatically.</div>'; return; }
+    var html = '<table><thead><tr><th>Date</th><th>Score</th><th>Conf.</th><th>Counts?</th><th>Verified</th></tr></thead><tbody>';
+    for (var i = 0; i < visits.length; i++) {
+      var v = visits[i];
+      html += '<tr class="' + (v.countsToward ? '' : 'muted') + '"><td>' + esc(v.date || '') + '</td><td>' + esc(String(v.score)) + '</td><td>' + esc(String(v.confidence)) + '</td><td>'
+        + (v.countsToward ? 'yes' : ('no — ' + esc(v.reason || ''))) + '</td><td>' + (v.verified ? '✓' : '–') + '</td></tr>';
+    }
+    html += '</tbody></table>';
+    $('visitsBody').innerHTML = html;
+  }
+
+  /* ---------- placement (paid visibility; never the rating) ---------- */
+  var PLACEMENT_STATE = { selected: 'none', available: ['none'] };
+  function fillPlacement(pl) {
+    PLACEMENT_STATE.selected = pl.selected || 'none';
+    PLACEMENT_STATE.available = pl.available || ['none'];
+    var opts = pl.options || [{ key: 'none', label: null, blurb: 'Organic placement only.', allowed: true }];
+    var html = '';
+    for (var i = 0; i < opts.length; i++) {
+      var o = opts[i];
+      var allowed = !!o.allowed;
+      var checked = (o.key === (pl.selected || 'none'));
+      var title = o.key === 'none' ? 'Organic (no paid boost)' : (o.label || o.key);
+      html += '<label class="popt' + (checked ? ' sel' : '') + (allowed ? '' : ' disabled') + '" data-k="' + esc(o.key) + '">'
+        + '<input type="radio" name="placement" value="' + esc(o.key) + '"' + (checked ? ' checked' : '') + (allowed ? '' : ' disabled') + '>'
+        + '<div><div class="t">' + esc(title) + (o.key !== 'none' ? '<span class="tag2">Paid</span>' : '') + '</div>'
+        + '<div class="b">' + esc(o.blurb || '') + '</div>'
+        + (allowed ? '' : '<div class="lk">' + (o.key === 'featured' ? 'Available on the plan that includes Featured — upgrade in billing.' : 'Requires an active subscription.') + '</div>')
+        + '</div></label>';
+    }
+    if (pl.effective && pl.effective !== (pl.selected || 'none')) {
+      html += '<div class="note" style="margin-top:6px">Currently applied: <b>' + esc(pl.effective) + '</b> (your selection activates once you\'re entitled).</div>';
+    }
+    $('placementOptions').innerHTML = html;
+    // clicking a row selects its radio (and re-styles)
+    var rows = $('placementOptions').getElementsByClassName('popt');
+    for (var r = 0; r < rows.length; r++) {
+      rows[r].onclick = function () {
+        var input = this.getElementsByTagName('input')[0];
+        if (input && !input.disabled) { input.checked = true; for (var k = 0; k < rows.length; k++) rows[k].className = rows[k].className.replace(' sel', ''); this.className += ' sel'; }
+      };
+    }
+  }
+  function selectedPlacement() {
+    var rs = document.getElementsByName('placement');
+    for (var i = 0; i < rs.length; i++) if (rs[i].checked) return rs[i].value;
+    return PLACEMENT_STATE.selected || 'none';
+  }
+  $('placeSaveBtn').onclick = function () {
+    if (!tok()) { $('signin').className = 'card'; return; }
+    $('placeNote').textContent = 'Saving…';
+    fetch(BK + '/api/best-doctors/profile', { method: 'POST', headers: hdr(), body: JSON.stringify({ placement: selectedPlacement() }) })
+      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) {
+        if (j && j.ok) { $('placeNote').textContent = '✓ Saved'; $('placeStatus').innerHTML = j.note ? ('<div class="status bad">' + esc(j.note) + '</div>') : ''; loadAll(); }
+        else { $('placeNote').textContent = 'Could not save placement right now.'; }
+      }, function () { $('placeNote').textContent = 'Could not save placement right now.'; });
+  };
+
+  /* ---------- save ---------- */
+  function parseLinks(text) {
+    var out = {}, raw = String(text || '').split(/\r?\n/), i, u;
+    for (i = 0; i < raw.length; i++) { u = raw[i].replace(/^\s+|\s+$/g, ''); if (!/^https?:/i.test(u)) continue;
+      if (/healthgrades\.com/i.test(u)) out.healthgrades = u;
+      else if (/vitals\.com/i.test(u)) out.vitals = u;
+      else if (/webmd\.com/i.test(u)) out.webmd = u;
+      else if (/ratemds\.com/i.test(u)) out.ratemds = u;
+      else if (/zocdoc\.com/i.test(u)) out.zocdoc = u;
+      else if (/(google\.[a-z.]+\/maps|maps\.app\.goo\.gl|g\.page)/i.test(u)) out.google = u; }
+    return out;
+  }
+
+  $('saveBtn').onclick = function () {
+    if (!tok()) { $('signin').className = 'card'; return; }
+    var body = {
+      displayName: $('displayName').value, specialty: $('specialty').value,
+      city: $('city').value, state: $('state').value, bio: $('bio').value, photoUrl: $('photoUrl').value,
+      reviewLinks: parseLinks($('reviewLinks').value),
+      directoryOptin: $('directoryOptin').checked, consentAck: $('consentAck').checked
+    };
+    $('saveNote').textContent = 'Saving…';
+    fetch(BK + '/api/best-doctors/profile', { method: 'POST', headers: hdr(), body: JSON.stringify(body) })
+      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) {
+        if (j && j.ok) { $('saveNote').textContent = '✓ Saved'; loadAll(); if (j.note) $('saveStatus').innerHTML = '<div class="status bad">' + esc(j.note) + '</div>'; else $('saveStatus').innerHTML = ''; }
+        else { $('saveNote').textContent = 'Saved locally (service not live yet).'; }
+      }, function () { $('saveNote').textContent = 'Could not save right now.'; });
+  };
+
+  /* pull the review-finder cache (public reviews) and publish DOCTOR-scoped highlights */
+  $('reviewsBtn').onclick = function () {
+    if (!tok()) return;
+    var sc = null; try { sc = JSON.parse(localStorage.getItem('mlsRFScrapeCache') || 'null'); } catch (e) {}
+    var payload = sc && sc.payload ? sc.payload : null;
+    if (!payload) { $('saveNote').textContent = 'Run the Review Finder in MLS first, then click this.'; return; }
+    var summary = (payload.summary && payload.summary.doctor) ? { rating: payload.summary.doctor.rating, count: payload.summary.doctor.reviewCount } : {};
+    var highlights = [];
+    var rv = payload.reviews || [];
+    for (var i = 0; i < rv.length && highlights.length < 12; i++) { if (rv[i].scope === 'doctor' && rv[i].text) highlights.push({ source: rv[i].source, rating: rv[i].rating, author: rv[i].author, text: rv[i].text }); }
+    $('saveNote').textContent = 'Publishing reviews…';
+    fetch(BK + '/api/best-doctors/profile/reviews', { method: 'POST', headers: hdr(), body: JSON.stringify({ summary: summary, highlights: highlights }) })
+      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) { $('saveNote').textContent = (j && j.ok) ? ('✓ Published ' + highlights.length + ' review highlight(s).') : 'Could not publish reviews.'; }, function () {});
+  };
+
+  loadAll();
+})();
+</script>
+</body>
+</html>
