@@ -325,7 +325,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '3.2.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.3.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -470,10 +470,12 @@
       r.ok = true; r.reason = '';
       r.error = '';
       r.chartName = want;                               /* text-grounded identity for downstream (F18a etc.) */
-      if (!r.chartDob) {
-        var m = /\b\d{1,2}yo\s+[MF]\s*\|\s*([01]?\d[\-\/][0-3]?\d[\-\/]\d{4})/i.exec(String(r.text || ''));
-        if (m) r.chartDob = m[1];
-      }
+      /* v3.3: ALWAYS derive the DOB from the banner text; the extension's own
+         identity dob is regex garbage from noise frames (verified live:
+         6-23-1942 leaked onto Adam J Schaeffer, 03/24/2006). No banner DOB →
+         blank, never a guess. */
+      var m = /\b\d{1,2}yo\s+[MF]\s*\|\s*([01]?\d[\-\/][0-3]?\d[\-\/]\d{4})/i.exec(String(r.text || ''));
+      r.chartDob = m ? m[1] : '';
       try { if (api.__onGatePass) api.__onGatePass(want, r.chartDob || '', r.text || ''); } catch (e) {}
       return true;
     }
@@ -15947,7 +15949,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b71';
+  var MLS_APP_BUILD='2026-07-07-b72';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
