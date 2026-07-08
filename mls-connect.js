@@ -1,43 +1,40 @@
 /* =========================================================================
- * MLS Scribe — IMPORT CHAIN FIX  (__mlsImportChainFix) v2.1.0  2026-07-07
+ * MLS Scribe — IMPORT CHAIN FIX + IMPORT HYGIENE  (__mlsImportChainFix) v2.2.0  2026-07-07
  *
- * ROOT CAUSE (live since ~Jul 2, verified 2026-07-07): window._importPulledSchedule
- * is wrapped by THREE independent modules, two of which re-wrap on ETERNAL
- * setInterval loops and store their original in a single module-level variable:
- *   - b49 pull-truth (`wrapImport`, every 2 s; stands down only if outer has __b49)
- *   - provider passthrough (`installWraps`, every 5 s; stands down only if __provWrap)
- *   - pullrec fix v1.4.2 (installs once, marker __prf)
- * When any wrapper WITHOUT a given marker lands on top, that module re-wraps
- * and CLOBBERS its saved original to point at the current outer function —
- * producing a cycle (stack: provWrap ↔ w). Because the pullrec layer defers
- * through Promise.resolve, the cycle can also spin as an INFINITE MICROTASK
- * LOOP (frozen tab) instead of a clean RangeError. Net effect: schedule
- * imports dead; pulled DOBs never save; occasional full-tab freezes.
+ * PART 1 — chain fix (v2.1, unchanged): window._importPulledSchedule is
+ * wrapped by three modules; b49 pull-truth (2 s loop, marker __b49) and
+ * provider passthrough (5 s loop, marker __provWrap) re-wrap forever and
+ * clobber their saved originals whenever an unmarked wrapper lands on top,
+ * forming a call cycle (RangeError, or a frozen tab via the pullrec layer's
+ * Promise deferral). This module boots FIRST, wraps window.setInterval, and
+ * stamps every already-installed layer's stand-down marker onto the current
+ * outer function synchronously before EVERY interval callback — the re-wrap
+ * checks can never see an unmarked outer, so the cycle can never form.
  *
- * FIX v2.1 (deterministic, race-free, no calls into app code):
- *   This module boots FIRST in the bundle, so it wraps window.setInterval
- *   before the re-wrap loops register theirs. The wrapper runs a tiny GUARD
- *   synchronously before EVERY interval callback: it records which layers
- *   have installed (own __b49/__provWrap/__prf on any sighted value) and
- *   stamps every already-installed layer's marker onto the CURRENT outer
- *   function. Because the guard executes in the same task, immediately
- *   before b49's/provPass's own re-wrap check, those checks can never see
- *   an unmarked outer — each layer installs exactly once, in any order, and
- *   the clobber cycle can never form.
- *   (v1's identity-change probe called the import chain directly and could
- *   itself enter the microtask loop — retired. An accessor trap is
- *   impossible: the base is a global function DECLARATION, whose binding is
- *   non-configurable.)
+ * PART 2 — import hygiene (new in v2.2): the pullrec v1.4.2 import wrapper
+ * (OPEN-slot drop + v1.51 structured-row DOB enrichment) never installs on
+ * live because its one-shot installer runs before the base import function
+ * exists (verified: outer chain lacks __prf on every load; provider-name
+ * rows like "Wright, PA-C" imported as patients at 9:51 PM). This module
+ * installs a LATE import wrapper once the base exists, which:
+ *   a) drops placeholder slots (OPEN / BLOCK / HOLD / LUNCH),
+ *   b) drops provider-credential rows ("…, MD", "…, PA-C", "…, DO", …),
+ *   c) attaches per-row DOBs from the extension v1.51 structured schedule
+ *      reply (passive mlsAppScheduleResult stash, normalized-name match,
+ *      never guessed) so name+DOB dedup finally has its key.
+ * The wrapper is marked __prf (so pullrec never double-installs) and gets
+ * __b49/__provWrap stamped by Part 1 — every layer coexists, no cycles.
  *
  * No Athena interaction. No writes. Revert: window.__mlsImportChainFix_revert()
  * ========================================================================= */
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '2.1.0', seen: {}, stamped: 0, guards: 0 };
+  var api = { version: '2.2.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
+  /* ---------------- PART 1: marker unification ---------------- */
   function guard() {
     api.guards++;
     var f = window._importPulledSchedule;
@@ -52,7 +49,6 @@
       if (api.seen[m] && !f[m]) { try { f[m] = 1; api.stamped++; } catch (e) {} }
     }
   }
-
   var nativeSetInterval = window.setInterval;
   var wrapped = function (fn) {
     var args = Array.prototype.slice.call(arguments);
@@ -63,13 +59,66 @@
   };
   try { wrapped.__mlsChainFix = 1; } catch (e) {}
   window.setInterval = wrapped;
+  var backstop = nativeSetInterval.call(window, function () { try { guard(); } catch (e) {} try { hygieneInstall(); } catch (e) {} }, 400);
 
-  /* backstop for assignments made outside interval callbacks */
-  var backstop = nativeSetInterval.call(window, function () { try { guard(); } catch (e) {} }, 400);
+  /* ---------------- PART 2: import hygiene ---------------- */
+  var SCHED = { appts: null, ts: 0 };
+  function onExtMsg(ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppScheduleResult') return;
+    try {
+      if (d.resp && d.resp.ok && Object.prototype.toString.call(d.resp.appts) === '[object Array]') {
+        SCHED.appts = d.resp.appts.slice(0, 400); SCHED.ts = new Date().getTime();
+      }
+    } catch (e) {}
+  }
+  window.addEventListener('message', onExtMsg, false);
+
+  function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function isPlaceholder(n) {
+    var t = String(n || '').replace(/[^a-z]/gi, '').toLowerCase();
+    return t === 'open' || t === 'openslot' || t === 'block' || t === 'blocked' || t === 'hold' || t === 'lunch' || t === '';
+  }
+  function isProviderRow(n) {
+    return /,\s*(MD|DO|PA\-?C|CRNP|NP|PhD|DPM|DC)\.?\s*$/i.test(String(n || '').trim());
+  }
+  function hygiene(appts) {
+    try {
+      if (appts && appts.length) {
+        for (var i = appts.length - 1; i >= 0; i--) {
+          var a = appts[i];
+          if (!a) continue;
+          if (isPlaceholder(a.name)) { appts.splice(i, 1); api.hygiene.openDropped++; continue; }
+          if (isProviderRow(a.name)) { appts.splice(i, 1); api.hygiene.provDropped++; continue; }
+        }
+      }
+      if (SCHED.appts && SCHED.appts.length && (new Date().getTime() - SCHED.ts) <= 120000) {
+        var byName = {};
+        SCHED.appts.forEach(function (r) { if (r && r.name && r.dob) { var k = normName(r.name); if (k && !byName[k]) byName[k] = String(r.dob); } });
+        (appts || []).forEach(function (a) {
+          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.hygiene.dobsAttached++; } }
+        });
+      }
+    } catch (e) {}
+    return appts;
+  }
+  function hygieneInstall() {
+    if (api.hygiene.installed) return;
+    var f = window._importPulledSchedule;
+    if (typeof f !== 'function') return;
+    if (f.__prf || api.seen.__prf) { api.hygiene.installed = true; return; }  /* real pullrec wrapper made it — stand down */
+    var orig = f;
+    var w = function (appts) { return orig.apply(this, [hygiene(appts)]); };
+    try { w.__prf = 1; w.__chainfixHyg = 1; } catch (e) {}
+    window._importPulledSchedule = w;
+    api.hygiene.installed = true;
+    guard();   /* record __prf as seen + stamp immediately */
+  }
 
   window.__mlsImportChainFix_revert = function () {
     try { if (window.setInterval && window.setInterval.__mlsChainFix) window.setInterval = nativeSetInterval; } catch (e) {}
     try { clearInterval(backstop); } catch (e) {}
+    try { window.removeEventListener('message', onExtMsg, false); } catch (e) {}
     delete window.__mlsImportChainFix; delete window.__mlsImportChainFix_revert;
   };
 })();
@@ -3966,7 +4015,7 @@
   /* ---------- install (retry until the base-app globals exist) ---------- */
   var tries = 0;
   function installAll() {
-    var ready = isFn(window.upsertPatient) && isFn(window.startCapture) && isFn(window.pullScheduleViaAssist);
+    var ready = isFn(window.upsertPatient) && isFn(window.startCapture) && isFn(window.pullScheduleViaAssist) && isFn(window._importPulledSchedule) && isFn(window._savePatientChart) && isFn(window.aiCallRaw) && isFn(window.stopCapture) && isFn(window._pullAllHistories); /* b65: wait for the LATE inline globals too - the one-shot install used to fire between inline blocks and skip half the wrappers */
     if (!ready && ++tries < 40) { setTimeout(installAll, 500); return; }
     safe(installF1); safe(installF2); safe(installF3); safe(installF4); safe(installF5);
     safe(installF6); safe(installF7); safe(installF8); safe(installF10); safe(installF11);
@@ -15272,7 +15321,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b64';
+  var MLS_APP_BUILD='2026-07-07-b65';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
