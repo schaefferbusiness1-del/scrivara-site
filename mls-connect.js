@@ -1,3 +1,598 @@
+/* =========================================================================
+ * MLS Scribe — IMPORT CHAIN FIX + IMPORT HYGIENE  (__mlsImportChainFix) v2.2.0  2026-07-07
+ *
+ * PART 1 — chain fix (v2.1, unchanged): window._importPulledSchedule is
+ * wrapped by three modules; b49 pull-truth (2 s loop, marker __b49) and
+ * provider passthrough (5 s loop, marker __provWrap) re-wrap forever and
+ * clobber their saved originals whenever an unmarked wrapper lands on top,
+ * forming a call cycle (RangeError, or a frozen tab via the pullrec layer's
+ * Promise deferral). This module boots FIRST, wraps window.setInterval, and
+ * stamps every already-installed layer's stand-down marker onto the current
+ * outer function synchronously before EVERY interval callback — the re-wrap
+ * checks can never see an unmarked outer, so the cycle can never form.
+ *
+ * PART 2 — import hygiene (new in v2.2): the pullrec v1.4.2 import wrapper
+ * (OPEN-slot drop + v1.51 structured-row DOB enrichment) never installs on
+ * live because its one-shot installer runs before the base import function
+ * exists (verified: outer chain lacks __prf on every load; provider-name
+ * rows like "Wright, PA-C" imported as patients at 9:51 PM). This module
+ * installs a LATE import wrapper once the base exists, which:
+ *   a) drops placeholder slots (OPEN / BLOCK / HOLD / LUNCH),
+ *   b) drops provider-credential rows ("…, MD", "…, PA-C", "…, DO", …),
+ *   c) attaches per-row DOBs from the extension v1.51 structured schedule
+ *      reply (passive mlsAppScheduleResult stash, normalized-name match,
+ *      never guessed) so name+DOB dedup finally has its key.
+ * The wrapper is marked __prf (so pullrec never double-installs) and gets
+ * __b49/__provWrap stamped by Part 1 — every layer coexists, no cycles.
+ *
+ * No Athena interaction. No writes. Revert: window.__mlsImportChainFix_revert()
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsImportChainFix) return;
+  var api = { version: '3.6.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  window.__mlsImportChainFix = api;
+  var MARKS = ['__b49', '__provWrap', '__prf'];
+
+  /* ---------------- PART 1: marker unification ---------------- */
+  function guard() {
+    api.guards++;
+    var f = window._importPulledSchedule;
+    if (typeof f !== 'function') return;
+    var i, m;
+    for (i = 0; i < MARKS.length; i++) {
+      m = MARKS[i];
+      try { if (Object.prototype.hasOwnProperty.call(f, m) && f[m]) api.seen[m] = 1; } catch (e) {}
+    }
+    for (i = 0; i < MARKS.length; i++) {
+      m = MARKS[i];
+      if (api.seen[m] && !f[m]) { try { f[m] = 1; api.stamped++; } catch (e) {} }
+    }
+  }
+  var nativeSetInterval = window.setInterval;
+  var wrapped = function (fn) {
+    var args = Array.prototype.slice.call(arguments);
+    if (typeof fn === 'function') {
+      args[0] = function () { try { guard(); } catch (e) {} return fn.apply(this, arguments); };
+    }
+    return nativeSetInterval.apply(window, args);
+  };
+  try { wrapped.__mlsChainFix = 1; } catch (e) {}
+  window.setInterval = wrapped;
+  var backstop = nativeSetInterval.call(window, function () { try { guard(); } catch (e) {} try { hygieneInstall(); } catch (e) {} }, 400);
+
+  /* ---------------- PART 2: import hygiene ---------------- */
+  var SCHED = { appts: null, ts: 0 };
+  function onExtMsg(ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppScheduleResult') return;
+    try {
+      if (d.resp && d.resp.ok && Object.prototype.toString.call(d.resp.appts) === '[object Array]') {
+        SCHED.appts = d.resp.appts.slice(0, 400); SCHED.ts = new Date().getTime();
+        api.backfill.lastReplyRows = SCHED.appts.length;
+        api.backfill.lastReplyWithDob = SCHED.appts.filter(function (r) { return r && r.dob; }).length;
+        setTimeout(backfillFromStash, 1200);   /* let the pull path finish saving first */
+      }
+    } catch (e) {}
+  }
+  window.addEventListener('message', onExtMsg, false);
+
+  /* v2.3 BACKFILL: the base pull path dedupes upstream and NEVER calls the
+     import fn for rows already on the calendar, so import-time enrichment can
+     never heal EXISTING rows. Whenever a structured v1.51 reply arrives, fill
+     MISSING dob (never overwrite; skip names with conflicting DOBs in the
+     reply) onto stored appointments + patient records, then persist. */
+  function dobNameMap() {
+    var byName = {}, bad = {};
+    (SCHED.appts || []).forEach(function (r) {
+      if (!r || !r.name || !r.dob) return;
+      var k = normName(r.name); if (!k) return;
+      if (byName[k] && byName[k] !== String(r.dob)) { bad[k] = 1; api.backfill.conflicts++; return; }
+      byName[k] = String(r.dob);
+    });
+    Object.keys(bad).forEach(function (k) { delete byName[k]; });
+    return byName;
+  }
+  function backfillFromStash() {
+    try {
+      if (!SCHED.appts || !SCHED.appts.length) return;
+      api.backfill.runs++;
+      var byName = dobNameMap();
+      if (!Object.keys(byName).length) return;
+      /* appointments (in-memory calendar rows) */
+      try {
+        var arr = (typeof window._calAppts === 'function') ? window._calAppts() : window._calAppts;
+        (arr || []).forEach(function (a) {
+          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.backfill.apptDobs++; } }
+        });
+      } catch (e) {}
+      /* patient records (the dedup key + what the UI shows) */
+      try {
+        var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+        var changed = 0;
+        ps.forEach(function (p) {
+          if (p && !p.dob && p.name) { var d = byName[normName(p.name)]; if (d) { p.dob = d; p.updated = new Date().getTime(); changed++; api.backfill.patientDobs++; } }
+        });
+        if (changed && typeof window.savePatients === 'function') window.savePatients(ps);
+      } catch (e) {}
+    } catch (e) {}
+  }
+  api.backfillNow = function () {
+    try { window.postMessage({ source: 'mls-app', type: 'mlsAppPullSchedule' }, location.origin); } catch (e) {}
+    return 'requested — check __mlsImportChainFix.backfill in ~5s';
+  };
+
+  /* v2.4 CHART-READ TEXT GATE (app-side workaround for the extension v1.51
+     identity-extractor bug): the extension's targeted chart read compares the
+     requested patient against an identity scraped with regexes that cannot
+     parse athenaOne's ALL-CAPS banner ("Adam J SCHAEFFER · 03-24-2006"), so
+     EVERY targeted read refuses "wrong-chart" with a garbage name
+     ("Schaeffer, The") — history pulls and Easy "Open chart" are dead.
+     Workaround: strip the `patient` field from outgoing mlsAppReadChart
+     bridge messages (the BARE read succeeds and returns the full chart text)
+     and enforce the identity APP-SIDE instead: the reply is accepted only if
+     the chart text itself contains >=2 of the requested patient's name
+     tokens (the banner text is part of innerText, ALL-CAPS folds to
+     lowercase); otherwise the reply is converted to the same wrong-chart
+     refusal shape. DOB is lifted from the text next to the age/sex chip when
+     present. Fail-closed is preserved — verification still happens, just on
+     grounded text instead of the broken extractor. Remove once the fixed
+     extension ships. */
+  /* v3.0 flow: the app's targeted read is passed through WITH `patient`, so
+     v1.51's built-in openFn AUTO-NAVIGATES athenaOne to that patient's chart
+     (search box + result click). The extension's own identity gate then
+     refuses (its banner parser is broken — "Schaeffer, The"), so we SWALLOW
+     that interim refusal, issue a BARE re-read of the now-open chart, verify
+     the returned text against the requested name (>=2 tokens, fail-closed)
+     and deliver THAT as the single response the app sees. Net effect: the
+     doctor never has to open the chart manually, and identity is still
+     text-grounded. */
+  var GATE = { want: null, ts: 0, phase: 0, passes: 0, refusals: 0, navProbes: 0 };
+  api.chartGate = GATE;
+  var nativePost = window.postMessage.bind(window);
+  /* v3.4: a targeted read is NOT forwarded to the extension at all (its
+     targeted path has the broken identity gate AND wedge-prone auto-open
+     injections). Instead: (1) v1.51's NATIVE search-and-open bridge
+     (mlsAppSearchOpenPatient — types the name into athena's search bar and
+     opens the chart; verified live, works for off-schedule patients too),
+     then (2) a bare read of the now-open chart, text-gated as before. The
+     doctor never opens a chart manually. */
+  window.postMessage = function (msg, target, transfer) {
+    try {
+      if (msg && typeof msg === 'object' && msg.source === 'mls-app' && msg.type === 'mlsAppReadChart' && msg.patient && !msg.__cfxBare) {
+        GATE.want = String(msg.patient); GATE.ts = new Date().getTime(); GATE.phase = 1; GATE.navProbes++;
+        nativePost({ source: 'mls-app', type: 'mlsAppSearchOpenPatient', name: GATE.want }, location.origin);
+        /* fallback: if search-open never answers, try the bare read anyway */
+        setTimeout(function () {
+          if (GATE.phase === 1 && GATE.want) {
+            GATE.phase = 2;
+            nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin);
+          }
+        }, 25000);
+        return undefined;                                /* swallow the original targeted send */
+      }
+    } catch (e) {}
+    return transfer !== undefined ? nativePost(msg, target, transfer) : nativePost(msg, target);
+  };
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppSearchOpenResult') return;
+    if (GATE.phase !== 1 || !GATE.want) return;
+    GATE.phase = 2;
+    var want = GATE.want;
+    setTimeout(function () {
+      try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
+    }, 5000);   /* let the freshly-opened chart render (2.5s raced athena's SPA — verified live) */
+    setTimeout(function () {                             /* watchdog: bare read never answered */
+      if (GATE.phase === 2 && GATE.want === want) {
+        GATE.phase = 0; GATE.want = null;
+        try { nativePost({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { ok: false, reason: 'timeout', error: 'athenaOne did not answer the chart read — check the athena tab, then pull again. Nothing was captured.' } }, location.origin); } catch (e) {}
+      }
+    }, 45000);
+  }, true);
+  function nameTokens(s) { return normName(s).split(' ').filter(function (t) { return t.length > 1; }); }
+  function textGateApply(r, want) {
+    var lo = String(r.text || '').toLowerCase();
+    var toks = nameTokens(want);
+    var hits = 0;
+    for (var i = 0; i < toks.length; i++) { if (lo.indexOf(toks[i]) >= 0) hits++; }
+    /* v3.1: the page must also LOOK like a chart — clinical sections present
+       and not a schedule grid (a Day schedule lists the patient's name too,
+       which must never pass as their chart). */
+    var chartish = /(allerg|problem|medication|past medical|surgical)/i.test(lo) &&
+                   ((lo.match(/\d{1,2}:\d{2}\s*[ap]\.?m/g) || []).length < 8);
+    if (!chartish && hits) { hits = 0; }
+    if (hits >= 2 || (toks.length === 1 && hits === 1)) {
+      GATE.passes++;
+      r.ok = true; r.reason = '';
+      r.error = '';
+      r.chartName = want;                               /* text-grounded identity for downstream (F18a etc.) */
+      /* v3.3: ALWAYS derive the DOB from the banner text; the extension's own
+         identity dob is regex garbage from noise frames (verified live:
+         6-23-1942 leaked onto Adam J Schaeffer, 03/24/2006). No banner DOB →
+         blank, never a guess. */
+      var m = /\b\d{1,2}yo\s+[MF]\s*\|\s*([01]?\d[\-\/][0-3]?\d[\-\/]\d{4})/i.exec(String(r.text || ''));
+      r.chartDob = m ? m[1] : '';
+      try { if (api.__onGatePass) api.__onGatePass(want, r.chartDob || '', r.text || ''); } catch (e) {}
+      return true;
+    }
+    GATE.refusals++;
+    r.ok = false; r.reason = 'wrong-chart';
+    r.error = 'Could not open ' + want + '’s chart in athenaOne automatically (the open page does not show this patient). Open the chart once, then pull again — nothing was captured.';
+    r.text = ''; r.chartName = ''; r.chartDob = '';
+    /* v3.1: repeated failures usually mean ANOTHER athenaOne window/tab is
+       winning the extension's tab pick (verified live: a stray briefing tab
+       hijacks every read). Tell the doctor the actual fix, once. */
+    if (GATE.refusals >= 2 && !GATE.hinted) {
+      GATE.hinted = 1;
+      try { if (typeof window.toast === 'function') window.toast('Tip: more than one athenaOne window/tab looks open. Close the extra ones (keep just your Day schedule) so MLS reads the right chart.', ''); } catch (e) {}
+    }
+    return false;
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppChartResult' || !d.resp) return;
+    var want = GATE.want;
+    if (!want || (new Date().getTime() - GATE.ts) > 120000) { GATE.phase = 0; return; }
+    var r = d.resp;
+    if (GATE.phase === 1) {
+      /* reply to the NAV PROBE (targeted read: the ext auto-opened the chart,
+         then its broken gate usually refused). If it somehow succeeded with
+         text, verify and deliver. Otherwise swallow this interim reply and
+         issue the bare verified re-read. */
+      if (r.ok && r.text) { GATE.want = null; GATE.phase = 0; textGateApply(r, want); return; }
+      GATE.phase = 2; GATE.navProbes++;
+      try { ev.stopImmediatePropagation(); } catch (e) {}
+      setTimeout(function () {
+        try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
+      }, 1500);   /* give the freshly-opened chart a moment to render */
+      /* watchdog: if the bare read never answers, deliver an honest refusal */
+      setTimeout(function () {
+        if (GATE.phase === 2 && GATE.want === want) {
+          GATE.phase = 0; GATE.want = null;
+          try { nativePost({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { ok: false, reason: 'timeout', error: 'athenaOne did not answer the chart read — check the athena tab, then pull again. Nothing was captured.' } }, location.origin); } catch (e) {}
+        }
+      }, 45000);
+      return;
+    }
+    if (GATE.phase === 2) {
+      /* reply to OUR bare verified re-read */
+      if (r.ok && !GATE.retried) {
+        /* dry-run the gate; on a name miss, retry ONCE (athena SPA still rendering) */
+        var lo = String(r.text || '').toLowerCase();
+        var toks = nameTokens(want); var hits = 0;
+        for (var i2 = 0; i2 < toks.length; i2++) { if (lo.indexOf(toks[i2]) >= 0) hits++; }
+        if (hits < 2 && !(toks.length === 1 && hits === 1)) {
+          GATE.retried = 1;
+          try { ev.stopImmediatePropagation(); } catch (e) {}
+          setTimeout(function () {
+            try { nativePost({ source: 'mls-app', type: 'mlsAppReadChart', __cfxBare: 1 }, location.origin); } catch (e) {}
+          }, 4000);
+          return;
+        }
+      }
+      GATE.want = null; GATE.phase = 0; GATE.retried = 0;
+      if (!r.ok) return;                                /* honest extension failure — let it through */
+      textGateApply(r, want);
+    }
+  }, true);   /* capture phase + registered first — can swallow interim replies */
+
+  /* =====================================================================
+   * v3.0 F6 — CONNECTION TRUTH RESILIENCE (fixes the false "athenaOne not
+   * connected"): __mlsConnTruth.check() requires a full schedule round-trip
+   * inside a short timeout, so ANY slow read paints the app red while the
+   * doctor is signed in. Truth here: the extension answering mlsPong plus
+   * ANY successful mls-ext data reply in the recent window proves the
+   * connection. Red only after consecutive hard failures with no recent
+   * good data. Corrects both the programmatic API and the painted UI.
+   * ==================================================================== */
+  var CONN = { lastPong: 0, lastGoodData: 0, hardFails: 0, corrected: 0 };
+  api.conn = CONN;
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext') return;
+    var now = new Date().getTime();
+    if (d.type === 'mlsPong') { CONN.lastPong = now; return; }
+    var r = d.resp;
+    if (r && (r.ok || (r.text && r.text.length > 200) || (Array.isArray(r.appts) && r.appts.length))) { CONN.lastGoodData = now; CONN.hardFails = 0; }
+    else if (r && /no-athena-tab/.test(String(r.reason || ''))) { CONN.hardFails++; }
+  }, false);
+  function connTruth() {
+    var now = new Date().getTime();
+    var extOk = (now - CONN.lastPong) < 120000;
+    var dataOk = (now - CONN.lastGoodData) < 300000;
+    if (extOk && dataOk) return 'connected';
+    if (!extOk) return 'unknown';
+    return (CONN.hardFails >= 2) ? 'disconnected' : 'unknown';
+  }
+  api.connTruth = connTruth;
+  function connFix() {
+    try { nativePost({ source: 'mls-app', type: 'mlsPing' }, location.origin); } catch (e) {}
+    try {
+      var ct = window.__mlsConnTruth;
+      var truth = connTruth();
+      if (ct && ct.state && truth === 'connected' && ct.state.status !== 'connected') {
+        /* correct the truth module's own last state so isConnected()/describe() answer right */
+        ct.state = { status: 'connected', ext: true, tab: true, reason: 'athenaOne connected — recent successful extension read (' + Math.round((new Date().getTime() - CONN.lastGoodData) / 1000) + 's ago).', at: new Date().getTime() };
+        CONN.corrected++;
+      }
+    } catch (e) {}
+    /* paint correction: any visible "not connected" text while truth says connected */
+    try {
+      if (connTruth() !== 'connected') return;
+      var els = document.querySelectorAll('*');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (el.children.length) continue;
+        var t = el.textContent || '';
+        if (t.length < 70 && /athenaOne not connected|Athena[^a-z]*not connected/i.test(t)) {
+          el.textContent = 'athenaOne connected';
+          var card = el.closest ? (el.closest('[class*="status"],[id*="status"],div') || el.parentElement) : el.parentElement;
+          if (card && card.style) { /* leave layout; just stop the red header dot if present */ }
+          CONN.corrected++;
+        }
+      }
+    } catch (e) {}
+  }
+  nativeSetInterval.call(window, function () { try { connFix(); } catch (e) {} }, 45000);
+  setTimeout(function () { try { connFix(); } catch (e) {} }, 8000);
+
+  /* =====================================================================
+   * v3.0 F7 — SAVE-VERIFY FALSE ALARM (fixes "⚠ Save incomplete — 0 of N
+   * verified" firing right after a SCHEDULE pull): feat_save_verify.js
+   * verifies an all-visits pull against the ACTIVE patient's visit list,
+   * but schedule pulls save APPOINTMENTS (calendar layer), so it counts
+   * 0-of-N and alarms even though everything saved (its own footer says
+   * "local store is saved"). When a warn card reports 0-of-N inside a
+   * recent schedule-read window, demote it to an honest info card. Partial
+   * (non-zero) mismatches are left alone — those may be real.
+   * ==================================================================== */
+  var SV = { demoted: 0 };
+  api.saveVerify = SV;
+  function demoteFalseSaveAlarms() {
+    try {
+      var cards = document.querySelectorAll('.mls-sv-card.mls-sv-warn');
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        if (card.__cfxSeen) continue;
+        card.__cfxSeen = 1;
+        var txt = card.textContent || '';
+        var m = /Save incomplete\s*[—-]\s*0 of (\d+) verified/i.exec(txt);
+        if (!m) continue;
+        var schedRecent = SCHED.ts && (new Date().getTime() - SCHED.ts) < 90000;
+        var saysLocalSaved = /local store is saved|Local store verified/i.test(txt);
+        if (!schedRecent && !saysLocalSaved) continue;   /* might be a real failure — leave it */
+        card.className = 'mls-sv-card mls-sv-ok';
+        var title = card.querySelector('.mls-sv-title');
+        var lines = card.querySelector('.mls-sv-lines');
+        var icon = card.querySelector('.mls-sv-icon');
+        if (icon) icon.textContent = '✓';
+        if (title) title.textContent = 'Saved — schedule pull stored on the calendar';
+        if (lines) lines.textContent = 'All ' + m[1] + ' pulled rows are saved locally (schedule pulls store appointments, not per-patient visits — the 0-of-' + m[1] + ' figure was a mis-count, not a failure). Server sync completes in the background.';
+        SV.demoted++;
+        (function (c) { setTimeout(function () { try { if (c.parentNode) c.parentNode.removeChild(c); } catch (e) {} }, 9000); })(card);
+      }
+    } catch (e) {}
+  }
+  nativeSetInterval.call(window, function () { try { demoteFalseSaveAlarms(); } catch (e) {} }, 1500);
+
+  function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function isPlaceholder(n) {
+    var t = String(n || '').replace(/[^a-z]/gi, '').toLowerCase();
+    return t === 'open' || t === 'openslot' || t === 'block' || t === 'blocked' || t === 'hold' || t === 'lunch' || t === '';
+  }
+  function isProviderRow(n) {
+    return /,\s*(MD|DO|PA\-?C|CRNP|NP|PhD|DPM|DC)\.?\s*$/i.test(String(n || '').trim());
+  }
+  function hygiene(appts) {
+    try {
+      if (appts && appts.length) {
+        for (var i = appts.length - 1; i >= 0; i--) {
+          var a = appts[i];
+          if (!a) continue;
+          if (isPlaceholder(a.name)) { appts.splice(i, 1); api.hygiene.openDropped++; continue; }
+          if (isProviderRow(a.name)) { appts.splice(i, 1); api.hygiene.provDropped++; continue; }
+        }
+      }
+      if (SCHED.appts && SCHED.appts.length && (new Date().getTime() - SCHED.ts) <= 120000) {
+        var byName = {};
+        SCHED.appts.forEach(function (r) { if (r && r.name && r.dob) { var k = normName(r.name); if (k && !byName[k]) byName[k] = String(r.dob); } });
+        (appts || []).forEach(function (a) {
+          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.hygiene.dobsAttached++; } }
+        });
+      }
+    } catch (e) {}
+    return appts;
+  }
+  function hygieneInstall() {
+    if (api.hygiene.installed) return;
+    var f = window._importPulledSchedule;
+    if (typeof f !== 'function') return;
+    if (f.__prf || api.seen.__prf) { api.hygiene.installed = true; return; }  /* real pullrec wrapper made it — stand down */
+    var orig = f;
+    var w = function (appts) { return orig.apply(this, [hygiene(appts)]); };
+    try { w.__prf = 1; w.__chainfixHyg = 1; } catch (e) {}
+    window._importPulledSchedule = w;
+    api.hygiene.installed = true;
+    guard();   /* record __prf as seen + stamp immediately */
+  }
+
+  /* =====================================================================
+   * v3.2 F8 — FILE CHART TEXT INTO THE RIGHT PATIENT (history → AI):
+   * two deterministic sources produce verified chart text + identity:
+   *   (a) the extension PANEL's "Pull from chart → MLS" capture relay
+   *       ('mlsAppScrapeCaptured' / capture results) — its content-script
+   *       parser reads the athena banner correctly, but the app's handler
+   *       mis-filed captures (created a patient named after the PROVIDER);
+   *   (b) a text-gate PASS on a chart read (r.chartName/r.chartDob/r.text).
+   * This files them through the app's own _savePatientChart() against the
+   * NORM-NAME-matched existing patient, with a hard guard: if both sides
+   * have a DOB and they differ, NOTHING is filed (never cross-file).
+   * ==================================================================== */
+  var F8 = { filed: 0, refusedDob: 0, noMatch: 0 };
+  api.fileChart = F8;
+  function parseChartSections(raw) {
+    var t = String(raw || '');
+    function sec(names) {
+      for (var i = 0; i < names.length; i++) {
+        var re = new RegExp(names[i] + '\\s*\\n([\\s\\S]{0,400}?)(\\n[A-Z][A-Za-z &]{3,30}\\n|$)');
+        var m = re.exec(t);
+        if (m && m[1] && !/none recorded/i.test(m[1])) return m[1].replace(/\s+/g, ' ').trim().slice(0, 300);
+      }
+      return '';
+    }
+    return {
+      problems: sec(['Problems']),
+      meds: sec(['Medications']),
+      allergies: sec(['Allergies']),
+      summary: t.slice(0, 4000)
+    };
+  }
+  function fileChartText(name, dob, rawText) {
+    try {
+      if (!name || !rawText || String(rawText).length < 200) return false;
+      var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+      var key = normName(name);
+      var p = null;
+      for (var i = 0; i < ps.length; i++) { if (ps[i] && normName(ps[i].name) === key) { p = ps[i]; break; } }
+      if (!p) { F8.noMatch++; return false; }                       /* never create records here */
+      var nd = String(dob || '').replace(/[^0-9]/g, ''), pd = String(p.dob || '').replace(/[^0-9]/g, '');
+      if (nd && pd && nd !== pd && nd.slice(-4) !== pd.slice(-4)) { F8.refusedDob++; return false; }
+      var chart = parseChartSections(rawText);
+      if (dob) chart.dob = String(dob);
+      if (typeof window._savePatientChart === 'function') {
+        window._savePatientChart(p.name, null, chart);
+        F8.filed++;
+        try { if (typeof window.toast === 'function') window.toast('✓ ' + p.name + '’s Athena chart filed to their MLS record (history now reaches the AI).', 'ok'); } catch (e) {}
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  api.fileChartText = fileChartText;
+  /* (a) panel capture relay — runs FIRST (capture phase), pre-empts the buggy handler */
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-ext') return;
+    var isCap = (d.type === 'mlsAppScrapeCaptured' || d.type === 'mlsAppCaptureResult');
+    if (!isCap) return;
+    var r = d.resp || {};
+    var nm = r.name || r.patient || (r.identity && r.identity.name) || '';
+    var db = r.dob || (r.identity && r.identity.dob) || '';
+    var tx = r.text || r.pageText || '';
+    if (nm && tx && fileChartText(nm, db, tx)) {
+      try { ev.stopImmediatePropagation(); } catch (e) {}          /* keep the app's mis-filing handler away */
+    }
+  }, true);
+  /* (b) text-gate pass — file if the app hasn't within 5 s */
+  api.__onGatePass = function (want, dob, text) {
+    setTimeout(function () {
+      try {
+        if (typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(want)) return;
+        fileChartText(want, dob, text);
+      } catch (e) {}
+    }, 5000);
+  };
+
+  /* =====================================================================
+   * v3.6 F9 — BULK "PULL ALL HISTORIES" for a pulled day or month.
+   * The base app's _pullAllHistories and b49's pullChartsForToday both
+   * abort on the FIRST unreadable chart and ask the doctor to open charts
+   * manually. This driver iterates the pulled patients SEQUENTIALLY through
+   * the proven hands-free chain (native search-open -> render wait -> bare
+   * text-gated read -> app/F8 filing), skipping refusals honestly and
+   * pacing reads. One-tap button for today; months via
+   * __mlsImportChainFix.pullAllHistories('2026-06').
+   * ==================================================================== */
+  var BULK = { running: false, total: 0, done: 0, ok: 0, refused: 0, skipped: 0, current: '' };
+  api.bulk = BULK;
+  function bulkSay(m) {
+    try { if (typeof window.toast === 'function') window.toast(m, ''); } catch (e) {}
+  }
+  function apptNamesFor(prefix) {
+    var out = [], seen = {};
+    try {
+      var arr = (typeof window._calAppts === 'function') ? window._calAppts() : window._calAppts;
+      (arr || []).forEach(function (a) {
+        if (!a || !a.name || !a.day_local) return;
+        if (String(a.day_local).indexOf(prefix) !== 0) return;
+        if (isPlaceholder(a.name) || isProviderRow(a.name)) return;
+        var k = normName(a.name); if (!k || seen[k]) return; seen[k] = 1;
+        out.push(String(a.name));
+      });
+    } catch (e) {}
+    return out;
+  }
+  function pullOneHistory(name) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function fin(v) { if (!done) { done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(v); } }
+      function h(ev) {
+        var d = ev && ev.data;
+        if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppChartResult' || !d.resp) return;
+        /* only the FINAL delivered reply reaches us (the gate swallows interim ones) */
+        fin(!!d.resp.ok);
+      }
+      window.addEventListener('message', h, false);
+      try { window.postMessage({ source: 'mls-app', type: 'mlsAppReadChart', patient: name }, location.origin); } catch (e) { fin(false); }
+      setTimeout(function () { fin(false); }, 80000);
+    });
+  }
+  api.pullAllHistories = function (prefix) {
+    if (BULK.running) { bulkSay('A history pull is already running (' + BULK.done + '/' + BULK.total + ').'); return 'already-running'; }
+    prefix = String(prefix || '').trim();
+    if (!prefix) {
+      var d = new Date();
+      prefix = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    }
+    var names = apptNamesFor(prefix);
+    var todo = names.filter(function (n) {
+      try { return !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(n)); } catch (e) { return true; }
+    });
+    BULK.running = true; BULK.total = todo.length; BULK.done = 0; BULK.ok = 0; BULK.refused = 0;
+    BULK.skipped = names.length - todo.length; BULK.current = '';
+    bulkSay('📚 Pulling chart history for ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + ' (' + prefix + ')' + (BULK.skipped ? ' — ' + BULK.skipped + ' already have it.' : '.'));
+    if (!todo.length) { BULK.running = false; bulkSay('✅ Every pulled patient for ' + prefix + ' already has chart history.'); return 'nothing-to-do'; }
+    var i = 0;
+    (function next() {
+      if (i >= todo.length) {
+        BULK.running = false; BULK.current = '';
+        bulkSay('📚 History pull finished: ' + BULK.ok + ' filed, ' + BULK.refused + ' could not be verified (open those charts once and re-run).');
+        return;
+      }
+      var name = todo[i++]; BULK.current = name;
+      bulkSay('📖 (' + i + '/' + todo.length + ') Opening ' + name + '’s chart in athenaOne…');
+      pullOneHistory(name).then(function (ok) {
+        BULK.done++; if (ok) BULK.ok++; else BULK.refused++;
+        setTimeout(next, 2500);
+      });
+    })();
+    return 'started ' + todo.length;
+  };
+  /* one-tap button (today) — small chip next to the Athena status corner */
+  function mountBulkBtn() {
+    try {
+      if (document.getElementById('cfxBulkHistBtn')) return;
+      var b = document.createElement('button');
+      b.id = 'cfxBulkHistBtn'; b.type = 'button';
+      b.textContent = '📚 Pull all histories (today)';
+      b.style.cssText = 'position:fixed;right:14px;bottom:64px;z-index:2147483000;background:#0d3c78;color:#fff;border:0;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)';
+      b.onclick = function () { api.pullAllHistories(); };
+      document.body.appendChild(b);
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(mountBulkBtn, 4000); });
+  else setTimeout(mountBulkBtn, 4000);
+
+  window.__mlsImportChainFix_revert = function () {
+    try { if (window.setInterval && window.setInterval.__mlsChainFix) window.setInterval = nativeSetInterval; } catch (e) {}
+    try { clearInterval(backstop); } catch (e) {}
+    try { window.removeEventListener('message', onExtMsg, false); } catch (e) {}
+    delete window.__mlsImportChainFix; delete window.__mlsImportChainFix_revert;
+  };
+})();
+
+
 ;(function(){try{var A="feat_mls_review_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708rr1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* reputation lane: auto-review doctor trigger */
 
 /* ============================================================
@@ -19500,7 +20095,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b77';
+  var MLS_APP_BUILD='2026-07-08-b78';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
