@@ -862,6 +862,8 @@
 
 ;(function(){try{var A="feat_mls_review_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708rr1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* reputation lane: auto-review doctor trigger */
 
+;(function(){try{var A="feat_mls_best_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708bd1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* best-doctors lane: per-visit rating engine satellite */
+
 /* ============================================================
  * mls_settings_cleanup_v1.js  ->  window.__mlsSettingsCleanupV1
  *
@@ -20362,7 +20364,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b84';
+  var MLS_APP_BUILD='2026-07-08-b85';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
