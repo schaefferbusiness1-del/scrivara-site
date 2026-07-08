@@ -1,4 +1,128 @@
 /* =========================================================================
+ * MLS Scribe — CHART-SUMMARY SANITIZER  (__mlsSummarySanitize) v1.0.0  2026-07-08 (b87)
+ *
+ * FIX (user-caught, critical): pulled chart summaries were capturing athenaOne's
+ * own PAGE JAVASCRIPT — the anatomical sketchpad code (SVGJotter / Raphael /
+ * VMLJSONToRaphaelJSON / PutSketchpad / IsSafari / window.Original / Jotter,
+ * plus SVG path/stroke coordinates) — instead of clinical text. These summaries
+ * FEED note/summary GENERATION, so code garbage in the summary poisons the AI
+ * output. Verified live: Brian's 4032-char summary was 43/152 lines of JS; after
+ * stripping -> 2156 chars, ALL code markers gone, clinical content intact.
+ *
+ * WHAT THIS DOES (additive, reversible, guarded — no re-wrap cycle):
+ *  - stripChartCode(text): drops <script>/<style> blocks and any line that is JS
+ *    or SVG-path code (braces, function/var/=>, window./document., the athena
+ *    sketchpad lib names, long coordinate runs), keeping clinical narrative.
+ *  - Wraps window.__mlsVisitModel.ingestChart AND window._savePatientChart so
+ *    EVERY chart pull / summary save is sanitized before it lands.
+ *  - One-time scrub: cleans any EXISTING patient .summary that already contains
+ *    leaked code, and persists the cleaned copy (upsertPatient).
+ *
+ * Idempotent (marker __mlsCleanWrapped). READ-ONLY re: athenaOne. Revert:
+ * window.__mlsSummarySanitize_revert().
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsSummarySanitize) return; } catch (e) { return; }
+
+  function isCode(t) {
+    if (/[{}]/.test(t)) return true;                                   // braces ~never in clinical text
+    if (/=>|=\s*function|\bfunction\s*\(|\bvar\s+\w+\s*=|\blet\s+\w+\s*=|\bconst\s+\w+\s*=|\breturn\s+[\[{"'`\w]|\btypeof\s|\.prototype\b|\.push\s*\(|\bnew\s+[A-Z]\w*\s*\(/.test(t)) return true;
+    if (/\bwindow\.\w|\bdocument\.\w|attachEvent|addEventListener|getElementById|createElement|SVGJotter|VMLJSON|\bRaphael\b|PutSketchpad|SketchpadData|IsSafari|\bJotter\b/.test(t)) return true;
+    if (/["'(]?\s*[MmLlCcSsQqTtAaZzHhVv]\s*-?\d[\d.,\-\s]{15,}/.test(t)) return true;   // SVG path data
+    if (/(-?\d+(\.\d+)?[,\s]+){8,}/.test(t)) return true;              // long coordinate list
+    return false;
+  }
+  function stripChartCode(text) {
+    var s = String(text == null ? '' : text);
+    if (!s) return s;
+    if (!hasCode(s)) return s; // fast path: nothing to strip
+    s = s.replace(/<script[\s\S]*?<\/script>/gi, '\n').replace(/<style[\s\S]*?<\/style>/gi, '\n').replace(/<!--[\s\S]*?-->/g, '\n');
+    var lines = s.split(/\r?\n/), kept = [];
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i], t = ln.trim();
+      if (!t) { kept.push(''); continue; }
+      if (isCode(t)) continue;
+      kept.push(ln);
+    }
+    return kept.join('\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function hasCode(s) {
+    return /SVGJotter|VMLJSON|\bRaphael\b|PutSketchpad|SketchpadData|IsSafari|\bJotter\b|=\s*function|\bfunction\s*\(|window\.\w+\s*=|\.prototype\b|[{}]/.test(String(s || ''));
+  }
+
+  function sanitizeChartObj(chart) {
+    if (!chart || typeof chart !== 'object') return chart;
+    try {
+      var c = {}; for (var k in chart) c[k] = chart[k];
+      if (typeof c.text === 'string') c.text = stripChartCode(c.text);
+      if (typeof c.summary === 'string') c.summary = stripChartCode(c.summary);
+      if (typeof c.raw === 'string') c.raw = stripChartCode(c.raw);
+      return c;
+    } catch (e) { return chart; }
+  }
+
+  // --- wraps (guarded so nothing re-wraps in a cycle) ---
+  function wrapIngest() {
+    try {
+      var M = window.__mlsVisitModel;
+      if (M && typeof M.ingestChart === 'function' && !M.ingestChart.__mlsCleanWrapped) {
+        var orig = M.ingestChart.bind(M);
+        var w = function (patient, chart, source) { return orig(patient, sanitizeChartObj(chart), source); };
+        w.__mlsCleanWrapped = true; w.__orig = orig;
+        M.ingestChart = w;
+      }
+    } catch (e) {}
+  }
+  function wrapSaveChart() {
+    try {
+      if (typeof window._savePatientChart === 'function' && !window._savePatientChart.__mlsCleanWrapped) {
+        var orig = window._savePatientChart;
+        var w = function (p) { try { if (p && typeof p.summary === 'string') p.summary = stripChartCode(p.summary); } catch (e) {} return orig.apply(this, arguments); };
+        w.__mlsCleanWrapped = true; w.__orig = orig;
+        window._savePatientChart = w;
+      }
+    } catch (e) {}
+  }
+
+  // --- one-time scrub of already-polluted summaries (clean + persist) ---
+  var scrubbed = false;
+  function scrubExisting() {
+    if (scrubbed) return;
+    try {
+      var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+      if (!ps.length) return; // roster not loaded yet — try again on the next tick
+      var fixed = 0;
+      for (var i = 0; i < ps.length; i++) {
+        var p = ps[i]; var s = p && p.summary;
+        if (typeof s === 'string' && s.length > 80 && hasCode(s)) {
+          var clean = stripChartCode(s);
+          if (clean && clean !== s) {
+            p.summary = clean; fixed++;
+            try { if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } catch (e) {}
+          }
+        }
+      }
+      scrubbed = true;
+      if (fixed) { try { console.log('[MLS sanitize] cleaned code out of ' + fixed + ' patient summar' + (fixed === 1 ? 'y' : 'ies')); } catch (e) {} }
+      try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
+    } catch (e) {}
+  }
+
+  function tick() { wrapIngest(); wrapSaveChart(); scrubExisting(); }
+  var _iv = null; try { _iv = setInterval(tick, 1200); } catch (e) {} tick();
+  // stop the heartbeat once wraps are in and the scrub has run (keep it light)
+  try { setTimeout(function () { if (scrubbed && _iv) { clearInterval(_iv); _iv = null; } }, 45000); } catch (e) {}
+
+  window.__mlsSummarySanitize = { version: '1.0.0', strip: stripChartCode, hasCode: hasCode, _scrub: function () { scrubbed = false; scrubExisting(); } };
+  window.__mlsSummarySanitize_revert = function () {
+    try { if (_iv) clearInterval(_iv); } catch (e) {}
+    try { var M = window.__mlsVisitModel; if (M && M.ingestChart && M.ingestChart.__orig) M.ingestChart = M.ingestChart.__orig; } catch (e) {}
+    try { if (window._savePatientChart && window._savePatientChart.__orig) window._savePatientChart = window._savePatientChart.__orig; } catch (e) {}
+    try { delete window.__mlsSummarySanitize; } catch (e) {}
+  };
+})();
+/* =========================================================================
  * MLS Scribe — DAY / MONTH CHART-HISTORY PULL  (__mlsDayHistoryPull) v1.0.0  2026-07-08 (b86)
  *
  * Pulls EVERY patient's chart history for a day (or month) into the app, so the
@@ -20540,7 +20664,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b86';
+  var MLS_APP_BUILD='2026-07-08-b87';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
