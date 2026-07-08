@@ -111,12 +111,18 @@
       var w = function (onStatus) {
         var cb = (typeof onStatus === 'function') ? onStatus : function () {};
         var patient = (typeof window.activePatient === 'function') ? window.activePatient() : null;
+        /* b85: track the patient by ID. saveVisits()/upsertPatient can REPLACE the patient
+           object in the store, leaving this captured `patient` reference stale (its .visits
+           still reads 0) even though the save landed — which made realDelta read 0 and falsely
+           report "nothing was saved" after a successful pull. Re-resolve the live object by id. */
+        var __pid = patient && patient.id;
+        function __curP() { try { if (__pid && typeof window.getPatients === 'function') { var ps = window.getPatients() || []; for (var _i = 0; _i < ps.length; _i++) { if (ps[_i] && ps[_i].id === __pid) return ps[_i]; } } } catch (e) {} return patient; }
         var before = {};
-        getVisitsSafe(M, patient).forEach(function (v) { if (isRealVisit(v)) before[keyOf(v)] = 1; });
+        getVisitsSafe(M, __curP()).forEach(function (v) { if (isRealVisit(v)) before[keyOf(v)] = 1; });
         var neutralShown = false, lastShown = 0, finished = false, honestSeen = false;
         function realDelta() {
           var n = 0;
-          getVisitsSafe(M, patient).forEach(function (v) { if (isRealVisit(v) && !before[keyOf(v)]) n++; });
+          getVisitsSafe(M, __curP()).forEach(function (v) { if (isRealVisit(v) && !before[keyOf(v)]) n++; });
           return n;
         }
         function filtered(line) {
@@ -144,7 +150,7 @@
           var d = realDelta();
           if (d > 0) {
             cb('✓ Done — ' + d + ' visit' + (d === 1 ? '' : 's') + ' read from athenaOne, each with an AI summary.');
-            return (o && o.r) || { ok: true, real: d };
+            return (o && o.r) || { ok: true, real: d, saved: d };
           }
           if (!honestSeen) cb(UPDATE_MSG);
           return { blocked: true, real: 0, reason: (o && o.__timeout) ? 'timeout' : (o && o.err) ? 'error' : 'no-real-visits' };
