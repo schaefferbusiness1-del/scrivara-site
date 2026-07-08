@@ -1,3 +1,1404 @@
+/* =============================================================================
+ * __mlsMenuToggleFix v1.0.0   (easy-round2 · URGENT — menu double-click bug)
+ * -----------------------------------------------------------------------------
+ * Makes the top-bar MENU button (#mlsTbMenuBtn → #mlsTbMenuPanel) toggle
+ * open/closed RELIABLY on every click — no dead/stuck state, no double-binding,
+ * no open/close desync. Prepend ABOVE the live mls-connect.js bundle (real \n\n
+ * join), like every other guarded module here.
+ *
+ * ROOT CAUSE (feat_mls_topbar_unify.js — the satellite that builds the menu;
+ * loader at mls-connect.LIVE.js:26599, source read from the build copy):
+ *   The menu is wired as:
+ *     btn.addEventListener('click', function(ev){ ...stopPropagation(); togglePanel(); });
+ *     document.addEventListener('click', outsideClose, true);   // CAPTURE phase
+ *     togglePanel() = panel.classList.contains('open') ? closePanel() : openPanel();
+ *   Two independent failure modes make the 2nd click "stick":
+ *     1. DOUBLE-BINDING: if the build/`start()` path runs more than once (it is
+ *        re-asserted by the nav-reorg 900ms loop and can re-run when the header
+ *        is re-rendered by feat_mls_header_exact), a SECOND click listener is
+ *        added to the same button. One physical click then fires togglePanel()
+ *        twice — open→close in the same tick — so the menu appears to do nothing
+ *        on that click and feels stuck.
+ *     2. CAPTURE/BUBBLE RACE + state desync: outsideClose runs in the CAPTURE
+ *        phase (before the button's own target-phase handler). Any variant where
+ *        outsideClose (or a second module's handler) also mutates the `.open`
+ *        class on the same click leaves the class state and the intended toggle
+ *        out of sync, so the boolean the toggle reads no longer matches what's
+ *        on screen — the next click flips the wrong way and it wedges.
+ *   Both reduce to: the toggle trusts internal state / multiple handlers instead
+ *   of the ONE fact that matters — is the panel visible right now.
+ *
+ * THE FIX (additive, satellite-agnostic — does not edit the satellite):
+ *   One document-level CAPTURE-phase click listener. Because this module is
+ *   prepended above the bundle (and the satellite loads at the bundle's EOF,
+ *   later), this listener is registered on `document` BEFORE any of the
+ *   satellite's listeners, so it fires first. When the click is on the menu
+ *   button it calls stopImmediatePropagation() — which neutralizes EVERY other
+ *   handler on that click, however many times they were bound, plus the
+ *   capture-phase outsideClose race — and then performs ONE deterministic
+ *   toggle driven purely by the panel's REAL computed visibility (never an
+ *   internal boolean), with stuck-state recovery via inline display. Result:
+ *   every click flips the actual on-screen state; it can never wedge.
+ *   Outside-click and Esc still close, handled here idempotently (the
+ *   satellite's own outside/Esc handlers remain and are harmless — closing an
+ *   already-closed menu is a no-op).
+ *
+ * Menu ITEM clicks (inside #mlsTbMenuPanel) are NOT intercepted — they keep
+ * their own handlers (forward to the real control + close). Only the toggle
+ * BUTTON is owned here.
+ *
+ * Kill switch: window.__mlsMenuToggleFix_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsMenuToggleFix) { return; }
+
+  var api = { ver: '1.0.0', toggles: 0, outsideCloses: 0 };
+  window.__mlsMenuToggleFix = api;
+
+  var BTN_ID = 'mlsTbMenuBtn';
+  var PANEL_ID = 'mlsTbMenuPanel';
+
+  function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
+  function panelEl() { return document.getElementById(PANEL_ID); }
+  function btnEl() { return document.getElementById(BTN_ID); }
+
+  function isOpen() {
+    var p = panelEl();
+    if (!p) { return false; }
+    return safe(function () { return getComputedStyle(p).display !== 'none'; }, false);
+  }
+  function setAria(open) { safe(function () { var b = btnEl(); if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false'); }); }
+
+  function doOpen() {
+    var p = panelEl(); if (!p) { return; }
+    safe(function () { p.classList.add('open'); });
+    safe(function () { p.style.display = ''; });          /* clear any stale inline 'none' */
+    if (!isOpen()) { safe(function () { p.style.display = 'block'; }); }  /* recover if no .open CSS */
+    setAria(true);
+  }
+  function doClose() {
+    var p = panelEl(); if (!p) { return; }
+    safe(function () { p.classList.remove('open'); });
+    safe(function () { p.style.display = ''; });           /* prefer class-driven hidden */
+    if (isOpen()) { safe(function () { p.style.display = 'none'; }); }    /* recover from a stuck-open state */
+    setAria(false);
+  }
+  function toggle() { if (isOpen()) { doClose(); } else { doOpen(); } api.toggles++; }
+
+  function onDocClickCapture(ev) {
+    var t = ev && ev.target;
+    if (!t || !t.closest) { return; }
+    /* (a) the toggle button — own it completely */
+    if (t.closest('#' + BTN_ID)) {
+      safe(function () { ev.stopImmediatePropagation(); });
+      safe(function () { ev.stopPropagation(); });
+      safe(function () { ev.preventDefault(); });
+      toggle();
+      return;
+    }
+    /* (b) outside click while open — close (do NOT stop the click; let it act) */
+    if (isOpen()) {
+      var inPanel = t.closest('#' + PANEL_ID);
+      var inBtn = t.closest('#' + BTN_ID);
+      if (!inPanel && !inBtn) { doClose(); api.outsideCloses++; }
+    }
+  }
+
+  function onKeydownCapture(ev) {
+    if (ev && (ev.key === 'Escape' || ev.keyCode === 27) && isOpen()) { doClose(); }
+  }
+
+  document.addEventListener('click', onDocClickCapture, true);
+  document.addEventListener('keydown', onKeydownCapture, true);
+
+  window.__mlsMenuToggleFix_revert = function () {
+    safe(function () { document.removeEventListener('click', onDocClickCapture, true); });
+    safe(function () { document.removeEventListener('keydown', onKeydownCapture, true); });
+    delete window.__mlsMenuToggleFix;
+    delete window.__mlsMenuToggleFix_revert;
+  };
+})();
+
+
+/* =============================================================================
+ * __mlsOpenChartInApp v1.0.0   (easy-round2 · item 3)
+ * -----------------------------------------------------------------------------
+ * Makes the MLS Easy "Open chart" button open ONLY the in-app MLS patient chart
+ * (the Patients-tab profile) — never the athenaOne read-only chart pull.
+ * Prepend ABOVE the live mls-connect.js bundle (real \n\n join).
+ *
+ * GROUND TRUTH (live b82 bundle, dispatch-work\backlog-sweep\_scratch):
+ *   - The Easy (ez3) per-patient room renders a "📖 Open chart" button
+ *     id="ez3Chart2" (mls-connect.LIVE.js:6690 and 4 duplicate lineage copies).
+ *   - Its handler calls window.calPullChartFor(S.appt.id) (mls-connect.LIVE.js
+ *     :6750) which drives pullPatientChartViaAssist -> the MLS Assist extension
+ *     -> a READ of the athenaOne chart. That is the athenaOne open the user
+ *     wants this button to STOP doing.
+ *   - ez3 dispatches all of its clicks through ONE delegated listener,
+ *     ez3Click, registered in the CAPTURE phase:
+ *         document.addEventListener('click', ez3Click, true)   (:5993)
+ *   - The app ALREADY has the exact in-app open we want:
+ *         calOpenPatientFor(id)  (ScribeFlow.html:7438) =
+ *           selectPatient(appt.patient_external_id); showView('patients');
+ *         (with a name-search fallback for unlinked appts)
+ *     and the lower-level openPatient(id)/selectPatient(id) (:9464/:9473) which
+ *     set the active patient and render their profile under Patients.
+ *
+ * HOW (additive, no bundle edit):
+ *   A single document-level CAPTURE-phase click listener. Because this module
+ *   is PREPENDED above the bundle, its IIFE runs first, so this listener is
+ *   registered on `document` BEFORE ez3Click. Capture-phase listeners on the
+ *   same target fire in registration order, so this one runs first; calling
+ *   stopImmediatePropagation() then prevents ez3Click (and its
+ *   calPullChartFor) from running at all. We then open the in-app chart:
+ *     - if the ez3 button carries a resolvable appointment, use the app's own
+ *       calOpenPatientFor(apptId) (handles link + name-search fallback);
+ *     - else fall back to the currently-active patient via openPatient()/
+ *       showView('patients') — the room screen only renders #ez3Chart2 once a
+ *       patient is locked/active, so this is reliable.
+ *   This is the codebase's own documented interception pattern (same technique
+ *   ez3 itself uses for its launcher trap, and b33 for #nav_help).
+ *
+ * SCOPE: only #ez3Chart2 (the Easy "Open chart"). The calendar appt-peek
+ * "📋 Open chart" (feat_mls_cal_launch, mls-connect.LIVE.js:22806) and the
+ * Cmd-K "open chart" (:22459) ALREADY open in-app (setActivePtId + openPatient)
+ * — verified — so they are intentionally left untouched. calPullChartFor itself
+ * is NOT modified: the read-only Athena pull stays available via ez3's own
+ * "Verify / Pull history" chips, which is its proper home.
+ *
+ * Kill switch: window.__mlsOpenChartInApp_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsOpenChartInApp) { return; }
+
+  var api = { ver: '1.0.0', redirects: 0 };
+  window.__mlsOpenChartInApp = api;
+
+  function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function toastSafe(msg) { safe(function () { if (isFn(window.toast)) window.toast(msg, ''); }); }
+
+  /* Try to recover an appointment id from the DOM near the button, so we can
+     use the app's richer calOpenPatientFor() (link + name-search fallback).
+     ez3's button carries no data-id, so this is best-effort; the active-patient
+     path below is the reliable primary. */
+  function activeId() {
+    return safe(function () { return isFn(window.getActivePtId) ? (window.getActivePtId() || '') : ''; }) || '';
+  }
+
+  function openInAppChart() {
+    api.redirects++;
+    var id = activeId();
+    if (id && isFn(window.openPatient)) {
+      safe(function () { window.openPatient(id); });
+      safe(function () { if (isFn(window.showView)) window.showView('patients'); });
+      toastSafe('Opened this patient’s MLS chart.');
+      return;
+    }
+    /* No active patient resolvable — just navigate to Patients so the doctor
+       can pick, rather than silently doing nothing. */
+    safe(function () { if (isFn(window.showView)) window.showView('patients'); });
+    toastSafe('Opened Patients — pick a chart to view.');
+  }
+
+  function onCaptureClick(ev) {
+    var t = ev && ev.target;
+    if (!t || !t.closest) { return; }
+    var btn = t.closest('#ez3Chart2');
+    if (!btn) { return; }
+    /* Stop ez3Click (same-target, later-registered capture listener) and any
+       inline handler from firing the athenaOne pull. */
+    safe(function () { ev.stopImmediatePropagation(); });
+    safe(function () { ev.stopPropagation(); });
+    safe(function () { ev.preventDefault(); });
+    openInAppChart();
+  }
+
+  document.addEventListener('click', onCaptureClick, true);
+
+  window.__mlsOpenChartInApp_revert = function () {
+    safe(function () { document.removeEventListener('click', onCaptureClick, true); });
+    delete window.__mlsOpenChartInApp;
+    delete window.__mlsOpenChartInApp_revert;
+  };
+})();
+
+
+/* =============================================================================
+ * __mlsAthenaPreview v1.0.0   (easy-round2 · item 5)
+ * -----------------------------------------------------------------------------
+ * Adds a "👁 Preview what goes to Athena" action next to Review & Sign / Send,
+ * which shows the doctor EXACTLY what MLS will write into athenaOne BEFORE it
+ * happens — the full note by section, each mapped to its athenaOne destination,
+ * plus an honest routing statement for every OTHER tool-generated output
+ * (recommendations, patient summary, referral, handout, portal sends, codes).
+ * Prepend ABOVE the live mls-connect.js bundle (real \n\n join).
+ *
+ * GROUND TRUTH (live b82: dispatch-work\backlog-sweep\_scratch):
+ *   The single source of truth for a full-visit push is pushEntireVisitToAthena()
+ *   (ScribeFlow.html:13712). It builds ONE plan of {kind,body} sections —
+ *   note -> Encounter note, dx -> Assessment/Diagnoses, billing -> Charges,
+ *   orders -> Orders — using emrReadyText() (:13637), currentCoding, and
+ *   currentOrders, and labels each with ATHENA_SECTIONS[kind].dest (:13750).
+ *   The autopilot (_ATHENA_RULES, :13760) STOPS before Save/Sign. Everything
+ *   else the app can generate (AVS, referral, handout, prior-auth, MIPS,
+ *   recommendations, portal invites) is NOT part of that push — it stays in MLS
+ *   or is a separate, explicit send. This preview reconstructs the SAME plan
+ *   from the SAME live globals (so it matches what will actually be pushed) and
+ *   states the routing of the rest plainly.
+ *
+ * This is READ-ONLY and never sends anything itself: the modal's "Send now"
+ * button simply clicks the app's real #pushAllEmrBtn, which runs the app's own
+ * confirm + autopilot (with all existing wrong-patient / stop-before-sign
+ * guards intact). Closing the modal does nothing.
+ *
+ * Kill switch: window.__mlsAthenaPreview_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsAthenaPreview) { return; }
+
+  var api = { ver: '1.0.0', opens: 0 };
+  window.__mlsAthenaPreview = api;
+
+  function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
+  function isFn(f) { return typeof f === 'function'; }
+  /* The base app declares its per-visit state with `let`/`const`
+     (currentSoap, currentCoding, currentOrders, currentRecs, currentAVS, …,
+     ORDER_DEFS) — verified in ScribeFlow.LIVE.html. Top-level let/const live in
+     the shared GLOBAL LEXICAL environment, NOT on `window`, so window['currentX']
+     is always undefined. Classic scripts in the same realm (this prepended
+     module is one) can still read them as BARE identifiers — the exact pattern
+     the app's own bundle modules use (e.g. `typeof currentSoap!=='undefined'`).
+     ATHENA_SECTIONS is a `var` (on window) but read the same way for uniformity.
+     Functions (emrReadyText, activePatient, …) ARE on window and are called
+     directly elsewhere. */
+  function g(name) {
+    try {
+      switch (name) {
+        case 'currentSoap':      return (typeof currentSoap !== 'undefined') ? currentSoap : undefined;
+        case 'currentInsurance': return (typeof currentInsurance !== 'undefined') ? currentInsurance : undefined;
+        case 'currentCoding':    return (typeof currentCoding !== 'undefined') ? currentCoding : undefined;
+        case 'currentOrders':    return (typeof currentOrders !== 'undefined') ? currentOrders : undefined;
+        case 'currentRecs':      return (typeof currentRecs !== 'undefined') ? currentRecs : undefined;
+        case 'currentAVS':       return (typeof currentAVS !== 'undefined') ? currentAVS : undefined;
+        case 'currentReferral':  return (typeof currentReferral !== 'undefined') ? currentReferral : undefined;
+        case 'currentHandout':   return (typeof currentHandout !== 'undefined') ? currentHandout : undefined;
+        case 'currentPriorAuth': return (typeof currentPriorAuth !== 'undefined') ? currentPriorAuth : undefined;
+        case 'currentIME':       return (typeof currentIME !== 'undefined') ? currentIME : undefined;
+        case 'currentMips':      return (typeof currentMips !== 'undefined') ? currentMips : undefined;
+        case 'ATHENA_SECTIONS':  return (typeof ATHENA_SECTIONS !== 'undefined') ? ATHENA_SECTIONS : undefined;
+        case 'ORDER_DEFS':       return (typeof ORDER_DEFS !== 'undefined') ? ORDER_DEFS : undefined;
+        default:                 return safe(function () { return window[name]; });
+      }
+    } catch (e) { return undefined; }
+  }
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function noteExists() {
+    var soap = g('currentSoap');
+    if (soap && String(soap).trim().length) { return true; }
+    var nb = document.getElementById('noteBox');
+    return !!(nb && nb.style.display !== 'none' && (nb.value || '').trim().length);
+  }
+
+  /* ---- reconstruct the push plan EXACTLY like pushEntireVisitToAthena ------ */
+  function buildPlan() {
+    var SEC = g('ATHENA_SECTIONS') || {};
+    var c = g('currentCoding') || null;
+    var orders = g('currentOrders') || [];
+    var noteText = '';
+    if (isFn(window.emrReadyText)) { noteText = safe(function () { return window.emrReadyText(); }, '') || ''; }
+    if (!noteText) {
+      var nb = document.getElementById('noteBox');
+      noteText = (nb && nb.value) ? nb.value : (g('currentSoap') || '');
+    }
+
+    var sections = [];
+    function dest(k) { return (SEC[k] && SEC[k].dest) || ''; }
+    function icon(k) { return (SEC[k] && SEC[k].icon) || '•'; }
+
+    sections.push({ kind: 'note', title: 'Clinical note', icon: icon('note'), dest: dest('note'), body: noteText });
+
+    if (c && c.icd && c.icd.length) {
+      sections.push({
+        kind: 'dx', title: 'Diagnoses (ICD-10)', icon: icon('dx'), dest: dest('dx'),
+        body: c.icd.map(function (x, i) { return (i + 1) + '. ' + x; }).join('\n')
+      });
+    }
+    var hasBill = (c && c.em) || (c && c.cpt && c.cpt.length);
+    if (hasBill) {
+      var bb = '';
+      if (c && c.em) { bb += 'E/M level: ' + c.em + '\n'; }
+      if (c && c.cpt && c.cpt.length) { bb += 'CPT charges:\n' + c.cpt.map(function (x) { return '  • ' + x; }).join('\n') + '\n'; }
+      if (c && c.icd && c.icd.length) { bb += 'Attach diagnoses to the charges: ' + c.icd.join('; '); }
+      sections.push({ kind: 'billing', title: 'Charges / billing', icon: icon('billing'), dest: dest('billing'), body: bb });
+    }
+    if (orders && orders.length) {
+      var ODEF = g('ORDER_DEFS') || {};
+      var ol = orders.map(function (o) {
+        var def = ODEF[o.type] || {};
+        var base = o._src || (def.label || o.type);
+        if (o.fields) {
+          var extra = Object.keys(o.fields).map(function (k) { return o.fields[k]; })
+            .filter(Boolean).join(' ');
+          if (extra) { base = base + ' — ' + extra; }
+        }
+        return String(base).slice(0, 90);
+      });
+      sections.push({
+        kind: 'orders', title: 'Orders', icon: icon('orders'), dest: dest('orders'),
+        body: ol.map(function (x) { return '• ' + x; }).join('\n')
+      });
+    }
+    return sections;
+  }
+
+  /* ---- everything else the app may have generated: where does it go? ------- */
+  function buildRouting() {
+    var rows = [];
+    function add(present, label, route) { if (present) { rows.push({ label: label, route: route }); } }
+    var recs = g('currentRecs');
+    /* currentRecs is an OBJECT {care_gaps:[],interactions:[],follow_up:[],
+       documentation:[]} (ScribeFlow.LIVE.html:12191), not an array — count the
+       real items across its array fields. */
+    var recCount = 0;
+    if (recs) {
+      if (typeof recs.length === 'number') { recCount = recs.length; }
+      else { safe(function () { var k; for (k in recs) { if (recs.hasOwnProperty(k) && recs[k] && recs[k].length) { recCount += recs[k].length; } } }); }
+    }
+    add(recCount > 0, '💡 Recommendations' + (recCount ? ' (' + recCount + ')' : ''),
+      'Shown in MLS → Recommendations. NOT written to Athena by this send.');
+    add(!!(g('currentAVS') && String(g('currentAVS')).trim()), '👤 Patient summary (AVS)',
+      'A patient-facing document — copy/print or send to the patient portal. NOT part of the Athena note.');
+    add(!!(g('currentReferral') && String(g('currentReferral')).trim()), '✉️ Referral letter',
+      'A separate letter — copy/print or send. NOT written into the Athena encounter by this send.');
+    add(!!(g('currentHandout') && String(g('currentHandout')).trim()), '📝 Patient handout',
+      'A patient-facing document — copy/print or send to the portal. NOT part of the Athena note.');
+    add(!!(g('currentPriorAuth') && String(g('currentPriorAuth')).trim()), '📄 Prior-authorization letter',
+      'A payer letter — copy/print/fax separately. NOT written into Athena by this send.');
+    add(!!(g('currentIME') && String(g('currentIME')).trim()), '📑 IME report',
+      'A standalone report — handled separately. NOT part of the Athena note.');
+    add(!!(g('currentMips') && String(g('currentMips')).trim()), '📊 MIPS notes',
+      'Quality documentation — reference only. NOT auto-written to Athena.');
+    return rows;
+  }
+
+  /* ---- modal --------------------------------------------------------------- */
+  function ensureModalCss() {
+    if (document.getElementById('mlsApvCss')) { return; }
+    var s = document.createElement('style');
+    s.id = 'mlsApvCss';
+    s.textContent =
+      '#mlsApvOv{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.62);' +
+        'display:flex;align-items:flex-start;justify-content:center;padding:24px 14px;overflow:auto;}' +
+      '#mlsApvCard{background:#fff;color:#12203a;max-width:760px;width:100%;border-radius:16px;' +
+        'box-shadow:0 24px 70px rgba(2,12,35,.5);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;}' +
+      '#mlsApvCard .apv-h{padding:18px 22px;background:linear-gradient(90deg,#12224a,#1f3d86);color:#fff;}' +
+      '#mlsApvCard .apv-h h2{margin:0;font-size:18px;font-weight:800;}' +
+      '#mlsApvCard .apv-h .apv-pt{margin-top:4px;font-size:12.5px;color:#c9d8f5;}' +
+      '#mlsApvCard .apv-body{padding:18px 22px;max-height:66vh;overflow:auto;}' +
+      '.apv-safe{background:#eafaf1;border:1px solid #b7e6cc;color:#0f5132;border-radius:10px;' +
+        'padding:10px 13px;font-size:12.8px;margin:0 0 16px;}' +
+      '.apv-sec{border:1px solid #d9e2f1;border-radius:12px;margin:0 0 12px;overflow:hidden;}' +
+      '.apv-sec .apv-sh{background:#f4f7fd;padding:9px 13px;font-weight:800;font-size:13px;color:#16305f;' +
+        'display:flex;align-items:center;gap:8px;flex-wrap:wrap;}' +
+      '.apv-sec .apv-dest{font-weight:600;font-size:11.5px;color:#4a5b7a;margin-left:auto;text-align:right;}' +
+      '.apv-sec pre{margin:0;padding:11px 13px;white-space:pre-wrap;word-break:break-word;font:12.5px/1.5 ' +
+        'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#12203a;background:#fff;}' +
+      '.apv-lbl{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#64748b;' +
+        'margin:18px 0 8px;}' +
+      '.apv-route{border:1px dashed #cbd5e6;border-radius:10px;padding:9px 12px;margin:0 0 8px;font-size:12.6px;}' +
+      '.apv-route b{color:#16305f;}' +
+      '.apv-route span{display:block;color:#5a6b88;margin-top:2px;}' +
+      '.apv-none{color:#5a6b88;font-size:12.6px;}' +
+      '#mlsApvCard .apv-f{padding:14px 22px;border-top:1px solid #e6ecf6;display:flex;gap:10px;' +
+        'justify-content:flex-end;flex-wrap:wrap;background:#fbfcfe;}' +
+      '.apv-btn{border:1px solid #c3cfe2;background:#fff;color:#243b66;border-radius:10px;padding:9px 16px;' +
+        'font-weight:700;font-size:13px;cursor:pointer;}' +
+      '.apv-btn.pri{background:#1f8f4e;border-color:#1f8f4e;color:#fff;}' +
+      '.apv-btn:hover{filter:brightness(1.05);}' +
+      '@media (prefers-color-scheme:dark){#mlsApvOv{background:rgba(2,6,18,.72);}}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function close() { var ov = document.getElementById('mlsApvOv'); if (ov && ov.parentNode) { ov.parentNode.removeChild(ov); } }
+  window.__mlsAthenaPreview_close = close;
+
+  function open() {
+    api.opens++;
+    if (!noteExists()) {
+      safe(function () { if (isFn(window.toast)) window.toast('Generate the note first — there is nothing to preview yet.', 'err'); });
+      return;
+    }
+    ensureModalCss();
+    close();
+
+    var p = safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; });
+    var ptName = (p && p.name) || safe(function () { var el = document.getElementById('patientLabel'); return el ? el.value.trim() : ''; }) || 'this patient';
+    var ptDob = (p && p.dob) ? (' · DOB ' + p.dob) : '';
+
+    var plan = buildPlan();
+    var routing = buildRouting();
+
+    var h = '<div id="mlsApvCard" role="dialog" aria-modal="true" aria-label="What goes to Athena">' +
+      '<div class="apv-h"><h2>👁 What MLS will write into athenaOne</h2>' +
+      '<div class="apv-pt">Patient: <b>' + esc(ptName) + '</b>' + esc(ptDob) + '</div></div>' +
+      '<div class="apv-body">' +
+      '<div class="apv-safe">MLS Assist enters each item below into its OWN athenaOne section, one at a time, ' +
+      'and <b>STOPS before Save / Sign</b> — nothing is filed in Athena until you review and confirm on Athena’s own screen. ' +
+      'MLS never signs or submits.</div>';
+
+    for (var i = 0; i < plan.length; i++) {
+      var s = plan[i];
+      h += '<div class="apv-sec"><div class="apv-sh"><span>' + esc(s.icon) + '</span><span>' + esc(s.title) + '</span>' +
+        (s.dest ? '<span class="apv-dest">→ ' + esc(s.dest) + '</span>' : '') +
+        '</div><pre>' + esc(s.body && s.body.length ? s.body : '(empty)') + '</pre></div>';
+    }
+
+    h += '<div class="apv-lbl">Also generated — where each goes</div>';
+    if (routing.length) {
+      for (var j = 0; j < routing.length; j++) {
+        h += '<div class="apv-route"><b>' + esc(routing[j].label) + '</b><span>' + esc(routing[j].route) + '</span></div>';
+      }
+    } else {
+      h += '<div class="apv-none">No extra documents generated for this visit. Only the sections above will be sent.</div>';
+    }
+
+    h += '</div>' +
+      '<div class="apv-f">' +
+      '<button type="button" class="apv-btn" id="mlsApvClose">Close</button>' +
+      '<button type="button" class="apv-btn pri" id="mlsApvSend">🚀 Looks right — send to Athena</button>' +
+      '</div></div>';
+
+    var ov = document.createElement('div');
+    ov.id = 'mlsApvOv';
+    ov.innerHTML = h;
+    ov.addEventListener('click', function (e) { if (e.target === ov) { close(); } });
+    document.body.appendChild(ov);
+
+    var cbtn = document.getElementById('mlsApvClose');
+    if (cbtn) { cbtn.onclick = close; }
+    var sbtn = document.getElementById('mlsApvSend');
+    if (sbtn) {
+      sbtn.onclick = function () {
+        close();
+        var real = document.getElementById('pushAllEmrBtn');
+        if (real) { safe(function () { real.click(); }); }   /* app's own confirm + autopilot */
+        else { safe(function () { if (isFn(window.toast)) window.toast('Send control not found on this build.', 'err'); }); }
+      };
+    }
+  }
+  window.__mlsAthenaPreview_open = open;
+
+  /* ---- entry points -------------------------------------------------------- */
+
+  /* (a) Persistent button in the base note card, right beside the real
+     "🚀 Send full visit to Athena" (#pushAllEmrBtn). Survives ez3 hiding the
+     card (it is only display:none'd, never removed). */
+  function ensureNoteCardBtn() {
+    safe(function () {
+      var push = document.getElementById('pushAllEmrBtn');
+      if (!push || document.getElementById('mlsApvNoteBtn')) { return; }
+      var b = document.createElement('button');
+      b.id = 'mlsApvNoteBtn';
+      b.type = 'button';
+      b.className = push.className || 'btn-ghost';
+      b.style.cssText = 'margin-left:8px';
+      b.textContent = '👁 Preview what goes to Athena';
+      b.onclick = open;
+      push.parentNode.insertBefore(b, push);
+    });
+  }
+
+  /* (b) Easy (ez3) entry: a persistent sibling row just below the room screen,
+     right beneath Review & Sign / Send to Athena. Inserted as a SIBLING of
+     #ez3Wrap so ez3's innerHTML re-render can't wipe it (same technique as the
+     ux-fixes phone-mic row). Shown only when a note exists. */
+  var ROW_ID = 'mlsApvEzRow';
+  function ensureEzRow() {
+    safe(function () {
+      var wrapEl = document.getElementById('ez3Wrap');
+      var existing = document.getElementById(ROW_ID);
+      var show = wrapEl && !!wrapEl.querySelector('#ez3Change') && noteExists();
+      if (!show) {
+        if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
+        return;
+      }
+      if (existing) { return; }
+      var row = document.createElement('div');
+      row.id = ROW_ID;
+      row.className = 'ez3-row2';
+      row.style.cssText = 'margin-top:6px';
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ez3-sm';
+      b.textContent = '👁 Preview what goes to Athena';
+      b.onclick = open;
+      row.appendChild(b);
+      /* place after the ux-fixes phone-mic row if present, else after #ez3Wrap */
+      var anchor = document.getElementById('mlsUxEz3ExtraRow') || wrapEl;
+      anchor.parentNode.insertBefore(row, anchor.nextSibling);
+    });
+  }
+
+  function tick() { ensureNoteCardBtn(); ensureEzRow(); }
+  var iv = setInterval(tick, 800);
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', tick, { once: true }); } else { tick(); }
+
+  window.__mlsAthenaPreview_revert = function () {
+    safe(function () { clearInterval(iv); });
+    safe(function () { close(); });
+    safe(function () { var b = document.getElementById('mlsApvNoteBtn'); if (b && b.parentNode) b.parentNode.removeChild(b); });
+    safe(function () { var r = document.getElementById(ROW_ID); if (r && r.parentNode) r.parentNode.removeChild(r); });
+    safe(function () { var s = document.getElementById('mlsApvCss'); if (s && s.parentNode) s.parentNode.removeChild(s); });
+    delete window.__mlsAthenaPreview_open;
+    delete window.__mlsAthenaPreview_close;
+    delete window.__mlsAthenaPreview;
+    delete window.__mlsAthenaPreview_revert;
+  };
+})();
+
+
+/* =============================================================================
+ * __mlsEasySmartTools v1.0.0   (easy-round2 · item 6, + item 4 fallback)
+ * -----------------------------------------------------------------------------
+ * Surfaces the app's AI tools and the doctor's custom widgets INSIDE the MLS
+ * Easy (ez3) visit flow — contextually, phase-aware, using ez3's own visual
+ * language, and WITHOUT duplicating anything ez3 already offers. Prepend ABOVE
+ * the live mls-connect.js bundle (real \n\n join).
+ *
+ * DESIGN RATIONALE (grounded in the live b82 sources):
+ *   ez3's per-patient room already surfaces Copilot, Recommendations, and
+ *   Send-to-patient in its own "✨ AI & visit tools" row (mls-connect.LIVE.js
+ *   :6699-6704). What it does NOT surface — and what a doctor otherwise has to
+ *   leave Easy for — are:
+ *     (1) the note-derived DOCUMENT tools that live disabled inside the hidden
+ *         note card: Referral letter (#refBtn -> generateReferral,
+ *         ScribeFlow.html:2001/:15680), Patient summary/AVS (#avsBtn ->
+ *         generateAVS, :1999/:15656), Patient handout (#handoutBtn ->
+ *         generateHandout, :2000/:16354). These only make sense AFTER a note
+ *         exists (each self-guards with "Generate a note first").
+ *     (2) the doctor's CUSTOM WIDGETS (openWidgetBuilder, getCustomWidgets,
+ *         refreshCustomWidget, cwPushToNote — ScribeFlow.html:1266/:19847/
+ *         :20248/:20271-20272), which auto-fill on Generate but render into
+ *         #customWidgetsHost inside the note card ez3 hides.
+ *   So this module adds ONE compact, labeled, contextual panel that shows only
+ *   what is relevant to the current phase — the "smart integration", not a
+ *   bolted-on toolbar. It reuses ez3's .ez3-sm / .ez3-row2 / .ez3-toolslbl
+ *   classes so it looks native, and it drives the app's OWN functions (never a
+ *   reimplementation).
+ *
+ * CONTEXTUAL RULES:
+ *   - Renders ONLY on ez3's per-patient doctor-room screen (gated on #ez3Change
+ *     inside #ez3Wrap — the same signal the ux-fixes phone-mic row uses).
+ *   - "📄 Visit documents" (Referral / Patient summary / Handout): shown ONLY
+ *     once a note exists. Each generates via the real function, then reveals the
+ *     hidden engine card and scrolls to the produced document so the doctor can
+ *     read / copy / send it.
+ *   - "🧩 Your widgets": lists saved custom widgets as chips (tap = generate
+ *     this widget for the current visit + jump to it) plus a "＋ New widget"
+ *     entry. If none exist, a single subtle "build a custom card" prompt.
+ *   - "🎙 Capture" (Phone mic / Paste transcript): item-4 FALLBACK ONLY. If the
+ *     staged ux-fixes module (__mlsUxPhoneMicRestore) is present, THAT owns the
+ *     phone-mic/paste row and this group stays hidden to avoid duplicate
+ *     controls. This group only appears if ux-fixes has not shipped, and only
+ *     before a note exists (the capture phase).
+ *
+ * Survives ez3's innerHTML re-render by mounting as a SIBLING of #ez3Wrap.
+ * Kill switch: window.__mlsEasySmartTools_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsEasySmartTools) { return; }
+
+  var api = { ver: '1.0.0', docRuns: 0, widgetRuns: 0 };
+  window.__mlsEasySmartTools = api;
+
+  function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function toastSafe(msg, kind) { safe(function () { if (isFn(window.toast)) window.toast(msg, kind || ''); }); }
+
+  function noteExists() {
+    /* currentSoap is a base-app `let` → shared global-lexical binding, NOT on
+       window; read it as a bare identifier (typeof-guarded). #noteBox is a
+       reliable DOM fallback (showNote() displays it with the note text). */
+    var soap = safe(function () { return (typeof currentSoap !== 'undefined') ? currentSoap : ''; }, '');
+    if (soap && String(soap).trim().length) { return true; }
+    var nb = document.getElementById('noteBox');
+    return !!(nb && nb.style.display !== 'none' && (nb.value || '').trim().length);
+  }
+
+  /* Reveal ez3's hidden engine card the app's own way (click the real
+     "🔧 Advanced tools" #ez3Adv), then scroll a produced card into view. */
+  function revealAndScroll(targetId) {
+    var already = safe(function () { return document.body.classList.contains('ez3adv'); }, false);
+    function scroll() {
+      safe(function () {
+        var el = targetId && document.getElementById(targetId);
+        if (el && el.scrollIntoView) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      });
+    }
+    if (already) { setTimeout(scroll, 250); return; }
+    var adv = document.getElementById('ez3Adv');
+    if (adv) { safe(function () { adv.click(); }); setTimeout(scroll, 550); return; }
+    setTimeout(scroll, 0);
+  }
+
+  function runDocTool(fnName, cardId, label) {
+    api.docRuns++;
+    if (!noteExists()) { toastSafe('Generate the note first, then create the ' + label + '.', 'err'); return; }
+    if (!isFn(window[fnName])) { toastSafe(label + ' is not available on this build.', 'err'); return; }
+    safe(function () { window[fnName](); });   /* real generateReferral / generateAVS / generateHandout */
+    revealAndScroll(cardId);
+  }
+
+  /* ---- custom widgets ------------------------------------------------------ */
+  function getWidgets() {
+    var arr = safe(function () { return isFn(window.getCustomWidgets) ? window.getCustomWidgets() : null; });
+    return (arr && arr.length) ? arr : [];
+  }
+  function runWidget(id) {
+    api.widgetRuns++;
+    if (!noteExists()) { toastSafe('Generate the note first — widgets fill from the visit.', 'err'); return; }
+    if (isFn(window.refreshCustomWidget)) { safe(function () { window.refreshCustomWidget(id); }); }
+    revealAndScroll('cw_' + id);
+  }
+  function newWidget() {
+    if (isFn(window.openWidgetBuilder)) { safe(function () { window.openWidgetBuilder(); }); }
+    else { toastSafe('Widget builder is not available on this build.', 'err'); }
+  }
+
+  /* ---- item-4 fallback capture controls (only if ux-fixes not present) ----- */
+  function phonemicOwnedElsewhere() { return !!window.__mlsUxPhoneMicRestore; }
+  function capturePhoneMic() {
+    if (isFn(window.__mlsStartPhoneMicFromEasy)) { window.__mlsStartPhoneMicFromEasy(); return; }
+    /* minimal self-contained path: reveal card -> open More options -> click phone mic */
+    var already = safe(function () { return document.body.classList.contains('ez3adv'); }, false);
+    function afterReveal() {
+      var more = document.getElementById('captureMore');
+      if (more && more.style.display === 'none') {
+        var mb = document.getElementById('captureMoreBtn');
+        safe(function () { if (mb) mb.click(); });
+      }
+      setTimeout(function () {
+        var pm = document.getElementById('phoneMicBtn');
+        if (!pm) { toastSafe('Phone mic control not found on this build.', 'err'); return; }
+        safe(function () { pm.click(); });
+        setTimeout(function () {
+          safe(function () { var pnl = document.getElementById('phoneMicPanel'); if (pnl && pnl.scrollIntoView) pnl.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+        }, 350);
+      }, 300);
+    }
+    if (already) { setTimeout(afterReveal, 200); return; }
+    var adv = document.getElementById('ez3Adv');
+    if (adv) { safe(function () { adv.click(); }); setTimeout(afterReveal, 550); }
+    else { setTimeout(afterReveal, 0); }
+  }
+  function capturePaste() {
+    if (isFn(window.__mlsPasteTranscriptFromEasy)) { window.__mlsPasteTranscriptFromEasy(); return; }
+    if (isFn(window.__mlsPasteTranscript)) { window.__mlsPasteTranscript(); return; }
+    /* last resort: reveal + focus the transcript box */
+    var adv = document.getElementById('ez3Adv');
+    if (adv && !safe(function () { return document.body.classList.contains('ez3adv'); }, false)) { safe(function () { adv.click(); }); }
+    setTimeout(function () {
+      var ta = document.getElementById('transcript');
+      if (ta) { safe(function () { ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); ta.focus(); }); }
+    }, 500);
+  }
+
+  /* ---- panel build --------------------------------------------------------- */
+  var PANEL_ID = 'mlsStEzPanel';
+
+  function chip(label, handler) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ez3-sm';
+    b.textContent = label;
+    b.onclick = handler;
+    return b;
+  }
+  function label(text) {
+    var d = document.createElement('div');
+    d.className = 'ez3-toolslbl';
+    d.textContent = text;
+    return d;
+  }
+  function row() {
+    var d = document.createElement('div');
+    d.className = 'ez3-row2';
+    d.style.cssText = 'margin-bottom:4px';
+    return d;
+  }
+
+  function buildPanel() {
+    var panel = document.createElement('div');
+    panel.id = PANEL_ID;
+
+    var hasNote = noteExists();
+
+    /* (1) Visit documents — only once a note exists */
+    if (hasNote) {
+      panel.appendChild(label('📄 Visit documents'));
+      var r1 = row();
+      if (isFn(window.generateReferral)) { r1.appendChild(chip('✉️ Referral letter', function () { runDocTool('generateReferral', 'refCard', 'referral letter'); })); }
+      if (isFn(window.generateAVS)) { r1.appendChild(chip('👤 Patient summary', function () { runDocTool('generateAVS', 'avsCard', 'patient summary'); })); }
+      if (isFn(window.generateHandout)) { r1.appendChild(chip('📝 Patient handout', function () { runDocTool('generateHandout', 'handoutCard', 'patient handout'); })); }
+      if (r1.childNodes.length) { panel.appendChild(r1); }
+      else { panel.removeChild(panel.lastChild); } /* drop the label if no tools resolved */
+    }
+
+    /* (2) Custom widgets */
+    var widgets = getWidgets();
+    var canBuild = isFn(window.openWidgetBuilder);
+    if (widgets.length || canBuild) {
+      panel.appendChild(label('🧩 Your widgets'));
+      var r2 = row();
+      for (var i = 0; i < widgets.length && i < 8; i++) {
+        (function (w) {
+          var lbl = ((w.emoji ? w.emoji + ' ' : '') + (w.title || 'Widget')).slice(0, 28);
+          r2.appendChild(chip(lbl, function () { runWidget(w.id); }));
+        })(widgets[i]);
+      }
+      if (canBuild) { r2.appendChild(chip('＋ New widget', newWidget)); }
+      panel.appendChild(r2);
+      if (!widgets.length) {
+        var hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11.5px;color:#9db1d8;text-align:center;margin:2px 0 4px';
+        hint.textContent = 'Build a custom card once — it fills itself on every visit.';
+        panel.appendChild(hint);
+      }
+    }
+
+    /* (3) Capture fallback — ONLY if ux-fixes phone-mic module is absent, and
+       only before a note exists (the capture phase). */
+    if (!hasNote && !phonemicOwnedElsewhere()) {
+      panel.appendChild(label('🎙 Capture'));
+      var r3 = row();
+      r3.appendChild(chip('📱 Phone mic', capturePhoneMic));
+      r3.appendChild(chip('📋 Paste transcript', capturePaste));
+      panel.appendChild(r3);
+    }
+
+    return panel.childNodes.length ? panel : null;
+  }
+
+  function isDoctorRoom(wrapEl) { return !!(wrapEl && wrapEl.querySelector('#ez3Change')); }
+
+  function ensurePanel() {
+    safe(function () {
+      var wrapEl = document.getElementById('ez3Wrap');
+      var existing = document.getElementById(PANEL_ID);
+      if (!isDoctorRoom(wrapEl)) {
+        if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
+        return;
+      }
+      /* Rebuild each tick so it stays phase-aware (note appears -> documents
+         group appears; widgets list refreshes). Cheap: a handful of buttons. */
+      var fresh = buildPanel();
+      if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
+      if (!fresh) { return; }
+      /* mount after preview row / phone-mic row / wrap, whichever is last present */
+      var anchor = document.getElementById('mlsApvEzRow') ||
+                   document.getElementById('mlsUxEz3ExtraRow') ||
+                   wrapEl;
+      anchor.parentNode.insertBefore(fresh, anchor.nextSibling);
+    });
+  }
+
+  var iv = setInterval(ensurePanel, 900);
+  ensurePanel();
+
+  window.__mlsEasySmartTools_revert = function () {
+    safe(function () { clearInterval(iv); });
+    safe(function () { var p = document.getElementById(PANEL_ID); if (p && p.parentNode) p.parentNode.removeChild(p); });
+    delete window.__mlsEasySmartTools;
+    delete window.__mlsEasySmartTools_revert;
+  };
+})();
+
+
+/* =============================================================================
+ * __mlsVisitSessionStash v1.0.0   (easy-round2 · item 2)
+ * -----------------------------------------------------------------------------
+ * "No lost work on patient switch." Preserves an in-progress recording / note
+ * when the doctor switches patients, re-associates it to the CORRECT patient,
+ * keeps a mid-generation note running and files its result under the patient it
+ * was started for (never the new one), and restores a patient's in-progress
+ * work when the doctor switches BACK. Handles two visits in flight at once.
+ * Prepend ABOVE the live mls-connect.js bundle (real \n\n join).
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT ALREADY EXISTS (and why this is additive, not a replacement)
+ * ---------------------------------------------------------------------------
+ *   - __mlsOpenSwitchFix (LIVE — verified 7 hits in the b82 bundle) wraps
+ *     selectPatient/setActivePtId to (a) saveDraft() the OLD patient's work to
+ *     History and (b) newVisit()+prefill a CLEAN slate for the new patient. That
+ *     already prevents silent data loss and cross-patient bleed. What it does
+ *     NOT do: let the doctor RESUME an in-progress unsigned visit by switching
+ *     back (it only leaves a History draft), and it does nothing for a note that
+ *     is still GENERATING when the switch happens (the async result lands on
+ *     whoever is active when it returns — the new patient — which mis-attributes
+ *     it). This module adds exactly those two behaviors, on top.
+ *   - ez3's blockSwitchWhileRecording (LIVE) already asks "stop first?" when you
+ *     switch mid-recording from inside the Easy workspace. This module does not
+ *     fight that gate — it only ever acts once a switch has actually gone
+ *     through (via the single setActivePtId choke point), so ez3's confirm still
+ *     gets first refusal exactly as today.
+ *
+ * ---------------------------------------------------------------------------
+ * MECHANISM (reuses the app's OWN full-fidelity primitives)
+ * ---------------------------------------------------------------------------
+ *   noteRecordFromState(false)  (ScribeFlow.html:10801) snapshots the ENTIRE
+ *   editor (transcript, soap, coding, EMR, orders, context, everything) into one
+ *   record. loadRecordIntoEditor(rec) (:11198) rehydrates all of it. This module
+ *   keeps an in-memory `stash` of those records keyed by patient id.
+ *
+ *   Single choke point: window.setActivePtId — the one state setter every switch
+ *   path funnels through (selectPatient, calStartVisit, quick-pick, Cmd-K,
+ *   voice). On a real id change:
+ *     1. BEFORE the real setter runs (old patient still active): snapshot the
+ *        old patient's editor into stash[old]. This captures an in-progress
+ *        recording's transcript too (the transcript box is the live source).
+ *     2. The real setter runs — so __mlsOpenSwitchFix's saveDraft(old) +
+ *        newVisit(clean) and ez3's lock/confirm still run exactly as today.
+ *     3. AFTER, on a deferred tick (setTimeout 0, so it lands AFTER
+ *        __mlsOpenSwitchFix's newVisit() regardless of which module wrapped the
+ *        setter last — making this order-independent): if the NEW patient has a
+ *        stash, loadRecordIntoEditor() restores their in-progress visit so they
+ *        can keep working; otherwise the clean slate __mlsOpenSwitchFix produced
+ *        is left as-is.
+ *
+ *   Mid-generation ownership: generateNote() (ScribeFlow.html:12341) is async
+ *   and reads the transcript into a local at its very first line, BEFORE any
+ *   await — so a generation always belongs to the patient who was active when it
+ *   started, even if the doctor switches during it. This module wraps
+ *   generateNote, captures that owner in the call's own closure (so TWO
+ *   overlapping generations each remember their own owner), and when the promise
+ *   settles: if the active patient changed, it rebuilds the finished note under
+ *   the ORIGINAL owner (owner's transcript from stash + the freshly generated
+ *   note/coding), files it in the owner's History, stashes it for a clean
+ *   switch-back, and clears the just-generated note off the CURRENT patient's
+ *   screen (preserving that patient's own transcript). No note ever bleeds onto
+ *   the wrong chart; no generation is aborted.
+ *
+ * SAFETY: every step is wrapped so that if any expected global is missing the
+ * module degrades to a silent no-op and the existing __mlsOpenSwitchFix behavior
+ * stands. It never deletes stored data and never wraps fetch.
+ *
+ * Kill switch: window.__mlsVisitSessionStash_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsVisitSessionStash) { return; }
+
+  var api = { ver: '1.0.0', snapshots: 0, restores: 0, refiled: 0 };
+  window.__mlsVisitSessionStash = api;
+
+  var stash = {};          /* patientId -> record from noteRecordFromState */
+  var liveOwner = '';      /* the patient the editor currently represents */
+  var switchDepth = 0;     /* reentrancy guard for our setActivePtId wrapper */
+  var restoring = false;   /* pause our switch handling while we restore */
+  var inFlight = 0;        /* count of generations currently running */
+  var origSetActive = null;
+
+  function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function norm(id) { return (id === null || id === undefined) ? '' : String(id); }
+  function activeIdSafe() { return safe(function () { return isFn(window.getActivePtId) ? norm(window.getActivePtId()) : ''; }, ''); }
+  function findPatientSafe(id) { return safe(function () { return isFn(window.findPatient) ? window.findPatient(id) : null; }, null); }
+  function toastSafe(msg, kind) { safe(function () { if (isFn(window.toast)) window.toast(msg, kind || ''); }); }
+  function tVal() { var t = document.getElementById('transcript'); return (t && t.value) || ''; }
+  function setTVal(v) { safe(function () { var t = document.getElementById('transcript'); if (t) { t.value = v; try { t.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} } }); }
+
+  function recHasContent(rec) {
+    if (!rec) { return false; }
+    var tr = rec.transcript && String(rec.transcript).replace(/^\s+|\s+$/g, '').length;
+    var so = rec.soap && String(rec.soap).replace(/^\s+|\s+$/g, '').length;
+    var ins = rec.insurance && String(rec.insurance).replace(/^\s+|\s+$/g, '').length;
+    return !!(tr || so || ins);
+  }
+
+  /* Snapshot the CURRENT editor into stash[id]. Must be called while `id` is the
+     active patient (so noteRecordFromState tags/reads the right context). */
+  function snapshotInto(id) {
+    if (!id) { return; }
+    safe(function () {
+      if (!isFn(window.noteRecordFromState)) { return; }
+      var rec = window.noteRecordFromState(false);
+      if (!rec) { return; }
+      rec.patientId = id;
+      if (recHasContent(rec)) { stash[id] = rec; api.snapshots++; }
+      else if (stash[id]) { delete stash[id]; } /* drop stale empty stash */
+    });
+  }
+
+  /* If __mlsOpenSwitchFix already saved this patient's in-progress work as a
+     History draft (it does, on every switch-away), converge the editor's
+     currentNoteId onto that existing record so a later save UPDATES it rather
+     than creating a duplicate/orphan. Makes restore id-stable regardless of the
+     order in which the two modules wrapped setActivePtId. */
+  function reconcileNoteId(id) {
+    safe(function () {
+      if (!isFn(window.getNotes)) { return; }
+      var arr = window.getNotes() || [];
+      var best = null, i;
+      for (i = 0; i < arr.length; i++) {
+        var n = arr[i];
+        if (n && String(n.patientId || '') === String(id) && !n.signed) {
+          if (!best || (n.updated || n.created || 0) >= (best.updated || best.created || 0)) { best = n; }
+        }
+      }
+      /* currentNoteId is a base-app `let` (global-lexical, NOT on window):
+         assign the BARE binding so the app's save path actually sees it —
+         `window.currentNoteId = …` would silently create an ignored window prop.
+         The bare identifier resolves to the shared binding for classic scripts
+         in this realm (this prepended module is one); guarded in case a build
+         ever renames it. */
+      if (best && best.id) { try { currentNoteId = best.id; } catch (e) {} }
+    });
+  }
+
+  /* Restore stash[id] into the editor. Returns true if something was restored. */
+  function restoreFor(id) {
+    if (!id || !stash[id]) { return false; }
+    return safe(function () {
+      if (!isFn(window.loadRecordIntoEditor)) { return false; }
+      restoring = true;
+      try { window.loadRecordIntoEditor(stash[id]); reconcileNoteId(id); api.restores++; return true; }
+      finally { restoring = false; }
+    }, false);
+  }
+
+  /* ==========================================================================
+   * SWITCH CHOKE POINT — window.setActivePtId
+   * ========================================================================== */
+  function wrapSetActive() {
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      var fn = window.setActivePtId;
+      if (isFn(fn) && !fn.__mlsStashWrapped) {
+        origSetActive = fn;
+        var wrapped = function (id) {
+          var newId = norm(id);
+          var oldId = activeIdSafe();
+          var acting = !restoring && newId && (newId !== oldId) && switchDepth === 0;
+          if (acting) {
+            switchDepth++;
+            snapshotInto(oldId);   /* capture OLD patient's in-progress work */
+            liveOwner = newId;
+          }
+          var r;
+          try {
+            r = fn.apply(this, arguments);
+          } finally {
+            if (acting) {
+              (function (target) {
+                setTimeout(function () {
+                  safe(function () {
+                    /* only restore if we're still on that patient (guard against
+                       a rapid double-switch) and they actually have stashed work */
+                    if (activeIdSafe() === target) { restoreFor(target); }
+                  });
+                }, 0);
+              })(newId);
+              switchDepth--;
+            }
+          }
+          return r;
+        };
+        wrapped.__mlsStashWrapped = true;
+        window.setActivePtId = wrapped;
+        clearInterval(iv);
+        liveOwner = activeIdSafe();
+      } else if (tries > 40) {
+        clearInterval(iv);
+      }
+    }, 250);
+    return iv;
+  }
+
+  /* ==========================================================================
+   * MID-GENERATION OWNERSHIP GUARD — window.generateNote
+   * ========================================================================== */
+  function wrapGenerate() {
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      var fn = window.generateNote;
+      if (isFn(fn) && !fn.__mlsStashGenWrapped) {
+        var wrapped = function () {
+          var owner = activeIdSafe();
+          var p;
+          inFlight++;
+          p = fn.apply(this, arguments);   /* generateNote already read the transcript for `owner` */
+          safe(function () {
+            Promise.resolve(p).then(function () { onGenSettled(owner); }, function () { inFlight = Math.max(0, inFlight - 1); });
+          });
+          return p;
+        };
+        wrapped.__mlsStashGenWrapped = true;
+        window.generateNote = wrapped;
+        clearInterval(iv);
+      } else if (tries > 40) {
+        clearInterval(iv);
+      }
+    }, 250);
+    return iv;
+  }
+
+  /* Build the OWNER's finished record: the freshly generated note parts (now in
+     the live editor) but with the OWNER's own transcript (from their stash),
+     since the current #transcript belongs to whoever is active now. */
+  function mergeOwnerNote(owner) {
+    return safe(function () {
+      if (!isFn(window.noteRecordFromState)) { return null; }
+      var rec = window.noteRecordFromState(false);
+      if (!rec) { return null; }
+      var os = stash[owner];
+      rec.transcript = (os && os.transcript) || rec.transcript || '';
+      rec.patientId = owner;
+      var op = findPatientSafe(owner);
+      if (op && op.name) { rec.patient = op.name; }
+      rec.isDraft = !(rec.soap && String(rec.soap).replace(/^\s+|\s+$/g, '').length);
+      return rec;
+    }, null);
+  }
+
+  /* Persist a record under a SPECIFIC patient without upsertNote's active-patient
+     side effects (upsertNote's attachVisitToPatient can retarget the active one). */
+  function persistUnderOwner(rec, owner) {
+    safe(function () {
+      if (!isFn(window.getNotes) || !isFn(window.saveNotes)) { return; }
+      var arr = window.getNotes() || [];
+      rec.patientId = owner;
+      var i = -1, k;
+      for (k = 0; k < arr.length; k++) { if (arr[k] && arr[k].id === rec.id) { i = k; break; } }
+      if (i >= 0) { var created = arr[i].created || arr[i].updated; arr[i] = rec; arr[i].created = created; }
+      else { rec.created = Date.now(); arr.unshift(rec); }
+      window.saveNotes(arr);
+      safe(function () { if (isFn(window.renderHistory)) window.renderHistory(); });
+      safe(function () { if (isFn(window.saveNoteToBackend)) window.saveNoteToBackend(rec); });
+    });
+  }
+
+  function onGenSettled(owner) {
+    inFlight = Math.max(0, inFlight - 1);
+    var othersInFlight = inFlight > 0;
+    var active = activeIdSafe();
+    if (!owner) { return; }
+    if (active === owner) { liveOwner = active; return; } /* no switch during generation: normal */
+
+    /* The doctor switched while this note generated. The editor is now a mix:
+       #transcript belongs to `active`, but the just-generated note parts belong
+       to `owner`. Re-file the note under `owner` (always safe), then — unless
+       ANOTHER generation is still running (whose result is about to render onto
+       the current screen) — restore `active`'s own editor. */
+    var activeTranscript = tVal();
+
+    safe(function () {
+      var ownerRec = mergeOwnerNote(owner);
+      if (ownerRec && recHasContent(ownerRec)) {
+        stash[owner] = ownerRec;              /* switch-back will restore the finished note */
+        persistUnderOwner(ownerRec, owner);   /* file it in owner's History now */
+        api.refiled++;
+      }
+    });
+
+    var on = findPatientSafe(owner);
+    if (othersInFlight) {
+      /* Another visit is still generating on this screen — clearing now would
+         destroy IT. Leave the screen alone; that generation's own settle will
+         reconcile. The owner's note is already safely filed + stashed above. */
+      toastSafe('Note for ' + ((on && on.name) || 'the previous patient') + ' finished and was filed under them.', 'ok');
+      return;
+    }
+
+    safe(function () {
+      restoring = true;
+      try {
+        if (isFn(window.newVisit)) { window.newVisit(); }   /* wipe owner's note off the current screen */
+        var restored = restoreFor(active);
+        if (!restored) {
+          /* active had no prior stash — put their own transcript back and prefill */
+          if (activeTranscript) { setTVal(activeTranscript); }
+          safe(function () { if (isFn(window.prefillContextFromProfile)) window.prefillContextFromProfile(); });
+        } else {
+          /* active had a stash; if they'd typed newer/longer transcript since, keep it */
+          if (activeTranscript && activeTranscript.length > tVal().length) { setTVal(activeTranscript); }
+        }
+      } finally { restoring = false; }
+    });
+
+    toastSafe('Note for ' + ((on && on.name) || 'the previous patient') + ' finished generating and was filed under them. You’re back on the current patient.', 'ok');
+  }
+
+  var ivA = wrapSetActive();
+  var ivB = wrapGenerate();
+
+  window.__mlsVisitSessionStash_revert = function () {
+    safe(function () { clearInterval(ivA); });
+    safe(function () { clearInterval(ivB); });
+    safe(function () { if (origSetActive && window.setActivePtId && window.setActivePtId.__mlsStashWrapped) { window.setActivePtId = origSetActive; } });
+    stash = {};
+    delete window.__mlsVisitSessionStash;
+    delete window.__mlsVisitSessionStash_revert;
+    /* generateNote wrapper is left in place (harmless passthrough) to avoid
+       clobbering any other module that wrapped it after us; its behavior is a
+       no-op when no cross-patient switch occurs. */
+  };
+})();
+
+
+/* ============================================================
+ * feat_mls_ext_download_sync.module.js  ->  window.__mlsExtDownloadSync
+ *
+ * PROBLEM (dispatch-work\individual-visits-sweep\GAP_ANALYSIS.md item 21,
+ * dispatch-work\MORNING_STATUS.md "TOP PRIORITY" section):
+ *   The Settings modal's "MLS Assist browser extension" card has a big
+ *   primary download button whose href/label/description are STATIC TEXT
+ *   in ScribeFlow.html ("...MLS_Assist_v1.51.zip", "Download MLS Assist
+ *   v1.51 (required update)", plus a hardcoded fix-summary sentence).
+ *   Every extension release has required a human to hand-edit that HTML
+ *   in 3 places (see MORNING_STATUS.md step 4) -- and because a compiled
+ *   .zip upload to the site repo has twice been denied by the permission
+ *   classifier as scope-expansion, releases have been stuck waiting on a
+ *   human to do this by hand.
+ *
+ * WHAT ALREADY EXISTS (verified live, 2026-07-08, via direct curl fetch --
+ *   no browser opened):
+ *   - GET https://mlsscribe.com/extension-version.json is already the
+ *     canonical, hosted, per-release-updated source of truth for
+ *     {version, url, notes}. Every extension-vNNN lane already drafts a
+ *     fresh copy of this file as part of shipping (see e.g.
+ *     dispatch-work\extension-v152\extension-version.json).
+ *   - get-extension.html ALREADY does exactly what this module brings to
+ *     Settings: a Chrome Web Store button as the primary, one-click
+ *     "Recommended" install path, with a manual .zip fallback below a
+ *     divider, and its version badge is synced live from
+ *     extension-version.json. The Store URL is already live and returns
+ *     HTTP 200: https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg
+ *   - The small green "Latest: vX.XX" pill next to the card heading is
+ *     ALREADY dynamic (a separate, already-shipped module -- untouched by
+ *     this file). Only the big primary button + the description sentence
+ *     below it are still static.
+ *
+ * WHAT THIS MODULE DOES: makes the Settings card match get-extension.html's
+ * already-proven pattern instead of re-inventing one --
+ *   1) Fetches /extension-version.json (same-origin, no browser needed to
+ *      verify the network call, only to eyeball the render).
+ *   2) Rewrites the primary button to the Chrome Web Store link (constant
+ *      below), matching get-extension.html's copy for consistency.
+ *   3) Adds/updates a secondary row: "Download vX.XX manually (.zip)" that
+ *      points at https://mlsscribe.com/MLS_Assist_v<version>.zip (the
+ *      established per-release naming convention -- v1.51.zip, v1.52.zip),
+ *      derived from the version number so NO per-release HTML edit is ever
+ *      needed again, plus keeps the existing "Other install options" link
+ *      to get-extension.html (which has its own robust client-side zip
+ *      builder that works even if a given version's static .zip was never
+ *      uploaded).
+ *   4) Rewrites the description sentence from extension-version.json's
+ *      `notes` field (every release lane already writes a human sentence
+ *      there) and derives the "(required update)" framing from whether
+ *      notes contains the phrase "REQUIRED UPDATE" -- no new field format
+ *      required of future release lanes.
+ *   5) Never touches the existing version-badge pill or anything else on
+ *      the page. Idempotent (data-eds-applied guard) + self-healing (poll
+ *      + MutationObserver, matching this codebase's convention, since the
+ *      Settings modal can be torn down/rebuilt between opens).
+ *
+ * CONFIG (the one thing a human may ever need to touch again): if the
+ * extension is ever re-published under a NEW Chrome Web Store listing
+ * (new item id), update STORE_URL below. Nothing else in this file is
+ * version-specific.
+ *
+ * Revert: window.__mlsExtDownloadSync_revert()
+ * ============================================================ */
+(function () {
+  'use strict';
+  if (window.__mlsExtDownloadSync) return;
+
+  var VERSION = 'edsync-1.0.0';
+
+  /* Live-verified 2026-07-08 (curl, HTTP 200) -- same URL get-extension.html
+     already uses as its primary "Recommended" install button. Update this
+     single constant if the Store listing is ever re-published elsewhere. */
+  var STORE_URL = 'https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg';
+  var VERSION_JSON_URL = '/extension-version.json';
+  var ZIP_BASE = 'https://mlsscribe.com/MLS_Assist_v';
+  var INSTALL_PAGE = 'https://mlsscribe.com/get-extension.html';
+
+  var _saved = { anchorParent: null, anchorNextSibling: null, origAnchorHTML: null, descEl: null, origDescHTML: null };
+  var _info = null; /* {version, notes} once fetched */
+  var _fetchInFlight = false;
+
+  function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  function findDownloadAnchor() {
+    var anchors = document.querySelectorAll('a.btn-primary, a[download]');
+    for (var i = 0; i < anchors.length; i++) {
+      var a = anchors[i];
+      var href = a.getAttribute('href') || '';
+      var txt = (a.textContent || '');
+      if (/MLS_Assist_v[\d.]+\.zip/i.test(href) || /Download MLS Assist/i.test(txt) || a.getAttribute('data-eds-primary') === '1') return a;
+    }
+    return null;
+  }
+
+  function fetchVersionInfo(cb) {
+    if (_info) return cb(_info);
+    if (_fetchInFlight) return;
+    _fetchInFlight = true;
+    safe(function () {
+      /* NOTE: intentionally avoids .catch(...) -- classic JScript (this repo's
+         cscript-based parse validator) treats "catch" as a reserved word that
+         cannot follow a dot; the two-argument then(onOk, onErr) form below is
+         functionally equivalent and parses cleanly on both engines. */
+      fetch(VERSION_JSON_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(
+        function (r) { return r && r.ok ? r.json() : null; },
+        function () { _fetchInFlight = false; }
+      ).then(
+        function (j) {
+          _fetchInFlight = false;
+          if (j && j.version) { _info = { version: String(j.version).trim(), notes: String(j.notes || '') }; cb(_info); }
+        },
+        function () { _fetchInFlight = false; }
+      );
+    });
+  }
+
+  function applyToAnchor(anchor, info) {
+    if (!anchor) return false;
+    if (anchor.getAttribute('data-eds-version') === info.version) return false; /* already current */
+
+    if (!_saved.anchorParent) {
+      _saved.anchorParent = anchor.parentNode;
+      _saved.origAnchorHTML = anchor.outerHTML;
+    }
+
+    var zipUrl = ZIP_BASE + info.version + '.zip';
+    var required = /required update/i.test(info.notes);
+
+    /* Primary CTA -> Chrome Web Store (one-click, auto-updating), matching
+       get-extension.html's already-live copy exactly. */
+    anchor.href = STORE_URL;
+    anchor.removeAttribute('download');
+    anchor.target = '_blank';
+    anchor.rel = 'noopener';
+    anchor.textContent = '✅ Add to Chrome — Chrome Web Store' + (required ? ' (update available: v' + info.version + ')' : '');
+    anchor.setAttribute('data-eds-primary', '1');
+    anchor.setAttribute('data-eds-version', info.version);
+
+    /* Secondary row: manual .zip + the (unchanged) full install-options page. */
+    var secId = 'edsSecondaryRow';
+    var sec = document.getElementById(secId);
+    if (!sec) {
+      sec = document.createElement('span');
+      sec.id = secId;
+      sec.className = 'note';
+      sec.style.cssText = 'display:block;margin:8px 0 0';
+      anchor.parentNode.insertBefore(sec, anchor.nextSibling);
+    }
+    sec.innerHTML = 'Already installed and updating manually, or the Store listing is behind? '
+      + '<a href="' + esc(zipUrl) + '" download target="_blank" rel="noopener">Download v' + esc(info.version) + ' directly (.zip)</a>'
+      + ' · <a href="' + esc(INSTALL_PAGE) + '" target="_blank" rel="noopener">Other install options</a>';
+
+    return true;
+  }
+
+  function applyToDescription(info) {
+    if (!info.notes) return false;
+    /* The description sentence sits in a .note right after the primary
+       anchor's *original* location; find it via the current anchor (it may
+       already be our rewritten one) rather than assuming a fixed DOM path. */
+    var anchor = findDownloadAnchor();
+    if (!anchor) return false;
+    var desc = anchor.parentNode.querySelector('.note[id]:not(#edsSecondaryRow), .note:not(#edsSecondaryRow)');
+    /* Prefer the specific note that is NOT our own secondary row and sits
+       between the anchor and the numbered install steps. */
+    var candidates = anchor.parentNode.querySelectorAll('.note');
+    desc = null;
+    for (var i = 0; i < candidates.length; i++) {
+      if (candidates[i].id === 'edsSecondaryRow') continue;
+      desc = candidates[i];
+      break;
+    }
+    if (!desc) return false;
+    if (desc.getAttribute('data-eds-version') === info.version) return false;
+    if (!_saved.descEl) { _saved.descEl = desc; _saved.origDescHTML = desc.innerHTML; }
+    desc.textContent = info.notes;
+    desc.setAttribute('data-eds-version', info.version);
+    return true;
+  }
+
+  function passAll() {
+    var anchor = findDownloadAnchor();
+    if (!anchor) return false;
+    var did = false;
+    fetchVersionInfo(function (info) {
+      if (applyToAnchor(findDownloadAnchor(), info)) did = true;
+      if (applyToDescription(info)) did = true;
+    });
+    return did;
+  }
+
+  var timer = null, mo = null;
+  function boot() {
+    passAll();
+    timer = setInterval(passAll, 2000);
+    safe(function () {
+      mo = new MutationObserver(function () { passAll(); });
+      mo.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    });
+  }
+
+  window.__mlsExtDownloadSync = { version: VERSION, installed: true, run: passAll, storeUrl: STORE_URL };
+  window.__mlsExtDownloadSync_revert = function () {
+    safe(function () { if (timer) clearInterval(timer); });
+    safe(function () { if (mo) mo.disconnect(); });
+    safe(function () {
+      var sec = document.getElementById('edsSecondaryRow');
+      if (sec) sec.remove();
+    });
+    safe(function () {
+      if (_saved.descEl && _saved.origDescHTML != null) {
+        _saved.descEl.innerHTML = _saved.origDescHTML;
+        _saved.descEl.removeAttribute('data-eds-version');
+      }
+    });
+    safe(function () {
+      if (_saved.anchorParent && _saved.origAnchorHTML != null) {
+        var cur = findDownloadAnchor();
+        if (cur) {
+          var tmp = document.createElement('div');
+          tmp.innerHTML = _saved.origAnchorHTML;
+          var restored = tmp.firstChild;
+          cur.parentNode.replaceChild(restored, cur);
+        }
+      }
+    });
+    delete window.__mlsExtDownloadSync;
+    delete window.__mlsExtDownloadSync_revert;
+    return 'reverted';
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+
 /* =========================================================================
  * MLS Scribe — CONTRAST FIX 2  (__mlsContrastFix2) v1.0.0  2026-07-08 (b92)
  *
@@ -21792,7 +23193,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b92';
+  var MLS_APP_BUILD='2026-07-08-b93';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
