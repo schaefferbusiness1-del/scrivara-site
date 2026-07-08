@@ -1,3 +1,298 @@
+/* =============================================================================
+ * __mlsOpenSwitchFix v1.1.0
+ * -----------------------------------------------------------------------------
+ * TWO focused, independent, additive/guarded fixes. Prepend ABOVE the live
+ * mls-connect.js bundle (real \n\n join), like every other guarded module in
+ * this codebase. Nothing here is destructive: no deletion of existing data,
+ * no wrapping of window.fetch (a prior fetch-wrapper mutual-recursion bug is
+ * documented against this app — see DIAGNOSIS.md §D in bugfix-pull-recording;
+ * this module never touches fetch).
+ *
+ * FIX 1 — "OPEN" is not a patient.
+ *   athenaOne renders an empty schedule slot as the literal name "OPEN" (or
+ *   "OPEN SLOT"). It must never become a saved Patient record, never survive
+ *   into window._calAppts (the in-memory store every "today" / agenda / choose-
+ *   patient renderer reads from), and never reach the schedule-import save path.
+ *   A narrower guard (`/^open$/i`) already exists ONLY inside the month-pull
+ *   engine's saveRow() (feat_mls_easy_v3x modules) — see FINDINGS.md/DIAGNOSIS.md
+ *   in bugfix-pull-recording. This fix is a belt-and-suspenders layer at the
+ *   base-app choke points those engine-specific guards do not cover:
+ *     (a) window.upsertPatient  — refuses to create/update a patient record
+ *         whose name normalizes to "open"/"open slot" (works no matter which
+ *         caller invokes it — today-pull, month-pull, chart import, study
+ *         groups, etc.).
+ *     (b) window._importPulledSchedule — strips OPEN rows out of the pulled
+ *         array BEFORE the base app's own import loop runs, so it never even
+ *         reaches an appointment POST or an upsertPatient() call.
+ *     (c) a lightweight periodic sweep of window._calAppts — several code
+ *         paths assign directly into _calAppts (loadCalendar's initial fetch,
+ *         _renderWaitingRoom, month-pull refreshes); the sweep is the single
+ *         defensive backstop that keeps ANY of them from leaking an OPEN row
+ *         into the header "today" agenda or any patient-picker card that reads
+ *         _calAppts, regardless of which function produced it.
+ *   Out of scope (intentionally): deleting any "OPEN"-named record that may
+ *   already exist in storage from before this fix shipped. That is a separate,
+ *   explicitly-confirmed cleanup job (dispatch-work\backend-junk-cleanup, lane
+ *   R7) — this module only stops NEW ones from being created or rendered.
+ *
+ * FIX 2 — switching to a different patient after recording/generating a note
+ *   must PRESERVE the first patient's work, then start the new patient with a
+ *   clean slate. Never lose a recording/note on switch; never mix patients.
+ *
+ *   Root cause (verified against the live base app, ScribeFlow HTML:9464 /
+ *   :10757 / :9763): window.selectPatient(id) ONLY does
+ *     setActivePtId(id); renderPatients(); renderProfile(); renderPatientBar();
+ *     updateNavCounts();
+ *   — it never touches the visit engine (transcript / note / coding / context
+ *   box / capture state), and it never SAVES anything either. The only path
+ *   that resets the engine is goNewVisitForPatient() -> newVisit(), called
+ *   after selectPatient() by calStartVisit() (calendar path) and by
+ *   ptQuickVisit() (Patients-page quick-visit path) — but not by every caller.
+ *   The MLS Easy workspace's search-picked / type-a-name switch path
+ *   (lockAndStartPatient(), and the `_pt` branch of lockAndStart()) calls
+ *   `window.selectPatient(id)` directly with no follow-up save OR reset.
+ *   Result, uncorrected: after recording/generating (or even signing) for
+ *   patient A, picking patient B by search (1) silently DISCARDS whatever of
+ *   A's transcript/note was never explicitly saved, AND (2) leaves it on
+ *   screen bleeding into B's session (#genBtn/#signBtn keep operating on it).
+ *
+ *   Fix: wrap the two lowest-level, always-used choke points — window.
+ *   selectPatient and window.setActivePtId — with a PRESERVE-THEN-RESET
+ *   sequence that runs only when the active patient id is actually about to
+ *   change (never on a same-patient re-select, never on deselect):
+ *     1. BEFORE the real call runs (so the OLD patient is still active and
+ *        window.getActivePtId() still resolves to them): if there is
+ *        meaningful unsaved content (#transcript or #noteBox non-empty) AND
+ *        the visit was not already signed (#signLine still hidden — signing
+ *        already persisted it via signNote()->saveCurrentNote(); re-saving
+ *        as a draft would wrongly flip signed back to false), call the app's
+ *        OWN window.saveDraft(). saveDraft() -> noteRecordFromState() ->
+ *        upsertNote() tags patientId = getActivePtId() (still the OLD
+ *        patient) and persists to uns('notes') + best-effort /api/records —
+ *        the exact same mechanism the app already uses for manual draft
+ *        saves, so it shows up in that patient's History/profile normally,
+ *        including if the doctor switches back to them later.
+ *     2. The real selectPatient/setActivePtId call runs — so the existing
+ *        patient-lock / "still recording, stop first?" gate
+ *        (feat_mls_patientlock_b53.js, which wraps these same two globals)
+ *        still gets first refusal, exactly as today. This fix's preserve step
+ *        only ever runs once a switch has actually been allowed through.
+ *     3. AFTER the real call runs (new patient now active): call the app's
+ *        own window.newVisit() + window.prefillContextFromProfile() — the
+ *        exact same reset the working calendar path already performs — so
+ *        the new patient starts from a verified-clean transcript/note/
+ *        context/coding/sign state. No new UI, no new confirm dialogs.
+ *   A reentrancy guard (switchDepth) ensures this preserve-then-reset
+ *   sequence runs exactly ONCE per logical switch even though selectPatient
+ *   calls setActivePtId internally (both are wrapped) — no duplicate saves,
+ *   no duplicate "Draft saved" toasts.
+ *
+ *   Re-selecting the SAME already-active patient is explicitly a no-op
+ *   (matches selectPatient's own "re-clicking the active one just re-opens"
+ *   contract — must not wipe or re-save an in-progress note just because the
+ *   doctor re-clicked their own patient row). Deselecting (id === '') is also
+ *   left untouched — that is deselectPatient()'s own designed behavior, not
+ *   this bug. Calling newVisit()/prefillContextFromProfile()/saveDraft() an
+ *   extra time on a path that already calls them (e.g. calStartVisit) is a
+ *   harmless no-op — nothing regresses on paths that were already correct.
+ *
+ * Kill switch: window.__mlsOpenSwitchFix_revert() restores both wrapped
+ * globals to their pre-module originals (best-effort; harmless to call even
+ * if nothing was wrapped yet).
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsOpenSwitchFix) { return; }
+
+  var api = { ver: '1.1.0', openBlocked: 0, importDropped: 0, sweepDropped: 0, resets: 0, preserved: 0 };
+  window.__mlsOpenSwitchFix = api;
+
+  function safe(fn, fallback) {
+    try { return fn(); } catch (e) { return fallback; }
+  }
+
+  /* ---- shared OPEN-placeholder test (matches the existing pull-engine guard's
+     case-insensitive, trimmed "open" / "open slot" match exactly) ------------ */
+  function isOpenPlaceholder(name) {
+    var s = (name === null || name === undefined) ? '' : String(name);
+    return /^open(\s+slot)?$/i.test(s.replace(/^\s+|\s+$/g, ''));
+  }
+
+  var origRegistry = {};
+
+  /* Poll briefly for a not-yet-defined global, wrap it exactly once, then stop.
+     Base-app functions are normally already defined by the time this prepended
+     module runs (ScribeFlow.html's inline script blocks load before
+     mls-connect.js is injected) — the poll is just cheap insurance. */
+  function wrapGlobalOnce(name, makeWrapper) {
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      var fn = window[name];
+      if (typeof fn === 'function' && !fn.__mlsOpenSwitchWrapped) {
+        origRegistry[name] = fn;
+        var wrapped = makeWrapper(fn);
+        wrapped.__mlsOpenSwitchWrapped = true;
+        window[name] = wrapped;
+        clearInterval(iv);
+      } else if (tries > 40) {
+        clearInterval(iv); /* ~10s; give up quietly, nothing else to do */
+      }
+    }, 250);
+  }
+
+  /* ==========================================================================
+   * FIX 1 — OPEN is not a patient
+   * ========================================================================== */
+
+  wrapGlobalOnce('upsertPatient', function (orig) {
+    return function (p) {
+      if (p && isOpenPlaceholder(p.name)) {
+        api.openBlocked++;
+        return; /* refuse silently: never create OR update a patient record named OPEN */
+      }
+      return orig.apply(this, arguments);
+    };
+  });
+
+  wrapGlobalOnce('_importPulledSchedule', function (orig) {
+    return function (appts) {
+      if (appts && appts.length) {
+        for (var i = appts.length - 1; i >= 0; i--) {
+          if (appts[i] && isOpenPlaceholder(appts[i].name)) {
+            appts.splice(i, 1);
+            api.importDropped++;
+          }
+        }
+      }
+      return orig.apply(this, arguments);
+    };
+  });
+
+  /* Defensive backstop: several code paths assign straight into window._calAppts
+     (loadCalendar's initial fetch, _renderWaitingRoom, month-pull refreshes) —
+     sweep it directly so none of them can leak an OPEN row into any renderer
+     (header "today" agenda, choose-patient cards, Who's Next, etc.). Mutates
+     the array in place (splice) rather than reassigning, so any code already
+     holding a reference to window._calAppts keeps seeing the live, scrubbed array. */
+  setInterval(function () {
+    safe(function () {
+      var a = window._calAppts;
+      if (!a || !a.length) { return; }
+      for (var i = a.length - 1; i >= 0; i--) {
+        if (a[i] && isOpenPlaceholder(a[i].name)) {
+          a.splice(i, 1);
+          api.sweepDropped++;
+        }
+      }
+    });
+  }, 3000);
+
+  /* ==========================================================================
+   * FIX 2 — switching patients always starts a clean slate
+   * ========================================================================== */
+
+  function getActiveIdSafe() {
+    return safe(function () { return (typeof window.getActivePtId === 'function') ? (window.getActivePtId() || '') : ''; }, '');
+  }
+
+  function isAlreadySigned() {
+    return safe(function () {
+      var line = document.getElementById('signLine');
+      return !!(line && line.style.display !== 'none');
+    }, false);
+  }
+
+  /* Meaningful, not-yet-persisted content sitting in the visit engine right
+     now: a transcript and/or a generated note that hasn't been saved. Once
+     signed, the note is already persisted (signNote() -> saveCurrentNote())
+     — re-running saveDraft() on a signed note would incorrectly flip its
+     `signed` flag back to false, so signed visits are never touched here. */
+  function hasUnsavedVisitContent() {
+    return safe(function () {
+      if (isAlreadySigned()) { return false; }
+      var tr = document.getElementById('transcript');
+      var nb = document.getElementById('noteBox');
+      var trHas = !!(tr && (tr.value || '').replace(/^\s+|\s+$/g, '').length);
+      var nbHas = !!(nb && (nb.value || '').replace(/^\s+|\s+$/g, '').length);
+      return trHas || nbHas;
+    }, false);
+  }
+
+  /* Save whatever the OLD patient's visit engine is holding, tagged to them,
+     using the app's OWN save mechanism (same one a manual "save draft" click
+     would use) — must run BEFORE the active id changes, since saveDraft()'s
+     noteRecordFromState() tags patientId from the CURRENTLY active patient. */
+  function preserveBeforeSwitch() {
+    safe(function () {
+      if (hasUnsavedVisitContent() && typeof window.saveDraft === 'function') {
+        window.saveDraft();
+        api.preserved++;
+      }
+    });
+  }
+
+  function forceFreshVisitForNewPatient() {
+    safe(function () {
+      if (typeof window.newVisit === 'function') { window.newVisit(); }
+    });
+    safe(function () {
+      if (typeof window.prefillContextFromProfile === 'function') { window.prefillContextFromProfile(); }
+    });
+    api.resets++;
+  }
+
+  /* Reentrancy guard: selectPatient()'s real body calls setActivePtId()
+     internally, and both globals are wrapped below — without this, a single
+     logical switch would run the preserve+reset sequence twice (harmless but
+     produces a duplicate "Draft saved" toast). depth===0 means "no outer
+     wrapper is already handling this switch", so only the outermost call
+     acts; the nested call still calls through to the real function normally. */
+  var switchDepth = 0;
+
+  function wrapSwitchChokepoint(name) {
+    wrapGlobalOnce(name, function (orig) {
+      return function (id) {
+        var newId = (id === null || id === undefined) ? '' : String(id);
+        var oldId = getActiveIdSafe();
+        var switching = (newId !== oldId) && switchDepth === 0;
+        if (switching) { switchDepth++; preserveBeforeSwitch(); }
+        var r;
+        try {
+          r = orig.apply(this, arguments);
+        } finally {
+          if (switching) {
+            forceFreshVisitForNewPatient();
+            switchDepth--;
+          }
+        }
+        return r;
+      };
+    });
+  }
+
+  /* Hooked at the two lowest-level, always-used choke points so this covers
+     every current AND future caller (Easy workspace search-pick, quick-pick
+     chips, Cmd-K, voice, calStartVisit, ptQuickVisit, etc.) without needing to
+     patch each UI surface. The real function always runs in between preserve
+     and reset — so the existing patient-lock "still recording, stop first?"
+     gate (feat_mls_patientlock_b53.js, which wraps these same two globals)
+     still gets to block/confirm exactly as it does today; this fix only ever
+     preserves/resets once a switch has actually been allowed through. */
+  wrapSwitchChokepoint('selectPatient');
+  wrapSwitchChokepoint('setActivePtId');
+
+  window.__mlsOpenSwitchFix_revert = function () {
+    Object.keys(origRegistry).forEach(function (name) {
+      window[name] = origRegistry[name];
+    });
+    origRegistry = {};
+    delete window.__mlsOpenSwitchFix;
+    delete window.__mlsOpenSwitchFix_revert;
+  };
+})();
+
+
 /* =========================================================================
  * MLS Scribe — IMPORT CHAIN FIX + IMPORT HYGIENE  (__mlsImportChainFix) v2.2.0  2026-07-07
  *
@@ -15574,7 +15869,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b69';
+  var MLS_APP_BUILD='2026-07-07-b70';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
