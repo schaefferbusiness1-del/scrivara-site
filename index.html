@@ -327,6 +327,62 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 #mlsChatSendBtn{background:#2563eb;color:#fff;border:none;border-radius:10px;padding:0 16px;font-weight:720;cursor:pointer}
 #mlsChatSendBtn:disabled{opacity:.5;cursor:default}
 
+/* INTERACTIVE CARDS + LIVE BADGE */
+[data-detail]{cursor:pointer}
+[data-detail]:focus-visible{outline:2px solid var(--brand);outline-offset:3px;border-radius:16px}
+.card .more,.emr-card .more{margin-top:15px;font-size:13px;font-weight:800;color:var(--brand);display:inline-flex;align-items:center;gap:6px;opacity:.82;transition:.16s}
+.card:hover .more,.emr-card:hover .more{opacity:1;gap:9px}
+.stat{transition:.18s}
+.stat[data-detail]:hover{transform:translateY(-2px);border-color:#d4e0ef;box-shadow:var(--shadow)}
+.stat .more{display:block;margin-top:8px;font-size:11px;font-weight:800;color:var(--brand);letter-spacing:.02em}
+.badge-live{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#0b7d73;background:#e7f7f2;border:1px solid #bfe9df;padding:3px 8px 3px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.badge-live .ld{width:7px;height:7px;border-radius:50%;background:#12a58e;box-shadow:0 0 0 3px rgba(18,165,142,.22);animation:lpulse 1.7s ease-in-out infinite}
+@keyframes lpulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* EMR GUARANTEE SECTION */
+.emr{background:linear-gradient(160deg,#f7fbff,#eef5fd)}
+.emr-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.emr-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius-lg);padding:30px 28px;box-shadow:var(--shadow-sm);transition:.18s}
+.emr-card:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.emr-card.hero-live{border-color:#bfe9df;background:linear-gradient(160deg,#f2fcf9,#eafaf5)}
+.emr-card .k{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.emr-card h3{font-size:21px}
+.emr-card p{color:var(--ink2);font-size:15px;margin-top:9px}
+.emr-card .big{font-size:52px;font-weight:860;letter-spacing:-.03em;background:linear-gradient(120deg,#2f74f0,#0d9488);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:.9}
+.emr-list{list-style:none;padding:0;margin:16px 0 0;display:flex;flex-direction:column;gap:9px}
+.emr-list li{position:relative;padding-left:26px;font-size:14.5px;color:var(--ink2)}
+.emr-list li:before{content:"✓";position:absolute;left:0;top:0;color:var(--teal);font-weight:850}
+.gtimeline{display:flex;align-items:flex-start;gap:0;margin-top:20px}
+.gtimeline .gt{flex:1;text-align:center;position:relative;font-size:11.5px;color:var(--muted);padding:0 4px}
+.gtimeline .gt b{display:block;color:var(--ink);font-size:12.5px;margin-bottom:2px}
+.gtimeline .gt:not(:last-child):after{content:"";position:absolute;top:8px;left:50%;width:100%;height:2px;background:var(--line)}
+.gtimeline .gt .d{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--brand);margin:0 auto 9px;position:relative;z-index:1}
+@media(max-width:820px){ .emr-grid{grid-template-columns:1fr} }
+
+/* DETAIL MODAL */
+.mdl-ov{position:fixed;inset:0;z-index:11000;background:rgba(9,19,31,.56);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .22s ease}
+.mdl-ov.open{opacity:1;pointer-events:auto}
+.mdl{background:#fff;border-radius:20px;box-shadow:var(--shadow-lg);width:min(600px,100%);max-height:88vh;overflow-y:auto;transform:translateY(16px) scale(.985);transition:transform .24s cubic-bezier(.2,.7,.2,1)}
+.mdl-ov.open .mdl{transform:none}
+.mdl-top{position:relative;padding:28px 28px 22px;background:linear-gradient(150deg,#0b1c30,#12314f);color:#fff;border-radius:20px 20px 0 0}
+.mdl-top .glyph{width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.13);display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:15px}
+.mdl-top h3{font-size:22px;color:#fff;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.mdl-top p{color:#bcd0e6;font-size:15px;margin-top:11px}
+.mdl-close{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:10px;border:none;background:rgba(255,255,255,.14);color:#fff;font-size:20px;cursor:pointer;line-height:1;transition:.16s}
+.mdl-close:hover{background:rgba(255,255,255,.27)}
+.mdl-body{padding:24px 28px 28px}
+.mdl-lbl{font-size:11.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:18px}
+.flow{position:relative;display:flex;flex-direction:column}
+.flow-step{display:flex;gap:15px;padding-bottom:20px;position:relative}
+.flow-step:last-child{padding-bottom:0}
+.flow-step .num{flex:none;width:34px;height:34px;border-radius:10px;background:linear-gradient(140deg,#eaf1ff,#e7fbf6);color:var(--brand);font-weight:850;display:flex;align-items:center;justify-content:center;font-size:15px;z-index:1}
+.flow-step:not(:last-child):before{content:"";position:absolute;left:16px;top:36px;bottom:2px;width:2px;background:linear-gradient(#d5e2ff,#dbf3ec)}
+.flow-step .ft b{display:block;font-size:15px;color:var(--ink);font-weight:750}
+.flow-step .ft span{display:block;font-size:14px;color:var(--ink2);margin-top:3px}
+.mdl-cta{margin-top:24px;display:flex;gap:10px;flex-wrap:wrap}
+body.mdl-lock{overflow:hidden}
+@media(max-width:600px){ .mdl-top{padding:22px 20px 18px} .mdl-body{padding:20px} }
+
 /* small-screen safety: long single-line buttons must wrap, never overflow */
 @media(max-width:600px){
  .btn{white-space:normal;max-width:100%;text-align:center}
@@ -369,7 +425,7 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 <div class="wrap">
 <div class="hero-grid">
 <div>
-<span class="pill"><span class="dot"></span> Ambient AI scribe · REST API · athenahealth integration</span>
+<span class="pill"><span class="dot"></span> Ambient AI scribe · REST API · athenahealth + any EMR</span>
 <h1>Talk through the visit.<br>Walk out with a <span class="grad">finished, coded note.</span></h1>
 <p class="lead">MLS listens to your spine, pain or PM&amp;R visit and drafts a clean, structured note with suggested coding — pulling chart data straight from athenahealth and writing back through your EHR. You review and sign in seconds instead of charting after hours. You're always the final word.</p>
 <div class="cta">
@@ -420,10 +476,10 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 </div>
 
 <div class="stats">
-<div class="stat"><b>From $19</b><span>per provider / month</span></div>
-<div class="stat"><b>2 hours</b><span>saved a day — verified by Chester County Spine Care</span></div>
-<div class="stat"><b>E/M · ICD-10 · CPT</b><span>suggested on each note</span></div>
-<div class="stat"><b>REST API + FHIR</b><span>pull &amp; write back to your EHR</span></div>
+<div class="stat" data-detail="stat-price"><b>From $19</b><span>per provider / month</span><span class="more">Details →</span></div>
+<div class="stat" data-detail="stat-hours"><b>2 hours</b><span>saved a day — verified by Chester County Spine Care</span><span class="more">Details →</span></div>
+<div class="stat" data-detail="stat-codes"><b>E/M · ICD-10 · CPT</b><span>suggested on each note</span><span class="more">Details →</span></div>
+<div class="stat" data-detail="stat-emr"><b>REST API + FHIR</b><span>pull &amp; write back to your EHR</span><span class="more">Details →</span></div>
 </div>
 </div>
 </section>
@@ -433,11 +489,11 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 <div class="wrap">
 <div class="lbl">Works with the tools your practice already runs on</div>
 <div class="row">
-<span class="wm"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="#7B2CBF"/><path d="M7 15 L12 7 L17 15" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg> athenahealth</span>
+<span class="wm"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="#7B2CBF"/><path d="M7 15 L12 7 L17 15" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg> athenahealth <span class="badge-live"><span class="ld"></span> Live</span></span>
 <span class="wm"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#e35205"/><path d="M8 12h8M12 8v8" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg> HL7 FHIR R4</span>
 <span class="wm"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="4" fill="#0d9488"/><path d="M6 12l3 3 6-7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg> SMART on FHIR</span>
 <span class="wm"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="#3a5575"/><path d="M8 8h8v8h-8z" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M8 12h8" stroke="#fff" stroke-width="1.6"/></svg> REST API</span>
-<span class="wm"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#c7d0dc"/><path d="M7 13l3 3 7-8" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg> eClinicalWorks <span class="soon">Coming soon</span></span>
+<span class="wm"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="4" fill="#0d9488"/><path d="M6 9h12M6 12h12M6 15h8" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg> Any EMR <span class="soon" style="background:#e7f7f2;color:#0b7d73;border:1px solid #bfe9df">30-day guarantee</span></span>
 </div>
 </div>
 </div>
@@ -468,15 +524,15 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 <p>Start with the scribe. Grow into a full clinical, revenue and reputation layer when you're ready.</p>
 </div>
 <div class="grid">
-<div class="card"><div class="ic">🎙️</div><h3>Ambient note generation</h3><p>SOAP, APSO, narrative or H&amp;P — choose the style and length per visit. The note reflects only what was documented.</p></div>
-<div class="card"><div class="ic">💳</div><h3>Coding &amp; reimbursement</h3><p>Suggested E/M, ICD-10 and CPT with a one-click superbill and an estimate of what each visit should reimburse.</p></div>
-<div class="card"><div class="ic">🔗</div><h3>Deep athenahealth integration</h3><p>Pull today's schedule and pull chart data — problems, meds, allergies, history — straight from athenaOne, then write the finished note back through your EHR.</p></div>
-<div class="card"><div class="ic">📋</div><h3>Patient intake</h3><p>An iPad/web intake that captures history, ODI and satisfaction — and fills the chart before you walk in.</p></div>
-<div class="card"><div class="ic">📈</div><h3>Outcomes tracking</h3><p>Pain and ODI captured at intake and tracked per patient and across the practice, with one-click export.</p></div>
-<div class="card"><div class="ic">⚖️</div><h3>Legal / IME report portal</h3><p>AI-drafted narrative, IME and utilization-review reports you review, sign, and sell to attorneys.</p></div>
-<div class="card"><div class="ic">⭐</div><h3>Reputation &amp; marketing suite <span class="badge-prem">Premium</span></h3><p>Find and manage your reputation across Google and the top review sites, surface positive quotes, and request more reviews from real patients.</p></div>
-<div class="card"><div class="ic">🧩</div><h3>Developer REST API</h3><p>A developer-friendly REST API and FHIR keys so your team can generate notes, sync records and build on MLS programmatically.</p></div>
-<div class="card"><div class="ic">🏆</div><h3>MLS Best Doctors directory <span class="badge-soon">Coming soon</span></h3><p>An earned, de-identified rating directory that turns your real visit quality into a public profile patients can find. In development for subscribed, opted-in practices.</p></div>
+<div class="card" data-detail="ambient"><div class="ic">🎙️</div><h3>Ambient note generation</h3><p>SOAP, APSO, narrative or H&amp;P — choose the style and length per visit. The note reflects only what was documented.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="coding"><div class="ic">💳</div><h3>Coding &amp; reimbursement</h3><p>Suggested E/M, ICD-10 and CPT with a one-click superbill and an estimate of what each visit should reimburse.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="athena"><div class="ic">🔗</div><h3>Deep athenahealth integration <span class="badge-live"><span class="ld"></span> Live</span></h3><p>Pull today's schedule and pull chart data — problems, meds, allergies, history — straight from athenaOne, then write the finished note back through your EHR.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="intake"><div class="ic">📋</div><h3>Patient intake</h3><p>An iPad/web intake that captures history, ODI and satisfaction — and fills the chart before you walk in.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="outcomes"><div class="ic">📈</div><h3>Outcomes tracking</h3><p>Pain and ODI captured at intake and tracked per patient and across the practice, with one-click export.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="legal"><div class="ic">⚖️</div><h3>Legal / IME report portal</h3><p>AI-drafted narrative, IME and utilization-review reports you review, sign, and sell to attorneys.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="reputation"><div class="ic">⭐</div><h3>Reputation &amp; marketing suite <span class="badge-prem">Premium</span></h3><p>Find and manage your reputation across Google and the top review sites, surface positive quotes, and request more reviews from real patients.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="api"><div class="ic">🧩</div><h3>Developer REST API</h3><p>A developer-friendly REST API and FHIR keys so your team can generate notes, sync records and build on MLS programmatically.</p><span class="more">See how it works →</span></div>
+<div class="card" data-detail="bestdoctors"><div class="ic">🏆</div><h3>MLS Best Doctors directory <span class="badge-soon">Coming soon</span></h3><p>An earned, de-identified rating directory that turns your real visit quality into a public profile patients can find. In development for subscribed, opted-in practices.</p><span class="more">See how it works →</span></div>
 </div>
 </div>
 </section>
@@ -490,10 +546,10 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 <h2>A real API. Real EHR integration.</h2>
 <p class="lead">MLS isn't a closed box. It's built on a documented REST API and connects deeply to the EHRs practices actually use — so notes flow in and out of your systems instead of living on an island.</p>
 <ul class="api-list">
-<li><span class="tk">🔗</span><div><b>Deep athenahealth integration</b><span>Pull today's schedule and chart data directly from athenaOne, and write finished notes back through the EHR — read-only until you say otherwise, and always stopping for your review before anything is signed.</span></div></li>
+<li><span class="tk">🔗</span><div><b>athenahealth — live &amp; proven <span class="badge-live"><span class="ld"></span> Live</span></b><span>Pull today's schedule and chart data directly from athenaOne, and write finished notes back into the encounter — read-only for structured data, and always stopping for your review before anything is signed.</span></div></li>
 <li><span class="tk">🔌</span><div><b>HL7 FHIR R4 &amp; SMART on FHIR</b><span>Standards-based write-back and record sync, so MLS fits into modern EHR workflows without a rip-and-replace.</span></div></li>
 <li><span class="tk">🧩</span><div><b>Developer-friendly REST API</b><span>Generate notes, save and retrieve records, and pull schedules over clean JSON endpoints. Provision your keys from Settings → Integrations.</span></div></li>
-<li><span class="tk">🕘</span><div><b>eClinicalWorks <span class="badge-soon">Coming soon</span></b><span>eCW integration is in active development — talk to us if it's on your roadmap and we'll keep you posted.</span></div></li>
+<li><span class="tk">🗓️</span><div><b>Any other EMR — guaranteed in 30 days</b><span>Epic, Cerner, eClinicalWorks, NextGen or whatever you run: tell us your system and our team builds a smart integration within 30 days. That's our guarantee.</span></div></li>
 </ul>
 <a class="btn btn-light btn-lg" href="#demo">Talk to us about integration <span class="arrow">→</span></a>
 </div>
@@ -519,6 +575,41 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 }</pre>
 </div>
 </div>
+</div>
+</section>
+
+<!-- EMR INTEGRATION + 30-DAY GUARANTEE -->
+<section id="emr" class="emr">
+<div class="wrap">
+<div class="sec-head">
+<span class="eyebrow">EMR integration</span>
+<h2>Works with your EMR — or we integrate it in 30 days</h2>
+<p>athenahealth is live and proven today. Whatever else your practice runs on, we'll connect it — guaranteed within 30 days.</p>
+</div>
+<div class="emr-grid">
+<div class="emr-card hero-live" data-detail="athena">
+<div class="k"><span class="badge-live"><span class="ld"></span> Live &amp; proven</span></div>
+<h3>Already works perfectly with athenahealth</h3>
+<p>We've verified the deep integration end to end: MLS pulls your athenaOne schedule and chart data, then writes the finished note back into the encounter — always stopping before Save/Sign so you review first.</p>
+<ul class="emr-list">
+<li>Live schedule &amp; chart pull from athenaOne</li>
+<li>Finished notes written back into the encounter</li>
+<li>Read-only for structured data; you sign every note</li>
+</ul>
+<span class="more">See how it works →</span>
+</div>
+<div class="emr-card">
+<div class="k"><span class="big">30</span><div><div style="font-weight:850;font-size:15px">day guarantee</div><div style="font-size:12.5px;color:var(--muted)">from the day you tell us your EMR</div></div></div>
+<h3>Smart integration with <em>any</em> other EMR</h3>
+<p>Epic, Cerner, eClinicalWorks, NextGen — or whatever you use. Tell us your system and our team builds a smart integration within 30 days. That's our guarantee.</p>
+<div class="gtimeline">
+<div class="gt"><div class="d"></div><b>Day 0</b>Tell us your EMR</div>
+<div class="gt"><div class="d"></div><b>Days 1–29</b>We build &amp; test</div>
+<div class="gt"><div class="d"></div><b>Day 30</b>Integrated — guaranteed</div>
+</div>
+</div>
+</div>
+<p style="text-align:center;margin-top:28px"><a class="btn btn-primary btn-lg" href="#demo">Tell us your EMR <span class="arrow">→</span></a></p>
 </div>
 </section>
 
@@ -703,9 +794,9 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 </div>
 <div class="faq">
 <details><summary>Do I have to switch EMRs?</summary><p>No. MLS works alongside your current EMR — copy the finished note in, or, where supported, write it back automatically over HL7 FHIR R4 and SMART on FHIR. Nothing to rip and replace.</p></details>
-<details><summary>How does the athenahealth integration work?</summary><p>MLS connects to athenaOne to pull your day's schedule and read chart data — problems, medications, allergies, history — so the note starts with real context, and to write the finished note back into the encounter. It stays read-only for structured data and always stops before anything is saved or signed, so the doctor reviews first.</p></details>
-<details><summary>Is there a developer API?</summary><p>Yes. MLS is built on a documented REST API — generate notes, save and retrieve records, and pull schedules over clean JSON endpoints — plus FHIR keys you provision from Settings → Integrations. Talk to us if you want to build on it.</p></details>
-<details><summary>Do you support eClinicalWorks?</summary><p>Not yet — eClinicalWorks integration is in active development and marked "coming soon." athenahealth, HL7 FHIR R4 and SMART on FHIR are supported today. Tell us if eCW is on your roadmap and we'll keep you posted.</p></details>
+<details><summary>How does the athenahealth integration work?</summary><p>athenahealth is live and proven today. MLS connects to athenaOne to pull your day's schedule and read chart data — problems, medications, allergies, history — so the note starts with real context, and to write the finished note back into the encounter. It stays read-only for structured data and always stops before anything is saved or signed, so the doctor reviews first.</p></details>
+<details><summary>Is there a developer API?</summary><p>Yes. MLS is built on a developer-friendly REST API — generate notes, save and retrieve records, and pull schedules over clean JSON endpoints — plus FHIR keys you provision from Settings → Integrations. Talk to us if you want to build on it.</p></details>
+<details><summary>What if I don't use athenahealth?</summary><p>You're covered. athenahealth works today, and for any other EMR — Epic, Cerner, eClinicalWorks, NextGen, or whatever you run — we guarantee a smart integration within 30 days of you telling us your system. Standards-based HL7 FHIR R4 and SMART on FHIR are supported too, and you can always copy the finished note into any system.</p></details>
 <details><summary>Is the AI making the diagnosis or the coding decision?</summary><p>No. MLS drafts the note and <em>suggests</em> codes from what you documented. You review, edit, and sign — the clinician is always the final medical and coding authority, and MLS never inflates documentation to raise a bill.</p></details>
 <details><summary>Is it HIPAA compliant?</summary><p>MLS uses a HIPAA-ready architecture (encryption, 2FA, audit logs, encrypted backups). Real patient data is only used after Business Associate Agreements are signed with our AI and hosting providers — until then, demos run on synthetic data. We don't claim "certified," because HIPAA certification isn't a real thing.</p></details>
 <details><summary>What is MLS Best Doctors?</summary><p>It's a public directory (coming soon) where a doctor's rating is earned from de-identified, per-visit quality — never purchasable. Practices can subscribe for optional promoted placement, which is always clearly labeled and affects position only, never the star rating. It requires doctor opt-in and consent, and is in development ahead of a privacy-reviewed launch to subscribed practices.</p></details>
@@ -750,7 +841,7 @@ footer{background:#fff;border-top:1px solid var(--line);padding:52px 0 40px}
 <a href="mailto:michael@mlsscribe.com">Contact</a>
 </div>
 </div>
-<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation. HIPAA-ready architecture; Business Associate Agreements in progress — synthetic data only until compliance review is complete. eClinicalWorks integration is in development and not yet available.</p>
+<p class="fineprint">© 2026 MLS Scribe LLC. MLS is a documentation and coding-support tool, not a medical device, and does not replace clinical judgment. Suggested codes are for provider review and confirmation. HIPAA-ready architecture; Business Associate Agreements in progress — synthetic data only until compliance review is complete. athenahealth integration is live today; integration with other EMRs is provided under our 30-day integration guarantee.</p>
 </div>
 </footer>
 
@@ -810,7 +901,7 @@ if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catc
 (function(){
 function show(el){ el.classList.add('in'); }
 if(!('IntersectionObserver' in window)){ document.querySelectorAll('.reveal').forEach(show); return; }
-document.querySelectorAll('.sec-head, .card, .price, .step, .hl .c, .trust3 .t, .quote, .api-list li, .feat-copy, .panel, .code, details').forEach(function(el){
+document.querySelectorAll('.sec-head, .card, .price, .step, .hl .c, .trust3 .t, .quote, .api-list li, .feat-copy, .panel, .code, .emr-card, details').forEach(function(el){
 var r=el.getBoundingClientRect();
 if(r.top > window.innerHeight*0.9) el.classList.add('reveal');
 });
@@ -858,6 +949,81 @@ sendChat(0)
 .finally(function(){ sendBtn.disabled=false; el('mlsChatInput').focus(); });
 return false;
 };
+})();
+</script>
+<!-- DETAIL MODAL (interactive feature/stat cards) -->
+<div id="detailModal" class="mdl-ov" role="dialog" aria-modal="true" aria-labelledby="dmTitle" aria-hidden="true">
+<div class="mdl" role="document">
+<div class="mdl-top">
+<button class="mdl-close" type="button" aria-label="Close" data-close>×</button>
+<div class="glyph" id="dmGlyph" aria-hidden="true"></div>
+<h3 id="dmTitle"></h3>
+<p id="dmIntro"></p>
+</div>
+<div class="mdl-body">
+<div class="mdl-lbl">How it works</div>
+<div class="flow" id="dmFlow"></div>
+<div class="mdl-cta" id="dmCta"></div>
+</div>
+</div>
+</div>
+
+<script>
+(function(){
+var LIVE='<span class="badge-live"><span class="ld"></span> Live</span>';
+var D={
+ambient:{g:'🎙️',t:'Ambient note generation',intro:'MLS listens to the visit and writes a structured note in your style — you never type from a blank page.',steps:[['Listen','Capture the conversation with the ambient mic or a paired phone-mic. Nothing leaves the page until you generate.'],['Structure','The AI organizes what was said into SOAP, APSO, narrative or H&P — your chosen format and length.'],['Ground','Every line reflects only what was actually documented — no invented findings.'],['Review & sign','You edit anything and sign. You are always the final word.']]},
+coding:{g:'💳',t:'Coding & reimbursement',intro:'Turn the finished note into defensible codes and an estimate of what the visit should reimburse.',steps:[['Read the note','The AI reads your documented findings and procedures.'],['Suggest codes','E/M level, ICD-10 and CPT suggested from what the documentation supports — never inflated.'],['Estimate','See an estimated reimbursement and generate a one-click superbill.'],['You confirm','Final coding is always yours to review and adjust before it is billed.']]},
+athena:{g:'🔗',t:'athenahealth integration',badge:LIVE,intro:'Already works with athenahealth today — MLS pulls your schedule and chart data and writes the finished note back into athenaOne.',steps:[['Pull schedule','MLS reads today’s athenaOne schedule so your patients are lined up and ready.'],['Pull chart','Problems, medications, allergies and history come straight from the chart — read-only.'],['Draft with context','The note starts grounded in real chart data instead of a blank page.'],['Write back','The finished note writes back into the encounter — and always stops before Save/Sign so you review first.']]},
+intake:{g:'📋',t:'Patient intake',intro:'A tablet or web intake fills the chart before you walk into the room.',steps:[['Patient completes','History, ODI and satisfaction on an iPad or the patient’s own phone.'],['Auto-fill','Answers flow into the chart and the note draft automatically.'],['Track over time','ODI and pain scores are captured so outcomes build on their own.']]},
+outcomes:{g:'📈',t:'Outcomes tracking',intro:'Every intake becomes measurable proof of the care you deliver.',steps:[['Capture','Pain and ODI recorded at each visit.'],['Track','Per patient and across the whole practice.'],['Export','One-click export and referral one-pagers for the physicians who send you patients.']]},
+legal:{g:'⚖️',t:'Legal / IME report portal',intro:'Turn records requests into a paid, AI-drafted report line.',steps:[['Request','An attorney requests a narrative, IME or utilization-review report.'],['Draft','MLS drafts it from the record for your review.'],['Sign & sell','You set the price, review and sign; get paid before the work is released. MLS takes a small platform fee, not an upcharge.']]},
+reputation:{g:'⭐',t:'Reputation & marketing suite',badge:'<span class="badge-prem">Premium</span>',intro:'Find, manage and grow your reputation where patients are actually looking.',steps:[['Find','See your ratings across Google and the top review sites in one place.'],['Surface','Pull your best real quotes into your marketing.'],['Request','Invite real patients to leave a review after a visit — respectfully and within the rules.']]},
+api:{g:'🧩',t:'Developer REST API',intro:'Build on MLS with clean JSON endpoints and FHIR keys.',steps:[['Provision keys','Generate API and FHIR keys from Settings → Integrations.'],['Call the API','POST a visit transcript to /api/generate and get back a structured, coded note.'],['Sync records','Save and retrieve records and schedules programmatically from your own systems.']],cta:[{label:'See the API',href:'#api',primary:true},{label:'Book a demo',href:'#demo'}]},
+bestdoctors:{g:'🏆',t:'MLS Best Doctors',badge:'<span class="badge-soon">Coming soon</span>',intro:'A public directory where the rating is earned from real visit quality — never bought.',steps:[['Earn','Ratings are computed from de-identified, per-visit quality.'],['Opt in','Doctor opt-in and consent are required; the directory is privacy-first and PHI-free.'],['Get found','Patients find providers they can trust. Optional sponsored placement is always labeled and affects position only, never the star rating.']]},
+'stat-price':{g:'💵',t:'Simple, honest pricing',intro:'Flat per-provider pricing — no per-note fees and no surprise overages.',steps:[['Lite — $19/mo','Just the scribe: unlimited AI notes and capture.'],['Standard — $30/mo','Coding & reimbursement, intake, outcomes and the attorney portal.'],['Premium — $150/mo','Reputation suite, ask-your-data Study Engine and white-label exports.']],cta:[{label:'See full pricing',href:'#pricing',primary:true},{label:'Book a demo',href:'#demo'}]},
+'stat-hours':{g:'⏱️',t:'About 2 hours saved a day',intro:'Chester County Spine Care measured roughly two hours a day of charting time given back, per provider.',steps:[['Before','Notes piled up for after-hours “pajama time” at home.'],['With MLS','The note is drafted during the visit and signed on the spot.'],['Result','About 2 hours a day returned — a real, verified result from Chester County Spine Care.']],cta:[{label:'Book a demo',href:'#demo',primary:true}]},
+'stat-codes':{g:'🧾',t:'E/M · ICD-10 · CPT on every note',intro:'Every note lands with suggested codes for you to confirm.',steps:[['E/M','The visit level your documentation actually supports.'],['ICD-10','Diagnoses pulled from what the note describes.'],['CPT','Procedures, plus a one-click superbill.']],cta:[{label:'See coding',href:'#features',primary:true},{label:'Book a demo',href:'#demo'}]},
+'stat-emr':{g:'🔌',t:'Notes flow in and out of your EMR',intro:'athenahealth today, standards-based FHIR, and any other EMR within 30 days.',steps:[['athenahealth','Live schedule + chart pull and note write-back today.'],['FHIR / SMART on FHIR','Standards-based record sync and write-back.'],['Any other EMR','A smart integration guaranteed within 30 days of you telling us your system.']],cta:[{label:'See integrations',href:'#emr',primary:true},{label:'Book a demo',href:'#demo'}]}
+};
+var ov=document.getElementById('detailModal');
+if(!ov) return;
+var lastFocus=null;
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function openDetail(key){
+var x=D[key]; if(!x) return;
+document.getElementById('dmGlyph').textContent=x.g||'';
+document.getElementById('dmTitle').innerHTML=esc(x.t)+(x.badge?(' '+x.badge):'');
+document.getElementById('dmIntro').textContent=x.intro||'';
+var f=document.getElementById('dmFlow'); f.innerHTML='';
+(x.steps||[]).forEach(function(s,i){
+var el=document.createElement('div'); el.className='flow-step';
+el.innerHTML='<div class="num">'+(i+1)+'</div><div class="ft"><b>'+esc(s[0])+'</b><span>'+esc(s[1])+'</span></div>';
+f.appendChild(el);
+});
+var c=document.getElementById('dmCta'); c.innerHTML='';
+(x.cta||[{label:'Book a demo',href:'#demo',primary:true}]).forEach(function(b){
+var a=document.createElement('a'); a.className='btn '+(b.primary?'btn-primary':'btn-ghost'); a.href=b.href; a.textContent=b.label;
+a.addEventListener('click',function(){closeDetail();});
+c.appendChild(a);
+});
+lastFocus=document.activeElement;
+ov.classList.add('open'); ov.setAttribute('aria-hidden','false'); document.body.classList.add('mdl-lock');
+var cb=ov.querySelector('[data-close]'); if(cb) cb.focus();
+}
+function closeDetail(){
+ov.classList.remove('open'); ov.setAttribute('aria-hidden','true'); document.body.classList.remove('mdl-lock');
+if(lastFocus&&lastFocus.focus){ try{lastFocus.focus();}catch(e){} }
+}
+ov.addEventListener('click',function(e){ if(e.target===ov||(e.target.hasAttribute&&e.target.hasAttribute('data-close'))) closeDetail(); });
+document.addEventListener('keydown',function(e){ if((e.key==='Escape'||e.key==='Esc')&&ov.classList.contains('open')) closeDetail(); });
+document.querySelectorAll('[data-detail]').forEach(function(el){
+var key=el.getAttribute('data-detail'); if(!D[key]) return;
+el.setAttribute('role','button'); el.setAttribute('tabindex','0');
+var h=el.querySelector('h3'); el.setAttribute('aria-label',((h?h.textContent.trim():D[key].t)||'')+' — see how it works');
+el.addEventListener('click',function(){ openDetail(key); });
+el.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){ e.preventDefault(); openDetail(key); } });
+});
 })();
 </script>
 </body>
