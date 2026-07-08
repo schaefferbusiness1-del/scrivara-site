@@ -30,7 +30,7 @@
 (function () {
   'use strict';
   if (window.__mlsImportChainFix) return;
-  var api = { version: '3.0.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
+  var api = { version: '3.1.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
 
@@ -164,6 +164,12 @@
     var toks = nameTokens(want);
     var hits = 0;
     for (var i = 0; i < toks.length; i++) { if (lo.indexOf(toks[i]) >= 0) hits++; }
+    /* v3.1: the page must also LOOK like a chart — clinical sections present
+       and not a schedule grid (a Day schedule lists the patient's name too,
+       which must never pass as their chart). */
+    var chartish = /(allerg|problem|medication|past medical|surgical)/i.test(lo) &&
+                   ((lo.match(/\d{1,2}:\d{2}\s*[ap]\.?m/g) || []).length < 8);
+    if (!chartish && hits) { hits = 0; }
     if (hits >= 2 || (toks.length === 1 && hits === 1)) {
       GATE.passes++;
       r.ok = true; r.reason = '';
@@ -179,6 +185,13 @@
     r.ok = false; r.reason = 'wrong-chart';
     r.error = 'Could not open ' + want + '’s chart in athenaOne automatically (the open page does not show this patient). Open the chart once, then pull again — nothing was captured.';
     r.text = ''; r.chartName = ''; r.chartDob = '';
+    /* v3.1: repeated failures usually mean ANOTHER athenaOne window/tab is
+       winning the extension's tab pick (verified live: a stray briefing tab
+       hijacks every read). Tell the doctor the actual fix, once. */
+    if (GATE.refusals >= 2 && !GATE.hinted) {
+      GATE.hinted = 1;
+      try { if (typeof window.toast === 'function') window.toast('Tip: more than one athenaOne window/tab looks open. Close the extra ones (keep just your Day schedule) so MLS reads the right chart.', ''); } catch (e) {}
+    }
     return false;
   }
   window.addEventListener('message', function (ev) {
@@ -15561,7 +15574,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-07-b68';
+  var MLS_APP_BUILD='2026-07-07-b69';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
