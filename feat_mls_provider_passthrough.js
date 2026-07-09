@@ -129,9 +129,11 @@
   var chipIv = setInterval(mountChip, 2000); PR._ivs.push(chipIv); mountChip();
 
   /* ---------- 2 + 3. late wrap of the CURRENT import fn + fetch stamp ---------- */
+  var _fetchWrapInstalled = false;
   function installWraps() {
     /* fetch stamp - only while an import is active */
-    if (!window.fetch.__provWrap) {
+    if (!_fetchWrapInstalled && !window.fetch.__provWrap) {
+      _fetchWrapInstalled = true;
       PR._orig.fetch = window.fetch;
       var pf = function (input, init) {
         try {
