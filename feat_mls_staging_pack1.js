@@ -199,7 +199,7 @@
         if (!std) { var btn = findBtnByText(/add (a )?standard line|standard line/i, list.parentElement); if (btn) std = btn.closest('div'); }
         if (std && list.parentElement && std !== bar) { list.parentElement.appendChild(std); std.style.marginTop = '14px'; }
       } catch (e) {}
-      tplLog('Templates toolbar ready (staging).');
+      tplLog('Templates toolbar ready.');
     }
     var tplIv = setInterval(mountTplBar, 1500); P._ivs.push(tplIv); mountTplBar();
 
@@ -530,7 +530,7 @@
       document.body.appendChild(fab); remember(fab);
       var dock = document.createElement('div');
       dock.id = 'mlsP1Ag';
-      dock.innerHTML = '<div class="ag-h">🤖 MLS Agent <span style="font-size:10px;background:rgba(255,255,255,.25);border-radius:999px;padding:2px 8px">STAGING</span><button id="mlsP1AgX" type="button">Close</button></div>' +
+      dock.innerHTML = '<div class="ag-h">🤖 MLS Agent <button id="mlsP1AgX" type="button">Close</button></div>' +
         '<div id="mlsP1AgMsgs"></div>' +
         '<div id="mlsP1AgIn"><input id="mlsP1AgQ" placeholder="e.g. prep all my op notes for tomorrow"><button id="mlsP1AgMic" type="button" title="Speak">🎤</button><button id="mlsP1AgSend" type="button">Send</button></div>';
       document.body.appendChild(dock); remember(dock);
