@@ -8739,7 +8739,7 @@ function _renderPinnedTabs(){
     var anchor=document.getElementById('nav_help')||document.getElementById('nav_admin');
     arr.forEach(function(w){ if(!w.id) w.id='w'+(w.ts||Date.now());
       var tab=document.createElement('div'); tab.className='navtab pinned-tab'; tab.id='nav_pin_'+w.id;
-      tab.textContent='🧩 '+String(w.title||'Tool').slice(0,20); tab.title=w.title||'Tool';
+      tab.textContent='🧩 '+(String(w.title||'Tool').length>20?String(w.title||'Tool').slice(0,20)+'…':String(w.title||'Tool')); tab.title=w.title||'Tool';
       tab.onclick=(function(id){ return function(){ openPinnedWidget(id); }; })(w.id);
       if(anchor) nav.insertBefore(tab, anchor); else nav.appendChild(tab);
     });
