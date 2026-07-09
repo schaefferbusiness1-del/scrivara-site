@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>MLS Website Widgets — embed your rating</title>
+<!-- ==========================================================================
+  mls-widgets.html — DOCTOR console (widgets v1.0.0)
+  Authoring lane widgets, 2026-07-08. Clinician-authed (sf_bk_token).
+
+  Lets a doctor pick an embeddable "Rated on MLS" widget (badge / rating card /
+  reviews card), see a LIVE preview of their OWN earned rating (via the authed
+  /widget/v1/mydata endpoint — works even before the public directory is live),
+  choose a theme + width, and COPY the one-line embed snippet to paste on their
+  own website.
+
+  It never exposes a control to set/raise the rating. All preview data is the same
+  PHI-free public card the directory serves (aggregate numbers + public business
+  info only). Degrades gracefully when the backend routes aren't live yet.
+  No PHI, no Athena.
+=========================================================================== -->
+<style>
+:root{--ink:#15243c;--sub:#5b6b83;--line:#dbe3f0;--teal:#19b8a6;--blue:#2f6bed;--gold:#e0a72a;--bg:#f4f7fc;--card:#fff;--ok:#0d6a5b;--warn:#9a6a10;--star-off:#d9e1ee}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink)}
+a{color:var(--blue)}
+.wrap{max-width:900px;margin:0 auto;padding:18px 16px 70px}
+header.mls{display:flex;align-items:center;gap:12px;padding:6px 0 4px}
+.mark{width:42px;height:42px;border-radius:12px;background:linear-gradient(140deg,var(--teal),var(--blue));display:flex;align-items:center;justify-content:center;flex:none}
+.mark svg{width:26px;height:26px}
+h1{font-size:21px;margin:0}
+.tag{font-size:12.5px;color:var(--sub)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 2px 10px rgba(21,36,60,.04)}
+.card h2{font-size:16.5px;margin:0 0 8px}
+.note{font-size:12.5px;color:var(--sub);line-height:1.5}
+.locked{background:#eef4ff;border:1px solid #cfe0ff;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#274b8f;margin:6px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:720px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:12px;font-weight:700;margin:12px 0 4px}
+select,input{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px;font-size:14px;font-family:inherit;background:#fff}
+.opts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.opt{flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;cursor:pointer;background:#fff;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+.opt:hover{border-color:#b9cdf5;box-shadow:0 3px 12px rgba(47,107,237,.10)}
+.opt.sel{border-color:var(--blue);background:#f5f9ff;box-shadow:0 3px 14px rgba(47,107,237,.16)}
+.opt .t{font-weight:800;font-size:13.5px}
+.opt .b{font-size:11.5px;color:var(--sub);margin-top:2px;line-height:1.4}
+.two{display:flex;gap:10px;flex-wrap:wrap}
+.two>div{flex:1;min-width:130px}
+.previewbox{border:1px solid var(--line);border-radius:14px;padding:26px 22px;display:flex;align-items:center;justify-content:center;min-height:170px;background:#fbfdff;background-image:radial-gradient(rgba(47,107,237,.09) 1px,transparent 1px);background-size:15px 15px;transition:background .25s ease}
+.previewbox.dark{background:#0a1120;background-image:radial-gradient(rgba(120,150,220,.14) 1px,transparent 1px)}
+.btn{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:14px}
+.btn.primary{background:linear-gradient(90deg,var(--teal),var(--blue));color:#fff}
+.btn.ghost{background:#eef2fa;color:#24406e}
+textarea.snip{width:100%;min-height:96px;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.5;background:#0f172a;color:#dbe7ff;white-space:pre;overflow:auto}
+.status{border-radius:10px;padding:11px 13px;font-size:13px;margin-top:8px}
+.status.good{background:#e9f9f4;color:var(--ok);border:1px solid #b7ecdf}
+.status.bad{background:#fff5e2;color:var(--warn);border:1px solid #f0dca8}
+.foot{font-size:11.5px;color:var(--sub);margin-top:22px;line-height:1.55}
+.hide{display:none}
+/* ---- inline preview widget (pixel-mirror of the served /widget/v1/frame) --- */
+.mlsw{--wc-card:#fff;--wc-ink:#0f1e33;--wc-sub:#6b7a90;--wc-line:#e8edf5;--wc-teal:#16b7a4;--wc-blue:#2f6bed;--wc-gold:#f5a623;--wc-staroff:#e2e8f2;--wc-chip:#f6f9fd;--wc-lk:#2f6bed;--wc-sh:0 4px 18px rgba(17,34,64,.10),0 1px 2px rgba(17,34,64,.06);position:relative;color:var(--wc-ink);background:var(--wc-card);border:1px solid var(--wc-line);border-radius:16px;box-shadow:var(--wc-sh);padding:15px 17px;width:100%;max-width:340px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif}
+.mlsw.dark{--wc-card:#101c31;--wc-ink:#eef3fb;--wc-sub:#95a6c4;--wc-line:#233650;--wc-teal:#1ec8b4;--wc-blue:#5b8cff;--wc-gold:#f7b64a;--wc-staroff:#2c3d5c;--wc-chip:#16243c;--wc-lk:#7fa8ff;--wc-sh:0 8px 26px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.4)}
+@media(prefers-color-scheme:dark){.mlsw.auto{--wc-card:#101c31;--wc-ink:#eef3fb;--wc-sub:#95a6c4;--wc-line:#233650;--wc-teal:#1ec8b4;--wc-blue:#5b8cff;--wc-gold:#f7b64a;--wc-staroff:#2c3d5c;--wc-chip:#16243c;--wc-lk:#7fa8ff;--wc-sh:0 8px 26px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.4)}}
+.mlsw::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--wc-teal),var(--wc-blue))}
+.mlsw a{color:inherit;text-decoration:none}
+.mlsw .blk{display:block}
+.mlsw .hd{display:flex;align-items:center;gap:11px}
+.mlsw .mk{width:34px;height:34px;border-radius:10px;background:linear-gradient(140deg,var(--wc-teal),var(--wc-blue));display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 3px 9px rgba(47,107,237,.3)}
+.mlsw .mk svg{width:20px;height:20px}
+.mlsw .nm{font-weight:750;font-size:14.5px;line-height:1.25;letter-spacing:-.01em}
+.mlsw .sb{font-size:11.5px;color:var(--wc-sub);line-height:1.4;margin-top:2px}
+.mlsw .caprow{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.mlsw .scorerow{display:flex;align-items:flex-end;gap:9px;margin-top:2px}
+.mlsw.badge .scorerow{align-items:center}
+.mlsw .stars{display:inline-flex;position:relative;line-height:0;flex:none}
+.mlsw .stars svg{width:15px;height:15px;display:block}
+.mlsw .stars .off path{fill:var(--wc-staroff)}
+.mlsw .stars .on{position:absolute;left:0;top:0;overflow:hidden;white-space:nowrap}
+.mlsw .stars .on path{fill:var(--wc-gold)}
+.mlsw.big .stars svg{width:18px;height:18px}
+.mlsw .sm .stars svg{width:13px;height:13px}
+.mlsw .score{font-weight:800;font-size:17px;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+.mlsw.big .score{font-size:30px}
+.mlsw .agg{font-weight:800;font-size:13px;font-variant-numeric:tabular-nums}
+.mlsw .slash{font-size:12.5px;color:var(--wc-sub);font-weight:600;align-self:flex-end}
+.mlsw .brand{display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--wc-sub)}
+.mlsw .brand b{color:var(--wc-ink);font-weight:750}
+.mlsw .vfd{width:13px;height:13px;flex:none;display:inline-flex}
+.mlsw .vfd svg{width:13px;height:13px;display:block}
+.mlsw .vfd svg path{fill:var(--wc-teal)}
+.mlsw .hr{height:1px;background:var(--wc-line);margin:13px 0}
+.mlsw .meta{font-size:11px;color:var(--wc-sub);margin-top:9px;line-height:1.45;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.mlsw .dims{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:11px 15px;margin-top:13px}
+.mlsw .dim .top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.mlsw .dim .n{font-size:10.5px;color:var(--wc-sub);text-transform:capitalize;letter-spacing:.01em}
+.mlsw .dim .v{font-size:10.5px;color:var(--wc-sub);font-weight:700;font-variant-numeric:tabular-nums}
+.mlsw .dim .bar{height:6px;border-radius:6px;background:var(--wc-staroff);margin-top:5px;overflow:hidden}
+.mlsw .dim .bar>i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--wc-teal),var(--wc-blue))}
+.mlsw .ftr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px}
+.mlsw .lk{font-size:11px;font-weight:700;color:var(--wc-lk)}
+.mlsw .q{background:var(--wc-chip);border:1px solid var(--wc-line);border-radius:11px;padding:10px 12px;margin-top:9px;font-size:12px;line-height:1.5}
+.mlsw .q .src{display:block;font-size:9.5px;color:var(--wc-sub);margin-top:6px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.mlsw .prog{margin-top:13px}
+.mlsw .prog .pl{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--wc-sub);margin-bottom:6px}
+.mlsw .prog .pl b{color:var(--wc-ink);font-weight:750;font-variant-numeric:tabular-nums}
+.mlsw .prog .track{height:7px;border-radius:7px;background:var(--wc-staroff);overflow:hidden}
+.mlsw .prog .track>i{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,var(--wc-teal),var(--wc-blue))}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mls">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13c3-1 5-1 8 0s5 1 8 0" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="2.4" fill="#fff"/></svg></div>
+    <div><h1>Add your MLS rating to your website</h1><div class="tag">Copy one line of code to show your earned "Rated on MLS" badge on your own site.</div></div>
+  </header>
+
+  <div id="signin" class="card hide"><h2>Sign in to MLS first</h2><div class="note">Open this from inside MLS (you must be signed in) to generate your embed code and preview.</div></div>
+  <div id="noprofile" class="card hide"><h2>Set up your listing first</h2><div class="note">You don't have an MLS Best Doctors listing yet. Open <a href="mls-best-doctors-admin.html">your Best Doctors listing</a> to create your public profile — then come back here to embed it.</div></div>
+
+  <div id="app" class="hide">
+    <div class="locked">🔒 The number in your widget is <b>earned</b> — computed from your real, de-identified visit sentiment. You can't edit or buy it, and neither can we. The widget just <i>displays</i> it, always PHI-free.</div>
+
+    <div class="grid">
+      <!-- LEFT: controls -->
+      <div class="card">
+        <h2>1 · Choose your widget</h2>
+        <div class="opts" id="typeOpts">
+          <div class="opt" data-type="badge"><div class="t">Compact badge</div><div class="b">Stars + "Rated on MLS". Great in a footer or sidebar.</div></div>
+          <div class="opt" data-type="rating"><div class="t">Rating card</div><div class="b">Stars, score, and the 5 experience dimensions.</div></div>
+          <div class="opt" data-type="reviews"><div class="t">Reviews card</div><div class="b">Your best patient-review highlights.</div></div>
+        </div>
+
+        <div class="two">
+          <div>
+            <label>Theme</label>
+            <select id="theme"><option value="light">Light</option><option value="dark">Dark</option><option value="auto">Auto (match visitor)</option></select>
+          </div>
+          <div>
+            <label>Max width (px)</label>
+            <input id="width" type="number" min="200" max="640" step="10" value="320">
+          </div>
+        </div>
+
+        <h2 style="margin-top:18px">2 · Copy this into your website</h2>
+        <div class="note">Paste it wherever you want the widget to appear (e.g. before <code>&lt;/body&gt;</code>, or inside a page builder's "custom HTML/embed" block).</div>
+        <textarea class="snip" id="snippet" readonly spellcheck="false"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn primary" id="copyBtn">Copy embed code</button>
+          <button class="btn ghost" id="copyContainerBtn" title="Container form — put the div where you want it, script anywhere">Copy container form</button>
+          <span class="note" id="copyNote" style="align-self:center"></span>
+        </div>
+      </div>
+
+      <!-- RIGHT: live preview -->
+      <div class="card">
+        <h2>Live preview</h2>
+        <div class="note" id="previewNote">This is exactly what visitors will see.</div>
+        <div class="previewbox" id="previewBox"><div id="preview"></div></div>
+        <div id="liveStatus" class="status" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>How it works &amp; the rules</h2>
+      <ul class="note" style="padding-left:18px;margin:6px 0">
+        <li>The widget loads in a sandboxed frame — it can't read your site, your visitors, or anything on the page. It only shows your public rating.</li>
+        <li>It updates automatically. When your rating changes, every embedded widget updates — no code changes needed.</li>
+        <li>It's PHI-free by construction: only aggregate numbers + your public business info are ever sent. Never a patient name, date, or visit detail.</li>
+        <li>Your widget only shows a public rating once your Best Doctors listing is live (opted-in, consent-attested, subscribed, and the directory is public). Until then it shows a tasteful "coming soon" to visitors — this preview shows you the real thing in the meantime.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var BK = (function () { try { return (window.bkBase && window.bkBase()) || 'https://scrivara-backend.onrender.com'; } catch (e) { return 'https://scrivara-backend.onrender.com'; } })();
+  function tok() { try { return sessionStorage.getItem('sf_bk_token') || localStorage.getItem('sf_bk_token') || ''; } catch (e) { return ''; } }
+  function hdr() { var h = { 'Content-Type': 'application/json' }; var t = tok(); if (t) h['Authorization'] = 'Bearer ' + t; return h; }
+  function $(id) { return document.getElementById(id); }
+  function show(el, on) { if (el) el.classList[on ? 'remove' : 'add']('hide'); }
+
+  var STATE = { type: 'badge', theme: 'light', width: 320, card: null, live: false, listable: false, slug: '' };
+
+  // ---- render helpers (pixel-mirror of the served /widget/v1/frame) ----------
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  function mk() { var d = el('div', 'mk'); d.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 13c3-1 5-1 8 0s5 1 8 0" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="2.4" fill="#fff"/></svg>'; return d; }
+  var STAR = '<svg viewBox="0 0 20 20"><path d="M10 1.6l2.35 4.76 5.25.76-3.8 3.7.9 5.23L10 14.9l-4.7 2.47.9-5.23-3.8-3.7 5.25-.76z"/></svg>';
+  var CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.1 14.3l-4-4 1.4-1.4 2.6 2.6 5.2-5.2 1.4 1.4z"/></svg>';
+  function starRow(val) { var wrap = el('span', 'stars'); var v = Math.max(0, Math.min(5, Number(val) || 0)); var off = el('span', 'off'); off.innerHTML = STAR + STAR + STAR + STAR + STAR; var on = el('span', 'on'); on.innerHTML = STAR + STAR + STAR + STAR + STAR; on.style.width = (v / 5 * 100) + '%'; wrap.appendChild(off); wrap.appendChild(on); return wrap; }
+  function vfd() { var s = el('span', 'vfd'); s.innerHTML = CHECK; return s; }
+  function brand(strong) { var b = el('span', 'brand'); b.appendChild(vfd()); b.appendChild(el(strong ? 'b' : 'span', null, 'Rated on MLS')); return b; }
+  function lk(txt) { return el('span', 'lk', txt); }
+  function fmt(x) { return (Math.round(x * 10) / 10).toFixed(1); }
+  function published(w) { return w && w.rating && w.ratingStatus === 'published' && w.rating.stars != null; }
+  function progVals(w) { var p = (w && w.ratingProgress) || {}; return { need: p.needed || null, have: p.countedVisits || 0 }; }
+  function progressBlock(w) { var pv = progVals(w); var pct = pv.need ? Math.max(8, Math.min(100, pv.have / pv.need * 100)) : 35; var p = el('div', 'prog'); var pl = el('div', 'pl'); pl.appendChild(el('span', null, 'Building your rating')); if (pv.need) { var r = el('span'); r.appendChild(el('b', null, pv.have + ' / ' + pv.need)); r.appendChild(document.createTextNode(' visits')); pl.appendChild(r); } p.appendChild(pl); var tr = el('div', 'track'); var i = el('i'); i.style.width = pct + '%'; tr.appendChild(i); p.appendChild(tr); return p; }
+  function renderState(box, title, sub) { var hd = el('div', 'hd'); hd.appendChild(mk()); var t = el('div'); t.appendChild(el('div', 'nm', title)); if (sub) t.appendChild(el('div', 'sb', sub)); hd.appendChild(t); box.appendChild(hd); }
+  function systemDark() { try { return window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches; } catch (e) { return false; } }
+
+  function renderPreview() {
+    var host = $('preview'); host.innerHTML = '';
+    var cls = 'mlsw' + (STATE.theme === 'dark' ? ' dark' : (STATE.theme === 'auto' ? ' auto' : ''));
+    cls += (STATE.type === 'badge') ? ' badge' : ((STATE.type === 'reviews') ? ' reviews big' : ' rating big');
+    var box = el('div', cls);
+    box.style.maxWidth = (parseInt(STATE.width, 10) || 320) + 'px';
+    var darkBg = STATE.theme === 'dark' || (STATE.theme === 'auto' && systemDark());
+    $('previewBox').classList[darkBg ? 'add' : 'remove']('dark');
+    var w = STATE.card;
+    if (!w) { renderState(box, 'Rating coming soon', 'Your MLS rating will appear here once your listing is live.'); host.appendChild(box); return; }
+    if (STATE.type === 'rating') renderRating(box, w);
+    else if (STATE.type === 'reviews') renderReviews(box, w);
+    else renderBadge(box, w);
+    host.appendChild(box);
+  }
+  function renderBadge(box, w) {
+    var a = el('div', 'blk');
+    var hd = el('div', 'hd'); hd.appendChild(mk()); var t = el('div');
+    if (published(w)) {
+      var sr = el('div', 'scorerow'); sr.appendChild(el('span', 'score', fmt(w.rating.stars))); sr.appendChild(starRow(w.rating.stars)); t.appendChild(sr);
+      var cap = el('div', 'sb caprow'); cap.appendChild(brand()); cap.appendChild(el('span', null, '· ' + w.rating.countedVisits + ' verified visits')); t.appendChild(cap);
+    } else {
+      var nmrow = el('div', 'nm caprow'); nmrow.appendChild(vfd()); nmrow.appendChild(el('span', null, 'Rated on MLS')); t.appendChild(nmrow);
+      var pv = progVals(w); t.appendChild(el('div', 'sb', pv.need ? ('Building rating · ' + pv.have + '/' + pv.need + ' visits') : 'Building rating'));
+    }
+    hd.appendChild(t); a.appendChild(hd); box.appendChild(a);
+  }
+  function renderRating(box, w) {
+    var hd = el('div', 'hd'); hd.appendChild(mk()); var ht = el('div'); ht.appendChild(el('div', 'nm', w.name || 'Rated on MLS'));
+    var subt = [w.specialty, [w.city, w.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '); if (subt) ht.appendChild(el('div', 'sb', subt)); hd.appendChild(ht); box.appendChild(hd);
+    box.appendChild(el('div', 'hr'));
+    if (published(w)) {
+      var sr = el('div', 'scorerow'); sr.appendChild(el('span', 'score', fmt(w.rating.stars))); sr.appendChild(starRow(w.rating.stars)); sr.appendChild(el('span', 'slash', '/ 5')); box.appendChild(sr);
+      var meta = el('div', 'meta'); meta.appendChild(brand()); meta.appendChild(el('span', null, '· Earned from ' + w.rating.countedVisits + ' de-identified visits')); box.appendChild(meta);
+      var dims = w.rating.dimensions || {}, keys = ['warmth', 'listening', 'clarity', 'empathy', 'rapport'].filter(function (k) { return dims[k] != null; });
+      if (keys.length) { var g = el('div', 'dims'); keys.forEach(function (k) { var pct = Math.max(0, Math.min(100, Number(dims[k]) || 0)); var d = el('div', 'dim'); var top = el('div', 'top'); top.appendChild(el('span', 'n', k)); top.appendChild(el('span', 'v', String(Math.round(pct)))); d.appendChild(top); var b = el('div', 'bar'); var i = el('i'); i.style.width = pct + '%'; b.appendChild(i); d.appendChild(b); g.appendChild(d); }); box.appendChild(g); }
+    } else { box.appendChild(progressBlock(w)); }
+    box.appendChild(el('div', 'hr'));
+    var ftr = el('div', 'ftr'); ftr.appendChild(lk('How it’s calculated')); ftr.appendChild(lk('View full profile →')); box.appendChild(ftr);
+  }
+  function renderReviews(box, w) {
+    var hd = el('div', 'hd'); hd.appendChild(mk()); var ht = el('div'); ht.appendChild(el('div', 'nm', w.name || 'Patient reviews'));
+    if (w.externalReviews) { var er = w.externalReviews; var s = el('div', 'sb sm caprow'); if (er.rating != null) { s.appendChild(el('span', 'agg', fmt(er.rating))); s.appendChild(starRow(er.rating)); } if (er.count) { s.appendChild(el('span', null, '· ' + er.count + ' reviews')); } ht.appendChild(s); }
+    hd.appendChild(ht); box.appendChild(hd);
+    var hl = w.externalHighlights || [];
+    if (hl.length) { hl.slice(0, 3).forEach(function (h) { var text = (typeof h === 'string') ? h : (h.quote || h.text || h.body || ''); if (!text) return; var q = el('div', 'q'); q.appendChild(document.createTextNode('“' + text + '”')); var src = (h && (h.source || h.site)) || ''; if (src) { var sp = el('span', 'src'); sp.textContent = src; q.appendChild(sp); } box.appendChild(q); }); }
+    else if (published(w)) { var sr = el('div', 'scorerow'); sr.appendChild(el('span', 'score', fmt(w.rating.stars))); sr.appendChild(starRow(w.rating.stars)); box.appendChild(sr); var meta = el('div', 'meta'); meta.appendChild(brand()); meta.appendChild(el('span', null, '· Earned from ' + w.rating.countedVisits + ' de-identified visits')); box.appendChild(meta); }
+    else { box.appendChild(el('div', 'hr')); box.appendChild(el('div', 'sb', 'Review highlights will appear here once available.')); }
+    box.appendChild(el('div', 'hr'));
+    var ftr = el('div', 'ftr'); ftr.appendChild(brand()); ftr.appendChild(lk('Read more →')); box.appendChild(ftr);
+  }
+
+  // ---- snippet builders ------------------------------------------------------
+  function snippetTag() {
+    return '<script async src="' + BK + '/widget/v1/embed.js"\n'
+      + '  data-mls-doctor="' + STATE.slug + '"\n'
+      + '  data-mls-widget="' + STATE.type + '"\n'
+      + '  data-mls-theme="' + STATE.theme + '"\n'
+      + '  data-mls-width="' + (parseInt(STATE.width, 10) || 320) + '"><' + '/script>';
+  }
+  function snippetContainer() {
+    return '<div class="mls-widget"\n'
+      + '  data-mls-doctor="' + STATE.slug + '"\n'
+      + '  data-mls-widget="' + STATE.type + '"\n'
+      + '  data-mls-theme="' + STATE.theme + '"\n'
+      + '  data-mls-width="' + (parseInt(STATE.width, 10) || 320) + '"></div>\n'
+      + '<script async src="' + BK + '/widget/v1/embed.js"><' + '/script>';
+  }
+  function refreshSnippet() { $('snippet').value = snippetTag(); }
+
+  function selectType(t) {
+    STATE.type = t;
+    var opts = document.querySelectorAll('#typeOpts .opt');
+    for (var i = 0; i < opts.length; i++) opts[i].classList[opts[i].getAttribute('data-type') === t ? 'add' : 'remove']('sel');
+    renderPreview(); refreshSnippet();
+  }
+
+  function copy(text, note) {
+    function done() { var n = $('copyNote'); n.textContent = note; setTimeout(function () { n.textContent = ''; }, 2200); }
+    try { navigator.clipboard.writeText(text).then(done, function () { fallback(); }); } catch (e) { fallback(); }
+    function fallback() { var ta = $('snippet'); ta.value = text; ta.focus(); ta.select(); try { document.execCommand('copy'); } catch (e2) {} done(); }
+  }
+
+  function liveStatus() {
+    var s = $('liveStatus');
+    if (STATE.live && STATE.listable) { s.className = 'status good'; s.textContent = 'Your listing is live — the embed shows this to visitors right now.'; }
+    else if (!STATE.listable) { s.className = 'status bad'; s.textContent = 'Your listing isn’t public yet (finish opt-in + consent + subscription in your Best Doctors listing). Visitors will see a "coming soon" until then; this preview shows the real widget.'; }
+    else { s.className = 'status bad'; s.textContent = 'The MLS directory isn’t open to the public yet. Visitors see a "coming soon"; this preview shows what will appear once it opens.'; }
+  }
+
+  function boot() {
+    if (!tok()) { show($('signin'), true); return; }
+    // Prefill controls
+    $('theme').addEventListener('change', function () { STATE.theme = $('theme').value; renderPreview(); refreshSnippet(); });
+    $('width').addEventListener('input', function () { STATE.width = parseInt($('width').value, 10) || 320; renderPreview(); refreshSnippet(); });
+    var opts = document.querySelectorAll('#typeOpts .opt');
+    for (var i = 0; i < opts.length; i++) (function (o) { o.addEventListener('click', function () { selectType(o.getAttribute('data-type')); }); })(opts[i]);
+    $('copyBtn').addEventListener('click', function () { copy(snippetTag(), 'Copied! Paste it into your site.'); });
+    $('copyContainerBtn').addEventListener('click', function () { copy(snippetContainer(), 'Container form copied.'); });
+
+    fetch(BK + '/widget/v1/mydata', { headers: hdr() })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok === false) {
+          if (d && (d.reason === 'no_profile')) { show($('noprofile'), true); return; }
+          // not_configured or other -> show app with a placeholder preview
+          STATE.card = null; STATE.live = false; STATE.listable = false;
+        } else {
+          STATE.card = d.widget; STATE.live = !!d.live; STATE.listable = !!d.listable; STATE.slug = (d.widget && d.widget.slug) || '';
+        }
+        show($('app'), true);
+        selectType('badge'); refreshSnippet(); liveStatus();
+        $('foot').innerHTML = 'MLS Website Widgets · v1.0.0 — the widget is served from ' + BK + ' and updates automatically. Questions: <a href="mailto:michael@mlsscribe.com">michael@mlsscribe.com</a>.';
+      })
+      .then(null, function () {
+        STATE.card = null; show($('app'), true); selectType('badge'); refreshSnippet();
+        var s = $('liveStatus'); s.className = 'status bad'; s.textContent = 'Couldn’t reach MLS to load your rating. Your embed code below is still correct.';
+      });
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
