@@ -1,3 +1,127 @@
+/* =========================================================================
+ * MLS Scribe - SCHEDULE IMPORT + NO-YANK FIX  (__mlsSchedFix) v1.0.0  2026-07-09 (b107)
+ *
+ * Fixes the four live screenshot bugs (all APP-side; extension untouched):
+ *  1) "2 on today's schedule" with ~52 booked: the schedule importer leaves
+ *     per-row provider EMPTY on real patient rows, so the Easy panel's
+ *     provider scoping (chip "Pulling as: <provider>") hides them all. The
+ *     import wrap stamps the batch's single labeled provider onto unlabeled
+ *     rows; a one-time in-memory backfill repairs rows already imported.
+ *  2) "Murphy, DO" shown as the next PATIENT: a provider/credential-suffixed
+ *     row imported as a patient. Import wrap drops credential-named rows;
+ *     the backfill scrubs existing ones.
+ *  3) "DOB -": consequence of (2) - provider rows carry no DOB. Real rows
+ *     already carry DOB from the extension reader (44/52 live).
+ *  4) Pull strands the user on athenaOne: belt-and-braces WORKER-timer watch
+ *     on __mlsDayHistoryPull.state.running true->false that calls the proven
+ *     __mlsNoAthenaYank.focusMlsTab() (falls back to the raw bridge post).
+ *     Worker timer because the MLS tab is background-throttled during pulls.
+ *
+ * Idempotent; additive; nothing in the working pull path is modified.
+ * Revert: window.__mlsSchedFix_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsSchedFix && window.__mlsSchedFix.version === '1.0.0') return; } catch (e) { return; }
+  var api = { version: '1.0.0', dropped: 0, stamped: 0, scrubbedRows: 0, backfilled: 0, returns: 0, sawRun: false };
+
+  /* name ends ", <credential>" => a provider label, never a patient */
+  var CRED_END = /,\s*(MD|DO|PA-?C?|NP|CRNA|APRN|DPM|DDS|DMD|RN|CRNP|FNP|DNP|PHD|OD|DPT|PT|PHYS)\.?\s*$/i;
+  function isProviderName(n) { return CRED_END.test(String(n || '').trim()); }
+
+  function fixBatch(list, provHint) {
+    if (!Array.isArray(list)) return list;
+    var labels = {}, out = [];
+    list.forEach(function (a) { if (a && a.provider && String(a.provider).trim()) labels[String(a.provider).trim()] = 1; });
+    if (provHint && String(provHint).trim()) labels[String(provHint).trim()] = 1;
+    var keys = Object.keys(labels);
+    var single = keys.length === 1 ? keys[0] : '';
+    list.forEach(function (a) {
+      if (!a) return;
+      if (isProviderName(a.name)) { api.dropped++; return; }
+      if (single && !(a.provider && String(a.provider).trim())) { a.provider = single; api.stamped++; }
+      out.push(a);
+    });
+    return out;
+  }
+
+  /* 1+2) wrap the importer ONCE (own-flag set once, never re-inspected) */
+  try {
+    var f0 = window._importPulledSchedule;
+    if (typeof f0 === 'function' && !f0.__mlsSchedFixWrapped) {
+      var wrapped = function (resp) {
+        try {
+          if (resp && Array.isArray(resp.appts)) {
+            var hint = (resp.providers && resp.providers.length === 1) ? resp.providers[0] : '';
+            resp.appts = fixBatch(resp.appts, hint);
+          }
+        } catch (e) {}
+        return f0.apply(this, arguments);
+      };
+      wrapped.__mlsSchedFixWrapped = 1;
+      window._importPulledSchedule = wrapped;
+    }
+  } catch (e) {}
+
+  /* one-time in-memory scrub + PER-DAY backfill of rows already imported.
+     Per-day because this is a multi-provider practice (10+ labeled providers in
+     the store) - only a day whose labeled rows all carry ONE provider gets its
+     unlabeled rows stamped; ambiguous days are left honest. Live 2026-07-09:
+     scrubbed 7 credential rows, backfilled 113, today went 1/23 -> 23/23
+     provider-stamped and the Easy panel went "2 on today's schedule" -> 23. */
+  function scrubNow() {
+    try {
+      var arr = window._calAppts;
+      if (!Array.isArray(arr)) return;
+      for (var i = arr.length - 1; i >= 0; i--) {
+        var a = arr[i];
+        if (a && isProviderName(a.name)) { arr.splice(i, 1); api.scrubbedRows++; }
+      }
+      var byDay = {};
+      arr.forEach(function (a) { if (!a) return; var d = String(a.day_local || '').slice(0, 10); if (!d) return; (byDay[d] = byDay[d] || []).push(a); });
+      Object.keys(byDay).forEach(function (d) {
+        var rows = byDay[d], labels = {};
+        rows.forEach(function (a) { if (a.provider && String(a.provider).trim()) labels[String(a.provider).trim()] = 1; });
+        var keys = Object.keys(labels);
+        if (keys.length === 1) {
+          rows.forEach(function (a) { if (!(a.provider && String(a.provider).trim())) { a.provider = keys[0]; api.backfilled++; } });
+        }
+      });
+    } catch (e) {}
+  }
+  scrubNow();
+
+  /* 4) pull-end focus return (worker timer - exempt from tab throttling) */
+  var wkUrl = null;
+  try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
+  var stopped = false;
+  function tick(ms, cb) {
+    if (stopped) return;
+    if (wkUrl) { try { var w = new Worker(wkUrl); w.onmessage = function () { try { w.terminate(); } catch (e) {} cb(); }; w.postMessage(ms); return; } catch (e) {} }
+    setTimeout(cb, ms);
+  }
+  function focusMls() {
+    try { if (window.__mlsNoAthenaYank && typeof window.__mlsNoAthenaYank.focusMlsTab === 'function') { window.__mlsNoAthenaYank.focusMlsTab(); return; } } catch (e) {}
+    try { window.postMessage({ type: 'mlsAppFocusMlsTab', source: 'mls-app', from: 'mls-app' }, '*'); } catch (e) {}
+  }
+  (function loop() {
+    tick(2500, function () {
+      try {
+        var S = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
+        if (S) {
+          if (S.running) { api.sawRun = true; }
+          else if (api.sawRun) { api.sawRun = false; api.returns++; focusMls(); }
+        }
+      } catch (e) {}
+      loop();
+    });
+  })();
+
+  api.scrub = scrubNow;
+  window.__mlsSchedFix = api;
+  window.__mlsSchedFix_revert = function () { stopped = true; try { delete window.__mlsSchedFix; } catch (e) {} };
+})();
+
 /* =============================================================================
  * __mlsEz3Gradient v1.1.0   (cosmetic-gradient - Doctor/Visit panel reskin)
  * -----------------------------------------------------------------------------
@@ -24936,7 +25060,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-09-b106';
+  var MLS_APP_BUILD='2026-07-09-b107';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
