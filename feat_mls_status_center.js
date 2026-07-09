@@ -425,12 +425,25 @@
     };
     safe(function () { if (isFn(ct.stop)) ct.stop(); }); // stop the old flappy 30s poll; we drive cadence now
     ct.isConnected = function () { return conn.verdict === 'connected'; };
+    /* de-dupe (2026-07-09, BROKEN-4): conn.reason often BEGINS with the same
+       label the panel renders right next to it ("athenaOne connected — ..."),
+       which painted the doubled "athenaOne connectedathenaOne connected — ..."
+       status text. Strip the leading duplicate at the one place label+detail meet. */
+    function scDedupDetail(lbl, txt) {
+      txt = String(txt || '');
+      var l = String(lbl || '').replace(/[.…]+\s*$/, '');
+      if (l && txt.toLowerCase().indexOf(l.toLowerCase()) === 0) {
+        txt = txt.slice(l.length).replace(/^[\s.,:—–-]+/, '');
+        if (txt) txt = txt.charAt(0).toUpperCase() + txt.slice(1);
+      }
+      return txt;
+    }
     ct.describe = function (s) {
       var v = (s && s.verdict) ? s.verdict : conn.verdict;
-      if (v === 'connected') return { status: 'connected', color: 'green', label: 'athenaOne connected', detail: conn.reason };
-      if (v === 'checking') return { status: 'checking', color: 'grey', label: 'Checking Athena connection…', detail: conn.reason };
+      if (v === 'connected') return { status: 'connected', color: 'green', label: 'athenaOne connected', detail: scDedupDetail('athenaOne connected', conn.reason) };
+      if (v === 'checking') return { status: 'checking', color: 'grey', label: 'Checking Athena connection…', detail: scDedupDetail('Checking Athena connection', conn.reason) };
       var lbl = conn.detailStatus === 'no-extension' ? 'MLS Assist not detected' : 'No signed-in athenaOne tab';
-      return { status: conn.detailStatus, color: 'red', label: lbl, detail: conn.reason };
+      return { status: conn.detailStatus, color: 'red', label: lbl, detail: scDedupDetail(lbl, conn.reason) };
     };
     ct.check = function () { return probeConnection(true).then(function () { return connPublicState(); }); };
     ct.subscribe = function (fn) {
