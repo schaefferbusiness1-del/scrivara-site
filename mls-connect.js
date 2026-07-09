@@ -24716,7 +24716,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b103';
+  var MLS_APP_BUILD='2026-07-08-b104';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -25870,6 +25870,7 @@
         var e=els[i];
         if(e.__mlsMsgFixed) continue;
         if(e.children.length>1) continue;
+        if(e.closest && e.closest('#mlsSignInPrompt')) continue;
         var t=e.textContent||'';
         if(t.length<200 && BAD.test(t)){ e.__mlsMsgFixed=true; e.textContent=GOOD; }
       }
