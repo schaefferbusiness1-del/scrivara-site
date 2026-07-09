@@ -835,9 +835,9 @@
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.0.0') return; } catch (e) { return; }
+  try { if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.1.0') return; } catch (e) { return; }
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
 
   /* ---------- tiny helpers ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -918,12 +918,27 @@
     var buckets = { problems: [], meds: [], allergies: [], insurance: [], encounters: [], hpi: [], history: [], _pre: [] };
     var cur = '_pre';
     var headerHits = 0, distinct = {};
+    /* v1.1.0 (2026-07-09): athenaOne's exam view has sub-section headers the bucket
+       dictionary does not own (Social History Snapshot, Surgical & Procedure History,
+       Outstanding Orders, Last Visit with ..., Follow Up). They used to fall through as
+       CONTENT, so their lines leaked into the PREVIOUS bucket - live-verified case:
+       smoking status filed under Medications. Recognized break labels now re-route the
+       stream: history-like breaks into the history bucket, the rest out of the lists. */
+    var BREAK_HIST = /^(social history(?:\s+snapshot)?|surgical(?:\s*(?:and|&|\/)\s*procedure)?\s+history|family history|health maintenance|immunizations?)\b/;
+    var BREAK_MISC = /^(review of systems|ros|vital signs?|vitals|results?|imaging|last visit\b.*|recent activity|outstanding orders?|follow[\s-]?up|care team|screenings?|goals?|intake)\b/;
     for (var i = 0; i < lines.length; i++) {
       var h = matchHeader(lines[i]);
       if (h) {
         cur = h.key; headerHits++; distinct[h.key] = 1;
         if (h.inline) buckets[cur].push(h.inline);
         continue;
+      }
+      var t0 = trim(lines[i]).replace(/\s+/g, ' ');
+      var ci0 = t0.indexOf(':');
+      var lbl0 = (ci0 >= 0 ? t0.slice(0, ci0) : t0).toLowerCase();
+      if (lbl0 && lbl0.length <= 40) {
+        if (BREAK_HIST.test(lbl0)) { cur = 'history'; continue; }
+        if (BREAK_MISC.test(lbl0)) { cur = '_pre'; continue; }
       }
       buckets[cur].push(lines[i]);
     }
@@ -24921,7 +24936,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-09-b105';
+  var MLS_APP_BUILD='2026-07-09-b106';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
