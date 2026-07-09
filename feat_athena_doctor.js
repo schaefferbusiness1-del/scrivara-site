@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.0.0)
+ *  window.__mlsAthenaDoctor (v1.0.1)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -32,7 +32,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -461,17 +461,19 @@
       autoTrigger({ ok: true, count: 0, anyReal: false });
     } else {
       // genuine failure — show honest line AND auto-open the diagnostic
-      showToast('warn', '⚠ That Athena ' + kind + ' didn\'t work — opening troubleshooter…');
+      showToast('warn', '⚠ That Athena ' + kind + ' didn\'t work — re-run, or tap the Troubleshoot Athena button…');
       autoTrigger({ ok: false, count: m.count, stage: m.stage });
     }
   }
 
   var _autoCooldown = 0;
   function autoTrigger(lastResult) {
-    var now = Date.now();
-    if (now - _autoCooldown < 4000) return; // avoid double-opens from paired messages
-    _autoCooldown = now;
-    setTimeout(function () { openDiagnostic(lastResult); }, 350);
+    /* auto-popup removed 2026-07-08 (b102): the full-screen "Found the problem"
+       diagnostic used to auto-open on every honest pull/search failure, which is
+       disruptive during normal pulls (they routinely include expected refusals).
+       No-op now; the manual "Troubleshoot Athena" button / status-dot still opens
+       the full panel on request. Kept as a no-op so both call sites stay valid. */
+    return;
   }
 
   function showToast(kind, text) {
