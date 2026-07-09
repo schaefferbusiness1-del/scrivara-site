@@ -1,31 +1,30 @@
 /* =========================================================================
- * MLS Scribe - SCHEDULE IMPORT + NO-YANK FIX  (__mlsSchedFix) v1.0.0  2026-07-09 (b107)
+ * MLS Scribe - SCHEDULE IMPORT + NO-YANK FIX  (__mlsSchedFix) v1.1.0  2026-07-09 (b108)
  *
- * Fixes the four live screenshot bugs (all APP-side; extension untouched):
- *  1) "2 on today's schedule" with ~52 booked: the schedule importer leaves
- *     per-row provider EMPTY on real patient rows, so the Easy panel's
- *     provider scoping (chip "Pulling as: <provider>") hides them all. The
- *     import wrap stamps the batch's single labeled provider onto unlabeled
- *     rows; a one-time in-memory backfill repairs rows already imported.
- *  2) "Murphy, DO" shown as the next PATIENT: a provider/credential-suffixed
- *     row imported as a patient. Import wrap drops credential-named rows;
- *     the backfill scrubs existing ones.
- *  3) "DOB -": consequence of (2) - provider rows carry no DOB. Real rows
- *     already carry DOB from the extension reader (44/52 live).
- *  4) Pull strands the user on athenaOne: belt-and-braces WORKER-timer watch
- *     on __mlsDayHistoryPull.state.running true->false that calls the proven
- *     __mlsNoAthenaYank.focusMlsTab() (falls back to the raw bridge post).
- *     Worker timer because the MLS tab is background-throttled during pulls.
+ * v1.1.0: b107's v1.0.0 ran at PREPEND time, before the base app defined
+ * _importPulledSchedule/_calAppts - the wrap and scrub silently no-op'd and the
+ * auto-pull re-imported junk. This version ARMS on a short loop until the app
+ * is ready, then wraps + scrubs. Also: focus-return now also covers the
+ * "nothing-to-do" pull (whose running flag only blips for milliseconds) by
+ * wrapping the exposed pullDay/pullMonth and arming on the pull button click.
  *
- * Idempotent; additive; nothing in the working pull path is modified.
+ * Fixes (all APP-side; extension untouched):
+ *  1) "2 on today's schedule" w/ a full book: importer leaves per-row provider
+ *     EMPTY so the Easy panel's provider scoping hides real rows -> stamp the
+ *     batch's single labeled provider + one-time per-day backfill.
+ *  2) "Murphy, DO" as the next PATIENT: credential-suffixed provider rows
+ *     imported as patients -> drop at import + scrub existing.
+ *  3) "DOB -": consequence of (2); real rows carry DOB from the reader.
+ *  4) Pull strands the user on athenaOne -> focus-return to MLS at pull end
+ *     (worker-timer watch + exposed-fn wrap + button-click arm).
+ * Idempotent; additive; the working pull path itself is untouched.
  * Revert: window.__mlsSchedFix_revert()
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsSchedFix && window.__mlsSchedFix.version === '1.0.0') return; } catch (e) { return; }
-  var api = { version: '1.0.0', dropped: 0, stamped: 0, scrubbedRows: 0, backfilled: 0, returns: 0, sawRun: false };
+  try { if (window.__mlsSchedFix && /^1\./.test(window.__mlsSchedFix.version)) return; } catch (e) { return; }
+  var api = { version: '1.1.0', armed: false, dropped: 0, stamped: 0, scrubbedRows: 0, backfilled: 0, returns: 0, sawRun: false, btnArm: 0 };
 
-  /* name ends ", <credential>" => a provider label, never a patient */
   var CRED_END = /,\s*(MD|DO|PA-?C?|NP|CRNA|APRN|DPM|DDS|DMD|RN|CRNP|FNP|DNP|PHD|OD|DPT|PT|PHYS)\.?\s*$/i;
   function isProviderName(n) { return CRED_END.test(String(n || '').trim()); }
 
@@ -45,30 +44,6 @@
     return out;
   }
 
-  /* 1+2) wrap the importer ONCE (own-flag set once, never re-inspected) */
-  try {
-    var f0 = window._importPulledSchedule;
-    if (typeof f0 === 'function' && !f0.__mlsSchedFixWrapped) {
-      var wrapped = function (resp) {
-        try {
-          if (resp && Array.isArray(resp.appts)) {
-            var hint = (resp.providers && resp.providers.length === 1) ? resp.providers[0] : '';
-            resp.appts = fixBatch(resp.appts, hint);
-          }
-        } catch (e) {}
-        return f0.apply(this, arguments);
-      };
-      wrapped.__mlsSchedFixWrapped = 1;
-      window._importPulledSchedule = wrapped;
-    }
-  } catch (e) {}
-
-  /* one-time in-memory scrub + PER-DAY backfill of rows already imported.
-     Per-day because this is a multi-provider practice (10+ labeled providers in
-     the store) - only a day whose labeled rows all carry ONE provider gets its
-     unlabeled rows stamped; ambiguous days are left honest. Live 2026-07-09:
-     scrubbed 7 credential rows, backfilled 113, today went 1/23 -> 23/23
-     provider-stamped and the Easy panel went "2 on today's schedule" -> 23. */
   function scrubNow() {
     try {
       var arr = window._calAppts;
@@ -89,9 +64,53 @@
       });
     } catch (e) {}
   }
-  scrubNow();
 
-  /* 4) pull-end focus return (worker timer - exempt from tab throttling) */
+  function focusMls() {
+    try { if (window.__mlsNoAthenaYank && typeof window.__mlsNoAthenaYank.focusMlsTab === 'function') { window.__mlsNoAthenaYank.focusMlsTab(); return; } } catch (e) {}
+    try { window.postMessage({ type: 'mlsAppFocusMlsTab', source: 'mls-app', from: 'mls-app' }, '*'); } catch (e) {}
+  }
+  function focusSoon() { setTimeout(function () { api.returns++; focusMls(); }, 1500); }
+
+  /* ARM once the base app has defined its globals (prepend runs first) */
+  function tryArm() {
+    if (api.armed) return true;
+    var ok = false;
+    try {
+      var f0 = window._importPulledSchedule;
+      if (typeof f0 === 'function' && !f0.__mlsSchedFixWrapped) {
+        var wrapped = function (resp) {
+          try {
+            if (resp && Array.isArray(resp.appts)) {
+              var hint = (resp.providers && resp.providers.length === 1) ? resp.providers[0] : '';
+              resp.appts = fixBatch(resp.appts, hint);
+            }
+          } catch (e) {}
+          return f0.apply(this, arguments);
+        };
+        wrapped.__mlsSchedFixWrapped = 1;
+        window._importPulledSchedule = wrapped;
+      }
+      if (Array.isArray(window._calAppts)) { scrubNow(); ok = true; }
+      var P = window.__mlsDayHistoryPull;
+      if (P && typeof P.pullDay === 'function' && !P.pullDay.__mlsSchedFixWrapped) {
+        var pd = P.pullDay, pm = P.pullMonth;
+        P.pullDay = function () { var r = pd.apply(this, arguments); try { Promise.resolve(r).then(focusSoon, focusSoon); } catch (e) {} return r; };
+        P.pullDay.__mlsSchedFixWrapped = 1;
+        if (typeof pm === 'function') { P.pullMonth = function () { var r = pm.apply(this, arguments); try { Promise.resolve(r).then(focusSoon, focusSoon); } catch (e) {} return r; }; P.pullMonth.__mlsSchedFixWrapped = 1; }
+      }
+    } catch (e) {}
+    if (ok) api.armed = true;
+    return ok;
+  }
+
+  /* button-click arm: the pull button calls the module-internal run() (not the
+     exposed fns) - a capture listener arms a one-shot end-watch */
+  try {
+    document.addEventListener('click', function (ev) {
+      try { var b = ev.target && ev.target.closest && ev.target.closest('#mlsDayHistBtn'); if (b) { api.btnArm = Date.now(); } } catch (e) {}
+    }, true);
+  } catch (e) {}
+
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
   var stopped = false;
@@ -100,22 +119,21 @@
     if (wkUrl) { try { var w = new Worker(wkUrl); w.onmessage = function () { try { w.terminate(); } catch (e) {} cb(); }; w.postMessage(ms); return; } catch (e) {} }
     setTimeout(cb, ms);
   }
-  function focusMls() {
-    try { if (window.__mlsNoAthenaYank && typeof window.__mlsNoAthenaYank.focusMlsTab === 'function') { window.__mlsNoAthenaYank.focusMlsTab(); return; } } catch (e) {}
-    try { window.postMessage({ type: 'mlsAppFocusMlsTab', source: 'mls-app', from: 'mls-app' }, '*'); } catch (e) {}
-  }
   (function loop() {
-    tick(2500, function () {
+    tick(1200, function () {
       try {
+        tryArm();
         var S = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
         if (S) {
           if (S.running) { api.sawRun = true; }
-          else if (api.sawRun) { api.sawRun = false; api.returns++; focusMls(); }
+          else if (api.sawRun) { api.sawRun = false; api.returns++; focusMls(); api.btnArm = 0; }
+          else if (api.btnArm && Date.now() - api.btnArm > 12000) { api.btnArm = 0; api.returns++; focusMls(); }
         }
       } catch (e) {}
       loop();
     });
   })();
+  tryArm();
 
   api.scrub = scrubNow;
   window.__mlsSchedFix = api;
@@ -25060,7 +25078,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-09-b107';
+  var MLS_APP_BUILD='2026-07-09-b108';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
