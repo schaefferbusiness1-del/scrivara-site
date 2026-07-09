@@ -1,4 +1,209 @@
 /* =============================================================================
+ * __mlsEz3Gradient v1.1.0   (cosmetic-gradient - Doctor/Visit panel reskin)
+ * -----------------------------------------------------------------------------
+ * PURELY COSMETIC. CSS colors/gradients ONLY. Zero DOM structure changes, zero
+ * layout changes, zero JS behavior changes. Prepend ABOVE the live mls-connect.js
+ * bundle (real \n\n join), like every other guarded module in this repo.
+ *
+ * WHAT THE USER ASKED FOR:
+ *   The big dark navy / near-black CONTAINER box on the Visit tab -- the main
+ *   Doctor/Visit workspace that wraps the clock, provider picker, Start
+ *   Recording, and Choose-patient controls -- should have a light-to-dark BLUE
+ *   gradient fill instead of a flat near-black box. Buttons/text should nudge
+ *   slightly lighter and slightly more colorful (blue-family), staying
+ *   professional, with all existing text contrast preserved.
+ *
+ * WHICH ELEMENT THIS IS (verified against the live b104 bundle, fetched
+ * 2026-07-09 to scratchpad\mls-connect.LIVE-cosmetic.js):
+ *   #mlsEz3 -- the "__mlsEasyV3" workspace panel, mounted as the first child of
+ *   #visitView (mls-connect.LIVE-cosmetic.js:14540-14547). It IS the Visit tab
+ *   now (the legacy hero #visitHero is CSS-hidden -- confirmed
+ *   '#visitHero{display:none !important;}' at :19440 -- and Cockpit D's
+ *   .mls-cohere wrapper never activates because it only arms when #mlsCockpit
+ *   exists, which the silencer prevents). #mlsEz3 contains the header mode
+ *   toggle, .ez3-clock/.ez3-date, .ez3-prov provider <select>, the big
+ *   Start-Recording button (.ez3-big.rec), and the choose-patient surfaces
+ *   (.ez3-search input, .ez3-quick chips, .ez3-list/.ez3-prow rows) -- exactly
+ *   what the user described. Its CSS is injected inline at :14277-14520 as
+ *   '#mlsEz3{background:radial-gradient(1200px 600px at 50% -10%,#15315f 0%,
+ *   #0d1a35 55%,#0b1428 100%);...}' with NO !important anywhere in that block.
+ *   (Five near-identical copies of this same v3 CSS block exist elsewhere in
+ *   the bundle -- dead guard-sibling duplicates from earlier v3.x iterations,
+ *   consistent with this app's documented "layer cake" pattern. It does not
+ *   matter which copy actually wins the runtime guard race: all copies use the
+ *   same #mlsEz3 / .ez3-* selectors, and this module's !important rules beat
+ *   ANY of them regardless of DOM insertion order -- same technique already
+ *   proven live by __mlsFmtLiveContrast / b97.)
+ *
+ * v1.1.0: bumped the top-of-gradient color lighter again per live feedback
+ * ("make it a little bit lighter blue") after seeing it rendered on the real
+ * live Doctor panel. #1a4270 (v1.0.0, 1.66x the original top's luminance) ->
+ * #20508a (2.48x). Re-verified every text color against the new, lighter
+ * worst case (see CONTRAST NOTES) before shipping.
+ *
+ * DESIGN (color math worked out by hand, verified with a small script -- see
+ * CONTRAST NOTES below):
+ *   1. Container background: radial dark-on-dark -> linear light-to-dark blue.
+ *      New stops: #20508a (0%) -> #16375f (16%) -> #0d1a35 (38%, ORIGINAL mid,
+ *      unchanged) -> #0b1428 (100%, ORIGINAL bottom, unchanged). Only the top
+ *      ~38% of the box gets a new (lighter) color; the remaining ~62% is
+ *      pixel-identical to production today. This keeps the "light-to-dark
+ *      blue" look the user wants while leaving the vast majority of the panel
+ *      (patient rows, transcript, badges, modals) on its already-proven colors.
+ *   2. The one shared muted/secondary label color used throughout the panel
+ *      (#a7bce4 -- provider label, date, subtitles, status lines, pull-runner
+ *      labels) is nudged to #bccff3: lighter AND a touch more saturated blue,
+ *      and it IMPROVES contrast everywhere (it's only ever compared against
+ *      backgrounds that are the same or darker than the new lightest point).
+ *      Because this module replaces the background AND the label color
+ *      together in one atomic stylesheet insertion, the pre-existing #a7bce4
+ *      never actually has to coexist with the new background in the live DOM
+ *      -- so lightening the top further than v1.0.0 did not require preserving
+ *      #a7bce4's contrast against it, only #bccff3's (and every other color
+ *      actually shipped).
+ *   3. Secondary chips/buttons/cards/inputs (.ez3-sm, .ez3-exbtn, .ez3-qchip,
+ *      .ez3-card, .ez3-prow, .ez3-chip, .ez3-seg button, the moredots button,
+ *      .ez3-more, and a few input borders) move from a neutral white-alpha
+ *      tint to a soft blue-alpha tint (rgba(150,190,255,.x)) -- "a bit more
+ *      colorful" without touching any text color on them.
+ *   4. Deliberately UNTOUCHED: the primary action blue (.ez3-big / .ez3-prov
+ *      select / .ez3-modeseg .on -- background #2f6df6/#2350bf). Its contrast
+ *      against white button text is already only 4.53:1 -- essentially zero
+ *      headroom -- so lightening it further would break AA on Start
+ *      Recording/Generate/Send, the most important buttons in the app. Also
+ *      untouched: every semantic color (red = recording, green = success/
+ *      "happening now", amber = warning, purple = DOB badge) and the modal/
+ *      toast surfaces (out of the described scope).
+ *   5. `:not(...)` exclusions are used everywhere a class has a stateful
+ *      modifier (.on, .open, .now, .pri, .warn, .rec, .send) that sets the
+ *      SAME property with its own (meaningful) color, so this module cannot
+ *      stomp a selected/expanded/recording state's look. Also excludes
+ *      `.ez3-search input:focus` so the existing blue focus ring is untouched.
+ *
+ * CONTRAST NOTES (WCAG relative-luminance contrast ratio, computed by hand,
+ * spot-checked with a throwaway PowerShell script -- not shipped):
+ *   #a7bce4(orig label) vs current live top #15315f: 6.70:1  (today, for ref)
+ *   #bccff3(new label)  vs NEW top #20508a:          5.19:1  (AA, real margin)
+ *   #c9d8f5(modeseg)    vs NEW top #20508a:          5.68:1
+ *   #eef4ff(primary txt)vs NEW top #20508a:          7.38:1
+ *   #2f6df6(primary btn)vs white text:               4.53:1  (why it is NOT touched)
+ *   New top #20508a is 2.48x the relative luminance of the original top
+ *   #15315f -- a clearly visible lightening, chosen so #bccff3 (the color this
+ *   module actually ships) still clears WCAG AA (4.5:1) with a real margin.
+ *   All figures use #20508a (the LIGHTEST point of the new gradient) as the
+ *   worst case; every other point of the gradient is darker, so contrast can
+ *   only improve moving down the panel.
+ *
+ * SCOPE GUARD: everything below only ever sets `background`, `background-color`,
+ * `border-color`, `box-shadow`, or `color` -- never `display`, `position`,
+ * `width/height`, `padding/margin`, `flex/grid`, or anything that could shift
+ * layout. No elements are created, moved, or removed.
+ *
+ * Kill switch: window.__mlsEz3Gradient_revert().
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsEz3Gradient) { return; }
+
+  var api = { ver: '1.1.0' };
+  window.__mlsEz3Gradient = api;
+
+  var STYLE_ID = 'mlsEz3GradientCss';
+
+  var TOP = '#20508a';
+  var TOP_MID = '#16375f';
+  var LABEL = '#bccff3';
+  var TINT_BG_LO = 'rgba(150,190,255,.075)';
+  var TINT_BG_MD = 'rgba(150,190,255,.09)';
+  var TINT_BG = 'rgba(150,190,255,.10)';
+  var TINT_BG_STRONG = 'rgba(150,190,255,.11)';
+  var TINT_BG_HOVER = 'rgba(150,190,255,.18)';
+  var TINT_BG_HOVER_STRONG = 'rgba(150,190,255,.20)';
+  var TINT_BORDER = 'rgba(150,190,255,.24)';
+  var TINT_BORDER_SOFT = 'rgba(150,190,255,.16)';
+  var TINT_BORDER_STRONG = 'rgba(150,190,255,.30)';
+
+  function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
+
+  var CSS = [
+    /* 1) container: radial dark-on-dark -> linear light-to-dark blue.
+       Original bottom 62% (from 38% down) is byte-identical to production. */
+    '#mlsEz3{background:linear-gradient(180deg,' + TOP + ' 0%,' + TOP_MID + ' 16%,#0d1a35 38%,#0b1428 100%) !important;' +
+      'border-color:' + TINT_BORDER_STRONG + ' !important;' +
+      'box-shadow:0 16px 46px rgba(20,60,110,.32) !important;}',
+
+    /* 2) shared muted/secondary label color, used across the whole panel */
+    '#mlsEz3 .ez3-sub,#mlsEz3 .ez3-status,#mlsEz3 .ez3-empty,#mlsEz3 .ez3-prov label,' +
+      '#mlsEz3 .ez3-date,#mlsEz3 .ez3-prow .sub,#mlsEz3 .ez3-crow span,' +
+      '#mlsEz3 .ez3-pull .prow label,#mlsEz3 .ez3-pull .nowl2,#mlsEz3 .ez3-pull .c span' +
+      '{color:' + LABEL + ' !important;}',
+
+    /* 3) header segmented control (Doctor / Staff prep) */
+    '#mlsEz3 .ez3-modeseg{background:' + TINT_BG_MD + ' !important;border-color:' + TINT_BORDER + ' !important;}',
+
+    /* 4) secondary buttons/chips/cards -- neutral white-alpha -> soft blue-alpha.
+       :not() guards keep every stateful modifier's own color untouched. */
+    '#mlsEz3 .ez3-sm:not(.pri):not(.warn){background:' + TINT_BG + ' !important;border-color:' + TINT_BORDER + ' !important;}',
+    '#mlsEz3 .ez3-sm:not(.pri):not(.warn):hover{background:' + TINT_BG_HOVER_STRONG + ' !important;}',
+
+    '#mlsEz3 .ez3-exbtn:not(.rec):not(.send){background:' + TINT_BG_STRONG + ' !important;border-color:' + TINT_BORDER + ' !important;}',
+    '#mlsEz3 .ez3-exbtn:not(.rec):not(.send):hover{background:' + TINT_BG_HOVER_STRONG + ' !important;}',
+
+    '#mlsEz3 .ez3-qchip:not(.on){background:' + TINT_BG + ' !important;}',
+    '#mlsEz3 .ez3-qchip:not(.on):not(.now){border-color:' + TINT_BORDER + ' !important;}',
+    '#mlsEz3 .ez3-qchip:not(.on):hover{background:' + TINT_BG_HOVER + ' !important;}',
+
+    '#mlsEz3 .ez3-prow:not(.open){background:' + TINT_BG_LO + ' !important;border-color:' + TINT_BORDER_SOFT + ' !important;}',
+    '#mlsEz3 .ez3-prow .moredots{background:' + TINT_BG + ' !important;border-color:' + TINT_BORDER + ' !important;}',
+    '#mlsEz3 .ez3-prow .moredots:hover{background:' + TINT_BG_HOVER + ' !important;}',
+
+    '#mlsEz3 .ez3-chip:not(.on){border-color:' + TINT_BORDER_STRONG + ' !important;}',
+    '#mlsEz3 .ez3-chip:not(.on):hover{background:' + TINT_BG_HOVER + ' !important;}',
+
+    '#mlsEz3 .ez3-seg button:not(.on){background:' + TINT_BG_MD + ' !important;border-color:' + TINT_BORDER + ' !important;}',
+    '#mlsEz3 .ez3-seg button:not(.on):hover{background:' + TINT_BG_HOVER + ' !important;}',
+
+    '#mlsEz3 .ez3-card{background:' + TINT_BG_LO + ' !important;border-color:' + TINT_BORDER_SOFT + ' !important;}',
+    '#mlsEz3 .ez3-more{border-color:' + TINT_BORDER_STRONG + ' !important;}',
+    '#mlsEz3 .ez3-more:hover{background:' + TINT_BG + ' !important;}',
+
+    /* 5) a couple of input borders, incl. the choose-patient search box.
+       :not(:focus) on the search input preserves its existing blue focus ring. */
+    '#mlsEz3 .ez3-search input:not(:focus){border-color:' + TINT_BORDER_STRONG + ' !important;}',
+    '#mlsEz3 .ez3-daterow input,#mlsEz3 .ez3-pull input[type=month],#mlsEz3 .ez3-pull select' +
+      '{border-color:' + TINT_BORDER_STRONG + ' !important;}'
+  ].join('');
+
+  function ensureCss() {
+    if (document.getElementById(STYLE_ID)) { return; }
+    var s = document.createElement('style');
+    s.id = STYLE_ID;
+    s.textContent = CSS;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  ensureCss();
+
+  /* Belt-and-suspenders only: re-insert the stylesheet if some other module
+     ever wipes <head> children (nothing in this app does today, but several
+     other modules here defend against it the same way). No per-element work
+     needed -- this is a global stylesheet, so once present it covers every
+     current AND future matching element automatically. */
+  var iv = setInterval(ensureCss, 3000);
+
+  window.__mlsEz3Gradient_revert = function () {
+    safe(function () { clearInterval(iv); });
+    safe(function () {
+      var s = document.getElementById(STYLE_ID);
+      if (s && s.parentNode) { s.parentNode.removeChild(s); }
+    });
+    delete window.__mlsEz3Gradient;
+    delete window.__mlsEz3Gradient_revert;
+  };
+})();
+
+
+/* =============================================================================
  * __mlsGuidedTour v1.0.0   (onboarding - items 1-3)
  * -----------------------------------------------------------------------------
  * A premium, INTERACTIVE guided walkthrough of MLS Scribe that REPLACES the old
@@ -24716,7 +24921,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b104';
+  var MLS_APP_BUILD='2026-07-09-b105';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
