@@ -1,3 +1,59 @@
+/* MLS Scribe -- __mlsNoAthenaYank v1.1.0   2026-07-08 (b98)
+ * =========================================================================
+ * Stops MLS from STRANDING the doctor on athenaOne. Verified mechanism
+ * (b97 + ext v1.55): no verifier ever foregrounds Athena -- every identity/
+ * chart/connection check fails closed (inline message, no tab switch). The
+ * only thing that foregrounds Athena is the EXTENSION, and only when the app
+ * asks it to: the bulk history PULL (mlsAppGoHome) and "Send note to EMR"
+ * (mlsAppPasteNote). The PULL foregrounds Athena to read, then never returns
+ * the doctor to mlsscribe -- so after a pull the doctor is left on Athena,
+ * which reads like "MLS jumped me to Athena and dumped me there."
+ *
+ * This module: when a history pull ENDS (its own state.running goes
+ * true->false), ask the extension to bring the mlsscribe tab back to the
+ * front (mlsAppFocusMlsTab; a harmless no-op on ext < v1.56, which ignores
+ * unknown messages). It ONLY reads window.__mlsDayHistoryPull.state and posts
+ * one message -- it wraps nothing, drops nothing, and cannot affect the
+ * working pull. The pull's foreground-to-read behavior is unchanged.
+ *
+ * (The send-note foreground-before-field-check strand, and the actual tab
+ *  focus, are handled extension-side in v1.56 -- this app half only fires the
+ *  return-to-MLS signal after a pull.)
+ *
+ * Reversible: __mlsNoAthenaYank_revert().
+ * ========================================================================= */
+(function () {
+  'use strict';
+  try { if (window.__mlsNoAthenaYank) return; } catch (e) { return; }
+
+  var api = { version: '1.1.0', returns: 0, wasRunning: false };
+  window.__mlsNoAthenaYank = api;
+
+  function focusMlsTab() {
+    try { window.postMessage({ source: 'mls-app', type: 'mlsAppFocusMlsTab', from: 'mls-app' }, '*'); api.returns++; } catch (e) {}
+  }
+  api.focusMlsTab = focusMlsTab;
+
+  function tick() {
+    try {
+      var P = window.__mlsDayHistoryPull;
+      var running = !!(P && P.state && P.state.running);
+      if (api.wasRunning && !running) { focusMlsTab(); }   // pull just ended -> return the doctor to MLS
+      api.wasRunning = running;
+    } catch (e) {}
+  }
+
+  var _iv = null;
+  try { _iv = setInterval(tick, 800); } catch (e) {}
+
+  api._revert = function () {
+    try { if (_iv) clearInterval(_iv); } catch (e) {}
+    try { delete window.__mlsNoAthenaYank; } catch (e) {}
+  };
+  window.__mlsNoAthenaYank_revert = api._revert;
+})();
+
+
 /* =============================================================================
  * MLS Scribe -- FORMATTED-VIEW (LIVE) BODY CONTRAST  (__mlsFmtLiveContrast) v1.0.0  2026-07-08 (b97)
  *
@@ -23423,7 +23479,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b97';
+  var MLS_APP_BUILD='2026-07-08-b98';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
