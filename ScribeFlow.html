@@ -856,6 +856,9 @@
     #calSplitWrap:has(#calDayPanel[style*="block"]){ display:grid; grid-template-columns:minmax(0,1.45fr) minmax(0,1fr); gap:18px; align-items:start; }
     #calSplitWrap:has(#calDayPanel[style*="block"]) #calDayPanel{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 96px); overflow:auto; }
   }
+
+/* BROKEN-3 fix (2026-07-09): the LIVE redesigned header is #appHeader.mlsRdHdr (class added at runtime by the bundle); the b104 .mainnav z-index bump missed it, so fixed full-page views (z-index:5000) painted over the open Menu dropdown. 6000 stays below #_patientFace (9500) and #toast (99999). */
+#appHeader.mlsRdHdr{z-index:6000!important}
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script src="legal-connect-ui.js?v=20260617"></script><script src="legal-tracker.js?v=20260617c"></script>
