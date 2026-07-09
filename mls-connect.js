@@ -1,3 +1,104 @@
+/* =========================================================================
+ * MLS Scribe -- Pay Report visit-tab restore  (__mlsPayReportVisitBtn)
+ * authored 2026-07-08
+ * ----------------------------------------------------------------------------
+ * WHY: the "Pay Report" button (monthly revenue + patients-seen
+ * report, feat_comp_report.js / window.__mlsComp) used to float on every page
+ * including the Visit / MLS Easy tab. ui-cleanup-v1 (__mlsUiCleanupV1, LIVE)
+ * retired that floater and relocated the button into the AI Studio title
+ * strip + top of the Calendar view only -- it is no longer reachable from the
+ * Visit / MLS Easy tab at all, and it picked up a "PREMIUM FEATURE" badge
+ * there even though the button itself is not actually gated (openPayReports()
+ * has no premium check). That combination is why it reads as missing.
+ *
+ * WHAT THIS MODULE DOES: adds ONE small, plain (non-premium-labelled)
+ * "Pay Report" button back at the TOP of the Visit tab
+ * (#visitView), above whichever MLS Easy layer is currently rendering
+ * underneath it (the Visit tab has been rebuilt/re-skinned many times --
+ * anchoring to the stable outer #visitView container, not to any one Easy
+ * layer's internals, is what keeps this from breaking on the next Easy
+ * rework). Clicking it opens the SAME real report as Studio/Calendar
+ * (window.__mlsComp.open()) -- nothing reimplemented, nothing duplicated.
+ * Does NOT remove or alter the Studio/Calendar placements from ui-cleanup-v1.
+ *
+ * SAFETY: UI only, additive, reversible. No network calls, no PHI, no
+ * athenaOne interaction of any kind. ASCII-only source (emoji as \u escapes).
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsPayReportVisitBtn) return;
+  window.__mlsPayReportVisitBtn = { v: "prvb-1.0.0" };
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+
+  function css() {
+    if ($("mlsPrvbCss")) return;
+    var s = document.createElement("style"); s.id = "mlsPrvbCss";
+    s.textContent =
+      ".mls-prvb-wrap{display:flex;justify-content:flex-end;margin:0 0 12px}" +
+      ".mls-prvb{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:0;border-radius:999px;" +
+      "background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;" +
+      "font:600 13.5px/1 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;" +
+      "box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer;white-space:nowrap}" +
+      ".mls-prvb:hover{filter:brightness(1.08)}";
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function openPayReport() {
+    try {
+      if (window.__mlsComp && typeof window.__mlsComp.open === "function") { window.__mlsComp.open(); return; }
+      var b = $("mlsCompBtn"); if (b) { b.click(); return; }
+      alert("Pay Report is still loading - give it a moment and try again.");
+    } catch (e) {}
+  }
+
+  function button() {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "mls-prvb"; b.id = "mlsPrvbBtn";
+    b.title = "Monthly pay report - revenue and patients seen this month";
+    b.innerHTML = "\uD83D\uDCB5 Pay Report";
+    b.onclick = openPayReport;
+    return b;
+  }
+
+  function inject() {
+    try {
+      var vv = $("visitView");
+      if (!vv || $("mlsPrvbWrap")) return;
+      var wrap = document.createElement("div");
+      wrap.id = "mlsPrvbWrap"; wrap.className = "mls-prvb-wrap";
+      wrap.appendChild(button());
+      vv.insertBefore(wrap, vv.firstChild);
+    } catch (e) {}
+  }
+
+  function tick() { try { css(); inject(); } catch (e) {} }
+
+  tick();
+  var iv = setInterval(tick, 1200);
+  var mo = null;
+  try {
+    mo = new MutationObserver(function () { inject(); });
+    var vv0 = $("visitView");
+    if (vv0) mo.observe(vv0, { childList: true });
+    else {
+      var waitIv = setInterval(function () {
+        var vv1 = $("visitView");
+        if (vv1) { try { mo.observe(vv1, { childList: true }); } catch (e) {} clearInterval(waitIv); }
+      }, 500);
+    }
+  } catch (e) {}
+
+  window.__mlsPayReportVisitBtn_revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { if (mo) mo.disconnect(); } catch (e) {}
+    try { var w = $("mlsPrvbWrap"); if (w) w.remove(); } catch (e) {}
+    try { var s = $("mlsPrvbCss"); if (s) s.remove(); } catch (e) {}
+    window.__mlsPayReportVisitBtn = 0;
+    return "reverted";
+  };
+})();
+
 /* MLS Scribe -- __mlsNoAthenaYank v1.2.0   2026-07-08 (b99)
  * =========================================================================
  * Stops MLS from STRANDING the doctor on athenaOne. Verified mechanism
@@ -23495,7 +23596,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b99';
+  var MLS_APP_BUILD='2026-07-08-b100';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
