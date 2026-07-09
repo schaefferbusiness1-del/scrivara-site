@@ -1,4 +1,4 @@
-/* MLS Scribe -- __mlsNoAthenaYank v1.1.0   2026-07-08 (b98)
+/* MLS Scribe -- __mlsNoAthenaYank v1.2.0   2026-07-08 (b99)
  * =========================================================================
  * Stops MLS from STRANDING the doctor on athenaOne. Verified mechanism
  * (b97 + ext v1.55): no verifier ever foregrounds Athena -- every identity/
@@ -16,6 +16,11 @@
  * one message -- it wraps nothing, drops nothing, and cannot affect the
  * working pull. The pull's foreground-to-read behavior is unchanged.
  *
+ * v1.2.0: the pull foregrounds athenaOne, which BACKGROUNDS this tab, and a
+ * main-thread setInterval stalls when the tab is hidden -- the exact reason the
+ * pull itself moved its own loop to a Worker timer. So this poll is driven by a
+ * Worker (not throttled while hidden), with a setInterval fallback.
+ *
  * (The send-note foreground-before-field-check strand, and the actual tab
  *  focus, are handled extension-side in v1.56 -- this app half only fires the
  *  return-to-MLS signal after a pull.)
@@ -26,7 +31,7 @@
   'use strict';
   try { if (window.__mlsNoAthenaYank) return; } catch (e) { return; }
 
-  var api = { version: '1.1.0', returns: 0, wasRunning: false };
+  var api = { version: '1.2.0', returns: 0, wasRunning: false, driver: 'none' };
   window.__mlsNoAthenaYank = api;
 
   function focusMlsTab() {
@@ -43,10 +48,21 @@
     } catch (e) {}
   }
 
-  var _iv = null;
-  try { _iv = setInterval(tick, 800); } catch (e) {}
+  // Worker-driven poll so it keeps ticking while this tab is hidden (the pull
+  // foregrounds athenaOne and backgrounds mlsscribe). Falls back to setInterval.
+  var _w = null, _iv = null, _url = null;
+  try {
+    _url = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},800)'], { type: 'application/javascript' }));
+    _w = new Worker(_url);
+    _w.onmessage = tick;
+    api.driver = 'worker';
+  } catch (e) {
+    try { _iv = setInterval(tick, 800); api.driver = 'interval'; } catch (e2) {}
+  }
 
   api._revert = function () {
+    try { if (_w) _w.terminate(); } catch (e) {}
+    try { if (_url) URL.revokeObjectURL(_url); } catch (e) {}
     try { if (_iv) clearInterval(_iv); } catch (e) {}
     try { delete window.__mlsNoAthenaYank; } catch (e) {}
   };
@@ -23479,7 +23495,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b98';
+  var MLS_APP_BUILD='2026-07-08-b99';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
