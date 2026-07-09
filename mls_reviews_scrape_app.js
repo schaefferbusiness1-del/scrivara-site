@@ -1,43 +1,41 @@
 /* ============================================================================
- * mls_reviews_scrape_app.js -- __mlsRepScrape v1.2.1 (2026-07-07)
- * v1.2.1 (deploy gate): Marketing CTA probes for mls-marketing.html before
- *   opening it; while the console page is not deployed (held for Michael's
- *   approval) the CTA falls back to the honest pending-state + prefilled
- *   email to michael@mlsscribe.com (same pattern the console itself uses
- *   when signed out). Forward-compatible: once the page ships, the same
- *   click opens it.
- * v1.2.0: AUTO-DISCOVERY is the primary path. Doctor enters name + practice;
- *   MLS finds their Healthgrades/Vitals/WebMD/RateMDs/Zocdoc/Google profiles
- *   itself (extension two-hop: open site search -> discover profile link ->
- *   read reviews; paste mode discovers from a pasted search page too), then
- *   pulls every review. Manual link paste demoted to an optional override.
- *   Drops the "add API key on the server / paste links" framing (also hides
- *   review-finder's stale #repSources API-key grid at runtime). MLS Marketing
- *   CTA now opens the real mls-marketing.html console.
- * v1.1.0: + MLS Marketing activation CTA (upgrades review-finder #repUpsell
- *   from a soft interest flag to a real activation flow)
+ * mls_reviews_scrape_app.js -- __mlsRepScrape v1.3.0 (2026-07-08)
+ *
+ * v1.3.0 (auto-reviews): GROUNDED API is now the PRIMARY, default path and the
+ *   browser extension is no longer required to find reviews. The "Find my
+ *   profiles & pull reviews" button calls the backend route
+ *       POST /api/reviews/auto-find  (OpenAI Responses API + web_search)
+ *   which finds the doctor's REAL profiles on Google, Healthgrades, Vitals,
+ *   WebMD, RateMDs and Zocdoc and pulls representative reviews -- server-side,
+ *   using the practice's own OpenAI key (never exposed to the browser). The old
+ *   "MLS Assist isn't installed" nag is gone: the extension + manual paste are
+ *   now OPTIONAL enhancements used only if the API path is unavailable.
+ *   Every result carries a verified/unconfirmed flag and a citation link; a
+ *   practice-wide rating is never shown as the doctor's personal rating; the
+ *   headline number is computed from CONFIRMED listings only.
  * ----------------------------------------------------------------------------
- * APP/PAGE-SIDE module for API-free review collection. Designed to be loaded
- * by review-finder.html with ONE tag:
- *     <script src="mls_reviews_scrape_app.js?v=20260707"></script>
+ * Earlier history (retained):
+ *   v1.2.1  Marketing CTA probes mls-marketing.html; honest pending fallback.
+ *   v1.2.0  Auto-discovery primary (extension two-hop); manual paste demoted;
+ *           hides review-finder's stale API-key grid; MLS Marketing CTA.
+ *   v1.1.0  MLS Marketing activation CTA.
+ * ----------------------------------------------------------------------------
+ * APP/PAGE-SIDE module. Loaded by review-finder.html with ONE tag:
+ *     <script src="mls_reviews_scrape_app.js?v=20260708"></script>
  * (also runs standalone on any page for testing; it floats its own card).
  *
- * What it does:
- *   1. EXTENSION SCRAPE (primary): asks MLS Assist (>= the build carrying
- *      ext_reviews_reader.js) to read each review site via the postMessage
- *      bridge -- {source:'mls-app', type:'mlsAppScrapeReviews', job} ->
- *      {source:'mls-ext', type:'mlsAppScrapeResult'} (see SCRAPE_DESIGN.md).
- *   2. ASSISTED CAPTURE (works TODAY, no extension change): per-site "Open"
- *      button + a paste box; pasted page source / text is parsed locally
- *      (JSON-LD first, text heuristics second). Nothing leaves the page.
- *   3. API FALLBACK: GET /api/reviews/find (Lane C) merges in when available.
+ * Discovery order (each step falls through cleanly to the next):
+ *   1. GROUNDED API (primary):  POST /api/reviews/auto-find -- no extension,
+ *      no per-site API keys, all six sources. Requires the user to be signed
+ *      into MLS (Bearer sf_bk_token) because it spends the practice's AI usage.
+ *   2. GOOGLE PLACES fallback:  GET /api/reviews/find -- an authoritative Google
+ *      rating with zero AI, merged in when the grounded path is unavailable.
+ *   3. EXTENSION / PASTE (optional): only surfaced if 1 & 2 return nothing; the
+ *      per-site "Open" + paste-a-page capture still works with no extension.
  *
- * Output: ONE dataset in exactly the /api/reviews/find response shape,
- * cached in localStorage.mlsRFScrapeCache (24h), rendered in its own card
- * with STRICT doctor-vs-practice scope separation (classifier is a verbatim
- * ES5 port of reviewsFind.js classifyScope), and broadcast via
- * document CustomEvent 'mls-reviews-data' for other modules (GBP wizard,
- * __mlsRepAuto2) to consume.
+ * Output: ONE dataset in the /api/reviews/find response shape (+ verified,
+ * unconfirmed, sourceUrl, foundOnPage), cached in localStorage.mlsRFScrapeCache
+ * (24h), broadcast via document CustomEvent 'mls-reviews-data'.
  *
  * Guard: window.__mlsRepScrape. Revert: window.__mlsRepScrape.revert().
  * Pure-ASCII, ES5/ES3-parseable (JScript new Function validated). READ-ONLY:
@@ -47,12 +45,13 @@
   'use strict';
   if (window.__mlsRepScrape) return;
 
-  var VER = '1.2.1';
+  var VER = '1.3.0';
   var MKT_URL = 'mls-marketing.html';
   var BK = 'https://scrivara-backend.onrender.com';
   var CACHE_KEY = 'mlsRFScrapeCache';
   var CACHE_TTL = 24 * 60 * 60 * 1000;
-  var EXT_TIMEOUT = 120000; /* whole job */
+  var EXT_TIMEOUT = 120000; /* whole extension job */
+  var AUTO_TIMEOUT = 100000; /* grounded API can take ~30-60s of web search */
   var CARD_ID = 'repScrapeCard';
 
   /* ------------------------------ utils ---------------------------------- */
@@ -67,6 +66,7 @@
   function nowIso() { try { return new Date().toISOString(); } catch (e) { return ''; } }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function token() { try { return sessionStorage.getItem('sf_bk_token') || lsGet('sf_bk_token') || ''; } catch (e) { return ''; } }
 
   /* ------------- scope classifier (ES5 port of reviewsFind.js) ----------- */
   function norm(s) {
@@ -103,13 +103,12 @@
 
   /* ------------------------- who are we scanning ------------------------- */
   function getWho() {
-    /* Prefer the live review-finder form (its doc() helper), else mlsRF store */
-    try { if (typeof window.doc === 'function') { var d = window.doc(); if (d && (d.name || d.practice)) return { doctor: d.name || '', practice: d.practice || '', city: d.city || '' }; } } catch (e) {}
+    try { if (typeof window.doc === 'function') { var d = window.doc(); if (d && (d.name || d.practice)) return { doctor: d.name || '', practice: d.practice || '', city: d.city || '', spec: d.spec || '' }; } } catch (e) {}
     try {
       var saved = JSON.parse(lsGet('mlsRF') || '{}');
-      if (saved && saved.doc) return { doctor: saved.doc.name || '', practice: saved.doc.practice || '', city: saved.doc.city || '' };
+      if (saved && saved.doc) return { doctor: saved.doc.name || '', practice: saved.doc.practice || '', city: saved.doc.city || '', spec: saved.doc.spec || '' };
     } catch (e) {}
-    return { doctor: '', practice: '', city: '' };
+    return { doctor: '', practice: '', city: '', spec: '' };
   }
   function manualLinks() {
     var raw = lsGet('mlsRFLinks') || '';
@@ -142,8 +141,6 @@
     if (/yelp\.com/i.test(u)) return 'yelp';
     return 'website';
   }
-  /* PROFILE-URL patterns (a real doctor profile, not a search page) \u2014 kept in
-   * sync with ext_reviews_reader.js PROFILE_PATTERNS. */
   var PROFILE_PATTERNS = [
     { key: 'healthgrades', re: /healthgrades\.com\/(physician|providers?|dentist)\//i },
     { key: 'vitals',       re: /vitals\.com\/doctors\//i },
@@ -157,8 +154,6 @@
     for (var i = 0; i < PROFILE_PATTERNS.length; i++) { if (PROFILE_PATTERNS[i].re.test(u)) return PROFILE_PATTERNS[i].key; }
     return null;
   }
-  /* Pull the doctor's profile links out of a pasted SEARCH-RESULTS page (paste
-   * fallback for auto-discovery when the extension isn't driving it). */
   function discoverFromHtml(html, who) {
     html = String(html || '');
     var toks = nameTokens(who && who.doctor || '');
@@ -178,7 +173,6 @@
     var best = {}, list = []; for (var i = 0; i < out.length; i++) { if (!best[out[i].key]) { best[out[i].key] = 1; list.push(out[i]); } }
     return list;
   }
-  /* add discovered links into mlsRFLinks so the next scan uses them directly */
   function rememberLinks(list) {
     if (!list || !list.length) return 0;
     var have = manualLinks(), map = {}, i;
@@ -193,7 +187,6 @@
   function searchUrl(key, who) {
     var q = (who.doctor || who.practice) + (who.city ? ' ' + who.city : '');
     if (key === 'google') {
-      /* practice listing carries most reviews; doctor listing checked via links */
       var g = (who.practice || who.doctor) + (who.city ? ' ' + who.city : '');
       return 'https://www.google.com/maps/search/' + enc(g);
     }
@@ -206,13 +199,11 @@
   }
   function buildTargets(who) {
     var out = [], used = {}, links = manualLinks(), i, k;
-    /* direct profile links first (highest fidelity) */
     for (i = 0; i < links.length; i++) {
       k = keyForUrl(links[i]);
       out.push({ key: k, url: links[i], direct: true });
       used[k] = true;
     }
-    /* search URLs for sites we have no direct link for */
     for (i = 0; i < SITE_DEFS.length; i++) {
       k = SITE_DEFS[i].key;
       if (!used[k]) out.push({ key: k, url: searchUrl(k, who), direct: false });
@@ -228,7 +219,7 @@
              summary: { doctor: { rating: null, reviewCount: null, listings: 0 },
                         practice: { rating: null, reviewCount: null, listings: 0 } },
              listings: [], reviews: [], sources: {}, manualLinks: manualLinks(),
-             scraped: true, scrapedAt: nowIso() };
+             engine: null, grounded: false, scraped: true, scrapedAt: nowIso() };
   }
 
   /* one site result {key,url,ok,method,listing,reviews,error} -> merge */
@@ -247,7 +238,8 @@
       payload.listings.push({ source: r.key, scope: scope, name: L.name || '',
         address: L.address || null, rating: L.rating != null ? L.rating : null,
         reviewCount: L.reviewCount != null ? L.reviewCount : null,
-        url: L.url || r.url, website: null });
+        url: L.url || r.url, website: null,
+        verified: true, unconfirmed: false }); /* hand-captured/DOM-read = confirmed by the user */
     }
     var revs = r.reviews || [], i;
     for (i = 0; i < revs.length; i++) {
@@ -255,23 +247,27 @@
         rating: revs[i].rating != null ? revs[i].rating : null,
         text: String(revs[i].text || '').slice(0, 1200),
         author: String(revs[i].author || '').slice(0, 120),
-        when: revs[i].when || null });
+        relativeTime: revs[i].when || null, sourceUrl: L.url || r.url || null,
+        verified: true, unconfirmed: false });
       if (payload.reviews.length >= 300) break;
     }
   }
-  function summarize(payload) {
-    var d = { rating: null, reviewCount: 0, listings: 0 };
-    var p = { rating: null, reviewCount: 0, listings: 0 };
-    var i, L, bucket;
-    for (i = 0; i < payload.listings.length; i++) {
-      L = payload.listings[i];
-      bucket = (L.scope === 'doctor') ? d : (L.scope === 'practice') ? p : null;
-      if (!bucket) continue;
-      bucket.listings++;
-      if (L.reviewCount) bucket.reviewCount += L.reviewCount;
-      if (L.rating != null && (bucket.rating == null || L.rating > bucket.rating)) bucket.rating = L.rating;
+
+  /* weighted-average summary, CONFIRMED listings only, doctor vs practice
+   * split -- mirrors reviewsAutoFind.js summarize() so a client-merged Places
+   * listing counts the same way the server counts. */
+  function weightedSummary(payload) {
+    function agg(scope) {
+      var i, L, n = 0, w = 0, count = 0;
+      for (i = 0; i < payload.listings.length; i++) {
+        L = payload.listings[i];
+        if (L.scope !== scope || L.verified === false || L.rating == null || !(L.reviewCount > 0)) continue;
+        n += L.reviewCount; w += L.rating * L.reviewCount; count++;
+      }
+      if (!n) return { rating: null, reviewCount: 0, listings: count };
+      return { rating: Math.round((w / n) * 10) / 10, reviewCount: n, listings: count };
     }
-    payload.summary = { doctor: d, practice: p };
+    payload.summary = { doctor: agg('doctor'), practice: agg('practice') };
     return payload;
   }
   function cacheKeyFor(who) { return norm(who.doctor) + '|' + norm(who.practice) + '|' + norm(who.city); }
@@ -290,7 +286,131 @@
     try { document.dispatchEvent(new CustomEvent('mls-reviews-data', { detail: payload })); } catch (e) {}
   }
 
-  /* ------------------------ extension scrape path ------------------------ */
+  /* ----------------- PRIMARY: grounded auto-find (OpenAI) ---------------- */
+  /* POST /api/reviews/auto-find -> the final payload shape. cb(result) where
+   * result = { status:'ok'|'auth'|'unconfigured'|'error', payload?, message? } */
+  function autoFind(who, cb) {
+    var url = BK + '/api/reviews/auto-find';
+    var body = { doctor: who.doctor || '', practice: who.practice || '', city: who.city || '', specialty: who.spec || '', links: manualLinks() };
+    var headers = { 'Content-Type': 'application/json' };
+    var t = token(); if (t) headers['Authorization'] = 'Bearer ' + t;
+    var done = false;
+    var killer = setTimeout(function () { if (!done) { done = true; cb({ status: 'error', message: 'The web search took too long -- try Rescan.' }); } }, AUTO_TIMEOUT);
+    function finish(o) { if (done) return; done = true; clearTimeout(killer); cb(o); }
+    try {
+      fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body) })
+        .then(function (r) {
+          var st = r.status;
+          return r.json().then(function (j) { return { st: st, j: j }; }, function () { return { st: st, j: null }; });
+        })
+        .then(function (x) {
+          var j = x.j;
+          if (x.st === 401 || x.st === 403) { finish({ status: 'auth', message: 'Sign in to MLS to auto-pull your reviews (it uses your MLS AI). Or add a profile link below.' }); return; }
+          if (j && j.ok) { finish({ status: 'ok', payload: j }); return; }
+          var reason = j && j.reason;
+          if (reason === 'no_openai_key' || reason === 'disabled') { finish({ status: 'unconfigured', message: (j && j.message) || 'Automatic finding is not turned on yet.' }); return; }
+          finish({ status: 'error', message: (j && j.message) || 'The review service had a problem -- try again shortly.' });
+        }, function () { finish({ status: 'error', message: 'Network problem reaching the review service.' }); });
+    } catch (e) { finish({ status: 'error', message: 'Could not reach the review service.' }); }
+  }
+
+  /* Normalize the auto-find payload into our render/cache shape (it already is
+   * that shape; we just guarantee the fields exist + carry engine/grounded). */
+  function fromAuto(j, who) {
+    var p = emptyPayload(who);
+    p.engine = j.engine || 'openai-web-search';
+    p.grounded = !!j.grounded;
+    p.model = j.model || null;
+    p.listings = (j.listings || []).slice();
+    p.reviews = (j.reviews || []).slice();
+    p.sources = j.sources || {};
+    p.counts = j.counts || null;
+    p.notes = j.notes || null;
+    p.apiMessage = j.message || null;
+    if (j.summary) p.summary = j.summary; else weightedSummary(p);
+    return p;
+  }
+
+  /* --------------------- FALLBACK: Google Places API --------------------- */
+  function apiFind(who, cb) {
+    var u = BK + '/api/reviews/find?doctor=' + enc(who.doctor) + '&practice=' + enc(who.practice) + '&city=' + enc(who.city);
+    try {
+      fetch(u).then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+        .then(function (j) { cb(j && j.ok ? j : null); }, function () { cb(null); });
+    } catch (e) { cb(null); }
+  }
+  /* Merge Places results for sources not already covered; Places = authoritative
+   * (real Google rating), so its listings are marked verified. */
+  function mergeApi(payload, api) {
+    if (!api) return payload;
+    var i, k, have = {};
+    for (i = 0; i < payload.listings.length; i++) { if (payload.listings[i].verified) have[payload.listings[i].source] = 1; }
+    var als = api.listings || [];
+    for (i = 0; i < als.length; i++) { if (!have[als[i].source]) { var L = als[i]; L.verified = true; L.unconfirmed = false; payload.listings.push(L); } }
+    var arv = api.reviews || [];
+    for (i = 0; i < arv.length; i++) { if (!have[arv[i].source]) { var R = arv[i]; R.verified = true; R.unconfirmed = false; if (!R.sourceUrl) R.sourceUrl = R.url || null; payload.reviews.push(R); } }
+    if (api.sources) { for (k in api.sources) { if (!api.sources.hasOwnProperty(k)) continue; if (!payload.sources[k] || payload.sources[k].status === 'not_found' || payload.sources[k].status === 'error') { payload.sources[k] = api.sources[k]; payload.sources[k].method = 'google-places-api'; } } }
+    return payload;
+  }
+
+  /* ------------------- paste capture (zero-dependency) ------------------- */
+  function parsePaste(text, key, who) {
+    text = String(text || '');
+    if (!text) return { ok: false, key: key, error: 'empty' };
+    var reviews = [], listing = { name: null, rating: null, reviewCount: null, address: null, url: null };
+    var m, re = /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi, foundLd = false;
+    while ((m = re.exec(text))) {
+      var parsed = null;
+      try { parsed = JSON.parse(m[1]); } catch (e) { parsed = null; }
+      if (!parsed) continue;
+      foundLd = true;
+      absorbLdInto(parsed, listing, reviews, 0);
+    }
+    if (!foundLd) {
+      var agg = text.match(/(\d(?:\.\d)?)\s*(?:out of 5|stars?|\u2605)?[^\n]{0,40}?([\d,]{1,7})\s*(?:patient\s+|Google\s+)?reviews?/i);
+      if (agg) { listing.rating = toNum(agg[1]); listing.reviewCount = toInt(agg[2]); }
+      var blocks = text.split(/\n\s*\n/), i;
+      for (i = 0; i < blocks.length && reviews.length < 60; i++) {
+        var b = blocks[i].replace(/^\s+|\s+$/g, '');
+        if (b.length < 40) continue;
+        if (/<a\s|<\/?(?:div|span|li|script|a)\b/i.test(b)) continue;
+        var rm = b.match(/(\d(?:\.\d)?)\s*(?:out of 5|stars?|\u2605)/i);
+        if (!rm && !/\b(doctor|dr\.?|visit|staff|pain|care|recommend)\b/i.test(b)) continue;
+        reviews.push({ rating: rm ? toNum(rm[1]) : null, text: b.slice(0, 1200), author: '', when: null });
+      }
+    }
+    if (listing.rating == null && !reviews.length) return { ok: false, key: key, error: 'nothing-recognized' };
+    if (!listing.name) listing.name = who.doctor || who.practice || '';
+    return { ok: true, key: key, url: null, method: foundLd ? 'jsonld-paste' : 'text-paste', listing: listing, reviews: reviews };
+  }
+  function absorbLdInto(node, listing, reviews, depth) {
+    if (!node || depth > 6) return;
+    if (Object.prototype.toString.call(node) === '[object Array]') {
+      for (var i = 0; i < node.length; i++) absorbLdInto(node[i], listing, reviews, depth + 1);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    if (node.aggregateRating && listing.rating == null) {
+      listing.rating = toNum(node.aggregateRating.ratingValue);
+      listing.reviewCount = toInt(node.aggregateRating.ratingCount != null ? node.aggregateRating.ratingCount : node.aggregateRating.reviewCount);
+      if (node.name && !listing.name) listing.name = String(node.name);
+    }
+    var revArr = null, t = String(node['@type'] || '').toLowerCase();
+    if (t.indexOf('review') >= 0 && t.indexOf('aggregate') < 0) revArr = [node];
+    else if (node.review) revArr = (Object.prototype.toString.call(node.review) === '[object Array]') ? node.review : [node.review];
+    if (revArr) {
+      for (var j = 0; j < revArr.length && reviews.length < 60; j++) {
+        var rv = revArr[j]; if (!rv || typeof rv !== 'object') continue;
+        var body = rv.reviewBody != null ? rv.reviewBody : rv.description;
+        reviews.push({ rating: rv.reviewRating ? toNum(rv.reviewRating.ratingValue) : null,
+          text: body != null ? String(body).slice(0, 1200) : '',
+          author: rv.author ? String(rv.author.name || rv.author).slice(0, 120) : '', when: rv.datePublished || null });
+      }
+    }
+    if (node['@graph']) absorbLdInto(node['@graph'], listing, reviews, depth + 1);
+  }
+
+  /* ------------------------ extension scrape (optional) ------------------ */
   function extPing(cb) {
     var done = false;
     function onMsg(e) {
@@ -329,87 +449,6 @@
     }, EXT_TIMEOUT);
   }
 
-  /* --------------------------- API fallback ------------------------------ */
-  function apiFind(who, cb) {
-    var u = BK + '/api/reviews/find?doctor=' + enc(who.doctor) + '&practice=' + enc(who.practice) + '&city=' + enc(who.city);
-    try {
-      fetch(u).then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
-        .then(function (j) { cb(j && j.ok ? j : null); }, function () { cb(null); });
-    } catch (e) { cb(null); }
-  }
-  function mergeApi(payload, api) {
-    if (!api) return payload;
-    var i, k;
-    /* API listings/reviews only for sources the scrape did not cover */
-    var have = {};
-    for (i = 0; i < payload.listings.length; i++) have[payload.listings[i].source] = 1;
-    var als = api.listings || [];
-    for (i = 0; i < als.length; i++) { if (!have[als[i].source]) payload.listings.push(als[i]); }
-    var arv = api.reviews || [];
-    for (i = 0; i < arv.length; i++) { if (!have[arv[i].source]) payload.reviews.push(arv[i]); }
-    if (api.sources) { for (k in api.sources) { if (!payload.sources[k] || payload.sources[k].status === 'error') { payload.sources[k] = api.sources[k]; payload.sources[k].method = 'api'; } } }
-    return payload;
-  }
-
-  /* ------------------- paste capture (zero-dependency) ------------------- */
-  function parsePaste(text, key, who) {
-    text = String(text || '');
-    if (!text) return { ok: false, key: key, error: 'empty' };
-    /* 1) page-source paste: extract JSON-LD blocks */
-    var reviews = [], listing = { name: null, rating: null, reviewCount: null, address: null, url: null };
-    var m, re = /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi, foundLd = false;
-    while ((m = re.exec(text))) {
-      var parsed = null;
-      try { parsed = JSON.parse(m[1]); } catch (e) { parsed = null; }
-      if (!parsed) continue;
-      foundLd = true;
-      absorbLdInto(parsed, listing, reviews, 0);
-    }
-    /* 2) plain-text heuristics */
-    if (!foundLd) {
-      var agg = text.match(/(\d(?:\.\d)?)\s*(?:out of 5|stars?|\u2605)?[^\n]{0,40}?([\d,]{1,7})\s*(?:patient\s+|Google\s+)?reviews?/i);
-      if (agg) { listing.rating = toNum(agg[1]); listing.reviewCount = toInt(agg[2]); }
-      var blocks = text.split(/\n\s*\n/), i;
-      for (i = 0; i < blocks.length && reviews.length < 60; i++) {
-        var b = blocks[i].replace(/^\s+|\s+$/g, '');
-        if (b.length < 40) continue;
-        if (/<a\s|<\/?(?:div|span|li|script|a)\b/i.test(b)) continue; /* skip raw HTML/anchor soup */
-        var rm = b.match(/(\d(?:\.\d)?)\s*(?:out of 5|stars?|\u2605)/i);
-        if (!rm && !/\b(doctor|dr\.?|visit|staff|pain|care|recommend)\b/i.test(b)) continue;
-        reviews.push({ rating: rm ? toNum(rm[1]) : null, text: b.slice(0, 1200), author: '', when: null });
-      }
-    }
-    if (listing.rating == null && !reviews.length) return { ok: false, key: key, error: 'nothing-recognized' };
-    if (!listing.name) listing.name = who.doctor || who.practice || '';
-    return { ok: true, key: key, url: null, method: foundLd ? 'jsonld-paste' : 'text-paste', listing: listing, reviews: reviews };
-  }
-  function absorbLdInto(node, listing, reviews, depth) {
-    if (!node || depth > 6) return;
-    if (Object.prototype.toString.call(node) === '[object Array]') {
-      for (var i = 0; i < node.length; i++) absorbLdInto(node[i], listing, reviews, depth + 1);
-      return;
-    }
-    if (typeof node !== 'object') return;
-    if (node.aggregateRating && listing.rating == null) {
-      listing.rating = toNum(node.aggregateRating.ratingValue);
-      listing.reviewCount = toInt(node.aggregateRating.ratingCount != null ? node.aggregateRating.ratingCount : node.aggregateRating.reviewCount);
-      if (node.name && !listing.name) listing.name = String(node.name);
-    }
-    var revArr = null, t = String(node['@type'] || '').toLowerCase();
-    if (t.indexOf('review') >= 0 && t.indexOf('aggregate') < 0) revArr = [node];
-    else if (node.review) revArr = (Object.prototype.toString.call(node.review) === '[object Array]') ? node.review : [node.review];
-    if (revArr) {
-      for (var j = 0; j < revArr.length && reviews.length < 60; j++) {
-        var rv = revArr[j]; if (!rv || typeof rv !== 'object') continue;
-        var body = rv.reviewBody != null ? rv.reviewBody : rv.description;
-        reviews.push({ rating: rv.reviewRating ? toNum(rv.reviewRating.ratingValue) : null,
-          text: body != null ? String(body).slice(0, 1200) : '',
-          author: rv.author ? String(rv.author.name || rv.author).slice(0, 120) : '', when: rv.datePublished || null });
-      }
-    }
-    if (node['@graph']) absorbLdInto(node['@graph'], listing, reviews, depth + 1);
-  }
-
   /* ------------------------------- UI ------------------------------------ */
   var CSS = [
     '#' + CARD_ID + '{border:1px solid #d7e0ef;border-radius:14px;padding:18px;margin:14px 0;background:#fff;font-family:system-ui,Segoe UI,Arial,sans-serif}',
@@ -422,14 +461,22 @@
     '#' + CARD_ID + ' .rsc-doc{background:#e7f6ee;color:#116b3e}',
     '#' + CARD_ID + ' .rsc-prac{background:#e8effc;color:#1c4fa0}',
     '#' + CARD_ID + ' .rsc-unk{background:#f1f2f6;color:#666}',
+    '#' + CARD_ID + ' .rsc-uncf{background:#fff4e5;color:#9a5b00;border:1px solid #ffd699}',
+    '#' + CARD_ID + ' .rsc-ver{background:#e7f6ee;color:#116b3e;border:1px solid #b7e4c9}',
     '#' + CARD_ID + ' .rsc-src{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}',
     '#' + CARD_ID + ' .rsc-chip{border:1px solid #dde4f0;border-radius:999px;padding:4px 10px;font-size:12px}',
     '#' + CARD_ID + ' .rsc-ok{border-color:#9adbb6;background:#effaf3}',
+    '#' + CARD_ID + ' .rsc-warn{border-color:#ffd699;background:#fff8ee}',
     '#' + CARD_ID + ' .rsc-err{border-color:#f0c1c1;background:#fdf1f1}',
     '#' + CARD_ID + ' .rsc-rev{border-top:1px solid #eef1f7;padding:9px 0;font-size:13px}',
+    '#' + CARD_ID + ' .rsc-rev a{font-size:11.5px}',
+    '#' + CARD_ID + ' .rsc-list{border:1px solid #eef1f7;border-radius:10px;padding:9px 11px;margin:7px 0;font-size:13px}',
     '#' + CARD_ID + ' .rsc-btn{cursor:pointer;border:0;border-radius:9px;padding:9px 14px;font-weight:700;font-size:13px}',
     '#' + CARD_ID + ' .rsc-primary{background:linear-gradient(90deg,#19b8a6,#2f6bed);color:#fff}',
     '#' + CARD_ID + ' .rsc-ghost{background:#eef2fa;color:#24406e}',
+    '#' + CARD_ID + ' .rsc-banner{border-radius:10px;padding:9px 12px;font-size:12.5px;margin:8px 0}',
+    '#' + CARD_ID + ' .rsc-banner.warn{background:#fff8ee;border:1px solid #ffd699;color:#8a5300}',
+    '#' + CARD_ID + ' .rsc-banner.info{background:#eef5ff;border:1px solid #cfe0fb;color:#1c4fa0}',
     '#' + CARD_ID + ' textarea{width:100%;min-height:90px;border:1px solid #d7e0ef;border-radius:9px;padding:8px;font-size:12.5px;box-sizing:border-box}'
   ].join('\n');
 
@@ -446,42 +493,78 @@
   function scopeBadge(scope) {
     if (scope === 'doctor') return '<span class="rsc-badge rsc-doc">DOCTOR</span>';
     if (scope === 'practice') return '<span class="rsc-badge rsc-prac">PRACTICE-WIDE</span>';
-    return '<span class="rsc-badge rsc-unk">UNVERIFIED</span>';
+    return '<span class="rsc-badge rsc-unk">UNVERIFIED MATCH</span>';
   }
-  function render(payload, statusLine) {
+  function confBadge(item) {
+    if (item && item.verified) return '<span class="rsc-badge rsc-ver">\u2714 confirmed</span>';
+    return '<span class="rsc-badge rsc-uncf">\u26A0 unconfirmed</span>';
+  }
+  function hostText(u) { try { return String(u).replace(/^https?:\/\//i, '').split('/')[0]; } catch (e) { return 'link'; } }
+
+  function render(payload, statusLine, banner) {
     var card = ensureCard();
     var h = [];
     h.push('<h2>\uD83D\uDD0E Find &amp; pull my reviews \u2014 automatically</h2>');
-    h.push('<div class="rsc-note">Just your name + practice above. MLS finds your profiles on Google, Healthgrades, Vitals, WebMD, RateMDs &amp; Zocdoc and pulls every review \u2014 <b>no API keys, no links to hunt down</b>. A practice rating is never shown as the doctor\u2019s personal rating.</div>');
+    h.push('<div class="rsc-note">Just your name + practice above. MLS finds your profiles on Google, Healthgrades, Vitals, WebMD, RateMDs &amp; Zocdoc and pulls your real reviews \u2014 <b>automatically, no browser extension and no API keys needed</b>. A practice rating is never shown as the doctor\u2019s personal rating, and only <b>confirmed</b> (cited) results count toward your headline rating.</div>');
     h.push('<div style="margin:10px 0"><button class="rsc-btn rsc-primary" id="rscScanBtn">\uD83D\uDD0E Find my profiles &amp; pull reviews</button> ' +
            '<button class="rsc-btn rsc-ghost" id="rscPasteBtn">\u2795 Add a profile link (optional)</button> ' +
            '<span class="rsc-note" id="rscStatus">' + esc(statusLine || '') + '</span></div>');
+
+    if (banner) {
+      h.push('<div class="rsc-banner ' + esc(banner.kind || 'info') + '">' + esc(banner.text) + '</div>');
+    }
+
     if (payload) {
       var d = payload.summary.doctor, p = payload.summary.practice;
       h.push('<div class="rsc-kpis">');
-      h.push('<div class="rsc-kpi"><div>Doctor\u2019s own rating ' + scopeBadge('doctor') + '</div><b>' + (d.rating != null ? d.rating.toFixed(1) + '\u2605' : '\u2014') + '</b><div class="rsc-note">' + (d.reviewCount || 0) + ' reviews \u00B7 ' + d.listings + ' listing(s)</div></div>');
-      h.push('<div class="rsc-kpi"><div>Practice-wide rating ' + scopeBadge('practice') + '</div><b>' + (p.rating != null ? p.rating.toFixed(1) + '\u2605' : '\u2014') + '</b><div class="rsc-note">' + (p.reviewCount || 0) + ' reviews \u00B7 ' + p.listings + ' listing(s) \u2014 reflects the whole office, not the doctor personally</div></div>');
+      h.push('<div class="rsc-kpi"><div>Doctor\u2019s own rating ' + scopeBadge('doctor') + '</div><b>' + (d.rating != null ? d.rating.toFixed(1) + '\u2605' : '\u2014') + '</b><div class="rsc-note">' + (d.reviewCount || 0) + ' reviews \u00B7 ' + d.listings + ' confirmed listing(s)</div></div>');
+      h.push('<div class="rsc-kpi"><div>Practice-wide rating ' + scopeBadge('practice') + '</div><b>' + (p.rating != null ? p.rating.toFixed(1) + '\u2605' : '\u2014') + '</b><div class="rsc-note">' + (p.reviewCount || 0) + ' reviews \u00B7 ' + p.listings + ' confirmed listing(s) \u2014 reflects the whole office, not the doctor personally</div></div>');
       h.push('</div>');
+
+      /* per-source chips */
       h.push('<div class="rsc-src">');
-      var k, srcs = payload.sources;
+      var k, srcs = payload.sources || {};
       for (k in srcs) {
         if (!srcs.hasOwnProperty(k)) continue;
-        var s = srcs[k], ok = s.status === 'scraped' || s.status === 'ok';
-        h.push('<span class="rsc-chip ' + (ok ? 'rsc-ok' : 'rsc-err') + '">' + esc(k) + ': ' + esc(s.status) + (s.method ? ' (' + esc(s.method) + ')' : '') + '</span>');
+        var s = srcs[k], cls = 'rsc-err', label = s.status;
+        if (s.status === 'ok' || s.status === 'scraped') { cls = 'rsc-ok'; label = 'found'; }
+        else if (s.status === 'unconfirmed') { cls = 'rsc-warn'; label = 'unconfirmed'; }
+        else if (s.status === 'not_found' || s.status === 'searched') { cls = 'rsc-err'; label = 'not found'; }
+        h.push('<span class="rsc-chip ' + cls + '">' + esc(k) + ': ' + esc(label) + '</span>');
       }
       h.push('</div>');
-      var revs = payload.reviews.slice(0, 25), i;
+
+      /* confirmed listings with profile links */
+      var lst = (payload.listings || []), i, shownL = 0;
+      var listHtml = '';
+      for (i = 0; i < lst.length && shownL < 12; i++) {
+        var L = lst[i];
+        if (!L.name && !L.url) continue;
+        shownL++;
+        listHtml += '<div class="rsc-list"><b>' + esc(L.name || hostText(L.url)) + '</b> ' + scopeBadge(L.scope) + ' ' + confBadge(L) +
+          ' <span class="rsc-note">' + esc(L.source) + (L.rating != null ? (' \u00B7 ' + L.rating + '\u2605 \u00B7 ' + (L.reviewCount || 0) + ' reviews') : ' \u00B7 no rating shown') + '</span>' +
+          (L.url ? ('<div><a href="' + esc(L.url) + '" target="_blank" rel="noopener">Open profile \u2197 ' + esc(hostText(L.url)) + '</a></div>') : '') + '</div>';
+      }
+      if (listHtml) { h.push('<div style="margin-top:8px;font-weight:700;font-size:13px">Profiles found</div>'); h.push(listHtml); }
+
+      /* reviews with citation links */
+      var revs = (payload.reviews || []).slice(0, 25);
       if (revs.length) {
-        h.push('<div style="margin-top:6px;font-weight:700;font-size:13px">Latest captured reviews (' + payload.reviews.length + ' total)</div>');
+        h.push('<div style="margin-top:10px;font-weight:700;font-size:13px">Representative reviews (' + (payload.reviews || []).length + ' pulled)</div>');
         for (i = 0; i < revs.length; i++) {
           var r = revs[i];
-          h.push('<div class="rsc-rev">' + (r.rating != null ? ('<b>' + r.rating + '\u2605</b> ') : '') + scopeBadge(r.scope) +
-                 ' <span class="rsc-note">' + esc(r.source) + (r.author ? ' \u00B7 ' + esc(r.author) : '') + (r.when ? ' \u00B7 ' + esc(r.when) : '') + '</span>' +
-                 '<div>' + esc(String(r.text || '').slice(0, 420)) + '</div></div>');
+          h.push('<div class="rsc-rev">' + (r.rating != null ? ('<b>' + r.rating + '\u2605</b> ') : '') + scopeBadge(r.scope) + ' ' + confBadge(r) +
+                 ' <span class="rsc-note">' + esc(r.source) + (r.author ? ' \u00B7 ' + esc(r.author) : '') + (r.relativeTime ? ' \u00B7 ' + esc(r.relativeTime) : '') + '</span>' +
+                 '<div>' + esc(String(r.text || '').slice(0, 440)) + '</div>' +
+                 (r.sourceUrl ? ('<a href="' + esc(r.sourceUrl) + '" target="_blank" rel="noopener">source \u2197 ' + esc(hostText(r.sourceUrl)) + '</a>') : '') + '</div>');
         }
+        h.push('<div class="rsc-note" style="margin-top:6px">Only use a review as a public testimonial if it is marked <b>\u2714 confirmed</b> and the source platform + patient allow it.</div>');
       }
-      h.push('<div class="rsc-note" style="margin-top:8px">Captured ' + esc(payload.scrapedAt || '') + ' \u00B7 cached 24h \u00B7 <a href="#" id="rscRescan">Rescan</a></div>');
+
+      var eng = payload.engine === 'openai-web-search' ? 'MLS AI web search' : (payload.engine || 'MLS');
+      h.push('<div class="rsc-note" style="margin-top:8px">Found via ' + esc(eng) + (payload.model ? ' (' + esc(payload.model) + ')' : '') + ' \u00B7 ' + esc(payload.scrapedAt || '') + ' \u00B7 cached 24h \u00B7 <a href="#" id="rscRescan">Rescan</a></div>');
     }
+
     h.push('<div id="rscPasteBox" style="display:none;margin-top:10px">' +
            '<div class="rsc-note"><b>Optional override.</b> MLS finds your profiles on its own \u2014 use this only to add a specific profile it missed, or to capture a page by hand. Paste a profile page (or a directory <i>search-results</i> page and MLS will pick out your profile links).</div>' +
            '<div class="rsc-src" id="rscOpenRow"></div>' +
@@ -491,6 +574,7 @@
     card.innerHTML = h.join('');
     wire(card);
   }
+
   function wire(card) {
     var who = getWho();
     var sb = $('rscScanBtn'); if (sb) sb.onclick = function () { scan(true); };
@@ -512,7 +596,6 @@
     var pg = $('rscPasteGo'); if (pg) pg.onclick = function () {
       var ta = $('rscPasteTa'), note = $('rscPasteNote'), sel = $('rscPasteSite');
       var val = ta ? ta.value : '';
-      /* bare profile URL pasted -> remember it, then auto-scan */
       var trimmed = String(val).replace(/^\s+|\s+$/g, '');
       if (/^https?:\/\/\S+$/.test(trimmed) && trimmed.indexOf('\n') < 0) {
         var added = rememberLinks([{ url: trimmed, key: keyForUrl(trimmed) }]);
@@ -520,17 +603,14 @@
         if (ta) ta.value = ''; scan(true); return;
       }
       var key = sel && sel.value ? sel.value : 'website';
-      /* SEARCH-RESULTS page (>=2 profile links) -> auto-discover, don't parse */
       var found = discoverFromHtml(val, who);
       if (found.length >= 2) {
         rememberLinks(found);
         if (note) note.textContent = 'Found ' + found.length + ' profile link(s) \u2014 pulling reviews\u2026';
         if (ta) ta.value = ''; scan(true); return;
       }
-      /* otherwise treat as a profile/review page */
       var r = parsePaste(val, key, who);
       if (r.ok) { S.perSite[key] = r; finishFromPerSite(who, 'Captured ' + key + '.'); if (ta) ta.value = ''; return; }
-      /* single discovered link fallback */
       if (found.length === 1) {
         rememberLinks(found);
         if (note) note.textContent = 'Found your ' + found[0].key + ' profile \u2014 pulling reviews\u2026';
@@ -541,37 +621,49 @@
   }
 
   /* ------------------------------ scan flow ------------------------------ */
+  /* Manual paste/capture path: build a payload from S.perSite, then merge the
+   * Google Places API for anything not hand-captured. */
   function finishFromPerSite(who, statusLine) {
     var payload = emptyPayload(who), k;
     for (k in S.perSite) { if (S.perSite.hasOwnProperty(k)) absorb(payload, S.perSite[k], who); }
     apiFind(who, function (api) {
-      payload = summarize(mergeApi(payload, api));
+      payload = weightedSummary(mergeApi(payload, api));
+      payload.scrapedAt = nowIso();
       saveCache(payload, who);
       broadcast(payload);
       render(payload, statusLine || 'Done.');
     });
   }
-  function scan(force) {
-    var who = getWho();
-    S.who = who;
-    if (!who.doctor && !who.practice) { render(null, 'Enter the doctor/practice details above first, then scan.'); return; }
-    if (!force) {
-      var cached = loadCache(who);
-      if (cached) { broadcast(cached); render(cached, 'From cache.'); return; }
+
+  /* Deep fallback when the grounded API is unavailable: try the extension if it
+   * is present (silent -- no nag if it is not), else offer the Places rating +
+   * the optional paste tools. */
+  function fallbackDiscovery(who, apiMsg, noExt) {
+    function placesOnly() {
+        /* No (or exhausted) extension: still give them the Google Places rating
+         * if we can, and point at the optional paste tools -- never block. */
+        apiFind(who, function (api) {
+          if (api && ((api.listings && api.listings.length) || (api.reviews && api.reviews.length))) {
+            var payload = weightedSummary(mergeApi(emptyPayload(who), api));
+            payload.engine = 'google-places-api';
+            payload.scrapedAt = nowIso();
+            saveCache(payload, who); broadcast(payload);
+            render(payload, '', { kind: 'info', text: (apiMsg || 'Automatic AI search is unavailable right now.') + ' Showing your verified Google rating \u2014 use \u201C\u2795 Add a profile link\u201D to pull the other sites.' });
+          } else {
+            S.running = false;
+            render(loadCache(who), '', { kind: 'info', text: (apiMsg || 'Automatic AI search is unavailable right now.') + ' Enter your details and use \u201C\u2795 Add a profile link\u201D to pull reviews, or open the sites below.' });
+          }
+          S.running = false;
+        });
     }
-    if (S.running) return;
-    S.running = true;
-    var targets = buildTargets(who);
-    S.targets = targets;
-    var haveLinks = manualLinks().length;
-    render(null, haveLinks ? 'Finding & reading your profiles\u2026' : 'Searching directories for your profiles\u2026');
+    /* If we already tried the extension this scan, don't ping it again (avoids
+     * an infinite retry loop) -- go straight to the Places rating. */
+    if (noExt) { placesOnly(); return; }
     extPing(function (hasExt) {
-      if (!hasExt) {
-        S.running = false;
-        render(loadCache(who), 'MLS Assist isn\u2019t installed \u2014 install it for fully automatic profile-finding, or use \u201C\u2795 Add a profile link\u201D below to pull reviews without it.');
-        return;
-      }
-      render(null, 'MLS is finding your profiles across ' + targets.length + ' directories\u2026 (20\u201390s)');
+      if (!hasExt) { placesOnly(); return; }
+      /* Extension present -> let it try once (optional power path). */
+      var targets = buildTargets(who);
+      render(null, 'MLS Assist is reading your profiles across ' + targets.length + ' directories\u2026 (20\u201390s)');
       extScrape(who, targets, function (prog) {
         var stEl = $('rscStatus');
         if (!stEl || !prog || !prog.key) return;
@@ -583,26 +675,55 @@
           : 'Checking ' + prog.key + '\u2026';
         stEl.textContent = label;
       }, function (resp) {
-        S.running = false;
         var rs = (resp && resp.results) || [], i;
-        if (!rs.length && resp && resp.error === 'timeout') {
-          /* extension present but no scrape support yet -> honest fallback */
-          render(loadCache(who), 'Your MLS Assist needs updating to auto-find profiles \u2014 update the extension, or use \u201C\u2795 Add a profile link\u201D below.');
-          return;
+        if (!rs.length) {
+          /* extension present but returned nothing -> single quiet fallback to Places */
+          fallbackDiscovery(who, apiMsg, true); return;
         }
         for (i = 0; i < rs.length; i++) { S.perSite[rs[i].key] = rs[i]; }
-        finishFromPerSite(who, 'Scan complete.');
+        finishFromPerSite(who, 'Scan complete (via MLS Assist).');
       });
     });
   }
 
+  function scan(force) {
+    var who = getWho();
+    S.who = who;
+    if (!who.doctor && !who.practice) { render(null, 'Enter the doctor/practice details above first, then scan.'); return; }
+    if (!force) {
+      var cached = loadCache(who);
+      if (cached) { broadcast(cached); render(cached, 'From cache.'); return; }
+    }
+    if (S.running) return;
+    S.running = true;
+    render(null, 'MLS is searching the web for your real profiles &amp; reviews\u2026 (this can take 20\u201360s)');
+    autoFind(who, function (res) {
+      if (res.status === 'ok') {
+        S.running = false;
+        var payload = fromAuto(res.payload, who);
+        payload.scrapedAt = res.payload.scrapedAt || nowIso();
+        saveCache(payload, who); broadcast(payload);
+        var banner = null;
+        if (!payload.grounded) banner = { kind: 'warn', text: (payload.apiMessage || 'The AI could not return verifiable web citations this time \u2014 results below are UNCONFIRMED. Try Rescan or add a profile link.') };
+        else if (payload.apiMessage) banner = { kind: 'info', text: payload.apiMessage };
+        render(payload, 'Done.', banner);
+        return;
+      }
+      if (res.status === 'auth') {
+        /* Not signed in -> can't spend AI. Fall back to the public Google rating. */
+        fallbackDiscovery(who, res.message);
+        return;
+      }
+      if (res.status === 'unconfigured') {
+        fallbackDiscovery(who, res.message);
+        return;
+      }
+      /* error/timeout -> fall back cleanly */
+      fallbackDiscovery(who, res.message);
+    });
+  }
+
   /* ------------- MLS Marketing (paid add-on) entry point ---------------- */
-  /* Upgrades review-finder's #repUpsell card into a real "go" that opens the
-   * MLS Marketing console (mls-marketing.html) \u2014 the full activate + subscribe
-   * + settings + review-reply-queue + campaign surface. The card reflects the
-   * console's status (localStorage.mlsMkt.status) and passes the doctor context
-   * along (the console reads mlsRF/mlsRFScrapeCache). All backend hooks the
-   * console needs are flagged in FINAL_REPORT. */
   function mktStatus() { try { var o = JSON.parse(lsGet('mlsMkt') || 'null'); return (o && o.status) || ''; } catch (e) { return ''; } }
   function upgradeMarketing() {
     var card = $('repUpsell');
@@ -618,21 +739,18 @@
   function renderMkt(row) {
     var st = mktStatus();
     if (st === 'active') {
-      row.innerHTML = '<button class="btn green" id="mktGo">\u2699\ufe0f Open MLS Marketing console</button>' +
+      row.innerHTML = '<button class="btn green" id="mktGo">\u2699\uFE0F Open MLS Marketing console</button>' +
         '<span class="note">\u2705 Active \u2014 manage replies, campaigns &amp; settings.</span>';
     } else if (st === 'pending') {
-      row.innerHTML = '<button class="btn green" id="mktGo">\u23f3 Finish activating MLS Marketing</button>' +
+      row.innerHTML = '<button class="btn green" id="mktGo">\u23F3 Finish activating MLS Marketing</button>' +
         '<span class="note">Subscription started \u2014 open the console to finish setup.</span>';
     } else {
-      row.innerHTML = '<button class="btn green" id="mktGo">\ud83d\ude80 Let\u2019s do it \u2014 Start MLS Marketing</button>' +
+      row.innerHTML = '<button class="btn green" id="mktGo">\uD83D\uDE80 Let\u2019s do it \u2014 Start MLS Marketing</button>' +
         '<span class="note">Opens the console: activate, subscribe &amp; set what runs automatically. You approve everything before it publishes.</span>';
     }
     var go = $('mktGo');
     if (go) go.onclick = function () { mktOpen(row); };
   }
-  /* Open the console if it is deployed; otherwise (page held / 404) take the
-   * honest email path and mark the request pending, exactly like the console's
-   * own signed-out fallback. */
   function mktOpen(row) {
     function fallback() {
       try { localStorage.setItem('mlsMkt', JSON.stringify({ status: 'pending', via: 'email', at: new Date().toISOString() })); } catch (e) {}
@@ -650,9 +768,9 @@
   }
 
   /* Neutralize review-finder's stale "add API key on the server / paste links"
-   * framing (Lane D __mlsRepAuto2). Auto-discovery is now the model, so hide the
-   * old #repSources "not connected yet" API-key grid and relabel the manual
-   * link box as an optional override. Reversible (revert() restores it). */
+   * framing (Lane D __mlsRepAuto2). Auto-discovery is the model, so hide the old
+   * #repSources "not connected yet" API-key grid and soften the manual-link
+   * helper text. Reversible (revert() restores it). */
   function neutralizeStaleCopy() {
     try {
       var grid = $('repSources');
@@ -662,8 +780,6 @@
       var ta = $('repLinks');
       if (ta && !ta.getAttribute('data-mls-relabel')) {
         ta.setAttribute('data-mls-relabel', '1');
-        var lab = ta.previousElementSibling;
-        /* soften any nearby "API key / not connected" helper text */
         var host = ta.parentNode;
         if (host) {
           var notes = host.querySelectorAll ? host.querySelectorAll('.note,.hint,small') : [];
@@ -675,6 +791,13 @@
         }
       }
     } catch (e) {}
+    /* Also hide __mlsRepAuto2's duplicate live card so there is ONE reputation
+     * surface (this module) -- the old one still fires /api/reviews/find which
+     * is fine as a data source, but its card is now redundant. */
+    try {
+      var old = $('repLiveCard');
+      if (old && old.style.display !== 'none' && !old.getAttribute('data-mls-hid')) { old.setAttribute('data-mls-hid', '1'); old.style.display = 'none'; }
+    } catch (e) {}
   }
 
   /* ------------------------------ mount ---------------------------------- */
@@ -685,6 +808,9 @@
     else render(null, '');
     var tries = 0;
     var iv = setInterval(function () { neutralizeStaleCopy(); if (upgradeMarketing() || ++tries > 25) clearInterval(iv); }, 800);
+    /* NOTE: we do NOT auto-fire the grounded API on load -- it spends the
+     * practice's OpenAI usage. The user triggers it with the "Find my profiles
+     * & pull reviews" button (or Rescan). Cached results still show instantly. */
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { setTimeout(mount, 600); });
@@ -693,10 +819,12 @@
   window.__mlsRepScrape = {
     version: VER,
     scan: scan,
+    autoFind: autoFind,               /* exposed for tests */
     getData: function () { return loadCache(getWho()); },
     parsePaste: parsePaste,           /* exposed for tests */
     classifyScope: classifyScope,     /* exposed for tests */
     discoverFromHtml: discoverFromHtml, /* exposed for tests */
+    weightedSummary: weightedSummary, /* exposed for tests */
     upgradeMarketing: upgradeMarketing, /* exposed for tests */
     revert: function () {
       try { var c = $(CARD_ID); if (c && c.parentNode) c.parentNode.removeChild(c); } catch (e) {}
