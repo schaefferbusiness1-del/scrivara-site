@@ -9660,14 +9660,11 @@
     });
   }
   function pullTodayProxy() {
-    /* the hero is CSS-hidden by the N+1 silencer, but its function is the real
-       driver — call it directly; fall back to the (hidden) button */
-    if (isFn(window.pullScheduleViaAssist)) { handOff(function () { window.pullScheduleViaAssist(); }, 'Pulling today’s schedule from Athena…'); return; }
-    var btn = null;
-    var list = document.querySelectorAll('button');
-    for (var i = 0; i < list.length; i++) { if (!mine(list[i]) && /pull today.?s patients/i.test((list[i].textContent || '').trim())) { btn = list[i]; break; } }
-    if (btn) handOff(function () { btn.click(); }, 'Pulling today’s schedule from Athena…');
-    else toast('Pull control not found on this build.');
+    /* day-pull text-preview parity (2026-07-08): reuse the SAME month-pull
+       engine (P state + plog readable log + pCounts panel + pullDay) for a
+       single-day range, so the day view shows the exact progress log the
+       month pull already has instead of a bare toast. */
+    startDayPull(false);
   }
 
   /* =======================================================================
@@ -10486,6 +10483,42 @@
     P.running = false; pCounts();
     render(); /* refresh the schedule list with the new rows */
   }
+
+  /* day-pull text-preview parity (2026-07-08): single-day counterpart to
+     startMonthPull() above. Reuses the exact same engine (P state, plog
+     readable log, pCounts panel, pullDay, finishMonthPull) with a one-day
+     range instead of a month range, so the day view renders the identical
+     progress log the month pull already shows. The month pull itself is
+     unchanged. Read-only toward Athena. */
+  function startDayPull(retryOnly) {
+    if (P && P.running) return;
+    var today = todayLocal();
+    var range = { ym: null, from: today, to: today, keys: [today], label: 'Today' };
+    var provider = activeProvider() || 'all';
+    if (!retryOnly || !P) { P = freshPull(range, provider); }
+    else { var redo = P.failedDays.slice(); if (!redo.length) return; redo.forEach(function (k) { delete P.dayStatus[k]; }); P.failedDays = []; P.keysToRun = redo; }
+    if (!signedIn()) { pSet('ez3PullNow', 'Sign in to MLS first.'); pSet('ez3PullNow2', 'The pull saves to your MLS account.'); plog('Not signed in — stopped before touching Athena.', 'err'); pCounts(); return; }
+    P.running = true; P.cancelled = false;
+    pSet('ez3PullNow', 'Starting…'); pSet('ez3PullNow2', ''); pCounts();
+    plog('Pull target: ' + range.label + ' · provider: ' + (provider === 'all' ? 'ALL (each row tagged as scheduled)' : provider));
+    loadExistingKeys().then(function () {
+      return pullPrecheck();
+    }).then(function (pc) {
+      if (!pc.ok) { P.running = false; pCounts(); return; }
+      P.extNav = !!pc.extNav;
+      plog(P.extNav ? 'Extension date navigation available — running hands-free.' : 'No hands-free date nav (older extension) — follow mode: move Athena day by day as prompted.', P.extNav ? 'ok' : '');
+      pSet('ez3PullNow', 'Pulling ' + range.label);
+      var chain = Promise.resolve();
+      P.keysToRun.forEach(function (dayKey) {
+        chain = chain.then(function () {
+          if (P.cancelled) return;
+          return pullDay(dayKey).then(function () { pCounts(); return new Promise(function (res) { setTimeout(res, 1100); }); });
+        });
+      });
+      return chain.then(finishMonthPull);
+    }).then(null, function (e) { plog('Unexpected error: ' + String((e && e.message) || e), 'err'); P.running = false; pCounts(); });
+  }
+
 
   /* =======================================================================
    *  staff prep mode
@@ -23596,7 +23629,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b101';
+  var MLS_APP_BUILD='2026-07-08-b102';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -29792,7 +29825,7 @@
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
 
 /* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=b91d';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=b102a';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: mls-template-stdline (reusable standard line for Templates tab) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');document.head.appendChild(s);}catch(e){}})();
