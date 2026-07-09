@@ -1,4 +1,9 @@
 /* feat_comp_report.js  ->  window.__mlsComp   (Monthly Pay / Compensation Report)
+ * v1.1.0 (2026-07-08) -- collections now priced by the grounded backend
+ * estimator (POST /api/payreport/estimate: real CPT/E&M codes -> CMS fee
+ * schedule waterfall) instead of an unconstrained raw-LLM dollar guess.
+ * Everything else (patient counts, days worked, reconciliation math, Excel
+ * export, manual override boxes) is UNCHANGED from v1.0.0.
  *
  * WHAT: One-click monthly compensation reconciliation, modeled on the practice's
  * manual Excel report (per-provider patient counts AM/PM, half-day credits,
@@ -7,10 +12,14 @@
  *
  * DATA SOURCES (honest, clearly labeled):
  *   - Patient counts / days worked: the practice's own backend appointments
- *     (GET /api/appointments?from&to) — whatever athena pulls have imported.
- *   - Collections: AI ESTIMATE via /api/complete (typical reimbursement per
- *     visit type), ALWAYS labeled "AI estimate", with a manual override field
- *     per provider for the real posted numbers. Never presented as actual.
+ *     (GET /api/appointments?from&to)  -  whatever athena pulls have imported.
+ *   - Collections: an ESTIMATE via POST /api/payreport/estimate  -  priced from
+ *     (in order) the practice's own fee overrides, real billing codes on the
+ *     matching MLS visit record, the note's own est_charge, a deterministic
+ *     keyword-to-CPT-bundle match, or (only for leftovers) one AI call that
+ *     may pick a bundle from a fixed table but never invents a dollar figure.
+ *     ALWAYS labeled an estimate, with a manual override field per provider
+ *     for the real posted numbers. Never presented as actual.
  *   - Rates/overhead/MRI: user-editable config, persisted in localStorage.
  *
  * SAFETY: read-only everywhere. Never touches athenaOne, never writes
@@ -55,26 +64,12 @@
   function aggregate(resp) {
     var doctorName = {};
     (resp.doctors || []).forEach(function (d) { if (d && d.id != null) doctorName[String(d.id)] = d.name || ""; });
-    /* the app\u0027s own calendar (schedule pulls) carries the REAL provider per visit\n       even when the backend row has none -- prefer it (match by id, then name+date) */
-    var calProv = {};
-    safe(function () {
-      (window._calAppts || []).forEach(function (a) {
-        if (!a) return;
-        var pp = String(a.provider || a.provider_raw || "").trim();
-        if (!pp) return;
-        if (a.id != null) calProv["#" + a.id] = pp;
-        var dd = String(a.appt_date || a.day_local || "").slice(0, 10);
-        var nn = String(a.name || "").trim().toLowerCase().replace(/\s+/g, " ");
-        if (dd && nn) calProv[nn + "|" + dd] = pp;
-      });
-    });
     var provs = {}; // provider -> { days: {date:{am,pm,unk}}, visits:[{date,reason}] }
     (resp.appointments || []).forEach(function (x) {
       if (!x || x.status === "cancelled" || x.status === "no_show") return;
+      var p = String(x.provider_name || doctorName[String(x.doctor_user_id)] || "Unassigned").trim() || "Unassigned";
       var d = String(x.appt_date || (x.start_at || "").slice(0, 10) || "").slice(0, 10);
       if (!d) return;
-      var nmKey = String(x.name || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + d;
-      var p = String(calProv["#" + x.id] || calProv[nmKey] || x.provider_name || doctorName[String(x.doctor_user_id)] || "Unassigned").trim() || "Unassigned";
       var pr = provs[p] || (provs[p] = { days: {}, visits: [] });
       var day = pr.days[d] || (pr.days[d] = { am: 0, pm: 0, unk: 0 });
       var h = nyHour(x.start_at);
@@ -97,44 +92,29 @@
     return { rows: rows, totals: [tAm, tPm, tAll], halves: halves, days: creditTotal };
   }
 
-  /* ---------------- AI collections estimate -------------------------------- */
+  /* ---------------- collections estimate (grounded backend) ---------------- */
+  // v1.1.0: replaces the old raw-/api/complete dollar guess with the real
+  // CPT/E&M-code fee-schedule waterfall at POST /api/payreport/estimate.
+  // provs is only used here to build the byProv map for the callers below;
+  // the server does its own independent pricing pass over the same month.
   function estimateCollections(provs, ym) {
-    var kinds = {};
-    Object.keys(provs).forEach(function (p) {
-      provs[p].visits.forEach(function (v) {
-        var k = (v.reason || "office visit").toLowerCase().trim() || "office visit";
-        kinds[k] = (kinds[k] || 0) + 1;
-      });
-    });
-    var list = Object.keys(kinds).slice(0, 60);
-    if (!list.length) return Promise.resolve({ fees: {}, byProv: {}, model: "" });
-    var cacheKey = "mlsCompFees_" + ym + "_" + list.length;
-    var cached = safe(function () { return JSON.parse(localStorage.getItem(cacheKey) || "null"); }, null);
-    var feeP = cached ? Promise.resolve(cached) : fetch(bkBase() + "/api/complete", {
+    var t = bkToken(); if (!t) return Promise.reject(new Error("Not signed in to MLS."));
+    return fetch(bkBase() + "/api/payreport/estimate", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + bkToken() },
-      body: JSON.stringify({
-        system: "You are a US medical billing analyst for an interventional spine/pain (PM&R) practice. Reply with STRICT JSON only, no prose.",
-        user: "For each visit type below, give the typical TOTAL insurance reimbursement in USD (blended commercial/Medicare, national average, professional fee actually collected) for one such encounter. JSON object mapping the exact visit-type string to a number. Visit types:\n" + JSON.stringify(list)
-      })
-    }).then(function (r) { if (!r.ok) throw new Error("AI estimate failed (" + r.status + ")"); return r.json(); })
-      .then(function (j) {
-        var txt = String(j.content || "").replace(/^```(json)?|```$/gm, "").trim();
-        var fees = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
-        safe(function () { localStorage.setItem(cacheKey, JSON.stringify(fees)); });
-        return fees;
-      });
-    return feeP.then(function (fees) {
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
+      body: JSON.stringify({ month: ym })
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || !j || j.ok === false) throw new Error((j && (j.message || j.error)) || ("Estimate failed (" + r.status + ")"));
+        return j;
+      }, function () { throw new Error("Estimate failed (" + r.status + ")"); });
+    }).then(function (j) {
       var byProv = {};
       Object.keys(provs).forEach(function (p) {
-        var sum = 0;
-        provs[p].visits.forEach(function (v) {
-          var k = (v.reason || "office visit").toLowerCase().trim() || "office visit";
-          sum += num(fees[k], 100); // unknown type -> conservative $100
-        });
-        byProv[p] = Math.round(sum * 100) / 100;
+        var pr = j.byProvider && j.byProvider[p];
+        byProv[p] = pr ? pr.total : 0;
       });
-      return { fees: fees, byProv: byProv };
+      return { byProv: byProv, assumptions: j.assumptions || {}, total: j.totalEstimatedCollections };
     });
   }
 
@@ -178,11 +158,11 @@
     o.innerHTML =
       '<div id="mlsCompPanel">' +
       '<h2>Monthly Pay Report</h2>' +
-      '<div class="mlsCompNote">Patient counts and days come from the appointments MLS has pulled from athenaOne. Collections are an <b>AI estimate</b> unless you type the real posted number in the override boxes. Nothing here writes to athena.</div>' +
+      '<div class="mlsCompNote">Patient counts and days come from the appointments MLS has pulled from athenaOne. Collections are an <b>estimate</b> (real billing codes + CMS fee schedule when available, unless you type the real posted number in the override boxes). Nothing here writes to athena.</div>' +
       '<div class="mlsCompBar">' +
       '<label>Month <input type="month" id="mlsCompMonth" value="' + defaultMonth() + '"></label>' +
       '<button id="mlsCompBuild">Build report</button>' +
-      '<button id="mlsCompEst" class="sec" disabled>AI-estimate collections</button>' +
+      '<button id="mlsCompEst" class="sec" disabled>Estimate collections</button>' +
       '<button id="mlsCompXlsx" class="sec" disabled>Download Excel</button>' +
       '<button id="mlsCompClose" class="sec">Close</button>' +
       '</div>' +
@@ -247,7 +227,7 @@
     h += '<h3>Settings (saved on this device)</h3><div class="mlsCompCfg">';
     r.names.forEach(function (p) {
       h += '<label>' + esc(p) + ' $/day <input data-rate="' + esc(p) + '" value="' + r.perProv[p].rate + '"></label>';
-      h += '<label>' + esc(p) + ' actual collections <input data-coll="' + esc(p) + '" placeholder="(blank = AI est.)" value="' + esc(cfg.coll[p] == null ? "" : cfg.coll[p]) + '"></label>';
+      h += '<label>' + esc(p) + ' actual collections <input data-coll="' + esc(p) + '" placeholder="(blank = estimate)" value="' + esc(cfg.coll[p] == null ? "" : cfg.coll[p]) + '"></label>';
     });
     h += '<label>less MRI <input data-k="mri" value="' + num(cfg.mri, 0) + '"></label>';
     h += '<label>less overhead <input data-k="overhead" value="' + num(cfg.overhead, 0) + '"></label></div>';
@@ -255,9 +235,9 @@
     h += '<h3>Reconciliation — ' + esc(S.ym) + '</h3><table class="mlsCompR">';
     r.names.forEach(function (p) {
       var pp = r.perProv[p];
-      h += '<tr><td>' + esc(p) + (pp.coll === null ? ' <span class="mlsCompNote">(no collections yet — run AI estimate or type actual)</span>' : (S.est && (cfg.coll[p] == null || cfg.coll[p] === "") ? ' <span class="mlsCompNote">(AI estimate)</span>' : '')) + '</td><td>' + (pp.coll === null ? "—" : money(pp.coll)) + '</td></tr>';
+      h += '<tr><td>' + esc(p) + (pp.coll === null ? ' <span class="mlsCompNote">(no collections yet — run Estimate or type actual)</span>' : (S.est && (cfg.coll[p] == null || cfg.coll[p] === "") ? ' <span class="mlsCompNote">(estimate)</span>' : '')) + '</td><td>' + (pp.coll === null ? "—" : money(pp.coll)) + '</td></tr>';
     });
-    h += '<tr class="tot"><td><b>Total collections' + (r.anyEstimate ? " (incl. AI estimates)" : "") + '</b></td><td><b>' + money(r.collTotal) + '</b></td></tr>';
+    h += '<tr class="tot"><td><b>Total collections' + (r.anyEstimate ? " (incl. estimates)" : "") + '</b></td><td><b>' + money(r.collTotal) + '</b></td></tr>';
     h += '<tr class="neg"><td>less MRI</td><td>(' + money(r.mri) + ')</td></tr>';
     h += '<tr><td></td><td>' + money(r.afterMri) + '</td></tr>';
     h += '<tr class="neg"><td>less daily rate (' + r.names.map(function (p) { return esc(p.split(",")[0]) + " " + r.perProv[p].agg.days + "d@" + money(r.perProv[p].rate); }).join(" + ") + ')</td><td>(' + money(r.rateTotal) + ')</td></tr>';
@@ -299,11 +279,21 @@
 
   function runEstimate() {
     if (!S.provs) return;
-    setStatus("Asking the AI billing model for typical reimbursement per visit type ...");
+    setStatus("Pricing " + S.ym + " from real billing codes + the CMS fee schedule ...");
     estimateCollections(S.provs, S.ym).then(function (est) {
-      S.est = est; setStatus("AI estimate done (" + Object.keys(est.fees).length + " visit types priced). Estimates are approximations — type real posted collections in the override boxes to replace them.");
+      S.est = est;
+      var a = est.assumptions || {};
+      var parts = [];
+      if (a.pricedFromRealCodes) parts.push(a.pricedFromRealCodes + " from real billing codes");
+      if (a.pricedFromEstCharge) parts.push(a.pricedFromEstCharge + " from note estimates");
+      if (a.pricedByKeyword) parts.push(a.pricedByKeyword + " by keyword match");
+      if (a.pricedBySavedMap) parts.push(a.pricedBySavedMap + " by saved mapping");
+      if (a.pricedByAi) parts.push(a.pricedByAi + " AI-classified");
+      if (a.defaultedToFollowup) parts.push(a.defaultedToFollowup + " defaulted to follow-up");
+      var breakdown = parts.length ? (": " + parts.join(", ")) : "";
+      setStatus("Estimate done (" + (a.appointmentsPriced || 0) + " visits priced" + breakdown + "). Type real posted collections in the override boxes to replace any provider's estimate.");
       render();
-    }).catch(function (e) { setStatus("AI estimate failed: " + e.message); });
+    }).catch(function (e) { setStatus("Estimate failed: " + e.message); });
   }
 
   /* ---------------- Excel export ------------------------------------------- */
@@ -321,8 +311,8 @@
     withXLSX(function (X) {
       var wb = X.utils.book_new();
       var rec = [["Monthly Pay Report", S.ym], []];
-      r.names.forEach(function (p) { rec.push([p + ((S.est && (loadCfg().coll || {})[p] == null) ? " (AI estimate)" : ""), r.perProv[p].coll == null ? "" : r.perProv[p].coll]); });
-      rec.push(["Total collections" + (r.anyEstimate ? " (incl. AI estimates)" : ""), r.collTotal]);
+      r.names.forEach(function (p) { rec.push([p + ((S.est && (loadCfg().coll || {})[p] == null) ? " (estimate)" : ""), r.perProv[p].coll == null ? "" : r.perProv[p].coll]); });
+      rec.push(["Total collections" + (r.anyEstimate ? " (incl. estimates)" : ""), r.collTotal]);
       rec.push(["less MRI", -r.mri]); rec.push(["", r.afterMri]);
       rec.push(["less daily rate", -r.rateTotal]); rec.push(["less overhead", -r.overhead]);
       rec.push(["Total Bonus", r.bonus]); rec.push(["Total Pay", r.totalPay]);
@@ -341,7 +331,9 @@
     });
   }
 
-  /* ---------------- launch button ------------------------------------------ */
+  /* ---------------- launch button (legacy floater; hidden by ui-cleanup-v1
+     on the app page today -- kept intact so window.__mlsComp.open() and any
+     direct #mlsCompBtn.click() fallback still resolve) ---------------------- */
   function addButton() {
     if (document.getElementById("mlsCompBtn")) return;
     css();
@@ -360,6 +352,5 @@
   }, 1000);
   document.addEventListener("visibilitychange", function () { safe(addButton); });
 
-  window.__mlsComp = { open: open, close: close, version: "1.0.0" };
+  window.__mlsComp = { open: open, close: close, version: "1.1.0" };
 })();
-
