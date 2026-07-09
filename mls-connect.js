@@ -1,3 +1,1090 @@
+/* =============================================================================
+ * __mlsGuidedTour v1.0.0   (onboarding - items 1-3)
+ * -----------------------------------------------------------------------------
+ * A premium, INTERACTIVE guided walkthrough of MLS Scribe that REPLACES the old
+ * static "How to use MLS" guide (__mlsHowToV2). Prepend ABOVE the live
+ * mls-connect.js bundle (real \n\n join), like every other guarded module here.
+ *
+ * WHAT THIS SHIPS (the four things the brief asked for, items 1-3):
+ *   1. AUTO-LAUNCH FOR NEW USERS. The first time a user reaches the signed-in
+ *      app (per-account flag), a step-by-step spotlight tour opens by itself
+ *      after the Visit tab settles. It is friendly, skippable, and remembers
+ *      completion ("don't show again" is implicit: finishing OR skipping sets
+ *      the done flag, so it never nags again). Re-openable forever from the menu
+ *      or the top-bar Help.
+ *   2. ON-DEMAND FROM THE MENU. One clean row "Guided tour / How-to"
+ *      in the top-bar Menu (#mlsTbMenuPanel) launches the SAME tour any time.
+ *      The top-bar "Help" (#nav_help) opens it too (capture-phase intercept).
+ *   3. REMOVES THE OLD STATIC HOW-TO. This module PRE-SEEDS window.__mlsHowToV2
+ *      (its IIFE bails on `if (window.__mlsHowToV2) return;`, verified at the
+ *      live bundle) so the old static-text modal never builds, never adds its
+ *      own menu row, and never installs its own #nav_help intercept. This
+ *      module then takes over every responsibility __mlsHowToV2 used to own:
+ *      the ONE menu row, the Help intercept, hiding the stale legacy tour rows
+ *      (#mlsTourMenuItem / #mlsTourMenuItemV2 / #mlsB39MenuItem / #mlsUC1HowTo /
+ *      #mlsHowTo2Row), and preserving the "Ask MLS a question" real-AI path
+ *      (window.__mlsG33_origHelp, else window.openMlsHelp).
+ *
+ * WHY THE MENU "BREAKS" TODAY (and how this fixes it):
+ *   __mlsHowToV2's menu row closed the panel with `panel.style.display='none'`
+ *   (an INLINE style). The menu is shown via a `.open` CLASS. An inline
+ *   display:none outranks the class rule, so the NEXT click of the menu button
+ *   adds `.open` but the panel stays inline-hidden -> the menu looks dead/stuck.
+ *   Removing that guide (item 3) is what the brief says should "eliminate that".
+ *   This module's own menu row closes the panel the HEALTHY way -- remove the
+ *   `.open` class AND clear any inline display (set to '') -- so it can never
+ *   wedge. (Fully compatible with easy-round2's __mlsMenuToggleFix, which
+ *   independently hardens the toggle button; both simply clear stale inline
+ *   display, so they agree.)
+ *
+ * DESIGN NOTES (authored blind against live b82 sources; a verify/go-live
+ * session live-tests):
+ *   - GRACEFUL, NEVER-BROKEN SPOTLIGHT. Each step lists candidate target
+ *     selectors. The first one that EXISTS AND IS VISIBLE gets a spotlight
+ *     (dimmed page + bright ring + a callout bubble placed beside it, target
+ *     scrolled into view). If none resolve (e.g. the note card / Send button
+ *     don't exist until a note has been generated, or the v3 layout differs),
+ *     that step degrades to a CENTERED callout card -- so the tour is always
+ *     clear and never points at nothing. This is the exact failure the old
+ *     spotlight tours had (they aimed at hero controls the silencer hid); this
+ *     design is immune to it.
+ *   - SAFETY: the tour is explanatory only. A transparent full-screen catch
+ *     layer swallows page clicks WHILE THE TOUR IS OPEN, so a user stepping
+ *     through can NEVER accidentally start a recording, generate, sign, or push
+ *     to Athena. Navigation is via the card buttons / arrow keys / Esc only.
+ *     No network, no Athena interaction, no PHI read/stored/logged.
+ *   - Targets the top nav tabs + v3 workspace CLASSES (.ez3-big / .ez3-modeseg)
+ *     + engine ids by fallback, so it survives id churn between v3 variants.
+ *
+ * Kill switch / revert: window.__mlsGuidedTour_revert()
+ * Re-arm the auto-launch (testing): window.__mlsGuidedTour.reset()
+ * Open programmatically: window.__mlsGuidedTour.open()
+ *
+ * ASCII-only source (emoji via \u escapes). ES5 only. Idempotent.
+ * ============================================================================= */
+(function () {
+  "use strict";
+
+  /* --- item 3: neutralize the old static how-to BEFORE its IIFE runs.
+     Its first line is `if (window.__mlsHowToV2) return;`. Pre-seeding a truthy
+     marker makes it bail entirely (no modal, no menu row, no #nav_help hook). */
+  if (!window.__mlsHowToV2) {
+    window.__mlsHowToV2 = { v: "superseded-by-guided-tour", superseded: true };
+  }
+
+  if (window.__mlsGuidedTour) { return; }
+
+  var api = { ver: "1.0.0", idx: -1, open: openTour, reset: resetSeen, opens: 0 };
+  window.__mlsGuidedTour = api;
+
+  /* ---------- tiny helpers ---------- */
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
+  function qs(sel) { try { return document.querySelector(sel); } catch (e) { return null; } }
+
+  var Z = 2147483600;                 /* above app modals (v2 used 2147483400) */
+  var SEEN_KEY = "mls_guided_tour_done";
+  var SESSION_KEY = "mls_gt_shown";
+
+  function acctKey() {
+    var email = safe(function () { return localStorage.getItem("sf_session"); }, "") || "";
+    return SEEN_KEY + (email ? ("::" + email) : "");
+  }
+  function isDone() { return safe(function () { return localStorage.getItem(acctKey()) === "1"; }, false); }
+  function markDone() { safe(function () { localStorage.setItem(acctKey(), "1"); }); }
+  function resetSeen() {
+    safe(function () { localStorage.removeItem(acctKey()); });
+    safe(function () { localStorage.removeItem(SEEN_KEY); });
+    safe(function () { sessionStorage.removeItem(SESSION_KEY); });
+    return "guided tour re-armed";
+  }
+
+  /* ============================ TOUR CONTENT =============================== */
+  /* Each step: { key, title, body, badge?, targets?[], centered? }
+     targets are tried in order; first visible one is spotlighted, else the
+     step shows as a centered card. Copy mirrors the real, current flow and the
+     app's safety posture (nothing is filed/signed/ordered without your OK on
+     Athena's own screen). Title + body are rendered as HTML (so & is &amp;). */
+  var STEPS = [
+    {
+      key: "welcome",
+      centered: true,
+      title: "\ud83d\udc4b Welcome to MLS Scribe",
+      body: "Here is the whole visit in about 60 seconds. MLS drafts \u2014 you are always the final word. " +
+            "You can skip anytime, and reopen this tour whenever you like from the <b>Menu</b> or the <b>\u2753 Help</b> button.",
+      badge: "Quick tour"
+    },
+    {
+      key: "day",
+      targets: ["#nav_visit"],
+      title: "Your day loads itself",
+      body: "The <b>Visit</b> tab is where visits happen. Open it and MLS pulls <b>today\u2019s patients</b> " +
+            "from Athena automatically \u2014 the header shows who is <b>now</b> and who is <b>next</b>, scoped to you " +
+            "by the doctor picker.",
+      badge: "\ud83c\udf99 Visit tab"
+    },
+    {
+      key: "record",
+      targets: [".ez3-big", "#mlsEz3", "#captureBtn", "#heroRecBtn"],
+      title: "Record &amp; generate \u2014 one big button",
+      body: "The big button is already loaded for whoever is up now: <b>Start Recording \u2014 [patient]</b>. " +
+            "Tap it and have your normal visit \u2014 just talk. When you\u2019re done, the same button becomes " +
+            "<b>\u23f9 Stop &amp; Generate Note</b> and MLS writes the full note right there. " +
+            "Identity guards lock everything to that patient; <b>Wrong patient? Switch</b> is right beside it.",
+      badge: "One tap"
+    },
+    {
+      key: "review",
+      targets: ["#noteCard", "#noteBox", ".mlsf-note"],
+      title: "Review the note",
+      body: "Read the draft. <b>\u270f\ufe0f Edit</b> to change anything, <b>\ud83d\udd04 Regenerate</b> for a fresh draft, " +
+            "then <b>\u2714 Review &amp; Sign</b> \u2014 signing saves it in MLS only; it never signs anything in Athena. " +
+            "One tap away: <b>\ud83d\udce4 Send to patient</b>, <b>\ud83e\udd16 Ask Copilot</b>, <b>\ud83d\udca1 Recommendations</b>.",
+      badge: "You decide"
+    },
+    {
+      key: "athena",
+      targets: ["#pushAllEmrBtn", "#emrBtn"],
+      title: "Send to Athena",
+      body: "Tap <b>\ud83d\ude80 Send to Athena</b>. Athena\u2019s <b>own review &amp; confirm screen</b> opens \u2014 nothing is " +
+            "written to the chart until you confirm it there, and <b>orders are never sent</b>. Then move on to the next patient.",
+      badge: "\ud83d\udd12 Safe by design"
+    },
+    {
+      key: "modes",
+      targets: [".ez3-modeseg", "#mlsEz3"],
+      title: "Doctor room | Staff prep",
+      body: "Use the pill at the top of the Visit tab. <b>Doctor room</b> (default) is the flow you just saw. " +
+            "<b>Staff prep</b> is for the front desk: pull <b>today\u2019s</b> schedule or a whole <b>month</b> " +
+            "(one doctor or all), plus <b>\u2b50 Reviews &amp; reputation</b> and <b>\ud83d\udc89 Prep op notes</b> ahead of time. " +
+            "Prepped drafts are never sent to Athena automatically.",
+      badge: "\ud83d\uddc2 Two modes"
+    },
+    {
+      key: "templates",
+      targets: ["header .tools button[onclick*='openTemplates']", "button[onclick*='openTemplates']", "#templatesBtn"],
+      title: "Templates",
+      body: "Upload your note and op-note forms here. The health card shows each template\u2019s status, re-processes " +
+            "older ones with the current AI, and a matching tester shows which template each visit type will use.",
+      badge: "\ud83d\udcc4 Top bar"
+    },
+    {
+      key: "history",
+      targets: ["#nav_history"],
+      title: "History",
+      body: "Every note and draft, organized per patient. Reopen, copy, or re-send anything from here.",
+      badge: "\ud83d\udcda History"
+    },
+    {
+      key: "tools",
+      targets: ["#nav_studio", "#nav_help"],
+      title: "Tools, reputation &amp; help",
+      body: "<b>\u2728 AI Studio</b> holds Copilot and your custom widgets. <b>Reviews &amp; reputation</b> live in Staff prep " +
+            "and on your Reviews page. And this tour is always one tap away \u2014 <b>\u2753 Help</b> in the top bar, or " +
+            "<b>Guided tour / How-to</b> in the Menu. That\u2019s it \u2014 you\u2019re ready.",
+      badge: "\ud83c\udf89 You\u2019re set"
+    }
+  ];
+
+  /* ============================== STYLES ================================== */
+  function ensureCss() {
+    if ($("mlsGtCss")) { return; }
+    var s = document.createElement("style");
+    s.id = "mlsGtCss";
+    s.textContent = [
+      /* menu row */
+      "#mlsGtMenuRow{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;padding:10px 12px;border-radius:8px;background:transparent;border:0;color:#eaf2ff;font:600 14px system-ui;cursor:pointer;box-sizing:border-box}",
+      "#mlsGtMenuRow:hover{background:rgba(255,255,255,.08)}",
+      /* retire the stale legacy tour/guide rows (reversible) */
+      "#mlsTourMenuItem,#mlsTourMenuItemV2,#mlsB39MenuItem,#mlsUC1HowTo,#mlsHowTo2Row{display:none!important}",
+      /* click-catch: swallows page clicks while the tour is open (safety) */
+      "#mlsGtCatch{position:fixed;inset:0;z-index:" + Z + ";background:transparent;display:none}",
+      "#mlsGtCatch.on{display:block}",
+      /* centered backdrop (for steps with no visible target) */
+      "#mlsGtBackdrop{position:fixed;inset:0;z-index:" + (Z + 1) + ";background:rgba(6,14,30,.62);display:none}",
+      "#mlsGtBackdrop.on{display:block}",
+      /* spotlight ring: transparent hole + huge shadow dims the rest of the page */
+      "#mlsGtRing{position:fixed;z-index:" + (Z + 1) + ";border-radius:14px;pointer-events:none;display:none;" +
+        "box-shadow:0 0 0 3px rgba(96,148,255,.95),0 0 0 9999px rgba(6,14,30,.62);" +
+        "transition:left .26s cubic-bezier(.4,0,.2,1),top .26s cubic-bezier(.4,0,.2,1),width .26s cubic-bezier(.4,0,.2,1),height .26s cubic-bezier(.4,0,.2,1)}",
+      "#mlsGtRing.on{display:block}",
+      /* callout card */
+      "#mlsGtCard{position:fixed;z-index:" + (Z + 2) + ";width:340px;max-width:calc(100vw - 20px);display:none;" +
+        "background:linear-gradient(180deg,#ffffff,#f5f9ff);border:1px solid #d8e4f6;border-radius:16px;" +
+        "box-shadow:0 26px 70px rgba(8,18,40,.5);padding:18px 18px 15px;color:#16233a;" +
+        "font:14px/1.55 'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}",
+      "#mlsGtCard.on{display:block;animation:mlsGtIn .22s ease}",
+      "@keyframes mlsGtIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}",
+      "#mlsGtCard .gt-top{display:flex;align-items:center;gap:8px;margin:0 0 8px}",
+      "#mlsGtCard .gt-badge{font-size:11px;font-weight:800;letter-spacing:.2px;color:#1c3a6e;background:#e8f0fd;" +
+        "border:1px solid #d3e0f4;border-radius:999px;padding:3px 10px;white-space:nowrap}",
+      "#mlsGtCard .gt-count{margin-left:auto;font-size:11.5px;font-weight:700;color:#7488a3}",
+      "#mlsGtCard .gt-x{background:#eef3fb;border:0;border-radius:8px;width:26px;height:26px;font-size:15px;" +
+        "color:#3d5168;cursor:pointer;line-height:1;flex:0 0 auto}",
+      "#mlsGtCard h3{margin:2px 0 6px;font-size:17px;line-height:1.25;color:#0f2540;font-weight:800}",
+      "#mlsGtCard .gt-body{font-size:13px;color:#3a4b63;line-height:1.55}",
+      "#mlsGtCard .gt-body b{color:#0f2540;font-weight:700}",
+      "#mlsGtCard .gt-dots{display:flex;gap:6px;flex-wrap:wrap;margin:13px 0 12px}",
+      "#mlsGtCard .gt-dot{width:7px;height:7px;border-radius:50%;background:#cfdcef;transition:background .2s,transform .2s;cursor:pointer}",
+      "#mlsGtCard .gt-dot.on{background:linear-gradient(135deg,#2f6bed,#2257cf);transform:scale(1.25)}",
+      "#mlsGtCard .gt-foot{display:flex;align-items:center;gap:9px}",
+      "#mlsGtCard .gt-skip{background:transparent;border:0;color:#7488a3;font:600 12.5px system-ui;cursor:pointer;padding:6px 2px}",
+      "#mlsGtCard .gt-skip:hover{color:#4a5b72;text-decoration:underline}",
+      "#mlsGtCard .gt-sp{flex:1 1 auto}",
+      "#mlsGtCard .gt-btn{border:0;border-radius:10px;padding:9px 15px;font:800 13px system-ui;cursor:pointer}",
+      "#mlsGtCard .gt-back{background:#eef3fb;color:#2c405c}",
+      "#mlsGtCard .gt-back:hover{background:#e2ebf8}",
+      "#mlsGtCard .gt-next{background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;box-shadow:0 6px 18px rgba(34,87,207,.35)}",
+      "#mlsGtCard .gt-next:hover{filter:brightness(1.05)}",
+      "@media (max-width:520px){#mlsGtCard{width:calc(100vw - 20px)}}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  /* ============================== OVERLAY ================================= */
+  var els = {};
+  function ensureOverlay() {
+    if ($("mlsGtCard")) {
+      els.catchLayer = $("mlsGtCatch"); els.backdrop = $("mlsGtBackdrop");
+      els.ring = $("mlsGtRing"); els.card = $("mlsGtCard");
+      return;
+    }
+    var mk = function (id) { var d = document.createElement("div"); d.id = id; return d; };
+    els.catchLayer = mk("mlsGtCatch");
+    els.backdrop = mk("mlsGtBackdrop");
+    els.ring = mk("mlsGtRing");
+    els.card = mk("mlsGtCard");
+    els.card.innerHTML =
+      '<div class="gt-top">' +
+        '<span class="gt-badge" id="mlsGtBadge"></span>' +
+        '<span class="gt-count" id="mlsGtCount"></span>' +
+        '<button type="button" class="gt-x" id="mlsGtX" aria-label="Close tour">\u00d7</button>' +
+      '</div>' +
+      '<h3 id="mlsGtTitle"></h3>' +
+      '<div class="gt-body" id="mlsGtText"></div>' +
+      '<div class="gt-dots" id="mlsGtDots"></div>' +
+      '<div class="gt-foot">' +
+        '<button type="button" class="gt-skip" id="mlsGtAsk">Ask a question</button>' +
+        '<button type="button" class="gt-skip" id="mlsGtSkip">Skip</button>' +
+        '<span class="gt-sp"></span>' +
+        '<button type="button" class="gt-btn gt-back" id="mlsGtBack">Back</button>' +
+        '<button type="button" class="gt-btn gt-next" id="mlsGtNext">Next</button>' +
+      '</div>';
+    var body = document.body || document.documentElement;
+    body.appendChild(els.catchLayer);
+    body.appendChild(els.backdrop);
+    body.appendChild(els.ring);
+    body.appendChild(els.card);
+
+    /* wiring */
+    els.catchLayer.addEventListener("click", function (e) { e.stopPropagation(); e.preventDefault(); }, true);
+    $("mlsGtX").onclick = function () { endTour(true); };
+    $("mlsGtSkip").onclick = function () { endTour(true); };
+    $("mlsGtAsk").onclick = function () { endTour(true); api.askQuestion(); };
+    $("mlsGtBack").onclick = function () { go(api.idx - 1); };
+    $("mlsGtNext").onclick = function () { if (api.idx >= STEPS.length - 1) { endTour(true); } else { go(api.idx + 1); } };
+  }
+
+  /* ---------- visibility + target resolution ---------- */
+  function visible(el) {
+    if (!el) { return false; }
+    return safe(function () {
+      var r = el.getBoundingClientRect();
+      if (r.width < 5 || r.height < 5) { return false; }
+      var cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity || "1") < 0.05) { return false; }
+      return true;
+    }, false);
+  }
+  function resolveTarget(step) {
+    var sels = step.targets || [];
+    for (var i = 0; i < sels.length; i++) {
+      var node = qs(sels[i]);
+      if (node && visible(node)) { return node; }
+    }
+    return null;
+  }
+
+  /* ---------- positioning ---------- */
+  function placeCentered() {
+    var c = els.card;
+    els.backdrop.classList.add("on");
+    els.ring.classList.remove("on");
+    c.style.transform = "translate(-50%,-50%)";
+    c.style.left = "50%";
+    c.style.top = "50%";
+  }
+  function placeAt(target) {
+    var c = els.card;
+    els.backdrop.classList.remove("on");
+    els.ring.classList.add("on");
+    var r = safe(function () { return target.getBoundingClientRect(); }, null);
+    if (!r) { placeCentered(); return; }
+    var pad = 8;
+    var rx = Math.max(4, r.left - pad);
+    var ry = Math.max(4, r.top - pad);
+    var rw = Math.min(window.innerWidth - 8, r.width + pad * 2);
+    var rh = r.height + pad * 2;
+    els.ring.style.left = rx + "px";
+    els.ring.style.top = ry + "px";
+    els.ring.style.width = rw + "px";
+    els.ring.style.height = rh + "px";
+    /* card placement: prefer below, then above, then clamp beside */
+    c.style.transform = "none";
+    var cw = c.offsetWidth || 340;
+    var ch = c.offsetHeight || 220;
+    var gap = 14;
+    var top;
+    if (r.bottom + gap + ch <= window.innerHeight - 8) { top = r.bottom + gap; }
+    else if (r.top - gap - ch >= 8) { top = r.top - gap - ch; }
+    else { top = Math.max(8, Math.min(window.innerHeight - ch - 8, r.top)); }
+    var left = r.left + r.width / 2 - cw / 2;
+    left = Math.max(8, Math.min(window.innerWidth - cw - 8, left));
+    c.style.left = left + "px";
+    c.style.top = top + "px";
+  }
+
+  var curTarget = null;
+  function reposition() {
+    if (api.idx < 0) { return; }
+    if (curTarget && visible(curTarget)) { placeAt(curTarget); }
+    else { placeCentered(); }
+  }
+
+  /* ---------- render a step ---------- */
+  function paintDots() {
+    var box = $("mlsGtDots");
+    if (!box) { return; }
+    box.innerHTML = "";
+    for (var i = 0; i < STEPS.length; i++) {
+      var d = document.createElement("span");
+      d.className = "gt-dot" + (i === api.idx ? " on" : "");
+      (function (n) { d.onclick = function () { go(n); }; })(i);
+      box.appendChild(d);
+    }
+  }
+  function go(n) {
+    if (n < 0) { n = 0; }
+    if (n > STEPS.length - 1) { n = STEPS.length - 1; }
+    api.idx = n;
+    var step = STEPS[n];
+    safe(function () { var b = $("mlsGtBadge"); b.innerHTML = step.badge || ""; b.style.display = step.badge ? "" : "none"; });
+    safe(function () { $("mlsGtCount").textContent = (n + 1) + " / " + STEPS.length; });
+    safe(function () { $("mlsGtTitle").innerHTML = step.title || ""; });
+    safe(function () { $("mlsGtText").innerHTML = step.body || ""; });
+    safe(function () { $("mlsGtBack").style.visibility = n === 0 ? "hidden" : "visible"; });
+    safe(function () { $("mlsGtNext").textContent = (n >= STEPS.length - 1) ? "Finish" : "Next"; });
+    paintDots();
+
+    curTarget = step.centered ? null : resolveTarget(step);
+    if (curTarget) {
+      safe(function () { curTarget.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); });
+      /* place after the smooth scroll settles, plus once more as a backstop */
+      setTimeout(reposition, 60);
+      setTimeout(reposition, 360);
+    } else {
+      placeCentered();
+    }
+  }
+
+  /* ---------- open / close ---------- */
+  function ensureVisitContext() {
+    /* the visit-flow steps need the Visit tab mounted; land there on open.
+       (After login the app already lands on Visit; this covers manual opens.) */
+    safe(function () { if (typeof window.showView === "function") { window.showView("visit"); } });
+  }
+  function openTour() {
+    ensureCss();
+    ensureOverlay();
+    ensureVisitContext();
+    els.catchLayer.classList.add("on");
+    els.card.classList.add("on");
+    api.opens++;
+    /* step 0 is the centered welcome (no target), so render it immediately --
+       no empty-card flash. Later steps resolve their targets when advanced to. */
+    go(0);
+    return "tour opened";
+  }
+  function endTour(markSeen) {
+    api.idx = -1;
+    curTarget = null;
+    safe(function () { els.catchLayer.classList.remove("on"); });
+    safe(function () { els.backdrop.classList.remove("on"); });
+    safe(function () { els.ring.classList.remove("on"); });
+    safe(function () { els.card.classList.remove("on"); });
+    if (markSeen) { markDone(); safe(function () { sessionStorage.setItem(SESSION_KEY, "1"); }); }
+  }
+
+  /* ---------- keyboard ---------- */
+  function onKey(e) {
+    if (api.idx < 0) { return; }
+    if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); endTour(true); return; }
+    if (e.key === "ArrowRight" || e.key === "Enter") { e.preventDefault(); if (api.idx >= STEPS.length - 1) { endTour(true); } else { go(api.idx + 1); } return; }
+    if (e.key === "ArrowLeft") { e.preventDefault(); go(api.idx - 1); return; }
+  }
+  document.addEventListener("keydown", onKey, true);
+  function onResize() { reposition(); }
+  window.addEventListener("resize", onResize, true);
+  window.addEventListener("scroll", onResize, true);
+
+  /* ====================== MENU ROW + HELP INTERCEPT ======================= */
+  function hideStaleRows() {
+    /* belt-and-suspenders in JS (the CSS above also hides these). We only hide;
+       revert restores. Do NOT touch our own #mlsGtMenuRow. */
+    var ids = ["mlsTourMenuItem", "mlsTourMenuItemV2", "mlsB39MenuItem", "mlsUC1HowTo", "mlsHowTo2Row"];
+    for (var i = 0; i < ids.length; i++) {
+      var n = $(ids[i]);
+      if (n && n.style.getPropertyValue("display") !== "none") {
+        n.style.setProperty("display", "none", "important");
+      }
+    }
+    /* any stray "How to use MLS" text rows inside the menu (except ours) */
+    var panel = $("mlsTbMenuPanel");
+    if (panel) {
+      var kids = panel.querySelectorAll("button,.mlsTbItem,a");
+      for (var j = 0; j < kids.length; j++) {
+        var k = kids[j];
+        if (k.id === "mlsGtMenuRow" || k.getAttribute("data-gt-hid")) { continue; }
+        if (/how\s*to\s*use\s*mls|how-?to/i.test((k.textContent || ""))) {
+          k.setAttribute("data-gt-hid", "1");
+          k.style.setProperty("display", "none", "important");
+        }
+      }
+    }
+  }
+
+  function closeMenuPanelHealthy() {
+    /* remove the .open class AND clear any inline display so the menu can't
+       wedge (this is the exact break item 3 calls out). */
+    var panel = $("mlsTbMenuPanel");
+    if (!panel) { return; }
+    safe(function () { panel.classList.remove("open"); });
+    safe(function () { panel.style.display = ""; });
+  }
+
+  function ensureMenuRow() {
+    var panel = $("mlsTbMenuPanel");
+    if (!panel) { return; }
+    if ($("mlsGtMenuRow")) { return; }
+    var btn = document.createElement("button");
+    btn.id = "mlsGtMenuRow";
+    btn.className = "mlsTbItem";
+    btn.type = "button";
+    btn.innerHTML = "\ud83c\udf93 Guided tour / How-to";
+    btn.onclick = function (ev) {
+      safe(function () { ev.stopPropagation(); });
+      closeMenuPanelHealthy();
+      openTour();
+    };
+    panel.insertBefore(btn, panel.firstChild);
+  }
+
+  /* top-bar "Help" opens THIS tour. Capture phase + stopImmediatePropagation
+     so the inline onclick (b33 openMlsHelp) and any other handler never fire.
+     window.openMlsHelp itself is NOT reassigned (b33 re-asserts it on a timer). */
+  function onHelpCapture(ev) {
+    var t = ev && ev.target;
+    if (t && t.closest && t.closest("#nav_help")) {
+      safe(function () { ev.stopImmediatePropagation(); });
+      safe(function () { ev.stopPropagation(); });
+      safe(function () { ev.preventDefault(); });
+      openTour();
+    }
+  }
+  document.addEventListener("click", onHelpCapture, true);
+
+  /* Preserve the real "Ask MLS a question" AI help so the tour can offer it. */
+  api.askQuestion = function () {
+    safe(function () {
+      if (typeof window.__mlsG33_origHelp === "function") { window.__mlsG33_origHelp(); return; }
+      if (typeof window.openMlsHelp === "function") { window.openMlsHelp(); }
+    });
+  };
+
+  /* ====================== AUTO-LAUNCH FOR NEW USERS ======================= */
+  function signedIn() {
+    var app = $("appScreen");
+    if (!app) { return false; }
+    if (safe(function () { return getComputedStyle(app).display === "none"; }, true)) { return false; }
+    var auth = $("authScreen");
+    if (auth && safe(function () { return getComputedStyle(auth).display !== "none"; }, false)) { return false; }
+    var boot = $("mlsBootVeil");
+    if (boot && safe(function () { return getComputedStyle(boot).display !== "none"; }, false)) { return false; }
+    var sess = safe(function () { return localStorage.getItem("sf_session"); }, "");
+    if (!sess) { return false; }
+    var visit = $("nav_visit");
+    if (!visit) { return false; }
+    return true;
+  }
+
+  var autoArmed = true;
+  function maybeAutoLaunch() {
+    if (!autoArmed) { return; }
+    if (api.idx >= 0) { return; }                              /* already open */
+    if (isDone()) { autoArmed = false; return; }               /* completed/skipped */
+    if (safe(function () { return sessionStorage.getItem(SESSION_KEY) === "1"; }, false)) { autoArmed = false; return; }
+    if (!signedIn()) { return; }
+    /* signed in, not seen, not shown this session -> launch after a settle beat */
+    autoArmed = false;
+    safe(function () { sessionStorage.setItem(SESSION_KEY, "1"); });  /* one auto-open per session */
+    setTimeout(function () { if (api.idx < 0 && !isDone() && signedIn()) { openTour(); } }, 1100);
+  }
+
+  /* ---------- ticks (menu row upkeep + auto-launch watch) ---------- */
+  function tick() {
+    safe(ensureCss);
+    safe(hideStaleRows);
+    safe(ensureMenuRow);
+    safe(maybeAutoLaunch);
+  }
+  tick();
+  var iv = setInterval(tick, 1200);
+
+  /* ============================== REVERT ================================= */
+  window.__mlsGuidedTour_revert = function () {
+    safe(function () { clearInterval(iv); });
+    safe(function () { document.removeEventListener("keydown", onKey, true); });
+    safe(function () { document.removeEventListener("click", onHelpCapture, true); });
+    safe(function () { window.removeEventListener("resize", onResize, true); });
+    safe(function () { window.removeEventListener("scroll", onResize, true); });
+    ["mlsGtCatch", "mlsGtBackdrop", "mlsGtRing", "mlsGtCard", "mlsGtMenuRow", "mlsGtCss"].forEach(function (id) {
+      safe(function () { var n = $(id); if (n && n.parentNode) { n.parentNode.removeChild(n); } });
+    });
+    /* restore any legacy rows we JS-hid (CSS is gone with #mlsGtCss) */
+    ["mlsTourMenuItem", "mlsTourMenuItemV2", "mlsB39MenuItem", "mlsUC1HowTo", "mlsHowTo2Row"].forEach(function (id) {
+      safe(function () { var n = $(id); if (n) { n.style.removeProperty("display"); } });
+    });
+    safe(function () {
+      var panel = $("mlsTbMenuPanel");
+      if (panel) {
+        var hid = panel.querySelectorAll("[data-gt-hid]");
+        for (var i = 0; i < hid.length; i++) { hid[i].style.removeProperty("display"); hid[i].removeAttribute("data-gt-hid"); }
+      }
+    });
+    delete window.__mlsGuidedTour_revert;
+    window.__mlsGuidedTour = 0;
+    return "reverted (note: the old __mlsHowToV2 static guide stays neutralized until reload)";
+  };
+})();
+
+
+/* =============================================================================
+ * MLS Scribe - PULLED-CHART STRUCTURING  (__mlsChartStructure)  v1.0.0  2026-07-08
+ * STAGING ONLY (data-quality review build). Prepend ABOVE the live mls-connect.js
+ * bundle (real \n\n join), like every other guarded module in this codebase.
+ * -----------------------------------------------------------------------------
+ * THE PROBLEM this fixes
+ *   When a patient's chart is pulled from athenaOne, the "Pull day histories"
+ *   path (__mlsDayHistoryPull v1.2.0) writes the ENTIRE cleaned chart text into
+ *   patient.summary and files it as ONE giant {type:'Chart summary', raw:<all>}
+ *   visit. Problems / Medications / Allergies / Insurance / individual dated
+ *   visits are never separated out - everything lands in the summary+visits
+ *   blob. (The single-patient "Pull chart" button DOES structure via the AI
+ *   _parsePatientChart, but it (a) has no insurance field and (b) _savePatientChart
+ *   then re-dumps history+visits back into the summary text.)
+ *
+ * WHAT THIS DOES  (deterministic, synchronous, no OpenAI spend, idempotent)
+ *   1. A section-splitter reads the (already code-sanitized) chart text and
+ *      routes its content into the RIGHT structured fields the base app already
+ *      renders:
+ *        - patient.problems   (Problem list / Assessment / Diagnoses)
+ *        - patient.meds       (Medications / Prescriptions)
+ *        - patient.allergies  (Allergies / adverse reactions)
+ *        - patient.insurance  ({payer,planName,memberId} - benefit numbers never touched)
+ *        - patient.visits[]   (structured, one entry per dated encounter, via __mlsVisitModel)
+ *        - patient.summary    (a genuine short clinical summary, NOT the raw page)
+ *   2. It intercepts the single-patient sink (_savePatientChart) so that path
+ *      also gets insurance routing + structured visits, and its summary stops
+ *      swallowing the history/visits arrays.
+ *   3. A light path-agnostic heartbeat (mirrors the live __mlsContinuousScrub
+ *      pattern) restructures any patient whose summary is still a raw chart dump
+ *      or whose visits[] holds a giant unstructured "Chart summary" blob - this
+ *      catches the day-pull's direct summary write AND already-polluted records
+ *      that were saved before this shipped (e.g. the reported "Jennifer Wright").
+ *
+ * SAFETY / IDEMPOTENCY
+ *   - Deterministic (regex/section headers). No AI call, so no spend and no
+ *     hallucination; the routing is predictable and reviewable.
+ *   - Only ACTS on text that looks like a real multi-section chart dump
+ *     (long + >=2 recognizable section headers). Short or already-structured
+ *     summaries are left untouched.
+ *   - Never overwrites a non-empty field the user may have edited: problems/
+ *     meds/allergies are MERGED item-by-item (adds only new lines); insurance
+ *     only fills empty payer/planName/memberId and never touches deductible/
+ *     coinsurance/copay/oop; a patient is marked (_mlsStructuredV1) once done.
+ *   - Athena is never touched (this only reads text already in the patient record).
+ *   - Fully reversible: window.__mlsChartStructure_revert().
+ *
+ * CONFIG (live-tweakable on the console)
+ *   window.__mlsChartStructure.summaryMode = 'digest' (default) | 'short'
+ *     'digest' -> summary becomes a tidy LABELED digest (Summary/Problems/Meds/
+ *                 Allergies/Insurance) that stays > 400 chars, so the live
+ *                 "Pull day histories" hasPulled() guard keeps treating the patient
+ *                 as pulled and NEVER redundantly re-reads athenaOne on a re-click.
+ *                 The raw page dump is gone; the discrete fields are the source of
+ *                 truth; the summary is a clean organized recap. This is the default.
+ *     'short'  -> summary becomes a minimal 2-4 sentence clinical summary (HPI);
+ *                 full detail lives in the structured fields + dated visits. Cleaner
+ *                 summary, but a shortened summary can make the day-pull re-read the
+ *                 patient on a manual re-click (read-only, just slower).
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.0.0') return; } catch (e) { return; }
+
+  var VERSION = '1.0.0';
+
+  /* ---------- tiny helpers ---------- */
+  function S(x) { return (x == null ? '' : String(x)); }
+  function trim(x) { return S(x).trim(); }
+  function low(x) { return S(x).toLowerCase(); }
+  function collapse(x) { return S(x).replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim(); }
+  function isFn(f) { return typeof f === 'function'; }
+
+  // Reuse the live b87 code-sanitizer if present (strips leaked page JS/UI noise).
+  function sanitize(t) {
+    try { return (window.__mlsSummarySanitize && isFn(window.__mlsSummarySanitize.strip)) ? window.__mlsSummarySanitize.strip(t) : t; }
+    catch (e) { return t; }
+  }
+  function getPatients() { try { return isFn(window.getPatients) ? (window.getPatients() || []) : []; } catch (e) { return []; } }
+  function upsert(p) { try { if (isFn(window.upsertPatient)) window.upsertPatient(p); } catch (e) {} }
+
+  /* ---------- section-header dictionary ----------
+     Each bucket maps to an anchored regex tested against a line's LABEL (the text
+     before an optional ':'). Headers are short, so we only test labels <= 34 chars. */
+  var HEADERS = {
+    problems:  /^(?:active\s+)?(?:problem list|problems?|assessment(?:\s*(?:and|&|\/)\s*plan)?|diagnoses|diagnosis|impression|active diagnoses|dx)$/,
+    meds:      /^(?:current\s+|active\s+|home\s+)?(?:medications?|medication list|meds|prescriptions?|rx)$/,
+    allergies: /^(?:drug\s+)?(?:allergies|allergy|allergies\s*(?:and|&|\/)\s*adverse reactions|adverse reactions|allergy list)$/,
+    // Only unambiguous insurance labels are section headers. "Plan"/"Policy"/
+    // "Subscriber" are deliberately NOT headers: bare "Plan:" usually means the
+    // treatment plan (Assessment/Plan), and routing that into insurance would be
+    // wrong. Those stay as CONTENT lines that insuranceFrom() reads via its
+    // labeled-field regexes (so "Plan: Traditional Medicare" still populates planName).
+    insurance: /^(?:primary\s+|secondary\s+)?(?:insurance|insurances|coverage|payer|guarantor)$/,
+    encounters:/^(?:encounters?|encounter history|visits?|visit history|past visits|recent visits|appointments?|office visits?)$/,
+    hpi:       /^(?:history of present illness|hpi|chief complaint|cc|reason for (?:visit|appointment|encounter)|subjective|clinical summary|summary)$/,
+    history:   /^(?:past medical history|pmh|past surgical history|psh|surgical history|social history|family history|medical history|pmhx|pshx)$/
+  };
+
+  var UI_NOISE = /^(?:edit|print|add|remove|delete|close|save|cancel|more|view|show|hide|expand|collapse|back|next|previous|menu|home|refresh|reload|filter|sort|export|actions?|options?|search|select|new|open|update|manage|settings?)$/i;
+
+  // Bullet/leading-marker chars, ASCII-safe via \u escapes (dash, bullet, filled
+  // circle, middle dot, en/em dash): keep this file pure-ASCII per the repo's
+  // clipboard-corruption discipline.
+  var LEAD_MARKERS = '\\-\\u2022\\u25cf\\u00b7\\u2013\\u2014\\*';
+  var RE_LEAD_ITEM = new RegExp('^[' + LEAD_MARKERS + '\\d\\.\\)\\s]+');
+  var RE_LEAD_BULLET = new RegExp('^[' + LEAD_MARKERS + '\\s]+');
+  // Is a single line worth keeping as a list item (problem/med/allergy)?
+  function isListItem(line) {
+    var t = trim(S(line).replace(RE_LEAD_ITEM, ''));
+    if (!t) return false;
+    if (t.length < 2) return false;
+    if (UI_NOISE.test(t)) return false;
+    if (/^[\d\/\-.:,\s]+$/.test(t)) return false;               // bare numbers/dates
+    if (/^(?:page\s+\d|of\s+\d|showing|results?|total)\b/i.test(t)) return false;
+    // Drop lines whose tokens are ALL UI-noise (e.g. "Show more Print Close").
+    var toks = t.split(/\s+/), allNoise = true;
+    for (var i = 0; i < toks.length; i++) { if (!UI_NOISE.test(toks[i])) { allNoise = false; break; } }
+    if (allNoise) return false;
+    return true;
+  }
+  function cleanItem(line) {
+    return trim(line).replace(RE_LEAD_BULLET, '').replace(/\s+/g, ' ').slice(0, 160);
+  }
+
+  /* ---------- classify one line as a header (or not) ---------- */
+  function matchHeader(line) {
+    var t = trim(line).replace(/\s+/g, ' ');
+    if (!t) return null;
+    var idx = t.indexOf(':');
+    var label = (idx >= 0 ? t.slice(0, idx) : t).trim().toLowerCase().replace(/\s+/g, ' ');
+    var inline = (idx >= 0 ? t.slice(idx + 1) : '').trim();
+    if (!label || label.length > 34) return null;
+    for (var key in HEADERS) {
+      if (HEADERS.hasOwnProperty(key) && HEADERS[key].test(label)) return { key: key, inline: inline };
+    }
+    return null;
+  }
+
+  /* ---------- split raw chart text into labeled buckets ---------- */
+  function splitSections(raw) {
+    var lines = S(raw).split(/\r?\n/);
+    var buckets = { problems: [], meds: [], allergies: [], insurance: [], encounters: [], hpi: [], history: [], _pre: [] };
+    var cur = '_pre';
+    var headerHits = 0, distinct = {};
+    for (var i = 0; i < lines.length; i++) {
+      var h = matchHeader(lines[i]);
+      if (h) {
+        cur = h.key; headerHits++; distinct[h.key] = 1;
+        if (h.inline) buckets[cur].push(h.inline);
+        continue;
+      }
+      buckets[cur].push(lines[i]);
+    }
+    buckets.__distinct = 0; for (var k in distinct) { if (distinct.hasOwnProperty(k)) buckets.__distinct++; }
+    return buckets;
+  }
+
+  /* ---------- turn a bucket of lines into a clean list string ---------- */
+  function listFrom(lines, max) {
+    max = max || 20;
+    var out = [], seen = {};
+    for (var i = 0; i < lines.length && out.length < max; i++) {
+      // an inline "a, b, c" line becomes multiple items - but only when it is
+      // clearly a comma-list (>=3 segments), so "Radiculopathy, chronic" stays whole.
+      var doSplit = (S(lines[i]).split(',').length >= 3 && S(lines[i]).length < 200);
+      var parts = doSplit ? S(lines[i]).split(',') : [lines[i]];
+      for (var j = 0; j < parts.length && out.length < max; j++) {
+        if (!isListItem(parts[j])) continue;
+        var it = cleanItem(parts[j]); var key = low(it);
+        if (!it || seen[key]) continue; seen[key] = 1; out.push(it);
+      }
+    }
+    return out.join('\n');
+  }
+
+  /* ---------- allergies (special: recognize NKDA) ---------- */
+  function allergiesFrom(lines) {
+    var joined = low(lines.join(' '));
+    if (/\b(nkda|no known (?:drug )?allerg|denies allerg|no allergies)\b/.test(joined) && !/\b(penicillin|sulfa|codeine|latex|morphine|nsaid|aspirin|iodine|contrast)\b/.test(joined)) {
+      return 'NKDA';
+    }
+    return listFrom(lines, 12);
+  }
+
+  /* ---------- insurance {payer, planName, memberId} ---------- */
+  function insuranceFrom(lines) {
+    var text = lines.join('\n');
+    var out = {};
+    var m;
+    m = text.match(/(?:payer|insurance|carrier|company)\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9 &.\/'-]{2,50})/i);
+    if (m) out.payer = trim(m[1]);
+    m = text.match(/(?:plan(?:\s*name)?|product|coverage)\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9 &.\/'-]{2,50})/i);
+    if (m) out.planName = trim(m[1]);
+    m = text.match(/(?:member\s*(?:id|#|number)|subscriber\s*(?:id|#)|policy\s*(?:id|#|number)?|id\s*#)\s*[:\-]?\s*([A-Za-z0-9\-]{4,25})/i);
+    if (m) out.memberId = trim(m[1]);
+    // Fallback: first non-noise content line becomes the payer if nothing labeled.
+    if (!out.payer) {
+      for (var i = 0; i < lines.length; i++) {
+        if (isListItem(lines[i]) && !/^\d/.test(trim(lines[i]))) { out.payer = cleanItem(lines[i]).slice(0, 50); break; }
+      }
+    }
+    if (!out.payer && !out.planName && !out.memberId) return null;
+    return out;
+  }
+
+  /* ---------- structured dated visits from encounter text ----------
+     Splits at lines that begin with a date; each block becomes one visit. */
+  var DATE_LEAD = /^\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{2}-\d{2})\b/;
+  function visitsFrom(encounterLines, wholeText, max) {
+    max = max || 14;
+    var src = (encounterLines && encounterLines.join('\n').replace(DATE_LEAD, '').length > 8) ? encounterLines.join('\n') : wholeText;
+    var lines = S(src).split(/\r?\n/);
+    // Count date-led lines; only treat as an encounter list if there are >= 2.
+    var leadIdx = [];
+    for (var i = 0; i < lines.length; i++) { if (DATE_LEAD.test(lines[i])) leadIdx.push(i); }
+    if (leadIdx.length < 2) return [];
+    var visits = [];
+    for (var k = 0; k < leadIdx.length && visits.length < max; k++) {
+      var start = leadIdx[k], end = (k + 1 < leadIdx.length) ? leadIdx[k + 1] : lines.length;
+      var block = lines.slice(start, end).join('\n');
+      var dm = block.match(DATE_LEAD);
+      var date = dm ? dm[1] : '';
+      var firstLine = trim(lines[start].replace(DATE_LEAD, ''));
+      var type = (firstLine || trim((lines[start + 1] || ''))).replace(/\s+/g, ' ').slice(0, 80) || 'Office visit';
+      visits.push({ date: date, type: type, raw: collapse(block).slice(0, 800) });
+    }
+    return visits;
+  }
+
+  /* ---------- short clinical summary ---------- */
+  function summaryFrom(buckets, problemsStr) {
+    var hpi = collapse(listFrom(buckets.hpi, 40).replace(/\n/g, ' '));
+    if (hpi) return firstSentences(hpi, 3, 520);
+    if (problemsStr) {
+      var probs = problemsStr.split('\n').slice(0, 6).join(', ');
+      return 'Active problems: ' + probs + '.';
+    }
+    // last resort: first couple of sentences of the preamble (never the whole page)
+    var pre = collapse(buckets._pre.join(' '));
+    return firstSentences(pre, 2, 300);
+  }
+  function firstSentences(text, n, cap) {
+    text = collapse(text).replace(/\n/g, ' ');
+    if (!text) return '';
+    // Manual sentence split (no lookbehind - must parse under ES3/JScript gate).
+    var out = [], buf = '', count = 0;
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charAt(i); buf += c;
+      if ((c === '.' || c === '!' || c === '?') && (i + 1 >= text.length || text.charAt(i + 1) === ' ')) {
+        out.push(trim(buf)); buf = ''; count++;
+        if (count >= n) break;
+      }
+    }
+    if (buf && count < n) out.push(trim(buf));
+    return out.join(' ').slice(0, cap).trim();
+  }
+
+  /* ---------- decide whether a blob is a structurable raw chart dump ---------- */
+  function looksLikeChartDump(text) {
+    var t = S(text);
+    if (t.length < 400) return false;
+    var buckets = splitSections(sanitize(t));
+    return buckets.__distinct >= 2;
+  }
+
+  /* ---------- THE STRUCTURER: raw text -> structured object (or null) ---------- */
+  function structureChartText(rawText) {
+    var raw = sanitize(S(rawText));
+    if (raw.length < 400) return null;
+    var b = splitSections(raw);
+    if (b.__distinct < 2) return null;             // not a multi-section chart; leave alone
+    var problems = listFrom(b.problems, 20);
+    var meds = listFrom(b.meds, 25);
+    var allergies = allergiesFrom(b.allergies);
+    var insurance = insuranceFrom(b.insurance);
+    var history = listFrom(b.history, 15).split('\n').filter(Boolean);
+    var visits = visitsFrom(b.encounters, raw, 14);
+    var summary = summaryFrom(b, problems);
+    if (!problems && !meds && !allergies && !insurance && !visits.length) return null;
+    return {
+      problems: problems, meds: meds, allergies: allergies, insurance: insurance,
+      history: history, visits: visits, summary: summary
+    };
+  }
+
+  /* ---------- field routing (merge, never clobber user data) ---------- */
+  function fillField(p, key, val) {
+    val = trim(val); if (!val) return false;
+    var cur = trim(p[key] || '');
+    if (!cur) { p[key] = val; return true; }
+    var have = {}; cur.split(/\n+/).forEach(function (l) { have[low(trim(l))] = 1; });
+    var add = val.split(/\n+/).filter(function (l) { l = trim(l); return l && !have[low(l)]; });
+    if (!add.length) return false;
+    p[key] = cur + '\n' + add.join('\n');
+    return true;
+  }
+  function routeInsurance(p, ins) {
+    if (!ins) return false;
+    var curIns = (p.insurance && typeof p.insurance === 'object') ? p.insurance : {};
+    var changed = false;
+    ['payer', 'planName', 'memberId'].forEach(function (k) {
+      if (trim(ins[k]) && !trim(curIns[k])) { curIns[k] = trim(ins[k]); changed = true; }
+    });
+    if (changed) p.insurance = curIns;             // benefit numbers (deductible/copay/...) untouched
+    return changed;
+  }
+  function addStructuredVisits(p, visits) {
+    if (!visits || !visits.length) return 0;
+    var M = window.__mlsVisitModel;
+    if (!M || !isFn(M.addVisit)) return 0;
+    var n = 0;
+    visits.forEach(function (v) {
+      try { M.addVisit(p.id, { date: v.date, type: v.type || 'Office visit', raw: v.raw }, { source: 'athena-copy', persist: false }); n++; } catch (e) {}
+    });
+    return n;
+  }
+
+  /* ---------- compose the new summary per summaryMode ---------- */
+  function stamp() { var d = new Date(); return 'Pulled from Athena ' + ((d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear()); }
+  function composeSummary(struct, keepStampFrom) {
+    var head = '';
+    var m = S(keepStampFrom).match(/Pulled from Athena[^\n]*/i);
+    head = m ? m[0] : stamp();
+    if (API.summaryMode === 'digest') {
+      var L = [head];
+      if (struct.summary) L.push('SUMMARY: ' + struct.summary);
+      if (struct.problems) L.push('PROBLEMS: ' + struct.problems.replace(/\n/g, '; '));
+      if (struct.meds) L.push('MEDICATIONS: ' + struct.meds.replace(/\n/g, '; '));
+      if (struct.allergies) L.push('ALLERGIES: ' + struct.allergies.replace(/\n/g, '; '));
+      if (struct.insurance) { var ins = struct.insurance; var ip = [ins.payer, ins.planName, ins.memberId ? ('Member ' + ins.memberId) : ''].filter(Boolean).join(' / '); if (ip) L.push('INSURANCE: ' + ip); }
+      if (struct.visits && struct.visits.length) L.push('VISITS ON FILE: ' + struct.visits.length + ' (see the Visits list).');
+      return L.join('\n');
+    }
+    // 'short'
+    return head + '\n' + (struct.summary || 'Chart imported - see Problems, Medications, Allergies and Visits.');
+  }
+
+  /* ---------- apply structuring to one patient's raw blob ---------- */
+  function applyToPatient(p, rawText, keepStampFrom) {
+    var struct = structureChartText(rawText);
+    if (!struct) return false;
+    var changed = false;
+    if (fillField(p, 'problems', struct.problems)) changed = true;
+    if (fillField(p, 'meds', struct.meds)) changed = true;
+    if (fillField(p, 'allergies', struct.allergies)) changed = true;
+    if (routeInsurance(p, struct.insurance)) changed = true;
+    if (addStructuredVisits(p, struct.visits)) changed = true;
+    var newSummary = composeSummary(struct, keepStampFrom || p.summary);
+    if (trim(newSummary) && newSummary !== p.summary) { p.summary = newSummary; changed = true; }
+    if (changed) { p._mlsStructuredV1 = Date.now(); STATS.structured++; }
+    return changed;
+  }
+
+  var STATS = { structured: 0, savesWrapped: 0, sweepPasses: 0 };
+
+  /* =========================================================================
+   * Interception 1 - the single-patient sink _savePatientChart(name, appt, chart)
+   * The base builds a good AI-parsed chart object but (a) has no insurance and (b) its
+   * summary swallows chart.history + chart.visits. We add insurance + structured
+   * visits, and hand the base a SLIM chart (no history/visits arrays) so it stops
+   * re-dumping them into the summary text.
+   * ===================================================================== */
+  function wrapSave() {
+    if (!isFn(window._savePatientChart)) return false;
+    if (window._savePatientChart.__mlsStructWrapped) return true;
+    var orig = window._savePatientChart;
+    var w = function (name, appt, chart) {
+      try {
+        chart = chart || {};
+        // If the AI parse under-structured (thin fields but a fat summary), enrich
+        // from the summary/text using the deterministic splitter.
+        var fatSummary = looksLikeChartDump(chart.summary) || looksLikeChartDump(chart.text);
+        if (fatSummary && (!trim(chart.problems) || !trim(chart.meds))) {
+          var st = structureChartText(chart.summary || chart.text || '');
+          if (st) {
+            if (!trim(chart.problems)) chart.problems = st.problems;
+            if (!trim(chart.meds)) chart.meds = st.meds;
+            if (!trim(chart.allergies)) chart.allergies = st.allergies;
+            if (!chart.__insurance) chart.__insurance = st.insurance;
+            if (st.summary) chart.summary = st.summary;
+            if ((!chart.visits || !chart.visits.length) && st.visits.length) chart.__structVisits = st.visits;
+          }
+        }
+        var insurance = chart.__insurance || null;
+        var structVisits = chart.__structVisits || (Array.isArray(chart.visits) ? null : null);
+        // Slim chart: keep short summary + problems/meds/allergies/dob; drop the
+        // history/visits arrays so the base does not append them to the summary blob.
+        var slim = {
+          dob: chart.dob, problems: chart.problems, meds: chart.meds,
+          allergies: chart.allergies, summary: chart.summary, history: [], visits: []
+        };
+        var ret = orig(name, appt, slim);
+        STATS.savesWrapped++;
+        // After the base persisted, re-fetch the patient and route insurance + visits.
+        try {
+          var nm = low(trim(name)); var p = null, ps = getPatients();
+          for (var i = 0; i < ps.length; i++) { if (low(trim(ps[i].name)) === nm) { p = ps[i]; break; } }
+          if (p) {
+            var did = false;
+            if (routeInsurance(p, insurance)) did = true;
+            if (structVisits && addStructuredVisits(p, structVisits)) did = true;
+            if (did) { p._mlsStructuredV1 = Date.now(); upsert(p); try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {} }
+          }
+        } catch (e) {}
+        return ret;
+      } catch (e) { return orig(name, appt, chart); }
+    };
+    w.__mlsStructWrapped = true; w.__orig = orig;
+    window._savePatientChart = w;
+    return true;
+  }
+
+  /* =========================================================================
+   * Interception 2 - path-agnostic heartbeat.
+   * Catches: the day-pull's DIRECT summary write (p.summary = ...+cleanText),
+   * its giant {type:'Chart summary', raw:<all>} visit, and any record polluted
+   * before this shipped. Idempotent via _mlsStructuredV1 + field-emptiness.
+   * ===================================================================== */
+  function needsWork(p) {
+    if (!p) return false;
+    if (p._mlsStructuredV1) return false;
+    // (a) summary is a raw chart dump
+    if (looksLikeChartDump(p.summary)) return true;
+    // (b) a visit holds a giant unstructured chart-summary blob
+    var vs = Array.isArray(p.visits) ? p.visits : [];
+    for (var i = 0; i < vs.length; i++) {
+      var v = vs[i]; if (!v) continue;
+      if (S(v.raw).length > 900 && (/chart summary/i.test(S(v.type)) || v.date === '' ) && looksLikeChartDump(v.raw)) return true;
+    }
+    return false;
+  }
+  function sweepPatient(p) {
+    var source = '';
+    if (looksLikeChartDump(p.summary)) source = p.summary;
+    if (!source) {
+      var vs = Array.isArray(p.visits) ? p.visits : [];
+      for (var i = 0; i < vs.length; i++) { if (vs[i] && looksLikeChartDump(vs[i].raw)) { source = vs[i].raw; break; } }
+    }
+    if (!source) { p._mlsStructuredV1 = Date.now(); return false; }
+    var changed = applyToPatient(p, source, p.summary);
+    // Slim down the giant "Chart summary" visit blob (detail now lives in fields +
+    // dated visits). Keep the entry but replace its raw with the short summary.
+    try {
+      var vs2 = Array.isArray(p.visits) ? p.visits : [];
+      for (var j = 0; j < vs2.length; j++) {
+        var vv = vs2[j];
+        if (vv && S(vv.raw).length > 900 && (/chart summary/i.test(S(vv.type)) || vv.date === '') && looksLikeChartDump(vv.raw)) {
+          var st = structureChartText(vv.raw);
+          vv.raw = (st && st.summary) ? st.summary : S(vv.raw).slice(0, 400);
+          changed = true;
+        }
+      }
+    } catch (e) {}
+    if (changed) upsert(p);
+    return changed;
+  }
+  function sweep() {
+    try {
+      var ps = getPatients(); if (!ps.length) return;
+      var touched = 0;
+      for (var i = 0; i < ps.length; i++) {
+        if (needsWork(ps[i])) { if (sweepPatient(ps[i])) touched++; }
+      }
+      STATS.sweepPasses++;
+      if (touched) {
+        try { console.log('[MLS chart-structure] structured ' + touched + ' patient record' + (touched === 1 ? '' : 's')); } catch (e) {}
+        try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
+        try { if (window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  /* ---------- install (lazy: sinks/models appear after this prepended module) ---------- */
+  var installTimer = null, sweepTimer = null, installed = false;
+  function tryInstall() {
+    if (!installed && wrapSave()) { installed = true; if (installTimer) { clearInterval(installTimer); installTimer = null; } }
+  }
+  try { installTimer = setInterval(tryInstall, 800); } catch (e) {}
+  tryInstall();
+  try { sweepTimer = setInterval(sweep, 3000); } catch (e) {}
+  setTimeout(sweep, 1500);
+
+  /* ---------- public API ---------- */
+  var API = {
+    version: VERSION,
+    // 'digest' (default) keeps the summary organized AND > 400 chars so the live
+    // "Pull day histories" hasPulled() guard still treats the patient as pulled
+    // (no redundant re-reads of athenaOne on a re-click). 'short' makes the summary
+    // a minimal 2-4 sentence HPI (may re-trigger a read on re-click). Both populate
+    // the discrete Problems/Meds/Allergies/Insurance/Visits fields identically.
+    summaryMode: 'digest',
+    stats: STATS,
+    structureChartText: structureChartText,
+    applyToPatient: applyToPatient,
+    looksLikeChartDump: looksLikeChartDump,
+    // Manually re-run over everyone (e.g. after flipping summaryMode on staging).
+    restructureAll: function () {
+      var ps = getPatients(), n = 0;
+      for (var i = 0; i < ps.length; i++) { ps[i]._mlsStructuredV1 = 0; if (needsWork(ps[i]) && sweepPatient(ps[i])) n++; }
+      try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
+      return n;
+    },
+    _splitSections: splitSections
+  };
+  window.__mlsChartStructure = API;
+
+  window.__mlsChartStructure_revert = function () {
+    try { if (installTimer) clearInterval(installTimer); } catch (e) {}
+    try { if (sweepTimer) clearInterval(sweepTimer); } catch (e) {}
+    try { if (window._savePatientChart && window._savePatientChart.__orig) window._savePatientChart = window._savePatientChart.__orig; } catch (e) {}
+    try { delete window.__mlsChartStructure; } catch (e) { window.__mlsChartStructure = undefined; }
+    return 'reverted (fields already written stay; nothing is unwritten)';
+  };
+})();
+
+
 /* =========================================================================
  * MLS Scribe -- Pay Report visit-tab restore  (__mlsPayReportVisitBtn)
  * authored 2026-07-08
@@ -23629,7 +24716,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-08-b102';
+  var MLS_APP_BUILD='2026-07-08-b103';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
