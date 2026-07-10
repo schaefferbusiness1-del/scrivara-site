@@ -341,7 +341,7 @@
 
 
 /* =========================================================================
- * MLS Scribe - COPILOT TRUTH GATE  (__mlsCopilotTruth) v1.0.0  2026-07-10 (b115)
+ * MLS Scribe - COPILOT TRUTH GATE  (__mlsCopilotTruth) v1.1.0  2026-07-10 (b116)
  *
  * TWO LIVE BUGS THIS FIXES (both found by asking the real Copilot a real
  * question on 2026-07-10 and watching it answer in 25ms without an AI call):
@@ -380,7 +380,7 @@
 (function () {
   'use strict';
   try { if (window.__mlsCopilotTruth) return; } catch (e) { return; }
-  var api = { version: '1.0.0', moneyRefusals: 0, comparisonsPassedToAI: 0, localAnswers: 0, armed: false };
+  var api = { version: '1.1.0', moneyRefusals: 0, comparisonsPassedToAI: 0, localAnswers: 0, armed: false };
 
   var MONEY_RE = /(revenue|money|bring in|billing|billed|collections?|income|earn|earned|earnings|paid|payment|\$|dollar|rvu\s*\$|made more|make more|how much (did|do|does).*(make|earn|bring))/i;
   var COMPARE_RE = /(\bcompare\b|\bcomparison\b|\bversus\b|\bvs\.?\b|\bmore than\b|\bless than\b|\bthan (me|mine|i did|him|her|dr\b)|\bbetween\b.*\band\b|who (made|earned|billed|did more))/i;
@@ -417,10 +417,71 @@
     return providersMentioned(q) >= 2;
   }
 
-  var MONEY_ANSWER =
-    'MLS does not have your billing data, so I will not put a dollar figure on this - any number I gave you would be made up. ' +
-    'MLS only sees the athenaOne schedule and the chart notes you have pulled: appointments, unique patients, procedures and CPT codes. ' +
-    'Ask me to compare those instead (for example: "compare my procedure count last month to Dr. Evering\'s"), or connect your billing system for real revenue.';
+  var MONEY_HEAD =
+    'MLS has no billing or payment data, so I will not put a dollar figure on this - any number would be made up. ' +
+    'What MLS does have is the real athenaOne schedule. ';
+
+  /* Month helpers so the refusal can hand back REAL numbers instead of nothing. */
+  function monthKey(offset) {
+    var d = new Date(), m = new Date(d.getFullYear(), d.getMonth() - (offset || 0), 1);
+    return m.getFullYear() + '-' + ('0' + (m.getMonth() + 1)).slice(-2);
+  }
+  function windowFor(q) {
+    var ql = String(q || '').toLowerCase();
+    if (/last month|previous month|prior month/.test(ql)) return { key: monthKey(1), label: 'last month' };
+    return { key: monthKey(0), label: 'this month' };
+  }
+  var PROC_RE = /(injection|epidural|\besi\b|facet|medial branch|\brfa\b|radiofrequenc|ablation|nerve block|\bblock\b|kyphoplast|stimulator|\bemg\b|discogram|\bmbb\b|trigger point|arthrocentesis|fusion|laminectom|discectom)/i;
+  /* real counts straight off the imported schedule rows */
+  function countsFor(provider, mKey) {
+    var rows = [], appts = 0, procs = 0, uniq = {}, i, n = 0;
+    try { rows = (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []); } catch (e) { rows = []; }
+    for (i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r || !r.provider || !r.day_local) continue;
+      if (String(r.day_local).slice(0, 7) !== mKey) continue;
+      if (nrm(r.provider) !== nrm(provider)) continue;
+      appts++;
+      if (r.name) uniq[nrm(r.name)] = 1;
+      if (PROC_RE.test(String(r.reason || ''))) procs++;
+    }
+    for (var k in uniq) { if (uniq.hasOwnProperty(k)) n++; }
+    return { appts: appts, patients: n, procs: procs };
+  }
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''); }
+  function whoIsMe() {
+    try { var el = document.getElementById('provSel'); if (el && el.value) return String(el.value); } catch (e) {}
+    return 'Matthew Schaeffer, MD';
+  }
+  /* every provider whose surname appears in the question */
+  function namedProviders(q) {
+    var ql = String(q || '').toLowerCase(), out = [], seen = {};
+    var names = providerNames(), i, j;
+    for (i = 0; i < names.length; i++) {
+      var toks = nrm(names[i]).split(' ').filter(function (t) { return t.length > 2; });
+      for (j = 0; j < toks.length; j++) {
+        if (ql.indexOf(toks[j]) >= 0 && !seen[names[i]]) { seen[names[i]] = 1; out.push(names[i]); break; }
+      }
+    }
+    return out;
+  }
+  function moneyAnswer(q) {
+    var w = windowFor(q);
+    var me = whoIsMe();
+    var others = namedProviders(q).filter(function (p) { return nrm(p) !== nrm(me); });
+    var list = [me].concat(others.slice(0, 2));
+    var parts = [], i;
+    for (i = 0; i < list.length; i++) {
+      var c = countsFor(list[i], w.key);
+      parts.push(list[i] + ': ' + c.appts + ' appointment' + (c.appts === 1 ? '' : 's') +
+                 ', ' + c.patients + ' unique patient' + (c.patients === 1 ? '' : 's') +
+                 (c.procs ? (', ' + c.procs + ' procedure-type visit' + (c.procs === 1 ? '' : 's')) : ''));
+    }
+    var tail = 'Real volume for ' + w.label + ' - ' + parts.join('; ') + '.';
+    if (!others.length) tail += ' Name another provider (e.g. "compare me to Dr. Evering") and I will compare volumes directly.';
+    tail += ' For actual dollars, connect your billing system - MLS never estimates them.';
+    return MONEY_HEAD + tail;
+  }
 
   function install() {
     var orig = window.mlsAsk;
@@ -432,8 +493,8 @@
       try {
         if (MONEY_RE.test(s)) {
           api.moneyRefusals++;
-          /* An honest, local, free answer. Never a fabricated dollar amount. */
-          return { answer: MONEY_ANSWER };
+          /* Honest, local, free: refuse the dollars, hand back the REAL volumes. */
+          return { answer: moneyAnswer(s) };
         }
         if (isComparison(s)) {
           api.comparisonsPassedToAI++;
@@ -27273,7 +27334,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b115';
+  var MLS_APP_BUILD='2026-07-10-b116';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
