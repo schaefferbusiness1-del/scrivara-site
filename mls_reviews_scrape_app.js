@@ -64,7 +64,12 @@
   var VER = '1.4.1';
   var MKT_URL = 'mls-marketing.html';
   var BK = 'https://scrivara-backend.onrender.com';
-  var CACHE_KEY = 'mlsRFScrapeCache';
+  /* v1.4.1: new key. Payloads cached by v1.4.0 can carry a `verified:true` that
+   * a confirm-then-undo left behind (the flag was mutated in place before
+   * __srcVerified existed), which would keep counting an un-confirmed listing
+   * toward the headline. Ignoring the old key self-heals every browser with no
+   * user action; the next scan repopulates it. */
+  var CACHE_KEY = 'mlsRFScrapeCache2';
   var CACHE_TTL = 24 * 60 * 60 * 1000;
   var EXT_TIMEOUT = 120000; /* whole extension job */
   var AUTO_TIMEOUT = 100000; /* grounded API can take ~30-60s of web search */
