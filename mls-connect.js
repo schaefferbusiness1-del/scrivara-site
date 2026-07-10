@@ -4189,7 +4189,18 @@
     try {
       var P = window.__mlsDayHistoryPull;
       var running = !!(P && P.state && P.state.running);
-      if (api.wasRunning && !running) { focusMlsTab(); }   // pull just ended -> return the doctor to MLS
+      try { var M = window.__mlsProvMonthPull; if (M && M.running) running = true; } catch (e2) {}
+      if (api.wasRunning && !running) { api._retap = 16; focusMlsTab(); }
+      if (!running && api._retap > 0) {
+        /* pull just ended: stragglers (a goHome/read still in flight) can
+           re-foreground athenaOne AFTER the first return, so re-tap at ~4s
+           and ~12s. Driven by THIS worker tick (~800ms) because setTimeout
+           is throttled to nothing in a hidden tab; stop as soon as the MLS
+           tab is actually visible. Ext v1.74 focus guardian is the backstop. */
+        api._retap--;
+        if (document.visibilityState === 'visible') { api._retap = 0; }
+        else if (api._retap === 11 || api._retap === 1) { focusMlsTab(); }
+      }
       api.wasRunning = running;
     } catch (e) {}
   }
@@ -27674,7 +27685,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b118';
+  var MLS_APP_BUILD='2026-07-10-b119';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -27903,7 +27914,7 @@
     document.body.appendChild(vw); return vw;
   }
   function hideMine(){ document.querySelectorAll('[data-mls-pview]').forEach(function(v){v.style.display='none';}); document.querySelectorAll('[data-mls-ptab]').forEach(function(t){t.classList.remove('on');}); }
-  function topPx(){ var nav=document.getElementById('mlsRdNav'); return nav?Math.round(nav.getBoundingClientRect().bottom):64; }
+  function topPx(){ var nav=document.getElementById('mlsRdNav')||document.getElementById('mainnav')||document.querySelector('.mainnav'); if(!nav){ var _nh=document.getElementById('nav_help'); nav=_nh&&_nh.parentNode; } return nav?Math.round(nav.getBoundingClientRect().bottom):64; }
   function show(vw){ hideMine(); vw.style.top=topPx()+'px'; vw.style.display='block'; }
   function showReviews(){
     var vw=overlay('mlsPView_reviews');
@@ -27964,7 +27975,7 @@
   }
   function showSend(){ var vw=overlay('mlsPView_send'); buildSend(vw); show(vw); var t=document.getElementById('mlsPtab_send'); if(t)t.classList.add('on'); }
   function inject(){
-    var nav=document.getElementById('mlsRdNav'); if(!nav) return false;
+    var nav=document.getElementById('mlsRdNav'); if(!nav){ var _nh=document.getElementById('nav_help'); nav=(_nh&&_nh.parentNode)||document.getElementById('mainnav')||document.querySelector('.mainnav'); } if(!nav) return false;
     if(nav.querySelector('[data-mls-ptab]')) return true;
     var before=document.getElementById('nav_help');
     function tab(id,label,fn){ var b=document.createElement('div'); b.id='mlsPtab_'+id; b.className='navtab'; b.setAttribute('data-mls-ptab',id); b.innerHTML=label+badge(); b.onclick=function(e){ try{e.stopPropagation();}catch(_){ } fn(); }; if(before&&before.parentNode) before.parentNode.insertBefore(b,before); else nav.appendChild(b); }
@@ -34904,3 +34915,148 @@
 
 
 ;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260707b53";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Revert: window.__mlsPatientLock.revert() */
+
+
+/* =========================================================================
+ * MLS Scribe - ONE MONTH PULL  (__mlsMonthPullOne) v1.0.0  2026-07-10 (b116)
+ *
+ * Michael's principle: a new feature REPLACES the old one - no duplicate
+ * buttons doing the same job differently. Before this module there were TWO
+ * month-pull surfaces that behaved differently:
+ *   1. Staff prep room (proven): month picker + doctor select -> imports the
+ *      month's SCHEDULE rows from athenaOne (read-only day walk).
+ *   2. A separate floating "Month pull - any provider" button/panel (b114/115):
+ *      pulls each rostered patient's CHART HISTORY for a month.
+ * This module consolidates them into the ONE proven surface:
+ *   - The floating duplicate button/panel is hidden (CSS; engine kept).
+ *   - The Staff prep pull card gains ONE continuation button - "Pull chart
+ *     histories (this doctor, this month)" - that reads the SAME month +
+ *     doctor inputs (#ez3sMonth / #ez3sPullProv) and drives the SAME engine
+ *     (__mlsProvMonthPull.run -> __mlsDayHistoryPull._pullOne), so the chart
+ *     pull now lives in the same flow as the proven schedule pull.
+ *   - HONEST GATES kept from v1.1.0: athenaOne only renders the signed-in
+ *     doctor's schedule, so charts for OTHER doctors cannot be opened from
+ *     this login (verified live 2026-07-10). "All providers" or another
+ *     doctor -> the button explains this and runs/offers the signed-in
+ *     doctor only. If the month's schedule was never imported, it says
+ *     "run the schedule pull above first" instead of failing silently.
+ * READ-ONLY in athenaOne (same engine, same gates; never Save/Sign/order).
+ * Idempotent; additive. Revert: window.__mlsMonthPullOne_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsMonthPullOne) return; } catch (e) { return; }
+  var api = { version: '1.0.0', clicks: 0, lastRun: null };
+
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function calRows() {
+    try { if (typeof _calAppts !== 'undefined' && _calAppts) { return (typeof _calAppts === 'function') ? (_calAppts() || []) : _calAppts; } } catch (e) {}
+    try { return (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []); } catch (e) { return []; }
+  }
+  var PLACEHOLDER = /^(frozen|open|available|ht|wt|bp|held|blocked|lunch|break|no exam|tbd|walk\s*in|placeholder)$/i;
+  function isPlaceholder(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || /,?\s*(md|do|dpm|pa-?c|np|crnp|staff|rn|ma|tech|phys|pt)\b/i.test(name || ''); }
+  function rosterCount(provider, ym) {
+    var n = 0, seen = {}, rows = calRows(), kp = nrm(provider);
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i];
+      if (!a || !a.name || !a.day_local || !a.provider) continue;
+      if (String(a.day_local).indexOf(ym) !== 0) continue;
+      if (nrm(a.provider) !== kp) continue;
+      if (isPlaceholder(a.name)) continue;
+      var k = nrm(a.name); if (!k || seen[k]) continue; seen[k] = 1; n++;
+    }
+    return n;
+  }
+  function selfProvider() {
+    try {
+      var el = document.getElementById('provSel') || document.querySelector('#mlsProvChip, [data-mls-provider]');
+      var t = el ? (el.value || el.textContent || '') : '';
+      if (t && /\w/.test(t)) return String(t).trim();
+    } catch (e) {}
+    return 'Matthew Schaeffer, MD';
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function note(msg) { try { var n = document.getElementById('mlsMpoNote'); if (n) n.innerHTML = msg; } catch (e) {} }
+
+  function css() {
+    if (document.getElementById('mlsMpoCss')) return;
+    var s = document.createElement('style'); s.id = 'mlsMpoCss';
+    s.textContent = [
+      '#mlsPmpBtn,#mlsPmpPanel{display:none !important}', /* the duplicate floating month-pull */
+      '#mlsMpoBtn{display:block;width:100%;margin-top:10px;border:0;border-radius:9px;padding:9px 0;font:700 12.5px system-ui;cursor:pointer;background:linear-gradient(135deg,#2E67EF,#1D46AF);color:#fff}',
+      '#mlsMpoBtn[disabled]{opacity:.55;cursor:default}',
+      '#mlsMpoNote{font-size:11.5px;color:#9fb0d8;margin-top:6px;line-height:1.45}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function onClick() {
+    api.clicks++;
+    var M = window.__mlsProvMonthPull;
+    var D = window.__mlsDayHistoryPull;
+    if (!M || !M.run || !D) { note('The chart-pull engine is not loaded — reload the page.'); return; }
+    if (M.running || (D.state && D.state.running)) { note('A pull is already running — let it finish (watch the progress screen).'); return; }
+    var ymEl = document.getElementById('ez3sMonth');
+    var provEl = document.getElementById('ez3sPullProv');
+    var ym = (ymEl && ymEl.value) || '';
+    if (!/^\d{4}-\d{2}$/.test(ym)) { note('Pick a month above first.'); return; }
+    var prov = (provEl && provEl.value) || 'all';
+    var self = selfProvider();
+    if (prov === 'all') {
+      prov = self;
+      note('Chart histories can only be opened for the signed-in doctor (' + esc(self) + ') — athenaOne renders only your own schedule. Running for ' + esc(self) + '; other providers’ schedule counts stay available to Copilot.');
+    } else if (nrm(prov) !== nrm(self)) {
+      note('⚠️ athenaOne only shows YOUR OWN schedule (' + esc(self) + '), so charts for ' + esc(prov) + ' cannot be opened from this login — verified live. Their schedule counts are still imported and comparable in Copilot.');
+      return;
+    }
+    var n = rosterCount(prov, ym);
+    if (!n) { note('No imported schedule rows for ' + esc(prov) + ' in ' + ym + ' — run the schedule pull above first, then pull charts.'); return; }
+    note('Pulling chart histories for ' + esc(prov) + ' — ' + n + ' patient' + (n === 1 ? '' : 's') + ' on the ' + ym + ' schedule. Progress shows in the pull screen; READ-ONLY in athenaOne.');
+    var p = M.run(prov, ym);
+    api.lastRun = { provider: prov, month: ym, started: true };
+    try {
+      if (p && p.then) p.then(function (res) {
+        if (res && res.total != null) note('Done: ' + res.ok + ' of ' + res.total + ' charts pulled for ' + esc(prov) + ' (' + ym + ')' + (res.failed ? (' — ' + res.failed + ' could not be read (re-run to retry).') : '.'));
+      });
+    } catch (e) {}
+  }
+
+  function mount() {
+    css();
+    try {
+      if (!window.__mlsProvMonthPull) return; /* engine not in this build */
+      var card = document.querySelector('.ez3-card.ez3-pull');
+      if (!card || document.getElementById('mlsMpoBtn')) return;
+      var b = document.createElement('button');
+      b.id = 'mlsMpoBtn'; b.type = 'button';
+      b.textContent = '📚 Pull chart histories (this doctor, this month)';
+      b.title = 'After the schedule pull above: open each rostered patient’s chart and file their history into MLS. Read-only in athenaOne.';
+      b.onclick = onClick;
+      card.appendChild(b);
+      var n = document.createElement('div');
+      n.id = 'mlsMpoNote';
+      n.textContent = 'Uses the same month + doctor picked above. Run the schedule pull first if this month isn’t imported yet.';
+      card.appendChild(n);
+    } catch (e) {}
+  }
+
+  /* the card re-renders via innerHTML — re-insert. NOTE: setInterval is
+     throttled to ~zero while the MLS tab is hidden (verified live 2026-07-10),
+     so ALSO re-mount on user interaction + visibility, which is when the
+     button actually needs to exist. */
+  var _iv = null;
+  try { _iv = setInterval(mount, 1200); } catch (e) {}
+  try { document.addEventListener('click', function () { try { mount(); } catch (e) {} }, true); } catch (e) {}
+  try { document.addEventListener('visibilitychange', function () { try { mount(); } catch (e) {} }, true); } catch (e) {}
+  try { mount(); } catch (e) {}
+
+  api.mount = mount;
+  window.__mlsMonthPullOne = api;
+  window.__mlsMonthPullOne_revert = function () {
+    try { if (_iv) clearInterval(_iv); } catch (e) {}
+    try { var s = document.getElementById('mlsMpoCss'); if (s) s.remove(); } catch (e) {}
+    try { var b = document.getElementById('mlsMpoBtn'); if (b) b.remove(); } catch (e) {}
+    try { var n = document.getElementById('mlsMpoNote'); if (n) n.remove(); } catch (e) {}
+    try { delete window.__mlsMonthPullOne; } catch (e) {}
+  };
+})();
