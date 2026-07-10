@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_source_clarity.js  —  window.__mlsSourceClarity  (v1.0.0)
+ * feat_source_clarity.js  —  window.__mlsSourceClarity  (v1.0.1 - athena-visits recognized)
  * -----------------------------------------------------------------------------
  * Makes Athena provenance obvious EVERYWHERE with color-coded circles.
  *
@@ -28,7 +28,7 @@
   'use strict';
   if (window.__mlsSourceClarity && window.__mlsSourceClarity.installed) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var STYLE_ID = 'mls-src-clarity-style';
   var LEGEND_ID = 'mlsSrcLegend';
   var SUMMARY_ID = 'mlsSrcSummary';
@@ -45,7 +45,7 @@
   /* ---- PURE: map a real visit.source value -> provenance meta -------------- */
   function srcMeta(source) {
     var s = (source == null ? '' : String(source)).toLowerCase().trim();
-    if (s === 'athena-copy' || s === 'athena' || s === 'athena-copy-every-visit')
+    if (s === 'athena-copy' || s === 'athena' || s === 'athena-copy-every-visit' || s === 'athena-visits' || s === 'athena-visits-pane')
       return { key: 'athena', label: 'From Athena', color: C_ATHENA };
     if (s === 'cohort-injection' || s === 'athena-cohort' || s === 'cohort')
       return { key: 'cohort', label: 'Athena cohort search', color: C_COHORT };
