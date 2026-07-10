@@ -1,5 +1,5 @@
 {
-  "version": "1.73",
+  "version": "1.74",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.73 - MLS Assist now updates itself in place; no download or reload is needed. Adds the athenaOne v26.3 week-strip date navigation, junk-frame identity guards, provider-credential name filtering, and the verified per-section write bridge. If you are installing for the first time, use the Chrome Web Store link."
+  "notes": "v1.74 - MLS Assist now updates itself in place; no download or reload is needed. Adds the focus guardian: after any pull or chart operation that brings athenaOne forward, you are always returned to MLS automatically (even if the operation errors out). Keeps v1.73's week-strip date navigation, junk-frame identity guards, provider-credential name filtering, and the verified per-section write bridge. If you are installing for the first time, use the Chrome Web Store link."
 }
