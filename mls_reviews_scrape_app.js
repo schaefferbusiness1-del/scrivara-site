@@ -1,5 +1,5 @@
 /* ============================================================================
- * mls_reviews_scrape_app.js -- __mlsRepScrape v1.4.0 (2026-07-10)
+ * mls_reviews_scrape_app.js -- __mlsRepScrape v1.4.1 (2026-07-10)
  *
  * v1.4.0 (one clean flow): the page previously showed a maze -- an AI-found
  *   3.8-star listing right under a headline that said "-- / 0 reviews / 0
@@ -61,7 +61,7 @@
   'use strict';
   if (window.__mlsRepScrape) return;
 
-  var VER = '1.4.0';
+  var VER = '1.4.1';
   var MKT_URL = 'mls-marketing.html';
   var BK = 'https://scrivara-backend.onrender.com';
   var CACHE_KEY = 'mlsRFScrapeCache';
@@ -179,11 +179,17 @@
     var conf = jsonList(CONF_KEY), deny = jsonList(DENY_KEY), i, j, L, k;
     for (i = 0; i < payload.listings.length; i++) {
       L = payload.listings[i]; k = keyOfListing(L);
+      /* v1.4.1: remember what the SOURCE said before any user mark, so an
+       * "undo" restores it. Without this, confirming then undoing left
+       * verified:true forever (the mutation survived in the cached payload)
+       * and the headline kept counting a listing the doctor had un-confirmed. */
+      if (L.__srcVerified === undefined) L.__srcVerified = !!L.verified;
       L.userDenied = false; L.userConfirmed = false;
       for (j = 0; j < deny.length; j++) { if (deny[j] === k) { L.userDenied = true; break; } }
       if (L.userDenied) { L.verified = false; L.unconfirmed = true; continue; }
       for (j = 0; j < conf.length; j++) { if (conf[j] === k) { L.userConfirmed = true; break; } }
       if (L.userConfirmed) { L.verified = true; L.unconfirmed = false; }
+      else { L.verified = L.__srcVerified; L.unconfirmed = !L.__srcVerified; }
     }
     var confSrc = {};
     for (i = 0; i < payload.listings.length; i++) {
@@ -192,7 +198,10 @@
     }
     var revs = payload.reviews || [];
     for (i = 0; i < revs.length; i++) {
+      /* same undo-safety as listings: never lose what the source said */
+      if (revs[i].__srcVerified === undefined) revs[i].__srcVerified = !!revs[i].verified;
       if (confSrc[String(revs[i].source) + '|' + String(revs[i].scope || '')]) { revs[i].verified = true; revs[i].unconfirmed = false; }
+      else { revs[i].verified = revs[i].__srcVerified; revs[i].unconfirmed = !revs[i].__srcVerified; }
     }
     return payload;
   }
