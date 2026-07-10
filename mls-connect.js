@@ -1,4 +1,585 @@
 /* =========================================================================
+ * MLS Scribe - CROSS-PROVIDER MONTH PULL  (__mlsProvMonthPull) v1.0.0  2026-07-10 (b114)
+ *
+ * "A full month pulls for a provider who is NOT Matthew Schaeffer."
+ * The live pull engine (__mlsDayHistoryPull v1.2.0) has two gaps this closes:
+ *   1. namesFor() filters by DAY only - a month pull would walk EVERY
+ *      provider's patients (2,600+ rows). This module builds a roster
+ *      scoped to ONE provider (exact match on the schedule row's provider).
+ *   2. pullOne() re-grounds athenaOne to HOME (= today) before each patient,
+ *      but the extension's opener clicks the patient's row on the DISPLAYED
+ *      schedule - so past days need gotoDate(day) after go-home. The fix is
+ *      the goHome->gotoDate SHIM PROVEN LIVE 2026-07-09 (12/15 on July 7):
+ *      hold the mlsAppGoHomeResult, drive mlsAppGotoDate(day) + settle, then
+ *      re-emit the held result so pullOne proceeds with the right day shown.
+ *
+ * Reuses __mlsDayHistoryPull._pullOne for all reading/identity/filing (no
+ * second pull engine), and drives __mlsDayHistoryPull.state so the existing
+ * pull-progress screen (__mlsPullProgress) shows this pull too.
+ *
+ * UI: "\ud83d\uddd3\ufe0f Month pull - any provider" button (bottom-right stack) -> panel
+ * with provider dropdown (from the imported schedule rows + counts), month
+ * picker, live "N patients / M still need a pull" count, Start / Stop.
+ *
+ * READ-ONLY in athenaOne (same engine, same gates; never Save/Sign/order).
+ * Idempotent; additive. Revert: window.__mlsProvMonthPull_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsProvMonthPull) return; } catch (e) { return; }
+  var api = { version: '1.0.0', running: false, stopReq: false, lastResult: null, shimHits: 0 };
+
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function say(m) { try { if (typeof window.toast === 'function') window.toast(m, ''); } catch (e) {} try { console.log('[MLS prov-month-pull]', m); } catch (e) {} }
+  var _wkUrl = null;
+  try { _wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
+  function wait(ms) {
+    return new Promise(function (r) {
+      if (_wkUrl) { try { var w = new Worker(_wkUrl); w.onmessage = function () { try { w.terminate(); } catch (e) {} r(); }; w.postMessage(ms); return; } catch (e) {} }
+      setTimeout(r, ms);
+    });
+  }
+  function bridge(type, payload, respType, timeout) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
+      try { window.addEventListener('message', h, false); } catch (e) {}
+      try { window.postMessage(Object.assign({ type: type, source: 'mls-app', from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
+      wait(timeout || 15000).then(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); });
+    });
+  }
+  function calRows() {
+    try { if (typeof _calAppts !== 'undefined' && _calAppts) { return (typeof _calAppts === 'function') ? (_calAppts() || []) : _calAppts; } } catch (e) {}
+    try { return (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []); } catch (e) { return []; }
+  }
+  function pats() { try { return (typeof window.getPatients === 'function') ? (window.getPatients() || []) : []; } catch (e) { return []; } }
+  function findPatient(name) { var k = nrm(name); var ps = pats(); for (var i = 0; i < ps.length; i++) { var pn = nrm(ps[i].name); if (pn && (pn === k || pn.indexOf(k) >= 0 || k.indexOf(pn) >= 0)) return ps[i]; } return null; }
+  function hasPulled(p) { var s = ''; try { s = String((p && p.summary) || ''); } catch (e) {} return s.length > 400 && /pulled from athena/i.test(s); }
+  var PLACEHOLDER = /^(frozen|open|available|ht|wt|bp|held|blocked|lunch|break|no exam|tbd|walk\s*in|placeholder)$/i;
+  function isPlaceholder(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || /,?\s*(md|do|dpm|pa-?c|np|crnp|staff|rn|ma|tech|phys|pt)\b/i.test(name || ''); }
+  function todayKey() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function thisMonth() { return todayKey().slice(0, 7); }
+
+  /* ------------- goHome -> gotoDate shim (live-proven mechanism) ---------- */
+  var shim = { active: false, day: '', passing: false };
+  function onGoHomeResult(ev) {
+    try {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppGoHomeResult') return;
+      if (!shim.active || shim.passing) return;
+      if (!shim.day || shim.day === todayKey()) return;
+      try { ev.stopImmediatePropagation(); } catch (e) {}
+      api.shimHits++;
+      var orig = d;
+      bridge('mlsAppGotoDate', { date: shim.day }, 'mlsAppGotoDateResult', 30000).then(function () {
+        return wait(3200); /* weekstrip settle; the v26.3 header-date verify lies - trust row content */
+      }).then(function () {
+        shim.passing = true;
+        try { window.postMessage(orig, '*'); } catch (e) {}
+        wait(600).then(function () { shim.passing = false; });
+      });
+    } catch (e) {}
+  }
+  try { window.addEventListener('message', onGoHomeResult, false); } catch (e) {}
+
+  /* ------------------------------ roster --------------------------------- */
+  function providersFor(monthPrefix) {
+    var map = {}, out = [], rows = calRows();
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i];
+      if (!a || !a.provider || !a.day_local) continue;
+      if (String(a.day_local).indexOf(monthPrefix) !== 0) continue;
+      if (isPlaceholder(a.name || '')) continue;
+      var p = String(a.provider);
+      if (!map[p]) { map[p] = { provider: p, appts: 0, uniq: {} }; }
+      map[p].appts++;
+      map[p].uniq[nrm(a.name || '')] = 1;
+    }
+    for (var k in map) {
+      if (!map.hasOwnProperty(k)) continue;
+      var u = 0, q; for (q in map[k].uniq) { if (map[k].uniq.hasOwnProperty(q)) u++; }
+      out.push({ provider: map[k].provider, appts: map[k].appts, patients: u });
+    }
+    out.sort(function (a, b) { return b.patients - a.patients; });
+    return out;
+  }
+  function rosterFor(provider, monthPrefix) {
+    var out = [], seen = {}, rows = calRows(), kp = nrm(provider);
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i];
+      if (!a || !a.name || !a.day_local || !a.provider) continue;
+      if (String(a.day_local).indexOf(monthPrefix) !== 0) continue;
+      if (nrm(a.provider) !== kp) continue;
+      if (isPlaceholder(a.name)) continue;
+      var k = nrm(a.name); if (!k || seen[k]) continue; seen[k] = 1;
+      out.push({ name: String(a.name), day: String(a.day_local).slice(0, 10) });
+    }
+    out.sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; });
+    return out;
+  }
+
+  /* ------------------------------ run loop -------------------------------- */
+  function run(provider, monthPrefix) {
+    var D = window.__mlsDayHistoryPull;
+    if (!D || !D._pullOne || !D.state) { say('The day-pull engine is not loaded - reload the page.'); return Promise.resolve('no-engine'); }
+    if (api.running || D.state.running) { say('A pull is already running.'); return Promise.resolve('already-running'); }
+    return (async function () {
+      var pre = await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 18000);
+      if (pre && pre.__timeout) { say('MLS Assist is not answering - is the extension loaded and an athenaOne tab open?'); return 'needs-ext'; }
+      var roster = rosterFor(provider, monthPrefix);
+      if (!roster.length) { say('No schedule rows found for ' + provider + ' in ' + monthPrefix + '.'); return 'empty-roster'; }
+      var todo = [], skipped = 0;
+      for (var i = 0; i < roster.length; i++) {
+        var p = findPatient(roster[i].name);
+        if (p && hasPulled(p) && (p.visits || []).length) { skipped++; } else { todo.push(roster[i]); }
+      }
+      var S = D.state;
+      S.running = true; S.total = todo.length; S.done = 0; S.ok = 0; S.failed = 0; S.current = ''; S.rows = [];
+      api.running = true; api.stopReq = false;
+      var btn = document.getElementById('mlsDayHistBtn'); if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+      say('Month pull for ' + provider + ' (' + monthPrefix + '): ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + (skipped ? ' - ' + skipped + ' already pulled.' : '.'));
+      if (!todo.length) {
+        S.running = false; api.running = false;
+        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+        say('Every ' + provider + ' patient in ' + monthPrefix + ' already has chart history.');
+        return 'nothing-to-do';
+      }
+      for (var j = 0; j < todo.length; j++) {
+        if (api.stopReq) { say('Month pull stopped by user at ' + S.done + '/' + S.total + '.'); break; }
+        var item = todo[j];
+        S.current = item.name + ' (' + item.day + ')';
+        shim.active = true; shim.day = item.day;
+        var row;
+        try { row = await D._pullOne(item.name); } catch (e) { row = { name: item.name, ok: false, reason: 'error:' + ((e && e.message) || e) }; }
+        shim.active = false; shim.day = '';
+        row.day = item.day;
+        S.rows.push(row); S.done++;
+        if (row && row.ok) S.ok++; else S.failed++;
+        try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
+        await wait(700);
+      }
+      shim.active = false;
+      S.running = false; S.current = '';
+      api.running = false;
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+      /* focus back to MLS (same courtesy as the day pull) */
+      try { window.postMessage({ source: 'mls-app', type: 'mlsAppFocusMlsTab' }, '*'); } catch (e) {}
+      api.lastResult = { provider: provider, month: monthPrefix, total: S.total, ok: S.ok, failed: S.failed, skippedAlreadyPulled: skipped, rows: S.rows.slice() };
+      say('Month pull finished for ' + provider + ': ' + S.ok + ' of ' + S.total + ' pulled' + (S.failed ? ' (' + S.failed + ' could not be read - re-run to retry)' : '') + '.');
+      return api.lastResult;
+    })();
+  }
+
+  /* -------------------------------- UI ------------------------------------ */
+  var BTN = 'mlsPmpBtn', PANEL = 'mlsPmpPanel';
+  function css() {
+    if (document.getElementById('mlsPmpCss')) return;
+    var st = document.createElement('style'); st.id = 'mlsPmpCss';
+    st.textContent = [
+      '#' + BTN + '{position:fixed;right:14px;bottom:190px;z-index:2147483000;background:#5b21b6;color:#fff;border:0;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)}',
+      '#' + PANEL + '{position:fixed;right:14px;bottom:236px;z-index:2147483001;width:330px;background:#0b1020;color:#e8ecff;border:1px solid rgba(139,120,220,.4);border-radius:14px;padding:16px;font:13px/1.5 system-ui;box-shadow:0 18px 50px rgba(0,0,0,.5)}',
+      '#' + PANEL + ' h3{margin:0 0 8px;font:800 14.5px system-ui}',
+      '#' + PANEL + ' label{display:block;font-size:11px;font-weight:700;color:#b7a8ea;margin:8px 0 3px;text-transform:uppercase;letter-spacing:.4px}',
+      '#' + PANEL + ' select,#' + PANEL + ' input{width:100%;background:#141b3d;color:#e8ecff;border:1px solid rgba(139,120,220,.35);border-radius:8px;padding:7px 9px;font-size:13px;box-sizing:border-box}',
+      '#' + PANEL + ' .pmp-count{font-size:12px;color:#9fb0d8;margin-top:8px;min-height:16px}',
+      '#' + PANEL + ' .pmp-row{display:flex;gap:8px;margin-top:12px}',
+      '#' + PANEL + ' button{flex:1;border:0;border-radius:9px;padding:9px 0;font:700 12.5px system-ui;cursor:pointer}',
+      '#' + PANEL + ' .pmp-go{background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff}',
+      '#' + PANEL + ' .pmp-stop{background:#3b1d1d;color:#ffb4a8;border:1px solid rgba(255,120,100,.35)}',
+      '#' + PANEL + ' .pmp-x{position:absolute;top:8px;right:10px;background:none;border:0;color:#9fb0d8;font-size:15px;cursor:pointer;flex:none;padding:2px 6px}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(st);
+  }
+  function refreshCount() {
+    try {
+      var sel = document.getElementById('mlsPmpProv'), mo = document.getElementById('mlsPmpMonth'), out = document.getElementById('mlsPmpCount');
+      if (!sel || !mo || !out) return;
+      if (!sel.value) { out.textContent = 'Pick a provider.'; return; }
+      var roster = rosterFor(sel.value, mo.value || thisMonth());
+      var need = 0;
+      for (var i = 0; i < roster.length; i++) { var p = findPatient(roster[i].name); if (!(p && hasPulled(p) && (p.visits || []).length)) need++; }
+      out.textContent = roster.length + ' patient' + (roster.length === 1 ? '' : 's') + ' on the ' + (mo.value || thisMonth()) + ' schedule; ' + need + ' still need a chart pull (~' + Math.ceil(need * 22 / 60) + ' min).';
+    } catch (e) {}
+  }
+  function fillProviders() {
+    try {
+      var sel = document.getElementById('mlsPmpProv'), mo = document.getElementById('mlsPmpMonth');
+      if (!sel) return;
+      var keep = sel.value;
+      var list = providersFor((mo && mo.value) || thisMonth());
+      var h = '<option value="">- pick a provider -</option>';
+      for (var i = 0; i < list.length; i++) {
+        var P = list[i];
+        h += '<option value="' + P.provider.replace(/"/g, '&quot;') + '">' + P.provider.replace(/</g, '&lt;') + ' (' + P.patients + ' pts)</option>';
+      }
+      sel.innerHTML = h;
+      if (keep) sel.value = keep;
+    } catch (e) {}
+  }
+  function openPanel() {
+    css();
+    var el = document.getElementById(PANEL);
+    if (el) { el.style.display = ''; fillProviders(); refreshCount(); return; }
+    el = document.createElement('div'); el.id = PANEL;
+    el.innerHTML = '<button class="pmp-x" title="Close">\u2715</button>'
+      + '<h3>\ud83d\uddd3\ufe0f Month pull - any provider</h3>'
+      + '<div style="font-size:11.5px;color:#9fb0d8">Pulls every scheduled patient\'s chart history for one provider\'s whole month. athenaOne will be driven (read-only) - it may flicker.</div>'
+      + '<label>Provider</label><select id="mlsPmpProv"></select>'
+      + '<label>Month</label><input id="mlsPmpMonth" type="month" value="' + thisMonth() + '">'
+      + '<div class="pmp-count" id="mlsPmpCount"></div>'
+      + '<div class="pmp-row"><button class="pmp-go" id="mlsPmpGo">\u25b6 Start month pull</button><button class="pmp-stop" id="mlsPmpStop">\u25a0 Stop</button></div>';
+    document.body.appendChild(el);
+    el.querySelector('.pmp-x').onclick = function () { el.style.display = 'none'; };
+    el.querySelector('#mlsPmpProv').onchange = refreshCount;
+    el.querySelector('#mlsPmpMonth').onchange = function () { fillProviders(); refreshCount(); };
+    el.querySelector('#mlsPmpGo').onclick = function () {
+      var sel = document.getElementById('mlsPmpProv'), mo = document.getElementById('mlsPmpMonth');
+      if (!sel.value) { say('Pick a provider first.'); return; }
+      run(sel.value, mo.value || thisMonth());
+    };
+    el.querySelector('#mlsPmpStop').onclick = function () { api.stopReq = true; say('Stopping after the current patient...'); };
+    fillProviders(); refreshCount();
+  }
+  function mountBtn() {
+    try {
+      if (document.getElementById(BTN)) return;
+      if (!document.body) return;
+      css();
+      var b = document.createElement('button');
+      b.id = BTN; b.type = 'button';
+      b.textContent = '\ud83d\uddd3\ufe0f Month pull - any provider';
+      b.title = 'Pull a whole month of chart histories for any provider on the schedule (read-only).';
+      b.onclick = openPanel;
+      document.body.appendChild(b);
+    } catch (e) {}
+  }
+  var _iv = null; try { _iv = setInterval(mountBtn, 2000); } catch (e) {} try { mountBtn(); } catch (e) {}
+
+  api.run = run;
+  api.rosterFor = rosterFor;
+  api.providersFor = providersFor;
+  window.__mlsProvMonthPull = api;
+  window.__mlsProvMonthPull_revert = function () {
+    try { if (_iv) clearInterval(_iv); } catch (e) {}
+    try { window.removeEventListener('message', onGoHomeResult, false); } catch (e) {}
+    try { var b = document.getElementById(BTN); if (b) b.remove(); } catch (e) {}
+    try { var p = document.getElementById(PANEL); if (p) p.remove(); } catch (e) {}
+    try { var s = document.getElementById('mlsPmpCss'); if (s) s.remove(); } catch (e) {}
+    try { delete window.__mlsProvMonthPull; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe - COPILOT PROVIDER-DATA GROUNDING  (__mlsCopilotData) v1.0.0  2026-07-10 (b114)
+ *
+ * Makes Copilot smart about CROSS-PROVIDER questions ("compare my procedure
+ * rates last month to Dr. Evering's", "who saw more patients in June?") by
+ * attaching REAL, locally-computed numbers to every /api/copilot request.
+ * The backend already forwards req.body.context verbatim into the model's
+ * PRACTICE SNAPSHOT (server.js /api/copilot, 60KB cap) - so this module
+ * enriches context.providerStats client-side. Nothing is ever fabricated:
+ * every number is computed from the imported athenaOne schedule rows
+ * (_calAppts: all providers) and the pulled chart visits (per-patient), and
+ * the payload states its own coverage so the model can be honest about what
+ * is NOT known (e.g. dollar revenue, or procedure detail for providers whose
+ * charts have not been pulled).
+ *
+ * Computation:
+ *  - apptsByMonth: per provider per month - appointment rows, unique patients,
+ *    procedure-hinted appointments (reason text matches a procedure keyword).
+ *  - pulledVisitStats: per provider per month - visits on file from pulled
+ *    charts, procedure visits (CPT present or procedure keyword in the visit
+ *    type/text), CPT codes found. Attribution: a visit belongs to the provider
+ *    whose schedule row matches that patient on that day; else the patient's
+ *    dominant provider; unattributable visits are counted separately.
+ *  - coverage: how many of the provider's patients have pulled charts, so the
+ *    model can say "based on 12 of 16 charts".
+ * No dollar amounts are included anywhere - there is no payment data in MLS -
+ * and the payload says so explicitly (noRevenueData: true).
+ *
+ * Scope guard: wraps window.fetch ONLY for POST .../api/copilot (same narrow
+ * pattern as the live __mlsCopilotActions response-side wrap). 5-min cache.
+ * Idempotent; additive. Revert: window.__mlsCopilotData_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsCopilotData) return; } catch (e) { return; }
+  var api = { version: '1.0.0', calls: 0, lastStats: null, lastError: null };
+
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function calRows() {
+    try { if (typeof _calAppts !== 'undefined' && _calAppts) { return (typeof _calAppts === 'function') ? (_calAppts() || []) : _calAppts; } } catch (e) {}
+    try { return (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []); } catch (e) { return []; }
+  }
+  function pats() { try { return (typeof window.getPatients === 'function') ? (window.getPatients() || []) : []; } catch (e) { return []; } }
+
+  var PROC_RE = /(injection|epidural|\besi\b|facet|medial branch|\brfa\b|radiofrequenc|ablation|nerve block|\bblock\b|kyphoplast|vertebroplast|stimulator|\bscs\b|\bemg\b|\bncs\b|discogram|\bmbb\b|trigger point|botox|\bprp\b|aspiration|arthrocentesis|fusion|laminectom|discectom|arthroplast|\btka\b|\btha\b|carpal tunnel release|\bcortisone\b|steroid inject)/i;
+  var PLACEHOLDER = /^(frozen|open|available|ht|wt|bp|held|blocked|lunch|break|no exam|tbd|walk\s*in|placeholder)$/i;
+  function isPlaceholder(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || /,?\s*(md|do|dpm|pa-?c|np|crnp|staff|rn|ma|tech|phys|pt)\b/i.test(name || ''); }
+  function monthsWanted() {
+    /* current month + previous 2 (covers "last month" questions) */
+    var out = [], d = new Date();
+    for (var i = 0; i < 3; i++) {
+      var m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      out.push(m.getFullYear() + '-' + ('0' + (m.getMonth() + 1)).slice(-2));
+    }
+    return out;
+  }
+
+  var _cache = { at: 0, stats: null };
+  function computeStats() {
+    var now = new Date().getTime();
+    if (_cache.stats && (now - _cache.at) < 5 * 60 * 1000) return _cache.stats;
+    var months = monthsWanted(), wantM = {}, mi;
+    for (mi = 0; mi < months.length; mi++) wantM[months[mi]] = 1;
+    var rows = calRows(), i;
+
+    /* pass 1: appointment volumes per provider per month + patient->provider index */
+    var prov = {}; /* name -> { months: { m: {appts, uniq{}, procHints} } } */
+    var patIdx = {}; /* nrm(patient) -> { days: {day: provider}, counts: {provider: n} } */
+    for (i = 0; i < rows.length; i++) {
+      var a = rows[i];
+      if (!a || !a.provider || !a.day_local || !a.name) continue;
+      if (isPlaceholder(a.name)) continue;
+      var day = String(a.day_local).slice(0, 10), m = day.slice(0, 7);
+      if (!wantM[m]) continue;
+      var P = String(a.provider);
+      if (!prov[P]) prov[P] = { months: {} };
+      if (!prov[P].months[m]) prov[P].months[m] = { appts: 0, uniq: {}, procHints: 0 };
+      var B = prov[P].months[m];
+      B.appts++;
+      var pk = nrm(a.name);
+      B.uniq[pk] = 1;
+      if (PROC_RE.test(String(a.reason || ''))) B.procHints++;
+      if (!patIdx[pk]) patIdx[pk] = { days: {}, counts: {} };
+      patIdx[pk].days[day] = P;
+      patIdx[pk].counts[P] = (patIdx[pk].counts[P] || 0) + 1;
+    }
+
+    /* pass 2: pulled-visit stats attributed to providers */
+    var unattributed = { visits: 0, procedureVisits: 0 };
+    var ps = pats(), pulledPatientsByProv = {};
+    for (i = 0; i < ps.length; i++) {
+      var p = ps[i]; if (!p || !p.name) continue;
+      var pk2 = nrm(p.name), att = patIdx[pk2];
+      var vs = p.visits || [], vi;
+      var hasPull = false;
+      try { hasPull = String(p.summary || '').length > 400 && /pulled from athena/i.test(String(p.summary || '')); } catch (e) {}
+      if (att && hasPull) {
+        var domP = null, domN = -1, ck;
+        for (ck in att.counts) { if (att.counts.hasOwnProperty(ck) && att.counts[ck] > domN) { domN = att.counts[ck]; domP = ck; } }
+        if (domP) { if (!pulledPatientsByProv[domP]) pulledPatientsByProv[domP] = {}; pulledPatientsByProv[domP][pk2] = 1; }
+      }
+      for (vi = 0; vi < vs.length; vi++) {
+        var v = vs[vi]; if (!v) continue;
+        var vday = String(v.date || '').slice(0, 10), vm = vday.slice(0, 7);
+        if (!wantM[vm]) continue;
+        var cptN = (v.cpt && v.cpt.length) || 0;
+        var isProc = cptN > 0 || PROC_RE.test(String(v.type || '') + ' ' + String(v.raw || '').slice(0, 800));
+        var provName = null;
+        if (att) {
+          provName = att.days[vday] || null;
+          if (!provName) { var bk, bn = -1; for (bk in att.counts) { if (att.counts.hasOwnProperty(bk) && att.counts[bk] > bn) { bn = att.counts[bk]; provName = bk; } } }
+        }
+        if (!provName) { unattributed.visits++; if (isProc) unattributed.procedureVisits++; continue; }
+        if (!prov[provName]) prov[provName] = { months: {} };
+        if (!prov[provName].months[vm]) prov[provName].months[vm] = { appts: 0, uniq: {}, procHints: 0 };
+        var B2 = prov[provName].months[vm];
+        B2.pulledVisits = (B2.pulledVisits || 0) + 1;
+        if (isProc) B2.procedureVisits = (B2.procedureVisits || 0) + 1;
+        if (cptN) B2.cptCodesFound = (B2.cptCodesFound || 0) + cptN;
+      }
+    }
+
+    /* pack (top 20 providers by total appts, compact) */
+    var list = [], k;
+    for (k in prov) {
+      if (!prov.hasOwnProperty(k)) continue;
+      var tot = 0, mm, packed = {};
+      for (mm in prov[k].months) {
+        if (!prov[k].months.hasOwnProperty(mm)) continue;
+        var b = prov[k].months[mm], u = 0, uq;
+        for (uq in b.uniq) { if (b.uniq.hasOwnProperty(uq)) u++; }
+        tot += b.appts;
+        packed[mm] = { appointments: b.appts, uniquePatients: u, procedureHintedAppointments: b.procHints };
+        if (b.pulledVisits) packed[mm].pulledChartVisits = b.pulledVisits;
+        if (b.procedureVisits) packed[mm].procedureVisitsFromPulledCharts = b.procedureVisits;
+        if (b.cptCodesFound) packed[mm].cptCodesFound = b.cptCodesFound;
+      }
+      var pulledPts = 0, pp;
+      if (pulledPatientsByProv[k]) { for (pp in pulledPatientsByProv[k]) { if (pulledPatientsByProv[k].hasOwnProperty(pp)) pulledPts++; } }
+      list.push({ provider: k, totalAppointments: tot, patientsWithPulledCharts: pulledPts, byMonth: packed });
+    }
+    list.sort(function (a, b) { return b.totalAppointments - a.totalAppointments; });
+    list = list.slice(0, 20);
+
+    var stats = {
+      generatedAt: new Date().toISOString().slice(0, 16),
+      monthsCovered: months,
+      source: 'imported athenaOne schedule rows (all providers) + chart visits pulled into MLS',
+      noRevenueData: true,
+      revenueNote: 'MLS has NO payment/collections data. Never state or estimate dollar amounts for any provider; if asked about money, say the practice billing system holds that and offer volume/procedure comparisons instead.',
+      coverageNote: 'procedureVisitsFromPulledCharts only counts charts pulled into MLS (see patientsWithPulledCharts); providers with 0 pulled charts have appointment volumes only - say so when comparing.',
+      providers: list,
+      unattributedPulledVisits: unattributed
+    };
+    var json = '';
+    try { json = JSON.stringify(stats); } catch (e) { json = ''; }
+    if (json.length > 14000) { /* keep the context payload small: drop to top 10 providers */
+      stats.providers = list.slice(0, 10);
+      stats.truncated = 'top 10 providers by volume (of ' + list.length + ')';
+    }
+    _cache.at = now; _cache.stats = stats;
+    api.lastStats = stats;
+    return stats;
+  }
+
+  /* ------------------------ narrow fetch wrap ----------------------------- */
+  var _fetch = window.fetch;
+  function wrapped(input, init) {
+    try {
+      var url = (typeof input === 'string') ? input : ((input && input.url) || '');
+      var method = (init && init.method) || (input && input.method) || 'GET';
+      if (/\/api\/copilot(\?|$)/.test(String(url).split('#')[0]) && String(method).toUpperCase() === 'POST' && init && typeof init.body === 'string') {
+        var b = null;
+        try { b = JSON.parse(init.body); } catch (e) { b = null; }
+        if (b && typeof b === 'object') {
+          if (!b.context || typeof b.context !== 'object') b.context = {};
+          b.context.providerStats = computeStats();
+          var newBody = JSON.stringify(b);
+          if (newBody.length <= 59000) { /* stay under the server's 60KB context slice */
+            init = Object.assign({}, init, { body: newBody });
+            api.calls++;
+          }
+        }
+      }
+    } catch (e) { api.lastError = String((e && e.message) || e); }
+    return _fetch.call(this, input, init);
+  }
+  try { window.fetch = wrapped; } catch (e) {}
+
+  api.computeStats = computeStats;
+  window.__mlsCopilotData = api;
+  window.__mlsCopilotData_revert = function () {
+    try { if (window.fetch === wrapped) window.fetch = _fetch; } catch (e) {}
+    try { delete window.__mlsCopilotData; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe - LIVE EXTENSION VERSION IN SETTINGS  (__mlsExtVerLive) v1.0.0  2026-07-10 (b114)
+ *
+ * The Settings download slot showed a STALE version (extension-version.json
+ * said 1.55 while the running extension answers 1.73 to mlsPing). This module
+ * shows the TRUTH dynamically:
+ *  - pings the extension (mlsPing -> mlsPong.version = the version actually
+ *    running in this browser right now) whenever the download slot is visible
+ *  - renders a status row under the download anchor: running version, and
+ *    up-to-date / behind vs extension-version.json (fetched fresh, no-store)
+ *  - if the extension is not answering, says that honestly instead of a number
+ * Never shows a hardcoded version. Idempotent; additive.
+ * Revert: window.__mlsExtVerLive_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsExtVerLive) return; } catch (e) { return; }
+  var api = { version: '1.0.0', running: null, latestJson: null, renders: 0 };
+  var ROW = 'mlsExtVerLiveRow';
+
+  function verNum(v) { var m = String(v == null ? '' : v).match(/(\d+)\.(\d+)/); return m ? (parseInt(m[1], 10) * 1000 + parseInt(m[2], 10)) : null; }
+  function ping(cb) {
+    var done = false;
+    function on(e) {
+      var d = e && e.data;
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong') return;
+      if (done) return; done = true;
+      try { window.removeEventListener('message', on); } catch (e2) {}
+      cb(d.version || null);
+    }
+    try { window.addEventListener('message', on, false); } catch (e2) {}
+    try { window.postMessage({ source: 'mls-app', type: 'mlsPing' }, location.origin); } catch (e2) {}
+    setTimeout(function () { if (done) return; done = true; try { window.removeEventListener('message', on); } catch (e2) {} cb(null); }, 2500);
+  }
+  var _jsonAt = 0;
+  function latest(cb) {
+    var now = new Date().getTime();
+    if (api.latestJson && (now - _jsonAt) < 10 * 60 * 1000) { cb(api.latestJson); return; }
+    try {
+      fetch('/extension-version.json?t=' + now, { cache: 'no-store' }).then(
+        function (r) { return r && r.ok ? r.json() : null; },
+        function () { return null; }
+      ).then(function (j) {
+        if (j && j.version) { api.latestJson = String(j.version).trim(); _jsonAt = now; }
+        cb(api.latestJson);
+      }, function () { cb(api.latestJson); });
+    } catch (e) { cb(api.latestJson); }
+  }
+  function slotAnchor() {
+    try {
+      var as = document.querySelectorAll('a[data-eds-primary="1"], a[href*="MLS_Assist_v"], a[download]');
+      for (var i = 0; i < as.length; i++) {
+        var a = as[i];
+        if (a.offsetParent === null) continue;
+        var t = String(a.textContent || '') + ' ' + String(a.href || '');
+        if (/MLS.?Assist|Add to Chrome|extension/i.test(t)) return a;
+      }
+    } catch (e) {}
+    return null;
+  }
+  function render() {
+    var a = slotAnchor();
+    if (!a) { return; }
+    ping(function (v) {
+      api.running = v;
+      latest(function (lv) {
+        try {
+          var row = document.getElementById(ROW);
+          if (!row) {
+            row = document.createElement('span');
+            row.id = ROW;
+            row.className = 'note';
+            row.style.cssText = 'display:block;margin:7px 0 0;font-size:12px';
+            var after = document.getElementById('edsSecondaryRow') || a;
+            if (after.parentNode) after.parentNode.insertBefore(row, after.nextSibling);
+            else return;
+          }
+          var html;
+          if (v) {
+            var vn = verNum(v), ln = verNum(lv);
+            var upToDate = (vn != null && ln != null) ? (vn >= ln) : null;
+            html = '\ud83d\udd0e <b>Running in this browser right now: v' + String(v).replace(/</g, '&lt;') + '</b>';
+            if (upToDate === true) html += ' \u2014 \u2705 up to date.';
+            else if (upToDate === false) html += ' \u2014 an update (v' + String(lv).replace(/</g, '&lt;') + ') is available above.';
+            else html += ' (live check).';
+          } else {
+            html = '\ud83d\udd0e MLS Assist is not answering in this tab \u2014 if you just installed or updated it, reload this page and check again.';
+          }
+          if (row.getAttribute('data-html') !== html) {
+            row.innerHTML = html;
+            row.setAttribute('data-html', html);
+            api.renders++;
+          }
+        } catch (e) {}
+      });
+    });
+  }
+  var _iv = null;
+  try { _iv = setInterval(render, 4000); } catch (e) {}
+  try { render(); } catch (e) {}
+
+  api.render = render;
+  window.__mlsExtVerLive = api;
+  window.__mlsExtVerLive_revert = function () {
+    try { if (_iv) clearInterval(_iv); } catch (e) {}
+    try { var r = document.getElementById(ROW); if (r) r.remove(); } catch (e) {}
+    try { delete window.__mlsExtVerLive; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
  * MLS Scribe - PULL PROGRESS SCREEN  (__mlsPullProgress) v1.0.0  2026-07-10 (b113)
  *
  * The day/month history pull runs for minutes and (until now) only emitted
@@ -26371,7 +26952,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b113';
+  var MLS_APP_BUILD='2026-07-10-b114';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
