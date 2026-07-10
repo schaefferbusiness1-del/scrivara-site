@@ -1,6 +1,22 @@
 /* ============================================================================
- * mls_reviews_scrape_app.js -- __mlsRepScrape v1.3.0 (2026-07-08)
+ * mls_reviews_scrape_app.js -- __mlsRepScrape v1.4.0 (2026-07-10)
  *
+ * v1.4.0 (one clean flow): the page previously showed a maze -- an AI-found
+ *   3.8-star listing right under a headline that said "-- / 0 reviews / 0
+ *   confirmed", with no way to get from one to the other. Fixes:
+ *   1. CONFIRM FLOW: every unconfirmed listing now has "This is me -- count
+ *      it" / "Not me -- hide" buttons. Confirming marks the listing (and its
+ *      reviews) verified, persists in localStorage (mlsRFConfirmed /
+ *      mlsRFDenied, survives rescans), recomputes the headline and re-renders.
+ *   2. PLACES ALWAYS MERGED: the authoritative zero-AI Google Places rating
+ *      (/api/reviews/find) is now merged into GROUNDED results too (it was
+ *      fallback-only), so a verified Google listing counts immediately.
+ *   3. HONEST HINT: while nothing is confirmed, the "--" headline explains
+ *      itself ("Found 3.8 stars on healthgrades -- unconfirmed. Click This is
+ *      me below to count it.") instead of looking broken.
+ *   4. NO FLASH: the duplicate __mlsRepAuto2 card + stale API-key grid are
+ *      hidden by CSS injected at parse time (was: ~1.4s late via interval).
+ * ----------------------------------------------------------------------------
  * v1.3.0 (auto-reviews): GROUNDED API is now the PRIMARY, default path and the
  *   browser extension is no longer required to find reviews. The "Find my
  *   profiles & pull reviews" button calls the backend route
@@ -45,7 +61,7 @@
   'use strict';
   if (window.__mlsRepScrape) return;
 
-  var VER = '1.3.0';
+  var VER = '1.4.0';
   var MKT_URL = 'mls-marketing.html';
   var BK = 'https://scrivara-backend.onrender.com';
   var CACHE_KEY = 'mlsRFScrapeCache';
@@ -53,6 +69,16 @@
   var EXT_TIMEOUT = 120000; /* whole extension job */
   var AUTO_TIMEOUT = 100000; /* grounded API can take ~30-60s of web search */
   var CARD_ID = 'repScrapeCard';
+
+  /* v1.4.0: hide the duplicate __mlsRepAuto2 card + stale API-key grid the
+   * instant this file parses (script tag sits at the end of body, so the DOM
+   * exists) -- kills the flash-of-duplicate-dashboard. revert() removes it. */
+  try {
+    var hideSt = document.createElement('style');
+    hideSt.id = CARD_ID + 'HideCss';
+    hideSt.textContent = '#repLiveCard,#repSources{display:none !important}';
+    (document.head || document.documentElement).appendChild(hideSt);
+  } catch (e) {}
 
   /* ------------------------------ utils ---------------------------------- */
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -119,6 +145,56 @@
       if (out.length >= 6) break;
     }
     return out;
+  }
+
+  /* -------------------- v1.4.0: confirm / deny listings ------------------ */
+  /* The doctor confirms "this profile is me" once; it persists across rescans
+   * (localStorage) and the listing + its reviews count toward the headline. */
+  var CONF_KEY = 'mlsRFConfirmed', DENY_KEY = 'mlsRFDenied';
+  function jsonList(k) { try { var a = JSON.parse(lsGet(k) || '[]'); return Object.prototype.toString.call(a) === '[object Array]' ? a : []; } catch (e) { return []; } }
+  function keyOfListing(L) {
+    if (L && L.url) return String(L.url).toLowerCase().replace(/[?#].*$/, '').replace(/\/+$/, '');
+    return String((L && L.source) || '') + '|' + String((L && L.name) || '').toLowerCase();
+  }
+  function markConfirmed(k, on) {
+    var l = jsonList(CONF_KEY), ix = -1, i;
+    for (i = 0; i < l.length; i++) { if (l[i] === k) { ix = i; break; } }
+    if (on && ix < 0) l.push(k);
+    if (!on && ix >= 0) l.splice(ix, 1);
+    lsSet(CONF_KEY, JSON.stringify(l.slice(0, 60)));
+  }
+  function markDenied(k) {
+    var l = jsonList(DENY_KEY), i, seen = false;
+    for (i = 0; i < l.length; i++) { if (l[i] === k) { seen = true; break; } }
+    if (!seen) l.push(k);
+    lsSet(DENY_KEY, JSON.stringify(l.slice(0, 60)));
+  }
+  function clearDenied() { lsSet(DENY_KEY, '[]'); }
+  /* Re-apply the doctor's saved confirm/deny marks to any payload (fresh scan,
+   * cache load, Places merge). Denied listings are flagged (render hides them,
+   * weightedSummary already skips verified:false). Reviews inherit confirmed
+   * status from their source listing (same source + scope). */
+  function applyUserMarks(payload) {
+    if (!payload || !payload.listings) return payload;
+    var conf = jsonList(CONF_KEY), deny = jsonList(DENY_KEY), i, j, L, k;
+    for (i = 0; i < payload.listings.length; i++) {
+      L = payload.listings[i]; k = keyOfListing(L);
+      L.userDenied = false; L.userConfirmed = false;
+      for (j = 0; j < deny.length; j++) { if (deny[j] === k) { L.userDenied = true; break; } }
+      if (L.userDenied) { L.verified = false; L.unconfirmed = true; continue; }
+      for (j = 0; j < conf.length; j++) { if (conf[j] === k) { L.userConfirmed = true; break; } }
+      if (L.userConfirmed) { L.verified = true; L.unconfirmed = false; }
+    }
+    var confSrc = {};
+    for (i = 0; i < payload.listings.length; i++) {
+      L = payload.listings[i];
+      if (L.verified && !L.userDenied) confSrc[String(L.source) + '|' + String(L.scope || '')] = 1;
+    }
+    var revs = payload.reviews || [];
+    for (i = 0; i < revs.length; i++) {
+      if (confSrc[String(revs[i].source) + '|' + String(revs[i].scope || '')]) { revs[i].verified = true; revs[i].unconfirmed = false; }
+    }
+    return payload;
   }
 
   /* --------------------------- scrape targets ---------------------------- */
@@ -516,8 +592,18 @@
 
     if (payload) {
       var d = payload.summary.doctor, p = payload.summary.practice;
+      /* v1.4.0: while nothing is confirmed, say what WAS found instead of a bare dash */
+      var docHint = '';
+      if (d.rating == null) {
+        var bestU = null, bi;
+        for (bi = 0; bi < (payload.listings || []).length; bi++) {
+          var BL = payload.listings[bi];
+          if (BL.scope === 'doctor' && !BL.verified && !BL.userDenied && BL.rating != null && (!bestU || (BL.reviewCount || 0) > (bestU.reviewCount || 0))) bestU = BL;
+        }
+        if (bestU) docHint = '<div class="rsc-note" style="margin-top:4px;color:#9a5b00">Found <b>' + bestU.rating + '\u2605 \u00B7 ' + (bestU.reviewCount || 0) + ' reviews</b> on ' + esc(bestU.source) + ' \u2014 unconfirmed. Click \u201C\u2714 This is me\u201D on it below to count it here.</div>';
+      }
       h.push('<div class="rsc-kpis">');
-      h.push('<div class="rsc-kpi"><div>Doctor\u2019s own rating ' + scopeBadge('doctor') + '</div><b>' + (d.rating != null ? d.rating.toFixed(1) + '\u2605' : '\u2014') + '</b><div class="rsc-note">' + (d.reviewCount || 0) + ' reviews \u00B7 ' + d.listings + ' confirmed listing(s)</div></div>');
+      h.push('<div class="rsc-kpi"><div>Doctor\u2019s own rating ' + scopeBadge('doctor') + '</div><b>' + (d.rating != null ? d.rating.toFixed(1) + '\u2605' : '\u2014') + '</b><div class="rsc-note">' + (d.reviewCount || 0) + ' reviews \u00B7 ' + d.listings + ' confirmed listing(s)</div>' + docHint + '</div>');
       h.push('<div class="rsc-kpi"><div>Practice-wide rating ' + scopeBadge('practice') + '</div><b>' + (p.rating != null ? p.rating.toFixed(1) + '\u2605' : '\u2014') + '</b><div class="rsc-note">' + (p.reviewCount || 0) + ' reviews \u00B7 ' + p.listings + ' confirmed listing(s) \u2014 reflects the whole office, not the doctor personally</div></div>');
       h.push('</div>');
 
@@ -535,17 +621,26 @@
       h.push('</div>');
 
       /* confirmed listings with profile links */
-      var lst = (payload.listings || []), i, shownL = 0;
+      var lst = (payload.listings || []), i, shownL = 0, hiddenN = 0;
       var listHtml = '';
       for (i = 0; i < lst.length && shownL < 12; i++) {
         var L = lst[i];
         if (!L.name && !L.url) continue;
+        if (L.userDenied) { hiddenN++; continue; }
         shownL++;
+        var lk = keyOfListing(L), act = '';
+        if (L.userConfirmed) {
+          act = '<div style="margin-top:6px"><span class="rsc-badge rsc-ver">\u2714 counted in your headline</span> <a href="#" class="rsc-unconfirm rsc-note" data-k="' + esc(lk) + '">undo</a></div>';
+        } else if (!L.verified) {
+          act = '<div style="margin-top:6px"><button class="rsc-btn rsc-primary rsc-confirm" data-k="' + esc(lk) + '" style="padding:6px 11px;font-size:12px">\u2714 This is me \u2014 count it</button> ' +
+                '<button class="rsc-btn rsc-ghost rsc-deny" data-k="' + esc(lk) + '" style="padding:6px 11px;font-size:12px">\u2716 Not me \u2014 hide</button></div>';
+        }
         listHtml += '<div class="rsc-list"><b>' + esc(L.name || hostText(L.url)) + '</b> ' + scopeBadge(L.scope) + ' ' + confBadge(L) +
           ' <span class="rsc-note">' + esc(L.source) + (L.rating != null ? (' \u00B7 ' + L.rating + '\u2605 \u00B7 ' + (L.reviewCount || 0) + ' reviews') : ' \u00B7 no rating shown') + '</span>' +
-          (L.url ? ('<div><a href="' + esc(L.url) + '" target="_blank" rel="noopener">Open profile \u2197 ' + esc(hostText(L.url)) + '</a></div>') : '') + '</div>';
+          (L.url ? ('<div><a href="' + esc(L.url) + '" target="_blank" rel="noopener">Open profile \u2197 ' + esc(hostText(L.url)) + '</a></div>') : '') + act + '</div>';
       }
-      if (listHtml) { h.push('<div style="margin-top:8px;font-weight:700;font-size:13px">Profiles found</div>'); h.push(listHtml); }
+      if (listHtml) { h.push('<div style="margin-top:8px;font-weight:700;font-size:13px">Profiles found <span class="rsc-note" style="font-weight:400">\u2014 confirm yours so they count toward the headline</span></div>'); h.push(listHtml); }
+      if (hiddenN) { h.push('<div class="rsc-note">' + hiddenN + ' listing(s) hidden as \u201Cnot me\u201D \u2014 <a href="#" id="rscResetDeny">show them again</a></div>'); }
 
       /* reviews with citation links */
       var revs = (payload.reviews || []).slice(0, 25);
@@ -577,6 +672,28 @@
 
   function wire(card) {
     var who = getWho();
+    /* v1.4.0: confirm / deny / undo / reset handlers */
+    function reprocess() {
+      var w2 = getWho(), c = loadCache(w2);
+      if (!c) return;
+      c = weightedSummary(applyUserMarks(c));
+      saveCache(c, w2); broadcast(c);
+      render(c, 'Updated \u2014 your confirmations are saved.');
+    }
+    var bi2, cbs = card.querySelectorAll('.rsc-confirm');
+    for (bi2 = 0; bi2 < cbs.length; bi2++) {
+      cbs[bi2].onclick = (function (k) { return function () { markConfirmed(k, true); reprocess(); }; })(cbs[bi2].getAttribute('data-k'));
+    }
+    var dbs = card.querySelectorAll('.rsc-deny');
+    for (bi2 = 0; bi2 < dbs.length; bi2++) {
+      dbs[bi2].onclick = (function (k) { return function () { markDenied(k); reprocess(); }; })(dbs[bi2].getAttribute('data-k'));
+    }
+    var ubs = card.querySelectorAll('.rsc-unconfirm');
+    for (bi2 = 0; bi2 < ubs.length; bi2++) {
+      ubs[bi2].onclick = (function (k) { return function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); markConfirmed(k, false); reprocess(); return false; }; })(ubs[bi2].getAttribute('data-k'));
+    }
+    var rd = $('rscResetDeny');
+    if (rd) rd.onclick = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); clearDenied(); reprocess(); return false; };
     var sb = $('rscScanBtn'); if (sb) sb.onclick = function () { scan(true); };
     var rs = $('rscRescan'); if (rs) rs.onclick = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); scan(true); return false; };
     var pb = $('rscPasteBtn'); if (pb) pb.onclick = function () {
@@ -627,7 +744,7 @@
     var payload = emptyPayload(who), k;
     for (k in S.perSite) { if (S.perSite.hasOwnProperty(k)) absorb(payload, S.perSite[k], who); }
     apiFind(who, function (api) {
-      payload = weightedSummary(mergeApi(payload, api));
+      payload = weightedSummary(applyUserMarks(mergeApi(payload, api)));
       payload.scrapedAt = nowIso();
       saveCache(payload, who);
       broadcast(payload);
@@ -644,7 +761,7 @@
          * if we can, and point at the optional paste tools -- never block. */
         apiFind(who, function (api) {
           if (api && ((api.listings && api.listings.length) || (api.reviews && api.reviews.length))) {
-            var payload = weightedSummary(mergeApi(emptyPayload(who), api));
+            var payload = weightedSummary(applyUserMarks(mergeApi(emptyPayload(who), api)));
             payload.engine = 'google-places-api';
             payload.scrapedAt = nowIso();
             saveCache(payload, who); broadcast(payload);
@@ -692,7 +809,7 @@
     if (!who.doctor && !who.practice) { render(null, 'Enter the doctor/practice details above first, then scan.'); return; }
     if (!force) {
       var cached = loadCache(who);
-      if (cached) { broadcast(cached); render(cached, 'From cache.'); return; }
+      if (cached) { cached = weightedSummary(applyUserMarks(cached)); broadcast(cached); render(cached, 'From cache.'); return; }
     }
     if (S.running) return;
     S.running = true;
@@ -702,11 +819,17 @@
         S.running = false;
         var payload = fromAuto(res.payload, who);
         payload.scrapedAt = res.payload.scrapedAt || nowIso();
-        saveCache(payload, who); broadcast(payload);
-        var banner = null;
-        if (!payload.grounded) banner = { kind: 'warn', text: (payload.apiMessage || 'The AI could not return verifiable web citations this time \u2014 results below are UNCONFIRMED. Try Rescan or add a profile link.') };
-        else if (payload.apiMessage) banner = { kind: 'info', text: payload.apiMessage };
-        render(payload, 'Done.', banner);
+        /* v1.4.0: ALWAYS merge the authoritative zero-AI Google Places rating
+         * (it arrives verified) so the headline can work before any manual
+         * confirm; then re-apply the doctor's saved confirm/deny marks. */
+        apiFind(who, function (api) {
+          payload = weightedSummary(applyUserMarks(mergeApi(payload, api)));
+          saveCache(payload, who); broadcast(payload);
+          var banner = null;
+          if (!payload.grounded) banner = { kind: 'warn', text: (payload.apiMessage || 'The AI could not return verifiable web citations this time \u2014 results below are UNCONFIRMED. Try Rescan or add a profile link.') };
+          else if (payload.apiMessage) banner = { kind: 'info', text: payload.apiMessage };
+          render(payload, 'Done.', banner);
+        });
         return;
       }
       if (res.status === 'auth') {
@@ -804,7 +927,7 @@
   function mount() {
     var who = getWho();
     var cached = loadCache(who);
-    if (cached) { broadcast(cached); render(cached, 'From cache \u2014 Rescan for fresh data.'); }
+    if (cached) { cached = weightedSummary(applyUserMarks(cached)); broadcast(cached); render(cached, 'From cache \u2014 Rescan for fresh data.'); }
     else render(null, '');
     var tries = 0;
     var iv = setInterval(function () { neutralizeStaleCopy(); if (upgradeMarketing() || ++tries > 25) clearInterval(iv); }, 800);
@@ -829,6 +952,7 @@
     revert: function () {
       try { var c = $(CARD_ID); if (c && c.parentNode) c.parentNode.removeChild(c); } catch (e) {}
       try { var s = $(CARD_ID + 'Css'); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e) {}
+      try { var s2 = $(CARD_ID + 'HideCss'); if (s2 && s2.parentNode) s2.parentNode.removeChild(s2); } catch (e) {}
       try { var hid = document.querySelectorAll('[data-mls-hid]'); for (var i = 0; i < hid.length; i++) { hid[i].style.display = ''; hid[i].removeAttribute('data-mls-hid'); } } catch (e) {}
       try { delete window.__mlsRepScrape; } catch (e) { window.__mlsRepScrape = undefined; }
       return 'reverted';
