@@ -851,7 +851,7 @@
 
 
 /* =========================================================================
- * MLS Scribe - LIVE EXTENSION VERSION IN SETTINGS  (__mlsExtVerLive) v1.0.0  2026-07-10 (b114)
+ * MLS Scribe - LIVE EXTENSION VERSION IN SETTINGS  (__mlsExtVerLive) v1.1.0  2026-07-10 (b117)
  *
  * The Settings download slot showed a STALE version (extension-version.json
  * said 1.55 while the running extension answers 1.73 to mlsPing). This module
@@ -867,7 +867,7 @@
 (function () {
   'use strict';
   try { if (window.__mlsExtVerLive) return; } catch (e) { return; }
-  var api = { version: '1.0.0', running: null, latestJson: null, renders: 0 };
+  var api = { version: '1.1.0', running: null, latestJson: null, renders: 0 };
   var ROW = 'mlsExtVerLiveRow';
 
   function verNum(v) { var m = String(v == null ? '' : v).match(/(\d+)\.(\d+)/); return m ? (parseInt(m[1], 10) * 1000 + parseInt(m[2], 10)) : null; }
@@ -898,19 +898,40 @@
       }, function () { cb(api.latestJson); });
     } catch (e) { cb(api.latestJson); }
   }
+  /* Do NOT require offsetParent: the download slot lives in a Settings section
+   * that is display:none until the user opens it. Rendering into the hidden
+   * slot is correct - it is there the moment they open it. */
   function slotAnchor() {
     try {
       var as = document.querySelectorAll('a[data-eds-primary="1"], a[href*="MLS_Assist_v"], a[download]');
       for (var i = 0; i < as.length; i++) {
         var a = as[i];
-        if (a.offsetParent === null) continue;
         var t = String(a.textContent || '') + ' ' + String(a.href || '');
         if (/MLS.?Assist|Add to Chrome|extension/i.test(t)) return a;
       }
     } catch (e) {}
     return null;
   }
+
+  /* The eds slot advertises "Download v<X> directly (.zip)" built from
+   * extension-version.json. Verified live 2026-07-10: MLS_Assist_v1.55.zip and
+   * v1.73.zip both return 404 (only v1.51.zip was ever published), so that link
+   * is a broken download in the doctor's Settings. The extension now updates
+   * itself in place, so drop the dead link entirely and say so. */
+  function fixStaleZipRow() {
+    try {
+      var sec = document.getElementById('edsSecondaryRow');
+      if (!sec || sec.getAttribute('data-mls-zipfixed') === '1') return;
+      if (!/\.zip/i.test(sec.innerHTML || '')) return;
+      sec.setAttribute('data-mls-zipfixed', '1');
+      var other = sec.querySelector('a[href*="get-extension"], a[href$=".html"]');
+      var href = other ? other.getAttribute('href') : 'get-extension.html';
+      sec.innerHTML = 'Already installed? MLS Assist updates itself in place - no download needed. '
+        + '<a href="' + String(href).replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">Other install options</a>';
+    } catch (e) {}
+  }
   function render() {
+    fixStaleZipRow();
     var a = slotAnchor();
     if (!a) { return; }
     ping(function (v) {
@@ -957,6 +978,239 @@
     try { if (_iv) clearInterval(_iv); } catch (e) {}
     try { var r = document.getElementById(ROW); if (r) r.remove(); } catch (e) {}
     try { delete window.__mlsExtVerLive; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe - STUDY COHORT DATA FIX  (__mlsStudyDataFix) v1.0.0  2026-07-10 (b117)
+ *
+ * BUG (found live 2026-07-10 by running the cohort matcher and independently
+ * scanning the patient store):
+ *   __mlsStudyBuilderV2's "Advanced cohort filters" gets its per-patient visit
+ *   history from window.__mlsSgFix.harvest(name, dob). That call returns an
+ *   EMPTY array for every patient in this practice (probed for a patient with
+ *   38 real visits: harvest -> 0, athenaVisitRecords -> 0), so the builder
+ *   silently falls back to its notes+appointments source. Consequences, all
+ *   measured:
+ *     - "injection" matched 2 patients (both TRUE positives - the term is in
+ *       the appointment reason) but MISSED the 3 patients whose PULLED CHART
+ *       visits mention injection.
+ *     - Diagnosis/ICD search returned 0 for every code, even though 3 patients
+ *       carry real icd10 arrays on their pulled visits.
+ *     - CPT search could never match (the only patient with a cpt array was
+ *       invisible).
+ *   i.e. "pull patients by the procedure they had" only ever searched the
+ *   schedule's reason text, never the chart.
+ *
+ * FIX (additive, reversible): wrap __mlsSgFix.harvest. When it returns nothing
+ * for a patient, synthesize the visit list from that patient's own `visits`
+ * array (the records the day/month chart pull files), normalized to a SUPERSET
+ * of the shape the builder reads:
+ *     { date, type, detail, raw, plan, cpt[], icd10[], provider, source }
+ * `detail` is populated so the existing free-text/procedure path keeps working,
+ * and cpt/icd10 are exposed so the structured code filters finally match.
+ * Never invents a visit: it only re-exposes records already stored locally.
+ *
+ * Idempotent; additive; no network. Revert: window.__mlsStudyDataFix_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsStudyDataFix) return; } catch (e) { return; }
+  var api = { version: '1.0.0', wrapped: false, matchWrapped: false, fallbacksUsed: 0, visitsExposed: 0, chartOnlyAdded: 0 };
+
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''); }
+  function pats() { try { return (typeof window.getPatients === 'function') ? (window.getPatients() || []) : []; } catch (e) { return []; } }
+  function findPatient(name, dob) {
+    var k = nrm(name), ps = pats(), i, exact = null, loose = null;
+    for (i = 0; i < ps.length; i++) {
+      var pn = nrm(ps[i].name);
+      if (!pn) continue;
+      if (pn === k) { exact = ps[i]; break; }
+      if (!loose && (pn.indexOf(k) >= 0 || k.indexOf(pn) >= 0)) loose = ps[i];
+    }
+    return exact || loose;
+  }
+  function arr(v) { return Object.prototype.toString.call(v) === '[object Array]' ? v : (v ? [v] : []); }
+
+  /* one stored visit -> the superset shape the cohort matcher understands */
+  function normalize(v, p) {
+    if (!v || typeof v !== 'object') return null;
+    var note = v.note && typeof v.note === 'object' ? v.note : null;
+    var coding = note && note.coding && typeof note.coding === 'object' ? note.coding : null;
+    var cpt = arr(v.cpt).concat(coding ? arr(coding.cpt) : []);
+    var icd = arr(v.icd10).concat(coding ? arr(coding.icd10) : []);
+    var raw = String(v.raw || (note && note.raw) || '');
+    var plan = String(v.plan || (note && note.plan) || '');
+    var type = String(v.type || '');
+    /* detail is what the free-text / procedure filter reads */
+    var detail = String(v.detail || '');
+    if (!detail) detail = [type, raw, plan].join(' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+    return {
+      date: String(v.date || ''),
+      type: type,
+      detail: detail,
+      raw: raw,
+      plan: plan,
+      cpt: cpt,
+      icd10: icd,
+      provider: String(v.provider || (p && p.provider) || ''),
+      source: String(v.source || 'athena-chart')
+    };
+  }
+
+  function install() {
+    var SG = window.__mlsSgFix;
+    if (!SG || typeof SG.harvest !== 'function') return false;
+    if (SG.harvest.__mlsDataFix) return true;
+
+    var orig = SG.harvest;
+    var wrapped = function (name, dob, ctx) {
+      var out = null;
+      try { out = orig.apply(this, arguments); } catch (e) { out = null; }
+      try {
+        if (out && out.length) return out; /* harvester worked - leave it alone */
+        var p = findPatient(name, dob);
+        if (!p) return out || [];
+        var vs = p.visits || [];
+        if (!vs.length) return out || [];
+        var mapped = [], i, n;
+        for (i = 0; i < vs.length; i++) { n = normalize(vs[i], p); if (n) mapped.push(n); }
+        if (!mapped.length) return out || [];
+        api.fallbacksUsed++;
+        api.visitsExposed += mapped.length;
+        return mapped;
+      } catch (e) {}
+      return out || [];
+    };
+    wrapped.__mlsDataFix = true;
+    wrapped.__orig = orig;
+    try { SG.harvest = wrapped; api.wrapped = true; } catch (e) { return false; }
+    return true;
+  }
+
+  /* ------------------------------------------------------------------------
+   * Wrapping harvest is not enough on its own: __mlsStudyBuilderV2 captured its
+   * visit source at INIT, before the __mlsSgFix satellite existed, so it never
+   * calls harvest again (measured: match() does not invoke the wrapper). We
+   * therefore also wrap match() and UNION IN the patients whose PULLED CHART
+   * visits satisfy the same filters. Same entry shape: {patient, visits,
+   * reason, codes}. Never removes one of the builder's own matches.
+   * ---------------------------------------------------------------------- */
+  function ageOf(p) {
+    /* patient.dob in this store is M-D-YYYY (e.g. "6-17-1965"), NOT ISO - the
+     * builder's own `age 0` in every reason string comes from slicing an ISO
+     * year off that. Parse both forms. */
+    var d = String((p && p.dob) || '');
+    var y = null, m;
+    if ((m = d.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) y = parseInt(m[1], 10);
+    else if ((m = d.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/))) y = parseInt(m[3], 10);
+    if (!y) return null;
+    return new Date().getFullYear() - y;
+  }
+  function txtOf(v) {
+    return [v.type, v.detail, v.raw, v.plan, arr(v.cpt).join(' '), arr(v.icd10).join(' ')].join(' ').toLowerCase();
+  }
+  function inRange(dateStr, from, to) {
+    var d = String(dateStr || '').slice(0, 10);
+    if (!d) return !from && !to;
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  }
+  function chartMatches(f) {
+    var ps = pats(), out = [], i, j;
+    var proc = String(f.proc || '').toLowerCase().replace(/^\s+|\s+$/g, '');
+    var icd = String(f.icd || '').toLowerCase().replace(/^\s+|\s+$/g, '');
+    var kw = String(f.kw || '').toLowerCase().replace(/^\s+|\s+$/g, '');
+    var prov = String(f.provider || '').toLowerCase().replace(/^\s+|\s+$/g, '');
+    var aMin = f.ageMin === '' || f.ageMin == null ? null : parseInt(f.ageMin, 10);
+    var aMax = f.ageMax === '' || f.ageMax == null ? null : parseInt(f.ageMax, 10);
+    if (!proc && !icd && !kw) return out;   /* never widen an unfiltered query */
+    for (i = 0; i < ps.length; i++) {
+      var p = ps[i], vs = p.visits || [], hit = [], why = [];
+      if (!vs.length) continue;
+      var age = ageOf(p);
+      if (aMin != null && (age == null || age < aMin)) continue;
+      if (aMax != null && (age == null || age > aMax)) continue;
+      for (j = 0; j < vs.length; j++) {
+        var nv = normalize(vs[j], p);
+        if (!nv) continue;
+        if (!inRange(nv.date, f.from, f.to)) continue;
+        if (prov && String(nv.provider || '').toLowerCase().indexOf(prov) < 0) continue;
+        var hay = txtOf(nv);
+        var ok = true;
+        if (proc && hay.indexOf(proc) < 0) ok = false;
+        if (ok && icd && hay.indexOf(icd) < 0) ok = false;
+        if (ok && kw && hay.indexOf(kw) < 0) ok = false;
+        if (ok) hit.push(nv);
+      }
+      if (!hit.length) continue;
+      if (proc) why.push('procedure/CPT \u201c' + proc + '\u201d');
+      if (icd) why.push('diagnosis/ICD \u201c' + icd + '\u201d');
+      if (kw) why.push('keyword \u201c' + kw + '\u201d');
+      why.push(age == null ? 'age unknown' : ('age ' + age));
+      why.push('from pulled chart');
+      var cptMap = {}, icdMap = {}, k;
+      for (k = 0; k < hit.length; k++) {
+        arr(hit[k].cpt).forEach(function (c) { if (c) cptMap[c] = (cptMap[c] || 0) + 1; });
+        arr(hit[k].icd10).forEach(function (c) { if (c) icdMap[c] = (icdMap[c] || 0) + 1; });
+      }
+      out.push({ patient: p, visits: hit, reason: why.join(' \u00b7 '), codes: { cpt: cptMap, icd: icdMap } });
+    }
+    return out;
+  }
+  function installMatch() {
+    var SB = window.__mlsStudyBuilderV2;
+    if (!SB || typeof SB.match !== 'function') return false;
+    if (SB.match.__mlsDataFix) return true;
+    var orig = SB.match;
+    var wrapped = function (filters) {
+      var base = [];
+      try { base = orig.apply(this, arguments) || []; } catch (e) { base = []; }
+      try {
+        var f = filters || {};
+        var extra = chartMatches(f);
+        if (!extra.length) return base;
+        var seen = {}, i;
+        for (i = 0; i < base.length; i++) {
+          var bp = base[i] && base[i].patient;
+          if (bp && bp.id != null) seen[bp.id] = 1;
+        }
+        var merged = base.slice();
+        for (i = 0; i < extra.length; i++) {
+          var ep = extra[i].patient;
+          if (ep && ep.id != null && seen[ep.id]) continue;
+          merged.push(extra[i]);
+        }
+        api.chartOnlyAdded += (merged.length - base.length);
+        return merged;
+      } catch (e) {}
+      return base;
+    };
+    wrapped.__mlsDataFix = true;
+    wrapped.__orig = orig;
+    try { SB.match = wrapped; api.matchWrapped = true; } catch (e) { return false; }
+    return true;
+  }
+
+  var tries = 0, iv = null;
+  function attempt() {
+    var a = install(), b = installMatch();
+    if ((a && b) || ++tries > 200) { try { if (iv) clearInterval(iv); } catch (e) {} }
+  }
+  attempt();
+  try { iv = setInterval(attempt, 500); } catch (e) {}
+
+  api.chartMatches = chartMatches;
+  api.ageOf = ageOf;
+  api.normalize = normalize;
+  window.__mlsStudyDataFix = api;
+  window.__mlsStudyDataFix_revert = function () {
+    try { if (iv) clearInterval(iv); } catch (e) {}
+    try { var SG = window.__mlsSgFix; if (SG && SG.harvest && SG.harvest.__mlsDataFix) SG.harvest = SG.harvest.__orig; } catch (e) {}
+    try { var SB = window.__mlsStudyBuilderV2; if (SB && SB.match && SB.match.__mlsDataFix) SB.match = SB.match.__orig; } catch (e) {}
+    try { delete window.__mlsStudyDataFix; } catch (e) {}
   };
 })();
 
@@ -27334,7 +27588,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b116';
+  var MLS_APP_BUILD='2026-07-10-b117';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
