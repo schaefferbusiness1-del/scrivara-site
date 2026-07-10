@@ -1,3 +1,998 @@
+/* feat_study_builder_v2.js  ->  window.__mlsStudyBuilderV2   (Run-a-Study: more
+ * filters + richer reports)
+ * ==========================================================================
+ * SCOPE: AI Studio -> Study Groups area ONLY (#mls-sg-root / #mlsSgPro).
+ * Layers ON TOP of the shipped Study Groups stack -- reuses it, never
+ * reimplements it:
+ *   - __mlsStudyGroups (feat_mls_studygroups.js) -- the data model
+ *     (createGroup/importJSON/list/get/runStudy -> svg+xlsx+pdf), exposed on
+ *     window.__mlsStudyGroups. Unchanged.
+ *   - __mlsStudyProB40 -- builds #mlsSgPro (the "Add ALL" / "Build cohort by
+ *     procedure" / study-type+range/AI-narrative strip). This module's tick()
+ *     is a no-op once #mlsSgPro exists (\`if (!sgRoot || $("mlsSgPro")) return\`)
+ *     so inserting content INSIDE #mlsSgPro after it's built is race-free --
+ *     it never touches its own children again.
+ *   - __mlsSgFix -- ships the real per-visit harvester
+ *     (window.__mlsSgFix.harvest(name, dob) -> [{date,type,detail,source}]),
+ *     which already folds together saved notes, calendar appointments AND
+ *     individually-dated bullets from pulled Athena chart history. THIS
+ *     MODULE CALLS THAT HARVESTER RATHER THAN RE-PARSING CHART TEXT ITSELF
+ *     -- if it's not present (older build / reverted), a light local
+ *     fallback (notes + appointments only) is used instead so the panel
+ *     still works, just with a narrower data source (stated honestly in
+ *     the UI).
+ *   - window.__mlsStudy -- the existing "Study / Import Patients" modal that
+ *     already drives a live, read-only athenaOne procedure/claims search
+ *     through the extension (postMessage \`mlsAppSearchProcedure\` /
+ *     \`mlsAppSearchResult\` -- see mls-connect.js ~line 30259-30352). THIS IS
+ *     the existing "pull patients by the procedure they got" pipeline --
+ *     this module's "Search athenaOne for this procedure" button opens that
+ *     SAME modal (window.__mlsStudy.open()) and prefills its procedure/date
+ *     fields, instead of inventing a second bridge. If a concurrent session
+ *     is wiring the extension side of that search, no app-side change is
+ *     needed here -- see FINAL_REPORT.md "Coordination" section.
+ *
+ * WHAT THIS ADDS
+ *  A) A real cohort-builder with combinable filters (AND logic), all
+ *     client-side / read-only, no Athena writes, no PHI leaves the browser
+ *     except into the existing authed /api/study call (same as today):
+ *       - Procedure / CPT text (matches visit text/type AND structured
+ *         note coding.cpt[] codes)
+ *       - Diagnosis / ICD text (matches visit text AND structured note
+ *         coding.icd10[] codes, and patient.problems)
+ *       - Free keyword (general text match, independent of the two above)
+ *       - Visit date range (from/to) -- filters the INDIVIDUAL visits used,
+ *         not just a coarse preset bucket
+ *       - Provider (from window._calProviders / distinct appt provider
+ *         strings) -- "patient had >=1 appointment with this provider in
+ *         range"; honestly a practice with one provider will show one
+ *         option and the filter is a no-op
+ *       - Age range (from patient.dob year -- same approximation already
+ *         used by the live cohort CSV export, exportCohortCsv)
+ *       - Sex (from patient.sex; the control hides itself if no patient in
+ *         the practice has sex recorded -- never fabricated)
+ *     A live "N patients / M visits match" readout updates as filters change
+ *     (debounced). "Build this cohort" imports the matched patients + their
+ *     FILTERED visit list into the existing Study Groups engine
+ *     (createGroup + importJSON) with an auto-generated, editable name --
+ *     from there every existing action (Run the study, AI narrative,
+ *     Excel/PDF/graph) works completely unchanged.
+ *  B) A richer, well-formatted COHORT REPORT (separate from, and in
+ *     addition to, the engine's existing graph/Excel/PDF):
+ *       - Header: cohort name, one-sentence filter summary, generated time
+ *       - Stat tiles: patients, visits, date span, average age, sex split
+ *         (only shown if recorded), unique providers touched
+ *       - Two simple bar charts (visits per month; age-band distribution)
+ *       - Top procedures/diagnoses table (tallied from CPT/ICD codes and
+ *         from keyword hits actually found in the matched visits)
+ *       - De-identified patient table (S1, S2... + age + sex + visit count
+ *         + first/last visit + why they matched) -- same de-identification
+ *         convention as the live exportCohortCsv (age from DOB year, no
+ *         name/DOB/MRN)
+ *       - Export: CSV (de-identified), Print, Copy summary
+ *       - Optional PREMIUM AI narrative via the EXISTING gated
+ *         \`POST /api/study\` endpoint (same auth/base-URL lookup as
+ *         __mlsStudyProB40's runNarrative) -- the request now states the
+ *         actual filter criteria used (age range/provider/date range/
+ *         procedure/diagnosis) so Methods reads accurately. Uses whichever
+ *         model the backend's /api/study route is configured with (the
+ *         Render OPENAI_API_KEY already powers this route -- nothing
+ *         hardcoded here).
+ *
+ * SAFETY: read-only against app data; the only network call is the existing
+ * authed /api/study route. No Athena writes. Athena SEARCH is only ever
+ * triggered by the user's own click, and only via the existing, already-
+ * shipped window.__mlsStudy modal (unchanged). ES5-only, guarded IIFE,
+ * idempotent re-assert. Full revert: window.__mlsStudyBuilderV2.revert()
+ * removes every injected node (data-mls-sbv2) and stylesheet; touches
+ * nothing else.
+ * ==========================================================================*/
+;(function () {
+  "use strict";
+  var VERSION = "sbv2-1.0.0";
+  try { if (window.__mlsStudyBuilderV2 && window.__mlsStudyBuilderV2.installed) return; } catch (e) { return; }
+
+  var STYLE_ID = "mlsSbv2Css", PANEL_ID = "mlsSbv2Panel", OUT_ID = "mlsSbv2Out";
+  var _t = null, _obs = null;
+  var LAST_MATCH = null; /* {patients:[...], filters:{...}} */
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(x) { return x == null ? "" : String(x); }
+  function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+
+  /* ---------------------------- data access ---------------------------- */
+  function allPatients() { return safe(function () { return window.getPatients() || []; }, []); }
+  function allNotes() { return safe(function () { return window.getNotes() || []; }, []); }
+  function allAppts() { return safe(function () { return window._calAppts || []; }, []); }
+  function normName(s) { return S(s).trim().toLowerCase().replace(/\s+/g, " "); }
+
+  function notesByPatient() {
+    var idx = {};
+    allNotes().forEach(function (n) {
+      var nm = normName(n.patient || n.name || "");
+      if (!nm) return;
+      (idx[nm] = idx[nm] || []).push(n);
+    });
+    return idx;
+  }
+  function apptsByPatient() {
+    var idx = {};
+    allAppts().forEach(function (a) {
+      var nm = normName(a.name || "");
+      if (!nm) return;
+      (idx[nm] = idx[nm] || []).push(a);
+    });
+    return idx;
+  }
+
+  function fallbackHarvest(p, apptIdx) {
+    var out = [];
+    (apptIdx[normName(p.name)] || []).forEach(function (a) {
+      out.push({
+        date: S(a.appt_date || "").slice(0, 10),
+        type: S(a.appt_type || "Appointment"),
+        detail: "Reason: " + S(a.reason || "(not recorded)") + (a.provider ? (" | Provider: " + S(a.provider).replace(/_/g, " ")) : ""),
+        source: "mls-appt", provider: S(a.provider || "")
+      });
+    });
+    return out;
+  }
+  function harvestPatientVisits(p, apptIdx) {
+    try {
+      if (window.__mlsSgFix && typeof window.__mlsSgFix.harvest === "function") {
+        var h = window.__mlsSgFix.harvest(p.name, p.dob);
+        if (Array.isArray(h)) {
+          /* backfill provider onto visits from the matching appt when the
+             harvester's own detail text doesn't already carry it */
+          var apByDate = {};
+          (apptIdx[normName(p.name)] || []).forEach(function (a) { apByDate[S(a.appt_date || "").slice(0, 10)] = a.provider; });
+          h.forEach(function (v) { if (!v.provider) v.provider = apByDate[S(v.date).slice(0, 10)] || ""; });
+          return h;
+        }
+      }
+    } catch (e) {}
+    return fallbackHarvest(p, apptIdx);
+  }
+
+  /* patient-level notes -> structured coding codes, for precise CPT/ICD match */
+  function codesForPatient(p, noteIdx) {
+    var cpt = {}, icd = {};
+    (noteIdx[normName(p.name)] || []).forEach(function (n) {
+      var c = n.coding || {};
+      (Array.isArray(c.cpt) ? c.cpt : []).forEach(function (x) { var code = S(x).match(/\d{4,5}/); if (code) cpt[code[0]] = (cpt[code[0]] || 0) + 1; });
+      (Array.isArray(c.icd10) ? c.icd10 : []).forEach(function (x) { var code = S(x).trim().split(/\s/)[0].toUpperCase(); if (code) icd[code] = (icd[code] || 0) + 1; });
+    });
+    return { cpt: cpt, icd: icd };
+  }
+
+  function parseYear(dob) { var m = S(dob).match(/((?:19|20)\d{2})/); return m ? parseInt(m[1], 10) : null; }
+  function ageOf(dob) { var y = parseYear(dob); if (!y) return null; return new Date().getFullYear() - y; }
+
+  /* -------------------------- provider roster -------------------------- */
+  function providerList() {
+    var seen = {}, out = [];
+    (safe(function () { return window._calProviders; }, []) || []).forEach(function (p) {
+      var name = S(p && (p.name || p)).trim(); if (name && !seen[name]) { seen[name] = 1; out.push(name); }
+    });
+    if (!out.length) {
+      allAppts().forEach(function (a) {
+        var name = S(a.provider || "").replace(/_/g, " ").trim();
+        if (name && !seen[name]) { seen[name] = 1; out.push(name); }
+      });
+    }
+    out.sort();
+    return out;
+  }
+  function anyPatientHasSex() { return allPatients().some(function (p) { return S(p.sex || "").trim(); }); }
+
+  /* ------------------------------ matching ------------------------------ */
+  function readFilters() {
+    return {
+      proc: S(($("sbv2Proc") || {}).value).trim().toLowerCase(),
+      icd: S(($("sbv2Icd") || {}).value).trim().toLowerCase(),
+      kw: S(($("sbv2Kw") || {}).value).trim().toLowerCase(),
+      from: S(($("sbv2From") || {}).value),
+      to: S(($("sbv2To") || {}).value),
+      provider: S(($("sbv2Prov") || {}).value),
+      ageMin: parseInt(S(($("sbv2AgeMin") || {}).value), 10),
+      ageMax: parseInt(S(($("sbv2AgeMax") || {}).value), 10),
+      sex: S(($("sbv2Sex") || {}).value)
+    };
+  }
+  function inDateRange(d, from, to) {
+    if (!d) return !from && !to;
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  }
+  function textHit(v, needle) { return needle && ((S(v.detail) + " " + S(v.type)).toLowerCase().indexOf(needle) >= 0); }
+  function codeHit(needle, codeMap) {
+    if (!needle) return false;
+    var bare = needle.replace(/[^0-9a-z]/gi, "");
+    var keys = Object.keys(codeMap);
+    for (var i = 0; i < keys.length; i++) { if (keys[i].toLowerCase().indexOf(bare) >= 0 || bare.indexOf(keys[i].toLowerCase()) >= 0) return true; }
+    return false;
+  }
+
+  function matchCohort(filters) {
+    var noteIdx = notesByPatient(), apptIdx = apptsByPatient();
+    var hasAge = !isNaN(filters.ageMin) || !isNaN(filters.ageMax);
+    var results = [];
+    allPatients().forEach(function (p) {
+      if (!S(p.name).trim()) return;
+      if (filters.sex && S(p.sex || "") !== filters.sex) return;
+      if (hasAge) {
+        var age = ageOf(p.dob);
+        if (age == null) return;
+        if (!isNaN(filters.ageMin) && age < filters.ageMin) return;
+        if (!isNaN(filters.ageMax) && age > filters.ageMax) return;
+      }
+      var visits = harvestPatientVisits(p, apptIdx);
+      var inRange = visits.filter(function (v) { return inDateRange(S(v.date).slice(0, 10), filters.from, filters.to); });
+      if ((filters.from || filters.to) && !inRange.length) return;
+      var pool = (filters.from || filters.to) ? inRange : visits;
+
+      if (filters.provider) {
+        var hasProv = pool.some(function (v) { return S(v.provider || "").toLowerCase().indexOf(filters.provider.toLowerCase()) >= 0; })
+          || (apptIdx[normName(p.name)] || []).some(function (a) { return S(a.provider || "").toLowerCase().indexOf(filters.provider.toLowerCase()) >= 0; });
+        if (!hasProv) return;
+      }
+
+      var codes = codesForPatient(p, noteIdx);
+      var reasons = [];
+      if (filters.proc) {
+        var procHit = pool.some(function (v) { return textHit(v, filters.proc); }) || codeHit(filters.proc, codes.cpt) || (S(p.problems || p.summary || "").toLowerCase().indexOf(filters.proc) >= 0);
+        if (!procHit) return; reasons.push("procedure/CPT “" + filters.proc + "”");
+      }
+      if (filters.icd) {
+        var icdHit = pool.some(function (v) { return textHit(v, filters.icd); }) || codeHit(filters.icd, codes.icd) || (S(p.problems || "").toLowerCase().indexOf(filters.icd) >= 0);
+        if (!icdHit) return; reasons.push("diagnosis/ICD “" + filters.icd + "”");
+      }
+      if (filters.kw) {
+        var kwHit = pool.some(function (v) { return textHit(v, filters.kw); });
+        if (!kwHit) return; reasons.push("“" + filters.kw + "”");
+      }
+      if (hasAge) reasons.push("age " + ageOf(p.dob));
+      if (filters.provider) reasons.push("seen by " + filters.provider);
+      if (filters.sex) reasons.push(filters.sex);
+      if (!reasons.length) reasons.push("in practice");
+
+      results.push({ patient: p, visits: pool.slice().sort(function (a, b) { return S(a.date) < S(b.date) ? -1 : 1; }), reason: reasons.join(" · "), codes: codes });
+    });
+    return results;
+  }
+
+  function filterSummarySentence(filters) {
+    var bits = [];
+    if (filters.proc) bits.push("procedure/CPT “" + filters.proc + "”");
+    if (filters.icd) bits.push("diagnosis/ICD “" + filters.icd + "”");
+    if (filters.kw) bits.push("keyword “" + filters.kw + "”");
+    if (filters.from || filters.to) bits.push("visits " + (filters.from || "…") + " to " + (filters.to || "…"));
+    if (filters.provider) bits.push("provider " + filters.provider);
+    if (!isNaN(filters.ageMin) || !isNaN(filters.ageMax)) bits.push("age " + (isNaN(filters.ageMin) ? "≤" + filters.ageMax : (isNaN(filters.ageMax) ? "≥" + filters.ageMin : (filters.ageMin + "–" + filters.ageMax))));
+    if (filters.sex) bits.push("sex " + filters.sex);
+    return bits.length ? bits.join(" AND ") : "everyone in the practice (no filters set)";
+  }
+  function autoName(filters) {
+    var s = "Cohort — " + [filters.proc, filters.icd, filters.kw].filter(Boolean).join(" + ");
+    if (s === "Cohort — ") s = "Cohort — " + new Date().toISOString().slice(0, 10);
+    return s.slice(0, 70);
+  }
+
+  /* ------------------------------ styling ------------------------------ */
+  function injectCSS() {
+    var css = [
+      "#" + PANEL_ID + "{border:1px dashed #cdd9ea;border-radius:10px;background:#fff;padding:12px 14px;margin:10px 0}",
+      "#" + PANEL_ID + " summary{cursor:pointer;font:800 13px system-ui;color:#16233a;list-style:none}",
+      "#" + PANEL_ID + " summary::-webkit-details-marker{display:none}",
+      "#" + PANEL_ID + " summary:before{content:'\\25B8';display:inline-block;margin-right:6px;transition:transform .15s ease}",
+      "#" + PANEL_ID + "[open] summary:before{transform:rotate(90deg)}",
+      "#" + PANEL_ID + " .sbv2-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:10px}",
+      "#" + PANEL_ID + " label{font:700 11px system-ui;color:#3b5f9e;display:block;margin-bottom:3px}",
+      "#" + PANEL_ID + " input,#" + PANEL_ID + " select{width:100%;box-sizing:border-box;font:500 13px system-ui;padding:7px 9px;border:1px solid #cdd9ea;border-radius:8px;background:#fff;color:#16233a}",
+      "#" + PANEL_ID + " .sbv2-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}",
+      "#" + PANEL_ID + " .sbv2-btn{font:700 13px system-ui;border:0;border-radius:9px;padding:9px 14px;cursor:pointer;color:#fff;background:#2563eb}",
+      "#" + PANEL_ID + " .sbv2-btn.grn{background:#16a34a}",
+      "#" + PANEL_ID + " .sbv2-btn.ghost{background:#fff;color:#2563eb;border:1px solid #cdd9ea}",
+      "#" + PANEL_ID + " .sbv2-note{font:600 12.5px system-ui;color:#3b5f9e;margin-top:8px}",
+      "#" + OUT_ID + "{margin-top:12px}",
+      "." + OUT_ID + "-card{background:#fff;border:1px solid #d5e2f8;border-radius:12px;padding:16px 18px;margin-top:10px}",
+      "." + OUT_ID + "-card h4{margin:0 0 10px;font:800 14px system-ui;color:#0f2540}",
+      "." + OUT_ID + "-tiles{display:flex;gap:10px;flex-wrap:wrap}",
+      "." + OUT_ID + "-tile{background:#f6f9ff;border:1px solid #dde7fb;border-radius:10px;padding:9px 13px;min-width:110px}",
+      "." + OUT_ID + "-tile b{display:block;font-size:19px;color:#16233a}",
+      "." + OUT_ID + "-tile span{font-size:11px;color:#5a6b82;font-weight:600}",
+      "." + OUT_ID + "-bar{display:flex;align-items:center;gap:8px;margin:3px 0;font:600 12px system-ui;color:#3b5f9e}",
+      "." + OUT_ID + "-bar .lbl{width:72px;flex:none;color:#5a6b82}",
+      "." + OUT_ID + "-bar .track{flex:1;background:#eef2fb;border-radius:6px;height:14px;overflow:hidden}",
+      "." + OUT_ID + "-bar .fill{height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed)}",
+      "." + OUT_ID + "-bar .n{width:28px;text-align:right;flex:none;color:#16233a}",
+      "." + OUT_ID + "-tbl{width:100%;border-collapse:collapse;font:500 12.5px system-ui;margin-top:6px}",
+      "." + OUT_ID + "-tbl th,." + OUT_ID + "-tbl td{text-align:left;padding:6px 8px;border-bottom:1px solid #eef2fb;color:#16233a}",
+      "." + OUT_ID + "-tbl th{color:#5a6b82;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em}",
+      "." + OUT_ID + "-dl{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #cdd9ea;border-radius:9px;padding:7px 12px;font:700 12px system-ui;color:#1e3a8a;cursor:pointer;margin:0 6px 6px 0;text-decoration:none}",
+      "#mlsSbv2Narr{background:#fbfaff;border:1px solid #d5e2f8;border-left:4px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-top:10px;font:500 13.5px/1.6 system-ui;color:#1b2942;white-space:pre-wrap;max-height:420px;overflow:auto}"
+    ].join("\n");
+    var s = $(STYLE_ID);
+    if (!s) { s = document.createElement("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
+    if (s.textContent !== css) s.textContent = css;
+  }
+
+  /* ------------------------------ panel UI ------------------------------ */
+  function panelHtml() {
+    var provOpts = '<option value="">Any</option>' + providerList().map(function (p) { return '<option value="' + esc(p) + '">' + esc(p) + "</option>"; }).join("");
+    var sexRow = anyPatientHasSex()
+      ? '<div><label>Sex</label><select id="sbv2Sex"><option value="">Any</option><option value="F">F</option><option value="M">M</option><option value="Other">Other</option></select></div>'
+      : "";
+    return '<h4>&#129516; Advanced cohort filters</h4>' +
+      '<div class="sbv2-grid">' +
+      '<div><label>Procedure / CPT</label><input type="text" id="sbv2Proc" placeholder="e.g. injection, 64483"></div>' +
+      '<div><label>Diagnosis / ICD-10</label><input type="text" id="sbv2Icd" placeholder="e.g. radiculopathy, M54.1"></div>' +
+      '<div><label>Keyword (anything)</label><input type="text" id="sbv2Kw" placeholder="e.g. post-op, MRI"></div>' +
+      '<div><label>Visit date from</label><input type="date" id="sbv2From"></div>' +
+      '<div><label>Visit date to</label><input type="date" id="sbv2To"></div>' +
+      '<div><label>Provider</label><select id="sbv2Prov">' + provOpts + '</select></div>' +
+      '<div><label>Age min</label><input type="number" id="sbv2AgeMin" min="0" max="120" placeholder="e.g. 40"></div>' +
+      '<div><label>Age max</label><input type="number" id="sbv2AgeMax" min="0" max="120" placeholder="e.g. 65"></div>' +
+      sexRow +
+      "</div>" +
+      '<div class="sbv2-actions">' +
+      '<button type="button" class="sbv2-btn ghost" id="sbv2Preview">&#128269; Preview match</button>' +
+      '<button type="button" class="sbv2-btn grn" id="sbv2Build">&#129516; Build this cohort</button>' +
+      '<button type="button" class="sbv2-btn ghost" id="sbv2AthenaSearch">&#128752; Search athenaOne for this procedure</button>' +
+      '<span class="sbv2-note" id="sbv2Note"></span>' +
+      "</div>" +
+      '<div id="' + OUT_ID + '"></div>';
+  }
+
+  function ensurePanel() {
+    var sgPro = $("mlsSgPro");
+    if (!sgPro || $(PANEL_ID)) return;
+    var anchor = $("mlsSgProRun") || null;
+    var panel = document.createElement("details");
+    panel.id = PANEL_ID;
+    panel.setAttribute("data-mls-sbv2", "1");
+    panel.innerHTML = panelHtml();
+    if (anchor) sgPro.insertBefore(panel, anchor); else sgPro.appendChild(panel);
+
+    panel.querySelector("#sbv2Preview").addEventListener("click", function () { runPreview(false); });
+    panel.querySelector("#sbv2Build").addEventListener("click", function () { runPreview(true); });
+    panel.querySelector("#sbv2AthenaSearch").addEventListener("click", openAthenaSearch);
+    var debounceT = null;
+    panel.querySelectorAll("input,select").forEach(function (el) {
+      el.addEventListener("input", function () {
+        if (debounceT) clearTimeout(debounceT);
+        debounceT = setTimeout(function () { runPreview(false); }, 450);
+      });
+    });
+  }
+
+  function openAthenaSearch() {
+    var filters = readFilters();
+    try {
+      if (window.__mlsStudy && typeof window.__mlsStudy.open === "function") {
+        window.__mlsStudy.open();
+        setTimeout(function () {
+          try {
+            var procField = document.getElementById("mlsStudyBProc");
+            var fromField = document.getElementById("mlsStudyBFrom");
+            var toField = document.getElementById("mlsStudyBTo");
+            if (procField && (filters.proc || filters.icd)) { procField.value = filters.proc || filters.icd; procField.dispatchEvent(new Event("input", { bubbles: true })); }
+            if (fromField && filters.from) fromField.value = filters.from;
+            if (toField && filters.to) toField.value = filters.to;
+          } catch (e) {}
+        }, 250);
+      } else {
+        var note = $("sbv2Note"); if (note) note.textContent = "Athena procedure search isn't loaded in this build yet.";
+      }
+    } catch (e) {}
+  }
+
+  /* ------------------------------ preview / build ------------------------------ */
+  function runPreview(thenBuild) {
+    var note = $("sbv2Note");
+    var filters = readFilters();
+    if (note) note.textContent = "Matching…";
+    setTimeout(function () {
+      var results = matchCohort(filters);
+      LAST_MATCH = { results: results, filters: filters };
+      var nVisits = results.reduce(function (a, r) { return a + r.visits.length; }, 0);
+      if (note) note.textContent = "✓ " + results.length + " patient(s) · " + nVisits + " visit(s) match: " + filterSummarySentence(filters) + ".";
+      if (thenBuild) buildCohort(results, filters);
+      else renderReportPreviewOnly(results, filters);
+    }, 20);
+  }
+
+  function buildCohort(results, filters) {
+    var sg = safe(function () { return window.__mlsStudyGroups; }, null);
+    var out = $(OUT_ID), note = $("sbv2Note");
+    if (!sg) { if (note) note.textContent = "Study engine not loaded yet — try again in a moment."; return; }
+    if (!results.length) { if (note) note.textContent = "No patients match those filters yet — widen them, or pull more history first."; return; }
+    var name = autoName(filters);
+    var data = { patients: results.map(function (r) { return { name: r.patient.name, dob: r.patient.dob || "", mrn: r.patient.mrn || r.patient.id || "", history: r.visits.map(function (v) { return { date: v.date, type: v.type, note: v.detail }; }) }; }) };
+    var existing = sg.list().filter(function (g) { return g.name === name; })[0];
+    var g = existing || sg.createGroup(name);
+    sg.importJSON(g.id, JSON.stringify(data));
+    if (note) note.textContent = "✓ “" + name + "” built — " + results.length + " patients. Select it in the Study Groups list above, then Run the study for the full graph/Excel/PDF/AI narrative.";
+    try {
+      var sel = document.querySelector("#mls-sg-root select");
+      if (sel) {
+        var have = [].slice.call(sel.options).some(function (o) { return o.value === g.id; });
+        if (!have) { var o = document.createElement("option"); o.value = g.id; o.textContent = g.name + " (" + (g.patients ? g.patients.length : results.length) + ")"; sel.appendChild(o); }
+        sel.value = g.id; sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    } catch (e) {}
+    renderReport(results, filters, name);
+  }
+
+  /* ------------------------------ report rendering ------------------------------ */
+  function monthBuckets(results) {
+    var m = {};
+    results.forEach(function (r) { r.visits.forEach(function (v) { var k = S(v.date).slice(0, 7); if (k.length === 7) m[k] = (m[k] || 0) + 1; }); });
+    var keys = Object.keys(m).sort();
+    return keys.map(function (k) { return { k: k, n: m[k] }; });
+  }
+  function ageBuckets(results) {
+    var bands = [[0, 17, "0-17"], [18, 29, "18-29"], [30, 44, "30-44"], [45, 59, "45-59"], [60, 74, "60-74"], [75, 999, "75+"]];
+    var counts = bands.map(function () { return 0; });
+    var any = false;
+    results.forEach(function (r) { var age = ageOf(r.patient.dob); if (age == null) return; any = true; for (var i = 0; i < bands.length; i++) { if (age >= bands[i][0] && age <= bands[i][1]) { counts[i]++; break; } } });
+    return any ? bands.map(function (b, i) { return { k: b[2], n: counts[i] }; }) : [];
+  }
+  function topCodes(results) {
+    var cpt = {}, icd = {};
+    results.forEach(function (r) {
+      Object.keys(r.codes.cpt).forEach(function (k) { cpt[k] = (cpt[k] || 0) + r.codes.cpt[k]; });
+      Object.keys(r.codes.icd).forEach(function (k) { icd[k] = (icd[k] || 0) + r.codes.icd[k]; });
+    });
+    function top(m) { return Object.keys(m).map(function (k) { return { code: k, n: m[k] }; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 8); }
+    return { cpt: top(cpt), icd: top(icd) };
+  }
+  function barRow(lbl, n, max) {
+    var pct = max ? Math.round((n / max) * 100) : 0;
+    return '<div class="' + OUT_ID + '-bar"><span class="lbl">' + esc(lbl) + '</span><span class="track"><span class="fill" style="width:' + pct + '%"></span></span><span class="n">' + n + "</span></div>";
+  }
+  function csvExport(results, name) {
+    var yr = new Date().getFullYear();
+    var lines = ["cohort,study_id,age,sex,visits,first_visit,last_visit,matched_on"];
+    results.forEach(function (r, i) {
+      var age = ageOf(r.patient.dob); var dates = r.visits.map(function (v) { return v.date; }).filter(Boolean).sort();
+      lines.push([name, "S" + (i + 1), age == null ? "" : age, r.patient.sex || "", r.visits.length, dates[0] || "", dates[dates.length - 1] || "", r.reason]
+        .map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(","));
+    });
+    var blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "MLS_Cohort_Report_" + name.replace(/[^a-z0-9]+/gi, "_") + ".csv";
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  function renderReportPreviewOnly(results, filters) {
+    /* lightweight inline count only -- full report renders after Build */
+  }
+  function renderReport(results, filters, name) {
+    var out = $(OUT_ID); if (!out) return;
+    var nVisits = results.reduce(function (a, r) { return a + r.visits.length; }, 0);
+    var ages = results.map(function (r) { return ageOf(r.patient.dob); }).filter(function (a) { return a != null; });
+    var avgAge = ages.length ? Math.round(ages.reduce(function (a, b) { return a + b; }, 0) / ages.length) : null;
+    var sexCounts = {}; results.forEach(function (r) { var s = S(r.patient.sex || "").trim(); if (s) sexCounts[s] = (sexCounts[s] || 0) + 1; });
+    var provSet = {}; results.forEach(function (r) { r.visits.forEach(function (v) { if (v.provider) provSet[v.provider] = 1; }); });
+    var allDates = []; results.forEach(function (r) { r.visits.forEach(function (v) { if (v.date) allDates.push(v.date); }); }); allDates.sort();
+
+    var mBuckets = monthBuckets(results), maxM = Math.max.apply(null, mBuckets.map(function (b) { return b.n; }).concat([1]));
+    var aBuckets = ageBuckets(results), maxA = Math.max.apply(null, aBuckets.map(function (b) { return b.n; }).concat([1]));
+    var codes = topCodes(results);
+
+    var html = '<div class="' + OUT_ID + '-card">' +
+      "<h4>&#128203; Cohort report — " + esc(name) + "</h4>" +
+      '<div class="sbv2-note" style="margin:0 0 12px">' + esc(filterSummarySentence(filters)) + " · generated " + esc(new Date().toLocaleString()) + "</div>" +
+      '<div class="' + OUT_ID + '-tiles">' +
+      '<div class="' + OUT_ID + '-tile"><b>' + results.length + '</b><span>Patients</span></div>' +
+      '<div class="' + OUT_ID + '-tile"><b>' + nVisits + '</b><span>Visits</span></div>' +
+      '<div class="' + OUT_ID + '-tile"><b>' + (allDates.length ? (esc(allDates[0]) + "→" + esc(allDates[allDates.length - 1])) : "—") + '</b><span>Date span</span></div>' +
+      '<div class="' + OUT_ID + '-tile"><b>' + (avgAge == null ? "—" : avgAge) + '</b><span>Avg. age</span></div>' +
+      '<div class="' + OUT_ID + '-tile"><b>' + (Object.keys(sexCounts).length ? Object.keys(sexCounts).map(function (k) { return k + ":" + sexCounts[k]; }).join(" · ") : "—") + '</b><span>Sex split</span></div>' +
+      '<div class="' + OUT_ID + '-tile"><b>' + (Object.keys(provSet).length || "—") + '</b><span>Providers touched</span></div>' +
+      "</div>" +
+      (mBuckets.length ? ('<div style="margin-top:14px"><b style="font-size:12px;color:#3b5f9e">Visits per month</b>' + mBuckets.map(function (b) { return barRow(b.k, b.n, maxM); }).join("") + "</div>") : "") +
+      (aBuckets.length ? ('<div style="margin-top:14px"><b style="font-size:12px;color:#3b5f9e">Age distribution</b>' + aBuckets.map(function (b) { return barRow(b.k, b.n, maxA); }).join("") + "</div>") : "") +
+      ((codes.cpt.length || codes.icd.length) ? ('<div style="margin-top:14px"><b style="font-size:12px;color:#3b5f9e">Top codes seen in this cohort</b>' +
+        '<table class="' + OUT_ID + '-tbl"><tr><th>CPT</th><th>n</th><th>ICD-10</th><th>n</th></tr>' +
+        Array.apply(null, { length: Math.max(codes.cpt.length, codes.icd.length) }).map(function (_, i) {
+          var c = codes.cpt[i], d = codes.icd[i];
+          return "<tr><td>" + (c ? esc(c.code) : "") + "</td><td>" + (c ? c.n : "") + "</td><td>" + (d ? esc(d.code) : "") + "</td><td>" + (d ? d.n : "") + "</td></tr>";
+        }).join("") + "</table></div>") : "") +
+      '<div style="margin-top:14px"><b style="font-size:12px;color:#3b5f9e">Patients (de-identified)</b>' +
+      '<table class="' + OUT_ID + '-tbl"><tr><th>Study ID</th><th>Age</th><th>Sex</th><th>Visits</th><th>First</th><th>Last</th><th>Matched on</th></tr>' +
+      results.map(function (r, i) {
+        var age = ageOf(r.patient.dob); var dates = r.visits.map(function (v) { return v.date; }).filter(Boolean).sort();
+        return "<tr><td>S" + (i + 1) + "</td><td>" + (age == null ? "" : age) + "</td><td>" + esc(r.patient.sex || "") + "</td><td>" + r.visits.length + "</td><td>" + esc(dates[0] || "") + "</td><td>" + esc(dates[dates.length - 1] || "") + "</td><td>" + esc(r.reason) + "</td></tr>";
+      }).join("") + "</table></div>" +
+      '<div style="margin-top:14px">' +
+      '<a class="' + OUT_ID + '-dl" id="sbv2Csv">&#11015; CSV (de-identified)</a>' +
+      '<a class="' + OUT_ID + '-dl" id="sbv2Print">&#128424; Print</a>' +
+      '<a class="' + OUT_ID + '-dl" id="sbv2Copy">&#128203; Copy summary</a>' +
+      '<label style="display:inline-flex;align-items:center;gap:6px;font:600 12.5px system-ui;color:#16233a;margin-left:6px"><input type="checkbox" id="sbv2Ai" checked> &#129504; Add PREMIUM AI narrative</label>' +
+      '<button type="button" class="sbv2-btn" id="sbv2RunAi" style="margin-left:8px">&#9654; Generate narrative</button>' +
+      "</div></div>";
+    out.innerHTML = html;
+
+    out.querySelector("#sbv2Csv").addEventListener("click", function () { csvExport(results, name); });
+    out.querySelector("#sbv2Print").addEventListener("click", function () {
+      try { if (typeof window.printExtra === "function") { var card = out.querySelector("." + OUT_ID + "-card"); card.id = "sbv2PrintTarget"; window.printExtra("Cohort Report — " + name, "sbv2PrintTarget"); } else window.print(); } catch (e) { window.print(); }
+    });
+    out.querySelector("#sbv2Copy").addEventListener("click", function () {
+      var txt = "Cohort report — " + name + "\n" + filterSummarySentence(filters) + "\nPatients: " + results.length + " · Visits: " + nVisits + (avgAge != null ? (" · Avg age: " + avgAge) : "");
+      try { navigator.clipboard.writeText(txt); } catch (e) {}
+    });
+    var runBtn = out.querySelector("#sbv2RunAi");
+    if (runBtn) runBtn.addEventListener("click", function () { runNarrativeV2(results, filters, name); });
+  }
+
+  function runNarrativeV2(results, filters, name) {
+    var out = $(OUT_ID);
+    var tokv = safe(function () { return sessionStorage.getItem("sf_bk_token") || localStorage.getItem("sf_bk_token") || ""; }, "");
+    var base = safe(function () { return window.bkBase ? window.bkBase() : ""; }, "") || "https://scrivara-backend.onrender.com";
+    var status = document.createElement("div"); status.className = "sbv2-note"; status.textContent = "Writing the AI narrative…";
+    out.appendChild(status);
+    if (!tokv) { status.textContent = "Sign in to add the AI narrative."; return; }
+    var lines = [], pi = 0, nVisits = 0;
+    results.forEach(function (r) {
+      pi++;
+      r.visits.forEach(function (v) { if (lines.length < 900) { lines.push("P" + pi + " | " + S(v.date) + " | " + S(v.type) + " | " + S(v.detail).replace(/[\n\r|]+/g, " ").slice(0, 260)); nVisits++; } });
+    });
+    var sys = "You are a careful, honest, PREMIUM clinical-study analyst. Use ONLY the provided de-identified per-visit records. " +
+      "The cohort was built with these exact filter criteria: " + filterSummarySentence(filters) + ". " +
+      "Produce a properly structured retrospective study: Background, Methods (state the filter criteria verbatim, n=" + nVisits + " visit records across " + results.length + " patients), " +
+      "Results (real numbers computed from the records only — show counts and math), Limitations (note this is a convenience sample from MLS's own stored/pulled data, not a full-registry query), " +
+      "and a note that IRB/compliance review is required before publication. NEVER fabricate numbers, dates or outcomes. Plain text only.";
+    var user = "COHORT: " + name + "\nFILTERS: " + filterSummarySentence(filters) + "\n\nDE-IDENTIFIED VISIT RECORDS (patient | date | type | detail):\n" + lines.join("\n");
+    fetch(base + "/api/study", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tokv }, body: JSON.stringify({ system: sys, user: user }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+      .then(function (x) {
+        var text = S(x.j && (x.j.content || x.j.text || x.j.reply)).trim();
+        if (!x.ok || !text) { status.textContent = x.status === 403 ? "AI narrative unavailable (premium study engine not enabled on this account)." : "AI narrative unavailable."; return; }
+        status.remove();
+        var div = document.createElement("div"); div.id = "mlsSbv2Narr"; div.textContent = text;
+        var hd = document.createElement("div"); hd.style.cssText = "font:800 13px system-ui;color:#7c3aed;margin-top:12px";
+        hd.innerHTML = "&#129504; Premium AI study narrative" + (x.j.model ? (' <span style="font-weight:600;color:#8a97ad">&middot; ' + esc(x.j.model) + "</span>") : "");
+        out.appendChild(hd); out.appendChild(div);
+      })
+      .catch(function () { status.textContent = "AI narrative unavailable (network problem)."; });
+  }
+
+  /* ------------------------------ boot / revert ------------------------------ */
+  function tick() { try { injectCSS(); ensurePanel(); } catch (e) {} }
+  function boot() {
+    tick();
+    try { _obs = new MutationObserver(function () { tick(); }); _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    _t = setInterval(tick, 1200);
+  }
+  function revert() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_t) clearInterval(_t); } catch (e) {}
+    try {
+      var nodes = document.querySelectorAll('[data-mls-sbv2]');
+      Array.prototype.forEach.call(nodes, function (n) { n.remove(); });
+    } catch (e) {}
+    try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
+    try { window.__mlsStudyBuilderV2.installed = false; } catch (e) {}
+  }
+  window.__mlsStudyBuilderV2 = { installed: true, version: VERSION, revert: revert, match: matchCohort, readFilters: readFilters };
+  try { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot(); }
+  catch (e) { try { boot(); } catch (e2) {} }
+})();
+
+/* feat_analysis_redesign_v1.js  ->  window.__mlsAnalysisPolish  (Analysis visual polish)
+ * ==========================================================================
+ * SCOPE: #analysisView ONLY. Cosmetic polish layered ON TOP of the existing
+ * __mlsAx "ax-3.0.0" draggable/resizable tile grid (feat_mls_analysis_exact.js)
+ * and __mlsAnaClarity's scope bar / RVU-explain / provider-scope work
+ * (feat_analysis_clarity_b56.js). Does NOT reimplement or fight either:
+ *   - __mlsAx owns tile creation/order/size and reconciles child order
+ *     idempotently (only touches elements it put in its own sequence array).
+ *     This module never adds a new DIRECT CHILD of #analysisView except the
+ *     one-time "at a glance" ribbon, inserted the same proven way
+ *     __mlsAnaClarity already inserts its scope bar (before firstChild,
+ *     existence-guarded) -- so it sits outside ax's reorder set and never
+ *     ping-pongs (same technique __mlsAnaClarity's own FINAL_REPORT verified
+ *     safe).
+ *   - Everything else is CSS, or small elements appended INSIDE nodes ax/
+ *     anaclarity already own (e.g. one glyph inside the existing .ax-title,
+ *     one small category pill inside each expanded tile's .ax-head -- both
+ *     idempotent, existence-checked per tile).
+ *
+ * WHAT THIS ADDS (cosmetic + one read-only summary strip -- no new data
+ * fetches, no fabricated numbers):
+ *   1) Brand header glyph inside the existing Analysis title block, matching
+ *      the AI Studio header treatment and the recent blue-gradient reskin.
+ *   2) "At a glance" KPI ribbon: reads the big numbers ax already computed
+ *      and displays on a handful of KNOWN tiles (Key trends / RVU
+ *      productivity / Team ratings / Days worked) and mirrors up to 4 of
+ *      them as compact pills under the header. Pure DOM read of text
+ *      already on screen -- nothing is computed or invented here, and any
+ *      tile that isn't found/rendered yet is silently skipped (no ribbon at
+ *      all if nothing is available yet).
+ *   3) Per-tile category pill (Financial / Outcomes / Quality / Coding /
+ *      Tools) shown in the expanded-tile header strip -- a plain label, so
+ *      related cards read as grouped even though the user's own drag order
+ *      is fully preserved (positions are never changed by this module).
+ *   4) Unified typography/contrast tokens (same AA-safe slate as the Studio
+ *      polish module and __mlsAnaClarity: #3d4e64 / #46586f) applied to any
+ *      plain (non-tile) fallback card content, so nothing regresses to
+ *      light-on-light if ax is ever inactive for an account.
+ *   5) Softer, more consistent premium-badge and empty-state styling.
+ *
+ * SAFETY: no Athena calls, no backend calls, no writes, reads only text
+ * already rendered on screen. Guarded IIFE, idempotent, ES5-only. Full
+ * revert: window.__mlsAnalysisPolish.revert() removes the injected <style>,
+ * the ribbon, the header glyph and every category pill (all carry
+ * data-mls-anapolish) and touches nothing else.
+ * ==========================================================================*/
+;(function () {
+  "use strict";
+  var VERSION = "anapolish-1.0.0";
+  try { if (window.__mlsAnalysisPolish && window.__mlsAnalysisPolish.installed) return; } catch (e) { return; }
+
+  var STYLE_ID = "mlsAnaPolishCss", RIBBON_ID = "mlsAnaRibbon";
+  var _obs = null, _t = null, _sched = null;
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function mk(t, c, h) { var e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; }
+
+  /* id -> {category, ribbon regex + label} -- cosmetic mapping only, kept
+     independent of ax's own KNOWN table (that table isn't exposed on
+     window; duplicating a small label list here is low-risk and decoupled). */
+  var CATS = {
+    anaKeyTrends: "Overview", anaOutcomes: "Outcomes", anaRwe: "Research", anaAsk: "Tools",
+    anaBaseline: "Financial", anaDoctorReview: "Quality", anaTeamGrades: "Quality",
+    anaReferral: "Outcomes", anaRegistry: "Outcomes", mlsRvuProd: "Financial",
+    mlsDWCard: "Overview", mlsProcReport: "Coding"
+  };
+  var RIBBON_SRC = [
+    { id: "anaKeyTrends", icon: "&#128204;", label: "Active patients", re: /([\d,]+)\s*(?:active\s*)?patient/i },
+    { id: "mlsRvuProd", icon: "&#128200;", label: "Total wRVU", re: /total\s*wrvu[^\d]*([\d,]+(?:\.\d+)?)/i },
+    { id: "anaTeamGrades", icon: "&#127775;", label: "Avg experience", re: /([\d.]+\s*\/\s*5)/ },
+    { id: "mlsDWCard", icon: "&#128197;", label: "Days worked", re: /([\d,]+)\s*days?/i }
+  ];
+
+  function injectCSS() {
+    var css = [
+      "#analysisView{--anp-ink:#0f2540;--anp-sub:#3d4e64;--anp-mini:#46586f;--anp-line:#e4ebf3;--anp-grad:linear-gradient(120deg,#eef5ff,#f6effd)}",
+      "#analysisView > .card{color:var(--anp-ink)}",
+      "#analysisView > .card .sub{color:var(--anp-sub)!important}",
+      "#analysisView > .card .mini{color:var(--anp-mini)!important}",
+
+      /* header glyph (appended inside the existing .ax-title, or as a
+         standalone block if ax isn't active) */
+      "#analysisView .anp-glyph-row{display:flex;align-items:center;gap:11px;margin-bottom:2px}",
+      "#analysisView .anp-glyph{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#1e3a8a,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;box-shadow:0 8px 16px -9px rgba(30,58,138,.5)}",
+
+      /* at-a-glance ribbon */
+      "#analysisView ." + RIBBON_ID + "{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0 16px;padding:12px 14px;border-radius:14px;background:var(--anp-grad);border:1px solid #e3e9fb}",
+      "#analysisView ." + RIBBON_ID + " .anp-pill{display:flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--anp-line);border-radius:20px;padding:6px 12px 6px 8px;font-size:12.5px}",
+      "#analysisView ." + RIBBON_ID + " .anp-pill .anp-ic{font-size:14px}",
+      "#analysisView ." + RIBBON_ID + " .anp-pill b{color:var(--anp-ink);font-size:13.5px;font-weight:800;margin-right:3px}",
+      "#analysisView ." + RIBBON_ID + " .anp-pill span.anp-lbl{color:var(--anp-mini)}",
+
+      /* category pill inside expanded tile head */
+      "#analysisView .ax-head .anp-cat{flex:none;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#6b7d93;background:#eef2f8;border:1px solid #e0e8f1;border-radius:20px;padding:3px 8px;margin-left:6px}",
+
+      /* premium badge + empty state softening (applies whether or not ax/tiles are active) */
+      "#analysisView .card [style*='PREMIUM']{letter-spacing:.04em}",
+      "#analysisView .empty{color:var(--anp-mini)!important}",
+
+      "@media (max-width:640px){#analysisView ." + RIBBON_ID + "{gap:8px;padding:10px}}"
+    ].join("\n");
+    var s = $(STYLE_ID);
+    if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
+    if (s.textContent !== css) s.textContent = css;
+  }
+
+  function ensureGlyph(v) {
+    var title = v.querySelector(":scope > .ax-title");
+    if (title) {
+      if (title.querySelector(".anp-glyph-row")) return;
+      var h1 = title.querySelector("h1");
+      if (!h1) return;
+      var row = mk("div", "anp-glyph-row");
+      row.setAttribute("data-mls-anapolish", "1");
+      var glyph = mk("span", "anp-glyph", "&#128202;");
+      row.appendChild(glyph);
+      h1.parentNode.insertBefore(row, h1);
+      row.appendChild(h1);
+    } else if (!v.querySelector(":scope > .anp-glyph-row")) {
+      var row2 = mk("div", "anp-glyph-row");
+      row2.setAttribute("data-mls-anapolish", "1");
+      row2.innerHTML = '<span class="anp-glyph">&#128202;</span><h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:26px;margin:0">Analysis</h1>';
+      v.insertBefore(row2, v.firstChild);
+    }
+  }
+
+  function readNum(src) {
+    var body = $(src.id + "Body") || $(src.id);
+    if (!body) return null;
+    try {
+      var txt = (body.textContent || "").replace(/\s+/g, " ");
+      var m = src.re.exec(txt);
+      if (m && m[1]) return m[1];
+    } catch (e) {}
+    return null;
+  }
+
+  function ensureRibbon(v) {
+    var found = [];
+    RIBBON_SRC.forEach(function (src) {
+      var val = readNum(src);
+      if (val) found.push({ icon: src.icon, label: src.label, val: val });
+    });
+    var existing = v.querySelector(":scope > ." + RIBBON_ID);
+    if (!found.length) { if (existing) existing.remove(); return; }
+    var html = found.map(function (f) {
+      return '<div class="anp-pill"><span class="anp-ic">' + f.icon + '</span><b>' + f.val + '</b><span class="anp-lbl">' + f.label + '</span></div>';
+    }).join("");
+    if (existing) {
+      if (existing.getAttribute("data-anp-sig") !== html) { existing.innerHTML = html; existing.setAttribute("data-anp-sig", html); }
+      return;
+    }
+    var ribbon = mk("div", RIBBON_ID, html);
+    ribbon.setAttribute("data-mls-anapolish", "1");
+    ribbon.setAttribute("data-anp-sig", html);
+    var title = v.querySelector(":scope > .ax-title");
+    if (title && title.nextSibling) title.parentNode.insertBefore(ribbon, title.nextSibling);
+    else if (title) title.parentNode.appendChild(ribbon);
+    else v.insertBefore(ribbon, v.firstChild);
+  }
+
+  function ensureCatPills(v) {
+    var tiles = v.querySelectorAll(".ax-tile.ax-exp");
+    Array.prototype.forEach.call(tiles, function (tile) {
+      var id = tile.getAttribute("data-ax-id");
+      var cat = id && CATS[id];
+      if (!cat) return;
+      var head = tile.querySelector(".ax-head");
+      if (!head || head.querySelector(".anp-cat")) return;
+      var collapseBtn = head.querySelector(".ax-collapse");
+      var pill = mk("span", "anp-cat", cat);
+      pill.setAttribute("data-mls-anapolish", "1");
+      if (collapseBtn) head.insertBefore(pill, collapseBtn); else head.appendChild(pill);
+    });
+  }
+
+  function build() {
+    var v = $("analysisView"); if (!v) return;
+    injectCSS();
+    if (v.style.display === "none") return;
+    ensureGlyph(v);
+    ensureRibbon(v);
+    ensureCatPills(v);
+  }
+
+  function hookShowView() {
+    try { if (typeof window.showView === "function" && !window.__anpHook) { window.__anpHook = 1; var _o = window.showView; window.showView = function () { var r = _o.apply(this, arguments); schedule(); return r; }; } } catch (e) {}
+  }
+  function applyAll() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { hookShowView(); build(); } catch (e) {}
+    try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+  }
+  function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 200); }
+  function boot() {
+    try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
+    applyAll();
+    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 15) clearInterval(_t); }, 900);
+  }
+  function revert() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_t) clearInterval(_t); } catch (e) {}
+    try {
+      var nodes = document.querySelectorAll('[data-mls-anapolish]');
+      Array.prototype.forEach.call(nodes, function (n) {
+        /* the glyph-row wrapper holds the real h1 -- unwrap, don't delete it */
+        if (n.classList && n.classList.contains("anp-glyph-row")) {
+          var h1 = n.querySelector("h1");
+          if (h1 && n.parentNode) n.parentNode.insertBefore(h1, n);
+        }
+        n.remove();
+      });
+    } catch (e) {}
+    try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
+    try { window.__mlsAnalysisPolish.installed = false; } catch (e) {}
+  }
+  window.__mlsAnalysisPolish = { installed: true, version: VERSION, reapply: boot, revert: revert, build: build };
+  try { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot(); }
+  catch (e) { try { boot(); } catch (e2) {} }
+})();
+
+/* feat_studio_redesign_v1.js  ->  window.__mlsStudioPolish   (AI Studio visual polish)
+ * ==========================================================================
+ * SCOPE: #studioView ONLY. Cosmetic/layout polish layered ON TOP of the
+ * existing __mlsSx "sx-2.2.0-prod" grid rebuild (feat_mls_studio_exact.js)
+ * and the Study Groups engine mounted at #mls-sg-root. Does NOT reimplement
+ * or fight either one's DOM ownership:
+ *   - __mlsSx owns grid placement of #copilotCard / .sx-right / #mls-sg-root /
+ *     #studioResultCard and reorders them idempotently. This module never
+ *     inserts a new DIRECT CHILD of #studioView (that would race __mlsSx's
+ *     "only re-append when the sequence differs" check) -- all insertions
+ *     go INSIDE an existing card/section, or are pure CSS.
+ *   - Works with or without __mlsSx present (selectors degrade gracefully
+ *     to plain #studioView .card so the polish still applies if sx isn't
+ *     active for some account/build).
+ *
+ * WHAT THIS ADDS (pure visual -- zero function/handler changes):
+ *   1) A brand header treatment for the Studio title strip matching the
+ *      recent Visit-tab blue-gradient reskin (light-to-dark blue, #mlsEz3
+ *      family) -- small gradient glyph tile + refined subtitle line.
+ *   2) Consistent spacing/typography rhythm across every card: unified
+ *      heading size/weight, unified sub-copy color (matches the AA-safe
+ *      slate already used by __mlsAnaClarity: #3d4e64 / #46586f -- no new
+ *      light-on-light text anywhere).
+ *   3) "Build a custom tool" composer restyled as a clear 3-part block
+ *      (prompt box / actions row / starter chips) with a labelled section
+ *      header and pill-style starter/example links.
+ *   4) Chat polish: Copilot bubbles get consistent padding/radius/shadow,
+ *      the input row gets a subtle focus ring, chips get a hover lift.
+ *   5) "My creations" empty/populated states restyled (dashed-border empty
+ *      card instead of a bare gray line; saved-tool chips get a small
+ *      icon + hover elevation -- purely CSS, the chip DOM itself is
+ *      untouched/still built by the base app).
+ *   6) Study Groups panel (#mls-sg-root incl. the #mlsSgPro strip from
+ *      __mlsStudyProB40 and the advanced builder from __mlsStudyBuilderV2
+ *      if present) gets the same card chrome + a subtle section label so
+ *      it reads as one designed page instead of a bolted-on strip.
+ *   7) Loading/empty skeleton shimmer for #studioFrame while a widget is
+ *      generating (CSS-only overlay, removed the instant the iframe gets
+ *      real srcdoc content).
+ *
+ * SAFETY: no Athena calls, no backend calls, no writes. Guarded IIFE,
+ * idempotent re-assert (MutationObserver + interval, same cadence family
+ * as sibling modules), ES5-only. Full revert: window.__mlsStudioPolish.revert()
+ * removes the injected <style> and the handful of marked label/wrapper
+ * nodes (all carry data-mls-stdpolish) and does not touch anything else.
+ * ==========================================================================*/
+;(function () {
+  "use strict";
+  var VERSION = "stdpolish-1.0.0";
+  try { if (window.__mlsStudioPolish && window.__mlsStudioPolish.installed) return; } catch (e) { return; }
+
+  var STYLE_ID = "mlsStudioPolishCss";
+  var _obs = null, _t = null, _sched = null;
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function mk(t, c, h) { var e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; }
+
+  function injectCSS() {
+    var css = [
+      /* ---- shared tokens (scoped, no leakage outside #studioView) ---- */
+      "#studioView{--stp-ink:#0f2540;--stp-sub:#46586f;--stp-mini:#6b7d93;--stp-line:#e4ebf3;--stp-grad:linear-gradient(120deg,#eef5ff,#f6effd)}",
+      "#studioView .card{color:var(--stp-ink)}",
+      "#studioView .card h2{color:var(--stp-ink);letter-spacing:-.01em}",
+      "#studioView .card .sub{color:var(--stp-sub)!important}",
+      "#studioView .card .mini{color:var(--stp-mini)!important}",
+
+      /* ---- brand header strip (matches the .sx-title slot if __mlsSx is
+         active; degrades to a plain block above the first card if not) ---- */
+      "#studioView .stp-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:14px 18px;border-radius:16px;background:var(--stp-grad);border:1px solid #e3e9fb}",
+      "#studioView.sx-grid .stp-head{grid-column:1/-1;margin:0 0 4px}",
+      "#studioView .stp-head .stp-glyph{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1e3a8a,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;box-shadow:0 8px 18px -10px rgba(30,58,138,.55)}",
+      "#studioView .stp-head .stp-copy{flex:1;min-width:180px}",
+      "#studioView .stp-head .stp-copy b{display:block;font-size:15.5px;font-weight:800;color:var(--stp-ink)}",
+      "#studioView .stp-head .stp-copy span{display:block;font-size:12.5px;color:var(--stp-sub);margin-top:1px}",
+
+      /* ---- unified card chrome (only applies where sx hasn't already
+         forced its own !important chrome -- these are lower specificity
+         and simply keep non-sx cards consistent) ---- */
+      "#studioView .card{border-radius:16px}",
+
+      /* ---- build-a-tool composer ---- */
+      "#studioView .stp-section-lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--stp-mini);margin:0 0 8px}",
+      "#studioView #studioPrompt{transition:border-color .15s ease,box-shadow .15s ease}",
+      "#studioView #studioPrompt:focus{outline:none;border-color:#7c9ceb!important;box-shadow:0 0 0 3px rgba(47,107,237,.12)}",
+      "#studioView #studioGenBtn{background:linear-gradient(135deg,#16a34a,#0f8a3f)!important;box-shadow:0 10px 20px -12px rgba(22,163,74,.55)}",
+      "#studioView #studioTemplates a,#studioView .copilot-chips a{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;background:#f3f6fb;border:1px solid #e0e8f1;color:#2f6bed!important;font-size:12.5px;font-weight:600;text-decoration:none;transition:transform .12s ease,box-shadow .12s ease,background .12s ease}",
+      "#studioView #studioTemplates a:hover,#studioView .copilot-chips a:hover{background:#eaf1ff;transform:translateY(-1px);box-shadow:0 6px 14px -8px rgba(47,107,237,.4)}",
+
+      /* ---- copilot chat polish ---- */
+      "#studioView #copilotThread .msg,#studioView #copilotThread [class*='bubble']{border-radius:14px!important}",
+      "#studioView #copilotChips button,#studioView .copilot-chips button{border-radius:20px!important}",
+      "#studioView #copilotInputRow #copilotInput:focus{outline:none;border-color:#7c9ceb!important;box-shadow:0 0 0 3px rgba(47,107,237,.12)}",
+
+      /* ---- my creations ---- */
+      "#studioView #studioSaved{gap:10px!important}",
+      "#studioView #studioSaved > .mini{width:100%;padding:22px 16px;text-align:center;border:1.5px dashed var(--stp-line);border-radius:14px;background:#fbfcfe;color:var(--stp-mini)!important;font-size:13px}",
+      "#studioView #studioSaved > *:not(.mini){transition:transform .12s ease,box-shadow .12s ease}",
+      "#studioView #studioSaved > *:not(.mini):hover{transform:translateY(-2px);box-shadow:0 10px 20px -12px rgba(15,37,64,.28)}",
+
+      /* ---- Study Groups strip (mls-sg-root / mlsSgPro / mlsStudyBuilderV2) ---- */
+      "#studioView #mls-sg-root,#studioView #mlsSgPro,#studioView #mlsStudyBuilderV2{color:var(--stp-ink)}",
+      "#studioView .stp-sg-lbl{grid-column:1/-1;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--stp-mini);margin:2px 0 -2px 2px}",
+
+      /* ---- widget generating shimmer ---- */
+      "#studioView.stp-gen #studioFrame{position:relative;background:linear-gradient(90deg,#f3f6fb 25%,#eaf0f9 37%,#f3f6fb 63%);background-size:400% 100%;animation:stpShimmer 1.4s ease infinite}",
+      "@keyframes stpShimmer{0%{background-position:100% 0}100%{background-position:0 0}}",
+
+      /* ---- responsive ---- */
+      "@media (max-width:640px){#studioView .stp-head{padding:12px 14px}#studioView .stp-head .stp-glyph{width:30px;height:30px;font-size:14px}}"
+    ].join("\n");
+    var s = $(STYLE_ID);
+    if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
+    if (s.textContent !== css) s.textContent = css;
+  }
+
+  function ensureHead(v) {
+    if (v.querySelector(":scope > .stp-head")) return;
+    var sxTitle = v.querySelector(":scope > .sx-title");
+    var h = mk("div", "stp-head");
+    h.setAttribute("data-mls-stdpolish", "1");
+    h.innerHTML =
+      '<span class="stp-glyph">&#10022;</span>' +
+      '<div class="stp-copy"><b>AI Studio</b><span>Ask Copilot, build a custom tool, or run a study &mdash; everything for exploring your practice, in one place.</span></div>';
+    if (sxTitle) {
+      /* sx already renders its own title row -- drop ours INSIDE it as a
+         second line instead of adding a sibling (keeps sx's child-sequence
+         check untouched: sx-title's own children are sx's business, but
+         appending inside it, not beside it, adds nothing to #studioView's
+         direct-child list). */
+      sxTitle.appendChild(h);
+    } else {
+      v.insertBefore(h, v.firstChild);
+    }
+  }
+
+  function ensureSgLabel(v) {
+    var sg = document.getElementById("mls-sg-root");
+    if (!sg || sg.querySelector(":scope > .stp-sg-lbl")) return;
+    var lbl = mk("div", "stp-sg-lbl", "&#128202; Study Groups &mdash; build a cohort and run a study");
+    lbl.setAttribute("data-mls-stdpolish", "1");
+    sg.insertBefore(lbl, sg.firstChild);
+  }
+
+  function markGenerating() {
+    var v = $("studioView"), frame = $("studioFrame"), status = $("studioStatus");
+    if (!v || !frame) return;
+    var busy = false;
+    try { busy = !!(status && /generating|building|working/i.test(status.textContent || "")); } catch (e) {}
+    v.classList.toggle("stp-gen", busy);
+  }
+
+  function build() {
+    var v = $("studioView"); if (!v) return;
+    injectCSS();
+    if (v.style.display === "none") return;
+    ensureHead(v);
+    ensureSgLabel(v);
+    markGenerating();
+  }
+
+  function hookShowView() {
+    try { if (typeof window.showView === "function" && !window.__stpHook) { window.__stpHook = 1; var _o = window.showView; window.showView = function () { var r = _o.apply(this, arguments); schedule(); return r; }; } } catch (e) {}
+  }
+  function applyAll() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { hookShowView(); build(); } catch (e) {}
+    try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+  }
+  function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 180); }
+  function boot() {
+    try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
+    applyAll();
+    var n = 0; _t = setInterval(function () { applyAll(); if (++n > 15) clearInterval(_t); }, 900);
+  }
+  function revert() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { if (_t) clearInterval(_t); } catch (e) {}
+    try {
+      var nodes = document.querySelectorAll('[data-mls-stdpolish]');
+      Array.prototype.forEach.call(nodes, function (n) { n.remove(); });
+    } catch (e) {}
+    try { var v = $("studioView"); if (v) v.classList.remove("stp-gen"); } catch (e) {}
+    try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
+    try { window.__mlsStudioPolish.installed = false; } catch (e) {}
+  }
+  window.__mlsStudioPolish = { installed: true, version: VERSION, reapply: boot, revert: revert, build: build };
+  try { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot(); }
+  catch (e) { try { boot(); } catch (e2) {} }
+})();
+
 /* =========================================================================
  * MLS Scribe - EMR SECTIONS -> ATHENAONE PER-SECTION WRITE  (__mlsEmrSectionsWrite)
  * v1.0.0  2026-07-10 (b111)
@@ -25263,7 +26258,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b111';
+  var MLS_APP_BUILD='2026-07-10-b112';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
