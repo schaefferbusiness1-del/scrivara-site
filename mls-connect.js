@@ -1,5 +1,5 @@
 /* =========================================================================
- * MLS Scribe - CROSS-PROVIDER MONTH PULL  (__mlsProvMonthPull) v1.0.0  2026-07-10 (b114)
+ * MLS Scribe - CROSS-PROVIDER MONTH PULL  (__mlsProvMonthPull) v1.1.0  2026-07-10 (b115)
  *
  * "A full month pulls for a provider who is NOT Matthew Schaeffer."
  * The live pull engine (__mlsDayHistoryPull v1.2.0) has two gaps this closes:
@@ -27,7 +27,7 @@
 (function () {
   'use strict';
   try { if (window.__mlsProvMonthPull) return; } catch (e) { return; }
-  var api = { version: '1.0.0', running: false, stopReq: false, lastResult: null, shimHits: 0 };
+  var api = { version: '1.1.0', running: false, stopReq: false, lastResult: null, shimHits: 0 };
 
   function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function say(m) { try { if (typeof window.toast === 'function') window.toast(m, ''); } catch (e) {} try { console.log('[MLS prov-month-pull]', m); } catch (e) {} }
@@ -60,27 +60,72 @@
   function todayKey() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function thisMonth() { return todayKey().slice(0, 7); }
 
-  /* ------------- goHome -> gotoDate shim (live-proven mechanism) ---------- */
-  var shim = { active: false, day: '', passing: false };
-  function onGoHomeResult(ev) {
-    try {
-      var d = ev && ev.data;
-      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppGoHomeResult') return;
-      if (!shim.active || shim.passing) return;
-      if (!shim.day || shim.day === todayKey()) return;
-      try { ev.stopImmediatePropagation(); } catch (e) {}
-      api.shimHits++;
-      var orig = d;
-      bridge('mlsAppGotoDate', { date: shim.day }, 'mlsAppGotoDateResult', 30000).then(function () {
-        return wait(3200); /* weekstrip settle; the v26.3 header-date verify lies - trust row content */
-      }).then(function () {
-        shim.passing = true;
-        try { window.postMessage(orig, '*'); } catch (e) {}
-        wait(600).then(function () { shim.passing = false; });
-      });
-    } catch (e) {}
+  /* ------------- goHome -> gotoDate shim (postMessage interception) --------
+   * WHY THIS SHAPE (measured live 2026-07-10, do not "simplify"):
+   *  - pullOne opens a patient via the extension's search-open, whose OPEN phase
+   *    scans the DISPLAYED schedule for the patient's row. Probed live: with
+   *    today's schedule shown, a June-2 patient returns candidates:0 /
+   *    "No matching patient was found" -> the day MUST be navigated first.
+   *  - mlsAppGotoDate to a 5-week-old date measured 20.3s (week-arrow stepping).
+   *    ground()'s own bridge timeout is 18s, so ANY approach that delays the
+   *    mlsAppGoHomeResult past 18s makes attempt 1 time out.
+   *  - ground() retries goHome up to 3x (~18s + 1.8s each, ~59s total). So we
+   *    SWALLOW the app's mlsAppGoHome, run the real goHome->gotoDate chain
+   *    ourselves, and answer with a synthetic mlsAppGoHomeResult when the chain
+   *    finishes (~25s) - it lands inside ground()'s attempt 2 and ground()
+   *    returns true. Costs one wasted 18s timeout per patient; robust.
+   * Only active while a month pull is running on a NON-today day: normal
+   * today-pulls never enter this path (shim.armed stays false).
+   * ---------------------------------------------------------------------- */
+  var shim = { armed: false, day: '', chain: null };
+  var _post = window.postMessage.bind(window);
+  function rawPost(msg) { try { _post(msg, '*'); } catch (e) {} }
+  function chainNav(day) {
+    /* real goHome (returns athenaOne to the schedule) then real gotoDate(day) */
+    return (async function () {
+      for (var a = 0; a < 3; a++) {
+        var gh = await bridgeRaw('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 20000);
+        if (gh && !gh.__timeout && (gh.ok || gh.clicked)) break;
+        await wait(1500);
+      }
+      await wait(2500);
+      var gd = await bridgeRaw('mlsAppGotoDate', { date: day }, 'mlsAppGotoDateResult', 60000);
+      await wait(2500); /* weekstrip settle; v26.3's header-date verify lies - trust row content */
+      return !!(gd && gd.ok);
+    })();
   }
-  try { window.addEventListener('message', onGoHomeResult, false); } catch (e) {}
+  /* bridge that bypasses our own postMessage wrapper (so content.js sees it) */
+  function bridgeRaw(type, payload, respType, timeout) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
+      try { window.addEventListener('message', h, false); } catch (e) {}
+      rawPost(Object.assign({ type: type, source: 'mls-app', from: 'mls-app' }, payload || {}));
+      wait(timeout || 15000).then(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); });
+    });
+  }
+  function wrappedPost(msg, target, transfer) {
+    try {
+      if (shim.armed && msg && msg.source === 'mls-app' && msg.type === 'mlsAppGoHome' && shim.day && shim.day !== todayKey()) {
+        api.shimHits++;
+        if (!shim.chain) {
+          shim.chain = chainNav(shim.day).then(function (ok) {
+            shim.chain = null;
+            /* answer the app's ground() with a synthetic result once we're on the right day */
+            rawPost({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: { ok: !!ok, clicked: true, viaProvMonthPull: true } });
+            return ok;
+          }, function () {
+            shim.chain = null;
+            rawPost({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: { ok: false, clicked: false, viaProvMonthPull: true } });
+            return false;
+          });
+        }
+        return; /* swallowed: do NOT forward the app's goHome to the extension */
+      }
+    } catch (e) {}
+    return _post(msg, target === undefined ? '*' : target, transfer);
+  }
+  try { window.postMessage = wrappedPost; } catch (e) {}
 
   /* ------------------------------ roster --------------------------------- */
   function providersFor(monthPrefix) {
@@ -145,20 +190,20 @@
         return 'nothing-to-do';
       }
       for (var j = 0; j < todo.length; j++) {
-        if (api.stopReq) { say('Month pull stopped by user at ' + S.done + '/' + S.total + '.'); break; }
+        if (api.stopReq) { shim.armed = false; shim.day = ''; say('Month pull stopped by user at ' + S.done + '/' + S.total + '.'); break; }
         var item = todo[j];
         S.current = item.name + ' (' + item.day + ')';
-        shim.active = true; shim.day = item.day;
+        shim.armed = true; shim.day = item.day;
         var row;
         try { row = await D._pullOne(item.name); } catch (e) { row = { name: item.name, ok: false, reason: 'error:' + ((e && e.message) || e) }; }
-        shim.active = false; shim.day = '';
+        shim.armed = false; shim.day = '';
         row.day = item.day;
         S.rows.push(row); S.done++;
         if (row && row.ok) S.ok++; else S.failed++;
         try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
         await wait(700);
       }
-      shim.active = false;
+      shim.armed = false; shim.day = '';
       S.running = false; S.current = '';
       api.running = false;
       if (btn) { btn.disabled = false; btn.style.opacity = ''; }
@@ -190,17 +235,41 @@
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
+  /* Who is signed in to athenaOne? Only THAT provider's appointments render on
+   * the clinical schedule, and the opener works by clicking the patient's row
+   * there. Verified live 2026-07-10: athenaOne v26.3's "View by" is a GROUPING
+   * control (Provider/Department/Time), not a provider filter; a June-2 patient
+   * of another provider returns candidates:0 / "No matching patient was found".
+   * So we warn honestly instead of running a pull that will refuse every row. */
+  function selfProvider() {
+    try {
+      var el = document.getElementById('provSel') || document.querySelector('#mlsProvChip, [data-mls-provider]');
+      var t = el ? (el.value || el.textContent || '') : '';
+      if (t && /\w/.test(t)) return String(t).trim();
+    } catch (e) {}
+    return 'Matthew Schaeffer, MD';
+  }
+  function isSelf(p) { return nrm(p).indexOf(nrm(selfProvider()).split(' ')[0]) >= 0 && nrm(p) === nrm(selfProvider()); }
   function refreshCount() {
     try {
       var sel = document.getElementById('mlsPmpProv'), mo = document.getElementById('mlsPmpMonth'), out = document.getElementById('mlsPmpCount');
+      var go = document.getElementById('mlsPmpGo');
       if (!sel || !mo || !out) return;
-      if (!sel.value) { out.textContent = 'Pick a provider.'; return; }
+      if (!sel.value) { out.textContent = 'Pick a provider.'; if (go) go.disabled = false; return; }
       var roster = rosterFor(sel.value, mo.value || thisMonth());
       var need = 0;
       for (var i = 0; i < roster.length; i++) { var p = findPatient(roster[i].name); if (!(p && hasPulled(p) && (p.visits || []).length)) need++; }
-      out.textContent = roster.length + ' patient' + (roster.length === 1 ? '' : 's') + ' on the ' + (mo.value || thisMonth()) + ' schedule; ' + need + ' still need a chart pull (~' + Math.ceil(need * 22 / 60) + ' min).';
+      var line = roster.length + ' patient' + (roster.length === 1 ? '' : 's') + ' on the ' + (mo.value || thisMonth()) + ' schedule; ' + need + ' still need a chart pull (~' + Math.ceil(need * 45 / 60) + ' min).';
+      if (!isSelf(sel.value)) {
+        line += ' \u26a0\ufe0f athenaOne only shows YOUR OWN schedule (' + esc(selfProvider()) + '), so charts for ' +
+                esc(sel.value) + ' cannot be opened from this login - the pull will honestly refuse each row. ' +
+                'Counts above are still real (from the imported schedule) and Copilot can compare them.';
+        if (go) go.disabled = true;
+      } else if (go) { go.disabled = false; }
+      out.innerHTML = line;
     } catch (e) {}
   }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function fillProviders() {
     try {
       var sel = document.getElementById('mlsPmpProv'), mo = document.getElementById('mlsPmpMonth');
@@ -261,11 +330,263 @@
   window.__mlsProvMonthPull = api;
   window.__mlsProvMonthPull_revert = function () {
     try { if (_iv) clearInterval(_iv); } catch (e) {}
-    try { window.removeEventListener('message', onGoHomeResult, false); } catch (e) {}
+    try { shim.armed = false; shim.day = ''; } catch (e) {}
+    try { if (window.postMessage === wrappedPost) window.postMessage = _post; } catch (e) {}
     try { var b = document.getElementById(BTN); if (b) b.remove(); } catch (e) {}
     try { var p = document.getElementById(PANEL); if (p) p.remove(); } catch (e) {}
     try { var s = document.getElementById('mlsPmpCss'); if (s) s.remove(); } catch (e) {}
     try { delete window.__mlsProvMonthPull; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe - COPILOT TRUTH GATE  (__mlsCopilotTruth) v1.0.0  2026-07-10 (b115)
+ *
+ * TWO LIVE BUGS THIS FIXES (both found by asking the real Copilot a real
+ * question on 2026-07-10 and watching it answer in 25ms without an AI call):
+ *
+ * 1. FABRICATED REVENUE. `window.mlsAsk` (the __mlsSmartAsk local analytics
+ *    layer) answered ANY money question with `rows.length * 175` dollars:
+ *      "Estimated revenue for Matthew Schaeffer, MD: $22,575 - 129 visits x
+ *       ~$175 (estimate; connect billing for exact)."
+ *    MLS holds NO payment, charge, allowed-amount or collections data. That
+ *    number was invented from a hardcoded constant. A doctor comparing his
+ *    income to a partner's would have been reading fiction.
+ *
+ * 2. THE AI NEVER RAN FOR COMPARISONS. `__mlsOneChatB35.wrapFetch` transparently
+ *    intercepts POST /api/copilot and short-circuits it whenever the question
+ *    matches /(how many|number of|count|most common|most frequent|busiest|who
+ *    saw|revenue|how much)/ AND mlsAsk returns any string. "Compare my
+ *    procedure rates last month to Dr. Evering's" and "how much more did he
+ *    make than me" BOTH match -> answered locally, single-provider, no AI, and
+ *    (for money) fabricated. The per-provider grounding (__mlsCopilotData) and
+ *    the gpt-4o backend were never reached for exactly the questions that need
+ *    them.
+ *
+ * FIX (wraps window.mlsAsk; does not touch the B35 fetch wrapper):
+ *   - MONEY questions -> honest refusal. Never a dollar figure. Offers the
+ *     volume/procedure comparison MLS can actually support. (Answered locally,
+ *     instantly, for free - the AI cannot know billing either.)
+ *   - COMPARISON questions (compare / vs / than / two provider names / "more
+ *     than me") -> return an EMPTY answer. analyticsAnswer() treats a falsy
+ *     answer as "no local answer" and passes the request through to the real
+ *     backend, where __mlsCopilotData has already attached providerStats and
+ *     server.js now runs it on full gpt-4o. Real numbers, real model.
+ *   - Everything else -> unchanged (fast, exact, local).
+ *
+ * Idempotent; additive; no network. Revert: window.__mlsCopilotTruth_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsCopilotTruth) return; } catch (e) { return; }
+  var api = { version: '1.0.0', moneyRefusals: 0, comparisonsPassedToAI: 0, localAnswers: 0, armed: false };
+
+  var MONEY_RE = /(revenue|money|bring in|billing|billed|collections?|income|earn|earned|earnings|paid|payment|\$|dollar|rvu\s*\$|made more|make more|how much (did|do|does).*(make|earn|bring))/i;
+  var COMPARE_RE = /(\bcompare\b|\bcomparison\b|\bversus\b|\bvs\.?\b|\bmore than\b|\bless than\b|\bthan (me|mine|i did|him|her|dr\b)|\bbetween\b.*\band\b|who (made|earned|billed|did more))/i;
+
+  function providerNames() {
+    var out = [], seen = {};
+    try {
+      var rows = (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []);
+      for (var i = 0; i < rows.length; i++) {
+        var p = rows[i] && rows[i].provider;
+        if (!p || seen[p]) continue;
+        seen[p] = 1;
+        out.push(String(p));
+      }
+    } catch (e) {}
+    return out;
+  }
+  /* how many DISTINCT providers does this question name? */
+  function providersMentioned(q) {
+    var ql = String(q || '').toLowerCase(), names = providerNames(), hits = {}, n = 0, i, j;
+    for (i = 0; i < names.length; i++) {
+      var toks = names[i].toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter(function (t) { return t.length > 2 && t !== 'the'; });
+      /* a surname hit is enough: "Evering", "Monaco" */
+      for (j = 0; j < toks.length; j++) {
+        if (ql.indexOf(toks[j]) >= 0) { if (!hits[names[i]]) { hits[names[i]] = 1; n++; } break; }
+      }
+    }
+    /* first person counts as one provider ("mine", "my", "I", "me") */
+    if (/\b(my|mine|me|i)\b/.test(ql)) n++;
+    return n;
+  }
+  function isComparison(q) {
+    if (COMPARE_RE.test(String(q || ''))) return true;
+    return providersMentioned(q) >= 2;
+  }
+
+  var MONEY_ANSWER =
+    'MLS does not have your billing data, so I will not put a dollar figure on this - any number I gave you would be made up. ' +
+    'MLS only sees the athenaOne schedule and the chart notes you have pulled: appointments, unique patients, procedures and CPT codes. ' +
+    'Ask me to compare those instead (for example: "compare my procedure count last month to Dr. Evering\'s"), or connect your billing system for real revenue.';
+
+  function install() {
+    var orig = window.mlsAsk;
+    if (typeof orig !== 'function') return false;
+    if (orig.__mlsTruth) return true; /* already wrapped */
+
+    var wrapped = function (q) {
+      var s = String(q || '');
+      try {
+        if (MONEY_RE.test(s)) {
+          api.moneyRefusals++;
+          /* An honest, local, free answer. Never a fabricated dollar amount. */
+          return { answer: MONEY_ANSWER };
+        }
+        if (isComparison(s)) {
+          api.comparisonsPassedToAI++;
+          /* Empty answer -> __mlsOneChatB35.analyticsAnswer() returns null ->
+             the request passes through to POST /api/copilot, where
+             __mlsCopilotData has attached real providerStats and the backend
+             runs full gpt-4o. */
+          return { answer: '' };
+        }
+      } catch (e) {}
+      /* Local answer - but reject the junk ones. 592 imported schedule rows carry
+       * no provider, so the local "busiest provider" tally answers "Unassigned
+       * saw the most patients - 464", which is meaningless to a doctor. Fall
+       * through to the AI (which gets real per-provider stats) instead. */
+      var out = orig.apply(this, arguments);
+      try {
+        var txt = String((out && out.answer) || '');
+        if (/\b(unassigned|undefined|null)\b/i.test(txt) || /^\s*\(none\)/.test(txt)) {
+          api.comparisonsPassedToAI++;
+          return { answer: '' };
+        }
+      } catch (e) {}
+      api.localAnswers++;
+      return out;
+    };
+    wrapped.__mlsTruth = true;
+    wrapped.__orig = orig;
+    try { window.mlsAsk = wrapped; api.armed = true; } catch (e) { return false; }
+    return true;
+  }
+
+  /* mlsAsk is defined by __mlsSmartAsk, which may load after us; poll briefly. */
+  var tries = 0;
+  var iv = null;
+  function attempt() {
+    if (install() || ++tries > 120) { try { if (iv) clearInterval(iv); } catch (e) {} }
+  }
+  attempt();
+  try { iv = setInterval(attempt, 500); } catch (e) {}
+
+  api.isComparison = isComparison;
+  api.isMoney = function (q) { return MONEY_RE.test(String(q || '')); };
+  window.__mlsCopilotTruth = api;
+  window.__mlsCopilotTruth_revert = function () {
+    try { if (iv) clearInterval(iv); } catch (e) {}
+    try { if (window.mlsAsk && window.mlsAsk.__mlsTruth) window.mlsAsk = window.mlsAsk.__orig; } catch (e) {}
+    try { delete window.__mlsCopilotTruth; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe - PRIMARY BUTTON POLISH  (__mlsBtnPolish) v1.0.0  2026-07-10 (b115)
+ *
+ * Cosmetic only. Richer, deeper brand gradients + a soft brand-tinted shadow
+ * and a small hover lift on the PRIMARY actions. No layout, no handlers, no
+ * geometry changes (same padding/radius/size), so nothing can shift or break.
+ *
+ * Contrast (WCAG AA, white text on the DARKEST stop of each gradient - the
+ * worst case; the lighter stop is only ever a highlight):
+ *   blue   #1d4ed8 -> #1e40af : white on #1e40af = 8.6:1  (was #2350bf = 6.9:1)
+ *   green  #047857 -> #065f46 : white on #065f46 = 7.4:1  (was #047857 = 4.8:1)
+ *   teal   #0d9488 -> #0f766e : white on #0f766e = 5.3:1  (was #13a18f = 3.4:1 FAIL)
+ *   indigo #4f46e5 -> #4338ca : white on #4338ca = 7.6:1
+ * Every one of these clears AA (4.5:1) for normal text; the old teal
+ * "Start recording" pill did NOT, so this pass fixes a real contrast bug.
+ *
+ * Targets by ID/class only (never by text), so a relabel can't detach it.
+ * Idempotent; additive; CSS-only. Revert: window.__mlsBtnPolish_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsBtnPolish) return; } catch (e) { return; }
+  var api = { version: '1.0.0' };
+  var ID = 'mlsBtnPolishCss';
+
+  var CSS = [
+    /* ---- shared feel: soft brand shadow + hover lift, no geometry change --- */
+    '#ez3Next,#ez3Choose,#heroRecBtn,#mlsDayHistBtn,#mlsPmpBtn{',
+    '  transition:transform .14s ease, box-shadow .14s ease, filter .14s ease;',
+    '  border:0;',
+    '}',
+    '#ez3Next:hover,#ez3Choose:hover,#heroRecBtn:hover,#mlsDayHistBtn:hover,#mlsPmpBtn:hover{',
+    '  transform:translateY(-1px);',
+    '  filter:saturate(1.06);',
+    '}',
+    '#ez3Next:active,#ez3Choose:active,#heroRecBtn:active,#mlsDayHistBtn:active,#mlsPmpBtn:active{',
+    '  transform:translateY(0);',
+    '}',
+    /* focus ring for keyboard users (was missing) */
+    '#ez3Next:focus-visible,#ez3Choose:focus-visible,#heroRecBtn:focus-visible,#mlsDayHistBtn:focus-visible,#mlsPmpBtn:focus-visible{',
+    '  outline:3px solid rgba(147,197,253,.85); outline-offset:2px;',
+    '}',
+
+    /* ---- primary blue: Start Recording ------------------------------------ */
+    '#ez3Next{',
+    '  background-image:linear-gradient(135deg,#2563eb 0%,#1d4ed8 55%,#1e40af 100%)!important;',
+    '  box-shadow:0 8px 24px rgba(29,78,216,.34), inset 0 1px 0 rgba(255,255,255,.16)!important;',
+    '}',
+    '#ez3Next:hover{ box-shadow:0 12px 30px rgba(29,78,216,.44), inset 0 1px 0 rgba(255,255,255,.2)!important; }',
+
+    /* ---- confirming green: Choose patient --------------------------------- */
+    '#ez3Choose{',
+    '  background-image:linear-gradient(135deg,#059669 0%,#047857 55%,#065f46 100%)!important;',
+    '  box-shadow:0 8px 24px rgba(4,120,87,.32), inset 0 1px 0 rgba(255,255,255,.15)!important;',
+    '}',
+    '#ez3Choose:hover{ box-shadow:0 12px 30px rgba(4,120,87,.42), inset 0 1px 0 rgba(255,255,255,.19)!important; }',
+
+    /* ---- teal record pill: darkened to reach AA --------------------------- */
+    '#heroRecBtn{',
+    '  background-image:linear-gradient(135deg,#0d9488 0%,#0f766e 100%)!important;',
+    '  box-shadow:0 6px 18px rgba(15,118,110,.32), inset 0 1px 0 rgba(255,255,255,.14)!important;',
+    '}',
+    '#heroRecBtn:hover{ box-shadow:0 10px 24px rgba(15,118,110,.42)!important; }',
+
+    /* ---- utility FABs: flat -> gradient, same size ------------------------ */
+    '#mlsDayHistBtn{',
+    '  background-image:linear-gradient(135deg,#1d4ed8 0%,#0d3c78 100%)!important;',
+    '  background-color:transparent!important;',
+    '  box-shadow:0 8px 22px rgba(13,60,120,.42), inset 0 1px 0 rgba(255,255,255,.14)!important;',
+    '}',
+    '#mlsPmpBtn{',
+    '  background-image:linear-gradient(135deg,#4f46e5 0%,#4338ca 100%)!important;',
+    '  background-color:transparent!important;',
+    '  box-shadow:0 8px 22px rgba(67,56,202,.42), inset 0 1px 0 rgba(255,255,255,.14)!important;',
+    '}',
+    '#mlsPmpBtn[disabled]{ filter:grayscale(.55) brightness(.8); cursor:not-allowed; transform:none; }',
+
+    /* respect reduced-motion */
+    '@media (prefers-reduced-motion: reduce){',
+    '  #ez3Next,#ez3Choose,#heroRecBtn,#mlsDayHistBtn,#mlsPmpBtn{transition:none}',
+    '  #ez3Next:hover,#ez3Choose:hover,#heroRecBtn:hover,#mlsDayHistBtn:hover,#mlsPmpBtn:hover{transform:none}',
+    '}'
+  ].join('\n');
+
+  function mount() {
+    try {
+      if (document.getElementById(ID)) return;
+      var st = document.createElement('style');
+      st.id = ID;
+      st.textContent = CSS;
+      (document.head || document.documentElement).appendChild(st);
+    } catch (e) {}
+  }
+  mount();
+  var iv = null;
+  try { iv = setInterval(mount, 3000); } catch (e) {}
+
+  window.__mlsBtnPolish = api;
+  window.__mlsBtnPolish_revert = function () {
+    try { if (iv) clearInterval(iv); } catch (e) {}
+    try { var s = document.getElementById(ID); if (s) s.remove(); } catch (e) {}
+    try { delete window.__mlsBtnPolish; } catch (e) {}
   };
 })();
 
@@ -26952,7 +27273,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b114';
+  var MLS_APP_BUILD='2026-07-10-b115';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
