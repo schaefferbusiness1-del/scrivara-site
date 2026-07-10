@@ -1,5 +1,5 @@
 {
-  "version": "1.55",
+  "version": "1.73",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.55 — adds the hands-free day/month history pull (returns athenaOne to the schedule between patients and foregrounds the read so it doesn't stall), on top of v1.54's chart-history binding, DOB capture, and write-target verification. Load this update, then use 'Pull day histories'."
+  "notes": "v1.73 - MLS Assist now updates itself in place; no download or reload is needed. Adds the athenaOne v26.3 week-strip date navigation, junk-frame identity guards, provider-credential name filtering, and the verified per-section write bridge. If you are installing for the first time, use the Chrome Web Store link."
 }
