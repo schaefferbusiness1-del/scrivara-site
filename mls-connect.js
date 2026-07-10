@@ -124,8 +124,17 @@
         var arr = window._calAppts;
         if (Array.isArray(arr) && arr.length !== api.lastLen) {
           var changed = scrubNow();
-          if (changed && document.getElementById('ez3Next')) {
-            try { window.__mlsEasyV32 && window.__mlsEasyV32.open && window.__mlsEasyV32.open(); } catch (e) {}
+          /* b110: nudge ONLY when the Easy panel is actually VISIBLE - #ez3Next
+             exists (hidden) on every view, and __mlsEasyV32.open() navigates to
+             the Visit tab, which YANKED the user off Calendar (live regression
+             introduced by b109's nudge). Also cap nudges to one per 60s. */
+          if (changed) {
+            var nx0 = document.getElementById('ez3Next');
+            var vis0 = false; try { var rr0 = nx0 && nx0.getBoundingClientRect(); vis0 = !!(rr0 && rr0.width > 5 && rr0.height > 5); } catch (e) {}
+            if (vis0 && (!api.lastNudge || Date.now() - api.lastNudge > 60000)) {
+              api.lastNudge = Date.now();
+              try { window.__mlsEasyV32 && window.__mlsEasyV32.open && window.__mlsEasyV32.open(); } catch (e) {}
+            }
           }
         }
         var S = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
@@ -25083,7 +25092,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-09-b109';
+  var MLS_APP_BUILD='2026-07-09-b110';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
