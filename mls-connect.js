@@ -1,3 +1,68 @@
+/* feat_studygroups_badge_fix.js  ->  window.__mlsSgBadgeFix  (sgbadge-1.0.0)
+ * ---------------------------------------------------------------------------
+ * Hides the stray "v1 - staging" pill still visible on the live Study Groups
+ * card header (#mls-sg-root h3 .mls-sg-pill). This is a known, already-
+ * documented live bug (MASTER_STATUS_2026-07-08.md section 4, "Known live
+ * bugs, not yet fixed": "a stray 'staging' badge left visible in production
+ * (Study Groups/Analysis area)") -- it predates last night's AI-Studio
+ * redesign work. Flagged and fixed here because it is exactly what makes an
+ * otherwise-working Study Groups feature (the real engine -- __mlsStudyGroups
+ * + __mlsSgFix -- is live, tested, and unaffected by last night's changes)
+ * look unfinished or broken to a doctor looking at the tab.
+ *
+ * SAFETY: pure DOM text/style patch. No function, handler, backend call, or
+ * data-model change. Only acts on a badge whose own text says "staging" --
+ * if the live markup doesn't match, this module makes NO change (never
+ * guesses or invents an element to hide).
+ *
+ * Idempotent, additive, reversible: window.__mlsSgBadgeFix.revert()
+ * ASCII-only. try/catch throughout. No PHI logged.
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  try { if (window.__mlsSgBadgeFix && window.__mlsSgBadgeFix.installed) return; } catch (e) { return; }
+
+  var VERSION = 'sgbadge-1.0.0';
+  var MARK = 'data-mls-sgbadge';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+
+  function fix() {
+    safe(function () {
+      var root = document.getElementById('mls-sg-root');
+      if (!root) return;
+      var pills = root.querySelectorAll('.mls-sg-pill');
+      for (var i = 0; i < pills.length; i++) {
+        var p = pills[i];
+        if (p.getAttribute(MARK)) continue; // already handled this node
+        if (/staging/i.test(p.textContent || '')) {
+          p.setAttribute(MARK, '1');
+          p.setAttribute('data-mls-sgbadge-orig', p.textContent);
+          p.style.setProperty('display', 'none', 'important');
+        }
+      }
+    });
+  }
+
+  var _t = setInterval(fix, 1200);
+  fix();
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fix); }
+
+  function revert() {
+    try { clearInterval(_t); } catch (e) {}
+    safe(function () {
+      var nodes = document.querySelectorAll('[' + MARK + ']');
+      Array.prototype.forEach.call(nodes, function (n) {
+        n.style.removeProperty('display');
+        n.removeAttribute(MARK);
+        n.removeAttribute('data-mls-sgbadge-orig');
+      });
+    });
+    try { window.__mlsSgBadgeFix.installed = false; } catch (e) {}
+  }
+
+  window.__mlsSgBadgeFix = { installed: true, version: VERSION, revert: revert, run: fix };
+})();
 /* =========================================================================
  * MLS Scribe - CROSS-PROVIDER MONTH PULL  (__mlsProvMonthPull) v1.1.0  2026-07-10 (b115)
  *
@@ -2264,10 +2329,19 @@
  * as sibling modules), ES5-only. Full revert: window.__mlsStudioPolish.revert()
  * removes the injected <style> and the handful of marked label/wrapper
  * nodes (all carry data-mls-stdpolish) and does not touch anything else.
+ *
+ * v1.0.1 HOTFIX (2026-07-10): fixed a live bug where ensureHead() appended a
+ * duplicate "AI Studio" glyph+heading+subtitle block inside __mlsSx's own
+ * .sx-title on every render/interval tick -- its own duplicate-guard checked
+ * only DIRECT children of #studioView, but the block was inserted as a
+ * grandchild, so the guard never matched and copies stacked unbounded. Also
+ * consolidated the two different "AI Studio" descriptions (sx's own native
+ * subtitle vs. this module's appended one) into one. See ensureHead() /
+ * consolidateSxSubtitle() below for details.
  * ==========================================================================*/
 ;(function () {
   "use strict";
-  var VERSION = "stdpolish-1.0.0";
+  var VERSION = "stdpolish-1.0.1";
   try { if (window.__mlsStudioPolish && window.__mlsStudioPolish.installed) return; } catch (e) { return; }
 
   var STYLE_ID = "mlsStudioPolishCss";
@@ -2334,24 +2408,51 @@
     if (s.textContent !== css) s.textContent = css;
   }
 
+  /* Plain ASCII hyphen, not &mdash; -- this string is assigned via BOTH
+     innerHTML (entity-aware) and .textContent (entity-UNAWARE -- an &mdash;
+     would render as the literal text "&mdash;" there), and ASCII source
+     keeps it safe across this repo's copy/paste deploy pipeline (documented
+     UTF-8 mangling risk on raw non-ASCII source bytes). */
+  var STP_COPY = "Ask Copilot, build a custom tool, or run a study - everything for exploring your practice, in one place.";
+
+  /* v1.0.1 FIX -- root cause of the "dozens of stacked duplicate headers" bug:
+     when __mlsSx's own .sx-title row exists, the old code appended a WHOLE
+     second glyph+heading+subtitle block INSIDE it (sxTitle.appendChild(h)) --
+     a real duplicate-description bug (sx already renders its own "AI Studio"
+     heading + subtitle there). Worse, the guard above that call checked
+     v.querySelector(":scope > .stp-head") -- DIRECT children of #studioView
+     only -- but the block it guards was appended as a GRANDCHILD (child of
+     .sx-title, not of #studioView), so the guard never matched. Every
+     MutationObserver tick and every 900ms interval tick re-ran ensureHead(),
+     found no direct-child match, and appended another copy -- unbounded,
+     since appending itself is a DOM mutation that re-triggers the observer.
+     Fix: when sx's title exists, don't append a second header at all --
+     consolidate sx's OWN existing subtitle text in place (one description,
+     idempotent via a marker attribute) instead of stacking a duplicate. */
+  function consolidateSxSubtitle(sxTitle) {
+    if (sxTitle.getAttribute("data-mls-stdpolish-sub") === "1") return; // already consolidated
+    var spans = sxTitle.querySelectorAll(":scope > span");
+    var subEl = null;
+    for (var i = 0; i < spans.length; i++) {
+      var t = spans[i].textContent || "";
+      if (/ask/i.test(t) || /build a tool/i.test(t)) { subEl = spans[i]; break; }
+    }
+    if (!subEl) return; // unrecognized sx markup -- don't guess, leave sx's header untouched
+    subEl.setAttribute("data-mls-stdpolish-orig", subEl.textContent);
+    subEl.textContent = STP_COPY;
+    sxTitle.setAttribute("data-mls-stdpolish-sub", "1");
+  }
+
   function ensureHead(v) {
-    if (v.querySelector(":scope > .stp-head")) return;
-    var sxTitle = v.querySelector(":scope > .sx-title");
+    var sxTitle = v.querySelector(".sx-title");
+    if (sxTitle) { consolidateSxSubtitle(sxTitle); return; }
+    if (v.querySelector(".stp-head")) return; // unscoped on purpose -- matches at any depth
     var h = mk("div", "stp-head");
     h.setAttribute("data-mls-stdpolish", "1");
     h.innerHTML =
       '<span class="stp-glyph">&#10022;</span>' +
-      '<div class="stp-copy"><b>AI Studio</b><span>Ask Copilot, build a custom tool, or run a study &mdash; everything for exploring your practice, in one place.</span></div>';
-    if (sxTitle) {
-      /* sx already renders its own title row -- drop ours INSIDE it as a
-         second line instead of adding a sibling (keeps sx's child-sequence
-         check untouched: sx-title's own children are sx's business, but
-         appending inside it, not beside it, adds nothing to #studioView's
-         direct-child list). */
-      sxTitle.appendChild(h);
-    } else {
-      v.insertBefore(h, v.firstChild);
-    }
+      '<div class="stp-copy"><b>AI Studio</b><span>' + STP_COPY + '</span></div>';
+    v.insertBefore(h, v.firstChild);
   }
 
   function ensureSgLabel(v) {
@@ -2399,6 +2500,14 @@
     try {
       var nodes = document.querySelectorAll('[data-mls-stdpolish]');
       Array.prototype.forEach.call(nodes, function (n) { n.remove(); });
+    } catch (e) {}
+    try {
+      var subbed = document.querySelectorAll('[data-mls-stdpolish-sub]');
+      Array.prototype.forEach.call(subbed, function (t) {
+        var span = t.querySelector('span[data-mls-stdpolish-orig]');
+        if (span) { span.textContent = span.getAttribute('data-mls-stdpolish-orig'); span.removeAttribute('data-mls-stdpolish-orig'); }
+        t.removeAttribute('data-mls-stdpolish-sub');
+      });
     } catch (e) {}
     try { var v = $("studioView"); if (v) v.classList.remove("stp-gen"); } catch (e) {}
     try { var s = $(STYLE_ID); if (s) s.remove(); } catch (e) {}
@@ -27701,7 +27810,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b122c';
+  var MLS_APP_BUILD='2026-07-10-b123';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -34102,7 +34211,7 @@
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260625afx2';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710b122c';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca1';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260710cv2';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260625su1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260625chk1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
