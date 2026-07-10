@@ -3841,6 +3841,8 @@
     visits.forEach(function (v) {
       try { M.addVisit(p.id, { date: v.date, type: v.type || 'Office visit', raw: v.raw }, { source: 'athena-copy', persist: false }); n++; } catch (e) {}
     });
+    /* b121 clobber fix: the live honest addVisit drops our persist:false and writes each visit to localStorage via its own re-fetched clone; the caller's p is a SEPARATE stale clone whose later upsert(p) would wipe them. Re-adopt the freshly-persisted .visits onto p. */
+    if (n) { try { var _ps = getPatients(); for (var _i = 0; _i < _ps.length; _i++) { if (_ps[_i] && _ps[_i].id === p.id) { if (Array.isArray(_ps[_i].visits)) p.visits = _ps[_i].visits; break; } } } catch (e) {} }
     return n;
   }
 
