@@ -27810,7 +27810,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b124';
+  var MLS_APP_BUILD='2026-07-10-b125';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -35271,4 +35271,132 @@
     try { var s = document.getElementById('edsSecondaryRow'); if (s) { s.removeAttribute('data-mls-ziplink'); } } catch (e) {}
     try { delete window.__mlsExtZipLink; } catch (e) {}
   };
+})();
+
+/* =========================================================================
+ * MLS Scribe — patient-list WIPE GUARD  (feat_mls_patient_wipe_guard.js)
+ * Addresses OUTSTANDING_BUGS_2026-07-10 §4.3: an in-memory patient list was
+ * once observed emptied (1177 -> 0) mid-session and never root-caused. The
+ * base savePatients() (ScribeFlow.html:5667) is:
+ *     function savePatients(arr){ localStorage.setItem(uns('patients'),JSON.stringify(arr)); }
+ * with NO guard, so ANY code path that hands it [] persists an empty list to
+ * localStorage and silently loses every patient that was not yet synced to the
+ * server (loadPatientsFromServer merges back only server rows on reload).
+ *
+ * This module wraps window.savePatients and HARD-BLOCKS the one operation that
+ * is never legitimate in this app: collapsing a non-trivial stored list all the
+ * way to EMPTY in a single save. It also WARNS (but allows) on a suspiciously
+ * large shrink so a real bug leaves a breadcrumb without blocking a legitimate
+ * bulk cleanup/dedup.
+ *
+ * WHY THIS IS SAFE (audited against every live savePatients call site):
+ *   - setPatients/bulk save (5676), athena-schedule cleanup (5706),
+ *     server-merge (5790 — only grows), single-delete (9495 — removes ONE).
+ *   None of these can take a large list to [] in one call. A brand-new account
+ *   (currentLen 0) is below the threshold, so first-run is untouched.
+ *
+ * Escape hatch for a FUTURE legitimate "erase all my data" feature:
+ *   window.__mlsWipeGuard.allowOnce()  -> next savePatients([]) is permitted.
+ *
+ * Additive + reversible: window.__mlsWipeGuard_revert().
+ * ES5/JScript-parse-gate clean (var/function only, no arrows, no .catch, no
+ * template strings). Self-heals if another module re-wraps savePatients later.
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsWipeGuard && window.__mlsWipeGuard.installed) return;
+
+  var EMPTY_BLOCK_MIN = 8;   // hard-block savePatients([]) only when >= this many are already stored
+  var SHRINK_WARN_MIN = 40;  // only consider a shrink "suspicious" when the stored list is at least this big
+  var SHRINK_WARN_FRAC = 0.25; // ...and the new list is below this fraction of the stored count
+
+  var G = {
+    installed: true,
+    version: '1.0.0',
+    blocked: 0,      // count of hard-blocked wipes
+    warned: 0,       // count of suspicious-shrink warnings
+    _allowNext: false,
+    lastBlock: null,
+    allowOnce: function () { G._allowNext = true; return 'next savePatients([]) will be permitted once'; }
+  };
+
+  function storedCount() {
+    // Read the current persisted list WITHOUT going through any wrapper.
+    try {
+      if (typeof window.getPatients === 'function') {
+        var p = window.getPatients();
+        return (p && p.length) || 0;
+      }
+    } catch (e) {}
+    return 0;
+  }
+
+  function toastSafe(msg) {
+    try { if (typeof window.toast === 'function') window.toast(msg, 'err'); } catch (e) {}
+  }
+
+  function makeWrapper(orig) {
+    function guarded(arr) {
+      var newLen = (arr && arr.length) || 0;
+      var curLen = storedCount();
+
+      // HARD BLOCK: full -> empty collapse of a non-trivial list. Never legitimate here.
+      if (newLen === 0 && curLen >= EMPTY_BLOCK_MIN) {
+        if (G._allowNext) {
+          G._allowNext = false; // consume the one-time escape hatch
+        } else {
+          G.blocked++;
+          G.lastBlock = { curLen: curLen, at: (function () { try { return new Date().toISOString(); } catch (e) { return ''; } })() };
+          try { console.error('[mlsWipeGuard] BLOCKED savePatients([]) — refusing to erase ' + curLen + ' stored patients. Use window.__mlsWipeGuard.allowOnce() first if this was intentional.'); } catch (e) {}
+          toastSafe('Blocked an attempt to clear all ' + curLen + ' patients (safety guard). Reload to reconcile.');
+          return; // do NOT persist the empty list
+        }
+      }
+
+      // SOFT WARN (still allowed): a suspiciously large shrink that is not an obvious single delete.
+      if (newLen > 0 && curLen >= SHRINK_WARN_MIN && newLen < Math.floor(curLen * SHRINK_WARN_FRAC)) {
+        G.warned++;
+        try { console.warn('[mlsWipeGuard] large patient-list shrink ' + curLen + ' -> ' + newLen + ' (allowed; leaving a breadcrumb).'); } catch (e) {}
+      }
+
+      return orig.apply(this, arguments);
+    }
+    guarded.__mlsWipeGuarded = true;
+    guarded.__mlsWipeGuardOrig = orig;
+    return guarded;
+  }
+
+  function install() {
+    try {
+      var cur = window.savePatients;
+      if (typeof cur !== 'function') return false;
+      if (cur.__mlsWipeGuarded) return true; // already ours
+      G._prevOrig = cur;
+      window.savePatients = makeWrapper(cur);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // Install now, and self-heal if a later module replaces savePatients with an
+  // un-guarded version (matches this codebase's re-assertion convention).
+  install();
+  G._heal = setInterval(function () {
+    try {
+      if (typeof window.savePatients === 'function' && !window.savePatients.__mlsWipeGuarded) install();
+    } catch (e) {}
+  }, 4000);
+
+  G.revert = function () {
+    try { clearInterval(G._heal); } catch (e) {}
+    try {
+      if (window.savePatients && window.savePatients.__mlsWipeGuarded && window.savePatients.__mlsWipeGuardOrig) {
+        window.savePatients = window.savePatients.__mlsWipeGuardOrig;
+      }
+    } catch (e) {}
+    G.installed = false;
+    try { delete window.__mlsWipeGuard; } catch (e) { window.__mlsWipeGuard = undefined; }
+    return 'reverted';
+  };
+  window.__mlsWipeGuard_revert = G.revert;
+  window.__mlsWipeGuard = G;
 })();
