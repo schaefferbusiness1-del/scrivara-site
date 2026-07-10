@@ -1,5 +1,5 @@
 {
-  "version": "1.76",
+  "version": "1.77",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.76 - MLS Assist updates itself in place; a direct download of this tested build is also available from Settings. Adds the focus guardian: after any pull or chart operation that brings athenaOne forward, you are always returned to MLS automatically (even if the operation errors out) and never left stranded. Keeps the week-strip date navigation, junk-frame identity guards, and the verified per-section write bridge."
+  "notes": "v1.77 - MLS Assist updates itself in place; a direct download of this tested build is also available from Settings. Adds the focus guardian (after any pull or chart read that brings athenaOne forward you are always returned to MLS, even if the operation fails) and read-only diagnostics that explain a write-gate refusal instead of leaving it unexplained. Keeps the verified per-section write bridge, the patient-identity gate, junk-frame guards and week-strip date navigation."
 }
