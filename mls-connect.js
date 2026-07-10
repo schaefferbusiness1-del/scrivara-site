@@ -341,7 +341,7 @@
 
 
 /* =========================================================================
- * MLS Scribe - COPILOT TRUTH GATE  (__mlsCopilotTruth) v1.1.0  2026-07-10 (b116)
+ * MLS Scribe - COPILOT TRUTH GATE  (__mlsCopilotTruth) v1.2.0  2026-07-10 (b118)
  *
  * TWO LIVE BUGS THIS FIXES (both found by asking the real Copilot a real
  * question on 2026-07-10 and watching it answer in 25ms without an AI call):
@@ -380,7 +380,7 @@
 (function () {
   'use strict';
   try { if (window.__mlsCopilotTruth) return; } catch (e) { return; }
-  var api = { version: '1.1.0', moneyRefusals: 0, comparisonsPassedToAI: 0, localAnswers: 0, armed: false };
+  var api = { version: '1.2.0', moneyRefusals: 0, comparisonsPassedToAI: 0, localAnswers: 0, armed: false, panelBound: 0, panelAnswers: 0, dollarScrubs: 0 };
 
   var MONEY_RE = /(revenue|money|bring in|billing|billed|collections?|income|earn|earned|earnings|paid|payment|\$|dollar|rvu\s*\$|made more|make more|how much (did|do|does).*(make|earn|bring))/i;
   var COMPARE_RE = /(\bcompare\b|\bcomparison\b|\bversus\b|\bvs\.?\b|\bmore than\b|\bless than\b|\bthan (me|mine|i did|him|her|dr\b)|\bbetween\b.*\band\b|who (made|earned|billed|did more))/i;
@@ -527,20 +527,106 @@
   }
 
   /* mlsAsk is defined by __mlsSmartAsk, which may load after us; poll briefly. */
-  var tries = 0;
-  var iv = null;
-  function attempt() {
-    if (install() || ++tries > 120) { try { if (iv) clearInterval(iv); } catch (e) {} }
+  /* ------------------------------------------------------------------------
+   * v1.2.0 - the "\ud83d\udcca Ask your data" panel (__mlsSmartAsk) does NOT call
+   * window.mlsAsk. Its open() closes over its own `ask()` and wires:
+   *     #mls-ask-go .onclick = run;  #mls-ask-q keydown Enter -> run;
+   *     .mls-ask-chip .onclick -> set q, run;
+   * where run() does `ask(q.value)` and writes esc(r.answer) into #mls-ask-a.
+   * So wrapping window.mlsAsk alone left the FABRICATED $175/visit revenue
+   * reachable from that panel. We re-bind those handlers to the wrapped
+   * window.mlsAsk, rendering the exact same markup. Idempotent per panel.
+   * ---------------------------------------------------------------------- */
+  function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function renderAnswer(text) {
+    var out = document.getElementById('mls-ask-a');
+    if (!out) return;
+    var r = null;
+    try { r = window.mlsAsk(text); } catch (e) { r = null; }
+    var ans = (r && r.answer) || '';
+    if (!ans) {
+      /* comparison question: the local layer defers to the AI. Say so here -
+         this panel has no chat thread to fall through to. */
+      ans = 'That is a cross-provider comparison - ask it in the MLS Assistant chat, where it is answered by the AI using your real per-provider numbers.';
+    }
+    out.innerHTML = '<div style="background:#141b3d;border-left:3px solid #2563eb;border-radius:8px;padding:10px 12px">' + escHtml(ans) + '</div>';
+    api.panelAnswers++;
   }
-  attempt();
-  try { iv = setInterval(attempt, 500); } catch (e) {}
+
+  /* CAPTURE-PHASE interception, not a timer.
+   * Measured live 2026-07-10: a plain setInterval(fn, 200) in this tab fired
+   * ZERO times in 900ms - Chrome intensive-throttles the MLS tab whenever
+   * athenaOne is foregrounded (the same reason the day-pull runs its waits on a
+   * Web Worker). Any timer-based binding is therefore unreliable exactly when
+   * the doctor is switching tabs. A capture-phase listener on `document` runs
+   * BEFORE the panel's own bubble-phase `.onclick` property handler, so
+   * stopImmediatePropagation() reliably pre-empts the fabricating code path
+   * with no timers involved. Same technique the extension uses for #mls-cap. */
+  function onClick(ev) {
+    try {
+      var t = ev.target;
+      if (!t || !t.closest) return;
+      var go = t.closest('#mls-ask-go');
+      var chip = t.closest('.mls-ask-chip');
+      if (!go && !chip) return;
+      var q = document.getElementById('mls-ask-q');
+      if (!q) return;
+      ev.stopImmediatePropagation();
+      ev.preventDefault();
+      if (chip) q.value = chip.textContent || '';
+      api.panelBound++;
+      renderAnswer(q.value);
+    } catch (e) {}
+  }
+  function onKey(ev) {
+    try {
+      if (ev.key !== 'Enter') return;
+      var t = ev.target;
+      if (!t || t.id !== 'mls-ask-q') return;
+      ev.stopImmediatePropagation();
+      ev.preventDefault();
+      api.panelBound++;
+      renderAnswer(t.value);
+    } catch (e) {}
+  }
+  try { document.addEventListener('click', onClick, true); } catch (e) {}
+  try { document.addEventListener('keydown', onKey, true); } catch (e) {}
+
+  /* Safety net, observer-based (observers are NOT throttled): if anything ever
+   * renders a dollar figure into that answer box, replace it. MLS has no
+   * billing data, so a "$" there is by definition invented. */
+  var mo = null;
+  function scrubNode(out) {
+    try {
+      if (!out) return;
+      var t = out.textContent || '';
+      if (/\$\s?[\d,]+/.test(t) && /175|estimate/i.test(t)) {
+        out.innerHTML = '<div style="background:#3b2a14;border-left:3px solid #d97706;border-radius:8px;padding:10px 12px">' +
+          escHtml('MLS has no billing or payment data - that dollar estimate was not real and has been removed. Ask about appointments, patients, procedures or CPT codes instead.') + '</div>';
+        api.dollarScrubs++;
+      }
+    } catch (e) {}
+  }
+  try {
+    mo = new MutationObserver(function () {
+      install();               /* mlsAsk may appear after us */
+      scrubNode(document.getElementById('mls-ask-a'));
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+
+  install();
 
   api.isComparison = isComparison;
   api.isMoney = function (q) { return MONEY_RE.test(String(q || '')); };
   window.__mlsCopilotTruth = api;
   window.__mlsCopilotTruth_revert = function () {
-    try { if (iv) clearInterval(iv); } catch (e) {}
+    try { if (mo) mo.disconnect(); } catch (e) {}
+    try { document.removeEventListener('click', onClick, true); } catch (e) {}
+    try { document.removeEventListener('keydown', onKey, true); } catch (e) {}
     try { if (window.mlsAsk && window.mlsAsk.__mlsTruth) window.mlsAsk = window.mlsAsk.__orig; } catch (e) {}
+    try { var ov = document.getElementById('mls-ask-ov'); if (ov) ov.remove(); } catch (e) {}
     try { delete window.__mlsCopilotTruth; } catch (e) {}
   };
 })();
@@ -27588,7 +27674,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b117';
+  var MLS_APP_BUILD='2026-07-10-b118';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
