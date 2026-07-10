@@ -27685,7 +27685,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b119';
+  var MLS_APP_BUILD='2026-07-10-b120';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -35058,5 +35058,63 @@
     try { var b = document.getElementById('mlsMpoBtn'); if (b) b.remove(); } catch (e) {}
     try { var n = document.getElementById('mlsMpoNote'); if (n) n.remove(); } catch (e) {}
     try { delete window.__mlsMonthPullOne; } catch (e) {}
+  };
+})();
+
+
+/* =========================================================================
+ * MLS Scribe - SETTINGS DIRECT-DOWNLOAD RESTORE  (__mlsExtZipLink) v1.0.0  2026-07-10 (b120)
+ *
+ * Michael's ask: Settings must OFFER the latest TESTED build for download,
+ * with a version label that matches reality. b117 removed the zip row
+ * because every versioned zip URL 404'd (none was ever published). The
+ * tested build is now published per release as /MLS_Assist_v<version>.zip,
+ * so: read extension-version.json (no-store), HEAD-check the zip, and ONLY
+ * if it answers 200 rewrite #edsSecondaryRow to offer the direct download
+ * next to "Other install options". If the zip is missing, b117's honest
+ * "no download needed" text stays — this link can never 404 again.
+ * Also sets data-mls-zipfixed so b117's stale-row scrubber never undoes it.
+ * Idempotent; additive. Revert: window.__mlsExtZipLink_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsExtZipLink) return; } catch (e) { return; }
+  var api = { version: '1.0.0', checkedVer: null, offered: false };
+  function upgrade() {
+    try {
+      var sec = document.getElementById('edsSecondaryRow');
+      if (!sec || sec.getAttribute('data-mls-ziplink') === '1') return;
+      fetch('/extension-version.json?t=' + new Date().getTime(), { cache: 'no-store' })
+        .then(function (r) { return r && r.ok ? r.json() : null; })
+        .then(function (j) {
+          var ver = j && j.version ? String(j.version).trim() : '';
+          if (!ver) return;
+          var zip = '/MLS_Assist_v' + ver + '.zip';
+          fetch(zip, { method: 'HEAD', cache: 'no-store' }).then(function (h) {
+            api.checkedVer = ver;
+            if (!h || !h.ok) return; /* zip absent -> keep the honest b117 text */
+            var sec2 = document.getElementById('edsSecondaryRow');
+            if (!sec2 || sec2.getAttribute('data-mls-ziplink') === '1') return;
+            sec2.setAttribute('data-mls-ziplink', '1');
+            sec2.setAttribute('data-mls-zipfixed', '1'); /* stop b117's scrubber from undoing this */
+            var other = sec2.querySelector('a[href*="get-extension"]');
+            var oh = other ? other.getAttribute('href') : 'get-extension.html';
+            sec2.innerHTML = 'Prefer a manual copy? <a href="' + zip + '" download>Download v' + ver.replace(/</g, '&lt;') +
+              ' directly (.zip)</a> — the latest tested build (MLS Assist still updates itself in place). ' +
+              '<a href="' + String(oh).replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">Other install options</a>';
+            api.offered = true;
+          });
+        });
+    } catch (e) {}
+  }
+  var _iv = null;
+  try { document.addEventListener('click', function () { setTimeout(upgrade, 600); }, true); } catch (e) {}
+  try { _iv = setInterval(upgrade, 3000); } catch (e) {}
+  try { upgrade(); } catch (e) {}
+  window.__mlsExtZipLink = api;
+  window.__mlsExtZipLink_revert = function () {
+    try { if (_iv) clearInterval(_iv); } catch (e) {}
+    try { var s = document.getElementById('edsSecondaryRow'); if (s) { s.removeAttribute('data-mls-ziplink'); } } catch (e) {}
+    try { delete window.__mlsExtZipLink; } catch (e) {}
   };
 })();
