@@ -6,7 +6,7 @@
  * server.js's POST /api/copilot ALREADY returns { ok, reply, actions[], followups[],
  * artifact } (actions: {label, kind:'openPatient'|'startVisit'|'navigate'|'build', arg},
  * followups: string[], artifact: {kind,title,content,to,subject}) -- but the live
- * frontend pipeline (feat_mls_asst_fix.js -> aiAsk()) only reads \`d.reply\` and
+ * frontend pipeline (feat_mls_asst_fix.js -> aiAsk()) only reads `d.reply` and
  * silently drops actions/followups/artifact. This module recovers them and turns
  * them into REAL, clickable affordances in the SAME assistant thread, without
  * modifying feat_mls_asst_fix.js or the chat pipeline it owns.
@@ -48,12 +48,22 @@
  *
  * Idempotent, additive, reversible: window.__mlsCopilotActions.revert()
  * ASCII-only. try/catch throughout. No PHI logged.
+ *
+ * v1.0.1 HOTFIX (2026-07-10): fixed a live bug where using AI Studio's OWN
+ * inline Copilot chat (#copilotThread, the real everyday surface, hosted by
+ * __mlsCopilotInline) appeared to "open a new sidebar." Root cause: this
+ * module hardcoded the separate floating "MLS Assistant" panel (#mlsAsstPanel)
+ * as the only place it would render into, even though both surfaces post to
+ * the same /api/copilot endpoint. Now the target thread is resolved to
+ * whichever Copilot surface is actually on-screen at request time (Studio's
+ * inline thread preferred), and silently dropped if neither is visible --
+ * see pickThread()/studioThread()/assistantThread() below.
  * ==========================================================================*/
 (function () {
   'use strict';
   try { if (window.__mlsCopilotActions && window.__mlsCopilotActions.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ca-1.0.0';
+  var VERSION = 'ca-1.0.1';
   var ASSET = 'feat_mls_copilot_actions.js';
   var BLOCK_CLASS = 'mlsCaBlock';
   var STYLE_ID = 'mlsCoActStyle';
@@ -163,7 +173,37 @@
   }
 
   /* ---------------- rendering ---------------- */
-  function threadEl() { var p = $('mlsAsstPanel'); return p ? p.querySelector('.as-thread') : null; }
+  /* v1.0.1 FIX -- root cause of "clicking/typing in Copilot opens a NEW
+     SIDEBAR (and misbehaving)": this module hardcoded #mlsAsstPanel (the
+     separate, floating "MLS Assistant" panel + FAB from feat_mls_asst_fix.js)
+     as THE Copilot thread. But the real, everyday Copilot surface users type
+     into is AI Studio's OWN inline chat (#copilotThread inside #copilotCard,
+     hosted by the live __mlsCopilotInline module -- see mls-connect.js's own
+     comments: "copilot thread in AI Studio via __mlsCopilotInline"). Both
+     surfaces POST to the same /api/copilot endpoint, so this module's
+     fetch-peek caught replies from either one but always waited on, and
+     rendered into, #mlsAsstPanel -- a panel the user never opened. That
+     unrelated panel filling with content is what read as "a new sidebar
+     opened." Fix: capture which thread is actually on-screen AT THE MOMENT
+     the request fires (not later, when the response resolves -- the user
+     could have navigated by then), preferring the real Studio inline thread
+     whenever it's visible, and drop silently (never fall back to a hidden,
+     unrelated panel) if neither is on-screen. */
+  function studioThread() {
+    return safe(function () {
+      var sv = document.getElementById('studioView');
+      var t = document.getElementById('copilotThread');
+      if (sv && sv.offsetParent !== null && t && t.offsetParent !== null) return t;
+      return null;
+    }, null);
+  }
+  function assistantThread() {
+    return safe(function () {
+      var p = $('mlsAsstPanel');
+      return (p && p.offsetParent !== null) ? p.querySelector('.as-thread') : null;
+    }, null);
+  }
+  function pickThread() { return studioThread() || assistantThread(); }
 
   function sendEmail(btn, block, art) {
     var toEl = block.querySelector('.mlsca-to');
@@ -188,8 +228,8 @@
       .then(null, function () { btn.disabled = false; btn.textContent = 'Send email'; toast('Network error -- could not send.'); });
   }
 
-  function renderBlock(payload) {
-    var t = threadEl(); if (!t) return;
+  function renderBlock(payload, t) {
+    if (!t) return;
     var actions = Array.isArray(payload.actions) ? payload.actions : [];
     var followups = Array.isArray(payload.followups) ? payload.followups : [];
     var artifact = payload.artifact && typeof payload.artifact === 'object' ? payload.artifact : null;
@@ -245,18 +285,32 @@
       block.appendChild(art);
     }
     t.appendChild(block);
-    var body = $('mlsAsstPanel'); var b = body ? body.querySelector('.as-body') : null;
-    if (b) b.scrollTop = b.scrollHeight;
+    safe(function () { block.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
   }
 
-  /* pending payloads waiting for their AI bubble to render */
+  /* pending payloads waiting for their AI bubble to render. Each entry
+     remembers WHICH thread to render into (captured when the request fired,
+     see installFetchPeek) and how many children that thread had then -- once
+     the count grows (the reply rendered) or ~8s passes (safety timeout, in
+     case a thread's own bubble markup doesn't simply append), the affordance
+     block is rendered into that SAME thread. Generic child-count growth
+     (rather than a hardcoded ".as-msg.ai" selector) works for both the
+     Assistant panel's markup and Studio's own #copilotThread markup without
+     needing to know either one's exact bubble class names. */
   var pending = [];
   function drainPending() {
     if (!pending.length) return;
-    var t = threadEl(); if (!t) return;
-    var msgs = t.querySelectorAll('.as-msg.ai');
-    if (!msgs.length) return;
-    while (pending.length) { renderBlock(pending.shift()); }
+    var still = [];
+    for (var i = 0; i < pending.length; i++) {
+      var item = pending[i];
+      var t = item.target;
+      if (!t || !document.body.contains(t)) continue; // thread gone (nav'd away) -- drop silently
+      var grew = t.children.length > item.startCount;
+      var stale = (Date.now() - item.queuedAt) > 8000;
+      if (grew || stale) renderBlock(item.payload, t);
+      else still.push(item);
+    }
+    pending = still;
   }
   var drainIv = setInterval(function () { safe(drainPending); }, 400);
 
@@ -273,12 +327,16 @@
       var method = (init && init.method) || (typeof input === 'object' && input.method) || 'GET';
       var p = origFetch(input, init);
       if (String(method).toUpperCase() === 'POST' && isCopilotAsk(url)) {
+        /* capture NOW, while we still know where the user actually is --
+           by the time the response resolves they may have switched tabs */
+        var target = pickThread();
+        var startCount = target ? target.children.length : 0;
         safe(function () {
           p.then(function (resp) {
             safe(function () {
               resp.clone().json().then(function (d) {
-                if (d && d.ok && (Array.isArray(d.actions) && d.actions.length || Array.isArray(d.followups) && d.followups.length || d.artifact)) {
-                  pending.push(d);
+                if (target && d && d.ok && (Array.isArray(d.actions) && d.actions.length || Array.isArray(d.followups) && d.followups.length || d.artifact)) {
+                  pending.push({ payload: d, target: target, startCount: startCount, queuedAt: Date.now() });
                 }
               }).then(null, function () {});
             });
