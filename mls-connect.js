@@ -1,3 +1,116 @@
+/* =========================================================================
+ * MLS Scribe - PULL PROGRESS SCREEN  (__mlsPullProgress) v1.0.0  2026-07-10 (b113)
+ *
+ * The day/month history pull runs for minutes and (until now) only emitted
+ * toasts + a text log. This adds a real, honest progress screen that opens the
+ * moment a pull starts and closes when it ends:
+ *   - big "X of N" + percentage bar (from __mlsDayHistoryPull.state)
+ *   - current patient being pulled, elapsed time, running saved/failed tally
+ *   - honest per-patient row list (saved / could-not-read, with the reason)
+ *   - "Athena is being driven - it may flicker" explainer + a note that MLS
+ *     returns you here when it finishes
+ *   - Hide button (the pull keeps running; the FAB re-opens it)
+ *
+ * Reads ONLY the pull module's own state object; never drives the pull.
+ * WORKER-timer polling: the MLS tab is background-throttled to ~1 tick/min
+ * while athenaOne is foregrounded, which would freeze a setInterval-based UI.
+ * Idempotent; additive. Revert: window.__mlsPullProgress_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsPullProgress) return; } catch (e) { return; }
+  var api = { version: '1.0.0', opens: 0 };
+  var PANEL = 'mlsPullProgPanel', FAB = 'mlsPullProgFab';
+  var startedAt = 0, hidden = false, stopped = false;
+
+  var wkUrl = null;
+  try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
+  function tick(ms, cb) {
+    if (stopped) return;
+    if (wkUrl) { try { var w = new Worker(wkUrl); w.onmessage = function () { try { w.terminate(); } catch (e) {} cb(); }; w.postMessage(ms); return; } catch (e) {} }
+    setTimeout(cb, ms);
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function state() { try { return (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state) || null; } catch (e) { return null; } }
+  function mmss(ms) { var s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + 'm ' + ('0' + (s % 60)).slice(-2) + 's'; }
+
+  function css() {
+    if (document.getElementById('mlsPullProgCss')) return;
+    var st = document.createElement('style'); st.id = 'mlsPullProgCss';
+    st.textContent = [
+      '#' + PANEL + '{position:fixed;inset:0;z-index:100001;background:rgba(6,10,24,.78);display:flex;align-items:center;justify-content:center;padding:22px}',
+      '#' + PANEL + ' .ppc{max-width:620px;width:100%;background:#0b1020;border:1px solid rgba(120,140,220,.32);border-radius:18px;padding:20px 22px;box-shadow:0 24px 70px rgba(0,0,0,.55);color:#e8ecff;font:14px/1.5 system-ui}',
+      '#' + PANEL + ' h3{margin:0 0 4px;font:800 18px system-ui}',
+      '#' + PANEL + ' .pp-sub{color:#9fb0d8;font-size:12.5px;margin-bottom:14px}',
+      '#' + PANEL + ' .pp-big{font:800 30px system-ui;letter-spacing:-.02em}',
+      '#' + PANEL + ' .pp-track{height:12px;border-radius:99px;background:#141b3d;overflow:hidden;margin:10px 0 6px;border:1px solid rgba(120,140,220,.25)}',
+      '#' + PANEL + ' .pp-fill{height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width .4s ease}',
+      '#' + PANEL + ' .pp-meta{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#9fb0d8;flex-wrap:wrap}',
+      '#' + PANEL + ' .pp-cur{margin:12px 0;padding:10px 12px;border-radius:10px;background:#0f1530;border:1px solid rgba(120,140,220,.22)}',
+      '#' + PANEL + ' .pp-rows{max-height:200px;overflow:auto;margin-top:10px;border-radius:10px;border:1px solid rgba(120,140,220,.2);background:#0a0f24}',
+      '#' + PANEL + ' .pp-row{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(120,140,220,.1);font-size:12.5px}',
+      '#' + PANEL + ' .pp-ok{color:#7ee2a8}',
+      '#' + PANEL + ' .pp-bad{color:#ffcf8f}',
+      '#' + PANEL + ' .pp-note{font-size:11.5px;color:#8fa1c7;margin-top:12px}',
+      '#' + PANEL + ' .pp-btn{margin-top:14px;background:transparent;color:#e8ecff;border:1px solid rgba(120,140,220,.35);border-radius:10px;padding:9px 14px;font:700 12.5px system-ui;cursor:pointer}',
+      '#' + FAB + '{position:fixed;right:14px;bottom:150px;z-index:100000;background:#2563eb;color:#fff;border:0;border-radius:999px;padding:10px 15px;font:800 12.5px system-ui;box-shadow:0 8px 22px rgba(37,99,235,.45);cursor:pointer}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function ensureFab(show) {
+    var f = document.getElementById(FAB);
+    if (!show) { if (f) f.remove(); return; }
+    if (f) return;
+    f = document.createElement('button'); f.id = FAB; f.type = 'button';
+    f.textContent = 'Pull running - show progress';
+    f.onclick = function () { hidden = false; render(); };
+    document.body.appendChild(f);
+  }
+
+  function render() {
+    var S = state();
+    var running = !!(S && S.running);
+    if (!running) {
+      var p0 = document.getElementById(PANEL); if (p0) p0.remove();
+      ensureFab(false);
+      startedAt = 0; hidden = false;
+      return;
+    }
+    if (!startedAt) { startedAt = Date.now(); api.opens++; }
+    if (hidden) { ensureFab(true); var ph = document.getElementById(PANEL); if (ph) ph.remove(); return; }
+    ensureFab(false);
+    css();
+    var total = S.total || 0, done = S.done || 0, ok = S.ok || 0, failed = S.failed || 0;
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    var rows = (S.rows || []).slice(-40).reverse().map(function (r) {
+      var good = !!r.ok;
+      var why = good ? 'saved' : ((r.reason || 'could not read').replace(/^identity-mismatch:.*/, 'chart identity could not be verified').replace(/^open-failed$/, 'not on the athenaOne schedule').replace(/^read-failed$/, 'chart read timed out'));
+      return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + (good ? 'pp-ok' : 'pp-bad') + '">' + (good ? '✓ ' : '⚠ ') + esc(why) + '</span></div>';
+    }).join('');
+    var p = document.getElementById(PANEL);
+    if (!p) { p = document.createElement('div'); p.id = PANEL; document.body.appendChild(p); }
+    p.innerHTML = '<div class="ppc">' +
+      '<h3>📚 Pulling patient histories from athenaOne</h3>' +
+      '<div class="pp-sub">MLS is opening each scheduled patient’s chart, reading it, and filing it. This takes about a minute per patient.</div>' +
+      '<div class="pp-big">' + done + ' <span style="font-size:16px;color:#9fb0d8">of ' + total + '</span></div>' +
+      '<div class="pp-track"><div class="pp-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="pp-meta"><span>' + pct + '% complete</span><span>✓ ' + ok + ' saved · ⚠ ' + failed + ' skipped</span><span>' + mmss(Date.now() - startedAt) + ' elapsed</span></div>' +
+      '<div class="pp-cur"><b>Now reading:</b> ' + esc(S.current || '…') + '</div>' +
+      (rows ? '<div class="pp-rows">' + rows + '</div>' : '') +
+      '<div class="pp-note">athenaOne is being driven in its own tab and may flicker — that’s normal. MLS brings you back here when the pull finishes. Nothing is ever written to athenaOne during a pull (read-only).</div>' +
+      '<button type="button" class="pp-btn" id="mlsPullProgHide">Hide (keep pulling)</button>' +
+      '</div>';
+    var hb = document.getElementById('mlsPullProgHide');
+    if (hb) hb.onclick = function () { hidden = true; render(); };
+  }
+
+  (function loop() { tick(900, function () { try { render(); } catch (e) {} loop(); }); })();
+
+  window.__mlsPullProgress = api;
+  window.__mlsPullProgress_revert = function () { stopped = true; try { var p = document.getElementById(PANEL); if (p) p.remove(); } catch (e) {} try { ensureFab(false); } catch (e) {} try { delete window.__mlsPullProgress; } catch (e) {} };
+})();
+
 /* feat_study_builder_v2.js  ->  window.__mlsStudyBuilderV2   (Run-a-Study: more
  * filters + richer reports)
  * ==========================================================================
@@ -26258,7 +26371,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b112';
+  var MLS_APP_BUILD='2026-07-10-b113';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -32657,7 +32770,9 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item17: Visit-timeline rows open the real per-visit detail (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260625afx2';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260625afx2';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca1';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260710cv2';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260625su1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260625chk1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
