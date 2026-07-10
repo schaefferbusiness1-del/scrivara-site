@@ -1,5 +1,5 @@
 /* ===== MLS b121 pack — 2026-07-10 (day shift) ==============================
- * ONE satellite carrying five additive, individually-revertible modules.
+ * ONE satellite carrying NINE additive, individually-revertible modules.
  * Loaded by a single loader line in mls-connect.js (build 2026-07-10-b121),
  * inserted after the feat_mls_asst_fix.js loader anchor.
  *
@@ -18,8 +18,14 @@
  *   5. __mlsPullAnyDay          — Staff-prep "Pull a specific day" UI under
  *                                 the month card (schedule + charts, one
  *                                 flow, idempotent).
+ *   7. __mlsCleanSections       — athena-chrome section cleaner + one-time
+ *                                 migration.
+ *   8. __mlsDobEverywhere       — store DOB -> _calAppts join so every card
+ *                                 shows DOB.
+ *   9. __mlsHeaderDateGate      — hero/auto-pull date gate.
  *
- * Revert (console): __mlsPullAnyDay.revert(); __mlsVisitsBackfill.revert();
+ * Revert (console): __mlsHeaderDateGate.revert(); __mlsDobEverywhere.revert();
+ *   __mlsCleanSections_revert(); __mlsPullAnyDay.revert(); __mlsVisitsBackfill.revert();
  *   __mlsDedupById.revert(); __mlsDayKeyFix.revert();
  *   __mlsAddVisitCycleGuard.revert();
  * Removing the loader line from mls-connect.js removes the whole pack.
@@ -3312,6 +3318,7 @@
   function engineWouldDrop(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || ENGINE_BROKEN_CRED.test(String(name || '')); }
   function genuinelyPlaceholder(name) { var n = nrm(name); return !n || PLACEHOLDER.test(n) || CORRECT_CRED.test(String(name || '')); }
   function excludedByEngineBug(day, provList) {
+    try { var Mfx = window.__mlsProvMonthPull; if (Mfx && Mfx.nameGateFixed) return []; } catch (e) {}
     var rows = calRows(), out = [], seen = {};
     for (var i = 0; i < rows.length; i++) {
       var a = rows[i];
@@ -3451,7 +3458,7 @@
         note('Moving athenaOne to ' + esc(pd) + '&hellip;');
         var nav = await gotoDate(day, false, function (m) { note(esc(m)); });
         if (!nav || nav.ok !== true) return { error: (nav && nav.error) || ('Could not navigate athenaOne to ' + pd + '. Nothing was saved.') };
-        navConfirmed = (nav.schedDate && /^\d{4}-\d{2}-\d{2}$/.test(nav.schedDate)) ? nav.schedDate : day;
+        navConfirmed = (nav.schedDate && /^\d{4}-\d{2}-\d{2}$/.test(nav.schedDate)) ? nav.schedDate : '';
         await wait(2200); /* weekstrip settle */
       } else {
         note('This MLS Assist build has no hands-free date nav - put athenaOne on <b>' + esc(pd) + '</b> (Calendar › View Calendar); it is detected automatically.');
@@ -3603,9 +3610,16 @@
         var self = selfProvider();
         var chartProv = (prov === 'all') ? self : prov;
         if (!sameProv(chartProv, self)) {
-          api.state.phase = 'done';
-          note(head + '<br>⚠️ Charts NOT pulled: athenaOne only shows the signed-in doctor’s schedule (' + esc(self) + '), so ' + esc(chartProv) + '’s charts cannot be opened from this login. The schedule rows are imported and comparable in Copilot.');
-          return out;
+          var pong2 = await bridge('mlsPing', null, 'mlsPong', 3500);
+          var extv2 = String((pong2 && pong2.version) || '');
+          var vA = extv2.split('.');
+          var okCross = ((+vA[0] || 0) > 1) || (((+vA[0] || 0) === 1) && ((+vA[1] || 0) >= 85));
+          if (!okCross) {
+            api.state.phase = 'done';
+            note(head + '<br>⚠️ Charts NOT pulled: opening another provider’s charts needs MLS Assist v1.85+ (installed: ' + esc(extv2 || 'unknown') + '). ' + esc(chartProv) + '’s schedule rows are imported and comparable in Copilot.');
+            return out;
+          }
+          note(head + '<br>Cross-provider charts: MLS Assist v' + esc(extv2) + ' opens charts by patient search (schedule-display-independent) — pulling for ' + esc(chartProv) + '&hellip;');
         }
         if (prov === 'all') note(head + '<br>Charts can only be opened for the signed-in doctor - pulling charts for ' + esc(self) + '&hellip;');
         var cl = await chartLeg(day, chartProv);
@@ -3654,7 +3668,10 @@
   }
 
   /* --------------------------------- UI ------------------------------------ */
-  var DEFAULT_NOTE = 'Imports that day’s schedule for the Doctor picked above, then pulls chart history (DOB + history + visits) for the day’s patients. Read-only in athenaOne; re-clicking never doubles anything. Heads-up: the chart engine currently skips a few name shapes (a known filter bug) - if that hits this day you’ll be told exactly which patients.';
+  var _engineNameGateFixed = false; try { _engineNameGateFixed = !!(window.__mlsProvMonthPull && window.__mlsProvMonthPull.nameGateFixed); } catch (e) {}
+  var DEFAULT_NOTE = 'Imports that day’s schedule for the Doctor picked above, then pulls chart history (DOB + history + visits) for the day’s patients. Read-only in athenaOne; re-clicking never doubles anything. ' + (_engineNameGateFixed
+    ? 'Every real name shape is pulled - suffixes (“Hatton, Jr”), ALL-CAPS, apostrophes/hyphens (O’Hare, Smith-Jones), two-word first names and “(Bob)” nicknames; only placeholder rows (FROZEN / OPEN / Hold) and staff credential rows (“…, MD / PA-C / RN”) are skipped, and the status line names anything skipped.'
+    : 'Heads-up: the chart engine currently skips a few name shapes (a known filter bug) - if that hits this day you’ll be told exactly which patients.');
   function css() {
     if (document.getElementById('mlsPadCss')) return;
     var s = document.createElement('style'); s.id = 'mlsPadCss';
@@ -3700,11 +3717,18 @@
       var btn = row.querySelector('#mlsPadBtn');
       btn.disabled = !!api.state.running;
       btn.onclick = function () {
-        /* the oldest Easy dupe renders the card WITHOUT #ez3sPullProv - read
-           defensively and default to 'all' (chart leg then maps to the
-           signed-in doctor) */
+        /* provider = the SAME scope the schedule pull above uses: the v3.5.1+
+           card has no #ez3sPullProv - its live "Pulling for" label (#ez3PullFor,
+           rendered from activeProvider() on every selector change) is the one
+           provider source of truth; older cards still expose the dropdown. */
         var provEl = document.getElementById('ez3sPullProv');
-        runFlow(inp.value, (provEl && provEl.value) || 'all');
+        var prov = (provEl && provEl.value) || '';
+        if (!prov) {
+          var pf = document.getElementById('ez3PullFor');
+          var t = pf ? String(pf.textContent || '').trim() : '';
+          prov = (t && !/^all providers$/i.test(t)) ? t : 'all';
+        }
+        runFlow(inp.value, prov);
       };
       row.querySelector('#mlsPadNote').innerHTML = api._noteHtml || DEFAULT_NOTE;
     } catch (e) {}
@@ -3895,4 +3919,544 @@
     try { delete window.__mlsProgressAlwaysOn; } catch (e) { window.__mlsProgressAlwaysOn = null; }
     return 'reverted';
   }
+})();
+
+/* =========================================================================
+ * MODULE 7 - CHART-SECTION CLEANER  (__mlsCleanSections)  v1.0.0  2026-07-10
+ * Problems/meds/allergies pulled from athenaOne carry the page's UI chrome
+ * ("View problems from other sources", "Move Multiple", "11 problems",
+ * "Onset Date: ...", "Loading...", counts, group headers) mixed between real
+ * entries, and the append-only merges compound it (one row reached 738
+ * "problems"). This module (a) cleans the three fields on EVERY persist by
+ * wrapping window.upsertPatient (single choke point - covers _savePatientChart,
+ * __mlsChartStructure.fillField, F8 parseChartSections, dedup merges),
+ * (b) runs a ONE-TIME guarded store migration over existing rows, stashing
+ * originals once under _rawProblems/_rawMeds/_rawAllergies/_rawSummary,
+ * (c) rewrites the summary digest PROBLEMS:/MEDICATIONS:/ALLERGIES: lines from
+ * the cleaned fields and drops exact-chrome lines so the profile renders clean.
+ * Deterministic, additive, reversible: __mlsCleanSections.revert() unhooks;
+ * __mlsCleanSections.restore('ALL'|patientId) puts the stashed originals back.
+ * No setInterval on the MLS tab: Blob-Worker timer + capture-phase listeners.
+ * ========================================================================= */
+(function () {
+  'use strict';
+  try { if (window.__mlsCleanSections && window.__mlsCleanSections.version === '1.0.0') return; } catch (e) { return; }
+  function S(x) { return (x == null ? '' : String(x)); }
+  function trim(x) { return S(x).trim(); }
+  function low(x) { return S(x).toLowerCase(); }
+
+  /* ---------- shapes ---------- */
+  var ICD = /^[A-TV-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?\b/;      /* task spec: real problem line lead */
+  var ICD_ANY = /\b[A-TV-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?\b/; /* "name (M75.101)" style */
+  var DOSE = /\b\d+(?:[.,]\d+)?\s?(?:mg|mcg|g|ml|meq|units?|iu|%)\b|\b(?:tablet|capsule|patch|cream|ointment|solution|suspension|spray|inhaler|injection|gel|drops|lozenge)s?\b|\b(?:daily|nightly|weekly|monthly|bid|tid|qid|prn|qhs|qam|qpm|qd|q\s?\d+\s?h(?:ours?)?|twice a day|once a day|at bedtime|as needed|by mouth|oral(?:ly)?|topical(?:ly)?|subcutaneous|intramuscular)\b/i;
+  var LEAD_RE = new RegExp('^[\\s\\-\\u2022\\u25cf\\u00b7\\u2013\\u2014\\*]+'); /* bullets, ASCII-safe */
+
+  /* ---------- deny-list: athenaOne chrome + generic junk classes ---------- */
+  var JUNK = [
+    /* navigation/action labels ("View problems from other sources", "Move Multiple",
+       "move to historical", "Mark as...", "Filter", "Sorted by...") - verb leads.
+       'open'/'close'/'sign' deliberately absent: real dx names start with them
+       ("Open wound of ..."). */
+    /^(?:view|show|hide|see|move|mark|manage|filter|sort|select|expand|collapse|refresh|reload|print|export|search|edit|add|remove|delete|renew|refill|reorder|prescribe|discontinue|reconcile|review|verify|load|browse|click|tap|go to|jump to|learn more)(?:s|ed|ing)?\b/i,
+    /* bare section headers / state words ("Problems", "Active", "Historical",
+       "Uncategorized", "Loading...") */
+    /^(?:loading|uncategorized|historical|active|inactive|resolved|none|n\/?a|unknown|no results?|actions?|options?|sources?|status|details?|section|problems?|problem list|medications?|medication list|meds|allerg(?:y|ies)(?:\s+list)?|summary|onset|reaction|severity|criticality|frequency|dose|instructions?)[\s.:\u2026]*$/i,
+    /* count lines ("11 problems", "3 medications") */
+    /^\d+\s+(?:problems?|results?|items?|medications?|meds|allerg(?:y|ies)|entries|records?|visits?|encounters?|orders?|documents?)\b/i,
+    /* staleness banner */
+    /\bmay be (?:outdated|out of date)\b/i,
+    /\bfrom other sources\b/i,
+    /* per-row audit/date labels ("Onset Date: 03/05/2024", "Last Prescribed: ...") */
+    /^onset(?:\s+date)?\b/i,
+    /^(?:start|stop|end|entered|recorded|reviewed|documented|noted|updated|prescribed|created|modified|filled|expires?|effective|last\s+\w+)(?:\s+(?:date|on|by))?\s*[:\-]/i,
+    /* date-only / number-only lines */
+    /^[\d\s\/\-.:,()]+$/,
+    /* pagination */
+    /^(?:page\s+\d+|showing\b.*|\d+\s*(?:of|\/)\s*\d+|results?\s*:?\s*\d*)$/i,
+    /* empty-state prose (allergies handles NKDA before this) */
+    /^(?:no (?:active|known|current)\b.*|none recorded.*|nothing (?:found|recorded).*)$/i,
+    /^(?:as of|last synced|synced|pulled|imported)\b/i
+  ];
+  function isJunk(t) { for (var i = 0; i < JUNK.length; i++) { if (JUNK[i].test(t)) return true; } return false; }
+
+  /* narrow, exact-chrome-only list, safe to apply to SUMMARY prose lines */
+  var SUMMARY_CHROME = [
+    /^\d+\s+(?:problems?|results?|items?|medications?|meds|allerg(?:y|ies)|entries|records?)\s*$/i,
+    /^loading[\s.:\u2026]*$/i, /^uncategorized\s*$/i,
+    /^view .{0,40}from other sources\s*$/i, /^move multiple\s*$/i, /^move to historical\s*$/i,
+    /^(?:problem|medication|allergy)s? may be outdated\s*$/i,
+    /^onset(?:\s+date)?\s*[:\-]?\s*[\d\/\-.]*\s*$/i
+  ];
+  function isSummaryChrome(t) { for (var i = 0; i < SUMMARY_CHROME.length; i++) { if (SUMMARY_CHROME[i].test(t)) return true; } return false; }
+
+  /* ---------- keep-shapes ---------- */
+  function lettersRatio(t) { var s = t.replace(/\s+/g, ''); if (!s.length) return 0; return ((s.match(/[A-Za-z]/g) || []).length) / s.length; }
+  function looksName(t, maxWords) {
+    if (t.length < 3 || t.length > 120) return false;
+    var w = t.split(/\s+/); if (w.length > (maxWords || 12)) return false;
+    if (lettersRatio(t) < 0.55) return false;
+    for (var i = 0; i < w.length; i++) { if (/^[A-Za-z][A-Za-z'\-]{3,}$/.test(w[i])) return true; }
+    return false;
+  }
+  function keepProblem(t) {
+    if (ICD.test(t)) return true;                       /* "M75.102 Unspecified rotator cuff tear" */
+    if (ICD_ANY.test(t) && looksName(t, 14)) return true; /* "Rotator cuff tear (M75.101)" */
+    if (api.mode === 'strict') return false;            /* strict: code required */
+    return looksName(t, 12);                            /* balanced: name-only dx kept */
+  }
+  function keepMed(t) { return DOSE.test(t) || (t.length <= 80 && looksName(t, 8)); }
+  function keepAllergy(t) { return t.length <= 60 && looksName(t, 6); }
+
+  /* ---------- core cleaner ---------- */
+  function splitSegs(v) {
+    if (Array.isArray(v)) { var o = []; for (var i = 0; i < v.length; i++) { S(v[i]).split(/\r?\n|;/).forEach(function (s) { o.push(s); }); } return o; }
+    return S(v).split(/\r?\n|;/);
+  }
+  function cleanList(v, keepFn, cap) {
+    var segs = splitSegs(v), out = [], seen = {};
+    for (var i = 0; i < segs.length && out.length < cap; i++) {
+      var t = trim(S(segs[i]).replace(LEAD_RE, '')).replace(/\s+/g, ' ');
+      if (!t || t.length < 2) continue;
+      if (isJunk(t)) continue;
+      if (!keepFn(t)) continue;
+      var k = low(t); if (seen[k]) continue; seen[k] = 1;
+      out.push(t.slice(0, 160));
+    }
+    return out;
+  }
+  function cleanAllergies(v) {
+    var joined = low(splitSegs(v).join(' '));
+    /* NB: no trailing \b after the 'allerg' prefix alternatives - a trailing \b
+       between 'g' and 'ies' can never match (the live bundle's allergiesFrom at
+       3708 carries this exact latent bug) */
+    if (/\b(?:nkda\b|no known (?:drug )?allerg|denies allerg|no allergies\b)/.test(joined) &&
+        !/\b(?:penicillin|sulfa|codeine|latex|morphine|nsaid|aspirin|iodine|contrast|shellfish|peanut|statin|opioid)\b/.test(joined)) return ['NKDA'];
+    return cleanList(v, keepAllergy, 20);
+  }
+
+  /* ---------- per-patient application (stash-once, idempotent) ---------- */
+  var STATS = { cleaned: 0, migrated: 0, upserts: 0 };
+  function cleanField(p, key, cleaner, rawKey) {
+    var cur = p[key];
+    if (cur == null || cur === '' || (Array.isArray(cur) && !cur.length)) return false;
+    var out = cleaner(cur);
+    var neu = Array.isArray(cur) ? out : out.join('\n');
+    var same = Array.isArray(cur) ? (JSON.stringify(cur) === JSON.stringify(neu)) : (S(cur) === neu);
+    if (same) return false;
+    if (p[rawKey] == null) { var raw = Array.isArray(cur) ? cur.join('\n') : S(cur); p[rawKey] = raw.slice(0, 60000); }
+    p[key] = neu;
+    return true;
+  }
+  function cleanSummary(p) {
+    var s = S(p.summary); if (!s) return false;
+    var lines = s.split(/\r?\n/), out = [], changed = false;
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      var m = ln.match(/^(PROBLEMS|MEDICATIONS|ALLERGIES):\s*(.*)$/);
+      if (m) { /* digest lines (composeSummary, bundle 3856-3858): rebuild from the CLEANED field */
+        var key = (m[1] === 'PROBLEMS') ? 'problems' : ((m[1] === 'MEDICATIONS') ? 'meds' : 'allergies');
+        var val = (Array.isArray(p[key]) ? p[key].join('; ') : S(p[key])).replace(/\n/g, '; ');
+        var neu = val ? (m[1] + ': ' + val) : '';
+        if (neu !== ln) changed = true;
+        if (neu) out.push(neu);
+        continue;
+      }
+      var t = trim(ln);
+      if (t && t.length <= 80 && isSummaryChrome(t)) { changed = true; continue; } /* exact chrome only - prose untouched */
+      out.push(ln);
+    }
+    if (!changed) return false;
+    if (p._rawSummary == null) p._rawSummary = s.slice(0, 60000);
+    p.summary = out.join('\n');
+    return true;
+  }
+  function cleanPatient(p) {
+    if (!p || typeof p !== 'object') return false;
+    var c = false;
+    try { if (cleanField(p, 'problems', function (v) { return cleanList(v, keepProblem, 100); }, '_rawProblems')) c = true; } catch (e) {}
+    try { if (cleanField(p, 'meds', function (v) { return cleanList(v, keepMed, 60); }, '_rawMeds')) c = true; } catch (e) {}
+    try { if (cleanField(p, 'allergies', cleanAllergies, '_rawAllergies')) c = true; } catch (e) {}
+    try { if (cleanSummary(p)) c = true; } catch (e) {}
+    if (c) { p._mlsCleanV1 = Date.now(); STATS.cleaned++; }
+    return c;
+  }
+
+  /* ---------- choke point: wrap window.upsertPatient (parse-time for ALL producers) ---------- */
+  var DISABLED = false;
+  function wrapUpsert() {
+    var f = window.upsertPatient;
+    if (typeof f !== 'function') return false;
+    if (f.__mlsCleanSecWrapped) return true;
+    var w = function (p) {
+      STATS.upserts++;
+      if (!DISABLED) { try { if (p && typeof p === 'object') cleanPatient(p); } catch (e) {} }
+      return f.apply(this, arguments);
+    };
+    w.__mlsCleanSecWrapped = 1; w.__mlsCleanSecOrig = f;
+    /* carry the dedup module's head-marker forward so it never re-wraps (it IS
+       still in the chain below us) - upsert markers are safe to forward here,
+       unlike the addVisit chain (see module 1's cycle-guard notes) */
+    try { if (f.__mlsDedupWrapped) { w.__mlsDedupWrapped = f.__mlsDedupWrapped; w.__mlsDedupOrig = f.__mlsDedupOrig; } } catch (e) {}
+    window.upsertPatient = w;
+    return true;
+  }
+
+  /* ---------- ONE-TIME store migration (guarded, per-account flag) ---------- */
+  function migFlag() { try { return (typeof window.uns === 'function') ? window.uns('mlsCleanSectionsV1') : 'mlsCleanSectionsV1'; } catch (e) { return 'mlsCleanSectionsV1'; } }
+  function migrate() {
+    try {
+      if (localStorage.getItem(migFlag()) === '1') return 0;
+      if (typeof window.getPatients !== 'function' || typeof window.upsertPatient !== 'function') return -1; /* not ready */
+      var ps = window.getPatients() || [], n = 0;
+      for (var i = 0; i < ps.length; i++) {
+        try { if (cleanPatient(ps[i])) { window.upsertPatient(ps[i]); n++; } } catch (e) {}
+      }
+      try { localStorage.setItem(migFlag(), '1'); } catch (e) {}
+      STATS.migrated += n;
+      if (n) {
+        try { console.log('[MLS clean-sections] cleaned ' + n + ' patient record(s); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary'); } catch (e) {}
+        try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
+        try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
+      }
+      return n;
+    } catch (e) { return -1; }
+  }
+
+  /* ---------- install: Worker timer + capture-phase listeners (NO main-thread setInterval) ---------- */
+  var _wkUrl = null, _wk = null, _done = false;
+  function tick() {
+    if (_done) return;
+    try {
+      var w = wrapUpsert();
+      var m = w ? migrate() : -1;
+      if (w && m >= 0) { _done = true; stopWorker(); }
+    } catch (e) {}
+  }
+  function stopWorker() { try { if (_wk) _wk.terminate(); } catch (e) {} try { if (_wkUrl) URL.revokeObjectURL(_wkUrl); } catch (e) {} _wk = null; _wkUrl = null; }
+  try {
+    _wkUrl = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},1200);'], { type: 'application/javascript' }));
+    _wk = new Worker(_wkUrl); _wk.onmessage = tick;
+  } catch (e) {}
+  function evTick() { try { tick(); } catch (e) {} }
+  window.addEventListener('message', evTick, true);
+  document.addEventListener('visibilitychange', evTick, true);
+  tick();
+
+  /* ---------- public API ---------- */
+  var api = {
+    version: '1.0.0',
+    mode: 'balanced',            /* 'balanced' (code-or-name) | 'strict' (ICD code required) */
+    stats: STATS,
+    cleanPatient: cleanPatient,
+    cleanProblems: function (v) { return cleanList(v, keepProblem, 100); },
+    cleanMeds: function (v) { return cleanList(v, keepMed, 60); },
+    cleanAllergies: cleanAllergies,
+    migrateNow: function () { try { localStorage.removeItem(migFlag()); } catch (e) {} return migrate(); },
+    restore: function (idOrAll) {
+      var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+      var n = 0;
+      for (var i = 0; i < ps.length; i++) {
+        var p = ps[i];
+        if (idOrAll !== 'ALL' && p.id !== idOrAll) continue;
+        var did = false;
+        if (p._rawProblems != null) { p.problems = p._rawProblems; did = true; } 
+        if (p._rawMeds != null) { p.meds = p._rawMeds; did = true; }
+        if (p._rawAllergies != null) { p.allergies = p._rawAllergies; did = true; }
+        if (p._rawSummary != null) { p.summary = p._rawSummary; did = true; }
+        if (did) {
+          try { delete p._rawProblems; delete p._rawMeds; delete p._rawAllergies; delete p._rawSummary; delete p._mlsCleanV1; } catch (e) {}
+          DISABLED = true;
+          try { if (typeof window.upsertPatient === 'function') window.upsertPatient(p); } finally { DISABLED = false; }
+          n++;
+        }
+      }
+      try { localStorage.removeItem(migFlag()); } catch (e) {}
+      return n + ' restored (module still active - call revert() first for a full rollback)';
+    },
+    selfTest: function () {
+      var raw = ['View problems from other sources', 'Move Multiple', 'Loading...', 'Uncategorized', '11 problems',
+        'Problem may be outdated', 'Onset Date: 03/05/2024', 'move to historical', 'Problems', 'Active', 'Historical',
+        'M75.102 Unspecified rotator cuff tear', 'M54.16 Radiculopathy lumbar region',
+        'Rotator cuff tear, right shoulder (M75.101)', 'Cervical spondylosis'].join('\n');
+      var want = ['M75.102 Unspecified rotator cuff tear', 'M54.16 Radiculopathy lumbar region',
+        'Rotator cuff tear, right shoulder (M75.101)', 'Cervical spondylosis'];
+      var got = api.cleanProblems(raw);
+      var medsGot = api.cleanMeds('Add medication\n3 medications\nLast Prescribed: 05/01/2026\nmetformin 1000 mg tablet BID\nlisinopril');
+      var algGot = api.cleanAllergies('Add allergy\nreviewed 01/2026\nNo known drug allergies');
+      var pass = JSON.stringify(got) === JSON.stringify(want) &&
+        JSON.stringify(medsGot) === JSON.stringify(['metformin 1000 mg tablet BID', 'lisinopril']) &&
+        JSON.stringify(algGot) === JSON.stringify(['NKDA']);
+      return { pass: pass, problems: got, meds: medsGot, allergies: algGot };
+    },
+    revert: function () {
+      DISABLED = true; _done = true;
+      try { if (window.upsertPatient && window.upsertPatient.__mlsCleanSecWrapped) window.upsertPatient = window.upsertPatient.__mlsCleanSecOrig; } catch (e) {}
+      stopWorker();
+      try { window.removeEventListener('message', evTick, true); } catch (e) {}
+      try { document.removeEventListener('visibilitychange', evTick, true); } catch (e) {}
+      try { delete window.__mlsCleanSections; } catch (e) { window.__mlsCleanSections = undefined; }
+      try { delete window.__mlsCleanSections_revert; } catch (e) {}
+      return 'reverted (already-cleaned fields stay; restore("ALL") BEFORE revert to put originals back)';
+    }
+  };
+  window.__mlsCleanSections = api;
+  window.__mlsCleanSections_revert = api.revert; /* deploy-convention alias */
+})();
+
+/* ============================================================================
+ * __mlsDobEverywhere v1.0.0   (b121 pack · module 8)
+ * ---------------------------------------------------------------------------
+ * WHY: staff bookings POST /api/appointments with NO dob (ScribeFlow.html
+ * :7271/:7315/:8115), so GET /api/appointments hands loadCalendar() dob:''
+ * rows, and every "DOB —" card renders the _calAppts row's OWN .dob:
+ *   - __mlsEasyV32 agenda / Choose list / Now-Next / doctor badge (dobOf,
+ *     bundle :12818) and __mlsPatientPicker (bundle :28492) read _calAppts;
+ *   - chart pulls capture DOB only into the patients store
+ *     (sf_u::<email>::patients via upsertPatient->savePatients, :5666-:5676).
+ * Nothing joins the store back, and loadCalendar refetches dob:'' every load.
+ * THIS MODULE IS THAT JOIN, at the data level, so every consumer is fixed:
+ *   (1) store -> _calAppts backfill: exact patient_external_id first, else
+ *       exact sorted-token full-name match; same-name/two-DOBs veto; NEVER
+ *       overwrites a non-empty row dob;
+ *   (2) re-applied after every window.loadCalendar() and savePatients(),
+ *       plus cross-tab 'storage' events; microtask-coalesced, NO page timers;
+ *   (3) in-place repaint of already-rendered Easy rows: dob span text AND the
+ *       dob slot of data-k/data-hd/data-more/data-q keys ('id|name|dob|day|
+ *       start', bundle rowKey :12785) so apptByKey() keeps resolving and no
+ *       tap ever hits the "row is out of date" path;
+ *   (4) best-effort server persist: POST /api/appointments/<id>/update {dob}
+ *       once per row per session (endpoint already used for status/date at
+ *       ScribeFlow.html :7466/:8101; harmless if it ignores dob - the join
+ *       re-covers on every load). MLS backend only - ZERO athena surface.
+ * Kill switch: window.__mlsDobEverywhere.revert()
+ * ==========================================================================*/
+;(function () {
+  'use strict';
+  if (window.__mlsDobEverywhere) return;
+
+  var api = {
+    version: '1.0.0',
+    applied: 0,        /* rows backfilled this session */
+    persisted: 0,      /* rows accepted by /update */
+    persistFails: 0,   /* rows the server refused/ignored (join still covers) */
+    ambiguous: 0,      /* name keys vetoed (same name, two store DOBs) */
+    lastRun: 0,
+    persist: true,     /* set false to stop server writes; join keeps working */
+    apply: null,       /* manual re-run hook (filled below) */
+    revert: revert
+  };
+  window.__mlsDobEverywhere = api;
+
+  /* ---- tiny local helpers (self-contained, pack style) ------------------- */
+  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function nameKey(s) { var t = nrm(s).split(' ').filter(Boolean); if (t.length < 2) return ''; t.sort(); return t.join(' '); }
+  function dobDigits(s) { return String(s == null ? '' : s).replace(/[^0-9]/g, ''); }
+  function calRows() {
+    try { var c = window._calAppts; if (typeof c === 'function') c = c(); return Array.isArray(c) ? c : []; } catch (e) { return []; }
+  }
+
+  /* ---- store index: '#'+id -> dob, and sorted-token name -> dob ----------- */
+  function dobIndex() {
+    var pts = [];
+    try { pts = (typeof window.getPatients === 'function' ? window.getPatients() : []) || []; } catch (e) { pts = []; }
+    var m = {}, amb = {}, i, p, k, dd;
+    for (i = 0; i < pts.length; i++) {
+      p = pts[i]; if (!p || !p.name || !p.dob) continue;
+      dd = dobDigits(p.dob); if (!dd) continue;
+      if (p.id != null && p.id !== '') m['#' + String(p.id)] = String(p.dob).trim();
+      k = nameKey(p.name); if (!k) continue;
+      if (m[k] != null && dobDigits(m[k]) !== dd) { amb[k] = 1; continue; } /* same full name, two DOBs: never guess */
+      m[k] = String(p.dob).trim();
+    }
+    api.ambiguous = 0;
+    for (k in amb) { delete m[k]; api.ambiguous++; }
+    return m;
+  }
+
+  /* ---- the join: store dob -> _calAppts rows (in place, add-only) --------- */
+  function applyNow() {
+    var idx = dobIndex(), rows = calRows(), changed = [], i, a, d, k;
+    for (i = 0; i < rows.length; i++) {
+      a = rows[i];
+      if (!a || !a.name) continue;
+      if (a.dob && String(a.dob).trim()) continue;          /* NEVER overwrite */
+      d = '';
+      if (a.patient_external_id != null && a.patient_external_id !== '') d = idx['#' + String(a.patient_external_id)] || '';
+      if (!d) { k = nameKey(a.name); if (k) d = idx[k] || ''; }
+      if (!d) continue;
+      a.dob = d;
+      changed.push({ a: a, dob: d });
+    }
+    api.lastRun = Date.now();
+    if (changed.length) {
+      api.applied += changed.length;
+      try { repaint(changed); } catch (e) {}
+      if (api.persist) { try { persistChanged(changed); } catch (e) {} }
+    }
+    return changed.length;
+  }
+  api.apply = applyNow;
+
+  /* microtask-coalesced scheduler - no setTimeout/setInterval on this tab */
+  var _pending = false;
+  function applySoon() {
+    if (_pending) return;
+    _pending = true;
+    Promise.resolve().then(function () { _pending = false; try { applyNow(); } catch (e) {} });
+  }
+
+  /* ---- repaint already-rendered Easy DOM (keys + dob spans) --------------- */
+  function repaint(changed) {
+    var byName = {}, i;
+    for (i = 0; i < changed.length; i++) byName[nrm(changed[i].a.name)] = changed[i].dob;
+    var scopes = document.querySelectorAll('#mlsEz3, .ez3-modal');
+    for (var s = 0; s < scopes.length; s++) {
+      var attrs = ['data-k', 'data-hd', 'data-more', 'data-q'];
+      for (var ai = 0; ai < attrs.length; ai++) {
+        var els = scopes[s].querySelectorAll('[' + attrs[ai] + ']');
+        for (i = 0; i < els.length; i++) {
+          var v = els[i].getAttribute(attrs[ai]) || '';
+          var parts = v.split('|');
+          if (parts.length !== 5 || parts[2]) continue;   /* not a rowKey, or dob already set */
+          var d = byName[nrm(parts[1])]; if (!d) continue;
+          parts[2] = d;
+          els[i].setAttribute(attrs[ai], parts.join('|'));
+        }
+      }
+      var prows = scopes[s].querySelectorAll('.ez3-prow');
+      for (i = 0; i < prows.length; i++) {
+        var nmEl = prows[i].querySelector('.nm'), dEl = prows[i].querySelector('.dob');
+        if (!nmEl || !dEl) continue;
+        var d2 = byName[nrm(nmEl.textContent)];
+        if (d2 && /—\s*$/.test(dEl.textContent || '')) dEl.textContent = '🎂 ' + d2;
+      }
+    }
+  }
+
+  /* ---- best-effort server persist (once per appt id per session) ---------- */
+  var _pushed = {};
+  function persistChanged(changed) {
+    if (typeof window.bkBase !== 'function' || typeof window.bkToken !== 'function') return;
+    var base = '', tok = '';
+    try { base = window.bkBase(); tok = window.bkToken(); } catch (e) { return; }
+    if (!base || !tok) return;
+    var q = [], i, a;
+    for (i = 0; i < changed.length; i++) {
+      a = changed[i].a;
+      if (a && a.id != null && a.id !== '' && !_pushed[a.id]) { _pushed[a.id] = 1; q.push(changed[i]); }
+    }
+    (function next(j) {
+      if (j >= q.length) return;
+      fetch(base + '/api/appointments/' + encodeURIComponent(q[j].a.id) + '/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+        body: JSON.stringify({ dob: q[j].dob })
+      }).then(function (r) { if (r && r.ok) api.persisted++; else api.persistFails++; next(j + 1); },
+              function () { api.persistFails++; next(j + 1); });
+    })(0);
+  }
+
+  /* ---- hooks: loadCalendar (refetch wipes dob) + savePatients (pull lands) -
+   * Both are top-level function declarations in ScribeFlow.html, so the
+   * window property IS the binding that bare `loadCalendar()` calls resolve
+   * through - reassigning window.<fn> rebinds them everywhere. */
+  var _origLoad = null, _origSave = null;
+  function wrapLoad() {
+    var f = window.loadCalendar;
+    if (typeof f !== 'function' || f.__mlsDobWrap) return;
+    _origLoad = f;
+    var w = function () {
+      var r;
+      try { r = f.apply(this, arguments); } catch (e) { applySoon(); throw e; }
+      if (r && typeof r.then === 'function') return r.then(function (v) { applySoon(); return v; }, function (e) { applySoon(); throw e; });
+      applySoon();
+      return r;
+    };
+    w.__mlsDobWrap = 1;
+    window.loadCalendar = w;
+  }
+  function wrapSave() {
+    var f = window.savePatients;
+    if (typeof f !== 'function' || f.__mlsDobWrap) return;
+    _origSave = f;
+    var w = function () {
+      var r = f.apply(this, arguments);
+      applySoon();
+      return r;
+    };
+    w.__mlsDobWrap = 1;
+    window.savePatients = w;
+  }
+  function ensureWraps() { try { wrapLoad(); wrapSave(); } catch (e) {} }
+  ensureWraps();
+
+  /* late-defined globals / cross-tab store writes: event-driven only */
+  function onReady() { ensureWraps(); applySoon(); }
+  function onStorage(ev) { try { if (ev && ev.key && /::patients$/.test(ev.key)) { ensureWraps(); applySoon(); } } catch (e) {} }
+  function onVis() { ensureWraps(); if (Date.now() - api.lastRun > 2000) applySoon(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, { once: true });
+  window.addEventListener('storage', onStorage, false);
+  document.addEventListener('visibilitychange', onVis, true);
+
+  /* first pass now (store + _calAppts may both already be populated) */
+  applySoon();
+
+  function revert() {
+    try { if (_origLoad && window.loadCalendar && window.loadCalendar.__mlsDobWrap) window.loadCalendar = _origLoad; } catch (e) {}
+    try { if (_origSave && window.savePatients && window.savePatients.__mlsDobWrap) window.savePatients = _origSave; } catch (e) {}
+    try { document.removeEventListener('DOMContentLoaded', onReady); } catch (e) {}
+    try { window.removeEventListener('storage', onStorage, false); } catch (e) {}
+    try { document.removeEventListener('visibilitychange', onVis, true); } catch (e) {}
+    try { delete window.__mlsDobEverywhere; } catch (e) { window.__mlsDobEverywhere = null; }
+    return 'reverted (already-backfilled rows keep their dob; server writes are not undone)';
+  }
+})();
+
+/* ========================================================================= * MODULE 9 - HEADER/AUTO-PULL DATE GATE (__mlsHeaderDateGate) v1.0.0 - see F_controls_design FIX-10: gates the last unverified import leg (hero/auto pull) on a PROVEN today header; fail-closed, additive, revert(). ========================================================================= */
+(function () {
+  'use strict';
+  try { if (window.__mlsHeaderDateGate) return; } catch (e) { return; }
+  var api = { version: '1.0.0', blocks: 0, passes: 0, lastVerdict: '', killed: false };
+  function todayLocal() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function setS(m) { try { var el = document.getElementById('heroPullStatus'); if (el) { el.textContent = m; el.style.color = '#ffe0e0'; el.style.display = 'block'; } else if (typeof window.toast === 'function') window.toast(m, 'err'); } catch (e) {} }
+  var orig = null;
+  function arm() {
+    try {
+      var f = window._importPulledSchedule;
+      if (typeof f !== 'function' || f.__mlsHdrGate) return;
+      orig = f;
+      var w = function (appts) {
+        try {
+          if (!api.killed) {
+            var txt = String((window.__schedRaw && window.__schedRaw.text) || '');
+            var det = '';
+            try { det = (typeof window._detectSchedDate === 'function') ? String(window._detectSchedDate(txt) || '') : ''; } catch (e) { det = ''; }
+            try { if (!det && window.__mlsDayKeyFix && typeof window.__mlsDayKeyFix.robustSchedDate === 'function') det = String(window.__mlsDayKeyFix.robustSchedDate(txt, todayLocal()) || ''); } catch (e) {}
+            var today = todayLocal();
+            if (det !== today) { /* target of this leg is always TODAY; fail-closed, never guess */
+              api.blocks++; api.lastVerdict = det ? ('athena-on-' + det) : 'page-date-unprovable';
+              setS(det ? ('athenaOne is showing ' + det + ', not today (' + today + ') — nothing was imported. Use Staff prep → “Pull a specific day” for that date, or put athenaOne on today and pull again.')
+                       : 'Could not prove which day athenaOne is showing — nothing was imported. Open athenaOne on today’s Day view and pull again, or use Staff prep’s verified pulls.');
+              return Promise.resolve();
+            }
+            api.passes++; api.lastVerdict = 'ok-' + today;
+          }
+        } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+      w.__mlsHdrGate = 1;
+      window._importPulledSchedule = w;
+    } catch (e) {}
+  }
+  try { document.addEventListener('click', arm, true); } catch (e) {}
+  try { document.addEventListener('visibilitychange', arm, true); } catch (e) {}
+  try { arm(); } catch (e) {}
+  api.revert = function () {
+    api.killed = true;
+    try { document.removeEventListener('click', arm, true); } catch (e) {}
+    try { document.removeEventListener('visibilitychange', arm, true); } catch (e) {}
+    try { if (orig && window._importPulledSchedule && window._importPulledSchedule.__mlsHdrGate) window._importPulledSchedule = orig; } catch (e) {}
+    try { delete window.__mlsHeaderDateGate; } catch (e) {}
+  };
+  window.__mlsHeaderDateGate = api;
 })();
