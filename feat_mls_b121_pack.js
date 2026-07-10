@@ -4005,7 +4005,18 @@
     /^loading[\s.:\u2026]*$/i, /^uncategorized\s*$/i,
     /^view .{0,40}from other sources\s*$/i, /^move multiple\s*$/i, /^move to historical\s*$/i,
     /^(?:problem|medication|allergy)s? may be outdated\s*$/i,
-    /^onset(?:\s+date)?\s*[:\-]?\s*[\d\/\-.]*\s*$/i
+    /^onset(?:\s+date)?\s*[:\-]?\s*[\d\/\-.]*\s*$/i,
+    /* v1.1.0: athena group headers + encounter/section labels that leak into
+       legacy summaries as short standalone lines (safe: all end right after the
+       header, so real prose sentences are untouched) */
+    /^(?:historical|active|inactive|resolved|medications?|meds|allerg(?:y|ies)|problems?|orders?|results?|documents?|vitals?|immunizations?|vaccines?)\s*\(\s*\d+[^)]*\)\s*$/i,
+    /^historical\s+(?:meds?|medications?|problems?|allerg(?:y|ies)|orders?)\s*$/i,
+    /^encounter\s+(?:sign-?off|signed-?off|summary|performed|reviewed|documented|reconcil(?:ed|iation)?)\b.*$/i,
+    /^section note\s*$/i, /^care episodes(?:\s+and\s+tracking)?\s*$/i, /^audit history\s*$/i,
+    /^reviewed problems?\s*$/i, /^return to (?:office|inbox|list|schedule|results?)\s*$/i,
+    /^(?:preventtrailingcomma|automatic_polling|async|logout|onfinish|onerror)\b.*$/i,
+    /^(?:delete\s+args\b|args\.[a-z]).*$/i,
+    /^[A-Z_][A-Z0-9_]{2,}\s*:\s*(?:true|false|null|\[|'|").*$/
   ];
   function isSummaryChrome(t) { for (var i = 0; i < SUMMARY_CHROME.length; i++) { if (SUMMARY_CHROME[i].test(t)) return true; } return false; }
 
