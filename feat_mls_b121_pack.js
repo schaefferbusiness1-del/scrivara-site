@@ -3922,7 +3922,7 @@
 })();
 
 /* =========================================================================
- * MODULE 7 - CHART-SECTION CLEANER  (__mlsCleanSections)  v1.0.0  2026-07-10
+ * MODULE 7 - CHART-SECTION CLEANER  (__mlsCleanSections)  v1.1.0  2026-07-10
  * Problems/meds/allergies pulled from athenaOne carry the page's UI chrome
  * ("View problems from other sources", "Move Multiple", "11 problems",
  * "Onset Date: ...", "Loading...", counts, group headers) mixed between real
@@ -3975,7 +3975,27 @@
     /^(?:page\s+\d+|showing\b.*|\d+\s*(?:of|\/)\s*\d+|results?\s*:?\s*\d*)$/i,
     /* empty-state prose (allergies handles NKDA before this) */
     /^(?:no (?:active|known|current)\b.*|none recorded.*|nothing (?:found|recorded).*)$/i,
-    /^(?:as of|last synced|synced|pulled|imported)\b/i
+    /^(?:as of|last synced|synced|pulled|imported)\b/i,
+    /* v1.1.0 residual taxonomy (observed live 2026-07-10): group headers WITH a
+       count - "Historical (0)", "HISTORICAL (0 new)", "Medications (7 new)",
+       "Active (3)" (bare "Historical"/"Medications" already caught above) */
+    /^(?:historical|active|inactive|resolved|reviewed problems?|problem list|medications?|meds|allerg(?:y|ies)|orders?|results?|documents?|encounters?|vitals?|immunizations?|vaccines?|care plans?)\s*\(\s*\d+/i,
+    /* group headers with a trailing section word: "Historical Meds", "Historical Problems" */
+    /^historical\s+(?:meds?|medications?|problems?|allerg(?:y|ies)|orders?|documents?)\b/i,
+    /* athena encounter footers/headers - START-anchored so real dx endings
+       ("...initial encounter") and Z-code dx ("Encounter for screening ...") are SAFE */
+    /^encounter\s+(?:sign-?off|signed-?off|summary|performed|reviewed|documented|reconcil|note|reason|type|status|date)\b/i,
+    /^section note\b/i,
+    /^care episodes(?:\s+and\s+tracking)?\b/i,
+    /^audit history\b/i,
+    /^return to (?:office|inbox|list|schedule|results?)\b/i,
+    /* staff/appointment lines: "Robert McCafferty, PA-C for EST20 at POSM CL West Chester" */
+    /\b(?:pa-?c|md|do|crnp|np|rn|dpm|pt|ot)\s+for\s+\S+\s+at\b/i,
+    /* leaked page JS/config lines: "delete args.X;", "args.CONTENTCALLREMOTE[...]",
+       "PREVENTTRAILINGCOMMA: true", "AUTOMATIC_POLLING: true,", "ONFINISH: 'response',".
+       Restricted to UPPER_SNAKE keys / args. leads so real "S32.030A: Wedge ..." is SAFE */
+    /^(?:delete\s+args\b|args\.[a-z])/i,
+    /^[A-Z_][A-Z0-9_]{2,}\s*:\s*(?:true|false|null|\[|'|")/
   ];
   function isJunk(t) { for (var i = 0; i < JUNK.length; i++) { if (JUNK[i].test(t)) return true; } return false; }
 
@@ -4101,20 +4121,48 @@
     return true;
   }
 
-  /* ---------- ONE-TIME store migration (guarded, per-account flag) ---------- */
-  function migFlag() { try { return (typeof window.uns === 'function') ? window.uns('mlsCleanSectionsV1') : 'mlsCleanSectionsV1'; } catch (e) { return 'mlsCleanSectionsV1'; } }
-  function migrate() {
+  /* ---------- second choke point: wrap window.savePatients (BULK writes) --------
+   * v1.1.0: the app hydrates/refreshes patients from its server mirror via a BULK
+   * savePatients(arr) that BYPASSES the per-row upsert wrapper - that is why the
+   * one-shot migration only reached the rows present at load, leaving server-synced
+   * rows dirty. Cleaning every row here makes bulk writes self-heal too. (Module 8
+   * __mlsDobEverywhere also wraps savePatients; it loads AFTER us, so both run.) */
+  function wrapSave() {
+    var f = window.savePatients;
+    if (typeof f !== 'function') return false;
+    if (f.__mlsCleanSecSaveWrap) return true;
+    var w = function (arr) {
+      if (!DISABLED && arr && arr.length) { try { for (var i = 0; i < arr.length; i++) { if (arr[i] && typeof arr[i] === 'object') cleanPatient(arr[i]); } } catch (e) {} }
+      return f.apply(this, arguments);
+    };
+    w.__mlsCleanSecSaveWrap = 1; w.__mlsCleanSecSaveOrig = f;
+    try { if (f.__mlsDobWrap) { w.__mlsDobWrap = f.__mlsDobWrap; } } catch (e) {}
+    window.savePatients = w;
+    return true;
+  }
+
+  /* ---------- re-runnable store migration (NO permanent one-shot flag) ----------
+   * v1.1.0: instead of a set-once flag (which locked in a PARTIAL pass when the
+   * server sync arrived late), re-scan whenever the roster grows or a store event
+   * fires, capped per session. Idempotent + cheap: cleanPatient returns false for
+   * already-clean rows (byte-compare), stash is _raw*==null-guarded, so a re-scan
+   * only upserts rows that actually changed. */
+  var _lastCount = -1, _scans = 0, _cleanedInScan = 0;
+  var MAX_SCANS = 40;
+  function migrate(force) {
     try {
-      if (localStorage.getItem(migFlag()) === '1') return 0;
       if (typeof window.getPatients !== 'function' || typeof window.upsertPatient !== 'function') return -1; /* not ready */
-      var ps = window.getPatients() || [], n = 0;
+      var ps = window.getPatients() || [];
+      if (!force && _scans > 0 && ps.length === _lastCount) return 0; /* nothing new since last scan */
+      if (_scans >= MAX_SCANS && !force) return 0;
+      _lastCount = ps.length; _scans++;
+      var n = 0;
       for (var i = 0; i < ps.length; i++) {
         try { if (cleanPatient(ps[i])) { window.upsertPatient(ps[i]); n++; } } catch (e) {}
       }
-      try { localStorage.setItem(migFlag(), '1'); } catch (e) {}
       STATS.migrated += n;
       if (n) {
-        try { console.log('[MLS clean-sections] cleaned ' + n + ' patient record(s); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary'); } catch (e) {}
+        try { console.log('[MLS clean-sections v1.1.0] cleaned ' + n + ' record(s) (scan ' + _scans + '); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary'); } catch (e) {}
         try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
         try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
       }
@@ -4123,35 +4171,36 @@
   }
 
   /* ---------- install: Worker timer + capture-phase listeners (NO main-thread setInterval) ---------- */
-  var _wkUrl = null, _wk = null, _done = false;
+  var _wkUrl = null, _wk = null, _hooked = false;
   function tick() {
-    if (_done) return;
     try {
-      var w = wrapUpsert();
-      var m = w ? migrate() : -1;
-      if (w && m >= 0) { _done = true; stopWorker(); }
+      var w = wrapUpsert(); wrapSave();
+      _hooked = !!w;
+      if (w) migrate(false); /* re-scans while the roster is still growing; self-limits once stable */
     } catch (e) {}
   }
   function stopWorker() { try { if (_wk) _wk.terminate(); } catch (e) {} try { if (_wkUrl) URL.revokeObjectURL(_wkUrl); } catch (e) {} _wk = null; _wkUrl = null; }
   try {
-    _wkUrl = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},1200);'], { type: 'application/javascript' }));
+    _wkUrl = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},1500);'], { type: 'application/javascript' }));
     _wk = new Worker(_wkUrl); _wk.onmessage = tick;
   } catch (e) {}
   function evTick() { try { tick(); } catch (e) {} }
   window.addEventListener('message', evTick, true);
   document.addEventListener('visibilitychange', evTick, true);
+  function onStorage(ev) { try { if (ev && ev.key && /::patients$/.test(ev.key)) tick(); } catch (e) {} }
+  window.addEventListener('storage', onStorage, false);
   tick();
 
   /* ---------- public API ---------- */
   var api = {
-    version: '1.0.0',
+    version: '1.1.0',
     mode: 'balanced',            /* 'balanced' (code-or-name) | 'strict' (ICD code required) */
     stats: STATS,
     cleanPatient: cleanPatient,
     cleanProblems: function (v) { return cleanList(v, keepProblem, 100); },
     cleanMeds: function (v) { return cleanList(v, keepMed, 60); },
     cleanAllergies: cleanAllergies,
-    migrateNow: function () { try { localStorage.removeItem(migFlag()); } catch (e) {} return migrate(); },
+    migrateNow: function () { return migrate(true); },
     restore: function (idOrAll) {
       var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
       var n = 0;
@@ -4170,16 +4219,22 @@
           n++;
         }
       }
-      try { localStorage.removeItem(migFlag()); } catch (e) {}
       return n + ' restored (module still active - call revert() first for a full rollback)';
     },
     selfTest: function () {
       var raw = ['View problems from other sources', 'Move Multiple', 'Loading...', 'Uncategorized', '11 problems',
         'Problem may be outdated', 'Onset Date: 03/05/2024', 'move to historical', 'Problems', 'Active', 'Historical',
+        'Historical (0)', 'HISTORICAL (0 new)', 'Historical Meds', 'Medications (7 new)', 'Encounter Sign-Off',
+        'Encounter signed-off by Matthew Schaeffer', 'Encounter performed and documented by Matthew Schaeffer, MD',
+        'SECTION NOTE', 'Care Episodes and Tracking', 'Audit history', 'PREVENTTRAILINGCOMMA: true',
+        'AUTOMATIC_POLLING: true,', 'delete args.PREVENTTRAILINGCOMMA;', 'Return to Office',
+        'Robert McCafferty, PA-C for EST20 at POSM CL West Chester',
         'M75.102 Unspecified rotator cuff tear', 'M54.16 Radiculopathy lumbar region',
-        'Rotator cuff tear, right shoulder (M75.101)', 'Cervical spondylosis'].join('\n');
+        'Rotator cuff tear, right shoulder (M75.101)', 'Cervical spondylosis',
+        'Compression fracture of T12 vertebra, initial encounter', 'S32.030A: Wedge compression fracture of third lumbar vertebra'].join('\n');
       var want = ['M75.102 Unspecified rotator cuff tear', 'M54.16 Radiculopathy lumbar region',
-        'Rotator cuff tear, right shoulder (M75.101)', 'Cervical spondylosis'];
+        'Rotator cuff tear, right shoulder (M75.101)', 'Cervical spondylosis',
+        'Compression fracture of T12 vertebra, initial encounter', 'S32.030A: Wedge compression fracture of third lumbar vertebra'];
       var got = api.cleanProblems(raw);
       var medsGot = api.cleanMeds('Add medication\n3 medications\nLast Prescribed: 05/01/2026\nmetformin 1000 mg tablet BID\nlisinopril');
       var algGot = api.cleanAllergies('Add allergy\nreviewed 01/2026\nNo known drug allergies');
@@ -4189,11 +4244,13 @@
       return { pass: pass, problems: got, meds: medsGot, allergies: algGot };
     },
     revert: function () {
-      DISABLED = true; _done = true;
+      DISABLED = true; _scans = MAX_SCANS + 1;
       try { if (window.upsertPatient && window.upsertPatient.__mlsCleanSecWrapped) window.upsertPatient = window.upsertPatient.__mlsCleanSecOrig; } catch (e) {}
+      try { if (window.savePatients && window.savePatients.__mlsCleanSecSaveWrap) window.savePatients = window.savePatients.__mlsCleanSecSaveOrig; } catch (e) {}
       stopWorker();
       try { window.removeEventListener('message', evTick, true); } catch (e) {}
       try { document.removeEventListener('visibilitychange', evTick, true); } catch (e) {}
+      try { window.removeEventListener('storage', onStorage, false); } catch (e) {}
       try { delete window.__mlsCleanSections; } catch (e) { window.__mlsCleanSections = undefined; }
       try { delete window.__mlsCleanSections_revert; } catch (e) {}
       return 'reverted (already-cleaned fields stay; restore("ALL") BEFORE revert to put originals back)';
