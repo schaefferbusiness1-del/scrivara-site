@@ -1,4 +1,175 @@
 /* =========================================================================
+ * MLS Scribe - EMR SECTIONS -> ATHENAONE PER-SECTION WRITE  (__mlsEmrSectionsWrite)
+ * v1.0.0  2026-07-10 (b111)
+ *
+ * Completes the "EMR sections - review & confirm" console: its footer said
+ * "Per-field placement into athenaOne is the next extension step" - this is
+ * that step. Adds to #emrPanel:
+ *   - a "🏥 Insert confirmed to athenaOne" button (next to Insert-into-note)
+ *   - a Billing/charges card (review surface; routed via the Billing slate
+ *     autopilot only on a real run - never in verify mode)
+ *   - a per-section result log fed by the extension's verified write
+ *
+ * Flow on click: confirmed NON-ORDER sections are composed into a headered
+ * note (headers the extension's segmenter recognizes: HPI / Physical exam /
+ * Assessment / Plan) and sent over the v1.70 bridge mlsAppVerifiedWrite ->
+ * the extension's mlsVerifiedWrite: PATIENT IDENTITY GATE (refuse by default,
+ * explicit in-panel override only) -> segment -> per-section field scan on
+ * the open athenaOne encounter -> paste -> per-section verified/not-found
+ * results rendered honestly.
+ *
+ * HARD SAFETY (unchanged, enforced extension-side AND here):
+ *   - ORDER-CLASS sections (Orders, Prescriptions, Referrals, PT orders,
+ *     Imaging orders) are NEVER sent - listed as verify-only. athenaOne
+ *     orders auto-execute; the doctor enters them in Athena.
+ *   - Never Save/Sign/Finish - unsigned field content only.
+ *   - Identity mismatch/uncertain -> nothing written; override is an explicit
+ *     doctor action with the patient names shown.
+ * Idempotent; additive; revert: window.__mlsEmrSectionsWrite_revert()
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsEmrSectionsWrite) return; } catch (e) { return; }
+  var api = { version: '1.0.0', runs: 0, lastResp: null };
+  var ORDER_CLASS = { orders: 'Orders', rx: 'Prescriptions', referrals: 'Referrals', pt: 'PT orders', imaging: 'Imaging orders' };
+  var SEND_HEADERS = { history: 'HPI:', exam: 'Physical exam:', assessment: 'Assessment:', plan: 'Plan:', followup: 'Plan:' };
+
+  function bridge(type, payload, respType, timeout) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
+      try { window.addEventListener('message', h, false); } catch (e) {}
+      try { window.postMessage(Object.assign({ type: type, source: 'mls-app', from: 'mls-app' }, payload || {}), '*'); } catch (e) {}
+      setTimeout(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); }, timeout || 150000);
+    });
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+
+  function gather(panel) {
+    var send = [], held = [], billing = '';
+    var boxes = panel.querySelectorAll('input[data-k]');
+    for (var i = 0; i < boxes.length; i++) {
+      var k = boxes[i].getAttribute('data-k');
+      if (!boxes[i].checked) continue;
+      var ta = panel.querySelector('textarea[data-t="' + k + '"]');
+      var v = ta ? String(ta.value || '').trim() : '';
+      if (!v) continue;
+      if (k === 'billing') { billing = v; continue; }
+      if (ORDER_CLASS[k]) { held.push({ k: k, label: ORDER_CLASS[k], text: v }); continue; }
+      if (SEND_HEADERS[k]) send.push(SEND_HEADERS[k] + '\n' + v);
+    }
+    return { send: send, held: held, billing: billing };
+  }
+
+  function logTo(el, html) { el.innerHTML += '<div style="margin:3px 0">' + html + '</div>'; el.scrollTop = el.scrollHeight; }
+
+  function renderResp(logEl, resp, panel) {
+    if (!resp || resp.__timeout) { logTo(logEl, '⚠ No response from MLS Assist (timed out). Is athenaOne open?'); return; }
+    if (resp.error && !resp.blocked) { logTo(logEl, '⚠ ' + esc(resp.error)); return; }
+    if (resp.blocked) {
+      var p = resp.patient || {};
+      logTo(logEl, '⛔ <b>Nothing was written.</b> MLS: ' + esc((p.mlsName || '?') + (p.mlsDob ? ' (' + p.mlsDob + ')' : '')) + ' · Athena chart read: ' + esc((p.athName || 'unreadable') + (p.athDob ? ' (' + p.athDob + ')' : '')) + '.');
+      if (!panel.querySelector('#emrWbOverride')) {
+        var b = document.createElement('button'); b.id = 'emrWbOverride';
+        b.style.cssText = 'margin-top:6px;width:100%;border:1px solid #c0392b;color:#ffd7d0;background:rgba(192,57,43,.18);border-radius:10px;padding:9px 12px;font:700 12.5px system-ui;cursor:pointer';
+        b.textContent = '⚠ I confirmed the open chart IS this patient — write anyway';
+        b.onclick = function () { b.remove(); run(panel, true); };
+        logEl.parentElement.insertBefore(b, logEl.nextSibling);
+      }
+      return;
+    }
+    var pt = resp.patient || {};
+    logTo(logEl, '✓ Patient: <b>' + esc(pt.athName || pt.mlsName || '?') + '</b>' + (pt.athDob || pt.mlsDob ? ' (' + esc(pt.athDob || pt.mlsDob) + ')' : '') + (resp.forced ? ' <i>(doctor-confirmed override)</i>' : '') + ' — writing to this chart.');
+    var wr = resp.wrote || [];
+    if (!wr.length) { logTo(logEl, '⚠ Patient verified, but no matching section fields were found on the open Athena page (nothing written). Open the encounter/exam view with the section fields visible, then try again.'); return; }
+    var okN = 0, badN = 0;
+    wr.forEach(function (w) {
+      if (w.confirmed) { okN++; logTo(logEl, '&nbsp;&nbsp;✓ <b>' + esc(w.targetLabel || w.section) + '</b>' + (w.chosenLabel && w.chosenLabel !== w.targetLabel ? ' (' + esc(w.chosenLabel) + ')' : '') + ' — written & verified.'); }
+      else if (w.notfound) { badN++; logTo(logEl, '&nbsp;&nbsp;⚠ ' + esc(w.targetLabel || w.section) + ' — no matching field on this page (not written).'); }
+      else { badN++; logTo(logEl, '&nbsp;&nbsp;⚠ ' + esc(w.targetLabel || w.section) + ' — wrote but could not verify; check in Athena before signing.'); }
+    });
+    logTo(logEl, (badN === 0 ? '✓ <b>All sections placed & verified.</b>' : okN + ' verified · ' + badN + ' need a check.') + ' Unsigned — review and sign in athenaOne. MLS never clicks Save/Sign.');
+  }
+
+  function run(panel, force) {
+    var logEl = panel.querySelector('#emrWbLog'); if (!logEl) return;
+    var g = gather(panel);
+    if (!g.send.length && !g.held.length && !g.billing) { logTo(logEl, 'Confirm at least one section first (tick "confirm" on the cards above).'); return; }
+    g.held.forEach(function (h) { logTo(logEl, '🚫 <b>' + esc(h.label) + '</b> — confirmed for your reference but <b>never sent by MLS</b> (athenaOne orders auto-execute; enter these in Athena yourself).'); });
+    if (g.billing) logTo(logEl, '💲 <b>Billing</b> — reviewed here; use the Billing slate flow to file charges (not sent by this button).');
+    if (!g.send.length) { logTo(logEl, 'Nothing sendable — only order-class/billing sections were confirmed.'); return; }
+    api.runs++;
+    logTo(logEl, (force ? 'Writing (doctor-confirmed override)…' : 'Verifying the patient on the open athenaOne chart…'));
+    bridge('mlsAppVerifiedWrite', { note: g.send.join('\n\n'), force: !!force }, 'mlsAppVerifiedWriteResult', 150000)
+      .then(function (resp) { api.lastResp = resp; renderResp(logEl, resp, panel); });
+  }
+
+  function billingCard(panel) {
+    var body = panel.querySelector('#emrBody'); if (!body || panel.querySelector('textarea[data-t="billing"]')) return;
+    var div = document.createElement('div');
+    div.style.cssText = 'background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:12px;padding:12px 14px;margin-bottom:10px';
+    div.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="color:#e8ecff">Billing / charges</b><label style="font-size:12px;color:#9fb0d8;display:flex;gap:6px;cursor:pointer"><input type="checkbox" data-k="billing">confirm</label></div>' +
+      '<textarea data-t="billing" style="width:100%;margin-top:8px;min-height:38px;background:#141b3d;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:8px 10px;font:13px/1.5 system-ui;resize:vertical" placeholder="(CPT / charges for this visit — reviewed here; filed via the Billing slate)"></textarea>' +
+      '<div style="font-size:11px;color:#9fb0d8;margin-top:4px">Reviewed here for accuracy. Charges are filed through the Billing-slate flow — never auto-submitted by this panel.</div>';
+    body.appendChild(div);
+  }
+
+  function enhance(panel) {
+    if (panel.getAttribute('data-wb-enhanced')) return;
+    panel.setAttribute('data-wb-enhanced', '1');
+    billingCard(panel);
+    var insBtn = panel.querySelector('#emrIns'); if (!insBtn) return;
+    var host = insBtn.parentElement;
+    var b = document.createElement('button'); b.id = 'emrWbAthena';
+    b.style.cssText = 'background:#d97706;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800';
+    b.textContent = '🏥 Insert confirmed to athenaOne';
+    b.onclick = function () { run(panel, false); };
+    host.appendChild(b);
+    var wrap = insBtn.closest ? (insBtn.closest('div[style*="justify-content"]') || host) : host;
+    var log = document.createElement('div'); log.id = 'emrWbLog';
+    log.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;background:#0a0f24;border:1px solid rgba(120,140,220,.25);border-radius:10px;padding:10px 12px;font:12.5px/1.5 system-ui;color:#cdd8f5;display:block';
+    log.innerHTML = '<div style="color:#9fb0d8">Per-section write log — identity-gated; orders/prescriptions are never sent; MLS never clicks Save/Sign.</div>';
+    (wrap.parentElement || host).appendChild(log);
+  }
+
+  var mo = new MutationObserver(function () {
+    try { var p = document.getElementById('emrPanel'); if (p) enhance(p); } catch (e) {}
+  });
+  try { mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+  try { var p0 = document.getElementById('emrPanel'); if (p0) enhance(p0); } catch (e) {}
+
+  /* ACTIVE-PATIENT BEACON: the extension's MLS-side identity read runs in the
+     content-script isolated world and CANNOT see page JS globals (activePatient
+     etc.) - historically it fell back to scraping the visible page and grabbed
+     junk ("? (05-04-1968)" - another patient's DOB). This hidden, well-formed
+     element ([data-mls-patient-card], "Last, First" + DOB) is what the
+     extension reads first (v1.73). Updated on a light 3s interval. */
+  function beaconTick() {
+    try {
+      var ap = null;
+      try { ap = (typeof window.activePatient === 'function') ? window.activePatient() : window.activePatient; } catch (e) {}
+      if (!ap || !ap.name) return;
+      var el = document.getElementById('mlsActivePtBeacon');
+      if (!el) {
+        el = document.createElement('div'); el.id = 'mlsActivePtBeacon';
+        el.setAttribute('data-mls-patient-card', '');
+        el.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
+        document.body.appendChild(el);
+      }
+      var nm = String(ap.name || '').trim(); var parts = nm.split(/\s+/);
+      var lastFirst = parts.length >= 2 ? (parts[parts.length - 1] + ', ' + parts.slice(0, parts.length - 1).join(' ')) : nm;
+      var txt = 'Patient: ' + lastFirst + '\nDOB: ' + (ap.dob || '') + (ap.mrn ? '\nMRN: ' + ap.mrn : '');
+      if (el.textContent !== txt) el.textContent = txt;
+    } catch (e) {}
+  }
+  var beaconIv = setInterval(beaconTick, 3000);
+  beaconTick();
+
+  window.__mlsEmrSectionsWrite = api;
+  window.__mlsEmrSectionsWrite_revert = function () { try { mo.disconnect(); } catch (e) {} try { clearInterval(beaconIv); } catch (e) {} try { var b = document.getElementById('mlsActivePtBeacon'); if (b) b.remove(); } catch (e) {} try { delete window.__mlsEmrSectionsWrite; } catch (e) {} };
+})();
+
+/* =========================================================================
  * MLS Scribe - SCHEDULE IMPORT + NO-YANK FIX  (__mlsSchedFix) v1.1.1  2026-07-09 (b109)
  *
  * v1.1.1: _calAppts is REHYDRATED from persistence a few seconds after boot -
@@ -25092,7 +25263,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-09-b110';
+  var MLS_APP_BUILD='2026-07-10-b111';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
