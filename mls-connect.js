@@ -27496,7 +27496,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b41';
+  window.__MLS_AV = window.__MLS_AV || 'b124';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -27810,7 +27810,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b123';
+  var MLS_APP_BUILD='2026-07-10-b124';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -33984,6 +33984,9 @@
 
 /* loader: extended visit-history UI (timeline + overview + trends + filter/search/sort) — guarded, idempotent, cache-busted */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_visit_history_ext.js"]'))return;var s=document.createElement('script');s.src='feat_visit_history_ext.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_visit_history_ext.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+
+/* loader: feat_mls_visitfix (vfx-1.0.0 - no junk visit rows + background AI summaries; cert item 2.2) */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visitfix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visitfix.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_visitfix.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 
 /* ---- loader: mls-opnote-pro (op-note professional format + Save-as-PDF) ---- */
