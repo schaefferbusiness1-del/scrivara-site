@@ -1,5 +1,5 @@
 {
-  "version": "2.02",
+  "version": "2.04",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.02 - Visits reader parses PT/booking rows that carry a time before the date-comma (fixed a class of charts, e.g. physical-therapy patients, whose entire history was previously unreadable); skips future (upcoming) bookings while still counting them so an all-upcoming pane is an honest empty; identity de-race keeps the DOB gate strict (banner name + requested DOB) across multi-chip briefing surfaces. Keeps the tab hand-off panel, self-healing keep-alive, focus guardian, verified per-section write bridge, order-never-submit policy, and week-strip date navigation."
+  "notes": "v2.04 - Visits reader: settle-poll waits for the row list to hydrate before deciding rows-not-parsed (fixes the first-try 'That Athena pull didn't work' banner); reads now foreground the athenaOne tab for the duration (hidden tabs never hydrate the pane's rows) and return you to MLS after; any row dated after today is treated as a booking, never filed as history (marker-less future rows, e.g. scheduled PT sessions and follow-ups, were previously mis-filed). Keeps the v2.02 PT/booking time-tolerant parser, identity de-race, tab hand-off panel, self-healing keep-alive, verified per-section write bridge, and the order-never-submit policy."
 }
