@@ -21293,7 +21293,25 @@ function _ptGroupSort(mode){
     var lastId = activeId();
     refresh();
     setInterval(function(){ var id = activeId(); if (id !== lastId){ lastId = id; refresh(); } }, 1200);
-    window.addEventListener('storage', refresh);
+    (function(){ /* __mlsCardStormFix v1 */
+      /* Every localStorage write from ANY other MLS tab used to fire this
+         card's refresh(), which does a full getPatients() JSON.parse (~2MB on
+         a clinic-sized store) plus a card rebuild. Same-origin tabs share one
+         renderer process, so two write-chatty tabs (AI-summary pump, boot
+         rehydrate, day-pull ingest) amplified each other until the renderer
+         pegged at 100% and every MLS tab froze - the owner-reported
+         "freezes after sign-in / while clicking around" bug. React only to
+         the keys this card actually renders from, at most twice a second. */
+      var _stT = null;
+      window.addEventListener('storage', function(e){
+        try {
+          var k = (e && e.key != null) ? String(e.key) : '';
+          if (k && k.indexOf('patients') < 0 && k.indexOf('activePt') < 0) return;
+        } catch(_) {}
+        if (_stT) return;
+        _stT = setTimeout(function(){ _stT = null; refresh(); }, 500);
+      });
+    })();
   }
   if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
   else init();
