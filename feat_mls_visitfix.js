@@ -45,7 +45,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.5';
+  var VERSION = 'vfx-1.2.6';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -246,14 +246,27 @@
     w.__vfxWrapped = true; w.__vfxOrig = orig;
     window.upsertPatient = w; wrapped.upsert = { host: window, key: 'upsertPatient', orig: orig };
   }
+  var _lastBulkScrub = 0; /* v1.2.6 throttle */
   function wrapSave() {
     if (!isFn(window.savePatients) || window.savePatients.__vfxWrapped) return;
     var orig = window.savePatients;
     var w = function (list) {
       try {
         if (Array.isArray(list)) {
-          for (var i = 0; i < list.length; i++) { var n = scrubPatient(list[i]); if (n) STATE.scrubbedOnWrite += n; }
-          hydrateFromPersisted(list); /* v1.2.1: BEFORE the persisted copy is overwritten */
+          /* v1.2.6: hydrate ALWAYS (cheap + correctness-critical: it restores
+             visit content the server round-trip skeletonized, and must run
+             before the persisted copy is overwritten). */
+          hydrateFromPersisted(list);
+          /* v1.2.6: THROTTLE the full-store junk scrub to >=5s. It was running
+             scrubPatient over all ~1345 patients on EVERY save; the summary pump
+             saves per-summary (via the base upsertPatient's internal savePatients),
+             so a backlog drain fired 1345-patient scrubs back-to-back and pegged
+             the renderer. Junk is already blocked at the addVisit gate and cleaned
+             at boot, so a periodic (not per-save) sweep is more than enough. */
+          if (Date.now() - _lastBulkScrub > 5000) {
+            _lastBulkScrub = Date.now();
+            for (var i = 0; i < list.length; i++) { var n = scrubPatient(list[i]); if (n) STATE.scrubbedOnWrite += n; }
+          }
         }
       } catch (e) {}
       var r = orig.apply(window, arguments);
@@ -389,10 +402,14 @@
     return m.summarizeVisit(pid, vid).then(function () {
       pumpBusy = false; consecErr = 0;
       STATE.summarized++; PER_PATIENT[pid] = (PER_PATIENT[pid] || 0) + 1;
-      /* v1.2.4: never force a full visit-UI render per summary in a HIDDEN tab -
-         the scheduled uiFix covers it; a visible tab still refreshes live */
-      try { if (!document.hidden && window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e) {}
-      try { scheduleUiFix(); } catch (e) {}
+      /* v1.2.6: do NOT force a visit-UI render or schedule a uiFix per summary.
+         Forcing __mlsVisitUI.render + nudgePanel on every generated summary was
+         the re-render AMPLIFIER: during a large backlog drain each summary
+         cascaded a full timeline rebuild (+ the app's own _upsert render + the
+         feat_visit_history_ext 900ms interval), pegging the renderer to 100% and
+         freezing even a VISIBLE tab. The app already re-renders the active
+         patient on _upsert, and the worker-tick uiFix refreshes the panel on its
+         own cadence - a background summary does not need to force a repaint. */
     }, function (err) {
       pumpBusy = false; consecErr++; STATE.summarizeErrors++;
       if (consecErr >= 3) {
@@ -439,10 +456,17 @@
         _wkTicks++;
         try { if (_wkTicks <= 40) ensureWrapped(); } catch (e) {}
         /* v1.2.5: no UI churn while hidden - nothing is on screen to fix, and the
-           nudge/echo work is pure overhead on a deprioritized renderer */
+           nudge/echo work is pure overhead on a deprioritized renderer.
+           v1.2.6: uiFix (echo-hide + panel nudge) at most ~every 6s, visible only. */
         try { if (!document.hidden && (uiDirty || _wkTicks % 4 === 0)) { uiDirty = false; uiFix(); } } catch (e) {}
-        /* pumpOnce self-gates on document.hidden (visible-only); tick every ~4.5s */
-        if (_wkTicks % 3 === 0) { try { pumpOnce(); } catch (e) {} }
+        /* v1.2.6 GENTLE PUMP: one summary per ~19.5s (13 ticks), visible-only.
+           4.5s pumping drained the backlog too aggressively - each summary's
+           full-store save + the app's re-render + GC churn compounded until the
+           renderer pegged. At ~20s spacing a single background save is fully
+           absorbed and never stresses the tab; a real clinic day's ~20 visits
+           still summarize within a normal MLS-viewing stretch. pumpOnce also
+           self-gates on document.hidden. */
+        if (_wkTicks % 13 === 0) { try { pumpOnce(); } catch (e) {} }
         if (_wkTicks % 400 === 0) { try { sweepBacklog(); } catch (e) {} } /* v1.2.2: re-sweep ~10 min */
       };
     } catch (e) { _wk = null; }
