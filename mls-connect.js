@@ -6146,12 +6146,27 @@
       try {
         var p2 = findPatient(name) || p;
         var cur = summaryOf(p2);
+        cur = (function () { /* b126 refresh: the chart just passed the identity gate - the fresh read is authoritative; old value stashed on _sumPrev */
+          try {
+            if (isRealChart(cleanText)) {
+              var dnR = new Date(); var dsR = (dnR.getMonth() + 1) + '/' + dnR.getDate() + '/' + dnR.getFullYear();
+              var freshR = 'Pulled from Athena ' + dsR + '\n' + cleanText;
+              if (String(cur || '') !== freshR) {
+                if (cur && String(cur).slice(0, 300) !== freshR.slice(0, 300)) p2._sumPrev = String(cur).slice(0, 4000);
+                p2.summary = freshR;
+                if (typeof window.upsertPatient === 'function') window.upsertPatient(p2);
+              }
+              return summaryOf(p2);
+            }
+          } catch (eR) {}
+          return cur;
+        })();
         if (!isRealChart(cur)) {
           var dn = new Date(); var ds = (dn.getMonth() + 1) + '/' + dn.getDate() + '/' + dn.getFullYear();
           p2.summary = (cur ? cur + '\n' : '') + 'Pulled from Athena ' + ds + '\n' + cleanText;
           if (typeof window.upsertPatient === 'function') window.upsertPatient(p2);
         }
-        if (r.chartDob && !p2.dob) { p2.dob = r.chartDob; if (typeof window.upsertPatient === 'function') window.upsertPatient(p2); }
+        if (r.chartDob) { var ndB = dg(r.chartDob), odB = dg(p2.dob || ''); if (ndB && ndB !== odB) { if (p2.dob) p2._dobPrev = p2.dob; p2.dob = r.chartDob; if (typeof window.upsertPatient === 'function') window.upsertPatient(p2); } } /* b126: banner-verified DOB corrects a junk stored DOB */
       } catch (e) {}
       try { var p3 = findPatient(name); if (window.__mlsSummarySanitize && p3 && typeof p3.summary === 'string' && hasCode(p3.summary)) { p3.summary = strip(p3.summary); if (typeof window.upsertPatient === 'function') window.upsertPatient(p3); } } catch (e) {}
       var pf = findPatient(name);
@@ -27496,7 +27511,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b125';
+  window.__MLS_AV = window.__MLS_AV || 'b126';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -27810,7 +27825,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-10-b125';
+  var MLS_APP_BUILD='2026-07-10-b126';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -34213,7 +34228,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260625afx2';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710b122c';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260710cv2';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260625su1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
