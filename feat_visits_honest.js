@@ -85,7 +85,9 @@
       var orig = M.addVisit.bind(M);
       var w = function (patient, visit) {
         try { if (gating > 0 && !isRealVisit(visit)) return null; } catch (e) {}
-        return orig(patient, visit);
+        /* pass ALL args through - the old 2-arg call dropped callers' opts
+           ({source:'athena-visits'}), mistagging every pane visit as 'import' */
+        return orig.apply(null, arguments);
       };
       w.__honestWrapped = true; w.__orig = orig;
       M.addVisit = w;
