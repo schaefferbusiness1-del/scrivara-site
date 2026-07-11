@@ -82,19 +82,27 @@
     /* ---------- wrappers (each idempotent) ---------- */
     function wrapAddVisit(M) {
       if (!M || typeof M.addVisit !== 'function' || M.addVisit.__honestWrapped) return;
-      var orig = M.addVisit.bind(M);
+      var cur = M.addVisit;
+      var orig = cur.bind(M);
       var w = function (patient, visit) {
         try { if (gating > 0 && !isRealVisit(visit)) return null; } catch (e) {}
         /* pass ALL args through - the old 2-arg call dropped callers' opts
            ({source:'athena-visits'}), mistagging every pane visit as 'import' */
         return orig.apply(null, arguments);
       };
+      /* __mlsHonestCycleFix: carry the inner chain's idempotency markers (e.g.
+         source-clarity's __mlsSrcWrapped) forward. Dropping them made clarity
+         re-wrap this wrapper on its heartbeat and armed the h1<->c1 infinite
+         mutual recursion ('visit filing is broken' banner). With markers
+         carried forward no module ever re-wraps above this one. */
+      try { for (var k in cur) { w[k] = cur[k]; } } catch (e) {}
       w.__honestWrapped = true; w.__orig = orig;
       M.addVisit = w;
     }
     function wrapSave(CV) {
       if (!CV || typeof CV._saveVisits !== 'function' || CV._saveVisits.__honestWrapped) return;
-      var orig = CV._saveVisits.bind(CV);
+      var cur = CV._saveVisits;
+      var orig = cur.bind(CV);
       var w = function () {
         var args = Array.prototype.slice.call(arguments);
         try {
@@ -104,12 +112,14 @@
         } catch (e) {}
         return orig.apply(CV, args);
       };
+      try { for (var k in cur) { w[k] = cur[k]; } } catch (e) {} /* carry markers forward */
       w.__honestWrapped = true; w.__orig = orig;
       CV._saveVisits = w;
     }
     function wrapRun(CV, M) {
       if (!CV || typeof CV.run !== 'function' || CV.run.__honestWrapped) return;
-      var orig = CV.run.bind(CV);
+      var cur = CV.run;
+      var orig = cur.bind(CV);
       var w = function (onStatus) {
         var cb = (typeof onStatus === 'function') ? onStatus : function () {};
         var patient = (typeof window.activePatient === 'function') ? window.activePatient() : null;
@@ -158,16 +168,19 @@
           return { blocked: true, real: 0, reason: (o && o.__timeout) ? 'timeout' : (o && o.err) ? 'error' : 'no-real-visits' };
         });
       };
+      try { for (var k in cur) { w[k] = cur[k]; } } catch (e) {} /* carry markers forward */
       w.__honestWrapped = true; w.__orig = orig;
       CV.run = w;
     }
     function wrapCohort(CO) {
       if (!CO || typeof CO._capturePatient !== 'function' || CO._capturePatient.__honestWrapped) return;
-      var orig = CO._capturePatient.bind(CO);
+      var cur = CO._capturePatient;
+      var orig = cur.bind(CO);
       var w = function () {
         var args = arguments, self = this;
         return withGate(function () { return orig.apply(self, args); });
       };
+      try { for (var k in cur) { w[k] = cur[k]; } } catch (e) {} /* carry markers forward */
       w.__honestWrapped = true; w.__orig = orig;
       CO._capturePatient = w;
     }
@@ -189,7 +202,7 @@
 
     /* ---------- public surface + revert ---------- */
     window.__mlsVisitsHonest = {
-      installed: true, _full: true, version: '1.1.2',
+      installed: true, _full: true, version: '1.1.3',
       isRealVisit: isRealVisit, isOptimistic: isOptimistic, ensureWrapped: ensureWrapped,
       _gating: function () { return gating; },
       revert: function () {
