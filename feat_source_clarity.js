@@ -278,9 +278,10 @@
     try {
       var d = window.__mlsVisitDetail;
       if (!d || typeof d.buildRead !== 'function' || d.buildRead.__mlsSrcWrapped) return;
-      _origBuildRead = d.buildRead;
+      var inner = d.buildRead;                       /* per-wrapper capture (cycle fix) */
+      if (!_origBuildRead) _origBuildRead = inner;   /* first-ever original, for unwrap */
       var wrapped = function (visit, patient) {
-        var res = _origBuildRead.apply(this, arguments);
+        var res = inner.apply(this, arguments);
         try {
           // §45 buildRead returns { body, editBtn, regenBtn, status } where body is the
           // read-view DOM node; older/other builds may return the node directly.
@@ -299,6 +300,7 @@
         } catch (e) {}
         return res;
       };
+      for (var k in inner) { try { wrapped[k] = inner[k]; } catch (e) {} } /* carry markers forward */
       wrapped.__mlsSrcWrapped = true;
       d.buildRead = wrapped;
     } catch (e) {}
@@ -316,9 +318,10 @@
     try {
       var d = window.__mlsVisitDetail;
       if (!d || typeof d.buildCard !== 'function' || d.buildCard.__mlsSrcWrapped) return;
-      _origBuildCard = d.buildCard;
+      var inner = d.buildCard;                       /* per-wrapper capture (cycle fix) */
+      if (!_origBuildCard) _origBuildCard = inner;
       var wrapped = function (visit, patient) {
-        var card = _origBuildCard.apply(this, arguments);
+        var card = inner.apply(this, arguments);
         try {
           if (card && card.nodeType === 1 && visit) {
             var head = card.querySelector('.mlsvd-head') || card;
@@ -333,6 +336,7 @@
         } catch (e) {}
         return card;
       };
+      for (var k in inner) { try { wrapped[k] = inner[k]; } catch (e) {} } /* carry markers forward */
       wrapped.__mlsSrcWrapped = true;
       d.buildCard = wrapped;
     } catch (e) {}
@@ -363,7 +367,8 @@
     try {
       var c = window.__mlsCopyVisits;
       if (!c || typeof c.run !== 'function' || c.run.__mlsSrcWrapped) return;
-      _origRun = c.run;
+      var inner = c.run;                             /* per-wrapper capture (cycle fix) */
+      if (!_origRun) _origRun = inner;
       var wrapped = function () {
         // snapshot athena visit ids BEFORE the import
         var before = {};
@@ -371,7 +376,7 @@
           var ctx0 = visitMap();
           ctx0.visits.forEach(function (v) { if (isAthena(v.source) && v.id != null) before[String(v.id)] = 1; });
         } catch (e) {}
-        var ret = _origRun.apply(this, arguments);
+        var ret = inner.apply(this, arguments);
         var announce = function () {
           try {
             var ctx1 = visitMap();
@@ -393,6 +398,7 @@
         else setTimeout(announce, 1500);
         return ret;
       };
+      for (var k in inner) { try { wrapped[k] = inner[k]; } catch (e) {} } /* carry markers forward */
       wrapped.__mlsSrcWrapped = true;
       c.run = wrapped;
     } catch (e) {}
@@ -410,9 +416,16 @@
     try {
       var m = window.__mlsVisitModel;
       if (!m || typeof m.addVisit !== 'function' || m.addVisit.__mlsSrcWrapped) return;
-      _origAddVisit = m.addVisit;
+      /* __mlsSrcCycleFix v2: capture the inner fn PER WRAPPER. The old code read
+         the shared module-level _origAddVisit AT CALL TIME and overwrote it on
+         every re-wrap - with feat_visits_honest wrapped in between, that armed
+         the h1<->c1 infinite mutual recursion (the 'visit filing is broken'
+         banner / RangeError ingest failures). A per-wrapper closure makes every
+         chain terminate at the real model function no matter the load order. */
+      var inner = m.addVisit;
+      if (!_origAddVisit) _origAddVisit = inner;     /* first-ever original, for unwrap */
       var wrapped = function () {
-        var r = _origAddVisit.apply(this, arguments);
+        var r = inner.apply(this, arguments);
         try {
           // tag importedAt = captured on the stored visit, purely additive metadata.
           if (r && typeof r === 'object') {
@@ -422,7 +435,7 @@
         return r;
       };
       wrapped.__mlsSrcWrapped = true;
-      for (var k in _origAddVisit) { try { wrapped[k] = _origAddVisit[k]; } catch (e) {} }
+      for (var k in inner) { try { wrapped[k] = inner[k]; } catch (e) {} } /* carry other modules' idempotency markers forward */
       m.addVisit = wrapped;
     } catch (e) {}
   }
