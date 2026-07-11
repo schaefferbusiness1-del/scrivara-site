@@ -45,7 +45,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.6';
+  var VERSION = 'vfx-1.2.7';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -143,6 +143,30 @@
   function uiFix() { echoTick(); nudgePanel(); }
   function scheduleUiFix() { uiDirty = true; }
 
+  /* ---- v1.2.7 REPAIRED-DOB GUARD -----------------------------------------
+     The b126 pull engine repairs junk stored DOBs from the banner and stashes
+     the old value on _dobPrev. The backend's adopt-when-newer merge can echo
+     the PRE-repair copy back and silently undo the repair (live: Beth Garahan
+     reverted 09/19/1965 -> junk 01/05/1984 within minutes; Zakorchemny's
+     stuck only because her sync won the race). At the savePatients chokepoint:
+     if an incoming row's dob EQUALS the recorded pre-repair junk value, put
+     the banner-verified dob back. The registry is built from the persisted
+     store at boot and updated whenever a repair passes through upsert. */
+  var _dobRepairs = {};
+  function recordDobRepair(p) {
+    try { if (p && p.id && p._dobPrev && p.dob && p.dob !== p._dobPrev) _dobRepairs[p.id] = { dob: p.dob, prev: p._dobPrev }; } catch (e) {}
+  }
+  function guardDob(p) {
+    try {
+      var r = p && p.id && _dobRepairs[p.id];
+      if (r && p.dob === r.prev) { p.dob = r.dob; p._dobPrev = r.prev; STATE.dobGuarded++; return 1; }
+    } catch (e) {}
+    return 0;
+  }
+  function seedDobRepairs() {
+    try { var ps = isFn(window.getPatients) ? (window.getPatients() || []) : []; for (var i = 0; i < ps.length; i++) recordDobRepair(ps[i]); } catch (e) {}
+  }
+
   /* ---- v1.2.1 HYDRATION GUARD (visit content can never be emptied) --------
      The backend stores visits as {date,type,detail,source} and
      loadPatientsFromServer ADOPTS the server copy wholesale when its `updated`
@@ -239,6 +263,7 @@
     var orig = window.upsertPatient;
     var w = function (p) {
       try { var n = scrubPatient(p); if (n) STATE.scrubbedOnWrite += n; } catch (e) {}
+      try { recordDobRepair(p); guardDob(p); } catch (e) {} /* v1.2.7 */
       var r = orig.apply(window, arguments);
       try { scheduleUiFix(); } catch (e) {}
       return r;
@@ -257,6 +282,7 @@
              visit content the server round-trip skeletonized, and must run
              before the persisted copy is overwritten). */
           hydrateFromPersisted(list);
+          for (var gd = 0; gd < list.length; gd++) { guardDob(list[gd]); } /* v1.2.7: server echo of a pre-repair junk DOB never undoes a banner repair */
           /* v1.2.6: THROTTLE the full-store junk scrub to >=5s. It was running
              scrubPatient over all ~1345 patients on EVERY save; the summary pump
              saves per-summary (via the base upsertPatient's internal savePatients),
@@ -510,7 +536,7 @@
   }
 
   /* ------------------------------- public -------------------------------- */
-  var STATE = { blocked: 0, scrubbedOnWrite: 0, hydrated: 0, summarized: 0, summarizeErrors: 0, lastMigrate: null, lastRetag: null };
+  var STATE = { blocked: 0, scrubbedOnWrite: 0, hydrated: 0, dobGuarded: 0, summarized: 0, summarizeErrors: 0, lastMigrate: null, lastRetag: null };
   function revert() {
     stopped = true;
     ['addVisit', 'derive', 'upsert', 'save'].forEach(function (k) {
@@ -543,6 +569,7 @@
   ensureWrapped();
   function boot() {
     ensureWrapped();
+    try { seedDobRepairs(); } catch (e) {} /* v1.2.7: learn banner-verified repairs before any merge can echo them away */
     try { var r = migrateNow(); if (r && (r.removed || r.patients)) console.log('[MLS visitfix] removed ' + r.removed + ' junk visit row(s) across ' + r.patients + ' patient(s) (stashed on _junkVisits).'); } catch (e) {}
     try { var rt = retagSources(); if (rt && rt.retagged) console.log('[MLS visitfix] retagged ' + rt.retagged + ' visits-pane row(s) across ' + rt.patients + ' patient(s) as From Athena (old value on _srcPrev).'); } catch (e) {}
     startWorkerTicker();
