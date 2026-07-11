@@ -45,7 +45,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.2';
+  var VERSION = 'vfx-1.2.4';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -154,6 +154,9 @@
      server-won fields (date/type/detail/source) still win. */
   function keyDT(v) { return normD(v && v.date) + '|' + S(v && v.type).replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 44); }
   function skeletalV(v) { return !!(v && (v.date || v.type) && !S(v.raw).trim() && !S(v.aiSummary).trim() && !S(v.id).trim()); }
+  var _hydCache = { map: null, at: 0 }; /* v1.2.3: burst saves (the summary pump
+     persists per visit) re-parsed the 5MB store on every save and saturated the
+     main thread - a rich row from <=10s ago is still rich, so cache the parse. */
   function hydrateFromPersisted(list) {
     var restored = 0, prevMap = null;
     try {
@@ -164,12 +167,16 @@
         for (var j = 0; j < p.visits.length; j++) { if (skeletalV(p.visits[j])) { needs = true; break; } }
         if (!needs) continue;
         if (!prevMap) { /* parse the persisted store ONCE, only when a skeleton exists */
-          prevMap = {};
-          try {
-            var rawLs = (typeof window.uns === 'function') ? localStorage.getItem(window.uns('patients')) : null;
-            var prev = rawLs ? JSON.parse(rawLs) : [];
-            for (var k = 0; k < prev.length; k++) { if (prev[k] && prev[k].id) prevMap[prev[k].id] = prev[k]; }
-          } catch (eL) { prevMap = {}; }
+          if (_hydCache.map && (Date.now() - _hydCache.at) < 10000) prevMap = _hydCache.map;
+          else {
+            prevMap = {};
+            try {
+              var rawLs = (typeof window.uns === 'function') ? localStorage.getItem(window.uns('patients')) : null;
+              var prev = rawLs ? JSON.parse(rawLs) : [];
+              for (var k = 0; k < prev.length; k++) { if (prev[k] && prev[k].id) prevMap[prev[k].id] = prev[k]; }
+            } catch (eL) { prevMap = {}; }
+            _hydCache.map = prevMap; _hydCache.at = Date.now();
+          }
         }
         var pp = prevMap[p.id];
         if (!pp || !Array.isArray(pp.visits) || !pp.visits.length) continue;
@@ -374,8 +381,10 @@
     return m.summarizeVisit(pid, vid).then(function () {
       pumpBusy = false; consecErr = 0;
       STATE.summarized++; PER_PATIENT[pid] = (PER_PATIENT[pid] || 0) + 1;
-      try { if (window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e) {}
-      try { uiFix(); } catch (e) {}
+      /* v1.2.4: never force a full visit-UI render per summary in a HIDDEN tab -
+         the scheduled uiFix covers it; a visible tab still refreshes live */
+      try { if (!document.hidden && window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e) {}
+      try { scheduleUiFix(); } catch (e) {}
     }, function (err) {
       pumpBusy = false; consecErr++; STATE.summarizeErrors++;
       if (consecErr >= 3) {
@@ -422,7 +431,13 @@
         _wkTicks++;
         try { if (_wkTicks <= 40) ensureWrapped(); } catch (e) {}
         try { if (uiDirty || _wkTicks % 4 === 0) { uiDirty = false; uiFix(); } } catch (e) {}
-        if (_wkTicks % 3 === 0) { try { pumpOnce(); } catch (e) {} }
+        /* v1.2.4: VISIBILITY-PACED pump. The worker tick is immune to hidden-tab
+           timer throttling - which had always been the pump's accidental governor
+           (v1.1.0's setTimeout loop ran ~1/min hidden). Unthrottled 4.5s pumping
+           in a hidden low-priority renderer, with a full-store save per summary,
+           wedged the tab mid-drain (live, twice). Hidden: ~18s/summary; visible:
+           4.5s. Slow is fine - the criterion is background generation, not speed. */
+        if (_wkTicks % (document.hidden ? 12 : 3) === 0) { try { pumpOnce(); } catch (e) {} }
         if (_wkTicks % 400 === 0) { try { sweepBacklog(); } catch (e) {} } /* v1.2.2: re-sweep ~10 min */
       };
     } catch (e) { _wk = null; }
@@ -503,7 +518,11 @@
     try { var rt = retagSources(); if (rt && rt.retagged) console.log('[MLS visitfix] retagged ' + rt.retagged + ' visits-pane row(s) across ' + rt.patients + ' patient(s) as From Athena (old value on _srcPrev).'); } catch (e) {}
     startWorkerTicker();
     try { var sw = sweepBacklog(); if (sw) console.log('[MLS visitfix] backlog sweep queued ' + sw + ' patient(s) with unsummarized visits.'); } catch (e) {}
-    setTimeout(loop, 6000);
+    /* v1.2.3: ONE pump driver. Running the setTimeout loop AND the worker tick
+       doubled the cadence to ~2.2s; with a full-store save per summary that
+       saturated the renderer mid-drain (live freeze). The loop is only the
+       fallback when the Worker could not be created. */
+    if (!_wk) setTimeout(loop, 6000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 1500);
 })();
