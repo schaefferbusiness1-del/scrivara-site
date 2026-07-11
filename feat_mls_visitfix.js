@@ -45,7 +45,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.7';
+  var VERSION = 'vfx-1.2.8';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -167,6 +167,31 @@
     try { var ps = isFn(window.getPatients) ? (window.getPatients() || []) : []; for (var i = 0; i < ps.length; i++) recordDobRepair(ps[i]); } catch (e) {}
   }
 
+  /* ---- v1.2.8 SAME-ID DEDUPE ---------------------------------------------
+     Live finding 2026-07-11: byte-identical visit objects (SAME v.id, same
+     captured stamp) appeared TWICE in a patient's visits array (David A
+     Jackson 7/10, Brian Greenstein 7/11 - both filed by the day-pull
+     chart-summary path around a pull; ZZ probe had 2 more). A visit id is
+     minted once, so two same-id rows can only be an array-level double-append
+     (or a server echo of one) - never two real visits. Keep the FIRST
+     occurrence (preserves position), drop the extra copies, count them.
+     Runs at both write chokepoints so a doubled array can never persist. */
+  function dedupeSameId(p) {
+    try {
+      if (!p || !Array.isArray(p.visits) || p.visits.length < 2) return 0;
+      var seen = {}, out = [], removed = 0;
+      for (var i = 0; i < p.visits.length; i++) {
+        var v = p.visits[i];
+        var k = v ? S(v.id).trim() : '';
+        if (k && seen[k]) { removed++; continue; }
+        if (k) seen[k] = 1;
+        out.push(v);
+      }
+      if (removed) { p.visits = out; STATE.dedupedById += removed; }
+      return removed;
+    } catch (e) { return 0; }
+  }
+
   /* ---- v1.2.1 HYDRATION GUARD (visit content can never be emptied) --------
      The backend stores visits as {date,type,detail,source} and
      loadPatientsFromServer ADOPTS the server copy wholesale when its `updated`
@@ -264,6 +289,7 @@
     var w = function (p) {
       try { var n = scrubPatient(p); if (n) STATE.scrubbedOnWrite += n; } catch (e) {}
       try { recordDobRepair(p); guardDob(p); } catch (e) {} /* v1.2.7 */
+      try { dedupeSameId(p); } catch (e) {} /* v1.2.8 */
       var r = orig.apply(window, arguments);
       try { scheduleUiFix(); } catch (e) {}
       return r;
@@ -282,7 +308,7 @@
              visit content the server round-trip skeletonized, and must run
              before the persisted copy is overwritten). */
           hydrateFromPersisted(list);
-          for (var gd = 0; gd < list.length; gd++) { guardDob(list[gd]); } /* v1.2.7: server echo of a pre-repair junk DOB never undoes a banner repair */
+          for (var gd = 0; gd < list.length; gd++) { guardDob(list[gd]); dedupeSameId(list[gd]); } /* v1.2.7 dob guard; v1.2.8 same-id dedupe (cheap: skips <2-visit patients) */
           /* v1.2.6: THROTTLE the full-store junk scrub to >=5s. It was running
              scrubPatient over all ~1345 patients on EVERY save; the summary pump
              saves per-summary (via the base upsertPatient's internal savePatients),
@@ -536,7 +562,7 @@
   }
 
   /* ------------------------------- public -------------------------------- */
-  var STATE = { blocked: 0, scrubbedOnWrite: 0, hydrated: 0, dobGuarded: 0, summarized: 0, summarizeErrors: 0, lastMigrate: null, lastRetag: null };
+  var STATE = { blocked: 0, scrubbedOnWrite: 0, hydrated: 0, dobGuarded: 0, dedupedById: 0, summarized: 0, summarizeErrors: 0, lastMigrate: null, lastRetag: null };
   function revert() {
     stopped = true;
     ['addVisit', 'derive', 'upsert', 'save'].forEach(function (k) {
