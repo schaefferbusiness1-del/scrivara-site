@@ -1,5 +1,5 @@
 {
-  "version": "1.98",
+  "version": "2.01",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v1.98 - MLS Assist updates itself in place; a direct download of this tested build is also available from Settings. Adds the focus guardian (after any pull or chart read that brings athenaOne forward you are always returned to MLS, even if the operation fails) and read-only diagnostics that explain a write-gate refusal instead of leaving it unexplained. Keeps the verified per-section write bridge, the patient-identity gate, junk-frame guards and week-strip date navigation."
+  "notes": "v2.01 - Visits reader honesty: the Visits-and-Cases reader can no longer report an empty history unless athenaOne explicitly shows zero events (a declared event count with unreadable rows is a retryable refusal, never a silent empty); adds menu-close recovery for the clientsummary chart layout. Keeps the tab hand-off panel with pinning + self-healing keep-alive, the focus guardian, verified per-section write bridge, patient-identity gates, junk-frame guards and week-strip date navigation."
 }
