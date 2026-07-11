@@ -2756,11 +2756,32 @@
       var type = n > 1 ? baseType + ' (' + n + ')' : baseType;       /* <=80 chars; both same-day same-type rows survive */
       batch.push({ ymd: ymd, type: type, text: text, provider: collapse(v.provider).slice(0, 120) });
     }
-    var added = 0, skippedExisting = 0, errs = 0, consecErr = 0, lastErr = '';
+    var added = 0, skippedExisting = 0, upgraded = 0, rehydrated = 0, errs = 0, consecErr = 0, lastErr = '';
     for (var j = 0; j < batch.length; j++) {
       if (added >= CFG.maxPerPatient) break;
       var b = batch[j];
-      if (have[stableKey(b.ymd, b.type)]) { skippedExisting++; continue; } /* idempotent re-runs, independent of cpt[0] */
+      if (have[stableKey(b.ymd, b.type)]) {
+        skippedExisting++;
+        /* pane-confirmed: upgrade a legacy 'import'/untagged row to From Athena
+           (the pane just showed this same-date same-type visit; old tag stashed) */
+        try {
+          for (var q = 0; q < (p.visits || []).length; q++) {
+            var exv = p.visits[q]; if (!exv) continue;
+            if (stableKey(svcToYMD(exv.date) || S(exv.date), S(exv.type)) !== stableKey(b.ymd, b.type)) continue;
+            if (!exv.source || exv.source === 'import') { exv._srcPrev = S(exv.source); exv.source = 'athena-visits'; upgraded++; }
+            /* server round-trips strip visit content to {date,type,detail,source}
+               (live: Patricia Allen 5/5 skeletal after one reload) - put the pane
+               text back on skeletal rows so cards/AI summaries work again */
+            if (!S(exv.raw).trim() && b.text) {
+              exv.raw = (b.provider ? 'Provider: ' + b.provider + '\n' : '') + b.text;
+              if (!S(exv.findings).trim()) exv.findings = b.text.replace(/\s+/g, ' ').slice(0, 160);
+              rehydrated++;
+            }
+            break;
+          }
+        } catch (eU) {}
+        continue; /* idempotent re-runs, independent of cpt[0] */
+      }
       var cpt = [], icd = [];
       try { if (typeof M._cpt === 'function') cpt = M._cpt(b.text) || []; } catch (e) { cpt = []; }
       try { if (typeof M._icd10 === 'function') icd = M._icd10(b.text) || []; } catch (e) { icd = []; }
@@ -2770,11 +2791,14 @@
           type: b.type,
           raw: (b.provider ? 'Provider: ' + b.provider + '\n' : '') + b.text,  /* provider rides atop the collapsible raw pre (no provider field in the model/UI) */
           findings: b.text.replace(/\s+/g, ' ').slice(0, 160),                 /* at-a-glance chip before any summary exists */
-          cpt: cpt, icd10: icd
+          cpt: cpt, icd10: icd,
           /* aiSummary left EMPTY on purpose: that is the flag the live chart UI
            * keys on - it renders 'Generate AI summary' / 'Summarize all (N)'
            * buttons for empty-aiSummary visits (feat_visits.js b84, verified).
            * No OpenAI call is made here (cost guardrail). */
+          source: 'athena-visits' /* IN the payload: the cache-pinned b84 addVisit
+           * drops opts.source but _normVisit honors v.source (live root-cause of
+           * every pane row filing as 'import'/Untagged) */
         }, { source: 'athena-visits' });
         if (stored) { added++; have[stableKey(b.ymd, b.type)] = 1; consecErr = 0; }
       } catch (e) {
@@ -2785,7 +2809,8 @@
         /* else CONTINUE: one poison visit never drops the rest (wf_9 #5) */
       }
     }
-    return { added: added, skipped: skippedExisting, reason: errs ? 'ingest-partial(' + errs + '):' + lastErr : '' };
+    try { if ((upgraded || rehydrated) && !added && typeof window.upsertPatient === 'function') window.upsertPatient(p); } catch (eP) {} /* addVisit persists only when it adds */
+    return { added: added, skipped: skippedExisting, upgraded: upgraded, rehydrated: rehydrated, reason: errs ? 'ingest-partial(' + errs + '):' + lastErr : '' };
   }
 
   /* ------------------------- one patient's backfill ------------------------ */
