@@ -45,7 +45,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.1';
+  var VERSION = 'vfx-1.2.2';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -388,6 +388,23 @@
     if (stopped) return;
     Promise.resolve().then(pumpOnce).then(function () { setTimeout(loop, CFG.tickMs); }, function () { setTimeout(loop, CFG.tickMs); });
   }
+  /* v1.2.2 BACKLOG SWEEP: the pump queue is session-scoped (filled by addVisit and
+     the active patient), so a backlog left by an outage/reload never drained on its
+     own - live: 250 pending visits across 21 patients sat idle after the AI
+     transport recovered. Enqueue every patient with an eligible unsummarized visit
+     at boot and every ~10 min; the pump's own rate limits keep it gentle. */
+  function sweepBacklog() {
+    var n = 0;
+    try {
+      var ps = isFn(window.getPatients) ? (window.getPatients() || []) : [];
+      for (var i = 0; i < ps.length; i++) {
+        var p = ps[i]; if (!p || !Array.isArray(p.visits)) continue;
+        for (var j = 0; j < p.visits.length; j++) { if (eligible(p.visits[j])) { enqueue(p.id); n++; break; } }
+      }
+    } catch (e) {}
+    STATE.lastSweep = { patients: n, ticks: _wkTicks };
+    return n;
+  }
 
   /* -------- v1.2.0 worker ticker: immune to hidden-tab timer throttling ----
      Main-thread setInterval ticks ~0 times while the MLS tab is hidden (which
@@ -406,6 +423,7 @@
         try { if (_wkTicks <= 40) ensureWrapped(); } catch (e) {}
         try { if (uiDirty || _wkTicks % 4 === 0) { uiDirty = false; uiFix(); } } catch (e) {}
         if (_wkTicks % 3 === 0) { try { pumpOnce(); } catch (e) {} }
+        if (_wkTicks % 400 === 0) { try { sweepBacklog(); } catch (e) {} } /* v1.2.2: re-sweep ~10 min */
       };
     } catch (e) { _wk = null; }
   }
@@ -470,7 +488,7 @@
     isJunkVisit: isJunkVisit, selfTest: selfTest,
     migrateNow: migrateNow, retagSources: retagSources, restore: restore,
     enqueue: enqueue, queue: function () { return Q.slice(); },
-    uiFix: uiFix, _hydrate: hydrateFromPersisted,
+    uiFix: uiFix, _hydrate: hydrateFromPersisted, sweepBacklog: sweepBacklog,
     revert: revert
   };
 
@@ -484,6 +502,7 @@
     try { var r = migrateNow(); if (r && (r.removed || r.patients)) console.log('[MLS visitfix] removed ' + r.removed + ' junk visit row(s) across ' + r.patients + ' patient(s) (stashed on _junkVisits).'); } catch (e) {}
     try { var rt = retagSources(); if (rt && rt.retagged) console.log('[MLS visitfix] retagged ' + rt.retagged + ' visits-pane row(s) across ' + rt.patients + ' patient(s) as From Athena (old value on _srcPrev).'); } catch (e) {}
     startWorkerTicker();
+    try { var sw = sweepBacklog(); if (sw) console.log('[MLS visitfix] backlog sweep queued ' + sw + ' patient(s) with unsummarized visits.'); } catch (e) {}
     setTimeout(loop, 6000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 1500);
