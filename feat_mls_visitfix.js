@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_visitfix.js  ->  window.__mlsVisitFix  (vfx-1.2.0)
+ * feat_mls_visitfix.js  ->  window.__mlsVisitFix  (vfx-1.0.0)
  * -----------------------------------------------------------------------------
  * §2.2 VISIT-TIMELINE QUALITY (certification item): the patient visit timeline
  * must hold ONLY REAL visits. Live junk shapes it removes and blocks forever:
@@ -12,26 +12,13 @@
  *   - {type:'Imported chart'} legacy blob rows (deriveFromLegacy re-derivations
  *     of patient.summary - same blob under another name; the derivation is
  *     gated off too, so they cannot come back).
- * Plus the behavior fixes:
+ * Plus the two behavior fixes:
  *   - BACKGROUND AI SUMMARIES: visits saved with raw text but no aiSummary are
  *     summarized automatically (rate-limited queue over the app's own
  *     __mlsVisitModel.summarizeVisit -> aiCallRaw), so cards never sit on
  *     "AI summary pending - click to view & generate" after a pull.
- *   - Removed rows are STASHED on patient._junkVisits (cap 60) - restore('ALL'|id)
+ *   - Removed rows are STASHED on patient._junkVisits (cap 40) - restore('ALL'|id)
  *     puts them back; nothing is destroyed.
- * v1.2.0 (duplicate-visit render + provenance, live root-caused):
- *   - WORKER-PACED TICKER: main-thread setInterval is throttled to ~0 ticks in a
- *     hidden MLS tab (measured live: 0 ticks/3.6s while a pull foregrounds
- *     athena) - so the echo-hider and panel refresh NEVER ran exactly when
- *     pulls were filing visits, leaving the same visit rendered top AND bottom.
- *     A blob-Worker postMessage tick (same pattern as the b121 pack) is immune.
- *   - EVENT-DRIVEN UI FIX: every addVisit filing / scrub-on-write also fixes
- *     the render immediately (echo hide + __mlsVisitHistoryExt.rebuild nudge).
- *   - SOURCE RETAG (one-shot, stashed on v._srcPrev): visits filed by the
- *     visits-pane backfill were stored source:'import' because the cache-pinned
- *     feat_visits.js?v=b84 addVisit drops opts.source - the pane row shape
- *     ("Provider: ...\n<type> | MM-DD-YYYY, ...") is retagged 'athena-visits'
- *     so they render "From Athena". The pack now also stamps v.source directly.
  *
  * Wrap points (all additive, all reverted by revert()):
  *   __mlsVisitModel.addVisit        - junk gate (blocks new junk at the chokepoint)
@@ -45,7 +32,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.0';
+  var VERSION = 'vfx-1.1.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -115,7 +102,7 @@
      "Visit timeline" (.mls-tl-hist, bottom). When the patient has REAL model
      visits, hide the summary echoes so each visit appears exactly once, in
      the right place; patients with no model visits keep the read-only rows
-     (some history beats none). Gentle: one cheap class toggle per tick,
+     (some history beats none). Gentle: one cheap class toggle on a 1.5s tick,
      app page only (never touches athena). */
   function echoTick() {
     try {
@@ -127,14 +114,6 @@
       for (var i = 0; i < rows.length; i++) rows[i].style.display = hasModel ? 'none' : '';
     } catch (e) {}
   }
-  /* v1.2.0: sig-guarded refresh of the rich Visit-history panel - its own 900ms
-     setInterval is frozen in a hidden tab, so filings during a pull rendered a
-     stale "0 visits" panel until a manual poke. Cheap: rebuild(false) returns
-     on an unchanged data signature. */
-  function nudgePanel() {
-    try { var X = window.__mlsVisitHistoryExt; if (X && isFn(X.rebuild)) X.rebuild(false); } catch (e) {}
-  }
-  function uiFix() { echoTick(); nudgePanel(); }
 
   /* ------------------------------- wraps --------------------------------- */
   var wrapped = { addVisit: null, derive: null, upsert: null, save: null };
@@ -151,7 +130,6 @@
       } catch (e) {}
       var v = orig.apply(m, arguments);
       try { if (v && v.raw && !S(v.aiSummary).trim()) enqueue(patientId); } catch (e) {}
-      try { if (v) uiFix(); } catch (e) {} /* v1.2.0: never leave a fresh filing rendered twice */
       return v;
     };
     w.__vfxWrapped = true; w.__vfxOrig = orig;
@@ -172,9 +150,7 @@
     var orig = window.upsertPatient;
     var w = function (p) {
       try { var n = scrubPatient(p); if (n) STATE.scrubbedOnWrite += n; } catch (e) {}
-      var r = orig.apply(window, arguments);
-      try { uiFix(); } catch (e) {}
-      return r;
+      return orig.apply(window, arguments);
     };
     w.__vfxWrapped = true; w.__vfxOrig = orig;
     window.upsertPatient = w; wrapped.upsert = { host: window, key: 'upsertPatient', orig: orig };
@@ -188,9 +164,7 @@
           for (var i = 0; i < list.length; i++) { var n = scrubPatient(list[i]); if (n) STATE.scrubbedOnWrite += n; }
         }
       } catch (e) {}
-      var r = orig.apply(window, arguments);
-      try { uiFix(); } catch (e) {}
-      return r;
+      return orig.apply(window, arguments);
     };
     w.__vfxWrapped = true; w.__vfxOrig = orig;
     window.savePatients = w; wrapped.save = { host: window, key: 'savePatients', orig: orig };
@@ -213,43 +187,6 @@
       }
     } catch (e) { out.error = S(e && e.message || e).slice(0, 120); }
     STATE.lastMigrate = out;
-    return out;
-  }
-  /* v1.2.0: retag visits that the visits-pane backfill filed while the cache-
-     pinned b84 addVisit was dropping opts.source. Shape is unmistakable: the
-     backfill writes raw 'Provider: <name>\n<type> | <MM-DD-YYYY>, ...' (or the
-     bare '<type> | <MM-DD-YYYY>, ...' textHead when the pane row had no
-     provider). Old value stashed on v._srcPrev; re-runnable; never touches
-     rows that already carry a real source. */
-  var RE_PANE_PROV = /^Provider: [^\n]+\n/;
-  var RE_PANE_HEAD = /\| [01]?\d-[0-3]?\d-\d{4},/;
-  function retagSources() {
-    var out = { retagged: 0, patients: 0 };
-    try {
-      var ps = isFn(window.getPatients) ? (window.getPatients() || []) : [];
-      var touched = [];
-      for (var i = 0; i < ps.length; i++) {
-        var p = ps[i]; if (!p || !Array.isArray(p.visits)) continue;
-        var hit = 0;
-        for (var j = 0; j < p.visits.length; j++) {
-          var v = p.visits[j]; if (!v) continue;
-          var src = S(v.source);
-          if (src && src !== 'import') continue;
-          var raw = S(v.raw), fin = S(v.findings);
-          if (RE_PANE_PROV.test(raw) || RE_PANE_HEAD.test(raw) || RE_PANE_HEAD.test(fin)) {
-            v._srcPrev = src || '';
-            v.source = 'athena-visits';
-            hit++;
-          }
-        }
-        if (hit) { out.retagged += hit; out.patients++; touched.push(p); }
-      }
-      if (touched.length) {
-        if (isFn(window.savePatients)) window.savePatients(ps);
-        else if (isFn(window.upsertPatient)) for (var k = 0; k < touched.length; k++) window.upsertPatient(touched[k]);
-      }
-    } catch (e) { out.error = S(e && e.message || e).slice(0, 120); }
-    STATE.lastRetag = out;
     return out;
   }
   function restore(which) {
@@ -314,7 +251,6 @@
       pumpBusy = false; consecErr = 0;
       STATE.summarized++; PER_PATIENT[pid] = (PER_PATIENT[pid] || 0) + 1;
       try { if (window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e) {}
-      try { uiFix(); } catch (e) {}
     }, function (err) {
       pumpBusy = false; consecErr++; STATE.summarizeErrors++;
       if (consecErr >= 3) {
@@ -326,27 +262,6 @@
   function loop() {
     if (stopped) return;
     Promise.resolve().then(pumpOnce).then(function () { setTimeout(loop, CFG.tickMs); }, function () { setTimeout(loop, CFG.tickMs); });
-  }
-
-  /* -------- v1.2.0 worker ticker: immune to hidden-tab timer throttling ----
-     Main-thread setInterval ticks ~0 times while the MLS tab is hidden (which
-     is exactly when pulls file visits - athena is foregrounded). Worker timers
-     and their postMessage handlers still fire. Same blob-Worker pattern as the
-     b121 pack; degrades to the setTimeout paths if Worker creation fails. */
-  var _wk = null, _wkUrl = null, _wkTicks = 0;
-  function startWorkerTicker() {
-    if (_wk) return;
-    try {
-      _wkUrl = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},1500)'], { type: 'text/javascript' }));
-      _wk = new Worker(_wkUrl);
-      _wk.onmessage = function () {
-        if (stopped) return;
-        _wkTicks++;
-        try { if (_wkTicks <= 40) ensureWrapped(); } catch (e) {}
-        try { uiFix(); } catch (e) {}
-        if (_wkTicks % 3 === 0) { try { pumpOnce(); } catch (e) {} }
-      };
-    } catch (e) { _wk = null; }
   }
 
   /* ------------------------------ self-test ------------------------------ */
@@ -371,23 +286,11 @@
     for (var i = 0; i < cases.length; i++) {
       if (isJunkVisit(cases[i][0]) !== cases[i][1]) fails.push(i);
     }
-    /* v1.2.0: retag shape checks ride along */
-    var rt = [
-      [{ source: 'import', raw: 'Provider: Matthew Schaeffer, MD\nfluoro non sedation | 07-09-2026, Matthew Schaeffer, MD, Phys. Med. & Rehab.' }, true],
-      [{ source: 'import', raw: 'order group | 07-02-2026, Matthew Schaeffer, MD' }, true],
-      [{ source: 'athena-copy', raw: 'Provider: X\ny | 07-02-2026, Z' }, false],
-      [{ source: 'import', raw: 'Pulled from Athena 6/25/2026 PROBLEMS: ...' }, false]
-    ];
-    for (var j = 0; j < rt.length; j++) {
-      var v = rt[j][0];
-      var would = (!S(v.source) || S(v.source) === 'import') && (RE_PANE_PROV.test(S(v.raw)) || RE_PANE_HEAD.test(S(v.raw)) || RE_PANE_HEAD.test(S(v.findings)));
-      if (would !== rt[j][1]) fails.push('rt' + j);
-    }
-    return { pass: !fails.length, fails: fails, total: cases.length + rt.length };
+    return { pass: !fails.length, fails: fails, total: cases.length };
   }
 
   /* ------------------------------- public -------------------------------- */
-  var STATE = { blocked: 0, scrubbedOnWrite: 0, summarized: 0, summarizeErrors: 0, lastMigrate: null, lastRetag: null };
+  var STATE = { blocked: 0, scrubbedOnWrite: 0, summarized: 0, summarizeErrors: 0, lastMigrate: null };
   function revert() {
     stopped = true;
     ['addVisit', 'derive', 'upsert', 'save'].forEach(function (k) {
@@ -396,9 +299,7 @@
       wrapped[k] = null;
     });
     try { clearInterval(ensureIv); } catch (e) {}
-    try { if (_wk) _wk.terminate(); } catch (e) {}
-    try { if (_wkUrl) URL.revokeObjectURL(_wkUrl); } catch (e) {}
-    _wk = null; _wkUrl = null;
+    try { clearInterval(echoIv); } catch (e) {}
     try { var tl = document.getElementById('ptTimeline'); if (tl) { var rows = tl.querySelectorAll('.mls-tl-hist'); for (var i = 0; i < rows.length; i++) rows[i].style.display = ''; } } catch (e) {}
     window.__mlsVisitFix.installed = false;
   }
@@ -407,22 +308,20 @@
     installed: true, version: VERSION,
     state: STATE, cfg: CFG,
     isJunkVisit: isJunkVisit, selfTest: selfTest,
-    migrateNow: migrateNow, retagSources: retagSources, restore: restore,
+    migrateNow: migrateNow, restore: restore,
     enqueue: enqueue, queue: function () { return Q.slice(); },
-    uiFix: uiFix,
     revert: revert
   };
 
-  /* boot: wraps may race satellite load order - heartbeat like visits_honest
-     (kept alongside the worker ticker for the visible-tab boot window) */
+  /* boot: wraps may race satellite load order - heartbeat like visits_honest */
   var ticks = 0;
   var ensureIv = setInterval(function () { ensureWrapped(); if (++ticks > 60) clearInterval(ensureIv); }, 500);
+  var echoIv = null;
   ensureWrapped();
   function boot() {
     ensureWrapped();
     try { var r = migrateNow(); if (r && (r.removed || r.patients)) console.log('[MLS visitfix] removed ' + r.removed + ' junk visit row(s) across ' + r.patients + ' patient(s) (stashed on _junkVisits).'); } catch (e) {}
-    try { var rt = retagSources(); if (rt && rt.retagged) console.log('[MLS visitfix] retagged ' + rt.retagged + ' visits-pane row(s) across ' + rt.patients + ' patient(s) as From Athena (old value on _srcPrev).'); } catch (e) {}
-    startWorkerTicker();
+    try { if (!echoIv) echoIv = setInterval(echoTick, 1500); } catch (e) {}
     setTimeout(loop, 6000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 1500);
