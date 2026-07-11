@@ -285,9 +285,11 @@ load(); renderPlatforms(); dash();
     '<button class="btn violet" id="repGenBtn" onclick="window.__repGen()">✨ Write my Google listing</button><span class="note" id="repGenNote"></span></div>'+
     '<div id="repGenOut"></div></div>'+
 
-    '<div class="card" id="repUpsell" style="border-color:rgba(124,58,237,.5)"><h2>🚀 Optional: let MLS run marketing for you</h2>'+
-    '<p class="hint"><b>MLS Marketing (paid add-on)</b> — separate from everything above, which is free. If you want it, MLS keeps your listing optimized month after month, drafts replies to every review, and runs compliant review-request campaigns to real patients, plus optional paid ads. Everything stays doctor-approved before it publishes.</p>'+
-    '<div class="row"><button class="btn green" onclick="try{localStorage.setItem(\'mlsRepUpsell\',\'interested\');}catch(e){};this.textContent=\'✓ Noted — MLS will reach out\';this.disabled=true;">Tell me more</button><span class="note">No commitment — this just flags that you’d like details.</span></div></div>';
+    '<div class="card" id="repUpsell" style="border-color:rgba(124,58,237,.5)"><h2>🚀 Let MLS run your marketing</h2>'+
+    '<p class="hint"><b>MLS Marketing</b> keeps your Google Business Profile optimized, drafts a reply to every review, and runs compliant review-request campaigns to real patients — every change doctor-approved before it publishes. Start with the free guided setup; add paid automation whenever you\'re ready.</p>'+
+    '<div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn green" style="text-decoration:none" href="gbp-setup.html">🌟 Set up my Google Business Profile (guided)</a>'+
+    '<a class="btn violet" style="text-decoration:none" href="mls-marketing.html">📈 See marketing plans</a></div>'+
+    '<p class="note" style="margin-top:6px">The guided setup is free and MLS never sees your Google password. Paid automation is optional — you approve everything before it publishes.</p></div>';
   if(docCard && docCard.parentNode){ docCard.parentNode.insertBefore(host, docCard.nextSibling); }
   else document.querySelector('.wrap').appendChild(host);
 
