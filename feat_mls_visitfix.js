@@ -45,7 +45,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.4';
+  var VERSION = 'vfx-1.2.5';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -360,6 +360,14 @@
   var pumpBusy = false, consecErr = 0, pausedUntil = 0, stopped = false;
   function pumpOnce() {
     if (pumpBusy || stopped) return Promise.resolve();
+    /* v1.2.5: pump ONLY while the tab is visible. Each generated summary triggers
+       a full-store localStorage write (+ server POST); draining a large backlog
+       through a HIDDEN, low-priority renderer let GC fall behind and wedged the
+       tab (live, repeatedly). Visible-only is the real-world condition anyway -
+       the clinician is looking at MLS - and it is impossible to wedge a
+       backgrounded tab. Generation resumes automatically when MLS is refocused;
+       "background" here means "no click needed", not "while hidden". */
+    if (typeof document !== 'undefined' && document.hidden) return Promise.resolve();
     if (Date.now() < pausedUntil) return Promise.resolve();
     if (STATE.summarized >= CFG.maxPerSession) return Promise.resolve();
     var m = M(); if (!m || !isFn(m.summarizeVisit)) return Promise.resolve();
@@ -430,14 +438,11 @@
         if (stopped) return;
         _wkTicks++;
         try { if (_wkTicks <= 40) ensureWrapped(); } catch (e) {}
-        try { if (uiDirty || _wkTicks % 4 === 0) { uiDirty = false; uiFix(); } } catch (e) {}
-        /* v1.2.4: VISIBILITY-PACED pump. The worker tick is immune to hidden-tab
-           timer throttling - which had always been the pump's accidental governor
-           (v1.1.0's setTimeout loop ran ~1/min hidden). Unthrottled 4.5s pumping
-           in a hidden low-priority renderer, with a full-store save per summary,
-           wedged the tab mid-drain (live, twice). Hidden: ~18s/summary; visible:
-           4.5s. Slow is fine - the criterion is background generation, not speed. */
-        if (_wkTicks % (document.hidden ? 12 : 3) === 0) { try { pumpOnce(); } catch (e) {} }
+        /* v1.2.5: no UI churn while hidden - nothing is on screen to fix, and the
+           nudge/echo work is pure overhead on a deprioritized renderer */
+        try { if (!document.hidden && (uiDirty || _wkTicks % 4 === 0)) { uiDirty = false; uiFix(); } } catch (e) {}
+        /* pumpOnce self-gates on document.hidden (visible-only); tick every ~4.5s */
+        if (_wkTicks % 3 === 0) { try { pumpOnce(); } catch (e) {} }
         if (_wkTicks % 400 === 0) { try { sweepBacklog(); } catch (e) {} } /* v1.2.2: re-sweep ~10 min */
       };
     } catch (e) { _wk = null; }
