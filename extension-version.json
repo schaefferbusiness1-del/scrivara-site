@@ -1,5 +1,5 @@
 {
-  "version": "2.01",
+  "version": "2.02",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.01 - Visits reader honesty: the Visits-and-Cases reader can no longer report an empty history unless athenaOne explicitly shows zero events (a declared event count with unreadable rows is a retryable refusal, never a silent empty); adds menu-close recovery for the clientsummary chart layout. Keeps the tab hand-off panel with pinning + self-healing keep-alive, the focus guardian, verified per-section write bridge, patient-identity gates, junk-frame guards and week-strip date navigation."
+  "notes": "v2.02 - Visits reader parses PT/booking rows that carry a time before the date-comma (fixed a class of charts, e.g. physical-therapy patients, whose entire history was previously unreadable); skips future (upcoming) bookings while still counting them so an all-upcoming pane is an honest empty; identity de-race keeps the DOB gate strict (banner name + requested DOB) across multi-chip briefing surfaces. Keeps the tab hand-off panel, self-healing keep-alive, focus guardian, verified per-section write bridge, order-never-submit policy, and week-strip date navigation."
 }
