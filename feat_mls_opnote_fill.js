@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.5.0';
+  var VERSION = 'onf-1.5.1';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -38,6 +38,9 @@
   function S(x) { return x == null ? '' : String(x); }
   function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function toast(m, k) { safe(function () { if (isFn(window.toast)) window.toast(m, k || ''); }); }
+  /* a real MRN / patient id is numeric (4-15 digits). An internal app id like
+     "pmrhsi1kbgl2p" must NEVER be printed as the MRN on a clinical note. */
+  function plausibleMrn(s) { return /^\d{4,15}$/.test(S(s).replace(/[-\s]/g, '')); }
 
   function css() {
     if ($(STYLE_ID)) return;
@@ -296,7 +299,7 @@
     if (isProv && prov) return prov;
     if (/(date of birth|birth ?date|\bdob\b)/.test(l) && dob) return dob;
     if (/(date of procedure|procedure date|date of service|service date|\bdos\b|date of operation|operation date|encounter date|todays date|today s date)/.test(l) && dt) return dt;
-    if (/(mrn|medical record|patient id|chart (number|id|no)|account (number|no))/.test(l) && mrn) return mrn;
+    if (/(mrn|medical record|patient id|chart (number|id|no)|account (number|no))/.test(l) && mrn && plausibleMrn(mrn)) return mrn;
     if (!isProv && /(patient name|patient|^name$|full name)/.test(l) && pname) return pname;
     return '';
   }
@@ -336,7 +339,7 @@
     var dt = S(row.dateStr || '').replace(/^[A-Za-z]+,\s*/, '').trim();
     var bits = ['PATIENT: ' + nm];
     if (dob) bits.push('DOB: ' + dob);
-    if (mrn) bits.push('MRN: ' + mrn);
+    if (mrn && plausibleMrn(mrn)) bits.push('MRN: ' + mrn);
     if (dt) bits.push('DATE OF PROCEDURE: ' + dt);
     var header = bits.join('    ') + '\n\n';
     ta.value = header + val;
