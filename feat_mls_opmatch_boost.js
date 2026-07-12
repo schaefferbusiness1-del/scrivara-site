@@ -26,7 +26,7 @@
   'use strict';
   try { if (window.__mlsOpMatchBoost && window.__mlsOpMatchBoost.installed) return; } catch (e) { return; }
 
-  var VERSION = 'omb-1.0.0';
+  var VERSION = 'omb-1.1.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var STATE = { installed: true, version: VERSION, asset: 'feat_mls_opmatch_boost.js', matchedHistory: 0, matchedReason: 0, defaulted: 0, blanks: 0, practiceDefault: '' };
@@ -144,10 +144,44 @@
     return true;
   }
 
+  /* Back-fill an ALREADY-BUILT op-prep list (one that was rendered before this
+     module loaded, or before a fresh pull carried procedure text). Fills any row
+     left blank, then re-renders once so the dropdowns + the "N/N have a template"
+     counter update WITHOUT the clinician re-opening anything. Only touches blank
+     rows; never overrides an existing pick. */
+  function backfillOpPrep() {
+    try {
+      var op = window._opPrep;
+      if (!Array.isArray(op) || !op.length) return 0;
+      var n = 0;
+      for (var i = 0; i < op.length; i++) {
+        var r = op[i]; if (!r || S(r.tplId).trim()) continue;
+        var name = S(r.name || (r.appt && r.appt.name));
+        var reason = S(r.proc || r.reason || (r.appt && r.appt.reason));
+        var dob = S(r.dob || (r.appt && r.appt.dob));
+        var b = bestFor(name, reason, dob);
+        if (!b.tplId) continue;
+        r.tplId = b.tplId; r.ombSource = b.source;
+        if (b.source === 'history') STATE.matchedHistory++;
+        else if (b.source === 'reason') STATE.matchedReason++;
+        else { STATE.defaulted++; r.ombDefaulted = true; }
+        n++;
+      }
+      if (n && isFn(window.opPrepRender)) { try { window.opPrepRender(); } catch (e) {} }
+      return n;
+    } catch (e) { return 0; }
+  }
+
   function boot() {
     installWrap();
-    /* keep our wrapper outermost even if another module re-wraps _opNewRow */
-    iv = setInterval(function () { try { if (isFn(window._opNewRow) && !window._opNewRow.__omb) installWrap(); } catch (e) {} }, 1500);
+    backfillOpPrep();
+    /* keep our wrapper outermost even if another module re-wraps _opNewRow, and
+       keep any open op-prep list back-filled (cheap: only re-renders when it
+       actually fills a blank row). */
+    iv = setInterval(function () {
+      try { if (isFn(window._opNewRow) && !window._opNewRow.__omb) installWrap(); } catch (e) {}
+      try { backfillOpPrep(); } catch (e) {}
+    }, 1500);
   }
   function revert() {
     try { if (iv) { clearInterval(iv); iv = null; } } catch (e) {}
