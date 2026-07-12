@@ -1,5 +1,12 @@
 /* =============================================================================
- * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.0.0)
+ * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.1.0)
+ * wf2-1.1.0 (2026-07-12): WRITE-BACK SAFETY. The panel now independently
+ *   re-checks the chart identity the driver reports it wrote under against the
+ *   patient we intended, and REFUSES to print any success line unless a content
+ *   section is BOTH written AND read-back-verified. A wrong/absent chart yields
+ *   a loud "nothing was written" refusal -- never a false "WROTE". Pairs with
+ *   the extension driver's target-frame identity guard (background.js) that
+ *   stops a write from landing in a field that is not on this patient's chart.
  * -----------------------------------------------------------------------------
  * Owner-requested write-back UX, generic for ANY account/patient/provider:
  *
@@ -35,7 +42,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-1.0.0';
+  var VERSION = 'wf2-1.1.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
   var stopped = false;
@@ -52,6 +59,29 @@
   }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function activePt() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
+
+  /* ---- identity helpers: MIRROR the extension driver's own matchers so the
+     app's "is this the right chart?" judgment is identical to the driver's
+     gate. Used to REFUSE a false "written" claim when the chart the driver
+     reports it verified is NOT the patient we intended. ---------------------- */
+  function nrmName(s) { return S(s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function nameMatch(a, b) {
+    var ta = nrmName(a).split(' ').filter(function (x) { return x.length > 1; });
+    var tb = nrmName(b).split(' ').filter(function (x) { return x.length > 1; });
+    if (!ta.length || !tb.length) return false;
+    var o = ta.filter(function (x) { return tb.indexOf(x) >= 0; }).length;
+    return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1);
+  }
+  function nrmDob(s) {
+    var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(S(s));
+    if (!m) return '';
+    var pivot = (new Date().getFullYear() % 100) + 1;
+    var y = m[3].length === 2 ? ((Number(m[3]) > pivot ? '19' : '20') + m[3]) : m[3];
+    var mo = Number(m[1]), dy = Number(m[2]);
+    if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
+    return mo + '/' + dy + '/' + y;
+  }
+  function nrmId(s) { return S(s).replace(/\D/g, ''); }
 
   /* -------------------- sections from the review panel --------------------- */
   /* Panel card keys (bundle organizer): history, exam, assessment, plan,
@@ -76,28 +106,63 @@
 
   /* --------------------------- result rendering ---------------------------- */
   function logTo(el, html) { try { el.innerHTML += '<div style="margin:3px 0">' + html + '</div>'; el.scrollTop = el.scrollHeight; } catch (e) {} }
-  function renderResp(logEl, resp) {
-    if (!resp || resp.__timeout) { logTo(logEl, '&#9888; No response from MLS Assist (timed out). Is athenaOne open?'); return; }
+  function bigRefusal(logEl, html) {
+    try { logEl.innerHTML += '<div style="margin:6px 0;padding:8px 10px;border-radius:8px;background:rgba(220,38,38,.16);border:1px solid rgba(248,113,113,.55);color:#ffd9d9;font-weight:600">' + html + '</div>'; logEl.scrollTop = logEl.scrollHeight; } catch (e) {}
+  }
+  /* HONEST result rendering. The write driver returns ok:true whenever its
+     identity gate PASSED and it attempted the sections -- ok:true is NOT a
+     guarantee that anything landed, nor that it landed on the RIGHT chart.
+     So we independently re-check the chart identity the driver reports it
+     wrote under against the patient we intended, and we NEVER print a success
+     line unless a content section is BOTH written AND verified (read-back). */
+  function renderResp(logEl, resp, want) {
+    want = want || {};
+    if (!resp || resp.__timeout) { bigRefusal(logEl, '&#9888; No response from MLS Assist (timed out). Nothing was written. Is your signed-in athenaOne open in another tab?'); return; }
     if (!resp.ok) {
-      logTo(logEl, '&#9940; <b>Nothing was written.</b> ' + esc(resp.error || resp.reason || 'Refused.'));
+      bigRefusal(logEl, '&#9940; <b>Nothing was written.</b> ' + esc(resp.error || resp.reason || 'The write was refused.'));
       return;
     }
-    logTo(logEl, '&#10003; Patient verified: <b>' + esc(resp.chartName || '?') + '</b>' + (resp.chartDob ? ' (' + esc(resp.chartDob) + ')' : '') + (resp.chartMrn ? ' #' + esc(resp.chartMrn) : '') + ' — this chart only.');
+    /* ---- independent chart-identity check (must match the intended patient) -- */
+    var cName = S(resp.chartName), cDob = S(resp.chartDob), cMrn = S(resp.chartMrn);
+    if (!cName) {
+      bigRefusal(logEl, '&#9940; <b>Nothing was written.</b> Could not confirm which chart is open in athenaOne. Open <b>' + esc(want.name || 'the patient') + '</b>&#39;s chart, then write.');
+      return;
+    }
+    var nameOK = want.name ? nameMatch(cName, want.name) : true;
+    var dobOK = want.dob ? (nrmDob(cDob) === nrmDob(want.dob)) : true;
+    var idOK = (want.mrn && cMrn) ? (nrmId(cMrn) === nrmId(want.mrn)) : true;
+    if (!nameOK || !dobOK || !idOK) {
+      bigRefusal(logEl, '&#9940; <b>WRONG CHART OPEN &mdash; nothing was written.</b><br>athenaOne is showing <b>' + esc(cName) + '</b>' + (cDob ? ' (' + esc(cDob) + ')' : '') + (cMrn ? ' #' + esc(cMrn) : '') +
+        ',<br>not <b>' + esc(want.name || '?') + '</b>' + (want.dob ? ' (' + esc(want.dob) + ')' : '') + (want.mrn ? ' #' + esc(want.mrn) : '') +
+        '.<br>Open the correct patient&#39;s chart in athenaOne, then write.');
+      return;
+    }
+    logTo(logEl, '&#10003; Chart identity confirmed: <b>' + esc(cName) + '</b>' + (cDob ? ' (' + esc(cDob) + ')' : '') + (cMrn ? ' #' + esc(cMrn) : '') + ' &mdash; writing to THIS chart only.');
     var rs = resp.results || [];
-    var okN = 0, tgtN = 0, missN = 0;
+    var okN = 0, tgtN = 0, warnN = 0, execTotal = 0;
     for (var i = 0; i < rs.length; i++) {
       var r = rs[i];
       var label = r.key.charAt(0).toUpperCase() + r.key.slice(1);
       if (r.execute) {
-        if (r.verified) { okN++; logTo(logEl, '&nbsp;&nbsp;&#10003; <b>' + esc(label) + '</b> — written &amp; verified (' + esc(r.method || '') + ').'); }
-        else if (r.written) { missN++; logTo(logEl, '&nbsp;&nbsp;&#9888; ' + esc(label) + ' — wrote but could not verify; check in Athena before signing.'); }
-        else { missN++; logTo(logEl, '&nbsp;&nbsp;&#9888; ' + esc(label) + ' — ' + esc(r.error || 'no matching field on this page') + ' (not written).'); }
+        execTotal++;
+        if (r.written && r.verified) { okN++; logTo(logEl, '&nbsp;&nbsp;&#10003; <b>' + esc(label) + '</b> — written &amp; verified' + (r.persisted ? ' &amp; saved' : '') + ' (' + esc(r.method || '') + ').'); }
+        else if (r.written) { warnN++; logTo(logEl, '&nbsp;&nbsp;&#9888; ' + esc(label) + ' — wrote but could <b>not</b> verify it landed; check in Athena before you trust it.'); }
+        else { warnN++; logTo(logEl, '&nbsp;&nbsp;&#9888; ' + esc(label) + ' — ' + esc(r.error === 'target-not-on-open-chart' ? 'the field found was not on this patient’s chart' : (r.error || 'no matching field on this chart')) + ' (<b>NOT written</b>).'); }
       } else {
-        if (r.found) { tgtN++; logTo(logEl, '&nbsp;&nbsp;&#127919; <b>' + esc(label) + '</b> — destination identified: ' + esc(r.fieldLabel || r.fieldTag || 'field') + (r.fieldHeading ? ' (' + esc(r.fieldHeading.slice(0, 48)) + ')' : '') + '. Preview only.'); }
+        if (r.found) { tgtN++; logTo(logEl, '&nbsp;&nbsp;&#127919; <b>' + esc(label) + '</b> — destination identified: ' + esc(r.fieldLabel || r.fieldTag || 'field') + '. Preview only, never sent.'); }
         else { logTo(logEl, '&nbsp;&nbsp;&#183; ' + esc(label) + ' — no destination field on this screen (preview kept here).'); }
       }
     }
-    logTo(logEl, (missN === 0 ? '&#10003; <b>Done.</b> ' : okN + ' verified · ' + missN + ' need a check. ') + 'Unsigned — review and sign in athenaOne. MLS never clicks Save/Sign.');
+    /* ---- final verdict: only ever claim success on verified content ---------- */
+    if (execTotal > 0 && okN === 0) {
+      bigRefusal(logEl, '&#9940; <b>Nothing was written.</b> No section could be verified as landed on this chart &mdash; do not trust any partial paste. Confirm the right chart is open and try again.');
+    } else if (warnN > 0) {
+      logTo(logEl, '&#9888; <b>' + okN + ' section(s) written &amp; verified</b> · ' + warnN + ' need a manual check in athenaOne. Unsigned &mdash; review and sign in Athena. MLS never clicks Save/Sign.');
+    } else if (okN > 0) {
+      logTo(logEl, '&#10003; <b>Done &mdash; ' + okN + ' section(s) written &amp; verified on ' + esc(cName) + '.</b> Unsigned &mdash; review and sign in athenaOne. MLS never clicks Save/Sign.');
+    } else {
+      logTo(logEl, 'Destination(s) identified (preview only). Nothing was written.');
+    }
   }
 
   /* ------------------------- v2 write from the panel ------------------------ */
@@ -106,10 +171,12 @@
     var secs = gatherSections(panel);
     if (!secs.length) { logTo(logEl, 'Confirm at least one section first (tick "confirm" on the cards above).'); return; }
     var p = activePt() || {};
+    var want = { name: S(p.name), dob: S(p.dob), mrn: S(p.athenaId || p.mrn || '') };
+    if (!want.name) { bigRefusal(logEl, '&#9940; No active patient selected. Pick the patient first, then write.'); return; }
     STATE.writes++;
-    logTo(logEl, 'Verifying the patient on the open athenaOne chart&#8230;');
-    bridge('mlsAppWriteV2', { patient: S(p.name), dob: S(p.dob), athenaId: S(p.athenaId || p.mrn || ''), sections: secs }, 'mlsAppWriteV2Result', 150000)
-      .then(function (resp) { STATE.lastResp = resp; renderResp(logEl, resp); });
+    logTo(logEl, 'Verifying <b>' + esc(want.name) + '</b> is the chart open in athenaOne before writing anything&#8230;');
+    bridge('mlsAppWriteV2', { patient: want.name, dob: want.dob, athenaId: want.mrn, sections: secs }, 'mlsAppWriteV2Result', 150000)
+      .then(function (resp) { STATE.lastResp = resp; renderResp(logEl, resp, want); });
   }
 
   /* -------------------- panel takeover + copy cleanup ----------------------- */
