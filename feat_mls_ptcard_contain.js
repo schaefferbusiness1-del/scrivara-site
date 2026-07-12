@@ -39,7 +39,7 @@
   'use strict';
   try { if (window.__mlsPtCardContain && window.__mlsPtCardContain.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ptc-1.0.0';
+  var VERSION = 'ptc-2.0.0';
   var STYLE_ID = 'mlsPtCardContainCss';
 
   function install() {
@@ -48,15 +48,23 @@
       var css = document.createElement('style');
       css.id = STYLE_ID;
       css.textContent =
-        /* let the flex chain actually shrink */
+        /* ---- horizontal containment (long/unbroken names) ---- */
         '.pt-item{min-width:0}' +
-        /* hard containment: nothing paints outside the card box */
         '.pt-item .pt-main{min-width:0;overflow:hidden}' +
-        /* names/demographics WRAP to fit (anywhere reduces flex min-content), never spill */
         '.pt-item .pt-main .t{overflow-wrap:anywhere;word-break:break-word;min-width:0}' +
         '.pt-item .pt-main .s{overflow-wrap:anywhere;word-break:break-word}' +
-        /* fixed-width context line + chip row can never exceed the card width */
-        '.pt-item .pt-main>div{max-width:100%}';
+        '.pt-item .pt-main>div{max-width:100%}' +
+        /* ---- VERTICAL containment (ptc-2.0.0): the REAL reported bug ----
+           #ptList/.pt-list is a max-height COLUMN FLEXBOX. With many patients its
+           .pt-item children (default flex-shrink:1) get squeezed down to the 84px
+           min-height floor, but each card's content is ~115px, so with
+           align-items:center + overflow:visible the NAME spilled ~15px ABOVE the
+           card (overlapping the card above) and the chips spilled below. Making
+           the list a normal block lets every card take its natural content height
+           and the max-height/overflow-y:auto still scrolls; the flex gap is
+           replaced by a margin, and card content is top-aligned. */
+        '#patientsView .pt-list{display:block}' +
+        '#patientsView .pt-list .pt-item{align-items:flex-start;height:auto;margin-bottom:10px}';
       (document.head || document.documentElement).appendChild(css);
     } catch (e) {}
   }
