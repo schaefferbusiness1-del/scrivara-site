@@ -88,7 +88,23 @@
   'use strict';
   try { if (window.__mlsCopilotVoiceV2 && window.__mlsCopilotVoiceV2.installed) return; } catch (e) { return; }
 
-  var VERSION = 'cv2-1.0.0';
+  /* cv2-1.1.0 (2026-07-12, final integration sweep) -- CHAINED VOICE COMMANDS + SAFE PATIENT OPEN:
+   *   - NEW "open <patient>" intent: id-based REAL selection (window.selectPatient first --
+   *     the live asst_fix builtin only tried __mlsPick/openPatient, which no-op on the
+   *     current build, so "Opened X's chart" could lie), exact-name-first matching, and a
+   *     HARD ambiguity refusal (multiple name matches -> list candidates with DOB, never
+   *     guess). Confirms name + DOB out loud after a verified switch.
+   *   - NEW "record"/"start recording" intent on the currently open patient (refuses
+   *     honestly when no patient is open).
+   *   - NEW chained commands: "open James Smith and record", "open Jones then start a
+   *     visit", up to 3 legs split on and/then. The WHOLE chain is refused if ANY leg is
+   *     sign/order/submit-shaped (safety first). Unrecognized legs get an honest
+   *     "didn't catch" instead of silent drops.
+   *   - voice-start-visit now uses the same verified id-based open (was: hero-label fill
+   *     only, which left the active-patient pointer -- and therefore Copilot context --
+   *     on the PREVIOUS patient).
+   */
+  var VERSION = 'cv2-1.1.0';
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -214,7 +230,7 @@
     btn = btn || $(BTN_ID);
     if (enabled) {
       var ok = startRec();
-      if (ok) { toast('Listening -- say things like "pull today’s patients", "start a visit for Jones", "generate the note", or "go to history".'); speak('Listening.'); }
+      if (ok) { toast('Listening -- say things like "open James Smith and record", "pull today’s patients", "start a visit for Jones", "generate the note", or "go to history".'); speak('Listening.'); }
       else enabled = false;
     } else {
       stopRec();
@@ -270,6 +286,152 @@
     speak(text.slice(0, 4000));
   }
 
+  /* ---------------- cv2-1.1.0: smart patient matching + verified open ---------------- */
+  function allKnownPatients() {
+    var out = [], seen = {};
+    safe(function () {
+      var ps = (window.getPatients && window.getPatients()) || [];
+      for (var i = 0; i < ps.length; i++) {
+        var p = ps[i]; if (!p || p.id == null || !p.name) continue;
+        var k = S(p.id); if (seen[k]) continue; seen[k] = 1;
+        out.push({ id: p.id, name: S(p.name), dob: S(p.dob || '') });
+      }
+    });
+    safe(function () {
+      var list = (window.__mlsWhosNext && window.__mlsWhosNext.activeList && window.__mlsWhosNext.activeList()) || [];
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i]; if (!p || !p.name) continue;
+        var k = S(p.id == null ? ('wn:' + p.name) : p.id); if (seen[k]) continue; seen[k] = 1;
+        out.push({ id: p.id, name: S(p.name), dob: S(p.dob || '') });
+      }
+    });
+    return out;
+  }
+  function normName(s) {
+    s = S(s).toLowerCase().replace(/[^a-z ,'-]/g, ' ').replace(/\s+/g, ' ').trim();
+    /* fold "last, first" into "first last" so both storage shapes compare equal */
+    var m = s.match(/^([a-z' -]+),\s*([a-z' -]+)$/);
+    if (m) s = (m[2].trim() + ' ' + m[1].trim()).replace(/\s+/g, ' ');
+    return s;
+  }
+  /* -> { match: p|null, candidates: [p,...] } ; exact full-name beats substring;
+     multiple hits are returned for an explicit refusal, NEVER first-match-wins. */
+  function findPatientsSmart(nameRaw) {
+    var want = normName(nameRaw);
+    if (!want) return { match: null, candidates: [] };
+    var all = allKnownPatients(), exact = [], partial = [];
+    for (var i = 0; i < all.length; i++) {
+      var have = normName(all[i].name);
+      if (!have) continue;
+      if (have === want) exact.push(all[i]);
+      else if (have.indexOf(want) >= 0 || want.indexOf(have) >= 0) partial.push(all[i]);
+    }
+    var pool = exact.length ? exact : partial;
+    if (pool.length === 1) return { match: pool[0], candidates: pool };
+    return { match: null, candidates: pool };
+  }
+  /* REAL, verified selection: the base selectPatient() first (proven live), then the
+     older pick surfaces; hero fields synced after so the EZ3 label agrees. */
+  function openPatientVerified(p) {
+    var ok = false;
+    safe(function () { if (isFn(window.selectPatient)) { window.selectPatient(p.id); ok = true; } });
+    if (!ok) safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.select)) { window.__mlsPick.select(p.id); ok = true; } });
+    if (!ok) safe(function () { if (isFn(window.openPatient)) { window.openPatient(p.id); ok = true; } });
+    loadPatient(p);
+    var active = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '');
+    return ok && (!active || active === S(p.id)) ? (active === S(p.id) ? 'verified' : 'opened') : (ok ? 'unverified' : 'failed');
+  }
+  function describeCandidates(cands) {
+    var bits = [];
+    for (var i = 0; i < Math.min(3, cands.length); i++) bits.push(cands[i].name + (cands[i].dob ? (' (DOB ' + cands[i].dob + ')') : ''));
+    return bits.join(', ') + (cands.length > 3 ? (' and ' + (cands.length - 3) + ' more') : '');
+  }
+
+  /* ---------------- cv2-1.1.0: leg handlers (single commands, chainable) ---------------- */
+  function refusalShaped(s) {
+    s = S(s);
+    return /\bsign\b.*\b(it|the note|the chart|this)\b/i.test(s) ||
+      /\b(submit|place|put in)\b.*\border/i.test(s) ||
+      /\be-?sign\b/i.test(s) ||
+      /\bfinalize\b.*\b(chart|encounter|note)\b/i.test(s) ||
+      /\battest\b/i.test(s);
+  }
+  function speakToast(msg) { toast(msg); speak(msg); }
+  function legOpenPatient(q) {
+    var m = S(q).trim().match(/^(?:please\s+)?(?:open|pull up|bring up|switch to|select|show me|show|load)\s+(?:the\s+)?(?:patient\s+|chart\s+(?:for|of)\s+)?(.+?)(?:'s)?(?:\s+(?:chart|file|record|profile|page))?\s*$/i);
+    if (!m) return false;
+    var token = m[1].trim();
+    if (VIEW_ALIASES[token.toLowerCase()]) return false;          /* "open history" etc. -> navigation intent */
+    if (/^athena(one)?$/i.test(token)) return false;               /* "open athena" -> builtin */
+    var r = findPatientsSmart(token);
+    if (!r.match && r.candidates.length === 0) {
+      speakToast('I could not find a patient named "' + token + '". Say the full name, or pull the schedule first.');
+      return 'fail';   /* handled, but the open did NOT happen -- a chain must abort */
+    }
+    if (!r.match) {
+      speakToast('I found ' + r.candidates.length + ' patients matching "' + token + '": ' + describeCandidates(r.candidates) + '. Say the full name so I open the right chart.');
+      return 'fail';
+    }
+    var how = openPatientVerified(r.match);
+    if (how !== 'verified' && how !== 'opened') {
+      /* NEVER claim an open that did not land (the active pointer must agree) */
+      speakToast('I could not switch to ' + r.match.name + ' -- open the Patients tab and tap their card, then say "record".');
+      return 'fail';
+    }
+    speakToast('Opened ' + r.match.name + (r.match.dob ? (', date of birth ' + r.match.dob) : '') + '.');
+    return 'ok';
+  }
+  function legRecordNow(q) {
+    if (!/^(?:please\s+)?(?:record|start\s+recording|begin\s+recording|(?:start|begin)\s+(?:a\s+|the\s+)?(?:visit|capture|recording)|record\s+(?:the\s+)?visit)$/i.test(S(q).trim())) return false;
+    var ap = safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null);
+    if (!ap || !ap.name) { speakToast('No patient is open yet -- say "open" and the patient\'s name first.'); return 'fail'; }
+    safe(function () { if (isFn(window.showView)) window.showView('visit'); });
+    safe(function () { if (isFn(window.startCapture)) window.startCapture(); else if (isFn(window.heroStartVisit)) window.heroStartVisit(); });
+    speakToast('Recording for ' + ap.name + '. Say "stop recording" when done.');
+    return 'ok';
+  }
+  function legStop(q) {
+    if (!/^(?:please\s+)?(?:stop|end|finish)(?:\s+the)?\s+(?:recording|capture|visit)$/i.test(S(q).trim())) return false;
+    safe(function () { if (isFn(window.stopCapture)) window.stopCapture(); });
+    speakToast('Recording stopped. Say "generate the note" when ready.');
+    return true;
+  }
+  function legGenerate(q) {
+    if (!/^(?:please\s+)?(?:generate|write|create|make)(?:\s+(?:the|my|a))?\s+note$/i.test(S(q).trim())) return false;
+    safe(function () { if (isFn(window.showView)) window.showView('visit'); });
+    safe(function () { if (isFn(window.generateNote)) window.generateNote(); });
+    speakToast('Generating the note from your recording.');
+    return true;
+  }
+  function legNavigate(q) {
+    var m = S(q).trim().match(/^(?:please\s+)?(?:go to|open|show|navigate to)\s+(?:the\s+)?([a-z ]+?)(?:\s+tab| view)?$/i);
+    if (!m) return false;
+    var view = VIEW_ALIASES[m[1].trim().toLowerCase()];
+    if (!view) return false;
+    safe(function () { if (isFn(window.showView)) window.showView(view); });
+    toast('Opened ' + m[1].trim() + '.');
+    return true;
+  }
+  function legRead(q) {
+    if (!/\b(read|play)\b.*\b(note|history|back)\b/i.test(S(q).trim())) return false;
+    readNoteAloud();
+    return true;
+  }
+  function runLeg(text) {
+    if (refusalShaped(text)) {
+      speakToast('Signing, ordering, and submitting must be done manually in athenaOne. I will not do that part.');
+      return 'refused';
+    }
+    var r;
+    r = legOpenPatient(text); if (r) return r === 'ok' ? 'ok' : 'fail';
+    r = legRecordNow(text); if (r) return r === 'ok' ? 'ok' : 'fail';
+    if (legStop(text)) return 'ok';
+    if (legGenerate(text)) return 'ok';
+    if (legRead(text)) return 'ok';
+    if (legNavigate(text)) return 'ok';
+    return 'unknown';
+  }
+
   /* ---------------- register new deterministic intents ---------------- */
   var unregs = [], registered = false;
   function registerIntents() {
@@ -296,11 +458,59 @@
       var m = S(q).match(/^(?:please\s+)?(?:start|begin)\s+(?:a\s+|the\s+)?visit(?:\s+(?:for|with)\s+(.+))?$/i);
       if (!m) return false;
       safe(function () { if (isFn(window.showView)) window.showView('visit'); });
-      var who = m[1] ? findPatient(m[1]) : null;
-      if (m[1] && !who) { toast('Could not find "' + m[1] + '" on the schedule -- pull today’s patients first, or tap their card in Who’s Next.'); return true; }
-      if (who) loadPatient(who);
+      if (m[1]) {
+        /* cv2-1.1.0: verified id-based open with ambiguity refusal (was hero-label
+           fill only, which left the active-patient pointer on the previous patient) */
+        var r = findPatientsSmart(m[1]);
+        if (!r.match && r.candidates.length === 0) { speakToast('Could not find "' + m[1] + '" -- pull today’s patients first, or tap their card in Who’s Next.'); return true; }
+        if (!r.match) { speakToast('I found ' + r.candidates.length + ' patients matching "' + m[1] + '": ' + describeCandidates(r.candidates) + '. Say the full name.'); return true; }
+        var how = openPatientVerified(r.match);
+        if (how !== 'verified' && how !== 'opened') { speakToast('I could not switch to ' + r.match.name + ' -- tap their card, then say "record".'); return true; }
+      }
       safe(function () { if (isFn(window.startCapture)) window.startCapture(); else if (isFn(window.heroStartVisit)) window.heroStartVisit(); });
-      toast('🎙️ Visit started' + (who ? (' for ' + who.name) : '') + ' -- recording. Say "stop recording" when done.');
+      toast('🎙️ Visit started -- recording. Say "stop recording" when done.');
+      speak('Visit started. Recording.');
+      return true;
+    }, true));
+
+    /* cv2-1.1.0: single "open <patient>" (no "chart" keyword needed), verified + ambiguity-safe */
+    unregs.push(fx.registerIntent('voice-open-patient', function (q) {
+      if (refusalShaped(q)) return false; /* let the safety intent answer */
+      return legOpenPatient(q);
+    }, true));
+
+    /* cv2-1.1.0: "record" / "start recording" on the currently open patient */
+    unregs.push(fx.registerIntent('voice-record-now', function (q) {
+      if (refusalShaped(q)) return false;
+      return legRecordNow(q);
+    }, true));
+
+    /* cv2-1.1.0: CHAINED commands -- "open James Smith and record", up to 3 legs.
+       Registered last-with-atFront so it runs FIRST; a non-chain returns false fast. */
+    unregs.push(fx.registerIntent('voice-chain', function (q) {
+      var s = S(q).trim();
+      if (refusalShaped(s)) return false;                       /* whole chain refusal-shaped -> safety intent */
+      var parts = s.split(/\s+(?:and\s+then|then|and)\s+/i).map(function (p) { return p.trim(); }).filter(Boolean);
+      if (parts.length < 2 || parts.length > 3) return false;
+      /* the first leg must be something we understand, else this isn't a command chain */
+      var probe = parts[0];
+      var understood = refusalShaped(probe) ||
+        /^(?:please\s+)?(?:open|pull up|bring up|switch to|select|show me|show|load|record|start|begin|stop|end|finish|generate|write|create|make|go to|navigate to|read|play)\b/i.test(probe);
+      if (!understood) return false;
+      var i = 0;
+      var step = function () {
+        if (i >= parts.length) return;
+        var leg = parts[i]; i++;
+        var out = runLeg(leg);
+        if (out === 'refused') return;                          /* refusal already spoken; stop the chain */
+        if (out === 'fail') {                                    /* e.g. ambiguous open -- NEVER run "record" on the wrong patient */
+          if (i < parts.length) speakToast('I stopped there, so the rest of that command did not run.');
+          return;
+        }
+        if (out === 'unknown') speakToast('I didn’t catch the part "' + leg + '" -- try it as its own command.');
+        if (i < parts.length) setTimeout(step, 600);            /* let selection/render settle between legs */
+      };
+      step();
       return true;
     }, true));
 
@@ -367,6 +577,7 @@
     asset: ASSET,
     _muted: false,
     _testHandle: handleSaid,
+    _test: { runLeg: runLeg, findPatientsSmart: findPatientsSmart, legOpenPatient: legOpenPatient },
     isListening: function () { return enabled; },
     start: function () { setEnabled(true); },
     stop: function () { setEnabled(false); },
