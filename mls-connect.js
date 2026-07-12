@@ -27511,7 +27511,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b131';
+  window.__MLS_AV = window.__MLS_AV || 'b132';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -27825,7 +27825,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-11-b131';
+  var MLS_APP_BUILD='2026-07-11-b132';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -35417,3 +35417,5 @@
   window.__mlsWipeGuard_revert = G.revert;
   window.__mlsWipeGuard = G;
 })();
+
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260711sc1';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.0.0: store parse cache - fixes the single-tab rapid-tab-click freeze (memoizes getPatients/getNotes by stored-string identity; revert: window.__mlsStoreCache.revert()) */
