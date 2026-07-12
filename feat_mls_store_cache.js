@@ -1,5 +1,5 @@
 /* =========================================================================
- * MLS Scribe - PATIENT/NOTES STORE PARSE CACHE  (__mlsStoreCache) sc-1.0.0
+ * MLS Scribe - PATIENT/NOTES STORE PARSE CACHE  (__mlsStoreCache) sc-1.1.0
  * 2026-07-11 (freeze fix, single-tab "clicking around" lockups)
  * -------------------------------------------------------------------------
  * ROOT CAUSE THIS FIXES
@@ -34,7 +34,8 @@
  *     app's universal write pattern (get -> mutate element -> save) is
  *     unaffected: the save rewrites the string, which invalidates the cache.
  *     To bound the exposure of any hypothetical mutate-without-save caller,
- *     the cache also hard-expires after TTL_MS (1200 ms) - at the measured
+ *     the cache also hard-expires after TTL_MS (30000 ms) - raw-string identity
+ *     still invalidates immediately after every real stored write. At the measured
  *     50-350 calls/s hot rates that still eliminates >99% of parses, while
  *     costing under one parse per second when idle.
  *   - Cache is dropped on 'storage' events for matching keys (cross-tab
@@ -51,9 +52,9 @@
   'use strict';
   try { if (window.__mlsStoreCache) return; } catch (e) { return; }
 
-  var TTL_MS = 1200;
+  var TTL_MS = 30000;
   var api = {
-    version: 'sc-1.0.0',
+    version: 'sc-1.1.0',
     enabled: true,
     stats: { hits: 0, misses: 0, fallbacks: 0, invalidations: 0 },
     _wrapped: []

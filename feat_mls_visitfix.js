@@ -45,7 +45,7 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.8';
+  var VERSION = 'vfx-1.2.9';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   function M() { return window.__mlsVisitModel; }
@@ -407,7 +407,12 @@
   var Q = [];                    /* patient ids, FIFO, deduped */
   var QSEEN = {};
   var PER_PATIENT = {};          /* summaries generated per patient this session */
-  var CFG = { tickMs: 4500, minRaw: 40, maxPerPatient: 15, maxPerSession: 250, errPauseMs: 300000 };
+  /* v1.2.9 FREEZE FIX: automatic backlog summarization is OFF. On a clinic-sized
+     account every generated summary persists the whole patient store and wakes
+     the render/observer mesh. Even the former ~20s throttle could permanently
+     starve input on the largest account. Summaries remain available explicitly
+     through summarizeOneNow(); ordinary note generation is unaffected. */
+  var CFG = { tickMs: 4500, minRaw: 40, maxPerPatient: 15, maxPerSession: 250, errPauseMs: 300000, autoSummaries: false };
   function enqueue(pid) {
     pid = S(pid); if (!pid || QSEEN[pid]) return;
     QSEEN[pid] = 1; Q.push(pid);
@@ -423,8 +428,9 @@
     return null;
   }
   var pumpBusy = false, consecErr = 0, pausedUntil = 0, stopped = false;
-  function pumpOnce() {
+  function pumpOnce(force) {
     if (pumpBusy || stopped) return Promise.resolve();
+    if (!force && !CFG.autoSummaries) { STATE.backgroundSkips++; return Promise.resolve(); }
     /* v1.2.5: pump ONLY while the tab is visible. Each generated summary triggers
        a full-store localStorage write (+ server POST); draining a large backlog
        through a HIDDEN, low-priority renderer let GC fall behind and wedged the
@@ -518,8 +524,8 @@
            absorbed and never stresses the tab; a real clinic day's ~20 visits
            still summarize within a normal MLS-viewing stretch. pumpOnce also
            self-gates on document.hidden. */
-        if (_wkTicks % 13 === 0) { try { pumpOnce(); } catch (e) {} }
-        if (_wkTicks % 400 === 0) { try { sweepBacklog(); } catch (e) {} } /* v1.2.2: re-sweep ~10 min */
+        if (CFG.autoSummaries && _wkTicks % 13 === 0) { try { pumpOnce(false); } catch (e) {} }
+        if (CFG.autoSummaries && _wkTicks % 400 === 0) { try { sweepBacklog(); } catch (e) {} } /* v1.2.9: never scan a disabled backlog */
       };
     } catch (e) { _wk = null; }
   }
@@ -562,7 +568,7 @@
   }
 
   /* ------------------------------- public -------------------------------- */
-  var STATE = { blocked: 0, scrubbedOnWrite: 0, hydrated: 0, dobGuarded: 0, dedupedById: 0, summarized: 0, summarizeErrors: 0, lastMigrate: null, lastRetag: null };
+  var STATE = { blocked: 0, scrubbedOnWrite: 0, hydrated: 0, dobGuarded: 0, dedupedById: 0, summarized: 0, summarizeErrors: 0, backgroundSkips: 0, lastMigrate: null, lastRetag: null };
   function revert() {
     stopped = true;
     ['addVisit', 'derive', 'upsert', 'save'].forEach(function (k) {
@@ -585,6 +591,7 @@
     migrateNow: migrateNow, retagSources: retagSources, restore: restore,
     enqueue: enqueue, queue: function () { return Q.slice(); },
     uiFix: uiFix, _hydrate: hydrateFromPersisted, sweepBacklog: sweepBacklog,
+    summarizeOneNow: function () { return pumpOnce(true); },
     revert: revert
   };
 
@@ -598,13 +605,16 @@
     try { seedDobRepairs(); } catch (e) {} /* v1.2.7: learn banner-verified repairs before any merge can echo them away */
     try { var r = migrateNow(); if (r && (r.removed || r.patients)) console.log('[MLS visitfix] removed ' + r.removed + ' junk visit row(s) across ' + r.patients + ' patient(s) (stashed on _junkVisits).'); } catch (e) {}
     try { var rt = retagSources(); if (rt && rt.retagged) console.log('[MLS visitfix] retagged ' + rt.retagged + ' visits-pane row(s) across ' + rt.patients + ' patient(s) as From Athena (old value on _srcPrev).'); } catch (e) {}
-    startWorkerTicker();
-    try { var sw = sweepBacklog(); if (sw) console.log('[MLS visitfix] backlog sweep queued ' + sw + ' patient(s) with unsummarized visits.'); } catch (e) {}
+    /* With automatic summaries disabled there is no reason to create the
+       persistent Worker ticker (or its setTimeout fallback) at all. */
+    if (CFG.autoSummaries) startWorkerTicker();
+    /* v1.2.9: do not seed or drain a full-account summary backlog at boot.
+       Explicit summarizeOneNow() still handles one active/newly queued visit. */
     /* v1.2.3: ONE pump driver. Running the setTimeout loop AND the worker tick
        doubled the cadence to ~2.2s; with a full-store save per summary that
        saturated the renderer mid-drain (live freeze). The loop is only the
        fallback when the Worker could not be created. */
-    if (!_wk) setTimeout(loop, 6000);
+    if (CFG.autoSummaries && !_wk) setTimeout(loop, 6000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 1500);
 })();

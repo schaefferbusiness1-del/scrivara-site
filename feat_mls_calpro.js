@@ -54,7 +54,7 @@
   'use strict';
   if (window.__mlsCalPro && window.__mlsCalPro.installed) return;
 
-  var VERSION = 'cp-1.0.2';
+  var VERSION = 'cp-1.0.3';
   var S = function (x) { return x == null ? '' : String(x); };
   var esc = (typeof window.esc === 'function') ? window.esc
     : function (s) { return S(s).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
@@ -238,6 +238,14 @@
   function renderProvBoxes() {
     var box = el('cpProvBox'); if (!box) return;
     var ps = providers();
+    var sig = ps.length ? ps.map(function (p) {
+      return String(p && p.id) + '|' + provDisplay(p) + '|' + (!!SEL[String(p && p.id)]);
+    }).join('||') : '(empty)';
+    /* cp-1.0.3 FREEZE FIX: this can run from a body-subtree observer while the
+       Calendar DOM is arriving late. The old unconditional write fed that
+       observer again; a stable signature makes every reapply a no-op. */
+    if (box.getAttribute('data-cp-sig') === sig) return;
+    box.setAttribute('data-cp-sig', sig);
     if (!ps.length) { box.innerHTML = '<span style="font-size:12px;color:#69758c">(no providers loaded)</span>'; return; }
     box.innerHTML = ps.map(function (p) {
       var id = esc(String(p.id));
@@ -456,7 +464,7 @@
   }
 
   /* -------------------------------- boot ---------------------------------- */
-  var mo = null, stopped = false;
+  var mo = null, stopped = false, obsTimer = null;
   function boot() {
     if (stopped) return;
     wrapFn('renderCalendar');
@@ -468,6 +476,7 @@
   function revert() {
     stopped = true;
     try { if (mo) mo.disconnect(); } catch (e) {}
+    try { if (obsTimer) { clearTimeout(obsTimer); obsTimer = null; } } catch (e) {}
     Object.keys(wrapped).forEach(function (k) {
       try { if (window[k] && window[k].__cpWrapped) window[k] = wrapped[k].orig; } catch (e) {}
     });
@@ -489,7 +498,19 @@
 
   function armObserver() {
     try {
-      mo = new MutationObserver(function () { if (!el('cpRow')) boot(); else { renderProvBoxes(); } });
+      mo = new MutationObserver(function (muts) {
+        var row = el('cpRow'), relevant = false;
+        for (var i = 0; i < muts.length; i++) {
+          var t = muts[i] && muts[i].target;
+          if (row && t && (t === row || row.contains(t))) continue;
+          relevant = true; break;
+        }
+        if (!relevant || obsTimer) return;
+        obsTimer = setTimeout(function () {
+          obsTimer = null;
+          if (!el('cpRow')) boot(); else renderProvBoxes();
+        }, 40);
+      });
       var host = document.getElementById('calendarView');
       mo.observe(host || document.body, { childList: true, subtree: !host });
     } catch (e) {}

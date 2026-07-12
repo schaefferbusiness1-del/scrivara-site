@@ -1,4 +1,87 @@
 /* =========================================================================
+ * MLS - EARLY STORE CACHE  (__mlsStoreCache) sc-1.1.0  2026-07-12
+ * -------------------------------------------------------------------------
+ * The old cache was loaded as a satellite at the END of this 2.3 MB bundle,
+ * after the expensive boot modules had already parsed the multi-MB patient and
+ * notes stores many times. Install the same raw-string-keyed cache at byte zero
+ * so every bundle module benefits during startup. The existing satellite sees
+ * the guard and stands down. Any stored write changes the raw string and
+ * invalidates immediately; callers still receive fresh top-level arrays.
+ * Read-only, account-namespaced, reversible: __mlsStoreCache.revert().
+ * ========================================================================= */
+(function () {
+  'use strict';
+  try { if (window.__mlsStoreCache) return; } catch (e) { return; }
+  var TTL_MS = 30000;
+  var api = {
+    version: 'sc-1.1.0', enabled: true, early: true,
+    stats: { hits: 0, misses: 0, fallbacks: 0, invalidations: 0 }, _wrapped: []
+  };
+  function wrapPair(getName, keySuffix) {
+    var orig = window[getName];
+    if (typeof orig !== 'function') return;
+    var cache = { key: null, str: null, val: null, at: 0 };
+    function currentKey() {
+      try { return (typeof window.uns === 'function') ? window.uns(keySuffix) : null; }
+      catch (e) { return null; }
+    }
+    function wrapped() {
+      if (!api.enabled) return orig();
+      var k, s;
+      try {
+        k = currentKey();
+        if (!k) { api.stats.fallbacks++; return orig(); }
+        s = localStorage.getItem(k);
+      } catch (e) { api.stats.fallbacks++; return orig(); }
+      if (s == null || s === '') { cache.key = k; cache.str = s; cache.val = null; return []; }
+      var now = Date.now();
+      if (cache.val && cache.key === k && cache.str === s && now - cache.at < TTL_MS) {
+        api.stats.hits++; return cache.val.slice();
+      }
+      api.stats.misses++;
+      var v;
+      try { v = JSON.parse(s) || []; } catch (e) { v = []; }
+      if (!Array.isArray(v)) return v;
+      cache.key = k; cache.str = s; cache.val = v; cache.at = now;
+      return v.slice();
+    }
+    wrapped.__mlsStoreCache = true; wrapped.__orig = orig;
+    window[getName] = wrapped;
+    function onStorage(ev) {
+      try {
+        if (!ev || ev.key == null || String(ev.key).indexOf('::' + keySuffix) >= 0) {
+          cache.val = null; api.stats.invalidations++;
+        }
+      } catch (e) { cache.val = null; }
+    }
+    window.addEventListener('storage', onStorage, false);
+    api._wrapped.push({ name: getName, orig: orig, onStorage: onStorage });
+  }
+  wrapPair('getPatients', 'patients');
+  wrapPair('getNotes', 'notes');
+  api.revert = function () {
+    for (var i = 0; i < api._wrapped.length; i++) {
+      var w = api._wrapped[i];
+      try { if (window[w.name] && window[w.name].__mlsStoreCache) window[w.name] = w.orig; } catch (e) {}
+      try { window.removeEventListener('storage', w.onStorage, false); } catch (e) {}
+    }
+    api._wrapped = []; api.enabled = false;
+    try { delete window.__mlsStoreCache; } catch (e) {}
+    return 'reverted';
+  };
+  api.selfTest = function () {
+    var out = [];
+    function t(name, fn) { try { out.push((fn() ? 'PASS ' : 'FAIL ') + name); } catch (e) { out.push('FAIL ' + name); } }
+    t('getPatients returns array', function () { return Array.isArray(window.getPatients()); });
+    t('fresh top-level arrays', function () { return window.getPatients() !== window.getPatients(); });
+    t('cache hits', function () { var h = api.stats.hits; window.getPatients(); window.getPatients(); return api.stats.hits > h; });
+    t('getNotes returns array', function () { return Array.isArray(window.getNotes()); });
+    return out;
+  };
+  window.__mlsStoreCache = api;
+})();
+
+/* =========================================================================
  * MLS -- ageFromDob US-format fix (__mlsAgeDobFix adf-1.0.0)  2026-07-11 final sweep
  * ----------------------------------------------------------------------------
  * The GLOBAL ageFromDob() in ScribeFlow.html (~HTML:16213) only parses ISO
@@ -12298,7 +12381,7 @@
      widgets unshifted a duplicate every time — dedupe by html, newest kept, pinned
      flags preserved onto the survivor. */
   function wrapRenderWidget() {
-    if (typeof window.renderStudioWidget !== 'function' || window.renderStudioWidget.__sgfix) return;
+    if (wrapRenderWidget.__done || typeof window.renderStudioWidget !== 'function' || window.renderStudioWidget.__sgfix) return;
     var orig = window.renderStudioWidget;
     var w = function () {
       var r = orig.apply(this, arguments);
@@ -12318,7 +12401,7 @@
       } catch (e) {}
       return r;
     };
-    w.__sgfix = 1; w.__orig = orig;
+    w.__sgfix = 1; w.__orig = orig; wrapRenderWidget.__done = true;
     window.renderStudioWidget = w;
   }
   function unwrapRenderWidget() {
@@ -28650,7 +28733,7 @@
   function toolUpgrades() {
     try {
       /* auto-save every successful build (wrap renderStudioWidget once) */
-      if (typeof window.renderStudioWidget === "function" && !window.renderStudioWidget.__b39) {
+      if (typeof window.renderStudioWidget === "function" && !window.renderStudioWidget.__b39 && !toolUpgrades.__wrapDone) {
         _origRender = window.renderStudioWidget;
         var w = function (html, title) {
           var r = _origRender.apply(this, arguments);
@@ -28668,7 +28751,7 @@
           try { ensureImprove(); } catch (e) {}
           return r;
         };
-        w.__b39 = true; window.renderStudioWidget = w;
+        w.__b39 = true; window.renderStudioWidget = w; toolUpgrades.__wrapDone = true;
       }
       /* Enter-to-build in the prompt box */
       var ta = $("studioPrompt");
@@ -29882,7 +29965,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b167';
+  window.__MLS_AV = window.__MLS_AV || 'b168';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30196,7 +30279,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-12-b167';
+  var MLS_APP_BUILD='2026-07-12-b168';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -37790,14 +37873,14 @@
   window.__mlsWipeGuard = G;
 })();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260711sc1';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.0.0: store parse cache - fixes the single-tab rapid-tab-click freeze (memoizes getPatients/getNotes by stored-string identity; revert: window.__mlsStoreCache.revert()) */
+;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260712sc11';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.1.0 fallback loader; normal builds install the cache at byte zero before boot work */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v=20260711pcs1';s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 6: per-patient Copilot conversation isolation + identity confirm (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260711rs1';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260711ne1';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=wbs100';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v=20260711pf1';s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260711cp1';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11: calendar multi-provider checkboxes + date range + Monday/Thursday procedure views (window.__mlsCalPro cp-1.0.2; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260712cp103';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11 calendar controls; cp-1.0.3 prevents its calendar observer from self-triggering forever */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260712opnp3';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legalpack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legalpack.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_mls_legalpack.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS - legal full-history workflow + medical-legal narrative generator (Tasks 13+14; additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
