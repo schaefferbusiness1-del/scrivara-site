@@ -1,4 +1,12 @@
-/* feat_mls_asst_fix.js  ->  window.__mlsAsstFix  (v1.1.0)  [item19]
+/* feat_mls_asst_fix.js  ->  window.__mlsAsstFix  (v1.2.0)  [item19 + Task 2]
+ *
+ * v1.2.0 (Task 2 -- unified Copilot conversation): FIX 3's chat now shares ONE
+ * conversation store with AI Studio via window.__mlsCopilotConvo (feat_mls_copilot_unify.js).
+ * The private `chatLog` is used ONLY as a fallback when the unify module is absent,
+ * so a message asked here appears in Studio and vice-versa, and both persist across
+ * refresh. All other v1.1.0 behavior (capture-phase send, MutationObserver self-render
+ * guard, honest connection status, intents, provider picker) is unchanged.
+ * ORIGINAL v1.1.0 header follows:
  *
  * SIX additive, reversible fixes to the MLS Assistant panel/chat. Web-app only
  * (no extension reload). Read-only with respect to athenaOne -- NEVER writes, signs,
@@ -39,7 +47,11 @@
 ;(function () {
   "use strict";
   var NS = "__mlsAsstFix";
-  var VERSION = "1.1.0";
+  var VERSION = "1.2.0";
+  /* Task 2: the shared Copilot conversation store (feat_mls_copilot_unify.js).
+     When present, the panel's history reads/writes go through it so Studio and
+     this panel are ONE conversation. Absent -> fall back to the private chatLog. */
+  function CONVO() { try { var c = window.__mlsCopilotConvo; return (c && typeof c.append === "function") ? c : null; } catch (e) { return null; } }
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   /* ---------- self-gate: same as the assistant (staging page OR prod staging-marker) ---------- */
@@ -306,38 +318,61 @@
    * FIX 3 -- context-aware chat with real deterministic action intents
    * ===================================================================== */
   var chatLog = [], chatObserver = null, sendCapture = null, keyCapture = null,
-      chatBusy = false, chatSelfRender = false, chatBoundEls = null;
+      chatBusy = false, chatSelfRender = false, chatBoundEls = null, convoUnsub = null;
   var THREAD_MARK = "data-mlsfix";
 
+  var GREETING = "Hi -- I'm the MLS Assistant. I can pull your athenaOne schedule, open athenaOne, and answer questions. Try \"pull today's patients\", \"pull Dr <name>'s schedule\", or \"are we connected?\".";
+  /* the messages to render: shared store when present (so Studio + panel are one
+     conversation), else the private chatLog fallback. */
+  function convoMessages() {
+    var s = CONVO();
+    if (s) { return safe(function () { return s.all(); }, []) || []; }
+    return chatLog;
+  }
+  /* what renderThread actually paints -- shared store turns, or a display-only
+     greeting when the store is present but still empty. The MutationObserver
+     compares against THIS count so its self-render guard stays in sync. */
+  function displayMsgs() {
+    var msgs = convoMessages();
+    if (CONVO() && !msgs.length) return [{ role: "ai", text: GREETING }];
+    return msgs;
+  }
   function seedChatLog() {
+    var s = CONVO();
+    if (s) {
+      /* shared store present: DO NOT seed a greeting into it -- the greeting is
+         panel-only presentation and must not pollute the shared conversation (or the
+         /api/copilot history payload, or Studio's thread). renderThread() shows the
+         greeting as a display-only bubble when the store has no real turns yet. */
+      return;
+    }
     var a = ASST();
     var h = safe(function () { return a && isFn(a._history) ? a._history() : null; }, null);
     if (h && h.length) {
       chatLog = h.filter(function (m) { return m.role === "user" || m.role === "ai"; })
                  .map(function (m) { return { role: m.role, text: m.text }; });
     }
-    if (!chatLog.length) {
-      chatLog = [{ role: "ai", text: "Hi -- I'm the MLS Assistant. I can pull your athenaOne schedule, open athenaOne, and answer questions. Try \"pull today's patients\", \"pull Dr <name>'s schedule\", or \"are we connected?\"." }];
-    }
+    if (!chatLog.length) { chatLog = [{ role: "ai", text: GREETING }]; }
   }
   function renderThread() {
     var t = threadEl(); if (!t) return;
+    var msgs = displayMsgs();
     var html = "";
-    for (var i = 0; i < chatLog.length; i++) {
-      var m = chatLog[i];
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
       var role = m.role === "user" ? "user" : (m.role === "pending" ? "ai pending" : "ai");
       html += '<div class="as-msg ' + role + '"><div class="as-bub">' + esc(m.text) + "</div></div>";
     }
     chatSelfRender = true;
     t.innerHTML = html;
-    try { t.setAttribute(THREAD_MARK, String(chatLog.length)); } catch (e) {}
+    try { t.setAttribute(THREAD_MARK, String(msgs.length)); } catch (e) {}
     chatSelfRender = false;
     var b = bodyEl(); if (b) b.scrollTop = b.scrollHeight;
   }
-  function addUser(text) { chatLog.push({ role: "user", text: text }); renderThread(); }
-  function addAi(text) { dropPending(); chatLog.push({ role: "ai", text: text }); renderThread(); }
-  function addPending(text) { chatLog.push({ role: "pending", text: text || "Thinking..." }); renderThread(); }
-  function dropPending() { chatLog = chatLog.filter(function (m) { return m.role !== "pending"; }); }
+  function addUser(text) { var s = CONVO(); if (s) { safe(function () { s.append("user", text); }); } else { chatLog.push({ role: "user", text: text }); renderThread(); } }
+  function addAi(text) { var s = CONVO(); if (s) { safe(function () { s.dropPending(); s.append("ai", text); }); } else { dropPending(); chatLog.push({ role: "ai", text: text }); renderThread(); } }
+  function addPending(text) { var s = CONVO(); if (s) { safe(function () { s.pushPending(text || "Thinking..."); }); } else { chatLog.push({ role: "pending", text: text || "Thinking..." }); renderThread(); } }
+  function dropPending() { var s = CONVO(); if (s) { safe(function () { s.dropPending(); }); } else { chatLog = chatLog.filter(function (m) { return m.role !== "pending"; }); } }
 
   function parseIntent(q) {
     var s = String(q || "").toLowerCase().trim();
@@ -437,8 +472,12 @@
     var base = safe(function () { return window.bkBase(); }, "");
     var tok = safe(function () { return window.bkToken(); }, "");
     var ctx = safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot() : null; }, null);
-    var hist = chatLog.filter(function (m) { return m.role === "user" || m.role === "ai"; })
-                      .map(function (m) { return { role: m.role, text: m.text }; });
+    /* history from the shared store when present (so it matches Studio exactly),
+       else the private chatLog. Exclude any pending; drop the just-added user turn. */
+    var s = CONVO();
+    var src = s ? (safe(function () { return s.messages(); }, []) || []) : chatLog;
+    var hist = src.filter(function (m) { return m.role === "user" || m.role === "ai"; })
+                  .map(function (m) { return { role: m.role, text: m.text }; });
     hist = hist.slice(0, -1);
     var body = { question: q, history: hist };
     if (ctx) body.context = ctx;
@@ -533,6 +572,11 @@
     if (send.getAttribute("data-mlsfix-bound")) return true;
     seedChatLog();
     renderThread();
+    /* Task 2: repaint this panel whenever the shared conversation changes
+       (a turn asked in AI Studio, or a cross-surface reset). Idempotent + guarded
+       by the store's own re-entrancy flag; single subscription. */
+    var s0 = CONVO();
+    if (s0 && !convoUnsub) { convoUnsub = safe(function () { return s0.subscribe(function () { renderThread(); }); }, null); }
     sendCapture = function (e) {
       var v = ta.value;
       try { e.stopImmediatePropagation(); e.preventDefault(); } catch (er) {}
@@ -556,13 +600,14 @@
       chatObserver = new MutationObserver(function () {
         if (chatSelfRender) return;
         var cur = t.getAttribute(THREAD_MARK);
-        if (cur !== String(chatLog.length)) { renderThread(); }
+        if (cur !== String(displayMsgs().length)) { renderThread(); }
       });
       try { chatObserver.observe(t, { childList: true }); } catch (e) {}
     }
     return true;
   }
   function revertChat() {
+    if (convoUnsub) { try { convoUnsub(); } catch (e) {} convoUnsub = null; }
     if (chatObserver) { try { chatObserver.disconnect(); } catch (e) {} chatObserver = null; }
     if (chatBoundEls) {
       try { chatBoundEls.send.removeEventListener("click", sendCapture, true); } catch (e) {}

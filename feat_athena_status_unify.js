@@ -1,4 +1,4 @@
-/* feat_athena_status_unify.js  ->  window.__mlsAthenaStatusUnify  (v1.0.0)  [item20]
+/* feat_athena_status_unify.js  ->  window.__mlsAthenaStatusUnify  (v1.1.0)  [item20]
  * =====================================================================
  * ONE coherent, honest, single-source-of-truth Athena status system.
  *
@@ -45,6 +45,21 @@
  * SHAPE: own-scope IIFE, idempotent boot, ASCII-only, try/catch throughout,
  *   fully reversible via window.__mlsAthenaStatusUnify.revert().
  *
+ * v1.1.0 (2026-07-11, task17-freeze-hunt) -- LEAK FIX, no behavior change:
+ *   boot() retries every 250 ms (up to 40x) while waiting for
+ *   window.__mlsConnTruth, but each retry ALSO re-ran bindProgress() and
+ *   bindObserver() unconditionally. __mlsConnTruth has NO provider anywhere
+ *   in the current live surface (grep of ScribeFlow.html + mls-connect.js
+ *   b132 + all 110 satellites + the frozen extension src: zero assignments),
+ *   so EVERY live session ran all 40 retries and stacked 41 document-wide
+ *   MutationObservers (childList+characterData+subtree) plus 41 window
+ *   'message' listeners; only the last of each was reachable by revert().
+ *   Measured in the task17-freeze-hunt harness (live b132 + all satellites):
+ *   this one file accounted for ~45% of ALL MutationObserver callback
+ *   invocations app-wide (3,690 of ~8,200 during a 5 s click storm; ~200
+ *   fires/s at idle). v1.1.0 binds ONCE (if (!msgHandler) / if (!mo));
+ *   the observer, the handler and all arbitration behavior are unchanged.
+ *
  * PUBLIC API (window.__mlsAthenaStatusUnify)
  *   .installed .version
  *   .state            -> {connection, phase, progress, result}
@@ -58,7 +73,7 @@
   'use strict';
 
   var NS = '__mlsAthenaStatusUnify';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var win = window;
 
   if (win[NS] && win[NS].installed) { return; }
@@ -354,8 +369,10 @@
     if (!okConn || !isFn(win.upsertPatient)) {
       if (bootTries++ < 40) { bootTimer = setTimeout(boot, 250); }
     }
-    bindProgress();
-    bindObserver();
+    /* v1.1.0: bind ONCE -- see header. Re-binding on every retry stacked
+       up to 41 document-wide observers + 41 message listeners per load. */
+    if (!msgHandler) bindProgress();
+    if (!mo) bindObserver();
     safeScan();
     // also start the truth poll if present and idle
     safe(function () { if (win.__mlsConnTruth && isFn(win.__mlsConnTruth.start)) win.__mlsConnTruth.start(); });
