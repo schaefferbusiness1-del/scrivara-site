@@ -1,3 +1,98 @@
+/* =========================================================================
+ * MLS -- tour de-dup (__mlsTourDedupFix td-1.0.0)  2026-07-11 final sweep
+ * ----------------------------------------------------------------------------
+ * The new onboarding tour (feat_mls_onboarding_tour, obt-1.0.0, prepended
+ * immediately above this module) is THE one tour. obt already neutralizes
+ * __mlsGuidedTour and __mlsHowToV2 by pre-seeding their globals, but the live
+ * bundle carries TWO MORE self-auto-launching tour systems:
+ *   - __mlsTour        (Guided Tour v1 + v2 engines; #mlsTourRoot / #mlsTourRootV2;
+ *                       auto-launch on window load gated by mls_tour_seen_v1 / _v2)
+ *   - __mlsStudioTourB39 (b39 Studio tour; #mlsB39TourOv; gated by mls_tour_seen_v3)
+ * On a first-run account all of them fire -> THREE stacked tours (verified live
+ * 2026-07-11 during the final integration sweep). This module:
+ *   1. pre-seeds the three legacy seen-keys so the legacy tours never auto-launch;
+ *   2. once obt is installed, redirects the legacy .start/.open APIs and the
+ *      #mlsB39MenuItem menu row to obt.open (one tour, one entry point);
+ *   3. during the 20 s boot window, removes any stray legacy tour overlay.
+ * Additive / reversible: window.__mlsTourDedupFix.revert() (stops the rewire
+ * loop; legacy modules themselves are untouched code -- only their auto-start
+ * flags and public API pointers are adjusted).
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsTourDedupFix) return;
+  var api = { version: "td-1.0.0", installed: true, rewired: [], removedOverlays: 0 };
+  window.__mlsTourDedupFix = api;
+
+  /* 1. legacy tours must never auto-launch again (obt owns first-run) */
+  try {
+    ["mls_tour_seen_v1", "mls_tour_seen_v2", "mls_tour_seen_v3"].forEach(function (k) {
+      try { if (localStorage.getItem(k) !== "1") localStorage.setItem(k, "1"); } catch (e) {}
+    });
+  } catch (e) {}
+
+  /* 2 + 3. rewire explicit entry points to obt; sweep stray overlays (boot window only) */
+  var tries = 0, timer = null;
+  function obt() {
+    var t = window.__mlsOnboardingTour;
+    return (t && t.installed && typeof t.open === "function") ? t : null;
+  }
+  function sweepOverlays() {
+    ["mlsB39TourOv", "mlsTourRootV2", "mlsTourRoot"].forEach(function (id) {
+      try {
+        var n = document.getElementById(id);
+        if (n && n.parentNode) { n.parentNode.removeChild(n); api.removedOverlays++; }
+      } catch (e) {}
+    });
+  }
+  function rewire() {
+    tries++;
+    var o = obt();
+    if (o) {
+      try {
+        var t = window.__mlsTour;
+        if (t && typeof t === "object" && !t.__obtRedirect) {
+          if (typeof t.start === "function") t.start = o.open;
+          if (typeof t.open === "function") t.open = o.open;
+          t.__obtRedirect = 1; api.rewired.push("__mlsTour");
+        }
+      } catch (e) {}
+      try {
+        var b = window.__mlsStudioTourB39;
+        if (b && typeof b === "object" && !b.__obtRedirect) {
+          if (typeof b.start === "function") b.start = o.open;
+          b.__obtRedirect = 1; api.rewired.push("__mlsStudioTourB39");
+        }
+      } catch (e) {}
+      try {
+        var mi = document.getElementById("mlsB39MenuItem");
+        if (mi && !mi.__obtRedirect) {
+          var clone = mi.cloneNode(true);
+          clone.__obtRedirect = 1;
+          clone.addEventListener("click", function (ev) {
+            try { ev.preventDefault(); ev.stopImmediatePropagation(); } catch (e) {}
+            try { o.open(); } catch (e) {}
+          }, true);
+          mi.parentNode.replaceChild(clone, mi);
+          if (api.rewired.indexOf("mlsB39MenuItem") < 0) api.rewired.push("mlsB39MenuItem");
+        }
+      } catch (e) {}
+      sweepOverlays();
+    }
+    if (tries < 40) timer = setTimeout(rewire, 500);
+  }
+  function startLoop() { timer = setTimeout(rewire, 700); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", startLoop, { once: true });
+  else startLoop();
+
+  api.revert = function () {
+    try { if (timer) clearTimeout(timer); } catch (e) {}
+    tries = 40;
+    api.installed = false;
+    return "tour-dedup loop stopped (seen-keys and rewired pointers left as-is)";
+  };
+})();
+
 /* =============================================================================
  * feat_mls_onboarding_tour.module.js  ->  window.__mlsOnboardingTour  (obt-1.0.0)
  * -----------------------------------------------------------------------------
@@ -29713,7 +29808,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b134';
+  window.__MLS_AV = window.__MLS_AV || 'b135';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30027,7 +30122,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-11-b134';
+  var MLS_APP_BUILD='2026-07-11-b135';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
