@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsOpNotePrep && window.__mlsOpNotePrep.installed) return; } catch (e) { return; }
 
-  var VERSION = 'opnp-1.0.0';
+  var VERSION = 'opnp-1.1.0';
   var STYLE_ID = 'mlsOpnpCss';
 
   function S(x) { return x == null ? '' : String(x); }
@@ -325,10 +325,16 @@
     wrap('_opPatientCtx', function (orig) {
       return function (name) {
         // Resolve the patient safely from the current prep row's appt when possible.
+        // IDENTITY-SAFE for SAME-NAME patients: prefer the EXACT row being drafted
+        // (window.__opnpActiveIdx, pinned by the opPrepGenerateOne wrap below) so two
+        // patients who share a name never get each other's DOB/MRN in the note body.
+        // A bare first-name-match is only a last resort for non-drafting/display calls.
         var appt = null;
         try {
           var rows = window._opPrep || [];
-          for (var i = 0; i < rows.length; i++) { if (rows[i] && rows[i].appt && nname(rows[i].appt.name) === nname(name)) { appt = rows[i].appt; break; } }
+          var ai = window.__opnpActiveIdx;
+          if (ai != null && rows[ai] && rows[ai].appt && nname(rows[ai].appt.name) === nname(name)) appt = rows[ai].appt;
+          if (!appt) { for (var i = 0; i < rows.length; i++) { if (rows[i] && rows[i].appt && nname(rows[i].appt.name) === nname(name)) { appt = rows[i].appt; break; } } }
         } catch (e) {}
         var base;
         var res = resolvePatient(appt || { name: name });
@@ -342,6 +348,21 @@
         }
         base._idStatus = res.status; base._idWarnings = res.warnings; base._resolvedId = res.patient ? ptId(res.patient) : '';
         return enrichCtx(name, base, appt);
+      };
+    });
+
+    // Pin the EXACT row being drafted so _opPatientCtx (above) resolves same-name
+    // patients by the right row (not the first name-match). draftAll calls
+    // opPrepGenerateOne(idx) sequentially, so a single active index is race-free.
+    // Cleared when the draft settles so stray display-time ctx calls fall back safely.
+    wrap('opPrepGenerateOne', function (orig) {
+      return function (idx) {
+        try { window.__opnpActiveIdx = idx; } catch (e) {}
+        var clear = function () { try { if (window.__opnpActiveIdx === idx) window.__opnpActiveIdx = null; } catch (e) {} };
+        var r;
+        try { r = orig.apply(this, arguments); } catch (e) { clear(); throw e; }
+        try { if (r && isFn(r.then)) { r.then(clear, clear); } else { clear(); } } catch (e2) { clear(); }
+        return r;
       };
     });
 
