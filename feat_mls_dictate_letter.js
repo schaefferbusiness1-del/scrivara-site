@@ -379,15 +379,20 @@
 
   /* ------------------------------ launcher --------------------------------- */
   function addButton() {
-    if (stopped || document.getElementById('mlsdlLaunch')) return;
+    if (stopped) return;
+    var host = document.querySelector('#legalReqView .card h2') || document.querySelector('#legalReqView .card');
+    if (!host) return;
+    if (host.querySelector('#mlsdlLaunch')) return;
+    var stale = document.getElementById('mlsdlLaunch'); if (stale && stale.parentNode !== host) { try { stale.parentNode.removeChild(stale); } catch (e) {} }
     var b = document.createElement('button');
     b.id = 'mlsdlLaunch';
     b.type = 'button';
     b.textContent = 'Dictate letter';
     b.title = 'Dictate a letter to a doctor, attorney, or other recipient — draft & preview only.';
-    b.style.cssText = 'position:fixed;left:12px;bottom:150px;z-index:99997;background:#0ea5e9;border:none;color:#fff;border-radius:11px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)';
+    b.className = 'btn-ghost';
+    b.style.cssText = 'margin-left:8px;font-size:14px;padding:9px 15px';
     b.onclick = openModal;
-    document.body.appendChild(b);
+    host.appendChild(b);
   }
 
   var mo = null, iv = null;
