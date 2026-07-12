@@ -12651,6 +12651,7 @@
       + "CRITICAL -- ground everything: do NOT invent, assume, or carry over from a different case ANY clinical detail. If a template field or section is case-varying and was NOT dictated and is NOT already a standard value in the template, insert a clearly-marked [[snake_case_key]] placeholder AND list it in \"missing\" -- NEVER fabricate consent, technique specifics, medications, doses, contrast, blood loss, or complications. "
       + "BE CONSERVATIVE with placeholders: if the TEMPLATE already states a standard value (routine consent language, a standard prep/technique sentence, a default dose), KEEP the template's value rather than blanking it. Only blank a detail that truly changes patient-to-patient and was not provided. "
       + "Never place a [[placeholder]] for a KNOWN PATIENT FACT. Each placeholder key is unique and appears once. Use snake_case keys (needle_size, contrast_volume, sedation, ebl). "
+      + "CODING -- fill real codes, never echo an instruction: when the TEMPLATE, DRAFT NOTE, TRANSCRIPT, or KNOWN FACTS name a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. 'ICD-10 code for facet-mediated lumbar pain' or 'CPT code for lumbar medial branch block') -- REPLACE that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure, followed by a short description. Coding an explicitly-stated diagnosis is expected, NOT fabrication; do NOT output a truncated or deprecated parent code that is not separately billable, and do NOT invent a code for a diagnosis that was not stated. NEVER leave literal 'ICD-10 code for ...' or 'CPT code for ...' text in the finished note. Only if you are genuinely unsure of the exact current code for a named diagnosis, insert a [[icd10_<short_dx>]] placeholder and add it to \"missing\" instead of guessing. "
       + "Return ONLY JSON, no prose, no code fence: {\"note\":\"<full operative note text with [[key]] placeholders where needed>\",\"missing\":[{\"key\":\"needle_size\",\"label\":\"Needle size / gauge\",\"example\":\"22g 3.5in\"}]}.";
     var user = "TEMPLATE (the physician's own operative note -- match its structure & style exactly):\n\"\"\"\n" + S(templateText).slice(0, 9000) + "\n\"\"\"\n\n"
       + "TRANSCRIPT (what was actually dictated in this case -- the source of truth):\n\"\"\"\n" + S(transcript).slice(0, 8000) + "\n\"\"\"\n\n"
@@ -29881,7 +29882,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b160';
+  window.__MLS_AV = window.__MLS_AV || 'b161';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30195,7 +30196,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-12-b160';
+  var MLS_APP_BUILD='2026-07-12-b161';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
