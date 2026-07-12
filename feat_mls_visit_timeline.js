@@ -18,9 +18,12 @@
   'use strict';
   try { if (window.__mlsVisitTimeline && window.__mlsVisitTimeline.installed) return; } catch (e) { return; }
 
-  /* vtl-1.0.1: LIVE FREEZE FIX -- coalesced, always-key-checked renders (see
-   *   render()/schedule() notes below). Chart behavior/visuals unchanged. */
-  var VERSION = 'vtl-1.0.1';
+  /* vtl-1.0.1: LIVE FREEZE FIX -- coalesced, always-key-checked renders.
+   * vtl-1.0.2: DATA-SCALE HARDENING for heavy real accounts -- cheap store
+   *   revision check before ANY note parsing; chart capped to the most recent
+   *   150 notes; regexes see at most the first 4 KB of a note. Bounded cost
+   *   regardless of store pathology (huge visit counts, giant pasted notes). */
+  var VERSION = 'vtl-1.0.2';
   var CARD_ID = 'mlsVtlCard', STYLE_ID = 'mlsVtlStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -71,16 +74,33 @@
     return m ? m[1].trim() : S(txt).split('\n')[0].slice(0, 90);
   }
 
+  /* vtl-1.0.2 DATA-SCALE HARDENING: real accounts can hold pathological data
+     (one patient with thousands of filed visits; single chart-paste notes of
+     hundreds of KB). Caps: only the most recent 150 notes are charted, and
+     regexes only ever see the first 4 KB of a note (S:/pain lines live at the
+     top of real notes). Worst-case per rebuild is bounded no matter the store. */
+  var MAX_NOTES = 150, MAX_SCAN = 4000;
   function buildPoints(id) {
     var ns = notesFor(id), pts = [];
-    for (var i = 0; i < ns.length; i++) {
+    var start = ns.length > MAX_NOTES ? ns.length - MAX_NOTES : 0;
+    for (var i = start; i < ns.length; i++) {
       var n = ns[i]; if (!n) continue;
       var t = parseDate(n.date || n.created || n.at);
       if (t == null) continue;
-      pts.push({ t: t, pain: painOf(n.note), subj: firstSubj(n.note), date: S(n.date || '').slice(0, 10), id: n.id });
+      var txt = S(n.note).slice(0, MAX_SCAN);
+      pts.push({ t: t, pain: painOf(txt), subj: firstSubj(txt), date: S(n.date || '').slice(0, 10), id: n.id });
     }
     pts.sort(function (a, b) { return a.t - b.t; });
     return pts.slice(-60);
+  }
+  /* cheap store revision -- O(store entries) pointer copy via the b132 cache,
+     no text scanning -- so poll ticks pay ~zero when nothing changed */
+  function storeRev(id) {
+    return safe(function () {
+      var all = isFn(window.getNotes) ? (window.getNotes() || []) : [];
+      var last = all.length ? all[all.length - 1] : null;
+      return all.length + '|' + (last ? S(last.id) + ':' + S(last.note).length : '0');
+    }, 'err');
   }
 
   /* vtl-1.0.1 LIVE FREEZE FIX (07-12): render(true) used to bypass the
@@ -96,9 +116,12 @@
     var host = findHost();
     var id = activeId();
     if (!host || !id) { if ($(CARD_ID)) remove(); lastKey = ''; return; }
-    var pts = buildPoints(id);
-    var key = id + '|' + pts.length + '|' + (pts.length ? pts[pts.length - 1].t : 0);
+    /* vtl-1.0.2: the CHEAP revision check runs BEFORE any note parsing, so a
+       poll tick on an unchanged store costs microseconds even on a store with
+       tens of thousands of notes. */
+    var key = id + '|' + storeRev(id);
     if (key === lastKey && $(CARD_ID)) return;             /* write-if-changed: ALWAYS */
+    var pts = buildPoints(id);
     lastKey = key;
     css();
     var card = $(CARD_ID);
