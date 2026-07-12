@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.7.0';
+  var VERSION = 'onf-1.7.1';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -545,9 +545,10 @@
   }
 
   /* ---------------- tick (freeze-safe: cheap, gated, write-if-changed) ---------------- */
-  var _sig = {}, iv = null;
+  var _sig = {}, iv = null, _wireN = 0;
   function tick() {
-    safe(wireUploadButtons);                          /* runs regardless of the op-prep modal */
+    _wireN++;
+    if (_wireN <= 3 || _wireN % 6 === 0) safe(wireUploadButtons);   /* PERF: wire early, then only every ~6s (was a full document button/a scan EVERY tick) */
     if (!modalOpen()) return;
     safe(injectBar);
     /* set each row's procedure from its matched template + pre-fill the visible

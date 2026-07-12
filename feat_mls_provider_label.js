@@ -48,7 +48,7 @@
   'use strict';
   try { if (window.__mlsProviderLabel && window.__mlsProviderLabel.installed) return; } catch (e) { return; }
 
-  var VERSION = 'plbl-1.0.0';
+  var VERSION = 'plbl-1.1.0';
 
   /* labels that carry no real identity -> treat as unnameable ('') */
   var JUNK = /^(provider\s*(#?\s*\d+|undefined|null)?|no provider|unassigned|\[object object\]|undefined|null|n\/?a|all doctors|all providers|no preference)$/i;
@@ -130,21 +130,26 @@
     } catch (e) { return false; }
   }
 
-  var iv = null, stopped = false;
-  function tick() { if (!stopped) normalizeCalProviders(); }
-
+  var to = null, stopped = false, stableTicks = 0;
+  function tick() {
+    if (stopped) return;
+    var changed = normalizeCalProviders();
+    stableTicks = changed ? 0 : (stableTicks + 1);
+    /* PERF (plbl-1.1.0): adaptive back-off. Run every 2.5s while the roster is
+       still churning (asst_fix re-appending raw strings), but drop to a slow 20s
+       heartbeat once it has settled (no change for 3 ticks) so this is never a
+       persistent fast timer. A real change (a new pull) resets to fast cadence.
+       Uses a self-scheduling setTimeout, not a fixed setInterval. */
+    var delay = stableTicks >= 3 ? 20000 : 2500;
+    try { to = setTimeout(tick, delay); } catch (e) {}
+  }
   function boot() {
     normalizeCalProviders();
-    /* re-normalize on a light cadence: other modules (asst_fix) re-append raw
-       strings after each schedule read; this idempotently cleans them. Cheap
-       (~roster length) and a no-op once stable. No function wrapping -> no
-       re-wrap cycle. */
-    try { iv = setInterval(tick, 2500); } catch (e) {}
+    try { to = setTimeout(tick, 2500); } catch (e) {}
   }
-
   function revert() {
     stopped = true;
-    try { if (iv) { clearInterval(iv); iv = null; } } catch (e) {}
+    try { if (to) { clearTimeout(to); to = null; } } catch (e) {}
     try { window.__mlsProviderLabel.installed = false; } catch (e) {}
     return 'provider-label resolver reverted';
   }
