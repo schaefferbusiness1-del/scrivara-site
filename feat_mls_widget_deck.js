@@ -1,0 +1,233 @@
+/* =========================================================================
+ * MLS -- Widget Deck  (feat_mls_widget_deck.js -> window.__mlsWidgetDeck, wd-1.0.0)
+ * 2026-07-12, final integration sweep (owner: widgets belong IN the main flow).
+ * ----------------------------------------------------------------------------
+ * Custom widgets previously lived only on the AI Studio view -- a doctor in the
+ * Visit flow never saw them. This deck surfaces them natively on the VISIT view
+ * (right after the note card, where their content actually lands on Generate):
+ *   - a responsive card grid MIRRORING the app's own sanitized widget bodies
+ *     (#cwBody_<id>, rendered by the base cwRenderOutput -- this module never
+ *     renders model/user HTML itself, it clones what the app already vetted);
+ *   - per-card actions delegate 100% to the base app: refreshCustomWidget(id),
+ *     cwPushToNote(id); "+ New widget" opens the existing builder;
+ *   - EMPTY STATE: three curated one-click picks from the app's own CW_LIBRARY
+ *     (installLibraryWidget) so a new account discovers widgets naturally --
+ *     installs stay user-initiated, nothing is auto-installed;
+ *   - BUILDER POLISH: three example chips injected into the builder modal that
+ *     fill the description box (the AI designer is easier to start when you
+ *     can see what a good ask looks like).
+ * Read-only + delegating; write-if-changed mirroring (no idle churn); polls only
+ * while the Visit view is visible. Reversible: window.__mlsWidgetDeck.revert().
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  try { if (window.__mlsWidgetDeck && window.__mlsWidgetDeck.installed) return; } catch (e) { return; }
+
+  var VERSION = 'wd-1.0.0';
+  var DECK_ID = 'mlsWdDeck', STYLE_ID = 'mlsWdStyle', CHIPS_ID = 'mlsWdBuilderChips';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function $(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  function css() {
+    if ($(STYLE_ID)) return;
+    var st = document.createElement('style'); st.id = STYLE_ID;
+    st.textContent = [
+      '#' + DECK_ID + '{margin:14px 0;padding:14px 16px;border:1px solid #d5e4f7;border-radius:16px;background:linear-gradient(180deg,#f6faff 0%,#eef5ff 100%)}',
+      '#' + DECK_ID + ' .wd-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}',
+      '#' + DECK_ID + ' .wd-title{font:800 14px/1.3 "Plus Jakarta Sans",system-ui,sans-serif;color:#1b3a66}',
+      '#' + DECK_ID + ' .wd-note{font:600 11px/1.3 system-ui;color:#6e86a6;flex:1;min-width:140px}',
+      '#' + DECK_ID + ' .wd-btn{border:1px solid #c9dcf5;background:#fff;color:#2d63d6;border-radius:9px;padding:5px 12px;font:700 12px/1.2 system-ui;cursor:pointer;transition:transform .12s,box-shadow .12s}',
+      '#' + DECK_ID + ' .wd-btn:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(45,99,214,.16)}',
+      '#' + DECK_ID + ' .wd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}',
+      '#' + DECK_ID + ' .wd-card{background:#fff;border:1px solid #dde9f8;border-radius:12px;padding:11px 13px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 8px rgba(30,70,150,.06)}',
+      '#' + DECK_ID + ' .wd-card h4{margin:0;font:800 13px/1.35 "Plus Jakarta Sans",system-ui,sans-serif;color:#12294a;display:flex;align-items:center;gap:6px}',
+      '#' + DECK_ID + ' .wd-desc{font:500 11.5px/1.4 system-ui;color:#5f7796}',
+      '#' + DECK_ID + ' .wd-body{font:500 12.5px/1.5 system-ui;color:#28415f;max-height:220px;overflow-y:auto;border-top:1px dashed #e3edf9;padding-top:6px}',
+      '#' + DECK_ID + ' .wd-body:empty:before{content:"Fills when you generate a note.";color:#8ba1bd;font-weight:600}',
+      '#' + DECK_ID + ' .wd-acts{display:flex;gap:6px;margin-top:auto;padding-top:4px}',
+      '#' + DECK_ID + ' .wd-acts button{border:0;background:#eef5ff;color:#2d63d6;border-radius:8px;padding:4px 10px;font:700 11.5px/1.2 system-ui;cursor:pointer}',
+      '#' + DECK_ID + ' .wd-acts button:hover{background:#dcebff}',
+      '#' + DECK_ID + ' .wd-starter{border:1px dashed #bcd6f5;border-radius:12px;background:#fbfdff;padding:11px 13px}',
+      '#' + DECK_ID + ' .wd-starter b{font:800 12.5px/1.4 system-ui;color:#1b3a66}',
+      '#' + DECK_ID + ' .wd-starter p{margin:3px 0 8px;font:500 11.5px/1.45 system-ui;color:#5f7796}',
+      '#' + DECK_ID + ' .wd-starter button{width:100%}',
+      '#' + CHIPS_ID + '{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}',
+      '#' + CHIPS_ID + ' button{border:1px solid #cfe0f5;background:#f4f9ff;color:#2d63d6;border-radius:999px;padding:4px 11px;font:600 11.5px/1.3 system-ui;cursor:pointer}',
+      '#' + CHIPS_ID + ' button:hover{background:#e7f1ff}',
+      '@media (max-width:600px){#' + DECK_ID + ' .wd-grid{grid-template-columns:1fr}}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function widgets() { return safe(function () { return isFn(window.getCustomWidgets) ? (window.getCustomWidgets() || []) : []; }, []); }
+
+  /* three broad clinical starters from the app's own library, matched by title */
+  var STARTER_TITLES = ['Injection tracker', 'Return-to-work status', 'Opioid risk & MME'];
+  function starters() {
+    var lib = safe(function () { return (typeof CW_LIBRARY !== 'undefined') ? CW_LIBRARY : []; }, []);
+    var out = [];
+    for (var i = 0; i < lib.length; i++) if (STARTER_TITLES.indexOf(lib[i].title) >= 0) out.push({ i: i, tpl: lib[i] });
+    return out.slice(0, 3);
+  }
+
+  /* ---------------- deck render (write-if-changed) ---------------- */
+  var lastKey = '';
+  function ensureDeck() {
+    var vv = $('visitView');
+    if (!vv) return null;
+    var deck = $(DECK_ID);
+    if (!deck) {
+      deck = document.createElement('div'); deck.id = DECK_ID;
+      var anchor = $('noteCard');
+      if (anchor && anchor.parentNode && anchor.parentNode.closest && anchor.parentNode.closest('#visitView')) {
+        anchor.parentNode.insertBefore(deck, anchor.nextSibling);
+      } else if (anchor && anchor.parentNode) {
+        anchor.parentNode.insertBefore(deck, anchor.nextSibling);
+      } else {
+        vv.appendChild(deck);
+      }
+    }
+    return deck;
+  }
+  function skeleton(list) {
+    var h = '<div class="wd-head"><span class="wd-title">🧩 Smart widgets</span>' +
+      '<span class="wd-note">fill from each generated note · analysis only — never writes to Athena</span>' +
+      '<button type="button" class="wd-btn" id="mlsWdNew">＋ New widget</button>' +
+      '<button type="button" class="wd-btn" id="mlsWdStudio" title="Manage widgets in AI Studio">Manage</button></div>';
+    if (!list.length) {
+      var st = starters();
+      h += '<div class="wd-grid">';
+      for (var i = 0; i < st.length; i++) {
+        var t = st[i].tpl;
+        h += '<div class="wd-starter"><b>' + esc(t.emoji) + ' ' + esc(t.title) + '</b><p>' + esc(t.description || '') + '</p>' +
+          '<button type="button" class="wd-btn" data-lib="' + st[i].i + '">＋ Add this widget</button></div>';
+      }
+      h += '</div>';
+      if (!st.length) h += '<div class="wd-starter"><b>No widgets yet</b><p>Describe any card you want in plain English and MLS designs it.</p></div>';
+      return h;
+    }
+    h += '<div class="wd-grid">';
+    for (var j = 0; j < list.length; j++) {
+      var w = list[j];
+      h += '<div class="wd-card" data-wid="' + esc(w.id) + '"><h4>' + esc(w.emoji || '🧩') + ' ' + esc(w.title) + '</h4>' +
+        (w.description ? '<div class="wd-desc">' + esc(w.description) + '</div>' : '') +
+        '<div class="wd-body" data-body="' + esc(w.id) + '"></div>' +
+        '<div class="wd-acts">' +
+        '<button type="button" data-act="refresh" data-id="' + esc(w.id) + '" title="Generate this widget for the current visit">↻ Refresh</button>' +
+        '<button type="button" data-act="note" data-id="' + esc(w.id) + '" title="Append to the current note">➕ Add to note</button>' +
+        '</div></div>';
+    }
+    h += '</div>';
+    return h;
+  }
+  function wire(deck) {
+    var nb = $('mlsWdNew'); if (nb) nb.onclick = function () { safe(function () { window.openWidgetBuilder(); }); };
+    var sb = $('mlsWdStudio'); if (sb) sb.onclick = function () { var n = $('nav_studio'); if (n) n.click(); };
+    Array.prototype.slice.call(deck.querySelectorAll('[data-lib]')).forEach(function (b) {
+      b.onclick = function () {
+        var i = parseInt(b.getAttribute('data-lib'), 10);
+        safe(function () { window.installLibraryWidget(i); });
+        safe(function () { window.renderCustomWidgets(); });
+        lastKey = ''; sync();
+      };
+    });
+    Array.prototype.slice.call(deck.querySelectorAll('[data-act]')).forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute('data-id');
+        if (b.getAttribute('data-act') === 'refresh') safe(function () { window.refreshCustomWidget(id); });
+        else safe(function () { window.cwPushToNote(id); });
+      };
+    });
+  }
+  function mirrorBodies(deck, list) {
+    for (var i = 0; i < list.length; i++) {
+      var src = $('cwBody_' + list[i].id);
+      var dst = deck.querySelector('[data-body="' + list[i].id + '"]');
+      if (!dst) continue;
+      var html = src ? src.innerHTML : '';
+      if (dst.__mirror !== html) { dst.innerHTML = html; dst.__mirror = html; }
+    }
+  }
+  function sync() {
+    var vv = $('visitView');
+    if (!vv || !vv.offsetParent) return;      /* only work while the Visit view is visible */
+    /* make sure the base cards exist so there is something to mirror */
+    safe(function () { if ($('customWidgetsHost') && !$('customWidgetsHost').children.length && widgets().length && isFn(window.renderCustomWidgets)) window.renderCustomWidgets(); });
+    var list = widgets();
+    var deck = ensureDeck(); if (!deck) return;
+    var key = list.map(function (w) { return w.id; }).join(',');
+    if (key !== lastKey) {
+      lastKey = key;
+      deck.innerHTML = skeleton(list);
+      wire(deck);
+    }
+    mirrorBodies(deck, list);
+  }
+
+  /* ---------------- builder example chips (additive, once) ---------------- */
+  var EXAMPLES = [
+    'Track every injection I do: procedure, level, laterality, and how the pain responded',
+    'Summarize any imaging discussed this visit (MRI / X-ray / CT) with the key findings',
+    'A follow-up plan card: what we ordered, what the patient must do, and when I see them next'
+  ];
+  function ensureChips() {
+    var box = $('cwDescribe');
+    if (!box || $(CHIPS_ID)) return;
+    var wrap = box.parentNode; if (!wrap) return;
+    var row = document.createElement('div'); row.id = CHIPS_ID;
+    var lbl = document.createElement('span');
+    lbl.style.cssText = 'font:600 11px/2 system-ui;color:#7d90a8;margin-right:2px';
+    lbl.textContent = 'Try:';
+    row.appendChild(lbl);
+    EXAMPLES.forEach(function (ex) {
+      var b = document.createElement('button'); b.type = 'button';
+      b.textContent = ex.length > 46 ? ex.slice(0, 44) + '…' : ex;
+      b.title = ex;
+      b.addEventListener('click', function () { box.value = ex; box.focus(); });
+      row.appendChild(b);
+    });
+    wrap.appendChild(row);
+  }
+
+  /* instant mirroring: the moment the base renders a widget's output (on
+     Generate or Refresh), sync the deck too -- the poll is just a fallback. */
+  var renderWrapped = false;
+  function wrapRenderOutput() {
+    if (renderWrapped) return;
+    if (!isFn(window.cwRenderOutput) || window.cwRenderOutput.__wdWrapped) { renderWrapped = !!(window.cwRenderOutput && window.cwRenderOutput.__wdWrapped); return; }
+    var orig = window.cwRenderOutput;
+    var w = function () {
+      var r;
+      try { r = orig.apply(this, arguments); } catch (e) {}
+      safe(function () { setTimeout(function () { safe(sync); }, 30); });
+      return r;
+    };
+    w.__wdWrapped = true; w.__wdOrig = orig;
+    window.cwRenderOutput = w;
+    renderWrapped = true;
+  }
+
+  var iv = null;
+  function boot() {
+    css();
+    ensureChips();
+    wrapRenderOutput();
+    sync();
+    iv = setInterval(function () { safe(sync); safe(ensureChips); safe(wrapRenderOutput); }, 1200);
+  }
+  function revert() {
+    if (iv) { clearInterval(iv); iv = null; }
+    try { if (window.cwRenderOutput && window.cwRenderOutput.__wdWrapped && window.cwRenderOutput.__wdOrig) window.cwRenderOutput = window.cwRenderOutput.__wdOrig; } catch (e) {}
+    [DECK_ID, STYLE_ID, CHIPS_ID].forEach(function (id) { var n = $(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
+    try { window.__mlsWidgetDeck.installed = false; } catch (e) {}
+    return 'widget deck reverted';
+  }
+
+  window.__mlsWidgetDeck = { installed: true, version: VERSION, asset: 'feat_mls_widget_deck.js', sync: sync, revert: revert };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+})();

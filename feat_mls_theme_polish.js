@@ -22,7 +22,12 @@
   'use strict';
   try { if (window.__mlsThemePolish && window.__mlsThemePolish.installed) return; } catch (e) { return; }
 
-  var VERSION = 'thm-1.0.0';
+  /* thm-1.1.0: MLS Easy visual pass -- consistent card treatment on the Visit
+   *   view (uniform radius, calmer borders, soft elevation + gentle hover),
+   *   tidier section headers, and a subtle polish on the collapsible extra
+   *   cards, so the Easy flow reads as one designed surface rather than a
+   *   stack of differently-styled boxes. */
+  var VERSION = 'thm-1.1.0';
   var STYLE_ID = 'mlsThemePolishStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -55,6 +60,12 @@
       'html body .btn-red:hover{transform:translateY(-1px)}',
       'html body button.edit:hover{transform:translateY(-1px)}',
       'html .btn-green:focus-visible,html .btn-ghost:focus-visible,html .btn-blue:focus-visible,html #authBtn:focus-visible{outline:3px solid rgba(75,142,245,.45)!important;outline-offset:2px!important}',
+
+      /* ---------- 2b. MLS Easy card consistency (visit view) ---------- */
+      'html body #visitView .card,html body #visitView .extra-card{border-radius:16px!important;border-color:#dbe7f5!important;box-shadow:0 3px 14px rgba(25,60,130,.07)!important;transition:box-shadow .18s ease}',
+      'html body #visitView .card:hover,html body #visitView .extra-card:hover{box-shadow:0 6px 20px rgba(25,60,130,.11)!important}',
+      'html body #visitView .extra-card h3{letter-spacing:.01em}',
+      'html body #visitView .card h1,html body #visitView .card h2{letter-spacing:-.01em}',
 
       /* ---------- 3. view transitions + micro polish ---------- */
       '@keyframes mlsThmViewIn{from{opacity:.35;transform:translateY(5px)}to{opacity:1;transform:none}}',

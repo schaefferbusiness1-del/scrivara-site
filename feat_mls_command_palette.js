@@ -45,7 +45,7 @@
       '#' + OV_ID + ' .cpal-row .d{font-size:12px;color:#65788f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '#' + OV_ID + ' .cpal-sec{font:700 11px/1 inherit;letter-spacing:.08em;text-transform:uppercase;color:#8296ad;padding:10px 12px 4px}',
       '#' + OV_ID + ' .cpal-empty{padding:22px 16px;color:#65788f;text-align:center}',
-      '#' + OV_ID + ' .cpal-foot{display:flex;gap:14px;padding:9px 14px;border-top:1px solid #e6edf6;background:#f8fbff;color:#7composer0;color:#7d90a8;font-size:11.5px}',
+      '#' + OV_ID + ' .cpal-foot{display:flex;gap:14px;padding:9px 14px;border-top:1px solid #e6edf6;background:#f8fbff;color:#7d90a8;font-size:11.5px}',
       '#' + OV_ID + ' .cpal-foot kbd{background:#eef3fa;border:1px solid #d9e4f0;border-bottom-width:2px;border-radius:5px;padding:1px 5px;font:700 10.5px/1.3 inherit;color:#3d5877}',
       '#' + BTN_ID + '{display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#dbe7ff;font:600 12px/1 "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer;transition:background .15s}',
       '#' + BTN_ID + ':hover{background:rgba(255,255,255,.22)}',

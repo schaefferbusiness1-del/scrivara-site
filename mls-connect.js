@@ -29880,7 +29880,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b139';
+  window.__MLS_AV = window.__MLS_AV || 'b140';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30194,7 +30194,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-12-b139';
+  var MLS_APP_BUILD='2026-07-12-b140';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -37799,6 +37799,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260711opnp1';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legalpack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legalpack.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_mls_legalpack.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS - legal full-history workflow + medical-legal narrative generator (Tasks 13+14; additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260712cpal1';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260712cpal11';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v=20260712thm1';s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: lighter-blue scheme + button polish + view transitions (window.__mlsThemePolish thm-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v=20260712thm11';s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: lighter-blue scheme + button polish + view transitions (window.__mlsThemePolish thm-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260712wd1';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
