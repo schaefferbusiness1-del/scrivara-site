@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_calpro.js -> window.__mlsCalPro  (cp-1.0.1)
+ * feat_mls_calpro.js -> window.__mlsCalPro  (cp-1.0.3)
  * -----------------------------------------------------------------------------
  * TASK 11 - Calendar & provider APP-SIDE logic (mock-tested; Athena-gated parts
  * stay pluggable and are NOT driven from here). Fully generic: providers come
