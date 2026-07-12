@@ -196,8 +196,9 @@
 
   function start() {
     tick();
+    var _ageT = 0;
     try {
-      obs = new MutationObserver(function () { if (!applying) tick(); });
+      obs = new MutationObserver(function (muts) { if (applying || _ageT) return; var _add=false; for (var _i=0;_i<muts.length;_i++){ if (muts[_i].addedNodes && muts[_i].addedNodes.length){ _add=true; break; } } if (!_add) return; _ageT = setTimeout(function(){ _ageT=0; if (!applying) tick(); }, 200); }); /* b171: debounce + only on element adds */
       obs.observe(document.body || document.documentElement,
         { childList: true, subtree: true });
     } catch (e) {}

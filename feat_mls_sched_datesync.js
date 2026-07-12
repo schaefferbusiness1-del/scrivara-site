@@ -74,8 +74,9 @@
     }
     var isToday = (key === todayKey());
     safe(function () {
-      ind.innerHTML = '<span class="mlssi-dot"></span><span>Viewing: ' +
+      var html = '<span class="mlssi-dot"></span><span>Viewing: ' +
         (isToday ? "Today" : pretty(key)) + "</span>";
+      if (ind.__mlsSig !== html) { ind.innerHTML = html; ind.__mlsSig = html; } /* b171: signature-guard so the observer stops self-retriggering */
       ind.classList.toggle("is-today", isToday);
     });
   }

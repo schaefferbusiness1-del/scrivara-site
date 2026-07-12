@@ -638,6 +638,8 @@
     return txt.length<60;
   }
   function pass(){
+    var _av=document.getElementById('analysisView'), _sv=document.getElementById('studioView');
+    if((!_av||_av.offsetParent===null) && (!_sv||_sv.offsetParent===null)) return; /* b171: skip whole-doc scan when Analysis/Studio views are closed */
     ensureCss();
     var tiles=document.querySelectorAll('.ax-tile.ax-exp');
     for(var i=0;i<tiles.length;i++){

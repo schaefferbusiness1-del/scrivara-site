@@ -295,6 +295,7 @@
       return r;
     };
     w.__vfxWrapped = true; w.__vfxOrig = orig;
+    try { for (var _k in orig) { if (/Wrapped$/.test(_k)) w[_k] = orig[_k]; } } catch (e) {} /* b171: carry other modules' upsert-wrap markers so their guards don't re-wrap */
     window.upsertPatient = w; wrapped.upsert = { host: window, key: 'upsertPatient', orig: orig };
   }
   var _lastBulkScrub = 0; /* v1.2.6 throttle */

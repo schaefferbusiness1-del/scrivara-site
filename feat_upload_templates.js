@@ -32,9 +32,11 @@
     return null;
   }
 
+  var _mo=null, _iv=0, _pend=0;
+  function _stop(){ try{ if(_mo){ _mo.disconnect(); _mo=null; } }catch(e){} if(_iv){ clearInterval(_iv); _iv=0; } if(_pend){ clearTimeout(_pend); _pend=0; } }
   function inject(){
     try{
-      if(document.getElementById('mlsUplTplBtn')) return;
+      if(document.getElementById('mlsUplTplBtn')){ _stop(); return; }
       var anchor=findAnchor();
       if(!anchor) return;
       // climb to a card-sized ancestor so the button sits under the whole quick-action card
@@ -45,10 +47,12 @@
       }
       if(!card.parentNode) return;
       card.parentNode.insertBefore(makeBtn(), card.nextSibling);
+      _stop(); /* b171: injected once -> stop the observer + interval */
     }catch(e){}
   }
+  function _schedInject(){ if(_pend) return; _pend=setTimeout(function(){ _pend=0; inject(); }, 250); } /* b171: coalesce mutation bursts into one scan */
 
-  try{ new MutationObserver(inject).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
-  setInterval(inject, 1500);
+  try{ _mo=new MutationObserver(_schedInject); _mo.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+  _iv=setInterval(inject, 1500);
   if(document.readyState!=='loading') inject(); else document.addEventListener('DOMContentLoaded', inject);
 })();

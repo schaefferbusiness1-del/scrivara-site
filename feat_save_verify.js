@@ -463,6 +463,7 @@
       return ret;
     };
     wrapped.__mlsVerifyWrapped = true; wrapped.__mlsOrig = up;
+    try { for (var _k in up) { if (/Wrapped$/.test(_k)) wrapped[_k] = up[_k]; } } catch (e) {} /* b171: carry other modules' upsert-wrap markers so their guards don't re-wrap */
     window.upsertPatient = wrapped;
     return true;
   }

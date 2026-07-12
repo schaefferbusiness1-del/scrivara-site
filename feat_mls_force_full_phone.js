@@ -36,7 +36,7 @@
 
   /* --- 1) force the single full view --- */
   function forceFull(){
-    try { localStorage.setItem('mls.easy.viewPref', 'complex'); } catch(e){}
+    try { if (localStorage.getItem('mls.easy.viewPref') !== 'complex') localStorage.setItem('mls.easy.viewPref', 'complex'); } catch(e){}
     try {
       var s = window.__mlsEasy && window.__mlsEasy.state;
       if (s && s.mode !== 'full') {
@@ -95,12 +95,13 @@
     var a = document.getElementById('mlsGpLink');
     var code = document.getElementById('mlsGpCode');
     if (canonUrl && a) {
-      a.href = canonUrl;
-      a.textContent = stripProto(canonUrl);
+      var _lt = stripProto(canonUrl);
+      if (a.getAttribute('href') !== canonUrl) a.href = canonUrl; /* b171: idempotent writes so syncQR stops self-triggering its own observer */
+      if (a.textContent !== _lt) a.textContent = _lt;
     }
     if (canonUrl && code) {
       var cd = codeFromUrl(canonUrl);
-      if (cd) code.textContent = 'Code ' + cd;
+      if (cd) { var _ct = 'Code ' + cd; if (code.textContent !== _ct) code.textContent = _ct; }
     }
   }
 
