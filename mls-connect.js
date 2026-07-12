@@ -17101,9 +17101,10 @@
         '<span class="ez3-status" style="margin:0;text-align:left">(set with the Provider selector above)</span>' +
         '<button type="button" class="ez3-sm" id="ez3ProvRefresh" style="padding:8px 12px;font-size:12px"' +
           (provRefreshing ? ' disabled' : '') + '>' + (provRefreshing ? '↻ Refreshing providers…' : '↻ Re-pull all providers') + '</button></div>' +
-      (providerList().length <= 1 ? '<p class="ez3-status" style="text-align:left;margin:2px 0 6px">Only ' + providerList().length +
-        ' provider loaded — tap <b>↻ Re-pull all providers</b> to fetch the full roster from Athena/MLS.</p>' : '') +
-      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — pick a month and press Start.</span></div>' +
+      (providerList().length <= 1 ? '<p class="ez3-status" style="text-align:left;margin:2px 0 6px">' + (providerList().length === 0 ?
+        '<b>No providers loaded yet.</b> Tap <b>↻ Re-pull all providers</b> and MLS reads your practice roster from Athena (read-only). You only need this once.' :
+        '<b>Only 1 provider loaded.</b> If your practice has more doctors, tap <b>↻ Re-pull all providers</b> to fetch the full roster from Athena (read-only).') + '</p>' : '') +
+      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — <b>1)</b> pick the month · <b>2)</b> press Start. MLS pulls the schedule and files every visit automatically.</span></div>' +
       '<div class="barwrap"><div class="bar" id="ez3PullBar"></div></div>' +
       '<div class="ez3-status" id="ez3PullBarLbl" style="text-align:left;margin:0 0 4px"></div>' +
       '<div class="counts">' +
@@ -21203,7 +21204,7 @@
       '<div class="pw">⚠️ Keep athenaOne open on <b>Calendar › View Calendar</b>. The pull is READ-ONLY in Athena: it only navigates dates and reads the schedule, then saves to your MLS calendar. Already-saved appointments are skipped, never doubled.</div>' +
       '<div class="prow"><label>Month</label><input type="month" id="ez3sMonth" value="' + esc(ymVal) + '" max="' + esc(nowYm()) + '">' +
         '<label>Doctor</label><select id="ez3sPullProv">' + provOpts + '</select></div>' +
-      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — pick a month and press Start.</span></div>' +
+      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — <b>1)</b> pick the month · <b>2)</b> press Start. MLS pulls the schedule and files every visit automatically.</span></div>' +
       '<div class="barwrap"><div class="bar" id="ez3PullBar"></div></div>' +
       '<div class="ez3-status" id="ez3PullBarLbl" style="text-align:left;margin:0 0 4px"></div>' +
       '<div class="counts">' +
@@ -23083,7 +23084,7 @@
       '<div class="pw">⚠️ Keep athenaOne open on <b>Calendar › View Calendar</b>. The pull is READ-ONLY in Athena: it only navigates dates and reads the schedule, then saves to your MLS calendar. Already-saved appointments are skipped, never doubled.</div>' +
       '<div class="prow"><label>Month</label><input type="month" id="ez3sMonth" value="' + esc(ymVal) + '" max="' + esc(nowYm()) + '">' +
         '<label>Doctor</label><select id="ez3sPullProv">' + provOpts + '</select></div>' +
-      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — pick a month and press Start.</span></div>' +
+      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — <b>1)</b> pick the month · <b>2)</b> press Start. MLS pulls the schedule and files every visit automatically.</span></div>' +
       '<div class="barwrap"><div class="bar" id="ez3PullBar"></div></div>' +
       '<div class="ez3-status" id="ez3PullBarLbl" style="text-align:left;margin:0 0 4px"></div>' +
       '<div class="counts">' +
@@ -24567,7 +24568,7 @@
       '<div class="pw">⚠️ Keep athenaOne open on <b>Calendar › View Calendar</b>. The pull is READ-ONLY in Athena: it only navigates dates and reads the schedule, then saves to your MLS calendar. Already-saved appointments are skipped, never doubled.</div>' +
       '<div class="prow"><label>Month</label><input type="month" id="ez3sMonth" value="' + esc(ymVal) + '" max="' + esc(nowYm()) + '">' +
         '<label>Doctor</label><select id="ez3sPullProv">' + provOpts + '</select></div>' +
-      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — pick a month and press Start.</span></div>' +
+      '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — <b>1)</b> pick the month · <b>2)</b> press Start. MLS pulls the schedule and files every visit automatically.</span></div>' +
       '<div class="barwrap"><div class="bar" id="ez3PullBar"></div></div>' +
       '<div class="ez3-status" id="ez3PullBarLbl" style="text-align:left;margin:0 0 4px"></div>' +
       '<div class="counts">' +
@@ -29880,7 +29881,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b142';
+  window.__MLS_AV = window.__MLS_AV || 'b143';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30194,7 +30195,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-12-b142';
+  var MLS_APP_BUILD='2026-07-12-b143';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
