@@ -107,8 +107,37 @@
   function later(fn, ms) { var t = setTimeout(function () { try { fn(); } catch (e) {} }, ms || 0); _timers.push(t); return t; }
 
   // ---- the strict gate: read the single source of truth, synchronously ----
+  // v2 (2026-07-12 final sweep): __mlsConnTruth has NO provider anywhere on the
+  // live surface (proven in the task17-freeze-hunt grep: zero assignments in
+  // ScribeFlow, the bundle, all satellites and the frozen extension), so the
+  // original gate meant this prompt could NEVER evaluate -- the owner's "it
+  // doesn't actually work". The gate now falls back to the one live classifier
+  // that makes DEFINITIVE verdicts from real pull replies: __mlsPullFlow
+  // (pf-1.0.0, deployed b133). Only its terminal 'signed-out' / extension-
+  // missing verdicts count; anything ambiguous stays silent exactly like before.
+  function mkTruth(connected, status, detail) {
+    return {
+      isConnected: function () { return !!connected; },
+      state: { status: connected ? 'connected' : status },
+      describe: function () { return { detail: detail || '', label: detail || '' }; }
+    };
+  }
   function connTruth() {
-    try { return window.__mlsConnTruth || null; } catch (e) { return null; }
+    try { if (window.__mlsConnTruth) return window.__mlsConnTruth; } catch (e) {}
+    try {
+      var pf = window.__mlsPullFlow;
+      var st = pf && typeof pf.state === 'function' ? pf.state() : null;
+      if (st) {
+        if (st.phase === 'done') return mkTruth(true);
+        if (st.phase === 'terminal') {
+          if (st.terminalKind === 'signed-out')
+            return mkTruth(false, 'no-tab', 'athenaOne is signed out. Sign in in the athenaOne tab, then retry your pull.');
+          if (st.terminalKind === 'ext-missing' || st.failedKey === 'ext')
+            return mkTruth(false, 'no-extension', 'MLS Assist is not responding. Make sure the extension is installed and enabled.');
+        }
+      }
+    } catch (e) {}
+    return null;
   }
   // Returns the disconnected status string ('no-extension'|'no-tab'|'error') if
   // and only if __mlsConnTruth exists and reports a GENUINE disconnect.
@@ -139,21 +168,24 @@
     try {
       if (document.getElementById(STYLE_ID)) return;
       var st = document.createElement('style'); st.id = STYLE_ID;
+      /* v2: compact bottom-RIGHT pill (was a 440px bottom-center panel the owner
+         called too big/clunky) -- one title line, one sub line, one action. */
       st.textContent = [
-        '#mlsSignInPrompt{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);',
-        'z-index:2147483646;max-width:440px;width:calc(100% - 32px);box-sizing:border-box;',
-        'background:#0f2440;color:#fff;border:1px solid rgba(255,255,255,.30);border-radius:12px;',
-        'box-shadow:0 10px 30px rgba(0,0,0,.35);padding:14px 16px;font-size:14px;line-height:1.4;',
-        'font-family:inherit;}',
-        '#mlsSignInPrompt .mlssip-h{font-weight:700;display:flex;align-items:center;gap:8px;margin:0 0 4px;}',
-        '#mlsSignInPrompt .mlssip-sub{font-size:12.5px;opacity:.9;margin:0;}',
-        '#mlsSignInPrompt .mlssip-detail{font-size:11.5px;opacity:.75;margin:6px 0 0;}',
-        '#mlsSignInPrompt .mlssip-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}',
-        '#mlsSignInPrompt button{cursor:pointer;border-radius:8px;font-size:12.5px;font-weight:600;',
-        'padding:7px 12px;border:1px solid rgba(255,255,255,.30);background:rgba(255,255,255,.16);color:#fff;}',
+        '#mlsSignInPrompt{position:fixed;right:16px;bottom:16px;left:auto;transform:none;',
+        'z-index:2147483646;max-width:310px;width:auto;box-sizing:border-box;',
+        'background:#122b4e;color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:12px;',
+        'box-shadow:0 6px 20px rgba(8,20,45,.35);padding:10px 30px 10px 12px;font-size:12.5px;line-height:1.35;',
+        'font-family:inherit;position:fixed;}',
+        '@media (max-width:480px){#mlsSignInPrompt{right:8px;left:8px;max-width:none;}}',
+        '#mlsSignInPrompt .mlssip-h{font-weight:800;display:flex;align-items:center;gap:6px;margin:0 0 2px;font-size:12.5px;}',
+        '#mlsSignInPrompt .mlssip-sub{font-size:11.5px;opacity:.88;margin:0;}',
+        '#mlsSignInPrompt .mlssip-detail{font-size:10.5px;opacity:.7;margin:4px 0 0;}',
+        '#mlsSignInPrompt .mlssip-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}',
+        '#mlsSignInPrompt button{cursor:pointer;border-radius:8px;font-size:11.5px;font-weight:700;',
+        'padding:5px 10px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.14);color:#fff;}',
         '#mlsSignInPrompt button.mlssip-primary{background:#2f6df0;border-color:#2f6df0;}',
-        '#mlsSignInPrompt .mlssip-x{position:absolute;top:8px;right:10px;background:none;border:none;',
-        'color:#fff;opacity:.7;font-size:16px;padding:2px 6px;}'
+        '#mlsSignInPrompt .mlssip-x{position:absolute;top:6px;right:7px;background:none;border:none;',
+        'color:#fff;opacity:.65;font-size:14px;padding:2px 5px;}'
       ].join('');
       (document.head || document.documentElement).appendChild(st);
     } catch (e) {}
@@ -177,15 +209,24 @@
           '<button type="button" class="mlssip-x" aria-label="Dismiss">&times;</button>' +
           '<div class="mlssip-h">athenaOne connected</div>' +
           '<p class="mlssip-sub">You are signed in. Go ahead and start your pull.</p>';
+      } else if (disconnectStatus() === 'no-extension') {
+        /* v2: extension-missing is a DIFFERENT problem than signed-out -- say so */
+        wrap.innerHTML =
+          '<button type="button" class="mlssip-x" aria-label="Dismiss">&times;</button>' +
+          '<div class="mlssip-h">🧩 MLS Assist not detected</div>' +
+          '<p class="mlssip-sub">Install or enable the MLS Assist extension to connect athenaOne.</p>' +
+          '<div class="mlssip-row">' +
+            '<button type="button" class="mlssip-primary" id="mlssipGetExt">Get MLS Assist</button>' +
+          '</div>';
       } else {
         var detail = honestDetail();
         wrap.innerHTML =
           '<button type="button" class="mlssip-x" aria-label="Dismiss">&times;</button>' +
-          '<div class="mlssip-h">Opening athenaOne</div>' +
-          '<p class="mlssip-sub">Please sign in to athenaOne in the new tab, then come back here and try again.</p>' +
+          '<div class="mlssip-h">🔑 Sign in to athenaOne</div>' +
+          '<p class="mlssip-sub">Sign in in the athenaOne tab, then come back and retry your pull.</p>' +
           (detail ? '<p class="mlssip-detail">' + escHtml(detail) + '</p>' : '') +
           '<div class="mlssip-row">' +
-            '<button type="button" class="mlssip-primary" id="mlssipReopen">Reopen athenaOne</button>' +
+            '<button type="button" class="mlssip-primary" id="mlssipReopen">Open athenaOne</button>' +
           '</div>';
       }
       document.body.appendChild(wrap);
@@ -193,6 +234,11 @@
       if (x) x.addEventListener('click', function () { dismissPrompt(); });
       var re = wrap.querySelector('#mlssipReopen');
       if (re) re.addEventListener('click', function () { openAthena(true); });
+      var ge = wrap.querySelector('#mlssipGetExt');
+      if (ge) ge.addEventListener('click', function () {
+        try { window.open('https://mlsscribe.com/get-extension.html', '_blank', 'noopener'); } catch (e) {}
+        dismissPrompt();
+      });
       if (S.promptTimer) { try { clearTimeout(S.promptTimer); } catch (e) {} }
       S.promptTimer = later(dismissPrompt, PROMPT_MS);
     } catch (e) {}
