@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsOpNotePrep && window.__mlsOpNotePrep.installed) return; } catch (e) { return; }
 
-  var VERSION = 'opnp-1.1.0';
+  var VERSION = 'opnp-1.2.0';
   var STYLE_ID = 'mlsOpnpCss';
 
   function S(x) { return x == null ? '' : String(x); }
@@ -132,14 +132,19 @@
     return name + ', ' + cred;
   }
   function providerFacilityCtx() {
+    /* opnp-1.2.0: overlay the PRACTICE PROFILE (set once in op-prep, key
+       mls_provider_profile) so operating provider / NPI / facility / practice
+       fill on every note's attestation instead of showing [[blank]] warnings.
+       The profile wins when set; otherwise fall back to the app's own getters. */
+    var prof = {}; try { prof = JSON.parse(localStorage.getItem('mls_provider_profile') || '{}') || {}; } catch (e) {}
     var ctx = {
-      provider: pick('getProviderName', 'getName'),
+      provider: trim(prof.name) || pick('getProviderName', 'getName'),
       cred: pick('getProviderCred'),
       spec: pick('getSpec'),
-      npi: pick('getNpi', 'getNPI'),
+      npi: trim(prof.npi) || pick('getNpi', 'getNPI'),
       license: pick('getLicense', 'getProviderLicense'),
       dea: pick('getDea', 'getDEA'),
-      facility: pick('getPracticeName'),
+      facility: trim(prof.facility) || trim(prof.practice) || pick('getPracticeName'),
       facilityAddress: pick('getClinicAddress'),
       facilityPhone: pick('getClinicPhone')
     };

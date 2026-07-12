@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.4.0';
+  var VERSION = 'onf-1.5.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -260,6 +260,24 @@
       for (var i = 1; i < spec.opts.length; i++) { var o = S(spec.opts[i]).toLowerCase(); if (o && ctx.indexOf(o) >= 0) return spec.opts[i]; }
       return spec.opts[1] || '';
     }
+    /* free-text: a conservative, near-universal best-guess (shown "suggested",
+       one-click editable). NEVER a specific dose / volume / level / count -
+       those are patient/procedure-specific and must not be invented. */
+    if (/\b(dose|dosage|volume|amount|\bmg\b|\bml\b|\bcc\b|mcg|units|concentration|levels?|which level|how many|number of|count)\b/.test(l)) return '';
+    var CD = [
+      [/type of anesthesia|anesthesia type/, 'Local anesthesia'],
+      [/local anesthetic|anesthetic( agent| used| type)?$|lidocaine/, '1% lidocaine'],
+      [/\bsedation\b/, 'None - local anesthesia only'],
+      [/needle( gauge| size)?/, '22-gauge'],
+      [/patient position|positioning/, 'Prone'],
+      [/skin prep|antisep|prep solution|sterile prep/, 'Chlorhexidine'],
+      [/imaging( guidance| modality)?|\bguidance\b/, 'Fluoroscopy'],
+      [/contrast( agent| type)?/, 'Iodinated contrast'],
+      [/estimated blood loss|\bebl\b/, 'Minimal'],
+      [/complications?/, 'None'],
+      [/consent/, 'Informed consent obtained']
+    ];
+    for (var c = 0; c < CD.length; c++) { if (CD[c][0].test(l)) return CD[c][1]; }
     return '';
   }
   function knownValue(label, row) {
