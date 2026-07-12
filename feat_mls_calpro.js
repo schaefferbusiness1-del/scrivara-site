@@ -75,10 +75,24 @@
 
   function appts() { return (window._calAppts || []); }
   function providers() { return (window._calProviders || []); }
+  /* Resolve a provider entry's DISPLAY name from whatever real field carries it.
+     In multi-provider practices the pull stamps the clinician name onto
+     provider/provider_key/provider_raw (appointment-shaped roster rows) while
+     leaving name/id empty (doctor_user_id is unpopulated). Read those real fields
+     before any fallback so we never render the literal "Provider undefined".
+     Order: name -> provider_raw -> provider_key -> provider -> displayName/label. */
+  function provDisplay(p) {
+    if (p == null) return 'No provider';
+    if (typeof p === 'string') { var s = p.replace(/_/g, ' ').trim(); return s || 'No provider'; }
+    var nm = p.name || p.provider_raw || p.provider_key || p.provider || p.displayName || p.label;
+    nm = S(nm).replace(/_/g, ' ').trim();
+    if (nm) return nm;
+    return (p.id != null && p.id !== '') ? ('Provider ' + p.id) : 'No provider';
+  }
   function provName(id) {
     if (id == null || id === '') return 'No provider';
     var p = providers().find(function (x) { return String(x.id) === String(id); });
-    return p ? (p.name || ('Provider ' + p.id)) : ('Provider ' + id);
+    return p ? provDisplay(p) : ('Provider ' + id);
   }
   function selIds() { return Object.keys(SEL).filter(function (k) { return SEL[k]; }); }
   function selActive() { return selIds().length > 0; }
@@ -229,7 +243,7 @@
       var id = esc(String(p.id));
       var on = !!SEL[String(p.id)];
       return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer">' +
-        '<input type="checkbox" data-cp-prov="' + id + '"' + (on ? ' checked' : '') + '> ' + esc(p.name || ('Provider ' + p.id)) + '</label>';
+        '<input type="checkbox" data-cp-prov="' + id + '"' + (on ? ' checked' : '') + '> ' + esc(provDisplay(p)) + '</label>';
     }).join('');
     box.querySelectorAll('input[data-cp-prov]').forEach(function (cb) {
       cb.onchange = function () {

@@ -293,8 +293,8 @@
   function fillProviders() {
     var sel = $("mlsLM51prov"); if (!sel) return;
     var names = {};
-    safe(function () { var roster = window.__mlsProviderRoster && isFn(window.__mlsProviderRoster.list) ? window.__mlsProviderRoster.list() : null; (roster || []).forEach(function (p) { var n = String((p && (p.name || p)) || "").trim(); if (n) names[n] = 1; }); });
-    safe(function () { ((window._calAppts) || []).forEach(function (a) { var n = String((a && a.provider) || "").trim(); if (n) names[n] = 1; }); });
+    safe(function () { var roster = window.__mlsProviderRoster && isFn(window.__mlsProviderRoster.list) ? window.__mlsProviderRoster.list() : null; (roster || []).forEach(function (p) { var n = (window.__mlsProviderLabel ? window.__mlsProviderLabel(p) : String((p && (p.name || p)) || "")).trim(); if (n) names[n] = 1; }); });
+    safe(function () { ((window._calAppts) || []).forEach(function (a) { var n = (window.__mlsProviderLabel ? window.__mlsProviderLabel(a && a.provider) : String((a && a.provider) || "")).trim(); if (n) names[n] = 1; }); });
     Object.keys(names).sort().forEach(function (n) { var o = document.createElement("option"); o.value = n; o.textContent = n; sel.appendChild(o); });
   }
   function setConn(kind, label, sub) { var d = $("mlsLM51connDot"), c = $("mlsLM51conn"), s2 = $("mlsLM51connSub"); if (d) d.className = "mp-dot " + kind; if (c) c.textContent = label; if (s2 && sub != null) s2.textContent = sub; }
