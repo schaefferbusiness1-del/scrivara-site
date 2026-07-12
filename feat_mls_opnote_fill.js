@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.2.0';
+  var VERSION = 'onf-1.3.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -142,6 +142,49 @@
   }
   function noteBoxes() { return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"]'); }, []); }
   function sigOf(ta) { var v = ta.value || ''; return v.length + '|' + (v.match(/\[FILL:/gi) || []).length; }
+
+  /* onf-1.3.0: AUTO-FILL fields the app already KNOWS. Provider/physician name,
+     patient name, DOB, MRN, procedure date, provider NPI/facility (from the
+     stored provider profile) should never be shown as a manual [FILL:] field --
+     they are silently pre-filled from the appointment + provider profile before
+     the fill box is built, so the clinician only sees genuinely unknown,
+     procedure-specific blanks (laterality, needle size, etc.). */
+  function provProfile() { return safe(function () { return JSON.parse(localStorage.getItem('mls_provider_profile') || '{}') || {}; }, {}) || {}; }
+  function apptProvider(appt) { return S((appt && (appt.provider_raw || appt.provider_key || appt.provider)) || '').replace(/_/g, ' ').trim(); }
+  function knownValue(label, row) {
+    var l = S(label).toLowerCase().replace(/[^a-z0-9 \/]/g, ' ').replace(/\s+/g, ' ').trim();
+    var appt = (row && row.appt) || {};
+    var prof = provProfile();
+    var prov = apptProvider(appt) || S(prof.name).trim();
+    var pname = S(appt.name).trim();
+    var dob = S(appt.dob).trim();
+    var mrn = S(appt.athenaId || appt.mrn || '').trim();
+    var dt = S((row && row.dateStr) || '').replace(/^[A-Za-z]+,\s*/, '').trim();
+    var isProv = /(provider|physician|surgeon|\bdoctor\b|operator|attending|clinician|proceduralist|performed by|operating|rendering)/.test(l);
+    if (/\bnpi\b/.test(l) && S(prof.npi).trim()) return S(prof.npi).trim();
+    if (/(facility|practice|clinic|location|site|hospital|center|ambulatory)/.test(l) && S(prof.facility).trim()) return S(prof.facility).trim();
+    if (isProv && prov) return prov;
+    if (/(date of birth|birth ?date|\bdob\b)/.test(l) && dob) return dob;
+    if (/(date of procedure|procedure date|date of service|service date|\bdos\b|date of operation|operation date|encounter date|todays date|today s date)/.test(l) && dt) return dt;
+    if (/(mrn|medical record|patient id|chart (number|id|no)|account (number|no))/.test(l) && mrn) return mrn;
+    if (!isProv && /(patient name|patient|^name$|full name)/.test(l) && pname) return pname;
+    return '';
+  }
+  function autoFillKnown(ta) {
+    var idx = ta.id.replace('opPrepNote_', '');
+    var row = safe(function () { return (window._opPrep || [])[+idx]; }, null);
+    if (!row) return;
+    var tokens = fillTokens(ta.value || ''), txt = ta.value || '', changed = false;
+    for (var i = 0; i < tokens.length; i++) {
+      var v = knownValue(tokens[i], row);
+      if (v) { var nt = replaceToken(txt, tokens[i], v); if (nt !== txt) { txt = nt; changed = true; } }
+    }
+    if (changed) {
+      ta.value = txt;
+      safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
+      safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = txt; });
+    }
+  }
 
   /* onf-1.2.0: GUARANTEED PERSONALIZATION. The AI draft sometimes writes "the
      patient" generically (name/DOB/date omitted). This deterministically
@@ -256,8 +299,9 @@
       if (_sig[ta.id] === s) continue;                   /* unchanged -> skip */
       (function (t) {
         safe(function () { ensureHeader(t); });          /* guarantee personalization (may prepend header) */
-        _sig[t.id] = sigOf(t);                            /* store the POST-header signature */
-        safe(function () { buildFillBox(t); });
+        safe(function () { autoFillKnown(t); });          /* silently fill provider/patient/dob/date/mrn */
+        _sig[t.id] = sigOf(t);                            /* store the POST-header/POST-autofill signature */
+        safe(function () { buildFillBox(t); });           /* only genuinely-unknown blanks remain */
       })(ta);
     }
   }
