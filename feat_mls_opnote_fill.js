@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.5.1';
+  var VERSION = 'onf-1.6.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -174,6 +174,24 @@
     var t = null, tl = templates();
     for (var i = 0; i < tl.length; i++) if (tl[i] && tl[i].id === row.tplId) { t = tl[i]; break; }
     if (t) { row.proc = S(t.name || '').replace(/^(procedure note:?|op note:?)\s*/i, '').trim(); }
+  }
+  /* onf-1.6.0: auto-populate the VISIBLE editable "Procedure" input on each
+     op-prep card with the matched procedure (row.proc) instead of leaving it
+     blank. The input carries onchange="_opProcChanged(N,this.value)", so N maps
+     it to its row. We only fill an EMPTY input (never override manual entry). */
+  function fillProcInputs() {
+    try {
+      var op = window._opPrep || [], modal = $('opPrepModal'); if (!modal) return;
+      var inputs = modal.querySelectorAll('input');
+      for (var i = 0; i < inputs.length; i++) {
+        var inp = inputs[i], m = S(inp.getAttribute('onchange')).match(/_opProcChanged\((\d+)/);
+        if (!m) continue;
+        var idx = +m[1], row = op[idx];
+        if (!row || !S(row.proc).trim() || S(inp.value).trim()) continue;
+        inp.value = row.proc;
+        safe(function () { inp.dispatchEvent(new Event('input', { bubbles: true })); });
+      }
+    } catch (e) {}
   }
 
   /* ================= PART B: fillable [FILL: ...] fields ================= */
@@ -465,6 +483,10 @@
     safe(wireUploadButtons);                          /* runs regardless of the op-prep modal */
     if (!modalOpen()) return;
     safe(injectBar);
+    /* set each row's procedure from its matched template + pre-fill the visible
+       "Procedure" input on every card (list view too, not just drafted rows). */
+    safe(function () { var op = window._opPrep || []; for (var i = 0; i < op.length; i++) syncProcedure(op[i]); });
+    safe(fillProcInputs);
     var tas = noteBoxes();
     for (var i = 0; i < tas.length; i++) {
       var ta = tas[i]; if (!ta.id) continue;
