@@ -3829,7 +3829,7 @@
     if (!p) { p = document.createElement('div'); p.id = PANEL; document.body.appendChild(p); }
     p.innerHTML = '<div class="ppc">' +
       '<h3>📚 Pulling patient histories from athenaOne</h3>' +
-      '<div class="pp-sub">MLS is opening each scheduled patient’s chart, reading it, and filing it. This takes about a minute per patient.</div>' +
+      '<div class="pp-sub">MLS is opening each scheduled patient’s chart, reading it, and filing it. Each chart usually takes about 15-30 seconds; a busy day can run a few minutes total.</div>' +
       '<div class="pp-big">' + done + ' <span style="font-size:16px;color:#9fb0d8">of ' + total + '</span></div>' +
       '<div class="pp-track"><div class="pp-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="pp-meta"><span>' + pct + '% complete</span><span>✓ ' + ok + ' saved · ⚠ ' + failed + ' skipped</span><span>' + mmss(Date.now() - startedAt) + ' elapsed</span></div>' +
@@ -29881,7 +29881,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b151';
+  window.__MLS_AV = window.__MLS_AV || 'b152';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30195,7 +30195,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-12-b151';
+  var MLS_APP_BUILD='2026-07-12-b152';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -37807,3 +37807,4 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260712onf12';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: bulk template assign (unblocks Draft All when Athena carries no procedure text) + [FILL] placeholders -> form fields (window.__mlsOpNoteFill onf-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_names.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_names.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_names.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar provider dropdowns: stop rendering Provider-undefined phantom rows (window.__mlsProviderNames pn-1.0.0; revert()) */

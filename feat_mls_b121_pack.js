@@ -3507,7 +3507,18 @@
       }
       note('Reading the ' + esc(pd) + ' schedule&hellip;');
       var r = await readSchedule();
-      if (!r || r.ok !== true) return { error: (r && r.error) || 'The schedule read did not answer. Nothing was saved.' };
+      /* A null r is a *no-answer-yet* bridge timeout (readSchedule resolves null
+         after ~45s), NOT a genuine failure - a busy athenaOne day routinely reads
+         longer than that. Re-arm the read a few times (each re-arm catches the
+         late reply from the still-in-flight read) and only declare "did not
+         answer" once it has genuinely failed. A real {ok:false} is NOT retried. */
+      var rdTry = 0, RD_MAX = 3;
+      while (!r && rdTry < RD_MAX) {
+        rdTry++;
+        note('athenaOne is still sending the ' + esc(pd) + ' schedule - nothing has failed (attempt ' + (rdTry + 1) + ' of ' + (RD_MAX + 1) + '; a busy day can take a couple of minutes)&hellip;');
+        r = await readSchedule();
+      }
+      if (!r || r.ok !== true) return { error: (r && r.error) || 'The schedule read did not answer after ' + (RD_MAX + 1) + ' tries. Nothing was saved - click again to retry.' };
       var av = athenaVerdict(r);
       if (!av.isAthena) return { error: 'The readable tab is ' + (av.host ? av.host : 'not verifiably athenaOne') + ' - NOTHING was saved (rows from a non-athena page would be junk-frame phantoms).' };
       var sd = respSchedDate(r);
