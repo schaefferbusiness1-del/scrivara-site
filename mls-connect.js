@@ -1,4 +1,76 @@
 /* =========================================================================
+ * MLS -- ageFromDob US-format fix (__mlsAgeDobFix adf-1.0.0)  2026-07-11 final sweep
+ * ----------------------------------------------------------------------------
+ * The GLOBAL ageFromDob() in ScribeFlow.html (~HTML:16213) only parses ISO
+ * YYYY-MM-DD; anything else falls through to a bare \b(\d{1,3})\b regex, so a
+ * US-format DOB like "01/01/1940" returns age **1** (it matches the "01").
+ * Athena chart pulls store DOBs in MM/DD/YYYY, and ageFromDob feeds BOTH the
+ * AI context (HTML:8976/10183) and the MLS-Easy prep card age chip -- so real
+ * pulled patients could show / send nonsense ages. (A correct module-local
+ * parseDob already exists at ~HTML:21154; it was never applied to the global.)
+ * Verified live 2026-07-11: ageFromDob('01/01/1940') === 1 before this fix.
+ *
+ * Fix: wrap window.ageFromDob. Parse ISO, then MM/DD/YYYY (and MM-DD-YYYY),
+ * then "age NN", then generic Date(). Only if ALL of those fail, defer to the
+ * original function (keeps any exotic legacy behavior). Sanity 0..129.
+ * Additive / reversible: window.__mlsAgeDobFix.revert().
+ * ==========================================================================*/
+(function () {
+  "use strict";
+  if (window.__mlsAgeDobFix) return;
+  var api = { version: "adf-1.0.0", installed: false, calls: 0, fixedPaths: 0 };
+  window.__mlsAgeDobFix = api;
+
+  function ageFrom(y, m, d) {
+    var t = new Date();
+    var a = t.getFullYear() - y;
+    if ((t.getMonth() + 1) < m || ((t.getMonth() + 1) === m && t.getDate() < d)) a--;
+    return (a >= 0 && a < 130) ? a : null;
+  }
+  function robust(dob) {
+    if (!dob) return null;
+    var s = String(dob).trim();
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);                 /* YYYY-MM-DD */
+    if (m) return ageFrom(+m[1], +m[2], +m[3]);
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);           /* MM/DD/YYYY, MM-DD-YYYY */
+    if (m) return ageFrom(+m[3], +m[1], +m[2]);
+    m = s.match(/age\s*(\d{1,3})/i);                                  /* "age 62" */
+    if (m) { var a = parseInt(m[1], 10); return (a >= 0 && a < 130) ? a : null; }
+    var dt = new Date(s);
+    if (!isNaN(dt.getTime())) return ageFrom(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+    return null;
+  }
+
+  var tries = 0;
+  function install() {
+    tries++;
+    var orig = window.ageFromDob;
+    if (typeof orig !== "function") {
+      if (tries < 40) setTimeout(install, 250);
+      return;
+    }
+    if (orig.__adfWrapped) return;
+    var wrapped = function (dob) {
+      api.calls++;
+      var r = robust(dob);
+      if (r !== null) { api.fixedPaths++; return r; }
+      try { return orig.apply(this, arguments); } catch (e) { return null; }
+    };
+    wrapped.__adfWrapped = true;
+    wrapped.__adfOrig = orig;
+    window.ageFromDob = wrapped;
+    api.installed = true;
+    api.revert = function () {
+      try { if (window.ageFromDob && window.ageFromDob.__adfOrig) window.ageFromDob = window.ageFromDob.__adfOrig; } catch (e) {}
+      api.installed = false;
+      return "ageFromDob restored";
+    };
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true });
+  else install();
+})();
+
+/* =========================================================================
  * MLS -- tour de-dup (__mlsTourDedupFix td-1.0.0)  2026-07-11 final sweep
  * ----------------------------------------------------------------------------
  * The new onboarding tour (feat_mls_onboarding_tour, obt-1.0.0, prepended
@@ -29808,7 +29880,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b135';
+  window.__MLS_AV = window.__MLS_AV || 'b136';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30122,7 +30194,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-11-b135';
+  var MLS_APP_BUILD='2026-07-12-b136';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
