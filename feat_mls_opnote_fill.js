@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.6.0';
+  var VERSION = 'onf-1.7.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -64,6 +64,8 @@
       '.onf-fillbox label.onf-has input,.onf-fillbox label.onf-has select{border-color:#8fce9e;background:#f6fdf8;}',
       '.onf-fillbox .onf-sug{font:800 9px system-ui;color:#7a5310;background:#fdf0d0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-need{font:800 9px system-ui;color:#8a2a2a;background:#fbe0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
+      '.onf-fillbox .onf-saved{font:800 9px system-ui;color:#1b5e20;background:#dff0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
+      '.onf-fillbox .onf-hist{font:800 9px system-ui;color:#1456a8;background:#e0ecfb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-note{font:600 10.5px system-ui;color:#8a7130;margin:7px 0 0;}',
       '@media (max-width:600px){.onf-fillbox .onf-grid{grid-template-columns:1fr;}}'
     ].join('');
@@ -262,6 +264,61 @@
       return parts.join(' ');
     }, '') || '';
   }
+  /* onf-1.7.0: STABLE per-PATIENT key so known/entered fill values can be
+     remembered for that patient across future op notes. Prefer a numeric MRN;
+     else normalized name (+ DOB when present). */
+  function patientKey(row) {
+    var appt = (row && row.appt) || {};
+    var mrn = S(appt.athenaId || appt.mrn || '').replace(/\D/g, '');
+    if (mrn) return 'id:' + mrn;
+    var nm = S(appt.name).toLowerCase().replace(/[^a-z0-9]/g, '');
+    var dob = S(appt.dob).replace(/\D/g, '');
+    return nm ? ('nd:' + nm + (dob ? ('_' + dob) : '')) : '';
+  }
+  /* onf-1.7.0: per-patient fill MEMORY. Once a field value is known/entered for a
+     patient, it is saved under that patient's record (localStorage keyed by
+     patientKey) and pre-filled on their FUTURE op notes -- so the steroid /
+     medication (and any other stable value) never has to be re-typed. The doctor
+     still sees and can change every field before signing. Device-local; nothing
+     is written to Athena. */
+  var FILLMEM_PREFIX = 'mls_opfill_mem::';
+  function loadFillMem(row) {
+    var k = patientKey(row); if (!k) return {};
+    return safe(function () { return JSON.parse(localStorage.getItem(FILLMEM_PREFIX + k) || '{}') || {}; }, {}) || {};
+  }
+  function saveFillMemValue(row, fieldKey, val) {
+    var k = patientKey(row); if (!k || !fieldKey) return;
+    val = S(val).trim();
+    var mem = loadFillMem(row);
+    if (val) mem[fieldKey] = val; else delete mem[fieldKey];
+    safe(function () { localStorage.setItem(FILLMEM_PREFIX + k, JSON.stringify(mem)); });
+  }
+  /* onf-1.7.0: read the patient's ACTUAL chart history for the medication they
+     were given, so a steroid / anesthetic NAME field is pre-filled from what is
+     actually in their record -- not a generic guess. Only fills a NAME; a
+     dose/volume/concentration stays blank for the doctor (never invented). */
+  function historyMed(label, row) {
+    var l = S(label).toLowerCase();
+    var hist = patientHistText(row).toLowerCase(); if (!hist) return '';
+    if (/steroid|corticosteroid|cortico|kenalog|depo|injectate|\bmed(ication)?\b|\bdrug\b/.test(l) && !/dose|volume|\bmg\b|\bml\b|\bcc\b|mcg/.test(l)) {
+      var STEROIDS = [
+        [/triamcinolone|kenalog/, 'Triamcinolone'],
+        [/methylprednisolone|depo-?medrol|depo medrol/, 'Methylprednisolone'],
+        [/betamethasone|celestone/, 'Betamethasone'],
+        [/dexamethasone|decadron/, 'Dexamethasone']
+      ];
+      for (var i = 0; i < STEROIDS.length; i++) if (STEROIDS[i][0].test(hist)) return STEROIDS[i][1];
+    }
+    if (/\banesthetic\b|lidocaine|bupivacaine|ropivacaine|marcaine/.test(l) && !/dose|volume|concentration|\bmg\b|\bml\b|\bcc\b/.test(l)) {
+      var ANES = [
+        [/bupivacaine|marcaine/, 'Bupivacaine'],
+        [/ropivacaine/, 'Ropivacaine'],
+        [/lidocaine|xylocaine/, 'Lidocaine']
+      ];
+      for (var j = 0; j < ANES.length; j++) if (ANES[j][0].test(hist)) return ANES[j][1];
+    }
+    return '';
+  }
   /* A SAFE best-guess for a fill field, marked "suggested" and one-click editable:
      - laterality ONLY from a clear signal (never guess a side);
      - a finite either/or list -> the option that appears in the patient's own
@@ -392,12 +449,18 @@
     if (!tokens.length) { if (existing) existing.parentNode.removeChild(existing); return; }
     css();
     var vals = (row && row._onfVals) || {}, meta = {};
+    var pmem = row ? loadFillMem(row) : {};                      /* onf-1.7.0: this patient's saved fills */
     for (var t = 0; t < tokens.length; t++) {
       var lab = tokens[t], key = lab.toLowerCase(), spec0 = fieldSpec(lab);
       if (vals[key] == null) {
         var kv = knownValue(lab, row);
         if (kv) { vals[key] = kv; meta[key] = 'known'; }
-        else { var sd = smartDefault(lab, spec0, row); if (sd) { vals[key] = sd; meta[key] = 'suggested'; } else meta[key] = 'blank'; }
+        else if (pmem[key]) { vals[key] = pmem[key]; meta[key] = 'saved'; }        /* remembered for this patient */
+        else {
+          var hm = historyMed(lab, row);                                          /* from the patient's chart history */
+          if (hm) { vals[key] = hm; meta[key] = 'history'; saveFillMemValue(row, key, hm); }
+          else { var sd = smartDefault(lab, spec0, row); if (sd) { vals[key] = sd; meta[key] = 'suggested'; } else meta[key] = 'blank'; }
+        }
       } else meta[key] = vals[key] ? 'set' : 'blank';
     }
     if (row) row._onfVals = vals;
@@ -422,7 +485,10 @@
       } else {
         ctrl = '<input type="text" data-onf-idx="' + idx + '" data-onf-label="' + esc(label) + '" id="' + fid + '" value="' + esc(cur) + '" placeholder="type value">';
       }
-      var tag = kind === 'suggested' ? ' <span class="onf-sug">suggested</span>' : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
+      var tag = kind === 'suggested' ? ' <span class="onf-sug">suggested</span>'
+        : kind === 'saved' ? ' <span class="onf-saved">saved</span>'
+        : kind === 'history' ? ' <span class="onf-hist">from chart</span>'
+        : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
       return '<label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>';
     }).join('');
     var blanks = 0; for (var m in meta) if (meta[m] === 'blank') blanks++;
@@ -437,6 +503,7 @@
           if (!row) return;
           var label = ctrl.getAttribute('data-onf-label'), val = S(ctrl.value).trim();
           row._onfVals = row._onfVals || {}; row._onfVals[label.toLowerCase()] = val;
+          saveFillMemValue(row, label.toLowerCase(), val);   /* onf-1.7.0: remember for this patient's future notes */
           var out = applyVals(row._onfRaw != null ? row._onfRaw : (ta.value || ''), row._onfVals);
           ta.value = out;
           safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -514,6 +581,7 @@
   window.__mlsOpNoteFill = {
     installed: true, version: VERSION, asset: 'feat_mls_opnote_fill.js',
     applyBulk: applyBulk, _fillTokens: fillTokens, _fieldSpec: fieldSpec, _replaceToken: replaceToken,
+    _patientKey: patientKey, _loadFillMem: loadFillMem, _saveFillMemValue: saveFillMemValue, _historyMed: historyMed,
     wireUploadButtons: wireUploadButtons, tick: tick, revert: revert
   };
 
