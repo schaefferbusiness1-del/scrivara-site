@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.0.0';
+  var VERSION = 'onf-1.1.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -187,9 +187,38 @@
     }
   }
 
+  /* ================= PART C: repair dead "Upload templates" buttons =================
+   * onf-1.1.0: several "Upload templates" buttons on the page (e.g. #mlsUplTplBtn
+   * on the visit view) have NO click handler at all -> clicking does nothing. The
+   * real template-upload UI is opened by the existing global openTemplates(). This
+   * wires any such handler-less button to it. Buttons that already work (their own
+   * onclick, e.g. triggering a file input) are left untouched. */
+  function looksDeadUploadBtn(b) {
+    if (!b || b.getAttribute('data-onf-wired')) return false;
+    if (!/upload template/i.test(b.textContent || '')) return false;
+    if (b.getAttribute('onclick')) return false;      /* already has an inline handler */
+    if (b.tagName === 'A' && b.getAttribute('href')) return false;
+    if (b.type === 'file' || b.querySelector && b.querySelector('input[type=file]')) return false;
+    return true;
+  }
+  function wireUploadButtons() {
+    if (!isFn(window.openTemplates)) return;
+    var btns = safe(function () { return document.querySelectorAll('button, a'); }, []);
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      if (!looksDeadUploadBtn(b)) continue;
+      b.setAttribute('data-onf-wired', '1');
+      b.addEventListener('click', function (ev) {
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {}
+        safe(function () { window.openTemplates(); });
+      });
+    }
+  }
+
   /* ---------------- tick (freeze-safe: cheap, gated, write-if-changed) ---------------- */
   var _sig = {}, iv = null;
   function tick() {
+    safe(wireUploadButtons);                          /* runs regardless of the op-prep modal */
     if (!modalOpen()) return;
     safe(injectBar);
     var tas = noteBoxes();
@@ -214,7 +243,7 @@
   window.__mlsOpNoteFill = {
     installed: true, version: VERSION, asset: 'feat_mls_opnote_fill.js',
     applyBulk: applyBulk, _fillTokens: fillTokens, _fieldSpec: fieldSpec, _replaceToken: replaceToken,
-    tick: tick, revert: revert
+    wireUploadButtons: wireUploadButtons, tick: tick, revert: revert
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
