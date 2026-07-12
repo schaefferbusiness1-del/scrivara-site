@@ -104,7 +104,10 @@
    *     only, which left the active-patient pointer -- and therefore Copilot context --
    *     on the PREVIOUS patient).
    */
-  var VERSION = 'cv2-1.1.0';
+  /* cv2-1.1.1: intent replies echo into the shared conversation thread (chat feel on
+   *   both surfaces, not toast-only), and speech output only plays while voice mode is
+   *   actually listening (typed commands no longer talk back unexpectedly). */
+  var VERSION = 'cv2-1.1.1';
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -356,7 +359,17 @@
       /\bfinalize\b.*\b(chart|encounter|note)\b/i.test(s) ||
       /\battest\b/i.test(s);
   }
-  function speakToast(msg) { toast(msg); speak(msg); }
+  /* cv2-1.1.1: intent replies must feel like CHAT, not just toasts -- echo into the
+     shared conversation so both surfaces show an answer bubble (matches the asst_fix
+     builtins' addAi behavior), and only speak aloud when voice mode is actually on. */
+  function speakToast(msg) {
+    toast(msg);
+    safe(function () {
+      var c = window.__mlsCopilotConvo;
+      if (c && isFn(c.append)) c.append('ai', msg);
+    });
+    if (enabled) speak(msg);
+  }
   function legOpenPatient(q) {
     var m = S(q).trim().match(/^(?:please\s+)?(?:open|pull up|bring up|switch to|select|show me|show|load)\s+(?:the\s+)?(?:patient\s+|chart\s+(?:for|of)\s+)?(.+?)(?:'s)?(?:\s+(?:chart|file|record|profile|page))?\s*$/i);
     if (!m) return false;
