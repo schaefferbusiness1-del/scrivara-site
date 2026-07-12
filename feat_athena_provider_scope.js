@@ -29,7 +29,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   if (window.__mlsAthenaProviderScope && window.__mlsAthenaProviderScope.installed) return;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -191,7 +191,11 @@
   /* ---- the wrap around _importPulledSchedule ---- */
   var origImport = null;
   function wrapped(payload) {
-    var orig = origImport;
+    /* CYCLE FIX: call the PER-WRAP captured original (passed by install as
+       arguments[1]), NEVER the shared module-level slot. Reading a mutable
+       module-level slot at call-time is what lets two re-wrapping modules form a
+       closed loop -> "Maximum call stack size exceeded" on the schedule pull. */
+    var orig = arguments[1] || origImport;
     try {
       if (!payload || typeof payload !== 'object' || typeof payload.text !== 'string' || !payload.text.trim()) {
         return orig.call(this, payload);
@@ -253,10 +257,11 @@
   /* ---- install / re-assert / revert ---- */
   function install() {
     if (typeof window._importPulledSchedule === 'function' && !window._importPulledSchedule.__mlsScopeWrapped) {
-      origImport = window._importPulledSchedule;
-      var w = function (payload) { return wrapped.call(this, payload); };
+      var cap = window._importPulledSchedule;   /* PER-WRAP captured original */
+      origImport = cap;
+      var w = function (payload) { return wrapped.call(this, payload, cap); };
       w.__mlsScopeWrapped = true;
-      w.__orig = origImport;
+      w.__orig = cap;
       window._importPulledSchedule = w;
     }
   }

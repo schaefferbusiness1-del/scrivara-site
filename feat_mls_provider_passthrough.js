@@ -159,7 +159,11 @@
     }
     /* wrap whatever _importPulledSchedule is CURRENT (item81's date-guard version) */
     if (typeof window._importPulledSchedule === 'function' && !window._importPulledSchedule.__provWrap) {
-      PR._orig.importSched = window._importPulledSchedule;
+      /* CYCLE FIX: capture the current import in a PER-WRAP closure and call THAT,
+         never the shared mutable PR._orig.importSched slot (which a re-wrapping
+         module can point back into this chain -> stack-overflow on the pull). */
+      var capturedImport = window._importPulledSchedule;
+      PR._orig.importSched = capturedImport;
       var wrap = function (appts) {
         PR.state.importActive = true; PR.state.stamped = 0;
         var tally = {};
@@ -193,7 +197,7 @@
           } catch (e) {}
         };
         var p;
-        try { p = PR._orig.importSched.apply(this, arguments); } catch (e) { fin(); throw e; }
+        try { p = capturedImport.apply(this, arguments); } catch (e) { fin(); throw e; }
         try { if (p && typeof p.then === 'function') p.then(fin, fin); else setTimeout(fin, 1500); } catch (e) { fin(); }
         return p;
       };
@@ -204,7 +208,11 @@
   /* boot LATE so item81's replacement is already in place, and keep watching
      in case a later module swaps the import fn again (idempotent re-wrap). */
   setTimeout(installWraps, 2500);
-  var wrapIv = setInterval(installWraps, 5000); PR._ivs.push(wrapIv);
+  /* BOUND the re-assert: with per-wrap closures the chain can't cycle, but an
+     UNBOUNDED re-wrap timer still grows the wrapper chain forever (two modules
+     each re-wrapping the other) until a deep chain overflows. Cap it. */
+  var _wrapTries = 0;
+  var wrapIv = setInterval(function () { installWraps(); if (++_wrapTries >= 8) { try { clearInterval(wrapIv); } catch (e) {} } }, 5000); PR._ivs.push(wrapIv);
 
   PR.revert = function () {
     try { PR._ivs.forEach(function (i) { clearInterval(i); }); } catch (e) {}
