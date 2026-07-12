@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.1.0';
+  var VERSION = 'onf-1.2.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -143,6 +143,34 @@
   function noteBoxes() { return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"]'); }, []); }
   function sigOf(ta) { var v = ta.value || ''; return v.length + '|' + (v.match(/\[FILL:/gi) || []).length; }
 
+  /* onf-1.2.0: GUARANTEED PERSONALIZATION. The AI draft sometimes writes "the
+     patient" generically (name/DOB/date omitted). This deterministically
+     ensures every drafted op-note carries a patient header with the real name,
+     DOB and procedure date -- so the note is always personalized, never generic,
+     regardless of AI variance. Added once per draft (skipped if a PATIENT: line
+     already exists), and never leaves placeholder/example data. */
+  function ensureHeader(ta) {
+    var idx = ta.id.replace('opPrepNote_', '');
+    var row = safe(function () { return (window._opPrep || [])[+idx]; }, null);
+    if (!row || !row.appt) return;
+    var val = ta.value || '';
+    if (!val.trim()) return;                                  /* not drafted yet */
+    if (/(^|\n)\s*PATIENT\s*:/i.test(val)) return;            /* already has a patient header */
+    var nm = S(row.appt.name).trim();
+    if (!nm) return;
+    var dob = S(row.appt.dob).trim();
+    var mrn = S(row.appt.athenaId || row.appt.mrn || '').trim();
+    var dt = S(row.dateStr || '').replace(/^[A-Za-z]+,\s*/, '').trim();
+    var bits = ['PATIENT: ' + nm];
+    if (dob) bits.push('DOB: ' + dob);
+    if (mrn) bits.push('MRN: ' + mrn);
+    if (dt) bits.push('DATE OF PROCEDURE: ' + dt);
+    var header = bits.join('    ') + '\n\n';
+    ta.value = header + val;
+    safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
+    safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = ta.value; });
+  }
+
   function buildFillBox(ta) {
     var idx = ta.id.replace('opPrepNote_', '');
     var tokens = fillTokens(ta.value || '');
@@ -226,8 +254,11 @@
       var ta = tas[i]; if (!ta.id) continue;
       var s = sigOf(ta);
       if (_sig[ta.id] === s) continue;                   /* unchanged -> skip */
-      _sig[ta.id] = s;
-      safe(function () { buildFillBox(ta); });
+      (function (t) {
+        safe(function () { ensureHeader(t); });          /* guarantee personalization (may prepend header) */
+        _sig[t.id] = sigOf(t);                            /* store the POST-header signature */
+        safe(function () { buildFillBox(t); });
+      })(ta);
     }
   }
   function boot() { css(); tick(); iv = setInterval(function () { safe(tick); }, 1000); }
