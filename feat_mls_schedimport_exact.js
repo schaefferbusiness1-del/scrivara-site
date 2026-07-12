@@ -25,7 +25,7 @@
  *  - Replaces window._importPulledSchedule with a faithful, corrected version that:
  *      * NEVER blocks on a confirm (non-blocking; a heavy-day note is shown, not a modal).
  *      * Files EACH appointment on its OWN real date when the parse provides one, else on the
- *        TARGET day (an explicit chosen day, else the day printed on the page, else EST today).
+ *        TARGET day (an explicit chosen day or the proven day printed on the page).
  *      * Normalizes times robustly (handles "12:27 PM" and "14:30") and stores start_at as the
  *        correct UTC for the account TZ (America/New_York / EST by default).
  *      * Falls back to the extension's STRUCTURED DOM scrape (li.filled-appointment-row ->
@@ -43,8 +43,13 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.0.2";
+  var VERSION = "si-1.1.0";
   var EST_TZ = "America/New_York";
+  var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
+  var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
+  var PENDING_TTL = 5 * 60 * 1000;
+  var inFlight = {};
+  var knownDays = {};
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === "function"; }
@@ -78,6 +83,93 @@
   function bkToken() { return callG("bkToken") || ""; }
   function signedIn() { return safe(function () { return isFn(window.backendMode) && window.backendMode() && !!bkToken(); }, false); }
   function toast(m, k) { var f = gfn("toast"); if (f) safe(function () { f(m, k); }); }
+
+  /* ---- account-local import identity / idempotency index ----
+   * The backend appointment API has no idempotency key. Keep a tiny index in
+   * the SAME account namespace as the patient store so a repeated/stale GET
+   * cannot cause the same schedule row to be POSTed twice from this browser.
+   * Patient identity is MRN/athenaId first, otherwise normalized name + DOB;
+   * appointment identity adds the authoritative appointment day. */
+  function normName(s) { return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function normDob(s) {
+    s = String(s || "").trim(); if (!s) return "";
+    var m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (m) {
+      var yy = m[3];
+      if (yy.length === 2) yy = (Number(yy) <= Number(String(new Date().getFullYear()).slice(-2)) ? "20" : "19") + yy;
+      return yy + ("0" + m[1]).slice(-2) + ("0" + m[2]).slice(-2);
+    }
+    var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if (iso) return iso[1] + ("0" + iso[2]).slice(-2) + ("0" + iso[3]).slice(-2);
+    return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+  function normMrn(s) { return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, ""); }
+  function rowMrn(a) { return normMrn(a && (a.mrn || a.athenaId || a.athena_id)); }
+  function patientIdentity(a) {
+    var m = rowMrn(a); if (m) return "mrn:" + m;
+    return "nd:" + normName(a && a.name) + "|" + normDob(a && a.dob);
+  }
+  function importKey(a, date) { return patientIdentity(a) + "|" + String(date || ""); }
+  function stableId(s) {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return "p_sched_" + (h >>> 0).toString(36);
+  }
+  function indexKey(day) { return safe(function () { return isFn(window.uns) ? window.uns(IMPORT_INDEX_SUFFIX + "::" + String(day || "")) : ""; }, ""); }
+  function daysKey() { return safe(function () { return isFn(window.uns) ? window.uns(IMPORT_DAYS_SUFFIX) : ""; }, ""); }
+  function ensureDay(day) {
+    day = String(day || ""); if (!day || knownDays[day]) return;
+    knownDays[day] = 1;
+    var k = daysKey(); if (!k) return;
+    safe(function () {
+      var days = JSON.parse(localStorage.getItem(k) || "[]"); if (!Array.isArray(days)) days = [];
+      if (days.indexOf(day) < 0) days.push(day);
+      days.sort();
+      while (days.length > 45) { var old = days.shift(); delete knownDays[old]; localStorage.removeItem(indexKey(old)); }
+      localStorage.setItem(k, JSON.stringify(days));
+    });
+  }
+  function readIndex(day) {
+    var k = indexKey(day); if (!k) return { v: 1, rows: {} };
+    return safe(function () {
+      var x = JSON.parse(localStorage.getItem(k) || "null");
+      if (!x || x.v !== 1 || !x.rows || typeof x.rows !== "object") x = { v: 1, rows: {} };
+      return x;
+    }, { v: 1, rows: {} });
+  }
+  function writeIndex(day, x) { var k = indexKey(day); if (k) { ensureDay(day); safe(function () { localStorage.setItem(k, JSON.stringify(x)); }); } }
+  function markDone(key, meta) {
+    var day = String((meta && meta.date) || ""), x = readIndex(day);
+    x.rows[key] = { state: "done", patientId: String((meta && meta.patientId) || ""), appt_date: String((meta && meta.date) || ""), updated: Date.now() };
+    writeIndex(day, x); delete inFlight[key];
+  }
+  function claim(key, meta) {
+    if (inFlight[key]) return "";
+    var day = String((meta && meta.date) || ""), now = Date.now(), x = readIndex(day), old = x.rows[key];
+    if (old && old.state === "done") return "";
+    if (old && old.state === "pending" && now - Number(old.updated || 0) < PENDING_TTL) return "";
+    var owner = now.toString(36) + Math.random().toString(36).slice(2);
+    x.rows[key] = { state: "pending", owner: owner, patientId: String((meta && meta.patientId) || ""), appt_date: String((meta && meta.date) || ""), updated: now };
+    writeIndex(day, x);
+    var check = readIndex(day).rows[key];
+    if (!check || check.state !== "pending" || check.owner !== owner) return "";
+    inFlight[key] = owner; return owner;
+  }
+  function rollback(key, owner, day) {
+    var x = readIndex(day), old = x.rows[key];
+    if (old && old.state === "pending" && old.owner === owner) { delete x.rows[key]; writeIndex(day, x); }
+    if (inFlight[key] === owner) delete inFlight[key];
+  }
+  function findPatient(pts, a) {
+    var mrn = rowMrn(a), nk = normName(a && a.name), dk = normDob(a && a.dob), i, p;
+    if (mrn) {
+      for (i = 0; i < pts.length; i++) { p = pts[i]; if (rowMrn(p) === mrn) return p; }
+      if (dk) for (i = 0; i < pts.length; i++) { p = pts[i]; if (!rowMrn(p) && normName(p && p.name) === nk && normDob(p && p.dob) === dk) return p; }
+      return null;
+    }
+    if (dk) for (i = 0; i < pts.length; i++) { p = pts[i]; if (normName(p && p.name) === nk && normDob(p && p.dob) === dk) return p; }
+    for (i = 0; i < pts.length; i++) { p = pts[i]; if (normName(p && p.name) === nk) return p; }
+    return null;
+  }
 
   /* ---- read-only capture of the latest schedule read (for DOM-scrape fallback) ---- */
   var lastResp = null;
@@ -122,11 +214,12 @@
       return Promise.resolve({ created: 0, skipped: 0, reason: "empty", days: {} });
     }
 
-    /* target day: explicit -> page-printed date -> EST today (NO synthetic fallback) */
+    /* target day: explicit -> page-printed date. No unproven today fallback. */
     var schedText = safe(function () { return (window.__schedRaw && window.__schedRaw.text) || (lastResp && lastResp.text) || ""; }, "");
     var pageDate = normDate(detectSchedDate(schedText)) || "";
-    var fallbackDay = normDate(opts.date) || (window.__mlsSITarget ? normDate(window.__mlsSITarget) : "") || pageDate || estTodayKey();
+    var fallbackDay = normDate(opts.date) || (window.__mlsSITarget ? normDate(window.__mlsSITarget) : "") || pageDate || "";
     var scopeDate = opts.scopeDate ? (normDate(opts.scopeDate) || String(opts.scopeDate).slice(0, 10)) : "";
+    var wrongDay = 0, invalidDate = 0;
 
     /* Resolve EACH appointment's REAL scheduled date: its own parsed date first, then the
        date printed on the schedule page, then the requested/target day. This stops the old
@@ -150,8 +243,13 @@
       /* FIX 2026-07-01: the user's REQUESTED day (fallbackDay's first slot = opts.date) must
          outrank the date PRINTED on the athena page -- a week-range banner ("Week of June 28 -
          July 4, 2026") made pageDate resolve to the wrong day, so day-scoped pulls filtered
-         every row out ("patients land on July 4" / "0 imported"). Per-row dates still win. */
-      o._date = normDate(a.date) || fallbackDay;
+         every row out ("patients land on July 4" / "0 imported"). A conflicting
+         per-row date is rejected, never silently moved onto the requested day. */
+      var parsedDate = normDate(a.date), storedDate = normDate(a.appt_date), ownDate = parsedDate || storedDate;
+      if (parsedDate && storedDate && parsedDate !== storedDate) { o._wrongDay = true; wrongDay++; }
+      if (scopeDate && ownDate && ownDate !== scopeDate && !o._wrongDay) { o._wrongDay = true; wrongDay++; }
+      o._date = scopeDate ? (o._wrongDay ? "" : scopeDate) : (ownDate || fallbackDay);
+      if (!o._date && !o._wrongDay) { o._badDate = true; invalidDate++; }
       if (!String(o.provider || "").trim()) {
         var _nm = String(o.name || "").trim().toLowerCase().replace(/\s+/g, " ");
         if (respProv[_nm]) o.provider = respProv[_nm];
@@ -160,9 +258,10 @@
     });
     /* Day-scoped pull (Today / Tomorrow / a specific date): import ONLY that day's
        appointments, placed on that day. Never smear other days onto it. */
-    if (scopeDate) appts = appts.filter(function (a) { return a._date === scopeDate; });
+    if (scopeDate) appts = appts.filter(function (a) { return !a._wrongDay && a._date === scopeDate; });
+    else appts = appts.filter(function (a) { return !a._wrongDay && !a._badDate && !!a._date; });
     if (!appts.length) {
-      return Promise.resolve({ created: 0, skipped: 0, reason: scopeDate ? "none-for-day" : "empty", days: {}, target: scopeDate || fallbackDay, scope: scopeDate || "" });
+      return Promise.resolve({ created: 0, skipped: 0, wrongDay: wrongDay, invalidDate: invalidDate, reason: scopeDate ? "none-for-day" : (invalidDate ? "unproven-date" : "empty"), days: {}, target: scopeDate || fallbackDay, scope: scopeDate || "" });
     }
     var target = scopeDate || fallbackDay;
 
@@ -187,6 +286,9 @@
         var ld = x.appt_date || ""; if (!ld) safe(function () { if (x.start_at) { var dd = new Date(x.start_at); ld = dd.getFullYear() + "-" + ("0" + (dd.getMonth() + 1)).slice(-2) + "-" + ("0" + dd.getDate()).slice(-2); } });
         existingKeys[apptKey(x.name, ld, lt)] = 1;
         existingKeys["D:" + String(x.name || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + ld] = 1;
+        var linked = null;
+        safe(function () { linked = pts.find(function (p) { return String(p && p.id || "") === String(x.patient_external_id || ""); }); });
+        existingKeys["I:" + importKey(linked || x, ld)] = 1;
       });
 
       var created = 0, skipped = 0, failed = 0, days = {};
@@ -201,16 +303,27 @@
           if (onEach) safe(function () { onEach("fields", { name: name, time: nt, provider: String(a.provider || "") }); });
           var key = apptKey(name, date, nt);
           var dayKey = "D:" + name.toLowerCase().replace(/\s+/g, " ") + "|" + date;
+          var ledgerKey = importKey(a, date);
           if (onEach) safe(function () { onEach("dedupe", { name: name }); });
-          if (existingKeys[key] || existingKeys[dayKey]) { skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return; }
+          if (existingKeys[key] || existingKeys[dayKey] || existingKeys["I:" + ledgerKey]) {
+            markDone(ledgerKey, { date: date }); skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return;
+          }
+          var owner = claim(ledgerKey, { date: date });
+          if (!owner) { skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return; }
           existingKeys[key] = 1; existingKeys[dayKey] = 1;
 
           var ext = "", existing = null;
-          safe(function () { existing = pts.find(function (x) { return String(x.name || "").trim().toLowerCase() === name.toLowerCase(); }); if (existing) ext = existing.id; });
+          safe(function () { existing = findPatient(pts, a); if (existing) ext = existing.id; });
           if (!existing && isFn(window.upsertPatient)) {
-            var np = { id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), source: "athena-schedule", created: Date.now() };
-            safe(function () { window.upsertPatient(np); pts.push(np); ext = np.id; });
-          } else if (existing && a.dob && !existing.dob) { existing.dob = String(a.dob); safe(function () { window.upsertPatient(existing); }); }
+            var np = { id: stableId(patientIdentity(a)), name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), source: "athena-schedule", created: Date.now() };
+            if (rowMrn(a)) { np.athenaId = String(a.mrn || a.athenaId || a.athena_id || ""); np.mrn = np.athenaId; }
+            safe(function () { window.upsertPatient(np); ext = np.id; if (!findPatient(pts, np)) pts.push(np); });
+          } else if (existing) {
+            var dirty = false;
+            if (a.dob && !existing.dob) { existing.dob = String(a.dob); dirty = true; }
+            if (rowMrn(a) && !rowMrn(existing)) { existing.athenaId = String(a.mrn || a.athenaId || a.athena_id || ""); if (!existing.mrn) existing.mrn = existing.athenaId; dirty = true; }
+            if (dirty) safe(function () { window.upsertPatient(existing); });
+          }
 
           var startIso = null; if (/^\d\d:\d\d$/.test(nt)) startIso = wallToUtc(date, nt);
           /* FIX 2026-07-01: carry the per-appointment PROVIDER into storage. The extension
@@ -224,11 +337,11 @@
           return safe(function () {
             return fetch(base + "/api/appointments", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body) })
               .then(function (r) {
-                if (r.ok) { created++; days[date] = (days[date] || 0) + 1; if (onEach) safe(function () { onEach("saved", { name: name }); }); }
-                else { failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "HTTP " + r.status }); }); }
+                if (r.ok) { markDone(ledgerKey, { patientId: ext, date: date }); created++; days[date] = (days[date] || 0) + 1; if (onEach) safe(function () { onEach("saved", { name: name }); }); }
+                else { rollback(ledgerKey, owner, date); failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "HTTP " + r.status }); }); }
               })
-              .catch(function () { failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); }); });
-          }, Promise.resolve());
+              .catch(function () { rollback(ledgerKey, owner, date); failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); }); });
+          }, null) || (rollback(ledgerKey, owner, date), Promise.resolve());
         });
       });
 
@@ -271,7 +384,7 @@
           safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.reapply)) window.__mlsPick.reapply(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
-          return { created: created, skipped: skipped, failed: failed, days: days, target: target, scope: scopeDate || "" };
+          return { created: created, skipped: skipped, failed: failed, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "" };
         });
       });
     });
