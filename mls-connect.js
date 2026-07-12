@@ -1,3 +1,2205 @@
+/* =============================================================================
+ * feat_mls_onboarding_tour.module.js  ->  window.__mlsOnboardingTour  (obt-1.0.0)
+ * -----------------------------------------------------------------------------
+ * A significantly-better first-sign-in GUIDED TOUR for the MLS Easy / MLS Assist
+ * web app. Interactive spotlight walkthrough of the whole product, PLUS two new
+ * required onboarding steps the old tours never had:
+ *
+ *   (A) CHROME CHECK  - confirms the user is on Google Chrome. The MLS Assist
+ *       companion browser extension only works in Chrome; on any other browser
+ *       the tour says so clearly and links to https://www.google.com/chrome/ .
+ *   (B) INSTALL MLS ASSIST - explains the extension and links to the EXISTING
+ *       hosted install page (https://mlsscribe.com/get-extension.html). It does
+ *       NOT build any new delivery mechanism; it links to what already ships,
+ *       and live-detects whether the extension is already installed using the
+ *       app's OWN existing mlsPing/mlsPong handshake (read-only presence check;
+ *       the extension itself is NEVER touched or modified).
+ *
+ * This module is the improved successor to the older, never-deployed
+ * dispatch-work\onboarding\feat_mls_guided_tour.module.js. SHIP ONLY ONE of the
+ * two (they would both add a Menu row + a Help intercept). This file subsumes
+ * everything that one did and adds A + B and clearer feature coverage.
+ *
+ * SAFETY / SCOPE (this is a live clinical app):
+ *   - Onboarding UI ONLY. It reads no PHI, stores no PHI, makes no clinical
+ *     writes, and never touches athenaOne.
+ *   - The one and only message it posts is the app's existing extension
+ *     presence ping ({type:'mlsPing',source:'mls-app'}); it listens for the
+ *     existing {source:'mls-ext',type:'mlsPong'} reply. Read-only detection.
+ *   - While the tour is open a transparent full-screen catch layer swallows
+ *     every page click, so a user stepping through can NEVER accidentally start
+ *     a recording, generate, sign, or push a note to the EMR. Navigation is
+ *     card buttons / arrow keys / Esc only.
+ *   - The EXTENSION IS FROZEN AND OFF LIMITS. Nothing here edits, reloads, or
+ *     reaches into it; it only detects presence and links to the existing page.
+ *
+ * ENGINEERING DISCIPLINE (matches every other module in this repo):
+ *   - Prepend ABOVE the live mls-connect.js bundle with a real \n\n join.
+ *   - ES5 only. ASCII-only source (emoji via \u escapes) so it cannot be
+ *     mangled by the UTF-8 -> Windows-1252 clipboard bug. Guarded, idempotent,
+ *     reversible IIFE. LF line endings.
+ *   - Uses a MutationObserver / short re-assert ticks, never a hot animation
+ *     loop (setInterval is throttled to ~0 in the MLS tab).
+ *
+ * PUBLIC API:
+ *   window.__mlsOnboardingTour.open()      - open the tour programmatically
+ *   window.__mlsOnboardingTour.reset()     - clear done flags (re-arm auto-launch)
+ *   window.__mlsOnboardingTour.revert()    - full uninstall (overlay/CSS/menu/listeners)
+ *   window.__mlsOnboardingTour.__test      - pure functions for the offline harness
+ * ===========================================================================*/
+(function () {
+  'use strict';
+  if (window.__mlsOnboardingTour && window.__mlsOnboardingTour.installed) return;
+
+  var VERSION = 'obt-1.0.0';
+  var Z = 2147483600;                 // above the app's own modals
+  var DONE_PREFIX = 'mls_onboard_tour_done::';
+  var SESSION_SHOWN = 'mls_obt_shown'; // per-tab guard so a mid-session reload won't re-open
+  var CHROME_URL = 'https://www.google.com/chrome/';
+  var EXT_INSTALL_URL = 'https://mlsscribe.com/get-extension.html'; // EXISTING hosted page
+
+  /* ---------------------------------------------------------------------------
+   * REPLACE THE LEGACY ONBOARDING LAYERS (this module is their improved
+   * successor). The live b130 bundle already ships an older 9-step guided tour
+   * (window.__mlsGuidedTour) and a static how-to (window.__mlsHowToV2), each of
+   * which auto-launches, adds a Menu row, and intercepts the Help button. If we
+   * merely coexisted, the user would get TWO tours, two menu rows, and two Help
+   * intercepts.
+   *
+   * Both of those live IIFEs bail early on a truthy self-global
+   * (`if (window.__mlsGuidedTour) return;` / `if (window.__mlsHowToV2) return;`
+   * -- confirmed in the live bundle). Because THIS module is prepended ABOVE the
+   * bundle, seeding a truthy sentinel here makes each of them no-op. This is the
+   * exact, already-proven technique the live guided tour itself uses to retire
+   * the static how-to. At the end of this IIFE we alias window.__mlsGuidedTour
+   * to our own API, so any legacy `__mlsGuidedTour.open()` caller opens THIS
+   * (better) tour instead. The EXTENSION is untouched; this is app-layer only.
+   * ------------------------------------------------------------------------- */
+  try { if (!window.__mlsGuidedTour) window.__mlsGuidedTour = { installed: true, __neutralizedBy: 'obt', open: function () {}, reset: function () {} }; } catch (e) {}
+  try { if (!window.__mlsHowToV2) window.__mlsHowToV2 = { installed: true, __neutralizedBy: 'obt' }; } catch (e) {}
+
+  /* ---------------------------------------------------------------------------
+   * Small helpers (ASCII-safe DOM builders; never innerHTML with user data).
+   * ------------------------------------------------------------------------- */
+  function el(tag, css, txt) {
+    var n = document.createElement(tag);
+    if (css) n.style.cssText = css;
+    if (txt != null) n.textContent = txt;
+    return n;
+  }
+  function byId(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function on(node, ev, fn, cap) { try { node.addEventListener(ev, fn, !!cap); } catch (e) {} }
+  function off(node, ev, fn, cap) { try { node.removeEventListener(ev, fn, !!cap); } catch (e) {} }
+
+  /* ---------------------------------------------------------------------------
+   * (A) BROWSER DETECTION. "Chrome" here means genuine Google Chrome, because
+   * that is what the companion extension is distributed for. Chromium-family
+   * browsers (Edge, Opera, Brave, Samsung Internet) are reported by name and
+   * treated as "not the supported browser" per the task requirement ("only
+   * works on Chrome"). Pure function -> unit-testable with an injected nav.
+   * ------------------------------------------------------------------------- */
+  function detectBrowser(nav) {
+    nav = nav || (typeof navigator !== 'undefined' ? navigator : {});
+    var ua = String(nav.userAgent || '');
+    var vendor = String(nav.vendor || '');
+    var brands = '';
+    try {
+      if (nav.userAgentData && nav.userAgentData.brands) {
+        for (var i = 0; i < nav.userAgentData.brands.length; i++) {
+          brands += ' ' + String(nav.userAgentData.brands[i].brand || '');
+        }
+      }
+    } catch (e) {}
+    var b = { name: 'your browser', isChrome: false, isChromium: false, ua: ua };
+
+    // Non-Chromium first (unambiguous).
+    if (/Firefox\//i.test(ua) || /\bFxiOS\//i.test(ua)) { b.name = 'Firefox'; return b; }
+    if (/\bEdg(e|A|iOS)?\//i.test(ua) || /Edg\//i.test(brands)) { b.name = 'Microsoft Edge'; b.isChromium = true; return b; }
+    if (/\bOPR\//i.test(ua) || /Opera/i.test(ua) || /Opera/i.test(brands)) { b.name = 'Opera'; b.isChromium = true; return b; }
+    if (/\bBrave\//i.test(ua) || /Brave/i.test(brands) || (nav.brave && typeof nav.brave === 'object')) { b.name = 'Brave'; b.isChromium = true; return b; }
+    if (/SamsungBrowser\//i.test(ua)) { b.name = 'Samsung Internet'; b.isChromium = true; return b; }
+    // Safari: has "Safari" and "Version/" but no "Chrome" / "CriOS".
+    if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua) && !/CriOS\//i.test(ua) && !/Chromium\//i.test(ua)) { b.name = 'Safari'; return b; }
+    // Chrome on iOS is really Safari's WebKit under the hood -> extension can't run.
+    if (/CriOS\//i.test(ua)) { b.name = 'Chrome for iOS (iPhone/iPad)'; b.isChromium = false; return b; }
+
+    // Genuine desktop Google Chrome: "Chrome/" present, Google vendor, and NOT
+    // one of the Chromium re-skins handled above.
+    if (/Chrome\//i.test(ua) && /Google Inc\.?/i.test(vendor)) { b.name = 'Google Chrome'; b.isChrome = true; b.isChromium = true; return b; }
+    if (/Chromium\//i.test(ua)) { b.name = 'Chromium'; b.isChromium = true; return b; }
+    if (/Chrome\//i.test(ua)) { b.name = 'a Chrome-based browser'; b.isChromium = true; return b; } // Chrome/ but no Google vendor (unusual)
+
+    return b;
+  }
+  function isChrome(nav) { return detectBrowser(nav).isChrome === true; }
+
+  /* ---------------------------------------------------------------------------
+   * (B) EXTENSION PRESENCE - the app's OWN existing handshake, read-only.
+   * Posts {type:'mlsPing',source:'mls-app'} and resolves true if a
+   * {source:'mls-ext',type:'mlsPong'} arrives within `timeoutMs`. Never mutates
+   * the extension. Injectable win for tests.
+   * ------------------------------------------------------------------------- */
+  function pingExtension(cb, timeoutMs, win) {
+    win = win || window;
+    var done = false, version = '';
+    function finish(ok) {
+      if (done) return; done = true;
+      try { win.removeEventListener('message', onMsg); } catch (e) {}
+      try { cb(ok, version); } catch (e) {}
+    }
+    function onMsg(ev) {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong') return;
+      version = d.version || '';
+      finish(true);
+    }
+    try { win.addEventListener('message', onMsg, false); } catch (e) {}
+    try { win.postMessage({ type: 'mlsPing', source: 'mls-app' }, '*'); } catch (e) {}
+    setTimeout(function () { finish(false); }, timeoutMs || 1500);
+  }
+
+  /* ---------------------------------------------------------------------------
+   * Per-account done flag. There is no reliable client-side "first login ever"
+   * signal, so the tour shows once per account until finished or skipped.
+   * ------------------------------------------------------------------------- */
+  function acctKey() {
+    var e = '';
+    try { e = localStorage.getItem('sf_user') || ''; } catch (x) {}
+    if (!e) { try { var s = JSON.parse(localStorage.getItem('sf_session') || '{}'); e = (s && (s.email || s.user)) || ''; } catch (x2) {} }
+    return String(e || 'anon').toLowerCase();
+  }
+  function doneKey() { return DONE_PREFIX + acctKey(); }
+  function isDone() { try { return localStorage.getItem(doneKey()) === '1'; } catch (e) { return false; } }
+  function markDone() { try { localStorage.setItem(doneKey(), '1'); } catch (e) {} }
+
+  /* ---------------------------------------------------------------------------
+   * Graceful spotlight target resolution: first selector that EXISTS and is
+   * actually rendered. If none resolve, the step degrades to a centered card
+   * (never points at nothing, never throws). Injectable doc for tests.
+   * ------------------------------------------------------------------------- */
+  function isVisible(node, docWin) {
+    if (!node) return false;
+    try {
+      var w = docWin || window;
+      var cs = w.getComputedStyle ? w.getComputedStyle(node) : null;
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') < 0.05)) return false;
+      var r = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+      if (!r) return true;
+      return (r.width > 1 && r.height > 1);
+    } catch (e) { return true; }
+  }
+  function resolveTarget(selectors, doc, docWin) {
+    doc = doc || document;
+    if (!selectors || !selectors.length) return null;
+    for (var i = 0; i < selectors.length; i++) {
+      var node = null;
+      try { node = doc.querySelector(selectors[i]); } catch (e) { node = null; }
+      if (node && isVisible(node, docWin)) return node;
+    }
+    return null;
+  }
+
+  /* ---------------------------------------------------------------------------
+   * THE STEPS. Each: {key, badge, title, body(), target?[], kind?}. `body` is a
+   * function returning a DOM node (so the Chrome/extension steps can render live
+   * status). Steps with a `target` spotlight it; if it doesn't resolve, they
+   * degrade to a centered card.
+   * ------------------------------------------------------------------------- */
+  function pill(txt, bg, fg) {
+    var p = el('span', 'display:inline-block;font:600 12px/1 system-ui;padding:5px 10px;border-radius:999px;background:' + bg + ';color:' + fg + ';margin:2px 6px 2px 0', txt);
+    return p;
+  }
+  function para(txt) { return el('div', 'font:14px/1.5 system-ui;color:#e8eeff;margin:8px 0 0', txt); }
+  function linkBtn(txt, href) {
+    var a = el('a', 'display:inline-block;margin-top:10px;background:#ffffff;color:#1f3d8a;font:700 13px/1 system-ui;text-decoration:none;padding:9px 14px;border-radius:9px');
+    a.textContent = txt; a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    return a;
+  }
+
+  function buildChromeBody() {
+    var wrap = el('div');
+    var b = detectBrowser();
+    if (b.isChrome) {
+      wrap.appendChild(pill('✓ Google Chrome', '#e7f6ec', '#1c7a43'));
+      wrap.appendChild(para('You are on Google Chrome — perfect. The MLS Assist companion extension runs here so MLS can work inside your real EMR.'));
+    } else {
+      wrap.appendChild(pill('⚠ ' + b.name, '#fdecec', '#b4231e'));
+      var note = b.isChromium
+        ? 'You are on ' + b.name + '. MLS Assist — the browser extension that lets MLS read a chart and drop the finished note back into your EMR — is built for Google Chrome. Please switch to Chrome for the EMR features. You can still use the rest of MLS here.'
+        : 'You are on ' + b.name + '. The MLS Assist browser extension only works in Google Chrome. To use MLS inside your real EMR, please open MLS in Chrome. You can still use the rest of MLS here.';
+      wrap.appendChild(para(note));
+      wrap.appendChild(linkBtn('⬇ Get Google Chrome', CHROME_URL));
+    }
+    return wrap;
+  }
+
+  function buildExtensionBody() {
+    var wrap = el('div');
+    wrap.appendChild(para('🧩 MLS Assist is a browser extension. Install it once and MLS can capture a chart from your EMR (e.g. athenaOne) into MLS in one click, and drop the finished, reviewed note back — you always confirm inside the EMR.'));
+    var status = el('div', 'font:600 13px/1.4 system-ui;color:#cfe0ff;margin-top:10px', 'Checking whether MLS Assist is already installed…');
+    wrap.appendChild(status);
+    var act = el('div', 'margin-top:8px');
+    wrap.appendChild(act);
+    // Live, read-only presence check via the app's existing handshake.
+    pingExtension(function (ok, ver) {
+      if (ok) {
+        status.textContent = '✓ MLS Assist is installed' + (ver ? (' (v' + ver + ')') : '') + ' and responding. You are ready to pull charts.';
+        status.style.color = '#bff0d0';
+      } else {
+        var b = detectBrowser();
+        status.textContent = b.isChrome
+          ? 'MLS Assist is not detected yet. Install it (about a minute), then reload MLS.'
+          : 'Install MLS Assist in Google Chrome (it will not run in ' + b.name + ').';
+        status.style.color = '#ffd9d9';
+        act.appendChild(linkBtn('⬇ Install MLS Assist', EXT_INSTALL_URL));
+      }
+    }, 1500);
+    return wrap;
+  }
+
+  function textBody(lines) {
+    return function () {
+      var wrap = el('div');
+      for (var i = 0; i < lines.length; i++) wrap.appendChild(para(lines[i]));
+      return wrap;
+    };
+  }
+
+  var STEPS = [
+    {
+      key: 'welcome', badge: '👋 Welcome', title: 'Welcome to MLS',
+      body: textBody([
+        'This 90-second tour shows you the whole visit flow and where everything lives. You are always the final word — MLS drafts, you review and sign.',
+        'You can skip anytime, and reopen this from ❓ Help or the Menu whenever you like.'
+      ])
+    },
+    {
+      key: 'chrome', badge: 'Step 1 · Browser', title: 'Use Google Chrome',
+      body: buildChromeBody
+    },
+    {
+      key: 'extension', badge: 'Step 2 · MLS Assist', title: 'Install the MLS Assist extension',
+      body: buildExtensionBody
+    },
+    {
+      key: 'visit', badge: 'Step 3 · Your day', title: 'Your day loads itself',
+      target: ['#nav_visit', '[data-view="visit"]'],
+      body: textBody(['The Visit tab is home base. Pull today’s schedule and each patient’s history from your EMR in one tap (that is what the MLS Assist extension is for).'])
+    },
+    {
+      key: 'record', badge: 'Step 4 · Record', title: 'Record & generate — one button',
+      target: ['.ez3-big', '#recordBtn', '#startBtn'],
+      body: textBody(['Open a patient (or “New visit”), press record, and just talk through the visit. MLS transcribes and writes a structured note. No microphone? You can type or paste the conversation instead.'])
+    },
+    {
+      key: 'review', badge: 'Step 5 · Review', title: 'Review & sign — you decide',
+      target: ['#noteCard', '#noteBox', '.note-card'],
+      body: textBody(['Read the draft, edit anything, switch between SOAP and insurance-ready formats, then Sign. Your signature block is appended automatically. Nothing is final until you sign.'])
+    },
+    {
+      key: 'send', badge: 'Step 6 · Send safely', title: 'Send back to your EMR',
+      target: ['#pushAllEmrBtn', '#emrBtn', '[data-emr-send]'],
+      body: textBody(['When ready, MLS drops the note into your EMR through the MLS Assist extension — you confirm it inside the EMR. MLS never signs for you, and clinical orders are never auto-sent; you place those yourself.'])
+    },
+    {
+      key: 'patients', badge: 'Step 7 · Charts', title: 'Patients & history',
+      target: ['#nav_patients', '#nav_history', '[data-view="patients"]'],
+      body: textBody(['Every chart keeps the problem list, meds, allergies, prior visits, and notes. Search by name or DOB up top. The History tab lists everything you have generated.'])
+    },
+    {
+      key: 'reports', badge: 'Step 8 · Reports', title: 'Legal reports & prior-auth',
+      body: textBody(['From a patient you can generate a medical-legal narrative / IME / records-review report, or a payer-ready prior-authorization request and denial appeal — built only from that chart, with [bracketed placeholders] for anything missing. Always a draft you verify and sign.'])
+    },
+    {
+      key: 'practice', badge: 'Step 9 · Practice', title: 'Scheduling, booking & phone',
+      body: textBody(['Set your hours in Availability, share your online booking link, and let the AI phone assistant answer calls, book real open slots, and take messages — all from the same account.'])
+    },
+    {
+      key: 'studio', badge: 'Step 10 · More', title: 'AI Studio, custom cards & Help',
+      target: ['#nav_studio', '[data-view="studio"]'],
+      body: (function () {
+        return function () {
+          var wrap = el('div');
+          wrap.appendChild(para('AI Studio holds the extra tools — ask questions about a chart, and build your own visit cards by describing them in plain English (they are display-only and never change your note or write to your EMR).'));
+          wrap.appendChild(para('That is the tour! Reopen it anytime from ❓ Help or the Menu. Welcome aboard.'));
+          return wrap;
+        };
+      })()
+    }
+  ];
+
+  /* ---------------------------------------------------------------------------
+   * Overlay / rendering.
+   * ------------------------------------------------------------------------- */
+  var state = { open: false, i: 0, nodes: null, keyHandler: null, resizeHandler: null };
+
+  function ensureCss() {
+    if (byId('mlsObtCss')) return;
+    var s = el('style'); s.id = 'mlsObtCss';
+    s.textContent =
+      '#mlsObtDim{position:fixed;inset:0;background:rgba(11,18,40,.62);z-index:' + Z + ';}' +
+      '#mlsObtCatch{position:fixed;inset:0;z-index:' + (Z + 1) + ';cursor:default;}' +
+      '#mlsObtRing{position:fixed;z-index:' + (Z + 2) + ';border:3px solid #63a0ff;border-radius:12px;box-shadow:0 0 0 4px rgba(99,160,255,.35),0 0 0 9999px rgba(11,18,40,.0);pointer-events:none;transition:all .18s ease;}' +
+      '#mlsObtCard{position:fixed;z-index:' + (Z + 3) + ';max-width:380px;width:calc(100vw - 32px);box-sizing:border-box;background:linear-gradient(180deg,#2f6bed,#2257cf);color:#fff;border-radius:16px;padding:18px 18px 14px;box-shadow:0 18px 50px rgba(10,20,50,.5);font-family:system-ui,-apple-system,"Plus Jakarta Sans",sans-serif;}' +
+      '#mlsObtCard h3{margin:6px 0 2px;font-size:18px;line-height:1.25;}' +
+      '#mlsObtDots{display:flex;gap:5px;margin:12px 0 10px;flex-wrap:wrap;}' +
+      '.mlsObtDot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35);}' +
+      '.mlsObtDot.on{background:#fff;}' +
+      '#mlsObtBtns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;}' +
+      '.mlsObtBtn{font:600 13px/1 system-ui;border-radius:9px;padding:9px 13px;border:0;cursor:pointer;}' +
+      '.mlsObtNext{background:#fff;color:#1f3d8a;}' +
+      '.mlsObtBack{background:rgba(255,255,255,.16);color:#fff;}' +
+      '.mlsObtSkip{background:transparent;color:#dfe8ff;margin-left:auto;text-decoration:underline;}' +
+      '@media (max-width:480px){#mlsObtCard{left:16px!important;right:16px!important;width:auto!important;bottom:16px!important;top:auto!important;}}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function clearOverlay() {
+    ['mlsObtDim', 'mlsObtCatch', 'mlsObtRing', 'mlsObtCard'].forEach(function (id) {
+      var n = byId(id); if (n && n.parentNode) n.parentNode.removeChild(n);
+    });
+  }
+
+  function positionForTarget(ring, card, target) {
+    var vw = window.innerWidth || 1024, vh = window.innerHeight || 768;
+    if (target && target.getBoundingClientRect) {
+      var r = target.getBoundingClientRect();
+      ring.style.display = 'block';
+      ring.style.left = Math.max(4, r.left - 6) + 'px';
+      ring.style.top = Math.max(4, r.top - 6) + 'px';
+      ring.style.width = Math.min(vw - 8, r.width + 12) + 'px';
+      ring.style.height = Math.min(vh - 8, r.height + 12) + 'px';
+      // place card below if room, else above, else centered-bottom
+      var cardTop = r.bottom + 12;
+      if (cardTop + 220 > vh) cardTop = Math.max(12, r.top - 232);
+      card.style.top = cardTop + 'px';
+      var left = Math.min(Math.max(12, r.left), vw - 392);
+      card.style.left = left + 'px';
+      card.style.bottom = 'auto'; card.style.right = 'auto';
+    } else {
+      ring.style.display = 'none';
+      card.style.left = '50%'; card.style.top = '50%';
+      card.style.transform = 'translate(-50%,-50%)';
+      card.style.bottom = 'auto'; card.style.right = 'auto';
+    }
+  }
+
+  function renderStep() {
+    var step = STEPS[state.i];
+    var ring = byId('mlsObtRing'), card = byId('mlsObtCard');
+    if (!ring || !card) return;
+    card.style.transform = '';
+    // build card content
+    card.innerHTML = '';
+    var badge = el('div', 'font:700 11px/1 system-ui;letter-spacing:.03em;color:#cfe0ff;text-transform:uppercase', step.badge || '');
+    card.appendChild(badge);
+    var h = el('h3', '', step.title || ''); card.appendChild(h);
+    var bodyNode = (typeof step.body === 'function') ? step.body() : el('div', '', String(step.body || ''));
+    card.appendChild(bodyNode);
+    // dots
+    var dots = el('div'); dots.id = 'mlsObtDots';
+    for (var d = 0; d < STEPS.length; d++) {
+      var dot = el('span'); dot.className = 'mlsObtDot' + (d === state.i ? ' on' : ''); dots.appendChild(dot);
+    }
+    card.appendChild(dots);
+    // buttons
+    var btns = el('div'); btns.id = 'mlsObtBtns';
+    if (state.i > 0) {
+      var back = el('button'); back.className = 'mlsObtBtn mlsObtBack'; back.textContent = '← Back';
+      on(back, 'click', function () { go(-1); }); btns.appendChild(back);
+    }
+    var next = el('button'); next.className = 'mlsObtBtn mlsObtNext';
+    next.textContent = (state.i >= STEPS.length - 1) ? '✓ Finish' : 'Next →';
+    on(next, 'click', function () { (state.i >= STEPS.length - 1) ? finish(true) : go(1); });
+    btns.appendChild(next);
+    var skip = el('button'); skip.className = 'mlsObtBtn mlsObtSkip'; skip.textContent = 'Skip';
+    on(skip, 'click', function () { finish(true); });
+    btns.appendChild(skip);
+    card.appendChild(btns);
+    // position (graceful spotlight)
+    var target = step.target ? resolveTarget(step.target) : null;
+    if (target && target.scrollIntoView) { try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }
+    positionForTarget(ring, card, target);
+  }
+
+  function go(delta) {
+    var n = state.i + delta;
+    if (n < 0) n = 0;
+    if (n > STEPS.length - 1) { finish(true); return; }
+    state.i = n; renderStep();
+  }
+
+  function openTour() {
+    if (state.open) return;
+    ensureCss();
+    clearOverlay();
+    var dim = el('div'); dim.id = 'mlsObtDim';
+    var catcher = el('div'); catcher.id = 'mlsObtCatch';
+    // Safety: swallow all clicks on the page while the tour is up.
+    on(catcher, 'click', function (ev) { ev.preventDefault(); ev.stopPropagation(); }, true);
+    on(catcher, 'mousedown', function (ev) { ev.preventDefault(); ev.stopPropagation(); }, true);
+    var ring = el('div'); ring.id = 'mlsObtRing'; ring.style.display = 'none';
+    var card = el('div'); card.id = 'mlsObtCard';
+    document.body.appendChild(dim);
+    document.body.appendChild(catcher);
+    document.body.appendChild(ring);
+    document.body.appendChild(card);
+    state.open = true; state.i = 0;
+    state.keyHandler = function (e) {
+      if (e.key === 'Escape') { finish(true); }
+      else if (e.key === 'ArrowRight') { go(1); }
+      else if (e.key === 'ArrowLeft') { go(-1); }
+    };
+    on(document, 'keydown', state.keyHandler, true);
+    state.resizeHandler = function () { renderStep(); };
+    on(window, 'resize', state.resizeHandler);
+    renderStep();
+    try { sessionStorage.setItem(SESSION_SHOWN, '1'); } catch (e) {}
+  }
+
+  function closeTour() {
+    if (!state.open) return;
+    state.open = false;
+    off(document, 'keydown', state.keyHandler, true);
+    off(window, 'resize', state.resizeHandler);
+    clearOverlay();
+  }
+
+  function finish(setDone) {
+    if (setDone) markDone();
+    closeTour();
+  }
+
+  /* ---------------------------------------------------------------------------
+   * Auto-launch on first sign-in. DEFERS while the practice-setup wizard
+   * (#setupModal.show) is open, so the two never collide; the tour is the
+   * natural next thing after setup. Never fires if already done this account or
+   * already shown this tab session.
+   * ------------------------------------------------------------------------- */
+  function signedIn() {
+    var app = byId('appScreen'), auth = byId('authScreen'), veil = byId('mlsBootVeil');
+    var sess = '';
+    try { sess = localStorage.getItem('sf_session') || localStorage.getItem('sf_user') || ''; } catch (e) {}
+    var appVisible = app ? isVisible(app) : true;   // if no #appScreen id, don't block
+    var authHidden = auth ? !isVisible(auth) : true;
+    var veilUp = veil ? isVisible(veil) : false;
+    var navReady = !!byId('nav_visit') || !!document.querySelector('[data-view="visit"]');
+    return appVisible && authHidden && !veilUp && !!sess && navReady;
+  }
+  function setupOpen() {
+    var m = byId('setupModal');
+    return !!(m && /(^|\s)show(\s|$)/.test(m.className || ''));
+  }
+  var _autoTries = 0, _autoTimer = null;
+  function maybeAutoLaunch() {
+    if (state.open) return;
+    if (isDone()) return;
+    try { if (sessionStorage.getItem(SESSION_SHOWN) === '1') return; } catch (e) {}
+    if (!signedIn()) { scheduleAuto(); return; }
+    if (setupOpen()) { scheduleAuto(); return; } // let the setup wizard finish first
+    // one more settle beat, then a final signed-in re-check (guards a logout in the window)
+    setTimeout(function () { if (!state.open && signedIn() && !setupOpen() && !isDone()) openTour(); }, 700);
+  }
+  function scheduleAuto() {
+    _autoTries++;
+    if (_autoTries > 120) return; // ~2 min ceiling, then stop polling
+    _autoTimer = setTimeout(maybeAutoLaunch, 1000);
+  }
+
+  /* ---------------------------------------------------------------------------
+   * Revisit affordances: a Menu row + a Help intercept. Both open THIS tour.
+   * Re-asserted on a slow tick so they survive menu re-renders.
+   * ------------------------------------------------------------------------- */
+  var _menuTimer = null;
+  function ensureMenuRow() {
+    try {
+      var panel = byId('mlsTbMenuPanel') || document.querySelector('.tb-menu-panel');
+      if (!panel || byId('mlsObtMenuRow')) return;
+      var row = el('button', 'display:block;width:100%;text-align:left;background:none;border:0;padding:10px 14px;font:600 14px/1 system-ui;color:inherit;cursor:pointer');
+      row.id = 'mlsObtMenuRow';
+      row.textContent = '🎓 Guided tour / How-to';
+      on(row, 'click', function () {
+        try { panel.classList.remove('open'); panel.style.display = ''; } catch (e) {}
+        openTour();
+      });
+      panel.appendChild(row);
+    } catch (e) {}
+  }
+  var _helpBound = false;
+  function bindHelp() {
+    if (_helpBound) return;
+    var help = byId('nav_help');
+    if (!help) return;
+    on(help, 'click', function (ev) {
+      try { ev.stopImmediatePropagation(); ev.preventDefault(); } catch (e) {}
+      openTour();
+    }, true);
+    _helpBound = true;
+  }
+
+  /* ---------------------------------------------------------------------------
+   * Boot.
+   * ------------------------------------------------------------------------- */
+  function boot() {
+    ensureCss();
+    ensureMenuRow(); bindHelp();
+    _menuTimer = setInterval(function () { ensureMenuRow(); bindHelp(); }, 1500);
+    scheduleAuto();
+  }
+
+  function revert() {
+    try { if (_menuTimer) clearInterval(_menuTimer); } catch (e) {}
+    try { if (_autoTimer) clearTimeout(_autoTimer); } catch (e) {}
+    closeTour();
+    ['mlsObtCss'].forEach(function (id) { var n = byId(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
+    var row = byId('mlsObtMenuRow'); if (row && row.parentNode) row.parentNode.removeChild(row);
+    window.__mlsOnboardingTour.installed = false;
+  }
+  function reset() {
+    try { localStorage.removeItem(doneKey()); } catch (e) {}
+    try { sessionStorage.removeItem(SESSION_SHOWN); } catch (e) {}
+    _autoTries = 0; scheduleAuto();
+  }
+
+  window.__mlsOnboardingTour = {
+    installed: true, version: VERSION,
+    open: openTour, close: closeTour, reset: reset, revert: revert,
+    stepCount: function () { return STEPS.length; },
+    /* pure functions for the offline harness (no DOM required) */
+    __test: {
+      detectBrowser: detectBrowser,
+      isChrome: isChrome,
+      pingExtension: pingExtension,
+      resolveTarget: resolveTarget,
+      isVisible: isVisible,
+      doneKeyFor: function (email) { return DONE_PREFIX + String(email || 'anon').toLowerCase(); },
+      steps: function () { return STEPS.map(function (s) { return { key: s.key, title: s.title, hasTarget: !!s.target }; }); },
+      constants: { CHROME_URL: CHROME_URL, EXT_INSTALL_URL: EXT_INSTALL_URL, DONE_PREFIX: DONE_PREFIX }
+    }
+  };
+
+  // Alias the legacy global so any pre-existing "__mlsGuidedTour.open()" caller
+  // (menu rows, help handlers baked into the bundle) opens THIS tour instead.
+  try { window.__mlsGuidedTour = window.__mlsOnboardingTour; } catch (e) {}
+
+  if (document.readyState === 'loading') on(document, 'DOMContentLoaded', boot); else boot();
+})();
+
+/* =============================================================================
+ * __mlsWidgetClarity v1.0.0   (Task 16 — widget clarity, FIX A + B + C)
+ * -----------------------------------------------------------------------------
+ * THREE focused, independent, additive/guarded fixes that make the in-app
+ * custom/library widget system self-explanatory and hide the two supervisory
+ * doctor-performance tools behind an explicit opt-in. Prepend ABOVE the live
+ * mls-connect.js bundle (real \n\n join), like every other guarded module in
+ * this codebase. Nothing here writes to the note buffer, calls a write bridge
+ * (mlsAppWriteV2 / mlsVerifiedWrite / mlsAppPasteRequest — grep-verified ZERO
+ * calls in the widget code region, HTML:19594-21050), or touches athenaOne.
+ * All DOM built with createElement/textContent only — never innerHTML with
+ * model/user data.
+ *
+ * Ground truth (re-verified against scratchpad\ScribeFlow.LIVE-cosmetic.html,
+ * the 07-09 live base-app capture, and dispatch-work\visitfix-v12\
+ * mls-connect.b130.js, build 2026-07-11-b130 — NOT the older b82-rooted
+ * numbers in the transfer report; all line numbers below re-confirmed):
+ *   - CW_LIBRARY (8 curated specs)            HTML:19867-19966
+ *   - installLibraryWidget()                  HTML:19969  (Premium-gated :19974)
+ *   - cwShowLibrary() → #cwLibraryGrid        HTML:19991 / :3491
+ *   - openWidgetBuilder() / builder modal     HTML:20017 / :3469-3548
+ *   - cwRenderLayoutSummary()                 HTML:20055-20085
+ *   - renderWidgetBuilderList() → #cwList     HTML:20225 / :3547
+ *   - renderCustomWidgets() → #customWidgetsHost  HTML:20248 / :1875
+ *   - toggleCustomWidgetAuto() (no re-render!)    HTML:20201-20208
+ *   - getCustomWidgets()/setCustomWidgets()   HTML:19845-19857
+ *   - cwSanitizeSpec() — NOTE: DROPS the library `captures` field on install
+ *     (output keys: id/emoji/title/description/prompt/format/auto/useHistory/
+ *     created/layout — HTML:19823-19844), so EVERY installed widget (library
+ *     or custom-built) lacks `captures`; only the browse-grid templates have
+ *     it. FIX B therefore synthesizes Captures for ALL installed widgets.
+ *   - Efficiency report: entry button HTML:2387 (inside #teamView h2, no id —
+ *     targeted via [onclick*="generateEfficiencyReport"]), card #effCard
+ *     HTML:2398, generator gated isHead at HTML:5990.
+ *   - Performance analysis: card #anaDoctorReview HTML:2520-2542 (contains the
+ *     🧠 generate button :2529 and #analysisCard :2533), head/admin-gated by
+ *     applyAccessUI (HTML:4456-4457, inline style display).
+ *   - Settings Features section ("🧩 Features", HTML:3034) — per-device
+ *     feature switches persisted as uns() localStorage keys '1'/'0'
+ *     (featOn(), HTML:4988-4991). mlsBuildSettingsTabs() (HTML:5259) only
+ *     tags/hides whole sections — it never rebuilds section innerHTML, so a
+ *     field injected into the Features section survives it.
+ *   - b130 contains NO overriding copies of the widget render functions
+ *     (grep: 1 hit of customWidgetsHost in the bundle, a comment in
+ *     __mlsEasySmartTools B130:5124) — the base-app functions are live.
+ *
+ * ---------------------------------------------------------------------------
+ * FIX A — capability ("clarity") line on every widget surface
+ * ---------------------------------------------------------------------------
+ * The four capability facts are uniform for every custom/library widget and
+ * were re-verified here rather than trusted from the transfer report:
+ *   - Analysis only: every prompt carries the documented-facts-only /
+ *     [bracketed placeholders] / advisory-draft guardrails (HTML:20123 bakes
+ *     them into every designed prompt; all 8 CW_LIBRARY prompts carry them).
+ *   - Never writes to Athena: zero write-bridge calls in the widget region
+ *     (grep-verified this session).
+ *   - Fills on Generate (auto) / when you tap ↻ Refresh (manual): spec.auto,
+ *     HTML:20041 + the run filter `.filter(w=>w.auto)` HTML:20969 + the
+ *     manual-widget hint HTML:20284.
+ *   - Note-buffer: ⚠ ONE HONEST DEVIATION from the transfer-report copy. The
+ *     report claimed "no note-buffer write path exists in the widget code"
+ *     and asked for the line "won't change your note". Re-verification found
+ *     cwPushToNote() (HTML:20806-20845) — the "➕ Add to note" button rendered
+ *     on every widget card (HTML:20272) DOES append the widget's serialized
+ *     text into currentSoap/currentInsurance when the DOCTOR explicitly taps
+ *     it. A widget never touches the note on its own (auto-fill and Refresh
+ *     only render the card), but printing "won't change your note" two
+ *     buttons away from "➕ Add to note" would be self-contradictory. The
+ *     shipped line is therefore "won't change your note on its own" — factual
+ *     both ways. Documented in the Task 16/17 implementation report.
+ * Injection surfaces (all three the task names):
+ *   1. Visit cards in #customWidgetsHost  → line + synthesized Captures
+ *      (description is already rendered by the base card, HTML:20276 — not
+ *      duplicated).
+ *   2. Builder-list rows in #cwList       → line + Captures (description +
+ *      layout summary already rendered by the row, HTML:20237-20238).
+ *   3. Library grid cards in #cwLibraryGrid → line only (description AND a
+ *      real "Captures:" line are already rendered by cwShowLibrary,
+ *      HTML:20003-20004 — nothing duplicated).
+ * Mechanism: one MutationObserver per host (hosts are STATIC markup —
+ * :1875/:3547/:3491 — so the observers attach once at install). Injection is
+ * idempotent (.mls-wc-meta presence check + fast no-op on observer re-entry).
+ * NO setInterval anywhere — intervals are throttled ~0 in the MLS tab.
+ * Because toggleCustomWidgetAuto() saves without re-rendering (HTML:20201),
+ * a delegated 'change' listener on #cwList re-syncs every injected line the
+ * moment an Auto checkbox flips.
+ *
+ * ---------------------------------------------------------------------------
+ * FIX B — synthesized "Captures:" line for installed widgets
+ * ---------------------------------------------------------------------------
+ * The task asked to REUSE cwRenderLayoutSummary() rather than duplicate its
+ * logic. Ground truth: that helper is not a pure function — it reads the
+ * builder's mutable global `_cwPendingLayout` (a top-level `let`, HTML:19618)
+ * and renders into the builder-preview DOM (#cwLayoutSummary), toggling
+ * #cwLayoutWrap/#cwFormatWrap display (HTML:20055-20085). It is therefore
+ * reused via SAVE→SWAP→CALL→RESTORE: the previous _cwPendingLayout value,
+ * #cwLayoutSummary innerHTML and both display states are captured, the real
+ * helper is called against the widget's layout, the rendered .cw-sum-row
+ * rows are read back, and EVERYTHING is restored in a finally block. The
+ * whole operation is synchronous, so no user interaction can interleave with
+ * the swapped state. If the helper or the builder nodes are unavailable
+ * (defensive: they are static markup today), a minimal label+type fallback
+ * runs instead — degraded output, clearly NOT a re-implementation of the
+ * helper's option/range formatting. Read-only w.r.t. the saved widget spec:
+ * nothing is ever written back to customWidgets.
+ * Layout-less (v1/simple) widgets get "a plain-text summary / a bulleted
+ * list / a simple table" from spec.format.
+ *
+ * ---------------------------------------------------------------------------
+ * FIX C — supervisory performance tools hidden by default (opt-in toggle)
+ * ---------------------------------------------------------------------------
+ * Settings toggle key: 'mlsShowPerformanceTools' (per-user uns() localStorage
+ * key, '1'/'0', DEFAULT FALSE — same persistence shape as featOn()). While
+ * false, a !important stylesheet hides BOTH supervisory surfaces even for
+ * head doctors:
+ *   - the 📊 Efficiency report entry button (#teamView
+ *     [onclick*="generateEfficiencyReport"]) and its #effCard
+ *   - the whole 🧠 Doctor analysis & review card (#anaDoctorReview, which
+ *     contains the generate button and #analysisCard)
+ * When a head opts in, the stylesheet is removed and the EXISTING head/admin
+ * gate still applies untouched (applyAccessUI keeps setting #anaDoctorReview's
+ * inline display from isHead||isAdmin, HTML:4456-4457; generateEfficiencyReport
+ * itself still refuses non-heads, HTML:5989-5990; #teamView is only reachable
+ * via the head-only nav_team tab, HTML:4445-4447). DISPLAY GATING ONLY — the
+ * features and their data access are unchanged. The toggle is injected into
+ * the Settings "🧩 Features" section using the exact featMME field markup
+ * (checkbox + muted note), synced whenever #settingsModal gains .show
+ * (MutationObserver on its class attribute — no polling). NOT added to
+ * PREF_SYNC_KEYS (that const lives in the immutable-for-this-pass HTML), so
+ * the preference is per-device — same limitation as any new uns() key;
+ * flagged in the report.
+ *
+ * OUT OF SCOPE, deliberately: FIX D (new greenfield CW_LIBRARY presets) is
+ * decision-gated with Michael and NOT built. No control that writes to the
+ * note buffer or Athena is added anywhere — widgets stay display-only.
+ *
+ * Kill switch: window.__mlsWidgetClarity_revert() — disconnects all
+ * observers/listeners, removes every injected .mls-wc-meta node, both style
+ * tags and the Settings field, and deletes the globals. The performance-tools
+ * preference VALUE is left in localStorage (harmless; re-honored if the
+ * module returns).
+ * ============================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsWidgetClarity) { return; }
+
+  var api = {
+    ver: '1.0.0',
+    cardMetas: 0, builderMetas: 0, libraryMetas: 0,
+    capturesReused: 0, capturesFallback: 0,
+    gateApplies: 0, syncs: 0
+  };
+  window.__mlsWidgetClarity = api;
+
+  function safe(fn, fallback) {
+    try { return fn(); } catch (e) { return fallback; }
+  }
+
+  /* ---- access to base-app globals (exist by the time the bundle runs —
+     the loader is appended at HTML:21302, after every inline script) ---- */
+  function widgets() {
+    return safe(function () {
+      return (typeof window.getCustomWidgets === 'function') ? (window.getCustomWidgets() || []) : [];
+    }, []);
+  }
+  function widgetById(id) {
+    var list = widgets();
+    for (var i = 0; i < list.length; i++) { if (list[i] && list[i].id === id) { return list[i]; } }
+    return null;
+  }
+  /* _cwPendingLayout is a top-level `let` (global LEXICAL binding, not a
+     window property) — reachable only as a bare identifier. Both accessors
+     throw ReferenceError if the base app hasn't defined it; every call site
+     wraps them in try/catch via safe(). */
+  function getPendingLayout() { return _cwPendingLayout; }            /* eslint-disable-line no-undef */
+  function setPendingLayout(v) { _cwPendingLayout = v; }              /* eslint-disable-line no-undef */
+  function libraryTemplates() {
+    return safe(function () { return CW_LIBRARY; }, null);            /* eslint-disable-line no-undef */
+  }
+
+  /* ==========================================================================
+   * FIX A helpers — the capability line
+   * ========================================================================== */
+
+  var LINE_PREFIX = '🔎 Analysis only · won’t change your note on its own · never writes to Athena · ';
+  function capabilityLine(auto) {
+    return LINE_PREFIX + (auto ? 'fills on Generate' : 'fills when you tap ↻ Refresh');
+  }
+
+  function ensureCss() {
+    safe(function () {
+      if (document.getElementById('mlsWidgetClarityCss')) { return; }
+      var s = document.createElement('style');
+      s.id = 'mlsWidgetClarityCss';
+      s.textContent =
+        '.mls-wc-meta{font-size:11.5px;line-height:1.5;color:var(--muted,#6b7a90);margin:2px 0 8px}' +
+        '.mls-wc-meta .wc-line{font-weight:600}' +
+        '.mls-wc-meta .wc-cap{margin-top:1px}' +
+        /* builder rows are compact — keep the meta on its own full-width line */
+        '#cwList .mls-wc-meta{margin:3px 0 0}' +
+        '#cwLibraryGrid .mls-wc-meta{margin:4px 0 2px}';
+      (document.head || document.documentElement).appendChild(s);
+    });
+  }
+
+  /* ==========================================================================
+   * FIX B — Captures synthesis (reuse cwRenderLayoutSummary, save/restore)
+   * ========================================================================== */
+
+  var FRIENDLY = {
+    text: 'text', bullets: 'bullets', table: 'table', fields: 'fields',
+    select: 'dropdown', checklist: 'checklist', badge: 'status badge',
+    score: 'score', chart: 'chart', timeline: 'timeline', rating: 'rating',
+    number: 'number'
+  };
+
+  /* Reuse path: swap the widget's layout into the builder's own summary
+     renderer, harvest the rendered rows, restore everything. Synchronous —
+     nothing can interleave. Returns [{type,label}] or null. */
+  function rowsViaAppHelper(layout) {
+    var box = document.getElementById('cwLayoutSummary');
+    var wrap = document.getElementById('cwLayoutWrap');
+    var fmt = document.getElementById('cwFormatWrap');
+    if (!box || !wrap || typeof window.cwRenderLayoutSummary !== 'function') { return null; }
+    var prevLayout = getPendingLayout();           /* may throw → caller's safe() */
+    var prevBox = box.innerHTML;
+    var prevWrap = wrap.style.display;
+    var prevFmt = fmt ? fmt.style.display : null;
+    var rows = null;
+    try {
+      setPendingLayout(layout);
+      window.cwRenderLayoutSummary();
+      rows = [];
+      var els = box.querySelectorAll('.cw-sum-row');
+      for (var i = 0; i < els.length; i++) {
+        var tagEl = els[i].querySelector('.cw-sum-tag');
+        var type = tagEl ? String(tagEl.textContent || '').trim() : '';
+        var spans = els[i].querySelectorAll('span');
+        var txtEl = spans.length ? spans[spans.length - 1] : null;
+        var raw = txtEl ? String(txtEl.textContent || '') : '';
+        /* the helper renders "<label> — <extras>"; keep the label part */
+        var label = raw.split(' — ')[0].trim();
+        if (label === '(unlabeled)') { label = ''; }
+        rows.push({ type: type, label: label });
+      }
+    } finally {
+      safe(function () { setPendingLayout(prevLayout); });
+      safe(function () { box.innerHTML = prevBox; });
+      safe(function () { wrap.style.display = prevWrap; });
+      safe(function () { if (fmt && prevFmt != null) { fmt.style.display = prevFmt; } });
+    }
+    return rows;
+  }
+
+  /* Degraded fallback ONLY (builder nodes/helper unavailable): label+type
+     straight off the sanitized spec — deliberately minimal, no option/range
+     formatting, so the app helper stays the single source of that logic. */
+  function rowsFallback(layout) {
+    var rows = [];
+    for (var i = 0; i < layout.length; i++) {
+      var b = layout[i];
+      if (!b || !b.type) { continue; }
+      rows.push({ type: String(b.type), label: String(b.label || '').trim() });
+    }
+    return rows;
+  }
+
+  function capturesFor(spec) {
+    if (!spec) { return ''; }
+    /* library browse-grid templates still carry a human `captures` line */
+    if (spec.captures) { return String(spec.captures); }
+    var layout = (spec.layout && spec.layout.length) ? spec.layout : null;
+    if (!layout) {
+      var fmap = { text: 'a plain-text summary', bullets: 'a bulleted list', table: 'a simple table' };
+      return fmap[spec.format] || fmap.text;
+    }
+    var rows = safe(function () { return rowsViaAppHelper(layout); }, null);
+    if (rows && rows.length) { api.capturesReused++; }
+    else { rows = rowsFallback(layout); api.capturesFallback++; }
+    var parts = [];
+    for (var i = 0; i < rows.length; i++) {
+      var friendly = FRIENDLY[rows[i].type] || rows[i].type || 'block';
+      parts.push(rows[i].label ? (rows[i].label + ' (' + friendly + ')') : friendly);
+    }
+    var line = parts.join(', ');
+    if (line.length > 180) { line = line.slice(0, 177) + '…'; }
+    return line;
+  }
+
+  /* ---- meta node builder (createElement/textContent ONLY) ---- */
+  function buildMeta(spec, withCaptures) {
+    var meta = document.createElement('div');
+    meta.className = 'mls-wc-meta';
+    var line = document.createElement('div');
+    line.className = 'wc-line';
+    line.textContent = capabilityLine(spec ? spec.auto !== false : true);
+    meta.appendChild(line);
+    if (withCaptures) {
+      var capText = capturesFor(spec);
+      if (capText) {
+        var cap = document.createElement('div');
+        cap.className = 'wc-cap';
+        cap.textContent = 'Captures: ' + capText;
+        meta.appendChild(cap);
+      }
+    }
+    return meta;
+  }
+
+  /* ==========================================================================
+   * FIX A — injection per surface (idempotent; observer-driven)
+   * ========================================================================== */
+
+  /* 1) Visit cards in #customWidgetsHost (card id = 'cw_'+widget.id) */
+  function decorateHostCards(host) {
+    var cards = host.querySelectorAll('.extra-card[id^="cw_"]');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      if (card.querySelector('.mls-wc-meta')) { continue; }
+      var w = widgetById(card.id.slice(3));
+      if (!w) { continue; }
+      /* renderCustomWidgets → makeCardCollapsible (HTML:12654) wraps everything
+         after the <h3> into a .collapse-body div — insert before .xbody inside
+         WHATEVER its real parent is, so the meta collapses/expands with the
+         card body exactly like the base description does. */
+      var body = card.querySelector('.xbody');
+      var meta = buildMeta(w, true);
+      if (body && body.parentNode) { body.parentNode.insertBefore(meta, body); }
+      else { card.appendChild(meta); }
+      api.cardMetas++;
+    }
+  }
+
+  /* 2) Builder-list rows in #cwList — widget id recovered from the row's Auto
+     checkbox onchange attribute (order-independent, edit-safe). */
+  function rowWidgetId(row) {
+    var cb = row.querySelector('input[type="checkbox"][onchange*="toggleCustomWidgetAuto"]');
+    if (!cb) { return null; }
+    var m = /toggleCustomWidgetAuto\('([a-z0-9]+)'/.exec(cb.getAttribute('onchange') || '');
+    return m ? m[1] : null;
+  }
+  function decorateBuilderRows(box) {
+    var rows = box.children;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (row.nodeType !== 1 || row.querySelector('.mls-wc-meta')) { continue; }
+      var id = rowWidgetId(row);
+      if (!id) { continue; }
+      var w = widgetById(id);
+      if (!w) { continue; }
+      /* the row's flex:1 text column is its first <div> child */
+      var col = row.querySelector('div');
+      var meta = buildMeta(w, true);
+      if (col) { col.appendChild(meta); } else { row.appendChild(meta); }
+      api.builderMetas++;
+    }
+  }
+
+  /* 3) Library grid cards — description + real Captures already rendered by
+     cwShowLibrary (HTML:20003-20004); inject the capability line only.
+     All 8 CW_LIBRARY templates are auto:true (verified) — but read the real
+     template by title when reachable rather than assuming. */
+  function libTemplateByTitle(title) {
+    var lib = libraryTemplates();
+    if (!lib) { return null; }
+    for (var i = 0; i < lib.length; i++) {
+      if (lib[i] && lib[i].title === title) { return lib[i]; }
+    }
+    return null;
+  }
+  function decorateLibraryCards(grid) {
+    var cards = grid.querySelectorAll('.cw-lib-card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      if (card.querySelector('.mls-wc-meta')) { continue; }
+      var ttlEl = card.querySelector('b');
+      var tpl = ttlEl ? libTemplateByTitle(String(ttlEl.textContent || '').trim()) : null;
+      var meta = buildMeta(tpl || { auto: true }, false);
+      var capEl = card.querySelector('.cw-lib-cap');
+      if (capEl && capEl.parentNode === card) { card.insertBefore(meta, capEl); }
+      else { card.appendChild(meta); }
+      api.libraryMetas++;
+    }
+  }
+
+  /* Re-sync every injected capability line (auto may have flipped without a
+     re-render — toggleCustomWidgetAuto saves but does not re-render). */
+  function syncLines() {
+    api.syncs++;
+    safe(function () {
+      var host = document.getElementById('customWidgetsHost');
+      if (!host) { return; }
+      var cards = host.querySelectorAll('.extra-card[id^="cw_"]');
+      for (var i = 0; i < cards.length; i++) {
+        var line = cards[i].querySelector('.mls-wc-meta .wc-line');
+        var w = widgetById(cards[i].id.slice(3));
+        if (line && w) { line.textContent = capabilityLine(w.auto !== false); }
+      }
+    });
+    safe(function () {
+      var box = document.getElementById('cwList');
+      if (!box) { return; }
+      for (var i = 0; i < box.children.length; i++) {
+        var row = box.children[i];
+        var line = row.querySelector && row.querySelector('.mls-wc-meta .wc-line');
+        if (!line) { continue; }
+        var id = rowWidgetId(row);
+        var w = id && widgetById(id);
+        if (w) { line.textContent = capabilityLine(w.auto !== false); }
+      }
+    });
+  }
+
+  /* ---- observers (hosts are static markup; attach once) ---- */
+  var observers = [];
+  function watch(id, handler) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    safe(function () { handler(el); });
+    var mo = new MutationObserver(function () {
+      safe(function () { handler(el); });
+    });
+    mo.observe(el, { childList: true, subtree: true });
+    observers.push(mo);
+  }
+
+  function onCwListChange(ev) {
+    var t = ev && ev.target;
+    if (t && t.getAttribute && /toggleCustomWidgetAuto/.test(t.getAttribute('onchange') || '')) {
+      /* let the app's own handler save first, then re-sync */
+      setTimeout(syncLines, 0);
+    }
+  }
+
+  /* ==========================================================================
+   * FIX C — performance-tools display gate + Settings toggle
+   * ========================================================================== */
+
+  var PERF_KEY = 'mlsShowPerformanceTools';
+  function perfStorageKey() {
+    return safe(function () {
+      return (typeof window.uns === 'function') ? window.uns(PERF_KEY) : ('sf_u::_::' + PERF_KEY);
+    }, 'sf_u::_::' + PERF_KEY);
+  }
+  function perfToolsOn() {
+    return safe(function () { return localStorage.getItem(perfStorageKey()) === '1'; }, false);
+  }
+  function setPerfTools(on) {
+    safe(function () { localStorage.setItem(perfStorageKey(), on ? '1' : '0'); });
+    applyPerfGate();
+    safe(function () {
+      if (typeof window.toast === 'function') {
+        window.toast(on
+          ? 'Supervisory performance tools are now visible (head-doctor access rules still apply).'
+          : 'Supervisory performance tools hidden.', '');
+      }
+    });
+  }
+  function applyPerfGate() {
+    api.gateApplies++;
+    var s = document.getElementById('mlsPerfGateCss');
+    if (perfToolsOn()) {
+      if (s && s.parentNode) { s.parentNode.removeChild(s); }
+      return;
+    }
+    if (s) { return; }
+    safe(function () {
+      var css = document.createElement('style');
+      css.id = 'mlsPerfGateCss';
+      css.textContent =
+        /* 📊 Efficiency report: entry button (no id — static markup HTML:2387) + its card */
+        '#teamView [onclick*="generateEfficiencyReport"]{display:none!important}' +
+        '#effCard{display:none!important}' +
+        /* 🧠 Doctor analysis & review: whole card incl. generate button + #analysisCard */
+        '#anaDoctorReview{display:none!important}';
+      (document.head || document.documentElement).appendChild(css);
+    });
+  }
+
+  function ensureSettingsField() {
+    return safe(function () {
+      if (document.getElementById('mlsPerfToolsField')) { return true; }
+      var anchor = document.getElementById('featMME');
+      if (!anchor) { return false; }
+      var section = anchor.closest ? anchor.closest('.set-section') : null;
+      if (!section) { return false; }
+
+      var field = document.createElement('div');
+      field.className = 'field';
+      field.id = 'mlsPerfToolsField';
+      field.style.marginBottom = '4px';
+
+      var label = document.createElement('label');
+      label.setAttribute('for', 'mlsShowPerformanceTools');
+      label.style.cssText = 'display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = 'mlsShowPerformanceTools';
+      cb.style.cssText = 'width:17px;height:17px;cursor:pointer';
+      cb.checked = perfToolsOn();
+      cb.addEventListener('change', function () { setPerfTools(!!cb.checked); });
+
+      var span = document.createElement('span');
+      span.textContent = '📊 Show supervisory performance tools (efficiency & documentation analysis) ';
+      var mut = document.createElement('span');
+      mut.style.cssText = 'font-weight:400;color:var(--muted)';
+      mut.textContent = '— off by default.';
+      span.appendChild(mut);
+
+      label.appendChild(cb);
+      label.appendChild(span);
+      field.appendChild(label);
+
+      var note = document.createElement('p');
+      note.className = 'note';
+      note.style.cssText = 'margin:4px 0 0 26px';
+      note.textContent = 'Shows the head-doctor 📊 Efficiency report and 🧠 MLS Performance analysis. Head-doctor access rules still apply — this only hides or shows the tools.';
+      field.appendChild(note);
+
+      section.appendChild(field);
+      return true;
+    }, false);
+  }
+
+  /* keep the checkbox honest every time Settings opens (class → 'show') */
+  var settingsMo = null;
+  function watchSettings() {
+    var modal = document.getElementById('settingsModal');
+    if (!modal) { return; }
+    settingsMo = new MutationObserver(function () {
+      safe(function () {
+        if (modal.classList.contains('show')) {
+          ensureSettingsField();
+          var cb = document.getElementById('mlsShowPerformanceTools');
+          if (cb) { cb.checked = perfToolsOn(); }
+        }
+      });
+    });
+    settingsMo.observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  /* ==========================================================================
+   * install
+   * ========================================================================== */
+  function install() {
+    ensureCss();
+    applyPerfGate();
+    ensureSettingsField();
+    watchSettings();
+    watch('customWidgetsHost', decorateHostCards);
+    watch('cwList', decorateBuilderRows);
+    watch('cwLibraryGrid', decorateLibraryCards);
+    safe(function () {
+      var box = document.getElementById('cwList');
+      if (box) { box.addEventListener('change', onCwListChange, true); }
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true });
+  } else {
+    install();
+  }
+
+  window.__mlsWidgetClarity_revert = function () {
+    safe(function () { observers.forEach(function (mo) { mo.disconnect(); }); observers = []; });
+    safe(function () { if (settingsMo) { settingsMo.disconnect(); settingsMo = null; } });
+    safe(function () {
+      var box = document.getElementById('cwList');
+      if (box) { box.removeEventListener('change', onCwListChange, true); }
+    });
+    safe(function () {
+      var metas = document.querySelectorAll('.mls-wc-meta');
+      for (var i = 0; i < metas.length; i++) {
+        if (metas[i].parentNode) { metas[i].parentNode.removeChild(metas[i]); }
+      }
+    });
+    ['mlsWidgetClarityCss', 'mlsPerfGateCss', 'mlsPerfToolsField'].forEach(function (id) {
+      safe(function () {
+        var el = document.getElementById(id);
+        if (el && el.parentNode) { el.parentNode.removeChild(el); }
+      });
+    });
+    delete window.__mlsWidgetClarity;
+    delete window.__mlsWidgetClarity_revert;
+    /* NOTE: the mlsShowPerformanceTools preference value is intentionally left
+       in localStorage; without the module the app reverts to today's live
+       behavior (both tools visible to heads). */
+  };
+})();
+
+/* =============================================================================
+ * MLS Scribe - EASY PATIENT PREP  (__mlsEasyPrep)  v1.0.0  2026-07-11
+ * STAGING ONLY. Prepend ABOVE the live mls-connect.js bundle (real \n\n join)
+ * or load as its own <script data-mls-asset> loader appended at EOF, like every
+ * other guarded module in this codebase (see feat_mls_visitfix.js / writeflow.js
+ * loader lines). Draft-only. Mock/offline-testable. Never touches Athena.
+ * -----------------------------------------------------------------------------
+ * THE PROBLEM this fixes (AUDIT_2026-07-11_FULL_APP.md section 4)
+ *   The first-page patient-prep card (renderProfile(), ScribeFlow.html:9549)
+ *   already shows: name, sex/DOB/MRN, Problems, Meds, Allergies, Summary,
+ *   Insurance, at-a-glance chips (visits/last seen/last pain), Documents, and
+ *   the per-patient visit timeline. It is MISSING, per the audit:
+ *     - Age (p.age / ageFromDob() exist and are used for AI context, but never
+ *       rendered on the card itself)
+ *     - Vitals (no BP/HR/Temp/RR/SpO2/Height/Weight/BMI block at all - BMI is
+ *       only opportunistically scraped from free text by _ptBmi())
+ *     - Reason for visit / chief complaint (p.reason is read by the op-note
+ *       prep flow but never shown or editable on the profile card)
+ *     - Discrete PMH/PSH/Social/Family history, smoking status, immunizations,
+ *       LMP, code status, PCP/referring provider, preferred pharmacy (all
+ *       missing entirely - only a single free-text "Summary" field exists)
+ *     - Appointment time for the visit (computed from _calAppts but not shown
+ *       on the chart)
+ *     - Key risks / patient-specific reminders (no such field)
+ *     - A concise DOCTOR-FACING PREP SUMMARY pulling all of the above (plus
+ *       Outside Records, see feat_mls_outside_records.module.js) into one
+ *       skimmable block
+ *
+ * WHAT THIS DOES
+ *   1. Adds new OPTIONAL patient fields (all additive, nothing removed/renamed,
+ *      nothing required - a patient with none of this filled in renders exactly
+ *      as before plus empty-state prompts):
+ *        p.reason                 - chief complaint / reason for visit (string)
+ *        p.vitals   = {bp,hr,temp,rr,spo2,heightIn,weightLb,bmi,takenAt}
+ *        p.history  = {pmh,psh,social,family,smoking,immunizations,lmp,
+ *                       codeStatus,pcp,pharmacy}
+ *        p.careFlags               - key risks / patient-specific reminders (string)
+ *      (p.bmi, already read elsewhere by _ptBmi(), stays populated/in sync so
+ *      existing consumers keep working unchanged.)
+ *   2. Injects new UI onto the EXISTING profile card by wrapping renderProfile()
+ *      - never replaces it, never deletes any existing field - using the same
+ *      "wrap + idempotent DOM insert" idiom as _renderProfAtGlance and every
+ *      other satellite module in this codebase:
+ *        - "Doctor prep summary" box (deterministic, no AI call - see below)
+ *        - Small context row: age, reason for visit (editable), next/today's
+ *          appointment time (read-only, computed from _calAppts if present)
+ *        - "Key risks & reminders" box (highlighted)
+ *        - "Vitals" box (editable multi-field form, auto-computes BMI)
+ *        - "History & background" box (PMH/PSH/Social+smoking/Family/
+ *          immunizations/LMP/code status/PCP/pharmacy - editable multi-field
+ *          form, same pattern as the live editInsurance()/saveInsurance())
+ *   3. generatePrepSummary(p) is a pure, deterministic, offline function (no AI
+ *      spend, no hallucination risk, works with Athena signed out) - a template,
+ *      not a model call. It reads every field above plus (if loaded)
+ *      window.__mlsOutsideRecords.summaryText() from the companion module. This
+ *      keeps the summary trustworthy: it can only ever say what is literally in
+ *      the record.
+ *
+ * SAFETY
+ *   - Draft-only: every new field is a plain editable text field persisted via
+ *     the existing upsertPatient() - same path, same local+server sync, as
+ *     every other profile field already in production. No new write surface.
+ *   - Never sends anything to athenaOne. Never calls an order/write bridge.
+ *   - Allergies are always rendered FIRST in the prep summary (patient-safety
+ *     convention: the doctor should never have to scroll to see allergies).
+ *   - Additive only: does not rename/remove any existing field, function, or
+ *     DOM id. Fully reversible: window.__mlsEasyPrep_revert().
+ *   - Pure ASCII, ES5-only (no arrow/const/let/template-literals) so it parses
+ *     under cscript/JScript for the offline validator, and runs unmodified in
+ *     Chrome (this repo's two required environments).
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.0.0') return; } catch (e) { return; }
+
+  var VERSION = '1.0.0';
+
+  /* ---------- tiny helpers (mirrors the live app's own conventions) ---------- */
+  function S(x) { return (x == null ? '' : String(x)); }
+  function trim(x) { return S(x).trim(); }
+  function isFn(f) { return typeof f === 'function'; }
+  function esc(s) {
+    try { if (isFn(window.esc)) return window.esc(s); } catch (e) {}
+    return S(s).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; });
+  }
+  function toast(msg, type) { try { if (isFn(window.toast)) window.toast(msg, type); } catch (e) {} }
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? null : n; }
+
+  /* ---------- computed fields (pure, testable) ---------- */
+  // Age: reuse the live ageFromDob() when present (handles ISO dob AND "age NN"
+  // free text, same as the rest of the app); otherwise a self-contained fallback
+  // with identical semantics so the module still works if loaded standalone.
+  function computeAge(dob) {
+    try {
+      if (isFn(window.ageFromDob)) { var a = window.ageFromDob(dob); if (a != null && !isNaN(a) && a >= 0 && a < 130) return a; }
+    } catch (e) {}
+    if (!dob) return null;
+    var m = S(dob).match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      // Build the Date from the captured numeric groups rather than re-parsing
+      // the ISO substring (new Date(isoString)) - a numeric (y,m,d) constructor
+      // is unambiguous in every JS engine and sidesteps any local-vs-UTC
+      // midnight skew an ISO-string parse could introduce near a birthday.
+      var y = parseInt(m[1], 10), mo = parseInt(m[2], 10), da = parseInt(m[3], 10);
+      var d = new Date(y, mo - 1, da);
+      if (!isNaN(d.getTime()) && d.getFullYear() === y) {
+        var yrs = Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 3600 * 1000));
+        if (yrs >= 0 && yrs < 130) return yrs;
+      }
+    }
+    var am = S(dob).match(/age\s*(\d{1,3})/i) || S(dob).match(/\b(\d{1,3})\b/);
+    return am ? parseInt(am[1], 10) : null;
+  }
+  // BMI = 703 * lb / in^2, rounded to 1 decimal. Returns null if inputs invalid.
+  function computeBmi(heightIn, weightLb) {
+    var h = num(heightIn), w = num(weightLb);
+    if (!h || !w || h <= 0 || w <= 0) return null;
+    var b = (703 * w) / (h * h);
+    if (!isFinite(b) || b < 5 || b > 120) return null;
+    return Math.round(b * 10) / 10;
+  }
+  function defaultVitals() { return { bp: '', hr: '', temp: '', rr: '', spo2: '', heightIn: '', weightLb: '', bmi: '', takenAt: '' }; }
+  function defaultHistory() { return { pmh: '', psh: '', social: '', family: '', smoking: '', immunizations: '', lmp: '', codeStatus: '', pcp: '', pharmacy: '' }; }
+  function getVitals(p) { return (p && p.vitals) || defaultVitals(); }
+  function getHistory(p) { return (p && p.history) || defaultHistory(); }
+
+  // Best-known BMI for a patient: prefer an explicit p.bmi (existing field, used
+  // by _ptBmi() elsewhere), else derive from height/weight, else the vitals-box
+  // manual entry.
+  function resolveBmi(p) {
+    if (p && p.bmi) { var b = num(p.bmi); if (b) return b; }
+    var v = getVitals(p);
+    var derived = computeBmi(v.heightIn, v.weightLb);
+    if (derived) return derived;
+    var manual = num(v.bmi);
+    return manual || null;
+  }
+
+  // Last visit date + count, computed the same way the live at-a-glance chips
+  // and studioDataSnapshot() already do (via patientNotes), so numbers always
+  // agree with what's already on screen.
+  function lastVisitInfo(patientId) {
+    var notes = [];
+    try { notes = (isFn(window.patientNotes) ? window.patientNotes(patientId) : []) || []; } catch (e) {}
+    var dates = notes.map(function (n) { return S(n.date || n.note_date || n.created_at).slice(0, 10); }).filter(Boolean).sort();
+    var last = notes.slice().sort(function (a, b) {
+      var da = S(a.date || a.note_date || a.created_at), db = S(b.date || b.note_date || b.created_at);
+      return da < db ? 1 : (da > db ? -1 : 0);
+    })[0];
+    var excerpt = '';
+    try { excerpt = S(last && (last.text || last.note || last.soap)).replace(/\s+/g, ' ').trim().slice(0, 160); } catch (e) {}
+    return { count: notes.length, lastDate: dates.length ? dates[dates.length - 1] : '', lastExcerpt: excerpt };
+  }
+
+  // Today's/next appointment time + reason for this patient, computed the same
+  // way openOpPrepForPatient() already does from window._calAppts (read-only -
+  // never writes, never touches Athena; _calAppts is populated by the app's own
+  // backend-driven calendar and/or an Athena day-pull that already ran).
+  function apptContext(p) {
+    var out = { time: '', reason: '' };
+    try {
+      var appts = (window._calAppts || []) || [];
+      var pDob = trim(p && p.dob);
+      var pool = (p && p.id) ? appts.filter(function (a) { return S(a.patient_external_id) === p.id; }) : [];
+      if (!pool.length) {
+        // No id match. This project's identity rule is DOB/ID, never name
+        // alone - so a bare name match is only trusted when it can't actually
+        // be ambiguous:
+        var byName = appts.filter(function (a) {
+          return S(a.name).trim().toLowerCase() === S(p && p.name).trim().toLowerCase();
+        });
+        if (pDob) {
+          // We know this patient's DOB - any candidate that ALSO carries a
+          // dob must agree with it (candidates with no dob on the row are
+          // still allowed through, matching the live app's existing
+          // openOpPrepForPatient() convention when the schedule row is
+          // DOB-less).
+          pool = byName.filter(function (a) { var d = trim(a.dob); return !d || d === pDob; });
+        } else {
+          // We don't know this patient's DOB. If the same-named candidates
+          // themselves carry more than one distinct DOB, we cannot tell
+          // which one is really this patient - refuse to guess rather than
+          // risk showing a DIFFERENT patient's reason/time.
+          var seenDobs = {}, distinctDobs = 0;
+          byName.forEach(function (a) { var d = trim(a.dob); if (d && !seenDobs[d]) { seenDobs[d] = true; distinctDobs++; } });
+          pool = (distinctDobs > 1) ? [] : byName;
+        }
+      }
+      var match = pool.sort(function (a, b) { return S(b.start_at).localeCompare(S(a.start_at)); })[0];
+      if (match) {
+        out.reason = S(match.reason || p.reason || '');
+        try { out.time = isFn(window._fmtApptTime) ? window._fmtApptTime(match.start_at) : S(match.start_at); } catch (e) {}
+      } else {
+        out.reason = S(p.reason || '');
+      }
+    } catch (e) { out.reason = S(p && p.reason || ''); }
+    return out;
+  }
+
+  function outsideRecordsText(p) {
+    try {
+      if (window.__mlsOutsideRecords && isFn(window.__mlsOutsideRecords.summaryText)) {
+        return S(window.__mlsOutsideRecords.summaryText(p));
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  /* ---------- the doctor-facing prep summary (pure function - unit-testable) ----------
+     ctx: {name,dob,age,sex,mrn,reason,apptTime,problems,meds,allergies,vitals,
+           history,careFlags,lastDate,visitCount,lastExcerpt,outsideText}
+     Returns a plain-text, multi-section block. No AI call - only ever states
+     what is literally present in the fields passed in. */
+  function buildPrepSummary(ctx) {
+    ctx = ctx || {};
+    var lines = [];
+    var name = trim(ctx.name) || 'Unnamed patient';
+    var demoBits = [];
+    if (ctx.age != null) demoBits.push(ctx.age + 'y');
+    if (trim(ctx.sex)) demoBits.push(trim(ctx.sex));
+    if (trim(ctx.dob)) demoBits.push('DOB ' + trim(ctx.dob));
+    if (trim(ctx.mrn)) demoBits.push('MRN ' + trim(ctx.mrn));
+    lines.push('PREP SUMMARY — ' + name);
+    if (demoBits.length) lines.push(demoBits.join(' · '));
+    var visitBits = [];
+    if (trim(ctx.apptTime)) visitBits.push(trim(ctx.apptTime));
+    if (trim(ctx.reason)) visitBits.push(trim(ctx.reason));
+    if (visitBits.length) lines.push('Visit: ' + visitBits.join(' — '));
+    lines.push('');
+
+    // Allergies ALWAYS first in the body - patient-safety convention.
+    lines.push('ALLERGIES: ' + (trim(ctx.allergies) || 'None recorded — confirm with patient (NKDA not yet documented)'));
+    lines.push('PROBLEMS: ' + (trim(ctx.problems) || 'None recorded'));
+    lines.push('MEDICATIONS: ' + (trim(ctx.meds) || 'None recorded'));
+
+    var v = ctx.vitals || {};
+    var vBits = [];
+    if (trim(v.bp)) vBits.push('BP ' + trim(v.bp));
+    if (trim(v.hr)) vBits.push('HR ' + trim(v.hr));
+    if (trim(v.temp)) vBits.push('Temp ' + trim(v.temp));
+    if (trim(v.rr)) vBits.push('RR ' + trim(v.rr));
+    if (trim(v.spo2)) vBits.push('SpO2 ' + trim(v.spo2));
+    if (trim(v.heightIn)) vBits.push('Ht ' + trim(v.heightIn) + 'in');
+    if (trim(v.weightLb)) vBits.push('Wt ' + trim(v.weightLb) + 'lb');
+    if (ctx.bmi != null) vBits.push('BMI ' + ctx.bmi);
+    lines.push('VITALS: ' + (vBits.length ? vBits.join(', ') : 'Not recorded'));
+
+    var h = ctx.history || {};
+    var hBits = [];
+    if (trim(h.pmh)) hBits.push('PMH: ' + trim(h.pmh));
+    if (trim(h.psh)) hBits.push('PSH: ' + trim(h.psh));
+    var socialBits = [];
+    if (trim(h.social)) socialBits.push(trim(h.social));
+    if (trim(h.smoking)) socialBits.push('Smoking: ' + trim(h.smoking));
+    if (socialBits.length) hBits.push('Social: ' + socialBits.join('; '));
+    if (trim(h.family)) hBits.push('Family: ' + trim(h.family));
+    if (trim(h.immunizations)) hBits.push('Immunizations: ' + trim(h.immunizations));
+    if (trim(h.lmp)) hBits.push('LMP: ' + trim(h.lmp));
+    if (trim(h.codeStatus)) hBits.push('Code status: ' + trim(h.codeStatus));
+    if (trim(h.pcp)) hBits.push('PCP: ' + trim(h.pcp));
+    if (trim(h.pharmacy)) hBits.push('Pharmacy: ' + trim(h.pharmacy));
+    lines.push('HISTORY: ' + (hBits.length ? hBits.join(' | ') : 'Not recorded'));
+
+    var lastBits = [];
+    if (ctx.visitCount) lastBits.push(ctx.visitCount + ' visit' + (ctx.visitCount === 1 ? '' : 's') + ' on file');
+    if (trim(ctx.lastDate)) lastBits.push('last seen ' + trim(ctx.lastDate));
+    lines.push('LAST VISIT: ' + (lastBits.length ? lastBits.join(', ') : 'No prior visits on file'));
+    if (trim(ctx.lastExcerpt)) lines.push('  → ' + trim(ctx.lastExcerpt) + (ctx.lastExcerpt.length >= 160 ? '…' : ''));
+
+    if (trim(ctx.outsideText)) lines.push('OUTSIDE RECORDS: ' + trim(ctx.outsideText));
+
+    lines.push('');
+    lines.push('KEY RISKS / REMINDERS: ' + (trim(ctx.careFlags) || 'None flagged'));
+
+    return lines.join('\n');
+  }
+
+  function buildPrepSummaryForPatient(p) {
+    if (!p) return '';
+    var appt = apptContext(p);
+    var lv = lastVisitInfo(p.id);
+    return buildPrepSummary({
+      name: p.name, dob: p.dob, age: computeAge(p.dob), sex: p.sex || p.gender, mrn: p.mrn,
+      reason: appt.reason, apptTime: appt.time,
+      problems: p.problems, meds: p.meds, allergies: p.allergies,
+      vitals: getVitals(p), bmi: resolveBmi(p), history: getHistory(p), careFlags: p.careFlags,
+      visitCount: lv.count, lastDate: lv.lastDate, lastExcerpt: lv.lastExcerpt,
+      outsideText: outsideRecordsText(p)
+    });
+  }
+
+  /* ============================== UI LAYER ============================== */
+  function activePatient() { try { return isFn(window.activePatient) ? window.activePatient() : null; } catch (e) { return null; } }
+  function upsert(p) { try { if (isFn(window.upsertPatient)) window.upsertPatient(p); } catch (e) {} }
+  function rerenderProfile() { try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {} }
+
+  function ensureHost(id, afterEl, tag, cls) {
+    var el = document.getElementById(id);
+    if (el) return el;
+    if (!afterEl || !afterEl.parentNode) return null;
+    el = document.createElement(tag || 'div');
+    el.id = id;
+    if (cls) el.className = cls;
+    afterEl.parentNode.insertBefore(el, afterEl.nextSibling);
+    return el;
+  }
+
+  // Anchor new top-of-card boxes after whichever of #profAtGlance (the live
+  // "visits / last seen / last pain" chip row, when present) or #profDemo
+  // exists LAST in the base render - so this module's boxes land below that
+  // chip row instead of splitting it away from the demographics line above it.
+  function topAnchor() {
+    return document.getElementById('profAtGlance') || document.getElementById('profDemo');
+  }
+
+  // Edit-state guard shared by every editable box on this card. The "is this
+  // safe to re-render right now" check must be bound to the PATIENT the
+  // editor was opened for, not just "is an editor open" - otherwise switching
+  // the active patient while an editor is open leaves the OLD patient's
+  // editor sitting on screen (Save would then write that patient's typed text
+  // onto the NEW active patient's chart - a direct patient-safety violation).
+  // Returns true when it's safe to render the normal read view now (either
+  // nothing is being edited, or the edit belonged to a patient who is no
+  // longer active - in which case the stale edit is discarded here).
+  function editingGuardOk(host, p) {
+    var editingFor = host.getAttribute('data-mls-editing');
+    if (!editingFor) return true;
+    if (p && editingFor === String(p.id)) return false; // still mid-edit for the CURRENT patient - don't clobber
+    host.removeAttribute('data-mls-editing'); // stale edit for a patient who is no longer active - discard it
+    return true;
+  }
+  // Save-time defense in depth: even though editingGuardOk() clears a stale
+  // edit as soon as renderProfile() runs again after a patient switch (which
+  // the live app's selectPatient()/openPatient() always do synchronously),
+  // this double-checks at the moment Save is actually clicked so a save can
+  // NEVER be written onto a different patient than the one the editor opened
+  // for, even if some future code path skipped an intervening render.
+  function editingGuardSaveOk(host, p) {
+    if (!host || !p) return false;
+    var boundId = host.getAttribute('data-mls-editing');
+    if (boundId !== String(p.id)) {
+      toast('The active patient changed while this was open — edit discarded for safety. Please re-open and try again.', 'err');
+      host.removeAttribute('data-mls-editing');
+      rerenderProfile();
+      return false;
+    }
+    return true;
+  }
+
+  function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); toast('Prep summary copied.', 'ok'); return; }
+    } catch (e) {}
+    try {
+      var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      toast('Prep summary copied.', 'ok');
+    } catch (e) { toast('Could not copy - select the text manually.', 'err'); }
+  }
+  window.__mlsEpCopySummary = function () {
+    var p = activePatient(); if (!p) return;
+    copyText(buildPrepSummaryForPatient(p));
+  };
+
+  function renderSummaryBox(p) {
+    var host = ensureHost('mlsEpSummaryBox', topAnchor(), 'div', 'prof-box');
+    if (!host) return;
+    host.style.cssText = 'margin-top:16px';
+    var text = buildPrepSummaryForPatient(p);
+    host.innerHTML =
+      '<h3>🧾 Doctor prep summary' +
+      '<button class="edit" onclick="window.__mlsEpCopySummary()">📋 Copy</button></h3>' +
+      '<div class="body" style="font-family:inherit">' + esc(text).replace(/\n/g, '<br>') + '</div>';
+  }
+
+  function renderTopBox(p) {
+    var summaryBox = document.getElementById('mlsEpSummaryBox');
+    var anchor = summaryBox || topAnchor();
+    var host = ensureHost('mlsEpTopBox', anchor, 'div', 'prof-box');
+    if (!host) return;
+    if (!editingGuardOk(host, p)) return; // reason edit in progress for THIS patient - don't clobber the open input
+    host.style.cssText = 'margin-top:16px';
+    var age = computeAge(p.dob);
+    var appt = apptContext(p);
+    var chips = [];
+    if (age != null) chips.push('<span class="mls-ep-chip">' + age + 'y old</span>');
+    if (trim(appt.time)) chips.push('<span class="mls-ep-chip">🕐 ' + esc(appt.time) + '</span>');
+    // If the schedule's own reason (used in the Prep Summary "Visit:" line
+    // above) differs from what's saved in this editable field, say so
+    // explicitly rather than let the two boxes silently disagree.
+    var reasonMismatch = trim(p.reason) && trim(appt.reason) && trim(p.reason) !== trim(appt.reason);
+    host.innerHTML =
+      '<h3>📌 Visit context</h3>' +
+      '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">' + chips.join('') + '</div>' +
+      '<div style="display:flex;align-items:flex-start;gap:8px">' +
+      '<div style="flex:1"><b style="font-size:12px;color:var(--muted)">Reason for visit / chief complaint</b>' +
+      '<div class="body' + (trim(p.reason) ? '' : ' empty-txt') + '" id="mlsEpReasonBody">' +
+      (esc(trim(p.reason)) || 'Not recorded. Add the reason for today’s visit.') + '</div>' +
+      (reasonMismatch ? '<p class="mini" style="color:var(--red,#d64545);margin:4px 0 0">⚠ athenaOne’s scheduled reason (“' + esc(trim(appt.reason)) + '”) differs from this saved field — the prep summary above uses the scheduled reason.</p>' : '') +
+      '</div>' +
+      '<button class="edit" onclick="window.__mlsEpEditReason()">✎ Edit</button>' +
+      '</div>';
+  }
+  window.__mlsEpEditReason = function () {
+    var p = activePatient(); if (!p) return;
+    var host = document.getElementById('mlsEpTopBox'); if (!host) return;
+    var body = document.getElementById('mlsEpReasonBody'); if (!body || body.querySelector('input')) return;
+    host.setAttribute('data-mls-editing', String(p.id));
+    body.classList.remove('empty-txt');
+    body.innerHTML =
+      '<input type="text" class="inline-ins-input" id="mlsEpReasonInput" value="' + esc(p.reason || '') + '" style="width:100%" placeholder="e.g. Follow-up low back pain, post-injection">' +
+      '<div class="inline-edit-actions"><button class="btn-green" onclick="window.__mlsEpSaveReason()">Save</button>' +
+      '<button class="btn-ghost" onclick="window.__mlsEpCancelReason()">Cancel</button></div>';
+    var inp = document.getElementById('mlsEpReasonInput'); if (inp) { inp.focus(); inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); window.__mlsEpSaveReason(); } else if (e.key === 'Escape') { e.preventDefault(); window.__mlsEpCancelReason(); } }); }
+  };
+  window.__mlsEpSaveReason = function () {
+    var host = document.getElementById('mlsEpTopBox'); if (!host) return;
+    var p = activePatient(); if (!p) return;
+    if (!editingGuardSaveOk(host, p)) return;
+    var inp = document.getElementById('mlsEpReasonInput'); if (!inp) return;
+    p.reason = trim(inp.value);
+    host.removeAttribute('data-mls-editing');
+    upsert(p); rerenderProfile(); toast('Reason for visit saved.', 'ok');
+  };
+  window.__mlsEpCancelReason = function () {
+    var host = document.getElementById('mlsEpTopBox'); if (host) host.removeAttribute('data-mls-editing');
+    rerenderProfile();
+  };
+
+  function renderRisksBox(p) {
+    var top = document.getElementById('mlsEpTopBox');
+    var anchor = top || document.getElementById('profDemo');
+    var host = ensureHost('mlsEpRisksBox', anchor, 'div', 'prof-box');
+    if (!host) return;
+    host.style.cssText = 'margin-top:16px;border-left:4px solid var(--red,#d64545)';
+    // Explicit editing flag, bound to the patient id it was opened for - NOT a
+    // DOM-presence check (stale at the instant Save/Cancel re-renders) and NOT
+    // just a bare '1' (which would let a stale edit for patient A survive a
+    // switch to patient B and get saved onto B - see editingGuardOk() above).
+    if (!editingGuardOk(host, p)) return;
+    var val = trim(p.careFlags);
+    host.innerHTML =
+      '<h3>🚩 Key risks &amp; reminders <button class="edit" onclick="window.__mlsEpEditRisks()">✎ Edit</button></h3>' +
+      '<div class="body' + (val ? '' : ' empty-txt') + '" id="mlsEpRisksBody">' +
+      (esc(val) || 'None flagged. E.g. fall risk, anticoagulated, prior wrong-site near-miss, interpreter needed.') + '</div>';
+  }
+  window.__mlsEpEditRisks = function () {
+    var p = activePatient(); if (!p) return;
+    var host = document.getElementById('mlsEpRisksBox'); if (!host || host.getAttribute('data-mls-editing')) return;
+    host.setAttribute('data-mls-editing', String(p.id));
+    host.innerHTML =
+      '<h3>🚩 Key risks &amp; reminders</h3>' +
+      '<textarea class="inline-edit-area" id="mlsEpRisksInput" placeholder="One item per line, e.g. Fall risk - use walker. Anticoagulated (warfarin). Needs Spanish interpreter.">' + esc(p.careFlags || '') + '</textarea>' +
+      '<div class="inline-edit-actions"><button class="btn-green" onclick="window.__mlsEpSaveRisks()">Save</button>' +
+      '<button class="btn-ghost" onclick="window.__mlsEpCancelRisks()">Cancel</button></div>';
+    var ta = document.getElementById('mlsEpRisksInput'); if (ta) ta.focus();
+  };
+  window.__mlsEpSaveRisks = function () {
+    var host = document.getElementById('mlsEpRisksBox'); if (!host) return;
+    var p = activePatient(); if (!p) return;
+    if (!editingGuardSaveOk(host, p)) return;
+    var ta = document.getElementById('mlsEpRisksInput'); if (!ta) return;
+    p.careFlags = trim(ta.value);
+    host.removeAttribute('data-mls-editing');
+    upsert(p); rerenderProfile(); toast('Risks & reminders saved.', 'ok');
+  };
+  window.__mlsEpCancelRisks = function () {
+    var host = document.getElementById('mlsEpRisksBox'); if (host) host.removeAttribute('data-mls-editing');
+    rerenderProfile();
+  };
+
+  function grid() { return document.querySelector('#profileCard .prof-grid'); }
+
+  function renderVitalsBox(p) {
+    var g = grid(); if (!g) return;
+    var host = document.getElementById('mlsEpVitalsBox');
+    if (!host) { host = document.createElement('div'); host.id = 'mlsEpVitalsBox'; host.className = 'prof-box'; g.appendChild(host); }
+    if (!editingGuardOk(host, p)) return; // editing in progress for THIS patient (patient-id-bound flag - see editingGuardOk)
+    var v = getVitals(p);
+    var bmi = resolveBmi(p);
+    var bits = [];
+    if (trim(v.bp)) bits.push('BP: ' + trim(v.bp));
+    if (trim(v.hr)) bits.push('HR: ' + trim(v.hr));
+    if (trim(v.temp)) bits.push('Temp: ' + trim(v.temp));
+    if (trim(v.rr)) bits.push('RR: ' + trim(v.rr));
+    if (trim(v.spo2)) bits.push('SpO2: ' + trim(v.spo2));
+    if (trim(v.heightIn)) bits.push('Height: ' + trim(v.heightIn) + ' in');
+    if (trim(v.weightLb)) bits.push('Weight: ' + trim(v.weightLb) + ' lb');
+    if (bmi != null) bits.push('BMI: ' + bmi);
+    host.innerHTML =
+      '<h3>🩺 Vitals <button class="edit" onclick="window.__mlsEpEditVitals()">✎ Edit</button></h3>' +
+      '<div class="body' + (bits.length ? '' : ' empty-txt') + '">' + (bits.length ? esc(bits.join('\n')) : 'No vitals recorded.') + '</div>';
+  }
+  var VITALS_ROWS = [['bp', 'Blood pressure', 'text', 'e.g. 128/82'], ['hr', 'Heart rate', 'text', 'e.g. 72'], ['temp', 'Temp', 'text', 'e.g. 98.6F'], ['rr', 'Resp. rate', 'text', 'e.g. 16'], ['spo2', 'SpO2', 'text', 'e.g. 98%'], ['heightIn', 'Height (in)', 'number', 'e.g. 68'], ['weightLb', 'Weight (lb)', 'number', 'e.g. 180']];
+  window.__mlsEpEditVitals = function () {
+    var p = activePatient(); if (!p) return;
+    var host = document.getElementById('mlsEpVitalsBox'); if (!host || host.getAttribute('data-mls-editing')) return;
+    host.setAttribute('data-mls-editing', String(p.id));
+    var v = getVitals(p);
+    var rows = VITALS_ROWS.map(function (r) {
+      return '<label class="inline-ins-row"><span>' + esc(r[1]) + '</span><input class="inline-ins-input" id="mlsEpV_' + r[0] + '" type="' + r[2] + '" placeholder="' + esc(r[3]) + '" value="' + esc(v[r[0]] || '') + '"></label>';
+    }).join('');
+    host.innerHTML =
+      '<h3>🩺 Vitals</h3>' +
+      '<div class="inline-ins-form">' + rows + '</div>' +
+      '<p class="mini" style="margin:6px 0 0;color:var(--muted)">BMI is calculated automatically from height &amp; weight.</p>' +
+      '<div class="inline-edit-actions"><button class="btn-green" onclick="window.__mlsEpSaveVitals()">Save</button>' +
+      '<button class="btn-ghost" onclick="window.__mlsEpCancelVitals()">Cancel</button></div>';
+  };
+  window.__mlsEpSaveVitals = function () {
+    var host = document.getElementById('mlsEpVitalsBox'); if (!host) return;
+    var p = activePatient(); if (!p) return;
+    if (!editingGuardSaveOk(host, p)) return;
+    var v = defaultVitals();
+    VITALS_ROWS.forEach(function (r) { var el = document.getElementById('mlsEpV_' + r[0]); v[r[0]] = el ? trim(el.value) : ''; });
+    v.takenAt = new Date().toISOString();
+    p.vitals = v;
+    var bmi = computeBmi(v.heightIn, v.weightLb);
+    if (bmi != null) { p.bmi = bmi; v.bmi = String(bmi); }
+    host.removeAttribute('data-mls-editing');
+    upsert(p); rerenderProfile(); toast('Vitals saved.', 'ok');
+  };
+  window.__mlsEpCancelVitals = function () {
+    var host = document.getElementById('mlsEpVitalsBox'); if (host) host.removeAttribute('data-mls-editing');
+    rerenderProfile();
+  };
+
+  function renderHistoryBox(p) {
+    var g = grid(); if (!g) return;
+    var host = document.getElementById('mlsEpHistoryBox');
+    if (!host) { host = document.createElement('div'); host.id = 'mlsEpHistoryBox'; host.className = 'prof-box'; g.appendChild(host); }
+    if (!editingGuardOk(host, p)) return; // patient-id-bound flag - see editingGuardOk
+    var h = getHistory(p);
+    var lines = [];
+    if (trim(h.pmh)) lines.push('PMH: ' + trim(h.pmh));
+    if (trim(h.psh)) lines.push('PSH: ' + trim(h.psh));
+    if (trim(h.social) || trim(h.smoking)) lines.push('Social: ' + [trim(h.social), trim(h.smoking) ? ('Smoking - ' + trim(h.smoking)) : ''].filter(Boolean).join('; '));
+    if (trim(h.family)) lines.push('Family: ' + trim(h.family));
+    if (trim(h.immunizations)) lines.push('Immunizations: ' + trim(h.immunizations));
+    if (trim(h.lmp)) lines.push('LMP: ' + trim(h.lmp));
+    if (trim(h.codeStatus)) lines.push('Code status: ' + trim(h.codeStatus));
+    if (trim(h.pcp)) lines.push('PCP: ' + trim(h.pcp));
+    if (trim(h.pharmacy)) lines.push('Pharmacy: ' + trim(h.pharmacy));
+    host.innerHTML =
+      '<h3>📖 History &amp; background <button class="edit" onclick="window.__mlsEpEditHistory()">✎ Edit</button></h3>' +
+      '<div class="body' + (lines.length ? '' : ' empty-txt') + '">' + (lines.length ? esc(lines.join('\n')) : 'No PMH/PSH/social/family history on file.') + '</div>';
+  }
+  var HISTORY_ROWS = [
+    ['pmh', 'Past medical history', 'text', 'e.g. Hypertension, T2DM'],
+    ['psh', 'Past surgical history', 'text', 'e.g. L4-5 laminectomy 2019'],
+    ['social', 'Social history', 'text', 'e.g. Lives alone, retired teacher'],
+    ['smoking', 'Smoking status', 'select', ''],
+    ['family', 'Family history', 'text', 'e.g. Father - MI age 60'],
+    ['immunizations', 'Immunizations', 'text', 'e.g. Flu 2025-10, Tdap 2022'],
+    ['lmp', 'LMP / pregnancy status', 'text', 'e.g. N/A, or 2026-06-01'],
+    ['codeStatus', 'Code status', 'select', ''],
+    ['pcp', 'PCP / referring provider', 'text', 'e.g. Dr. J. Alvarez'],
+    ['pharmacy', 'Preferred pharmacy', 'text', 'e.g. CVS - Rte 30, Paoli']
+  ];
+  var SMOKING_OPTS = ['', 'Never smoker', 'Former smoker', 'Current smoker', 'Unknown'];
+  var CODE_OPTS = ['', 'Full code', 'DNR', 'DNR/DNI', 'Unknown'];
+  function histInput(row, val) {
+    if (row[2] === 'select') {
+      var opts = row[0] === 'smoking' ? SMOKING_OPTS : CODE_OPTS;
+      var html = '<select class="inline-ins-input" id="mlsEpH_' + row[0] + '">';
+      opts.forEach(function (o) { html += '<option value="' + esc(o) + '"' + (o === val ? ' selected' : '') + '>' + (esc(o) || 'Not recorded') + '</option>'; });
+      return html + '</select>';
+    }
+    return '<input class="inline-ins-input" id="mlsEpH_' + row[0] + '" type="text" placeholder="' + esc(row[3]) + '" value="' + esc(val || '') + '">';
+  }
+  window.__mlsEpEditHistory = function () {
+    var p = activePatient(); if (!p) return;
+    var host = document.getElementById('mlsEpHistoryBox'); if (!host || host.getAttribute('data-mls-editing')) return;
+    host.setAttribute('data-mls-editing', String(p.id));
+    var h = getHistory(p);
+    var rows = HISTORY_ROWS.map(function (r) { return '<label class="inline-ins-row"><span>' + esc(r[1]) + '</span>' + histInput(r, h[r[0]]) + '</label>'; }).join('');
+    host.innerHTML =
+      '<h3>📖 History &amp; background</h3>' +
+      '<div class="inline-ins-form">' + rows + '</div>' +
+      '<div class="inline-edit-actions"><button class="btn-green" onclick="window.__mlsEpSaveHistory()">Save</button>' +
+      '<button class="btn-ghost" onclick="window.__mlsEpCancelHistory()">Cancel</button></div>';
+  };
+  window.__mlsEpSaveHistory = function () {
+    var host = document.getElementById('mlsEpHistoryBox'); if (!host) return;
+    var p = activePatient(); if (!p) return;
+    if (!editingGuardSaveOk(host, p)) return;
+    var h = defaultHistory();
+    HISTORY_ROWS.forEach(function (r) { var el = document.getElementById('mlsEpH_' + r[0]); h[r[0]] = el ? trim(el.value) : ''; });
+    p.history = h;
+    host.removeAttribute('data-mls-editing');
+    upsert(p); rerenderProfile(); toast('History & background saved.', 'ok');
+  };
+  window.__mlsEpCancelHistory = function () {
+    var host = document.getElementById('mlsEpHistoryBox'); if (host) host.removeAttribute('data-mls-editing');
+    rerenderProfile();
+  };
+
+  /* ---------- CSS for the small chips (injected once) ---------- */
+  function injectCss() {
+    if (document.getElementById('mlsEpStyle')) return;
+    var s = document.createElement('style'); s.id = 'mlsEpStyle';
+    s.textContent = '.mls-ep-chip{background:#eef4fc;border:1px solid #d7e6fb;border-radius:999px;padding:3px 11px;font-size:12px;color:#2a5a86}' +
+      'body.theme-dark .mls-ep-chip{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14);color:#cfe3ff}';
+    document.head.appendChild(s);
+  }
+
+  /* ---------- wrap renderProfile (composes with any other module doing the same) ---------- */
+  function mlsEP_render() {
+    var p = activePatient();
+    var card = document.getElementById('profileCard');
+    if (!p || !card || card.style.display === 'none') return; // nothing to render onto (empty/no-patient state)
+    injectCss();
+    renderSummaryBox(p);
+    renderTopBox(p);
+    renderRisksBox(p);
+    renderVitalsBox(p);
+    renderHistoryBox(p);
+  }
+
+  var _mlsEP_orig = (isFn(window.renderProfile)) ? window.renderProfile : null;
+  window.renderProfile = function () {
+    if (_mlsEP_orig) { try { _mlsEP_orig(); } catch (e) {} }
+    try { mlsEP_render(); } catch (e) {}
+  };
+
+  window.__mlsEasyPrep_revert = function () {
+    if (_mlsEP_orig) window.renderProfile = _mlsEP_orig;
+    ['mlsEpSummaryBox', 'mlsEpTopBox', 'mlsEpRisksBox', 'mlsEpVitalsBox', 'mlsEpHistoryBox', 'mlsEpStyle'].forEach(function (id) {
+      var el = document.getElementById(id); if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    try { delete window.__mlsEasyPrep; } catch (e) { window.__mlsEasyPrep = undefined; }
+  };
+
+  window.__mlsEasyPrep = {
+    version: VERSION,
+    computeAge: computeAge,
+    computeBmi: computeBmi,
+    resolveBmi: resolveBmi,
+    lastVisitInfo: lastVisitInfo,
+    apptContext: apptContext,
+    buildPrepSummary: buildPrepSummary,
+    buildPrepSummaryForPatient: buildPrepSummaryForPatient,
+    render: mlsEP_render
+  };
+
+  // In case the profile card is already showing (module loaded after first paint).
+  try { mlsEP_render(); } catch (e) {}
+})();
+
+/* =============================================================================
+ * MLS Scribe - OUTSIDE RECORDS / IMAGING / EXTRA HISTORY  (__mlsOutsideRecords)
+ * v1.0.0  2026-07-11
+ * STAGING ONLY. Prepend ABOVE the live mls-connect.js bundle (real \n\n join)
+ * or load as its own <script data-mls-asset> loader appended at EOF, like every
+ * other guarded module in this codebase. Draft-only. Mock/offline-testable.
+ * Never touches Athena.
+ * -----------------------------------------------------------------------------
+ * THE GAP this fills (AUDIT_2026-07-11_FULL_APP.md - no existing section covers
+ * this; confirmed 0 hits for "outside records" / "Penn Medicine" / "Main Line
+ * Health" anywhere in the live base app or bundle). The profile card has a
+ * generic "Documents" uploader (OCR/text-extract + AI analyze) but nothing that
+ * lets staff log CATEGORIZED outside information that didn't arrive as a file:
+ * a phone summary of an outside MRI, a line of Main Line Health records, a
+ * medical assistant's intake note, a doctor's own dictated aside, etc.
+ *
+ * WHAT THIS DOES
+ *   1. New patient field: p.outsideRecords = [ {id, category, title, source,
+ *      date, text, addedBy, createdAt, updatedAt} ]. Additive - a patient with
+ *      no entries renders exactly as before (empty-state prompt only).
+ *      Categories: 'mri' | 'xray' | 'pennMedicine' | 'mainLineHealth' |
+ *                  'maHistory' | 'staffNote' | 'doctorDictation' | 'manual'
+ *   2. A new profile-card section, "Outside records / imaging / extra history":
+ *      add / edit / delete entries, filter chips by category, newest first.
+ *      Same inline-edit visual language as the rest of the card (.prof-box,
+ *      .inline-edit-area, .inline-ins-row) so it looks native, not bolted on.
+ *   3. A READ-ONLY accessor other code can call to consume this data, per the
+ *      task spec ("available to patient prep, note generation, Copilot, orders
+ *      draft context, and legal reports" - this module only EXPOSES the data;
+ *      wiring those other consumers is out of scope for this task/file):
+ *        window.__mlsOutsideRecords.getForPatient(patientOrId) -> entry[]
+ *        window.__mlsOutsideRecords.summaryText(patientOrId, opts) -> string
+ *          - flattened, grouped-by-category plain text, safe to splice into any
+ *            prompt or report (already consumed by feat_mls_easy_prep.module.js
+ *            if that module is also loaded - purely via feature-detection, no
+ *            hard dependency either direction).
+ *        window.__mlsOutsideRecords.CATEGORIES -> the category list/labels
+ *
+ * SAFETY
+ *   - Draft-only, free-text logging. Never sends anything to athenaOne, never
+ *     calls a write/order bridge. Persisted via the existing upsertPatient()
+ *     (same local+server sync path as every other profile field already live).
+ *   - No PHI inference: this module NEVER fabricates content - it only stores
+ *     exactly what staff types in, verbatim.
+ *   - Identity-scoped: every entry lives inside ONE patient's own record
+ *     (p.outsideRecords), addressed only by that patient's id - never merged,
+ *     matched by name, or shared across patients, so one patient's outside
+ *     records can never bleed onto another's chart (matches the project's
+ *     standing patient-safety rule).
+ *   - Additive only; does not rename/remove any existing field, function, or
+ *     DOM id. Fully reversible: window.__mlsOutsideRecords_revert().
+ *   - Pure ASCII, ES5-only so it parses under cscript/JScript for the offline
+ *     validator and runs unmodified in Chrome.
+ * ------------------------------------------------------------------------- */
+(function () {
+  'use strict';
+  try { if (window.__mlsOutsideRecords && window.__mlsOutsideRecords.version === '1.0.0') return; } catch (e) { return; }
+
+  var VERSION = '1.0.0';
+
+  function S(x) { return (x == null ? '' : String(x)); }
+  function trim(x) { return S(x).trim(); }
+  function isFn(f) { return typeof f === 'function'; }
+  function esc(s) {
+    try { if (isFn(window.esc)) return window.esc(s); } catch (e) {}
+    return S(s).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; });
+  }
+  function toast(msg, type) { try { if (isFn(window.toast)) window.toast(msg, type); } catch (e) {} }
+  function uid() { return 'or' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  var CATEGORIES = [
+    { key: 'mri', label: 'Outside MRI', icon: '🧲' },
+    { key: 'xray', label: 'Outside X-ray', icon: '🩻' },
+    { key: 'pennMedicine', label: 'Penn Medicine records', icon: '🏥' },
+    { key: 'mainLineHealth', label: 'Main Line Health records', icon: '🏥' },
+    { key: 'maHistory', label: 'Medical assistant history', icon: '📝' },
+    { key: 'staffNote', label: 'Staff note', icon: '🗒️' },
+    { key: 'doctorDictation', label: 'Doctor dictation', icon: '🎙️' },
+    { key: 'manual', label: 'Manual entry', icon: '✍️' }
+  ];
+  var CAT_BY_KEY = {}; CATEGORIES.forEach(function (c) { CAT_BY_KEY[c.key] = c; });
+  var HOP = Object.prototype.hasOwnProperty;
+  // Own-property check, not a bare truthy lookup: CAT_BY_KEY is a plain {}, so
+  // a category value like "constructor"/"toString"/"hasOwnProperty" resolves
+  // truthy via the INHERITED Object.prototype property rather than a real
+  // category - isValidCategory() is the only safe way to test membership.
+  function isValidCategory(key) { return HOP.call(CAT_BY_KEY, key); }
+  function catLabel(key) { return isValidCategory(key) ? CAT_BY_KEY[key].label : 'Other'; }
+  function catIcon(key) { return isValidCategory(key) ? CAT_BY_KEY[key].icon : '📄'; }
+
+  /* ---------- data access (pure - unit-testable) ---------- */
+  function listOf(p) { return (p && Array.isArray(p.outsideRecords)) ? p.outsideRecords : []; }
+
+  function resolvePatient(patientOrId) {
+    if (patientOrId && typeof patientOrId === 'object') return patientOrId;
+    try {
+      if (isFn(window.findPatient)) return window.findPatient(patientOrId) || null;
+      var list = isFn(window.getPatients) ? (window.getPatients() || []) : [];
+      var found = null;
+      for (var i = 0; i < list.length; i++) { if (list[i].id === patientOrId) { found = list[i]; break; } }
+      return found;
+    } catch (e) { return null; }
+  }
+
+  function getForPatient(patientOrId) {
+    var p = resolvePatient(patientOrId);
+    return listOf(p).slice().sort(function (a, b) {
+      var da = S(a.date || a.createdAt), db = S(b.date || b.createdAt);
+      return da < db ? 1 : (da > db ? -1 : 0);
+    });
+  }
+
+  function addEntry(p, entry) {
+    if (!p) return null;
+    if (!Array.isArray(p.outsideRecords)) p.outsideRecords = [];
+    var now = new Date().toISOString();
+    var rec = {
+      id: uid(),
+      category: (entry && isValidCategory(entry.category)) ? entry.category : 'manual',
+      title: trim(entry && entry.title),
+      source: trim(entry && entry.source),
+      date: trim(entry && entry.date),
+      text: trim(entry && entry.text),
+      addedBy: trim(entry && entry.addedBy),
+      createdAt: now, updatedAt: now
+    };
+    p.outsideRecords.unshift(rec);
+    return rec;
+  }
+  function updateEntry(p, id, patch) {
+    if (!p || !Array.isArray(p.outsideRecords)) return null;
+    var rec = null;
+    for (var i = 0; i < p.outsideRecords.length; i++) { if (p.outsideRecords[i].id === id) { rec = p.outsideRecords[i]; break; } }
+    if (!rec) return null;
+    ['category', 'title', 'source', 'date', 'text', 'addedBy'].forEach(function (k) {
+      if (patch && HOP.call(patch, k)) rec[k] = (k === 'category' && !isValidCategory(patch[k])) ? rec.category : trim(patch[k]);
+    });
+    rec.updatedAt = new Date().toISOString();
+    return rec;
+  }
+  function deleteEntry(p, id) {
+    if (!p || !Array.isArray(p.outsideRecords)) return false;
+    // Remove exactly the FIRST matching entry (splice by index), not every
+    // entry whose id happens to match - a filter-based "keep everything that
+    // doesn't match" would silently delete more than one record if an id were
+    // ever duplicated (e.g. by a future import/merge path).
+    for (var i = 0; i < p.outsideRecords.length; i++) {
+      if (p.outsideRecords[i].id === id) { p.outsideRecords.splice(i, 1); return true; }
+    }
+    return false;
+  }
+
+  // Flattened, grouped-by-category plain text for downstream consumers (prep
+  // summary, note generation, Copilot context, orders draft, legal reports).
+  // opts.maxPerCategory caps verbosity (default 3); opts.maxCharsPerEntry caps
+  // a single entry's text (default 220).
+  function summaryText(patientOrId, opts) {
+    opts = opts || {};
+    var maxPer = opts.maxPerCategory || 3;
+    var maxChars = opts.maxCharsPerEntry || 220;
+    var entries = getForPatient(patientOrId);
+    if (!entries.length) return '';
+    var byCat = {};
+    // Own-property guard on both read and write: without it, an entry whose
+    // category is "constructor" (or any other Object.prototype member) makes
+    // byCat[e.category] resolve to the INHERITED property (e.g. the Object
+    // constructor function) instead of undefined, so "|| []" never creates a
+    // real array and .push() throws - which, since outsideRecordsText() in
+    // the companion easy-prep module wraps this call in a silent try/catch,
+    // would make the ENTIRE outside-records section vanish from the prep
+    // summary (including every other, valid entry) with no error shown
+    // anywhere. addEntry()/updateEntry() now reject bad categories before
+    // they ever reach storage, but this stays defensive in case
+    // p.outsideRecords is ever populated by something other than this
+    // module's own CRUD functions (e.g. a future import/merge path).
+    entries.forEach(function (e) {
+      if (!HOP.call(byCat, e.category)) byCat[e.category] = [];
+      byCat[e.category].push(e);
+    });
+    var parts = [];
+    CATEGORIES.forEach(function (c) {
+      var arr = byCat[c.key]; if (!arr || !arr.length) return;
+      var shown = arr.slice(0, maxPer).map(function (e) {
+        var bits = [];
+        if (trim(e.date)) bits.push(trim(e.date));
+        if (trim(e.title)) bits.push(trim(e.title));
+        if (trim(e.source)) bits.push('(' + trim(e.source) + ')');
+        var head = bits.join(' ');
+        var body = trim(e.text).slice(0, maxChars);
+        return (head ? head + ': ' : '') + body;
+      });
+      var more = arr.length > maxPer ? ' [+' + (arr.length - maxPer) + ' more]' : '';
+      parts.push(c.label + ' — ' + shown.join(' | ') + more);
+    });
+    return parts.join('  //  ');
+  }
+
+  /* ============================== UI LAYER ============================== */
+  function activePatient() { try { return isFn(window.activePatient) ? window.activePatient() : null; } catch (e) { return null; } }
+  function upsert(p) { try { if (isFn(window.upsertPatient)) window.upsertPatient(p); } catch (e) {} }
+  function rerenderProfile() { try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {} }
+
+  var _filter = 'all';
+  window.__mlsOrSetFilter = function (key) { _filter = key || 'all'; renderBox(activePatient()); };
+
+  function entryRow(e) {
+    var head = [];
+    if (trim(e.date)) head.push(esc(e.date));
+    if (trim(e.source)) head.push(esc(e.source));
+    return '<div class="doc-item" style="align-items:flex-start;cursor:default">' +
+      '<span class="ic">' + catIcon(e.category) + '</span>' +
+      '<div class="dm">' +
+      '<div class="t">' + (esc(e.title) || catLabel(e.category)) + '</div>' +
+      '<div class="s">' + catLabel(e.category) + (head.length ? (' · ' + head.join(' · ')) : '') + '</div>' +
+      // Truncate the RAW text first, then escape - escaping first and slicing
+      // the result can bisect a multi-character HTML entity (e.g. cut "&amp;"
+      // down to "&am"), producing a stray partial-entity fragment on screen.
+      '<div style="font-size:13px;color:var(--ink);white-space:pre-wrap;margin-top:4px">' + esc(trim(e.text).slice(0, 4000)) + '</div>' +
+      '</div>' +
+      '<button class="edit" onclick="window.__mlsOrEdit(\'' + e.id + '\')">✎</button>' +
+      '<button class="del" title="Delete entry" onclick="window.__mlsOrDelete(\'' + e.id + '\')">🗑</button>' +
+      '</div>';
+  }
+
+  function renderBox(p) {
+    var docsBox = null;
+    try {
+      var boxes = document.querySelectorAll('#profileCard .prof-box');
+      for (var i = 0; i < boxes.length; i++) { if (/📎\s*Documents/.test(boxes[i].querySelector('h3') ? boxes[i].querySelector('h3').textContent : '')) { docsBox = boxes[i]; break; } }
+    } catch (e) {}
+    var anchor = docsBox || document.getElementById('profDemo');
+    var host = document.getElementById('mlsOrBox');
+    if (!host) {
+      if (!anchor || !anchor.parentNode) return;
+      host = document.createElement('div'); host.id = 'mlsOrBox'; host.className = 'prof-box'; host.style.cssText = 'margin-top:16px';
+      anchor.parentNode.insertBefore(host, anchor.nextSibling);
+    }
+    if (!p) { host.innerHTML = ''; return; }
+    // Explicit editing flag, bound to the patient id it was opened for - NOT
+    // a DOM-presence check (stale at the instant Save/Delete re-renders, so
+    // it would bail out forever and leave the box permanently stuck on the
+    // form) and NOT a bare '1' either. A bare-'1' flag can't tell "still
+    // editing THIS patient" apart from "editing a DIFFERENT patient whose
+    // form is now stale because the active patient changed underneath it" -
+    // and leaving that stale form on screen means a later Save would write
+    // the old patient's typed entry onto the NEW active patient's chart, a
+    // direct patient-safety violation. So: if the flag belongs to a patient
+    // who is no longer active, clear it and fall through to a normal render
+    // for the new patient instead of preserving the stale form.
+    var editingFor = host.getAttribute('data-mls-editing');
+    if (editingFor) {
+      if (editingFor === String(p.id)) return; // still editing THIS patient - don't clobber
+      host.removeAttribute('data-mls-editing'); // stale edit for a patient who is no longer active - discard it
+    }
+
+    var all = getForPatient(p);
+    var shown = _filter === 'all' ? all : all.filter(function (e) { return e.category === _filter; });
+    var chips = '<button class="pt-gbtn' + (_filter === 'all' ? ' on' : '') + '" type="button" onclick="window.__mlsOrSetFilter(\'all\')">All (' + all.length + ')</button>';
+    CATEGORIES.forEach(function (c) {
+      var n = all.filter(function (e) { return e.category === c.key; }).length;
+      if (!n) return;
+      chips += '<button class="pt-gbtn' + (_filter === c.key ? ' on' : '') + '" type="button" onclick="window.__mlsOrSetFilter(\'' + c.key + '\')">' + c.icon + ' ' + c.label + ' (' + n + ')</button>';
+    });
+
+    host.innerHTML =
+      '<h3>🗂️ Outside records / imaging / extra history <button class="edit" onclick="window.__mlsOrAdd()">＋ Add entry</button></h3>' +
+      '<p class="mini" style="margin:0 0 8px;color:var(--muted)">Outside MRI/X-ray results, Penn Medicine or Main Line Health records, medical-assistant intake history, staff notes, or doctor dictation that didn\'t arrive as a file. Feeds the prep summary and is available to note generation, Copilot, orders, and legal reports.</p>' +
+      (all.length ? '<div class="pt-group-bar" style="margin-bottom:8px">' + chips + '</div>' : '') +
+      (shown.length ? '<div class="doc-list">' + shown.map(entryRow).join('') + '</div>' : '<div class="mini" style="color:var(--muted)">No outside records yet.</div>');
+  }
+
+  function formHtml(existing) {
+    existing = existing || {};
+    var opts = CATEGORIES.map(function (c) { return '<option value="' + c.key + '"' + (existing.category === c.key ? ' selected' : '') + '>' + c.icon + ' ' + c.label + '</option>'; }).join('');
+    return '<h3>🗂️ ' + (existing.id ? 'Edit' : 'Add') + ' outside record</h3>' +
+      '<div class="inline-ins-form">' +
+      '<label class="inline-ins-row"><span>Category</span><select class="inline-ins-input" id="mlsOrF_category">' + opts + '</select></label>' +
+      '<label class="inline-ins-row"><span>Title</span><input class="inline-ins-input" id="mlsOrF_title" type="text" placeholder="e.g. Lumbar MRI w/o contrast" value="' + esc(existing.title || '') + '"></label>' +
+      '<label class="inline-ins-row"><span>Source / facility</span><input class="inline-ins-input" id="mlsOrF_source" type="text" placeholder="e.g. Penn Radiology, Dr. Kim" value="' + esc(existing.source || '') + '"></label>' +
+      '<label class="inline-ins-row"><span>Date</span><input class="inline-ins-input" id="mlsOrF_date" type="text" placeholder="e.g. 2026-05-02" value="' + esc(existing.date || '') + '"></label>' +
+      '</div>' +
+      '<textarea class="inline-edit-area" id="mlsOrF_text" placeholder="Findings, summary, or dictated note...">' + esc(existing.text || '') + '</textarea>' +
+      '<div class="inline-edit-actions">' +
+      '<button class="btn-green" onclick="window.__mlsOrSave(\'' + (existing.id || '') + '\')">Save</button>' +
+      '<button class="btn-ghost" onclick="window.__mlsOrCancel()">Cancel</button>' +
+      '</div>';
+  }
+  window.__mlsOrAdd = function () {
+    var p = activePatient(); if (!p) { toast('Open a patient first.', 'err'); return; }
+    var host = document.getElementById('mlsOrBox'); if (!host || host.getAttribute('data-mls-editing')) return;
+    host.setAttribute('data-mls-editing', String(p.id));
+    host.innerHTML = formHtml({});
+    var t = document.getElementById('mlsOrF_title'); if (t) t.focus();
+  };
+  window.__mlsOrEdit = function (id) {
+    var p = activePatient(); if (!p) return;
+    var rec = getForPatient(p).filter(function (e) { return e.id === id; })[0]; if (!rec) return;
+    var host = document.getElementById('mlsOrBox'); if (!host || host.getAttribute('data-mls-editing')) return;
+    host.setAttribute('data-mls-editing', String(p.id));
+    host.innerHTML = formHtml(rec);
+  };
+  window.__mlsOrCancel = function () {
+    var host = document.getElementById('mlsOrBox'); if (host) host.removeAttribute('data-mls-editing');
+    rerenderProfile();
+  };
+  window.__mlsOrSave = function (id) {
+    var host = document.getElementById('mlsOrBox'); if (!host) return;
+    var p = activePatient(); if (!p) { toast('Open a patient first.', 'err'); return; }
+    // Defense in depth: even though the render guard above discards a stale
+    // form as soon as renderProfile() runs after a patient switch, double-
+    // check at the moment Save is actually clicked so an entry can NEVER be
+    // written onto a different patient than the one the form was opened for.
+    var boundId = host.getAttribute('data-mls-editing');
+    if (boundId !== String(p.id)) {
+      toast('The active patient changed while this was open — entry discarded for safety. Please re-open and try again.', 'err');
+      host.removeAttribute('data-mls-editing'); rerenderProfile(); return;
+    }
+    var get = function (elId) { var el = document.getElementById(elId); return el ? el.value : ''; };
+    var payload = { category: get('mlsOrF_category'), title: get('mlsOrF_title'), source: get('mlsOrF_source'), date: get('mlsOrF_date'), text: get('mlsOrF_text') };
+    if (!trim(payload.title) && !trim(payload.text)) { toast('Add a title or some text first.', 'err'); return; }
+    var result = id ? updateEntry(p, id, payload) : addEntry(p, payload);
+    if (!result) {
+      // e.g. an edit whose entry id no longer exists on this patient (could
+      // only happen if the record was deleted elsewhere in the meantime) -
+      // never claim success when nothing was actually saved.
+      toast('Could not save — that record may have changed. Please re-open and try again.', 'err');
+      host.removeAttribute('data-mls-editing'); rerenderProfile(); return;
+    }
+    host.removeAttribute('data-mls-editing');
+    upsert(p); rerenderProfile(); toast(id ? 'Outside record updated.' : 'Outside record added.', 'ok');
+  };
+  window.__mlsOrDelete = function (id) {
+    var p = activePatient(); if (!p) return;
+    if (!window.confirm('Delete this outside-record entry? This cannot be undone.')) return;
+    // Re-resolve the active patient AFTER the (blocking) confirm dialog - the
+    // active patient cannot change while confirm() is open, but re-checking
+    // costs nothing and removes any doubt.
+    var p2 = activePatient();
+    if (!p2 || p2.id !== p.id) { toast('The active patient changed — nothing was deleted. Please try again.', 'err'); rerenderProfile(); return; }
+    var ok = deleteEntry(p2, id);
+    if (!ok) { toast('Could not find that record to delete — it may already be gone.', 'err'); rerenderProfile(); return; }
+    upsert(p2); rerenderProfile(); toast('Outside record deleted.', '');
+  };
+
+  var _mlsOR_orig = (isFn(window.renderProfile)) ? window.renderProfile : null;
+  window.renderProfile = function () {
+    if (_mlsOR_orig) { try { _mlsOR_orig(); } catch (e) {} }
+    try {
+      var card = document.getElementById('profileCard');
+      var p = activePatient();
+      if (!p || !card || card.style.display === 'none') { var h = document.getElementById('mlsOrBox'); if (h) h.innerHTML = ''; return; }
+      renderBox(p);
+    } catch (e) {}
+  };
+
+  window.__mlsOutsideRecords_revert = function () {
+    if (_mlsOR_orig) window.renderProfile = _mlsOR_orig;
+    var el = document.getElementById('mlsOrBox'); if (el && el.parentNode) el.parentNode.removeChild(el);
+    try { delete window.__mlsOutsideRecords; } catch (e) { window.__mlsOutsideRecords = undefined; }
+  };
+
+  window.__mlsOutsideRecords = {
+    version: VERSION,
+    CATEGORIES: CATEGORIES,
+    getForPatient: getForPatient,
+    addEntry: addEntry,
+    updateEntry: updateEntry,
+    deleteEntry: deleteEntry,
+    summaryText: summaryText,
+    render: renderBox
+  };
+
+  try { renderBox(activePatient()); } catch (e) {}
+})();
+
 /* feat_studygroups_badge_fix.js  ->  window.__mlsSgBadgeFix  (sgbadge-1.0.0)
  * ---------------------------------------------------------------------------
  * Hides the stray "v1 - staging" pill still visible on the live Study Groups
@@ -27511,7 +29713,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b133';
+  window.__MLS_AV = window.__MLS_AV || 'b134';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -27825,7 +30027,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-11-b133';
+  var MLS_APP_BUILD='2026-07-11-b134';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
