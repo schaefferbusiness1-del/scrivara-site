@@ -27,7 +27,10 @@
    *   tidier section headers, and a subtle polish on the collapsible extra
    *   cards, so the Easy flow reads as one designed surface rather than a
    *   stack of differently-styled boxes. */
-  var VERSION = 'thm-1.1.0';
+  /* thm-1.1.1: LIVE FREEZE FIX -- keepLast() style-node re-append removed (full
+   *   document style recalc every 3 s on big DOMs); permanent will-change
+   *   compositor layers on button classes removed. Visuals unchanged. */
+  var VERSION = 'thm-1.1.1';
   var STYLE_ID = 'mlsThemePolishStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -48,7 +51,7 @@
       'html #appHeader [id^="nav_"]{transition:background .15s,color .15s}',
 
       /* ---------- 2. button polish ---------- */
-      'html .btn-green,html .btn-ghost,html .btn-blue,html .btn-red,html button.edit,html #authBtn{transition:transform .13s ease,box-shadow .13s ease,filter .13s ease!important;will-change:transform}',
+      'html .btn-green,html .btn-ghost,html .btn-blue,html .btn-red,html button.edit,html #authBtn{transition:transform .13s ease,box-shadow .13s ease,filter .13s ease!important}',
       'html body .btn-green.btn-green.btn-green{background:linear-gradient(135deg,#17a56c 0%,#0d8a58 100%)!important;box-shadow:0 3px 10px rgba(16,150,98,.28)!important;border:0!important}',
       'html body .btn-green.btn-green:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(16,150,98,.36)!important;filter:brightness(1.04)}',
       'html body .btn-green.btn-green:active{transform:translateY(0);box-shadow:0 2px 6px rgba(16,150,98,.3)!important}',
@@ -99,22 +102,20 @@
     wrapped = true;
   }
 
-  /* several sibling styling modules append !important rules later in <head>;
-     equal-importance CSS resolves by specificity THEN order, so keep this
-     node the LAST style element (write-if-changed: only moves when needed). */
-  function keepLast() {
-    var st = $(STYLE_ID); if (!st) return;
-    var head = document.head; if (!head) return;
-    var styles = head.querySelectorAll('style');
-    if (styles.length && styles[styles.length - 1] !== st) head.appendChild(st);
-  }
+  /* thm-1.1.1 FREEZE FIX: the old keepLast() re-appended this style node every
+     3 s to stay last in <head>. Re-inserting a <style> invalidates the ENTIRE
+     document's styles -- imperceptible on a small test DOM, a heavy recurring
+     synchronous hit on a clinic-scale DOM (the owner's live freeze, 07-12).
+     It was also unnecessary: every contested rule here is specificity-stacked
+     (#id#id / .cls.cls.cls + !important), which beats the sibling modules'
+     rules regardless of document order. So: insert the node ONCE, never move
+     it, and keep the tick to cheap existence checks only. */
 
   var tickIv = null;
   function boot() {
     css();
     wrapShowView();
-    keepLast();
-    tickIv = setInterval(function () { safe(css); safe(wrapShowView); safe(keepLast); }, 3000);
+    tickIv = setInterval(function () { safe(css); safe(wrapShowView); }, 3000);
   }
   function revert() {
     if (tickIv) { clearInterval(tickIv); tickIv = null; }

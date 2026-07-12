@@ -23,7 +23,8 @@
   'use strict';
   try { if (window.__mlsWidgetDeck && window.__mlsWidgetDeck.installed) return; } catch (e) { return; }
 
-  var VERSION = 'wd-1.0.0';
+  /* wd-1.0.1: poll hygiene -- widget list memoized by raw stored string. */
+  var VERSION = 'wd-1.0.1';
   var DECK_ID = 'mlsWdDeck', STYLE_ID = 'mlsWdStyle', CHIPS_ID = 'mlsWdBuilderChips';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -62,7 +63,20 @@
     (document.head || document.documentElement).appendChild(st);
   }
 
-  function widgets() { return safe(function () { return isFn(window.getCustomWidgets) ? (window.getCustomWidgets() || []) : []; }, []); }
+  /* wd-1.0.1: memoize the widget list by the raw stored string (same discipline
+     as the b132 store-cache fix) so the 1.2 s poll never re-parses unchanged JSON. */
+  var _wMemoRaw = null, _wMemoVal = [];
+  function widgets() {
+    return safe(function () {
+      if (!isFn(window.getCustomWidgets)) return [];
+      var raw = null;
+      try { if (isFn(window.uns)) raw = localStorage.getItem(window.uns('customWidgets')); } catch (e) {}
+      if (raw !== null && raw === _wMemoRaw) return _wMemoVal;
+      _wMemoVal = window.getCustomWidgets() || [];
+      _wMemoRaw = raw;
+      return _wMemoVal;
+    }, []);
+  }
 
   /* three broad clinical starters from the app's own library, matched by title */
   var STARTER_TITLES = ['Injection tracker', 'Return-to-work status', 'Opioid risk & MME'];

@@ -18,7 +18,9 @@
   'use strict';
   try { if (window.__mlsVisitTimeline && window.__mlsVisitTimeline.installed) return; } catch (e) { return; }
 
-  var VERSION = 'vtl-1.0.0';
+  /* vtl-1.0.1: LIVE FREEZE FIX -- coalesced, always-key-checked renders (see
+   *   render()/schedule() notes below). Chart behavior/visuals unchanged. */
+  var VERSION = 'vtl-1.0.1';
   var CARD_ID = 'mlsVtlCard', STYLE_ID = 'mlsVtlStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -81,14 +83,22 @@
     return pts.slice(-60);
   }
 
+  /* vtl-1.0.1 LIVE FREEZE FIX (07-12): render(true) used to bypass the
+     write-if-changed key entirely, so EVERY renderProfile call (which fires
+     continuously in real use -- storage-driven card refreshes, sibling module
+     wraps) triggered a full innerHTML/SVG rebuild: sustained DOM churn waking
+     every body-wide MutationObserver. Now even forced renders rebuild ONLY
+     when the (patient, notes) key actually changed; force just skips nothing
+     else. Combined with schedule() coalescing below, worst case is one
+     comparison per call and one rebuild per real change. */
   var lastKey = '';
   function render(force) {
     var host = findHost();
     var id = activeId();
-    if (!host || !id) { remove(); lastKey = ''; return; }
+    if (!host || !id) { if ($(CARD_ID)) remove(); lastKey = ''; return; }
     var pts = buildPoints(id);
     var key = id + '|' + pts.length + '|' + (pts.length ? pts[pts.length - 1].t : 0);
-    if (!force && key === lastKey && $(CARD_ID)) return;   /* write-if-changed: no idle churn */
+    if (key === lastKey && $(CARD_ID)) return;             /* write-if-changed: ALWAYS */
     lastKey = key;
     css();
     var card = $(CARD_ID);
@@ -143,8 +153,15 @@
   }
   function remove() { var c = $(CARD_ID); if (c && c.parentNode) c.parentNode.removeChild(c); }
 
-  /* renderProfile wrap (same additive pattern as easy-prep) + gentle poll fallback */
-  var wrapped = false, origRender = null, pollIv = null;
+  /* renderProfile wrap (same additive pattern as easy-prep) + gentle poll fallback.
+     vtl-1.0.1: renders are COALESCED -- any burst of renderProfile calls
+     schedules at most ONE pending render (which is itself key-checked). */
+  var wrapped = false, origRender = null, pollIv = null, pending = false;
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    setTimeout(function () { pending = false; safe(function () { render(false); }); }, 120);
+  }
   function wrapRenderProfile() {
     if (wrapped) return;
     if (!isFn(window.renderProfile) || window.renderProfile.__vtlWrapped) { wrapped = !!(window.renderProfile && window.renderProfile.__vtlWrapped); return; }
@@ -152,7 +169,7 @@
     var w = function () {
       var r;
       try { r = origRender.apply(this, arguments); } catch (e) {}
-      safe(function () { setTimeout(function () { safe(function () { render(true); }); }, 60); });
+      safe(schedule);
       return r;
     };
     w.__vtlWrapped = true; w.__vtlOrig = origRender;
@@ -161,8 +178,8 @@
   }
   function boot() {
     wrapRenderProfile();
-    pollIv = setInterval(function () { safe(wrapRenderProfile); safe(function () { render(false); }); }, 1500);
-    safe(function () { render(true); });
+    pollIv = setInterval(function () { safe(wrapRenderProfile); safe(function () { render(false); }); }, 2000);
+    safe(function () { render(false); });
   }
   function revert() {
     if (pollIv) { clearInterval(pollIv); pollIv = null; }
@@ -173,7 +190,7 @@
     return 'visit timeline reverted';
   }
 
-  window.__mlsVisitTimeline = { installed: true, version: VERSION, asset: 'feat_mls_visit_timeline.js', render: function () { render(true); }, _points: buildPoints, revert: revert };
+  window.__mlsVisitTimeline = { installed: true, version: VERSION, asset: 'feat_mls_visit_timeline.js', render: function () { lastKey = ''; render(false); }, _points: buildPoints, revert: revert };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
