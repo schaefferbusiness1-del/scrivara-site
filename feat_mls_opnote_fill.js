@@ -635,6 +635,13 @@
     _wireN++;
     if (_wireN <= 3 || _wireN % 6 === 0) safe(wireUploadButtons);   /* PERF: wire early, then only every ~6s (was a full document button/a scan EVERY tick) */
     if (!modalOpen()) return;
+    /* the Templates modal opens BEHIND the op modal (equal z 9400, earlier in
+       DOM). The click-handler bump can miss (its wiring is lazy) - keep this
+       tick-level guarantee: whenever both are open, templates paints on top. */
+    safe(function () {
+      var t = document.getElementById('templatesModal');
+      if (t && t.classList.contains('show') && t.style.zIndex !== '99500') t.style.zIndex = '99500';
+    });
     safe(injectBar);
     /* set each row's procedure from its matched template + pre-fill the visible
        "Procedure" input on every card (list view too, not just drafted rows). */
