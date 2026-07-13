@@ -246,7 +246,13 @@
     return {initials:initials, name:name, sub:sub};
   }
 
-  function navLabelOf(tab){ try{ var t=(tab.textContent||'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu,'').trim(); return t.replace(/\d+$/,'').trim(); }catch(e){ return ''; } }
+  function navLabelOf(tab){ try{
+      var t='';
+      for(var i=0;i<tab.childNodes.length;i++){ var n=tab.childNodes[i]; if(n.nodeType===3) t+=n.textContent; }
+      if(!t.trim()) t=(tab.textContent||'');
+      t=t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}✦]/gu,'').trim();
+      return t.replace(/\d+$/,'').trim();
+    }catch(e){ return ''; } }
   function syncTitle(){
     try{ var el=$('mlsRdTitle'); if(!el) return;
       var on=document.querySelector('#mlsRdNav .navtab.on');
