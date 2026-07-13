@@ -312,6 +312,17 @@
       if(!$('mlsRdScrim')){ var sc=mk('div'); sc.id='mlsRdScrim'; sc.addEventListener('click',function(){ document.documentElement.classList.remove('mls-rail-open'); railSlide(false); }); document.body.appendChild(sc); }
       /* close rail after choosing a view on mobile */
       navWrap.addEventListener('click',function(e){ try{ if(e.target&&e.target.closest&&e.target.closest('.navtab')){ document.documentElement.classList.remove('mls-rail-open'); railSlide(false); } }catch(_){} });
+      /* Help = the ONE guided tour/guide (bug found live 2026-07-13: nav_help's
+         openMlsHelp() produced no visible surface in the rail shell; the obt
+         tour engine works — route Help to it, capture-phase so we win the
+         legacy handler; fall back to the original if obt is absent). */
+      navWrap.addEventListener('click',function(e){
+        try{
+          if(!(e.target&&e.target.closest&&e.target.closest('#nav_help'))) return;
+          var t=window.__mlsOnboardingTour;
+          if(t&&t.installed&&typeof t.open==='function'){ e.preventDefault(); e.stopPropagation(); t.open(); }
+        }catch(_){}
+      },true);
     }
     /* relocate real controls into slots (idempotent: appendChild moves) */
     var tgSlot=$('mlsRdToggleSlot'), seSlot=$('mlsRdSearchSlot'), meSlot=$('mlsRdMenuSlot'), navWrap=$('mlsRdNav');
