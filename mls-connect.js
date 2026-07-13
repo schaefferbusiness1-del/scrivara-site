@@ -30299,7 +30299,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b207';
+  window.__MLS_AV = window.__MLS_AV || 'b208';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30613,7 +30613,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b207';
+  var MLS_APP_BUILD='2026-07-13-b208';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38270,8 +38270,30 @@
   /* something re-shows the launcher with an inline-important display — the
      day-hist FAB lesson: inline-important is the only deterministic hide */
   function forceHide() {
-    ['_patientFace', 'mlsAddPtLauncher'].forEach(function (id) {
-      try { var el = $(id); if (el && el.style.getPropertyValue('display') !== 'none') el.style.setProperty('display', 'none', 'important'); } catch (e) {}
+    var ids = ['_patientFace', 'mlsAddPtLauncher'];
+    if (window.innerWidth <= 760) {
+      /* phone: ONE fab. Their features ride in its menu. Voice stays visible
+         while actually listening (mls-bl42-on). */
+      ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip', 'mlsScDock'].forEach(function (id) { ids.push(id); });
+    } else {
+      /* back on desktop: undo the phone-only inline hides */
+      ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'].forEach(function (id) {
+        try { var el2 = $(id); if (el2 && el2.__ftHidden) { el2.style.removeProperty('display'); el2.__ftHidden = false; } } catch (e) {}
+      });
+    }
+    ids.forEach(function (id) {
+      try {
+        var el = $(id);
+        if (!el) return;
+        if (id === 'mlsCopVoiceBtn' && el.classList.contains('mls-bl42-on')) {
+          if (el.__ftHidden) { el.style.removeProperty('display'); el.__ftHidden = false; }
+          return;
+        }
+        if (el.style.getPropertyValue('display') !== 'none') {
+          el.style.setProperty('display', 'none', 'important');
+          if (id !== '_patientFace' && id !== 'mlsAddPtLauncher') el.__ftHidden = true;
+        }
+      } catch (e) {}
     });
   }
   forceHide();
