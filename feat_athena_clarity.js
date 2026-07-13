@@ -77,8 +77,8 @@
       '.mlsac-toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483600;' +
         'max-width:520px;padding:11px 16px;border-radius:10px;font-size:13px;font-weight:600;' +
         'box-shadow:0 8px 24px rgba(0,0,0,.18);background:#fff;color:#0f2233;border:1px solid #cbd5e1;}' +
-      '.mlsac-toast.ok{background:#dcfce7;border-color:#86efac;color:#14532d;}' +
-      '.mlsac-toast.warn{background:#fef3c7;border-color:#fcd34d;color:#7c4a03;}';
+      '.mlsac-toast.ok{background:#EAF1EE;border-color:#D5E5DC;color:#204034;}' +
+      '.mlsac-toast.warn{background:#FCF8EF;border-color:#EFE4CE;color:#B07636;}';
     (document.head || document.documentElement).appendChild(s);
   }
 

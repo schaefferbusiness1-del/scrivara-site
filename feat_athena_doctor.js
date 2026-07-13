@@ -448,16 +448,26 @@
     if (kind !== 'pull' && kind !== 'search') return; // only user-facing pull/search actions
     var m = resultMeta(d);
 
+    /* Editorial Calm consolidation (2026-07-13, RS#2): clarity shows the richer
+       per-patient toast ("Pulled N real visits into <name> — saved in MLS", plus
+       its own zero-visits line) for PULLs, so this module's overlapping generic
+       pull toasts stand down when clarity is installed. Search toasts and
+       genuine-failure warnings remain ours (clarity does not cover those). */
+    var clarityOwnsPull = (kind === 'pull') && !!(W.__mlsAthenaClarity);
     if (m.ok && (m.count == null || m.count > 0)) {
-      // honest success line (counts). §58 save-verify separately confirms persistence.
-      var noun = kind === 'pull' ? 'visit' : 'result';
-      var what = kind === 'pull' ? 'Pulled' : 'Athena search returned';
-      var n = (m.count == null) ? '' : (m.count + ' ');
-      var tail = (kind === 'pull' && W.__mlsSaveVerify) ? ' — save check below confirms they\'re stored.' : '';
-      showToast('ok', '✓ ' + what + ' ' + n + noun + (m.count === 1 ? '' : 's') + (kind === 'pull' ? ' from athenaOne.' : '.') + tail);
+      if (!clarityOwnsPull) {
+        // honest success line (counts). §58 save-verify separately confirms persistence.
+        var noun = kind === 'pull' ? 'visit' : 'result';
+        var what = kind === 'pull' ? 'Pulled' : 'Athena search returned';
+        var n = (m.count == null) ? '' : (m.count + ' ');
+        var tail = (kind === 'pull' && W.__mlsSaveVerify) ? ' — save check below confirms they\'re stored.' : '';
+        showToast('ok', '✓ ' + what + ' ' + n + noun + (m.count === 1 ? '' : 's') + (kind === 'pull' ? ' from athenaOne.' : '.') + tail);
+      }
     } else if (m.ok && m.count === 0) {
-      showToast('info', 'ℹ The read completed but found 0 ' + (kind === 'pull' ? 'visits' : 'results') + '. The pull opens the chart automatically — re-run it, or this patient may simply have no visits yet.');
-      // soft auto-trigger so the user sees why
+      if (!clarityOwnsPull) {
+        showToast('info', 'ℹ The read completed but found 0 ' + (kind === 'pull' ? 'visits' : 'results') + '. The pull opens the chart automatically — re-run it, or this patient may simply have no visits yet.');
+      }
+      // soft auto-trigger so the user sees why (kept regardless — no toast involved)
       autoTrigger({ ok: true, count: 0, anyReal: false });
     } else {
       // genuine failure — show honest line AND auto-open the diagnostic
