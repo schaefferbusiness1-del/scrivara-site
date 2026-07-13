@@ -30541,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b259';
+  window.__MLS_AV = window.__MLS_AV || 'b260';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b259';
+  var MLS_APP_BUILD='2026-07-13-b260';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -39635,5 +39635,82 @@
     try { clearInterval(agentIv); clearInterval(cardIv); clearInterval(beaconIv); clearInterval(phoneIv); } catch (e) {}
     try { var c = $('mlsRlCard'); if (c) c.remove(); var pb = $('mlsRlPhoneBar'); if (pb) pb.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsRelayLink;
+  };
+})();
+
+/* ===== __mlsPhoneHome ph-1.0.0 (2026-07-13, b260 - phone-first front door,
+ * gap #1 of the walk-in-with-a-phone design).
+ * The ?phone=1 QR landing (persisted in sessionStorage so it survives login/
+ * navigation; also auto-detected: signed-in + no extension + narrow screen)
+ * gets a STRIPPED doctor home instead of the full app: presence bar ->
+ * day strip -> Up next -> Choose patient -> record. Everything else on the
+ * home (quick-tools row, staff link, smart-widgets deck, day-chip extras,
+ * secondary hero rows) is HIDDEN by a body.mls-phone CSS layer - not removed;
+ * a "Show full app" link restores it for this session. Zero behavior change
+ * outside phone mode. Reversible: revert(). ES5. */
+(function () {
+  if (window.__mlsPhoneHome) return;
+  var api = { installed: true, version: 'ph-1.0.0' };
+  window.__mlsPhoneHome = api;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+
+  function qs() { try { return new URLSearchParams(location.search); } catch (e) { return null; } }
+  var q = qs();
+  try { if (q && q.get('phone') === '1') sessionStorage.setItem('mls_phone_mode', '1'); } catch (e) {}
+  try { if (q && q.get('phone') === '0') sessionStorage.removeItem('mls_phone_mode'); } catch (e) {}
+  function extPresent() { try { var rl = window.__mlsRelayLink; return rl ? rl.extPresent() : !!window.__mlsExtReportedVersion; } catch (e) { return false; } }
+  function wantPhone() {
+    try {
+      if (sessionStorage.getItem('mls_phone_mode') === '1') return true;
+      if (sessionStorage.getItem('mls_phone_mode') === '0') return false;
+      return window.innerWidth <= 760 && !extPresent();
+    } catch (e) { return false; }
+  }
+
+  var st = document.createElement('style'); st.id = 'mlsPhCss';
+  st.textContent = [
+    /* hide the secondary chrome of the doctor home in phone mode - display
+       toggles only, nothing removed */
+    'body.mls-phone .ez3fl-quick, body.mls-phone .ez3fl-staffLink, body.mls-phone .ez3fl-steps,',
+    'body.mls-phone .wd-deck, body.mls-phone [id^="mlsWd"], body.mls-phone #mlsDayProgress,',
+    'body.mls-phone .ez3-row2, body.mls-phone #ez3Adv, body.mls-phone .ez3fl-daychip,',
+    'body.mls-phone #mlsCopVoiceBtn, body.mls-phone #mlsAsstFab, body.mls-phone #mlsTabPickerChip{ display:none !important; }',
+    /* ez3Adv is shown by an id-chained !important rule elsewhere - outrank it
+       (b210 specificity lesson). The record CTA clicks it programmatically,
+       so hiding it visually loses nothing on the phone. */
+    'html body.mls-phone #mlsEz3 #ez3Adv, html body.mls-phone #ez3Adv{ display:none !important; }',
+    'body.mls-phone #mlsPhExit{ display:block; }',
+    '#mlsPhExit{ display:none; margin:14px auto 6px; background:transparent; border:0; color:#8A8F86; font:500 12px "Public Sans",system-ui,sans-serif; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(st);
+
+  function ensure() {
+    try {
+      var on = wantPhone();
+      var has = document.body.classList.contains('mls-phone');
+      if (on && !has) document.body.classList.add('mls-phone');
+      if (!on && has) document.body.classList.remove('mls-phone');
+      if (!on) return;
+      var body = $('mlsEz3Body'); if (!body) return;
+      if (!$('mlsPhExit')) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.id = 'mlsPhExit';
+        b.textContent = 'Show the full app';
+        b.addEventListener('click', function () {
+          try { sessionStorage.setItem('mls_phone_mode', '0'); } catch (e) {}
+          document.body.classList.remove('mls-phone');
+          try { if (typeof window.toast === 'function') window.toast('Full app shown — reopen the QR link (or add ?phone=1) to return to phone mode.', ''); } catch (e) {}
+        });
+        body.appendChild(b);
+      }
+    } catch (e) {}
+  }
+  var iv = setInterval(function () { try { ensure(); } catch (e) {} }, 1600);
+  ensure();
+  api.ensure = ensure;
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { st.remove(); document.body.classList.remove('mls-phone'); var b = $('mlsPhExit'); if (b) b.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsPhoneHome;
   };
 })();
