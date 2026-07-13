@@ -9955,12 +9955,42 @@ function _opTomorrowDateStr(){ var d=new Date(); d.setDate(d.getDate()+1); retur
 function _opRankTemplates(procedure){
   var procL=String(procedure||'').toLowerCase();
   var toks=procL.replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(function(w){ return w.length>1; });
+  /* Procedure TYPE is the identity of an op note (a TFESI is never a facet
+     block, whatever levels match). Level/laterality only break ties WITHIN
+     a type. Fixed 2026-07-13: "left L5-S1 transforaminal ESI" used to match
+     the bilateral facet template because L5+S1 in its NAME outscored the
+     word "transforaminal". */
+  var TYPES=[
+    {k:'tfesi',       re:/(tfesi|transforaminal)/},
+    {k:'interlaminar',re:/interlaminar/},
+    {k:'caudal',      re:/caudal/},
+    {k:'facet',       re:/(facet|medial branch|\bmbb\b)/},
+    {k:'rfa',         re:/(\brfa\b|radiofrequency|ablation|rhizotomy)/},
+    {k:'si',          re:/(sacroiliac|si joint)/},
+    {k:'trigger',     re:/trigger point/},
+    {k:'genicular',   re:/genicular/},
+    {k:'kypho',       re:/(kyphoplasty|vertebroplasty)/},
+    {k:'stim',        re:/stimulator/}
+  ];
+  var procTypes=TYPES.filter(function(ty){ return ty.re.test(procL); }).map(function(ty){ return ty.k; });
   var tpls=getTemplates();
   return tpls.map(function(t){
-    var hay=((t.name||'')+' '+((t.keywords||[]).join(' '))+' '+String(t.text||'').slice(0,600)).toLowerCase();
-    var score=0; toks.forEach(function(w){ if(hay.indexOf(w)>=0) score+= (/(l[1-5]|s1|si|epidural|facet|medial|branch|rhizotomy|ablation|rfa|esi|transforaminal|interlaminar|caudal|kyphoplasty|discogram|sacroiliac|stimulator|injection|block|bursa|trigger)/.test(w)?3:1); });
-    // strong laterality/level bonuses
+    var nameL=String(t.name||'').toLowerCase();
+    var hay=(nameL+' '+((t.keywords||[]).join(' '))+' '+String(t.text||'').slice(0,600)).toLowerCase();
+    var score=0;
+    toks.forEach(function(w){
+      var special=/(l[1-5]|s1|si|epidural|facet|medial|branch|rhizotomy|ablation|rfa|esi|transforaminal|interlaminar|caudal|kyphoplasty|discogram|sacroiliac|stimulator|injection|block|bursa|trigger)/.test(w);
+      if(nameL.indexOf(w)>=0) score+=special?4:2;        /* the name IS the identity */
+      else if(hay.indexOf(w)>=0) score+=special?2:1;     /* body text is weak evidence */
+    });
+    // laterality/level bonuses (tie-breakers within a type)
     ['left','right','bilateral','l1','l2','l3','l4','l5','s1','c5','c6','t12'].forEach(function(k){ if(procL.indexOf(k)>=0 && hay.indexOf(k)>=0) score+=2; });
+    // decisive type match/clash on the template NAME
+    TYPES.forEach(function(ty){
+      if(!ty.re.test(nameL)) return;
+      if(procTypes.indexOf(ty.k)>=0) score+=12;
+      else if(procTypes.length) score-=8;
+    });
     return {tpl:t, score:score};
   }).sort(function(a,b){ return b.score-a.score; });
 }
