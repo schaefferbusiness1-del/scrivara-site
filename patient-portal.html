@@ -416,11 +416,35 @@
   function addMsg(text, who){ var d=document.createElement("div"); d.className="msg "+who; d.textContent=text; log.appendChild(d); log.scrollTop=log.scrollHeight; return d; }
   function addSys(text){ addMsg(text,"sys"); }
 
+  /* ---- AI SAFETY FILTER (b249): deflect out-of-scope questions BEFORE they
+     reach the backend. Three hard categories, checked client-side on every
+     send (the server has its own guards; this is the first gate and also the
+     honest UX - an instant, clearly-scripted answer instead of an AI reply):
+       1. EMERGENCY language        -> 911/urgent-care message, always first
+       2. Prescription / refill    -> call the office (chat never handles Rx)
+       3. Someone ELSE's health    -> own-records-only
+       4. New-diagnosis / medical-advice seeking -> records-explanation only
+     Ambiguity fails TOWARD deflection for these patterns; everything else
+     (visits, meds on file, appointments, billing, instructions) passes. */
+  function portalSafetyFilter(q){
+    var s=" "+String(q||"").toLowerCase()+" ";
+    if(/(chest pain|can.?t breathe|trouble breathing|suicid|overdos|unconscious|severe bleeding|stroke|heart attack)/.test(s))
+      return "If this is an emergency, please call 911 or go to the nearest emergency room now. This chat can only explain what's already in your records — it can't help with urgent medical problems.";
+    if(/(refill|renew(al)?\b|new prescription|more (of my )?(med|pill)|(out of|ran out of|running low on) (my )?(med|pill|prescription)|\brx\b)/.test(s))
+      return "I can't handle prescription or refill requests here. Please call the office and the care team will take care of it — this chat can only explain what's already in your records.";
+    if(/(my (husband|wife|spouse|son|daughter|mother|father|mom|dad|child|kid|brother|sister|grandm|grandf|friend|neighbor)|another patient|someone else|other patient|for a family member)/.test(s))
+      return "This portal can only discuss your own records — I can't answer questions about anyone else, even family. They can reach out to their own care team or portal.";
+    if(/(do i have\b|what.?s wrong with me|diagnos(e|is)|is (this|it) (cancer|serious|dangerous|normal)|am i (dying|sick|ok)|should i (take|stop|start|double|skip)|what (disease|condition|illness) (do|could|might))/.test(s))
+      return "I can't give medical advice or make new diagnoses — I can only explain what your care team has already written in your records. For medical questions, please contact the office directly.";
+    return null;
+  }
   function ask(question){
     question=(question||"").trim(); if(!question) return;
     addMsg(question,"me"); $("q").value="";
     var btn=$("sendBtn"); btn.disabled=true;
     var thinking=addMsg("…","ai");
+    var deflect=portalSafetyFilter(question);
+    if(deflect){ thinking.textContent=deflect; btn.disabled=false; return; }
     if(DEMO){
       setTimeout(function(){ thinking.textContent="(Demo mode) Sign in to your real account to get answers grounded in your actual records. Your care team sends you a portal invite with a username and password."; btn.disabled=false; }, 500);
       return;
@@ -823,6 +847,13 @@
   }
 
   function handleGuarded(text){
+    /* b249: EMERGENCY language outranks every other guard - "chest pain and I
+       need a refill" must get the 911 message, not the refill flow. */
+    if(/(chest pain|can.?t breathe|trouble breathing|suicid|overdos|unconscious|severe bleeding|stroke|heart attack)/i.test(String(text||""))){
+      addChatMsg(text,"me");
+      addChatMsg("If this is an emergency, please call 911 or go to the nearest emergency room now. This chat can only explain what's already in your records — it can't help with urgent medical problems.","ai");
+      return true;
+    }
     var key=sensitiveOf(text); if(!key) return false;
     addChatMsg(text,"me");
     var labels={refill:"a refill request",pain:"a pain-medicine question",injection:"an injection-timing question",appointment:"an appointment request",message:"something your care team should handle"};
