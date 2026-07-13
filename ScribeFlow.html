@@ -885,6 +885,11 @@
 </style>
 <style id="mls2Base">
 /* ===== Editorial Calm base layer (2026 redesign) — login + shared primitives ===== */
+/* Pixel-true centering on the login screen: the global scrollbar-gutter:stable
+   reserves 15px on the right even though login never scrolls, pushing the
+   centered card 7px left. Drop the gutter ONLY while the auth screen is the
+   visible surface (the app keeps it to avoid scroll layout shift). */
+html:has(#authScreen:not([style*="none"])){ scrollbar-gutter: auto; }
 .auth-wrap{ background:var(--bg) !important; position:relative; }
 .auth-wrap::before{ content:''; position:absolute; inset:0; background:radial-gradient(700px 400px at 50% -10%, #EAF1EE, transparent 62%); pointer-events:none; }
 body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50% -10%, #1F2721, transparent 62%); }
