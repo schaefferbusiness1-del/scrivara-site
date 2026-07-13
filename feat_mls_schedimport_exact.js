@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.1.0";
+  var VERSION = "si-1.2.0";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -182,7 +182,7 @@
   }
 
   /* map the extension DOM scrape rows {time,name,provider} into the app appt shape */
-  function domApptsFromResp(resp) {
+  function domApptsFromResp(resp, confirmedDay) {
     return safe(function () {
       var a = (resp && resp.appts) || [];
       var out = [];
@@ -192,7 +192,15 @@
         /* FIX 2026-07-01: keep the DOB the extension already supplies (it was mapped to ""
            here, so structured-read imports stored dob-less rows -- same dropped-field class
            as the provider bug). */
-        out.push({ name: nm, dob: String(a[i].dob || ""), date: "", time: normTime(a[i].time || ""), reason: "", provider: String(a[i].provider || "") });
+        out.push({
+          name: nm,
+          dob: String(a[i].dob || ""),
+          mrn: String(a[i].mrn || a[i].athenaId || a[i].athena_id || ""),
+          date: normDate(a[i].date || a[i].appt_date || "") || String(confirmedDay || ""),
+          time: normTime(a[i].start_local || a[i].time || a[i].time_display || ""),
+          reason: String(a[i].reason || ""),
+          provider: String(a[i].provider || "")
+        });
       }
       return out;
     }, []);
@@ -427,14 +435,25 @@
   }
 
   /* ---- day-scoped pull (Today / Tomorrow / any date) for items 2 & 3 ---- */
-  function bridge(type, reqType, timeoutMs) {
+  function bridge(type, reqType, timeoutMs, payload) {
     return new Promise(function (res) {
       var done = false;
       function on(e) { if (!(e.data && e.data.source === "mls-ext")) return; if (e.data.type === type) { done = true; window.removeEventListener("message", on); res(e.data.resp || e.data || null); } }
       window.addEventListener("message", on);
-      safe(function () { window.postMessage({ source: "mls-app", type: reqType }, "*"); });
+      safe(function () {
+        var msg = { source: "mls-app", type: reqType };
+        payload = payload || {};
+        for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; }
+        window.postMessage(msg, "*");
+      });
       setTimeout(function () { if (!done) { window.removeEventListener("message", on); res(null); } }, timeoutMs || 12000);
     });
+  }
+
+  function responseDay(r) {
+    var sd = normDate(r && r.schedDate);
+    if (sd) return sd;
+    return normDate(detectSchedDate((r && r.text) || "")) || "";
   }
 
   function pull(opts) {
@@ -449,17 +468,44 @@
     onStatus("Looking for MLS Assist...", "");
     return bridge("mlsPong", "mlsPing", 3500).then(function (pong) {
       if (!pong) { onStatus("MLS Assist isn't responding. Enable it and open your athenaOne Day schedule, then try again.", "err"); return { created: 0, reason: "no-ext" }; }
-      onStatus("Reading your athenaOne Day schedule...", "");
-      return bridge("mlsAppScheduleResult", "mlsAppPullSchedule", 30000).then(function (r) {
+      onStatus("Opening " + date + " in athenaOne...", "");
+      return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
+        var navDay = normDate(nav && nav.schedDate);
+        if (nav && nav.ok === false) {
+          onStatus((nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
+          return { created: 0, reason: "nav-failed" };
+        }
+        if (navDay && navDay !== date) {
+          onStatus("Athena opened " + navDay + " instead of " + date + ". Nothing was imported.", "err");
+          return { created: 0, reason: "wrong-day" };
+        }
+        onStatus("Reading your athenaOne Day schedule...", "");
+        return bridge("mlsAppScheduleResult", "mlsAppPullSchedule", 30000).then(function (r) {
         if (!r || !r.ok || !r.text) { onStatus((r && r.error) || "Couldn't read your athenaOne tab. Open your Day schedule and try again.", "err"); return { created: 0, reason: "no-read" }; }
+        var readDay = responseDay(r) || navDay;
+        if (!readDay) {
+          onStatus("Couldn't verify the date shown in athenaOne. Nothing was imported.", "err");
+          return { created: 0, reason: "unverified-day" };
+        }
+        if (readDay !== date) {
+          onStatus("Athena is showing " + readDay + " instead of " + date + ". Nothing was imported.", "err");
+          return { created: 0, reason: "wrong-day" };
+        }
         lastResp = r;
-        safe(function () { window.__schedRaw = { text: r.text || "", url: r.url || "", frames: r.frames }; });
+        safe(function () { window.__schedRaw = { text: r.text || "", url: r.url || "", frames: r.frames, appts: r.appts || [], schedDate: readDay }; });
         onStatus("Finding patients on " + date + "...", "");
-        return Promise.resolve(safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(r.text) : []; }, [])).then(function (parsed) {
+        /* Exact structured DOM rows are authoritative for time. The prior AI-first path
+           could turn a real appointment into a guessed time (including the repeated 6 PM
+           symptom). Only fall back to text parsing when the extension supplied no rows. */
+        var exactRows = domApptsFromResp(r, readDay);
+        var parsedP = exactRows.length
+          ? Promise.resolve(exactRows)
+          : Promise.resolve(safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(r.text) : []; }, []));
+        return parsedP.then(function (parsed) {
           parsed = Array.isArray(parsed) ? parsed : [];
           /* keep each appt OWN parsed date; importAppts scopes to `date` and files each
              appointment on its real day -- no whole-week-onto-one-day smear. */
-          var rows = parsed.map(function (a) { return { name: a.name, dob: a.dob || "", date: a.date || "", time: a.time || "", reason: a.reason || "" }; });
+          var rows = parsed.map(function (a) { return { name: a.name, dob: a.dob || "", mrn: a.mrn || a.athenaId || a.athena_id || "", date: a.date || readDay, time: a.start_local || a.time || a.time_display || "", reason: a.reason || "", provider: a.provider || "" }; });
           return importAppts(rows, { date: date, scopeDate: date, provider: opts.provider }).then(function (res) {
             if (res.created > 0) onStatus("Imported " + res.created + " appointment" + (res.created === 1 ? "" : "s") + " for " + date + ".", "ok");
             else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
@@ -470,6 +516,7 @@
             safe(function () { if (isFn(window._pullAllHistories)) window._pullAllHistories(false); });
             return res;
           });
+        });
         });
       });
     });
