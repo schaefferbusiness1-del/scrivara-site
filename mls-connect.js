@@ -30541,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b257';
+  window.__MLS_AV = window.__MLS_AV || 'b258';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b257';
+  var MLS_APP_BUILD='2026-07-13-b258';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -39273,7 +39273,7 @@
  * ensure pass. Reversible: revert(). ES5. */
 (function () {
   if (window.__mlsProfCalm) return;
-  var api = { installed: true, version: 'pf2-1.0.0' };
+  var api = { installed: true, version: 'pf2-1.1.0' };
   window.__mlsProfCalm = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
 
@@ -39287,7 +39287,17 @@
     '.pf2-b{display:none;padding:4px 10px 10px;}',
     '.pf2-sec.open .pf2-b{display:block;}',
     '.pf2-b > *{margin-top:8px !important;}',
-    '@media (prefers-reduced-motion: reduce){.pf2-h .ar{transition:none;}}'
+    '@media (prefers-reduced-motion: reduce){.pf2-h .ar{transition:none;}}',
+    /* pf2-1.1.0 (b258): ONE summary - at-a-glance / visit-context / key-risks
+       live INSIDE the prep-summary card as compact rows instead of separate
+       stacked cards (owner: merge the summary duplication). */
+    '#pf2SumExtra{margin:10px 0 2px;display:flex;flex-direction:column;gap:8px;}',
+    '#pf2SumExtra > *{margin:0 !important;border:1px solid #EFEDE6 !important;border-radius:10px !important;box-shadow:none !important;background:#FCFBF8 !important;}',
+    '#pf2SumExtra #profAtGlance{padding:7px 11px !important;font-size:12.5px !important;}',
+    /* pf2-1.1.0: visit-detail calm leftovers - the AI-summary box was old-blue
+       tinted; the detail modal title goes serif per the calm modal language. */
+    '.mlsvd-ai{background:#F6FBF8 !important;border-color:#D8E5DE !important;}',
+    '.mlsvnd-ttl{font-family:Newsreader,Georgia,serif !important;font-weight:600 !important;font-size:17px !important;}'
   ].join('\n');
   (document.head || document.documentElement).appendChild(st);
 
@@ -39323,13 +39333,34 @@
     return null;
   }
 
+  /* pf2-1.1.0 (b258): merge the summary duplication - at-a-glance, visit
+     context and key risks become compact rows INSIDE the prep-summary card
+     (DOM moves; their Edit handlers are inline globals and survive). */
+  function mergeSummaries(pc) {
+    try {
+      var sum = $('mlsEpSummaryBox');
+      if (!sum || sum.parentElement !== pc) return;
+      var extra = $('pf2SumExtra');
+      if (!extra) {
+        extra = document.createElement('div'); extra.id = 'pf2SumExtra';
+        var hdr = sum.firstElementChild;
+        if (hdr && hdr.nextSibling) sum.insertBefore(extra, hdr.nextSibling); else sum.appendChild(extra);
+      }
+      ['profAtGlance', 'mlsEpTopBox', 'mlsEpRisksBox'].forEach(function (id) {
+        var el = $(id);
+        if (el && el.parentElement === pc) extra.appendChild(el);
+      });
+    } catch (e) {}
+  }
   function ensure() {
     try {
       var pc = $('profileCard');
       if (!pc || pc.offsetParent === null) return;
+      mergeSummaries(pc);
       /* anchor: sections sit AFTER the good top block. Anchor = the risks box if
          present, else the prep-summary box, else the at-glance line. */
       var anchor = $('mlsEpRisksBox') || $('mlsEpSummaryBox') || $('profAtGlance');
+      if (anchor && anchor.parentElement !== pc) anchor = $('mlsEpSummaryBox');
       if (!anchor || anchor.parentElement !== pc) return;
       var before = anchor.nextSibling;
       for (var i = 0; i < SECS.length; i++) { if (!$(SECS[i].id)) mkSec(SECS[i], pc, before); }
