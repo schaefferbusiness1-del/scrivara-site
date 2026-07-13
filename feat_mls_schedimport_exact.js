@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.2.0";
+  var VERSION = "si-1.3.0";
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
@@ -282,7 +282,7 @@
 
     var token = bkToken(), base = bkBase();
     var pts = (callG("getPatients") || []) || [];
-    var existingKeys = {};
+    var existingKeys = {}, existingRows = {};
 
     return safe(function () {
       return fetch(base + "/api/appointments", { headers: { Authorization: "Bearer " + token } })
@@ -293,13 +293,17 @@
         var lt = ""; safe(function () { if (x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); });
         var ld = x.appt_date || ""; if (!ld) safe(function () { if (x.start_at) { var dd = new Date(x.start_at); ld = dd.getFullYear() + "-" + ("0" + (dd.getMonth() + 1)).slice(-2) + "-" + ("0" + dd.getDate()).slice(-2); } });
         existingKeys[apptKey(x.name, ld, lt)] = 1;
-        existingKeys["D:" + String(x.name || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + ld] = 1;
+        var existingDayKey = "D:" + String(x.name || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + ld;
+        existingKeys[existingDayKey] = 1;
+        if (!existingRows[existingDayKey]) existingRows[existingDayKey] = x;
         var linked = null;
         safe(function () { linked = pts.find(function (p) { return String(p && p.id || "") === String(x.patient_external_id || ""); }); });
-        existingKeys["I:" + importKey(linked || x, ld)] = 1;
+        var existingIdentityKey = "I:" + importKey(linked || x, ld);
+        existingKeys[existingIdentityKey] = 1;
+        if (!existingRows[existingIdentityKey]) existingRows[existingIdentityKey] = x;
       });
 
-      var created = 0, skipped = 0, failed = 0, days = {};
+      var created = 0, repaired = 0, skipped = 0, failed = 0, days = {};
       var onEach = isFn(opts.onEach) ? opts.onEach : null;   /* task-1: per-appointment status callback */
       var chain = Promise.resolve();
       appts.forEach(function (a) {
@@ -312,8 +316,35 @@
           var key = apptKey(name, date, nt);
           var dayKey = "D:" + name.toLowerCase().replace(/\s+/g, " ") + "|" + date;
           var ledgerKey = importKey(a, date);
+          var desiredStart = /^\d\d:\d\d$/.test(nt) ? wallToUtc(date, nt) : null;
           if (onEach) safe(function () { onEach("dedupe", { name: name }); });
           if (existingKeys[key] || existingKeys[dayKey] || existingKeys["I:" + ledgerKey]) {
+            var oldRow = existingRows[dayKey] || existingRows["I:" + ledgerKey] || null;
+            /* Repair rows imported by older builds with start_at:null. Their renderer
+               used to turn that blank into an epoch-derived 6/7 PM label. A verified
+               structured Athena time may fill the missing MLS field, but this NEVER
+               overwrites a real existing appointment time. */
+            if (oldRow && oldRow.id != null && desiredStart && !String(oldRow.start_at || "").trim()) {
+              if (onEach) safe(function () { onEach("repair", { name: name }); });
+              return fetch(base + "/api/appointments/" + encodeURIComponent(oldRow.id) + "/update", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+                body: JSON.stringify({ appt_date: date, start_at: desiredStart })
+              }).then(function (rr) {
+                if (rr.ok) {
+                  oldRow.start_at = desiredStart;
+                  markDone(ledgerKey, { patientId: oldRow.patient_external_id || "", date: date });
+                  repaired++; days[date] = (days[date] || 0) + 1;
+                  if (onEach) safe(function () { onEach("repaired", { name: name }); });
+                } else {
+                  failed++;
+                  if (onEach) safe(function () { onEach("error", { name: name, error: "HTTP " + rr.status }); });
+                }
+              }).catch(function () {
+                failed++;
+                if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); });
+              });
+            }
             markDone(ledgerKey, { date: date }); skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return;
           }
           var owner = claim(ledgerKey, { date: date });
@@ -333,7 +364,7 @@
             if (dirty) safe(function () { window.upsertPatient(existing); });
           }
 
-          var startIso = null; if (/^\d\d:\d\d$/.test(nt)) startIso = wallToUtc(date, nt);
+          var startIso = desiredStart;
           /* FIX 2026-07-01: carry the per-appointment PROVIDER into storage. The extension
              supplies it (a.provider e.g. "Matthew Schaeffer, MD") and the backend has a
              provider column, but it was being dropped here -> every stored appt had provider
@@ -392,7 +423,7 @@
           safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.reapply)) window.__mlsPick.reapply(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
-          return { created: created, skipped: skipped, failed: failed, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "" };
+          return { created: created, repaired: repaired, skipped: skipped, failed: failed, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "" };
         });
       });
     });
@@ -507,7 +538,12 @@
              appointment on its real day -- no whole-week-onto-one-day smear. */
           var rows = parsed.map(function (a) { return { name: a.name, dob: a.dob || "", mrn: a.mrn || a.athenaId || a.athena_id || "", date: a.date || readDay, time: a.start_local || a.time || a.time_display || "", reason: a.reason || "", provider: a.provider || "" }; });
           return importAppts(rows, { date: date, scopeDate: date, provider: opts.provider }).then(function (res) {
-            if (res.created > 0) onStatus("Imported " + res.created + " appointment" + (res.created === 1 ? "" : "s") + " for " + date + ".", "ok");
+            if (res.created > 0 || res.repaired > 0) {
+              var parts = [];
+              if (res.created > 0) parts.push("added " + res.created + " appointment" + (res.created === 1 ? "" : "s"));
+              if (res.repaired > 0) parts.push("repaired " + res.repaired + " missing time" + (res.repaired === 1 ? "" : "s"));
+              onStatus(parts.join(" and ") + " for " + date + ".", "ok");
+            }
             else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
             else onStatus("No patients scheduled for " + date + " in your open athenaOne tab. Open that day Day schedule (the patient grid) and pull again.", "err");
             /* also pull each patient's chart history in the background (non-blocking) */
