@@ -5823,17 +5823,9 @@
     try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
     run();
     var n = 0; _iv = setInterval(function () { run(); if (++n > 20) clearInterval(_iv); }, 900);
-    /* the engine rewrites #ez3HomeStatus via textContent (characterData - the
-       childList observer never fires), so the duplicate-count trim needs its
-       own steady cadence; write-only-when-matched keeps it free */
-    setInterval(function () {
-      try {
-        var hs = document.getElementById('ez3HomeStatus');
-        if (hs && /\d+\s*\/\s*\d+ seen today/.test(hs.textContent || '')) {
-          hs.textContent = hs.textContent.replace(/\s*[·•]?\s*\d+\s*\/\s*\d+ seen today\s*[·•]?\s*/, ' · ');
-        }
-      } catch (e) {}
-    }, 1200);
+    /* b233: the duplicate seen-count is now removed at the SOURCE (homeStatus in
+       every engine copy). The b232 trim interval fought the engine's 700ms status
+       rewrite and made the line flip between two texts - deleted, nothing to trim. */
   }
   window.__mlsEz3Flow = {
     installed: true, version: VERSION,
@@ -16565,7 +16557,6 @@
     var seen = rows.filter(isSeen).length, g = guardInfo();
     var bits = [];
     bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
-    bits.push(seen + ' / ' + rows.length + ' seen today');
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
     return bits.join(' · ');
   }
@@ -20712,7 +20703,6 @@
     var seen = rows.filter(isSeen).length, g = guardInfo();
     var bits = [];
     bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
-    bits.push(seen + ' / ' + rows.length + ' seen today');
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
     return bits.join(' · ');
   }
@@ -22630,7 +22620,6 @@
     var seen = rows.filter(isSeen).length, g = guardInfo();
     var bits = [];
     bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
-    bits.push(seen + ' / ' + rows.length + ' seen today');
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
     return bits.join(' · ');
   }
@@ -24386,7 +24375,6 @@
     var seen = rows.filter(isSeen).length, g = guardInfo();
     var bits = [];
     bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
-    bits.push(seen + ' / ' + rows.length + ' seen today');
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
     return bits.join(' · ');
   }
@@ -25947,7 +25935,6 @@
     var seen = rows.filter(isSeen).length, g = guardInfo();
     var bits = [];
     bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
-    bits.push(seen + ' / ' + rows.length + ' seen today');
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
     return bits.join(' · ');
   }
@@ -30338,7 +30325,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b232';
+  window.__MLS_AV = window.__MLS_AV || 'b233';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30652,7 +30639,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b232';
+  var MLS_APP_BUILD='2026-07-13-b233';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
