@@ -5497,7 +5497,7 @@
     '#mlsEz3 .ez3fl-back:hover{background:#F4F2EC;}',
     '#mlsEz3 .ez3fl-staffbadge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#B07636;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:5px;padding:2px 7px;margin-left:8px;vertical-align:2px;}',
     /* hero record CTA: the follow-through from "patient picked" to "recording" */
-    '#mlsEz3 .ez3fl-record{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0;}',
+    '#mlsEz3 .ez3fl-record{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin:2px 0 0;}',
     '#mlsEz3 .ez3fl-recbtn{display:inline-flex;align-items:center;gap:10px;background:#204034;border:1px solid #204034;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;padding:13px 22px;box-shadow:0 1px 2px rgba(20,33,28,.10);transition:background .16s ease;}',
     '#mlsEz3 .ez3fl-recbtn:hover{background:#2E6A4B;border-color:#2E6A4B;}',
     '#mlsEz3 .ez3fl-recbtn .dot{width:9px;height:9px;border-radius:50%;background:#8FD8BE;flex:0 0 auto;}',
@@ -30598,7 +30598,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b195';
+  var MLS_APP_BUILD='2026-07-13-b196';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
