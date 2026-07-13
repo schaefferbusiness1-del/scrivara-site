@@ -28604,6 +28604,9 @@
     var list = [];
     try { list = (window.__mlsWhosNext && window.__mlsWhosNext.activeList && window.__mlsWhosNext.activeList()) || []; } catch (e) {}
     if (!list.length) { try { list = (window._heroTodayList || []).map(function (a) { return { name: a.name, time: a.time || "", provider: a.provider || "" }; }); } catch (e) {} }
+    /* b255: owner-marked staff never count in the day-progress strip (this module
+       is the ACTIVE .mdp-txt writer - it rewrites the legacy text on mutation) */
+    try { if (window.__mlsStaffMark) list = list.filter(function (a) { return !window.__mlsStaffMark.isStaff(a && a.name); }); } catch (eSm) {}
     var me = myName(); var withProv = list.filter(function (a) { return S(a.provider).trim(); });
     if (me && withProv.length) {
       var mine = list.filter(function (a) { return a.provider && provMatch(a.provider, me); });
@@ -30538,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b254';
+  window.__MLS_AV = window.__MLS_AV || 'b255';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30852,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b254';
+  var MLS_APP_BUILD='2026-07-13-b255';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
