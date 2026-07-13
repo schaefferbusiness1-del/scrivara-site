@@ -24,8 +24,8 @@
     st.id = CSS_ID;
     st.textContent = [
       /* legacy strip: hidden until asked for; its shouty label retires */
-      '#mls-sg-root{display:none;}',
-      'body.sg2-open #mls-sg-root{display:block;}',
+      '#mls-sg-root{display:none !important;}',
+      'body.sg2-open #mls-sg-root{display:block !important;}',
       '#mls-sg-root .stp-sg-lbl{display:none !important;}',
       /* the disclosure row */
       '#' + TOGGLE_ID + '{display:flex;align-items:center;gap:8px;width:100%;margin:14px 0 0;background:transparent;',
