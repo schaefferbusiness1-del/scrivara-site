@@ -295,6 +295,22 @@
       var logo=mk('div','', '<span style="width:32px;height:32px;border-radius:9px;background:#204034;display:flex;align-items:center;justify-content:center;flex:none">'+LOGO_SVG+'</span>'+
         '<span style="font-family:\'Newsreader\',Georgia,serif;font-weight:600;font-size:18px;letter-spacing:-.01em;color:var(--ink)">MLS Scribe</span>');
       logo.id='mlsRdRailLogo'; navWrap.appendChild(logo);
+      /* one-click collapse: rail becomes an on-demand overlay (burger reopens) */
+      var col=mk('button','','&#10094;'); col.id='mlsRdCollapse'; col.type='button';
+      col.title='Hide the sidebar - the menu button at top-left brings it back';
+      if(document.documentElement.classList.contains('mls-rail-collapsed')) col.innerHTML='&#128204;';
+      col.addEventListener('click',function(e){
+        try{
+          e.stopPropagation();
+          var h=document.documentElement;
+          var collapsed=h.classList.toggle('mls-rail-collapsed');
+          h.classList.remove('mls-rail-open'); railSlide(false);
+          col.innerHTML=collapsed?'&#128204;':'&#10094;';
+          col.title=collapsed?'Pin the sidebar back in place':'Hide the sidebar - the menu button at top-left brings it back';
+          try{ localStorage.setItem('mls_rail_collapsed',collapsed?'1':'0'); }catch(_){}
+        }catch(_){}
+      });
+      logo.appendChild(col);
       hdr.appendChild(navWrap);
 
       /* rail foot: settings + user chip + sign out */
@@ -506,6 +522,33 @@
 "  body.mls-redesign #ez3Wrap > #ez3HomeStatus{ grid-row:7 !important; }",
 "}",
 "",
+"/* ---- collapsible rail: one click hides it; the burger brings it back as an overlay ---- */",
+"#mlsRdNav{ transition:transform .22s ease; }",
+"html.mls-rail-collapsed body.mls-rd-shell{ padding-left:0 !important; }",
+"html.mls-rail-collapsed #mlsRdNav{ transform:translateX(-105%); }",
+"html.mls-rail-collapsed.mls-rail-open #mlsRdNav{ transform:none; box-shadow:0 24px 70px -18px rgba(20,33,28,.35); }",
+"html.mls-rail-collapsed #mlsRdRailBtn{ display:flex !important; }",
+"html.mls-rail-collapsed.mls-rail-open #mlsRdScrim{ display:block; }",
+"#mlsRdCollapse{ margin-left:auto; width:26px; height:26px; border-radius:8px; border:1px solid transparent; background:transparent; color:#A6AEA6; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:13px; flex:none; }",
+"#mlsRdCollapse:hover{ background:#F0EEE7; color:#1A211C; border-color:#E4E1D8; }",
+"@media (max-width:760px){ #mlsRdCollapse{ display:none; } }",
+"",
+"/* ---- motion layer: calm micro-interactions everywhere ---- */",
+"@media (prefers-reduced-motion: no-preference){",
+"  body.mls-redesign .card{ transition:box-shadow .18s ease; }",
+"  body.mls-redesign .card:hover{ box-shadow:0 2px 12px rgba(20,33,28,.07); }",
+"  #mlsRdNav .navtab{ transition:background .15s ease, color .15s ease; }",
+"  body.mls-redesign .modal-bg{ animation:mlsRdFade .18s ease; }",
+"  body.mls-redesign .modal-bg > *{ animation:mlsRdRise .2s ease; }",
+"  body.mls-redesign #toast{ transition:opacity .25s ease, transform .25s ease; }",
+"  body.mls-redesign button:not(.ez3fl-recbtn){ transition:background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .07s ease; }",
+"  #mlsFabMenu button{ animation:mlsRdRise .18s ease backwards; }",
+"  #mlsTbMenuPanel.open{ animation:mlsRdRise .16s ease; }",
+"  #mlsEz3 .ez3fl-daypop, .onf-fillbox select, .onf-fillbox input{ transition:border-color .15s ease, box-shadow .15s ease; }",
+"}",
+"@keyframes mlsRdFade{ from{ opacity:0; } }",
+"@keyframes mlsRdRise{ from{ opacity:0; transform:translateY(6px); } }",
+"",
 "/* ---- patient banner, elevated (owner: likes the concept - push it further) ---- */",
 "body.mls-redesign #mlsCtxBar{ background:#fff !important; border:1px solid #E7E5DD !important; border-radius:16px !important;",
 "  box-shadow:0 1px 2px rgba(20,33,28,.05) !important; padding:12px 16px !important; gap:10px 12px !important; align-items:center !important; }",
@@ -591,6 +634,7 @@
   }
   function boot(){
     injectFonts();
+    try{ if(localStorage.getItem('mls_rail_collapsed')==='1') document.documentElement.classList.add('mls-rail-collapsed'); }catch(e){}
     try{ _obs=new MutationObserver(function(){ schedule(); }); }catch(e){}
     wrapShowViewForTitle();
     applyAll();

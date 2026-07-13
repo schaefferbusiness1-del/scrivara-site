@@ -471,6 +471,30 @@
     return [];
   }
   var OTHER = '__onf_other__';
+  /* onf-2.0.0 (owner HIGH 2026-07-13): a template may specify its OWN standard
+     value for a field ("Skin prep: Chlorhexidine" as concrete text). The
+     template is the source of truth where it speaks - its value outranks any
+     generic guess (but identity/chart/doctor-saved values still come first,
+     since they are about THIS patient). */
+  function templateDefault(label, row) {
+    try {
+      var tpl = (row && row.tplId && typeof window.getTemplateById === 'function') ? window.getTemplateById(row.tplId) : null;
+      if (!tpl || !tpl.text) return '';
+      var words = S(label).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 2; });
+      if (!words.length) return '';
+      var lines = String(tpl.text).split(/\n/);
+      for (var i = 0; i < lines.length; i++) {
+        var m = lines[i].match(/^\s*([A-Za-z][A-Za-z +\/&()-]{2,42}):\s*(.+?)\s*$/);
+        if (!m) continue;
+        var lab = m[1].toLowerCase(), val = m[2];
+        if (!val || /\[\s*fill/i.test(val) || /^[_.\s-]+$/.test(val) || val.length > 80) continue;
+        var all = true;
+        for (var w = 0; w < words.length; w++) { if (lab.indexOf(words[w]) < 0) { all = false; break; } }
+        if (all) return val;
+      }
+    } catch (e) {}
+    return '';
+  }
   function buildOptions(label, cur) {
     var key = S(label).toLowerCase();
     var prev = safe(function () { return (typeof window.getOpFieldVals === 'function') ? window.getOpFieldVals(key) : []; }, []) || [];
@@ -507,7 +531,11 @@
         else {
           var hm = historyMed(lab, row);                                          /* from the patient's chart history */
           if (hm) { vals[key] = hm; meta[key] = 'history'; saveFillMemValue(row, key, hm); }
-          else { var sd = smartDefault(lab, spec0, row); if (sd) { vals[key] = sd; meta[key] = 'suggested'; } else meta[key] = 'blank'; }
+          else {
+            var td = templateDefault(lab, row);                                   /* the template's OWN standard value */
+            if (td) { vals[key] = td; meta[key] = 'template'; }
+            else { var sd = smartDefault(lab, spec0, row); if (sd) { vals[key] = sd; meta[key] = 'suggested'; } else meta[key] = 'blank'; }
+          }
         }
       } else meta[key] = vals[key] ? 'set' : 'blank';
     }
@@ -545,6 +573,7 @@
       var tag = kind === 'suggested' ? ' <span class="onf-sug">suggested</span>'
         : kind === 'saved' ? ' <span class="onf-saved">saved</span>'
         : kind === 'history' ? ' <span class="onf-hist">from chart</span>'
+        : kind === 'template' ? ' <span class="onf-hist">from template</span>'
         : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
       return '<label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>';
     }).join('');
