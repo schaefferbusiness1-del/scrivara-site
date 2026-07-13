@@ -192,10 +192,13 @@
     var anchor = el('calNewApptBox') || card.lastElementChild;
     var row = document.createElement('div');
     row.id = 'cpRow';
-    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;padding:10px;background:#f6f9ff;border:1px solid #d9e5f7;border-radius:12px';
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;padding:10px;background:#FCFBF8;border:1px solid #E7E5DD;border-radius:12px';
+    /* Editorial Calm consolidation (2026-07-13, RS#7): the provider CHECKBOX
+       segment is gone — provider filtering has exactly ONE surface now (the
+       calendar_polish roster chips + the native #calProvFilter select). Two
+       simultaneous filter mechanisms could blank the grid + show a false
+       "no appointments" state. Range/procedure/pull-plan features stay. */
     row.innerHTML =
-      '<b style="font-size:12.5px">Providers:</b><span id="cpProvBox" style="display:inline-flex;gap:10px;flex-wrap:wrap"></span>' +
-      '<span style="border-left:1px solid #d9e5f7;height:20px"></span>' +
       '<b style="font-size:12.5px">Range:</b>' +
       '<input type="date" id="cpFrom" style="' + CSS + ';cursor:auto" title="From">' +
       '<span style="font-size:12px;color:#69758c">to</span>' +
@@ -488,6 +491,7 @@
   window.__mlsCalPro = {
     installed: true, version: VERSION, state: STATE, cfg: CFG,
     selProviders: function () { return selIds(); },
+    clearSelection: function () { SEL = {}; try { renderProvBoxes(); } catch (e) {} try { rerender(); } catch (e) {} },
     setRunner: function (fn) { RUNNER = (typeof fn === 'function') ? fn : null; paintPull(); },
     getPlan: function () { return PULL.plan.slice(); },
     pullRunning: function () { return !!PULL.running; },

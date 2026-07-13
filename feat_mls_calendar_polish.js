@@ -160,6 +160,10 @@
   }
   function setFilter(val) {
     var pf = filterEl(); if (!pf) return;
+    /* RS#7: exactly one provider-filter mode may be active — drop any calpro
+       selection before the chip choice takes effect (belt-and-suspenders; the
+       calpro checkbox UI itself no longer renders as of 2026-07-13). */
+    try { if (window.__mlsCalPro && window.__mlsCalPro.installed && typeof window.__mlsCalPro.clearSelection === 'function' && window.__mlsCalPro.selProviders && window.__mlsCalPro.selProviders().length) window.__mlsCalPro.clearSelection(); } catch (e) {}
     if (val && !optionExists(pf, val)) {
       var o = document.createElement('option'); o.value = val;
       o.textContent = nameOf(val) || val; pf.appendChild(o);
