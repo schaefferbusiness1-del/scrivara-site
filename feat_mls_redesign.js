@@ -348,8 +348,10 @@
     [].slice.call(vt.children).forEach(function(b){ var on=/mlsVtOn/.test(b.className);
       b.style.cssText='display:flex;align-items:center;height:30px;padding:0 14px;border:0;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;'+(on?'background:#fff;color:#1A211C;box-shadow:0 1px 3px rgba(20,33,28,.15);':'background:transparent;color:#79837C;'); }); }catch(e){} }
   function styleSearch(se){ try{ se.style.cssText=''; se.classList.add('mlsRdSearch'); try{se.placeholder='Find anything — patients, notes, codes…';}catch(e){} }catch(e){} }
-  function styleMenu(me){ try{ me.style.cssText='height:38px;padding:0 14px;border-radius:10px;border:1px solid #E4E1D8;background:var(--card);color:#55605A;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:8px';
-    if(!/mlsRdMenuIco/.test(me.innerHTML)){ me.innerHTML='<span class="mlsRdMenuIco" style="display:flex">'+MENU_ICON+'</span>Menu'; } }catch(e){} }
+  function styleMenu(me){ try{ me.style.cssText='height:38px;padding:0 16px;border-radius:10px;border:1px solid #E4E1D8;background:var(--card);color:#55605A;font-weight:600;font-size:13px;line-height:1;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;justify-content:center';
+    /* text-only label: the hamburger icon pushed "Menu" right of the button's
+       optical center (owner precision note) — plain centered text reads calm */
+    if(me.textContent.replace(/\s+/g,'')!=='Menu'){ me.textContent='Menu'; } }catch(e){} }
 
   function reStyleToggleState(){ var vt=$('mlsViewToggle'); if(vt&&vt.parentElement&&vt.parentElement.id==='mlsRdToggleSlot') styleToggle(vt); }
 
@@ -427,6 +429,12 @@
 "body.mls-redesign .mlsRdAnaGrip:hover{ opacity:.9; }",
 "body.mls-redesign .mlsRdAnaGrid > .card > h2, body.mls-redesign .mlsRdAnaGrid > .card > h3{ cursor:move; user-select:none; }",
 "body.mls-redesign .mlsRdAnaDragging{ opacity:.55 !important; outline:2px dashed #2E6A4B !important; }",
+"",
+"/* ---- text-centering precision: kill the 1px-low baseline rounding on pills ---- */",
+"body.mls-redesign #mlsDayHistBtn, body.mls-redesign #mlsAddPtLauncher, body.mls-redesign #mlsTabPickerChip,",
+"body.mls-redesign #mlsEz3 .ez3-sm, body.mls-redesign #mlsEz3 .ez3-big, body.mls-redesign #mlsEz3 #ez3Adv{",
+"  line-height:1 !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; }",
+"body.mls-redesign #mlsEz3 .ez3-big{ display:flex !important; flex-direction:column !important; }",
 "",
 "/* ---- bottom-right FAB column: one aligned, non-overlapping stack ---- */",
 "body.mls-rd-shell #mlsTabPickerChip{ right:16px !important; bottom:16px !important; left:auto !important; }",
