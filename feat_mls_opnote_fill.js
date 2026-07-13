@@ -446,6 +446,41 @@
      value, or a safe smart-default best-guess) and the note is rendered from
      raw+values, so a field can be changed any number of times with one click and
      the note re-renders correctly (no value collisions, no token loss). */
+  /* onf-1.9.0 (owner directive): every best-guess field is a DROPDOWN - the
+     #1 guess pre-selected, guesses #2/#3 as alternatives, the doctor's own
+     previously-used values above the generic ones, and "Other (type custom)"
+     last. Never type from scratch in the common case. */
+  function altGuesses(label) {
+    var l = S(label).toLowerCase();
+    var A = [
+      [/local anesthetic/, ['1% lidocaine, 3 mL', '2% lidocaine, 2 mL', '0.25% bupivacaine, 2 mL']],
+      [/steroid/, ['Dexamethasone 10 mg', 'Triamcinolone (Kenalog) 40 mg', 'Methylprednisolone (Depo-Medrol) 40 mg']],
+      [/anesthetic.*volume|injectate/, ['0.25% bupivacaine, 1 mL', '0.5% bupivacaine, 1 mL', '1% lidocaine, 1 mL']],
+      [/needle/, ['22-gauge', '25-gauge', '20-gauge']],
+      [/contrast/, ['1 mL', '2 mL', '0.5 mL']],
+      [/interval|follow.?up/, ['6 weeks', '2 weeks', '3 months']],
+      [/position/, ['Prone', 'Supine', 'Lateral decubitus']],
+      [/sedation/, ['None - local anesthesia only', 'MAC sedation', 'Oral anxiolysis']],
+      [/imaging|guidance/, ['Fluoroscopy', 'Ultrasound', 'CT guidance']],
+      [/prep|antisep/, ['Chlorhexidine', 'Betadine (povidone-iodine)', 'Alcohol']],
+      [/complication/, ['None', 'Vasovagal episode - resolved with observation', 'See note']],
+      [/blood loss|\bebl\b/, ['Minimal', 'None', '< 5 mL']],
+      [/laterality|\bside\b/, ['Left', 'Right', 'Bilateral']]
+    ];
+    for (var i = 0; i < A.length; i++) if (A[i][0].test(l)) return A[i][1].slice();
+    return [];
+  }
+  var OTHER = '__onf_other__';
+  function buildOptions(label, cur) {
+    var key = S(label).toLowerCase();
+    var prev = safe(function () { return (typeof window.getOpFieldVals === 'function') ? window.getOpFieldVals(key) : []; }, []) || [];
+    var opts = [], seen = {};
+    function add(v) { v = S(v).trim(); if (!v || seen[v.toLowerCase()]) return; seen[v.toLowerCase()] = 1; opts.push(v); }
+    add(cur);
+    prev.slice(0, 3).forEach(add);       /* the doctor's own answers first */
+    altGuesses(label).forEach(add);      /* then the standard alternatives */
+    return opts;
+  }
   function buildFillBox(ta) {
     var idx = ta.id.replace('opPrepNote_', '');
     var row = safe(function () { return (window._opPrep || [])[+idx]; }, null);
@@ -494,9 +529,18 @@
         var opsHtml = spec.opts.slice();
         if (cur && opsHtml.indexOf(cur) < 0) opsHtml.push(cur);
         ctrl = '<select data-onf-idx="' + idx + '" data-onf-label="' + esc(label) + '" id="' + fid + '">' +
-          opsHtml.map(function (o) { return '<option value="' + esc(o) + '"' + (S(o) === S(cur) ? ' selected' : '') + '>' + (o ? esc(o) : '— pick —') + '</option>'; }).join('') + '</select>';
+          opsHtml.map(function (o) { return '<option value="' + esc(o) + '"' + (S(o) === S(cur) ? ' selected' : '') + '>' + (o ? esc(o) : '— pick —') + '</option>'; }).join('') +
+          '<option value="' + OTHER + '">Other (type custom)…</option></select>';
       } else {
-        ctrl = '<input type="text" data-onf-idx="' + idx + '" data-onf-label="' + esc(label) + '" id="' + fid + '" value="' + esc(cur) + '" placeholder="type value">';
+        var choices = buildOptions(label, cur);
+        if (choices.length) {
+          ctrl = '<select data-onf-idx="' + idx + '" data-onf-label="' + esc(label) + '" id="' + fid + '">' +
+            (cur ? '' : '<option value="" selected>— pick —</option>') +
+            choices.map(function (o) { return '<option value="' + esc(o) + '"' + (S(o) === S(cur) ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') +
+            '<option value="' + OTHER + '">Other (type custom)…</option></select>';
+        } else {
+          ctrl = '<input type="text" data-onf-idx="' + idx + '" data-onf-label="' + esc(label) + '" id="' + fid + '" value="' + esc(cur) + '" placeholder="type value">';
+        }
       }
       var tag = kind === 'suggested' ? ' <span class="onf-sug">suggested</span>'
         : kind === 'saved' ? ' <span class="onf-saved">saved</span>'
@@ -511,17 +555,36 @@
     if (!existing) ta.parentNode.insertBefore(box, ta);
     var ctrls = box.querySelectorAll('[data-onf-label]');
     for (var i = 0; i < ctrls.length; i++) {
-      (function (ctrl) {
-        var handler = function () {
+      (function wire(ctrl) {
+        function applyVal(el) {
           if (!row) return;
-          var label = ctrl.getAttribute('data-onf-label'), val = S(ctrl.value).trim();
+          var label = el.getAttribute('data-onf-label'), val = S(el.value).trim();
           row._onfVals = row._onfVals || {}; row._onfVals[label.toLowerCase()] = val;
-          saveFillMemValue(row, label.toLowerCase(), val);   /* onf-1.7.0: remember for this patient's future notes */
+          saveFillMemValue(row, label.toLowerCase(), val);   /* per-patient memory (onf-1.7.0) */
+          safe(function () { if (val && typeof window.addOpFieldVal === 'function') window.addOpFieldVal(label.toLowerCase(), val); });  /* cross-patient dropdown history */
           var out = applyVals(row._onfRaw != null ? row._onfRaw : (ta.value || ''), row._onfVals);
           ta.value = out;
           safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
           safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = out; });
-          var lbl = ctrl.closest('label'); if (lbl) lbl.classList.toggle('onf-has', !!val);
+          var lbl = el.closest('label'); if (lbl) lbl.classList.toggle('onf-has', !!val);
+        }
+        var handler = function () {
+          /* "Other (type custom)…" swaps the dropdown for a focused text input
+             wired to the same label - typed once, remembered for next time */
+          if (S(ctrl.value).trim() === OTHER) {
+            var inp = document.createElement('input');
+            inp.type = 'text'; inp.id = ctrl.id;
+            inp.setAttribute('data-onf-idx', ctrl.getAttribute('data-onf-idx'));
+            inp.setAttribute('data-onf-label', ctrl.getAttribute('data-onf-label'));
+            inp.placeholder = 'type custom value';
+            ctrl.parentNode.replaceChild(inp, ctrl);
+            var apply2 = function () { applyVal(inp); };
+            inp.addEventListener('change', apply2);
+            inp.addEventListener('blur', apply2);
+            inp.focus();
+            return;
+          }
+          applyVal(ctrl);
         };
         ctrl.addEventListener('change', handler);
         if (ctrl.tagName === 'INPUT') ctrl.addEventListener('blur', handler);
