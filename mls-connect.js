@@ -30495,7 +30495,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b242';
+  window.__MLS_AV = window.__MLS_AV || 'b243';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30809,7 +30809,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b242';
+  var MLS_APP_BUILD='2026-07-13-b243';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -32576,9 +32576,24 @@
     try{ var ap=window.activePatient; if(typeof ap==='function') ap=ap(); return (ap&&ap.name)?ap.name:null; }catch(e){ return null; }
   }
 
+  /* b243 (owner P1 "chips don't draft"): the op-note and AVS chips now invoke the
+     REAL native workflows (op-prep modal w/ templates+fill box; the AVS module via
+     its real button) instead of sending a generic prompt into the chat — the chat
+     answer was the "glitchy empty panel does nothing" experience. Referral letter
+     keeps the prompt route (no native flow exists for it yet). */
   var DRAFTS = [
-    { label:'✍️ Draft op note', prompt:function(n){ return 'Draft a complete operative note for '+(n||'the active patient')+' for their planned/most recent procedure. Use standard operative-note structure: Preoperative diagnosis, Postoperative diagnosis, Procedure, Surgeon, Assistant, Anesthesia, Indications, Findings, Technique (numbered operative steps), Implants/Instrumentation, Estimated blood loss, Complications, Specimens, Disposition. Pull the procedure and clinical details from this patient’s record; wherever a specific detail is not documented, insert a clearly-marked [fill in] placeholder rather than inventing it.'; } },
-    { label:'✍️ After-visit summary', prompt:function(n){ return 'Write a clear, patient-friendly after-visit summary for '+(n||'the active patient')+' based on their record and today’s visit: what we discussed, any diagnosis in plain language, medication changes, instructions/precautions, and next steps / follow-up. Warm, plain English, no jargon.'; } },
+    { label:'✍️ Draft op note', native:function(){ try{ if(typeof window.openOpPrepForPatient==='function'){ window.openOpPrepForPatient(); return true; } }catch(e){} return false; }, prompt:function(n){ return 'Draft a complete operative note for '+(n||'the active patient')+' for their planned/most recent procedure. Use standard operative-note structure: Preoperative diagnosis, Postoperative diagnosis, Procedure, Surgeon, Assistant, Anesthesia, Indications, Findings, Technique (numbered operative steps), Implants/Instrumentation, Estimated blood loss, Complications, Specimens, Disposition. Pull the procedure and clinical details from this patient’s record; wherever a specific detail is not documented, insert a clearly-marked [fill in] placeholder rather than inventing it.'; } },
+    { label:'✍️ After-visit summary', native:function(){ try{
+        var ab=document.getElementById('mlsavsBtn'); if(ab){ ab.click(); return true; }
+        /* the real AVS button lives in the visit workspace — reveal it first,
+           then click (the proven b235 quick-chip pattern, same 800ms) */
+        var adv=document.getElementById('ez3Adv');
+        if(adv && document.body && !document.body.classList.contains('ez3adv')){
+          adv.click();
+          setTimeout(function(){ try{ var b2=document.getElementById('mlsavsBtn'); if(b2) b2.click(); else if(typeof window.toast==='function') window.toast('After-visit summary is not available on this build.','err'); }catch(e){} }, 800);
+          return true;
+        }
+      }catch(e){} return false; }, prompt:function(n){ return 'Write a clear, patient-friendly after-visit summary for '+(n||'the active patient')+' based on their record and today’s visit: what we discussed, any diagnosis in plain language, medication changes, instructions/precautions, and next steps / follow-up. Warm, plain English, no jargon.'; } },
     { label:'✍️ Referral letter', prompt:function(n){ return 'Draft a referral letter to physical therapy for '+(n||'the active patient')+' based on their spine/pain diagnoses and history. Include the referring diagnosis with ICD-10 if known, brief relevant history and exam, precautions, and specific PT goals/frequency. Professional letter format.'; } }
   ];
 
@@ -32609,7 +32624,7 @@
         if(model && model.cloneNode){ chip=model.cloneNode(true); chip.removeAttribute('id'); chip.textContent=d.label; }
         else { chip=document.createElement('button'); chip.textContent=d.label; chip.style.cssText='font-size:12.5px;border:1px solid #cfe0f3;background:#fff;color:#204034;border-radius:999px;padding:6px 11px;cursor:pointer;margin:3px'; }
         chip.setAttribute('data-mlsdraft','1');
-        chip.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); sendPrompt(d.prompt(activeName())); }, true);
+        chip.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); if(d.native && d.native()) return; sendPrompt(d.prompt(activeName())); }, true);
         wrap.appendChild(chip);
       });
     }catch(e){}
@@ -38049,7 +38064,7 @@
 ;(function(){try{var A="feat_mls_provider_passthrough.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260702pp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item82: provider passthrough -- completes per-doctor scoping: "Pulling as" doctor chip by the Athena pull button; stamps provider onto imported appointments (import-window only) now that the backend persists+returns provider (d9e9a0c, live-verified); restores the imported-day jump button (late re-wrap after item81). Revert: window.__mlsProv.revert() */
 
 
-;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260713b18v4";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
+;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260713b18v5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
 ;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705sc1c1-B177";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* task-4: MLS Status Center -- ONE honest Athena/MLS status surface (current task, current step, patient/day being read, data source, per-area statuses, retries, what-changed, what-next); fixes "connected but shown disconnected" via evidence+retry ConnTruth wrap; dedupes duplicate spinners; survives reload. Revert: window.__mlsStatusCenter.revert() */
 
 ;(function(){try{var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708pr2c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Monthly Pay Report -- per-provider patient counts, half-day credits, days x daily rate, AI-estimated collections (clearly labeled, manual override) + xlsx export + floating Pay Report button. Read-only. Revert: remove this loader. */

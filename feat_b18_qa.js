@@ -738,7 +738,11 @@
     chip.onclick=function(){
       chip.style.display='none';
       try{
-        if(typeof window.openCopilot==='function') window.openCopilot();
+        /* b243: openCopilotDock is the surface that actually holds the chat nodes
+           (the Assistant merge moved them; the dock-fix borrows them back).
+           openCopilot alone opened a hero-only card = "empty Copilot panel". */
+        if(typeof window.openCopilotDock==='function') window.openCopilotDock();
+        else if(typeof window.openCopilot==='function') window.openCopilot();
         setTimeout(function(){
           var ci=document.getElementById('copilotInput');
           if(ci){ ci.value=q; try{ ci.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){} }
