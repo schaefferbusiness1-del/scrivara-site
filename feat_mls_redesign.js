@@ -339,6 +339,19 @@
     refreshUserChip();
     return true;
   }
+  /* every PREMIUM tag rendered by any module collapses to the ONE canonical
+     badge (inline gradient styles at 9px rendered muddy/mismatched) */
+  function normalizePremiumBadges(){
+    try{
+      var spans=document.querySelectorAll('#mlsRdNav .navtab span, #mlsTbMenuPanel span');
+      for(var i=0;i<spans.length;i++){
+        var s=spans[i];
+        if(s.children.length===0 && /^premium$/i.test((s.textContent||'').trim()) && !s.classList.contains('mlsRdPrem')){
+          s.className='mlsRdPrem'; s.removeAttribute('style');
+        }
+      }
+    }catch(e){}
+  }
   function refreshUserChip(){ try{ var chip=$('mlsRdUserChip'); if(!chip) return; var u=userInfo();
     var nm=chip.querySelector('.nm'), sb=chip.querySelector('.sub'), av=chip.querySelector('.av');
     if(nm&&nm.textContent!==u.name) nm.textContent=u.name;
@@ -430,6 +443,12 @@
 "body.mls-redesign .mlsRdAnaGrid > .card > h2, body.mls-redesign .mlsRdAnaGrid > .card > h3{ cursor:move; user-select:none; }",
 "body.mls-redesign .mlsRdAnaDragging{ opacity:.55 !important; outline:2px dashed #2E6A4B !important; }",
 "",
+"/* ---- ONE canonical premium badge everywhere (owner: badges must match) ---- */",
+".mlsRdPrem, .mls-prem-pill{ background:#EFEAF8 !important; background-image:none !important; color:#7A5CC0 !important;",
+"  font-size:9.5px !important; font-weight:700 !important; letter-spacing:.05em !important; text-transform:uppercase !important;",
+"  padding:2px 7px !important; border-radius:5px !important; border:0 !important; line-height:1.5 !important; display:inline-block !important; vertical-align:1px; }",
+"#mlsRdNav .navtab .mlsRdPrem, #mlsRdNav .navtab .mls-prem-pill{ margin-left:auto !important; flex:none !important; }",
+"",
 "/* ---- text-centering precision: kill the 1px-low baseline rounding on pills ---- */",
 "body.mls-redesign #mlsDayHistBtn, body.mls-redesign #mlsAddPtLauncher, body.mls-redesign #mlsTabPickerChip,",
 "body.mls-redesign #mlsEz3 .ez3-sm, body.mls-redesign #mlsEz3 .ez3-big, body.mls-redesign #mlsEz3 #ez3Adv{",
@@ -494,7 +513,7 @@
 
   function applyAll(){
     try{ if(_obs) _obs.disconnect(); }catch(e){}
-    try{ injectCSS(); mark(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); syncTitle(); }catch(e){}
+    try{ injectCSS(); mark(); buildShell(); styleVisit(); makeAnalysisDashboard(); reStyleToggleState(); syncTitle(); normalizePremiumBadges(); }catch(e){}
     try{ if(_obs) _obs.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
   }
   var _schedT=null;

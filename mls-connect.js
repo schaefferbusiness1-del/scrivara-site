@@ -5477,6 +5477,17 @@
     '#mlsEz3 .ez3-modeseg{display:none !important;}',
     /* quiet label over the doctor secondary actions: instant comprehension */
     '#mlsEz3Body .ez3-row2::before{content:"GET THE DAY READY";flex-basis:100%;font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#8A8F86;margin-bottom:2px;}',
+    /* the batch "Pull day histories" action lives in Staff day-prep now (owner:
+       a floating button bottom corner made no sense) — real button stays in the
+       DOM (hidden) and the flow layer proxies it from the staff tools row */
+    'body #mlsDayHistBtn{display:none !important;}',
+    /* day chip on the doctor hero */
+    '#mlsEz3 .ez3fl-daychip{display:inline-flex;align-items:center;gap:6px;margin-left:10px;background:#F2F0E9;border:1px solid #E4E1D8;border-radius:999px;color:#55605A;font-size:11.5px;font-weight:600;cursor:pointer;padding:4px 11px;}',
+    '#mlsEz3 .ez3fl-daychip:hover{background:#EAE7DE;color:#1A211C;}',
+    '#mlsEz3 .ez3fl-daypop{position:absolute;z-index:80;margin-top:6px;background:#fff;border:1px solid #E7E5DD;border-radius:12px;box-shadow:0 1px 2px rgba(20,33,28,.04),0 18px 40px -16px rgba(20,33,28,.25);padding:6px;min-width:190px;}',
+    '#mlsEz3 .ez3fl-daypop button{display:flex;width:100%;text-align:left;align-items:center;gap:8px;background:transparent;border:0;border-radius:8px;color:#1A211C;font-size:13px;font-weight:600;cursor:pointer;padding:9px 11px;}',
+    '#mlsEz3 .ez3fl-daypop button:hover{background:#F0EEE7;}',
+    '#mlsEz3 .ez3fl-daypop input[type=date]{width:100%;box-sizing:border-box;margin:4px 0 2px;background:#FCFBF8;border:1px solid #E4E1D8;border-radius:8px;padding:7px 9px;font-size:13px;color:#1A211C;}',
     /* injected staff entry + back button */
     '#mlsEz3 .ez3fl-staffLink{display:inline-flex;align-items:center;gap:7px;margin-top:2px;background:transparent;border:0;color:#79837C;font-size:12px;font-weight:600;cursor:pointer;padding:4px 2px;}',
     '#mlsEz3 .ez3fl-staffLink:hover{color:#1A211C;text-decoration:underline;}',
@@ -5574,14 +5585,39 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.0.1';
+  var VERSION = 'fl-1.1.0';
   var _obs = null, _deb = null, _iv = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function onStaffScreen(body) {
     try { var h = body.querySelector('.ez3-h1'); return !!(h && /staff prep/i.test(h.textContent || '')); } catch (e) { return false; }
   }
   function clickMode(id) { try { var b = $(id); if (b) { b.click(); return true; } } catch (e) {} return false; }
+  /* day-chip -> staff schedule browser preset (drives the REAL seg/date inputs) */
+  var _pendingRange = null;
+  function goStaffRange(kind, dateStr) { _pendingRange = { kind: kind, date: dateStr, tries: 0 }; clickMode('ez3ModeStaff'); }
+  function applyPendingRange(body) {
+    if (!_pendingRange) return;
+    var p = _pendingRange;
+    if (++p.tries > 12) { _pendingRange = null; return; }
+    var seg = body.querySelector('#ez3Seg'); if (!seg) return;
+    var want = p.kind === 'tomorrow' ? /tomorrow/i : /custom/i;
+    var btn = [].slice.call(seg.querySelectorAll('button')).filter(function (b) { return want.test(b.textContent || ''); })[0];
+    if (!btn) return;
+    if (!p.clicked) { p.clicked = true; btn.click(); return; /* next ensure() pass fills dates */ }
+    if (p.kind === 'tomorrow') { _pendingRange = null; return; }
+    var f = body.querySelector('#ez3From'), t = body.querySelector('#ez3To');
+    if (!f || !t) return;
+    try {
+      f.value = p.date; t.value = p.date;
+      f.dispatchEvent(new Event('change', { bubbles: true }));
+      t.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) {}
+    _pendingRange = null;
+  }
   function ensure() {
+    /* the day-hist FAB's own body-appended stylesheet wins the !important
+       order battle — inline-important is the deterministic hide */
+    try { var fb = $('mlsDayHistBtn'); if (fb && fb.style.getPropertyValue('display') !== 'none') fb.style.setProperty('display', 'none', 'important'); } catch (e) {}
     var body = $('mlsEz3Body'); if (!body) return;
     var staff = onStaffScreen(body);
     /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
@@ -5603,6 +5639,34 @@
         a.addEventListener('click', function () { clickMode('ez3ModeStaff'); });
         (row.parentElement || body).insertBefore(a, row.nextSibling);
       }
+      /* (1b) the day chip: Visit always knows the REAL day (live clock stays);
+         pretending it is another day is an explicit, labeled control that opens
+         the schedule browser (staff day-prep) preset to the chosen day —
+         existing, tested machinery; no hidden day state. */
+      var clockbar = body.querySelector('.ez3-clockbar');
+      if (clockbar && !clockbar.querySelector('.ez3fl-daychip')) {
+        var chip = document.createElement('button');
+        chip.type = 'button'; chip.className = 'ez3fl-daychip';
+        chip.innerHTML = '&#128197; Viewing today &#9662;';
+        chip.title = 'You are on the live current day. Click to look at another day\'s schedule.';
+        chip.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var old = body.querySelector('.ez3fl-daypop'); if (old) { old.remove(); return; }
+          var pop = document.createElement('div'); pop.className = 'ez3fl-daypop';
+          function mk2(html, fn) { var b = document.createElement('button'); b.type = 'button'; b.innerHTML = html; b.addEventListener('click', fn); pop.appendChild(b); return b; }
+          mk2('&#10003; Today (live) &mdash; you are here', function () { pop.remove(); });
+          mk2('Tomorrow’s schedule', function () { pop.remove(); goStaffRange('tomorrow', null); });
+          var pick = document.createElement('input'); pick.type = 'date';
+          pick.addEventListener('click', function (e2) { e2.stopPropagation(); });
+          pick.addEventListener('change', function () { var v = pick.value; pop.remove(); if (v) goStaffRange('custom', v); });
+          var lbl = document.createElement('button'); lbl.type = 'button'; lbl.innerHTML = 'Pick a date&hellip;'; lbl.addEventListener('click', function (e3) { e3.stopPropagation(); pick.style.display = 'block'; try { pick.showPicker && pick.showPicker(); } catch (e4) {} });
+          pop.appendChild(lbl); pick.style.display = 'none'; pop.appendChild(pick);
+          chip.parentElement.style.position = 'relative';
+          chip.insertAdjacentElement('afterend', pop);
+          setTimeout(function () { document.addEventListener('click', function h(e5) { if (!pop.contains(e5.target)) { try { pop.remove(); } catch (e6) {} document.removeEventListener('click', h, true); } }, true); }, 0);
+        });
+        clockbar.appendChild(chip);
+      }
     }
     /* (2) staff screen: prominent Back + a clarity badge on the heading */
     if (staff) {
@@ -5619,6 +5683,20 @@
         tag.className = 'ez3fl-staffbadge'; tag.textContent = 'staff workspace';
         h.appendChild(tag);
       }
+      /* (2b) Pull day histories moved home: proxy the real (hidden) FAB from
+         the Practice tools row — batch history pulls are a staff-prep task */
+      var toolsCard = [].slice.call(body.querySelectorAll('.ez3-card')).filter(function (c) { return /practice tools/i.test(c.textContent || ''); })[0];
+      var tools = toolsCard ? toolsCard.querySelector('.ez3-row2') : null;
+      if (tools && !body.querySelector('.ez3fl-dayhist') && $('mlsDayHistBtn')) {
+        var dh = document.createElement('button');
+        dh.type = 'button'; dh.className = 'ez3-sm ez3fl-dayhist';
+        dh.innerHTML = '&#128218; Pull day histories';
+        dh.title = 'Batch-pull visit histories for a whole day';
+        dh.addEventListener('click', function () { try { $('mlsDayHistBtn').click(); } catch (e) {} });
+        tools.appendChild(dh);
+      }
+      /* honor a day preset chosen from the doctor-view chip */
+      applyPendingRange(body);
     }
     /* (3) Menu row (once) */
     try {
@@ -30124,7 +30202,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b189';
+  window.__MLS_AV = window.__MLS_AV || 'b191';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30438,7 +30516,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b189';
+  var MLS_APP_BUILD='2026-07-13-b191';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -30690,7 +30768,7 @@
   }
   function activePatient(){ try{ var v=window.activePatient; if(typeof v==='function'){ return v()||{}; } return window._activePatient||(typeof v==='object'&&v?v:{}); }catch(e){ return {}; } }
   function isPrem(){ try{ if(typeof window.effectivePremium==='function') return !!window.effectivePremium(); var u=window.bkUser; return !!(u&&(u.premium||u.isAdmin)); }catch(e){ return false; } }
-  function badge(){ return '<span style="margin-left:6px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7A5CC0,#2E6A4B);color:#fff;padding:2px 5px;border-radius:6px;vertical-align:middle">PREMIUM</span>'; }
+  function badge(){ return '<span class="mlsRdPrem">PREMIUM</span>'; }
   function showUpsell(title,blurb){
     var vw=overlay('mlsPView_upsell'); vw.innerHTML='';
     var w=document.createElement('div');
@@ -36786,7 +36864,7 @@
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623c1';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm11';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm12';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
 
 
 ;(function(){try{if(!document.querySelector('script[data-mls-exact-enable]')){var m=document.createElement('script');m.type='text/plain';m.src='data:,mls-connect.staging.js';m.setAttribute('data-mls-exact-enable','1');(document.head||document.documentElement).appendChild(m);}}catch(e){}})(); /* MLS prod-enable: satisfies *_exact isStaging() gate without loading the staging bundle; REVERT: delete this line + the 14 *_exact loader lines below */
