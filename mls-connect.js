@@ -5441,6 +5441,15 @@
     '#mlsEz3 .ez3-modeseg .on,#mlsEz3 .ez3-seg button.on{background:#fff !important;color:#1A211C !important;box-shadow:0 1px 3px rgba(20,33,28,.15) !important;}',
     '#mlsEz3 select,#mlsEz3 input{background:#FCFBF8 !important;color:#1A211C !important;border:1px solid #E4E1D8 !important;}',
     '#mlsEz3 .ez3-safety{color:#79837C !important;}',
+    /* 1c) light-band text: every secondary control reads as ink on the light card */
+    '#mlsEz3 .ez3-sm,#mlsEz3 .ez3-exbtn,#mlsEz3 .ez3-qchip,#mlsEz3 .ez3-chip,#mlsEz3 .ez3-more{color:#1A211C !important;}',
+    '#mlsEz3 .ez3-modeseg button{color:#55605A !important;}',
+    '#mlsEz3 .ez3-modeseg button.on{color:#1A211C !important;}',
+    '#mlsEz3 .ez3-advrow button,#mlsEz3 #ez3Adv{color:#55605A !important;}',
+    '#mlsEz3 #ez3Wrap{text-align:left !important;}',
+    '#mlsEz3Head{color:#1A211C !important;flex-wrap:wrap !important;gap:8px !important;align-items:center !important;}',
+    /* injected strips (op-note fill bar etc.) drop to their own full-width row under the seg */
+    '#mlsEz3Head > :not(.ez3-modeseg){flex:1 1 100% !important;order:2;color:#1A211C !important;}',
 
     /* 2) shared muted/secondary label color, used across the whole panel */
     '#mlsEz3 .ez3-sub,#mlsEz3 .ez3-status,#mlsEz3 .ez3-empty,#mlsEz3 .ez3-prov label,' +
