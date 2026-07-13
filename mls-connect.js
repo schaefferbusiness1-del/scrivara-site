@@ -5460,6 +5460,9 @@
     '#mlsEz3 .ez3-qchip.on .qt{color:#EAF1EC !important;}',
     '#mlsEz3 .ez3-search input::placeholder{color:#A6AEA6 !important;}',
     '#mlsEz3 .ez3-spin{color:#79837C !important;border-top-color:#2E6A4B !important;}',
+    /* b245: the base HAPPENING-NOW tag kept its dark-theme pale-mint text (#b9f3dd)
+       on the light shell = unreadable (owner screenshot). Calm chip tokens. */
+    '#mlsEz3 .ez3-nowtag{color:#2E6A4B !important;background:#EAF1EE !important;border-color:rgba(46,106,75,.45) !important;}',
     '#mlsEz3 .ez3-nowtag.next{color:#2E6A4B !important;}',
     '#mlsEz3 .ez3-note,#mlsEz3 .ez3-timer{color:#1A211C !important;}',
     '#mlsEz3 .ez3-modeseg button{color:#55605A !important;}',
@@ -30495,7 +30498,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b244';
+  window.__MLS_AV = window.__MLS_AV || 'b245';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30809,7 +30812,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b244';
+  var MLS_APP_BUILD='2026-07-13-b245';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
