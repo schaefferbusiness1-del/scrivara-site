@@ -30498,7 +30498,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b245';
+  window.__MLS_AV = window.__MLS_AV || 'b246';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30812,7 +30812,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b245';
+  var MLS_APP_BUILD='2026-07-13-b246';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38448,7 +38448,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v=20260713da2';s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.0.0, mic chip on focus, insert-at-caret, zero observers) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260713sg2d';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260713lb2';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calm loading vocabulary: slim working bar driven by real /api fetches + .mls-skel shimmer (window.__mlsLoadingCalm lb-1.0.0) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260713lb3';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calm loading vocabulary: slim working bar driven by real /api fetches + .mls-skel shimmer (window.__mlsLoadingCalm lb-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_staff_hub.js"]'))return;var s=document.createElement('script');s.src='feat_mls_staff_hub.js?v=20260713sh1';s.setAttribute('data-mls-asset','feat_mls_staff_hub.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE staff-account system: Practice-staff card in Team (roles explained, real receptionist provisioning adopted), duplicate assistant-panel month-pull retired (window.__mlsStaffHub sh-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260713cmd1';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
