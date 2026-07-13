@@ -5468,6 +5468,7 @@
     /* injected strips (op-note fill bar etc.) drop to their own full-width row under the seg */
     '#mlsEz3Head > :not(.ez3-modeseg){flex:1 1 100% !important;order:2;color:#1A211C !important;}',
     /* secondary action buttons sit inline on one row, natural width */
+    '#mlsEz3 .ez3-row2{flex-direction:row !important;justify-content:flex-start !important;align-items:center !important;}',
     '#mlsEz3 .ez3-row2 .ez3-sm{width:auto !important;flex:0 0 auto !important;display:inline-flex !important;align-items:center !important;}',
 
     /* 2) shared muted/secondary label color, used across the whole panel */
