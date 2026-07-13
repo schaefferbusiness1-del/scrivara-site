@@ -125,13 +125,13 @@
       '#' + MODAL_ID + ' .box{background:#fff;max-width:520px;width:100%;border-radius:16px;padding:20px;max-height:90vh;overflow:auto}',
       '#' + MODAL_ID + ' h3{margin:0 0 6px;font-size:18px;color:#15243c}',
       '#' + MODAL_ID + ' .note{font-size:12.5px;color:#5b6b83}',
-      '#' + MODAL_ID + ' .own{background:#eef4ff;border:1px solid #cfe0ff;border-radius:10px;padding:9px 11px;font-size:12px;color:#274b8f;margin:8px 0}',
+      '#' + MODAL_ID + ' .own{background:#eef4ff;border:1px solid #EAF1EE;border-radius:10px;padding:9px 11px;font-size:12px;color:#204034;margin:8px 0}',
       '#' + MODAL_ID + ' textarea{width:100%;min-height:96px;border:1px solid #d7e0ef;border-radius:9px;padding:9px;font:14px system-ui;box-sizing:border-box}',
       '#' + MODAL_ID + ' input{width:100%;border:1px solid #d7e0ef;border-radius:9px;padding:9px;font-size:14px;box-sizing:border-box}',
       '#' + MODAL_ID + ' label{display:block;font-size:12px;font-weight:700;margin:10px 0 4px;color:#15243c}',
       '#' + MODAL_ID + ' .btn{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:14px}',
       '#' + MODAL_ID + ' .btn.primary{background:linear-gradient(90deg,#3B7C5A,#2E6A4B);color:#fff}',
-      '#' + MODAL_ID + ' .btn.ghost{background:#eef2fa;color:#24406e}'
+      '#' + MODAL_ID + ' .btn.ghost{background:#eef2fa;color:#204034}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(s);
   }

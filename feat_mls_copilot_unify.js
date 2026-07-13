@@ -179,7 +179,7 @@
     try {
       if (document.getElementById(HINT_STYLE_ID)) return;
       var css = ".mls-nopt-hint{margin:0 0 8px;padding:7px 11px;border-radius:9px;border:1px dashed #c8d2e6;" +
-        "background:#f3f6fc;color:#5b6b86;font:600 12px/1.35 'Plus Jakarta Sans',system-ui,sans-serif;}";
+        "background:#f3f6fc;color:#2E6A4B;font:600 12px/1.35 'Plus Jakarta Sans',system-ui,sans-serif;}";
       var s = document.createElement("style"); s.id = HINT_STYLE_ID; s.type = "text/css";
       s.appendChild(document.createTextNode(css));
       (document.head || document.documentElement).appendChild(s);

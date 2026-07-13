@@ -315,7 +315,7 @@
     html += '<span style="color:' + statusColor + ';font-weight:800;font-size:12.5px">' + (v.safe ? '✓ Ready to write (after you confirm)' : '⛔ Blocked — not safe to write') + '</span>';
     html += '</div>';
     /* identity grid */
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font:12.5px/1.5 system-ui;color:#cdd8f5">';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font:12.5px/1.5 system-ui;color:#EAF1EE">';
     html += row('Patient', v.fields.patient);
     html += row('DOB', v.fields.dob);
     html += row('MRN', v.fields.mrn);

@@ -26,7 +26,7 @@
   var _orig = null;
 
   // uniform "active" blue (matches the redesign palette) + the kept cancelled red
-  var BLUE = { bg: '#e8f1fe', fg: '#1456a8' };
+  var BLUE = { bg: '#e8f1fe', fg: '#204034' };
   var RED = { bg: '#fdeaea', fg: '#a12c2c' };
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }

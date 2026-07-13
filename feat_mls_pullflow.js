@@ -37,7 +37,7 @@
 (function () {
   'use strict';
   if (window.__mlsPullFlow) return;
-  var VER = 'pf-1.0.0';
+  var VER = 'pf-1.1.0';
 
   /* ---- tiny helpers -------------------------------------------------------- */
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -429,41 +429,41 @@
       s.id = 'mpfStyle';
       s.textContent = [
         '#mlsPullFlowPanel{margin:0 0 14px;font-family:inherit;}',
-        '.mpf-card{background:#0f1e3c;border:1px solid rgba(143,216,190,.28);border-radius:14px;padding:16px 16px 14px;color:#e8eefc;box-shadow:0 8px 26px rgba(10,25,60,.35);}',
-        '.mpf-card.attention{border-color:rgba(234,179,8,.55);background:linear-gradient(180deg,#241f0e,#12203f);}',
-        '.mpf-card.fail{border-color:rgba(239,68,68,.5);}',
-        '.mpf-h{display:flex;align-items:center;gap:9px;font-size:16px;font-weight:800;margin:0 0 4px;}',
+        '.mpf-card{background:#fff;border:1px solid #E7E5DD;border-radius:16px;padding:18px 18px 15px;color:#1A211C;box-shadow:0 1px 2px rgba(20,33,28,.04),0 14px 34px -18px rgba(20,33,28,.18);}',
+        '.mpf-card.attention{border-color:#EFE4CE;background:linear-gradient(180deg,#FCF8EF,#fff 55%);}',
+        '.mpf-card.fail{border-color:#EAD3CE;}',
+        '.mpf-h{display:flex;align-items:center;gap:9px;font-size:16px;font-weight:700;margin:0 0 4px;font-family:Newsreader,Georgia,serif;letter-spacing:-.01em;}',
         '.mpf-h .ico{font-size:18px;}',
-        '.mpf-body{font-size:13px;line-height:1.55;color:#c7d5f2;margin:2px 0 8px;}',
-        '.mpf-hint{font-size:12.5px;line-height:1.5;color:#a7bce4;background:rgba(143,216,190,.09);border-radius:9px;padding:8px 10px;margin:8px 0 10px;}',
+        '.mpf-body{font-size:13px;line-height:1.55;color:#55605A;margin:2px 0 8px;}',
+        '.mpf-hint{font-size:12.5px;line-height:1.5;color:#55605A;background:#F6FBF8;border:1px solid #EFEDE6;border-radius:9px;padding:8px 10px;margin:8px 0 10px;}',
         '.mpf-steps{list-style:none;margin:8px 0 4px;padding:0;}',
-        '.mpf-step{display:flex;align-items:flex-start;gap:9px;font-size:12.6px;line-height:1.5;padding:3px 0;color:#9fb2d8;}',
-        '.mpf-step .dot{flex:0 0 auto;width:16px;height:16px;border-radius:50%;margin-top:1px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;border:1.5px solid #35507f;color:#7f97c4;background:transparent;}',
-        '.mpf-step.completed .dot{background:#059669;border-color:#059669;color:#fff;}',
-        '.mpf-step.running .dot{background:#2E6A4B;border-color:#60a5fa;color:#fff;animation:mpfPulse 1.2s infinite;}',
-        '.mpf-step.attention .dot{background:#eab308;border-color:#eab308;color:#3a2d00;}',
-        '.mpf-step.retrying .dot{background:#7A5CC0;border-color:#a78bfa;color:#fff;animation:mpfPulse 1.2s infinite;}',
-        '.mpf-step.failed .dot{background:#ef4444;border-color:#ef4444;color:#fff;}',
-        '.mpf-step.completed .lab{color:#cfe8dd;}',
-        '.mpf-step.running .lab{color:#e8eefc;font-weight:700;}',
-        '.mpf-step.failed .lab{color:#ffd7d7;font-weight:700;}',
-        '.mpf-step .sub{display:block;font-size:11px;color:#7f93bd;font-weight:500;}',
-        '@keyframes mpfPulse{0%,100%{box-shadow:0 0 0 0 rgba(96,165,250,.5)}50%{box-shadow:0 0 0 6px rgba(96,165,250,0)}}',
+        '.mpf-step{display:flex;align-items:flex-start;gap:9px;font-size:12.6px;line-height:1.5;padding:3px 0;color:#79837C;}',
+        '.mpf-step .dot{flex:0 0 auto;width:16px;height:16px;border-radius:50%;margin-top:1px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;border:1.5px solid #D6D2C6;color:#8A8F86;background:transparent;}',
+        '.mpf-step.completed .dot{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
+        '.mpf-step.running .dot{background:#2E6A4B;border-color:#8FD8BE;color:#fff;animation:mpfPulse 1.2s infinite;}',
+        '.mpf-step.attention .dot{background:#B07636;border-color:#B07636;color:#fff;}',
+        '.mpf-step.retrying .dot{background:#7A5CC0;border-color:#EFEAF8;color:#fff;animation:mpfPulse 1.2s infinite;}',
+        '.mpf-step.failed .dot{background:#B23B3B;border-color:#B23B3B;color:#fff;}',
+        '.mpf-step.completed .lab{color:#3D453E;}',
+        '.mpf-step.running .lab{color:#1A211C;font-weight:700;}',
+        '.mpf-step.failed .lab{color:#B23B3B;font-weight:700;}',
+        '.mpf-step .sub{display:block;font-size:11px;color:#A6AEA6;font-weight:500;}',
+        '@keyframes mpfPulse{0%,100%{box-shadow:0 0 0 0 rgba(46,106,75,.35)}50%{box-shadow:0 0 0 6px rgba(46,106,75,0)}}',
         '.mpf-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}',
-        '.mpf-btn{appearance:none;border:0;border-radius:10px;padding:10px 15px;font-size:13px;font-weight:700;cursor:pointer;}',
-        '.mpf-btn.primary{background:linear-gradient(135deg,#2E6A4B,#1456a8);color:#fff;}',
-        '.mpf-btn.ghost{background:rgba(255,255,255,.08);color:#dbe6fb;border:1px solid rgba(255,255,255,.16);}',
-        '.mpf-btn:active{transform:scale(.98);}',
+        '.mpf-btn{appearance:none;border:0;border-radius:10px;padding:10px 15px;font-size:13px;font-weight:600;cursor:pointer;transition:transform .12s ease;}',
+        '.mpf-btn.primary{background:#204034;color:#fff;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);}',
+        '.mpf-btn.ghost{background:#fff;color:#1A211C;border:1px solid #D9D6CD;}',
+        '.mpf-btn:active{transform:translateY(1px);}',
         '.mpf-dbg{margin-top:10px;font-size:12px;}',
-        '.mpf-dbg summary{cursor:pointer;color:#9fb2d8;font-weight:700;list-style:none;user-select:none;}',
+        '.mpf-dbg summary{cursor:pointer;color:#79837C;font-weight:700;list-style:none;user-select:none;}',
         '.mpf-dbg summary::-webkit-details-marker{display:none;}',
-        '.mpf-dbg[open] summary{color:#c7d5f2;}',
-        '.mpf-kv{margin:8px 0 0;border-top:1px solid rgba(143,216,190,.18);padding-top:8px;}',
-        '.mpf-kv div{display:flex;gap:8px;padding:2px 0;font-size:11.6px;color:#b9c9ea;}',
-        '.mpf-kv .k{flex:0 0 44%;color:#8ea3ce;}',
-        '.mpf-kv .v{flex:1 1 auto;color:#e2ebfb;word-break:break-word;}',
+        '.mpf-dbg[open] summary{color:#1A211C;}',
+        '.mpf-kv{margin:8px 0 0;border-top:1px solid #EFEDE6;padding-top:8px;}',
+        '.mpf-kv div{display:flex;gap:8px;padding:2px 0;font-size:11.6px;color:#1A211C;}',
+        '.mpf-kv .k{flex:0 0 44%;color:#79837C;}',
+        '.mpf-kv .v{flex:1 1 auto;color:#3D453E;word-break:break-word;}',
         '.mpf-code{margin-top:8px;display:flex;gap:8px;align-items:center;}',
-        '.mpf-code code{flex:1 1 auto;background:#1E2B24;border:1px solid rgba(143,216,190,.25);border-radius:7px;padding:6px 8px;font-size:11px;color:#a7c2ff;overflow:auto;}',
+        '.mpf-code code{flex:1 1 auto;background:#FCFBF8;border:1px solid #E7E5DD;border-radius:7px;padding:6px 8px;font-size:11px;color:#1A211C;overflow:auto;}',
         '@media (max-width:600px){.mpf-kv .k{flex-basis:52%;}}'
       ].join('');
       (document.head || document.documentElement).appendChild(s);
@@ -624,6 +624,21 @@
       ST.failedKey = terminalToStep(res.terminal);
       ST.at = nowMs();
       ST.code = makeCode(res.terminal);
+      /* pf-1.1.0: never blame the extension without asking it first. If the
+         extension answers a real ping, move the failure marker to the reading
+         step (the honest earliest-unproven step) and record the live version. */
+      if (ST.failedKey === 'ext') {
+        (function (kindAtCheck) {
+          verifyExt(function (ok) {
+            try {
+              if (ok && ST.phase === 'terminal' && ST.terminalKind === kindAtCheck && ST.failedKey === 'ext') {
+                ST.failedKey = 'appts';
+                render(); persist();
+              }
+            } catch (e) {}
+          });
+        })(res.terminal);
+      }
       /* safe auto-retry: ONE time, only for transient classes, never signed-out */
       var t = TERMINAL_COPY[res.terminal];
       if (t && t.transient && !ST.autoRetried && !cancelledThisCycle) {
@@ -669,6 +684,42 @@
       case 'timeout': return 'match';
       default: return 'ext';
     }
+  }
+
+  /* ---- pf-1.1.0: VERIFIED ext blame ----------------------------------------
+     The old flow blamed "MLS Assist connection" for any unclassified failure
+     (default -> 'ext'), which showed a false red X while the extension was
+     actually alive (its service worker just wakes slower than a single ping).
+     Before we pin a failure on the extension, actually ASK it: up to 3 pings
+     over ~3 s. If it answers, the connection row must NOT be the failure —
+     reclassify the blame to the reading step so the card stays honest. */
+  var _extPing = { at: 0, ok: null, ver: null, busy: false };
+  function verifyExt(done) {
+    var now = nowMs();
+    if (_extPing.ok !== null && (now - _extPing.at) < 30000) { done(_extPing.ok); return; }
+    if (_extPing.busy) { done(null); return; }
+    _extPing.busy = true;
+    var tries = 0, settled = false;
+    function finish(ok, ver) {
+      if (settled) return; settled = true;
+      _extPing.busy = false; _extPing.at = nowMs(); _extPing.ok = ok; _extPing.ver = ver || null;
+      try { window.removeEventListener('message', onMsg); } catch (e) {}
+      done(ok);
+    }
+    function onMsg(e) {
+      try {
+        if (e && e.data && e.data.source === 'mls-ext' && e.data.type === 'mlsPong') finish(true, e.data.version);
+      } catch (err) {}
+    }
+    try { window.addEventListener('message', onMsg); } catch (e) { finish(null); return; }
+    function ping() {
+      if (settled) return;
+      if (tries >= 3) { finish(false); return; }
+      tries++;
+      try { window.postMessage({ source: 'mls-app', type: 'mlsPing' }, '*'); } catch (e) {}
+      setTimeout(ping, 1000);
+    }
+    ping();
   }
 
   /* ---- lifecycle ----------------------------------------------------------- */

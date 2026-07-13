@@ -156,7 +156,7 @@
     var clone = svg.cloneNode(true);
     if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     // currentColor in a detached SVG falls back to black — fine on white paper.
-    clone.setAttribute('color', '#15233d');
+    clone.setAttribute('color', '#1E2B24');
     var s = new XMLSerializer().serializeToString(clone);
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + s;
   }
@@ -355,7 +355,7 @@
       var svgb = document.createElement('button');
       svgb.id = 'ocExpSvg'; svgb.type = 'button';
       svgb.setAttribute('data-mls-outcome-pdf', '1');
-      svgb.style.cssText = btnCss('#6b5cff');
+      svgb.style.cssText = btnCss('#C9DCD2');
       svgb.textContent = '⬇ SVG';
       svgb.addEventListener('click', function (e) { try { e.preventDefault(); } catch (_) {} exportSVG(); });
 

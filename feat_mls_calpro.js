@@ -392,7 +392,7 @@
       '<button id="cpRun" style="' + CSS + ';background:#e7f6ee"' + (PULL.running ? ' disabled' : '') + '>' + (PULL.running ? 'Running…' : (doneN ? 'Resume' : 'Run')) + '</button>' +
       (PULL.running ? '<button id="cpStop" style="' + CSS + '">Stop after current</button>' : '') +
       '<button id="cpRebuild" style="' + CSS + '"' + (PULL.running ? ' disabled' : '') + '>Rebuild plan</button></div>';
-    h += '<div style="height:10px;background:#eef1f7;border-radius:999px;overflow:hidden;margin:4px 0 10px"><div style="height:100%;width:' + pct + '%;background:#3452d6;transition:width .3s"></div></div>' +
+    h += '<div style="height:10px;background:#eef1f7;border-radius:999px;overflow:hidden;margin:4px 0 10px"><div style="height:100%;width:' + pct + '%;background:#2E6A4B;transition:width .3s"></div></div>' +
       '<div style="font-size:12px;color:#69758c;margin-bottom:8px">' + doneN + ' / ' + PULL.total + ' finished · ' + okN + ' with data · ' + sk.length + ' skipped' + (RUNNER ? '' : ' · <b style="color:#a15c00">live runner not connected — Athena-gated; showing app-side plan only</b>') + '</div>';
     var byDay = {};
     PULL.plan.forEach(function (t) { (byDay[t.date] = byDay[t.date] || []).push(t); });

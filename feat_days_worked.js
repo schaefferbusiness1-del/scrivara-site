@@ -32,12 +32,12 @@
     back.style.cssText='position:fixed;inset:0;background:rgba(10,30,60,.5);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
     var box=document.createElement('div');
     box.style.cssText='background:#fff;border-radius:16px;max-width:860px;width:100%;max-height:86vh;overflow:auto;padding:22px;box-shadow:0 12px 44px rgba(0,0,0,.32)';
-    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:800;font-size:18px;color:#15528f">📊 Days worked / patient volume</div><button id="mlsDWClose" style="border:none;background:#eef4fc;color:#15528f;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">Close</button></div>';
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:800;font-size:18px;color:#204034">📊 Days worked / patient volume</div><button id="mlsDWClose" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">Close</button></div>';
     h+='<div style="font-size:12.5px;color:#5b6b7c;margin-bottom:14px">Days worked = distinct appointment dates. Patients seen = distinct patients. Per provider and combined, by month. Pull past months from Athena to fill in history.</div>';
     if(!months.length){
       h+='<div style="padding:22px;text-align:center;color:#5b6b7c">No provider-linked appointment data yet.<br>Pull today’s / past months’ patients from Athena, then reopen this.</div>';
     } else {
-      h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#15528f"><th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Month</th>';
+      h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#204034"><th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Month</th>';
       provs.forEach(function(p){ h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">'+esc(p)+'</th>'; });
       h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">Combined</th></tr>';
       h+='<tr style="text-align:left;color:#5b6b7c;font-size:11px"><th></th>';
@@ -67,7 +67,7 @@
       var card = (model && model.cloneNode) ? model.cloneNode(false) : document.createElement('div');
       if(!card.className) card.className='card';
       card.id='mlsDWCard';
-      card.innerHTML='<div style="font-weight:800;color:#15528f;font-size:14px">📊 Days worked/patient volume</div><div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days worked &amp; patients seen per provider, by month — separately &amp; combined.</div><button id="mlsDWOpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
+      card.innerHTML='<div style="font-weight:800;color:#204034;font-size:14px">📊 Days worked/patient volume</div><div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days worked &amp; patients seen per provider, by month — separately &amp; combined.</div><button id="mlsDWOpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
       card.querySelector('#mlsDWOpen').addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); openModal(); });
       grid.appendChild(card);
     }catch(e){}

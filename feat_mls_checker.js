@@ -327,7 +327,7 @@
       '#' + SECTION_ID + ' .mc-name{font:700 12px/1.25 "Plus Jakarta Sans";color:#1A211C;flex:1 1 auto;}' +
       '#' + SECTION_ID + ' .mc-code{font:700 10px/1 ui-monospace,Menlo,monospace;color:#5a6b80;background:#f1f5fb;border-radius:5px;padding:3px 5px;}' +
       '#' + SECTION_ID + ' .mc-cause{font-size:11px;color:#7a2718;margin-top:5px;}' +
-      '#' + SECTION_ID + ' .mc-fix{font-size:11px;color:#0f3b66;margin-top:3px;}' +
+      '#' + SECTION_ID + ' .mc-fix{font-size:11px;color:#204034;margin-top:3px;}' +
       '#' + SECTION_ID + ' .mc-detail{font-size:10px;color:#93a1b3;margin-top:3px;}';
     (document.head || document.documentElement).appendChild(styleEl);
   }

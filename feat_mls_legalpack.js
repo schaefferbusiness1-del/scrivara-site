@@ -336,13 +336,13 @@
     '#mlsLpHost .lp-btn{border:1px solid var(--line,#E4E1D8);background:#EAF1EE;color:#204034;border-radius:9px;padding:8px 13px;font-size:13px;font-weight:600;cursor:pointer}',
     '#mlsLpHost .lp-btn.green{background:#e6f6ec;border-color:#bfe6cf;color:#1f7a4d}',
     '#mlsLpHost .lp-btn[disabled]{opacity:.55;cursor:default}',
-    '#mlsLpHost .lp-ident{background:#f4f8ff;border:1px solid #cfe2f8;border-radius:10px;padding:9px 12px;font-size:13.5px;font-weight:600;color:#1d4fd0;margin:8px 0}',
+    '#mlsLpHost .lp-ident{background:#f4f8ff;border:1px solid #cfe2f8;border-radius:10px;padding:9px 12px;font-size:13.5px;font-weight:600;color:#2E6A4B;margin:8px 0}',
     '#mlsLpHost .lp-warn{background:#fff6e5;border:1px solid #f0d9a0;border-radius:10px;padding:9px 12px;font-size:13px;color:#8a5a00;margin:8px 0}',
-    '#mlsLpHost .lp-provchip{display:inline-flex;align-items:center;gap:5px;background:#f2f6fb;border:1px solid #d7e2ee;border-radius:18px;padding:4px 11px;font-size:12.5px;font-weight:600;color:#2a4a68;cursor:pointer;user-select:none}',
+    '#mlsLpHost .lp-provchip{display:inline-flex;align-items:center;gap:5px;background:#f2f6fb;border:1px solid #d7e2ee;border-radius:18px;padding:4px 11px;font-size:12.5px;font-weight:600;color:#204034;cursor:pointer;user-select:none}',
     '#mlsLpHost .lp-provchip.off{opacity:.45;text-decoration:line-through}',
     '#mlsLpHost .lp-cat{margin:14px 0 4px;font-size:14px;font-weight:800;color:#204034;border-bottom:1px solid var(--line,#e2e9f1);padding-bottom:4px}',
     '#mlsLpHost .lp-item{border:1px solid var(--line,#e6edf4);border-radius:10px;padding:8px 11px;margin:7px 0;font-size:13px}',
-    '#mlsLpHost .lp-item .hd{font-weight:700;color:#20415e}',
+    '#mlsLpHost .lp-item .hd{font-weight:700;color:#204034}',
     '#mlsLpHost .lp-item .src{font-weight:500;color:var(--muted,#7189a0);font-size:12px;margin-left:6px}',
     '#mlsLpHost .lp-item pre{white-space:pre-wrap;font-family:inherit;font-size:12.5px;margin:5px 0 0;color:#2c4258;max-height:260px;overflow:auto}',
     '#mlsLpHost .lp-srcrow{display:flex;align-items:center;gap:8px;border:1px solid #e2e9f1;border-radius:9px;padding:6px 10px;margin:5px 0;font-size:12.5px}',
@@ -389,10 +389,10 @@
       '<h2>🧾 Medical-legal narrative generator</h2>' +
       '<p class="lp-sub">Drafts a structured narrative report (patient introduction, injury date, initial presentation, prior history, imaging, treatment timeline, procedures, response, current condition, causation, medical necessity, future treatment, conclusion) from the pulled chart, prior visits and procedure notes, plus any records you add below — PDFs, Word documents, images and scans are read automatically. Add counsel’s custom questions and edit the draft freely before signing.</p>' +
       '<div class="lp-row">' +
-      '<div style="flex:1;min-width:200px"><label style="font-size:12.5px;font-weight:700;color:#2a4a68">Date of injury / onset</label><br>' +
+      '<div style="flex:1;min-width:200px"><label style="font-size:12.5px;font-weight:700;color:#204034">Date of injury / onset</label><br>' +
       '<input type="text" id="mlsLpDoi" placeholder="e.g. 2025-03-14" style="width:95%"></div>' +
       '</div>' +
-      '<label style="font-size:12.5px;font-weight:700;color:#2a4a68;display:block;margin-top:8px">Custom questions from counsel (optional — each is answered in its own section)</label>' +
+      '<label style="font-size:12.5px;font-weight:700;color:#204034;display:block;margin-top:8px">Custom questions from counsel (optional — each is answered in its own section)</label>' +
       '<textarea id="mlsLpQuestions" style="width:100%;min-height:70px" placeholder="e.g.&#10;1. Is the lumbar injury causally related to the 3/14/2025 accident?&#10;2. Has the patient reached maximum medical improvement?"></textarea>' +
       '<div class="lp-drop" id="mlsLpDrop">📎 Drop records here or click to add — PDF, Word (.docx), images/scans (OCR), .txt<br><span style="font-size:11.5px">Outside records, prior imaging reports, IME letters, anything counsel sent.</span></div>' +
       '<input type="file" id="mlsLpFile" multiple accept=".pdf,.docx,.txt,image/*" style="display:none">' +
@@ -462,7 +462,7 @@
     var provs = state.model.providers;
     if (!state.provFilter) { state.provFilter = {}; provs.forEach(function (pv) { state.provFilter[pv] = true; }); }
     row.style.display = 'flex';
-    row.innerHTML = '<span style="font-size:12.5px;font-weight:700;color:#2a4a68">Providers:</span>' + provs.map(function (pv) {
+    row.innerHTML = '<span style="font-size:12.5px;font-weight:700;color:#204034">Providers:</span>' + provs.map(function (pv) {
       var on = !!state.provFilter[pv];
       return '<span class="lp-provchip' + (on ? '' : ' off') + '" data-prov="' + esc(pv) + '">' + (on ? '✓ ' : '✕ ') + esc(pv) + '</span>';
     }).join('') +
@@ -572,7 +572,7 @@
     if (!drop || !fi) return;
     drop.addEventListener('click', function () { fi.click(); });
     fi.addEventListener('change', function (ev) { addFiles(ev.target.files); ev.target.value = ''; });
-    drop.addEventListener('dragover', function (ev) { ev.preventDefault(); drop.style.borderColor = '#5b8def'; });
+    drop.addEventListener('dragover', function (ev) { ev.preventDefault(); drop.style.borderColor = '#C9DCD2'; });
     drop.addEventListener('dragleave', function () { drop.style.borderColor = '#c9d7e6'; });
     drop.addEventListener('drop', function (ev) { ev.preventDefault(); drop.style.borderColor = '#c9d7e6'; if (ev.dataTransfer) addFiles(ev.dataTransfer.files); });
   }

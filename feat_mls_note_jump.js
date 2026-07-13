@@ -30,7 +30,7 @@
       'font-weight:700;opacity:.5;margin-right:2px;}',
       '#' + BAR_ID + ' .mlsnj-chip{cursor:pointer;display:inline-flex;align-items:center;',
       'padding:3px 10px;border-radius:999px;font-weight:600;font-size:12px;line-height:1.3;',
-      'background:rgba(139,92,246,.12);color:#a78bfa;border:1px solid rgba(139,92,246,.30);',
+      'background:rgba(139,92,246,.12);color:#C9DCD2;border:1px solid rgba(139,92,246,.30);',
       'transition:background .12s,transform .12s;}',
       '#' + BAR_ID + ' .mlsnj-chip:hover{background:rgba(139,92,246,.24);}',
       '#' + BAR_ID + ' .mlsnj-chip:active{transform:translateY(1px);}',

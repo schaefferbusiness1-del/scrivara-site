@@ -48,13 +48,13 @@
     st.textContent = [
       '#' + BAR_ID + '{margin:0 0 12px;padding:11px 13px;border:1px solid #cfe0f5;border-radius:12px;',
       'background:linear-gradient(180deg,#f4f9ff,#eaf3ff);display:flex;flex-wrap:wrap;align-items:center;gap:9px;',
-      'font:600 12.5px/1.35 "Plus Jakarta Sans",system-ui,sans-serif;color:#1b3a66;}',
+      'font:600 12.5px/1.35 "Plus Jakarta Sans",system-ui,sans-serif;color:#204034;}',
       '#' + BAR_ID + ' b{font-weight:800;}',
-      '#' + BAR_ID + ' select{font:600 12.5px system-ui;padding:6px 9px;border:1px solid #b9d0ee;border-radius:8px;background:#fff;color:#12294a;max-width:280px;}',
-      '#' + BAR_ID + ' button{cursor:pointer;border:0;border-radius:8px;padding:7px 13px;font:700 12.5px system-ui;background:#2f6df0;color:#fff;}',
-      '#' + BAR_ID + ' button.ghost{background:#e6eefb;color:#255ad0;}',
+      '#' + BAR_ID + ' select{font:600 12.5px system-ui;padding:6px 9px;border:1px solid #EAF1EE;border-radius:8px;background:#fff;color:#1E2B24;max-width:280px;}',
+      '#' + BAR_ID + ' button{cursor:pointer;border:0;border-radius:8px;padding:7px 13px;font:700 12.5px system-ui;background:#2E6A4B;color:#fff;}',
+      '#' + BAR_ID + ' button.ghost{background:#e6eefb;color:#2E6A4B;}',
       '#' + BAR_ID + ' button:hover{filter:brightness(1.05);}',
-      '#' + BAR_ID + ' .onf-count{margin-left:auto;font-weight:700;color:#3a5980;}',
+      '#' + BAR_ID + ' .onf-count{margin-left:auto;font-weight:700;color:#204034;}',
       '.onf-fillbox{margin:8px 0;padding:10px 12px;border:1px solid #e0b877;border-radius:11px;background:#fffdf5;}',
       '.onf-fillbox .onf-h{font:800 12px/1.3 "Plus Jakarta Sans",system-ui,sans-serif;color:#7a5310;margin:0 0 7px;display:flex;align-items:center;gap:6px;}',
       '.onf-fillbox .onf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;}',
@@ -65,7 +65,7 @@
       '.onf-fillbox .onf-sug{font:800 9px system-ui;color:#7a5310;background:#fdf0d0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-need{font:800 9px system-ui;color:#8a2a2a;background:#fbe0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-saved{font:800 9px system-ui;color:#1b5e20;background:#dff0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
-      '.onf-fillbox .onf-hist{font:800 9px system-ui;color:#1456a8;background:#e0ecfb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
+      '.onf-fillbox .onf-hist{font:800 9px system-ui;color:#204034;background:#e0ecfb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-note{font:600 10.5px system-ui;color:#8a7130;margin:7px 0 0;}',
       '@media (max-width:600px){.onf-fillbox .onf-grid{grid-template-columns:1fr;}}'
     ].join('');
@@ -129,18 +129,18 @@
   }
   /* ---- practice-profile editor (provider / NPI / facility / practice) ---- */
   function profFld(lbl, key, val) {
-    return '<label style="display:flex;flex-direction:column;gap:3px;font:700 11px system-ui;color:#3a5980;">' + esc(lbl) +
-      '<input type="text" data-prof="' + key + '" value="' + esc(val || '') + '" style="padding:6px 8px;border:1px solid #b9d0ee;border-radius:7px;font:600 12.5px system-ui;"></label>';
+    return '<label style="display:flex;flex-direction:column;gap:3px;font:700 11px system-ui;color:#204034;">' + esc(lbl) +
+      '<input type="text" data-prof="' + key + '" value="' + esc(val || '') + '" style="padding:6px 8px;border:1px solid #EAF1EE;border-radius:7px;font:600 12.5px system-ui;"></label>';
   }
   function profileFormHtml() {
     var p = seedProfile();
-    return '<div id="mlsOnfProfForm" style="display:none;flex-basis:100%;margin-top:9px;padding:11px 12px;border:1px dashed #9fb9e0;border-radius:10px;background:#fff;">' +
-      '<div style="font-weight:800;margin-bottom:7px;color:#1b3a66;">Practice profile — set once, auto-fills every note (never fabricated)</div>' +
+    return '<div id="mlsOnfProfForm" style="display:none;flex-basis:100%;margin-top:9px;padding:11px 12px;border:1px dashed #C9DCD2;border-radius:10px;background:#fff;">' +
+      '<div style="font-weight:800;margin-bottom:7px;color:#204034;">Practice profile — set once, auto-fills every note (never fabricated)</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px;">' +
       profFld('Operating provider', 'name', p.name) + profFld('Provider NPI', 'npi', p.npi) +
       profFld('Facility / surgery center', 'facility', p.facility) + profFld('Practice / group name', 'practice', p.practice) +
       '</div>' +
-      '<button type="button" id="mlsOnfProfSave" style="margin-top:9px;background:#2f6df0;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">Save profile</button>' +
+      '<button type="button" id="mlsOnfProfSave" style="margin-top:9px;background:#2E6A4B;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;">Save profile</button>' +
       '<span id="mlsOnfProfMsg" style="margin-left:9px;color:#2e7d43;font-weight:700;"></span></div>';
   }
   function toggleProfileEditor() { var f = $('mlsOnfProfForm'); if (f) f.style.display = (f.style.display === 'none' || !f.style.display) ? 'block' : 'none'; }

@@ -103,7 +103,7 @@
         "background:#0f2036;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:6px;" +
         "box-shadow:0 14px 40px rgba(0,0,0,.45);display:none;}" +
       "#" + PANEL_ID + ".open{display:block;}" +
-      "#" + PANEL_ID + " .mlsTbWho{font-size:12px;color:#9fb4d4;padding:8px 10px 6px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:4px;word-break:break-all;}" +
+      "#" + PANEL_ID + " .mlsTbWho{font-size:12px;color:#C9DCD2;padding:8px 10px 6px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:4px;word-break:break-all;}" +
       "#" + PANEL_ID + " button.mlsTbItem{width:100%;text-align:left;background:transparent;border:0;color:#EAF1EC;" +
         "font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;padding:10px 12px;" +
         "display:flex;align-items:center;gap:10px;}" +

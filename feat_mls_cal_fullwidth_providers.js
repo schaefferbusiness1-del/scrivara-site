@@ -60,7 +60,7 @@
       '#calendarView .cx-main{width:100%;}' +
       '#calendarView .cx-prov-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;width:100%;border:0;background:transparent;cursor:pointer;text-align:left;padding:3px 4px;border-radius:8px;font-family:inherit}' +
       '#calendarView .cx-prov-row:hover{background:#eef4fc}' +
-      '#calendarView .cx-prov-row.cx-prov-on{background:#e6effd;outline:1px solid #bcd4f5}';
+      '#calendarView .cx-prov-row.cx-prov-on{background:#e6effd;outline:1px solid #EAF1EE}';
     var s = document.getElementById(STYLE_ID);
     if(!s){ s = document.createElement('style'); s.id = STYLE_ID; (document.head||document.documentElement).appendChild(s); }
     if(s.textContent !== css) s.textContent = css;

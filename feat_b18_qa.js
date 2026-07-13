@@ -92,10 +92,10 @@
     var s=document.createElement('style'); s.id='mls-pullfix-css';
     s.textContent=
       '#mls-pull-progress{top:64px!important;left:auto!important;right:18px!important;transform:none!important;max-width:420px!important;border:1px solid rgba(120,160,255,.35)!important}'+
-      '#mlsPullInModal{display:flex;align-items:center;gap:10px;margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#eef4ff;border:1px solid #c6d8f7;color:#123a6b;font:600 13px/1.4 system-ui,sans-serif}'+
-      '#mlsPullInModal .mlspim-spin{width:15px;height:15px;border:3px solid #b9cdf2;border-top-color:#2E6A4B;border-radius:50%;animation:mlsppspin .8s linear infinite;flex:none}'+
+      '#mlsPullInModal{display:flex;align-items:center;gap:10px;margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#eef4ff;border:1px solid #EAF1EE;color:#204034;font:600 13px/1.4 system-ui,sans-serif}'+
+      '#mlsPullInModal .mlspim-spin{width:15px;height:15px;border:3px solid #EAF1EE;border-top-color:#2E6A4B;border-radius:50%;animation:mlsppspin .8s linear infinite;flex:none}'+
       '#mlsPullInModal.done .mlspim-spin{display:none}'+
-      '#mlsPullInModal .mlspim-x{margin-left:auto;cursor:pointer;color:#5b7ba9;font-weight:800;padding:0 4px}'+
+      '#mlsPullInModal .mlspim-x{margin-left:auto;cursor:pointer;color:#2E6A4B;font-weight:800;padding:0 4px}'+
       '#mls-pull-progress .mlspp-close{margin-left:6px;cursor:pointer;font-weight:800;opacity:.75;padding:0 4px}'+
       '#mls-pull-progress .mlspp-elapsed{opacity:.75;font-weight:500;margin-left:4px}';
     (document.head||document.documentElement).appendChild(s);
@@ -257,7 +257,7 @@
   function row(state,text){
     var ic = state==='ok' ? '✓' : (state==='warn' ? '⚠' : '⛔');
     var col= state==='ok' ? '#0f7b41' : (state==='warn' ? '#92600a' : '#b3261e');
-    return '<div style="display:flex;gap:8px;align-items:flex-start;margin:3px 0;font:500 12.5px/1.45 system-ui"><span style="color:'+col+';font-weight:800;flex:none">'+ic+'</span><span style="color:#233a55">'+text+'</span></div>';
+    return '<div style="display:flex;gap:8px;align-items:flex-start;margin:3px 0;font:500 12.5px/1.45 system-ui"><span style="color:'+col+';font-weight:800;flex:none">'+ic+'</span><span style="color:#204034">'+text+'</span></div>';
   }
 
   function showGate(msg,args){
@@ -345,17 +345,17 @@
       card.innerHTML=
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+
           '<span style="font-size:19px">'+(blocked?'⛔':'🛡️')+'</span>'+
-          '<b style="font-size:16.5px;color:#10243e">'+(blocked?'Write blocked':'Confirm write to athenaOne')+'</b>'+
+          '<b style="font-size:16.5px;color:#1E2B24">'+(blocked?'Write blocked':'Confirm write to athenaOne')+'</b>'+
           '<span style="margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.05em;color:#7c2d12;background:#fde68a;border:1px solid #f59e0b;border-radius:7px;padding:2px 8px">WRITES TO CHART</span>'+
         '</div>'+
         '<div style="margin:8px 0 2px">'+checks.join('')+'</div>'+
         (blocked?('<div style="margin:10px 0;padding:10px 12px;border-radius:10px;background:#fdecec;border:1px solid #f2b8b5;color:#8c1d18;font:600 12.5px/1.5 system-ui">'+hard.map(esc).join('<br>')+'</div>'):'')+
         (note?('<div style="font:700 11px/1 system-ui;color:#5b7186;margin:10px 0 4px;letter-spacing:.04em">CONTENT PREVIEW</div>'+
-        '<div style="max-height:200px;overflow:auto;border:1px solid #dbe6f5;border-radius:10px;padding:10px 12px;background:#f8fafd;font:12.5px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#1d3450">'+esc(note.slice(0,6000))+(note.length>6000?'\n…':'')+'</div>'):'')+
+        '<div style="max-height:200px;overflow:auto;border:1px solid #dbe6f5;border-radius:10px;padding:10px 12px;background:#f8fafd;font:12.5px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#1E2B24">'+esc(note.slice(0,6000))+(note.length>6000?'\n…':'')+'</div>'):'')+
         '<div id="mlsWbAcks" style="margin-top:10px"></div>'+
         '<div style="display:flex;gap:10px;margin-top:14px;align-items:center">'+
           '<button id="mlsWbCancel" style="cursor:pointer;border:1px solid #cbd5e1;background:#fff;color:#0f172a;font:600 13px system-ui;border-radius:10px;padding:9px 16px">Cancel — write nothing</button>'+
-          (blocked?'':'<button id="mlsWbGo" style="cursor:pointer;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font:700 13px system-ui;border-radius:10px;padding:9px 16px">Confirm & write</button>')+
+          (blocked?'':'<button id="mlsWbGo" style="cursor:pointer;border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;font:700 13px system-ui;border-radius:10px;padding:9px 16px">Confirm & write</button>')+
           '<span style="margin-left:auto;font:500 11px system-ui;color:#8195ab">MLS never signs or places orders.</span>'+
         '</div>';
       host.appendChild(card);
@@ -443,18 +443,18 @@
     var h;
     if(dayMine.length>0) { box.__mlsSmart=0; return; } /* not an empty state — leave native */
     if(dayAll.length>0){
-      h='<div style="font:600 13px/1.5 system-ui;color:#28425f">No patients for <b>'+esc(prov)+'</b> on '+esc(pretty(day))+'.</div>'+
-        '<div style="font:500 12.5px/1.5 system-ui;color:#54708c;margin-top:2px">'+dayAll.length+' appointment'+(dayAll.length===1?'':'s')+' exist'+(dayAll.length===1?'s':'')+' for other providers that day.</div>'+
-        '<button id="mlsSeAll" style="margin-top:8px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Show all providers for this day</button>';
+      h='<div style="font:600 13px/1.5 system-ui;color:#204034">No patients for <b>'+esc(prov)+'</b> on '+esc(pretty(day))+'.</div>'+
+        '<div style="font:500 12.5px/1.5 system-ui;color:#2E6A4B;margin-top:2px">'+dayAll.length+' appointment'+(dayAll.length===1?'':'s')+' exist'+(dayAll.length===1?'s':'')+' for other providers that day.</div>'+
+        '<button id="mlsSeAll" style="margin-top:8px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#2E6A4B;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Show all providers for this day</button>';
     } else {
-      h='<div style="font:600 13px/1.5 system-ui;color:#28425f">Nothing on the calendar for '+esc(pretty(day))+'.</div>'+
-        (next?('<button id="mlsSeNext" style="margin-top:8px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Jump to next clinic day — '+esc(pretty(next))+' ('+futureDays[next]+')</button>'):('<div style="font:500 12.5px system-ui;color:#54708c;margin-top:2px">Pull a day from athenaOne to fill the schedule.</div>'));
+      h='<div style="font:600 13px/1.5 system-ui;color:#204034">Nothing on the calendar for '+esc(pretty(day))+'.</div>'+
+        (next?('<button id="mlsSeNext" style="margin-top:8px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#2E6A4B;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Jump to next clinic day — '+esc(pretty(next))+' ('+futureDays[next]+')</button>'):('<div style="font:500 12.5px system-ui;color:#2E6A4B;margin-top:2px">Pull a day from athenaOne to fill the schedule.</div>'));
     }
     box.innerHTML=h;
     var b1=box.querySelector('#mlsSeAll');
     if(b1) b1.onclick=function(){
       var t=document.getElementById('heroToday');
-      if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.style.transition='box-shadow .3s'; t.style.boxShadow='0 0 0 3px #5b8cff'; setTimeout(function(){ t.style.boxShadow=''; },1600); }
+      if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.style.transition='box-shadow .3s'; t.style.boxShadow='0 0 0 3px #C9DCD2'; setTimeout(function(){ t.style.boxShadow=''; },1600); }
     };
     var b2=box.querySelector('#mlsSeNext');
     if(b2) b2.onclick=function(){
@@ -679,10 +679,10 @@
   try{
     if(window.__mlsCalmBootDone) return;
     var veil=document.createElement('div'); veil.id='mlsBootVeil';
-    veil.style.cssText='position:fixed;inset:0;z-index:2147483602;background:linear-gradient(180deg,#0d1b33,#13264a);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .22s ease';
-    veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2E6A4B;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#9fb4dd">Scribe</span></span></div>'+
-      '<div style="width:150px;height:4px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden"><div id="mlsBootBar" style="width:24%;height:100%;border-radius:99px;background:#5b8cff;transition:width .5s ease"></div></div>'+
-      '<div style="font:500 12px system-ui;color:#8ea6d4">Preparing your workspace…</div>';
+    veil.style.cssText='position:fixed;inset:0;z-index:2147483602;background:linear-gradient(180deg,#0d1b33,#1E2B24);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .22s ease';
+    veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2E6A4B;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#C9DCD2">Scribe</span></span></div>'+
+      '<div style="width:150px;height:4px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden"><div id="mlsBootBar" style="width:24%;height:100%;border-radius:99px;background:#C9DCD2;transition:width .5s ease"></div></div>'+
+      '<div style="font:500 12px system-ui;color:#C9DCD2">Preparing your workspace…</div>';
     (document.body||document.documentElement).appendChild(veil);
     var t0=Date.now(), muts=0, released=false;
     var mo=new MutationObserver(function(ms){ muts+=ms.length; });
@@ -728,7 +728,7 @@
     var q=String(inp.value||'').trim(); if(q.length<3) return;
     if(!chip){
       chip=document.createElement('button'); chip.id='mlsAskCopilotChip';
-      chip.style.cssText='position:fixed;z-index:100060;cursor:pointer;border:1px solid #2E6A4B;background:#0f1b33;color:#cfe0ff;font:600 12.5px system-ui;border-radius:999px;padding:7px 14px;box-shadow:0 8px 24px rgba(10,25,60,.4)';
+      chip.style.cssText='position:fixed;z-index:100060;cursor:pointer;border:1px solid #2E6A4B;background:#0f1b33;color:#EAF1EE;font:600 12.5px system-ui;border-radius:999px;padding:7px 14px;box-shadow:0 8px 24px rgba(10,25,60,.4)';
       document.body.appendChild(chip);
     }
     var r=inp.getBoundingClientRect();

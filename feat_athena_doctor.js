@@ -293,7 +293,7 @@
       '#' + BTN_ID + '{position:fixed;top:8px;right:30px;z-index:2147483601;background:rgba(15,23,42,.82);color:#fff;' +
       'border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;' +
       'cursor:pointer;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;}' +
-      '#' + BTN_ID + ':hover{background:#1d4ed8;}' +
+      '#' + BTN_ID + ':hover{background:#2E6A4B;}' +
       // success / failure toast
       '#' + TOAST_ID + '{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:2147483602;' +
       'max-width:min(560px,92vw);padding:11px 16px;border-radius:11px;font-size:14px;font-weight:700;color:#fff;' +

@@ -36,7 +36,7 @@
       '.mls-age-chip{display:inline-flex;align-items:center;gap:4px;' +
       'font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:700;' +
       'font-size:11px;line-height:1;letter-spacing:.2px;color:#2E6A4B;' +
-      'background:#e7eefc;border:1px solid #d4e0fb;border-radius:999px;' +
+      'background:#e7eefc;border:1px solid #EAF1EE;border-radius:999px;' +
       'padding:3px 9px;white-space:nowrap;vertical-align:middle;}' +
       '.mls-age-hint{margin-top:6px;}' +
       '.mls-age-ctx{margin-left:8px;}' +

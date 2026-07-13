@@ -32,13 +32,13 @@
     var box=document.createElement('div');
     box.style.cssText='background:#fff;border-radius:16px;max-width:420px;width:100%;padding:22px;box-shadow:0 12px 44px rgba(0,0,0,.32)';
     box.innerHTML=''
-      +'<div style="font-weight:800;font-size:17px;color:#15528f;margin-bottom:4px">📧 Send portal login</div>'
+      +'<div style="font-weight:800;font-size:17px;color:#204034;margin-bottom:4px">📧 Send portal login</div>'
       +'<div style="font-size:13.5px;color:#5b6b7c;margin-bottom:14px">'+esc(nm)+' will get a secure email with a one-time link to view their records and chat with them.</div>'
-      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin-bottom:5px">Patient email</label>'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin-bottom:5px">Patient email</label>'
       +'<input id="mlsPiEmail" type="email" value="'+esc(email)+'" placeholder="patient@email.com" style="width:100%;padding:11px 12px;border:1px solid #E7E5DD;border-radius:10px;font-size:15px;box-sizing:border-box;color:#0d2338" />'
       +'<div id="mlsPiMsg" style="font-size:13px;margin-top:12px;display:none"></div>'
       +'<div style="display:flex;gap:8px;margin-top:18px">'
-      +'  <button id="mlsPiCancel" type="button" style="flex:1;padding:11px;border:1px solid #E7E5DD;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
+      +'  <button id="mlsPiCancel" type="button" style="flex:1;padding:11px;border:1px solid #E7E5DD;background:#eef4fc;color:#204034;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
       +'  <button id="mlsPiSend" type="button" style="flex:2;padding:11px;border:none;background:#2E6A4B;color:#fff;border-radius:10px;font-weight:700;cursor:pointer">Send login</button>'
       +'</div>';
     back.appendChild(box); document.body.appendChild(back);
@@ -71,7 +71,7 @@
     b.id='mlsPortalInviteBtn'; b.type='button';
     b.textContent='📧 Send portal login';
     b.title='Email this patient a secure link to their records';
-    b.style.cssText='margin:6px 8px 2px 0;display:inline-flex;align-items:center;gap:6px;background:#eef4fc;border:1px solid #cfe0f3;color:#15528f;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.2';
+    b.style.cssText='margin:6px 8px 2px 0;display:inline-flex;align-items:center;gap:6px;background:#eef4fc;border:1px solid #cfe0f3;color:#204034;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.2';
     b.addEventListener('mouseenter',function(){ b.style.background='#e2edfa'; });
     b.addEventListener('mouseleave',function(){ b.style.background='#eef4fc'; });
     b.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); var ap=active(); if(!ap){ alert('Select a patient first.'); return; } openModal(ap); });

@@ -139,7 +139,7 @@
       'font-weight:600;color:' + INK + '}' +
       '.mls-src-cohortflag{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;' +
       'border-radius:999px;background:rgba(124,58,237,.10);border:1px solid rgba(124,58,237,.40);' +
-      'color:#5b21b6;font-weight:700}' +
+      'color:#2E6A4B;font-weight:700}' +
       '.mls-src-cardchip{margin-top:4px}' +
       '.mls-src-headdot{margin-right:6px}' +
       '.mlsxh-card .mls-src-cardchip{display:inline-flex}' +
@@ -149,7 +149,7 @@
       '.mls-src-banner .mls-src-when{font-weight:500;color:' + INK + ';opacity:.85}' +
       '.mls-src-toast{position:fixed;right:18px;bottom:18px;z-index:99999;max-width:340px;' +
       'display:flex;align-items:center;gap:9px;padding:12px 14px;border-radius:11px;' +
-      'background:#0f2740;color:#eaf1fb;font-size:13px;font-weight:600;line-height:1.35;' +
+      'background:#1E2B24;color:#eaf1fb;font-size:13px;font-weight:600;line-height:1.35;' +
       'box-shadow:0 8px 26px rgba(0,0,0,.30);opacity:0;transform:translateY(8px);' +
       'transition:opacity .25s,transform .25s}' +
       '.mls-src-toast.show{opacity:1;transform:none}' +

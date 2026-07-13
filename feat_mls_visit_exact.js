@@ -42,7 +42,7 @@
 
   /* emoji as HTML numeric entities (keeps this source pure ASCII) */
   var E = {
-    mic: "&#127897;&#65039;", note: "&#128221;", folder: "&#128193;", chart: "&#128200;",
+    mic: "&#2E6A4B;&#65039;", note: "&#128221;", folder: "&#128193;", chart: "&#128200;",
     inbox: "&#128229;", plug: "&#128268;", syringe: "&#128137;"
   };
 
@@ -107,7 +107,7 @@
         '<span style="color:#B9CEC2;font-size:12.5px;font-weight:600">Ready for your next patient</span>' +
       '</div>' +
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:38px;line-height:1.08;letter-spacing:-.015em;color:#fff;margin:0 0 12px">Just talk &mdash; <span style="font-style:italic;color:#8fe9da">MLS writes the note.</span></h1>' +
-      '<p style="color:#bcd2ed;font-size:15px;line-height:1.55;max-width:440px;margin:0 0 22px">Enter the patient\'s name and DOB, hit record, and have a natural visit. No typing, no clicks &mdash; you review and sign.</p>';
+      '<p style="color:#EAF1EE;font-size:15px;line-height:1.55;max-width:440px;margin:0 0 22px">Enter the patient\'s name and DOB, hit record, and have a natural visit. No typing, no clicks &mdash; you review and sign.</p>';
     var row = mk("div", "display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap"); row.className = "vx-cap-row";
     var nameWrap = mk("div", "flex:1;min-width:200px", '<label style="display:block;color:#B9CEC2;font-size:11.5px;font-weight:600;margin-bottom:6px">Patient name</label>');
     var dobWrap = mk("div", "width:150px", '<label style="display:block;color:#B9CEC2;font-size:11.5px;font-weight:600;margin-bottom:6px">Date of birth</label>');
@@ -136,13 +136,13 @@
       b.innerHTML =
         '<span style="width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:16px">' + q.icon + '</span>' +
         '<span style="flex:1"><span style="display:block;font-weight:600;font-size:13.5px">' + q.t + '</span>' +
-        '<span style="display:block;color:#9fb6d6;font-size:11.5px;margin-top:1px">' + q.s + '</span></span>' +
+        '<span style="display:block;color:#C9DCD2;font-size:11.5px;margin-top:1px">' + q.s + '</span></span>' +
         (q.tag ? '<span style="font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#8FD8BE;border:1px solid rgba(95,227,207,.4);padding:2px 7px;border-radius:20px">' + q.tag + '</span>' : '');
       right.appendChild(b);
     });
     inner.appendChild(right);
 
-    if (pull) { imp(pull, "color", "#bcd2ed"); left.appendChild(pull); }
+    if (pull) { imp(pull, "color", "#EAF1EE"); left.appendChild(pull); }
     if (today) left.appendChild(today);
   }
 

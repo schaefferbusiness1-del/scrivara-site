@@ -16,7 +16,7 @@
     b.type='button'; b.id='mlsUplTplBtn';
     b.textContent='📤 Upload templates';
     b.title='Add your own note templates (pick multiple files at once)';
-    b.style.cssText='margin:10px 0 2px;display:inline-flex;align-items:center;gap:6px;background:#eef4fc;border:1px solid #cfe0f3;color:#15528f;border-radius:10px;padding:8px 13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.2';
+    b.style.cssText='margin:10px 0 2px;display:inline-flex;align-items:center;gap:6px;background:#eef4fc;border:1px solid #cfe0f3;color:#204034;border-radius:10px;padding:8px 13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.2';
     b.addEventListener('mouseenter',function(){ b.style.background='#e2edfa'; });
     b.addEventListener('mouseleave',function(){ b.style.background='#eef4fc'; });
     b.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); trigger(); });

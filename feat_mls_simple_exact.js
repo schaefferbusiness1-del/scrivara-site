@@ -53,7 +53,7 @@
   /* emoji as HTML numeric entities (keeps this source pure ASCII) */
   var E = {
     person: "&#128100;", cal: "&#128197;", calWk: "&#128198;", down: "&#11015;&#65039;",
-    find: "&#128269;", pen: "&#9997;&#65039;", mic: "&#127897;&#65039;", lock: "&#128274;",
+    find: "&#128269;", pen: "&#9997;&#65039;", mic: "&#2E6A4B;&#65039;", lock: "&#128274;",
     arrow: "&#8594;", larrow: "&#8592;", tri: "&#9662;", check: "&#10003;", spiral: "&#128467;&#65039;",
     spark: "&#10024;", save: "&#128190;", clip: "&#128203;", receipt: "&#129534;"
   };
@@ -218,7 +218,7 @@
     var athConn = athenaConnected();
     var statusDot = '<span style="display:flex;align-items:center;gap:6px;background:' + (athConn ? "#eef7f3" : "#f5f7fa") + ';border:1px solid ' + (athConn ? "#cfe9dd" : "#E7E5DD") + ';border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:600;color:' + (athConn ? "#1f7d5c" : "#8a9cb2") + '"><span style="width:7px;height:7px;border-radius:50%;background:' + (athConn ? "#27b07a" : "#c2cdda") + '"></span>Athena &middot; ' + (athConn ? "connected" : "idle") + '</span>';
     host.innerHTML =
-      '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ' + (active ? "#cfe0fb" : "#E7E5DD") + ';border-radius:13px;padding:13px 16px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,33,28,.04)">' +
+      '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ' + (active ? "#EAF1EE" : "#E7E5DD") + ';border-radius:13px;padding:13px 16px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,33,28,.04)">' +
         '<span style="width:36px;height:36px;border-radius:10px;background:' + avatarBg + ';color:#2E6A4B;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">' + avatarHTML + '</span>' +
         '<div style="flex:1;min-width:0;line-height:1.35">' +
           '<div style="font-weight:700;font-size:13.5px;color:#1A211C">' + title + '</div>' +
@@ -285,7 +285,7 @@
           '<span style="position:relative;width:54px;height:54px;border-radius:14px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:24px">' + E.cal + '</span>' +
           '<span style="position:relative;flex:1">' +
             '<span style="display:flex;align-items:center;gap:9px;margin-bottom:3px"><span style="color:#fff;font-weight:700;font-size:17px">Pull today\'s patients</span><span style="font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#204034;background:#8FD8BE;padding:2px 8px;border-radius:20px">READ-ONLY</span></span>' +
-            '<span style="display:block;color:#bcd2ed;font-size:13px;line-height:1.45">Brings in today\'s schedule from athenaOne. The fastest way to start.</span>' +
+            '<span style="display:block;color:#EAF1EE;font-size:13px;line-height:1.45">Brings in today\'s schedule from athenaOne. The fastest way to start.</span>' +
           '</span>' +
           '<span style="position:relative;color:#8fe9da;font-size:22px;font-weight:700">' + E.arrow + '</span>' +
         '</button>' +
@@ -380,7 +380,7 @@
     if (step === 4) {
       var preview = val("noteBox");
       b.innerHTML =
-        '<div style="background:#FCFBF8;border:1px solid #F4F2EC;border-radius:14px;padding:16px 18px;max-height:280px;overflow:auto;white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:#243a55">' +
+        '<div style="background:#FCFBF8;border:1px solid #F4F2EC;border-radius:14px;padding:16px 18px;max-height:280px;overflow:auto;white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:#204034">' +
           (preview.trim() ? esc(preview) : "No note text found &mdash; go back and generate the note.") + '</div>';
       return;
     }

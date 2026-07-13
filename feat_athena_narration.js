@@ -386,7 +386,7 @@
       ownPanel = doc.createElement('div');
       ownPanel.setAttribute('data-mls-asset-ui', 'feat_athena_narration.js');
       ownPanel.style.cssText = 'position:fixed;left:16px;bottom:16px;max-width:360px;z-index:2147483000;' +
-        'background:#0f2742;color:#eaf2fb;font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif;' +
+        'background:#1E2B24;color:#eaf2fb;font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif;' +
         'padding:10px 12px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.28);';
       ownPanel.innerHTML = '<div style="font-weight:600;margin-bottom:4px;opacity:.85;">MLS · Athena narration</div><div class="mlsnar-line"></div>';
       doc.body.appendChild(ownPanel);

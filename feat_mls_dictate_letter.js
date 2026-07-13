@@ -346,11 +346,11 @@
       '<textarea id="mlsdlBody" style="' + IN + ';min-height:150px;resize:vertical" placeholder="Dictate or type the letter body..."></textarea>' +
       '<label style="font:12px system-ui;color:#B9CEC2;display:flex;gap:6px;align-items:center;margin-top:8px;cursor:pointer"><input type="checkbox" id="mlsdlClinical">Include a clinical summary (problems / meds / allergies) from the open chart</label>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">' +
-      '<button class="mlsdlPv" data-k="chart" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#cdd8f5">Draft chart copy</button>' +
-      '<button class="mlsdlPv" data-k="print" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#cdd8f5">Print preview</button>' +
-      '<button class="mlsdlPv" data-k="fax" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#cdd8f5">Fax preview</button>' +
-      '<button class="mlsdlPv" data-k="email" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#cdd8f5">Email preview</button>' +
-      '<button id="mlsdlOpenPrint" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#cdd8f5">Open printable page</button>' +
+      '<button class="mlsdlPv" data-k="chart" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Draft chart copy</button>' +
+      '<button class="mlsdlPv" data-k="print" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Print preview</button>' +
+      '<button class="mlsdlPv" data-k="fax" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Fax preview</button>' +
+      '<button class="mlsdlPv" data-k="email" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Email preview</button>' +
+      '<button id="mlsdlOpenPrint" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Open printable page</button>' +
       '<button id="mlsdlCopy" style="background:#2E6A4B;' + BT + '">Copy</button>' +
       '</div>' +
       '<div id="mlsdlPreviewLabel" style="font:700 12px system-ui;color:#ffcf8f;margin:12px 0 4px">Letter preview</div>' +

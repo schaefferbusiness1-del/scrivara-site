@@ -41,7 +41,7 @@
       DRAFTS.forEach(function(d){
         var chip;
         if(model && model.cloneNode){ chip=model.cloneNode(true); chip.removeAttribute('id'); chip.textContent=d.label; }
-        else { chip=document.createElement('button'); chip.textContent=d.label; chip.style.cssText='font-size:12.5px;border:1px solid #cfe0f3;background:#fff;color:#15528f;border-radius:999px;padding:6px 11px;cursor:pointer;margin:3px'; }
+        else { chip=document.createElement('button'); chip.textContent=d.label; chip.style.cssText='font-size:12.5px;border:1px solid #cfe0f3;background:#fff;color:#204034;border-radius:999px;padding:6px 11px;cursor:pointer;margin:3px'; }
         chip.setAttribute('data-mlsdraft','1');
         chip.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); sendPrompt(d.prompt(activeName())); }, true);
         wrap.appendChild(chip);

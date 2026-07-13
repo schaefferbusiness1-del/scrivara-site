@@ -121,7 +121,7 @@
     chip = document.createElement('div');
     chip.id = 'mlsAutoPullChip';
     chip.style.cssText = 'position:fixed;z-index:2147483600;left:50%;bottom:24px;transform:translateX(-50%);max-width:90vw;' +
-      'background:#0f2740;color:#fff;padding:10px 16px;border-radius:10px;font:14px/1.45 system-ui,-apple-system,sans-serif;' +
+      'background:#1E2B24;color:#fff;padding:10px 16px;border-radius:10px;font:14px/1.45 system-ui,-apple-system,sans-serif;' +
       'box-shadow:0 8px 28px rgba(0,0,0,.32);white-space:pre-wrap;text-align:center;';
     (document.body || document.documentElement).appendChild(chip);
     return chip;

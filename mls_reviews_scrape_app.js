@@ -549,7 +549,7 @@
     '#' + CARD_ID + ' .rsc-kpi b{font-size:24px}',
     '#' + CARD_ID + ' .rsc-badge{display:inline-block;font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle}',
     '#' + CARD_ID + ' .rsc-doc{background:#e7f6ee;color:#116b3e}',
-    '#' + CARD_ID + ' .rsc-prac{background:#e8effc;color:#1c4fa0}',
+    '#' + CARD_ID + ' .rsc-prac{background:#e8effc;color:#204034}',
     '#' + CARD_ID + ' .rsc-unk{background:#f1f2f6;color:#666}',
     '#' + CARD_ID + ' .rsc-uncf{background:#fff4e5;color:#9a5b00;border:1px solid #ffd699}',
     '#' + CARD_ID + ' .rsc-ver{background:#e7f6ee;color:#116b3e;border:1px solid #b7e4c9}',
@@ -563,10 +563,10 @@
     '#' + CARD_ID + ' .rsc-list{border:1px solid #eef1f7;border-radius:10px;padding:9px 11px;margin:7px 0;font-size:13px}',
     '#' + CARD_ID + ' .rsc-btn{cursor:pointer;border:0;border-radius:9px;padding:9px 14px;font-weight:700;font-size:13px}',
     '#' + CARD_ID + ' .rsc-primary{background:linear-gradient(90deg,#3B7C5A,#2E6A4B);color:#fff}',
-    '#' + CARD_ID + ' .rsc-ghost{background:#eef2fa;color:#24406e}',
+    '#' + CARD_ID + ' .rsc-ghost{background:#eef2fa;color:#204034}',
     '#' + CARD_ID + ' .rsc-banner{border-radius:10px;padding:9px 12px;font-size:12.5px;margin:8px 0}',
     '#' + CARD_ID + ' .rsc-banner.warn{background:#fff8ee;border:1px solid #ffd699;color:#8a5300}',
-    '#' + CARD_ID + ' .rsc-banner.info{background:#EAF1EE;border:1px solid #cfe0fb;color:#1c4fa0}',
+    '#' + CARD_ID + ' .rsc-banner.info{background:#EAF1EE;border:1px solid #EAF1EE;color:#204034}',
     '#' + CARD_ID + ' textarea{width:100%;min-height:90px;border:1px solid #d7e0ef;border-radius:9px;padding:8px;font-size:12.5px;box-sizing:border-box}'
   ].join('\n');
 

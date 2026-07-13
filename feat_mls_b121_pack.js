@@ -3716,7 +3716,7 @@
       '#mlsPadHead{font:800 13px system-ui;margin-bottom:6px}',
       '#mlsPadCtl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
       '#mlsPadDate{background:#24332A;color:#EAF1EC;border:1px solid rgba(139,120,220,.35);border-radius:8px;padding:7px 9px;font-size:13px}',
-      '#mlsPadBtn{flex:1;min-width:230px;border:0;border-radius:9px;padding:9px 12px;font:700 12.5px system-ui;cursor:pointer;background:linear-gradient(135deg,#2E67EF,#1D46AF);color:#fff}',
+      '#mlsPadBtn{flex:1;min-width:230px;border:0;border-radius:9px;padding:9px 12px;font:700 12.5px system-ui;cursor:pointer;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff}',
       '#mlsPadBtn[disabled]{opacity:.55;cursor:default}',
       '#mlsPadNote{font-size:11.5px;color:#B9CEC2;margin-top:6px;line-height:1.45}'
     ].join('\n');
@@ -3878,15 +3878,15 @@
     el = document.createElement('div');
     el.id = EL_ID;
     el.setAttribute('data-mls-b121', '1');
-    el.style.cssText = 'position:fixed;right:18px;bottom:86px;z-index:2147483000;background:#0f1e33;color:#EAF1EC;border:1px solid #2b4a77;border-radius:12px;padding:14px 18px;min-width:300px;max-width:380px;box-shadow:0 10px 30px rgba(0,0,0,.45);font:13px/1.45 system-ui,Segoe UI,sans-serif;display:none';
+    el.style.cssText = 'position:fixed;right:18px;bottom:86px;z-index:2147483000;background:#0f1e33;color:#EAF1EC;border:1px solid #204034;border-radius:12px;padding:14px 18px;min-width:300px;max-width:380px;box-shadow:0 10px 30px rgba(0,0,0,.45);font:13px/1.45 system-ui,Segoe UI,sans-serif;display:none';
     el.innerHTML =
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
-        '<span id="mlsPP2Spin" style="width:12px;height:12px;border:2px solid #3f6ea8;border-top-color:#9fd0ff;border-radius:50%;display:inline-block;animation:mlsPP2r 1s linear infinite"></span>' +
+        '<span id="mlsPP2Spin" style="width:12px;height:12px;border:2px solid #2E6A4B;border-top-color:#EAF1EE;border-radius:50%;display:inline-block;animation:mlsPP2r 1s linear infinite"></span>' +
         '<b id="mlsPP2Title">Pulling charts from athenaOne…</b>' +
       '</div>' +
       '<div id="mlsPP2Line" style="margin-bottom:6px">starting…</div>' +
-      '<div style="background:#12305a;border-radius:6px;height:8px;overflow:hidden"><div id="mlsPP2Bar" style="height:8px;width:0%;background:linear-gradient(90deg,#2f7bd9,#63b3ff);transition:width .4s"></div></div>' +
-      '<div id="mlsPP2Tally" style="margin-top:6px;color:#a9c3e4"></div>' +
+      '<div style="background:#1E2B24;border-radius:6px;height:8px;overflow:hidden"><div id="mlsPP2Bar" style="height:8px;width:0%;background:linear-gradient(90deg,#2E6A4B,#C9DCD2);transition:width .4s"></div></div>' +
+      '<div id="mlsPP2Tally" style="margin-top:6px;color:#C9DCD2"></div>' +
       '<style>@keyframes mlsPP2r{to{transform:rotate(360deg)}}</style>';
     (document.body || document.documentElement).appendChild(el);
     return el;

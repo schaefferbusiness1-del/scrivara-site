@@ -173,13 +173,13 @@
     var s = document.createElement('style'); s.id = STYLE_ID;
     s.textContent = [
       '#' + MODAL_ID + '{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;font-family:inherit}',
-      '#' + MODAL_ID + ' .ctcard{background:#fff;color:#0f2740;width:min(680px,94vw);max-height:88vh;overflow:auto;border-radius:14px;padding:20px 22px;box-shadow:0 18px 60px rgba(0,0,0,.35)}',
+      '#' + MODAL_ID + ' .ctcard{background:#fff;color:#1E2B24;width:min(680px,94vw);max-height:88vh;overflow:auto;border-radius:14px;padding:20px 22px;box-shadow:0 18px 60px rgba(0,0,0,.35)}',
       '#' + MODAL_ID + ' h3{margin:0 0 4px;font-size:17px}',
       '#' + MODAL_ID + ' .ctsub{font-size:12.5px;color:#5b6b80;margin:0 0 12px;line-height:1.45}',
       '#' + MODAL_ID + ' textarea{width:100%;min-height:150px;font:12px/1.45 ui-monospace,Consolas,monospace;border:1px solid #cfe0f3;border-radius:9px;padding:9px;box-sizing:border-box}',
       '#' + MODAL_ID + ' .ctrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}',
-      '#' + MODAL_ID + ' button{font:inherit;font-size:13px;font-weight:700;border-radius:9px;padding:8px 14px;cursor:pointer;border:1px solid #cfe0f3;background:#eef4fc;color:#15528f}',
-      '#' + MODAL_ID + ' button.pri{background:#1763b6;border-color:#1763b6;color:#fff}',
+      '#' + MODAL_ID + ' button{font:inherit;font-size:13px;font-weight:700;border-radius:9px;padding:8px 14px;cursor:pointer;border:1px solid #cfe0f3;background:#eef4fc;color:#204034}',
+      '#' + MODAL_ID + ' button.pri{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
       '#' + MODAL_ID + ' button.ghost{background:#fff}',
       '#' + MODAL_ID + ' .ctprev{margin-top:12px;border:1px solid #e2ecf6;border-radius:9px;max-height:210px;overflow:auto;font-size:12px}',
       '#' + MODAL_ID + ' .ctprev table{border-collapse:collapse;width:100%}',

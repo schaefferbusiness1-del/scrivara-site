@@ -224,7 +224,7 @@
       + 'color:#22683f!important;font-weight:600!important;}'
       + '.mls-chart-filled-btn .mls-cf-detail{font-weight:400;opacity:.8;}'
       + '.mls-chart-filled-btn .mls-cf-refresh{opacity:.7;margin-left:2px;}'
-      + '.mls-using-chart{background:#eef4ff;border:1px solid #4067c9;color:#22386e;'
+      + '.mls-using-chart{background:#eef4ff;border:1px solid #2E6A4B;color:#204034;'
       + 'border-radius:8px;padding:8px 12px;font-size:13px;margin:6px 0 10px;}';
     (document.head || document.documentElement).appendChild(st);
   }

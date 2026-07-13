@@ -33,12 +33,12 @@
       '#' + STRIP_ID + ' .mlspx-ico{font-size:15px;line-height:1;}',
       '#' + STRIP_ID + ' .mlspx-pill{display:inline-flex;align-items:center;',
       'padding:3px 10px;border-radius:999px;font-weight:600;font-size:12.5px;',
-      'background:rgba(59,130,246,.13);color:#3b82f6;border:1px solid rgba(59,130,246,.30);}',
+      'background:rgba(59,130,246,.13);color:#2E6A4B;border:1px solid rgba(59,130,246,.30);}',
       '#' + STRIP_ID + '.mlspx-none{border-color:rgba(120,120,140,.20);background:rgba(255,255,255,.03);}',
       '#' + STRIP_ID + '.mlspx-none .mlspx-pill{background:rgba(120,120,140,.10);color:inherit;',
       'opacity:.7;border-color:rgba(120,120,140,.22);}',
       '#' + STRIP_ID + ' .mlspx-more{cursor:pointer;background:rgba(59,130,246,.06);',
-      'color:#3b82f6;text-decoration:none;}',
+      'color:#2E6A4B;text-decoration:none;}',
       '#' + STRIP_ID + ' .mlspx-more:hover{background:rgba(59,130,246,.18);}',
       '#' + STRIP_ID + ' .mlspx-src{margin-left:auto;font-size:11px;opacity:.55;font-weight:500;}'
     ].join('');

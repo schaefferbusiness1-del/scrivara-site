@@ -31,7 +31,7 @@
       '#' + WRAP_ID + ' button:hover{background:rgba(59,130,246,.28);}',
       '#' + WRAP_ID + ' button[disabled]{opacity:.4;cursor:default;}',
       '#' + WRAP_ID + ' .np-pos{font-weight:700;font-size:11.5px;opacity:.85;min-width:74px;text-align:center;}',
-      '#' + WRAP_ID + ' .np-next{background:rgba(59,130,246,.22);border-color:rgba(59,130,246,.4);color:#bfdbfe;}'
+      '#' + WRAP_ID + ' .np-next{background:rgba(59,130,246,.22);border-color:rgba(59,130,246,.4);color:#EAF1EE;}'
     ].join('');
     document.head.appendChild(s);
   }

@@ -210,8 +210,8 @@
     if ($(STYLE_ID)) return;
     var css = [
       "#mlsLM51back{position:fixed;inset:0;background:rgba(10,20,35,.55);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:18px;}",
-      "#mlsLM51modal{width:600px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.4);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#12263f;overflow:hidden;}",
-      "#mlsLM51modal .mp-head{background:#0f2740;color:#fff;padding:13px 18px;display:flex;align-items:center;gap:10px;}",
+      "#mlsLM51modal{width:600px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.4);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#1E2B24;overflow:hidden;}",
+      "#mlsLM51modal .mp-head{background:#1E2B24;color:#fff;padding:13px 18px;display:flex;align-items:center;gap:10px;}",
       "#mlsLM51modal .mp-head b{font-size:15.5px;font-weight:800;}",
       "#mlsLM51modal .mp-x{margin-left:auto;cursor:pointer;border:0;background:transparent;color:#cfe0f5;font-size:19px;font-weight:800;padding:2px 8px;border-radius:8px;}",
       "#mlsLM51modal .mp-body{padding:14px 18px;overflow:auto;}",
@@ -221,27 +221,27 @@
       "#mlsLM51modal .mp-dot.spin{background:#2E6A4B;animation:mlsLM51pulse 1s ease-in-out infinite;}",
       "@keyframes mlsLM51pulse{0%,100%{opacity:1}50%{opacity:.35}}",
       "#mlsLM51modal .mp-conn{font-weight:700;}",
-      "#mlsLM51modal .mp-sub{color:#54708c;font-size:12.5px;}",
-      "#mlsLM51modal .mp-range{background:#eef4ff;border:1px solid #c6d8f7;border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}",
-      "#mlsLM51modal .mp-range b{color:#123a6b;}",
+      "#mlsLM51modal .mp-sub{color:#2E6A4B;font-size:12.5px;}",
+      "#mlsLM51modal .mp-range{background:#eef4ff;border:1px solid #EAF1EE;border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}",
+      "#mlsLM51modal .mp-range b{color:#204034;}",
       "#mlsLM51modal .mp-warn{background:#fff7ed;border:1px solid #fcd9b0;color:#7c3f00;border-radius:10px;padding:8px 12px;font-size:12.5px;margin:8px 0;font-weight:700;}",
-      "#mlsLM51modal select{border:1px solid #c6d3e4;border-radius:8px;padding:5px 8px;font:600 13px system-ui;color:#12263f;background:#fff;}",
+      "#mlsLM51modal select{border:1px solid #c6d3e4;border-radius:8px;padding:5px 8px;font:600 13px system-ui;color:#1E2B24;background:#fff;}",
       "#mlsLM51modal .mp-barwrap{background:#e8eef7;border-radius:999px;height:14px;overflow:hidden;margin:10px 0 4px;}",
-      "#mlsLM51modal .mp-bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#4f8bff);transition:width .35s;}",
+      "#mlsLM51modal .mp-bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#C9DCD2);transition:width .35s;}",
       "#mlsLM51modal .mp-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}",
       "#mlsLM51modal .mp-c{background:#f4f7fc;border:1px solid #e1e9f5;border-radius:10px;padding:7px 10px;text-align:center;}",
-      "#mlsLM51modal .mp-c b{display:block;font-size:17px;color:#123a6b;}",
-      "#mlsLM51modal .mp-c span{font-size:11px;color:#54708c;font-weight:700;text-transform:uppercase;}",
+      "#mlsLM51modal .mp-c b{display:block;font-size:17px;color:#204034;}",
+      "#mlsLM51modal .mp-c span{font-size:11px;color:#2E6A4B;font-weight:700;text-transform:uppercase;}",
       "#mlsLM51modal .mp-now{background:#f8fafd;border:1px solid #e1e9f5;border-radius:10px;padding:9px 12px;min-height:52px;}",
-      "#mlsLM51modal .mp-now .l1{font-weight:800;color:#123a6b;}",
-      "#mlsLM51modal .mp-now .l2{color:#33506e;font-size:13px;margin-top:2px;}",
-      "#mlsLM51modal .mp-log{background:#0f2740;color:#d7e6f8;border-radius:10px;padding:9px 12px;height:120px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;margin-top:10px;white-space:pre-wrap;}",
+      "#mlsLM51modal .mp-now .l1{font-weight:800;color:#204034;}",
+      "#mlsLM51modal .mp-now .l2{color:#204034;font-size:13px;margin-top:2px;}",
+      "#mlsLM51modal .mp-log{background:#1E2B24;color:#d7e6f8;border-radius:10px;padding:9px 12px;height:120px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;margin-top:10px;white-space:pre-wrap;}",
       "#mlsLM51modal .mp-log .err{color:#ffb4b4;}#mlsLM51modal .mp-log .ok{color:#9ff2bf;}",
       "#mlsLM51modal .mp-days{display:none;margin-top:10px;background:#fff7ed;border:1px solid #fcd9b0;border-radius:10px;padding:8px 12px;font-size:12.5px;color:#7c3f00;}",
       "#mlsLM51modal .mp-foot{display:flex;gap:9px;padding:12px 18px;border-top:1px solid #e6edf6;background:#fbfdff;align-items:center;flex-wrap:wrap;}",
       "#mlsLM51modal .mp-btn{cursor:pointer;border-radius:9px;padding:8px 15px;font:700 13.5px system-ui;border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;}",
       "#mlsLM51modal .mp-btn[disabled]{opacity:.45;cursor:default;}",
-      "#mlsLM51modal .mp-btn.sec{background:#fff;color:#1d4ed8;border-color:#9db9ee;}",
+      "#mlsLM51modal .mp-btn.sec{background:#fff;color:#2E6A4B;border-color:#C9DCD2;}",
       "#mlsLM51modal .mp-btn.warn{background:#fff;color:#b45309;border-color:#e5b46b;}",
       "#mls-pull-lastmonth-btn{display:block;width:100%;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(120,120,180,.4);background:rgba(120,120,200,.12);color:inherit;font:600 13px system-ui,-apple-system,sans-serif;cursor:pointer;}"
     ].join("\n");
@@ -255,7 +255,7 @@
     var back = document.createElement("div"); back.id = "mlsLM51back";
     back.innerHTML =
       '<div id="mlsLM51modal" role="dialog" aria-label="Pull last month from Athena">' +
-        '<div class="mp-head"><b>🗓️ Pull last month</b><span class="mp-sub" style="color:#9fc0e8">read-only in Athena</span><button class="mp-x" id="mlsLM51close">&times;</button></div>' +
+        '<div class="mp-head"><b>🗓️ Pull last month</b><span class="mp-sub" style="color:#C9DCD2">read-only in Athena</span><button class="mp-x" id="mlsLM51close">&times;</button></div>' +
         '<div class="mp-body">' +
           '<div class="mp-warn">⚠️ Keep athenaOne open on <b>Calendar › View Calendar</b> (day/week grid) before you click Start - if it is not on that screen the pull cannot read the schedule.</div>' +
           '<div class="mp-row"><span class="mp-dot spin" id="mlsLM51connDot"></span><span class="mp-conn" id="mlsLM51conn">Checking Athena connection</span></div>' +

@@ -127,7 +127,7 @@
       "#" + MODAL_ID + " .fd-sub{padding:0 18px 8px;color:#79837C;font-size:12px}",
       "#" + MODAL_ID + " .fd-list{overflow:auto;padding:4px 12px 14px}",
       "#" + MODAL_ID + " .fd-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border-radius:10px;border:1px solid #e6edf4;background:#fff;cursor:pointer;font-family:inherit;margin:6px 0}",
-      "#" + MODAL_ID + " .fd-row:hover{border-color:#b9d0f3;background:#f5f9ff}",
+      "#" + MODAL_ID + " .fd-row:hover{border-color:#EAF1EE;background:#f5f9ff}",
       "#" + MODAL_ID + " .fd-row.is-chosen{border-color:#2E6A4B;box-shadow:0 0 0 2px rgba(32,64,52,.16)}",
       "#" + MODAL_ID + " .fd-nm{font-weight:700;font-size:14px;color:#1A211C}",
       "#" + MODAL_ID + " .fd-sp{font-size:11.5px;color:#8a9cb2;margin-top:1px}"

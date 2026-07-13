@@ -120,7 +120,7 @@
     if (!anchor) return;
     var chip = document.createElement('span');
     chip.id = 'mlsProvChip';
-    if (fixed) chip.style.cssText = 'position:fixed;left:18px;bottom:18px;z-index:99995;background:linear-gradient(135deg,#0d3c78,#2168c9);border:0';
+    if (fixed) chip.style.cssText = 'position:fixed;left:18px;bottom:18px;z-index:99995;background:linear-gradient(135deg,#204034,#2E6A4B);border:0';
     chip.addEventListener('click', function (e) { e.stopPropagation(); buildMenu(chip); });
     if (fixed) anchor.appendChild(chip); else anchor.insertAdjacentElement('afterend', chip);
     remember(chip);
@@ -187,7 +187,7 @@
                   var b = document.createElement('button');
                   b.type = 'button';
                   b.textContent = '📅 Imported for ' + dayLabel(dom) + ' — view that day';
-                  b.style.cssText = 'display:block;margin-top:6px;background:#fff;color:#0d3c78;border:0;border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer';
+                  b.style.cssText = 'display:block;margin-top:6px;background:#fff;color:#204034;border:0;border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer';
                   b.onclick = function () { try { if (typeof showView === 'function') showView('calendar'); } catch (e) {} try { if (typeof calOpenDay === 'function') calOpenDay(dom); } catch (e) {} };
                   st.insertAdjacentElement('afterend', b); remember(b);
                   setTimeout(function () { try { b.remove(); } catch (e) {} }, 120000);

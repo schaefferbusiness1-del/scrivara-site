@@ -936,7 +936,7 @@
       bodyEl.innerHTML = '';
       var box = document.createElement('div');
       box.id = 'mlsOutcomeInline';
-      box.style.cssText = '--bg:#ffffff;--text:#15233d;--panel:#eef2f9;--border:#cfd7e6;color:#15233d;padding:2px 0;';
+      box.style.cssText = '--bg:#ffffff;--text:#1E2B24;--panel:#eef2f9;--border:#cfd7e6;color:#1E2B24;padding:2px 0;';
       box.innerHTML = modalHTML();
       bodyEl.appendChild(box);
       // the card already has its own X in the header and the tabs are right
@@ -971,7 +971,7 @@
     if (!host) return false;
     var sec = document.createElement('div');
     sec.id = 'mlsOutcomeSection';
-    sec.style.cssText = 'margin-top:18px;padding:14px 16px;border:1px solid var(--border,#2a3550);' +
+    sec.style.cssText = 'margin-top:18px;padding:14px 16px;border:1px solid var(--border,#204034);' +
       'border-radius:12px;background:var(--panel,rgba(255,255,255,.03));';
     sec.innerHTML =
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
@@ -1043,8 +1043,8 @@
     // white surface and were invisible). One scoped override fixes the whole
     // subtree on desktop and mobile.
     box.style.cssText = 'width:min(960px,96vw);' +
-      '--bg:#ffffff;--text:#15233d;--panel:#eef2f9;--border:#cfd7e6;' +
-      'background:#ffffff;color:#15233d;' +
+      '--bg:#ffffff;--text:#1E2B24;--panel:#eef2f9;--border:#cfd7e6;' +
+      'background:#ffffff;color:#1E2B24;' +
       'border:1px solid #cfd7e6;border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,.5);padding:20px 22px;';
     box.innerHTML = modalHTML();
     ov.appendChild(box);
@@ -1077,8 +1077,8 @@
       '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
         '<input type="file" id="ocFile" accept=".xlsx,.xls,.csv,text/csv" style="font-size:13px">' +
         '<span style="opacity:.6;font-size:12px">or</span>' +
-        '<button id="ocPasteBtn" style="background:#33415c;' + btnCss('#33415c') + '">Paste rows</button>' +
-        '<button id="ocDemo" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:7px 12px;border-radius:9px;cursor:pointer;font-size:12px">Load demo data</button>' +
+        '<button id="ocPasteBtn" style="background:#204034;' + btnCss('#204034') + '">Paste rows</button>' +
+        '<button id="ocDemo" style="background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:7px 12px;border-radius:9px;cursor:pointer;font-size:12px">Load demo data</button>' +
       '</div>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
         '<button id="ocAiBtn" style="' + btnCss('#7A5CC0') + '">\uD83E\uDD16 Import any Excel with AI</button>' +
@@ -1087,7 +1087,7 @@
       '</div>' +
       '<textarea id="ocPaste" placeholder="Name, DOS&#10;Jane Doe, 03/04/2026&#10;John Smith, 2026-02-15" ' +
         'style="display:none;width:100%;min-height:120px;box-sizing:border-box;background:var(--panel,#0b1220);' +
-        'color:inherit;border:1px solid var(--border,#2a3550);border-radius:9px;padding:10px;font-size:13px;font-family:monospace"></textarea>' +
+        'color:inherit;border:1px solid var(--border,#204034);border-radius:9px;padding:10px;font-size:13px;font-family:monospace"></textarea>' +
       '<div id="ocParseMsg" style="margin-top:12px;font-size:13px"></div>' +
       '<div id="ocPatientList" style="margin-top:10px"></div>' +
       '<div id="ocStep1Actions" style="margin-top:14px"></div>';
@@ -1230,7 +1230,7 @@
     body.innerHTML =
       '<div style="font-size:13px;margin-bottom:8px">🤖 <b>AI import</b> — extracting patients &amp; scores from <b>' + esc(fname) + '</b> (any layout).</div>' +
       '<div id="ocAiLog" style="margin-top:8px;font-size:12.5px;max-height:300px;overflow:auto;border:1px solid var(--border,#cfd7e6);border-radius:9px;padding:10px"></div>' +
-      '<div style="margin-top:12px"><button id="ocAiBack" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Start over</button></div>';
+      '<div style="margin-top:12px"><button id="ocAiBack" style="background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Start over</button></div>';
     var b = body.querySelector('#ocAiBack'); if (b) b.addEventListener('click', function () { renderStep1(box); });
   }
   function aiLog(box, t, col) {
@@ -1342,14 +1342,14 @@
   }
   function aiBannerHTML(info) {
     var src = info.filename ? esc(info.filename) : 'the uploaded sheet';
-    return '<div id="ocIngestBanner" style="margin-bottom:10px;padding:9px 12px;border:1px solid #6d28d9;' +
+    return '<div id="ocIngestBanner" style="margin-bottom:10px;padding:9px 12px;border:1px solid #2E6A4B;' +
       'background:rgba(124,58,237,.08);border-radius:10px;font-size:12.5px">' +
       '<span style="color:#7A5CC0;font-weight:600">🤖 AI import from ' + src + '</span> — <b>' +
       info.studies.length + '</b> patient(s), <b>' + info.scoreCells + '</b> score value(s) extracted' +
       (info.model ? ' · model ' + esc(String(info.model)) : '') + '. ' +
       (info.saved && info.saved.patients ? '<b>' + info.saved.patients + '</b> saved as patient record(s)' +
         (info.saved.cohort ? ' in cohort “' + esc(info.saved.cohort) + '”' : '') + '.' : '') +
-      ' <button id="ocFillAthena" style="margin-left:6px;background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">＋ Fill blanks from Athena (optional)</button>' +
+      ' <button id="ocFillAthena" style="margin-left:6px;background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">＋ Fill blanks from Athena (optional)</button>' +
       '<div id="ocFillLog" style="margin-top:6px;font-size:11.5px"></div></div>';
   }
 
@@ -1371,14 +1371,14 @@
       '<div style="margin-top:6px;font-size:12px;color:#f5a623">Skipped: ' +
         parsed.skipped.slice(0, 10).map(function (s) { return 'row ' + s.row + ' (' + esc(s.reason) + ')'; }).join('; ') +
         (parsed.skipped.length > 10 ? ' …' : '') + '</div>' : '';
-    list.innerHTML = '<div style="max-height:200px;overflow:auto;border:1px solid var(--border,#2a3550);border-radius:9px">' +
+    list.innerHTML = '<div style="max-height:200px;overflow:auto;border:1px solid var(--border,#204034);border-radius:9px">' +
       '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
       '<thead><tr><th style="text-align:left;padding:4px 8px;position:sticky;top:0;background:var(--panel,#10182a)">Patient</th>' +
       '<th style="text-align:left;padding:4px 8px;position:sticky;top:0;background:var(--panel,#10182a)">DOS</th></tr></thead>' +
       '<tbody>' + rowsHtml + '</tbody></table></div>' + skHtml;
     acts.innerHTML =
       '<button id="ocRunAthena" style="' + btnCss('#3B7C5A') + '">▶ Read charts from Athena &amp; build study</button> ' +
-      '<button id="ocRunDemo" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">Build from pasted/demo scores</button>';
+      '<button id="ocRunDemo" style="background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">Build from pasted/demo scores</button>';
     acts.querySelector('#ocRunAthena').addEventListener('click', function () { runAthena(box); });
     acts.querySelector('#ocRunDemo').addEventListener('click', function () { runFromInline(box); });
   }
@@ -1425,8 +1425,8 @@
       esc(layoutLabel(info.layout)) + ' layout, <b>' + info.studies.length + '</b> patient(s), <b>' +
       info.scoreCells + '</b> score value(s) read from the sheet. No paste or Athena needed.' +
       (info.skipped && info.skipped.length ? ' <span style="color:#f5a623">' + info.skipped.length + ' row(s) skipped.</span>' : '') +
-      ' <button id="ocAdjustCols" style="margin-left:6px;background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">🛠 Adjust columns</button>' +
-      ' <button id="ocFillAthena" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">＋ Fill blanks from Athena (optional)</button>' +
+      ' <button id="ocAdjustCols" style="margin-left:6px;background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">🛠 Adjust columns</button>' +
+      ' <button id="ocFillAthena" style="background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">＋ Fill blanks from Athena (optional)</button>' +
       '<div id="ocFillLog" style="margin-top:6px;font-size:11.5px"></div></div>';
   }
   function wireIngestBanner(box) {
@@ -1464,7 +1464,7 @@
     var body = box.querySelector('#ocBody');
     var an = STATE.analysis, rows = STATE.rawRows || [];
     if (!an || an.headerRow < 0) { body.innerHTML = redMsg('No spreadsheet loaded to map. Go back and upload a file.') +
-      '<div style="margin-top:12px"><button id="ocMapBack" style="' + btnCss('#33415c') + '">↩ Back</button></div>';
+      '<div style="margin-top:12px"><button id="ocMapBack" style="' + btnCss('#204034') + '">↩ Back</button></div>';
       var bb = body.querySelector('#ocMapBack'); if (bb) bb.addEventListener('click', function () { renderStep1(box); }); return; }
     var headers = an.headers || [];
     var firstData = rows[an.headerRow + 1] || [];
@@ -1476,16 +1476,16 @@
     var rowsHtml = headers.map(function (h, ci) {
       var sel = colToken(an.cols && an.cols[ci]);
       var sample = cleanStr(firstData[ci]);
-      return '<tr style="border-top:1px solid var(--border,#222e48)">' +
+      return '<tr style="border-top:1px solid var(--border,#1E2B24)">' +
         '<td style="padding:5px 9px;font-weight:600">' + esc(h || ('Column ' + (ci + 1))) + '</td>' +
         '<td style="padding:5px 9px;opacity:.7;font-size:11.5px">' + esc(sample) + '</td>' +
         '<td style="padding:5px 9px"><select data-mapcol="' + ci + '" style="background:var(--panel,#0b1220);color:inherit;' +
-          'border:1px solid var(--border,#2a3550);border-radius:7px;padding:4px 6px;font-size:12px">' + optsFor(sel) + '</select></td></tr>';
+          'border:1px solid var(--border,#204034);border-radius:7px;padding:4px 6px;font-size:12px">' + optsFor(sel) + '</select></td></tr>';
     }).join('');
     body.innerHTML =
       '<div style="font-size:13px;opacity:.85;margin-bottom:10px">🛠 <b>Column mapping</b> — confirm what each column holds, then build the study. ' +
         'Use the per-timepoint options for one-row-per-patient sheets, or the “(per-visit value)” + “Timepoint label / Visit date” options for one-row-per-visit sheets.</div>' +
-      '<div style="max-height:340px;overflow:auto;border:1px solid var(--border,#2a3550);border-radius:9px">' +
+      '<div style="max-height:340px;overflow:auto;border:1px solid var(--border,#204034);border-radius:9px">' +
       '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>' +
         '<th style="text-align:left;padding:5px 9px;position:sticky;top:0;background:var(--panel,#10182a)">Column</th>' +
         '<th style="text-align:left;padding:5px 9px;position:sticky;top:0;background:var(--panel,#10182a)">Sample</th>' +
@@ -1494,7 +1494,7 @@
       '<div id="ocMapMsg" style="margin-top:10px;font-size:12.5px"></div>' +
       '<div style="margin-top:12px">' +
         '<button id="ocMapApply" style="' + btnCss('#3B7C5A') + '">✓ Apply mapping &amp; build study</button> ' +
-        '<button id="ocMapBack" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Back</button></div>';
+        '<button id="ocMapBack" style="background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Back</button></div>';
     body.querySelector('#ocMapBack').addEventListener('click', function () {
       if (STATE.ingestInfo) renderResults(box); else renderStep1(box);
     });
@@ -1602,7 +1602,7 @@
     var prog = document.createElement('div');
     prog.id = 'ocProg';
     prog.style.cssText = 'margin-top:14px;font-size:12.5px;max-height:260px;overflow:auto;' +
-      'border:1px solid var(--border,#2a3550);border-radius:9px;padding:8px 10px';
+      'border:1px solid var(--border,#204034);border-radius:9px;padding:8px 10px';
     body.appendChild(prog);
     function log(t, cls) { var d = document.createElement('div'); if (cls) d.style.color = cls; d.innerHTML = t; prog.appendChild(d); prog.scrollTop = prog.scrollHeight; }
 
@@ -1679,9 +1679,9 @@
       ingestBannerHTML() +
       '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">' +
         '<div style="font-size:13px;opacity:.85;max-width:560px">' + esc(summarize(agg, c)) + '</div>' +
-        '<div><button id="ocExpCsv" style="' + btnCss('#33415c') + '">⬇ CSV</button> ' +
+        '<div><button id="ocExpCsv" style="' + btnCss('#204034') + '">⬇ CSV</button> ' +
         '<button id="ocExpXlsx" style="' + btnCss('#3B7C5A') + '">⬇ Excel</button> ' +
-        '<button id="ocBack" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Start over</button></div>' +
+        '<button id="ocBack" style="background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Start over</button></div>' +
       '</div>' +
       chartSVG(agg, c) +
       statTable('VAS pain (' + c.vasMin + '–' + c.vasMax + ', lower = better)', agg.vas, true) +
@@ -1704,7 +1704,7 @@
         dCell = '<span style="color:' + col + '">' + (r.changeMean > 0 ? '+' : '') + r.changeMean + '</span>';
       }
       var dMed = (r.key !== 'baseline' && r.changeMedian != null) ? ((r.changeMedian > 0 ? '+' : '') + r.changeMedian) : '';
-      return '<tr style="border-top:1px solid var(--border,#222e48)">' +
+      return '<tr style="border-top:1px solid var(--border,#1E2B24)">' +
         td(r.label, true) + td(r.n) + td(fmtN(r.mean)) + td(fmtN(r.median)) + td(fmtN(r.sd)) +
         '<td style="padding:5px 9px">' + dCell + '</td>' + td(dMed) + td(r.nPaired == null ? '' : r.nPaired) + '</tr>';
     }).join('');
@@ -1736,7 +1736,7 @@
       var yy = padT + (H - padT - padB) * f;
       gridY += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="currentColor" opacity=".08"></line>';
     });
-    return '<div style="margin-top:6px;border:1px solid var(--border,#222e48);border-radius:10px;padding:8px">' +
+    return '<div style="margin-top:6px;border:1px solid var(--border,#1E2B24);border-radius:10px;padding:8px">' +
       '<div style="font-size:11.5px;margin-bottom:2px"><span style="color:#3B7C5A">●</span> mean VAS pain (0–' + c.vasMax + ') &nbsp; <span style="color:#f5a623">●</span> mean short-form (0–' + c.sfMax + ')</div>' +
       '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;color:var(--text,#e8eefc)">' +
       gridY + line(agg.vas, c.vasMax, '#3B7C5A') + line(agg.shortForm, c.sfMax, '#f5a623') + labels + '</svg></div>';
@@ -1751,10 +1751,10 @@
       var b = s.baseline || {};
       var cells = [s.name, s.dos, num(b.vas), num(b.shortForm)];
       keys.forEach(function (k) { var f = s.followups[k] || {}; cells.push(num(f.vas), num(f.shortForm)); });
-      return '<tr style="border-top:1px solid var(--border,#222e48)">' + cells.map(function (cl, i) { return '<td style="padding:4px 8px' + (i === 0 ? ';font-weight:600' : '') + '">' + esc(cl) + '</td>'; }).join('') + '</tr>';
+      return '<tr style="border-top:1px solid var(--border,#1E2B24)">' + cells.map(function (cl, i) { return '<td style="padding:4px 8px' + (i === 0 ? ';font-weight:600' : '') + '">' + esc(cl) + '</td>'; }).join('') + '</tr>';
     }).join('');
     return '<div style="margin-top:16px"><div style="font-weight:600;font-size:13px;margin-bottom:4px">Per-patient detail</div>' +
-      '<div style="max-height:260px;overflow:auto;border:1px solid var(--border,#2a3550);border-radius:9px">' +
+      '<div style="max-height:260px;overflow:auto;border:1px solid var(--border,#204034);border-radius:9px">' +
       '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table></div></div>';
   }
   function num(v) { return v == null ? '—' : v; }

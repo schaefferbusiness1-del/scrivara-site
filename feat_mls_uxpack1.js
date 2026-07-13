@@ -33,15 +33,15 @@
     s.textContent = [
       "#mlsOpFillBtn{display:none !important;}",
       "#mlsSnapshotBtn{display:none !important;}",
-      "#mlsAgendaChip{font-weight:700 !important;font-size:13px !important;padding:6px 12px !important;background:#2f6df0 !important;color:#fff !important;border-radius:10px !important;border:1px solid #2f6df0 !important;cursor:pointer;}",
+      "#mlsAgendaChip{font-weight:700 !important;font-size:13px !important;padding:6px 12px !important;background:#2E6A4B !important;color:#fff !important;border-radius:10px !important;border:1px solid #2E6A4B !important;cursor:pointer;}",
       ".mlsux1-busy{opacity:.85;pointer-events:none;}",
-      ".mlsux1-spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(120,150,255,.35);border-top-color:#2f6df0;border-radius:50%;vertical-align:-2px;margin-right:6px;animation:mlsux1rot .8s linear infinite;}",
+      ".mlsux1-spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(120,150,255,.35);border-top-color:#2E6A4B;border-radius:50%;vertical-align:-2px;margin-right:6px;animation:mlsux1rot .8s linear infinite;}",
       "@keyframes mlsux1rot{to{transform:rotate(360deg)}}",
       "#mlsUx1TmplBar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px;padding-top:10px;border-top:1px dashed #d5dde6;width:100%;}",
       "#mlsUx1TmplBar button{cursor:pointer;border:1px solid #d5dde6;background:#f6f9fc;border-radius:8px;padding:6px 10px;font-size:12.5px;}",
       "#mlsUx1TmplBar button.mlsux1-danger{border-color:#e3b3b3;background:#fdf3f3;color:#8a1f1f;}",
       ".mlsux1-daychips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;}",
-      ".mlsux1-daychips span{background:#eef4ff;border:1px solid #cfe0ff;color:#1d3a6b;border-radius:8px;padding:3px 8px;font-size:12px;}"
+      ".mlsux1-daychips span{background:#eef4ff;border:1px solid #EAF1EE;color:#204034;border-radius:8px;padding:3px 8px;font-size:12px;}"
     ].join("");
     (document.head || document.documentElement).appendChild(s);
   }
@@ -62,7 +62,7 @@
     if (!sub) {
       sub = document.createElement("div");
       sub.className = "mlsux1-status";
-      sub.style.cssText = "font-size:11.5px;margin-top:3px;color:#1d3a6b;";
+      sub.style.cssText = "font-size:11.5px;margin-top:3px;color:#204034;";
       c.appendChild(sub);
     }
     while (sub.firstChild) sub.removeChild(sub.firstChild);
@@ -161,7 +161,7 @@
       strip.setAttribute("data-sig", sig);
       while (strip.firstChild) strip.removeChild(strip.firstChild);
       var head = document.createElement("span");
-      head.style.cssText = "background:#2f6df0;color:#fff;border-color:#2f6df0;font-weight:600;";
+      head.style.cssText = "background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:600;";
       head.textContent = "Booked: " + appts.length;
       strip.appendChild(head);
       for (var j = 0; j < appts.length && j < 24; j++) {

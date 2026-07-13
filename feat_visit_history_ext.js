@@ -71,7 +71,7 @@
     if (/inject|tfesi|\besi\b|epidural|\bblock\b|facet|\brfa\b|ablation|rhizotom|trigger ?point|denervation|medial branch/.test(t))
       return { key: "injection", label: "Injection", icon: "💉", color: "#7A5CC0", tint: "rgba(124,58,237,.10)" };
     if (/mri|x-?ray|ct scan|ultrasound|imaging|radiograph|emg|ncs/.test(t))
-      return { key: "imaging", label: "Imaging / study", icon: "🖼️", color: "#0891b2", tint: "rgba(8,145,178,.10)" };
+      return { key: "imaging", label: "Imaging / study", icon: "🖼️", color: "#2E6A4B", tint: "rgba(8,145,178,.10)" };
     if (/operat|surg|implant|\bstim\b|kyphoplast|discectomy|fusion|procedure performed|pump/.test(t))
       return { key: "procedure", label: "Procedure", icon: "🛠️", color: "#a87d0a", tint: "rgba(168,125,10,.12)" };
     if (/office|follow|consult|new patient|established|e\/m|telehealth|evaluation|visit|exam/.test(t))
@@ -208,7 +208,7 @@
       "#mlsVisitHistoryExt .mlsxh-pill{font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 7px;white-space:nowrap}",
       "#mlsVisitHistoryExt .mlsxh-pill.dx{background:rgba(168,125,10,.13);color:#7a5a06}",
       "#mlsVisitHistoryExt .mlsxh-pill.cpt{background:rgba(15,138,99,.13);color:#0b6b4d}",
-      "#mlsVisitHistoryExt .mlsxh-pill.score{background:rgba(37,99,201,.11);color:#1d4e94}",
+      "#mlsVisitHistoryExt .mlsxh-pill.score{background:rgba(37,99,201,.11);color:#204034}",
       "#mlsVisitHistoryExt .mlsxh-sum{font-size:12px;line-height:1.45;color:var(--muted,#79837C);margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}",
       "#mlsVisitHistoryExt .mlsxh-sum.pending{font-style:italic;opacity:.8}",
       "#mlsVisitHistoryExt .mlsxh-chev{flex:0 0 auto;color:var(--muted,#79837C);font-size:13px;align-self:center}",

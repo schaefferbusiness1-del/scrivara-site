@@ -174,13 +174,13 @@
   body.theme-dark [style*="border:1px solid #bfe6cf"],
   body.theme-dark [style*="border:1px solid #d9cdf0"],
   body.theme-dark [style*="border:1px solid #cfe2f8"],
-  body.theme-dark [style*="border:1px solid #cdbce8"],
+  body.theme-dark [style*="border:1px solid #EAF1EE"],
   body.theme-dark [style*="border:1px solid #bfe6d2"],
   body.theme-dark [style*="border:1px solid #f0d9a0"]{ border-color:var(--line)!important }
   /* dark-on-light accent text → lighten for contrast on dark */
   body.theme-dark [style*="color:#1f7a4d"],
   body.theme-dark [style*="color:#127a55"]{ color:var(--green)!important }
-  body.theme-dark [style*="color:#6b3fa0"]{ color:#b89cf0!important }
+  body.theme-dark [style*="color:#2E6A4B"]{ color:#C9DCD2!important }
   /* inputs / selects / textareas inside the new panels (number + type-less inputs
      aren't caught by the global input rule) */
   body.theme-dark #legalInvoicePanel input,
@@ -584,10 +584,10 @@
     border-radius:12px;padding:10px 14px;cursor:pointer;transition:.12s;text-align:left;min-width:150px}
   .team-doc:hover{border-color:var(--brand);background:#f3f8ff}
   .team-doc.on{border-color:var(--brand);background:#eaf3ff;box-shadow:0 0 0 2px rgba(31,122,224,.15)}
-  .team-doc .dlabel{font-weight:700;font-size:14px;color:var(--ink,#16324f)}
+  .team-doc .dlabel{font-weight:700;font-size:14px;color:var(--ink,#1E2B24)}
   .team-doc .dmeta{font-size:12px;color:var(--muted)}
   .pt-item.active{border-color:var(--brand);background:#eaf3ff;box-shadow:0 0 0 2px rgba(31,122,224,.15)}
-  .pt-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(120deg,#2E6A4B,#155fb3);
+  .pt-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(120deg,#2E6A4B,#2E6A4B);
     color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex-shrink:0}
   .pt-main{flex:1;min-width:0}
   .pt-main .t{font-weight:700;font-size:16px;color:var(--ink)}
@@ -760,9 +760,9 @@
   #copilotCard{ overflow:hidden; }
   #copilotHero{ margin:-4px -2px 14px; padding:16px 16px 14px; border-radius:14px;
     background:linear-gradient(135deg, #eef4ff 0%, #f3ecff 55%, #eafaf3 100%);
-    border:1px solid #e2e6ff; }
+    border:1px solid #EAF1EE; }
   #copilotOrb{ width:42px;height:42px;flex:0 0 42px;border-radius:13px;display:flex;align-items:center;justify-content:center;
-    font-size:21px;color:#fff;background:linear-gradient(135deg,#6d5efc,#3aa0ff);box-shadow:0 6px 16px rgba(80,90,230,.35);
+    font-size:21px;color:#fff;background:linear-gradient(135deg,#C9DCD2,#C9DCD2);box-shadow:0 6px 16px rgba(80,90,230,.35);
     animation:copilotPulse 3.4s ease-in-out infinite; }
   @keyframes copilotPulse{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-3px) } }
   #copilotThread{ display:flex;flex-direction:column;gap:11px;max-height:460px;overflow-y:auto;padding:4px 2px 2px; }
@@ -771,12 +771,12 @@
   .cmsg-user{ justify-content:flex-end; }
   .cmsg-ai{ justify-content:flex-start; }
   .cbubble{ max-width:82%;padding:11px 14px;border-radius:15px;font-size:14px;line-height:1.5;
-    background:linear-gradient(135deg,#3f7bff,#5a6cff);color:#fff;border-bottom-right-radius:5px;box-shadow:0 2px 8px rgba(60,90,220,.22); }
+    background:linear-gradient(135deg,#2E6A4B,#C9DCD2);color:#fff;border-bottom-right-radius:5px;box-shadow:0 2px 8px rgba(60,90,220,.22); }
   .cbubble-ai{ background:var(--soft,#f1f5fb);color:var(--ink);border:1px solid var(--line);border-bottom-right-radius:15px;border-bottom-left-radius:5px;box-shadow:none; }
   .cactions{ display:flex;flex-wrap:wrap;gap:7px;margin-top:10px; }
-  .cact-btn{ font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:9px;border:1px solid var(--brand,#3f7bff);
-    color:var(--brand,#2a5fd0);background:var(--card,#fff);cursor:pointer;transition:.15s; }
-  .cact-btn:hover{ background:var(--brand,#3f7bff);color:#fff;transform:translateY(-1px); }
+  .cact-btn{ font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:9px;border:1px solid var(--brand,#2E6A4B);
+    color:var(--brand,#2E6A4B);background:var(--card,#fff);cursor:pointer;transition:.15s; }
+  .cact-btn:hover{ background:var(--brand,#2E6A4B);color:#fff;transform:translateY(-1px); }
   .cact-done{ opacity:.55; }
   .cdots{ display:inline-flex;gap:4px;align-items:center;padding:2px 0; }
   .cdots i{ width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;animation:cblink 1.1s infinite; }
@@ -785,11 +785,11 @@
   .copilot-chips{ display:flex;flex-wrap:wrap;gap:7px;margin:13px 2px 4px; }
   .copilot-chip{ font-size:12.5px;padding:7px 13px;border-radius:20px;border:1px solid var(--line);
     background:var(--soft,#f3f6fb);color:var(--ink);cursor:pointer;transition:.15s; }
-  .copilot-chip:hover{ border-color:var(--brand,#3f7bff);color:var(--brand,#2a5fd0);transform:translateY(-1px); }
+  .copilot-chip:hover{ border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);transform:translateY(-1px); }
   #copilotInputRow{ display:flex;gap:9px;align-items:flex-end;margin-top:6px; }
   #copilotInput{ flex:1;resize:none;min-height:46px;max-height:150px;padding:12px 14px;border:1.5px solid var(--line);
     border-radius:13px;font-size:14px;font-family:inherit;background:var(--field-bg,#fff);color:var(--ink);transition:.15s; }
-  #copilotInput:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.16); }
+  #copilotInput:focus{ outline:none;border-color:var(--brand,#2E6A4B);box-shadow:0 0 0 3px rgba(63,123,255,.16); }
   #copilotSendBtn{ flex:0 0 auto;width:46px;height:46px;border-radius:13px;font-size:18px;padding:0;display:flex;align-items:center;justify-content:center; }
   /* Studio fullscreen overlay */
   #studioFsOverlay{ display:none;position:fixed;inset:0;z-index:9000;background:var(--bg,#fff);flex-direction:column; }
@@ -797,9 +797,9 @@
   #studioFsTitle{ flex:1;font-weight:700;font-size:15px;color:var(--ink); }
   #studioFsFrame{ flex:1;width:100%;border:0;background:#fff; }
   /* Dark-mode tuning */
-  body.theme-dark #copilotHero{ background:linear-gradient(135deg,#1c2540 0%,#241d3f 55%,#16302a 100%);border-color:#2c3358; }
+  body.theme-dark #copilotHero{ background:linear-gradient(135deg,#1E2B24 0%,#1E2B24 55%,#16302a 100%);border-color:#204034; }
   body.theme-dark .cbubble-ai{ background:#1c2333;border-color:var(--line); }
-  body.theme-dark .cact-btn{ background:var(--card);color:#9db8ff;border-color:#3a4a78; }
+  body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:#1b2230; }
 
   /* Copilot artifact canvas */
@@ -811,24 +811,24 @@
   .c-art-text:focus{ outline:none;background:var(--card,#fff); }
   .c-art-tweak{ display:flex;gap:7px;padding:10px 11px;align-items:center;background:var(--soft,#FCFBF8); }
   .c-art-tweak input{ flex:1;padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:var(--field-bg,#fff);color:var(--ink); }
-  .c-art-tweak input:focus{ outline:none;border-color:var(--brand,#3f7bff); }
+  .c-art-tweak input:focus{ outline:none;border-color:var(--brand,#2E6A4B); }
   .cactions{ padding:0 11px 11px; }
   .c-artifact .cactions{ padding:0 11px 11px; }
-  body.theme-dark .c-art-head{ background:linear-gradient(135deg,#1c2540,#241d3f); }
+  body.theme-dark .c-art-head{ background:linear-gradient(135deg,#1E2B24,#1E2B24); }
   /* Email composer modal */
   #cMailOv{ display:none;position:fixed;inset:0;z-index:9200;background:rgba(15,23,40,.5);align-items:center;justify-content:center;padding:18px; }
   #cMailCard{ width:560px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 24px 60px rgba(10,20,40,.35); }
   .c-mail-head{ font-size:17px;font-weight:800;color:var(--ink);margin-bottom:14px; }
   .c-mail-lbl{ display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 4px; }
   .c-mail-in{ width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;background:var(--field-bg,#fff);color:var(--ink); }
-  .c-mail-in:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
+  .c-mail-in:focus{ outline:none;border-color:var(--brand,#2E6A4B);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
   .c-mail-note{ font-size:12px;color:var(--muted);margin:10px 0 4px; }
   .c-mail-btns{ display:flex;gap:9px;justify-content:flex-end;margin-top:16px; }
   /* Copilot mic + context chip + pinned tabs */
   #copilotMicBtn{ flex:0 0 auto;width:46px;height:46px;border-radius:13px;font-size:18px;padding:0;display:flex;align-items:center;justify-content:center; }
   #copilotMicBtn.mic-live{ background:#e8453c;color:#fff;border-color:#e8453c;animation:micPulse 1s infinite; }
   @keyframes micPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(232,69,60,.5) } 50%{ box-shadow:0 0 0 7px rgba(232,69,60,0) } }
-  .copilot-chip-ctx{ border-color:var(--brand,#3f7bff)!important;color:var(--brand,#2a5fd0);font-weight:700; }
+  .copilot-chip-ctx{ border-color:var(--brand,#2E6A4B)!important;color:var(--brand,#2E6A4B);font-weight:700; }
   .navtab.pinned-tab{ position:relative; }
   /* Omnipresent Copilot dock */
   #copilotDockScrim{ position:fixed;inset:0;background:rgba(12,20,38,.34);z-index:9300;opacity:0;pointer-events:none;transition:opacity .2s ease; }
@@ -849,12 +849,12 @@
   .genseg button{ border:0;background:transparent;color:var(--ink);font-size:12.5px;font-weight:600;padding:7px 12px;cursor:pointer;border-right:1px solid var(--line);transition:.12s; }
   .genseg button:last-child{ border-right:0; }
   .genseg button:hover{ background:var(--soft,#eef3f9); }
-  .genseg button.on{ background:var(--brand,#3f7bff);color:#fff; }
+  .genseg button.on{ background:var(--brand,#2E6A4B);color:#fff; }
   .genopt-extra{ border:1px solid var(--line);background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:9px;cursor:pointer; }
-  .genopt-extra.on,.genopt-extra:hover{ border-color:var(--brand,#3f7bff);color:var(--brand,#2a5fd0); }
+  .genopt-extra.on,.genopt-extra:hover{ border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B); }
   .genopt-chk{ display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink);cursor:pointer; }
   #genInstr{ width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:var(--field-bg,#fff);color:var(--ink); }
-  #genInstr:focus{ outline:none;border-color:var(--brand,#3f7bff);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
+  #genInstr:focus{ outline:none;border-color:var(--brand,#2E6A4B);box-shadow:0 0 0 3px rgba(63,123,255,.15); }
   body.theme-dark #genOptionsBar{ background:#161d2b; }
   /* Calendar: day details open on the RIGHT (split) when a day is selected. */
   @media(min-width:981px){
@@ -994,7 +994,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div class="auth-card" id="regTwofaCard" style="display:none">
     <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div> MLS</div>
     <p class="auth-sub" style="font-weight:600">🔐 Finish creating your account</p>
-    <p class="note" style="background:#eef6ff;border:1px solid #E4E1D8;color:#1f4e79;margin:6px 0 12px">For your patients' security, set up two-factor authentication to finish creating your account.</p>
+    <p class="note" style="background:#eef6ff;border:1px solid #E4E1D8;color:#204034;margin:6px 0 12px">For your patients' security, set up two-factor authentication to finish creating your account.</p>
     <div class="auth-err" id="regTwofaErr"></div>
 
     <!-- Step 1: scan / enroll -->
@@ -1339,7 +1339,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <h2 style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
-        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#bcd5f3;color:#1456a8" onclick="pullPatientFromAthenaPrompt(this)" title="Missing a patient, or a chart came up empty? Pull them straight from Athena.">📥 Pull from Athena</button>
+        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" title="Missing a patient, or a chart came up empty? Pull them straight from Athena.">📥 Pull from Athena</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, the front desk, team logins and more">⋯ More</button>
         <span id="ptMore" style="display:none;flex-basis:100%;flex-wrap:wrap;gap:8px;margin-top:2px"><button class="btn-ghost" id="ptReceptionBtn" style="font-size:14px;padding:9px 15px" onclick="loadReceptionists(true)" title="Create and manage front-desk receptionist logins">👥 Receptionists</button>
         <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
@@ -1475,7 +1475,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div id="waitingRoomBar" style="display:none;margin-bottom:12px"></div>
 
   <!-- ===== RECORD-FIRST HERO — the landing focal point: say the patient, hit record, just talk. ===== -->
-  <div id="visitHero" class="card" style="background:linear-gradient(135deg,#2E6A4B,#1456a8);color:#fff;border:0;margin-bottom:14px;box-shadow:0 6px 22px rgba(20,60,120,.25)">
+  <div id="visitHero" class="card" style="background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;border:0;margin-bottom:14px;box-shadow:0 6px 22px rgba(20,60,120,.25)">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:240px">
         <div style="font-size:12.5px;font-weight:700;opacity:.9;letter-spacing:.4px">READY FOR YOUR NEXT PATIENT</div>
@@ -1498,7 +1498,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div style="font-size:12px;opacity:.85;margin-bottom:4px">Date of birth</div>
         <input id="heroPtDob" type="text" placeholder="MM/DD/YYYY" style="width:100%;border:0;border-radius:9px;padding:11px 12px;font-size:14px;box-sizing:border-box">
       </div>
-      <button id="heroRecBtn" onclick="heroStartVisit()" style="background:#fff;color:#1456a8;border:0;border-radius:10px;padding:12px 22px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.18)">🎙️ Start recording</button>
+      <button id="heroRecBtn" onclick="heroStartVisit()" style="background:#fff;color:#204034;border:0;border-radius:10px;padding:12px 22px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.18)">🎙️ Start recording</button>
     </div>
     <div id="heroPullStatus" style="display:none;font-size:12.5px;margin-top:10px;font-weight:600"></div>
     <div id="heroToday" style="display:none;margin-top:10px"></div>
@@ -1788,7 +1788,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="sec-copy" id="legalInvoiceBtn" style="background:#f0fbf4;border-color:#bfe6cf;color:#1f7a4d;font-weight:600" onclick="toggleLegalInvoice()" title="Build and download an itemized expert invoice for this matter">🧾 Itemized invoice</button>
             <button class="sec-copy" id="legalAskBtn" style="background:#eef4fc;border-color:#cfe2f8;color:var(--brand-dk);font-weight:600" onclick="askAiQuestions()" title="Have the AI list what it still needs from counsel and post it to the attorney thread">❓ Ask counsel what's missing</button>
-            <button class="sec-copy" id="legalMsgBtn" style="background:#f6f1fb;border-color:#d9cdf0;color:#6b3fa0;font-weight:600" onclick="toggleLegalMessages()" title="Secure messages with the attorney for this request">💬 Messages</button>
+            <button class="sec-copy" id="legalMsgBtn" style="background:#f6f1fb;border-color:#d9cdf0;color:#2E6A4B;font-weight:600" onclick="toggleLegalMessages()" title="Secure messages with the attorney for this request">💬 Messages</button>
           </div>
           <div id="legalInvoicePanel" style="display:none;margin-top:8px"></div>
           <div id="legalMsgPanel" style="display:none;margin-top:8px"></div>
@@ -2508,7 +2508,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- 🔎 FREE-TEXT DATA STUDY BOX — ask anything of your practice records (PREMIUM) -->
     <div class="card" id="anaAsk">
-      <h2><span class="ic">🔎</span> Ask your data <span id="anaPremiumBadge" style="display:none;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <h2><span class="ic">🔎</span> Ask your data <span id="anaPremiumBadge" style="display:none;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#C9DCD2,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
       <p class="sub">Ask any question about your practice records — volumes, trends, outcomes, coding — or request a de-identified retrospective study summary. Built from your stored visit records; no patient names are sent to the AI.</p>
 
       <!-- Unlocked study box (premium only) -->
@@ -2584,7 +2584,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- 🤝 REFERRAL OUTCOMES — close-the-loop reports for referring physicians (PREMIUM) -->
     <div class="card" id="anaReferral">
-      <h2><span class="ic">🤝</span> Referral outcomes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <h2><span class="ic">🤝</span> Referral outcomes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#C9DCD2,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
       <p class="sub">Close the loop with the physicians who refer to you. Summarizes pain and ODI improvement, satisfaction, and visit counts grouped by referring physician — ready to print and send back. Referrers are captured on the patient intake form.</p>
       <button class="btn-primary" style="margin-top:6px" onclick="generateReferralOutcomes()">🤝 Generate referral report</button>
       <div class="extra-card" id="refOutCard" style="display:none;margin-top:16px">
@@ -2599,7 +2599,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- 📋 OUTCOMES REGISTRY — practice-wide outcomes table + CSV export (PREMIUM) -->
     <div class="card" id="anaRegistry">
-      <h2><span class="ic">📋</span> Outcomes registry <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <h2><span class="ic">📋</span> Outcomes registry <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#C9DCD2,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
       <p class="sub">A practice-wide registry of every patient's pain and ODI trajectory, satisfaction, and visit count — for quality reporting and review. Export to CSV for your registry or QI program.</p>
       <button class="btn-primary" style="margin-top:6px" onclick="generateOutcomesRegistry()">📋 Build registry</button>
       <button class="btn-ghost" style="margin-top:6px;margin-left:8px" onclick="downloadOutcomesCsv()">⬇ Download CSV</button>
@@ -2717,12 +2717,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <p class="sub">Request a medical-legal report from a treating clinician. They receive your request, prepare the report from their patient's record, sign it, and return it to you here.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 16px">
       <div style="flex:1;min-width:150px;background:#f4f8ff;border:1px solid #d7e6fb;border-radius:10px;padding:11px 13px">
-        <div style="font-weight:700;font-size:13px;color:#1d4fd0">① Tell us the case</div>
-        <div style="font-size:12.5px;color:#3a5a78;margin-top:3px">The doctor, your client, the document you need, and the legal questions to answer.</div>
+        <div style="font-weight:700;font-size:13px;color:#2E6A4B">① Tell us the case</div>
+        <div style="font-size:12.5px;color:#204034;margin-top:3px">The doctor, your client, the document you need, and the legal questions to answer.</div>
       </div>
       <div style="flex:1;min-width:150px;background:#f4f8ff;border:1px solid #d7e6fb;border-radius:10px;padding:11px 13px">
-        <div style="font-weight:700;font-size:13px;color:#1d4fd0">② Attach your files</div>
-        <div style="font-size:12.5px;color:#3a5a78;margin-top:3px">Signed authorization, records, and cover letter — open the request after submitting to upload.</div>
+        <div style="font-weight:700;font-size:13px;color:#2E6A4B">② Attach your files</div>
+        <div style="font-size:12.5px;color:#204034;margin-top:3px">Signed authorization, records, and cover letter — open the request after submitting to upload.</div>
       </div>
       <div style="flex:1;min-width:150px;background:#f0faf4;border:1px solid #cdeed9;border-radius:10px;padding:11px 13px">
         <div style="font-weight:700;font-size:13px;color:#1c7a43">③ Get the signed report</div>
@@ -2908,7 +2908,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <input type="text" id="clinicAddress" placeholder="Street, City, State ZIP">
       </div>
       <div class="field">
-        <label for="clinicLogoInput">Practice logo <span style="font-size:11px;font-weight:700;color:#155fb3;background:#e8f1fc;border-radius:10px;padding:1px 8px;margin-left:4px">Premium</span></label>
+        <label for="clinicLogoInput">Practice logo <span style="font-size:11px;font-weight:700;color:#2E6A4B;background:#e8f1fc;border-radius:10px;padding:1px 8px;margin-left:4px">Premium</span></label>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <img id="clinicLogoPreview" alt="" style="max-height:46px;max-width:170px;display:none;border:1px solid var(--border,#d7dee8);border-radius:6px;padding:4px;background:#fff">
           <input type="file" id="clinicLogoInput" accept="image/png,image/jpeg,image/svg+xml" onchange="handleClinicLogoUpload(this)" style="flex:1;min-width:160px">
@@ -2948,7 +2948,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <p class="set-desc">Standing instructions and defaults MLS applies to every note it writes for you.</p>
 
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label for="noteModelSel" style="font-size:15px">🤖 AI model for notes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);border-radius:999px;padding:2px 8px;margin-left:4px">Premium</span></label>
+      <label for="noteModelSel" style="font-size:15px">🤖 AI model for notes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#C9DCD2,#9B82D4);border-radius:999px;padding:2px 8px;margin-left:4px">Premium</span></label>
       <select class="sf-select" id="noteModelSel" style="margin-top:8px">
         <option value="gpt-4o">Balanced — stronger model (recommended)</option>
         <option value="gpt-4o-mini">Fast — quickest generation</option>
@@ -3270,7 +3270,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
         <a href="https://mlsscribe.com/MLS_Assist_v1.51.zip" download target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist v1.51 (required update)</a>
         <span class="note" style="display:block;margin:6px 0 0">v1.51 fixes chart history binding, adds DOB capture, hands-free month pulls, and write-target verification. These fixes only work after you install this update. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Other install options</a></span>
-        <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#3a5a78;line-height:1.6">
+        <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
           <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder. (To update later, replace the folder and click ↻ Reload.)</li>
           <li>Make sure you're <b>signed in to MLS in a tab</b> — the extension uses that login automatically. <b>No key to paste.</b></li>
@@ -3423,12 +3423,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
 
     <!-- Multi-template PDF splitter -->
-    <div style="background:linear-gradient(135deg,#eef4ff,#f3ecff);border:1px solid #e2e6ff;border-radius:12px;padding:13px 14px;margin-bottom:14px">
+    <div style="background:linear-gradient(135deg,#eef4ff,#f3ecff);border:1px solid #EAF1EE;border-radius:12px;padding:13px 14px;margin-bottom:14px">
       <div style="font-weight:700;font-size:14px">✨ Have several forms / templates to import?</div>
       <div style="font-size:12.5px;color:var(--muted);margin:3px 0 9px">Drop one big PDF with many forms, OR drop a whole batch of files at once (Word, PDF, images, text). MLS recognizes and splits out every template — even 50–100 of them.</div>
       <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="document.getElementById('tplMultiFileInput').click()">📑 Upload templates (one PDF or many files)</button>
       <input type="file" id="tplMultiFileInput" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" multiple style="display:none" onchange="tplMultiFile(event)">
-      <div id="tplMultiDrop" ondragover="_tplMultiDragOver(event,true)" ondragleave="_tplMultiDragOver(event,false)" ondrop="_tplMultiDrop(event)" onclick="document.getElementById('tplMultiFileInput').click()" style="margin-top:8px;border:2px dashed #c9cdf5;border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:12.5px;background:#fbfbff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop your forms here (one multi-form PDF, or many files at once)</div>
+      <div id="tplMultiDrop" ondragover="_tplMultiDragOver(event,true)" ondragleave="_tplMultiDragOver(event,false)" ondrop="_tplMultiDrop(event)" onclick="document.getElementById('tplMultiFileInput').click()" style="margin-top:8px;border:2px dashed #EAF1EE;border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:12.5px;background:#fbfbff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop your forms here (one multi-form PDF, or many files at once)</div>
       <div id="tplMultiStatus" class="mini" style="color:var(--muted);margin-top:8px"></div>
       <div id="tplMultiResult" style="margin-top:8px"></div>
     </div>
@@ -4592,7 +4592,7 @@ async function loadAdminUsers(){
     body.innerHTML=users.map(u=>{
       const isOwner=(u.role==='owner'||u.isAdmin);
       const premOn=!!(u.premium===1||u.premium===true);
-      const premBtn='<button class="btn-ghost" style="font-size:12px;padding:5px 9px;'+(premOn?'background:linear-gradient(90deg,#7b5cff,#9B82D4);color:#fff;border-color:#7b5cff':'')+'" onclick="adminSetPremium(\''+u.id+'\','+(premOn?'false':'true')+')" title="Toggle the premium Data Study add-on">'+(premOn?'Premium ✓':'Premium')+'</button>';
+      const premBtn='<button class="btn-ghost" style="font-size:12px;padding:5px 9px;'+(premOn?'background:linear-gradient(90deg,#C9DCD2,#9B82D4);color:#fff;border-color:#C9DCD2':'')+'" onclick="adminSetPremium(\''+u.id+'\','+(premOn?'false':'true')+')" title="Toggle the premium Data Study add-on">'+(premOn?'Premium ✓':'Premium')+'</button>';
       const actions=isOwner
         ? '<span style="color:var(--muted)">Owner</span>'
         : '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> '+
@@ -6537,7 +6537,7 @@ async function renderStudyCharts(specs){
     wrap.innerHTML='<div class="mini" style="color:var(--muted)">Charts unavailable (could not load chart library). The numbers are in the narrative above.</div>';
     return;
   }
-  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#9B82D4','#84cc16','#ec4899'];
+  const palette=['#C9DCD2','#22c55e','#f59e0b','#ef4444','#2E6A4B','#9B82D4','#84cc16','#ec4899'];
   valid.forEach((spec,i)=>{
     try{
       const type=['bar','line','pie','doughnut'].includes(spec.type)?spec.type:'bar';
@@ -6985,7 +6985,7 @@ function calToday(){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.get
 function calPrev(){ _calInit(); if(_calMode==='month'){ _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } } else if(_calMode==='week'){ _calShiftRef(-7); } else { _calShiftRef(-1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
 function calNext(){ _calInit(); if(_calMode==='month'){ _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } } else if(_calMode==='week'){ _calShiftRef(7); } else { _calShiftRef(1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
 function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump'); if(jump) jump.style.display=(m==='month')?'':'none'; var pn=document.getElementById('calDayPanel'); if(pn&&m!=='day') pn.style.display='none'; renderCalendar(); if(m==='day') calOpenDay(_calRefDate); }
-function _calStatusColor(s){ s=s||''; if(s==='completed') return {bg:'#e7f6ee',fg:'#11643f'}; if(s==='cancelled'||s==='no_show') return {bg:'#fdeaea',fg:'#a12c2c'}; if(s==='checked_in'||s==='arrived') return {bg:'#fff4e0',fg:'#9a6b00'}; if(s==='roomed') return {bg:'#e8eefc',fg:'#2a4bbd'}; return {bg:'#eef4fc',fg:'#155fb3'}; }
+function _calStatusColor(s){ s=s||''; if(s==='completed') return {bg:'#e7f6ee',fg:'#11643f'}; if(s==='cancelled'||s==='no_show') return {bg:'#fdeaea',fg:'#a12c2c'}; if(s==='checked_in'||s==='arrived') return {bg:'#fff4e0',fg:'#9a6b00'}; if(s==='roomed') return {bg:'#e8eefc',fg:'#2E6A4B'}; return {bg:'#eef4fc',fg:'#2E6A4B'}; }
 function _calLabelOf(a){ return a.name||a.label||a.patient||a.title||'Appointment'; }
 function _calDateOf(a){ return a.appt_date || String(a.start_at||'').slice(0,10); }
 async function loadCalendar(){
@@ -7168,7 +7168,7 @@ function calApptPeek(id, ev){
   var c=_calStatusColor(a.status);
   var prov=''; try{ if(typeof _docName==='function'&&a.doctor_user_id) prov=_docName(a.doctor_user_id); }catch(e){}
   var pop=document.createElement('div'); pop.id='calApptPeek';
-  pop.style.cssText='position:fixed;z-index:99999;min-width:232px;max-width:300px;background:#fff;border:1px solid #d2e0f0;border-radius:13px;box-shadow:0 14px 38px rgba(20,50,90,.26);padding:13px 15px;font-size:13px;color:#16324f;animation:mlsViewIn .14s ease';
+  pop.style.cssText='position:fixed;z-index:99999;min-width:232px;max-width:300px;background:#fff;border:1px solid #d2e0f0;border-radius:13px;box-shadow:0 14px 38px rgba(20,50,90,.26);padding:13px 15px;font-size:13px;color:#1E2B24;animation:mlsViewIn .14s ease';
   pop.innerHTML=''
     +'<div style="display:flex;align-items:flex-start;gap:8px"><span style="font-weight:800;font-size:15.5px;flex:1;line-height:1.2">'+esc(_calLabelOf(a))+'</span><span onclick="var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="cursor:pointer;color:#9aa7b4;font-size:17px;line-height:1;padding:0 2px">×</span></div>'
     +'<div style="font-size:12.5px;color:#5b7186;margin-top:3px">📅 '+esc(when||'No time set')+'</div>'
@@ -7178,8 +7178,8 @@ function calApptPeek(id, ev){
     +(prov?'<div style="font-size:12.5px;margin-top:3px"><span style="color:#8a98a8">Provider:</span> '+esc(prov)+'</div>':'')
     +'<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">'
       +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#2E6A4B;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
-      +'<button onclick="calPullChartFor('+id+')" style="background:#EAF1EE;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📥 Pull chart</button>'
-      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
+      +'<button onclick="calPullChartFor('+id+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📥 Pull chart</button>'
+      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
     +'</div>';
   document.body.appendChild(pop);
   var x=window.innerWidth/2, y=160; try{ if(ev){ x=ev.clientX; y=ev.clientY; } }catch(e){}
@@ -7773,7 +7773,7 @@ function _patientQuickHistory(p){
   if(pains.length) lines.push('Last pain: '+pains[pains.length-1]+'/10');
   if(p.problems){ var pr=String(p.problems).split(/\n|;/).map(function(s){return s.trim();}).filter(Boolean).slice(0,3).join(', '); if(pr) lines.push('<span style="color:#cdd9e6">'+esc(pr.slice(0,120))+'</span>'); }
   if(!notes.length) lines.push('<span style="color:#9fb2c6">New patient — no visits yet.</span>');
-  lines.push('<span style="color:#7fb0e0;font-size:11px">Click to open this chart →</span>');
+  lines.push('<span style="color:#C9DCD2;font-size:11px">Click to open this chart →</span>');
   return lines.join('<br>');
 }
 function _renderPatientFace(){
@@ -7991,7 +7991,7 @@ function helpEx(t){ var q=document.getElementById('helpQ'); if(q) q.value=t; ask
 async function askMlsHelp(){
   var q=((document.getElementById('helpQ')||{}).value||'').trim();
   var a=document.getElementById('helpAnswer');
-  var setA=(m,c)=>{ if(a){ a.textContent=m; a.style.color=c||'var(--ink,#16324f)'; } };
+  var setA=(m,c)=>{ if(a){ a.textContent=m; a.style.color=c||'var(--ink,#1E2B24)'; } };
   if(!q){ setA('Type a question first.','#b4231e'); return; }
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ setA('Sign in to your MLS account to use Help.','#b4231e'); return; }
   var btn=document.getElementById('helpAskBtn'); if(btn){ btn.disabled=true; btn.textContent='…'; }
@@ -8550,8 +8550,8 @@ function renderLawyers(list, justCreated){
   h+='<div style="border-top:1px dashed #d9cdf0;padding-top:10px;margin-top:6px">';
   h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">🔗 Self-serve connect link</div>'; h+='<div class="mini" style="color:var(--muted);margin-bottom:6px">Share one link; any attorney who opens it creates their own portal login, auto-connected to you.</div>'; h+='<button class="btn-ghost" id="lawLinkBtn" style="font-size:13px;padding:7px 13px;margin-bottom:8px" onclick="publishLawyerConnectLink()">🔗 Get connect link</button><div id="lawConnectLinkBox" style="margin-bottom:10px"></div>'; h+='<div style="font-size:13px;font-weight:600;margin-bottom:6px">➕ Invite a lawyer</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-  h+='<input id="lawName" placeholder="Name / firm" style="flex:1;min-width:120px;border:1px solid #cdbce8;border-radius:8px;padding:7px 9px;font-size:13px">';
-  h+='<input id="lawEmail" type="email" placeholder="Email" style="flex:2;min-width:160px;border:1px solid #cdbce8;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<input id="lawName" placeholder="Name / firm" style="flex:1;min-width:120px;border:1px solid #EAF1EE;border-radius:8px;padding:7px 9px;font-size:13px">';
+  h+='<input id="lawEmail" type="email" placeholder="Email" style="flex:2;min-width:160px;border:1px solid #EAF1EE;border-radius:8px;padding:7px 9px;font-size:13px">';
   h+='<button class="btn-primary" id="lawAddBtn" style="font-size:13px;padding:7px 13px" onclick="addLawyer()">Create login</button>';
   h+='</div></div>';
   box.innerHTML=h;
@@ -9458,7 +9458,7 @@ function _ptItemHtml(p, activeId){
   const fromAthena=(p.source==='athena-schedule');
   const chip='font-size:11px;color:var(--muted);background:var(--soft);border-radius:999px;padding:2px 9px;white-space:nowrap';
   let chips='';
-  if(fromAthena) chips+='<span style="font-size:11px;color:#1456a8;background:#EAF1EC;border:1px solid #d3e4fb;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap">📥 Athena</span>';
+  if(fromAthena) chips+='<span style="font-size:11px;color:#204034;background:#EAF1EC;border:1px solid #d3e4fb;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap">📥 Athena</span>';
   chips+='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
   if(notes.length) chips+='<span style="'+chip+'">'+notes.length+' note'+(notes.length===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
@@ -9467,7 +9467,7 @@ function _ptItemHtml(p, activeId){
       <div class="pt-main" style="min-width:0">
         <div class="t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(p.name)}${isActive?'<span style="font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px">ACTIVE</span>':''}</div>
         ${demo?`<div class="s" style="margin-top:1px">${esc(demo)}</div>`:''}
-        ${ctx?`<div style="margin-top:3px;font-size:12px;color:#3f5a7d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px">🩺 ${esc(ctx)}</div>`:''}
+        ${ctx?`<div style="margin-top:3px;font-size:12px;color:#204034;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px">🩺 ${esc(ctx)}</div>`:''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${chips}</div>
       </div>
       <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
@@ -9616,7 +9616,7 @@ function _renderProfAtGlance(p){
   var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
   var last=dates[dates.length-1]||'';
   var pains=notes.map(function(n){ var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return (v==null||v==='')?null:Number(v); }).filter(function(x){return x!=null&&!isNaN(x);});
-  function chip(label,val){ return '<span style="background:#eef4fc;border:1px solid #d7e6fb;border-radius:999px;padding:3px 11px;font-size:12px;color:#2a5a86"><b>'+val+'</b> '+label+'</span>'; }
+  function chip(label,val){ return '<span style="background:#eef4fc;border:1px solid #d7e6fb;border-radius:999px;padding:3px 11px;font-size:12px;color:#204034"><b>'+val+'</b> '+label+'</span>'; }
   var h=chip('visit'+(notes.length===1?'':'s'), notes.length);
   if(last){ var dd=new Date(last+'T12:00'); if(!isNaN(dd.getTime())) h+=chip('last seen', dd.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})); }
   if(pains.length){ h+=chip('last pain', pains[pains.length-1]+'/10'); }
@@ -10042,7 +10042,7 @@ function _opPreviewHtml(proc, name, dateStr){
   d.types.forEach(function(t){ chips+=badge(t,'rgba(160,120,255,.42)'); });
   var title=String(proc||'').trim()||'No procedure entered yet — type it below';
   var faded=!String(proc||'').trim();
-  return '<div style="border-radius:13px;padding:14px 16px;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;box-shadow:0 4px 16px rgba(20,60,120,.22)">'+
+  return '<div style="border-radius:13px;padding:14px 16px;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;box-shadow:0 4px 16px rgba(20,60,120,.22)">'+
     '<div style="font-size:10.5px;font-weight:800;letter-spacing:.6px;opacity:.8">💉 PROCEDURE</div>'+
     '<div style="font-size:17px;font-weight:850;margin:4px 0 4px;line-height:1.25;opacity:'+(faded?'.6':'1')+'">'+esc(title)+'</div>'+
     '<div style="font-size:12.5px;opacity:.92">🧑 '+esc(name||'Patient')+(dateStr?(' &nbsp;·&nbsp; 📅 '+esc(dateStr)):'')+'</div>'+
@@ -10072,7 +10072,7 @@ function opPrepRender(){
   var rows=window._opPrep||[];
   var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Prep op notes';
   // Reflect which mode is active in the switcher (blue = on).
-  try{ var _mp=document.getElementById('opPrepModePatient'), _ma=document.getElementById('opPrepModeAll'); var _on='background:#1456a8;color:#fff;border-color:#1456a8;font-weight:700', _off='background:var(--card);color:var(--ink);border-color:var(--line);font-weight:600';
+  try{ var _mp=document.getElementById('opPrepModePatient'), _ma=document.getElementById('opPrepModeAll'); var _on='background:#204034;color:#fff;border-color:#204034;font-weight:700', _off='background:var(--card);color:var(--ink);border-color:var(--line);font-weight:600';
     if(_mp) _mp.style.cssText='font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid;cursor:pointer;'+(window._opPrepMode==='patient'?_on:_off);
     if(_ma) _ma.style.cssText='font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid;cursor:pointer;'+(window._opPrepMode!=='patient'?_on:_off);
   }catch(e){}
@@ -10255,7 +10255,7 @@ function opPrepSave(i){
     saveNotes(ns);
     try{ if(typeof saveNoteToBackend==='function'){ var sv=ns.find(function(x){ return x.id===row._noteId; }); if(sv) saveNoteToBackend(sv); } }catch(e){}
   }catch(e){}
-  var msg=document.getElementById('opPrepMsg_'+i); if(msg){ msg.innerHTML='✓ Saved to '+esc(p.name)+'’s History'+(leftover?(' — '+leftover+' blank(s) still in the note'):'')+' · <a href="#" onclick="closeOpPrep();setActivePtId(\''+p.id+'\');try{renderProfile();renderPatientBar();}catch(e){};showView(\'history\');return false;" style="color:#1456a8;font-weight:700">Open in History →</a>'; msg.style.color=leftover?'#b4231e':'#16924e'; }
+  var msg=document.getElementById('opPrepMsg_'+i); if(msg){ msg.innerHTML='✓ Saved to '+esc(p.name)+'’s History'+(leftover?(' — '+leftover+' blank(s) still in the note'):'')+' · <a href="#" onclick="closeOpPrep();setActivePtId(\''+p.id+'\');try{renderProfile();renderPatientBar();}catch(e){};showView(\'history\');return false;" style="color:#204034;font-weight:700">Open in History →</a>'; msg.style.color=leftover?'#b4231e':'#16924e'; }
   try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){}
 }
 
@@ -10300,7 +10300,7 @@ function renderTemplateList(){
     const kw=(t.keywords&&t.keywords.length)?'<div style="font-size:12px;color:var(--muted)">Keywords: '+esc(t.keywords.join(', '))+'</div>':'';
     const len=(t.text||'').length;
     const isActive=t.id===activeId;
-    return '<div style="border:1px solid '+(isActive?'#bcd6f5':'var(--line)')+';border-radius:8px;padding:8px 10px;margin-bottom:8px;background:'+(isActive?'#f4f9ff':'transparent')+'">'+
+    return '<div style="border:1px solid '+(isActive?'#EAF1EE':'var(--line)')+';border-radius:8px;padding:8px 10px;margin-bottom:8px;background:'+(isActive?'#f4f9ff':'transparent')+'">'+
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
       '<div style="flex:1;min-width:160px"><strong>'+esc(t.name)+'</strong> '+(isActive?'<span style="font-size:10.5px;color:#127a55;font-weight:700">● ACTIVE</span> ':'')+'<span style="font-size:11px;color:var(--muted)">('+len+' chars)</span>'+kw+'</div>'+
       '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="useTemplateNow(\''+esc(t.id)+'\')" title="Reformat the note you have open right now to match this template">⚡ Use on current note</button>'+
@@ -10444,7 +10444,7 @@ function saveTemplateFromForm(){
    and splits them into separate templates the user can keep. ===== */
 var _tplPendingSplit=[];
 function _tplMultiStatus(m,c){ var s=document.getElementById('tplMultiStatus'); if(s){ s.textContent=m||''; s.style.color=c||'var(--muted)'; } }
-function _tplMultiDragOver(ev,on){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='copy'; }catch(e){} var z=document.getElementById('tplMultiDrop'); if(z){ z.style.borderColor=on?'#5b54e0':'#c9cdf5'; z.style.background=on?'#eef0ff':'#fbfbff'; } }
+function _tplMultiDragOver(ev,on){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='copy'; }catch(e){} var z=document.getElementById('tplMultiDrop'); if(z){ z.style.borderColor=on?'#2E6A4B':'#EAF1EE'; z.style.background=on?'#eef0ff':'#fbfbff'; } }
 function _tplMultiDrop(ev){ ev.preventDefault(); _tplMultiDragOver(ev,false); var fs=ev.dataTransfer&&ev.dataTransfer.files; if(!fs||!fs.length){ _tplMultiStatus('No files detected in that drop.','#b4231e'); return; } tplMultiFile({target:{files:fs,value:''}}); }
 /* Read ANY supported file to text (PDF text-layer, Word .docx, OCR images, or plain/rich text). */
 async function _tplReadAnyFile(file){
@@ -11112,14 +11112,14 @@ function renderHistory(){
   if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
   if(q){ ordered=ordered.filter(n=>{ const d=new Date(n.updated||n.created||Date.now()); const ds=(d.toLocaleDateString()+' '+d.toLocaleString([], {month:'long'})).toLowerCase(); const hay=[_pname(n), n.cc||'', n.text||n.soap||'', ds, (n.signed?'signed':(n.isDraft?'draft':'unsigned')), (n.kind||'')].join(' \n ').toLowerCase(); return hay.indexOf(q)>=0; }); }
   const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (total+' visit'+(total===1?'':'s'));
-  if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#1456a8;font-weight:700">Clear search</a>'; return; }
+  if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
   empty.style.display='none';
   list.innerHTML=ordered.map(n=>{
     const d=new Date(n.updated||n.created||Date.now());
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     const status = n.isDraft ? '<span class="badge draft">● Draft</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
-    const kindTag = n.kind==='opnote' ? ' <span class="badge" style="background:#eef0ff;color:#4a3fb0;border-color:#d6d8ff">💉 Op note</span>' : '';
+    const kindTag = n.kind==='opnote' ? ' <span class="badge" style="background:#eef0ff;color:#2E6A4B;border-color:#EAF1EE">💉 Op note</span>' : '';
     const cc = esc(n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint'));
     const patName = esc(_pname(n));
     const isOrphan = ap && !n.patientId;
@@ -11367,9 +11367,9 @@ function _showAssistInstallBanner(){
   try{
     if(document.getElementById('assistInstallBanner')) return;
     var bar=document.createElement('div'); bar.id='assistInstallBanner';
-    bar.style.cssText='background:linear-gradient(135deg,#2E6A4B,#1456a8);color:#fff;border-radius:12px;padding:12px 16px;margin:0 0 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(20,60,120,.22)';
+    bar.style.cssText='background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;border-radius:12px;padding:12px 16px;margin:0 0 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(20,60,120,.22)';
     bar.innerHTML='<div style="flex:1;min-width:230px"><div style="font-weight:800;font-size:14.5px">🧩 Install MLS Assist to connect your EMR</div><div style="font-size:13px;opacity:.93">It lets MLS pull your day’s schedule from Athena and push finished notes back into the chart — no copy/paste. Takes about a minute.</div></div>'+
-      '<a href="https://mlsscribe.com/assist.html" target="_blank" rel="noopener" style="background:#fff;color:#1456a8;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:800;text-decoration:none;white-space:nowrap">⬇ Get MLS Assist</a>'+
+      '<a href="https://mlsscribe.com/assist.html" target="_blank" rel="noopener" style="background:#fff;color:#204034;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:800;text-decoration:none;white-space:nowrap">⬇ Get MLS Assist</a>'+
       '<button onclick="_dismissAssistPrompt()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer;white-space:nowrap">Maybe later</button>';
     var vv=document.getElementById('visitView');
     var hero=document.getElementById('visitHero');
@@ -11737,9 +11737,9 @@ function _heroPatChip(a,onclick,opts){
   opts=opts||{}; var up=!!opts.up, seen=!!opts.seen, dashed=!!opts.dashed;
   var nm=String(a.name||'').trim(); if(!nm) return '';
   var meta=[_fmtApptTime(a.time||''), a.reason||''].filter(Boolean).join(' · ');
-  var bg=up?'#fff':(seen?'rgba(255,255,255,.10)':'rgba(255,255,255,.15)'); var fg=up?'#1456a8':'#fff';
+  var bg=up?'#fff':(seen?'rgba(255,255,255,.10)':'rgba(255,255,255,.15)'); var fg=up?'#204034':'#fff';
   return '<button onclick="'+onclick+'" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:'+bg+';border:1px '+(dashed?'dashed':'solid')+' '+(up?'#fff':'rgba(255,255,255,.34)')+';border-radius:9px;padding:7px 11px;color:'+fg+';cursor:pointer;text-align:left;min-width:120px;opacity:'+(seen?'.72':'1')+'">'+
-    (up?'<span style="font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px">● UP NOW</span>':'')+
+    (up?'<span style="font-size:9.5px;font-weight:800;color:#204034;letter-spacing:.4px">● UP NOW</span>':'')+
     (seen?'<span style="font-size:9.5px;font-weight:800;letter-spacing:.4px">✅ SEEN</span>':'')+
     '<span style="font-weight:700;font-size:13px">'+esc(nm)+'</span>'+(meta?'<span style="font-size:11px;opacity:.85">'+esc(meta)+'</span>':'')+'</button>';
 }
@@ -11755,9 +11755,9 @@ function _heroAutoPos(pending){
 function _heroNextChip(a, origIdx, isCur, manual){
   var nm=String(a.name||'').trim();
   var meta=[_fmtApptTime(a.time||''), a.reason||''].filter(Boolean).join(' · ');
-  var bg=isCur?'#fff':'rgba(255,255,255,.15)'; var fg=isCur?'#1456a8':'#fff';
+  var bg=isCur?'#fff':'rgba(255,255,255,.15)'; var fg=isCur?'#204034':'#fff';
   return '<button onclick="_heroPickPatient('+origIdx+')" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:'+bg+';border:2px solid '+(isCur?'#fff':'rgba(255,255,255,.30)')+';border-radius:9px;padding:7px 11px;color:'+fg+';cursor:pointer;text-align:left;min-width:122px;box-shadow:'+(isCur?'0 2px 12px rgba(0,0,0,.20)':'none')+'">'+
-    (isCur?'<span style="font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px">'+(manual?'● SELECTED':'● UP NOW')+'</span>':'')+
+    (isCur?'<span style="font-size:9.5px;font-weight:800;color:#204034;letter-spacing:.4px">'+(manual?'● SELECTED':'● UP NOW')+'</span>':'')+
     '<span style="font-weight:700;font-size:13px">'+esc(nm)+'</span>'+(meta?'<span style="font-size:11px;opacity:.85">'+esc(meta)+'</span>':'')+'</button>';
 }
 /* Shows only the ~5 NEXT (not-yet-seen) patients as a rolling window that auto-advances
@@ -12323,7 +12323,7 @@ function _reflectVisitTools(){
     var btn=document.getElementById('visitToolsBtn'); if(!btn) return;
     if(!document.getElementById('_vtCss')){
       var st=document.createElement('style'); st.id='_vtCss';
-      st.textContent='#visitToolsBtn.vt-has{background:#eef4ff;border-color:#9cc0ff;color:#1b4fa0;font-weight:600}'+
+      st.textContent='#visitToolsBtn.vt-has{background:#eef4ff;border-color:#EAF1EE;color:#204034;font-weight:600}'+
         '#visitToolsBtn.vt-alert{background:#fdecec;border-color:#f1a9a9;color:#b4231e;font-weight:700;animation:vtPulse 1.6s ease-in-out 3}'+
         '@keyframes vtPulse{0%,100%{box-shadow:0 0 0 0 rgba(180,35,30,0)}50%{box-shadow:0 0 0 4px rgba(180,35,30,.18)}}';
       document.head.appendChild(st);
@@ -13827,7 +13827,7 @@ function _athenaShowReceipt(who, results, partial){
     var old=document.getElementById('athenaReceipt'); if(old) old.remove();
     var when=new Date().toLocaleString();
     var rows=results.map(function(r){
-      var itemsHtml=(r.items&&r.items.length)?('<ul style="margin:4px 0 0 0;padding-left:18px;font-size:12.5px;color:#33536f">'+r.items.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('')+'</ul>'):'';
+      var itemsHtml=(r.items&&r.items.length)?('<ul style="margin:4px 0 0 0;padding-left:18px;font-size:12.5px;color:#204034">'+r.items.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('')+'</ul>'):'';
       return '<div style="border:1px solid #e2e8f2;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:'+(r.ok?'#f3fbf6':'#fff6f6')+'">'
         +'<div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px">'+(r.ok?'✅':'⚠️')+'</span><b style="font-size:13.5px">'+r.icon+' '+esc(r.label)+'</b></div>'
         +'<div style="font-size:11.5px;color:#5b7186;margin-top:2px">→ '+esc(r.dest)+'</div>'+itemsHtml+'</div>';
@@ -13836,11 +13836,11 @@ function _athenaShowReceipt(who, results, partial){
     var card=document.createElement('div'); card.id='athenaReceipt';
     card.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(10,25,50,.45);display:flex;align-items:center;justify-content:center;padding:18px';
     card.innerHTML='<div style="background:#fff;border-radius:16px;max-width:540px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 24px 70px rgba(10,30,70,.4);padding:20px 22px">'
-      +'<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:17px;font-weight:800;color:#0d3c78">🚀 Sent to Athena — '+esc(who||'patient')+'</div><div style="font-size:12px;color:#5b7186;margin-top:2px">'+esc(when)+(partial?' · stopped early':'')+'</div></div><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="background:none;border:none;font-size:22px;color:#9aa7b4;cursor:pointer;line-height:1">×</button></div>'
-      +'<div style="font-size:12.5px;color:#33536f;margin:10px 0 12px">Exactly what MLS Assist entered, each into its own athenaOne section:</div>'
+      +'<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:17px;font-weight:800;color:#204034">🚀 Sent to Athena — '+esc(who||'patient')+'</div><div style="font-size:12px;color:#5b7186;margin-top:2px">'+esc(when)+(partial?' · stopped early':'')+'</div></div><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="background:none;border:none;font-size:22px;color:#9aa7b4;cursor:pointer;line-height:1">×</button></div>'
+      +'<div style="font-size:12.5px;color:#204034;margin:10px 0 12px">Exactly what MLS Assist entered, each into its own athenaOne section:</div>'
       +rows
       +'<div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#7a5a16;margin-top:4px">⚠ MLS Assist <b>stopped before Save / Sign</b> — open Athena and confirm each item looks right, then save & sign there.'+(anyFail?' One or more items are marked ⚠ — double-check those in Athena.':'')+'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:14px"><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="flex:1;background:#1456a8;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer">Got it — I’ll review in Athena</button></div>'
+      +'<div style="display:flex;gap:8px;margin-top:14px"><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="flex:1;background:#204034;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer">Got it — I’ll review in Athena</button></div>'
       +'</div>';
     document.body.appendChild(card);
     card.addEventListener('click', function(e){ if(e.target===card) card.remove(); });
@@ -13958,8 +13958,8 @@ function printShare(){
   const p=activePatient(); if(!p) return;
   const txt=document.getElementById('shareText').value;
   const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Patient Record — '+esc(p.name)+'</title>'+
-    '<style>body{font-family:\'Segoe UI\',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13px;line-height:1.55}'+
-    'h1{font-size:18px;color:#155fb3;border-bottom:2px solid #2E6A4B;padding-bottom:8px}'+
+    '<style>body{font-family:\'Segoe UI\',Arial,sans-serif;color:#1E2B24;padding:34px 40px;font-size:13px;line-height:1.55}'+
+    'h1{font-size:18px;color:#2E6A4B;border-bottom:2px solid #2E6A4B;padding-bottom:8px}'+
     'pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0}'+
     '.foot{margin-top:18px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:8px}'+
     '@media print{body{padding:0}}</style></head><body>'+
@@ -14054,13 +14054,13 @@ function buildPrintHTML(){
 <title>MLS Note — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1E2B24;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
   .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
-  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand{font-size:20px;font-weight:700;color:#2E6A4B}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
-  .meta b{color:#16324f}
-  h2{font-size:15px;color:#155fb3;margin:20px 0 7px;border-bottom:1px solid #e2e9f1;padding-bottom:4px}
+  .meta b{color:#1E2B24}
+  h2{font-size:15px;color:#2E6A4B;margin:20px 0 7px;border-bottom:1px solid #e2e9f1;padding-bottom:4px}
   pre.note{white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0}
   table.emr{width:100%;border-collapse:collapse;margin-top:4px}
   table.emr td{padding:6px 5px;border-bottom:1px solid #e2e9f1;vertical-align:top}
@@ -14649,21 +14649,21 @@ function buildOrdersPrintHTML(){
 <title>MLS Orders — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1E2B24;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
   .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
-  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand{font-size:20px;font-weight:700;color:#2E6A4B}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
-  .meta b{color:#16324f}
-  h1.title{font-size:17px;color:#155fb3;margin:6px 0 14px}
-  .dx{background:#eef4fc;border:1px solid #cfe2f8;border-radius:8px;padding:8px 12px;margin-bottom:16px;font-size:13px;color:#155fb3}
+  .meta b{color:#1E2B24}
+  h1.title{font-size:17px;color:#2E6A4B;margin:6px 0 14px}
+  .dx{background:#eef4fc;border:1px solid #cfe2f8;border-radius:8px;padding:8px 12px;margin-bottom:16px;font-size:13px;color:#2E6A4B}
   .ord{margin-bottom:14px;border:1px solid #e2e9f1;border-radius:9px;padding:10px 14px;page-break-inside:avoid}
-  .ord h3{font-size:14.5px;color:#155fb3;margin:0 0 6px}
+  .ord h3{font-size:14.5px;color:#2E6A4B;margin:0 0 6px}
   table.emr{width:100%;border-collapse:collapse}
   table.emr td{padding:5px 5px;border-bottom:1px solid #F4F2EC;vertical-align:top}
   table.emr td.k{color:#5f7186;font-weight:600;width:200px;white-space:nowrap}
   .sign{margin-top:26px;padding-top:16px;border-top:1px solid #e2e9f1;font-size:13px}
-  .sign .line{display:inline-block;border-bottom:1px solid #16324f;min-width:280px;margin:0 8px}
+  .sign .line{display:inline-block;border-bottom:1px solid #1E2B24;min-width:280px;margin:0 8px}
   .disc{font-size:11.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;border-radius:6px;padding:7px 10px;margin-top:14px}
   .foot{margin-top:22px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:10px}
   @media print{body{padding:0}}
@@ -14917,13 +14917,13 @@ function buildPriorAuthPrintHTML(){
 <title>MLS Prior-Auth — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1E2B24;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
   .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
-  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand{font-size:20px;font-weight:700;color:#2E6A4B}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
-  .meta b{color:#16324f}
-  h1.title{font-size:17px;color:#155fb3;margin:6px 0 14px}
+  .meta b{color:#1E2B24}
+  h1.title{font-size:17px;color:#2E6A4B;margin:6px 0 14px}
   pre.letter{white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0}
   .disc{font-size:11.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;border-radius:6px;padding:7px 10px;margin-top:16px}
   .foot{margin-top:22px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:10px}
@@ -16134,13 +16134,13 @@ function printProcNote(){
 <title>MLS Procedure Note — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1E2B24;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
   .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
-  .brand{font-size:20px;font-weight:700;color:#155fb3}
+  .brand{font-size:20px;font-weight:700;color:#2E6A4B}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
-  .meta b{color:#16324f}
-  h1.title{font-size:17px;color:#155fb3;margin:6px 0 14px}
+  .meta b{color:#1E2B24}
+  h1.title{font-size:17px;color:#2E6A4B;margin:6px 0 14px}
   pre.note{white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0}
   .disc{font-size:11.5px;color:#8a6d3b;background:#fcf8e3;border:1px solid #f7ecb5;border-radius:6px;padding:7px 10px;margin-top:16px}
   .foot{margin-top:22px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:10px}
@@ -16457,7 +16457,7 @@ function printHandout(){
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Home Care Instructions — ${esc(patient)}</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:15px;line-height:1.6}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1E2B24;margin:0;padding:34px 40px;font-size:15px;line-height:1.6}
   .hd{border-bottom:3px solid #19a974;padding-bottom:12px;margin-bottom:18px}
   .brand{font-size:22px;font-weight:700;color:#127a55}
   .brand small{display:block;font-weight:400;font-size:13px;color:#5f7186}
@@ -16718,8 +16718,8 @@ function printExtra(title,bodyId){
   const bodyText=(body.tagName==='TEXTAREA'||body.tagName==='INPUT')?body.value:body.textContent;
   const content=body.tagName==='TABLE'?body.outerHTML:('<pre style="white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0">'+esc(bodyText)+'</pre>');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)} — ${esc(patient)}</title>
-  <style>body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13.5px;line-height:1.55}
-  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #2E6A4B;padding-bottom:8px}
+  <style>body{font-family:'Segoe UI',Arial,sans-serif;color:#1E2B24;padding:34px 40px;font-size:13.5px;line-height:1.55}
+  h1{font-size:18px;color:#2E6A4B;border-bottom:2px solid #2E6A4B;padding-bottom:8px}
   .m{font-size:12px;color:#5f7186;margin-bottom:14px}
   table{width:100%;border-collapse:collapse}td{padding:6px 5px;border-bottom:1px solid #e2e9f1;vertical-align:top}
   td.k{color:#5f7186;font-weight:600;width:150px}</style></head><body>
@@ -17351,7 +17351,7 @@ function sigPadInit(canvasId){
   cv.height=Math.round(cssH*dpr);
   const ctx=cv.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#16324f';
+  ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#1E2B24';
   const st={ctx,cssW,cssH,empty:true,drawing:false,last:null,minX:cssW,minY:cssH,maxX:0,maxY:0};
   _sigPads[canvasId]=st;
   const pos=ev=>{
@@ -19531,7 +19531,7 @@ async function sendLegalMessageDoctor(){
 /* Shared thread renderer (doctor + lawyer). reloadFnName/sendFnName are global fn names. */
 function renderLegalMessages(container, msgs, myRole, reloadFnName, sendFnName){
   var h='<div style="background:#fff;border:1px solid #d9cdf0;border-radius:10px;padding:10px">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:#6b3fa0">💬 Secure messages</div><button class="btn-ghost" style="font-size:11px;padding:3px 8px" onclick="'+reloadFnName+'()">↻ Refresh</button></div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:#2E6A4B">💬 Secure messages</div><button class="btn-ghost" style="font-size:11px;padding:3px 8px" onclick="'+reloadFnName+'()">↻ Refresh</button></div>';
   if(!msgs.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:6px">No messages yet — ask for missing records or clarify the case here. It stays inside the encrypted portal.</div>'; }
   else {
     h+='<div style="max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:8px">';
@@ -19544,7 +19544,7 @@ function renderLegalMessages(container, msgs, myRole, reloadFnName, sendFnName){
     });
     h+='</div>';
   }
-  h+='<div style="display:flex;gap:6px"><textarea id="legalMsgInput" rows="2" placeholder="Write a message…" style="flex:1;border:1px solid #cdbce8;border-radius:8px;padding:7px;font-size:13px"></textarea>'
+  h+='<div style="display:flex;gap:6px"><textarea id="legalMsgInput" rows="2" placeholder="Write a message…" style="flex:1;border:1px solid #EAF1EE;border-radius:8px;padding:7px;font-size:13px"></textarea>'
     +'<button class="btn-primary" style="font-size:12.5px;padding:7px 13px" onclick="'+sendFnName+'()">Send</button></div></div>';
   container.innerHTML=h;
 }
@@ -20414,7 +20414,7 @@ function cwRenderLayoutBlocks(w,content){
   if(!body) return;
   body.innerHTML='';
   _cwState[w.id]=content;
-  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#9B82D4','#84cc16','#ec4899'];
+  const palette=['#C9DCD2','#22c55e','#f59e0b','#ef4444','#2E6A4B','#9B82D4','#84cc16','#ec4899'];
   let hasInfo=false;
   w.layout.forEach((blk,i)=>{
     const c=content[i];
@@ -20660,8 +20660,8 @@ function cwPrintStyleCss(){
   // Concrete, non-CSS-var styling for the cw-* block classes so they keep
   // their look in a fresh print window (where --line/--muted/etc. don't exist).
   return `
-  body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13.5px;line-height:1.55;background:#fff}
-  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #2E6A4B;padding-bottom:8px;margin:0 0 4px}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1E2B24;padding:34px 40px;font-size:13.5px;line-height:1.55;background:#fff}
+  h1{font-size:18px;color:#2E6A4B;border-bottom:2px solid #2E6A4B;padding-bottom:8px;margin:0 0 4px}
   .cwp-desc{font-size:13px;color:#42566b;margin:6px 0 10px}
   .cwp-meta{font-size:12px;color:#5f7186;margin:0 0 6px}
   .cwp-foot{font-size:11px;color:#7a8aa0;margin:18px 0 0;border-top:1px solid #e2e9f1;padding-top:8px}
@@ -20692,7 +20692,7 @@ function cwPrintStyleCss(){
   .cw-rt-num{font-size:18px;font-weight:800}
   .cw-rt-dots{display:inline-flex;gap:4px}
   .cw-rt-dot{width:11px;height:11px;border-radius:50%;background:#dfe5ec;display:inline-block}
-  .cw-rt-dot.on{background:#155fb3}
+  .cw-rt-dot.on{background:#2E6A4B}
   .cw-number{display:flex;align-items:baseline;gap:7px}
   .cw-num-big{font-size:30px;font-weight:800;line-height:1}
   .cw-num-unit{font-size:14px;color:#5f7186;font-weight:600}
@@ -20715,7 +20715,7 @@ async function cwChartToPrintPng(blk,c){
   let Chart=null;
   try{ Chart=await loadChartJs(); }catch(e){ return ''; }
   if(!Chart) return '';
-  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#9B82D4','#84cc16','#ec4899'];
+  const palette=['#C9DCD2','#22c55e','#f59e0b','#ef4444','#2E6A4B','#9B82D4','#84cc16','#ec4899'];
   const isPie=(blk.kind==='pie');
   const cv=document.createElement('canvas');
   cv.width=640; cv.height=300;

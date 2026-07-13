@@ -121,7 +121,7 @@
         bannerEl.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:2147483631;max-width:580px;padding:11px 16px;border-radius:10px;font:13px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;font-weight:600;box-shadow:0 8px 24px rgba(8,20,36,.22);display:flex;gap:12px;align-items:center;';
         (document.body || document.documentElement).appendChild(bannerEl);
       }
-      var pal = kind === 'ok' ? ['#dcfce7', '#86efac', '#14532d'] : kind === 'warn' ? ['#fef3c7', '#fcd34d', '#7c4a03'] : ['#e6f0fb', '#b9d4f0', '#173a63'];
+      var pal = kind === 'ok' ? ['#dcfce7', '#86efac', '#14532d'] : kind === 'warn' ? ['#fef3c7', '#fcd34d', '#7c4a03'] : ['#e6f0fb', '#EAF1EE', '#204034'];
       bannerEl.style.background = pal[0]; bannerEl.style.border = '1px solid ' + pal[1]; bannerEl.style.color = pal[2];
       bannerEl.innerHTML = '';
       var span = document.createElement('span'); span.style.flex = '1 1 auto'; span.textContent = msg; bannerEl.appendChild(span);

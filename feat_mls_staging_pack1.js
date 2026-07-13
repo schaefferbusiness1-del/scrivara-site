@@ -72,8 +72,8 @@
   try {
     addStyle('mlsP1TplStyle',
       '#mlsP1TplBar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0;padding:10px 12px;border:1px solid var(--line,#E4E1D8);border-radius:12px;background:var(--card,#fff)}' +
-      '#mlsP1TplBar .p1-b{border:0;border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff}' +
-      '#mlsP1TplBar .p1-b.ghost{background:rgba(33,104,201,.1);color:#0d3c78}' +
+      '#mlsP1TplBar .p1-b{border:0;border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff}' +
+      '#mlsP1TplBar .p1-b.ghost{background:rgba(33,104,201,.1);color:#204034}' +
       '#mlsP1TplBar .p1-b.danger{background:#8f1d2c}' +
       '#mlsP1TplLog{font-size:11.5px;opacity:.8;width:100%;max-height:90px;overflow:auto}' +
       '#mlsP1AlwaysWrap{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink,#15243a)}');
@@ -241,14 +241,14 @@
    * ==================================================================== */
   try {
     addStyle('mlsP1TunStyle',
-      '#mlsP1Tunnel{position:fixed;inset:0;z-index:99998;background:linear-gradient(160deg,#0a2450,#123c7d 55%,#1b5db1);display:none;align-items:center;justify-content:center}' +
+      '#mlsP1Tunnel{position:fixed;inset:0;z-index:99998;background:linear-gradient(160deg,#1E2B24,#204034 55%,#2E6A4B);display:none;align-items:center;justify-content:center}' +
       '#mlsP1Tunnel .tn-card{width:640px;max-width:94vw;color:#fff;text-align:center;padding:20px}' +
       '#mlsP1Tunnel .tn-step{font-size:12px;font-weight:800;letter-spacing:1.5px;opacity:.75;text-transform:uppercase}' +
       '#mlsP1Tunnel h2{font-size:30px;margin:10px 0 6px;font-weight:850}' +
       '#mlsP1Tunnel .tn-sub{font-size:14.5px;opacity:.85;margin-bottom:18px}' +
       '#mlsP1Tunnel input,#mlsP1Tunnel textarea{width:100%;box-sizing:border-box;border:0;border-radius:12px;padding:14px 16px;font-size:17px;margin:7px 0;color:#123}' +
       '#mlsP1Tunnel textarea{min-height:150px;font-size:14px;text-align:left}' +
-      '#mlsP1Tunnel .tn-big{display:inline-flex;align-items:center;gap:10px;border:0;border-radius:14px;padding:15px 26px;font-size:17px;font-weight:850;cursor:pointer;background:#fff;color:#0d3c78;margin:8px 6px}' +
+      '#mlsP1Tunnel .tn-big{display:inline-flex;align-items:center;gap:10px;border:0;border-radius:14px;padding:15px 26px;font-size:17px;font-weight:850;cursor:pointer;background:#fff;color:#204034;margin:8px 6px}' +
       '#mlsP1Tunnel .tn-big.rec{background:#e5484d;color:#fff}' +
       '#mlsP1Tunnel .tn-ghost{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.4)}' +
       '#mlsP1Tunnel .tn-nav{margin-top:16px;display:flex;justify-content:space-between;align-items:center}' +
@@ -262,7 +262,7 @@
       var ov = document.createElement('div');
       ov.id = 'mlsP1Tunnel';
       ov.innerHTML = '<div class="tn-card"><div class="tn-step" id="mlsP1TnStep"></div><h2 id="mlsP1TnTitle"></h2><div class="tn-sub" id="mlsP1TnSub"></div><div id="mlsP1TnBody"></div><div class="tn-status" id="mlsP1TnStatus"></div>' +
-        '<div class="tn-nav"><button id="mlsP1TnBack" style="background:rgba(255,255,255,.15);color:#fff">← Back</button><button id="mlsP1TnClose" style="background:rgba(255,255,255,.15);color:#fff">Exit</button><button id="mlsP1TnNext" style="background:#fff;color:#0d3c78">Next →</button></div></div>';
+        '<div class="tn-nav"><button id="mlsP1TnBack" style="background:rgba(255,255,255,.15);color:#fff">← Back</button><button id="mlsP1TnClose" style="background:rgba(255,255,255,.15);color:#fff">Exit</button><button id="mlsP1TnNext" style="background:#fff;color:#204034">Next →</button></div></div>';
       document.body.appendChild(ov); remember(ov);
       $('mlsP1TnClose').onclick = closeTunnel;
       $('mlsP1TnBack').onclick = function () { if (tun.step > 0) { tun.step--; paintTunnel(); } };
@@ -407,7 +407,7 @@
   try {
     addStyle('mlsP1AgStyle',
       '#mlsP1Ag{position:fixed;top:0;right:0;bottom:0;width:340px;z-index:99996;background:var(--card,#fff);color:var(--ink,#15243a);border-left:1px solid var(--line,#E4E1D8);box-shadow:-10px 0 30px rgba(15,25,40,.18);display:none;flex-direction:column;font-size:13.5px}' +
-      '#mlsP1Ag .ag-h{display:flex;align-items:center;gap:8px;padding:12px 14px;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;font-weight:850}' +
+      '#mlsP1Ag .ag-h{display:flex;align-items:center;gap:8px;padding:12px 14px;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;font-weight:850}' +
       '#mlsP1Ag .ag-h button{margin-left:auto;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:3px 10px;cursor:pointer;font-weight:700}' +
       '#mlsP1AgMsgs{flex:1;overflow:auto;padding:12px}' +
       '#mlsP1AgMsgs .m{border-radius:12px;padding:9px 12px;margin:6px 0;max-width:92%;line-height:1.5;white-space:pre-wrap}' +
@@ -416,8 +416,8 @@
       '#mlsP1AgMsgs .m.step{font-size:12.5px;background:transparent;border:1px dashed var(--line,#cdd9e8);opacity:.9}' +
       '#mlsP1AgIn{display:flex;gap:7px;padding:10px;border-top:1px solid var(--line,#E4E1D8)}' +
       '#mlsP1AgIn input{flex:1;border:1px solid var(--line,#c9d5e4);border-radius:10px;padding:10px 12px;font-size:13.5px}' +
-      '#mlsP1AgIn button{border:0;border-radius:10px;padding:9px 13px;font-weight:800;cursor:pointer;background:#2168c9;color:#fff}' +
-      '#mlsP1AgFab{position:fixed;right:18px;bottom:76px;z-index:99995;border:0;border-radius:999px;padding:12px 18px;font-size:14px;font-weight:850;cursor:pointer;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;box-shadow:0 8px 26px rgba(15,40,90,.45)}');
+      '#mlsP1AgIn button{border:0;border-radius:10px;padding:9px 13px;font-weight:800;cursor:pointer;background:#2E6A4B;color:#fff}' +
+      '#mlsP1AgFab{position:fixed;right:18px;bottom:76px;z-index:99995;border:0;border-radius:999px;padding:12px 18px;font-size:14px;font-weight:850;cursor:pointer;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;box-shadow:0 8px 26px rgba(15,40,90,.45)}');
     function agEl() { return $('mlsP1Ag'); }
     function agMsg(txt, cls) {
       var box = $('mlsP1AgMsgs'); if (!box) return;

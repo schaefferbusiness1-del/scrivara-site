@@ -94,7 +94,7 @@
       '.mlsproto-s2head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 10px;}',
       '.mlsproto-s2head h3{margin:0;font-size:17px;font-weight:800;color:#fff;line-height:1.25;}',
       '.mlsproto-upnow{display:inline-flex;align-items:center;gap:7px;margin:0 0 11px;padding:8px 13px;border-radius:999px;',
-      'background:#ffffff;color:#0b3d91;font-size:14px;font-weight:800;box-shadow:0 2px 8px rgba(8,20,36,.18);}',
+      'background:#ffffff;color:#204034;font-size:14px;font-weight:800;box-shadow:0 2px 8px rgba(8,20,36,.18);}',
       '.mlsproto-upnow .dot{width:9px;height:9px;border-radius:50%;background:#2E6A4B;box-shadow:0 0 0 3px rgba(22,163,74,.25);}',
       /* the cloned NEXT UP card grid -- reuse the look of #heroToday cards, sized up */
       '#mlsProtoGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:2px 0 4px;}',
@@ -106,7 +106,7 @@
       '#mlsProtoGrid button:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(8,20,36,.26);border-color:#fff;}',
       '#mlsProtoGrid button:focus-visible{outline:3px solid #ffd34d;outline-offset:2px;}',
       '#mlsProtoGrid button > span:first-child{font-size:15px;font-weight:800;color:#0b1f33;line-height:1.2;}',
-      '#mlsProtoGrid button > span{font-size:13px;font-weight:600;color:#33506e;line-height:1.3;}',
+      '#mlsProtoGrid button > span{font-size:13px;font-weight:600;color:#204034;line-height:1.3;}',
       '#mlsProtoGrid button .mlsproto-cardnow,',
       '#mlsProtoGrid button > span.upnowtag{align-self:flex-start;font-size:11px;font-weight:900;letter-spacing:.04em;',
       'color:#0a7a33;text-transform:uppercase;}',

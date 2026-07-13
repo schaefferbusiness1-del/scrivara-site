@@ -89,7 +89,7 @@
       "#" + BTN_ID + ":hover{background:#0b8a30 !important;}" +
       "#" + BTN_ID + ":active{transform:translateY(2px) !important;box-shadow:0 1px 0 #075f21 !important;}" +
       "#" + BTN_ID + ":focus-visible{outline:3px solid #ffd34d !important;outline-offset:2px !important;}" +
-      "#" + HINT_ID + "{margin:4px 2px 2px;font-size:13px;line-height:1.35;color:#cfe0ff;opacity:.95;text-align:center;}" +
+      "#" + HINT_ID + "{margin:4px 2px 2px;font-size:13px;line-height:1.35;color:#EAF1EE;opacity:.95;text-align:center;}" +
       "#" + PANEL_ID + ".mlsproto-s2 #" + BTN_ID + ",#" + PANEL_ID + ".mlsproto-s2 #" + HINT_ID + "{display:none !important;}" +
       // self-sufficient styling for the big advance button + selected card (in case §71 is reverted)
       "#mlsProtoStart." + BIG_CLASS + "{display:block !important;width:100% !important;box-sizing:border-box !important;" +

@@ -37,7 +37,7 @@
       ACTIONS.forEach(function(a){
         var b=document.createElement('button');
         b.type='button'; b.textContent=a.label; b.setAttribute('data-mlsagentact','1');
-        b.style.cssText='font-size:12px;border:1px solid #cfe0f3;background:#fff;color:#15528f;border-radius:999px;padding:5px 10px;cursor:pointer;font-family:inherit;line-height:1.2';
+        b.style.cssText='font-size:12px;border:1px solid #cfe0f3;background:#fff;color:#204034;border-radius:999px;padding:5px 10px;cursor:pointer;font-family:inherit;line-height:1.2';
         b.addEventListener('mouseenter',function(){ b.style.background='#e2edfa'; });
         b.addEventListener('mouseleave',function(){ b.style.background='#fff'; });
         b.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); a.run(); });

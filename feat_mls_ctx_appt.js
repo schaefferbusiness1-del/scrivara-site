@@ -67,7 +67,7 @@
     s.textContent = [
       "#" + CHIP_ID + "{display:inline-flex;align-items:center;gap:6px;margin-left:8px;vertical-align:middle;",
       "padding:2px 9px;border-radius:999px;font:700 11px/1.5 inherit;white-space:nowrap;",
-      "background:rgba(59,130,246,.14);color:#93c5fd;border:1px solid rgba(59,130,246,.30);}",
+      "background:rgba(59,130,246,.14);color:#C9DCD2;border:1px solid rgba(59,130,246,.30);}",
       "#" + CHIP_ID + " svg{width:11px;height:11px;flex:0 0 auto;opacity:.85;}",
       "#" + CHIP_ID + " .mlsca-rsn{opacity:.8;font-weight:600;}",
       "#" + CHIP_ID + " .mlsca-sep{opacity:.5;}"

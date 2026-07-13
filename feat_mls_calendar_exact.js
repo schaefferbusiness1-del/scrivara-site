@@ -421,7 +421,7 @@
       var chip = document.createElement("div");
       chip.className = "cx-ovmore";
       chip.textContent = "+" + n + " more";
-      chip.style.cssText = "position:absolute;left:" + left + "px;top:" + top + "px;width:" + w + "px;height:" + height + "px;pointer-events:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:700;color:#2E6A4B;background:#eef4fc;border:1px dashed #b9cdf0;border-radius:6px;padding:1px 2px;overflow:hidden;z-index:6";
+      chip.style.cssText = "position:absolute;left:" + left + "px;top:" + top + "px;width:" + w + "px;height:" + height + "px;pointer-events:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:700;color:#2E6A4B;background:#eef4fc;border:1px dashed #EAF1EE;border-radius:6px;padding:1px 2px;overflow:hidden;z-index:6";
       host.appendChild(chip);
     } catch (e) {}
   }

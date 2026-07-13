@@ -410,7 +410,7 @@
     var ov = document.createElement("div"); ov.id = "mlsNeModal";
     ov.style.cssText = "position:fixed;inset:0;background:rgba(12,20,38,.42);z-index:99000;display:flex;align-items:center;justify-content:center;padding:20px";
     var box = document.createElement("div");
-    box.style.cssText = "background:var(--card,#fff);color:var(--ink,#16324f);max-width:720px;width:100%;border-radius:14px;padding:18px 20px;box-shadow:0 24px 70px rgba(8,20,45,.45)";
+    box.style.cssText = "background:var(--card,#fff);color:var(--ink,#1E2B24);max-width:720px;width:100%;border-radius:14px;padding:18px 20px;box-shadow:0 24px 70px rgba(8,20,45,.45)";
     box.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div style="font:800 15px system-ui;flex:1">' + esc(title) + '</div><button type="button" id="mlsNeModalX" style="cursor:pointer;border:0;background:transparent;font:700 18px system-ui;color:#5b6b82">✕</button></div>' + innerHtml;
     ov.appendChild(box); document.body.appendChild(ov);
     ov.addEventListener("click", function (e) { if (e.target === ov) closeModal(); });
@@ -427,9 +427,9 @@
     var st = document.createElement("style"); st.id = STYLE_ID;
     st.textContent = [
       "#" + BAR_ID + "{margin:10px 0 2px;border:1px solid rgba(120,150,220,.28);border-radius:12px;padding:10px 11px;background:rgba(32,64,52,.05)}",
-      "#" + BAR_ID + " .ne-hd{font:700 12.5px system-ui;color:#1f3350;margin-bottom:7px;display:flex;align-items:center;gap:8px}",
+      "#" + BAR_ID + " .ne-hd{font:700 12.5px system-ui;color:#1E2B24;margin-bottom:7px;display:flex;align-items:center;gap:8px}",
       "#" + BAR_ID + " .ne-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}",
-      "#" + BAR_ID + " button.ne-b{cursor:pointer;border:1px solid #cfd9ea;background:#fff;color:#33465f;border-radius:8px;padding:5px 9px;font:600 11.5px system-ui}",
+      "#" + BAR_ID + " button.ne-b{cursor:pointer;border:1px solid #cfd9ea;background:#fff;color:#204034;border-radius:8px;padding:5px 9px;font:600 11.5px system-ui}",
       "#" + BAR_ID + " button.ne-b:hover{background:#f1f5fc}",
       "#" + BAR_ID + " button.ne-b.on{background:#c0392b;color:#fff;border-color:#c0392b}",
       "#" + BAR_ID + " button.ne-b[disabled]{opacity:.45;cursor:default}",

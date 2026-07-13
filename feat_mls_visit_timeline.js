@@ -37,13 +37,13 @@
     var st = document.createElement('style'); st.id = STYLE_ID;
     st.textContent = [
       '#' + CARD_ID + '{margin:12px 0;padding:14px 16px 10px;border:1px solid #E7E5DD;border-radius:14px;background:linear-gradient(180deg,#f7faff 0%,#EAF1EE 100%)}',
-      '#' + CARD_ID + ' .vtl-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;font:800 13px/1.3 "Plus Jakarta Sans",system-ui,sans-serif;color:#1b3a66}',
-      '#' + CARD_ID + ' .vtl-h .n{font-weight:600;font-size:11.5px;color:#5c749b}',
+      '#' + CARD_ID + ' .vtl-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;font:800 13px/1.3 "Plus Jakarta Sans",system-ui,sans-serif;color:#204034}',
+      '#' + CARD_ID + ' .vtl-h .n{font-weight:600;font-size:11.5px;color:#2E6A4B}',
       '#' + CARD_ID + ' svg{display:block;width:100%;height:86px}',
       '#' + CARD_ID + ' .vtl-dot{cursor:pointer;transition:r .12s}',
       '#' + CARD_ID + ' .vtl-dot:hover{r:6}',
-      '#' + CARD_ID + ' .vtl-tip{font:600 11.5px/1.4 "Plus Jakarta Sans",system-ui,sans-serif;color:#33517d;min-height:16px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '#' + CARD_ID + ' .vtl-empty{font:600 12px/1.4 system-ui;color:#7189a9;padding:6px 0 10px}'
+      '#' + CARD_ID + ' .vtl-tip{font:600 11.5px/1.4 "Plus Jakarta Sans",system-ui,sans-serif;color:#204034;min-height:16px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '#' + CARD_ID + ' .vtl-empty{font:600 12px/1.4 system-ui;color:#2E6A4B;padding:6px 0 10px}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -146,11 +146,11 @@
     if (painPts.length >= 2) {
       var dpath = '';
       for (var i = 0; i < painPts.length; i++) dpath += (i ? 'L' : 'M') + X(painPts[i].t).toFixed(1) + ' ' + Y(painPts[i].pain).toFixed(1) + ' ';
-      svg += '<path d="' + dpath + '" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>';
+      svg += '<path d="' + dpath + '" fill="none" stroke="#2E6A4B" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>';
     }
     for (var j = 0; j < pts.length; j++) {
       var p = pts[j];
-      var col = p.pain == null ? '#9db8dc' : (p.pain >= 7 ? '#e05252' : p.pain >= 4 ? '#e8a13c' : '#2fa46a');
+      var col = p.pain == null ? '#C9DCD2' : (p.pain >= 7 ? '#e05252' : p.pain >= 4 ? '#e8a13c' : '#2fa46a');
       svg += '<circle class="vtl-dot" data-i="' + j + '" cx="' + X(p.t).toFixed(1) + '" cy="' + Y(p.pain).toFixed(1) + '" r="4.5" fill="' + col + '" stroke="#fff" stroke-width="1.5"/>';
     }
     svg += '</svg>';

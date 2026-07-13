@@ -72,9 +72,9 @@
     st.textContent =
       '#' + TOAST_ID + '{position:fixed;right:18px;bottom:18px;z-index:2147483600;' +
       'max-width:340px;font:600 13.5px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;' +
-      'color:#0b2746;background:#fff;border:1px solid #bcd5f3;border-radius:12px;' +
+      'color:#1E2B24;background:#fff;border:1px solid #EAF1EE;border-radius:12px;' +
       'box-shadow:0 8px 28px rgba(8,40,80,.18);padding:12px 14px;display:none}' +
-      '#' + TOAST_ID + ' .mlsva-h{font-weight:800;color:#1456a8;margin-bottom:4px;display:flex;align-items:center;gap:7px}' +
+      '#' + TOAST_ID + ' .mlsva-h{font-weight:800;color:#204034;margin-bottom:4px;display:flex;align-items:center;gap:7px}' +
       '#' + TOAST_ID + ' .mlsva-row{margin:3px 0;white-space:normal}' +
       '#' + TOAST_ID + ' .ok{color:#137a3a}#' + TOAST_ID + ' .bad{color:#b42318}#' + TOAST_ID + ' .skip{color:#92690a}';
     (document.head || document.documentElement).appendChild(st);

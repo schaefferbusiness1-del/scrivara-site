@@ -58,7 +58,7 @@
     if ($(STYLE_ID)) return;
     var css = [
       '#calMonthLabel{font-size:20px!important;font-weight:800!important;line-height:1.2!important;'
-        + 'flex:1 1 100%!important;order:99!important;margin:6px 2px 2px!important;color:var(--ink,#16324f)!important}',
+        + 'flex:1 1 100%!important;order:99!important;margin:6px 2px 2px!important;color:var(--ink,#1E2B24)!important}',
       '#calendarView .mlsCalControls{gap:8px 8px!important;align-items:center!important;'
         + 'padding-bottom:4px!important;border-bottom:1px solid var(--line,#e6edf5)!important;margin-bottom:12px!important}',
       '#calMode_month,#calMode_week,#calMode_day{transition:background .12s ease,color .12s ease;font-weight:700!important}',
@@ -68,15 +68,15 @@
         + 'text-transform:uppercase;color:var(--muted,#6b7c92);margin-right:2px}',
       '#' + ROSTER_ID + ' .mlsRosChip{font-size:12.5px;line-height:1;cursor:pointer;border-radius:999px;'
         + 'padding:6px 12px;border:1px solid var(--line,#d7e2ef);background:var(--card,#fff);'
-        + 'color:var(--ink,#16324f);transition:all .12s ease;white-space:nowrap}',
-      '#' + ROSTER_ID + ' .mlsRosChip:hover{border-color:#9cc2ee;background:#f3f8ff}',
+        + 'color:var(--ink,#1E2B24);transition:all .12s ease;white-space:nowrap}',
+      '#' + ROSTER_ID + ' .mlsRosChip:hover{border-color:#C9DCD2;background:#f3f8ff}',
       '#' + ROSTER_ID + ' .mlsRosChip.mlsRosOn{background:#2E6A4B;border-color:#2E6A4B;color:#fff;font-weight:700;'
         + 'box-shadow:0 2px 7px rgba(31,122,224,.30)}',
       '#' + ROSTER_ID + ' .mlsRosChip .mlsRosDot{display:inline-block;width:7px;height:7px;border-radius:50%;'
         + 'background:#2bb673;margin-right:6px;vertical-align:middle}',
       '#' + EMPTY_ID + '{margin:0 0 12px;background:#f7faff;border:1px solid #dbe7f7;border-radius:12px;'
         + 'padding:16px 18px;color:var(--ink,#2a3b50);font-size:13.5px;line-height:1.5}',
-      '#' + EMPTY_ID + ' b{color:#1456a8}',
+      '#' + EMPTY_ID + ' b{color:#204034}',
       '#' + EMPTY_ID + ' .mlsEmptyHint{display:block;margin-top:4px;font-size:12px;color:var(--muted,#6b7c92)}',
       '#calGrid [data-appt]{font-size:11px!important;line-height:1.3!important}'
     ].join('\n');

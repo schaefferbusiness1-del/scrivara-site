@@ -30,7 +30,7 @@
         var sep=document.createElement('span');
         sep.id='mlsFindInlineSep';
         sep.textContent='·';
-        sep.style.cssText='margin:0 4px 0 8px;color:#9bb4d1';
+        sep.style.cssText='margin:0 4px 0 8px;color:#C9DCD2';
         var b=document.createElement('span');
         b.id='mlsFindInline';
         b.textContent='🔍 find a doctor';

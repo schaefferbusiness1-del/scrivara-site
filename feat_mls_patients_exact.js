@@ -52,7 +52,7 @@
       "#patientsView .px-prof-hd{background:linear-gradient(135deg,#204034,#204034)!important;border-radius:16px!important;margin:-4px -4px 8px!important;padding:20px 22px!important;position:relative;overflow:hidden}",
       "#patientsView .px-prof-hd #profName{color:#fff!important;font-family:'Newsreader',Georgia,serif!important;font-weight:500!important;font-size:24px!important}",
       "#patientsView .px-prof-hd .ic{display:none!important}",
-      "#patientsView .px-prof-hd .sub,#patientsView .px-prof-hd #profDemo{color:#bcd2ed!important}",
+      "#patientsView .px-prof-hd .sub,#patientsView .px-prof-hd #profDemo{color:#EAF1EE!important}",
       "@media (min-width:981px){#patientsView #ptSplitWrap.px-has-profile > .card:first-child{position:sticky;top:138px}}",
       "@media (max-width:980px){#patientsView #ptSplitWrap.px-has-profile{grid-template-columns:1fr}}",
       /* narrow widths: let the stacked grid items shrink to the viewport (no h-overflow) */

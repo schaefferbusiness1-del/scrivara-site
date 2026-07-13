@@ -410,8 +410,8 @@
       s + '.' + BTN_AI + ',' + s + '.' + BTN_MANUAL + ',' + s + '.' + BTN_CHECK +
         '{border:0;border-radius:6px;padding:4px 9px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;}',
       s + '.' + BTN_AI + '{background:#1f6f3f;}',
-      s + '.' + BTN_MANUAL + '{background:#2a5d8f;}',
-      s + '.' + BTN_CHECK + '{background:#5b4a86;}',
+      s + '.' + BTN_MANUAL + '{background:#204034;}',
+      s + '.' + BTN_CHECK + '{background:#2E6A4B;}',
       s + '.' + BTN_AI + ':hover,' + s + '.' + BTN_MANUAL + ':hover,' + s + '.' + BTN_CHECK + ':hover{filter:brightness(1.08);}',
       s + '.' + BTN_AI + '.ok,' + s + '.' + BTN_MANUAL + '.ok,' + s + '.' + BTN_CHECK + '.ok{background:#15824a;}',
       s + '.' + BTN_AI + '.warn,' + s + '.' + BTN_MANUAL + '.warn,' + s + '.' + BTN_CHECK + '.warn{background:#9a3b16;}',

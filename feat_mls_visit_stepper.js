@@ -50,8 +50,8 @@
       '#' + BAR_ID + ' .mlsstp.is-done .mlsstp-num{background:rgba(16,185,129,.18);color:#2E6A4B;border-color:rgba(16,185,129,.35);}',
       '#' + BAR_ID + ' .mlsstp.is-done .mlsstp-lbl{color:#2E6A4B;}',
       // current
-      '#' + BAR_ID + ' .mlsstp.is-now .mlsstp-num{background:rgba(59,130,246,.20);color:#3b82f6;border-color:rgba(59,130,246,.45);box-shadow:0 0 0 3px rgba(59,130,246,.12);}',
-      '#' + BAR_ID + ' .mlsstp.is-now .mlsstp-lbl{color:#3b82f6;}'
+      '#' + BAR_ID + ' .mlsstp.is-now .mlsstp-num{background:rgba(59,130,246,.20);color:#2E6A4B;border-color:rgba(59,130,246,.45);box-shadow:0 0 0 3px rgba(59,130,246,.12);}',
+      '#' + BAR_ID + ' .mlsstp.is-now .mlsstp-lbl{color:#2E6A4B;}'
     ].join('');
     document.head.appendChild(s);
   }

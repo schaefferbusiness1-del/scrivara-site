@@ -42,7 +42,7 @@
       "#mlsProtoStart." + BIG_CLASS + "[disabled]{" +
         "background:#9aa3ad!important;color:#eef2f6!important;cursor:not-allowed!important;" +
         "opacity:.85!important;box-shadow:none!important;}" +
-      "#" + HINT_ID + "{margin:2px 2px 8px;font-size:13.5px;line-height:1.3;color:#cfe0ff;opacity:.95;text-align:center;}" +
+      "#" + HINT_ID + "{margin:2px 2px 8px;font-size:13.5px;line-height:1.3;color:#EAF1EE;opacity:.95;text-align:center;}" +
       "#mlsProtoGrid button." + SELECTED_CLASS + "{" +
         "outline:3px solid #0a7d2c!important;outline-offset:1px!important;" +
         "box-shadow:0 0 0 3px rgba(10,125,44,.25)!important;border-radius:12px!important;}" +

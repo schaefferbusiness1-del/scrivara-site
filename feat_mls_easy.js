@@ -134,7 +134,7 @@
         'transition:transform .06s ease, box-shadow .12s ease, background .12s ease;}' +
       '#' + PANEL_ID + ' button.ez-btn:active{transform:translateY(1px);}' +
       '#' + PANEL_ID + ' button.ez-btn:disabled{opacity:.5;cursor:not-allowed;}' +
-      '#' + PANEL_ID + ' button.ez-primary{background:#ffffff;color:#1e3a8a;box-shadow:0 8px 22px rgba(0,0,0,.22);flex:1 1 260px;}' +
+      '#' + PANEL_ID + ' button.ez-primary{background:#ffffff;color:#204034;box-shadow:0 8px 22px rgba(0,0,0,.22);flex:1 1 260px;}' +
       '#' + PANEL_ID + ' button.ez-primary:hover:not(:disabled){background:#f1f5ff;}' +
       '#' + PANEL_ID + ' button.ez-rec{background:#ef4444;color:#fff;flex:1 1 260px;box-shadow:0 8px 22px rgba(0,0,0,.25);}' +
       '#' + PANEL_ID + ' button.ez-rec:hover:not(:disabled){background:#dc2626;}' +

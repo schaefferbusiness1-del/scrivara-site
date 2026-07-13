@@ -76,9 +76,9 @@
     var s = document.createElement('style'); s.id = 'mlsBdCss';
     s.textContent = [
       '#' + TOAST_ID + '{position:fixed;right:18px;bottom:132px;z-index:2147481200;max-width:320px;background:#0f2038;color:#eaf1ff;',
-      'border:1px solid #24406e;border-radius:12px;padding:11px 13px;font:600 12.5px system-ui,Segoe UI,Arial;box-shadow:0 8px 24px rgba(10,25,55,.32)}',
-      '#' + TOAST_ID + ' a{color:#7db4ff;text-decoration:none;font-weight:800}',
-      '#' + TOAST_ID + ' button#mlsBdX{background:transparent;border:0;color:#9db6df;font-size:16px;cursor:pointer;float:right;margin:-2px -2px 0 6px;line-height:1}'
+      'border:1px solid #204034;border-radius:12px;padding:11px 13px;font:600 12.5px system-ui,Segoe UI,Arial;box-shadow:0 8px 24px rgba(10,25,55,.32)}',
+      '#' + TOAST_ID + ' a{color:#C9DCD2;text-decoration:none;font-weight:800}',
+      '#' + TOAST_ID + ' button#mlsBdX{background:transparent;border:0;color:#C9DCD2;font-size:16px;cursor:pointer;float:right;margin:-2px -2px 0 6px;line-height:1}'
     ].join('');
     (document.head || document.documentElement).appendChild(s);
   }

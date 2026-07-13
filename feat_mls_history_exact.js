@@ -42,10 +42,10 @@
       "#historyView #hyChips{display:flex!important;flex-wrap:wrap!important;gap:8px!important;margin:0 0 16px!important}",
       "#historyView .hy-chip{height:34px!important;padding:0 15px!important;border-radius:20px!important;font-weight:600!important;font-size:12.5px!important;font-family:inherit!important;cursor:pointer!important;border:1px solid #e0e8f1!important;background:#fff!important;color:#3d5168!important;transition:background .12s,color .12s,border-color .12s!important}",
       "#historyView .hy-chip[data-on=\"1\"]{background:#2E6A4B!important;color:#fff!important;border-color:#2E6A4B!important}",
-      "#historyView .hy-chip:hover{border-color:#cfe0fb!important}",
+      "#historyView .hy-chip:hover{border-color:#EAF1EE!important}",
       "#historyView .hist-list{display:flex!important;flex-direction:column!important;gap:10px!important}",
       "#historyView .hist-item{border:1px solid #E7E5DD!important;border-radius:14px!important;background:#fff!important;padding:15px 17px!important;box-shadow:none!important}",
-      "#historyView .hist-item:hover{border-color:#cfe0fb!important;background:#fbfdff!important}",
+      "#historyView .hist-item:hover{border-color:#EAF1EE!important;background:#fbfdff!important}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
@@ -72,7 +72,7 @@
         imp(b, "border", "0"); imp(b, "font-weight", "700");
         imp(b, "box-shadow", "0 10px 22px -10px rgba(46,106,75,.6)");
       } else if (/Pull chart/i.test(t)) {
-        imp(b, "background", "#EAF1EE"); imp(b, "color", "#2E6A4B"); imp(b, "border", "1px solid #cfe0fb"); imp(b, "font-weight", "700");
+        imp(b, "background", "#EAF1EE"); imp(b, "color", "#2E6A4B"); imp(b, "border", "1px solid #EAF1EE"); imp(b, "font-weight", "700");
       } else {
         imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600");
       }

@@ -155,7 +155,7 @@
       var kind = opts.kind || 'info';
       var palette = kind === 'ok' ? ['#dcfce7', '#86efac', '#14532d']
         : kind === 'warn' ? ['#fef3c7', '#fcd34d', '#7c4a03']
-        : ['#e6f0fb', '#b9d4f0', '#173a63'];
+        : ['#e6f0fb', '#EAF1EE', '#204034'];
       bannerEl.style.background = palette[0];
       bannerEl.style.border = '1px solid ' + palette[1];
       bannerEl.style.color = palette[2];

@@ -220,7 +220,7 @@
     if (document.getElementById('mlsOcEvCss')) return;
     var s = document.createElement('style'); s.id = 'mlsOcEvCss';
     s.textContent =
-      '#' + BTN_ID + '{background:linear-gradient(135deg,#4f46e5,#7A5CC0);border:0;color:#fff;' +
+      '#' + BTN_ID + '{background:linear-gradient(135deg,#2E6A4B,#7A5CC0);border:0;color:#fff;' +
       'padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:700;margin-left:6px}' +
       '#' + BTN_ID + ':hover{filter:brightness(1.06)}' +
       '#' + STAT_ID + '{font-size:11.5px;opacity:.85;margin-top:6px}';

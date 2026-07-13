@@ -132,8 +132,8 @@
         "font-weight:700;font-size:12px;letter-spacing:.2px;color:#dce8fb;background:transparent;" +
         "border:0;border-radius:999px;padding:6px 13px;line-height:1;transition:background .12s,color .12s;}" +
       "#" + WRAP_ID + " button.mlsVtSeg:hover{color:#fff;}" +
-      "#" + WRAP_ID + " button.mlsVtSeg.mlsVtOn{background:#fff;color:#12243d;box-shadow:0 1px 3px rgba(0,0,0,.25);}" +
-      "#" + WRAP_ID + " button.mlsVtSeg:focus-visible{outline:2px solid #8fc0ff;outline-offset:1px;}";
+      "#" + WRAP_ID + " button.mlsVtSeg.mlsVtOn{background:#fff;color:#1E2B24;box-shadow:0 1px 3px rgba(0,0,0,.25);}" +
+      "#" + WRAP_ID + " button.mlsVtSeg:focus-visible{outline:2px solid #C9DCD2;outline-offset:1px;}";
     var st = document.createElement("style");
     st.id = STYLE_ID; st.textContent = css;
     (document.head || document.documentElement).appendChild(st);

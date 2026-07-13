@@ -94,7 +94,7 @@
       '#mlsFpPullLog .fp-ln{padding:1.5px 0;border-bottom:1px dashed rgba(255,255,255,.12)}' +
       '#mlsFpPullLog .fp-ln.err{color:#ffd9d9}' +
       '#mlsFpPullLog .fp-ln .fp-t{opacity:.6;font-size:10.5px;margin-right:6px}' +
-      '#mlsFpDayBtn{margin-top:7px;display:none;background:#fff;color:#0d3c78;border:0;border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer}');
+      '#mlsFpDayBtn{margin-top:7px;display:none;background:#fff;color:#204034;border:0;border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer}');
 
     function ensureCard() {
       var st = $('heroPullStatus');
@@ -262,7 +262,7 @@
           try { det = findReasonFor(name, ''); } catch (e) {}
           if (det) {
             var out = FP._orig.opPrev.call(this, det, name, dateStr);
-            return out + '<div style="font-size:11px;margin-top:3px;opacity:.85;color:#2168c9;font-weight:700">⚡ Procedure auto-detected from the Athena schedule — edit below if wrong.</div>';
+            return out + '<div style="font-size:11px;margin-top:3px;opacity:.85;color:#2E6A4B;font-weight:700">⚡ Procedure auto-detected from the Athena schedule — edit below if wrong.</div>';
           }
           var out2 = FP._orig.opPrev.apply(this, arguments);
           return String(out2).replace(PLACEHOLDER_RX, 'Type the procedure below — MLS fills this in automatically once the Athena pull knows it');
@@ -435,7 +435,7 @@
       var chip = $('mlsAgendaChip'); if (!chip) return;
       if (!chip.__fpStyled) {
         chip.__fpStyled = true;
-        chip.style.background = 'linear-gradient(135deg,#0d3c78,#2168c9)';
+        chip.style.background = 'linear-gradient(135deg,#204034,#2E6A4B)';
         chip.style.color = '#fff';
         chip.style.fontWeight = '800';
         chip.style.fontSize = '13.5px';
@@ -487,7 +487,7 @@
         });
         if (shown > 0) { removeFb(); return; } /* panel is rendering them - stay out of the way */
         var rows = appts.slice().sort(function (p, q) { return String(p.start_at || '').localeCompare(String(q.start_at || '')); }).map(function (a) {
-          return '<div style="display:flex;gap:9px;align-items:center;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;border-radius:9px;padding:8px 12px;margin:5px 0;font-size:13px;font-weight:700">' +
+          return '<div style="display:flex;gap:9px;align-items:center;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;border-radius:9px;padding:8px 12px;margin:5px 0;font-size:13px;font-weight:700">' +
             '<span style="opacity:.85;min-width:64px">' + esc(apptTimeLbl(a) || '—') + '</span><span>' + esc(a.name || (typeof _calLabelOf === 'function' ? _calLabelOf(a) : 'Patient')) + '</span>' +
             (a.reason ? '<span style="opacity:.75;font-weight:600;font-size:12px;margin-left:auto">' + esc(String(a.reason).slice(0, 40)) + '</span>' : '') + '</div>';
         }).join('');
@@ -653,10 +653,10 @@
   try {
     addStyle('mlsFpFmtStyle',
       '.mls-fp-fmt{border:1px solid var(--line,#E4E1D8);border-radius:12px;background:var(--card,#fff);margin:8px 0;overflow:hidden}' +
-      '.mls-fp-fmt .fmt-bar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;font-size:12px;font-weight:800}' +
+      '.mls-fp-fmt .fmt-bar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;font-size:12px;font-weight:800}' +
       '.mls-fp-fmt .fmt-bar button{margin-left:auto;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:3px 10px;font-size:11.5px;font-weight:700;cursor:pointer}' +
       '.mls-fp-fmt .fmt-body{padding:12px 16px;font-size:13.5px;line-height:1.55;max-height:340px;overflow:auto}' +
-      '.mls-fp-fmt .fmt-body h4{margin:12px 0 4px;font-size:13px;letter-spacing:.5px;color:#0d3c78;border-bottom:1px solid var(--line,#e3e9f2);padding-bottom:2px}' +
+      '.mls-fp-fmt .fmt-body h4{margin:12px 0 4px;font-size:13px;letter-spacing:.5px;color:#204034;border-bottom:1px solid var(--line,#e3e9f2);padding-bottom:2px}' +
       '.mls-fp-fmt .fmt-body ul{margin:2px 0 6px 20px;padding:0}' +
       '.mls-fp-fmt .fmt-body .fmt-fill{background:#fff3cd;border:1px dashed #d9a406;border-radius:5px;padding:0 5px;font-weight:700}');
     function looksStructured(t) {
@@ -752,7 +752,7 @@
 
     /* blank scanner + one-at-a-time walker */
     addStyle('mlsFpBlankStyle',
-      '#mlsFpBlankBar{position:fixed;right:18px;bottom:18px;z-index:99997;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;border-radius:13px;padding:11px 16px;font-size:13.5px;font-weight:800;box-shadow:0 8px 26px rgba(15,40,90,.45);cursor:pointer;display:none;align-items:center;gap:9px}' +
+      '#mlsFpBlankBar{position:fixed;right:18px;bottom:18px;z-index:99997;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;border-radius:13px;padding:11px 16px;font-size:13.5px;font-weight:800;box-shadow:0 8px 26px rgba(15,40,90,.45);cursor:pointer;display:none;align-items:center;gap:9px}' +
       '#mlsFpBlankModal{position:fixed;inset:0;z-index:99999;background:rgba(15,25,40,.55);display:none;align-items:center;justify-content:center}' +
       '#mlsFpBlankModal .bm-card{width:520px;max-width:92vw;background:var(--card,#fff);color:var(--ink,#15243a);border-radius:16px;border:1px solid var(--line,#E4E1D8);box-shadow:0 24px 70px rgba(15,25,40,.5);padding:20px 22px}' +
       '#mlsFpBlankModal .bm-ctx{background:rgba(33,104,201,.08);border:1px solid var(--line,#E4E1D8);border-radius:10px;padding:10px 13px;font-size:13px;line-height:1.5;margin:10px 0}' +
@@ -760,7 +760,7 @@
       '#mlsFpBlankModal input{width:100%;box-sizing:border-box;border:1px solid var(--line,#c9d5e4);border-radius:10px;padding:11px 13px;font-size:15px;margin:4px 0 12px}' +
       '#mlsFpBlankModal .bm-row{display:flex;gap:9px;justify-content:flex-end}' +
       '#mlsFpBlankModal button{border:0;border-radius:10px;padding:9px 17px;font-size:13.5px;font-weight:800;cursor:pointer}' +
-      '#mlsFpBlankModal .bm-next{background:#2168c9;color:#fff}#mlsFpBlankModal .bm-skip{background:rgba(33,104,201,.12);color:#0d3c78}');
+      '#mlsFpBlankModal .bm-next{background:#2E6A4B;color:#fff}#mlsFpBlankModal .bm-skip{background:rgba(33,104,201,.12);color:#204034}');
     var BLANK_RX = /\[FILL:[^\]]*\]|_{3,}|\[not dictated[^\]]*\]/gi;
     var blankTarget = null;
     function countBlanks(t) { var m = String(t || '').match(BLANK_RX); return m ? m.length : 0; }

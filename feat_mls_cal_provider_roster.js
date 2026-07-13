@@ -123,7 +123,7 @@
 
   /* ----- roster paint (authoritative; coexists with item64 without flicker) ----- */
   function rosterHtml(names){
-    var palette = ['#2E6A4B','#3B7C5A','#9B82D4','#e8833a','#d6457f','#0ea5b7','#5b6ee8','#11a36b'];
+    var palette = ['#2E6A4B','#3B7C5A','#9B82D4','#e8833a','#d6457f','#0ea5b7','#2E6A4B','#11a36b'];
     var active = window.__mls65scope || '';
     // hidden data-mls64root sentinel + matching item64 sig keep item64's painter from clobbering us
     var h = '<div data-mls65root="1"><span data-mls64root="1" style="display:none"></span>';
@@ -160,7 +160,7 @@
       /* roster rows */
       '#calendarView .cx-prov-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;width:100%;border:0;background:transparent;cursor:pointer;text-align:left;padding:3px 4px;border-radius:8px;font-family:inherit}',
       '#calendarView .cx-prov-row:hover{background:#eef4fc}',
-      '#calendarView .cx-prov-row.cx-prov-on{background:#e6effd;outline:1px solid #bcd4f5}',
+      '#calendarView .cx-prov-row.cx-prov-on{background:#e6effd;outline:1px solid #EAF1EE}',
       '#calendarView .cx-prov-list{max-height:360px;overflow:auto}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(s);

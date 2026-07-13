@@ -62,7 +62,7 @@
     "#t7AxRefresh[disabled]{opacity:.55;cursor:default}",
     ".t7-face-note{color:#A6AEA6;font-size:11px;margin-top:4px}",
     ".t7-busy{position:absolute;inset:0;background:rgba(255,255,255,.72);display:flex;align-items:center;justify-content:center;z-index:40;border-radius:inherit;backdrop-filter:blur(1px)}",
-    ".t7-busy>div{display:flex;align-items:center;gap:10px;color:#31435c;font-weight:600;font-size:13.5px;background:#fff;border:1px solid #e2e9f2;border-radius:12px;padding:10px 16px;box-shadow:0 8px 24px -12px rgba(20,33,28,.35)}",
+    ".t7-busy>div{display:flex;align-items:center;gap:10px;color:#204034;font-weight:600;font-size:13.5px;background:#fff;border:1px solid #e2e9f2;border-radius:12px;padding:10px 16px;box-shadow:0 8px 24px -12px rgba(20,33,28,.35)}",
     ".t7-spin{width:16px;height:16px;border-radius:50%;border:2px solid #c9d9ef;border-top-color:#2E6A4B;animation:t7spin .8s linear infinite}",
     "@keyframes t7spin{to{transform:rotate(360deg)}}",
     "@media(min-width:1150px){#mls-sg-root{display:grid!important;grid-template-columns:1fr 1fr;gap:0 16px;align-items:start;max-width:1320px}",
@@ -73,12 +73,12 @@
     "#t7SgStatus{display:none;margin:8px 0 2px;padding:8px 12px;border-radius:9px;font-size:12.5px;font-weight:600;line-height:1.45}",
     "#t7SgStatus.t7-ok{display:block;background:#eef8f1;color:#1f7d5c;border:1px solid #cdeadb}",
     "#t7SgStatus.t7-err{display:block;background:#fdf0ef;color:#b3382c;border:1px solid #f3d5d2}",
-    "#t7SgStatus.t7-info{display:block;background:#eef4fd;color:#2f5f9e;border:1px solid #d5e3f7}",
+    "#t7SgStatus.t7-info{display:block;background:#eef4fd;color:#2E6A4B;border:1px solid #d5e3f7}",
     "#t7SgStatus button{margin-left:8px;height:24px;padding:0 10px;border-radius:7px;border:1px solid currentColor;background:transparent;color:inherit;font-weight:700;font-size:11.5px;cursor:pointer;font-family:inherit}",
     ".t7-rm{margin-left:10px;border:none;background:transparent;color:#c05248;font-weight:700;cursor:pointer;font-size:13px;line-height:1;padding:2px 6px;border-radius:6px}",
     ".t7-rm:hover{background:#fdeeed}",
     "#t7SgRename{height:28px;padding:0 9px;border-radius:7px;border:1px solid #dbe4ee;background:#fff;color:#5c6f87;font-size:12px;cursor:pointer;font-family:inherit}",
-    "#t7SgRename:hover{color:#2E6A4B;border-color:#bcd6fb}"
+    "#t7SgRename:hover{color:#2E6A4B;border-color:#EAF1EE}"
   ].join("\n");
   var styleEl = document.createElement("style");
   styleEl.id = "t7Style";

@@ -64,7 +64,7 @@
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = 'Set up payments';
-    btn.style.cssText = 'flex:0 0 auto;cursor:pointer;border:0;border-radius:8px;padding:9px 14px;background:#635bff;color:#fff;font-weight:600;font-size:14px';
+    btn.style.cssText = 'flex:0 0 auto;cursor:pointer;border:0;border-radius:8px;padding:9px 14px;background:#2E6A4B;color:#fff;font-weight:600;font-size:14px';
     btn.addEventListener('click', function () { startOnboarding(btn); });
     d.appendChild(txt);
     d.appendChild(btn);

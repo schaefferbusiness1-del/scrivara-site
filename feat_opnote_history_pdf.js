@@ -83,7 +83,7 @@
     b.style.cssText =
       'margin-right:6px;padding:4px 8px;font-size:12px;line-height:1;' +
       'border:1px solid #c7d2e8;border-radius:6px;background:#eef3ff;' +
-      'color:#1b3a7a;cursor:pointer;white-space:nowrap;';
+      'color:#204034;cursor:pointer;white-space:nowrap;';
     b.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopImmediatePropagation();                  // do NOT trigger row open

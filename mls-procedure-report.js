@@ -239,36 +239,36 @@
     if (document.getElementById('mlsProcReportCSS')) return;
     var css = [
       '#mlsProcReport{background:#ffffff;color:#1f2a37;border:1px solid #d7deea;border-radius:14px;padding:18px 20px;margin:0 0 16px;box-shadow:0 1px 3px rgba(16,32,64,.06)}',
-      '#mlsProcReport h2{margin:0 0 4px;font-size:19px;color:#15396b;display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+      '#mlsProcReport h2{margin:0 0 4px;font-size:19px;color:#204034;display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
       '#mlsProcReport .mlspr-sub{color:#5f7186;font-size:12.5px;margin:0 0 12px}',
       '#mlsProcReport .mlspr-presets{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}',
-      '#mlsProcReport .mlspr-btn{cursor:pointer;border:1px solid #c3d0e4;background:#EAF1EE;color:#1f3a63;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:600;line-height:1}',
+      '#mlsProcReport .mlspr-btn{cursor:pointer;border:1px solid #c3d0e4;background:#EAF1EE;color:#204034;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:600;line-height:1}',
       '#mlsProcReport .mlspr-btn:hover{background:#e1ebf9}',
       '#mlsProcReport .mlspr-btn.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
-      '#mlsProcReport .mlspr-custom{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;font-size:12.5px;color:#33415a}',
+      '#mlsProcReport .mlspr-custom{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;font-size:12.5px;color:#204034}',
       '#mlsProcReport input[type=date]{border:1px solid #c3d0e4;border-radius:7px;padding:5px 8px;font-size:12.5px;color:#1f2a37;background:#fff}',
       '#mlsProcReport .mlspr-kpis{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}',
       '#mlsProcReport .mlspr-kpi{flex:1 1 130px;min-width:120px;background:#f5f8fd;border:1px solid #dde6f3;border-radius:10px;padding:10px 12px}',
-      '#mlsProcReport .mlspr-kpi .n{font-size:24px;font-weight:800;color:#15396b;line-height:1.1}',
+      '#mlsProcReport .mlspr-kpi .n{font-size:24px;font-weight:800;color:#204034;line-height:1.1}',
       '#mlsProcReport .mlspr-kpi .l{font-size:11.5px;color:#5f7186;margin-top:2px;text-transform:uppercase;letter-spacing:.03em}',
-      '#mlsProcReport .mlspr-kpi.office .n{color:#1769aa}',
+      '#mlsProcReport .mlspr-kpi.office .n{color:#2E6A4B}',
       '#mlsProcReport .mlspr-kpi.asc .n{color:#9c4221}',
       '#mlsProcReport .mlspr-kpi.unspec .n{color:#6b7280}',
-      '#mlsProcReport h3{font-size:14px;color:#15396b;margin:16px 0 7px;font-weight:700}',
+      '#mlsProcReport h3{font-size:14px;color:#204034;margin:16px 0 7px;font-weight:700}',
       '#mlsProcReport table{width:100%;border-collapse:collapse;font-size:12.5px}',
       '#mlsProcReport th,#mlsProcReport td{text-align:left;padding:6px 8px;border-bottom:1px solid #e7edf6;color:#28344a}',
-      '#mlsProcReport th{background:#EAF1EE;color:#33507e;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}',
+      '#mlsProcReport th{background:#EAF1EE;color:#204034;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}',
       '#mlsProcReport td.num,#mlsProcReport th.num{text-align:right;font-variant-numeric:tabular-nums}',
-      '#mlsProcReport tr.total td{font-weight:800;background:#f5f8fd;color:#15396b;border-top:2px solid #c3d0e4}',
-      '#mlsProcReport .mlspr-code{font-weight:700;color:#15396b}',
+      '#mlsProcReport tr.total td{font-weight:800;background:#f5f8fd;color:#204034;border-top:2px solid #c3d0e4}',
+      '#mlsProcReport .mlspr-code{font-weight:700;color:#204034}',
       '#mlsProcReport .mlspr-empty{background:#f5f8fd;border:1px dashed #c3d0e4;border-radius:10px;padding:22px;text-align:center;color:#48566e;font-size:13.5px}',
       '#mlsProcReport .mlspr-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}',
       '#mlsProcReport .mlspr-actions .mlspr-btn{padding:8px 13px;font-size:13px}',
-      '#mlsProcReport .mlspr-actions .pdf{background:#15396b;border-color:#15396b;color:#fff}',
+      '#mlsProcReport .mlspr-actions .pdf{background:#204034;border-color:#204034;color:#fff}',
       '#mlsProcReport .mlspr-actions .csv{background:#10713b;border-color:#10713b;color:#fff}',
       '#mlsProcReport .mlspr-tagwrap{margin-top:14px;border-top:1px solid #e7edf6;padding-top:10px}',
-      '#mlsProcReport .mlspr-tagrow{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #f0f4fa;font-size:12.5px;color:#33415a;flex-wrap:wrap}',
-      '#mlsProcReport .mlspr-tagrow .d{font-weight:700;color:#15396b;min-width:88px}',
+      '#mlsProcReport .mlspr-tagrow{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #f0f4fa;font-size:12.5px;color:#204034;flex-wrap:wrap}',
+      '#mlsProcReport .mlspr-tagrow .d{font-weight:700;color:#204034;min-width:88px}',
       '#mlsProcReport select.mlspr-set{border:1px solid #c3d0e4;border-radius:7px;padding:4px 7px;font-size:12.5px;color:#1f2a37;background:#fff}',
       '#mlsProcReport .mlspr-note{font-size:11.5px;color:#7a8aa0;margin-top:8px}',
       '#mlsProcReport a.mlspr-toggle{color:#2E6A4B;font-size:12.5px;cursor:pointer;font-weight:600;text-decoration:none}'
@@ -302,7 +302,7 @@
     h.push('<div class="mlspr-sub" style="margin-top:-4px"><strong>Range:</strong> ' + esc(rangeLabel()) + '</div>');
 
     if (!A.total) {
-      h.push('<div class="mlspr-empty"><div style="font-size:30px;margin-bottom:6px">🗓️</div><div style="font-weight:700;color:#33507e;margin-bottom:4px">No procedures in this range</div>'
+      h.push('<div class="mlspr-empty"><div style="font-size:30px;margin-bottom:6px">🗓️</div><div style="font-weight:700;color:#204034;margin-bottom:4px">No procedures in this range</div>'
         + 'No visit in ' + esc(STATE.range.label || (STATE.range.from + '…' + STATE.range.to)) + ' carries a procedure CPT code.'
         + (A.undatedProc ? '<div class="mlspr-note">' + A.undatedProc + ' procedure visit(s) have no recorded date and are not counted in any range.</div>' : '')
         + '</div>');
@@ -556,7 +556,7 @@
     try {
       var t = document.createElement('div');
       t.textContent = msg;
-      t.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#15396b;color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;z-index:2147483600;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+      t.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#204034;color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;z-index:2147483600;box-shadow:0 4px 14px rgba(0,0,0,.25)';
       document.body.appendChild(t);
       setTimeout(function () { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(function () { t.remove(); }, 420); }, 1800);
     } catch (e) {}

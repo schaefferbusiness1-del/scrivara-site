@@ -46,7 +46,7 @@
       '#mlsAthenaStatusDot{position:fixed;top:8px;right:10px;z-index:2147483601;width:12px;height:12px;' +
       'border-radius:50%;background:' + COLORS.checking + ';box-shadow:0 0 0 2px rgba(255,255,255,.92),0 1px 5px rgba(0,0,0,.5);' +
       'cursor:default;pointer-events:auto;transition:background .2s ease;}' +
-      '#mlsAthenaStatusDot .mlsDotTip{position:absolute;top:19px;right:0;white-space:nowrap;background:#0f2740;color:#fff;' +
+      '#mlsAthenaStatusDot .mlsDotTip{position:absolute;top:19px;right:0;white-space:nowrap;background:#1E2B24;color:#fff;' +
       'padding:5px 9px;border-radius:7px;font:12px/1.3 system-ui,-apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.35);' +
       'opacity:0;visibility:hidden;transition:opacity .12s ease;pointer-events:none;}' +
       '#mlsAthenaStatusDot:hover .mlsDotTip{opacity:1;visibility:visible;}';

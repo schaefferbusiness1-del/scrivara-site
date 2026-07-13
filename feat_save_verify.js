@@ -277,8 +277,8 @@
       'cursor:pointer;font-size:16px;line-height:1;padding:0 2px;margin-left:4px;}.mls-sv-x:hover{opacity:1;}' +
       '@keyframes mlsSvIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}' +
       '.mls-sv-verifybtn{display:inline-flex;align-items:center;gap:7px;margin:8px 0;padding:9px 14px;' +
-      'border-radius:10px;border:1px solid #15406b;background:#204034;color:#fff;font-weight:600;font-size:13px;cursor:pointer;}' +
-      '.mls-sv-verifybtn:hover{background:#16314f;}' +
+      'border-radius:10px;border:1px solid #204034;background:#204034;color:#fff;font-weight:600;font-size:13px;cursor:pointer;}' +
+      '.mls-sv-verifybtn:hover{background:#1E2B24;}' +
       '.mls-sv-report{margin:8px 0;border:1px solid #cfd8e3;border-radius:10px;background:#f6f9fc;' +
       'color:#1A211C;padding:11px 13px;font-size:13px;line-height:1.45;}' +
       '.mls-sv-report b{color:#0d2238;}.mls-sv-report .mls-sv-good{color:#0f6b30;font-weight:700;}' +

@@ -126,7 +126,7 @@
     if (document.getElementById("mlsCompCss")) return;
     var s = document.createElement("style"); s.id = "mlsCompCss";
     s.textContent =
-      "#mlsCompBtn{position:fixed;left:12px;bottom:140px;z-index:99990;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2E6A4B);color:#fff;font:600 14px/1 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer}" +
+      "#mlsCompBtn{position:fixed;left:12px;bottom:140px;z-index:99990;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;font:600 14px/1 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer}" +
       "#mlsCompBtn:hover{filter:brightness(1.08)}" +
       "#mlsCompOvl{position:fixed;inset:0;z-index:99991;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}" +
       "#mlsCompPanel{background:#fff;color:#0f172a;border-radius:14px;max-width:1060px;width:100%;padding:22px 26px;font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)}" +

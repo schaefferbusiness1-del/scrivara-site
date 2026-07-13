@@ -39,16 +39,16 @@
       'opacity:.55;font-weight:700;margin:0 0 4px;}',
       '#' + POP_ID + ' .mlssnap-pill{display:inline-flex;align-items:center;margin:0 6px 6px 0;',
       'padding:3px 9px;border-radius:999px;font-weight:600;font-size:12px;',
-      'background:rgba(59,130,246,.16);color:#93c5fd;border:1px solid rgba(59,130,246,.30);}',
+      'background:rgba(59,130,246,.16);color:#C9DCD2;border:1px solid rgba(59,130,246,.30);}',
       '#' + POP_ID + ' .mlssnap-pill.alg{background:rgba(220,38,38,.16);color:#fca5a5;border-color:rgba(220,38,38,.34);}',
       '#' + POP_ID + ' .mlssnap-pill.ok{background:rgba(16,185,129,.16);color:#6ee7b7;border-color:rgba(16,185,129,.32);}',
       '#' + POP_ID + ' .mlssnap-v{font-weight:600;}',
       '#' + POP_ID + ' .mlssnap-visit{display:flex;gap:8px;padding:5px 0;border-top:1px solid rgba(148,163,184,.12);}',
       '#' + POP_ID + ' .mlssnap-visit:first-of-type{border-top:none;}',
-      '#' + POP_ID + ' .mlssnap-vd{flex:0 0 auto;font-weight:700;color:#93c5fd;font-size:12px;white-space:nowrap;}',
+      '#' + POP_ID + ' .mlssnap-vd{flex:0 0 auto;font-weight:700;color:#C9DCD2;font-size:12px;white-space:nowrap;}',
       '#' + POP_ID + ' .mlssnap-vt{flex:1 1 auto;opacity:.9;font-size:12px;}',
       '#' + POP_ID + ' .mlssnap-foot{margin-top:12px;font-size:11px;opacity:.5;}',
-      '#' + BTN_ID + '[aria-pressed="true"]{color:#3b82f6;}'
+      '#' + BTN_ID + '[aria-pressed="true"]{color:#2E6A4B;}'
     ].join('');
     document.head.appendChild(s);
   }

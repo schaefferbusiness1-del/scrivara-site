@@ -70,7 +70,7 @@
       "#" + STRIP_ID + " .mlshg-v{font-weight:800;color:#f1f5f9;}",
       "#" + STRIP_ID + " .mlshg-nm{font-weight:700;opacity:.95;}",
       "#" + STRIP_ID + " .mlshg-dot{width:4px;height:4px;border-radius:999px;background:rgba(255,255,255,.45);display:inline-block;}",
-      "#" + STRIP_ID + " .mlshg-up{color:#bfdbfe;}"
+      "#" + STRIP_ID + " .mlshg-up{color:#EAF1EE;}"
     ].join("");
     document.head.appendChild(s);
   }

@@ -69,7 +69,7 @@
   var DOB_IN = "heroPtDob";
   var BANNER = "heroPullStatus";
 
-  var LABEL_STYLE = "font-size:9.5px;font-weight:800;color:#1456a8;letter-spacing:.4px";
+  var LABEL_STYLE = "font-size:9.5px;font-weight:800;color:#204034;letter-spacing:.4px";
   var _busy = false;          /* guard: our own DOM writes / re-render */
   var _depth = 0;             /* guard: bounded re-render recursion */
   var _origRender = null;
@@ -156,7 +156,7 @@
       if (on) {
         chip.style.background = "#fff";
         chip.style.border = "2px solid #fff";
-        chip.style.color = "#1456a8";
+        chip.style.color = "#204034";
         chip.style.boxShadow = "0 2px 12px rgba(0,0,0,.20)";
         if (!firstChildIsLabel(chip)) {
           var lab = document.createElement("span");
