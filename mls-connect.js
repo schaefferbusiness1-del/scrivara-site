@@ -30476,7 +30476,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b238';
+  window.__MLS_AV = window.__MLS_AV || 'b239';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30790,7 +30790,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b238';
+  var MLS_APP_BUILD='2026-07-13-b239';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38635,5 +38635,55 @@
     try { if (typeof orig === 'function') window.clearAllOrders = orig; } catch (e) {}
     try { var s = document.getElementById('mlsCalmConfirm'); if (s) s.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsCalmClear; delete window.__mlsCalmConfirm;
+  };
+})();
+
+/* ===== __mlsCopCalm cop-1.0.0 (2026-07-13, b239 - owner P1 "Copilot opens as an
+ * empty glitching panel"): openCopilotDock() reveals #copilotCard INLINE in the
+ * current view; with a long restored conversation the card measured 5,821px tall
+ * and the page landed scrolled to a random slice (card top 4,586px above the
+ * viewport) - which reads as a huge blank white panel. Minimal, reversible calm:
+ *   1) cap the card at the viewport (internal scroll instead of a 5.8k-px page);
+ *   2) after open, bring the card into view and scroll its thread to the latest
+ *      message + the ask box (never a random middle slice).
+ * Style + scroll only - no Copilot logic touched. Full drawer redesign queued
+ * separately (see REDESIGN_HANDOFF). Reversible: window.__mlsCopCalm.revert(). */
+(function () {
+  if (window.__mlsCopCalm) return;
+  var api = { installed: true, version: 'cop-1.0.0' };
+  window.__mlsCopCalm = api;
+  var st = document.createElement('style');
+  st.id = 'mlsCopCalmCss';
+  st.textContent = '#copilotCard{ max-height:calc(100vh - 132px); overflow-y:auto; }';
+  (document.head || document.documentElement).appendChild(st);
+  function settle() {
+    try {
+      var c = document.getElementById('copilotCard');
+      if (!c || !c.getBoundingClientRect().height) return;
+      var noMotion = false;
+      try { noMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+      try { c.scrollIntoView({ block: 'start', behavior: noMotion ? 'auto' : 'smooth' }); } catch (e) { try { c.scrollIntoView(); } catch (_) {} }
+      c.scrollTop = c.scrollHeight; /* latest messages + the ask box, not a random slice */
+    } catch (e) {}
+  }
+  /* openCopilotDock gets re-assigned by other modules (wrap-war hazard, the
+     b168 class) - so DON'T wrap it. Instead, settle after any click on a known
+     Copilot opener (capture phase, no timers, no observers). */
+  function isOpener(t) {
+    try {
+      if (!t || !t.closest) return false;
+      if (t.closest('#askCopilotHdrBtn,#mlsAsstFab,#mlsCopVoiceBtn')) return true;
+      var row = t.closest('#mlsRdNewMenu button, .navtab, button');
+      if (row && /ask copilot|^ask$/i.test((row.textContent || '').trim())) return true;
+      return false;
+    } catch (e) { return false; }
+  }
+  function onClick(ev) { try { if (isOpener(ev.target)) setTimeout(settle, 300); } catch (e) {} }
+  document.addEventListener('click', onClick, true);
+  api.settle = settle;
+  api.revert = function () {
+    try { document.removeEventListener('click', onClick, true); } catch (e) {}
+    try { st.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsCopCalm;
   };
 })();
