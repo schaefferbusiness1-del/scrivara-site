@@ -633,7 +633,11 @@
   var _sig = {}, iv = null, _wireN = 0;
   function tick() {
     _wireN++;
-    if (_wireN <= 3 || _wireN % 6 === 0) safe(wireUploadButtons);   /* PERF: wire early, then only every ~6s (was a full document button/a scan EVERY tick) */
+    /* PERF: wire early then every ~6s - EXCEPT while the op modal is open,
+       where its Upload-templates button must work on the FIRST click (it is
+       born dead; the lazy cadence left a ~6s window where clicks did nothing
+       - owner bug 2026-07-13) */
+    if (_wireN <= 3 || _wireN % 6 === 0 || modalOpen()) safe(wireUploadButtons);
     if (!modalOpen()) return;
     /* the Templates modal opens BEHIND the op modal (equal z 9400, earlier in
        DOM). The click-handler bump can miss (its wiring is lazy) - keep this
