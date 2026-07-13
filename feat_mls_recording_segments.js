@@ -123,6 +123,12 @@
   var SEGMENTS = [];        /* all segments, all patients (filtered for display) */
   var selected = {};        /* id -> true (checkbox state for the current patient) */
   var armed = null;         /* {id, kind, boundaryLen, patientId} while a segment records */
+  /* rs-1.1.0 (staff-system 2026-07-13): every segment carries WHO recorded it,
+     so a doctor picking up a staff-started visit sees exactly who captured what */
+  function whoAmI() {
+    try { if (typeof bkUser !== 'undefined' && bkUser) return String(bkUser.name || bkUser.email || '').slice(0, 60); } catch (e) {}
+    return '';
+  }
 
   function load() {
     SEGMENTS = safe(function () {
@@ -198,6 +204,7 @@
       label: kindOf(armed.kind).label,
       text: text,
       wordCount: words(text),
+      recordedBy: whoAmI(),
       startedAt: armed.startedAt,
       endedAt: nowMs()
     };
@@ -225,6 +232,7 @@
     var rec = {
       id: uid(), patientId: p ? p.id : "", patientName: p ? p.name : "", patientDob: p ? p.dob : "",
       kind: kindOf(kind).key, label: kindOf(kind).label, text: text, wordCount: words(text),
+      recordedBy: whoAmI(),
       startedAt: nowMs(), endedAt: nowMs()
     };
     SEGMENTS.push(rec); selected[rec.id] = true; persist(); render();
@@ -349,17 +357,24 @@
       return '<div class="rs-row" data-id="' + s.id + '">'
         + '<input type="checkbox" class="rs-ck"' + (selected[s.id] ? ' checked' : '') + '>'
         + '<select class="rs-kindsel">' + opts + '</select>'
-        + '<span class="rs-wc">' + s.wordCount + ' word' + (s.wordCount === 1 ? '' : 's') + '</span>'
+        + '<span class="rs-wc">' + s.wordCount + ' word' + (s.wordCount === 1 ? '' : 's')
+        + (s.recordedBy ? ' · by ' + esc(s.recordedBy) : '') + '</span>'
         + '<button type="button" class="rs-del" title="Delete recording">✕</button>'
         + '</div>';
     }).join("") : '<div class="rs-empty">No recordings yet. Pick a type, then Start.</div>';
 
     var selCount = 0; for (var i = 0; i < mine.length; i++) if (selected[mine[i].id]) selCount++;
+    /* handoff clarity: a staff-captured segment means the doctor reviews before signing */
+    var staffSeg = mine.some(function (s) { return s.kind === 'staff' || /staff/i.test(s.label || ''); });
+    var handoffChip = staffSeg
+      ? '<div class="rs-handoff" style="background:#FCF8EF;border:1px solid #EFE4CE;color:#8A5A22;border-radius:9px;padding:7px 11px;font:600 12px system-ui;margin:0 0 8px">🤝 Staff-prepared content in this visit — review each part before you combine and sign.</div>'
+      : '';
 
     h.innerHTML =
       '<div class="rs-hd">🎙️ Recordings for this visit</div>'
       + '<div class="rs-sub">Capture the doctor\'s dictation, an addendum, staff history, imaging review, or a procedure discussion - separately - then combine any of them into one note.</div>'
       + ptLine
+      + handoffChip
       + '<div class="rs-kinds">' + kindBtns + '</div>'
       + '<div class="rs-rec">'
       + '<button type="button" class="rs-recbtn' + (recOn ? ' rec' : '') + '" id="rsRecBtn">' + (recOn ? '■ Stop ' + esc(kindOf(armed.kind).label) : '● Start ' + esc(kindOf(curKind).label)) + '</button>'
