@@ -30495,7 +30495,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b243';
+  window.__MLS_AV = window.__MLS_AV || 'b244';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30809,7 +30809,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b243';
+  var MLS_APP_BUILD='2026-07-13-b244';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38719,5 +38719,169 @@
     try { document.removeEventListener('click', onClick, true); } catch (e) {}
     try { st.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsCopCalm;
+  };
+})();
+
+/* ===== __mlsDaySwitch ds-1.0.0 (2026-07-13, b244 - owner: day selection for MLS
+ * Easy, and the day-pull control FRONT AND CENTER instead of buried under
+ * "advanced tools"). A calm day strip on the doctor home / choose-patient
+ * screens: [<] [day label] [>] [Today] [Pull this day from Athena].
+ *  - TODAY stays 100% the engine's native flow (this module renders NOTHING
+ *    extra and never touches the native list) - the other-day path is a
+ *    SEPARATE branch: picking another day shows this module's OWN read-only
+ *    list panel for that day (from the already-pulled _calAppts, provider
+ *    shown per row) below the strip; back to Today removes it.
+ *  - "Pull this day" uses the SAME engine that powers the existing day/month
+ *    pulls (__mlsSI.pull({date,onStatus})) with a REAL loading state: the
+ *    button becomes a live progress row (spinner + the engine's own status
+ *    text), success/failure toasts - no more quiet gray text.
+ *  - Hidden on the staff screen (staff has the full pull console).
+ * Reversible: window.__mlsDaySwitch.revert(). ES5. No observers; one gentle
+ * ensure interval (1.2s, write-only-when-missing). */
+(function () {
+  if (window.__mlsDaySwitch) return;
+  var api = { installed: true, version: 'ds-1.0.0' };
+  window.__mlsDaySwitch = api;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function keyOf(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function todayKey() { return keyOf(new Date()); }
+  function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
+  function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
+  var DS = { day: todayKey(), pulling: false };
+
+  var st = document.createElement('style'); st.id = 'mlsDsCss';
+  st.textContent = [
+    '#mlsDsStrip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:9px 12px;margin:0 0 10px;box-shadow:0 1px 2px rgba(20,33,28,.04);}',
+    '#mlsDsStrip .ds-nav{width:32px;height:32px;border-radius:8px;border:1px solid #E4E1D8;background:#FCFBF8;color:#55605A;font-size:15px;cursor:pointer;line-height:1;}',
+    '#mlsDsStrip .ds-nav:hover{background:#F0EEE7;color:#1A211C;}',
+    '#mlsDsStrip .ds-day{font:600 13.5px "Public Sans",system-ui,sans-serif;color:#1A211C;min-width:150px;text-align:center;}',
+    '#mlsDsStrip .ds-day b{font-weight:700;}',
+    '#mlsDsStrip .ds-today{border:1px solid #E4E1D8;background:#FCFBF8;color:#2E6A4B;font:600 12px system-ui;border-radius:8px;padding:7px 12px;cursor:pointer;}',
+    '#mlsDsStrip .ds-pull{margin-left:auto;display:inline-flex;align-items:center;gap:8px;border:0;background:#204034;color:#fff;font:700 12.5px system-ui;border-radius:9px;padding:9px 15px;cursor:pointer;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);}',
+    '#mlsDsStrip .ds-pull:hover{background:#28503f;}',
+    '#mlsDsStrip .ds-pull[disabled]{opacity:.85;cursor:default;}',
+    '#mlsDsStrip .ds-spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:mlsDsSpin .8s linear infinite;flex:none;display:inline-block;}',
+    '@keyframes mlsDsSpin{to{transform:rotate(360deg)}}',
+    '@media (prefers-reduced-motion: reduce){#mlsDsStrip .ds-spin{animation-duration:2s;}}',
+    '#mlsDsStatus{flex-basis:100%;font:600 12px system-ui;color:#2E6A4B;background:#EAF1EE;border-radius:8px;padding:7px 10px;display:none;}',
+    '#mlsDsList{background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:10px 12px;margin:0 0 10px;}',
+    '#mlsDsList .ds-h{font:700 12px system-ui;color:#79837C;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;}',
+    '#mlsDsList .ds-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-top:1px solid #EFEDE6;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;flex-wrap:wrap;}',
+    '#mlsDsList .ds-row:first-of-type{border-top:0;}',
+    '#mlsDsList .ds-tm{color:#2E6A4B;min-width:70px;}',
+    '#mlsDsList .ds-dob{color:#79837C;font-weight:500;font-size:12px;}',
+    '#mlsDsList .ds-pv{margin-left:auto;color:#8A8F86;font-weight:500;font-size:11.5px;}',
+    '#mlsDsList .ds-empty{color:#79837C;font:500 13px system-ui;padding:6px 2px;}'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(st);
+
+  function rowsFor(dayK) {
+    var ap = window._calAppts || [], seen = {}, out = [];
+    for (var i = 0; i < ap.length; i++) {
+      var a = ap[i]; if (!a) continue;
+      var d = String(a.day_local || a.appt_date || '').slice(0, 10);
+      if (d !== dayK) continue;
+      var nm = String(a.name || '').trim(); if (!nm) continue;
+      var t = String(a.time_display || a.start_local || a.time || '');
+      var k = nm.toLowerCase() + '|' + String(a.dob || '') + '|' + t;
+      if (seen[k]) continue; seen[k] = 1;
+      out.push({ name: nm, dob: String(a.dob || ''), time: t, prov: String(a.provider || ''), sort: String(a.start_local || t) });
+    }
+    out.sort(function (x, y) { return String(x.sort).localeCompare(String(y.sort)); });
+    return out;
+  }
+  function fmt12(t) { try { return (typeof window._fmtApptTime === 'function' && window._fmtApptTime(t)) || t || ''; } catch (e) { return t || ''; } }
+
+  function renderList() {
+    var host = $('mlsDsStrip'); if (!host) return;
+    var old = $('mlsDsList'); if (old) old.remove();
+    if (DS.day === todayKey()) return;                     /* today = native list only */
+    var rows = rowsFor(DS.day);
+    var el = document.createElement('div'); el.id = 'mlsDsList';
+    var h = '<div class="ds-h">' + esc(fmtDay(DS.day)) + ' - ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' loaded</div>';
+    if (!rows.length) h += '<div class="ds-empty">Nothing loaded for this day yet - tap "Pull this day" to get it from Athena, or it may genuinely be empty.</div>';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      h += '<div class="ds-row"><span class="ds-tm">' + esc(fmt12(r.time) || '-') + '</span><span>' + esc(r.name) + '</span>' +
+           (r.dob ? '<span class="ds-dob">DOB ' + esc(r.dob) + '</span>' : '') +
+           '<span class="ds-pv">' + esc(r.prov || 'Provider not recorded') + '</span></div>';
+    }
+    el.innerHTML = h;
+    host.parentNode.insertBefore(el, host.nextSibling);
+  }
+
+  function syncStrip() {
+    var lb = $('mlsDsDayLbl'), tb = $('mlsDsTodayBtn');
+    if (lb) lb.innerHTML = (DS.day === todayKey() ? '<b>Today</b> - ' : '') + esc(fmtDay(DS.day));
+    if (tb) tb.style.display = (DS.day === todayKey()) ? 'none' : '';
+  }
+  function setDay(k) { DS.day = k; syncStrip(); renderList(); }
+  function shift(n) { var d = parseKey(DS.day); d.setDate(d.getDate() + n); setDay(keyOf(d)); }
+
+  function startPull() {
+    if (DS.pulling) return;                               /* duplicate-click guard */
+    var si = window.__mlsSI;
+    if (!si || typeof si.pull !== 'function') {
+      try { if (typeof window.toast === 'function') window.toast('The Athena day-pull engine is not available on this build.', 'err'); } catch (e) {}
+      return;
+    }
+    DS.pulling = true;
+    var day = DS.day;
+    var btn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
+    if (stat) { stat.style.display = 'block'; stat.textContent = 'Starting the Athena pull for ' + fmtDay(day) + '...'; }
+    var closed = false;
+    function done(ok, msg) {
+      if (closed) return; closed = true;
+      DS.pulling = false;
+      if (btn) { btn.disabled = false; btn.innerHTML = '📥 Pull this day'; }
+      if (stat) { stat.style.display = 'none'; }
+      try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
+      renderList();
+    }
+    try {
+      var p = si.pull({ date: day, onStatus: function (m) { try { if (stat && m) stat.textContent = String(m); } catch (e) {} } });
+      if (p && typeof p.then === 'function') {
+        p.then(function () { done(true, fmtDay(day) + ' pulled from Athena.'); },
+               function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
+      } else {
+        /* engine reports via onStatus only - close the loading state after a generous window */
+        setTimeout(function () { done(true, 'Pull for ' + fmtDay(day) + ' finished - check the list.'); }, 90000);
+      }
+    } catch (e) { done(false, 'The pull could not start - make sure athenaOne is open, then try again.'); }
+  }
+
+  function ensure() {
+    try {
+      var body = $('mlsEz3Body'); if (!body) return;
+      if (body.querySelector('.ez3fl-staffbadge')) { var s0 = $('mlsDsStrip'); if (s0) s0.remove(); var l0 = $('mlsDsList'); if (l0) l0.remove(); return; }
+      if ($('mlsDsStrip')) return;
+      var strip = document.createElement('div'); strip.id = 'mlsDsStrip';
+      strip.innerHTML =
+        '<button type="button" class="ds-nav" id="mlsDsPrev" title="Previous day">&#8249;</button>' +
+        '<span class="ds-day" id="mlsDsDayLbl"></span>' +
+        '<button type="button" class="ds-nav" id="mlsDsNext" title="Next day">&#8250;</button>' +
+        '<button type="button" class="ds-today" id="mlsDsTodayBtn">Back to Today</button>' +
+        '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull this day</button>' +
+        '<span id="mlsDsStatus"></span>';
+      var anchor = body.querySelector('.ez3fl-record');
+      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(strip, anchor);
+      else body.insertBefore(strip, body.firstChild);
+      $('mlsDsPrev').onclick = function () { shift(-1); };
+      $('mlsDsNext').onclick = function () { shift(1); };
+      $('mlsDsTodayBtn').onclick = function () { setDay(todayKey()); };
+      $('mlsDsPullBtn').onclick = startPull;
+      syncStrip(); renderList();
+    } catch (e) {}
+  }
+  var iv = setInterval(function () { try { ensure(); } catch (e) {} }, 1200);
+  ensure();
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { st.remove(); } catch (e) {}
+    try { var a = $('mlsDsStrip'); if (a) a.remove(); var b = $('mlsDsList'); if (b) b.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsDaySwitch;
   };
 })();
