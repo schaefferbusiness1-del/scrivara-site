@@ -5720,7 +5720,7 @@
           });
           mkq('&#128196; After-visit summary', 'A patient-friendly summary of this visit - preview first, nothing sends by itself', function () {
             openWorkspace(false);
-            setTimeout(function () { try { var ab = $('mlsavsBtn') || $('mlsApvNoteBtn'); if (ab) ab.click(); } catch (e) {} }, 800);
+            setTimeout(function () { try { var ab = $('mlsavsBtn'); if (ab) { ab.click(); } else if (typeof window.toast === 'function') { window.toast('After-visit summary is not available on this build.', 'err'); } } catch (e) {} }, 800);
           });
           mkq('&#128221; Orders', 'See or edit the orders that ride along when you send the visit to Athena', function () {
             openWorkspace(false);
@@ -7638,7 +7638,7 @@
   'use strict';
   if (window.__mlsAthenaPreview) { return; }
 
-  var api = { ver: '1.0.0', opens: 0 };
+  var api = { ver: '2.0.0', opens: 0 };
   window.__mlsAthenaPreview = api;
 
   function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
@@ -7774,35 +7774,48 @@
     var s = document.createElement('style');
     s.id = 'mlsApvCss';
     s.textContent =
-      '#mlsApvOv{position:fixed;inset:0;z-index:2147483000;background:rgba(26,33,28,.62);' +
-        'display:flex;align-items:flex-start;justify-content:center;padding:24px 14px;overflow:auto;}' +
-      '#mlsApvCard{background:#fff;color:#1E2B24;max-width:760px;width:100%;border-radius:16px;' +
-        'box-shadow:0 24px 70px rgba(2,12,35,.5);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;}' +
-      '#mlsApvCard .apv-h{padding:18px 22px;background:linear-gradient(90deg,#1E2B24,#204034);color:#fff;}' +
-      '#mlsApvCard .apv-h h2{margin:0;font-size:18px;font-weight:800;}' +
-      '#mlsApvCard .apv-h .apv-pt{margin-top:4px;font-size:12.5px;color:#EAF1EE;}' +
-      '#mlsApvCard .apv-body{padding:18px 22px;max-height:66vh;overflow:auto;}' +
-      '.apv-safe{background:#eafaf1;border:1px solid #b7e6cc;color:#0f5132;border-radius:10px;' +
-        'padding:10px 13px;font-size:12.8px;margin:0 0 16px;}' +
-      '.apv-sec{border:1px solid #d9e2f1;border-radius:12px;margin:0 0 12px;overflow:hidden;}' +
-      '.apv-sec .apv-sh{background:#f4f7fd;padding:9px 13px;font-weight:800;font-size:13px;color:#204034;' +
+      '#mlsApvOv{position:fixed;inset:0;z-index:2147483000;background:rgba(26,33,28,.45);' +
+        'display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px 16px;overflow:auto;}' +
+      '#mlsApvCard{background:#fff;color:#1A211C;max-width:780px;width:100%;border:1px solid #E7E5DD;border-radius:16px;' +
+        'box-shadow:0 24px 70px rgba(20,33,28,.28);font:14px/1.55 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;' +
+        'opacity:0;transform:translateY(6px);transition:opacity .18s ease,transform .18s ease;}' +
+      '#mlsApvCard.on{opacity:1;transform:none;}' +
+      '@media (prefers-reduced-motion:reduce){#mlsApvCard{transition:none;transform:none;opacity:1;}}' +
+      '#mlsApvCard .apv-h{padding:16px 22px 13px;background:#FCFBF8;border-bottom:1px solid #EFEDE6;display:flex;gap:12px;align-items:center;}' +
+      '#mlsApvCard .apv-av{width:38px;height:38px;border-radius:50%;background:#204034;color:#8FD8BE;display:inline-flex;' +
+        'align-items:center;justify-content:center;font-weight:700;font-size:14px;flex:0 0 auto;}' +
+      '#mlsApvCard .apv-h h2{margin:0;font-family:Newsreader,Georgia,serif;font-size:20px;font-weight:600;letter-spacing:-.01em;color:#1A211C;}' +
+      '#mlsApvCard .apv-pt{margin-top:2px;font-size:12.5px;color:#55605A;}' +
+      '#mlsApvCard .apv-body{padding:16px 22px;max-height:64vh;overflow:auto;}' +
+      '.apv-safe{background:#F6FBF8;border:1px solid #CFE8DC;color:#204034;border-radius:10px;' +
+        'padding:10px 13px;font-size:12.8px;margin:0 0 14px;}' +
+      '.apv-sec{border:1px solid #E7E5DD;border-radius:12px;margin:0 0 10px;overflow:hidden;background:#fff;}' +
+      '.apv-sec .apv-sh{background:#FCFBF8;border-bottom:1px solid #EFEDE6;padding:9px 13px;font-weight:700;font-size:13px;color:#1A211C;' +
         'display:flex;align-items:center;gap:8px;flex-wrap:wrap;}' +
+      '.apv-cnt{font-size:10.5px;font-weight:700;color:#2E6A4B;background:#EAF1EE;border-radius:999px;padding:2px 8px;flex:0 0 auto;}' +
       '.apv-sec .apv-dest{font-weight:600;font-size:11.5px;color:#2E6A4B;margin-left:auto;text-align:right;}' +
+      '.apv-edit{font-size:11.5px;font-weight:600;color:#55605A;background:#fff;border:1px solid #E7E5DD;border-radius:7px;' +
+        'padding:2px 9px;cursor:pointer;font-family:inherit;flex:0 0 auto;}' +
+      '.apv-edit:hover{background:#F4F2EC;color:#1A211C;}' +
       '.apv-sec pre{margin:0;padding:11px 13px;white-space:pre-wrap;word-break:break-word;font:12.5px/1.5 ' +
-        'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#1E2B24;background:#fff;}' +
-      '.apv-lbl{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#79837C;' +
-        'margin:18px 0 8px;}' +
-      '.apv-route{border:1px dashed #cbd5e6;border-radius:10px;padding:9px 12px;margin:0 0 8px;font-size:12.6px;}' +
-      '.apv-route b{color:#204034;}' +
-      '.apv-route span{display:block;color:#2E6A4B;margin-top:2px;}' +
-      '.apv-none{color:#2E6A4B;font-size:12.6px;}' +
-      '#mlsApvCard .apv-f{padding:14px 22px;border-top:1px solid #e6ecf6;display:flex;gap:10px;' +
-        'justify-content:flex-end;flex-wrap:wrap;background:#fbfcfe;}' +
-      '.apv-btn{border:1px solid #c3cfe2;background:#fff;color:#204034;border-radius:10px;padding:9px 16px;' +
-        'font-weight:700;font-size:13px;cursor:pointer;}' +
-      '.apv-btn.pri{background:#1f8f4e;border-color:#1f8f4e;color:#fff;}' +
-      '.apv-btn:hover{filter:brightness(1.05);}' +
-      '@media (prefers-color-scheme:dark){#mlsApvOv{background:rgba(2,6,18,.72);}}';
+        'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#1A211C;background:#fff;max-height:230px;overflow:auto;}' +
+      '.apv-skip{border:1px dashed #E7E5DD;border-radius:12px;margin:0 0 10px;padding:9px 13px;display:flex;gap:8px;' +
+        'align-items:center;color:#79837C;font-size:12.5px;background:#FBFAF7;}' +
+      '.apv-lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#79837C;' +
+        'margin:16px 0 8px;}' +
+      '.apv-route{border:1px dashed #E7E5DD;border-radius:10px;padding:9px 12px;margin:0 0 8px;font-size:12.6px;background:#FBFAF7;}' +
+      '.apv-route b{color:#1A211C;}' +
+      '.apv-route span{display:block;color:#55605A;margin-top:2px;}' +
+      '.apv-none{color:#55605A;font-size:12.6px;}' +
+      '#mlsApvCard .apv-f{padding:14px 22px;border-top:1px solid #EFEDE6;display:flex;gap:10px;align-items:center;' +
+        'justify-content:flex-end;flex-wrap:wrap;background:#FCFBF8;}' +
+      '.apv-hint{margin-right:auto;font-size:11.5px;color:#79837C;}' +
+      '.apv-btn{border:1px solid #E7E5DD;background:#fff;color:#55605A;border-radius:9px;padding:9px 16px;' +
+        'font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;}' +
+      '.apv-btn:hover{background:#F4F2EC;color:#1A211C;}' +
+      '.apv-btn.pri{background:#204034;border-color:#204034;color:#fff;font-weight:700;}' +
+      '.apv-btn.pri:hover{background:#2E6A4B;border-color:#2E6A4B;}';
+
     (document.head || document.documentElement).appendChild(s);
   }
 
@@ -7825,41 +7838,99 @@
     var plan = buildPlan();
     var routing = buildRouting();
 
-    var h = '<div id="mlsApvCard" role="dialog" aria-modal="true" aria-label="What goes to Athena">' +
-      '<div class="apv-h"><h2>👁 What MLS will write into athenaOne</h2>' +
-      '<div class="apv-pt">Patient: <b>' + esc(ptName) + '</b>' + esc(ptDob) + '</div></div>' +
+    var SEC2 = safe(function () { return g('ATHENA_SECTIONS'); }, null) || {};
+    var initials = safe(function () { return (ptName || '?').split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase(); }, '?');
+    var h = '<div id="mlsApvCard" role="dialog" aria-modal="true" aria-label="Review before sending to Athena">' +
+      '<div class="apv-h"><span class="apv-av">' + esc(initials) + '</span><div>' +
+      '<h2>Review — exactly what goes to Athena</h2>' +
+      '<div class="apv-pt">Patient: <b>' + esc(ptName) + '</b>' + esc(ptDob) + '</div>' +
+      '</div></div>' +
       '<div class="apv-body">' +
-      '<div class="apv-safe">MLS Assist enters each item below into its OWN athenaOne section, one at a time, ' +
-      'and <b>STOPS before Save / Sign</b> — nothing is filed in Athena until you review and confirm on Athena’s own screen. ' +
-      'MLS never signs or submits.</div>';
+      '<div class="apv-safe"><b>MLS stops before Save / Sign.</b> It types each item below into its own athenaOne section, ' +
+      'then waits — nothing is filed until you review and sign on Athena&rsquo;s own screen. MLS never signs, never submits.</div>';
 
-    for (var i = 0; i < plan.length; i++) {
-      var s = plan[i];
-      h += '<div class="apv-sec"><div class="apv-sh"><span>' + esc(s.icon) + '</span><span>' + esc(s.title) + '</span>' +
-        (s.dest ? '<span class="apv-dest">→ ' + esc(s.dest) + '</span>' : '') +
-        '</div><pre>' + esc(s.body && s.body.length ? s.body : '(empty)') + '</pre></div>';
+    /* every destination is listed EVERY time — present sections show their exact
+       content; absent ones say plainly that nothing will touch that section
+       (the owner-priority explicitness: the doctor consciously sees the orders
+       state instead of inferring it from a missing row) */
+    var byKind = {}; var bi;
+    for (bi = 0; bi < plan.length; bi++) { byKind[plan[bi].kind] = plan[bi]; }
+    var KINDS = [
+      { k: 'note',    skip: 'No note yet — nothing goes to the encounter note.',                       edit: 'noteCard',        editLbl: 'Edit note' },
+      { k: 'dx',      skip: 'No diagnoses coded — the Assessment &amp; Plan list is left untouched.',  edit: 'emrCard',         editLbl: 'Edit codes' },
+      { k: 'billing', skip: 'No E/M or CPT charges — the billing slate is left untouched.',            edit: 'emrCard',         editLbl: 'Edit codes' },
+      { k: 'orders',  skip: 'No orders staged — nothing will be entered in Orders.',                   edit: 'visitOrdersCard', editLbl: 'Manage orders' }
+    ];
+    function cntOf(sx) {
+      if (!sx || !sx.body) { return ''; }
+      if (sx.kind === 'note') { return sx.body.length.toLocaleString() + ' characters'; }
+      var n = (sx.body.match(/^\s*(\d+\.|•|E\/M)/gm) || []).length;
+      return n ? (n + (n === 1 ? ' item' : ' items')) : '';
+    }
+    for (var ki = 0; ki < KINDS.length; ki++) {
+      var kd = KINDS[ki]; var sx = byKind[kd.k]; var meta = SEC2[kd.k] || {};
+      if (sx) {
+        var cnt = cntOf(sx);
+        h += '<div class="apv-sec"><div class="apv-sh"><span>' + esc(sx.icon) + '</span><span>' + esc(sx.title) + '</span>' +
+          (cnt ? '<span class="apv-cnt">' + esc(cnt) + '</span>' : '') +
+          '<button type="button" class="apv-edit" data-edit="' + esc(kd.edit) + '">' + kd.editLbl + '</button>' +
+          (sx.dest ? '<span class="apv-dest">→ ' + esc(sx.dest) + '</span>' : '') +
+          '</div><pre>' + esc(sx.body && sx.body.length ? sx.body : '(empty)') + '</pre></div>';
+      } else {
+        h += '<div class="apv-skip"><span>' + esc(meta.icon || '•') + '</span><span>' + kd.skip + '</span></div>';
+      }
     }
 
-    h += '<div class="apv-lbl">Also generated — where each goes</div>';
+    h += '<div class="apv-lbl">Also generated this visit — where each goes</div>';
     if (routing.length) {
       for (var j = 0; j < routing.length; j++) {
         h += '<div class="apv-route"><b>' + esc(routing[j].label) + '</b><span>' + esc(routing[j].route) + '</span></div>';
       }
     } else {
-      h += '<div class="apv-none">No extra documents generated for this visit. Only the sections above will be sent.</div>';
+      h += '<div class="apv-none">No extra documents generated for this visit. Only the sections above are involved.</div>';
     }
 
     h += '</div>' +
       '<div class="apv-f">' +
+      '<span class="apv-hint">Esc closes — nothing sends without the green button</span>' +
       '<button type="button" class="apv-btn" id="mlsApvClose">Close</button>' +
-      '<button type="button" class="apv-btn pri" id="mlsApvSend">🚀 Looks right — send to Athena</button>' +
+      '<button type="button" class="apv-btn pri" id="mlsApvSend">Looks right — send to Athena</button>' +
       '</div></div>';
+
 
     var ov = document.createElement('div');
     ov.id = 'mlsApvOv';
     ov.innerHTML = h;
     ov.addEventListener('click', function (e) { if (e.target === ov) { close(); } });
     document.body.appendChild(ov);
+    requestAnimationFrame(function () { safe(function () { document.getElementById('mlsApvCard').classList.add('on'); }); });
+    /* Escape closes (existence-guarded; re-registered per open) */
+    if (window.__mlsApvKey) { try { document.removeEventListener('keydown', window.__mlsApvKey, true); } catch (e0) {} }
+    window.__mlsApvKey = function (ev) {
+      if (ev.key === 'Escape' && document.getElementById('mlsApvOv')) { ev.stopImmediatePropagation(); ev.preventDefault(); close(); }
+    };
+    document.addEventListener('keydown', window.__mlsApvKey, true);
+    /* per-section Edit links: close, reveal the workspace if needed, land on the control */
+    ov.addEventListener('click', function (e) {
+      var eb = e.target && e.target.closest ? e.target.closest('.apv-edit') : null;
+      if (!eb) { return; }
+      var tgt = eb.getAttribute('data-edit');
+      close();
+      safe(function () {
+        var el = document.getElementById(tgt);
+        var hidden = !el || !el.offsetParent;
+        if (hidden) {
+          var adv = document.getElementById('ez3Adv');
+          if (adv && !document.body.classList.contains('ez3adv')) { adv.click(); }
+        }
+        setTimeout(function () {
+          var el2 = document.getElementById(tgt); if (!el2) { return; }
+          el2.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (tgt === 'noteCard') { var nb = document.getElementById('noteBox'); if (nb) { try { nb.focus(); } catch (e2) {} } }
+        }, hidden ? 700 : 60);
+      });
+    });
+
 
     var cbtn = document.getElementById('mlsApvClose');
     if (cbtn) { cbtn.onclick = close; }
@@ -30380,7 +30451,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b235';
+  window.__MLS_AV = window.__MLS_AV || 'b236';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30694,7 +30765,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b235';
+  var MLS_APP_BUILD='2026-07-13-b236';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -37934,7 +38005,7 @@
 ;(function(){try{var A="feat_mls_provider_passthrough.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260702pp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item82: provider passthrough -- completes per-doctor scoping: "Pulling as" doctor chip by the Athena pull button; stamps provider onto imported appointments (import-window only) now that the backend persists+returns provider (d9e9a0c, live-verified); restores the imported-day jump button (late re-wrap after item81). Revert: window.__mlsProv.revert() */
 
 
-;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705b18v3c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
+;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260713b18v4";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
 ;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705sc1c1-B177";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* task-4: MLS Status Center -- ONE honest Athena/MLS status surface (current task, current step, patient/day being read, data source, per-area statuses, retries, what-changed, what-next); fixes "connected but shown disconnected" via evidence+retry ConnTruth wrap; dedupes duplicate spinners; survives reload. Revert: window.__mlsStatusCenter.revert() */
 
 ;(function(){try{var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708pr2c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Monthly Pay Report -- per-provider patient counts, half-day credits, days x daily rate, AI-estimated collections (clearly labeled, manual override) + xlsx export + floating Pay Report button. Read-only. Revert: remove this loader. */

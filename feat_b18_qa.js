@@ -256,7 +256,7 @@
 
   function row(state,text){
     var ic = state==='ok' ? '✓' : (state==='warn' ? '⚠' : '⛔');
-    var col= state==='ok' ? '#0f7b41' : (state==='warn' ? '#92600a' : '#b3261e');
+    var col= state==='ok' ? '#2E6A4B' : (state==='warn' ? '#B07636' : '#B23B3B');
     return '<div style="display:flex;gap:8px;align-items:flex-start;margin:3px 0;font:500 12.5px/1.45 system-ui"><span style="color:'+col+';font-weight:800;flex:none">'+ic+'</span><span style="color:#204034">'+text+'</span></div>';
   }
 
@@ -272,7 +272,7 @@
     var dup=seen[fpr] && (Date.now()-seen[fpr]<20*60*1000);
 
     var host=document.createElement('div'); host.id='mlsWbGate';
-    host.style.cssText='position:fixed;inset:0;z-index:2147483200;display:flex;align-items:flex-start;justify-content:center;background:rgba(8,18,33,.62);padding:4vh 14px 14px;overflow:auto;font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif';
+    host.style.cssText='position:fixed;inset:0;z-index:2147483200;display:flex;align-items:flex-start;justify-content:center;background:rgba(26,33,28,.55);padding:4vh 14px 14px;overflow:auto;font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif';
     document.body.appendChild(host);
 
     function close(){ try{host.remove();}catch(e){} try{ clearTimeout(host.__autoT); }catch(e){} open=false; }
@@ -285,7 +285,7 @@
     }
     /* keep the gate shorter than the writeback engine's own 60s timeout so the
        two flows can never desync into a late surprise paste */
-    host.__autoT=setTimeout(function(){ if(open){ cancel('timeout'); safe(function(){ if(typeof window.toast==='function') window.toast('Write confirmation timed out after 45s — nothing was written. Click write again when ready.','err'); }); } },45000);
+    host.__autoT=setTimeout(function(){ if(open){ cancel('timeout'); safe(function(){ if(typeof window.toast==='function') window.toast('The final write check waited 45 seconds with no answer — nothing was written. Click Send again and confirm the check when it appears.','err'); }); } },45000);
 
     readChart().then(function(chart){
       chart=chart||{};
@@ -341,28 +341,28 @@
       var blocked=hard.length>0;
       if(blocked) api.blocked++;
       var card=document.createElement('div');
-      card.style.cssText='background:#fff;border-radius:16px;max-width:660px;width:100%;box-shadow:0 24px 70px rgba(10,25,50,.45);padding:18px 20px;border:1px solid #d5e2f5';
+      card.style.cssText='background:#fff;border-radius:16px;max-width:660px;width:100%;box-shadow:0 24px 70px rgba(20,33,28,.28);padding:18px 20px;border:1px solid #E7E5DD';
       card.innerHTML=
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+
           '<span style="font-size:19px">'+(blocked?'⛔':'🛡️')+'</span>'+
-          '<b style="font-size:16.5px;color:#1E2B24">'+(blocked?'Write blocked':'Confirm write to athenaOne')+'</b>'+
-          '<span style="margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.05em;color:#7c2d12;background:#fde68a;border:1px solid #f59e0b;border-radius:7px;padding:2px 8px">WRITES TO CHART</span>'+
+          '<b style="font-size:17.5px;color:#1A211C;font-family:Newsreader,Georgia,serif;font-weight:600">'+(blocked?'Write blocked':'Final check — write to athenaOne')+'</b>'+
+          '<span style="margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.05em;color:#B07636;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:7px;padding:2px 8px">WRITES TO CHART</span>'+
         '</div>'+
         '<div style="margin:8px 0 2px">'+checks.join('')+'</div>'+
-        (blocked?('<div style="margin:10px 0;padding:10px 12px;border-radius:10px;background:#fdecec;border:1px solid #f2b8b5;color:#8c1d18;font:600 12.5px/1.5 system-ui">'+hard.map(esc).join('<br>')+'</div>'):'')+
-        (note?('<div style="font:700 11px/1 system-ui;color:#5b7186;margin:10px 0 4px;letter-spacing:.04em">CONTENT PREVIEW</div>'+
-        '<div style="max-height:200px;overflow:auto;border:1px solid #dbe6f5;border-radius:10px;padding:10px 12px;background:#f8fafd;font:12.5px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#1E2B24">'+esc(note.slice(0,6000))+(note.length>6000?'\n…':'')+'</div>'):'')+
+        (blocked?('<div style="margin:10px 0;padding:10px 12px;border-radius:10px;background:#FBF1EF;border:1px solid #EAC8C3;color:#B23B3B;font:600 12.5px/1.5 system-ui">'+hard.map(esc).join('<br>')+'</div>'):'')+
+        (note?('<div style="font:700 11px/1 system-ui;color:#79837C;letter-spacing:.04em;margin:10px 0 4px;letter-spacing:.04em">CONTENT PREVIEW</div>'+
+        '<div style="max-height:200px;overflow:auto;border:1px solid #E7E5DD;border-radius:10px;padding:10px 12px;background:#FCFBF8;font:12.5px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#1E2B24">'+esc(note.slice(0,6000))+(note.length>6000?'\n…':'')+'</div>'):'')+
         '<div id="mlsWbAcks" style="margin-top:10px"></div>'+
         '<div style="display:flex;gap:10px;margin-top:14px;align-items:center">'+
-          '<button id="mlsWbCancel" style="cursor:pointer;border:1px solid #cbd5e1;background:#fff;color:#0f172a;font:600 13px system-ui;border-radius:10px;padding:9px 16px">Cancel — write nothing</button>'+
-          (blocked?'':'<button id="mlsWbGo" style="cursor:pointer;border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;font:700 13px system-ui;border-radius:10px;padding:9px 16px">Confirm & write</button>')+
-          '<span style="margin-left:auto;font:500 11px system-ui;color:#8195ab">MLS never signs or places orders.</span>'+
+          '<button id="mlsWbCancel" style="cursor:pointer;border:1px solid #E7E5DD;background:#fff;color:#55605A;font:600 13px system-ui;border-radius:10px;padding:9px 16px">Cancel — write nothing</button>'+
+          (blocked?'':'<button id="mlsWbGo" style="cursor:pointer;border:1px solid #204034;background:#204034;color:#fff;font:700 13px system-ui;border-radius:10px;padding:9px 16px">Confirm & write</button>')+
+          '<span style="margin-left:auto;font:500 11px system-ui;color:#79837C">MLS never signs or places orders.</span>'+
         '</div>';
       host.appendChild(card);
 
       var ackBox=card.querySelector('#mlsWbAcks');
       if(!blocked && needAck.length){
-        ackBox.innerHTML='<label style="display:flex;gap:8px;align-items:flex-start;font:600 12.5px/1.5 system-ui;color:#5c4a00;background:#fff8e1;border:1px solid #f2d98c;border-radius:10px;padding:9px 11px;cursor:pointer"><input type="checkbox" id="mlsWbAckCb" style="margin-top:2px">I read the warnings above and confirm this write is correct.</label>';
+        ackBox.innerHTML='<label style="display:flex;gap:8px;align-items:flex-start;font:600 12.5px/1.5 system-ui;color:#B07636;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:10px;padding:9px 11px;cursor:pointer"><input type="checkbox" id="mlsWbAckCb" style="margin-top:2px">I read the warnings above and confirm this write is correct.</label>';
       }
       var go=card.querySelector('#mlsWbGo');
       if(go){

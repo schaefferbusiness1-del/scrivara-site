@@ -13822,7 +13822,7 @@ function _athenaPushRun(goal, startMsg, onDone){
   var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
   statusToast(startMsg||'Looking for MLS Assist…',''); ping();
   iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open.','err','noext'); } else ping(); }, 350);
-  function proceed(){ window.addEventListener('message',onMsg); try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){} setTimeout(function(){ if(!finished){ finish('MLS Assist didn’t finish in time, or it’s an older version. Update to the latest version (Settings → Download) and make sure the encounter is open, then try again.','err','timeout'); } }, 180000); }
+  function proceed(){ window.addEventListener('message',onMsg); try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){} setTimeout(function(){ if(!finished){ finish('The send did not finish — nothing was written. If the “Final check” box appeared and was not confirmed, click Send again and confirm it; also make sure the patient’s encounter is open in Athena.','err','timeout'); } }, 180000); }
 }
 /* ===== ATHENA DESTINATION MAP — every piece of the visit has a SPECIFIC athenaOne home.
    One source of truth for (a) the on-screen "send to ___" labels and (b) the autopilot's
@@ -13837,7 +13837,7 @@ var ATHENA_SECTIONS={
   orders:{ icon:'📋', label:'ORDERS', dest:'Athena » Orders — Add order (labs / imaging / Rx / referral)',
     goalHead:'In the OPEN athenaOne encounter, open the ORDERS area ("Add order" / order entry). For each order below use the right order type — labs, imaging, medication/Rx, referral, or DME — search for it and add it. Announce "athenaOne: Orders" when you start.' }
 };
-var _ATHENA_RULES=' RULES: only use controls actually on screen; if that athenaOne section isn’t open yet, navigate to it FIRST via the encounter’s tabs/section headers, and verify you can see it before typing; skip any single item that won’t go and continue; do NOT click Save, Sign, Submit, e-Sign, or Close — STOP when this section is entered so the doctor reviews.';
+var _ATHENA_RULES=' RULES: FIRST CHECK: the encounter documentation area for THIS patient must already be open or one obvious click away inside the open chart (e.g. today’s encounter under Visits); if it is not visible after ONE attempt, STOP IMMEDIATELY and report that no encounter is open so the doctor can open it — do NOT keep looking; NEVER open the top navigation menus (Calendar, Patients, Claims, Financials, Reports, Quality, Apps, Support); only use controls actually on screen; if that athenaOne section isn’t open yet, navigate to it FIRST via the encounter’s tabs/section headers, and verify you can see it before typing; skip any single item that won’t go and continue; do NOT click Save, Sign, Submit, e-Sign, or Close — STOP when this section is entered so the doctor reviews.';
 /* Build one focused, athenaOne-specific goal for a section. */
 function _athenaSectionGoal(kind, body){ var s=ATHENA_SECTIONS[kind]; if(!s) return ''; return 'GOAL ('+s.dest+'): '+s.goalHead+_ATHENA_RULES+'\n\n'+String(body||''); }
 /* Run a PLAN — a list of {kind, body} sections — one after another, each into its own
