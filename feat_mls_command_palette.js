@@ -232,8 +232,11 @@
     if (!host) return;
     var b = document.createElement('button');
     b.id = BTN_ID; b.type = 'button';
-    b.innerHTML = '🔍 Search <kbd>Ctrl K</kbd>';
-    b.title = 'Search patients, notes and actions (Ctrl+K / ⌘K)';
+    /* RS consolidation (2026-07-13): the header field is THE search (patients,
+       notes); this trigger is the COMMAND palette — distinct vocabulary so the
+       two entry points never read as duplicates. */
+    b.innerHTML = 'Commands <kbd>Ctrl K</kbd>';
+    b.title = 'Command palette — actions, navigation, patients (Ctrl+K / ⌘K)';
     b.addEventListener('click', function () { open(); });
     host.appendChild(b);
   }
