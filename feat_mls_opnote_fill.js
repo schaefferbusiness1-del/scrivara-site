@@ -29,7 +29,7 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
-  var VERSION = 'onf-1.7.1';
+  var VERSION = 'onf-1.8.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -205,11 +205,20 @@
     if (mChoice) return { type: 'select', opts: ['', mChoice[1].trim(), mChoice[2].trim()] };
     return { type: 'text', opts: null };
   }
-  /* distinct [FILL: label] tokens in a note, in first-seen order */
+  /* distinct fill tokens in a note, in first-seen order. onf-1.8.0: BOTH
+     placeholder syntaxes land in this ONE box — "[FILL: label]" (template
+     render path) AND "[[snake_key]]" (the _genOpNote AI path, which used to
+     feed a separate one-at-a-time walker in ScribeFlow; the owner mandated
+     exactly ONE fill mechanism, so the walker is retired and this box owns
+     every blank). A [[key]] surfaces as its prettified label; the same label
+     replaces both token forms. */
+  function keyToLabel(k) { return S(k).toLowerCase().replace(/_/g, ' ').trim(); }
+  function labelToKey(l) { return S(l).toLowerCase().trim().replace(/\s+/g, '_'); }
   function fillTokens(text) {
-    var re = /\[FILL:\s*([^\]]+?)\s*\]/gi, seen = {}, out = [], m;
+    var re = /\[FILL:\s*([^\]]+?)\s*\]|\[\[([a-z0-9_]+)\]\]/gi, seen = {}, out = [], m;
     while ((m = re.exec(text)) !== null) {
-      var label = m[1].trim(), key = label.toLowerCase();
+      var label = m[1] != null ? m[1].trim() : keyToLabel(m[2]);
+      var key = label.toLowerCase();
       if (!seen[key]) { seen[key] = 1; out.push(label); }
     }
     return out;
@@ -218,10 +227,13 @@
     if (!value) return text;
     var q = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     var re = new RegExp('\\[FILL:\\s*' + q + '\\s*\\]', 'gi');
-    return text.replace(re, value);
+    var out = text.replace(re, value);
+    var qk = labelToKey(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp('\\[\\[' + qk + '\\]\\]', 'gi'), value);
+    return out;
   }
   function noteBoxes() { return safe(function () { return document.querySelectorAll('textarea[id^="opPrepNote_"]'); }, []); }
-  function sigOf(ta) { var v = ta.value || ''; return v.length + '|' + (v.match(/\[FILL:/gi) || []).length; }
+  function sigOf(ta) { var v = ta.value || ''; return v.length + '|' + ((v.match(/\[FILL:/gi) || []).length + (v.match(/\[\[[a-z0-9_]+\]\]/gi) || []).length); }
 
   /* onf-1.3.0: AUTO-FILL fields the app already KNOWS. Provider/physician name,
      patient name, DOB, MRN, procedure date, provider NPI/facility (from the
@@ -497,7 +509,13 @@
   }
   function buildOptions(label, cur) {
     var key = S(label).toLowerCase();
-    var prev = safe(function () { return (typeof window.getOpFieldVals === 'function') ? window.getOpFieldVals(key) : []; }, []) || [];
+    /* history was written under the space form by this box and under the
+       snake_case form by the retired ScribeFlow walker — read BOTH */
+    var prev = safe(function () {
+      if (typeof window.getOpFieldVals !== 'function') return [];
+      var a = window.getOpFieldVals(key) || [], b = window.getOpFieldVals(labelToKey(label)) || [];
+      return a.concat(b);
+    }, []) || [];
     var opts = [], seen = {};
     function add(v) { v = S(v).trim(); if (!v || seen[v.toLowerCase()]) return; seen[v.toLowerCase()] = 1; opts.push(v); }
     add(cur);
@@ -514,7 +532,7 @@
        [FILL:] tokens and is NOT our own last render (identical to applyVals(raw)). */
     if (row) {
       var lastRender = row._onfRaw != null ? applyVals(row._onfRaw, row._onfVals || {}) : null;
-      if (/\[FILL:/i.test(ta.value || '') && ta.value !== lastRender) { row._onfRaw = ta.value; row._onfVals = {}; }
+      if (/\[FILL:|\[\[[a-z0-9_]+\]\]/i.test(ta.value || '') && ta.value !== lastRender) { row._onfRaw = ta.value; row._onfVals = {}; }
     }
     var raw = (row && row._onfRaw != null) ? row._onfRaw : (ta.value || '');
     var tokens = fillTokens(raw);
@@ -595,6 +613,8 @@
           ta.value = out;
           safe(function () { ta.dispatchEvent(new Event('input', { bubbles: true })); });
           safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = out; });
+          /* keep the draft autosaved as blanks fill in (parity with the retired walker) */
+          safe(function () { if (typeof window.opPrepAutosaveDraft === 'function') window.opPrepAutosaveDraft(+idx); });
           var lbl = el.closest('label'); if (lbl) lbl.classList.toggle('onf-has', !!val);
         }
         var handler = function () {

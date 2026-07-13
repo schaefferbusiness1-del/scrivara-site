@@ -10143,7 +10143,9 @@ function opPrepRender(){
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px" onclick="opPrepGenerateOne('+i+')">'+(row.gen?'↻ Re-draft':'✨ Draft op note')+'</button></div>';
     if(row.gen){
       if(row.missing&&row.missing.length){
-        h+=_opBlanksHtml(i, row);   // guided: walks DOWN the document, prompting one blank at a time until none remain
+        /* b240: the one-at-a-time blank walker is RETIRED (owner: exactly ONE way to
+           fill a blank). [[key]] blanks now surface in the same "Fields" box (onf-1.8.0)
+           as [FILL:] tokens — all visible at once, directly above the note text. */
       }
       h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value">'+esc(row.note||'')+'</textarea>';
       h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
