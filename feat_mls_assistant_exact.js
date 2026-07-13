@@ -141,6 +141,15 @@
     var d = estDateObj(t);
     if (d) { var p = estParts(d); if (p) return p.h * 60 + p.mi; }
     var s = String(t == null ? "" : t);
+    /* b242: an EXPLICIT meridian is authoritative — "4:00 PM" must never read as
+       4:00 AM (this AM-default was the documented latent meridian bug; b211 fixed
+       one caller, this fixes the shared parser every consumer routes through). */
+    var mx = s.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/);
+    if (mx && !/T\d{2}:/.test(s)) {
+      var hx = (+mx[1]) % 12; if (/[Pp]/.test(mx[3])) hx += 12;
+      var mix = +mx[2]; if (hx > 23 || mix > 59) return null;
+      return hx * 60 + mix;
+    }
     var m = s.match(/T(\d{2}):(\d{2})/) || s.match(/(?:^|\s)(\d{1,2}):(\d{2})/);
     if (!m) return null;
     var h = +m[1], mi = +m[2]; if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
@@ -177,6 +186,46 @@
     } catch (e) {}
   }
   installEstHooks();   /* synchronous, ASAP, before any picker render on a fresh load */
+
+  /* b242: the hero "Up now" rows can carry a bare meridian-less time ("4:00") that
+     every formatter then AM-defaults. ONE flag-guarded wrap of _calLoadNextUp
+     enriches the shared _heroTodayList rows from trustworthy fields (the row's
+     own time_display / start_local, else the matching pulled _calAppts record by
+     name+day) BEFORE the banner/list render. Truly unknown times stay bare —
+     never guessed. (Wrap installed once, flag-checked — no re-wrap cycle.) */
+  function _merTodayKey() { var d = new Date(); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
+  function _mer12(sl) { var m = String(sl || "").match(/^(\d{1,2}):(\d{2})/); if (!m) return ""; var h = +m[1]; return ((h % 12) || 12) + ":" + m[2] + " " + (h < 12 ? "AM" : "PM"); }
+  function _merEnrich() {
+    try {
+      var rows = window._heroTodayList || []; if (!rows.length) return;
+      var tk = _merTodayKey(), ca = window._calAppts || [];
+      for (var i = 0; i < rows.length; i++) {
+        var a = rows[i]; if (!a) continue;
+        var t = String(a.time || "");
+        if (!t || /[ap]\.?\s*\.?m/i.test(t)) continue;              /* empty or already explicit */
+        if (a.time_display) { a.time = String(a.time_display); continue; }
+        var f = _mer12(a.start_local); if (f) { a.time = f; continue; }
+        var nm = String(a.name || "").trim().toLowerCase(); if (!nm) continue;
+        for (var j = 0; j < ca.length; j++) {
+          var x = ca[j]; if (!x) continue;
+          if (String(x.name || "").trim().toLowerCase() !== nm) continue;
+          if (String(x.day_local || x.appt_date || "").slice(0, 10) !== tk) continue;
+          if (x.time_display) { a.time = String(x.time_display); }
+          else { var f2 = _mer12(x.start_local); if (f2) a.time = f2; }
+          break;
+        }
+      }
+    } catch (e) {}
+  }
+  (function installMerWrap() {
+    try {
+      var cur = window._calLoadNextUp;
+      if (typeof cur !== "function" || cur.__mlsAeMer) return;
+      var w = function () { _merEnrich(); return cur.apply(this, arguments); };
+      w.__mlsAeMer = 1; w.__mlsUnrOrig = cur;
+      window._calLoadNextUp = w;
+    } catch (e) {}
+  })();
   function fmtStamp(iso) {
     if (!iso) return "";
     try { var d = new Date(iso); if (!isNaN(d.getTime())) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch (e) {}

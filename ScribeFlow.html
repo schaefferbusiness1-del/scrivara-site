@@ -7036,6 +7036,9 @@ function _apptHHMMTz(v){ v=String(v||''); if(!v) return ''; if(/T/.test(v)){ var
 function _fmtApptTime(v){
   v=String(v||''); if(!v) return '';
   if(/T/.test(v)){ try{ var d=new Date(v); if(!isNaN(d.getTime())) return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:_acctTz()}); }catch(e){} }
+  /* b242: an EXPLICIT meridian in the input is authoritative — "4:00 PM" must never
+     re-format as 4:00 AM (the hh<12 default below is only for meridian-less input). */
+  var mx=v.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/); if(mx){ var hx=parseInt(mx[1],10)%12; if(hx===0) hx=12; return hx+':'+mx[2]+' '+(/[Pp]/.test(mx[3])?'PM':'AM'); }
   var m=v.match(/(\d{1,2}):(\d{2})/); if(!m) return v; var hh=parseInt(m[1],10); var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12; return h12+':'+m[2]+' '+ap;
 }
 /* Convert a wall-clock time (YYYY-MM-DD + "HH:MM") in the ACCOUNT time zone to a correct UTC ISO
@@ -11814,6 +11817,24 @@ function _heroNextChip(a, origIdx, isCur, manual){
    Built to stay light with 100+ patients a day — never renders the whole list. */
 function _renderTodayPatients(appts){
   var box=document.getElementById('heroToday'); if(!box) return;
+  /* b242 (b211 family, fixed at the SHARED source): hero rows can arrive with a bare
+     meridian-less "4:00" in .time, and every consumer then defaults it to AM. Enrich
+     from trustworthy fields — the row's own time_display / start_local, else the
+     matching pulled _calAppts record — before anything renders. Truly unknown times
+     stay bare (never guess). */
+  try{
+    var _dn=new Date(); var _todayK=_dn.getFullYear()+'-'+('0'+(_dn.getMonth()+1)).slice(-2)+'-'+('0'+_dn.getDate()).slice(-2);
+    function _m12(sl){ var m=String(sl||'').match(/^(\d{1,2}):(\d{2})/); if(!m) return ''; var h=+m[1]; return ((h%12)||12)+':'+m[2]+' '+(h<12?'AM':'PM'); }
+    (appts||[]).forEach(function(a){
+      if(!a) return; var t=String(a.time||'');
+      if(!t || /[ap]\.?\s*\.?m/i.test(t)) return;                   /* empty or already carries AM/PM */
+      if(a.time_display){ a.time=String(a.time_display); return; }
+      var fromLocal=_m12(a.start_local); if(fromLocal){ a.time=fromLocal; return; }
+      var nm2=String(a.name||'').trim().toLowerCase(); if(!nm2) return;
+      var ca=(window._calAppts||[]).find(function(x){ return x && String(x.name||'').trim().toLowerCase()===nm2 && String(x.day_local||x.appt_date||'').slice(0,10)===_todayK; });
+      if(ca){ if(ca.time_display) a.time=String(ca.time_display); else { var f2=_m12(ca.start_local); if(f2) a.time=f2; } }
+    });
+  }catch(e){}
   window._heroTodayList=appts||[];
   var tom=_tomorrowAppts(); window._heroTomorrowList=tom;
   if((!appts||!appts.length) && !tom.length){ box.style.display='none'; box.innerHTML=''; return; }
