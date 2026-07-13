@@ -5496,6 +5496,14 @@
     '#mlsEz3 .ez3fl-back{display:inline-flex;align-items:center;gap:8px;margin:0 0 12px;background:#fff;border:1px solid #D9D6CD;border-radius:10px;color:#1A211C;font-size:13px;font-weight:600;cursor:pointer;padding:9px 14px;}',
     '#mlsEz3 .ez3fl-back:hover{background:#F4F2EC;}',
     '#mlsEz3 .ez3fl-staffbadge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#B07636;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:5px;padding:2px 7px;margin-left:8px;vertical-align:2px;}',
+    /* hero record CTA: the follow-through from "patient picked" to "recording" */
+    '#mlsEz3 .ez3fl-record{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0;}',
+    '#mlsEz3 .ez3fl-recbtn{display:inline-flex;align-items:center;gap:10px;background:#204034;border:1px solid #204034;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;padding:13px 22px;box-shadow:0 1px 2px rgba(20,33,28,.10);transition:background .16s ease;}',
+    '#mlsEz3 .ez3fl-recbtn:hover{background:#2E6A4B;border-color:#2E6A4B;}',
+    '#mlsEz3 .ez3fl-recbtn .dot{width:9px;height:9px;border-radius:50%;background:#8FD8BE;flex:0 0 auto;}',
+    '#mlsEz3 .ez3fl-openws{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #D9D6CD;border-radius:12px;color:#1A211C;font-size:13px;font-weight:600;cursor:pointer;padding:12px 16px;}',
+    '#mlsEz3 .ez3fl-openws:hover{background:#F4F2EC;}',
+    '#mlsEz3 .ez3fl-rechint{flex-basis:100%;font-size:12px;color:#79837C;margin-top:-2px;}',
 
     /* 2) shared muted/secondary label color, used across the whole panel */
     '#mlsEz3 .ez3-sub,#mlsEz3 .ez3-status,#mlsEz3 .ez3-empty,#mlsEz3 .ez3-prov label,' +
@@ -5587,7 +5595,7 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.1.0';
+  var VERSION = 'fl-1.2.0';
   var _obs = null, _deb = null, _iv = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function onStaffScreen(body) {
@@ -5622,6 +5630,24 @@
   function revealRange(seg) {
     try { setTimeout(function () { seg.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 80); } catch (e) {}
   }
+  /* open the REAL visit workspace via the engine's own toggle; optionally
+     press the REAL Start Visit button (toggleCapture) - guarded so it can
+     only ever START, never accidentally stop a running capture */
+  function openWorkspace(startRec) {
+    var wasOpen = false;
+    try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
+    if (!wasOpen) { try { var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
+    setTimeout(function () {
+      try { var cc = $('captureCard'); if (cc) cc.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
+      if (!startRec) return;
+      setTimeout(function () {
+        try {
+          var cb = $('captureBtn');
+          if (cb && /start/i.test(cb.textContent || '')) cb.click();
+        } catch (e) {}
+      }, 350);
+    }, wasOpen ? 80 : 650);
+  }
   function ensure() {
     /* the day-hist FAB's own body-appended stylesheet wins the !important
        order battle — inline-important is the deterministic hide */
@@ -5633,11 +5659,51 @@
        for the mode they do not belong to (fl-1.0.1 fix: the Back button leaked
        onto the doctor screen after a staff round-trip). */
     try {
-      var kill = staff ? '.ez3fl-staffLink' : '.ez3fl-back,.ez3fl-staffbadge';
+      var kill = staff ? '.ez3fl-staffLink,.ez3fl-record' : '.ez3fl-back,.ez3fl-staffbadge';
       body.querySelectorAll(kill).forEach(function (n) { n.remove(); });
+      /* the record CTA duplicates the workspace once it is open */
+      if (document.body.classList.contains('ez3adv')) {
+        body.querySelectorAll('.ez3fl-record').forEach(function (n) { n.remove(); });
+      }
     } catch (e) {}
     /* (1) doctor screen: quiet staff entry under the actions row */
     if (!staff) {
+      /* (1a) the follow-through CTA: patient picked -> time to record.
+         The REAL workflow (capture card, transcript, note, Athena tools) hides
+         behind the engine's "Advanced tools" toggle; a doctor sees no way to
+         record. One press opens the real workspace and presses the real
+         Start Visit button - engine handlers only, nothing reimplemented. */
+      if (!document.body.classList.contains('ez3adv') && !body.querySelector('.ez3fl-record')) {
+        var wrap = body.querySelector('#ez3Wrap');
+        var row2 = wrap ? wrap.querySelector('.ez3-row2') : null;
+        if (wrap && row2) {
+          var nmEl = document.querySelector('.mlsctx-name');
+          var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
+          var rec = document.createElement('div');
+          rec.className = 'ez3fl-record';
+          var rb = document.createElement('button');
+          rb.type = 'button'; rb.className = 'ez3fl-recbtn';
+          rb.innerHTML = '<span class="dot"></span>&#127908; ' + (pname ? 'Start recording &mdash; ' + pname.replace(/&/g, '&amp;').replace(/</g, '&lt;') : 'Start a visit recording');
+          rb.addEventListener('click', function () { openWorkspace(true); });
+          var ob = document.createElement('button');
+          ob.type = 'button'; ob.className = 'ez3fl-openws';
+          ob.innerHTML = 'Open visit workspace';
+          ob.title = 'Type or paste a transcript, edit the note, use the Athena tools';
+          ob.addEventListener('click', function () { openWorkspace(false); });
+          var hint = document.createElement('div');
+          hint.className = 'ez3fl-rechint';
+          hint.textContent = 'Records locally and drafts the note here - nothing goes to Athena until you review and send it.';
+          rec.appendChild(rb); rec.appendChild(ob); rec.appendChild(hint);
+          wrap.insertBefore(rec, row2);
+        }
+      }
+      /* (1a2) honest label: the toggle hides the PRIMARY workspace, not "advanced tools" */
+      try {
+        var advB = $('ez3Adv');
+        if (advB && /advanced tools/i.test(advB.textContent || '')) {
+          advB.innerHTML = /hide/i.test(advB.textContent) ? '&#9650; Hide visit workspace' : '&#128295; Visit workspace &amp; tools';
+        }
+      } catch (e) {}
       var row = body.querySelector('.ez3-advrow') || body.querySelector('.ez3-row2');
       if (row && !body.querySelector('.ez3fl-staffLink')) {
         var a = document.createElement('button');
@@ -5740,7 +5806,7 @@
     revert: function () {
       try { if (_obs) _obs.disconnect(); } catch (e) {}
       try { if (_iv) clearInterval(_iv); } catch (e) {}
-      try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
+      try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
       try { window.__mlsEz3Flow.installed = false; } catch (e) {}
     }
   };
@@ -30524,7 +30590,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b193';
+  var MLS_APP_BUILD='2026-07-13-b194';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -36872,7 +36938,7 @@
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623c1';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm13';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm14';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
 
 
 ;(function(){try{if(!document.querySelector('script[data-mls-exact-enable]')){var m=document.createElement('script');m.type='text/plain';m.src='data:,mls-connect.staging.js';m.setAttribute('data-mls-exact-enable','1');(document.head||document.documentElement).appendChild(m);}}catch(e){}})(); /* MLS prod-enable: satisfies *_exact isStaging() gate without loading the staging bundle; REVERT: delete this line + the 14 *_exact loader lines below */
@@ -38143,6 +38209,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260712opnp3c1';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legalpack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legalpack.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_mls_legalpack.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS - legal full-history workflow + medical-legal narrative generator (Tasks 13+14; additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v=20260713da1';s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.0.0, mic chip on focus, insert-at-caret, zero observers) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260713cmd1';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v=20260712thm210-B177';s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: lighter-blue scheme + button polish + view transitions (window.__mlsThemePolish thm-1.0.0; revert()) */
