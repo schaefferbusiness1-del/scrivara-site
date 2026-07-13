@@ -14410,10 +14410,12 @@
          (they auto-place as the first sx-grid child and break the layout) */
       "#mlsCompBtn{display:none!important}",
       ".mls-b34-pay{display:none!important}",
-      ".uc1-pay{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:0;border-radius:999px;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;font:600 13.5px/1 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer;white-space:nowrap}",
+      /* align-self/max-height: as a grid child the pill used to STRETCH to the
+         row height and render as a giant egg (owner report 2026-07-13) */
+      ".uc1-pay{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:0;border-radius:999px;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;font:600 13.5px/1 'Public Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 1px 2px rgba(20,33,28,.12);cursor:pointer;white-space:nowrap;align-self:start;justify-self:end;max-height:38px}",
       ".uc1-pay:hover{filter:brightness(1.08)}",
       ".uc1-pay .uc1-prem{font-size:9.5px;font-weight:800;letter-spacing:.05em;background:linear-gradient(135deg,#7A5CC0,#9B82D4);border-radius:999px;padding:3px 9px}",
-      ".uc1-pay-wrap{display:flex;justify-content:flex-end;margin:0 0 12px}",
+      ".uc1-pay-wrap{display:flex;justify-content:flex-end;align-items:flex-start;align-self:start;margin:0 0 12px}",
       /* (3) ONE status indicator on the APP page:
          hide the extension's duplicate in-page UI (badge bottom-right 18/18 +
          its panel) and stray duplicate dots. The app's own MLS Assistant
@@ -30293,7 +30295,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b203';
+  window.__MLS_AV = window.__MLS_AV || 'b204';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30607,7 +30609,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b203';
+  var MLS_APP_BUILD='2026-07-13-b204';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -36937,7 +36939,7 @@
 
 ;(function(){try{['feat_fullhistory_pdf.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — Export full patient visit history as ONE PDF (additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewpersist.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewpersist.js?v=20260623ac1';s.setAttribute('data-mls-asset','feat_mls_viewpersist.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260713tb5';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260713tb6';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{
   var A='feat_athena_signin_prompt.js';
@@ -36955,7 +36957,7 @@
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623c1';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm16';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm17';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
 
 
 ;(function(){try{if(!document.querySelector('script[data-mls-exact-enable]')){var m=document.createElement('script');m.type='text/plain';m.src='data:,mls-connect.staging.js';m.setAttribute('data-mls-exact-enable','1');(document.head||document.documentElement).appendChild(m);}}catch(e){}})(); /* MLS prod-enable: satisfies *_exact isStaging() gate without loading the staging bundle; REVERT: delete this line + the 14 *_exact loader lines below */

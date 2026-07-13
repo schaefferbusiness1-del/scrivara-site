@@ -347,12 +347,20 @@
      badge (inline gradient styles at 9px rendered muddy/mismatched) */
   function normalizePremiumBadges(){
     try{
-      var spans=document.querySelectorAll('#mlsRdNav .navtab span, #mlsTbMenuPanel span');
+      /* canonicalize EVERY premium badge, not just rail/menu — the AI Studio
+         header carried a bare white-on-transparent span that read as "faded"
+         (owner report 2026-07-13) */
+      var spans=document.querySelectorAll('span,b,em,i,div');
       for(var i=0;i<spans.length;i++){
         var s=spans[i];
-        if(s.children.length===0 && /^premium$/i.test((s.textContent||'').trim()) && !s.classList.contains('mlsRdPrem')){
-          s.className='mlsRdPrem'; s.removeAttribute('style');
-        }
+        if(s.children.length!==0) continue;
+        var t=(s.textContent||'').trim();
+        if(!/^premium( feature)?$/i.test(t)) continue;
+        if(s.classList.contains('mlsRdPrem')) continue;
+        var r=s.getBoundingClientRect();
+        if(r.height>40||(!r.height&&!r.width)) continue;   /* skip huge/detached nodes */
+        s.className='mlsRdPrem'; s.removeAttribute('style');
+        if(/feature/i.test(t)) s.textContent='PREMIUM';
       }
     }catch(e){}
   }

@@ -111,7 +111,7 @@
       "#" + PANEL_ID + " button.mlsTbItem .mlsTbIco{width:18px;text-align:center;}" +
       /* rows other modules append (guided tour) inherit the same look */
       "#" + PANEL_ID + " #mlsObtMenuRow{width:100%;text-align:left;background:transparent;border:0;color:#1A211C !important;" +
-        "font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;padding:10px 12px;" +
+        "font-family:inherit !important;font-size:14px !important;font-weight:600 !important;line-height:1.35 !important;cursor:pointer;border-radius:8px;padding:10px 12px !important;" +
         "display:flex !important;align-items:center;gap:10px;justify-content:flex-start !important;}" +
       "#" + PANEL_ID + " #mlsObtMenuRow:hover{background:#F0EEE7;}" +
       /* relocated navtab rows (Orders, Troubleshoot): never inherit the rail's
