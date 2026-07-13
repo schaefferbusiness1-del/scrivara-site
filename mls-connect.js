@@ -7686,9 +7686,24 @@
     return !!(nb && nb.style.display !== 'none' && (nb.value || '').trim().length);
   }
 
-  /* ---- reconstruct the push plan EXACTLY like pushEntireVisitToAthena ------ */
+  /* ---- the push plan. b241: prefer the app's OWN builder (_athenaBuildPlan) —
+     the send executes the SAME function's output, so the sheet shows the LITERAL
+     section bodies the autopilot receives (byte-for-byte, no drift possible).
+     The local reconstruction below stays only as a fallback for a stale cached
+     ScribeFlow that predates _athenaBuildPlan. ---- */
   function buildPlan() {
     var SEC = g('ATHENA_SECTIONS') || {};
+    function dest2(k) { return (SEC[k] && SEC[k].dest) || ''; }
+    function icon2(k) { return (SEC[k] && SEC[k].icon) || '•'; }
+    var TITLES = { note: 'Clinical note', dx: 'Diagnoses (ICD-10)', billing: 'Charges / billing', orders: 'Orders' };
+    if (isFn(window._athenaBuildPlan)) {
+      var built = safe(function () { return window._athenaBuildPlan(); }, null);
+      if (built && built.plan && built.plan.length) {
+        return built.plan.map(function (s) {
+          return { kind: s.kind, title: TITLES[s.kind] || s.kind, icon: icon2(s.kind), dest: dest2(s.kind), body: s.body };
+        });
+      }
+    }
     var c = g('currentCoding') || null;
     var orders = g('currentOrders') || [];
     var noteText = '';
@@ -7699,8 +7714,8 @@
     }
 
     var sections = [];
-    function dest(k) { return (SEC[k] && SEC[k].dest) || ''; }
-    function icon(k) { return (SEC[k] && SEC[k].icon) || '•'; }
+    function dest(k) { return dest2(k); }
+    function icon(k) { return icon2(k); }
 
     sections.push({ kind: 'note', title: 'Clinical note', icon: icon('note'), dest: dest('note'), body: noteText });
 
@@ -7863,7 +7878,7 @@
     ];
     function cntOf(sx) {
       if (!sx || !sx.body) { return ''; }
-      if (sx.kind === 'note') { return sx.body.length.toLocaleString() + ' characters'; }
+      if (sx.kind === 'note') { return String(sx.body).replace(/^NOTE TEXT:\n/, '').length.toLocaleString() + ' characters'; }
       var n = (sx.body.match(/^\s*(\d+\.|•|E\/M)/gm) || []).length;
       return n ? (n + (n === 1 ? ' item' : ' items')) : '';
     }
@@ -7940,8 +7955,12 @@
         close();
         /* arm the wfr pass-through so the review's OWN send is not re-intercepted */
         safe(function () { if (window.__mlsWfReview) window.__mlsWfReview.armed = true; });
+        /* b241: this sheet WAS the confirmation — tell pushEntireVisitToAthena to
+           skip its redundant native confirm (30s window, consumed on read).
+           The write-time Final-check gate (b18 wbGate) still runs untouched. */
+        safe(function () { window.__mlsApvConfirmed = Date.now(); });
         var real = document.getElementById('pushAllEmrBtn');
-        if (real) { safe(function () { real.click(); }); }   /* app's own confirm + autopilot */
+        if (real) { safe(function () { real.click(); }); }   /* autopilot + final-check gate */
         else { safe(function () { if (isFn(window.toast)) window.toast('Send control not found on this build.', 'err'); }); }
       };
     }
@@ -30476,7 +30495,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b240';
+  window.__MLS_AV = window.__MLS_AV || 'b241';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30790,7 +30809,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b240';
+  var MLS_APP_BUILD='2026-07-13-b241';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;

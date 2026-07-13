@@ -2009,10 +2009,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
         <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
-        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="The full round-trip: MLS Assist enters the WHOLE visit into the patient's open Athena encounter — note, each diagnosis, E/M + CPT, and every order, each into its proper field. Shows a confirm before, a receipt after, and stops before Save/Sign so you review and sign.">🚀 Send full visit to Athena</button>
+        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="The last step: opens a review of EXACTLY what will be entered into the patient's open Athena encounter and where — note, each diagnosis, E/M + CPT, orders — then MLS Assist types each piece into its proper athenaOne section and stops before Save/Sign so you review and sign.">🚀 Review &amp; send to Athena</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
-      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6">🚀 <b>Send full visit</b> places each part in its own athenaOne section: <b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders. You'll see a confirm before and a receipt of exactly what was entered after.</div>
+      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6">🚀 <b>Last step — Review &amp; send</b>: first a review of exactly what goes where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders), then MLS enters each part into its own athenaOne section and gives you a receipt. Nothing is written until you confirm the review, and MLS never touches Save / Sign.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:11px 14px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
@@ -13791,10 +13791,11 @@ function sendToEMRviaAssist(btn, opts){
    + orders, each into its proper Athena field, via the MLS Assist AI autopilot. Shows a
    confirm of exactly what will be written first, and the autopilot NEVER clicks Save/Sign
    (it stops so the doctor reviews + signs in Athena). ===== */
-function pushEntireVisitToAthena(btn){
-  if(!currentSoap){ try{ toast('Generate the note first, then push the visit to Athena.','err'); }catch(e){} return; }
+/* ONE plan builder (b241): the pre-send review sheet AND the actual send both use
+   THIS function, so what the doctor reviews is byte-for-byte what the autopilot
+   receives — the plan can never drift from the preview. */
+function _athenaBuildPlan(){
   var noteText=''; try{ noteText=emrReadyText(); }catch(e){}
-  if(!noteText.trim()){ try{ toast('Nothing to push yet.','err'); }catch(e){} return; }
   var p=(typeof activePatient==='function')?activePatient():null;
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
   var orders=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
@@ -13807,10 +13808,22 @@ function pushEntireVisitToAthena(btn){
   var hasBill=(c&&c.em)||(c&&c.cpt&&c.cpt.length);
   if(hasBill){ var bb='BILLING:\n'+(c&&c.em?('E/M level: '+c.em+'\n'):'')+((c&&c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c&&c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
   if(orders&&orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+'  ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
-  var ok=false;
-  try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nMLS Assist will enter each piece into its OWN athenaOne section, one at a time:\n\n'+lines.join('\n')+'\n\n⚠ It STOPS before Save/Sign — you review & sign in Athena.\nOpen '+who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; }
+  return { plan:plan, lines:lines, who:who, noteText:noteText };
+}
+function pushEntireVisitToAthena(btn){
+  if(!currentSoap){ try{ toast('Generate the note first, then push the visit to Athena.','err'); }catch(e){} return; }
+  var built=_athenaBuildPlan();
+  if(!built.noteText.trim()){ try{ toast('Nothing to push yet.','err'); }catch(e){} return; }
+  /* b241: when the send comes from the calm review sheet (__mlsAthenaPreview),
+     that sheet WAS the confirmation — showing the same plan again in a native
+     confirm() was a redundant second mechanism (and native dialogs block the
+     render thread, the b234 class). Direct button paths still get the confirm. */
+  var pre=false;
+  try{ if(window.__mlsApvConfirmed && (Date.now()-window.__mlsApvConfirmed)<30000){ pre=true; } window.__mlsApvConfirmed=0; }catch(e){}
+  var ok=pre;
+  if(!ok){ try{ ok=window.confirm('PUSH TO ATHENA — '+built.who+'\n\nMLS Assist will enter each piece into its OWN athenaOne section, one at a time:\n\n'+built.lines.join('\n')+'\n\n⚠ It STOPS before Save/Sign — you review & sign in Athena.\nOpen '+built.who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; } }
   if(!ok) return;
-  _athenaPushPlan(plan, who);
+  _athenaPushPlan(built.plan, built.who);
 }
 /* Shared Athena push runner — pings MLS Assist, hands the autopilot a goal, reports progress. */
 function _athenaPushRun(goal, startMsg, onDone){
