@@ -68,19 +68,22 @@
     }
   }
 
-  /* additive fetch wrap: only backend calls drive the bar */
-  var origFetch = window.fetch;
+  /* additive fetch wrap: only backend calls drive the bar. Other modules also
+     wrap fetch and can bury this layer - re-assert by chain-wrapping whatever
+     currently occupies window.fetch (their behavior is preserved untouched). */
   function isTracked(input) {
     try {
       var u = typeof input === 'string' ? input : (input && input.url) || '';
       return /\/api\//.test(u) || /onrender\.com/.test(u);
     } catch (e) { return false; }
   }
-  if (typeof origFetch === 'function' && !origFetch.__mlsLb) {
+  function ensureWrap() {
+    var f = window.fetch;
+    if (typeof f !== 'function' || f.__mlsLb) return;
     var wrapped = function (input, init) {
       var track = isTracked(input);
       if (track) { api.inflight++; sync(); }
-      var p = origFetch.apply(this, arguments);
+      var p = f.apply(this, arguments);
       if (track && p && typeof p.finally === 'function') {
         p = p.finally(function () { api.inflight = Math.max(0, api.inflight - 1); sync(); });
       } else if (track) {
@@ -89,9 +92,11 @@
       return p;
     };
     wrapped.__mlsLb = true;
-    wrapped.__mlsLbOrig = origFetch;
+    wrapped.__mlsLbOrig = f;
     window.fetch = wrapped;
   }
+  ensureWrap();
+  var wrapIv = setInterval(ensureWrap, 2000);
 
   api.begin = function () {
     manual++;
@@ -104,7 +109,7 @@
   css();
 
   api.revert = function () {
-    try { if (window.fetch && window.fetch.__mlsLb) window.fetch = window.fetch.__mlsLbOrig; } catch (e) {}
+    try { clearInterval(wrapIv); if (window.fetch && window.fetch.__mlsLb) window.fetch = window.fetch.__mlsLbOrig; } catch (e) {}
     try { manualTimers.forEach(clearTimeout); } catch (e) {}
     try { var b = document.getElementById(BAR_ID); if (b) b.remove(); } catch (e) {}
     try { var s = document.getElementById(CSS_ID); if (s) s.remove(); } catch (e) {}
