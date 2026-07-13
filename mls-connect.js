@@ -30507,7 +30507,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b250';
+  window.__MLS_AV = window.__MLS_AV || 'b251';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30821,7 +30821,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b250';
+  var MLS_APP_BUILD='2026-07-13-b251';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38895,5 +38895,174 @@
     try { st.remove(); } catch (e) {}
     try { var a = $('mlsDsStrip'); if (a) a.remove(); var b = $('mlsDsList'); if (b) b.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsDaySwitch;
+  };
+})();
+
+/* ===== __mlsPullCheck pc2-1.0.0 (2026-07-13, b251 - owner: "a way to verify a
+ * pull actually got someone's complete history/visits"; settings option, OFF by
+ * default, fully functional when on).
+ *  - Settings > Integrations gains a "Verify pulls" toggle (localStorage
+ *    'mls_verify_pulls'; absent/0 = OFF).
+ *  - When ON, the patient banner (#mlsCtxBar) grows a "Verify pull" chip: it
+ *    re-reads the patient's visit list from athenaOne through the EXISTING
+ *    identity-verified extension lane (mlsAppReadVisits -> mlsAppReadVisitsResult,
+ *    b121 contract: {ok, visits:[{date:'YYYY-MM-DD',...}], reason}) and compares
+ *    the date set against MLS's stored visits (__mlsVisitModel.getVisits) -
+ *    calm result card: "N visits in athenaOne / N in MLS - complete" or the
+ *    exact missing dates. Honest failure states (signed out / wrong chart /
+ *    busy / timeout) - never guesses.
+ *  - READ-ONLY: no writes anywhere; no extension changes (existing verb).
+ * Reversible: window.__mlsPullCheck.revert(). ES5; one gentle 1.2s ensure tick. */
+(function () {
+  if (window.__mlsPullCheck) return;
+  var api = { installed: true, version: 'pc2-1.0.0', running: false };
+  window.__mlsPullCheck = api;
+  var KEY = 'mls_verify_pulls';
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function on() { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
+  function setOn(v) { try { localStorage.setItem(KEY, v ? '1' : '0'); } catch (e) {} }
+  function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
+
+  var st = document.createElement('style'); st.id = 'mlsPcCss';
+  st.textContent = [
+    '#mlsPcChip{display:inline-flex;align-items:center;gap:6px;border:1px solid #E4E1D8;background:#FCFBF8;color:#2E6A4B;font:600 12px "Public Sans",system-ui,sans-serif;border-radius:999px;padding:6px 12px;cursor:pointer;}',
+    '#mlsPcChip:hover{background:#F0EEE7;}',
+    '#mlsPcChip[disabled]{opacity:.7;cursor:default;}',
+    '#mlsPcOv{position:fixed;inset:0;z-index:100010;background:rgba(26,33,28,.45);display:flex;align-items:center;justify-content:center;padding:18px;}',
+    '#mlsPcCard{background:#fff;border:1px solid #E7E5DD;border-radius:14px;max-width:460px;width:100%;padding:20px 22px;box-shadow:0 24px 70px rgba(20,33,28,.25);font:14px/1.5 "Public Sans",system-ui,sans-serif;color:#1A211C;}',
+    '#mlsPcCard h3{margin:0 0 4px;font:600 18px Newsreader,Georgia,serif;}',
+    '#mlsPcCard .pc-ok{background:#EAF1EE;color:#2E6A4B;border-radius:9px;padding:10px 12px;font-weight:600;margin-top:10px;}',
+    '#mlsPcCard .pc-warn{background:#FCF8EF;color:#8A5A00;border-radius:9px;padding:10px 12px;font-weight:600;margin-top:10px;}',
+    '#mlsPcCard ul{margin:8px 0 0;padding-left:20px;font-size:13px;}',
+    '#mlsPcCard .pc-close{margin-top:14px;background:#204034;color:#fff;border:0;border-radius:9px;padding:9px 16px;font:600 13px system-ui;cursor:pointer;}'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(st);
+
+  function showCard(title, bodyHtml) {
+    try { var o0 = $('mlsPcOv'); if (o0) o0.remove(); } catch (e) {}
+    var ov = document.createElement('div'); ov.id = 'mlsPcOv';
+    ov.innerHTML = '<div id="mlsPcCard"><h3>' + esc(title) + '</h3>' + bodyHtml +
+      '<div style="text-align:right"><button type="button" class="pc-close" id="mlsPcClose">Close</button></div></div>';
+    document.body.appendChild(ov);
+    function close() { try { ov.remove(); } catch (e) {} try { document.removeEventListener('keydown', onKey, true); } catch (e) {} }
+    function onKey(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } }
+    ov.addEventListener('click', function (ev) { if (ev.target === ov) close(); });
+    var cb = $('mlsPcClose'); if (cb) cb.onclick = close;
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  function activeP() {
+    try { var p = (typeof window.activePatient === 'function') ? window.activePatient() : null; return (p && p.name) ? p : null; } catch (e) { return null; }
+  }
+  function uniqDates(arr) {
+    var s = {}, out = [];
+    for (var i = 0; i < (arr || []).length; i++) {
+      var d = String(arr[i] || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !s[d]) { s[d] = 1; out.push(d); }
+    }
+    return out.sort();
+  }
+
+  api.verify = function () {
+    if (api.running) { toast('A pull check is already running.', ''); return; }
+    var p = activeP();
+    if (!p) { toast('Open a patient first, then verify their pull.', 'err'); return; }
+    var M = window.__mlsVisitModel;
+    if (!M || typeof M.getVisits !== 'function') { toast('The visit model is not available on this build.', 'err'); return; }
+    api.running = true;
+    var chip = $('mlsPcChip'); if (chip) { chip.disabled = true; chip.textContent = 'Checking against athenaOne…'; }
+    try { if (window.__mlsLoadingCalm && window.__mlsLoadingCalm.begin) window.__mlsLoadingCalm.begin('Verifying ' + p.name + "'s pull against athenaOne…"); } catch (e) {}
+    var done = false;
+    function finish(fn) {
+      if (done) return; done = true;
+      api.running = false;
+      try { if (window.__mlsLoadingCalm && window.__mlsLoadingCalm.end) window.__mlsLoadingCalm.end(); } catch (e) {}
+      var c2 = $('mlsPcChip'); if (c2) { c2.disabled = false; c2.textContent = '✓ Verify pull'; }
+      try { window.removeEventListener('message', onMsg); } catch (e) {}
+      try { fn(); } catch (e) {}
+    }
+    function onMsg(ev) {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppReadVisitsResult') return;
+      var r = d.resp || d;
+      finish(function () {
+        if (!r || !r.ok) {
+          var why = (r && r.reason) ? String(r.reason) : 'no response';
+          showCard('Pull check — ' + p.name,
+            '<div class="pc-warn">Could not verify against athenaOne (' + esc(why) + '). Nothing was changed. Make sure athenaOne is open and signed in, then try again.</div>');
+          return;
+        }
+        var ath = uniqDates((r.visits || []).map(function (v) { return v && v.date; }));
+        var mine = uniqDates((M.getVisits(p.id) || []).map(function (v) { return v && v.date; }));
+        var mineSet = {}; for (var i = 0; i < mine.length; i++) mineSet[mine[i]] = 1;
+        var missing = ath.filter(function (d2) { return !mineSet[d2]; });
+        if (!ath.length) {
+          showCard('Pull check — ' + p.name,
+            '<div class="pc-warn">athenaOne returned 0 visits for this patient — either the chart genuinely has none, or the read could not see the visits list. MLS has ' + mine.length + ' stored.</div>');
+        } else if (!missing.length) {
+          showCard('Pull check — ' + p.name,
+            '<div class="pc-ok">✓ Complete — ' + ath.length + ' visit' + (ath.length === 1 ? '' : 's') + ' in athenaOne, all present in MLS (' + mine.length + ' stored' + (mine.length > ath.length ? ', incl. MLS-only notes' : '') + ').</div>');
+        } else {
+          showCard('Pull check — ' + p.name,
+            '<div class="pc-warn">' + (ath.length - missing.length) + ' of ' + ath.length + ' athenaOne visits are in MLS — <b>' + missing.length + ' missing</b>:</div>' +
+            '<ul>' + missing.slice(0, 15).map(function (d3) { return '<li>' + esc(d3) + '</li>'; }).join('') + (missing.length > 15 ? '<li>…and ' + (missing.length - 15) + ' more</li>' : '') + '</ul>' +
+            '<div style="font-size:12.5px;color:#79837C;margin-top:8px">Re-pull this patient’s chart to fetch the missing visits.</div>');
+        }
+      });
+    }
+    window.addEventListener('message', onMsg);
+    try {
+      window.postMessage({ source: 'mls-app', type: 'mlsAppReadVisits', name: p.name, dob: p.dob || '', athenaId: p.athenaId || p.mrn || '' }, '*');
+    } catch (e) { finish(function () { toast('Could not start the check.', 'err'); }); return; }
+    setTimeout(function () {
+      finish(function () {
+        showCard('Pull check — ' + p.name,
+          '<div class="pc-warn">The check timed out (athenaOne busy or signed out). Nothing was changed — try again when the Athena tab is open.</div>');
+      });
+    }, 110000);
+  };
+
+  function ensureSettingsRow() {
+    try {
+      var modal = $('settingsModal');
+      if (!modal || getComputedStyle(modal).display === 'none') return;
+      if ($('mlsPcRow')) { var t0 = $('mlsPcTgl'); if (t0) t0.checked = on(); return; }
+      var heads = modal.querySelectorAll('.set-head');
+      var host = null;
+      for (var i = 0; i < heads.length; i++) { if (/integrations/i.test(heads[i].textContent || '')) { host = heads[i].parentElement; break; } }
+      if (!host) return;
+      var row = document.createElement('div');
+      row.id = 'mlsPcRow'; row.className = 'field';
+      row.innerHTML = '<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600">' +
+        '<input type="checkbox" id="mlsPcTgl" style="width:16px;height:16px;margin:0"> Verify pulls (double-check completeness)</label>' +
+        '<p class="set-desc" style="margin:4px 0 0">When on, the patient banner gets a “Verify pull” button: MLS re-reads the patient’s visit list from athenaOne and confirms every visit made it into MLS — with the exact missing dates if not. Adds extra read time, so it’s off by default. Read-only; never changes anything.</p>';
+      host.appendChild(row);
+      var tg = $('mlsPcTgl');
+      tg.checked = on();
+      tg.addEventListener('change', function () { setOn(tg.checked); toast(tg.checked ? 'Verify pulls is ON — the patient banner now has a Verify button.' : 'Verify pulls is off.', ''); });
+    } catch (e) {}
+  }
+
+  function ensureChip() {
+    try {
+      var bar = $('mlsCtxBar');
+      var chip = $('mlsPcChip');
+      if (!on() || !bar) { if (chip) chip.remove(); return; }
+      if (chip) return;
+      chip = document.createElement('button');
+      chip.type = 'button'; chip.id = 'mlsPcChip'; chip.title = 'Re-read this patient’s visit list from athenaOne and confirm every visit made it into MLS (read-only)';
+      chip.textContent = '✓ Verify pull';
+      chip.addEventListener('click', function () { api.verify(); });
+      bar.appendChild(chip);
+    } catch (e) {}
+  }
+
+  var iv = setInterval(function () { try { ensureSettingsRow(); ensureChip(); } catch (e) {} }, 1200);
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { st.remove(); } catch (e) {}
+    ['mlsPcRow', 'mlsPcChip', 'mlsPcOv'].forEach(function (id) { try { var e2 = $(id); if (e2) e2.remove(); } catch (e) {} });
+    api.installed = false; delete window.__mlsPullCheck;
   };
 })();
