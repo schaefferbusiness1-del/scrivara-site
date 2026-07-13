@@ -15890,6 +15890,10 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
+      /* b252: owner-marked STAFF entries (office manager's recurring admin
+         blocks etc.) never render as patients. User-controlled list, never
+         guessed; the record itself is untouched. */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
       /* b238: normalized provider match. Rows with NO provider recorded stay
          VISIBLE for every provider (they were silently binned as "other
          providers" — 721 of the account's 2977 stored appts had provider:null,
@@ -20218,6 +20222,10 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
+      /* b252: owner-marked STAFF entries (office manager's recurring admin
+         blocks etc.) never render as patients. User-controlled list, never
+         guessed; the record itself is untouched. */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
       /* b238: normalized provider match. Rows with NO provider recorded stay
          VISIBLE for every provider (they were silently binned as "other
          providers" — 721 of the account's 2977 stored appts had provider:null,
@@ -22279,6 +22287,10 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
+      /* b252: owner-marked STAFF entries (office manager's recurring admin
+         blocks etc.) never render as patients. User-controlled list, never
+         guessed; the record itself is untouched. */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
       /* b238: normalized provider match. Rows with NO provider recorded stay
          VISIBLE for every provider (they were silently binned as "other
          providers" — 721 of the account's 2977 stored appts had provider:null,
@@ -24164,6 +24176,10 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
+      /* b252: owner-marked STAFF entries (office manager's recurring admin
+         blocks etc.) never render as patients. User-controlled list, never
+         guessed; the record itself is untouched. */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
       /* b238: normalized provider match. Rows with NO provider recorded stay
          VISIBLE for every provider (they were silently binned as "other
          providers" — 721 of the account's 2977 stored appts had provider:null,
@@ -25785,6 +25801,10 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
+      /* b252: owner-marked STAFF entries (office manager's recurring admin
+         blocks etc.) never render as patients. User-controlled list, never
+         guessed; the record itself is untouched. */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
       /* b238: normalized provider match. Rows with NO provider recorded stay
          VISIBLE for every provider (they were silently binned as "other
          providers" — 721 of the account's 2977 stored appts had provider:null,
@@ -30507,7 +30527,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b251';
+  window.__MLS_AV = window.__MLS_AV || 'b252';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30821,7 +30841,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b251';
+  var MLS_APP_BUILD='2026-07-13-b252';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38796,6 +38816,7 @@
       var d = String(a.day_local || a.appt_date || '').slice(0, 10);
       if (d !== dayK) continue;
       var nm = String(a.name || '').trim(); if (!nm) continue;
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(nm)) continue; } catch (eSm) {}
       var t = String(a.time_display || a.start_local || a.time || '');
       var k = nm.toLowerCase() + '|' + String(a.dob || '') + '|' + t;
       if (seen[k]) continue; seen[k] = 1;
@@ -39064,5 +39085,136 @@
     try { st.remove(); } catch (e) {}
     ['mlsPcRow', 'mlsPcChip', 'mlsPcOv'].forEach(function (id) { try { var e2 = $(id); if (e2) e2.remove(); } catch (e) {} });
     api.installed = false; delete window.__mlsPullCheck;
+  };
+})();
+
+/* ===== __mlsStaffMark sm-1.0.0 (2026-07-13, b252 - owner: Laura Zakorchemny is
+ * the OFFICE MANAGER, not a patient - her recurring 4:00 PM admin block on the
+ * athenaOne schedule was swept in as a "patient" on every pull: 16 imported
+ * appts, no reason, placeholder DOB 12/31/1940, zero visits).
+ * USER-CONTROLLED staff marking - never guessed:
+ *  - "Not a patient?" quiet action on the patient banner (shown only for
+ *    plausible staff records: zero stored visits) -> calm confirm -> the name
+ *    goes on the account's staff list (localStorage 'mls_staff_names').
+ *  - Marked names are FILTERED from the doctor-facing schedule surfaces (the
+ *    EZ3 day lists via a rowsInRange hook, the hero Up-next list, the day-strip
+ *    list). The patient RECORD is never deleted - nothing destructive.
+ *  - Settings > Integrations lists marked names with one-click Unmark.
+ * Exposes window.__mlsStaffMark.isStaff(name) for other modules.
+ * Reversible: revert(). ES5. Tick verified on the visible tab (RC3 skips
+ * hidden-pane ticks - known). */
+(function () {
+  if (window.__mlsStaffMark) return;
+  var api = { installed: true, version: 'sm-1.0.0' };
+  window.__mlsStaffMark = api;
+  var KEY = 'mls_staff_names';
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function norm(n) { return String(n || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function list() { try { var a = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function save(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (e) {} }
+  api.isStaff = function (name) { var n = norm(name); if (!n) return false; var a = list(); for (var i = 0; i < a.length; i++) { if (a[i] === n) return true; } return false; };
+  api.mark = function (name) { var n = norm(name); if (!n) return; var a = list(); if (a.indexOf(n) < 0) { a.push(n); save(a); } };
+  api.unmark = function (name) { var n = norm(name); save(list().filter(function (x) { return x !== n; })); };
+
+  var st = document.createElement('style'); st.id = 'mlsSmCss';
+  st.textContent = [
+    '#mlsSmBtn{border:0;background:transparent;color:#8A8F86;font:500 11.5px "Public Sans",system-ui,sans-serif;cursor:pointer;text-decoration:underline;text-underline-offset:2px;padding:4px 6px;}',
+    '#mlsSmBtn:hover{color:#55605A;}',
+    '#mlsSmList .sm-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;}',
+    '#mlsSmList .sm-un{margin-left:auto;border:1px solid #E4E1D8;background:#FCFBF8;color:#55605A;font:600 11px system-ui;border-radius:7px;padding:4px 9px;cursor:pointer;}'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(st);
+
+  function activeP() { try { var p = (typeof window.activePatient === 'function') ? window.activePatient() : null; return (p && p.name) ? p : null; } catch (e) { return null; } }
+
+  function markFlow(p) {
+    var go = function (ok) {
+      if (!ok) return;
+      api.mark(p.name);
+      try { if (typeof window.toast === 'function') window.toast(p.name + ' is marked as staff — they will stop appearing in your day lists. Undo any time in Settings → Integrations.', 'ok'); } catch (e) {}
+      var b = $('mlsSmBtn'); if (b) b.remove();
+    };
+    if (typeof window.__mlsCalmConfirm === 'function') {
+      window.__mlsCalmConfirm({
+        title: 'Not a patient?',
+        body: 'Mark ' + p.name + ' as STAFF (not a patient)? Their schedule entries will stop appearing in your day lists and Up-next. Nothing is deleted, and you can undo this in Settings → Integrations.',
+        okLabel: 'Mark as staff'
+      }, go);
+    } else { go(window.confirm('Mark ' + p.name + ' as staff (not a patient)?')); }
+  }
+
+  function ensureBtn() {
+    try {
+      var bar = $('mlsCtxBar'); if (!bar) { return; }
+      var p = activeP();
+      var btn = $('mlsSmBtn');
+      var eligible = p && !api.isStaff(p.name) && (function () {
+        try { var M = window.__mlsVisitModel; var vs = (M && M.getVisits) ? (M.getVisits(p.id) || []) : (p.visits || []); return vs.length === 0; } catch (e) { return false; }
+      })();
+      if (!eligible) { if (btn) btn.remove(); return; }
+      if (btn) { return; }
+      btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'mlsSmBtn';
+      btn.textContent = 'Not a patient?';
+      btn.title = 'Mark this person as staff / not a patient — their schedule entries stop appearing in your day lists (undo in Settings)';
+      btn.addEventListener('click', function () { var p2 = activeP(); if (p2) markFlow(p2); });
+      bar.appendChild(btn);
+    } catch (e) {}
+  }
+
+  function ensureSettings() {
+    try {
+      var modal = $('settingsModal');
+      if (!modal || getComputedStyle(modal).display === 'none') return;
+      var names = list();
+      var box = $('mlsSmList');
+      if (!box) {
+        var heads = modal.querySelectorAll('.set-head'); var host = null;
+        for (var i = 0; i < heads.length; i++) { if (/integrations/i.test(heads[i].textContent || '')) { host = heads[i].parentElement; break; } }
+        if (!host) return;
+        box = document.createElement('div'); box.id = 'mlsSmList'; box.className = 'field';
+        host.appendChild(box);
+      }
+      var sig = names.join('|');
+      if (box.__sig === sig) return;
+      box.__sig = sig;
+      box.innerHTML = '<label style="font-weight:600">Staff (not patients)</label>' +
+        (names.length
+          ? names.map(function (n) { return '<div class="sm-row"><span>' + esc(n.replace(/\b\w/g, function (c) { return c.toUpperCase(); })) + '</span><button type="button" class="sm-un" data-sm="' + esc(n) + '">Unmark</button></div>'; }).join('')
+          : '<p class="set-desc" style="margin:4px 0 0">No one marked. On a person with no visit history, the patient banner shows a quiet “Not a patient?” link — use it for staff whose schedule blocks keep getting pulled in.</p>');
+      box.querySelectorAll('.sm-un').forEach(function (b) {
+        b.addEventListener('click', function () { api.unmark(b.getAttribute('data-sm')); box.__sig = null; ensureSettings(); try { if (typeof window.toast === 'function') window.toast('Unmarked — they will appear in day lists again after the next render.', ''); } catch (e) {} });
+      });
+    } catch (e) {}
+  }
+
+  /* filter the hero Up-next list (shared row objects) - same wrap point the
+     b242 meridian enrichment uses; flag-guarded, no re-wrap cycle */
+  (function installHeroFilter() {
+    try {
+      var cur = window._calLoadNextUp;
+      if (typeof cur !== 'function' || cur.__mlsSmFilter) return;
+      var w = function () {
+        try {
+          var L = window._heroTodayList;
+          if (L && L.length) {
+            var f = L.filter(function (a) { return !(a && api.isStaff(a.name)); });
+            if (f.length !== L.length) window._heroTodayList = f;
+          }
+        } catch (e) {}
+        return cur.apply(this, arguments);
+      };
+      w.__mlsSmFilter = 1; w.__mlsUnrOrig = cur;
+      window._calLoadNextUp = w;
+    } catch (e) {}
+  })();
+
+  var iv = setInterval(function () { try { ensureBtn(); ensureSettings(); } catch (e) {} }, 1300);
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { st.remove(); } catch (e) {}
+    ['mlsSmBtn', 'mlsSmList'].forEach(function (id) { try { var e2 = $(id); if (e2) e2.remove(); } catch (e) {} });
+    api.installed = false; delete window.__mlsStaffMark;
   };
 })();
