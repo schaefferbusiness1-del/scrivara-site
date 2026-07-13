@@ -5468,7 +5468,7 @@
     /* injected strips (op-note fill bar etc.) drop to their own full-width row under the seg */
     '#mlsEz3Head > :not(.ez3-modeseg){flex:1 1 100% !important;order:2;color:#1A211C !important;}',
     /* secondary action buttons sit inline on one row, natural width */
-    '#mlsEz3 .ez3-row2{flex-direction:row !important;flex-wrap:wrap !important;justify-content:flex-start !important;align-items:center !important;gap:8px !important;}',
+    '#mlsEz3 .ez3-row2{flex-direction:row !important;flex-wrap:wrap !important;justify-content:flex-start !important;align-items:center !important;gap:8px !important;width:100% !important;max-width:none !important;}',
     '#mlsEz3 .ez3-row2 .ez3-sm{width:auto !important;flex:0 0 auto !important;display:inline-flex !important;align-items:center !important;}',
     /* ===== Visit UX v2 (2026-07-13, owner directive): NO modes on the doctor
        screen. The Doctor/Staff-prep pill toggle is hidden — the staff workspace
@@ -30202,7 +30202,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b191';
+  window.__MLS_AV = window.__MLS_AV || 'b192';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30516,7 +30516,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b191';
+  var MLS_APP_BUILD='2026-07-13-b192';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
