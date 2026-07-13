@@ -5,37 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="robots" content="noindex" />
 <title>MLS Patient Portal</title>
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   :root{
-    --blue:#1f7ae0; --blue-d:#15528f; --ink:#0d2338; --muted:#5b6b7c;
-    --line:#e4ebf3; --bg:#f4f8fd; --card:#ffffff; --good:#127a55; --soft:#eef4fc;
-    --shadow:0 2px 14px rgba(23,64,120,.08);
+    --blue:#204034; --blue-d:#204034; --ink:#1A211C; --muted:#55605A;
+    --line:#E7E5DD; --bg:#FBFAF7; --card:#ffffff; --good:#2E6A4B; --soft:#F4F2EC;
+    --shadow:0 1px 2px rgba(20,33,28,.04);
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  body{font-family:'Public Sans',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     color:var(--ink);background:var(--bg);line-height:1.5;-webkit-font-smoothing:antialiased}
-  a{color:var(--blue);text-decoration:none}
+  a{color:#2E6A4B;text-decoration:none}
   .wrap{max-width:1080px;margin:0 auto;padding:18px}
   .brand{display:flex;align-items:center;gap:9px;font-weight:800;color:var(--blue-d);font-size:18px}
-  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(18,122,85,.15)}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(46,106,75,.15)}
   .hide{display:none!important}
 
   /* ---------- Login ---------- */
   #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
   .login-card{width:100%;max-width:410px;padding:30px 28px}
-  .login-card h1{font-size:22px;margin:14px 0 4px}
+  .login-card h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em;font-size:22px;margin:14px 0 4px}
   .login-card p.sub{color:var(--muted);margin:0 0 20px;font-size:14px}
   label{display:block;font-size:12.5px;font-weight:700;color:var(--blue-d);margin:14px 0 5px}
-  input{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fbfdff;color:var(--ink)}
-  input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+  input{width:100%;padding:12px 13px;border:1px solid #E4E1D8;border-radius:10px;font-size:15px;background:#FCFBF8;color:var(--ink)}
+  input::placeholder{color:#A6AEA6}
+  input:focus{outline:none;border-color:#2E6A4B;box-shadow:0 0 0 3px rgba(46,106,75,.12)}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:10px;
-    background:var(--blue);color:#fff;font-weight:700;font-size:15px;padding:12px 16px;cursor:pointer;width:100%;margin-top:18px}
-  .btn:hover{background:#1a6ccb}
+    background:var(--blue);color:#fff;font-weight:700;font-size:15px;padding:12px 16px;cursor:pointer;width:100%;margin-top:18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
+  .btn:hover{background:#28503f}
   .btn[disabled]{opacity:.6;cursor:default}
-  .btn.ghost{background:var(--soft);color:var(--blue-d);margin-top:10px}
-  .err{background:#fdecec;border:1px solid #f5c2c2;color:#a12626;border-radius:9px;padding:10px 12px;font-size:13.5px;margin-top:14px}
+  .btn.ghost{background:var(--soft);color:var(--blue-d);margin-top:10px;box-shadow:none}
+  .err{background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:10px 12px;font-size:13.5px;margin-top:14px}
   .privacy{font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
 
   /* ---------- App ---------- */
@@ -45,7 +47,7 @@
   .who b{color:var(--ink)}
   .linkbtn{background:none;border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:700;color:var(--blue-d);cursor:pointer}
   .linkbtn:hover{background:var(--soft)}
-  .demo-banner{background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00;font-size:13px;padding:9px 14px;border-radius:10px;margin:16px 0}
+  .demo-banner{background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;font-size:13px;padding:9px 14px;border-radius:10px;margin:16px 0}
   .grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:18px}
   @media(min-width:900px){.grid{grid-template-columns:1.05fr .95fr}}
   .sec{padding:18px 18px 8px}
@@ -77,7 +79,7 @@
   @keyframes sp{to{transform:rotate(360deg)}}
 
   /* ---------- Expandable records (tap to open) ---------- */
-  ul.list li.li-x{padding:0;cursor:pointer;-webkit-tap-highlight-color:rgba(31,122,224,.08)}
+  ul.list li.li-x{padding:0;cursor:pointer;-webkit-tap-highlight-color:rgba(46,106,75,.08)}
   .li-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 2px}
   li.li-x:active .li-head{background:var(--soft);border-radius:8px}
   .li-chev{color:var(--muted);font-size:13px;transition:transform .18s;flex:none;padding-left:6px}
@@ -157,7 +159,7 @@
   <div class="wrap">
     <div id="demoBanner" class="demo-banner hide">👀 You're viewing <b>sample demo data</b> — this is not a real patient. Sign in to see your own records.</div>
 
-    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Request your next visit in under a minute.</div></div><a href="easy-book.html" style="text-decoration:none;background:#2563eb;color:#fff;font-weight:800;border-radius:11px;padding:12px 18px">📅 Book an appointment</a></div>
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Request your next visit in under a minute.</div></div><a href="easy-book.html" style="text-decoration:none;background:#204034;color:#fff;font-weight:800;border-radius:11px;padding:12px 18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Book an appointment</a></div>
 
     <div class="grid">
       <!-- LEFT: records -->
@@ -453,19 +455,19 @@
     if(document.getElementById("mlsPwSetup")) return;
     var back=document.createElement("div");
     back.id="mlsPwSetup";
-    back.style.cssText="position:fixed;inset:0;background:rgba(13,35,56,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    back.style.cssText="position:fixed;inset:0;background:rgba(20,33,28,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
     back.innerHTML=
       '<div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:28px 26px;box-shadow:0 12px 44px rgba(0,0,0,.32)">'
-      +'<div style="display:flex;align-items:center;gap:9px;font-weight:800;color:#15528f;font-size:17px"><span style="width:11px;height:11px;border-radius:50%;background:#127a55;box-shadow:0 0 0 4px rgba(18,122,85,.15)"></span>Welcome to your patient portal</div>'
-      +'<div style="margin:10px 0 2px;font-size:14.5px;color:#0d2338">✓ Your secure link worked — you\'re connected to <b>your own</b> records.</div>'
-      +'<div style="margin:6px 0 2px;color:#5b6b7c;font-size:13.5px">One quick step: choose a password. You\'ll use it (with your email and date of birth) to sign in from now on.</div>'
-      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:14px 0 5px">New password (8+ characters)</label>'
-      +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:12px 0 5px">Repeat password</label>'
-      +'<input id="pwsP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<div id="pwsErr" style="display:none;background:#fdecec;border:1px solid #f5c2c2;color:#a12626;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
-      +'<button id="pwsGo" style="width:100%;border:none;border-radius:10px;background:#1f7ae0;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save my password</button>'
-      +'<div style="font-size:12px;color:#5b6b7c;margin-top:10px;text-align:center">This can\'t be skipped — it\'s what keeps your records private to you.</div>'
+      +'<div style="display:flex;align-items:center;gap:9px;font-weight:800;color:#204034;font-size:17px"><span style="width:11px;height:11px;border-radius:50%;background:#2E6A4B;box-shadow:0 0 0 4px rgba(46,106,75,.15)"></span>Welcome to your patient portal</div>'
+      +'<div style="margin:10px 0 2px;font-size:14.5px;color:#1A211C">✓ Your secure link worked — you\'re connected to <b>your own</b> records.</div>'
+      +'<div style="margin:6px 0 2px;color:#55605A;font-size:13.5px">One quick step: choose a password. You\'ll use it (with your email and date of birth) to sign in from now on.</div>'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:14px 0 5px">New password (8+ characters)</label>'
+      +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
+      +'<input id="pwsP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<div id="pwsErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<button id="pwsGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save my password</button>'
+      +'<div style="font-size:12px;color:#55605A;margin-top:10px;text-align:center">This can\'t be skipped — it\'s what keeps your records private to you.</div>'
       +'</div>';
     document.body.appendChild(back);
     function perr(t){ var e=document.getElementById("pwsErr"); e.style.display="block"; e.textContent=t; }
@@ -524,7 +526,7 @@
       history.replaceState(null,"",location.pathname);
       var msgs={expired:"That sign-in link has expired or was already used. Ask your care team to send a fresh one — it only takes a moment.",invalid:"That sign-in link isn't valid. Ask your care team to send a new one.",unavailable:"The portal is briefly unavailable — please try your link again in a few minutes.",error:"Something went wrong opening your link. Please try again, or ask your care team for a new link."};
       var bar=document.createElement("div");
-      bar.style.cssText="background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00;border-radius:10px;padding:11px 14px;font-size:13.5px;max-width:410px;margin:14px auto 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+      bar.style.cssText="background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;border-radius:10px;padding:11px 14px;font-size:13.5px;max-width:410px;margin:14px auto 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
       bar.textContent=msgs[iv]||msgs.error;
       var login=document.getElementById("login");
       if(login&&login.firstElementChild){ login.insertBefore(bar,login.firstElementChild); bar.style.margin="0 0 14px"; } else document.body.insertBefore(bar,document.body.firstChild);
@@ -538,27 +540,27 @@
 
   var back=document.createElement("div");
   back.id="mlsClaimBack";
-  back.style.cssText="position:fixed;inset:0;background:rgba(13,35,56,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  back.style.cssText="position:fixed;inset:0;background:rgba(20,33,28,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   back.innerHTML=
     '<div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:28px 26px;box-shadow:0 12px 44px rgba(0,0,0,.32)">'
-    +'<div style="display:flex;align-items:center;gap:9px;font-weight:800;color:#15528f;font-size:17px"><span style="width:11px;height:11px;border-radius:50%;background:#127a55;box-shadow:0 0 0 4px rgba(18,122,85,.15)"></span>MLS Patient Portal</div>'
-    +'<div id="mcBody" style="margin-top:16px;font-size:14.5px;color:#0d2338">Setting up your secure access…</div>'
+    +'<div style="display:flex;align-items:center;gap:9px;font-weight:800;color:#204034;font-size:17px"><span style="width:11px;height:11px;border-radius:50%;background:#2E6A4B;box-shadow:0 0 0 4px rgba(46,106,75,.15)"></span>MLS Patient Portal</div>'
+    +'<div id="mcBody" style="margin-top:16px;font-size:14.5px;color:#1A211C">Setting up your secure access…</div>'
     +'</div>';
   document.body.appendChild(back);
   function body(html){ $("mcBody").innerHTML=html; }
   function close(){ var b=$("mlsClaimBack"); if(b) b.remove(); }
-  var OKBTN='<button onclick="document.getElementById(\'mlsClaimBack\').remove()" style="display:block;width:100%;margin-top:16px;border:1px solid #e4ebf3;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;font-size:14px;padding:12px;cursor:pointer">OK — take me to sign in</button>';
+  var OKBTN='<button onclick="document.getElementById(\'mlsClaimBack\').remove()" style="display:block;width:100%;margin-top:16px;border:1px solid #E4E1D8;background:#F4F2EC;color:#204034;border-radius:10px;font-weight:700;font-size:14px;padding:12px;cursor:pointer">OK — take me to sign in</button>';
 
   function pwForm(username){
     body(
-      '<div style="font-weight:700;color:#127a55">✓ You\'re verified.</div>'
-      +'<div style="margin:8px 0 4px;color:#5b6b7c;font-size:13.5px">Choose a password for your portal account'+(username?(' (<b>'+String(username).replace(/[<>&]/g,'')+'</b>)'):'')+'. You\'ll use it with your date of birth to sign in next time.</div>'
-      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:12px 0 5px">New password (8+ characters)</label>'
-      +'<input id="mcP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin:12px 0 5px">Repeat password</label>'
-      +'<input id="mcP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:16px;box-sizing:border-box" />'
-      +'<div id="mcErr" style="display:none;background:#fdecec;border:1px solid #f5c2c2;color:#a12626;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
-      +'<button id="mcGo" style="width:100%;border:none;border-radius:10px;background:#1f7ae0;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save password &amp; open my records</button>'
+      '<div style="font-weight:700;color:#2E6A4B">✓ You\'re verified.</div>'
+      +'<div style="margin:8px 0 4px;color:#55605A;font-size:13.5px">Choose a password for your portal account'+(username?(' (<b>'+String(username).replace(/[<>&]/g,'')+'</b>)'):'')+'. You\'ll use it with your date of birth to sign in next time.</div>'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">New password (8+ characters)</label>'
+      +'<input id="mcP1" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
+      +'<input id="mcP2" type="password" autocomplete="new-password" style="width:100%;padding:11px 12px;border:1px solid #E4E1D8;border-radius:10px;font-size:16px;box-sizing:border-box" />'
+      +'<div id="mcErr" style="display:none;background:#FBF1EF;border:1px solid #EAD3CE;color:#B23B3B;border-radius:9px;padding:9px 12px;font-size:13px;margin-top:12px"></div>'
+      +'<button id="mcGo" style="width:100%;border:none;border-radius:10px;background:#204034;color:#fff;font-weight:700;font-size:15px;padding:13px 16px;cursor:pointer;margin-top:16px">Save password &amp; open my records</button>'
     );
     function err(t){ var e=$("mcErr"); e.style.display="block"; e.textContent=t; }
     $("mcGo").onclick=function(){
@@ -585,7 +587,7 @@
       try{ var st=res.j&&(res.j.session||res.j.token); if(res.ok&&st&&window.__mlsPortalSess) window.__mlsPortalSess.set(st); }catch(e){}
       if(res.ok){ pwForm(res.j&&res.j.username); return; }
       if(res.status===404){ body('This type of setup link isn\'t enabled yet. Please sign in with the <b>username and password</b> your care team gave you.'+OKBTN); return; }
-      body('⏳ '+(((res.j&&res.j.error)||'This link has expired or was already used.'))+'<div style="color:#5b6b7c;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
+      body('⏳ '+(((res.j&&res.j.error)||'This link has expired or was already used.'))+'<div style="color:#55605A;font-size:13px;margin-top:8px">Ask your care team to send a fresh link — it only takes a moment.</div>'+OKBTN);
     })
     .catch(function(){ body('Network problem while setting up your access. Check your connection and re-open the link from your email.'+OKBTN); });
 })();
@@ -638,22 +640,22 @@
   var st=document.createElement("style");
   st.textContent=
     ".reqgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:4px}"+
-    ".reqbtn{display:flex;align-items:center;gap:9px;text-align:left;background:#fbfdff;border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-size:14px;font-weight:700;color:var(--blue-d);cursor:pointer}"+
+    ".reqbtn{display:flex;align-items:center;gap:9px;text-align:left;background:#FCFBF8;border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-size:14px;font-weight:700;color:var(--blue-d);cursor:pointer}"+
     ".reqbtn:hover{background:var(--soft)}"+
     ".reqbtn .ic{font-size:20px}"+
     ".reqbtn small{display:block;font-weight:500;color:var(--muted);font-size:11.5px;margin-top:2px}"+
-    ".mlsm-back{position:fixed;inset:0;background:rgba(13,35,56,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px}"+
+    ".mlsm-back{position:fixed;inset:0;background:rgba(20,33,28,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px}"+
     ".mlsm{background:#fff;border-radius:16px;max-width:460px;width:100%;max-height:92vh;overflow:auto;padding:22px 22px;box-shadow:0 12px 44px rgba(0,0,0,.32)}"+
     ".mlsm h3{margin:0 0 4px;color:var(--blue-d);font-size:18px}"+
-    ".mlsm .safe{background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00;border-radius:10px;padding:10px 12px;font-size:12.5px;margin:10px 0}"+
+    ".mlsm .safe{background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;border-radius:10px;padding:10px 12px;font-size:12.5px;margin:10px 0}"+
     ".mlsm label{margin-top:12px}"+
-    ".mlsm textarea{width:100%;min-height:70px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fbfdff;color:var(--ink);resize:vertical}"+
-    ".mlsm select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fbfdff;color:var(--ink)}"+
+    ".mlsm textarea{width:100%;min-height:70px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#FCFBF8;color:var(--ink);resize:vertical}"+
+    ".mlsm select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#FCFBF8;color:var(--ink)}"+
     ".mlsm .rowb{display:flex;gap:8px;margin-top:16px}"+
     ".mlsm .rowb .btn{margin-top:0}.mlsm .cancel{flex:1;background:var(--soft);color:var(--blue-d);border:1px solid var(--line)}.mlsm .go{flex:2}"+
     ".mlsm .res{border-radius:10px;padding:12px 14px;font-size:13.5px;margin-top:14px}"+
-    ".mlsm .res.ok{background:#eaf7f0;border:1px solid #bce6cf;color:#0f6b49}"+
-    ".mlsm .res.warn{background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00}"+
+    ".mlsm .res.ok{background:#EAF1EE;border:1px solid #CBDFD3;color:#2E6A4B}"+
+    ".mlsm .res.warn{background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636}"+
     ".mlsm .callbtn{display:inline-block;margin-top:8px;background:var(--good);color:#fff;text-decoration:none;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px}";
   document.head.appendChild(st);
 
@@ -686,7 +688,7 @@
       safe:"MLS can’t tell you when your next injection should be — the timing of injections is decided by your care team based on your plan and history. This sends your question to the office; they’ll advise you.",
       fields:function(){
         return '<label>Which injection / procedure?</label><textarea id="mReqProc" placeholder="e.g. lumbar epidural steroid injection"></textarea>'+
-               '<label>Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fbfdff">'+
+               '<label>Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#FCFBF8">'+
                '<label>Your question</label><textarea id="mReqQ" placeholder="e.g. am I due for my next one? how long should I wait?"></textarea>';
       },
       collect:function(){ return { procedure:($("mReqProc").value||"").trim(), lastDate:$("mReqLast").value, question:($("mReqQ").value||"").trim() }; },

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>MLS Recorder</title>
-<meta name="theme-color" content="#1456a8">
+<meta name="theme-color" content="#204034">
 <!-- Add-to-Home-Screen / PWA (iOS + Android) -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,12 +13,13 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="phone-manifest.json">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
-  :root{ --blue:#1f7ae0; --blue-dk:#1456a8; }
+  :root{ --blue:#2E6A4B; --blue-dk:#204034; }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; }
-  body{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
-    background:linear-gradient(160deg,#1f7ae0,#1456a8); color:#fff;
+  body{ font-family:'Public Sans',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+    background:linear-gradient(160deg,#204034,#2E6A4B); color:#fff;
     min-height:100dvh; display:flex; flex-direction:column;
     padding:calc(env(safe-area-inset-top) + 18px) 20px calc(env(safe-area-inset-bottom) + 22px); }
   .brand{ display:flex; align-items:center; gap:10px; font-weight:800; font-size:18px; letter-spacing:.2px; }
@@ -223,7 +224,7 @@
           method:'POST', headers:{'Content-Type':'application/json'},
           body:JSON.stringify({audio:reader.result, mimetype:mimetype||blob.type||'audio/webm'})
         });
-        if(rr.ok){ sentCount++; var el=document.getElementById('sent'); if(el) el.textContent=sentCount+' clip'+(sentCount===1?'':'s')+' sent to your computer'; pendBadge(); if(active) setStatus('● Recording… talk normally','#16a34a'); return; }
+        if(rr.ok){ sentCount++; var el=document.getElementById('sent'); if(el) el.textContent=sentCount+' clip'+(sentCount===1?'':'s')+' sent to your computer'; pendBadge(); if(active) setStatus('● Recording… talk normally','#A9E3C4'); return; }
         if(rr.status===404){ document.getElementById('recErr').textContent='That code expired. Your audio is SAFE on this phone — tap "Download my audio" below, or get a fresh code on your computer.'; ensureDownloadBtn(); return; }
         throw new Error('http '+rr.status);
       }catch(e){
@@ -267,7 +268,7 @@
       if(!stream) return;
       stream.getTracks().forEach(function(t){
         if(t.__pgWatched) return; t.__pgWatched=1;
-        t.onended=function(){ if(active){ setStatus('⚠️ Mic interrupted — resuming…','#dc2626'); recover(); } };
+        t.onended=function(){ if(active){ setStatus('⚠️ Mic interrupted — resuming…','#FFB4B4'); recover(); } };
       });
     }catch(e){}
   }
@@ -278,12 +279,12 @@
       try{
         stream=await navigator.mediaDevices.getUserMedia({audio:true});
         watchTrack(); startSegment();
-        setStatus('● Recording… (recovered — you did not lose anything)','#16a34a');
+        setStatus('● Recording… (recovered — you did not lose anything)','#A9E3C4');
         recovering=false; return;
       }catch(e){ await new Promise(function(r){ setTimeout(r,1500); }); }
     }
     recovering=false;
-    if(active) setStatus('⚠️ Mic unavailable — tap Record to resume. Your clips so far are safe.','#dc2626');
+    if(active) setStatus('⚠️ Mic unavailable — tap Record to resume. Your clips so far are safe.','#FFB4B4');
   }
   function nudge(){ try{ if(active&&(!rec||rec.state==='inactive')) recover(); }catch(e){} }
   setInterval(nudge, 5000);
