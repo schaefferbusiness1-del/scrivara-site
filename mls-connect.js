@@ -5574,7 +5574,7 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.0.0';
+  var VERSION = 'fl-1.0.1';
   var _obs = null, _deb = null, _iv = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function onStaffScreen(body) {
@@ -5584,6 +5584,14 @@
   function ensure() {
     var body = $('mlsEz3Body'); if (!body) return;
     var staff = onStaffScreen(body);
+    /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
+       nodes we insert at body level survive mode switches and must be removed
+       for the mode they do not belong to (fl-1.0.1 fix: the Back button leaked
+       onto the doctor screen after a staff round-trip). */
+    try {
+      var kill = staff ? '.ez3fl-staffLink' : '.ez3fl-back,.ez3fl-staffbadge';
+      body.querySelectorAll(kill).forEach(function (n) { n.remove(); });
+    } catch (e) {}
     /* (1) doctor screen: quiet staff entry under the actions row */
     if (!staff) {
       var row = body.querySelector('.ez3-advrow') || body.querySelector('.ez3-row2');
@@ -30116,7 +30124,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b187';
+  window.__MLS_AV = window.__MLS_AV || 'b189';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30430,7 +30438,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b187';
+  var MLS_APP_BUILD='2026-07-13-b189';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
