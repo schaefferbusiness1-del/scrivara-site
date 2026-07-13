@@ -56,6 +56,16 @@
   }
   function toast(m) { try { if (window.toast) window.toast(m); } catch (e) {} }
   function S(x) { return x == null ? '' : String(x); }
+  /* epoch seconds/ms or ISO -> local date string (a raw 1783951892 leaked into the header before 2026-07-13) */
+  function dateStr(v) {
+    try {
+      var d;
+      if (typeof v === 'number' || /^[0-9]{9,13}$/.test(S(v))) { var n = Number(v); d = new Date(n < 1e12 ? n * 1000 : n); }
+      else d = new Date(v);
+      if (isNaN(d.getTime())) return S(v).slice(0, 10);
+      return d.toLocaleDateString();
+    } catch (e) { return S(v).slice(0, 10); }
+  }
   function isEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(S(s).trim()); }
 
   // ---------------- patient + note gathering ----------------
@@ -244,7 +254,7 @@
         '<div class="mlsavs-body">' +
           '<p class="mlsavs-sub">Patient: <b>' + esc(pt.name || 'Unknown') + '</b>' +
             (pt.dob ? ' &middot; DOB ' + esc(pt.dob) : '') +
-            (note ? ' &middot; from the visit note dated ' + esc(S(note.updated || note.created).slice(0, 10)) : '') + '</p>' +
+            (note ? ' &middot; from the visit note dated ' + esc(dateStr(note.updated || note.created)) : '') + '</p>' +
           '<textarea class="mlsavs-ta" id="mlsavsText" placeholder="Click Generate to create a patient-friendly summary from this visit\'s note. You can edit it before sending."></textarea>' +
           '<div class="mlsavs-row">' +
             '<button type="button" class="mlsavs-btn gen" id="mlsavsGen">Generate summary</button>' +
@@ -393,8 +403,8 @@
       var pt = els.pt || {};
       var meta = (pt.name ? clean(pt.name) : '') + (pt.dob ? '  (DOB ' + clean(pt.dob) + ')' : '');
       if (meta.trim()) { doc.text(meta, marginX, y); y += 14; }
-      var dateStr = els.note ? S(els.note.updated || els.note.created).slice(0, 10) : '';
-      if (dateStr) { doc.text('Visit date: ' + clean(dateStr), marginX, y); y += 14; }
+      var visitDateTxt = els.note ? dateStr(els.note.updated || els.note.created) : '';
+      if (visitDateTxt) { doc.text('Visit date: ' + clean(visitDateTxt), marginX, y); y += 14; }
       doc.setTextColor(20); y += 6;
       doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
       var lines = doc.splitTextToSize(clean(txt), width);
