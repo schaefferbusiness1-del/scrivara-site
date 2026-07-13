@@ -30325,7 +30325,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b233';
+  window.__MLS_AV = window.__MLS_AV || 'b234';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30639,7 +30639,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b233';
+  var MLS_APP_BUILD='2026-07-13-b234';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38389,5 +38389,100 @@
   api.revert = function () {
     try { document.removeEventListener('click', onClick, true); } catch (e) {}
     api.installed = false; delete window.__mlsWfReview;
+  };
+})();
+
+/* =============================================================================
+ * __mlsCalmClear  cc-1.0.0   (2026-07-13)
+ * -----------------------------------------------------------------------------
+ * "Clear all" on the Orders view used a NATIVE confirm(), which blocks the
+ * entire render/JS thread while open (the reported 60-90s "renderer freeze"
+ * was this dialog sitting open during automated testing; native dialogs are
+ * also inconsistent across browsers/extensions and off-brand). This module:
+ *   1) exposes window.__mlsCalmConfirm(opts, cb) - a small Editorial Calm
+ *      in-page confirm (scrim + white card, Escape/scrim-click = cancel) that
+ *      NEVER blocks the thread; reusable by future modules.
+ *   2) wraps window.clearAllOrders to use it. On OK it calls the ORIGINAL
+ *      function with window.confirm stubbed to true for that one call, so the
+ *      base app's own clear logic runs untouched. Cancel = nothing happens.
+ * Fail-open: any error falls back to the original behavior.
+ * Reversible: window.__mlsCalmClear.revert(). ASCII-only.
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  if (window.__mlsCalmClear) return;
+  var api = { version: 'cc-1.0.0', installed: true, opens: 0 };
+  window.__mlsCalmClear = api;
+
+  function openConfirm(opts, cb) {
+    try { var prev = document.getElementById('mlsCalmConfirm'); if (prev) prev.remove(); } catch (e) {}
+    opts = opts || {};
+    var done = false;
+    function finish(ok) {
+      if (done) return; done = true;
+      try { document.removeEventListener('keydown', onKey, true); } catch (e) {}
+      try { scrim.style.opacity = '0'; scrim.style.pointerEvents = 'none'; } catch (e) {}
+      setTimeout(function () { try { scrim.remove(); } catch (e) {} }, 180);
+      try { cb(!!ok); } catch (e) {}
+    }
+    function onKey(ev) {
+      if (ev.key === 'Escape') { ev.stopImmediatePropagation(); ev.preventDefault(); finish(false); }
+    }
+    var scrim = document.createElement('div');
+    scrim.id = 'mlsCalmConfirm';
+    scrim.style.cssText = 'position:fixed;inset:0;z-index:99600;background:rgba(26,33,28,.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .18s ease';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border:1px solid #E7E5DD;border-radius:14px;box-shadow:0 12px 40px rgba(20,33,28,.18);max-width:420px;width:calc(100vw - 48px);padding:22px 24px;font-family:"Public Sans",system-ui,sans-serif';
+    var h = document.createElement('div');
+    h.style.cssText = 'font-family:"Newsreader",Georgia,serif;font-size:19px;font-weight:600;color:#1A211C;margin:0 0 8px;letter-spacing:-.01em';
+    h.textContent = opts.title || 'Are you sure?';
+    var p = document.createElement('div');
+    p.style.cssText = 'font-size:13.5px;color:#55605A;line-height:1.55;margin:0 0 18px';
+    p.textContent = opts.body || '';
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;justify-content:flex-end';
+    var noBtn = document.createElement('button');
+    noBtn.type = 'button'; noBtn.textContent = opts.cancelLabel || 'Cancel';
+    noBtn.style.cssText = 'background:#fff;border:1px solid #E7E5DD;border-radius:9px;padding:9px 14px;font:600 13px "Public Sans",system-ui,sans-serif;color:#55605A;cursor:pointer';
+    var okBtn = document.createElement('button');
+    okBtn.type = 'button'; okBtn.textContent = opts.okLabel || 'OK';
+    okBtn.style.cssText = 'border:0;border-radius:9px;padding:9px 16px;font:600 13px "Public Sans",system-ui,sans-serif;color:#fff;cursor:pointer;background:' + (opts.danger ? '#B23B3B' : '#204034');
+    noBtn.onclick = function () { finish(false); };
+    okBtn.onclick = function () { finish(true); };
+    scrim.addEventListener('click', function (ev) { if (ev.target === scrim) finish(false); });
+    row.appendChild(noBtn); row.appendChild(okBtn);
+    card.appendChild(h); card.appendChild(p); card.appendChild(row);
+    scrim.appendChild(card);
+    document.body.appendChild(scrim);
+    document.addEventListener('keydown', onKey, true);
+    api.opens++;
+    requestAnimationFrame(function () { scrim.style.opacity = '1'; try { noBtn.focus(); } catch (e) {} });
+  }
+  window.__mlsCalmConfirm = openConfirm;
+
+  var orig = window.clearAllOrders;
+  if (typeof orig === 'function') {
+    window.clearAllOrders = function () {
+      try {
+        var n = 0;
+        try { n = (typeof currentOrders !== 'undefined' && currentOrders) ? currentOrders.length : 0; } catch (e) {}
+        if (!n) return;
+        openConfirm({
+          title: 'Remove all orders?',
+          body: (n === 1 ? 'The 1 order' : 'All ' + n + ' orders') + ' staged for this visit will be removed. Nothing is sent to or changed in Athena.',
+          okLabel: 'Remove all', danger: true
+        }, function (ok) {
+          if (!ok) return;
+          var c = window.confirm;
+          window.confirm = function () { return true; };
+          try { orig(); } finally { window.confirm = c; }
+        });
+      } catch (e) { try { orig(); } catch (_) {} }
+    };
+  }
+  api.revert = function () {
+    try { if (typeof orig === 'function') window.clearAllOrders = orig; } catch (e) {}
+    try { var s = document.getElementById('mlsCalmConfirm'); if (s) s.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsCalmClear; delete window.__mlsCalmConfirm;
   };
 })();
