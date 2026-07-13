@@ -1,3 +1,10 @@
+/* !!! STALE REFERENCE (flagged v2.9.10, per Codex E1 follow-up) !!!
+ * This file has DRIFTED from the live inline reader in background.js (it lacks the
+ * structural-ID + coord-scroll lanes, _reasonS, the v2.9.7 suffix strip, the v2.9.8
+ * frame guard, v2.9.9 dedup, and the v2.9.10 shadow parser). It is NOT loaded at
+ * runtime. Do NOT test against this copy - background.js's injected closure is the
+ * single source of truth until the canonical-parser cutover regenerates this file
+ * with a parity test. */
 /* inject_dom.js — SELF-CONTAINED DOM schedule/provider reader.
  * This exact function body is inlined into MLS Assist background.js's executeScript
  * `func` so it runs INSIDE the athenaOne schedule frame. It must reference nothing

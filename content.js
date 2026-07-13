@@ -35,7 +35,7 @@
   /* v1.55: mlsAppGoHome added — the app-side day/month history orchestrator needs to
      return athenaOne to the CLINICAL SCHEDULE (home) between patients so each patient's
      row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -137,6 +137,15 @@
     }
     // v1.60 DEV: reload the unpacked extension from disk (build iteration without a
     // manual chrome://extensions click). Reload only - nothing else.
+    /* v2.9.11: read the accumulated shadow-parser totals (cutover evidence). Read-only. */
+    if (d.type === 'mlsNameShadowState') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsNameShadowStateRequest' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsNameShadowStateResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsNameShadowStateResult', resp: { error: 'extension error' } }); }
+      return;
+    }
     if (d.type === 'mlsDevReload') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsDevReloadRequest' }, function (resp) {
@@ -523,7 +532,12 @@
       var h = (location.hostname || '').toLowerCase();
       if (!h) return false;
       if (h === 'mlsscribe.com' || h === 'www.mlsscribe.com' || h.endsWith('.mlsscribe.com')) return false;
-      if (h === 'athenahealth.com' || h.endsWith('.athenahealth.com')) return true;
+      /* v2.9.8 (owner directive): on athenaOne the NEW floating widget (mls-popup
+         "MLS · Ready — Go / Pick a patient") is THE surface — the legacy
+         Dictate/Generate/Insert panel's corner badge no longer auto-shows there.
+         The panel machinery stays intact: the extension toolbar icon (mlsOpenPanel)
+         still opens it deliberately, and non-athena EMR hosts are unchanged. */
+      if (h === 'athenahealth.com' || h.endsWith('.athenahealth.com')) return false;
       try { var ex = window.__mlsBadgeHosts; if (Array.isArray(ex) && ex.some(function (x) { x = String(x).toLowerCase(); return h === x || h.endsWith('.' + x); })) return true; } catch (e) {}
       return false;
     } catch (e) { return false; }
