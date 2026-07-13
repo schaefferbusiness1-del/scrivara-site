@@ -139,7 +139,18 @@
   }
   function wire(deck) {
     var nb = $('mlsWdNew'); if (nb) nb.onclick = function () { safe(function () { window.openWidgetBuilder(); }); };
-    var sb = $('mlsWdStudio'); if (sb) sb.onclick = function () { var n = $('nav_studio'); if (n) n.click(); };
+    /* b248: "Manage" used to click #nav_studio, dropping the doctor at the TOP of
+       AI Studio (owner: "wrong place"). The REAL management surface is the widget
+       builder modal's "My widgets" list (#cwList - Edit / Delete / Auto per
+       widget). Open THAT; Studio nav stays only as a fallback. */
+    var sb = $('mlsWdStudio'); if (sb) sb.onclick = function () {
+      if (typeof window.openWidgetBuilder === 'function') {
+        window.openWidgetBuilder();
+        setTimeout(function () { try { var l = $('cwList'); if (l) l.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 250);
+        return;
+      }
+      var n = $('nav_studio'); if (n) n.click();
+    };
     Array.prototype.slice.call(deck.querySelectorAll('[data-lib]')).forEach(function (b) {
       b.onclick = function () {
         var i = parseInt(b.getAttribute('data-lib'), 10);
