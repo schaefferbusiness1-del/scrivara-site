@@ -16839,7 +16839,10 @@
    * ===================================================================== */
   function todayCountUnscoped() {
     var t = todayLocal(), n = 0;
-    appts().forEach(function (a) { if (a && apptDay(a) === t) n++; });
+    appts().forEach(function (a) { if (!a || apptDay(a) !== t) return;
+      /* b253: owner-marked staff never count as appointments */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return; } catch (eSm) {}
+      n++; });
     return n;
   }
   function autoPullKey() { return 'mlsEz3AutoPull.' + todayLocal(); }
@@ -20997,7 +21000,10 @@
    * ===================================================================== */
   function todayCountUnscoped() {
     var t = todayLocal(), n = 0;
-    appts().forEach(function (a) { if (a && apptDay(a) === t) n++; });
+    appts().forEach(function (a) { if (!a || apptDay(a) !== t) return;
+      /* b253: owner-marked staff never count as appointments */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return; } catch (eSm) {}
+      n++; });
     return n;
   }
   function autoPullKey() { return 'mlsEz3AutoPull.' + todayLocal(); }
@@ -22911,7 +22917,10 @@
    * ===================================================================== */
   function todayCountUnscoped() {
     var t = todayLocal(), n = 0;
-    appts().forEach(function (a) { if (a && apptDay(a) === t) n++; });
+    appts().forEach(function (a) { if (!a || apptDay(a) !== t) return;
+      /* b253: owner-marked staff never count as appointments */
+      try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return; } catch (eSm) {}
+      n++; });
     return n;
   }
   function autoPullKey() { return 'mlsEz3AutoPull.' + todayLocal(); }
@@ -27045,6 +27054,7 @@
       var hero = mine.slice().sort(function (a, b) { return new Date(a.start_at) - new Date(b.start_at); });
       var seenKeys = {}, ded = [];
       hero.forEach(function (a) {
+        try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return; } catch (eSm) {} /* b253 */
         var k = norm(cleanName(a.name)) + '|' + S(a.time_display || a.start_local);
         if (!seenKeys[k]) { seenKeys[k] = 1; ded.push(a); }
       });
@@ -27726,6 +27736,7 @@
         var nm = String(a.patient || a.name || '').trim(); if (!nm) return;
         var k = nm.toLowerCase() + '|' + String(a.time || '');
         if (dupes[k]) return; dupes[k] = 1;
+        try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(nm)) return; } catch (eSm) {} /* b253 */
         out.push({ name: nm, time: a.time || '', provider: a.provider || a.doctor || '' });
       });
       if (out.length) window._heroTodayList = out;
@@ -30527,7 +30538,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b252';
+  window.__MLS_AV = window.__MLS_AV || 'b253';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30841,7 +30852,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b252';
+  var MLS_APP_BUILD='2026-07-13-b253';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
