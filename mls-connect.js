@@ -5464,6 +5464,15 @@
        on the light shell = unreadable (owner screenshot). Calm chip tokens. */
     '#mlsEz3 .ez3-nowtag{color:#2E6A4B !important;background:#EAF1EE !important;border-color:rgba(46,106,75,.45) !important;}',
     '#mlsEz3 .ez3-nowtag.next{color:#2E6A4B !important;}',
+    /* b247: same dark-theme-leftover family (owner screenshot #2) - the lateness
+       banner was pale yellow #fbe7a2 on translucent yellow. Calm warn tokens
+       (b193 family: amber ink on #FCF8EF). */
+    '#mlsEz3 .ez3-late{color:#8A5A00 !important;background:#FCF8EF !important;border-color:rgba(176,118,54,.45) !important;}',
+    /* b247: "Staff tools - day prep & schedule pulls" was tiny plain gray text
+       (owner: needs to be way more obvious) - now a real calm button. */
+    '#mlsEz3 .ez3fl-staffLink{background:#fff !important;border:1px solid #E7E5DD !important;color:#1A211C !important;font-size:13px !important;font-weight:600 !important;border-radius:10px !important;padding:9px 14px !important;box-shadow:0 1px 2px rgba(20,33,28,.04) !important;}',
+    '#mlsEz3 .ez3fl-staffLink:hover{background:#F0EEE7 !important;}',
+    '#mlsEz3 .ez3fl-staffLink b{color:#2E6A4B !important;}',
     '#mlsEz3 .ez3-note,#mlsEz3 .ez3-timer{color:#1A211C !important;}',
     '#mlsEz3 .ez3-modeseg button{color:#55605A !important;}',
     '#mlsEz3 .ez3-modeseg button.on{color:#1A211C !important;}',
@@ -30498,7 +30507,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b246';
+  window.__MLS_AV = window.__MLS_AV || 'b247';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30812,7 +30821,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b246';
+  var MLS_APP_BUILD='2026-07-13-b247';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
