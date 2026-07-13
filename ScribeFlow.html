@@ -11953,6 +11953,7 @@ let phoneMicCode='', phoneMicPollT=null, phoneMicSeen=0;
 async function startPhoneMic(){
   if(!backendMode()){ toast('Phone mic requires the hosted version.','err'); return; }
   const btn=document.getElementById('phoneMicBtn');
+  if(btn && btn.disabled) return; // in-flight guard: a second call must not capture 'Starting...' as the original label
   const orig=btn?btn.textContent:'';
   if(btn){ btn.disabled=true; btn.textContent='Starting…'; }
   try{

@@ -5504,6 +5504,14 @@
     '#mlsEz3 .ez3fl-openws{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #D9D6CD;border-radius:12px;color:#1A211C;font-size:13px;font-weight:600;cursor:pointer;padding:12px 16px;}',
     '#mlsEz3 .ez3fl-openws:hover{background:#F4F2EC;}',
     '#mlsEz3 .ez3fl-rechint{flex-basis:100%;font-size:12px;color:#79837C;margin-top:-2px;}',
+    '#mlsEz3 .ez3fl-quick{flex-basis:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}',
+    '#mlsEz3 .ez3fl-qlbl{font-size:10px;font-weight:700;letter-spacing:.07em;color:#A6AEA6;}',
+    '#mlsEz3 .ez3fl-qchip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;color:#55605A;font-size:12.5px;font-weight:600;cursor:pointer;padding:6px 12px;transition:background .15s ease,color .15s ease;}',
+    '#mlsEz3 .ez3fl-qchip:hover{background:#F4F2EC;color:#1A211C;}',
+    '.ez3fl-step{display:flex;align-items:baseline;gap:9px;margin:0 0 12px;}',
+    '.ez3fl-step .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#204034;color:#fff;font-size:12px;font-weight:700;flex:0 0 auto;transform:translateY(3px);}',
+    '.ez3fl-step .t{font-family:Newsreader,Georgia,serif;font-size:17px;font-weight:600;color:#1A211C;}',
+    '.ez3fl-step .s{font-size:12.5px;color:#79837C;}',
 
     /* 2) shared muted/secondary label color, used across the whole panel */
     '#mlsEz3 .ez3-sub,#mlsEz3 .ez3-status,#mlsEz3 .ez3-empty,#mlsEz3 .ez3-prov label,' +
@@ -5595,7 +5603,7 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.2.0';
+  var VERSION = 'fl-1.3.0';
   var _obs = null, _deb = null, _iv = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function onStaffScreen(body) {
@@ -5694,6 +5702,32 @@
           hint.className = 'ez3fl-rechint';
           hint.textContent = 'Records locally and drafts the note here - nothing goes to Athena until you review and send it.';
           rec.appendChild(rb); rec.appendChild(ob); rec.appendChild(hint);
+          /* (1a1) QUICK TOOLS - owner directive: surface the buried-but-useful
+             tools on the main easy section. Chips open the REAL controls via the
+             workspace (engine handlers only); the row lives inside .ez3fl-record
+             so the existing symmetric cleanup removes it with the CTA. */
+          var q = document.createElement('div');
+          q.className = 'ez3fl-quick';
+          var ql = document.createElement('span'); ql.className = 'ez3fl-qlbl'; ql.textContent = 'QUICK TOOLS'; q.appendChild(ql);
+          var mkq = function (html, tip, fn) { var c = document.createElement('button'); c.type = 'button'; c.className = 'ez3fl-qchip'; c.innerHTML = html; c.title = tip; c.addEventListener('click', fn); q.appendChild(c); };
+          mkq('&#128203; Paste a transcript', 'Open the visit workspace with the transcript box ready - type or paste the conversation', function () {
+            openWorkspace(false);
+            setTimeout(function () { try { var tx = $('transcript'); if (tx) { tx.scrollIntoView({ block: 'center', behavior: 'smooth' }); tx.focus(); } } catch (e) {} }, 800);
+          });
+          mkq('&#128241; Record on phone', 'Use your phone as the microphone - a QR code pairs it to this visit', function () {
+            openWorkspace(false);
+            setTimeout(function () { try { if (typeof window.__mlsStartPhoneMicFromEasy === 'function') { window.__mlsStartPhoneMicFromEasy(); } else { var pm = $('phoneMicBtn'); if (pm) pm.click(); } } catch (e) {} }, 800);
+          });
+          mkq('&#128196; After-visit summary', 'A patient-friendly summary of this visit - preview first, nothing sends by itself', function () {
+            openWorkspace(false);
+            setTimeout(function () { try { var ab = $('mlsavsBtn') || $('mlsApvNoteBtn'); if (ab) ab.click(); } catch (e) {} }, 800);
+          });
+          mkq('&#128221; Orders', 'See or edit the orders that ride along when you send the visit to Athena', function () {
+            openWorkspace(false);
+            setTimeout(function () { try { var oc = $('visitOrdersCard'); if (oc) oc.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 800);
+          });
+          rec.appendChild(q);
+
           wrap.insertBefore(rec, row2);
         }
       }
@@ -5710,6 +5744,27 @@
         var advB = $('ez3Adv');
         if (advB && /advanced tools/i.test(advB.textContent || '')) {
           advB.innerHTML = /hide/i.test(advB.textContent) ? '&#9650; Hide visit workspace' : '&#128295; Visit workspace &amp; tools';
+        }
+      } catch (e) {}
+
+      /* (1a2b) plain words: "Prep notes" is the op-note prep + draft entry */
+      try {
+        var opB = $('ez3Prep');
+        if (opB && /prep notes/i.test(opB.textContent || '')) opB.innerHTML = '&#128137; Op note &mdash; prep &amp; draft';
+      } catch (e) {}
+      /* (1a2c) workspace step banners - one-time, injected INSIDE the static
+         cards (never as grid siblings) so the 3-column layout is untouched */
+      try {
+        if (document.body.classList.contains('ez3adv')) {
+          var mkStep = function (id, target, num, title, sub) {
+            var t = $(target); if (!t || $(id)) return;
+            var d = document.createElement('div'); d.id = id; d.className = 'ez3fl-step';
+            d.innerHTML = '<span class="n">' + num + '</span><span class="t">' + title + '</span><span class="s">' + sub + '</span>';
+            t.insertBefore(d, t.firstChild);
+          };
+          mkStep('mlsAtStep1', 'captureCard', '1', 'Capture the visit', 'Record, use your phone as a mic, or paste the conversation.');
+          mkStep('mlsAtStep2', 'noteCard', '2', 'Review the note', 'Edit anything - then sign, save to history, or send to Athena.');
+          mkStep('mlsAtStep3', 'emrCard', '3', 'Codes & billing', 'The E/M, CPT and ICD fields Athena receives - check before you send.');
         }
       } catch (e) {}
       var row = body.querySelector('.ez3-advrow') || body.querySelector('.ez3-row2');
@@ -30325,7 +30380,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b234';
+  window.__MLS_AV = window.__MLS_AV || 'b235';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30639,7 +30694,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b234';
+  var MLS_APP_BUILD='2026-07-13-b235';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
