@@ -25,7 +25,7 @@
 ;(function () {
   "use strict";
   try { if (window.__mlsRedesign && window.__mlsRedesign.installed) return; } catch (e) { return; }
-  var VERSION = "3.0.0", ASSET = "feat_mls_redesign.js";
+  var VERSION = "3.1.0", ASSET = "feat_mls_redesign.js";
   var FONT_ID = "mlsRdFont", STYLE_ID = "mlsRdStyle", CLS = "mls-redesign";
   var FONT_HREF = "fonts/fonts.css"; /* self-hosted Newsreader + Public Sans */
   var _obs = null, _t = null;
@@ -73,6 +73,25 @@
 "#mlsRdSearchSlot .mlsRdSearch{ width:100%; height:38px; border-radius:10px; border:1px solid #E4E1D8; background:var(--card); color:var(--ink); padding:0 34px 0 36px; font-size:13.5px; outline:none; transition:border-color .15s, box-shadow .15s; }",
 "#mlsRdSearchSlot .mlsRdSearch:focus{ border-color:var(--brand); box-shadow:0 0 0 3px rgba(46,106,75,.12); }",
 "#mlsRdKbd{ position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#A6AEA6; font-size:10.5px; border:1px solid var(--line); border-radius:5px; padding:2px 6px; background:var(--field-bg); }",
+
+"/* ---- '+ New' quick actions in the top bar (v3.1.0) ---- */",
+"#mlsRdNewBtn{ display:inline-flex; align-items:center; gap:7px; height:38px; padding:0 15px; border-radius:10px; border:none; background:var(--brand-dk); color:#fff; font-size:13px; font-weight:700; cursor:pointer; flex:none; box-shadow:0 8px 20px -8px rgba(32,64,52,.6); transition:background .18s ease, transform .12s ease; }",
+"#mlsRdNewBtn:hover{ background:#28503f; }",
+"#mlsRdNewBtn:active{ transform:translateY(1px); }",
+"#mlsRdNewBtn .plus{ font-size:17px; line-height:1; font-weight:600; }",
+"#mlsRdNewMenu{ position:fixed; z-index:99981; display:none; flex-direction:column; min-width:216px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:6px; box-shadow:0 1px 2px rgba(20,33,28,.04),0 16px 40px rgba(20,33,28,.14); }",
+"#mlsRdNewMenu.open{ display:flex; animation:mlsRdNewIn .16s ease; }",
+"@keyframes mlsRdNewIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }",
+"@media (prefers-reduced-motion: reduce){ #mlsRdNewMenu.open{ animation:none; } }",
+"#mlsRdNewMenu button{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:transparent; border:0; border-radius:8px; padding:9px 11px; font-size:13.5px; font-weight:600; color:var(--ink); cursor:pointer; }",
+"#mlsRdNewMenu button:hover{ background:#F0EEE7; }",
+"body.theme-dark #mlsRdNewMenu button:hover{ background:#1F2721; }",
+"/* The floating '+' FAB (#mlsFab) duplicated these actions and cluttered the",
+"   bottom-right corner (owner report: easy to miss next to the other floating",
+"   pills, esp. during op-note work). Desktop hides it; phones KEEP it - at",
+"   <=760px it is the ONE consolidated FAB that __mlsFabTidy folds rows into. */",
+"@media (min-width:761px){ body.mls-rd-shell #mlsFab, body.mls-rd-shell #mlsFabMenu{ display:none !important; } }",
+"@media (max-width:760px){ #mlsRdNewBtn{ display:none; } }",
 
 "/* ---- nav rail ---- */",
 "#mlsRdNav{ position:fixed; left:0; top:0; bottom:0; width:var(--rail-w); z-index:65; background:var(--bg); border-right:1px solid var(--line); display:flex; flex-direction:column; padding:14px 12px 12px; overflow:hidden; }",
@@ -230,6 +249,42 @@
       return a.getBoundingClientRect().height>40; }catch(e){ return false; }
   }
   function setFab(hide){ try{ ['mls-assist-badge','mlsAddPtLauncher'].forEach(function(id){ var e=$(id); if(e) e.style.display=hide?'none':''; }); }catch(e){} }
+
+  /* '+ New' quick actions in the top bar (v3.1.0). Same six actions as the
+     floating '+' FAB (#mlsFab, ScribeFlow ~7650) - the FAB stays the mobile
+     home for these (<=760px), desktop gets this always-visible button instead.
+     Actions dispatch to the app's real global functions; nothing reimplemented. */
+  function ensureNewBtn(){
+    try{
+      var meSlot=$('mlsRdMenuSlot'); if(!meSlot || $('mlsRdNewBtn')) return;
+      var b=mk('button','','<span class="plus">+</span> New'); b.id='mlsRdNewBtn'; b.type='button'; b.title='Quick actions';
+      meSlot.insertBefore(b, meSlot.firstChild);
+      var menu=mk('div'); menu.id='mlsRdNewMenu'; document.body.appendChild(menu);
+      var ACTS=[
+        ['Ask Copilot', function(){ try{ if(typeof openCopilotDock==='function') openCopilotDock(); else if(typeof openCopilot==='function') openCopilot(); }catch(e){} }],
+        ['New patient', function(){ try{ if(typeof showView==='function') showView('patients'); if(typeof newPatient==='function') setTimeout(newPatient,40); }catch(e){} }],
+        ['New visit', function(){ try{ if(typeof showView==='function') showView('visit'); if(typeof newVisit==='function') newVisit(); }catch(e){} }],
+        ['New appointment', function(){ try{ if(typeof calScheduleForPatient==='function') calScheduleForPatient(); }catch(e){} }],
+        ['Find anything', function(){ try{ if(typeof mlsQuickFind==='function') mlsQuickFind(); }catch(e){} }],
+        ['Waiting room', function(){ try{ if(typeof showView==='function') showView('visit'); }catch(e){} }]
+      ];
+      function close(){ menu.classList.remove('open'); }
+      function open(){
+        menu.innerHTML='';
+        ACTS.forEach(function(a){ var r=document.createElement('button'); r.type='button'; r.textContent=a[0];
+          r.addEventListener('click',function(ev){ ev.stopPropagation(); close(); a[1](); }); menu.appendChild(r); });
+        var r=b.getBoundingClientRect();
+        menu.style.top=(r.bottom+8)+'px';
+        menu.style.right=Math.max(8, window.innerWidth-r.right)+'px';
+        menu.classList.add('open');
+      }
+      b.addEventListener('click',function(e){ try{ e.stopPropagation(); }catch(_){}
+        if(menu.classList.contains('open')) close(); else open(); });
+      document.addEventListener('click',function(e){ try{ if(menu.classList.contains('open') && !b.contains(e.target) && !menu.contains(e.target)) close(); }catch(_){} }, true);
+      document.addEventListener('keydown',function(e){ try{ if((e.key==='Escape'||e.key==='Esc') && menu.classList.contains('open')) close(); }catch(_){} });
+      window.addEventListener('resize', close);
+    }catch(e){}
+  }
   function hideChrome(){ try{ var t=$('mlsRdTop'),n=$('mlsRdNav'); if(t)t.style.display='none'; if(n)n.style.display='none'; if(document.body)document.body.classList.remove('mls-rd-shell'); setFab(true); }catch(e){} }
 
   function userInfo(){
@@ -355,6 +410,7 @@
     var nav=document.querySelector('.mainnav');
     if(nav && navWrap && nav.parentElement!==navWrap){ var foot2=$('mlsRdRailFoot'); if(foot2) navWrap.insertBefore(nav,foot2); else navWrap.appendChild(nav); }
     try{ var _t2=$('mlsRdTop'),_n=$('mlsRdNav'); if(_t2)_t2.style.display=''; if(_n)_n.style.display=''; if(document.body)document.body.classList.add('mls-rd-shell'); setFab(false); }catch(e){}
+    ensureNewBtn();
     syncTitle();
     refreshUserChip();
     return true;
