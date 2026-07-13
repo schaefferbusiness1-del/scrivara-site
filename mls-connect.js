@@ -5454,6 +5454,8 @@
     '#mlsEz3 .ez3-prow{color:#1A211C !important;}',
     '#mlsEz3 .ez3-loadcard,#mlsEz3 .ez3-loadcard .l2{color:#55605A !important;}',
     '#mlsEz3 .ez3-pull .plog{color:#55605A !important;}',
+    '#mlsEz3 .ez3-pull .pw{color:#B07636 !important;background:#FCF8EF !important;border-color:#EFE4CE !important;}',
+    '#mlsEz3 .ez3-pull .pw b,#mlsEz3 .ez3-pull .pw strong{color:#8A5A22 !important;}',
     '#mlsEz3 .ez3-qchip .qt{color:#79837C !important;}',
     '#mlsEz3 .ez3-qchip.on .qt{color:#EAF1EC !important;}',
     '#mlsEz3 .ez3-search input::placeholder{color:#A6AEA6 !important;}',
@@ -5604,7 +5606,7 @@
     var btn = [].slice.call(seg.querySelectorAll('button')).filter(function (b) { return want.test(b.textContent || ''); })[0];
     if (!btn) return;
     if (!p.clicked) { p.clicked = true; btn.click(); return; /* next ensure() pass fills dates */ }
-    if (p.kind === 'tomorrow') { _pendingRange = null; return; }
+    if (p.kind === 'tomorrow') { _pendingRange = null; revealRange(seg); return; }
     var f = body.querySelector('#ez3From'), t = body.querySelector('#ez3To');
     if (!f || !t) return;
     try {
@@ -5613,6 +5615,12 @@
       t.dispatchEvent(new Event('change', { bubbles: true }));
     } catch (e) {}
     _pendingRange = null;
+    revealRange(seg);
+  }
+  /* land the user on the schedule scoper, not the month-pull card at the top
+     of the staff workspace — they asked for a day, show them the day */
+  function revealRange(seg) {
+    try { setTimeout(function () { seg.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 80); } catch (e) {}
   }
   function ensure() {
     /* the day-hist FAB's own body-appended stylesheet wins the !important
@@ -30516,7 +30524,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b192';
+  var MLS_APP_BUILD='2026-07-13-b193';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
