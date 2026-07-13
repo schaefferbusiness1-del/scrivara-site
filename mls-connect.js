@@ -30541,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b255';
+  window.__MLS_AV = window.__MLS_AV || 'b256';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b255';
+  var MLS_APP_BUILD='2026-07-13-b256';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -39230,5 +39230,126 @@
     try { st.remove(); } catch (e) {}
     ['mlsSmBtn', 'mlsSmList'].forEach(function (id) { try { var e2 = $(id); if (e2) e2.remove(); } catch (e) {} });
     api.installed = false; delete window.__mlsStaffMark;
+  };
+})();
+
+/* ===== __mlsProfCalm pf2-1.0.0 (2026-07-13, b256 - owner: "Patients tab messy -
+ * click into a record, top summary boxes look good, everything below falls
+ * apart"). Ground truth on a real record: ~3,600px of 16 stacked cards, incl.
+ * THREE visit lists (VisitHistoryExt 722px + hidden legacy + a 616px classic
+ * "Visit timeline" duplicate).
+ * FIX - information architecture, not restyling: keep the good top (verify,
+ * header, at-a-glance, copy bar, THE visit history, prep-summary trio); ADOPT
+ * the remaining boxes into calm COLLAPSIBLE sections (closed by default, the
+ * box's own title on the row):
+ *   Problems, meds & history <- .prof-grid
+ *   Insurance & benefits     <- #insBox
+ *   Documents & outside records <- Documents prof-box + #mlsOrBox
+ *   Visit timeline (classic) <- the duplicate timeline prof-box
+ *   Vitals & misc            <- #mlsVtlCard + strays
+ * DOM MOVES ONLY (inline handlers are globals - the proven adopt pattern);
+ * nothing deleted, one click reopens anything. Re-renders re-adopt on the next
+ * ensure pass. Reversible: revert(). ES5. */
+(function () {
+  if (window.__mlsProfCalm) return;
+  var api = { installed: true, version: 'pf2-1.0.0' };
+  window.__mlsProfCalm = api;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+
+  var st = document.createElement('style'); st.id = 'mlsPf2Css';
+  st.textContent = [
+    '.pf2-sec{background:#fff;border:1px solid #E7E5DD;border-radius:12px;margin:10px 0;overflow:hidden;}',
+    '.pf2-h{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:#FCFBF8;border:0;padding:11px 14px;cursor:pointer;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;}',
+    '.pf2-h:hover{background:#F0EEE7;}',
+    '.pf2-h .ar{margin-left:auto;color:#79837C;font-size:11px;transition:transform .15s;}',
+    '.pf2-sec.open .pf2-h .ar{transform:rotate(90deg);}',
+    '.pf2-b{display:none;padding:4px 10px 10px;}',
+    '.pf2-sec.open .pf2-b{display:block;}',
+    '.pf2-b > *{margin-top:8px !important;}',
+    '@media (prefers-reduced-motion: reduce){.pf2-h .ar{transition:none;}}'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(st);
+
+  var SECS = [
+    { id: 'pf2Records', label: '🩺 Problems, meds & history' },
+    { id: 'pf2Ins',     label: '💳 Insurance & benefits' },
+    { id: 'pf2Docs',    label: '📎 Documents & outside records' },
+    { id: 'pf2Classic', label: '📚 Visit timeline (classic view)' },
+    { id: 'pf2Misc',    label: '📈 Vitals & extras' }
+  ];
+  function mkSec(def, host, before) {
+    var s = document.createElement('div'); s.id = def.id; s.className = 'pf2-sec';
+    s.innerHTML = '<button type="button" class="pf2-h">' + def.label + '<span class="ar">▶</span></button><div class="pf2-b"></div>';
+    s.querySelector('.pf2-h').addEventListener('click', function () { s.classList.toggle('open'); });
+    host.insertBefore(s, before || null);
+    return s;
+  }
+  function bodyOf(id) { var s = $(id); return s ? s.querySelector('.pf2-b') : null; }
+
+  function classify(el) {
+    var id = el.id || '', cls = String(el.className || '');
+    var head = ''; try { head = (el.querySelector('h2,h3,b') || {}).textContent || ''; } catch (e) {}
+    head = String(head).toLowerCase();
+    if (id === 'insBox') return 'pf2Ins';
+    if (id === 'mlsOrBox') return 'pf2Docs';
+    if (id === 'mlsVtlCard') return 'pf2Misc';
+    if (/prof-grid/.test(cls)) return 'pf2Records';
+    if (/prof-box/.test(cls)) {
+      if (/document/.test(head)) return 'pf2Docs';
+      if (/timeline/.test(head)) return 'pf2Classic';
+      return 'pf2Misc';
+    }
+    return null;
+  }
+
+  function ensure() {
+    try {
+      var pc = $('profileCard');
+      if (!pc || pc.offsetParent === null) return;
+      /* anchor: sections sit AFTER the good top block. Anchor = the risks box if
+         present, else the prep-summary box, else the at-glance line. */
+      var anchor = $('mlsEpRisksBox') || $('mlsEpSummaryBox') || $('profAtGlance');
+      if (!anchor || anchor.parentElement !== pc) return;
+      var before = anchor.nextSibling;
+      for (var i = 0; i < SECS.length; i++) { if (!$(SECS[i].id)) mkSec(SECS[i], pc, before); }
+      /* adopt: any DIRECT child of profileCard below the anchor that classifies */
+      var moved = 0;
+      var kids = Array.prototype.slice.call(pc.children);
+      var past = false;
+      for (var k = 0; k < kids.length; k++) {
+        var el = kids[k];
+        if (el === anchor) { past = true; continue; }
+        if (!past) continue;
+        if (/^pf2/.test(el.id || '')) continue;
+        var dest = classify(el);
+        if (!dest) continue;
+        var b = bodyOf(dest);
+        if (b && el.parentElement === pc) { b.appendChild(el); moved++; }
+      }
+      /* hide section shells whose body is empty or content-free */
+      for (var j = 0; j < SECS.length; j++) {
+        var s = $(SECS[j].id); if (!s) continue;
+        var bb = s.querySelector('.pf2-b');
+        var hasContent = bb && bb.children.length > 0 && (bb.innerText || '').trim().length > 0;
+        s.style.display = hasContent ? '' : 'none';
+      }
+    } catch (e) {}
+  }
+  var iv = setInterval(function () { try { ensure(); } catch (e) {} }, 1400);
+  ensure();
+  api.ensure = ensure;   /* manual hook (hidden panes skip ticks - RC3) */
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try {
+      var pc = $('profileCard');
+      SECS.forEach(function (d) {
+        var s = $(d.id); if (!s) return;
+        var b = s.querySelector('.pf2-b');
+        while (b && b.firstChild && pc) pc.appendChild(b.firstChild);
+        s.remove();
+      });
+    } catch (e) {}
+    try { st.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsProfCalm;
   };
 })();
