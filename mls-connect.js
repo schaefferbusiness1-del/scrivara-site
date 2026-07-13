@@ -28864,14 +28864,13 @@
     try { if (typeof window.showView === "function") window.showView("visit"); } catch (e) {}
   }
   function menuItem() {
-    try {
-      var panel = $("mlsTbMenuPanel"); if (!panel || $("mlsB39MenuItem")) return;
-      var btn = document.createElement("button");
-      btn.id = "mlsB39MenuItem"; btn.className = "mlsTbItem"; btn.type = "button";
-      btn.innerHTML = "\u{1F4D8} How-To Guide";
-      btn.onclick = function () { try { panel.style.display = "none"; } catch (e) {} startTour(); };
-      panel.insertBefore(btn, panel.firstChild);
-    } catch (e) {}
+    /* Editorial Calm consolidation (2026-07-13): this legacy "How-To Guide" row
+       duplicated the newer "Guided tour / How-to" Menu row (ONE help entry now),
+       and its inline panel.style.display='none' close path was the documented
+       menu-wedge bug. The row no longer mounts; the tour itself stays reachable
+       via the Guided tour row + Help. Remove any copy an older cache mounted. */
+    try { var stale = $("mlsB39MenuItem"); if (stale) stale.remove(); } catch (e) {}
+    return;
   }
   var _autoTried = false;
   function autoStart() {
