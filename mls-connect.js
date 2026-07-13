@@ -30541,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b258';
+  window.__MLS_AV = window.__MLS_AV || 'b259';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b258';
+  var MLS_APP_BUILD='2026-07-13-b259';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -39519,6 +39519,45 @@
       .catch(function () { agentBusy = false; });
   }
   var agentIv = setInterval(function () { try { agentTick(); } catch (e) { agentBusy = false; } }, 4000);
+  /* b259: presence beacon - lets a PHONE say honestly whether this office
+     computer is reachable before the doctor relies on it. 45s, fetch-driven. */
+  function beacon() {
+    if (!authed() || !api.extPresent()) return;
+    fetch(base() + '/api/relay/presence', { method: 'POST', headers: H(), body: JSON.stringify({ ext: true }) }).catch(function () {});
+  }
+  var beaconIv = setInterval(function () { try { beacon(); } catch (e) {} }, 45000);
+  setTimeout(function () { try { beacon(); } catch (e) {} }, 6000);
+
+  /* b259: PHONE-MODE STATUS BAR - the ?phone=1 QR landing (and any signed-in
+     no-extension device) shows a live, honest office-computer status at the
+     top of the visit flow. */
+  var phoneMode = false;
+  try { phoneMode = new URLSearchParams(location.search).get('phone') === '1'; } catch (e) {}
+  function phoneBarTick() {
+    try {
+      if (!authed()) return;
+      if (!phoneMode && api.extPresent()) { var old = $('mlsRlPhoneBar'); if (old) old.remove(); return; }
+      if (!phoneMode && !api.shouldRelay()) return;
+      var body = $('mlsEz3Body'); if (!body) return;
+      var bar = $('mlsRlPhoneBar');
+      if (!bar) {
+        bar = document.createElement('div'); bar.id = 'mlsRlPhoneBar';
+        bar.style.cssText = 'display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:9px 13px;margin:0 0 10px;font:600 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;box-shadow:0 1px 2px rgba(20,33,28,.04)';
+        bar.innerHTML = '<span>📱 Phone mode</span><span id="mlsRlPresence" style="color:#79837C;font-weight:500">— checking your office computer…</span>';
+        body.insertBefore(bar, body.firstChild);
+      }
+      fetch(base() + '/api/relay/presence', { headers: H() })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (p) {
+          var el = $('mlsRlPresence'); if (!el || !p) return;
+          if (p.online && p.ext) { el.textContent = '— office computer connected ✓ (' + (p.ageSec != null ? p.ageSec + 's ago' : 'just now') + '). Pulls you start here run there.'; el.style.color = '#2E6A4B'; }
+          else { el.textContent = '— office computer NOT reachable ✗. Open MLS there (with the extension) to pull from Athena.'; el.style.color = '#8A5A00'; }
+        }).catch(function () {});
+    } catch (e) {}
+  }
+  var phoneIv = setInterval(function () { try { phoneBarTick(); } catch (e) {} }, 30000);
+  setTimeout(function () { try { phoneBarTick(); } catch (e) {} }, 3000);
+  api.phoneBarTick = phoneBarTick;
 
   /* =================== PHONE SIDE =================== */
   api.pullDay = function (date, hooks) {
@@ -39593,8 +39632,8 @@
   api.ensureCard = ensureCard;
 
   api.revert = function () {
-    try { clearInterval(agentIv); clearInterval(cardIv); } catch (e) {}
-    try { var c = $('mlsRlCard'); if (c) c.remove(); } catch (e) {}
+    try { clearInterval(agentIv); clearInterval(cardIv); clearInterval(beaconIv); clearInterval(phoneIv); } catch (e) {}
+    try { var c = $('mlsRlCard'); if (c) c.remove(); var pb = $('mlsRlPhoneBar'); if (pb) pb.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsRelayLink;
   };
 })();
