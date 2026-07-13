@@ -474,13 +474,28 @@
   }
   var _schedT=null;
   function schedule(){ if(_schedT) return; _schedT=setTimeout(function(){ _schedT=null; applyAll(); },120); }
+  /* the nav .on class flips without childList mutations, so the observer never
+     sees a view switch — wrap showView additively (guarded) for an instant,
+     always-correct title. */
+  function wrapShowViewForTitle(){
+    try{
+      if(typeof window.showView!=='function'||window.showView.__rdTitleWrapped) return;
+      var orig=window.showView;
+      var w=function(){ var r; try{ r=orig.apply(this,arguments); }catch(e){}
+        try{ setTimeout(syncTitle,0); }catch(e){} return r; };
+      w.__rdTitleWrapped=true; w.__rdTitleOrig=orig;
+      window.showView=w;
+    }catch(e){}
+  }
   function boot(){
     injectFonts();
     try{ _obs=new MutationObserver(function(){ schedule(); }); }catch(e){}
+    wrapShowViewForTitle();
     applyAll();
-    var n=0; _t=setInterval(function(){ applyAll(); if(++n>15) clearInterval(_t); }, 700);
+    var n=0; _t=setInterval(function(){ applyAll(); wrapShowViewForTitle(); if(++n>15) clearInterval(_t); }, 700);
   }
   function revert(){ try{if(_obs)_obs.disconnect();}catch(e){} try{if(_t)clearInterval(_t);}catch(e){}
+    try{ if(window.showView&&window.showView.__rdTitleWrapped&&window.showView.__rdTitleOrig) window.showView=window.showView.__rdTitleOrig; }catch(e){}
     try{var s=$(STYLE_ID);if(s)s.remove();}catch(e){} try{var f=$(FONT_ID);if(f)f.remove();}catch(e){}
     try{document.documentElement.classList.remove(CLS);document.documentElement.classList.remove('mls-rail-open');if(document.body){document.body.classList.remove(CLS);document.body.classList.remove('mls-rd-shell');}}catch(e){}
     try{var hdr=$('appHeader'); if(hdr){ hdr.classList.remove('mlsRdHdr'); hdr.style.cssText='';

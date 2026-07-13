@@ -95,19 +95,19 @@
       "." + HIDE + "{display:none !important;}" +
       "#mlsPqsPanel{display:none !important;}" + // suppress native patient-only dropdown
       "#" + MENU_ID + "{position:relative;display:inline-flex;}" +
-      "#" + BTN_ID + "{appearance:none;cursor:pointer;font-family:inherit;font-weight:700;" +
-        "font-size:14px;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.45);" +
+      "#" + BTN_ID + "{appearance:none;cursor:pointer;font-family:inherit;font-weight:600;" +
+        "font-size:13.5px;color:#55605A;background:#fff;border:1px solid #E4E1D8;" +
         "border-radius:10px;padding:8px 14px;display:inline-flex;align-items:center;gap:8px;line-height:1;}" +
-      "#" + BTN_ID + ":hover{background:rgba(255,255,255,.24);}" +
+      "#" + BTN_ID + ":hover{background:#F4F2EC;color:#1A211C;}" +
       "#" + PANEL_ID + "{position:absolute;top:calc(100% + 8px);right:0;min-width:230px;z-index:100000;" +
-        "background:#0f2036;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:6px;" +
-        "box-shadow:0 14px 40px rgba(0,0,0,.45);display:none;}" +
+        "background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:6px;" +
+        "box-shadow:0 1px 2px rgba(20,33,28,.04),0 18px 44px -16px rgba(20,33,28,.25);display:none;}" +
       "#" + PANEL_ID + ".open{display:block;}" +
-      "#" + PANEL_ID + " .mlsTbWho{font-size:12px;color:#C9DCD2;padding:8px 10px 6px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:4px;word-break:break-all;}" +
-      "#" + PANEL_ID + " button.mlsTbItem{width:100%;text-align:left;background:transparent;border:0;color:#EAF1EC;" +
+      "#" + PANEL_ID + " .mlsTbWho{font-size:12px;color:#79837C;padding:8px 10px 6px;border-bottom:1px solid #EFEDE6;margin-bottom:4px;word-break:break-all;}" +
+      "#" + PANEL_ID + " button.mlsTbItem{width:100%;text-align:left;background:transparent;border:0;color:#1A211C;" +
         "font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;padding:10px 12px;" +
         "display:flex;align-items:center;gap:10px;}" +
-      "#" + PANEL_ID + " button.mlsTbItem:hover{background:rgba(255,255,255,.12);}" +
+      "#" + PANEL_ID + " button.mlsTbItem:hover{background:#F0EEE7;}" +
       "#" + PANEL_ID + " button.mlsTbItem .mlsTbIco{width:18px;text-align:center;}";
     var st = document.createElement("style");
     st.id = STYLE_ID; st.textContent = css;
