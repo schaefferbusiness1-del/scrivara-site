@@ -28087,7 +28087,10 @@
   if (window.__mlsBLTidyB42) return;
 
   var GAP = 10, LEFT0 = 12;
-  var ROW = ['_patientFace', 'mlsCopVoiceBtn', 'mlsAsstFab'];
+  /* 2026-07-13 corner cleanup: the floating patient avatar is gone (the patient
+     banner + rail already own that access); the extension's Athena-tab chip
+     joins this row so the bottom-right corner belongs to the + FAB alone */
+  var ROW = ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'];
   var savedStyle = {};
   var origBtnHTML = null;
   var timers = [], obs = [];
@@ -28115,7 +28118,8 @@
         if (!(id in savedStyle)) savedStyle[id] = el.getAttribute('style');
         setImp(el, 'left', x + 'px');
         setImp(el, 'right', 'auto');
-        if (id === '_patientFace') setImp(el, 'bottom', '12px');
+        setImp(el, 'bottom', '14px');
+        setImp(el, 'top', 'auto');
         x += el.getBoundingClientRect().width + GAP;
       });
     } catch (e) {}
@@ -30295,7 +30299,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b204';
+  window.__MLS_AV = window.__MLS_AV || 'b205';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30609,7 +30613,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b204';
+  var MLS_APP_BUILD='2026-07-13-b205';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -36957,7 +36961,7 @@
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623c1';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm17';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260713calm18';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
 
 
 ;(function(){try{if(!document.querySelector('script[data-mls-exact-enable]')){var m=document.createElement('script');m.type='text/plain';m.src='data:,mls-connect.staging.js';m.setAttribute('data-mls-exact-enable','1');(document.head||document.documentElement).appendChild(m);}}catch(e){}})(); /* MLS prod-enable: satisfies *_exact isStaging() gate without loading the staging bundle; REVERT: delete this line + the 14 *_exact loader lines below */
@@ -38241,3 +38245,54 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_ptcard_contain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_ptcard_contain.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_ptcard_contain.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient-list card containment: names/chips/context can no longer paint outside the card box on narrow widths (window.__mlsPtCardContain ptc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_label.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_label.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_label.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE canonical provider-name resolver (window.__mlsProviderLabel) + normalizes _calProviders so every dropdown shows real names instead of "Provider undefined"/"[object Object]"/"Provider N" (plbl-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_dock_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_dock_fix.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_copilot_dock_fix.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* fixes the BLANK MLS Copilot dock: borrows the chat nodes (merged into the Assistant panel) back into #copilotCard on open, returns them on close (window.__mlsCopilotDockFix cdf-1.0.0; revert()) */
+
+/* =============================================================================
+ * __mlsFabTidy  ft-1.0.0   (2026-07-13 bottom-corner cleanup, owner directive)
+ * -----------------------------------------------------------------------------
+ * ONE floating action button owns quick actions. The floating patient avatar
+ * and the standalone "Add patient (per-visit)" launcher retire everywhere
+ * (the patient banner + rail own patient access; the FAB menu gains an
+ * Add-patient row that clicks the REAL hidden launcher - zero feature loss).
+ * On phones (<=760px) the Voice / Assistant / Athena-tab pills are hidden by
+ * the shell's phone layer; their features ride in the FAB menu the same way.
+ * Reversible: window.__mlsFabTidy.revert(). ASCII-only.
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  if (window.__mlsFabTidy) return;
+  var api = { version: 'ft-1.0.0', installed: true };
+  window.__mlsFabTidy = api;
+  function $(id) { return document.getElementById(id); }
+  var st = document.createElement('style');
+  st.id = 'mlsFtCss';
+  st.textContent = '#_patientFace,#mlsAddPtLauncher{display:none !important;}';
+  (document.head || document.documentElement).appendChild(st);
+
+  function row(label, fn) {
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+    b.className = 'mls-ft-row';
+    b.style.cssText = 'background:var(--card,#fff);color:var(--ink,#1A211C);border:1px solid var(--line,#E7E5DD);border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(20,33,28,.18);white-space:nowrap';
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      try { fn(); } catch (e) {}
+      try { var m = $('mlsFabMenu'); if (m) m.style.display = 'none'; var f = $('mlsFab'); if (f) f.style.transform = 'none'; } catch (e) {}
+    });
+    return b;
+  }
+  function augment() {
+    var m = $('mlsFabMenu');
+    if (!m || m.style.display === 'none' || m.querySelector('.mls-ft-row')) return;
+    var phone = window.innerWidth <= 760;
+    var addPt = $('mlsAddPtLauncher');
+    if (addPt) m.appendChild(row('➕ Add patient (per-visit)', function () { addPt.click(); }));
+    if (phone) {
+      var v = $('mlsCopVoiceBtn'); if (v) m.appendChild(row('🎙 Copilot Voice', function () { v.click(); }));
+      var a = $('mlsAsstFab'); if (a) m.appendChild(row('🩺 MLS Assistant', function () { a.click(); }));
+      var t = $('mlsTabPickerChip'); if (t) m.appendChild(row('🔗 Athena tab', function () { t.click(); }));
+    }
+  }
+  document.addEventListener('click', function (ev) {
+    if (ev.target && ev.target.closest && ev.target.closest('#mlsFab')) setTimeout(augment, 90);
+  }, true);
+  api.revert = function () { try { st.remove(); } catch (e) {} api.installed = false; delete window.__mlsFabTidy; };
+})();
