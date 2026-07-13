@@ -3,31 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="fonts/fonts.css">
 <title>MLS Reputation — Review Finder</title>
 <style>
-  /* Rethemed 2026-07-06 (task-9): light MLS palette to match ScribeFlow,
-     patient-portal, send-portal-invite and phone pages. Structure unchanged. */
-  :root{ --bg:#f4f8fd; --card:#ffffff; --card2:#f7fafe; --line:#e4ebf3; --ink:#0d2338; --mut:#5b6b7c; --blue:#1f7ae0; --blue-d:#15528f; --green:#16a34a; --amber:#d97706; --violet:#7c3aed; }
+  /* Rethemed 2026-07-13: Editorial Calm palette transplant (b197).
+     Previously:      patient-portal, send-portal-invite and phone pages. Structure unchanged. */
+  :root{ --bg:#FBFAF7; --card:#ffffff; --card2:#F6FBF8; --line:#E7E5DD; --ink:#1A211C; --mut:#55605A; --blue:#2E6A4B; --blue-d:#204034; --green:#3B7C5A; --amber:#B07636; --violet:#7A5CC0; }
   *{box-sizing:border-box}
-  body{margin:0;background:linear-gradient(160deg,#f4f8fd,#e9f1fb 60%,#f4f8fd);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh}
+  body{margin:0;background:linear-gradient(160deg,#FBFAF7,#F4F2EC 60%,#FBFAF7);color:var(--ink);font:15px/1.5 "Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh}
   a{color:var(--blue)}
   .wrap{max-width:1040px;margin:0 auto;padding:26px 18px 80px}
   .top{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-  .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#1f7ae0,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:20px}
+  .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#204034,#2E6A4B);display:flex;align-items:center;justify-content:center;font-size:20px}
   h1{font-size:24px;margin:0;color:var(--blue-d)}
   .sub{color:var(--mut);font-size:13px;margin:2px 0 22px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 2px 16px rgba(23,64,120,.09)}
   .card h2{font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:9px;color:var(--blue-d)}
   .card .hint{color:var(--mut);font-size:13px;margin:0 0 16px}
   label{display:block;font-size:12px;color:var(--blue-d);font-weight:700;margin:0 0 5px}
-  input,textarea,select{width:100%;background:#fbfdff;border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 12px;font-size:14px;font-family:inherit}
-  input:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(31,122,224,.15)}
+  input,textarea,select{width:100%;background:#FCFBF8;border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 12px;font-size:14px;font-family:inherit}
+  input:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(46,106,75,.15)}
   textarea{min-height:90px;resize:vertical}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
   .btn{background:var(--blue);border:none;color:#fff;border-radius:11px;padding:11px 18px;font-weight:800;font-size:14px;cursor:pointer;transition:filter .15s}
   .btn:hover{filter:brightness(1.08)}
-  .btn.ghost{background:#eef4fc;border:1px solid var(--line);color:var(--blue-d);font-weight:700}
-  .btn.ghost:hover{filter:none;background:#e2edfb}
+  .btn.ghost{background:#F2F0E9;border:1px solid var(--line);color:var(--blue-d);font-weight:700}
+  .btn.ghost:hover{filter:none;background:#EAE7DE}
   .btn.green{background:var(--green)} .btn.violet{background:var(--violet)}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .platforms{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
@@ -36,25 +37,25 @@
   .plat .nm{font-weight:800}
   .plat .sub2{color:var(--mut);font-size:12px;margin:2px 0 10px}
   .plat .cap{display:grid;grid-template-columns:1fr 74px 74px;gap:7px;margin-top:9px}
-  .chip{display:inline-block;background:#eef4fc;border:1px solid #c9dcf5;color:#15528f;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:700}
-  .chip.miss{background:#fff7e6;border-color:#ffe0a3;color:#8a5a00}
-  .chip.ok{background:#eaf7f0;border-color:#bce6cf;color:#0f6b49}
+  .chip{display:inline-block;background:#EAF1EE;border:1px solid #DCE5DF;color:#204034;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:700}
+  .chip.miss{background:#FCF8EF;border-color:#EFE4CE;color:#8A5A22}
+  .chip.ok{background:#EAF1EE;border-color:#CFE0D6;color:#2E6A4B}
   .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
   .kpi{background:var(--card2);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
   .kpi .n{font-size:26px;font-weight:800} .kpi .l{color:var(--mut);font-size:12px}
-  .stars{color:#e8960c;letter-spacing:2px}
+  .stars{color:#C99A3C;letter-spacing:2px}
   .out{background:var(--card2);border-left:3px solid var(--blue);border-radius:9px;padding:12px 14px;white-space:pre-wrap;font-size:14px;margin-top:10px}
   .quote{background:rgba(22,163,74,.08);border-left:3px solid var(--green);border-radius:8px;padding:9px 12px;margin:7px 0;font-size:13.5px}
   .note{font-size:12px;color:var(--mut)}
-  .banner{background:#fff7e6;border:1px solid #ffe0a3;border-radius:12px;padding:11px 14px;font-size:13px;color:#8a5a00;margin-bottom:16px}
+  .banner{background:#FCF8EF;border:1px solid #EFE4CE;border-radius:12px;padding:11px 14px;font-size:13px;color:#8A5A22;margin-bottom:16px}
   .foot{color:var(--mut);font-size:12px;text-align:center;margin-top:26px;line-height:1.7}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:680px){ .two{grid-template-columns:1fr} }
   /* --- auto-reputation additions (v1) --- */
   .scopebadge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800;letter-spacing:.2px}
-  .scopebadge.doctor{background:#eaf1ff;border:1px solid #bcd2fb;color:#15528f}
-  .scopebadge.practice{background:#f2ecff;border:1px solid #d8c9f7;color:#5b32b0}
-  .scopebadge.unknown{background:#eef1f5;border:1px solid #d7dee7;color:#5b6b7c}
+  .scopebadge.doctor{background:#EAF1EE;border:1px solid #DCE5DF;color:#204034}
+  .scopebadge.practice{background:#EFEAF8;border:1px solid #DFD5F0;color:#7A5CC0}
+  .scopebadge.unknown{background:#F2F0E9;border:1px solid #E4E1D8;color:#55605A}
   .grp{margin-top:14px}
   .grp .lbl{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);margin:0 0 8px;display:flex;align-items:center;gap:8px}
   .srcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
@@ -62,9 +63,9 @@
   .srccell .sn{font-weight:800;color:var(--blue-d)}
   .srccell .ss{font-size:11px;margin-top:2px}
   .dot2{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
-  .dot2.ok{background:var(--green)} .dot2.off{background:#c7cfd9} .dot2.err{background:#e0533a}
+  .dot2.ok{background:var(--green)} .dot2.off{background:#C4CBC2} .dot2.err{background:#B23B3B}
   .loadrow{display:flex;align-items:center;gap:9px;color:var(--mut);font-size:13px}
-  .lspin{width:15px;height:15px;border:2px solid rgba(31,122,224,.25);border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:lsp .7s linear infinite}
+  .lspin{width:15px;height:15px;border:2px solid rgba(46,106,75,.25);border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:lsp .7s linear infinite}
   @keyframes lsp{to{transform:rotate(360deg)}}
   details.manual > summary{cursor:pointer;font-weight:800;color:var(--blue-d);font-size:15px;list-style:none}
   details.manual > summary::-webkit-details-marker{display:none}
@@ -204,7 +205,7 @@ function dash(){
     '<div class="kpi"><div class="n stars">'+(avg?avg.toFixed(1):'—')+'</div><div class="l">avg rating <span class="stars">'+stars+'</span></div></div>'
     +'<div class="kpi"><div class="n">'+totC+'</div><div class="l">total reviews found</div></div>'
     +'<div class="kpi"><div class="n">'+covered+' / '+PLATFORMS.length+'</div><div class="l">sites with a profile ('+pct+'%)</div></div>'
-    +'<div class="kpi"><div class="n" style="color:#ffcf8f">'+missing.length+'</div><div class="l">profiles to claim</div></div>';
+    +'<div class="kpi"><div class="n" style="color:#F3D9AE">'+missing.length+'</div><div class="l">profiles to claim</div></div>';
   $('coverage').innerHTML = missing.length? '<div class="out" style="border-left-color:var(--amber)"><b>Claim these profiles</b> — patients search here and you\'re not showing up: '+missing.map(function(p){return esc(PLATFORMS.filter(function(x){return x.k===p.k;})[0].nm);}).join(', ')+'.</div>' : (covered? '<div class="out" style="border-left-color:var(--green)">Good coverage. Keep review volume growing with the request tools below.</div>' : '');
 }
 function quotes(){

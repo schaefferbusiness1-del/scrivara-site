@@ -8876,7 +8876,7 @@ function renderStudioSaved(){
   var arr=studioGetSaved();
   if(!arr.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">Nothing saved yet — build something above.</div>'; return; }
   box.innerHTML=arr.map(function(w,i){
-    var t=String(w.title||'Widget').replace(/[<>&]/g,'');
+    var t=String(w.title||'Widget').replace(/[<>&]/g,''); if(t.length>=80)t=t.slice(0,79)+'…';
     var pinned=!!w.pinned;
     return '<div style="border:1px solid '+(pinned?'var(--brand)':'var(--line)')+';border-radius:10px;padding:11px 13px;min-width:210px;max-width:270px;background:var(--card,#fff)">'
       +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px;line-height:1.35">🧩 '+t+(pinned?' <span style="font-size:11px;font-weight:700;color:var(--brand)">📌 tab</span>':'')+'</div>'

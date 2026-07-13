@@ -255,7 +255,10 @@
     }catch(e){ return ''; } }
   function syncTitle(){
     try{ var el=$('mlsRdTitle'); if(!el) return;
-      var on=document.querySelector('#mlsRdNav .navtab.on');
+      /* overlays (Reviews) mark their tab .on without clearing the view's —
+         the LAST .on is the most recently activated surface */
+      var ons=document.querySelectorAll('#mlsRdNav .navtab.on');
+      var on=ons.length?ons[ons.length-1]:null;
       var t=on?navLabelOf(on):'';
       if(!t) t='MLS Scribe';
       if(el.textContent!==t) el.textContent=t;

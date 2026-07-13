@@ -106,9 +106,14 @@
       "#" + PANEL_ID + " .mlsTbWho{font-size:12px;color:#79837C;padding:8px 10px 6px;border-bottom:1px solid #EFEDE6;margin-bottom:4px;word-break:break-all;}" +
       "#" + PANEL_ID + " button.mlsTbItem{width:100%;text-align:left;background:transparent;border:0;color:#1A211C;" +
         "font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;padding:10px 12px;" +
-        "display:flex;align-items:center;gap:10px;}" +
+        "display:flex;align-items:center;gap:10px;justify-content:flex-start !important;}" +
       "#" + PANEL_ID + " button.mlsTbItem:hover{background:#F0EEE7;}" +
-      "#" + PANEL_ID + " button.mlsTbItem .mlsTbIco{width:18px;text-align:center;}";
+      "#" + PANEL_ID + " button.mlsTbItem .mlsTbIco{width:18px;text-align:center;}" +
+      /* rows other modules append (guided tour) inherit the same look */
+      "#" + PANEL_ID + " #mlsObtMenuRow{width:100%;text-align:left;background:transparent;border:0;color:#1A211C;" +
+        "font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;padding:10px 12px;" +
+        "display:flex;align-items:center;gap:10px;justify-content:flex-start !important;}" +
+      "#" + PANEL_ID + " #mlsObtMenuRow:hover{background:#F0EEE7;}";
     var st = document.createElement("style");
     st.id = STYLE_ID; st.textContent = css;
     (document.head || document.documentElement).appendChild(st);
