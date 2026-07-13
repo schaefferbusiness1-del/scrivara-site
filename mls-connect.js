@@ -5757,6 +5757,14 @@
         tag.className = 'ez3fl-staffbadge'; tag.textContent = 'staff workspace';
         h.appendChild(tag);
       }
+      /* the engine's "Doctors don't see this screen" line reads like a wall;
+         say what to actually do next instead */
+      try {
+        var sub2 = [].slice.call(body.querySelectorAll('div,p,span')).filter(function (n2) {
+          return n2.children.length === 0 && /don’t see this screen|don't see this screen/i.test(n2.textContent || '');
+        })[0];
+        if (sub2) sub2.textContent = 'Pull schedules, scope by provider, prep the day - then head back to the doctor view to record.';
+      } catch (e) {}
       /* (2b) Pull day histories moved home: proxy the real (hidden) FAB from
          the Practice tools row — batch history pulls are a staff-prep task */
       var toolsCard = [].slice.call(body.querySelectorAll('.ez3-card')).filter(function (c) { return /practice tools/i.test(c.textContent || ''); })[0];
@@ -30590,7 +30598,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b194';
+  var MLS_APP_BUILD='2026-07-13-b195';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
