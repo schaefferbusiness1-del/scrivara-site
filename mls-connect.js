@@ -5468,8 +5468,21 @@
     /* injected strips (op-note fill bar etc.) drop to their own full-width row under the seg */
     '#mlsEz3Head > :not(.ez3-modeseg){flex:1 1 100% !important;order:2;color:#1A211C !important;}',
     /* secondary action buttons sit inline on one row, natural width */
-    '#mlsEz3 .ez3-row2{flex-direction:row !important;justify-content:flex-start !important;align-items:center !important;}',
+    '#mlsEz3 .ez3-row2{flex-direction:row !important;flex-wrap:wrap !important;justify-content:flex-start !important;align-items:center !important;gap:8px !important;}',
     '#mlsEz3 .ez3-row2 .ez3-sm{width:auto !important;flex:0 0 auto !important;display:inline-flex !important;align-items:center !important;}',
+    /* ===== Visit UX v2 (2026-07-13, owner directive): NO modes on the doctor
+       screen. The Doctor/Staff-prep pill toggle is hidden — the staff workspace
+       is reached through its own clearly-named entries (injected by the
+       __mlsEz3Flow layer below) and carries an explicit Back button. ===== */
+    '#mlsEz3 .ez3-modeseg{display:none !important;}',
+    /* quiet label over the doctor secondary actions: instant comprehension */
+    '#mlsEz3Body .ez3-row2::before{content:"GET THE DAY READY";flex-basis:100%;font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#8A8F86;margin-bottom:2px;}',
+    /* injected staff entry + back button */
+    '#mlsEz3 .ez3fl-staffLink{display:inline-flex;align-items:center;gap:7px;margin-top:2px;background:transparent;border:0;color:#79837C;font-size:12px;font-weight:600;cursor:pointer;padding:4px 2px;}',
+    '#mlsEz3 .ez3fl-staffLink:hover{color:#1A211C;text-decoration:underline;}',
+    '#mlsEz3 .ez3fl-back{display:inline-flex;align-items:center;gap:8px;margin:0 0 12px;background:#fff;border:1px solid #D9D6CD;border-radius:10px;color:#1A211C;font-size:13px;font-weight:600;cursor:pointer;padding:9px 14px;}',
+    '#mlsEz3 .ez3fl-back:hover{background:#F4F2EC;}',
+    '#mlsEz3 .ez3fl-staffbadge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#B07636;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:5px;padding:2px 7px;margin-left:8px;vertical-align:2px;}',
 
     /* 2) shared muted/secondary label color, used across the whole panel */
     '#mlsEz3 .ez3-sub,#mlsEz3 .ez3-status,#mlsEz3 .ez3-empty,#mlsEz3 .ez3-prov label,' +
@@ -5539,6 +5552,105 @@
     delete window.__mlsEz3Gradient;
     delete window.__mlsEz3Gradient_revert;
   };
+})();
+
+/* =============================================================================
+ * __mlsEz3Flow  fl-1.0.0   (2026-07-13, Visit UX v2 — owner directive)
+ * -----------------------------------------------------------------------------
+ * The Visit page is DOCTOR-ONLY now: the confusing Doctor/Staff-prep mode pills
+ * are hidden by CSS (see __mlsEz3Gradient block above). The staff workspace is
+ * a real feature (schedule pulls, pulling-as doctor, range browser) so it stays
+ * fully reachable — through entries that SAY what they are:
+ *   1. a quiet "Front desk? Open Staff day-prep" link under the doctor actions;
+ *   2. a "Staff day-prep" row in the top-bar Menu;
+ *   3. inside the staff screen, a prominent "Back to doctor view" button.
+ * All three simply click the engine's REAL (hidden) mode buttons, so every EZ3
+ * version keeps its own state machine — zero re-wiring, zero feature loss.
+ * Injections are re-asserted after each engine render via ONE debounced
+ * childList observer scoped to #mlsEz3Body (freeze-safe: no subtree on
+ * document, disconnect-during-write, 150 ms coalesce).
+ * Reversible: window.__mlsEz3Flow.revert(). ASCII-only.
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  if (window.__mlsEz3Flow) return;
+  var VERSION = 'fl-1.0.0';
+  var _obs = null, _deb = null, _iv = null;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function onStaffScreen(body) {
+    try { var h = body.querySelector('.ez3-h1'); return !!(h && /staff prep/i.test(h.textContent || '')); } catch (e) { return false; }
+  }
+  function clickMode(id) { try { var b = $(id); if (b) { b.click(); return true; } } catch (e) {} return false; }
+  function ensure() {
+    var body = $('mlsEz3Body'); if (!body) return;
+    var staff = onStaffScreen(body);
+    /* (1) doctor screen: quiet staff entry under the actions row */
+    if (!staff) {
+      var row = body.querySelector('.ez3-advrow') || body.querySelector('.ez3-row2');
+      if (row && !body.querySelector('.ez3fl-staffLink')) {
+        var a = document.createElement('button');
+        a.type = 'button'; a.className = 'ez3fl-staffLink';
+        a.innerHTML = '&#128451; Front desk? Open <b>Staff day-prep</b>';
+        a.title = 'Pull schedules and prep the day (staff workspace)';
+        a.addEventListener('click', function () { clickMode('ez3ModeStaff'); });
+        (row.parentElement || body).insertBefore(a, row.nextSibling);
+      }
+    }
+    /* (2) staff screen: prominent Back + a clarity badge on the heading */
+    if (staff) {
+      if (!body.querySelector('.ez3fl-back')) {
+        var bk = document.createElement('button');
+        bk.type = 'button'; bk.className = 'ez3fl-back';
+        bk.innerHTML = '&#8592; Back to doctor view';
+        bk.addEventListener('click', function () { clickMode('ez3ModeDoc'); });
+        body.insertBefore(bk, body.firstChild);
+      }
+      var h = body.querySelector('.ez3-h1');
+      if (h && !h.querySelector('.ez3fl-staffbadge')) {
+        var tag = document.createElement('span');
+        tag.className = 'ez3fl-staffbadge'; tag.textContent = 'staff workspace';
+        h.appendChild(tag);
+      }
+    }
+    /* (3) Menu row (once) */
+    try {
+      var menu = $('mlsTbMenuPanel');
+      if (menu && !$('ez3flMenuStaff')) {
+        var mi = document.createElement('button');
+        mi.id = 'ez3flMenuStaff'; mi.className = 'mlsTbItem'; mi.type = 'button';
+        mi.innerHTML = '&#128451; Staff day-prep';
+        mi.addEventListener('click', function () {
+          try { menu.classList.remove('open'); menu.style.display = ''; } catch (e) {}
+          try { if (typeof window.showView === 'function') window.showView('visit'); } catch (e) {}
+          setTimeout(function () { clickMode('ez3ModeStaff'); }, 120);
+        });
+        var settingsRow = null, kids = menu.children;
+        for (var i = 0; i < kids.length; i++) { if (/settings/i.test(kids[i].textContent || '')) { settingsRow = kids[i]; break; } }
+        if (settingsRow) menu.insertBefore(mi, settingsRow); else menu.appendChild(mi);
+      }
+    } catch (e) {}
+  }
+  function schedule() { if (_deb) return; _deb = setTimeout(function () { _deb = null; run(); }, 150); }
+  function run() {
+    try { if (_obs) _obs.disconnect(); } catch (e) {}
+    try { ensure(); } catch (e) {}
+    try { var body = $('mlsEz3Body'); if (body && _obs) _obs.observe(body, { childList: true, subtree: true }); } catch (e) {}
+  }
+  function boot() {
+    try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
+    run();
+    var n = 0; _iv = setInterval(function () { run(); if (++n > 20) clearInterval(_iv); }, 900);
+  }
+  window.__mlsEz3Flow = {
+    installed: true, version: VERSION,
+    revert: function () {
+      try { if (_obs) _obs.disconnect(); } catch (e) {}
+      try { if (_iv) clearInterval(_iv); } catch (e) {}
+      try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
+      try { window.__mlsEz3Flow.installed = false; } catch (e) {}
+    }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
 })();
 
 
@@ -30004,7 +30116,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b183';
+  window.__MLS_AV = window.__MLS_AV || 'b187';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30318,7 +30430,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b183';
+  var MLS_APP_BUILD='2026-07-13-b187';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
