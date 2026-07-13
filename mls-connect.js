@@ -30541,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b260';
+  window.__MLS_AV = window.__MLS_AV || 'b261';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b260';
+  var MLS_APP_BUILD='2026-07-13-b261';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -39650,7 +39650,7 @@
  * outside phone mode. Reversible: revert(). ES5. */
 (function () {
   if (window.__mlsPhoneHome) return;
-  var api = { installed: true, version: 'ph-1.0.0' };
+  var api = { installed: true, version: 'ph-1.1.0' };
   window.__mlsPhoneHome = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
 
@@ -39679,19 +39679,71 @@
        (b210 specificity lesson). The record CTA clicks it programmatically,
        so hiding it visually loses nothing on the phone. */
     'html body.mls-phone #mlsEz3 #ez3Adv, html body.mls-phone #ez3Adv{ display:none !important; }',
+    /* ph-1.1.0 (b261, owner screenshot: still too busy) - GENUINELY minimal:
+       banner reduces to identity+sync (actions/pills/chips hidden), the
+       clock/date block and provider dropdown go (the day strip owns the date),
+       fl's record row goes (the engine Up-next CTA is THE record button;
+       per-patient record lives in each Choose-patient row), FAB goes. */
+    'html body.mls-phone #mlsDayProgress, html body.mls-phone #mlsRecentPts, html body.mls-phone #mlsAgendaChip,',
+    'html body.mls-phone .mlsctx-actions, html body.mls-phone #mlsSmBtn, html body.mls-phone #mlsCardSlot,',
+    'html body.mls-phone #mlsEz3 .ez3-clockbar, html body.mls-phone .ez3-clockbar,',
+    'html body.mls-phone #mlsEz3 .ez3fl-record, html body.mls-phone .ez3fl-record,',
+    'html body.mls-phone #mlsFab, html body.mls-phone #mlsFabMenu, html body.mls-phone #mlsDaDock{ display:none !important; }',
+    'body.mls-phone #mlsDsStrip{ padding:7px 9px; gap:6px; }',
+    'body.mls-phone #mlsDsStrip .ds-pull{ padding:8px 12px; }',
     'body.mls-phone #mlsPhExit{ display:block; }',
     '#mlsPhExit{ display:none; margin:14px auto 6px; background:transparent; border:0; color:#8A8F86; font:500 12px "Public Sans",system-ui,sans-serif; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }'
   ].join('\n');
   (document.head || document.documentElement).appendChild(st);
 
+  /* ph-1.1.0: first-login install prompt (owner: don't make people figure out
+     installation) - a once-per-account dismissible card on the DESKTOP visit
+     view: email yourself the phone link (mailto, prefilled with add-to-home-
+     screen steps) or copy it. Never shown in phone mode itself. */
+  var PHONE_URL2 = 'https://mlsscribe.com/ScribeFlow.html?phone=1';
+  function mailtoHref() {
+    var sub = 'MLS Scribe on your phone - setup link';
+    var body = 'Open this on your phone and sign in:\n' + PHONE_URL2 +
+      '\n\nAdd it to your home screen so it opens like an app:\n' +
+      '- iPhone (Safari): tap the Share button, then "Add to Home Screen".\n' +
+      '- Android (Chrome): tap the three-dot menu, then "Add to Home screen".\n\n' +
+      'Athena pulls you start on the phone run on your office computer - keep MLS open there with the MLS Assist extension.';
+    return 'mailto:?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(body);
+  }
+  function installPrompt() {
+    try {
+      if (wantPhone()) return;
+      if (localStorage.getItem('mls_phone_prompt_done') === '1') return;
+      if ($('mlsPhPrompt')) return;
+      var body = $('mlsEz3Body'); if (!body) return;
+      var card = document.createElement('div');
+      card.id = 'mlsPhPrompt';
+      card.style.cssText = 'display:flex;align-items:center;gap:11px;flex-wrap:wrap;background:#F6FBF8;border:1px solid #D8E5DE;border-radius:12px;padding:11px 14px;margin:0 0 10px;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;';
+      card.innerHTML = '<span>📱 Put MLS on your phone — scan the QR in Settings → Integrations, or</span>' +
+        '<a href="' + mailtoHref() + '" style="color:#2E6A4B;font-weight:700;text-decoration:underline;text-underline-offset:2px">email yourself the setup link</a>' +
+        '<button type="button" id="mlsPhCopy" style="border:1px solid #E4E1D8;background:#fff;color:#1A211C;font:600 12px system-ui;border-radius:8px;padding:6px 11px;cursor:pointer">Copy link</button>' +
+        '<button type="button" id="mlsPhDismiss" title="Don’t show this again" style="margin-left:auto;border:0;background:transparent;color:#79837C;font-size:16px;cursor:pointer;line-height:1">×</button>';
+      body.insertBefore(card, body.firstChild);
+      $('mlsPhCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_URL2); if (typeof window.toast === 'function') window.toast('Link copied - text or email it to your phone.', 'ok'); } catch (e) {} });
+      $('mlsPhDismiss').addEventListener('click', function () { try { localStorage.setItem('mls_phone_prompt_done', '1'); } catch (e) {} card.remove(); });
+    } catch (e) {}
+  }
   function ensure() {
     try {
       var on = wantPhone();
       var has = document.body.classList.contains('mls-phone');
       if (on && !has) document.body.classList.add('mls-phone');
       if (!on && has) document.body.classList.remove('mls-phone');
-      if (!on) return;
+      installPrompt();
+      if (!on) {
+        /* leaving phone mode: restore the JS-hidden provider row */
+        try { var pv0 = $('ez3Prov'); if (pv0) { var row0 = pv0.closest('div'); if (row0 && row0.style.display === 'none') row0.style.display = ''; } } catch (e) {}
+        return;
+      }
       var body = $('mlsEz3Body'); if (!body) return;
+      /* provider dropdown row: no stable class on its container - hide the
+         select's closest block in JS (idempotent) */
+      try { var pv = $('ez3Prov'); if (pv) { var row = pv.closest('div'); if (row && row.style.display !== 'none') row.style.display = 'none'; } } catch (e) {}
       if (!$('mlsPhExit')) {
         var b = document.createElement('button');
         b.type = 'button'; b.id = 'mlsPhExit';
