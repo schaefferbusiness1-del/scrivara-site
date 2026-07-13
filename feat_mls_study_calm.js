@@ -51,7 +51,15 @@
   function ensure() {
     css();
     var root = document.getElementById('mls-sg-root');
-    if (!root || document.getElementById(TOGGLE_ID)) return;
+    if (!root) return;
+    var existing = document.getElementById(TOGGLE_ID);
+    if (existing) {
+      /* the toggle can be born before #mlsSgPro renders - adopt it once the
+         advanced card exists so it never floats as a lone grid cell */
+      var pro0 = document.getElementById('mlsSgPro');
+      if (pro0 && existing.parentElement !== pro0) pro0.appendChild(existing);
+      return;
+    }
     var t = document.createElement('button');
     t.type = 'button'; t.id = TOGGLE_ID;
     t.innerHTML = '<span class="car">&#9656;</span> Manage named groups &amp; manual patient lists <span style="color:#A6AEA6;font-weight:500">(add by name/DOB, CSV import, pull visits from Athena)</span>';
