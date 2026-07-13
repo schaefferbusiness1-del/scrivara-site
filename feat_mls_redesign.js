@@ -260,6 +260,7 @@
       var ons=document.querySelectorAll('#mlsRdNav .navtab.on');
       var on=ons.length?ons[ons.length-1]:null;
       var t=on?navLabelOf(on):'';
+      t=t.replace(/^[^A-Za-z0-9]+\s*/,'');   /* "⭐ Reviews" -> "Reviews" */
       if(!t) t='MLS Scribe';
       if(el.textContent!==t) el.textContent=t;
     }catch(e){}

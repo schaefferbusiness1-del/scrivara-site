@@ -113,7 +113,12 @@
       "#" + PANEL_ID + " #mlsObtMenuRow{width:100%;text-align:left;background:transparent;border:0;color:#1A211C !important;" +
         "font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;padding:10px 12px;" +
         "display:flex !important;align-items:center;gap:10px;justify-content:flex-start !important;}" +
-      "#" + PANEL_ID + " #mlsObtMenuRow:hover{background:#F0EEE7;}";
+      "#" + PANEL_ID + " #mlsObtMenuRow:hover{background:#F0EEE7;}" +
+      /* relocated navtab rows (Orders, Troubleshoot): never inherit the rail's
+         .on dark-fill styling inside the white panel */
+      "#" + PANEL_ID + " .navtab{color:#1A211C !important;background:transparent !important;}" +
+      "#" + PANEL_ID + " .navtab:hover{background:#F0EEE7 !important;}" +
+      "#" + PANEL_ID + " .navtab.on{color:#1A211C !important;background:transparent !important;box-shadow:none !important;}";
     var st = document.createElement("style");
     st.id = STYLE_ID; st.textContent = css;
     (document.head || document.documentElement).appendChild(st);
@@ -167,6 +172,12 @@
     wrap.appendChild(btn);
     wrap.appendChild(panel);
     t.appendChild(wrap);
+
+    // rows other modules relocate into the panel don't know about closePanel
+    panel.addEventListener("click", function (ev) {
+      var row = ev.target && ev.target.closest && ev.target.closest(".navtab,#mlsObtMenuRow,#ez3flMenuStaff");
+      if (row) setTimeout(closePanel, 60);
+    });
 
     // close on outside click / Esc
     document.addEventListener("click", outsideClose, true);
