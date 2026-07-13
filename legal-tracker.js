@@ -151,7 +151,7 @@
     if (window.__mlsExpertMktLoader) return;
     window.__mlsExpertMktLoader = true;
     var s = document.createElement('script');
-    s.src = 'expert-marketplace-ui.js?v=20260617b';
+    s.src = 'expert-marketplace-ui.js?v=20260713mx1';
     s.async = true;
     (document.head || document.documentElement).appendChild(s);
   } catch (e) { /* best-effort */ }

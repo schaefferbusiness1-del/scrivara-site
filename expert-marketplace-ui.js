@@ -61,7 +61,7 @@
     var st = document.createElement('style');
     st.id = 'mls-expert-mkt-style';
     st.textContent = [
-      '#mlsExpertAdCta{margin-top:12px;background:linear-gradient(135deg,#eef4ff,#eafaf4);border:1px solid #d6e6fb;border-radius:14px;padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}',
+      '#mlsExpertAdCta{margin-top:12px;background:linear-gradient(135deg,#F6FBF8,#F4F2EC);border:1px solid #E4E1D8;border-radius:14px;padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}',
       '#mlsExpertAdCta .mx-ico{font-size:26px;line-height:1}',
       '#mlsExpertAdCta .mx-txt{flex:1;min-width:200px}',
       '#mlsExpertAdCta .mx-txt b{display:block;font-size:15px;color:var(--ink,#0e2238)}',
@@ -116,6 +116,7 @@
 
   /* ---------- launcher injection (sibling of #expertBody so re-renders don't wipe it) ---------- */
   function placeLauncher() {
+    injectStyle();   /* the CTA renders long before the editor opens */
     try {
       var body = document.getElementById('expertBody');
       if (!body) return;
