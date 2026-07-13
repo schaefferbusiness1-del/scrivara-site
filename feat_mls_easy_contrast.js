@@ -26,10 +26,10 @@
 
   var CSS = [
     /* Caption/intent text next to the READ-ONLY chip on the blue hero */
-    '#mlsEasyPanel .mlsaa-intent{color:#eaf2ff !important;}',
+    '#mlsEasyPanel .mlsaa-intent{color:#EAF1EC !important;}',
     '#mlsEasyPanel .mlsaa-intent b,#mlsEasyPanel .mlsaa-intent strong{color:#ffffff !important;}',
     /* Helper notes + the "Tip:" / provider hint lines on the blue hero */
-    '#mlsEasyPanel .mlscp-note,#mlsEasyPanel .mlspp-hint{color:#eaf2ff !important;}',
+    '#mlsEasyPanel .mlscp-note,#mlsEasyPanel .mlspp-hint{color:#EAF1EC !important;}',
     '#mlsEasyPanel .mlscp-note b,#mlsEasyPanel .mlscp-note strong,',
     '#mlsEasyPanel .mlspp-hint b,#mlsEasyPanel .mlspp-hint strong{color:#ffffff !important;}',
     /* KEEP the READ-ONLY chip: keep it dark-green on its light-green chip bg */

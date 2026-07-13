@@ -70,7 +70,7 @@
         + 'padding:6px 12px;border:1px solid var(--line,#d7e2ef);background:var(--card,#fff);'
         + 'color:var(--ink,#16324f);transition:all .12s ease;white-space:nowrap}',
       '#' + ROSTER_ID + ' .mlsRosChip:hover{border-color:#9cc2ee;background:#f3f8ff}',
-      '#' + ROSTER_ID + ' .mlsRosChip.mlsRosOn{background:#1f7ae0;border-color:#1f7ae0;color:#fff;font-weight:700;'
+      '#' + ROSTER_ID + ' .mlsRosChip.mlsRosOn{background:#2E6A4B;border-color:#2E6A4B;color:#fff;font-weight:700;'
         + 'box-shadow:0 2px 7px rgba(31,122,224,.30)}',
       '#' + ROSTER_ID + ' .mlsRosChip .mlsRosDot{display:inline-block;width:7px;height:7px;border-radius:50%;'
         + 'background:#2bb673;margin-right:6px;vertical-align:middle}',

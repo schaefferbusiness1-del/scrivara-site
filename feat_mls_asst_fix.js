@@ -288,8 +288,8 @@
     btn.type = "button";
     btn.id = "mlsAsstOpenAthenaBtn";
     btn.textContent = "Open athenaOne in new tab";
-    btn.style.cssText = "width:100%;height:34px;border-radius:9px;border:1px solid #2563eb;" +
-      "background:linear-gradient(180deg,#3b82f6,#2563eb);color:#fff;font:600 12.5px/1 'Plus Jakarta Sans',system-ui,sans-serif;" +
+    btn.style.cssText = "width:100%;height:34px;border-radius:9px;border:1px solid #2E6A4B;" +
+      "background:linear-gradient(180deg,#3b82f6,#2E6A4B);color:#fff;font:600 12.5px/1 'Plus Jakarta Sans',system-ui,sans-serif;" +
       "cursor:pointer;letter-spacing:.2px;";
     btn.addEventListener("click", function () { openAthena(); });
     row.appendChild(btn);

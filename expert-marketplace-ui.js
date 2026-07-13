@@ -65,8 +65,8 @@
       '#mlsExpertAdCta .mx-ico{font-size:26px;line-height:1}',
       '#mlsExpertAdCta .mx-txt{flex:1;min-width:200px}',
       '#mlsExpertAdCta .mx-txt b{display:block;font-size:15px;color:var(--ink,#0e2238)}',
-      '#mlsExpertAdCta .mx-txt span{font-size:13px;color:var(--muted,#6a829c)}',
-      '.mx-btn{cursor:pointer;border:none;border-radius:10px;font-weight:700;font-size:14px;padding:11px 16px;background:var(--brand,#2563eb);color:#fff;transition:.15s}',
+      '#mlsExpertAdCta .mx-txt span{font-size:13px;color:var(--muted,#79837C)}',
+      '.mx-btn{cursor:pointer;border:none;border-radius:10px;font-weight:700;font-size:14px;padding:11px 16px;background:var(--brand,#2E6A4B);color:#fff;transition:.15s}',
       '.mx-btn:hover{filter:brightness(1.06);transform:translateY(-1px)}',
       '.mx-btn.ghost{background:#fff;color:var(--ink,#0e2238);border:1.5px solid var(--line,#e7edf4)}',
       '.mx-btn.sm{padding:8px 12px;font-size:13px}',
@@ -75,41 +75,41 @@
       '#mlsExpertModal{background:var(--card,#fff);color:var(--ink,#0e2238);width:100%;max-width:760px;border-radius:18px;box-shadow:0 24px 70px rgba(8,22,40,.4);overflow:hidden;font-family:inherit;margin:auto}',
       '.mx-hd{display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line,#e7edf4);position:sticky;top:0;background:var(--card,#fff);z-index:2}',
       '.mx-hd h2{font-size:18px;margin:0;font-weight:800;flex:1}',
-      '.mx-x{cursor:pointer;border:none;background:transparent;font-size:22px;color:var(--muted,#6a829c);line-height:1;padding:4px 8px;border-radius:8px}',
+      '.mx-x{cursor:pointer;border:none;background:transparent;font-size:22px;color:var(--muted,#79837C);line-height:1;padding:4px 8px;border-radius:8px}',
       '.mx-x:hover{background:var(--soft,#f3f6fa)}',
       '.mx-bd{padding:18px 22px;max-height:calc(100vh - 190px);overflow:auto}',
-      '.mx-ft{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:14px 22px;border-top:1px solid var(--line,#e7edf4);background:var(--soft,#f8fafc)}',
+      '.mx-ft{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:14px 22px;border-top:1px solid var(--line,#e7edf4);background:var(--soft,#FCFBF8)}',
       '.mx-ft .mx-spacer{flex:1}',
-      '.mx-optin{display:flex;gap:12px;align-items:flex-start;background:var(--soft2,#f5f8fc);border:1px solid var(--line,#e7edf4);border-radius:12px;padding:14px;margin-bottom:18px}',
+      '.mx-optin{display:flex;gap:12px;align-items:flex-start;background:var(--soft2,#FCFBF8);border:1px solid var(--line,#e7edf4);border-radius:12px;padding:14px;margin-bottom:18px}',
       '.mx-optin input{margin-top:3px;width:18px;height:18px;flex:0 0 auto}',
-      '.mx-optin b{font-size:14.5px}.mx-optin p{margin:3px 0 0;font-size:12.5px;color:var(--muted,#6a829c)}',
+      '.mx-optin b{font-size:14.5px}.mx-optin p{margin:3px 0 0;font-size:12.5px;color:var(--muted,#79837C)}',
       '.mx-sec{margin:0 0 20px}',
-      '.mx-sec>h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--brand,#2563eb);font-weight:800;margin:0 0 10px;border-bottom:1px solid var(--line,#eef2f7);padding-bottom:6px}',
+      '.mx-sec>h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--brand,#2E6A4B);font-weight:800;margin:0 0 10px;border-bottom:1px solid var(--line,#F4F2EC);padding-bottom:6px}',
       '.mx-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}',
       '@media(max-width:560px){.mx-row{grid-template-columns:1fr}.mx-bd{padding:16px}}',
       '.mx-f{margin-bottom:12px}',
       '.mx-f label{display:block;font-size:12.5px;font-weight:700;color:var(--ink2,#3a5575);margin-bottom:5px}',
-      '.mx-f .hint{font-weight:500;color:var(--muted,#6a829c)}',
+      '.mx-f .hint{font-weight:500;color:var(--muted,#79837C)}',
       '.mx-f input,.mx-f textarea,.mx-f select{width:100%;border:1.5px solid var(--line,#e7edf4);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;color:var(--ink,#0e2238);background:var(--field-bg,#fff);box-sizing:border-box}',
       '.mx-f textarea{resize:vertical;min-height:64px}',
-      '.mx-f input:focus,.mx-f textarea:focus,.mx-f select:focus{outline:none;border-color:var(--brand,#2563eb);box-shadow:0 0 0 3px rgba(37,99,235,.14)}',
+      '.mx-f input:focus,.mx-f textarea:focus,.mx-f select:focus{outline:none;border-color:var(--brand,#2E6A4B);box-shadow:0 0 0 3px rgba(32,64,52,.14)}',
       '.mx-states{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:4px 10px;max-height:168px;overflow:auto;border:1.5px solid var(--line,#e7edf4);border-radius:10px;padding:10px 12px}',
       '.mx-states label{display:flex;gap:7px;align-items:center;font-size:13px;font-weight:500;color:var(--ink,#0e2238);cursor:pointer;margin:0}',
       '.mx-states input{width:15px;height:15px;margin:0}',
       '.mx-photo{display:flex;gap:14px;align-items:center;flex-wrap:wrap}',
       '.mx-photo .pv{width:84px;height:84px;border-radius:14px;object-fit:cover;border:1px solid var(--line,#e7edf4);background:var(--soft,#f3f6fa)}',
       '.mx-photo .ph{width:84px;height:84px;border-radius:14px;border:1px dashed var(--line,#cdd9e8);background:var(--soft,#f3f6fa);display:flex;align-items:center;justify-content:center;color:var(--muted,#90a4bd);font-size:26px}',
-      '.mx-note{font-size:12px;color:var(--muted,#6a829c);margin-top:6px;line-height:1.4}',
+      '.mx-note{font-size:12px;color:var(--muted,#79837C);margin-top:6px;line-height:1.4}',
       '.mx-docs{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}',
       '.mx-docs li{display:flex;gap:10px;align-items:center;background:var(--soft,#f6f8fb);border:1px solid var(--line,#e7edf4);border-radius:9px;padding:8px 11px;font-size:13px}',
       '.mx-docs li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.mx-docs li .rm{cursor:pointer;color:#c0392b;border:none;background:transparent;font-weight:700;font-size:16px}',
       '.mx-ai{background:linear-gradient(135deg,#f3eeff,#eef6ff);border:1px solid #e0d8f6;border-radius:12px;padding:13px 15px;margin-bottom:14px}',
-      '.mx-ai b{font-size:13.5px}.mx-ai p{margin:3px 0 9px;font-size:12.5px;color:var(--muted,#6a829c)}',
+      '.mx-ai b{font-size:13.5px}.mx-ai p{margin:3px 0 9px;font-size:12.5px;color:var(--muted,#79837C)}',
       '.mx-msg{font-size:13px;margin-right:auto}',
       '.mx-msg.ok{color:#1f7a4d}.mx-msg.err{color:#c0392b}',
-      '.mx-live{font-size:12.5px;color:var(--muted,#6a829c)}',
-      '.mx-live a{color:var(--brand,#2563eb);font-weight:700}'
+      '.mx-live{font-size:12.5px;color:var(--muted,#79837C)}',
+      '.mx-live a{color:var(--brand,#2E6A4B);font-weight:700}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -197,7 +197,7 @@
   function renderDocs() {
     var ul = document.getElementById('mxDocList');
     if (!ul) return;
-    if (!STATE.docs.length) { ul.innerHTML = '<li style="color:var(--muted,#6a829c);border-style:dashed">No documents yet — add your CV, a de-identified sample report, or board certificates.</li>'; return; }
+    if (!STATE.docs.length) { ul.innerHTML = '<li style="color:var(--muted,#79837C);border-style:dashed">No documents yet — add your CV, a de-identified sample report, or board certificates.</li>'; return; }
     ul.innerHTML = STATE.docs.map(function (d) {
       return '<li data-id="' + d.id + '"><span>📄</span><span class="nm">' + esc(d.label || d.filename || 'Document') + '</span>' +
         '<button class="rm" type="button" title="Remove" data-id="' + d.id + '">✕</button></li>';
@@ -243,7 +243,7 @@
         field('mxYears', 'Years in / actively practicing', p.years, { ph: 'e.g. 14 years; actively practicing' }) +
         '</div>' +
 
-        '<div class="mx-sec"><h3>Licensed states / jurisdictions <span style="font-weight:600;color:var(--muted,#6a829c);text-transform:none;letter-spacing:0">— attorneys see physicians in their state first</span></h3>' +
+        '<div class="mx-sec"><h3>Licensed states / jurisdictions <span style="font-weight:600;color:var(--muted,#79837C);text-transform:none;letter-spacing:0">— attorneys see physicians in their state first</span></h3>' +
         statesGrid(statesSel) +
         '</div>' +
 
@@ -474,7 +474,7 @@
     // loading shell
     var shell = document.createElement('div');
     shell.id = 'mlsExpertOverlay';
-    shell.innerHTML = '<div id="mlsExpertModal"><div class="mx-bd" style="padding:40px;text-align:center;color:var(--muted,#6a829c)">Loading your profile…</div></div>';
+    shell.innerHTML = '<div id="mlsExpertModal"><div class="mx-bd" style="padding:40px;text-align:center;color:var(--muted,#79837C)">Loading your profile…</div></div>';
     document.body.appendChild(shell);
     try {
       var r = await fetch(base() + '/api/expert/me', { headers: authHeaders(false) });

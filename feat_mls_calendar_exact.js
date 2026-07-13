@@ -52,18 +52,18 @@
       "#calendarView .cx-main{display:grid;grid-template-columns:288px 1fr;gap:20px;align-items:start;margin:0}",
       "#calendarView .cx-rail{display:flex;flex-direction:column;gap:16px;position:sticky;top:138px}",
       "#calendarView .cx-main,#calendarView .cx-main *{box-sizing:border-box}",
-      "#calendarView .cx-card{background:#fff;border:1px solid #e4ebf3;border-radius:16px;box-shadow:0 1px 2px rgba(15,37,64,.04)}",
+      "#calendarView .cx-card{background:#fff;border:1px solid #E7E5DD;border-radius:16px;box-shadow:0 1px 2px rgba(20,33,28,.04)}",
       "#calendarView .cx-mini-day:hover{background:#eef4fc!important}",
       /* Fix #1: stop Saturday column overflow/spill from the mini-month rail onto the main grid */
       "#calendarView .cx-mini > div{width:100%}",
       "#calendarView .cx-mini > div > *{min-width:0}",
       "#calendarView .cx-mini-day{min-width:0;padding:0}",
-      "#calendarView .cx-agenda-head{border-bottom:1px solid #eef2f7;padding-bottom:16px}",
-      "#calendarView .cx-agenda{background:#fff!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important}",
+      "#calendarView .cx-agenda-head{border-bottom:1px solid #F4F2EC;padding-bottom:16px}",
+      "#calendarView .cx-agenda{background:#fff!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important}",
       "#calendarView .cx-agenda input,#calendarView .cx-agenda select,#calendarView .cx-agenda textarea{max-width:100%}",
       /* Fix #4: !important so the design pill wins over native renderCalendar inline blue-fill writes */
-      "#calendarView .cx-seg-btn{height:32px;padding:0 16px;border-radius:8px;border:none!important;font-family:inherit;cursor:pointer;font-weight:600;font-size:13px;background:transparent!important;color:#6b7d93!important;box-shadow:none!important}",
-      "#calendarView .cx-seg-btn.cx-on{background:#fff!important;color:#2f6bed!important;box-shadow:0 1px 2px rgba(15,37,64,.1)!important;font-weight:700!important}",
+      "#calendarView .cx-seg-btn{height:32px;padding:0 16px;border-radius:8px;border:none!important;font-family:inherit;cursor:pointer;font-weight:600;font-size:13px;background:transparent!important;color:#79837C!important;box-shadow:none!important}",
+      "#calendarView .cx-seg-btn.cx-on{background:#fff!important;color:#2E6A4B!important;box-shadow:0 1px 2px rgba(20,33,28,.1)!important;font-weight:700!important}",
       "#calendarView .cx-navbtn{width:36px;height:36px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}",
       "#calendarView .cx-todaybtn{height:36px;padding:0 14px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer}",
       "#calendarView .cx-ghost{height:40px;padding:0 14px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}",
@@ -113,8 +113,8 @@
       realNew.textContent = "+ " + clean;
       slotCTA.appendChild(realNew);
       impAll(realNew, ["width:100%", "height:48px", "border-radius:13px", "border:none",
-        "background:linear-gradient(135deg,#2f6bed,#2257cf)", "color:#fff", "font-weight:700",
-        "font-size:14.5px", "cursor:pointer", "box-shadow:0 12px 26px -10px rgba(47,107,237,.6)",
+        "background:linear-gradient(135deg,#2E6A4B,#204034)", "color:#fff", "font-weight:700",
+        "font-size:14.5px", "cursor:pointer", "box-shadow:0 12px 26px -10px rgba(32,64,52,.6)",
         "margin:0", "display:flex", "align-items:center", "justify-content:center", "gap:9px"]);
     }
     var mini = rail.querySelector(":scope > .cx-mini");
@@ -148,8 +148,8 @@
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
         '<span style="font-weight:500;font-size:16px;font-family:\'Newsreader\',Georgia,serif">' + MON[m] + " " + y + '</span>' +
         '<div style="display:flex;gap:4px">' +
-          '<button class="cx-mini-prev" style="width:28px;height:28px;border-radius:8px;border:1px solid #e0e8f1;background:#fff;color:#6b7d93;font-size:10px;cursor:pointer">' + LARR + '</button>' +
-          '<button class="cx-mini-next" style="width:28px;height:28px;border-radius:8px;border:1px solid #e0e8f1;background:#fff;color:#6b7d93;font-size:10px;cursor:pointer">' + RARR + '</button>' +
+          '<button class="cx-mini-prev" style="width:28px;height:28px;border-radius:8px;border:1px solid #e0e8f1;background:#fff;color:#79837C;font-size:10px;cursor:pointer">' + LARR + '</button>' +
+          '<button class="cx-mini-next" style="width:28px;height:28px;border-radius:8px;border:1px solid #e0e8f1;background:#fff;color:#79837C;font-size:10px;cursor:pointer">' + RARR + '</button>' +
         '</div></div>';
     var dows = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:5px">';
     for (var d = 0; d < 7; d++) dows += '<div style="text-align:center;font-size:10px;font-weight:700;color:#aab6c6">' + DOW[d] + '</div>';
@@ -159,10 +159,10 @@
     for (var day = 1; day <= dim; day++) {
       var key = y + "-" + pad(m + 1) + "-" + pad(day);
       var isT = key === tKey, isS = key === sel, dot = have[key];
-      var bg = isS ? "#2f6bed" : (isT ? "#eef4fc" : "transparent");
-      var fg = isS ? "#fff" : (isT ? "#155fb3" : "#42566e");
+      var bg = isS ? "#2E6A4B" : (isT ? "#eef4fc" : "transparent");
+      var fg = isS ? "#fff" : (isT ? "#3E6BA6" : "#55605A");
       cells += '<button class="cx-mini-day" data-key="' + key + '" style="position:relative;height:30px;border:none;border-radius:8px;background:' + bg + ';color:' + fg + ';font-size:12px;font-weight:' + (isT || isS ? "700" : "500") + ';cursor:pointer">' + day +
-        (dot ? '<span style="position:absolute;left:50%;bottom:3px;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:' + (isS ? "#fff" : "#2f6bed") + '"></span>' : '') + '</button>';
+        (dot ? '<span style="position:absolute;left:50%;bottom:3px;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:' + (isS ? "#fff" : "#2E6A4B") + '"></span>' : '') + '</button>';
     }
     cells += '</div>';
     var html = head + dows + cells;
@@ -180,9 +180,9 @@
   function renderGlance(glance) {
     var key = activeKey();
     var buckets = [
-      { label: "Booked", match: ["booked", "scheduled", ""], color: "#155fb3" },
+      { label: "Booked", match: ["booked", "scheduled", ""], color: "#3E6BA6" },
       { label: "Arrived", match: ["arrived", "checked_in"], color: "#9a6b00" },
-      { label: "Roomed", match: ["roomed"], color: "#2a4bbd" },
+      { label: "Roomed", match: ["roomed"], color: "#2E6A4B" },
       { label: "Completed", match: ["completed"], color: "#11643f" }
     ];
     var counts = [0, 0, 0, 0], total = 0;
@@ -203,24 +203,24 @@
     for (var r = 0; r < buckets.length; r++) {
       rows += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">' +
         '<span style="width:10px;height:10px;border-radius:3px;background:' + buckets[r].color + '"></span>' +
-        '<span style="flex:1;color:#42566e;font-size:13px;font-weight:600">' + buckets[r].label + '</span>' +
-        '<span style="font-weight:800;font-size:15px;color:#0f2540">' + counts[r] + '</span></div>';
+        '<span style="flex:1;color:#55605A;font-size:13px;font-weight:600">' + buckets[r].label + '</span>' +
+        '<span style="font-weight:800;font-size:15px;color:#1A211C">' + counts[r] + '</span></div>';
     }
     var html =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px">' +
         '<span style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#8a9cb2">DAY AT A GLANCE</span>' +
         '<span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#1f7d5c;background:#eef7f3;border:1px solid #cfe9dd;padding:3px 9px;border-radius:20px"><span style="width:6px;height:6px;border-radius:50%;background:#27b07a"></span>' + nowLbl + '</span>' +
       '</div>' + rows +
-      '<div style="border-top:1px solid #eef2f7;margin-top:6px;padding-top:12px;display:flex;align-items:center;justify-content:space-between">' +
-        '<span style="color:#6b7d93;font-size:12.5px;font-weight:600">Total booked</span>' +
-        '<span style="font-weight:800;font-size:18px;color:#2f6bed">' + total + '</span></div>';
+      '<div style="border-top:1px solid #F4F2EC;margin-top:6px;padding-top:12px;display:flex;align-items:center;justify-content:space-between">' +
+        '<span style="color:#79837C;font-size:12.5px;font-weight:600">Total booked</span>' +
+        '<span style="font-weight:800;font-size:18px;color:#2E6A4B">' + total + '</span></div>';
     if (glance.getAttribute("data-cx-h") !== html) { glance.innerHTML = html; glance.setAttribute("data-cx-h", html); }
   }
 
   function renderProviders(prov) {
     var list = prov.querySelector(".cx-prov-list");
     var provs = gv("_calProviders", []) || [];
-    var palette = ["#2f6bed", "#19b8a6", "#a855f7", "#e8833a", "#d6457f", "#0ea5b7"];
+    var palette = ["#2E6A4B", "#3B7C5A", "#9B82D4", "#e8833a", "#d6457f", "#0ea5b7"];
     var html = "";
     if (provs.length) {
       for (var i = 0; i < provs.length; i++) {
@@ -230,10 +230,10 @@
         var col = palette[i % palette.length];
         html += '<label style="display:flex;align-items:center;gap:10px;margin-bottom:11px">' +
           '<span style="width:22px;height:22px;border-radius:6px;background:' + col + ';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:10px">' + ini + '</span>' +
-          '<span style="flex:1;color:#42566e;font-size:13px;font-weight:600">' + nm + '</span></label>';
+          '<span style="flex:1;color:#55605A;font-size:13px;font-weight:600">' + nm + '</span></label>';
       }
     } else {
-      html = '<div style="color:#9aa8bb;font-size:12.5px;font-weight:500;margin-bottom:8px">All providers</div>';
+      html = '<div style="color:#A6AEA6;font-size:12.5px;font-weight:500;margin-bottom:8px">All providers</div>';
     }
     if (list && list.getAttribute("data-cx-h") !== html) { list.innerHTML = html; list.setAttribute("data-cx-h", html); }
     var slot = prov.querySelector(".cx-prov-slot");
@@ -272,9 +272,9 @@
     /* title (Newsreader) + subtitle from REAL data */
     var lbl = $("calMonthLabel");
     if (lbl && lbl.parentElement !== titlewrap) titlewrap.appendChild(lbl);
-    if (lbl) { imp(lbl, "font-family", "'Newsreader',Georgia,serif"); imp(lbl, "font-weight", "500"); imp(lbl, "font-size", "26px"); imp(lbl, "letter-spacing", "-.015em"); imp(lbl, "margin", "0"); imp(lbl, "color", "#0f2540"); }
+    if (lbl) { imp(lbl, "font-family", "'Newsreader',Georgia,serif"); imp(lbl, "font-weight", "500"); imp(lbl, "font-size", "26px"); imp(lbl, "letter-spacing", "-.015em"); imp(lbl, "margin", "0"); imp(lbl, "color", "#1A211C"); }
     var sub = titlewrap.querySelector(".cx-sub");
-    if (!sub) { sub = mk("div", "color:#6b7d93;font-size:13px;font-weight:500;margin-top:2px"); sub.className = "cx-sub"; titlewrap.appendChild(sub); }
+    if (!sub) { sub = mk("div", "color:#79837C;font-size:13px;font-weight:500;margin-top:2px"); sub.className = "cx-sub"; titlewrap.appendChild(sub); }
     var subTxt = subtitleText(); if (sub.textContent !== subTxt) sub.textContent = subTxt; /* guarded: no 150ms churn */
 
     /* segmented Day | Week | Month (design order); REAL buttons */
@@ -421,7 +421,7 @@
       var chip = document.createElement("div");
       chip.className = "cx-ovmore";
       chip.textContent = "+" + n + " more";
-      chip.style.cssText = "position:absolute;left:" + left + "px;top:" + top + "px;width:" + w + "px;height:" + height + "px;pointer-events:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:700;color:#2f6bed;background:#eef4fc;border:1px dashed #b9cdf0;border-radius:6px;padding:1px 2px;overflow:hidden;z-index:6";
+      chip.style.cssText = "position:absolute;left:" + left + "px;top:" + top + "px;width:" + w + "px;height:" + height + "px;pointer-events:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:700;color:#2E6A4B;background:#eef4fc;border:1px dashed #b9cdf0;border-radius:6px;padding:1px 2px;overflow:hidden;z-index:6";
       host.appendChild(chip);
     } catch (e) {}
   }

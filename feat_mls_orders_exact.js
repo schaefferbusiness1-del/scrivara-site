@@ -28,10 +28,10 @@
 
   function injectCSS() {
     var css = [
-      "#ordersView #ordersCard{max-width:960px;margin:0 auto!important;border-radius:18px!important;border:1px solid #e4ebf3!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;padding:24px 26px!important}",
+      "#ordersView #ordersCard{max-width:960px;margin:0 auto!important;border-radius:18px!important;border:1px solid #E7E5DD!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;padding:24px 26px!important}",
       "#ordersView #ordersCard,#ordersView #ordersCard *{box-sizing:border-box}",
       "#ordersView #ordersCard > h2{display:flex!important;align-items:center!important;gap:12px!important;flex-wrap:wrap!important;font-size:20px!important;font-weight:700!important;letter-spacing:-.01em!important}",
-      "#ordersView .extra-card{border:1px solid #e4ebf3!important;border-radius:14px!important;background:#fff!important;box-shadow:none!important;padding:18px 18px!important}",
+      "#ordersView .extra-card{border:1px solid #E7E5DD!important;border-radius:14px!important;background:#fff!important;box-shadow:none!important;padding:18px 18px!important}",
       "#ordersView .extra-card h3{font-size:15px!important;font-weight:700!important;letter-spacing:-.01em!important}",
       "#ordersView .sf-select,#ordersView select,#ordersView input[type=text],#ordersView .field input{border-radius:10px!important;border:1px solid #e0e8f1!important;background:#fff!important;font-size:13.5px!important}",
       "#ordersView .extra-card input,#ordersView .extra-card select,#ordersView .extra-card textarea{max-width:100%}",
@@ -46,7 +46,7 @@
     var h2 = card.querySelector(":scope > h2"); if (!h2 || h2.getAttribute("data-ox")) return;
     h2.setAttribute("data-ox", "1");
     var ic = h2.querySelector(".ic");
-    var sq = mk("span", "width:38px;height:38px;border-radius:10px;background:#eef3fb;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto", "&#128203;");
+    var sq = mk("span", "width:38px;height:38px;border-radius:10px;background:#EAF1EE;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto", "&#128203;");
     if (ic) h2.replaceChild(sq, ic); else h2.insertBefore(sq, h2.firstChild);
     var back = h2.querySelector("button");
     if (back) { imp(back, "height", "40px"); imp(back, "border-radius", "11px"); imp(back, "border", "1px solid #e0e8f1"); imp(back, "background", "#fff"); imp(back, "color", "#3d5168"); imp(back, "font-weight", "600"); }

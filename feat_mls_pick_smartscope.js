@@ -72,7 +72,7 @@
       "@media(max-width:900px){#" + WRAP_ID + " .mlspk-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}",
       "@media(max-width:560px){#" + WRAP_ID + " .mlspk-grid{grid-template-columns:minmax(0,1fr)}}",
       "#" + WRAP_ID + " .mlsps-cx-hd{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}",
-      "#" + WRAP_ID + " .mlsps-cx-hd h4{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:19px;margin:0;color:#0f2540}",
+      "#" + WRAP_ID + " .mlsps-cx-hd h4{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:19px;margin:0;color:#1A211C}",
       "#" + WRAP_ID + " .mlsps-cx-hd span{font-size:12px;color:#8a9cb2}",
       "html.mls-sv-active #" + WRAP_ID + "{display:none!important}"
     ].join("\n");

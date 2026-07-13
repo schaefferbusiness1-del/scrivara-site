@@ -14,7 +14,7 @@
   function isStaging() { try { if (/staging/i.test(location.pathname)) return true; if (document.querySelector('script[src*="mls-connect.staging.js"]')) return true; } catch (e) {} return false; }
   if (!isStaging()) { try { window.__mlsLx = { installed: false, skipped: "not-staging" }; } catch (e) {} return; }
   var STYLE_ID = "lxStyle"; var _obs = null, _t = null, _sched = null;
-  var TINTS = ["#f3eefb", "#eef3fb", "#e7f5ee", "#fff4e0"];
+  var TINTS = ["#f3eefb", "#EAF1EE", "#e7f5ee", "#fff4e0"];
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function mk(t, c, h) { var e = document.createElement(t); if (c) e.style.cssText = c; if (h != null) e.innerHTML = h; return e; }
   function imp(el, p, v) { try { el.style.setProperty(p, v, "important"); } catch (e) {} }
@@ -22,7 +22,7 @@
     var css = [
       "#legalReqView{max-width:1080px;margin:0 auto}",
       "#legalReqView,#legalReqView *{box-sizing:border-box}",
-      "#legalReqView .card{border-radius:18px!important;border:1px solid #e4ebf3!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;padding:24px 26px!important;margin-bottom:18px!important}",
+      "#legalReqView .card{border-radius:18px!important;border:1px solid #E7E5DD!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;padding:24px 26px!important;margin-bottom:18px!important}",
       "#legalReqView .card > h2{display:flex!important;align-items:center!important;gap:12px!important;flex-wrap:wrap!important;font-size:19px!important;font-weight:700!important;letter-spacing:-.01em!important}",
       "#legalReqView input,#legalReqView select,#legalReqView textarea{max-width:100%}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
@@ -46,7 +46,7 @@
       var btns = h2.querySelectorAll("button");
       for (var j = 0; j < btns.length; j++) {
         var b = btns[j]; imp(b, "height", "40px"); imp(b, "border-radius", "11px"); imp(b, "font-size", "13px");
-        if (/New request/i.test(b.textContent)) { imp(b, "background", "linear-gradient(135deg,#2f6bed,#2257cf)"); imp(b, "color", "#fff"); imp(b, "border", "0"); imp(b, "font-weight", "700"); }
+        if (/New request/i.test(b.textContent)) { imp(b, "background", "linear-gradient(135deg,#2E6A4B,#204034)"); imp(b, "color", "#fff"); imp(b, "border", "0"); imp(b, "font-weight", "700"); }
         else { imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600"); }
       }
     }

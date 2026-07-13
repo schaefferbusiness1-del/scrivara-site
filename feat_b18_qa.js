@@ -93,7 +93,7 @@
     s.textContent=
       '#mls-pull-progress{top:64px!important;left:auto!important;right:18px!important;transform:none!important;max-width:420px!important;border:1px solid rgba(120,160,255,.35)!important}'+
       '#mlsPullInModal{display:flex;align-items:center;gap:10px;margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#eef4ff;border:1px solid #c6d8f7;color:#123a6b;font:600 13px/1.4 system-ui,sans-serif}'+
-      '#mlsPullInModal .mlspim-spin{width:15px;height:15px;border:3px solid #b9cdf2;border-top-color:#2f6bed;border-radius:50%;animation:mlsppspin .8s linear infinite;flex:none}'+
+      '#mlsPullInModal .mlspim-spin{width:15px;height:15px;border:3px solid #b9cdf2;border-top-color:#2E6A4B;border-radius:50%;animation:mlsppspin .8s linear infinite;flex:none}'+
       '#mlsPullInModal.done .mlspim-spin{display:none}'+
       '#mlsPullInModal .mlspim-x{margin-left:auto;cursor:pointer;color:#5b7ba9;font-weight:800;padding:0 4px}'+
       '#mls-pull-progress .mlspp-close{margin-left:6px;cursor:pointer;font-weight:800;opacity:.75;padding:0 4px}'+
@@ -445,10 +445,10 @@
     if(dayAll.length>0){
       h='<div style="font:600 13px/1.5 system-ui;color:#28425f">No patients for <b>'+esc(prov)+'</b> on '+esc(pretty(day))+'.</div>'+
         '<div style="font:500 12.5px/1.5 system-ui;color:#54708c;margin-top:2px">'+dayAll.length+' appointment'+(dayAll.length===1?'':'s')+' exist'+(dayAll.length===1?'s':'')+' for other providers that day.</div>'+
-        '<button id="mlsSeAll" style="margin-top:8px;cursor:pointer;border:1px solid #2f6bed;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Show all providers for this day</button>';
+        '<button id="mlsSeAll" style="margin-top:8px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Show all providers for this day</button>';
     } else {
       h='<div style="font:600 13px/1.5 system-ui;color:#28425f">Nothing on the calendar for '+esc(pretty(day))+'.</div>'+
-        (next?('<button id="mlsSeNext" style="margin-top:8px;cursor:pointer;border:1px solid #2f6bed;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Jump to next clinic day — '+esc(pretty(next))+' ('+futureDays[next]+')</button>'):('<div style="font:500 12.5px system-ui;color:#54708c;margin-top:2px">Pull a day from athenaOne to fill the schedule.</div>'));
+        (next?('<button id="mlsSeNext" style="margin-top:8px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:7px 12px">Jump to next clinic day — '+esc(pretty(next))+' ('+futureDays[next]+')</button>'):('<div style="font:500 12.5px system-ui;color:#54708c;margin-top:2px">Pull a day from athenaOne to fill the schedule.</div>'));
     }
     box.innerHTML=h;
     var b1=box.querySelector('#mlsSeAll');
@@ -680,7 +680,7 @@
     if(window.__mlsCalmBootDone) return;
     var veil=document.createElement('div'); veil.id='mlsBootVeil';
     veil.style.cssText='position:fixed;inset:0;z-index:2147483602;background:linear-gradient(180deg,#0d1b33,#13264a);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .22s ease';
-    veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2f6bed;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#9fb4dd">Scribe</span></span></div>'+
+    veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2E6A4B;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#9fb4dd">Scribe</span></span></div>'+
       '<div style="width:150px;height:4px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden"><div id="mlsBootBar" style="width:24%;height:100%;border-radius:99px;background:#5b8cff;transition:width .5s ease"></div></div>'+
       '<div style="font:500 12px system-ui;color:#8ea6d4">Preparing your workspace…</div>';
     (document.body||document.documentElement).appendChild(veil);
@@ -728,7 +728,7 @@
     var q=String(inp.value||'').trim(); if(q.length<3) return;
     if(!chip){
       chip=document.createElement('button'); chip.id='mlsAskCopilotChip';
-      chip.style.cssText='position:fixed;z-index:100060;cursor:pointer;border:1px solid #2f6bed;background:#0f1b33;color:#cfe0ff;font:600 12.5px system-ui;border-radius:999px;padding:7px 14px;box-shadow:0 8px 24px rgba(10,25,60,.4)';
+      chip.style.cssText='position:fixed;z-index:100060;cursor:pointer;border:1px solid #2E6A4B;background:#0f1b33;color:#cfe0ff;font:600 12.5px system-ui;border-radius:999px;padding:7px 14px;box-shadow:0 8px 24px rgba(10,25,60,.4)';
       document.body.appendChild(chip);
     }
     var r=inp.getBoundingClientRect();

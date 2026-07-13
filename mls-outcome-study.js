@@ -977,12 +977,12 @@
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
         '<span style="font-size:16px">📈</span>' +
         '<strong style="font-size:15px">Outcome Study</strong>' +
-        '<span style="font-size:11px;padding:2px 7px;border-radius:10px;background:#1f9ad6;color:#fff">VAS + function</span>' +
+        '<span style="font-size:11px;padding:2px 7px;border-radius:10px;background:#3B7C5A;color:#fff">VAS + function</span>' +
       '</div>' +
       '<div style="font-size:12.5px;opacity:.8;margin-bottom:10px">Upload a spreadsheet of patients (name + date of service). ' +
         'MLS reads each chart, captures baseline &amp; follow-up VAS pain (0–10) and the functional short-form (0–25), ' +
         'buckets follow-ups to ~10 days / 1 / 2 / 3 months, and reports the outcomes.</div>' +
-      '<button id="mlsOutcomeOpen" style="' + btnCss('#1f9ad6') + '">📈 Open Outcome Study</button>';
+      '<button id="mlsOutcomeOpen" style="' + btnCss('#3B7C5A') + '">📈 Open Outcome Study</button>';
     host.appendChild(sec);
     var b = sec.querySelector('#mlsOutcomeOpen');
     if (b) b.addEventListener('click', openModal);
@@ -1002,7 +1002,7 @@
   }
   function btnCss(bg) {
     return 'display:inline-block;padding:8px 14px;border:0;border-radius:9px;cursor:pointer;' +
-      'font-size:13px;font-weight:600;color:#fff;background:' + (bg || '#1f9ad6') + ';';
+      'font-size:13px;font-weight:600;color:#fff;background:' + (bg || '#3B7C5A') + ';';
   }
 
   // Close the app's Study/Import modal (card + its fixed backdrop) so the
@@ -1081,7 +1081,7 @@
         '<button id="ocDemo" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:7px 12px;border-radius:9px;cursor:pointer;font-size:12px">Load demo data</button>' +
       '</div>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
-        '<button id="ocAiBtn" style="' + btnCss('#7c3aed') + '">\uD83E\uDD16 Import any Excel with AI</button>' +
+        '<button id="ocAiBtn" style="' + btnCss('#7A5CC0') + '">\uD83E\uDD16 Import any Excel with AI</button>' +
         '<input type="file" id="ocAiFile" accept=".xlsx,.xls,.csv,text/csv" style="display:none">' +
         '<span style="opacity:.7;font-size:11.5px">Any layout \u2014 the AI reads every patient &amp; score, saves them as records, and builds the study.</span>' +
       '</div>' +
@@ -1344,7 +1344,7 @@
     var src = info.filename ? esc(info.filename) : 'the uploaded sheet';
     return '<div id="ocIngestBanner" style="margin-bottom:10px;padding:9px 12px;border:1px solid #6d28d9;' +
       'background:rgba(124,58,237,.08);border-radius:10px;font-size:12.5px">' +
-      '<span style="color:#7c3aed;font-weight:600">🤖 AI import from ' + src + '</span> — <b>' +
+      '<span style="color:#7A5CC0;font-weight:600">🤖 AI import from ' + src + '</span> — <b>' +
       info.studies.length + '</b> patient(s), <b>' + info.scoreCells + '</b> score value(s) extracted' +
       (info.model ? ' · model ' + esc(String(info.model)) : '') + '. ' +
       (info.saved && info.saved.patients ? '<b>' + info.saved.patients + '</b> saved as patient record(s)' +
@@ -1377,7 +1377,7 @@
       '<th style="text-align:left;padding:4px 8px;position:sticky;top:0;background:var(--panel,#10182a)">DOS</th></tr></thead>' +
       '<tbody>' + rowsHtml + '</tbody></table></div>' + skHtml;
     acts.innerHTML =
-      '<button id="ocRunAthena" style="' + btnCss('#1f9ad6') + '">▶ Read charts from Athena &amp; build study</button> ' +
+      '<button id="ocRunAthena" style="' + btnCss('#3B7C5A') + '">▶ Read charts from Athena &amp; build study</button> ' +
       '<button id="ocRunDemo" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">Build from pasted/demo scores</button>';
     acts.querySelector('#ocRunAthena').addEventListener('click', function () { runAthena(box); });
     acts.querySelector('#ocRunDemo').addEventListener('click', function () { runFromInline(box); });
@@ -1493,7 +1493,7 @@
         rowsHtml + '</tbody></table></div>' +
       '<div id="ocMapMsg" style="margin-top:10px;font-size:12.5px"></div>' +
       '<div style="margin-top:12px">' +
-        '<button id="ocMapApply" style="' + btnCss('#1f9ad6') + '">✓ Apply mapping &amp; build study</button> ' +
+        '<button id="ocMapApply" style="' + btnCss('#3B7C5A') + '">✓ Apply mapping &amp; build study</button> ' +
         '<button id="ocMapBack" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Back</button></div>';
     body.querySelector('#ocMapBack').addEventListener('click', function () {
       if (STATE.ingestInfo) renderResults(box); else renderStep1(box);
@@ -1680,7 +1680,7 @@
       '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">' +
         '<div style="font-size:13px;opacity:.85;max-width:560px">' + esc(summarize(agg, c)) + '</div>' +
         '<div><button id="ocExpCsv" style="' + btnCss('#33415c') + '">⬇ CSV</button> ' +
-        '<button id="ocExpXlsx" style="' + btnCss('#1f9ad6') + '">⬇ Excel</button> ' +
+        '<button id="ocExpXlsx" style="' + btnCss('#3B7C5A') + '">⬇ Excel</button> ' +
         '<button id="ocBack" style="background:transparent;border:1px solid var(--border,#2a3550);color:inherit;padding:8px 12px;border-radius:9px;cursor:pointer;font-size:12.5px">↩ Start over</button></div>' +
       '</div>' +
       chartSVG(agg, c) +
@@ -1737,9 +1737,9 @@
       gridY += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="currentColor" opacity=".08"></line>';
     });
     return '<div style="margin-top:6px;border:1px solid var(--border,#222e48);border-radius:10px;padding:8px">' +
-      '<div style="font-size:11.5px;margin-bottom:2px"><span style="color:#1f9ad6">●</span> mean VAS pain (0–' + c.vasMax + ') &nbsp; <span style="color:#f5a623">●</span> mean short-form (0–' + c.sfMax + ')</div>' +
+      '<div style="font-size:11.5px;margin-bottom:2px"><span style="color:#3B7C5A">●</span> mean VAS pain (0–' + c.vasMax + ') &nbsp; <span style="color:#f5a623">●</span> mean short-form (0–' + c.sfMax + ')</div>' +
       '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;color:var(--text,#e8eefc)">' +
-      gridY + line(agg.vas, c.vasMax, '#1f9ad6') + line(agg.shortForm, c.sfMax, '#f5a623') + labels + '</svg></div>';
+      gridY + line(agg.vas, c.vasMax, '#3B7C5A') + line(agg.shortForm, c.sfMax, '#f5a623') + labels + '</svg></div>';
   }
 
   function perPatientTable() {

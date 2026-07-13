@@ -269,7 +269,7 @@
       '.mls-sv-card{pointer-events:auto;border-radius:12px;padding:13px 16px;color:#fff;' +
       'box-shadow:0 10px 30px rgba(0,0,0,.30);border:1px solid rgba(0,0,0,.18);' +
       'font-size:14px;line-height:1.4;display:flex;gap:11px;align-items:flex-start;animation:mlsSvIn .18s ease-out;}' +
-      '.mls-sv-ok{background:#0f8a3c;}.mls-sv-warn{background:#b3500e;}.mls-sv-info{background:#1f3a5f;}' +
+      '.mls-sv-ok{background:#0f8a3c;}.mls-sv-warn{background:#b3500e;}.mls-sv-info{background:#204034;}' +
       '.mls-sv-icon{font-size:18px;line-height:1.2;flex:0 0 auto;}' +
       '.mls-sv-body{flex:1 1 auto;min-width:0;}.mls-sv-title{font-weight:700;letter-spacing:.1px;}' +
       '.mls-sv-lines{margin-top:3px;opacity:.97;font-size:13px;white-space:pre-line;word-break:break-word;}' +
@@ -277,10 +277,10 @@
       'cursor:pointer;font-size:16px;line-height:1;padding:0 2px;margin-left:4px;}.mls-sv-x:hover{opacity:1;}' +
       '@keyframes mlsSvIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}' +
       '.mls-sv-verifybtn{display:inline-flex;align-items:center;gap:7px;margin:8px 0;padding:9px 14px;' +
-      'border-radius:10px;border:1px solid #15406b;background:#1f3a5f;color:#fff;font-weight:600;font-size:13px;cursor:pointer;}' +
+      'border-radius:10px;border:1px solid #15406b;background:#204034;color:#fff;font-weight:600;font-size:13px;cursor:pointer;}' +
       '.mls-sv-verifybtn:hover{background:#16314f;}' +
       '.mls-sv-report{margin:8px 0;border:1px solid #cfd8e3;border-radius:10px;background:#f6f9fc;' +
-      'color:#15293f;padding:11px 13px;font-size:13px;line-height:1.45;}' +
+      'color:#1A211C;padding:11px 13px;font-size:13px;line-height:1.45;}' +
       '.mls-sv-report b{color:#0d2238;}.mls-sv-report .mls-sv-good{color:#0f6b30;font-weight:700;}' +
       '.mls-sv-report .mls-sv-bad{color:#a5400b;font-weight:700;}.mls-sv-report ul{margin:6px 0 0;padding-left:18px;}';
     var st = document.createElement('style'); st.id = STYLE_ID; st.type = 'text/css';

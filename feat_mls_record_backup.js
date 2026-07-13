@@ -239,7 +239,7 @@
     allSess().then(function (list) {
       var b = document.getElementById(BTN_ID); if (!b) return;
       var box = document.createElement("div"); box.id = LIST_ID;
-      box.style.cssText = "position:absolute;z-index:99999;background:#fff;border:1px solid #d5dde6;border-radius:10px;box-shadow:0 8px 24px rgba(20,40,70,.18);padding:8px;min-width:240px;max-height:260px;overflow:auto;font-size:12.5px;color:#1f2f42;";
+      box.style.cssText = "position:absolute;z-index:99999;background:#fff;border:1px solid #d5dde6;border-radius:10px;box-shadow:0 8px 24px rgba(20,33,28,.18);padding:8px;min-width:240px;max-height:260px;overflow:auto;font-size:12.5px;color:#1f2f42;";
       var r = b.getBoundingClientRect();
       box.style.left = Math.max(8, r.left - 180) + "px";
       box.style.top = (r.bottom + 6 + (window.scrollY || 0)) + "px";

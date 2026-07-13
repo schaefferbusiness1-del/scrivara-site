@@ -374,7 +374,7 @@
     if (document.getElementById("mlsFhpdfCss")) return;
     var st = document.createElement("style"); st.id = "mlsFhpdfCss";
     st.textContent =
-      ".mlsfhpdf-btn{cursor:pointer;border:1px solid #1f7ae0;background:#1f7ae0;color:#fff;border-radius:8px;" +
+      ".mlsfhpdf-btn{cursor:pointer;border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;border-radius:8px;" +
       "padding:6px 11px;font:inherit;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:5px}" +
       ".mlsfhpdf-btn:hover{background:#1565c0;border-color:#1565c0}" +
       ".mlsfhpdf-btn[disabled]{opacity:.6;cursor:default}";

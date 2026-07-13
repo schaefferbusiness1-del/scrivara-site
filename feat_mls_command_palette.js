@@ -35,10 +35,10 @@
     st.textContent = [
       '#' + OV_ID + '{position:fixed;inset:0;z-index:2147483000;background:rgba(10,22,44,.38);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px}',
       '#' + OV_ID + ' .cpal-card{width:100%;max-width:640px;background:#fff;border-radius:16px;box-shadow:0 30px 90px rgba(8,20,45,.45);overflow:hidden;font:500 14px/1.45 "Plus Jakarta Sans",system-ui,sans-serif;color:#16324f}',
-      '#' + OV_ID + ' .cpal-inp{width:100%;box-sizing:border-box;border:0;outline:none;padding:16px 18px;font:600 16px/1.4 inherit;color:#0f2540;border-bottom:1px solid #e6edf6;background:#fbfdff}',
+      '#' + OV_ID + ' .cpal-inp{width:100%;box-sizing:border-box;border:0;outline:none;padding:16px 18px;font:600 16px/1.4 inherit;color:#1A211C;border-bottom:1px solid #e6edf6;background:#fbfdff}',
       '#' + OV_ID + ' .cpal-list{max-height:52vh;overflow-y:auto;padding:6px}',
       '#' + OV_ID + ' .cpal-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;cursor:pointer}',
-      '#' + OV_ID + ' .cpal-row.sel{background:#eaf2ff}',
+      '#' + OV_ID + ' .cpal-row.sel{background:#EAF1EC}',
       '#' + OV_ID + ' .cpal-row .ic{width:22px;text-align:center;flex:none}',
       '#' + OV_ID + ' .cpal-row .main{flex:1;min-width:0}',
       '#' + OV_ID + ' .cpal-row .t{font-weight:700;color:#12294a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',

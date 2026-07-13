@@ -40,26 +40,26 @@
       "#studioView." + GRID_CLASS + "{max-width:1320px;margin:0 auto;display:grid!important;grid-template-columns:1.35fr 1fr;grid-template-rows:auto 1fr;gap:16px;align-items:stretch}",
       "#studioView." + GRID_CLASS + ",#studioView." + GRID_CLASS + " *{box-sizing:border-box}",
       "#studioView." + GRID_CLASS + " .sx-title{grid-column:1 / -1;display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin:0}",
-      "#studioView." + GRID_CLASS + " #copilotCard{grid-column:1;grid-row:2;display:flex!important;flex-direction:column;min-width:0;min-height:0;height:calc(100vh - 188px);max-height:820px;overflow:hidden;margin:0!important;padding:0!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;background:#fff!important}",
+      "#studioView." + GRID_CLASS + " #copilotCard{grid-column:1;grid-row:2;display:flex!important;flex-direction:column;min-width:0;min-height:0;height:calc(100vh - 188px);max-height:820px;overflow:hidden;margin:0!important;padding:0!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;background:#fff!important}",
       "#studioView." + GRID_CLASS + " .sx-right{grid-column:2;grid-row:2;display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0;height:calc(100vh - 188px);max-height:820px}",
       /* copilot internals */
-      "#studioView #copilotHero{flex-shrink:0;display:flex!important;align-items:center;gap:11px;margin:0!important;padding:15px 20px!important;background:linear-gradient(120deg,#f6effd,#eef5ff)!important;border:0!important;border-bottom:1px solid #eef2f7!important;border-radius:0!important;color:#0f2540!important}",
-      "#studioView #copilotHero h2{color:#0f2540!important;font-size:15px!important;font-weight:700!important;margin:0!important;border:0!important;padding:0!important}",
-      "#studioView #copilotHero .sub{color:#6b7d93!important;font-size:11.5px!important;margin:2px 0 0!important}",
-      "#studioView #copilotOrb{width:32px;height:32px;border-radius:9px!important;background:linear-gradient(135deg,#7c3aed,#2f6bed)!important;color:#fff!important;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}",
+      "#studioView #copilotHero{flex-shrink:0;display:flex!important;align-items:center;gap:11px;margin:0!important;padding:15px 20px!important;background:linear-gradient(120deg,#f6effd,#EAF1EE)!important;border:0!important;border-bottom:1px solid #F4F2EC!important;border-radius:0!important;color:#1A211C!important}",
+      "#studioView #copilotHero h2{color:#1A211C!important;font-size:15px!important;font-weight:700!important;margin:0!important;border:0!important;padding:0!important}",
+      "#studioView #copilotHero .sub{color:#79837C!important;font-size:11.5px!important;margin:2px 0 0!important}",
+      "#studioView #copilotOrb{width:32px;height:32px;border-radius:9px!important;background:linear-gradient(135deg,#7A5CC0,#2E6A4B)!important;color:#fff!important;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}",
       "#studioView #copilotThread{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;padding:16px 20px!important;margin:0!important}",
       "#studioView #copilotChips{flex-shrink:0;padding:10px 20px 0!important;margin:0!important;display:flex;gap:7px;flex-wrap:wrap}",
-      "#studioView #copilotInputRow{flex-shrink:0;display:flex!important;gap:9px;align-items:center;padding:12px 20px 16px!important;border-top:1px solid #eef2f7;margin:0!important}",
-      "#studioView #copilotInput{flex:1;min-height:46px!important;height:46px;border-radius:12px!important;border:1px solid #e0e8f1!important;background:#f8fafc!important;padding:12px 15px!important;font-size:13.5px!important;resize:none;color:#0f2540!important}",
-      "#studioView #copilotMicBtn{width:46px;height:46px;border-radius:12px!important;border:1px solid #e0e8f1!important;background:#fff!important;color:#6b7d93!important;font-size:15px;flex-shrink:0;padding:0!important}",
-      "#studioView #copilotSendBtn{width:46px;height:46px;border-radius:12px!important;border:0!important;background:linear-gradient(135deg,#2f6bed,#2257cf)!important;color:#fff!important;font-size:17px;flex-shrink:0;box-shadow:0 10px 22px -10px rgba(47,107,237,.6);padding:0!important}",
+      "#studioView #copilotInputRow{flex-shrink:0;display:flex!important;gap:9px;align-items:center;padding:12px 20px 16px!important;border-top:1px solid #F4F2EC;margin:0!important}",
+      "#studioView #copilotInput{flex:1;min-height:46px!important;height:46px;border-radius:12px!important;border:1px solid #e0e8f1!important;background:#FCFBF8!important;padding:12px 15px!important;font-size:13.5px!important;resize:none;color:#1A211C!important}",
+      "#studioView #copilotMicBtn{width:46px;height:46px;border-radius:12px!important;border:1px solid #e0e8f1!important;background:#fff!important;color:#79837C!important;font-size:15px;flex-shrink:0;padding:0!important}",
+      "#studioView #copilotSendBtn{width:46px;height:46px;border-radius:12px!important;border:0!important;background:linear-gradient(135deg,#2E6A4B,#204034)!important;color:#fff!important;font-size:17px;flex-shrink:0;box-shadow:0 10px 22px -10px rgba(32,64,52,.6);padding:0!important}",
       "#studioView .copilot-note{flex-shrink:0;padding:0 20px 12px!important;margin:0!important}",
       /* right cards */
-      "#studioView .sx-right > .card{margin:0!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;background:#fff!important;min-height:0}",
+      "#studioView .sx-right > .card{margin:0!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;background:#fff!important;min-height:0}",
       "#studioView .sx-right > .sx-buildcard{flex:1 1 auto;display:flex;flex-direction:column;overflow:hidden;padding:18px 20px!important}",
       "#studioView .sx-right > .sx-buildcard #studioTemplates{flex:1 1 auto;min-height:0;overflow-y:auto}",
       "#studioView .sx-right > .sx-creations{flex-shrink:0;padding:16px 20px!important}",
-      "#studioView #studioResultCard{grid-column:1 / -1;grid-row:3;margin:0!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important}",
+      "#studioView #studioResultCard{grid-column:1 / -1;grid-row:3;margin:0!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important}",
       "#studioView input,#studioView select,#studioView textarea{max-width:100%}",
       /* responsive: single column below 980, natural heights with bounded thread scroll */
       "@media (max-width:980px){#studioView." + GRID_CLASS + "{grid-template-columns:1fr;grid-template-rows:auto auto auto}#studioView." + GRID_CLASS + " #copilotCard{grid-column:1;grid-row:2;height:auto;max-height:none}#studioView #copilotThread{max-height:46vh}#studioView." + GRID_CLASS + " .sx-right{grid-column:1;grid-row:3;height:auto;max-height:none}#studioView #studioResultCard{grid-row:4}}",
@@ -74,14 +74,14 @@
       "#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important;height:auto!important;min-height:520px}",
       "#studioView." + GRID_CLASS + " .sx-right{grid-row:3!important;height:auto!important;min-height:520px}",
       "#studioView #studioResultCard{grid-row:4!important}",
-      "#mls-sg-root .mls-sg-card{margin:0!important;background:#fff!important;border:1px solid #e4ebf3!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;padding:18px 20px!important;min-width:0}",
-      "#mls-sg-root .mls-sg-card h3{margin:0 0 4px!important;font-size:15px!important;font-weight:700!important;color:#0f2540!important}",
-      "#mls-sg-root .mls-sg-pill{background:#f3eefb;color:#7c3aed;border:1px solid #e4d9f7;border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;vertical-align:middle}",
-      "#mls-sg-root .mls-sg-muted{color:#6b7d93!important;font-size:12px!important}",
-      "#mls-sg-root input,#mls-sg-root select,#mls-sg-root textarea{border:1px solid #e0e8f1!important;background:#f8fafc!important;border-radius:10px!important;padding:9px 12px!important;font-size:13px!important;color:#0f2540!important}",
+      "#mls-sg-root .mls-sg-card{margin:0!important;background:#fff!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;padding:18px 20px!important;min-width:0}",
+      "#mls-sg-root .mls-sg-card h3{margin:0 0 4px!important;font-size:15px!important;font-weight:700!important;color:#1A211C!important}",
+      "#mls-sg-root .mls-sg-pill{background:#f3eefb;color:#7A5CC0;border:1px solid #e4d9f7;border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;vertical-align:middle}",
+      "#mls-sg-root .mls-sg-muted{color:#79837C!important;font-size:12px!important}",
+      "#mls-sg-root input,#mls-sg-root select,#mls-sg-root textarea{border:1px solid #e0e8f1!important;background:#FCFBF8!important;border-radius:10px!important;padding:9px 12px!important;font-size:13px!important;color:#1A211C!important}",
       "#mls-sg-root textarea{min-height:64px!important}",
-      "#mls-sg-root .mls-sg-btn{border:0;border-radius:10px;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font-weight:600;font-size:12.5px;padding:9px 14px;cursor:pointer}",
-      "#mls-sg-root .mls-sg-btn.gray{background:#fff;color:#6b7d93;border:1px solid #e0e8f1}",
+      "#mls-sg-root .mls-sg-btn{border:0;border-radius:10px;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font-weight:600;font-size:12.5px;padding:9px 14px;cursor:pointer}",
+      "#mls-sg-root .mls-sg-btn.gray{background:#fff;color:#79837C;border:1px solid #e0e8f1}",
       "#mls-sg-root .mls-sg-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}",
       "@media (max-width:1100px){#studioView." + GRID_CLASS + " #mls-sg-root{grid-template-columns:1fr}}",
       "@media (max-width:980px){#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important}#studioView." + GRID_CLASS + " .sx-right{grid-row:4!important}#studioView #studioResultCard{grid-row:5!important}}"
@@ -95,11 +95,11 @@
     if (v.querySelector(":scope > .sx-title")) return;
     var t = mk("div"); t.className = "sx-title";
     t.innerHTML =
-      '<span style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#7c3aed,#2f6bed);display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff">&#10022;</span>' +
+      '<span style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#7A5CC0,#2E6A4B);display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff">&#10022;</span>' +
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:23px;letter-spacing:-.01em;margin:0">AI Studio</h1>' +
-      '<span style="color:#6b7d93;font-size:13px">Ask your data, or build a tool &mdash; everything on one screen.</span>' +
+      '<span style="color:#79837C;font-size:13px">Ask your data, or build a tool &mdash; everything on one screen.</span>' +
       '<span style="flex:1"></span>' +
-      '<span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;color:#fff;background:linear-gradient(135deg,#7c3aed,#a855f7);padding:4px 10px;border-radius:20px">PREMIUM</span>';
+      '<span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;color:#fff;background:linear-gradient(135deg,#7A5CC0,#9B82D4);padding:4px 10px;border-radius:20px">PREMIUM</span>';
     v.insertBefore(t, v.firstChild);
   }
 

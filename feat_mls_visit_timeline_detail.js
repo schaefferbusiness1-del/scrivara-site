@@ -94,8 +94,8 @@
     if (safe(function () { return document.getElementById(STYLE_ID); })) return;
     var css = [
       ".mls-vtd-panel{margin:2px 0 8px;padding:11px 13px;border:1px solid var(--line,#e6e9ef);",
-      "border-left:3px solid var(--brand,#2563c9);border-radius:10px;background:var(--card,#fff);",
-      "font-size:13px;line-height:1.5;color:var(--ink,#15293f);white-space:pre-wrap;}",
+      "border-left:3px solid var(--brand,#2E6A4B);border-radius:10px;background:var(--card,#fff);",
+      "font-size:13px;line-height:1.5;color:var(--ink,#1A211C);white-space:pre-wrap;}",
       ".mls-vtd-panel .mls-vtd-h{font-weight:700;margin:0 0 4px;}",
       ".mls-vtd-panel .mls-vtd-note{color:var(--muted,#5b6b7c);font-style:italic;white-space:normal;}",
       ".mls-tl-hist{cursor:pointer;}"

@@ -316,7 +316,7 @@
   function fx4Notice(host, msg) {
     if (!host) return;
     var n = host.querySelector('.mls4fx-op-note');
-    if (!n) { n = ce('div', 'mls4fx-op-note'); n.style.cssText = 'margin:8px 1px 0;font-size:12.5px;color:#eaf2ff;opacity:.95;line-height:1.4;'; host.appendChild(n); }
+    if (!n) { n = ce('div', 'mls4fx-op-note'); n.style.cssText = 'margin:8px 1px 0;font-size:12.5px;color:#EAF1EC;opacity:.95;line-height:1.4;'; host.appendChild(n); }
     n.textContent = msg;
   }
 

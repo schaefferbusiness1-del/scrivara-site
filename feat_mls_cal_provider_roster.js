@@ -123,7 +123,7 @@
 
   /* ----- roster paint (authoritative; coexists with item64 without flicker) ----- */
   function rosterHtml(names){
-    var palette = ['#2f6bed','#19b8a6','#a855f7','#e8833a','#d6457f','#0ea5b7','#5b6ee8','#11a36b'];
+    var palette = ['#2E6A4B','#3B7C5A','#9B82D4','#e8833a','#d6457f','#0ea5b7','#5b6ee8','#11a36b'];
     var active = window.__mls65scope || '';
     // hidden data-mls64root sentinel + matching item64 sig keep item64's painter from clobbering us
     var h = '<div data-mls65root="1"><span data-mls64root="1" style="display:none"></span>';

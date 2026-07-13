@@ -52,15 +52,15 @@
       '.mlstip-info{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;',
         'margin-left:7px;border-radius:50%;font-size:11px;font-weight:700;line-height:1;',
         'background:rgba(255,255,255,.28);color:#fff;vertical-align:middle;cursor:help;flex:0 0 auto;}',
-      '.ez-btn.ez-secondary .mlstip-info{background:rgba(15,41,66,.18);color:#0f2942;}',
+      '.ez-btn.ez-secondary .mlstip-info{background:rgba(15,41,66,.18);color:#204034;}',
       /* the popover */
       '.mlstip-pop{position:absolute;left:12px;right:12px;top:calc(100% - 4px);z-index:30;',
-        'background:#0f2942;color:#eaf2ff;border:1px solid rgba(255,255,255,.22);',
+        'background:#204034;color:#EAF1EC;border:1px solid rgba(255,255,255,.22);',
         'border-radius:10px;padding:9px 11px;font-size:11.5px;font-weight:400;line-height:1.4;',
         'box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;visibility:hidden;transform:translateY(-4px);',
         'transition:opacity .12s ease,transform .12s ease,visibility .12s;pointer-events:none;text-align:left;}',
       '.mlstip-pop:before{content:"";position:absolute;left:18px;top:-6px;width:10px;height:10px;',
-        'background:#0f2942;border-left:1px solid rgba(255,255,255,.22);border-top:1px solid rgba(255,255,255,.22);',
+        'background:#204034;border-left:1px solid rgba(255,255,255,.22);border-top:1px solid rgba(255,255,255,.22);',
         'transform:rotate(45deg);}',
       /* shown on hover of the card, keyboard focus, or tap-toggle (open class) */
       '.mlstip-host:hover .mlstip-pop,',

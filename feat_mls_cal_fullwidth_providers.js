@@ -97,7 +97,7 @@
   window.__mls64ScopeTo = scopeTo;   // used by roster row onclick
 
   function rosterHtml(names){
-    var palette = ['#2f6bed','#19b8a6','#a855f7','#e8833a','#d6457f','#0ea5b7'];
+    var palette = ['#2E6A4B','#3B7C5A','#9B82D4','#e8833a','#d6457f','#0ea5b7'];
     var active = window.__mls64Scope || '';
     var h = '<div data-mls64root="1">';
     h += '<button class="cx-prov-row'+(active===''?' cx-prov-on':'')+'" onclick="window.__mls64ScopeTo &amp;&amp; window.__mls64ScopeTo(\'\')">' +
@@ -115,7 +115,7 @@
     // honest note when there are no real provider names yet (rows still provider:null until a re-pull)
     var anyStoredProv = (window.__mlsCalProvNames || []).length > 0;
     if(!anyStoredProv){
-      h += '<div style="color:#9aa8bb;font-size:11.5px;font-weight:500;line-height:1.35;margin-top:6px">'+
+      h += '<div style="color:#A6AEA6;font-size:11.5px;font-weight:500;line-height:1.35;margin-top:6px">'+
            'Real provider names appear after a fresh schedule re-pull from Athena.</div>';
     }
     h += '</div>';

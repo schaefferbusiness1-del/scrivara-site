@@ -20,9 +20,9 @@
     var css = [
       "#teamView{max-width:1080px;margin:0 auto}",
       "#teamView,#teamView *{box-sizing:border-box}",
-      "#teamView > .card{border-radius:18px!important;border:1px solid #e4ebf3!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;padding:24px 26px!important}",
+      "#teamView > .card{border-radius:18px!important;border:1px solid #E7E5DD!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;padding:24px 26px!important}",
       "#teamView > .card > h2{display:flex!important;align-items:center!important;gap:12px!important;flex-wrap:wrap!important;font-size:19px!important;font-weight:700!important;letter-spacing:-.01em!important}",
-      "#teamView .extra-card{border:1px solid #e4ebf3!important;border-radius:14px!important;background:#fff!important;box-shadow:none!important;padding:18px!important}",
+      "#teamView .extra-card{border:1px solid #E7E5DD!important;border-radius:14px!important;background:#fff!important;box-shadow:none!important;padding:18px!important}",
       "#teamView #teamList .team-docrow{display:grid!important;grid-template-columns:repeat(2,1fr)!important;gap:12px!important;align-items:stretch!important}",
       "#teamView #teamList .team-doc{width:auto!important;min-width:0!important;max-width:none!important}",
       "@media (max-width:760px){#teamView #teamList .team-docrow{grid-template-columns:1fr!important}}",
@@ -37,7 +37,7 @@
     var h2 = v.querySelector(".card > h2"); if (!h2 || h2.getAttribute("data-tx")) return;
     h2.setAttribute("data-tx", "1");
     var ic = h2.querySelector(".ic"), emoji = ic ? ic.innerHTML : "";
-    var sq = mk("span", "width:38px;height:38px;border-radius:10px;background:#eef3fb;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto", emoji);
+    var sq = mk("span", "width:38px;height:38px;border-radius:10px;background:#EAF1EE;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto", emoji);
     if (ic) h2.replaceChild(sq, ic); else h2.insertBefore(sq, h2.firstChild);
     var btns = h2.querySelectorAll("button");
     for (var j = 0; j < btns.length; j++) { var b = btns[j]; imp(b, "height", "40px"); imp(b, "border-radius", "11px"); imp(b, "font-size", "13px"); imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600"); }

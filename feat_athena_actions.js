@@ -62,7 +62,7 @@
     s.id = STYLE_ID;
     s.textContent = [
       '.mlsaa-tl{position:fixed;right:16px;bottom:16px;width:340px;max-width:92vw;',
-      'background:#fff;color:#15293f;border:1px solid #d7e0ea;border-radius:12px;',
+      'background:#fff;color:#1A211C;border:1px solid #d7e0ea;border-radius:12px;',
       'box-shadow:0 10px 34px rgba(16,40,72,.22);font:13px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;',
       'z-index:2147483600;overflow:hidden;}',
       '.mlsaa-tl[hidden]{display:none;}',

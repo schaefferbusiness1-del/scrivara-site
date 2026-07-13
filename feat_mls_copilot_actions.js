@@ -78,14 +78,14 @@
     if ($(STYLE_ID)) return;
     var st = document.createElement('style'); st.id = STYLE_ID;
     st.textContent = [
-      '.' + BLOCK_CLASS + '{margin:6px 4px 12px;padding:10px 12px;border-radius:12px;background:rgba(47,107,237,.07);border:1px solid rgba(47,107,237,.22)}',
+      '.' + BLOCK_CLASS + '{margin:6px 4px 12px;padding:10px 12px;border-radius:12px;background:rgba(32,64,52,.07);border:1px solid rgba(32,64,52,.22)}',
       '.' + BLOCK_CLASS + ' .mlsca-fu{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}',
-      '.' + BLOCK_CLASS + ' .mlsca-chip{cursor:pointer;border:1px solid rgba(47,107,237,.4);background:#fff;color:#1456a8;border-radius:999px;padding:5px 11px;font:600 12px system-ui;}',
-      '.' + BLOCK_CLASS + ' .mlsca-chip:hover{background:rgba(47,107,237,.12)}',
+      '.' + BLOCK_CLASS + ' .mlsca-chip{cursor:pointer;border:1px solid rgba(32,64,52,.4);background:#fff;color:#1456a8;border-radius:999px;padding:5px 11px;font:600 12px system-ui;}',
+      '.' + BLOCK_CLASS + ' .mlsca-chip:hover{background:rgba(32,64,52,.12)}',
       '.' + BLOCK_CLASS + ' .mlsca-acts{display:flex;flex-wrap:wrap;gap:6px}',
-      '.' + BLOCK_CLASS + ' .mlsca-act{cursor:pointer;border:0;border-radius:9px;padding:7px 12px;font:700 12.5px system-ui;color:#fff;background:linear-gradient(135deg,#2f6bed,#1456a8)}',
+      '.' + BLOCK_CLASS + ' .mlsca-act{cursor:pointer;border:0;border-radius:9px;padding:7px 12px;font:700 12.5px system-ui;color:#fff;background:linear-gradient(135deg,#2E6A4B,#1456a8)}',
       '.' + BLOCK_CLASS + ' .mlsca-act:hover{filter:brightness(1.08)}',
-      '.' + BLOCK_CLASS + ' .mlsca-art{margin-top:10px;padding:9px 11px;border-radius:10px;background:#fff;border:1px solid rgba(47,107,237,.25)}',
+      '.' + BLOCK_CLASS + ' .mlsca-art{margin-top:10px;padding:9px 11px;border-radius:10px;background:#fff;border:1px solid rgba(32,64,52,.25)}',
       '.' + BLOCK_CLASS + ' .mlsca-art h5{margin:0 0 6px;font:800 12.5px system-ui;color:#1f2d40}',
       '.' + BLOCK_CLASS + ' .mlsca-art textarea{width:100%;min-height:90px;box-sizing:border-box;font:13px system-ui;border:1px solid #cfd9ea;border-radius:8px;padding:7px}',
       '.' + BLOCK_CLASS + ' .mlsca-art input{width:100%;box-sizing:border-box;font:13px system-ui;border:1px solid #cfd9ea;border-radius:8px;padding:6px 8px;margin:4px 0}',

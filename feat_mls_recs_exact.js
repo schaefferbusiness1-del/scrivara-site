@@ -18,11 +18,11 @@
   function imp(el, p, v) { try { el.style.setProperty(p, v, "important"); } catch (e) {} }
   function injectCSS() {
     var css = [
-      "#recsView #recsCard{max-width:1080px;margin:0 auto!important;border-radius:18px!important;border:1px solid #e4ebf3!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important;padding:24px 26px!important}",
+      "#recsView #recsCard{max-width:1080px;margin:0 auto!important;border-radius:18px!important;border:1px solid #E7E5DD!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;padding:24px 26px!important}",
       "#recsView #recsCard,#recsView #recsCard *{box-sizing:border-box}",
       "#recsView #recsCard > h2{display:flex!important;align-items:center!important;gap:12px!important;flex-wrap:wrap!important;font-size:20px!important;font-weight:700!important;letter-spacing:-.01em!important}",
       "#recsView .rec-group{margin-top:18px!important}",
-      "#recsView .rec-group .rec-item,#recsView .rec-item{border:1px solid #e4ebf3!important;border-radius:13px!important;background:#fff!important;padding:14px 16px!important;box-shadow:none!important}",
+      "#recsView .rec-group .rec-item,#recsView .rec-item{border:1px solid #E7E5DD!important;border-radius:13px!important;background:#fff!important;padding:14px 16px!important;box-shadow:none!important}",
       "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
@@ -39,7 +39,7 @@
     var btns = h2.querySelectorAll("button");
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i]; imp(b, "height", "40px"); imp(b, "border-radius", "11px"); imp(b, "font-size", "13px");
-      if (/Generate Recommendations/i.test(b.textContent)) { imp(b, "background", "linear-gradient(135deg,#1f9d6b,#178a5c)"); imp(b, "color", "#fff"); imp(b, "border", "0"); imp(b, "font-weight", "700"); }
+      if (/Generate Recommendations/i.test(b.textContent)) { imp(b, "background", "linear-gradient(135deg,#2E6A4B,#204034)"); imp(b, "color", "#fff"); imp(b, "border", "0"); imp(b, "font-weight", "700"); }
       else { imp(b, "background", "#fff"); imp(b, "color", "#3d5168"); imp(b, "border", "1px solid #e0e8f1"); imp(b, "font-weight", "600"); }
     }
   }

@@ -44,18 +44,18 @@
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
   var KNOWN = {
-    mlsProcReport:   { icon: "&#128202;", iconBg: "#eef3fb", accent: "#2f6bed", title: "Procedure Report",            sub: "procedures by type",         color: "#0f2540", src: "mlsProcReport",    re: /([\d,]+)\s*procedure/i, fallback: "View" },
-    anaKeyTrends:    { icon: "&#128204;", iconBg: "#fdecec", accent: "#e05252", title: "Key trends at a glance",      sub: "active patients, top dx",    color: "#0f2540", src: "anaKeyTrendsBody", re: /([\d,]+)\s*(?:active\s*)?patient/i, fallback: "View" },
+    mlsProcReport:   { icon: "&#128202;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: "Procedure Report",            sub: "procedures by type",         color: "#1A211C", src: "mlsProcReport",    re: /([\d,]+)\s*procedure/i, fallback: "View" },
+    anaKeyTrends:    { icon: "&#128204;", iconBg: "#fdecec", accent: "#e05252", title: "Key trends at a glance",      sub: "active patients, top dx",    color: "#1A211C", src: "anaKeyTrendsBody", re: /([\d,]+)\s*(?:active\s*)?patient/i, fallback: "View" },
     anaOutcomes:     { icon: "&#128227;", iconBg: "#fbf3e3", accent: "#e0a028", title: "Outcomes &amp; marketing",    sub: "patient satisfaction",       color: "#c2680f", src: "anaOutcomesBody",  re: /(\d{1,3}%)/, fallback: "View" },
-    anaAsk:          { icon: "&#128270;", iconBg: "#f3eefb", accent: "#7c3aed", title: "Ask your data",               sub: "volumes, trends, coding",    color: "#7c3aed", label: "Query", premium: true },
-    anaBaseline:     { icon: "&#128200;", iconBg: "#e7f5ee", accent: "#12915e", title: "Baseline metrics",            sub: "wRVU and visit counts",      color: "#0f2540", src: "anaBaselineBody",  re: /wRVU\s*\(approx\.\)\s*([\d,]+(?:\.\d+)?)/i, re2: /Office visits\s*([\d,]+)/i, fallback: "View" },
-    anaDoctorReview: { icon: "&#128202;", iconBg: "#eef3fb", accent: "#2f6bed", title: "Doctor analysis &amp; review", sub: "per-provider AI feedback",  color: "#2f6bed", label: "Review" },
+    anaAsk:          { icon: "&#128270;", iconBg: "#f3eefb", accent: "#7A5CC0", title: "Ask your data",               sub: "volumes, trends, coding",    color: "#7A5CC0", label: "Query", premium: true },
+    anaBaseline:     { icon: "&#128200;", iconBg: "#e7f5ee", accent: "#12915e", title: "Baseline metrics",            sub: "wRVU and visit counts",      color: "#1A211C", src: "anaBaselineBody",  re: /wRVU\s*\(approx\.\)\s*([\d,]+(?:\.\d+)?)/i, re2: /Office visits\s*([\d,]+)/i, fallback: "View" },
+    anaDoctorReview: { icon: "&#128202;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: "Doctor analysis &amp; review", sub: "per-provider AI feedback",  color: "#2E6A4B", label: "Review" },
     anaTeamGrades:   { icon: "&#127775;", iconBg: "#fef6e0", accent: "#1f7d5c", title: "Patient-experience ratings",  sub: "graded visits",              color: "#1f7d5c", src: "anaTeamGradesBody", re: /([\d.]+\s*\/\s*5)/, fallback: "View" },
-    anaReferral:     { icon: "&#129309;", iconBg: "#fef6e0", accent: "#7c3aed", title: "Referral outcomes",           sub: "close the loop",             color: "#7c3aed", label: "Report", premium: true },
-    anaRegistry:     { icon: "&#128203;", iconBg: "#eef3fb", accent: "#7c3aed", title: "Outcomes registry",           sub: "pain &amp; ODI trajectory",  color: "#7c3aed", label: "Build", premium: true },
-    anaRwe:          { icon: "&#128300;", iconBg: "#e7f5ee", accent: "#12915e", title: "Research registry",           sub: "de-identified outcomes",     color: "#7c3aed", label: "Export" },
-    mlsRvuProd:      { icon: "&#128202;", iconBg: "#e7f5ee", accent: "#12915e", title: "RVU Productivity",            sub: "from signed visits",         color: "#7c3aed", label: "wRVU", premium: true },
-    mlsDWCard:       { icon: "&#128197;", iconBg: "#eef3fb", accent: "#2f6bed", title: "Days worked &amp; volume",    sub: "per provider, by month",     color: "#0f2540", label: "Open" }
+    anaReferral:     { icon: "&#129309;", iconBg: "#fef6e0", accent: "#7A5CC0", title: "Referral outcomes",           sub: "close the loop",             color: "#7A5CC0", label: "Report", premium: true },
+    anaRegistry:     { icon: "&#128203;", iconBg: "#EAF1EE", accent: "#7A5CC0", title: "Outcomes registry",           sub: "pain &amp; ODI trajectory",  color: "#7A5CC0", label: "Build", premium: true },
+    anaRwe:          { icon: "&#128300;", iconBg: "#e7f5ee", accent: "#12915e", title: "Research registry",           sub: "de-identified outcomes",     color: "#7A5CC0", label: "Export" },
+    mlsRvuProd:      { icon: "&#128202;", iconBg: "#e7f5ee", accent: "#12915e", title: "RVU Productivity",            sub: "from signed visits",         color: "#7A5CC0", label: "wRVU", premium: true },
+    mlsDWCard:       { icon: "&#128197;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: "Days worked &amp; volume",    sub: "per provider, by month",     color: "#1A211C", label: "Open" }
   };
   var PREF = ["anaKeyTrends", "anaBaseline", "anaOutcomes", "anaTeamGrades", "mlsProcReport", "mlsRvuProd", "mlsDWCard", "anaDoctorReview", "anaAsk", "anaReferral", "anaRegistry", "anaRwe"];
 
@@ -69,7 +69,7 @@
   function metaFor(card) {
     var id = card.id || "";
     if (KNOWN[id]) return KNOWN[id];
-    return { icon: "&#128202;", iconBg: "#eef3fb", accent: "#2f6bed", title: cleanTitle(card), sub: "", color: "#0f2540", label: "View" };
+    return { icon: "&#128202;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: cleanTitle(card), sub: "", color: "#1A211C", label: "View" };
   }
 
   function cards() {
@@ -100,29 +100,29 @@
     var css = [
       "#analysisView." + GRID_CLASS + "{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;grid-auto-rows:" + ROWH + "px!important;gap:" + GAP + "px!important;grid-auto-flow:row dense!important;align-items:stretch!important;max-width:1320px;margin:0 auto}",
       "#analysisView." + GRID_CLASS + " .ax-title{grid-column:1 / -1;display:block;margin:2px 0 10px}",
-      "#analysisView." + GRID_CLASS + " .ax-tile{position:relative;border-radius:16px;overflow:hidden;background:#fff;border:1px solid #e6ecf4;box-shadow:0 1px 3px rgba(15,37,64,.05);transition:box-shadow .18s ease,transform .18s ease,border-color .18s ease;min-width:0}",
-      "#analysisView." + GRID_CLASS + " .ax-tile::before{content:'';position:absolute;left:0;top:0;right:0;height:3px;background:var(--ax-accent,#2f6bed);opacity:0;transition:opacity .18s ease}",
-      "#analysisView." + GRID_CLASS + " .ax-tile:hover{transform:translateY(-2px);border-color:#d5e2f2;box-shadow:0 10px 24px -12px rgba(15,37,64,.22)}",
+      "#analysisView." + GRID_CLASS + " .ax-tile{position:relative;border-radius:16px;overflow:hidden;background:#fff;border:1px solid #e6ecf4;box-shadow:0 1px 3px rgba(20,33,28,.05);transition:box-shadow .18s ease,transform .18s ease,border-color .18s ease;min-width:0}",
+      "#analysisView." + GRID_CLASS + " .ax-tile::before{content:'';position:absolute;left:0;top:0;right:0;height:3px;background:var(--ax-accent,#2E6A4B);opacity:0;transition:opacity .18s ease}",
+      "#analysisView." + GRID_CLASS + " .ax-tile:hover{transform:translateY(-2px);border-color:#d5e2f2;box-shadow:0 10px 24px -12px rgba(20,33,28,.22)}",
       "#analysisView." + GRID_CLASS + " .ax-tile:hover::before{opacity:1}",
-      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp{border-color:#bcd6fb;box-shadow:0 18px 40px -20px rgba(13,33,56,.4);transform:none}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp{border-color:#bcd6fb;box-shadow:0 18px 40px -20px rgba(20,33,28,.4);transform:none}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp::before{opacity:1}",
-      "#analysisView." + GRID_CLASS + " .ax-tile.ax-drag{opacity:.5;background:#eef5ff;box-shadow:inset 0 0 0 2px #9cc0f5}",
-      "#analysisView." + GRID_CLASS + " .ax-tile.ax-over{box-shadow:inset 0 0 0 2px #2f6bed,0 12px 28px -16px rgba(47,107,237,.5);transform:translateY(-2px)}",
-      "#analysisView." + GRID_CLASS + " .ax-prev{width:100%;height:100%;text-align:left;background:transparent;border:none;padding:18px 20px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;color:#0f2540}",
-      "#analysisView." + GRID_CLASS + " .ax-prev .ax-cta{display:flex;align-items:center;gap:5px;color:#9aa8bb;font-size:12.5px;font-weight:600;margin-top:12px;transition:color .15s ease}",
-      "#analysisView." + GRID_CLASS + " .ax-tile:hover .ax-prev .ax-cta{color:#2f6bed}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-drag{opacity:.5;background:#EAF1EE;box-shadow:inset 0 0 0 2px #9cc0f5}",
+      "#analysisView." + GRID_CLASS + " .ax-tile.ax-over{box-shadow:inset 0 0 0 2px #2E6A4B,0 12px 28px -16px rgba(32,64,52,.5);transform:translateY(-2px)}",
+      "#analysisView." + GRID_CLASS + " .ax-prev{width:100%;height:100%;text-align:left;background:transparent;border:none;padding:18px 20px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;color:#1A211C}",
+      "#analysisView." + GRID_CLASS + " .ax-prev .ax-cta{display:flex;align-items:center;gap:5px;color:#A6AEA6;font-size:12.5px;font-weight:600;margin-top:12px;transition:color .15s ease}",
+      "#analysisView." + GRID_CLASS + " .ax-tile:hover .ax-prev .ax-cta{color:#2E6A4B}",
       "#analysisView." + GRID_CLASS + " .ax-head{display:none;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #edf2f8;background:#fbfcfe}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp .ax-head{display:flex}",
       "#analysisView." + GRID_CLASS + " .ax-head .ax-hicon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}",
-      "#analysisView." + GRID_CLASS + " .ax-head .ax-htitle{font-weight:700;font-size:14px;color:#0f2540;letter-spacing:-.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-      "#analysisView." + GRID_CLASS + " .ax-collapse{flex:none;height:30px;padding:0 12px;border-radius:8px;border:1px solid #e0e8f1;background:#fff;color:#6b7d93;font-weight:600;font-size:12.5px;font-family:inherit;cursor:pointer}",
-      "#analysisView." + GRID_CLASS + " .ax-collapse:hover{background:#f3f6fb;color:#2f6bed;border-color:#c9dbf3}",
+      "#analysisView." + GRID_CLASS + " .ax-head .ax-htitle{font-weight:700;font-size:14px;color:#1A211C;letter-spacing:-.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      "#analysisView." + GRID_CLASS + " .ax-collapse{flex:none;height:30px;padding:0 12px;border-radius:8px;border:1px solid #e0e8f1;background:#fff;color:#79837C;font-weight:600;font-size:12.5px;font-family:inherit;cursor:pointer}",
+      "#analysisView." + GRID_CLASS + " .ax-collapse:hover{background:#f3f6fb;color:#2E6A4B;border-color:#c9dbf3}",
       "#analysisView." + GRID_CLASS + " .ax-body{display:flex;flex-direction:column;height:100%;min-height:0}",
       "#analysisView." + GRID_CLASS + " .ax-tile.ax-exp .ax-body{height:calc(100% - 55px)}",
       "#analysisView." + GRID_CLASS + " .ax-body > .card{border:0!important;border-radius:0!important;box-shadow:none!important;margin:0!important;height:100%;overflow:auto;background:#fff!important}",
       "#analysisView." + GRID_CLASS + " .ax-grip{position:absolute;right:3px;bottom:3px;width:20px;height:20px;cursor:nwse-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px;z-index:5;color:#d3dce7;opacity:0;transition:opacity .15s ease}",
       "#analysisView." + GRID_CLASS + " .ax-tile:hover .ax-grip{opacity:1}",
-      "#analysisView." + GRID_CLASS + " .ax-grip:hover{color:#2f6bed}",
+      "#analysisView." + GRID_CLASS + " .ax-grip:hover{color:#2E6A4B}",
       "@media (max-width:1099px){#analysisView." + GRID_CLASS + "{grid-template-columns:repeat(3,minmax(0,1fr))!important}}",
       "@media (max-width:819px){#analysisView." + GRID_CLASS + "{grid-template-columns:repeat(2,minmax(0,1fr))!important}}",
       "@media (max-width:559px){#analysisView." + GRID_CLASS + "{grid-template-columns:1fr!important}}",
@@ -146,11 +146,11 @@
   }
   function buildPreview(prev, m) {
     var st = readStat(m);
-    var prem = m.premium ? '<span style="font-size:9px;font-weight:700;letter-spacing:.05em;color:#7c3aed;background:#f3eefb;border:1px solid #e4d9f7;padding:3px 8px;border-radius:20px">PREMIUM</span>' : "";
+    var prem = m.premium ? '<span style="font-size:9px;font-weight:700;letter-spacing:.05em;color:#7A5CC0;background:#f3eefb;border:1px solid #e4d9f7;padding:3px 8px;border-radius:20px">PREMIUM</span>' : "";
     prev.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="width:40px;height:40px;border-radius:11px;background:' + m.iconBg + ';display:flex;align-items:center;justify-content:center;font-size:18px">' + m.icon + '</span>' + prem + '</div>' +
       '<div style="font-weight:700;font-size:14.5px;letter-spacing:-.01em;line-height:1.25;margin-bottom:auto">' + m.title + '</div>' +
-      '<div style="margin-top:10px"><div style="font-weight:800;font-size:' + (st.isLabel ? "16px" : "24px") + ';letter-spacing:-.015em;color:' + (st.isLabel ? "#5b6b7c" : m.color) + '">' + st.text + '</div>' + (m.sub ? '<div style="color:#9aa8bb;font-size:12px;margin-top:2px">' + m.sub + '</div>' : "") + '</div>' +
+      '<div style="margin-top:10px"><div style="font-weight:800;font-size:' + (st.isLabel ? "16px" : "24px") + ';letter-spacing:-.015em;color:' + (st.isLabel ? "#5b6b7c" : m.color) + '">' + st.text + '</div>' + (m.sub ? '<div style="color:#A6AEA6;font-size:12px;margin-top:2px">' + m.sub + '</div>' : "") + '</div>' +
       '<div class="ax-cta">Tap to expand &#10530;</div>';
   }
 
@@ -204,7 +204,7 @@
     var t = mk("div"); t.className = "ax-title";
     t.innerHTML =
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.015em;margin:0">Analysis</h1>' +
-      '<p style="color:#9aa8bb;font-size:12.5px;margin:4px 0 0">Live practice metrics. Tap any tile to expand it; drag to reorder.</p>';
+      '<p style="color:#A6AEA6;font-size:12.5px;margin:4px 0 0">Live practice metrics. Tap any tile to expand it; drag to reorder.</p>';
     v.insertBefore(t, v.firstChild);
   }
 
@@ -219,7 +219,7 @@
       var card = byId[k]; if (!card) return;
       var m = metaFor(card), tile = ensureTile(card);
       var body = tile.querySelector(".ax-body"), prev = tile.querySelector(".ax-prev");
-      tile.style.setProperty("--ax-accent", m.accent || "#2f6bed");
+      tile.style.setProperty("--ax-accent", m.accent || "#2E6A4B");
       if (card.parentElement !== body) body.appendChild(card);
       var sz = sizeOf(k), exp = isExpanded(k);
       tile.style.gridColumn = "span " + clamp(sz.cols, 1, nc);

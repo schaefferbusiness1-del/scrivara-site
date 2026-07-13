@@ -29,7 +29,7 @@
       'padding:3px 10px;border-radius:999px;font-weight:600;font-size:12.5px;',
       'background:rgba(220,38,38,.14);color:#dc2626;border:1px solid rgba(220,38,38,.30);}',
       '#' + STRIP_ID + '.mlsalg-none{border-color:rgba(16,185,129,.28);background:rgba(16,185,129,.08);}',
-      '#' + STRIP_ID + '.mlsalg-none .mlsalg-pill{background:rgba(16,185,129,.14);color:#10b981;',
+      '#' + STRIP_ID + '.mlsalg-none .mlsalg-pill{background:rgba(16,185,129,.14);color:#2E6A4B;',
       'border-color:rgba(16,185,129,.30);}',
       '#' + STRIP_ID + '.mlsalg-has{border-color:rgba(220,38,38,.28);background:rgba(220,38,38,.06);}',
       '#' + STRIP_ID + ' .mlsalg-src{margin-left:auto;font-size:11px;opacity:.55;font-weight:500;}'

@@ -178,7 +178,7 @@
       '#' + BOX_ID + ' .mls-pqs-ic{position:absolute;left:10px;font-size:13px;opacity:.6;pointer-events:none}' +
       '#' + INPUT_ID + '{width:100%;box-sizing:border-box;padding:8px 28px 8px 28px;border:1px solid #cfd8e3;border-radius:9px;' +
         'font-size:13.5px;color:#16242e;background:#fff;outline:none}' +
-      '#' + INPUT_ID + ':focus{border-color:#1f9ad6;box-shadow:0 0 0 3px rgba(31,154,214,.18)}' +
+      '#' + INPUT_ID + ':focus{border-color:#3B7C5A;box-shadow:0 0 0 3px rgba(31,154,214,.18)}' +
       '#' + BOX_ID + ' .mls-pqs-kbd{position:absolute;right:8px;font-size:11px;color:#7a8893;border:1px solid #d7dee6;' +
         'border-radius:5px;padding:1px 5px;background:#f3f6f9;pointer-events:none}' +
       '#' + BOX_ID + ' .mls-pqs-kbd.hide{display:none}' +
@@ -189,12 +189,12 @@
       '#' + PANEL_ID + ' .mls-pqs-row{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;border-bottom:1px solid #eef2f6}' +
       '#' + PANEL_ID + ' .mls-pqs-row:last-child{border-bottom:none}' +
       '#' + PANEL_ID + ' .mls-pqs-row.on,#' + PANEL_ID + ' .mls-pqs-row:hover{background:#eaf4fb}' +
-      '#' + PANEL_ID + ' .mls-pqs-av{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:#127a7d;color:#fff;' +
+      '#' + PANEL_ID + ' .mls-pqs-av{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:#2E6A4B;color:#fff;' +
         'font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}' +
       '#' + PANEL_ID + ' .mls-pqs-main{min-width:0;flex:1 1 auto}' +
       '#' + PANEL_ID + ' .mls-pqs-nm{font-size:13.5px;font-weight:600;color:#16242e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
       '#' + PANEL_ID + ' .mls-pqs-sub{font-size:12px;color:#6b7a86;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-      '#' + PANEL_ID + ' .mls-pqs-badge{flex:0 0 auto;font-size:11px;color:#127a7d;background:#e6f3f2;border-radius:20px;padding:2px 8px}' +
+      '#' + PANEL_ID + ' .mls-pqs-badge{flex:0 0 auto;font-size:11px;color:#2E6A4B;background:#e6f3f2;border-radius:20px;padding:2px 8px}' +
       '#' + PANEL_ID + ' .mls-pqs-active{flex:0 0 auto;font-size:10px;color:#0a6b3b;background:#e3f6e9;border-radius:20px;padding:2px 7px;font-weight:700}' +
       '#' + PANEL_ID + ' .mls-pqs-empty{padding:14px 14px;font-size:13px;color:#6b7a86;text-align:center}' +
       '#' + PANEL_ID + ' .mls-pqs-foot{padding:7px 12px;font-size:11px;color:#8a97a2;background:#f7fafc;border-top:1px solid #eef2f6}' +

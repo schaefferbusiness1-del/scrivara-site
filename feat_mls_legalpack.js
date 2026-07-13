@@ -310,7 +310,7 @@
   function printText(title, text) {
     try {
       var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
-        '<style>body{font-family:Segoe UI,Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13px;line-height:1.55}h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px}pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0}</style></head><body><h1>' + esc(title) + '</h1><pre>' + esc(text) + '</pre></body></html>';
+        '<style>body{font-family:Segoe UI,Arial,sans-serif;color:#1A211C;padding:34px 40px;font-size:13px;line-height:1.55}h1{font-size:18px;color:#204034;border-bottom:2px solid #2E6A4B;padding-bottom:8px}pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0}</style></head><body><h1>' + esc(title) + '</h1><pre>' + esc(text) + '</pre></body></html>';
       var win = window.open('', '_blank', 'width=840,height=1000');
       if (win && win.document) { win.document.open(); win.document.write(html); win.document.close(); win.focus(); setTimeout(function () { try { win.print(); } catch (e) {} }, 350); }
       else say('Allow pop-ups to print.', 'err');
@@ -332,15 +332,15 @@
     '#mlsLpHost h2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:18px;margin:0 0 4px}',
     '#mlsLpHost .lp-sub{color:var(--muted,#5b7186);font-size:13px;margin:2px 0 10px}',
     '#mlsLpHost .lp-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}',
-    '#mlsLpHost input[type=text],#mlsLpHost textarea{border:1px solid var(--line,#cfd9e4);border-radius:9px;padding:9px 11px;font-size:13.5px;background:var(--field-bg,#fff);color:var(--ink,#16324f)}',
-    '#mlsLpHost .lp-btn{border:1px solid var(--line,#cfd9e4);background:#eef4fc;color:#155fb3;border-radius:9px;padding:8px 13px;font-size:13px;font-weight:600;cursor:pointer}',
+    '#mlsLpHost input[type=text],#mlsLpHost textarea{border:1px solid var(--line,#E4E1D8);border-radius:9px;padding:9px 11px;font-size:13.5px;background:var(--field-bg,#fff);color:var(--ink,#1A211C)}',
+    '#mlsLpHost .lp-btn{border:1px solid var(--line,#E4E1D8);background:#EAF1EE;color:#204034;border-radius:9px;padding:8px 13px;font-size:13px;font-weight:600;cursor:pointer}',
     '#mlsLpHost .lp-btn.green{background:#e6f6ec;border-color:#bfe6cf;color:#1f7a4d}',
     '#mlsLpHost .lp-btn[disabled]{opacity:.55;cursor:default}',
     '#mlsLpHost .lp-ident{background:#f4f8ff;border:1px solid #cfe2f8;border-radius:10px;padding:9px 12px;font-size:13.5px;font-weight:600;color:#1d4fd0;margin:8px 0}',
     '#mlsLpHost .lp-warn{background:#fff6e5;border:1px solid #f0d9a0;border-radius:10px;padding:9px 12px;font-size:13px;color:#8a5a00;margin:8px 0}',
     '#mlsLpHost .lp-provchip{display:inline-flex;align-items:center;gap:5px;background:#f2f6fb;border:1px solid #d7e2ee;border-radius:18px;padding:4px 11px;font-size:12.5px;font-weight:600;color:#2a4a68;cursor:pointer;user-select:none}',
     '#mlsLpHost .lp-provchip.off{opacity:.45;text-decoration:line-through}',
-    '#mlsLpHost .lp-cat{margin:14px 0 4px;font-size:14px;font-weight:800;color:#155fb3;border-bottom:1px solid var(--line,#e2e9f1);padding-bottom:4px}',
+    '#mlsLpHost .lp-cat{margin:14px 0 4px;font-size:14px;font-weight:800;color:#204034;border-bottom:1px solid var(--line,#e2e9f1);padding-bottom:4px}',
     '#mlsLpHost .lp-item{border:1px solid var(--line,#e6edf4);border-radius:10px;padding:8px 11px;margin:7px 0;font-size:13px}',
     '#mlsLpHost .lp-item .hd{font-weight:700;color:#20415e}',
     '#mlsLpHost .lp-item .src{font-weight:500;color:var(--muted,#7189a0);font-size:12px;margin-left:6px}',
@@ -348,9 +348,9 @@
     '#mlsLpHost .lp-srcrow{display:flex;align-items:center;gap:8px;border:1px solid #e2e9f1;border-radius:9px;padding:6px 10px;margin:5px 0;font-size:12.5px}',
     '#mlsLpHost .lp-results{position:relative}',
     '#mlsLpHost .lp-drop{border:2px dashed #c9d7e6;border-radius:11px;padding:14px;text-align:center;color:var(--muted,#5b7186);font-size:13px;margin:8px 0;cursor:pointer}',
-    '#mlsLpSearchRes{position:absolute;z-index:60;left:0;right:0;top:100%;background:#fff;border:1px solid #cfd9e4;border-radius:10px;box-shadow:0 8px 22px rgba(20,50,90,.14);max-height:280px;overflow:auto;display:none}',
+    '#mlsLpSearchRes{position:absolute;z-index:60;left:0;right:0;top:100%;background:#fff;border:1px solid #E4E1D8;border-radius:10px;box-shadow:0 8px 22px rgba(20,50,90,.14);max-height:280px;overflow:auto;display:none}',
     '#mlsLpSearchRes .r{padding:8px 12px;font-size:13.5px;cursor:pointer}',
-    '#mlsLpSearchRes .r:hover{background:#eef4fc}',
+    '#mlsLpSearchRes .r:hover{background:#EAF1EE}',
     '#mlsLpNarrOut{width:100%;min-height:360px;resize:vertical;font-family:Segoe UI,Arial,sans-serif}',
     '#mlsLpHost .lp-disclaim{background:#fff4f0;border:1px solid #f4c9b8;border-radius:9px;color:#a13c22;font-size:12.5px;padding:8px 11px;margin-top:8px}'
   ].join('\n');

@@ -439,7 +439,7 @@
     if (old && old.parentElement === glance) { if (old.getAttribute('data-t') !== txt) { old.textContent = txt; old.setAttribute('data-t', txt); } return; }
     if (old) old.remove();
     var d = document.createElement('div'); d.id = 'mlsT3GlanceNote'; d.setAttribute('data-t', txt);
-    d.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed #e4ebf3;font-size:12px;font-weight:700;color:#2f6bed';
+    d.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed #E7E5DD;font-size:12px;font-weight:700;color:#2E6A4B';
     d.textContent = txt;
     glance.appendChild(d);
   }
@@ -600,26 +600,26 @@
       '#mlsT3Status{display:none;align-items:center;gap:9px;min-height:34px;margin:0 0 10px;padding:6px 12px;border-radius:10px;font:600 12.5px/1.35 system-ui,sans-serif;border:1px solid #c6d8f7;background:#eef4ff;color:#123a6b}',
       '#mlsT3Status.t3s-err{background:#fdecec;border-color:#f2c4c4;color:#8c2323}',
       '#mlsT3Status.t3s-done{background:#e9f7ef;border-color:#c8e8d4;color:#136c3f}',
-      '#mlsT3Status .t3s-spin{width:13px;height:13px;border:3px solid #b9cdf2;border-top-color:#2f6bed;border-radius:50%;animation:t3spin .8s linear infinite;flex:none}',
+      '#mlsT3Status .t3s-spin{width:13px;height:13px;border:3px solid #b9cdf2;border-top-color:#2E6A4B;border-radius:50%;animation:t3spin .8s linear infinite;flex:none}',
       '@keyframes t3spin{to{transform:rotate(360deg)}}',
-      '#mlsT3Status .t3s-retry{font:700 12px/1 system-ui,sans-serif;background:#2f6bed;color:#fff;border:0;border-radius:7px;padding:6px 12px;cursor:pointer}',
+      '#mlsT3Status .t3s-retry{font:700 12px/1 system-ui,sans-serif;background:#2E6A4B;color:#fff;border:0;border-radius:7px;padding:6px 12px;cursor:pointer}',
       '#mlsT3Status .t3s-x{margin-left:auto;cursor:pointer;opacity:.6;font-weight:800;padding:0 4px}',
       /* provider roster pills */
       '#mlsT3Roster{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:2px 0 12px}',
       '#mlsT3Roster .t3r-cap{font-size:11px;font-weight:800;letter-spacing:.06em;color:#8a9cb2;text-transform:uppercase;margin-right:2px}',
       '#mlsT3Roster .t3r-chip{font:600 12.5px/1 system-ui,sans-serif;color:#2b4360;background:#fff;border:1px solid #d5e2f2;border-radius:999px;padding:7px 12px;cursor:pointer;white-space:nowrap}',
-      '#mlsT3Roster .t3r-chip b{font-weight:800;margin-left:3px;color:#2f6bed}',
+      '#mlsT3Roster .t3r-chip b{font-weight:800;margin-left:3px;color:#2E6A4B}',
       '#mlsT3Roster .t3r-chip:hover{border-color:#9cc2ee;background:#f3f8ff}',
-      '#mlsT3Roster .t3r-chip.t3r-on{background:#1f7ae0;border-color:#1f7ae0;color:#fff}',
+      '#mlsT3Roster .t3r-chip.t3r-on{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
       '#mlsT3Roster .t3r-chip.t3r-on b{color:#fff}',
-      '#mlsT3Roster .t3r-rf{margin-left:auto;font:600 12px/1 system-ui,sans-serif;color:#1456a8;background:#eef3fb;border:1px solid #cfe0f5;border-radius:8px;padding:7px 11px;cursor:pointer}',
+      '#mlsT3Roster .t3r-rf{margin-left:auto;font:600 12px/1 system-ui,sans-serif;color:#1456a8;background:#EAF1EE;border:1px solid #cfe0f5;border-radius:8px;padding:7px 11px;cursor:pointer}',
       /* calendar smart empty card */
       '#mlsT3Empty{grid-column:1/-1;margin:4px 0 12px;padding:16px 18px;border:1px dashed #c9d9f0;border-radius:12px;background:#f7faff;color:#2b4360;font:500 13px/1.5 system-ui,sans-serif}',
       '#mlsT3Empty .t3e-t{font-size:14px;color:#16324f}',
       '#mlsT3Empty .t3e-s{margin-top:3px;color:#5b7186;font-size:12.5px}',
       '#mlsT3Empty .t3e-b{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}',
       '#mlsT3Empty button{font:700 12.5px/1 system-ui,sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;border:1px solid #cfe0f5;background:#fff;color:#1456a8}',
-      '#mlsT3Empty button.t3e-all,#mlsT3Empty button.t3e-pull{background:#2f6bed;border-color:#2f6bed;color:#fff}',
+      '#mlsT3Empty button.t3e-all,#mlsT3Empty button.t3e-pull{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
       /* patient selector header + empty note (inside MLS Easy blue env) */
       '#mlsT3PickHead{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 4px;font:600 12px/1.3 system-ui,sans-serif;color:#eaf1ff}',
       '#mlsT3PickHead .t3p-cap{font-weight:800;letter-spacing:.05em;text-transform:uppercase;font-size:10.5px;opacity:.85}',

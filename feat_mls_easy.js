@@ -144,7 +144,7 @@
       '#' + PANEL_ID + ' button.ez-minibtn{background:rgba(255,255,255,.16);color:#fff;border:1.5px solid rgba(255,255,255,.5);' +
         'border-radius:12px;padding:12px 16px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;}' +
       '#' + PANEL_ID + ' button.ez-minibtn:hover{background:rgba(255,255,255,.26);}' +
-      '#' + PANEL_ID + ' button.ez-minibtn.ok{background:#16a34a;border-color:#16a34a;}' +
+      '#' + PANEL_ID + ' button.ez-minibtn.ok{background:#2E6A4B;border-color:#2E6A4B;}' +
       '#' + PANEL_ID + ' .ez-inputs{display:flex;gap:12px;flex-wrap:wrap;margin:4px 0 14px;}' +
       '#' + PANEL_ID + ' .ez-field{display:flex;flex-direction:column;gap:5px;flex:1 1 220px;}' +
       '#' + PANEL_ID + ' .ez-field label{font-size:12px;font-weight:700;opacity:.9;}' +

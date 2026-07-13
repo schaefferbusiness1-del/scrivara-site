@@ -78,14 +78,14 @@
       "#" + BAR_ID + "{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0 2px;",
       "font-family:'Plus Jakarta Sans',system-ui,sans-serif}",
       "#" + BAR_ID + " .mlsnu-lbl{font-size:11.5px;font-weight:700;letter-spacing:.3px;color:#5b6b80;margin-right:2px}",
-      "#" + BAR_ID + " .mlsnu-btn{background:#0f2540;border:1px solid #19365b;color:#fff;border-radius:8px;",
+      "#" + BAR_ID + " .mlsnu-btn{background:#1A211C;border:1px solid #19365b;color:#fff;border-radius:8px;",
       "padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;line-height:1.1}",
       "#" + BAR_ID + " .mlsnu-btn:hover{background:#16335a}",
-      "#" + BAR_ID + " .mlsnu-btn.on{background:#2563eb;border-color:#2563eb}",
-      "#" + BAR_ID + " .mlsnu-btn.ghost{background:#eef3fb;border-color:#cfe0f5;color:#0f2540}",
+      "#" + BAR_ID + " .mlsnu-btn.on{background:#2E6A4B;border-color:#2E6A4B}",
+      "#" + BAR_ID + " .mlsnu-btn.ghost{background:#EAF1EE;border-color:#cfe0f5;color:#1A211C}",
       "#" + BAR_ID + " .mlsnu-btn.ghost:hover{background:#e0ecfb}",
       "#" + BAR_ID + " input.mlsnu-date{border:1px solid #cfe0f5;border-radius:8px;padding:4px 8px;",
-      "font-size:12px;color:#0f2540;font-family:inherit;background:#fff;cursor:pointer}"
+      "font-size:12px;color:#1A211C;font-family:inherit;background:#fff;cursor:pointer}"
     ].join("");
     var s = document.createElement("style");
     s.id = STYLE_ID;

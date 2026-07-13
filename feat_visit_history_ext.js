@@ -69,14 +69,14 @@
   function classify(v) {
     var t = (S(v.type) + " " + S(v.raw)).toLowerCase();
     if (/inject|tfesi|\besi\b|epidural|\bblock\b|facet|\brfa\b|ablation|rhizotom|trigger ?point|denervation|medial branch/.test(t))
-      return { key: "injection", label: "Injection", icon: "💉", color: "#7c3aed", tint: "rgba(124,58,237,.10)" };
+      return { key: "injection", label: "Injection", icon: "💉", color: "#7A5CC0", tint: "rgba(124,58,237,.10)" };
     if (/mri|x-?ray|ct scan|ultrasound|imaging|radiograph|emg|ncs/.test(t))
       return { key: "imaging", label: "Imaging / study", icon: "🖼️", color: "#0891b2", tint: "rgba(8,145,178,.10)" };
     if (/operat|surg|implant|\bstim\b|kyphoplast|discectomy|fusion|procedure performed|pump/.test(t))
       return { key: "procedure", label: "Procedure", icon: "🛠️", color: "#a87d0a", tint: "rgba(168,125,10,.12)" };
     if (/office|follow|consult|new patient|established|e\/m|telehealth|evaluation|visit|exam/.test(t))
-      return { key: "office", label: "Office visit", icon: "🩺", color: "#2563c9", tint: "rgba(37,99,201,.09)" };
-    return { key: "other", label: "Visit", icon: "📄", color: "#5b6b7e", tint: "rgba(91,107,126,.10)" };
+      return { key: "office", label: "Office visit", icon: "🩺", color: "#2E6A4B", tint: "rgba(37,99,201,.09)" };
+    return { key: "other", label: "Visit", icon: "📄", color: "#79837C", tint: "rgba(91,107,126,.10)" };
   }
 
   /* ---- score extraction (REAL data only; never invents a point) ---- */
@@ -163,60 +163,60 @@
     if (document.getElementById("mls-xh-style")) return;
     var css = [
       "#mlsVisitHistory{display:none !important}", // hide the base flat list; we render the rich version
-      "#mlsVisitHistoryExt{margin-top:14px;color:var(--ink,#15293f)}",
+      "#mlsVisitHistoryExt{margin-top:14px;color:var(--ink,#1A211C)}",
       "#mlsVisitHistoryExt .mlsxh-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 10px}",
-      "#mlsVisitHistoryExt .mlsxh-title{font-weight:800;font-size:14px;display:flex;align-items:center;gap:7px;color:var(--ink,#15293f)}",
-      "#mlsVisitHistoryExt .mlsxh-count{font-weight:600;color:var(--muted,#5b6b7e);font-size:12px}",
-      "#mlsVisitHistoryExt .mlsxh-btn{cursor:pointer;border:1px solid var(--line,#e2e8f1);background:var(--card,#fff);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;color:var(--ink,#15293f)}",
-      "#mlsVisitHistoryExt .mlsxh-btn:hover{background:var(--soft,#eef3fb)}",
+      "#mlsVisitHistoryExt .mlsxh-title{font-weight:800;font-size:14px;display:flex;align-items:center;gap:7px;color:var(--ink,#1A211C)}",
+      "#mlsVisitHistoryExt .mlsxh-count{font-weight:600;color:var(--muted,#79837C);font-size:12px}",
+      "#mlsVisitHistoryExt .mlsxh-btn{cursor:pointer;border:1px solid var(--line,#E7E5DD);background:var(--card,#fff);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;color:var(--ink,#1A211C)}",
+      "#mlsVisitHistoryExt .mlsxh-btn:hover{background:var(--soft,#EAF1EE)}",
       "#mlsVisitHistoryExt .mlsxh-btn[disabled]{opacity:.55;cursor:default}",
       /* overview */
       "#mlsVisitHistoryExt .mlsxh-ov{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px}",
-      "#mlsVisitHistoryExt .mlsxh-stat{flex:1 1 150px;min-width:150px;background:var(--soft,#eef3fb);border:1px solid var(--line,#e2e8f1);border-radius:12px;padding:10px 12px}",
-      "#mlsVisitHistoryExt .mlsxh-stat .k{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#5b6b7e);margin:0 0 4px}",
-      "#mlsVisitHistoryExt .mlsxh-stat .val{font-size:14px;font-weight:700;color:var(--ink,#15293f);line-height:1.35}",
-      "#mlsVisitHistoryExt .mlsxh-stat .sub{font-size:11.5px;font-weight:600;color:var(--muted,#5b6b7e);margin-top:2px}",
-      "#mlsVisitHistoryExt .mlsxh-trend{flex:2 1 280px;min-width:240px;background:var(--card,#fff);border:1px solid var(--line,#e2e8f1);border-radius:12px;padding:10px 12px}",
-      "#mlsVisitHistoryExt .mlsxh-trend .k{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#5b6b7e);margin:0 0 6px}",
+      "#mlsVisitHistoryExt .mlsxh-stat{flex:1 1 150px;min-width:150px;background:var(--soft,#EAF1EE);border:1px solid var(--line,#E7E5DD);border-radius:12px;padding:10px 12px}",
+      "#mlsVisitHistoryExt .mlsxh-stat .k{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#79837C);margin:0 0 4px}",
+      "#mlsVisitHistoryExt .mlsxh-stat .val{font-size:14px;font-weight:700;color:var(--ink,#1A211C);line-height:1.35}",
+      "#mlsVisitHistoryExt .mlsxh-stat .sub{font-size:11.5px;font-weight:600;color:var(--muted,#79837C);margin-top:2px}",
+      "#mlsVisitHistoryExt .mlsxh-trend{flex:2 1 280px;min-width:240px;background:var(--card,#fff);border:1px solid var(--line,#E7E5DD);border-radius:12px;padding:10px 12px}",
+      "#mlsVisitHistoryExt .mlsxh-trend .k{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#79837C);margin:0 0 6px}",
       "#mlsVisitHistoryExt .mlsxh-trow{display:flex;align-items:center;gap:10px;margin:4px 0}",
-      "#mlsVisitHistoryExt .mlsxh-tlab{font-size:11.5px;font-weight:700;min-width:118px;display:flex;align-items:center;gap:6px;color:var(--ink,#15293f)}",
+      "#mlsVisitHistoryExt .mlsxh-tlab{font-size:11.5px;font-weight:700;min-width:118px;display:flex;align-items:center;gap:6px;color:var(--ink,#1A211C)}",
       "#mlsVisitHistoryExt .mlsxh-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}",
       "#mlsVisitHistoryExt .mlsxh-spark{flex:1 1 auto;height:34px}",
-      "#mlsVisitHistoryExt .mlsxh-tval{font-size:12px;font-weight:800;min-width:66px;text-align:right;color:var(--ink,#15293f)}",
+      "#mlsVisitHistoryExt .mlsxh-tval{font-size:12px;font-weight:800;min-width:66px;text-align:right;color:var(--ink,#1A211C)}",
       "#mlsVisitHistoryExt .mlsxh-tval .d{font-size:10.5px;font-weight:700;margin-left:3px}",
-      "#mlsVisitHistoryExt .mlsxh-tnone{font-size:11.5px;color:var(--muted,#5b6b7e);font-weight:600}",
+      "#mlsVisitHistoryExt .mlsxh-tnone{font-size:11.5px;color:var(--muted,#79837C);font-weight:600}",
       /* controls */
       "#mlsVisitHistoryExt .mlsxh-ctrls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}",
-      "#mlsVisitHistoryExt .mlsxh-ctrls input,#mlsVisitHistoryExt .mlsxh-ctrls select{font:inherit;font-size:12.5px;color:var(--ink,#15293f);background:var(--card,#fff);border:1px solid var(--line,#e2e8f1);border-radius:8px;padding:6px 9px;min-height:32px}",
+      "#mlsVisitHistoryExt .mlsxh-ctrls input,#mlsVisitHistoryExt .mlsxh-ctrls select{font:inherit;font-size:12.5px;color:var(--ink,#1A211C);background:var(--card,#fff);border:1px solid var(--line,#E7E5DD);border-radius:8px;padding:6px 9px;min-height:32px}",
       "#mlsVisitHistoryExt .mlsxh-search{flex:2 1 200px;min-width:150px}",
       "#mlsVisitHistoryExt .mlsxh-ctrls select{flex:1 1 130px}",
       "#mlsVisitHistoryExt .mlsxh-date{flex:1 1 130px}",
-      "#mlsVisitHistoryExt .mlsxh-clear{cursor:pointer;border:1px solid var(--line,#e2e8f1);background:var(--card,#fff);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:var(--muted,#5b6b7e)}",
-      "#mlsVisitHistoryExt .mlsxh-clear:hover{color:var(--ink,#15293f);background:var(--soft,#eef3fb)}",
+      "#mlsVisitHistoryExt .mlsxh-clear{cursor:pointer;border:1px solid var(--line,#E7E5DD);background:var(--card,#fff);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:var(--muted,#79837C)}",
+      "#mlsVisitHistoryExt .mlsxh-clear:hover{color:var(--ink,#1A211C);background:var(--soft,#EAF1EE)}",
       /* timeline */
-      "#mlsVisitHistoryExt .mlsxh-year{font-weight:800;font-size:13px;color:var(--ink,#15293f);margin:14px 0 2px;padding-bottom:4px;border-bottom:2px solid var(--line,#e2e8f1)}",
-      "#mlsVisitHistoryExt .mlsxh-month{font-weight:700;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted,#5b6b7e);margin:10px 0 6px}",
-      "#mlsVisitHistoryExt .mlsxh-card{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--line,#e2e8f1);border-left:4px solid var(--muted,#5b6b7e);border-radius:11px;background:var(--card,#fff);padding:10px 12px;margin:0 0 8px;cursor:pointer;transition:box-shadow .12s,transform .12s}",
+      "#mlsVisitHistoryExt .mlsxh-year{font-weight:800;font-size:13px;color:var(--ink,#1A211C);margin:14px 0 2px;padding-bottom:4px;border-bottom:2px solid var(--line,#E7E5DD)}",
+      "#mlsVisitHistoryExt .mlsxh-month{font-weight:700;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted,#79837C);margin:10px 0 6px}",
+      "#mlsVisitHistoryExt .mlsxh-card{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--line,#E7E5DD);border-left:4px solid var(--muted,#79837C);border-radius:11px;background:var(--card,#fff);padding:10px 12px;margin:0 0 8px;cursor:pointer;transition:box-shadow .12s,transform .12s}",
       "#mlsVisitHistoryExt .mlsxh-card:hover{box-shadow:0 4px 14px rgba(15,28,46,.10);transform:translateY(-1px)}",
       "#mlsVisitHistoryExt .mlsxh-ico{flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;margin-top:1px}",
       "#mlsVisitHistoryExt .mlsxh-main{flex:1 1 auto;min-width:0}",
       "#mlsVisitHistoryExt .mlsxh-r1{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}",
-      "#mlsVisitHistoryExt .mlsxh-cdate{font-weight:800;font-size:13px;color:var(--ink,#15293f)}",
-      "#mlsVisitHistoryExt .mlsxh-ctype{font-size:12.5px;font-weight:600;color:var(--ink,#15293f);opacity:.92}",
+      "#mlsVisitHistoryExt .mlsxh-cdate{font-weight:800;font-size:13px;color:var(--ink,#1A211C)}",
+      "#mlsVisitHistoryExt .mlsxh-ctype{font-size:12.5px;font-weight:600;color:var(--ink,#1A211C);opacity:.92}",
       "#mlsVisitHistoryExt .mlsxh-tag{font-size:10px;font-weight:800;border-radius:999px;padding:1px 7px}",
       "#mlsVisitHistoryExt .mlsxh-pills{display:flex;flex-wrap:wrap;gap:5px;margin:5px 0 0}",
       "#mlsVisitHistoryExt .mlsxh-pill{font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 7px;white-space:nowrap}",
       "#mlsVisitHistoryExt .mlsxh-pill.dx{background:rgba(168,125,10,.13);color:#7a5a06}",
       "#mlsVisitHistoryExt .mlsxh-pill.cpt{background:rgba(15,138,99,.13);color:#0b6b4d}",
       "#mlsVisitHistoryExt .mlsxh-pill.score{background:rgba(37,99,201,.11);color:#1d4e94}",
-      "#mlsVisitHistoryExt .mlsxh-sum{font-size:12px;line-height:1.45;color:var(--muted,#5b6b7e);margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}",
+      "#mlsVisitHistoryExt .mlsxh-sum{font-size:12px;line-height:1.45;color:var(--muted,#79837C);margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}",
       "#mlsVisitHistoryExt .mlsxh-sum.pending{font-style:italic;opacity:.8}",
-      "#mlsVisitHistoryExt .mlsxh-chev{flex:0 0 auto;color:var(--muted,#5b6b7e);font-size:13px;align-self:center}",
+      "#mlsVisitHistoryExt .mlsxh-chev{flex:0 0 auto;color:var(--muted,#79837C);font-size:13px;align-self:center}",
       /* empty */
-      "#mlsVisitHistoryExt .mlsxh-empty{border:1px dashed var(--line,#e2e8f1);border-radius:12px;padding:20px 16px;text-align:center;color:var(--muted,#5b6b7e)}",
-      "#mlsVisitHistoryExt .mlsxh-empty .t{font-size:13px;font-weight:700;color:var(--ink,#15293f);margin:0 0 4px}",
+      "#mlsVisitHistoryExt .mlsxh-empty{border:1px dashed var(--line,#E7E5DD);border-radius:12px;padding:20px 16px;text-align:center;color:var(--muted,#79837C)}",
+      "#mlsVisitHistoryExt .mlsxh-empty .t{font-size:13px;font-weight:700;color:var(--ink,#1A211C);margin:0 0 4px}",
       "#mlsVisitHistoryExt .mlsxh-empty .acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}",
-      "#mlsVisitHistoryExt .mlsxh-status{font-size:12px;color:var(--muted,#5b6b7e);margin:0 0 8px}",
+      "#mlsVisitHistoryExt .mlsxh-status{font-size:12px;color:var(--muted,#79837C);margin:0 0 8px}",
       "@media (max-width:560px){#mlsVisitHistoryExt .mlsxh-tlab{min-width:96px}#mlsVisitHistoryExt .mlsxh-stat{flex-basis:120px;min-width:120px}}"
     ].join("\n");
     var st = document.createElement("style");
@@ -395,18 +395,18 @@
     wrap.appendChild(stat("Total visits", String(ov.total),
       ov.first ? "since " + fmtDate(ov.first) : ""));
     wrap.appendChild(stat("Date range",
-      ov.first ? esc(fmtDate(ov.first)) + ' <span style="color:var(--muted,#5b6b7e)">→</span> ' + esc(fmtDate(ov.last)) : "—",
+      ov.first ? esc(fmtDate(ov.first)) + ' <span style="color:var(--muted,#79837C)">→</span> ' + esc(fmtDate(ov.last)) : "—",
       ov.first ? "" : "no dated visits"));
     wrap.appendChild(stat("Top procedures",
-      ov.topTypes.length ? ov.topTypes.map(function (t) { return esc(t.label) + ' <span style="color:var(--muted,#5b6b7e)">×' + t.count + "</span>"; }).join("<br>") : "—"));
+      ov.topTypes.length ? ov.topTypes.map(function (t) { return esc(t.label) + ' <span style="color:var(--muted,#79837C)">×' + t.count + "</span>"; }).join("<br>") : "—"));
     wrap.appendChild(stat("Common diagnoses",
-      ov.topDx.length ? ov.topDx.map(function (t) { return esc(t.label) + ' <span style="color:var(--muted,#5b6b7e)">×' + t.count + "</span>"; }).join("<br>") : "—"));
+      ov.topDx.length ? ov.topDx.map(function (t) { return esc(t.label) + ' <span style="color:var(--muted,#79837C)">×' + t.count + "</span>"; }).join("<br>") : "—"));
 
     // trend panel
     var tr = document.createElement("div"); tr.className = "mlsxh-trend";
     tr.appendChild(elHTML('<div class="k">Pain &amp; function over time</div>'));
     tr.appendChild(trendRow("Pain (VAS/NRS)", "#dc2626", ov.pain, 0, 10, "/10"));
-    tr.appendChild(trendRow("Function (ODI)", "#2563c9", ov.fun, 0, 100, "%"));
+    tr.appendChild(trendRow("Function (ODI)", "#2E6A4B", ov.fun, 0, 100, "%"));
     wrap.appendChild(tr);
     return wrap;
   }
@@ -424,7 +424,7 @@
       var delta = last.val - first.val;
       var arrow = delta === 0 ? "→" : (delta < 0 ? "↓" : "↑");
       // for pain & ODI, lower is better -> green when down
-      var good = delta < 0, dColor = delta === 0 ? "var(--muted,#5b6b7e)" : (good ? "#0f8a63" : "#dc2626");
+      var good = delta < 0, dColor = delta === 0 ? "var(--muted,#79837C)" : (good ? "#2E6A4B" : "#dc2626");
       var val = document.createElement("div"); val.className = "mlsxh-tval";
       val.innerHTML = esc(String(last.val)) + esc(unit) +
         ' <span class="d" style="color:' + dColor + '">' + arrow + Math.abs(delta).toFixed(delta % 1 ? 1 : 0) + "</span>";

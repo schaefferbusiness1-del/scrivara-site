@@ -21,9 +21,9 @@
       "#helpModal .modal,#helpModal .modal *{box-sizing:border-box}",
       "#helpModal .modal > h3{font-size:20px!important;font-weight:700!important;letter-spacing:-.01em!important}",
       "#helpModal .note{background:#f3f6fb!important;border:1px solid #e8edf4!important;border-radius:12px!important;padding:13px 15px!important;color:#5a6b80!important;font-size:13px!important;line-height:1.5!important}",
-      "#helpModal #helpQ{min-height:92px!important;border-radius:12px!important;border:1px solid #d8e6f8!important;background:#fff!important;padding:13px 15px!important;font-size:14px!important;line-height:1.55!important;box-shadow:0 0 0 3px rgba(47,107,237,.08)!important;max-width:100%}",
-      "#helpModal #helpAskBtn{height:48px!important;padding:0 24px!important;border-radius:12px!important;border:0!important;background:linear-gradient(135deg,#1f9d6b,#178a5c)!important;color:#fff!important;font-weight:700!important;font-size:15px!important;box-shadow:0 10px 22px -10px rgba(31,157,107,.6)!important}",
-      "#helpModal a{color:#2f6bed!important;font-weight:600!important}"
+      "#helpModal #helpQ{min-height:92px!important;border-radius:12px!important;border:1px solid #d8e6f8!important;background:#fff!important;padding:13px 15px!important;font-size:14px!important;line-height:1.55!important;box-shadow:0 0 0 3px rgba(32,64,52,.08)!important;max-width:100%}",
+      "#helpModal #helpAskBtn{height:48px!important;padding:0 24px!important;border-radius:12px!important;border:0!important;background:linear-gradient(135deg,#2E6A4B,#204034)!important;color:#fff!important;font-weight:700!important;font-size:15px!important;box-shadow:0 10px 22px -10px rgba(46,106,75,.6)!important}",
+      "#helpModal a{color:#2E6A4B!important;font-weight:600!important}"
     ].join("\n");
     var s = $(STYLE_ID);
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }

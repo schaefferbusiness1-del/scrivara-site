@@ -36,7 +36,7 @@
         b.textContent='🔍 find a doctor';
         b.title='Search all doctors in the practice';
         b.setAttribute('role','button');
-        b.style.cssText='color:#1f7ae0;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap';
+        b.style.cssText='color:#2E6A4B;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap';
         b.addEventListener('click',function(e){
           e.preventDefault(); e.stopPropagation();
           var f=document.getElementById('mlsFindDocBtn');

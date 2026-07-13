@@ -279,7 +279,7 @@
       '#mlsVisitHistory .mlsvh-fields{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}' +
       '#mlsVisitHistory .mlsvh-raw{margin-top:8px}' +
       '#mlsVisitHistory .mlsvh-raw>summary{cursor:pointer;font-size:12px;font-weight:600;opacity:.75}' +
-      '#mlsVisitHistory .mlsvh-raw pre{white-space:pre-wrap;font-size:12px;background:var(--bg2,#f7f9fc);border-radius:8px;padding:10px;max-height:340px;overflow:auto;margin:6px 0 0}' +
+      '#mlsVisitHistory .mlsvh-raw pre{white-space:pre-wrap;font-size:12px;background:var(--bg2,#FCFBF8);border-radius:8px;padding:10px;max-height:340px;overflow:auto;margin:6px 0 0}' +
       '#mlsVisitHistory .mlsvh-status{font-size:12px;opacity:.7;margin:0 0 6px}';
     (document.head || document.documentElement).appendChild(st);
   }
@@ -588,7 +588,7 @@
       var s = document.createElement('style'); s.id = 'mlsCvCss';
       s.textContent =
         '#mlsCopyVisitsBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 4px}' +
-        '#mlsCopyVisitsBar .mls-cv-btn{cursor:pointer;border:0;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:700;color:#fff;background:linear-gradient(135deg,#4f46e5,#7c3aed)}' +
+        '#mlsCopyVisitsBar .mls-cv-btn{cursor:pointer;border:0;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:700;color:#fff;background:linear-gradient(135deg,#4f46e5,#7A5CC0)}' +
         '#mlsCopyVisitsBar .mls-cv-btn:hover{filter:brightness(1.06)}' +
         '#mlsCopyVisitsBar .mls-cv-btn[disabled]{opacity:.6;cursor:default}' +
         '#mlsCopyVisitsBar .mls-cv-status{font-size:12.5px;opacity:.8;flex:1;min-width:160px}';

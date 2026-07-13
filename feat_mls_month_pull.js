@@ -176,8 +176,8 @@
       "#mlsMPmodal .mp-body{padding:14px 18px;overflow:auto;}",
       "#mlsMPmodal .mp-row{display:flex;align-items:center;gap:9px;margin:7px 0;flex-wrap:wrap;}",
       "#mlsMPmodal .mp-dot{width:10px;height:10px;border-radius:50%;background:#9aa9bd;flex:none;}",
-      "#mlsMPmodal .mp-dot.g{background:#16a34a;}#mlsMPmodal .mp-dot.r{background:#dc2626;}#mlsMPmodal .mp-dot.a{background:#f59e0b;}",
-      "#mlsMPmodal .mp-dot.spin{background:#2f6bed;animation:mlsMPpulse 1s ease-in-out infinite;}",
+      "#mlsMPmodal .mp-dot.g{background:#2E6A4B;}#mlsMPmodal .mp-dot.r{background:#dc2626;}#mlsMPmodal .mp-dot.a{background:#f59e0b;}",
+      "#mlsMPmodal .mp-dot.spin{background:#2E6A4B;animation:mlsMPpulse 1s ease-in-out infinite;}",
       "@keyframes mlsMPpulse{0%,100%{opacity:1}50%{opacity:.35}}",
       "#mlsMPmodal .mp-conn{font-weight:700;}",
       "#mlsMPmodal .mp-sub{color:#54708c;font-size:12.5px;}",
@@ -185,7 +185,7 @@
       "#mlsMPmodal .mp-range b{color:#123a6b;}",
       "#mlsMPmodal select{border:1px solid #c6d3e4;border-radius:8px;padding:5px 8px;font:600 13px system-ui;color:#12263f;background:#fff;}",
       "#mlsMPmodal .mp-barwrap{background:#e8eef7;border-radius:999px;height:14px;overflow:hidden;margin:10px 0 4px;}",
-      "#mlsMPmodal .mp-bar{height:100%;width:0%;background:linear-gradient(90deg,#2f6bed,#4f8bff);transition:width .35s;}",
+      "#mlsMPmodal .mp-bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#4f8bff);transition:width .35s;}",
       "#mlsMPmodal .mp-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}",
       "#mlsMPmodal .mp-c{background:#f4f7fc;border:1px solid #e1e9f5;border-radius:10px;padding:7px 10px;text-align:center;}",
       "#mlsMPmodal .mp-c b{display:block;font-size:17px;color:#123a6b;}",
@@ -197,7 +197,7 @@
       "#mlsMPmodal .mp-log .err{color:#ffb4b4;}#mlsMPmodal .mp-log .ok{color:#9ff2bf;}",
       "#mlsMPmodal .mp-days{display:none;margin-top:10px;background:#fff7ed;border:1px solid #fcd9b0;border-radius:10px;padding:8px 12px;font-size:12.5px;color:#7c3f00;}",
       "#mlsMPmodal .mp-foot{display:flex;gap:9px;padding:12px 18px;border-top:1px solid #e6edf6;background:#fbfdff;align-items:center;flex-wrap:wrap;}",
-      "#mlsMPmodal .mp-btn{cursor:pointer;border-radius:9px;padding:8px 15px;font:700 13.5px system-ui;border:1px solid #2f6bed;background:#2f6bed;color:#fff;}",
+      "#mlsMPmodal .mp-btn{cursor:pointer;border-radius:9px;padding:8px 15px;font:700 13.5px system-ui;border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;}",
       "#mlsMPmodal .mp-btn[disabled]{opacity:.45;cursor:default;}",
       "#mlsMPmodal .mp-btn.sec{background:#fff;color:#1d4ed8;border-color:#9db9ee;}",
       "#mlsMPmodal .mp-btn.warn{background:#fff;color:#b45309;border-color:#e5b46b;}",
@@ -612,7 +612,7 @@
     var btn = document.createElement("button");
     btn.id = "mlsMPasstBtn"; btn.type = "button";
     btn.textContent = "Pull last month from Athena";
-    btn.style.cssText = "display:block;width:100%;margin:8px 0 4px;cursor:pointer;border:1px solid #2f6bed;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:8px 10px;";
+    btn.style.cssText = "display:block;width:100%;margin:8px 0 4px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#1d4ed8;font:700 12.5px system-ui;border-radius:9px;padding:8px 10px;";
     btn.addEventListener("click", function () { open({}); });
     host.insertBefore(btn, host.firstChild);
   }

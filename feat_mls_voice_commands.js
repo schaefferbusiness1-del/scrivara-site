@@ -289,7 +289,7 @@
     var on = enabled;
     var active = on && listening && !appCapturing();
     fab.innerHTML = micSvg(on);
-    fab.style.background = on ? 'linear-gradient(135deg,#1f7ae0,#1456a8)' : '#e8eef7';
+    fab.style.background = on ? 'linear-gradient(135deg,#2E6A4B,#1456a8)' : '#e8eef7';
     fab.title = !SR
       ? 'Voice commands need Chrome or Edge'
       : (on ? 'Voice commands ON - say "MLS Assistant, start recording" or "start my visit" (click to turn off)'
@@ -311,7 +311,7 @@
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.id = 'mlsVoiceModalBtn';
-      btn.style.cssText = 'border:0;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:700;color:#fff;background:linear-gradient(135deg,#1f7ae0,#1456a8)';
+      btn.style.cssText = 'border:0;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:700;color:#fff;background:linear-gradient(135deg,#2E6A4B,#1456a8)';
       btn.textContent = enabled ? 'Voice commands: ON' : 'Enable voice commands';
       btn.addEventListener('click', function (ev) {
         ev.preventDefault(); ev.stopPropagation();

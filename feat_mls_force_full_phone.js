@@ -28,7 +28,7 @@
     + '#mlsGpQrBox{position:absolute;top:12px;right:12px;z-index:50;background:#fff;border:1px solid #dbe3ee;border-radius:12px;padding:10px;width:168px;text-align:center;font:12px system-ui,-apple-system,sans-serif;color:#0f1b33;box-shadow:0 2px 10px rgba(20,40,80,.08)}'
     + '#mlsGpQrBox img{width:138px;height:138px;display:block;margin:6px auto;background:#f3f6fb;border-radius:6px}'
     + '#mlsGpQrBox .c{font-weight:600;letter-spacing:1px;margin-top:2px}'
-    + '#mlsGpQrBox a{font-size:10px;color:#2563eb;word-break:break-all}'
+    + '#mlsGpQrBox a{font-size:10px;color:#2E6A4B;word-break:break-all}'
     + '#mlsGpQrBox .h{font-size:11px;color:#5b6b85}'
     + '#mlsGpPhoneBtn{display:inline-block;margin:10px 8px 0 0;padding:9px 14px;border-radius:10px;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;font:600 13px system-ui,-apple-system,sans-serif;cursor:pointer}';
     (document.head || document.documentElement).appendChild(st);

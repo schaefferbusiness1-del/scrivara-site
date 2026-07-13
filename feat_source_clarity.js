@@ -34,11 +34,11 @@
   var SUMMARY_ID = 'mlsSrcSummary';
 
   /* ---- color palette (literal, strong-contrast; dark text on light) -------- */
-  var INK = 'var(--ink, #15293f)';
+  var INK = 'var(--ink, #1A211C)';
   var SOFT = 'var(--soft, #f5f7fa)';
   var LINE = 'var(--line, #d9e1ea)';
-  var C_ATHENA = '#2563c9'; // blue
-  var C_COHORT = '#7c3aed'; // purple
+  var C_ATHENA = '#2E6A4B'; // blue
+  var C_COHORT = '#7A5CC0'; // purple
   var C_MANUAL = '#1f9d57'; // green
   var C_UNKNOWN = '#9aa3ad'; // grey
 

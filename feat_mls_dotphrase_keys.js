@@ -31,7 +31,7 @@
       '.mls-dk-badge{display:inline-flex;align-items:center;justify-content:center;' +
       'margin-left:6px;padding:1px 6px;border-radius:999px;' +
       'font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-weight:800;' +
-      'font-size:9px;line-height:1.4;letter-spacing:.3px;color:#2f6bed;' +
+      'font-size:9px;line-height:1.4;letter-spacing:.3px;color:#2E6A4B;' +
       'background:#e7eefc;border:1px solid #d4e0fb;vertical-align:middle;' +
       'white-space:nowrap;pointer-events:none;}';
     (document.head || document.documentElement).appendChild(st);

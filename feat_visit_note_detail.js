@@ -172,12 +172,12 @@
     if (document.getElementById("mls-vnd-style")) return;
     var css = [
       ".mlsvnd-scrim{position:fixed;inset:0;background:rgba(15,28,46,.55);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto}",
-      ".mlsvnd-modal{background:var(--card,#fff);color:var(--ink,#15293f);border:1px solid var(--line,#e2e8f1);border-radius:16px;box-shadow:0 18px 60px rgba(15,28,46,.32);width:100%;max-width:760px;margin:auto 0;overflow:hidden}",
-      ".mlsvnd-top{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line,#eef1f6);background:var(--soft,#f5f8fc)}",
-      ".mlsvnd-ttl{font-weight:800;font-size:15px;color:var(--ink,#15293f);flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-      ".mlsvnd-sub{font-weight:600;font-size:12px;color:var(--muted,#5b6b7e)}",
-      ".mlsvnd-x{flex:0 0 auto;cursor:pointer;border:1px solid var(--line,#e2e8f1);background:#fff;color:var(--ink,#15293f);border-radius:9px;font-size:16px;line-height:1;padding:6px 11px;font-weight:700}",
-      ".mlsvnd-x:hover{background:var(--soft2,#eef3fb)}",
+      ".mlsvnd-modal{background:var(--card,#fff);color:var(--ink,#1A211C);border:1px solid var(--line,#E7E5DD);border-radius:16px;box-shadow:0 18px 60px rgba(15,28,46,.32);width:100%;max-width:760px;margin:auto 0;overflow:hidden}",
+      ".mlsvnd-top{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line,#eef1f6);background:var(--soft,#FCFBF8)}",
+      ".mlsvnd-ttl{font-weight:800;font-size:15px;color:var(--ink,#1A211C);flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      ".mlsvnd-sub{font-weight:600;font-size:12px;color:var(--muted,#79837C)}",
+      ".mlsvnd-x{flex:0 0 auto;cursor:pointer;border:1px solid var(--line,#E7E5DD);background:#fff;color:var(--ink,#1A211C);border-radius:9px;font-size:16px;line-height:1;padding:6px 11px;font-weight:700}",
+      ".mlsvnd-x:hover{background:var(--soft2,#EAF1EE)}",
       ".mlsvnd-host{padding:6px 18px 18px;max-height:74vh;overflow:auto}",
       ".mlsvnd-host .mlsvd-body{border-top:none;padding-top:6px}"
     ].join("\n");

@@ -293,16 +293,16 @@
     if ($(STYLE_ID)) return;
     var st = document.createElement("style"); st.id = STYLE_ID;
     st.textContent = [
-      "#" + HOST_ID + "{margin:14px 0 4px;border:1px solid rgba(120,150,220,.28);border-radius:12px;padding:12px 13px;background:rgba(47,107,237,.05)}",
+      "#" + HOST_ID + "{margin:14px 0 4px;border:1px solid rgba(120,150,220,.28);border-radius:12px;padding:12px 13px;background:rgba(32,64,52,.05)}",
       "#" + HOST_ID + " .rs-hd{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;color:#1f3350;margin-bottom:2px}",
       "#" + HOST_ID + " .rs-sub{font-size:11.5px;color:#5b6b82;margin-bottom:9px}",
       "#" + HOST_ID + " .rs-warn{font-size:11.5px;color:#a12626;font-weight:600;margin:0 0 8px}",
       "#" + HOST_ID + " .rs-pt{font-size:11.5px;color:#155fb3;font-weight:600;margin:0 0 8px}",
       "#" + HOST_ID + " .rs-kinds{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}",
-      "#" + HOST_ID + " .rs-kind{cursor:pointer;border:1px solid rgba(47,107,237,.4);background:#fff;color:#1456a8;border-radius:999px;padding:5px 10px;font:600 11.5px system-ui}",
-      "#" + HOST_ID + " .rs-kind.on{background:#2f6bed;color:#fff}",
+      "#" + HOST_ID + " .rs-kind{cursor:pointer;border:1px solid rgba(32,64,52,.4);background:#fff;color:#1456a8;border-radius:999px;padding:5px 10px;font:600 11.5px system-ui}",
+      "#" + HOST_ID + " .rs-kind.on{background:#2E6A4B;color:#fff}",
       "#" + HOST_ID + " .rs-rec{display:flex;gap:8px;align-items:center;margin-bottom:10px}",
-      "#" + HOST_ID + " .rs-recbtn{cursor:pointer;border:0;border-radius:9px;padding:8px 13px;font:700 12.5px system-ui;color:#fff;background:linear-gradient(135deg,#2f6bed,#1456a8)}",
+      "#" + HOST_ID + " .rs-recbtn{cursor:pointer;border:0;border-radius:9px;padding:8px 13px;font:700 12.5px system-ui;color:#fff;background:linear-gradient(135deg,#2E6A4B,#1456a8)}",
       "#" + HOST_ID + " .rs-recbtn.rec{background:linear-gradient(135deg,#c0392b,#8e1f16)}",
       "#" + HOST_ID + " .rs-imp{cursor:pointer;border:1px solid #cfd9ea;background:#fff;color:#33465f;border-radius:9px;padding:8px 11px;font:600 12px system-ui}",
       "#" + HOST_ID + " .rs-list{display:flex;flex-direction:column;gap:6px;margin:4px 0 10px}",

@@ -18,7 +18,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MLS — Ambient AI Medical Scribe</title>
 <!-- PWA: installable phone + desktop app -->
-<meta name="theme-color" content="#2563eb">
+<meta name="theme-color" content="#2E6A4B">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -27,26 +27,31 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});var _swReloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(_swReloaded)return;_swReloaded=true;location.reload();});}</script>
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   :root{
-    --bg:#f4f6fa; --card:#ffffff; --ink:#15293f; --muted:#5b6b7e;
-    --line:#e2e8f1; --brand:#2563c9; --brand-dk:#1b4fa6;
-    --green:#0f8a63; --green-dk:#0c6e4f; --amber:#c47d09;
-    --red:#d24447; --soft:#eef3fb; --shadow:0 1px 2px rgba(20,40,70,.04),0 4px 14px rgba(20,40,70,.045);
-    --gold:#a87d0a; --gold-bg:#fbf6e8;
-    --header:#15294a; --header-line:rgba(255,255,255,.12);
+    /* ===== Editorial Calm (2026 redesign) ===== */
+    --bg:#FBFAF7; --card:#ffffff; --ink:#1A211C; --muted:#79837C;
+    --line:#E7E5DD; --brand:#2E6A4B; --brand-dk:#204034;
+    --green:#2E6A4B; --green-dk:#204034; --amber:#B07636;
+    --red:#B23B3B; --soft:#F4F2EC; --shadow:0 1px 2px rgba(20,33,28,.04),0 4px 14px rgba(20,33,28,.045);
+    --gold:#9A7728; --gold-bg:#F4EEE1;
+    --header:#FCFBF8; --header-line:#E7E5DD;
     /* QoL: surface colors hoisted to variables so dark mode can re-skin them */
-    --surface:#ffffff; --field-bg:#f7f9fc; --soft2:#f5f8fc;
+    --surface:#ffffff; --field-bg:#FCFBF8; --soft2:#F6FBF8;
+    --serif:'Newsreader',Georgia,serif;
+    --sans:'Public Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
   }
+  body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
   /* ===== QoL: DARK MODE (MLS) — overrides the color variables above ===== */
   body.theme-dark{
-    --bg:#0e1620; --card:#17212e; --ink:#e7edf4; --muted:#9aabbd;
-    --line:#283645; --brand:#4f93f2; --brand-dk:#6aa6f6;
-    --green:#2fb986; --green-dk:#43d39c; --amber:#f0ad3c;
-    --red:#e0606b; --soft:#1b2735; --shadow:0 1px 3px rgba(0,0,0,.3),0 6px 22px rgba(0,0,0,.4);
-    --gold:#d9a93b; --gold-bg:#2a2415;
-    --header:#101b29; --header-line:rgba(255,255,255,.08);
-    --surface:#17212e; --field-bg:#0f1925; --soft2:#152030;
+    --bg:#141915; --card:#1C231E; --ink:#EAEFEA; --muted:#9CA89E;
+    --line:#2B342D; --brand:#5FAF87; --brand-dk:#7CC4A0;
+    --green:#5FAF87; --green-dk:#7CC4A0; --amber:#E0A35C;
+    --red:#E0606B; --soft:#1F2721; --shadow:0 1px 3px rgba(0,0,0,.3),0 6px 22px rgba(0,0,0,.4);
+    --gold:#D9B25B; --gold-bg:#2A2415;
+    --header:#181E19; --header-line:rgba(255,255,255,.08);
+    --surface:#1C231E; --field-bg:#151B16; --soft2:#1A211B;
   }
   /* Re-point common hardcoded surfaces at the themeable variables so they
      follow dark mode (they default to white/very-light in light mode). */
@@ -73,7 +78,7 @@
   /* status / semantic chips → translucent tints that read on dark */
   body.theme-dark .badge.draft{ background:rgba(240,173,60,.16); color:var(--amber); border-color:rgba(240,173,60,.4) }
   body.theme-dark .badge.signed{ background:rgba(47,185,134,.16); color:var(--green); border-color:rgba(47,185,134,.4) }
-  body.theme-dark .em-pill{ background:rgba(79,147,242,.18); color:var(--brand-dk); border-color:rgba(79,147,242,.4) }
+  body.theme-dark .em-pill{ background:rgba(95,175,135,.18); color:var(--brand-dk); border-color:rgba(95,175,135,.4) }
   body.theme-dark .dotchip:hover{ background:var(--soft) }
   /* disclaimers / notes that hard-code warm/cool light backgrounds */
   body.theme-dark .disclaim,
@@ -204,8 +209,8 @@
   body.theme-dark .ik-opt,
   body.theme-dark .ik-sat{ background:var(--soft2); border-color:var(--line); color:var(--ink) }
   body.theme-dark .ik-odi-q{ border-top-color:var(--line) }
-  body.theme-dark .ik-cardbtn{ background:rgba(79,147,242,.12); border-color:var(--brand); color:var(--brand-dk) }
-  /* intake accent (brand teal) selected states stay legible as-is (#127a7d + #fff) */
+  body.theme-dark .ik-cardbtn{ background:rgba(95,175,135,.12); border-color:var(--brand); color:var(--brand-dk) }
+  /* intake accent (brand teal) selected states stay legible as-is (#2E6A4B + #fff) */
   /* ===== MLS additive — CUSTOM WIDGET v2 blocks (all colors via theme variables,
      so light & dark mode both work with zero extra rules) ===== */
   .cw-blk{margin:0 0 13px}
@@ -312,7 +317,7 @@
     display:inline-flex;align-items:center;gap:7px;justify-content:center;letter-spacing:.1px;
   }
   button:active{transform:translateY(1px)}
-  .btn-primary{background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 1px 2px rgba(20,40,70,.10)}
+  .btn-primary{background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 1px 2px rgba(20,33,28,.10)}
   .btn-primary:hover{background:var(--brand-dk);border-color:var(--brand-dk)}
   .btn-green{background:var(--green);color:#fff;border-color:var(--green)}
   .btn-green:hover{background:var(--green-dk);border-color:var(--green-dk)}
@@ -488,14 +493,14 @@
   .auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px;
     background:radial-gradient(120% 90% at 50% 0%,#eef4fb 0%,var(--bg) 60%)}
   .auth-card{background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:412px;width:100%;
-    padding:34px 32px;box-shadow:0 1px 3px rgba(20,40,70,.05),0 18px 50px rgba(21,41,74,.12)}
+    padding:34px 32px;box-shadow:0 1px 3px rgba(20,33,28,.05),0 18px 50px rgba(21,41,74,.12)}
   .auth-logo{display:flex;align-items:center;gap:12px;font-weight:650;font-size:22px;letter-spacing:-.3px;color:var(--ink);margin-bottom:4px}
   .auth-logo .mark{width:44px;height:44px;border-radius:12px;background:none;
     display:grid;place-items:center;font-size:25px}
   .auth-sub{color:var(--muted);font-size:13.5px;margin:0 0 24px;line-height:1.5}
   .auth-tabs{display:flex;gap:4px;margin-bottom:22px;background:var(--soft);padding:4px;border-radius:9px}
   .auth-tab{flex:1;text-align:center;padding:9px;border-radius:7px;font-weight:600;font-size:14.5px;cursor:pointer;color:var(--muted);transition:.12s}
-  .auth-tab.on{background:var(--card);color:var(--brand-dk);box-shadow:0 1px 3px rgba(20,40,70,.10)}
+  .auth-tab.on{background:var(--card);color:var(--brand-dk);box-shadow:0 1px 3px rgba(20,33,28,.10)}
   .auth-err{display:none;font-size:13.5px;color:var(--red);background:#fdeced;border:1px solid #f6cccd;
     border-radius:9px;padding:9px 12px;margin-bottom:12px}
   .auth-err.show{display:block}
@@ -540,7 +545,7 @@
   .btn-primary:hover,.btn-green:hover{ filter:brightness(1.04); }
   .btn-primary:active,.btn-green:active,.btn-ghost:active,.btn-red-ghost:active{ transform:translateY(1px); }
   .card>h2,.card>h3{ letter-spacing:-.2px; }
-  #patientBar{ box-shadow:0 1px 5px rgba(20,40,70,.06); }
+  #patientBar{ box-shadow:0 1px 5px rgba(20,33,28,.06); }
   .sf-select,input[type=text],input[type=password],input[type=email],textarea{ transition:border-color .12s ease, box-shadow .12s ease; }
   .sf-select:focus,input[type=text]:focus,input[type=password]:focus,input[type=email]:focus,textarea:focus{ border-color:var(--brand); box-shadow:0 0 0 3px rgba(31,99,201,.12); outline:none; }
   /* ===== MLS visual refresh 2026-06-13 — bolder but variable-aware (dark mode safe) ===== */
@@ -548,7 +553,7 @@
       radial-gradient(1100px 460px at 100% -6%, rgba(37,99,201,.06), transparent 60%),
       radial-gradient(880px 400px at -6% 0%, rgba(15,138,99,.045), transparent 55%),
       var(--bg); background-attachment:fixed; }
-  .card{ border-radius:14px; border:1px solid var(--line); box-shadow:0 1px 2px rgba(20,40,70,.045), 0 10px 28px rgba(20,40,70,.055); }
+  .card{ border-radius:14px; border:1px solid var(--line); box-shadow:0 1px 2px rgba(20,33,28,.045), 0 10px 28px rgba(20,33,28,.055); }
   .card>h2{ font-size:19px; font-weight:680; }
   .card>h2 .ic{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border-radius:9px; background:var(--soft); }
   .extra-card{ border:1px solid var(--line); border-radius:12px; }
@@ -582,7 +587,7 @@
   .team-doc .dlabel{font-weight:700;font-size:14px;color:var(--ink,#16324f)}
   .team-doc .dmeta{font-size:12px;color:var(--muted)}
   .pt-item.active{border-color:var(--brand);background:#eaf3ff;box-shadow:0 0 0 2px rgba(31,122,224,.15)}
-  .pt-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(120deg,#1f7ae0,#155fb3);
+  .pt-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(120deg,#2E6A4B,#155fb3);
     color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex-shrink:0}
   .pt-main{flex:1;min-width:0}
   .pt-main .t{font-weight:700;font-size:16px;color:var(--ink)}
@@ -683,13 +688,13 @@
      ============================================================ */
   body{ font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
   .wrap{ padding-bottom:60px; }
-  .card{ border-radius:18px; padding:24px; box-shadow:0 1px 2px rgba(20,40,70,.04),0 10px 30px rgba(20,40,70,.05); }
+  .card{ border-radius:18px; padding:24px; box-shadow:0 1px 2px rgba(20,33,28,.04),0 10px 30px rgba(20,33,28,.05); }
   .card + .card{ margin-top:20px; }
   .card h2{ font-size:18px; letter-spacing:-.4px; font-weight:700; }
   .card .sub{ line-height:1.55; }
   button{ border-radius:11px; }
   .btn-primary,.btn-ghost,.btn-green,.btn-red,.btn-gold,.btn-white{ border-radius:11px; }
-  .btn-primary{ box-shadow:0 1px 2px rgba(20,40,70,.12),0 2px 8px rgba(37,99,201,.18); }
+  .btn-primary{ box-shadow:0 1px 2px rgba(20,33,28,.12),0 2px 8px rgba(37,99,201,.18); }
   .sec-copy{ border-radius:9px; }
   input,select,textarea,.sf-select{ border-radius:11px; }
   .extra-card{ border-radius:16px; }
@@ -704,8 +709,8 @@
 
   /* ================= UI REFRESH 2026 — sleeker surfaces, depth & a sticky nav.
      Entirely variable-based, so BOTH light and dark mode follow automatically. ========= */
-  :root{ --r-card:16px; --r-ctl:11px; --shadow-soft:0 1px 2px rgba(20,40,70,.05),0 10px 28px rgba(20,40,70,.07); --ring:0 0 0 3px rgba(37,99,201,.18); }
-  body.theme-dark{ --shadow-soft:0 1px 3px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.5); --ring:0 0 0 3px rgba(79,147,242,.26); }
+  :root{ --r-card:16px; --r-ctl:11px; --shadow-soft:0 1px 2px rgba(20,33,28,.05),0 10px 28px rgba(20,33,28,.07); --ring:0 0 0 3px rgba(37,99,201,.18); }
+  body.theme-dark{ --shadow-soft:0 1px 3px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.5); --ring:0 0 0 3px rgba(95,175,135,.26); }
   body{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
   /* Cards — airier, with a soft layered shadow */
   .card{ border-radius:var(--r-card); box-shadow:var(--shadow-soft); }
@@ -713,7 +718,7 @@
   .howto{ border-radius:var(--r-card); box-shadow:var(--shadow-soft); }
   /* Buttons — refined radius, gentle depth, tactile hover lift */
   button{ border-radius:var(--r-ctl); transition:background .15s ease,box-shadow .15s ease,border-color .15s ease,transform .09s ease,filter .15s ease; }
-  .btn-primary,.btn-green,.btn-red,.btn-gold{ box-shadow:0 1px 2px rgba(20,40,70,.10),0 4px 12px rgba(20,40,70,.10); }
+  .btn-primary,.btn-green,.btn-red,.btn-gold{ box-shadow:0 1px 2px rgba(20,33,28,.10),0 4px 12px rgba(20,33,28,.10); }
   .btn-primary:hover,.btn-green:hover,.btn-red:hover,.btn-gold:hover{ transform:translateY(-1px); filter:brightness(1.04); }
   .btn-ghost:hover{ transform:translateY(-1px); }
   button:active{ transform:translateY(0) scale(.98); }
@@ -721,11 +726,11 @@
   input[type=text],input[type=password],input[type=email],input[type=date],input[type=time],input[type=number],input[type=search],input[type=tel],textarea,select,.sf-select{ border-radius:var(--r-ctl); transition:border-color .15s ease,box-shadow .15s ease,background .15s ease; }
   input:focus,textarea:focus,select:focus{ outline:none; border-color:var(--brand); box-shadow:var(--ring); }
   /* Navigation — sticky so it's always one glance away, with sleeker pills */
-  .mainnav{ position:sticky; top:10px; z-index:6000; border-radius:14px; box-shadow:0 2px 12px rgba(20,40,70,.07); }
+  .mainnav{ position:sticky; top:10px; z-index:6000; border-radius:14px; box-shadow:0 2px 12px rgba(20,33,28,.07); }
   body.theme-dark .mainnav{ box-shadow:0 2px 16px rgba(0,0,0,.45); }
   .navtab{ border-radius:10px; transition:background .14s ease,color .14s ease,box-shadow .14s ease,transform .09s ease; }
   .navtab.on{ box-shadow:0 3px 10px rgba(37,99,201,.32); }
-  body.theme-dark .navtab.on{ box-shadow:0 3px 12px rgba(79,147,242,.4); }
+  body.theme-dark .navtab.on{ box-shadow:0 3px 12px rgba(95,175,135,.4); }
   .navtab:active{ transform:scale(.97); }
   /* Active-patient bar — match the softer radius */
   #patientBar{ border-radius:14px; }
@@ -741,7 +746,7 @@
   body.theme-dark #calDayPanel{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
   body.theme-dark [style*="background:#fafcff"]{ background:var(--surface)!important; color:var(--ink); }
   body.theme-dark [style*="background:#eefaf3"]{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.30)!important; color:var(--ink); }
-  body.theme-dark [style*="background:#eef6ff"], body.theme-dark [style*="background:#f0f6ff"]{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
+  body.theme-dark [style*="background:#eef6ff"], body.theme-dark [style*="background:#F6FBF8"]{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
   /* Split patient view — chart on the RIGHT when a patient is active (opt-in setting). */
   body.pt-split.pt-has-active #ptSplitWrap{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
   body.pt-split.pt-has-active #profileCard{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 84px); overflow:auto; }
@@ -804,7 +809,7 @@
   .c-art-kind{ font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:var(--soft,#eef2f8);border-radius:20px;padding:2px 9px; }
   .c-art-text{ width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--line);padding:13px;font-size:13.5px;line-height:1.55;font-family:inherit;min-height:140px;resize:vertical;background:var(--field-bg,#fff);color:var(--ink); }
   .c-art-text:focus{ outline:none;background:var(--card,#fff); }
-  .c-art-tweak{ display:flex;gap:7px;padding:10px 11px;align-items:center;background:var(--soft,#f7f9fc); }
+  .c-art-tweak{ display:flex;gap:7px;padding:10px 11px;align-items:center;background:var(--soft,#FCFBF8); }
   .c-art-tweak input{ flex:1;padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:var(--field-bg,#fff);color:var(--ink); }
   .c-art-tweak input:focus{ outline:none;border-color:var(--brand,#3f7bff); }
   .cactions{ padding:0 11px 11px; }
@@ -861,7 +866,7 @@
 #appHeader.mlsRdHdr{z-index:6000!important}
 </style>
 <!-- pdf.js from cdnjs — used only to extract text from uploaded PDFs in-browser -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script src="legal-connect-ui.js?v=20260617"></script><script src="legal-tracker.js?v=20260617c"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script src="legal-connect-ui.js?v=20260617c1"></script><script src="legal-tracker.js?v=20260617cc1"></script>
 <style id="mls-redesign">
 #visitView .mls-more-toggle{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:2px 0 12px;padding:11px 14px;cursor:pointer;background:var(--soft);border:1.5px dashed var(--line);color:var(--brand-dk);font-weight:700;font-size:14px;border-radius:11px}
 #visitView .mls-more-toggle:hover{border-color:var(--brand);background:var(--soft2)}
@@ -878,13 +883,37 @@
 #patientsView .pt-group-hdr{font-size:12.5px;font-weight:800;letter-spacing:.4px;margin:18px 0 8px}
 #patientsView .pt-list>.pt-group-hdr:first-child{margin-top:4px}
 </style>
+<style id="mls2Base">
+/* ===== Editorial Calm base layer (2026 redesign) — login + shared primitives ===== */
+.auth-wrap{ background:var(--bg) !important; position:relative; }
+.auth-wrap::before{ content:''; position:absolute; inset:0; background:radial-gradient(700px 400px at 50% -10%, #EAF1EE, transparent 62%); pointer-events:none; }
+body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50% -10%, #1F2721, transparent 62%); }
+.auth-wrap::after{ content:'HIPAA-ready architecture · You sign every note'; position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:12px; color:#A6AEA6; pointer-events:none; }
+.auth-card{ position:relative; background:var(--card) !important; border:1px solid var(--line) !important; border-radius:20px !important;
+  box-shadow:0 1px 2px rgba(20,33,28,.04), 0 30px 60px -30px rgba(20,33,28,.28) !important; padding:38px 36px !important; max-width:404px; }
+.auth-logo{ font-family:var(--serif) !important; font-weight:600 !important; font-size:20px !important; letter-spacing:-.01em; color:var(--ink); }
+.auth-sub{ font-size:14px !important; color:var(--muted) !important; }
+.auth-tabs{ background:transparent !important; border:0 !important; border-bottom:1px solid var(--line) !important; border-radius:0 !important; padding:0 !important; gap:18px !important; }
+.auth-tab{ background:transparent !important; border:0 !important; border-radius:0 !important; color:#8A8F86 !important; font-weight:600 !important; padding:10px 2px !important; box-shadow:none !important; }
+.auth-tab.on{ color:var(--brand-dk) !important; font-weight:700 !important; box-shadow:inset 0 -2px 0 var(--brand) !important; }
+.auth-card .field label{ font-size:12.5px; font-weight:600; color:#55605A; }
+.auth-card .field input{ height:46px; border:1px solid #DDD8CC !important; border-radius:11px !important; background:var(--field-bg) !important; font-size:14.5px; transition:border-color .15s, box-shadow .15s; }
+.auth-card .field input:focus{ border-color:var(--brand) !important; box-shadow:0 0 0 3px rgba(46,106,75,.12) !important; outline:none; }
+.auth-card .btn-primary{ height:48px; border-radius:11px !important; font-size:15px; font-weight:600; }
+.auth-card .local-note{ color:var(--muted); }
+/* shared calm primitives available pre-bundle */
+.btn-primary{ background:var(--brand-dk) !important; border:none !important; box-shadow:0 8px 20px -8px rgba(32,64,52,.6) !important; transition:transform .12s ease, background .2s ease; }
+.btn-primary:hover{ background:#28503f !important; }
+.btn-primary:active{ transform:translateY(1px); }
+@media (prefers-reduced-motion: reduce){ *,*::before,*::after{ transition-duration:.01ms !important; animation-duration:.01ms !important; } }
+</style>
 </head>
 <body>
 
 <!-- ============ AUTH SCREEN ============ -->
 <div class="auth-wrap" id="authScreen">
   <div class="auth-card">
-    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div> MLS</div>
     <p class="auth-sub">Ambient AI medical scribe — sign in to continue</p>
 
     <div class="auth-tabs">
@@ -927,7 +956,7 @@
 
   <!-- Set-a-new-password card, shown when ?reset=<token> is in the URL -->
   <div class="auth-card" id="resetCard" style="display:none">
-    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkR)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div> MLS</div>
     <p class="auth-sub">Set a new password</p>
     <div class="auth-err" id="resetErr"></div>
     <div class="field">
@@ -944,7 +973,7 @@
 
   <!-- Two-factor code card, shown when login returns twofa_required -->
   <div class="auth-card" id="twofaCard" style="display:none">
-    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMark2)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div> MLS</div>
     <p class="auth-sub" id="twofaSub">Enter the 6-digit code from your Google Authenticator app</p>
     <div class="auth-err" id="twofaErr"></div>
     <div class="field">
@@ -963,9 +992,9 @@
   <!-- Mandatory 2FA enrollment, shown after a NEW account registers.
        The user cannot reach the app until totp_enabled is true. -->
   <div class="auth-card" id="regTwofaCard" style="display:none">
-    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMark3)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div> MLS</div>
+    <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMark3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div> MLS</div>
     <p class="auth-sub" style="font-weight:600">🔐 Finish creating your account</p>
-    <p class="note" style="background:#eef6ff;border:1px solid #cfe4ff;color:#1f4e79;margin:6px 0 12px">For your patients' security, set up two-factor authentication to finish creating your account.</p>
+    <p class="note" style="background:#eef6ff;border:1px solid #E4E1D8;color:#1f4e79;margin:6px 0 12px">For your patients' security, set up two-factor authentication to finish creating your account.</p>
     <div class="auth-err" id="regTwofaErr"></div>
 
     <!-- Step 1: scan / enroll -->
@@ -996,11 +1025,11 @@
 </div>
 
 <!-- ============ PHONE MIC PAGE (shown when ?mic=<CODE>) ============ -->
-<div id="phoneMicPage" style="display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,#0e3a4f,#0b6b6e);color:#fff;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:inherit">
+<div id="phoneMicPage" style="display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,#204034,#2E6A4B);color:#fff;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:inherit">
   <div style="font-size:24px;font-weight:700;margin-bottom:6px">MLS phone mic</div>
   <div style="font-size:14px;opacity:.85;margin-bottom:4px">Pairing code</div>
   <div id="phoneMicPageCode" style="font-size:30px;font-weight:700;letter-spacing:4px;font-family:monospace;margin-bottom:24px">------</div>
-  <button id="phoneRecBtn" onclick="togglePhoneRec()" style="width:170px;height:170px;border-radius:50%;border:none;background:#fff;color:#0b6b6e;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.3)">● Record</button>
+  <button id="phoneRecBtn" onclick="togglePhoneRec()" style="width:170px;height:170px;border-radius:50%;border:none;background:#fff;color:#2E6A4B;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.3)">● Record</button>
   <div id="phoneRecStatus" style="margin-top:22px;font-size:16px;min-height:24px"></div>
   <div id="phoneRecSent" style="margin-top:6px;font-size:13px;opacity:.8"></div>
   <button id="phoneDoneBtn" onclick="stopPhoneRec()" style="display:none;margin-top:24px;background:transparent;border:1px solid rgba(255,255,255,.6);color:#fff;border-radius:8px;padding:10px 22px;font-size:15px;cursor:pointer">Done</button>
@@ -1016,10 +1045,10 @@
 #intakeView{position:fixed;inset:0;z-index:9000;background:#f2f7f9;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none}
 .ik-wrap{max-width:760px;margin:0 auto;padding:20px 18px 70px;font-size:17px;color:#16323c}
 .ik-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
-.ik-brand{font-size:22px;font-weight:700;color:#0e3a4f}
+.ik-brand{font-size:22px;font-weight:700;color:#204034}
 .ik-exit{font-size:12px;color:#8aa3ad;text-decoration:none}
 .ik-sec{background:#fff;border:1px solid #d8e4ea;border-radius:14px;padding:18px;margin-top:16px;box-shadow:0 1px 3px rgba(14,58,79,.05)}
-.ik-sec h3{margin:0 0 4px;font-size:19px;color:#0e3a4f}
+.ik-sec h3{margin:0 0 4px;font-size:19px;color:#204034}
 .ik-sec .ik-sub{margin:0 0 12px;font-size:14px;color:#5c7682}
 .ik-field{margin-bottom:14px}
 .ik-field label{display:block;font-weight:600;margin-bottom:6px;font-size:16px}
@@ -1029,23 +1058,23 @@
 @media (max-width:560px){.ik-grid2{grid-template-columns:1fr}}
 .ik-checks{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
 .ik-check{display:flex;align-items:center;gap:9px;border:1px solid #c8d8e0;border-radius:10px;padding:10px 14px;min-height:48px;cursor:pointer;background:#fff;font-size:16px;user-select:none}
-.ik-check input{width:22px;height:22px;flex:none;accent-color:#127a7d}
+.ik-check input{width:22px;height:22px;flex:none;accent-color:#2E6A4B}
 .ik-pain-row{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
 .ik-pain{width:52px;height:52px;border-radius:10px;border:1px solid #c8d8e0;background:#fff;font-size:19px;font-weight:700;cursor:pointer;color:#16323c}
-.ik-pain.on{background:#127a7d;color:#fff;border-color:#127a7d}
+.ik-pain.on{background:#2E6A4B;color:#fff;border-color:#2E6A4B}
 .ik-odi-q{border-top:1px solid #e6eef2;padding-top:12px;margin-top:12px}
 .ik-odi-q:first-child{border-top:none;padding-top:0;margin-top:0}
 .ik-odi-t{font-weight:700;font-size:16px;margin-bottom:4px}
 .ik-opt{display:flex;align-items:flex-start;gap:10px;border:1px solid #e2ecf1;border-radius:10px;padding:11px 12px;margin-top:6px;cursor:pointer;font-size:15px;background:#fbfdfe;user-select:none}
-.ik-opt input{width:20px;height:20px;margin-top:1px;flex:none;accent-color:#127a7d}
-.ik-submit{display:block;width:100%;margin-top:20px;min-height:60px;border:none;border-radius:14px;background:#127a7d;color:#fff;font-size:20px;font-weight:700;cursor:pointer}
-.ik-cardbtn{display:inline-flex;align-items:center;gap:8px;min-height:50px;padding:12px 18px;border:1px dashed #127a7d;border-radius:10px;background:#f0fafa;color:#0e5e60;font-size:16px;font-weight:600;cursor:pointer}
+.ik-opt input{width:20px;height:20px;margin-top:1px;flex:none;accent-color:#2E6A4B}
+.ik-submit{display:block;width:100%;margin-top:20px;min-height:60px;border:none;border-radius:14px;background:#2E6A4B;color:#fff;font-size:20px;font-weight:700;cursor:pointer}
+.ik-cardbtn{display:inline-flex;align-items:center;gap:8px;min-height:50px;padding:12px 18px;border:1px dashed #2E6A4B;border-radius:10px;background:#f0fafa;color:#0e5e60;font-size:16px;font-weight:600;cursor:pointer}
 /* MLS additive — patient-satisfaction 1–5 buttons (intake kiosk) */
 .ik-sat-row{display:flex;gap:8px;flex-wrap:wrap}
-.ik-sat{flex:1;min-width:96px;min-height:64px;border:1px solid #cfdee6;border-radius:12px;background:#fbfdfe;cursor:pointer;color:#0e3a4f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 4px}
+.ik-sat{flex:1;min-width:96px;min-height:64px;border:1px solid #cfdee6;border-radius:12px;background:#fbfdfe;cursor:pointer;color:#204034;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 4px}
 .ik-sat .n{font-size:22px;font-weight:700}
 .ik-sat .l{font-size:12px;font-weight:600;text-align:center}
-.ik-sat.on{background:#127a7d;border-color:#127a7d;color:#fff}
+.ik-sat.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff}
 </style>
 <div id="intakeView">
   <div class="ik-wrap">
@@ -1205,7 +1234,7 @@
     <!-- Thank-you screen (after submit) -->
     <div id="ikDone" style="display:none;text-align:center;padding:70px 10px">
       <div style="font-size:54px">🙏</div>
-      <div style="font-size:26px;font-weight:700;color:#0e3a4f;margin:14px 0 8px">Thank you!</div>
+      <div style="font-size:26px;font-weight:700;color:#204034;margin:14px 0 8px">Thank you!</div>
       <div style="font-size:18px;color:#41606d">Your answers have been saved for your visit.<br>Please hand the iPad back to the front desk.</div>
       <button type="button" class="ik-cardbtn" style="margin-top:40px" onclick="intakeNextPatient()">Staff: start next patient</button>
     </div>
@@ -1254,7 +1283,7 @@
 <div id="appScreen" style="display:none">
 <header id="appHeader">
   <div class="logo">
-    <div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></div>
+    <div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div>
     <div>MLS
       <small>Ambient AI medical scribe</small>
       <small id="mlsOwnerByline" style="font-size:11.5px;opacity:.55;margin-top:0">Michael L Schaeffer</small>
@@ -1446,7 +1475,7 @@
   <div id="waitingRoomBar" style="display:none;margin-bottom:12px"></div>
 
   <!-- ===== RECORD-FIRST HERO — the landing focal point: say the patient, hit record, just talk. ===== -->
-  <div id="visitHero" class="card" style="background:linear-gradient(135deg,#1f7ae0,#1456a8);color:#fff;border:0;margin-bottom:14px;box-shadow:0 6px 22px rgba(20,60,120,.25)">
+  <div id="visitHero" class="card" style="background:linear-gradient(135deg,#2E6A4B,#1456a8);color:#fff;border:0;margin-bottom:14px;box-shadow:0 6px 22px rgba(20,60,120,.25)">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:240px">
         <div style="font-size:12.5px;font-weight:700;opacity:.9;letter-spacing:.4px">READY FOR YOUR NEXT PATIENT</div>
@@ -1796,7 +1825,7 @@
       <!-- Superbill -->
       <div class="extra-card" id="billCard" style="display:none">
         <h3>🧾 Superbill <span style="font-weight:400;font-size:13px;color:var(--muted)">(dx + CPT for billing)</span>
-          <button class="sec-copy" style="margin-left:auto;background:#16a34a;color:#fff;border-color:#16a34a;font-weight:700" onclick="pushSuperbillToAthena()" title="Push these charges (E/M, CPT and diagnoses) into Athena's billing for the open encounter">🚀 Push to Athena</button>
+          <button class="sec-copy" style="margin-left:auto;background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:700" onclick="pushSuperbillToAthena()" title="Push these charges (E/M, CPT and diagnoses) into Athena's billing for the open encounter">🚀 Push to Athena</button>
           <button class="sec-copy" onclick="copyExtra('billBodyText')">📑 Copy</button>
           <button class="sec-copy" onclick="printExtra('Superbill','billBody')">🖨 Print</button>
         </h3>
@@ -1984,7 +2013,7 @@
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
         <div id="visitOrdersBody"></div>
       </div>
-      <div id="visitGradeBox" style="display:none;margin-top:12px;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:12px;padding:13px 15px"></div>
+      <div id="visitGradeBox" style="display:none;margin-top:12px;background:var(--soft2,#FCFBF8);border:1px solid var(--line);border-radius:12px;padding:13px 15px"></div>
       <!-- Contextual "what's next" — appears after a note is saved/signed -->
       <div id="nextActionsBar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;background:#eefaf3;border:1px solid #cdeed9;border-radius:10px;padding:9px 12px"></div>
 
@@ -2479,7 +2508,7 @@
 
     <!-- 🔎 FREE-TEXT DATA STUDY BOX — ask anything of your practice records (PREMIUM) -->
     <div class="card" id="anaAsk">
-      <h2><span class="ic">🔎</span> Ask your data <span id="anaPremiumBadge" style="display:none;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <h2><span class="ic">🔎</span> Ask your data <span id="anaPremiumBadge" style="display:none;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
       <p class="sub">Ask any question about your practice records — volumes, trends, outcomes, coding — or request a de-identified retrospective study summary. Built from your stored visit records; no patient names are sent to the AI.</p>
 
       <!-- Unlocked study box (premium only) -->
@@ -2555,7 +2584,7 @@
 
     <!-- 🤝 REFERRAL OUTCOMES — close-the-loop reports for referring physicians (PREMIUM) -->
     <div class="card" id="anaReferral">
-      <h2><span class="ic">🤝</span> Referral outcomes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <h2><span class="ic">🤝</span> Referral outcomes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
       <p class="sub">Close the loop with the physicians who refer to you. Summarizes pain and ODI improvement, satisfaction, and visit counts grouped by referring physician — ready to print and send back. Referrers are captured on the patient intake form.</p>
       <button class="btn-primary" style="margin-top:6px" onclick="generateReferralOutcomes()">🤝 Generate referral report</button>
       <div class="extra-card" id="refOutCard" style="display:none;margin-top:16px">
@@ -2570,7 +2599,7 @@
 
     <!-- 📋 OUTCOMES REGISTRY — practice-wide outcomes table + CSV export (PREMIUM) -->
     <div class="card" id="anaRegistry">
-      <h2><span class="ic">📋</span> Outcomes registry <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
+      <h2><span class="ic">📋</span> Outcomes registry <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px">PREMIUM</span></h2>
       <p class="sub">A practice-wide registry of every patient's pain and ODI trajectory, satisfaction, and visit count — for quality reporting and review. Export to CSV for your registry or QI program.</p>
       <button class="btn-primary" style="margin-top:6px" onclick="generateOutcomesRegistry()">📋 Build registry</button>
       <button class="btn-ghost" style="margin-top:6px;margin-left:8px" onclick="downloadOutcomesCsv()">⬇ Download CSV</button>
@@ -2593,7 +2622,7 @@
         <button class="btn-ghost" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="loadLegalRequests()">🔄 Refresh</button>
       </h2>
       <p class="sub">Incoming medical-legal report requests sent to you by attorneys. Click a pending request to open the Legal tool prefilled with the request — then pull up the matching patient, generate, sign, and return the report. Use <b>➕ New request</b> to open one yourself when the attorney isn't on MLS and just emailed you the case.</p>
-      <div id="legalSelfReqForm" style="display:none;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:12px;padding:14px;margin:4px 0 14px"></div>
+      <div id="legalSelfReqForm" style="display:none;background:var(--soft2,#FCFBF8);border:1px solid var(--line);border-radius:12px;padding:14px;margin:4px 0 14px"></div>
       <div id="legalDashboard" style="display:none;gap:10px;flex-wrap:wrap;margin:4px 0 14px"></div>
       <div id="legalReqEmpty" class="empty"><span class="big">⚖️</span>No legal requests yet.<div style="font-size:13px;color:var(--muted);font-weight:400;margin-top:8px;max-width:460px;line-height:1.6">Two ways these arrive: an attorney sends one through MLS and it lands here, or you click <b>➕ New request</b> to start one yourself when a lawyer just emails you a case. Opt into the <b>Expert marketplace</b> below to be found by attorneys automatically.</div></div>
       <div id="legalReqList"></div>
@@ -2919,7 +2948,7 @@
     <p class="set-desc">Standing instructions and defaults MLS applies to every note it writes for you.</p>
 
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label for="noteModelSel" style="font-size:15px">🤖 AI model for notes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);border-radius:999px;padding:2px 8px;margin-left:4px">Premium</span></label>
+      <label for="noteModelSel" style="font-size:15px">🤖 AI model for notes <span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);border-radius:999px;padding:2px 8px;margin-left:4px">Premium</span></label>
       <select class="sf-select" id="noteModelSel" style="margin-top:8px">
         <option value="gpt-4o">Balanced — stronger model (recommended)</option>
         <option value="gpt-4o-mini">Fast — quickest generation</option>
@@ -3289,7 +3318,7 @@
       <label style="font-size:15px">🌙 Nightly EMR backup (automatic)</label>
       <p class="note" style="margin:2px 0 10px">Once your EMR is connected, MLS can automatically pull <b>every patient</b> (and their visit history) out of your EMR each night and back them up here — running on our server, so your office computer doesn't need to be on. Stored encrypted, same as in-app charts.</p>
       <div style="background:#eafaf0;border:1px solid #bfe6cf;border-radius:10px;padding:10px 13px;margin:0 0 10px;font-size:13px;color:#1c7a43">🩺 <b>No Athena developer API? You don't need it.</b> MLS Assist (the browser extension) runs this exact nightly backup straight from your signed-in EMR tab — no API access required. Click the MLS Assist toolbar icon → set the <b>Nightly EMR backup</b> time there. (Leave Chrome open and the EMR signed in overnight.) The server-side version below is only for practices that have full Athena API access.</div>
-      <div id="emrSyncBox" style="background:#f0f6ff;border:1px solid #d7e6fb;border-radius:10px;padding:12px 14px">
+      <div id="emrSyncBox" style="background:#F6FBF8;border:1px solid #d7e6fb;border-radius:10px;padding:12px 14px">
         <div id="emrSyncConn" style="font-size:13px;margin-bottom:10px;color:var(--muted)">Checking EMR connection…</div>
         <label class="row tight" style="gap:8px;align-items:center;font-size:14px;cursor:pointer">
           <input type="checkbox" id="emrSyncEnabled" style="width:auto"> Run an automatic backup every night
@@ -3581,7 +3610,7 @@
       <h3 style="margin:0">🚀 Set up your practice</h3>
       <span id="su_progress" style="font-size:12.5px;color:var(--muted);font-weight:600"></span>
     </div>
-    <div style="height:6px;background:#eef2f7;border-radius:6px;margin:10px 0 14px;overflow:hidden"><div id="su_bar" style="height:100%;width:0;background:linear-gradient(90deg,#1f9ad6,#127a55);transition:width .25s"></div></div>
+    <div style="height:6px;background:#F4F2EC;border-radius:6px;margin:10px 0 14px;overflow:hidden"><div id="su_bar" style="height:100%;width:0;background:linear-gradient(90deg,#3B7C5A,#127a55);transition:width .25s"></div></div>
 
     <!-- STEP 0: welcome -->
     <div class="su_step" id="su_step0">
@@ -4563,7 +4592,7 @@ async function loadAdminUsers(){
     body.innerHTML=users.map(u=>{
       const isOwner=(u.role==='owner'||u.isAdmin);
       const premOn=!!(u.premium===1||u.premium===true);
-      const premBtn='<button class="btn-ghost" style="font-size:12px;padding:5px 9px;'+(premOn?'background:linear-gradient(90deg,#7b5cff,#a855f7);color:#fff;border-color:#7b5cff':'')+'" onclick="adminSetPremium(\''+u.id+'\','+(premOn?'false':'true')+')" title="Toggle the premium Data Study add-on">'+(premOn?'Premium ✓':'Premium')+'</button>';
+      const premBtn='<button class="btn-ghost" style="font-size:12px;padding:5px 9px;'+(premOn?'background:linear-gradient(90deg,#7b5cff,#9B82D4);color:#fff;border-color:#7b5cff':'')+'" onclick="adminSetPremium(\''+u.id+'\','+(premOn?'false':'true')+')" title="Toggle the premium Data Study add-on">'+(premOn?'Premium ✓':'Premium')+'</button>';
       const actions=isOwner
         ? '<span style="color:var(--muted)">Owner</span>'
         : '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> '+
@@ -5640,8 +5669,8 @@ function _infoDialog(title, text){
     var ov=document.createElement('div'); ov.id='_mlsInfoDialog';
     ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(18,32,48,.45);display:flex;align-items:center;justify-content:center;padding:20px';
     var card=document.createElement('div');
-    card.style.cssText='background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(20,40,70,.35);overflow:hidden';
-    var head='<div style="background:#1f7ae0;color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center"><span>'+esc(title||'')+'</span><span style="cursor:pointer;font-size:20px;opacity:.85" onclick="var d=document.getElementById(\'_mlsInfoDialog\');if(d)d.remove()">×</span></div>';
+    card.style.cssText='background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(20,33,28,.35);overflow:hidden';
+    var head='<div style="background:#2E6A4B;color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center"><span>'+esc(title||'')+'</span><span style="cursor:pointer;font-size:20px;opacity:.85" onclick="var d=document.getElementById(\'_mlsInfoDialog\');if(d)d.remove()">×</span></div>';
     var body='<div style="padding:16px;overflow:auto;white-space:pre-wrap;font-size:14px;line-height:1.5;color:#1a2b3c">'+esc(text||'')+'</div>';
     var foot='<div style="padding:10px 16px;border-top:1px solid var(--line);text-align:right"><button class="btn-primary" style="font-size:13px;padding:8px 16px" onclick="var d=document.getElementById(\'_mlsInfoDialog\');if(d)d.remove()">Got it</button></div>';
     card.innerHTML=head+body+foot;
@@ -6200,7 +6229,7 @@ async function loadOutcomesMarketing(force){
   }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load outcomes.</div>'; }
 }
 function _omCard(big,lab,sub,col){
-  return '<div style="flex:1;min-width:150px;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:12px;padding:14px 16px">'
+  return '<div style="flex:1;min-width:150px;background:var(--soft2,#FCFBF8);border:1px solid var(--line);border-radius:12px;padding:14px 16px">'
     +'<div style="font-size:30px;font-weight:800;letter-spacing:-1px;color:'+(col||'var(--ink)')+'">'+esc(big)+'</div>'
     +'<div style="font-weight:600;font-size:13px;margin-top:2px">'+esc(lab)+'</div>'
     +(sub?'<div class="mini" style="color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+'</div>';
@@ -6211,9 +6240,9 @@ function renderOutcomesMarketing(d){
   var hasData=(pain.patients||0)>0||(odi.patients||0)>0||d.satisfaction!=null;
   if(!hasData){ box.innerHTML='<div class="mini" style="color:var(--muted)">No outcome scores recorded yet. As you log pain (0–10) and ODI on visits, your improvement stats build here automatically.</div>'; return; }
   var cards='';
-  if((pain.patients||0)>0) cards+=_omCard((pain.avg_pct_improvement!=null?pain.avg_pct_improvement+'%':'—'),'Average pain reduction','from '+pain.baseline+' to '+pain.latest+' (0–10) · '+pain.patients+' patients','#0f8a63');
-  if((pain.patients||0)>0) cards+=_omCard((pain.pct_improved!=null?pain.pct_improved+'%':'—'),'Patients who improved','reported less pain than baseline','#2563c9');
-  if((odi.patients||0)>0) cards+=_omCard((odi.improvement_pts!=null?odi.improvement_pts+' pts':'—'),'Average ODI improvement','Oswestry disability · '+odi.patients+' patients','#0f8a63');
+  if((pain.patients||0)>0) cards+=_omCard((pain.avg_pct_improvement!=null?pain.avg_pct_improvement+'%':'—'),'Average pain reduction','from '+pain.baseline+' to '+pain.latest+' (0–10) · '+pain.patients+' patients','#2E6A4B');
+  if((pain.patients||0)>0) cards+=_omCard((pain.pct_improved!=null?pain.pct_improved+'%':'—'),'Patients who improved','reported less pain than baseline','#2E6A4B');
+  if((odi.patients||0)>0) cards+=_omCard((odi.improvement_pts!=null?odi.improvement_pts+' pts':'—'),'Average ODI improvement','Oswestry disability · '+odi.patients+' patients','#2E6A4B');
   if(d.satisfaction!=null) cards+=_omCard((Math.round(d.satisfaction*20)+'%'),'Patient satisfaction',d.satisfaction+'/5 across '+(d.satisfaction_n||0)+' ratings','#c47d09');
   var h='<div style="display:flex;gap:12px;flex-wrap:wrap">'+cards+'</div>';
   h+='<div class="mini" style="color:var(--muted);margin-top:10px">Based on '+(d.n_patients||0)+' patients · '+(d.n_visits||0)+' visits'+(d.date_range&&d.date_range.first?(' · '+d.date_range.first+' to '+d.date_range.last):'')+'.</div>';
@@ -6379,7 +6408,7 @@ async function appendScheduleAnalytics(box){
   const wrap=document.createElement('div');
   wrap.style.marginTop='18px';
   if(!effectivePremium()){
-    wrap.innerHTML='<div style="font-weight:700;color:var(--muted);font-size:13px;margin-bottom:6px">🗓️ Scheduling &amp; no-show analytics <span style="background:#1f7ae0;color:#fff;font-size:11px;padding:1px 7px;border-radius:999px;margin-left:4px">Premium</span></div>'
+    wrap.innerHTML='<div style="font-weight:700;color:var(--muted);font-size:13px;margin-bottom:6px">🗓️ Scheduling &amp; no-show analytics <span style="background:#2E6A4B;color:#fff;font-size:11px;padding:1px 7px;border-radius:999px;margin-left:4px">Premium</span></div>'
       +'<div class="empty" style="padding:16px"><span class="big">🔒</span>See no-show &amp; cancellation rates, online-booking share, and appointment volume. <b>Upgrade to Premium</b> to unlock.</div>';
     box.appendChild(wrap); return;
   }
@@ -6508,7 +6537,7 @@ async function renderStudyCharts(specs){
     wrap.innerHTML='<div class="mini" style="color:var(--muted)">Charts unavailable (could not load chart library). The numbers are in the narrative above.</div>';
     return;
   }
-  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#a855f7','#84cc16','#ec4899'];
+  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#9B82D4','#84cc16','#ec4899'];
   valid.forEach((spec,i)=>{
     try{
       const type=['bar','line','pie','doughnut'].includes(spec.type)?spec.type:'bar';
@@ -6979,7 +7008,7 @@ function _calFilterVal(){
 function renderCalendar(){
   _calInit();
   if(!_calRefDate){ var _n=new Date(); _calRefDate=_n.getFullYear()+'-'+_calPad(_n.getMonth()+1)+'-'+_calPad(_n.getDate()); }
-  ['month','week','day'].forEach(function(m){ var b=document.getElementById('calMode_'+m); if(b){ var on=_calMode===m; b.style.background=on?'var(--brand,#1f7ae0)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; } });
+  ['month','week','day'].forEach(function(m){ var b=document.getElementById('calMode_'+m); if(b){ var on=_calMode===m; b.style.background=on?'var(--brand,#2E6A4B)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; } });
   if(_calMode==='week') return _calRenderWeek();
   if(_calMode==='day') return _calRenderDay();
   return _calRenderMonth();
@@ -7058,7 +7087,7 @@ function _calRenderWeek(){
   // Header row — click a day to open its Day agenda.
   var h='<div style="display:grid;grid-template-columns:44px repeat(7,1fr)">';
   h+='<div></div>';
-  days.forEach(function(d,idx){ var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); var it=key===todayKey; h+='<div onclick="_calRefDate=\''+key+'\';calSetMode(\'day\')" title="Open this day" style="text-align:center;font-weight:700;font-size:12px;color:'+(it?'#1f7ae0':'var(--muted)')+';padding:4px 0;cursor:pointer">'+dn[idx]+' '+d.getDate()+'</div>'; });
+  days.forEach(function(d,idx){ var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); var it=key===todayKey; h+='<div onclick="_calRefDate=\''+key+'\';calSetMode(\'day\')" title="Open this day" style="text-align:center;font-weight:700;font-size:12px;color:'+(it?'#2E6A4B':'var(--muted)')+';padding:4px 0;cursor:pointer">'+dn[idx]+' '+d.getDate()+'</div>'; });
   h+='</div>';
   // Body — hour gutter + 7 day lanes, appointments as duration-sized blocks.
   h+='<div style="display:grid;grid-template-columns:44px repeat(7,1fr);margin-top:2px">';
@@ -7068,9 +7097,9 @@ function _calRenderWeek(){
     var it=key===todayKey; var ap=(byDate[key]||[]); var timed=[], untimed=[];
     ap.forEach(function(a){ var b=_calApptTimeBlock(a); if(b) timed.push([a,b]); else untimed.push(a); });
     h+='<div onclick="_calGridClick(event,\''+key+'\','+rng.startMin+','+pxPerMin+')" title="Click an empty time to book here" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="position:relative;height:'+totalH+'px;border-left:1px solid var(--line);background:'+(it?'var(--soft)':'transparent')+';cursor:pointer">';
-    for(var tl=rng.startMin;tl<=rng.endMin;tl+=60){ var topl=(tl-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:0;right:0;top:'+topl+'px;border-top:1px solid #eef2f7"></div>'; }
+    for(var tl=rng.startMin;tl<=rng.endMin;tl+=60){ var topl=(tl-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:0;right:0;top:'+topl+'px;border-top:1px solid #F4F2EC"></div>'; }
     timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); h+='<div data-appt="1" draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="Click for details · drag to reschedule" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:4px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;cursor:pointer">'+esc(_calFmtHr(b.mins))+' '+esc(_calLabelOf(a))+'</div>'; });
-    if(untimed.length){ h+='<div onclick="calOpenDay(\''+key+'\')" title="'+untimed.length+' with no set time" style="position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;color:#1f7ae0;background:#eef4fc;border-radius:4px;padding:1px 4px;cursor:pointer;text-align:center">'+untimed.length+' no-time</div>'; }
+    if(untimed.length){ h+='<div onclick="calOpenDay(\''+key+'\')" title="'+untimed.length+' with no set time" style="position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;color:#2E6A4B;background:#eef4fc;border-radius:4px;padding:1px 4px;cursor:pointer;text-align:center">'+untimed.length+' no-time</div>'; }
     h+='</div>';
   });
   h+='</div>'; grid.innerHTML=h;
@@ -7091,8 +7120,8 @@ function _calRenderDay(){
   if(untimed.length){ h+='<div style="margin-bottom:8px"><span class="mini" style="color:var(--muted);margin-right:6px">No set time:</span>'; untimed.forEach(function(a){ var c=_calStatusColor(a.status); h+='<span onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" style="display:inline-block;margin:0 6px 6px 0;border-radius:6px;padding:5px 10px;background:'+c.bg+';color:'+c.fg+';font-size:12px;cursor:pointer">'+esc(_calLabelOf(a))+'</span>'; }); h+='</div>'; }
   h+='<div onclick="_calGridClick(event,\''+key+'\','+rng.startMin+','+pxPerMin+')" title="Click an empty time to book an appointment here" style="position:relative;height:'+totalH+'px;border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden;cursor:pointer">';
   for(var t=rng.startMin; t<=rng.endMin; t+=60){ var top=(t-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top+'px;border-top:1px solid var(--line)"></div><div style="position:absolute;left:6px;top:'+(top-7)+'px;font-size:11px;color:var(--muted)">'+_calFmtHr(t)+'</div>'; }
-  for(var t2=rng.startMin+30; t2<rng.endMin; t2+=60){ var top2=(t2-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top2+'px;border-top:1px dashed #eef2f7"></div>'; }
-  timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(24, b.dur*pxPerMin-3); var c=_calStatusColor(a.status); h+='<div data-appt="1" onclick="calApptPeek('+a.id+',event)" title="Click for a quick preview" style="position:absolute;left:54px;right:8px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:3px solid '+c.fg+';border-radius:6px;padding:3px 9px;font-size:12.5px;overflow:hidden;cursor:pointer;box-shadow:0 1px 3px rgba(20,40,70,.08)"><b>'+_calFmtHr(b.mins)+'</b> '+esc(_calLabelOf(a))+(a.reason?' <span style="opacity:.82">· '+esc(a.reason)+'</span>':'')+'</div>'; });
+  for(var t2=rng.startMin+30; t2<rng.endMin; t2+=60){ var top2=(t2-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top2+'px;border-top:1px dashed #F4F2EC"></div>'; }
+  timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(24, b.dur*pxPerMin-3); var c=_calStatusColor(a.status); h+='<div data-appt="1" onclick="calApptPeek('+a.id+',event)" title="Click for a quick preview" style="position:absolute;left:54px;right:8px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:3px solid '+c.fg+';border-radius:6px;padding:3px 9px;font-size:12.5px;overflow:hidden;cursor:pointer;box-shadow:0 1px 3px rgba(20,33,28,.08)"><b>'+_calFmtHr(b.mins)+'</b> '+esc(_calLabelOf(a))+(a.reason?' <span style="opacity:.82">· '+esc(a.reason)+'</span>':'')+'</div>'; });
   h+='</div>'; grid.innerHTML=h;
 }
 function _calRenderMonth(){
@@ -7116,12 +7145,12 @@ function _calRenderMonth(){
     var key=_calYear+'-'+_calPad(_calMonth+1)+'-'+_calPad(day);
     var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
     var isToday=key===todayKey; var isSel=(key===window._calSelDay);
-    var cellBorder=isSel?'2px solid #1f7ae0':(isToday?'1px solid #1f7ae0':'1px solid var(--line)');
+    var cellBorder=isSel?'2px solid #2E6A4B':(isToday?'1px solid #2E6A4B':'1px solid var(--line)');
     var cellBg=isSel?'#dbeafe':(isToday?'var(--soft)':'var(--card)');
     h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:122px;border:'+cellBorder+';border-radius:9px;padding:6px 7px;cursor:pointer;background:'+cellBg+(isSel?';box-shadow:0 3px 12px rgba(31,122,224,.28)':'')+'">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+((isToday||isSel)?'800':'600')+';font-size:13px;color:'+((isToday||isSel)?'#1f7ae0':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+((isToday||isSel)?'800':'600')+';font-size:13px;color:'+((isToday||isSel)?'#2E6A4B':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
     ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=_fmtApptTime(a.start_at); h+='<div draggable="true" onclick="calApptPeek('+a.id+',event)" ondragstart="calDragStart(event,'+a.id+')" title="Click for a quick preview · drag to reschedule" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:5px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
-    if(ap.length>5) h+='<div onclick="event.stopPropagation();calOpenDay(\''+key+'\')" title="See all '+ap.length+' appointments this day" style="font-size:11px;color:#1f7ae0;font-weight:700;margin-top:2px;cursor:pointer">+'+(ap.length-5)+' more →</div>';
+    if(ap.length>5) h+='<div onclick="event.stopPropagation();calOpenDay(\''+key+'\')" title="See all '+ap.length+' appointments this day" style="font-size:11px;color:#2E6A4B;font-weight:700;margin-top:2px;cursor:pointer">+'+(ap.length-5)+' more →</div>';
     h+='</div>';
   }
   h+='</div>';
@@ -7148,9 +7177,9 @@ function calApptPeek(id, ev){
     +(a.room?'<div style="font-size:12.5px;margin-top:3px"><span style="color:#8a98a8">Room:</span> '+esc(a.room)+'</div>':'')
     +(prov?'<div style="font-size:12.5px;margin-top:3px"><span style="color:#8a98a8">Provider:</span> '+esc(prov)+'</div>':'')
     +'<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">'
-      +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#16a34a;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
-      +'<button onclick="calPullChartFor('+id+')" style="background:#eef3fb;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📥 Pull chart</button>'
-      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#eef3fb;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
+      +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#2E6A4B;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
+      +'<button onclick="calPullChartFor('+id+')" style="background:#EAF1EE;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📥 Pull chart</button>'
+      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
     +'</div>';
   document.body.appendChild(pop);
   var x=window.innerWidth/2, y=160; try{ if(ev){ x=ev.clientX; y=ev.clientY; } }catch(e){}
@@ -7170,7 +7199,7 @@ function calOpenDay(key){
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
   else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=_fmtApptTime(a.start_at);
     h+='<div style="border:1px solid var(--line);border-radius:8px;margin-top:6px;background:var(--card)">';
-    h+='<div onclick="calApptInfo('+a.id+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#1f7ae0;font-weight:600">Details ›</span></div>';
+    h+='<div onclick="calApptInfo('+a.id+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:6px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#2E6A4B;font-weight:600">Details ›</span></div>';
     h+='<div id="calApptEdit_'+a.id+'"></div></div>';
   }); }
   // Add an appointment directly on this day.
@@ -7622,7 +7651,7 @@ try{ setInterval(_pollLiveCalls, 6000); setTimeout(_pollLiveCalls, 2500); }catch
       ['🟢 Waiting room', function(){ try{ if(typeof showView==='function') showView('visit'); }catch(e){} }]
     ];
     menu.innerHTML='';
-    acts.forEach(function(a){ var b=document.createElement('button'); b.type='button'; b.textContent=a[0]; b.style.cssText='background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(20,40,70,.18);white-space:nowrap'; b.addEventListener('click', function(ev){ ev.stopPropagation(); hideMenu(); a[1](); }); menu.appendChild(b); });
+    acts.forEach(function(a){ var b=document.createElement('button'); b.type='button'; b.textContent=a[0]; b.style.cssText='background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(20,33,28,.18);white-space:nowrap'; b.addEventListener('click', function(ev){ ev.stopPropagation(); hideMenu(); a[1](); }); menu.appendChild(b); });
   }
   function toggleMenu(){ if(!menu) return; if(menu.style.display==='none'||!menu.style.display){ renderMenu(); menu.style.display='flex'; positionMenu(); if(fab) fab.style.transform='rotate(45deg)'; } else { hideMenu(); } }
   function build(){
@@ -7754,7 +7783,7 @@ function _renderPatientFace(){
   if(!wrap){
     wrap=document.createElement('div'); wrap.id='_patientFace';
     wrap.style.cssText='position:fixed;left:18px;bottom:18px;z-index:9500;cursor:pointer';
-    wrap.innerHTML='<div id="_pfAvatar" style="width:50px;height:50px;border-radius:50%;background:#1f7ae0;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;box-shadow:0 4px 14px rgba(20,40,70,.32);border:2px solid #fff"></div><div id="_pfPop" style="display:none;position:absolute;left:0;bottom:62px;background:#13283d;color:#fff;border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.55;width:236px;box-shadow:0 10px 28px rgba(0,0,0,.34)"></div>';
+    wrap.innerHTML='<div id="_pfAvatar" style="width:50px;height:50px;border-radius:50%;background:#2E6A4B;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;box-shadow:0 4px 14px rgba(20,33,28,.32);border:2px solid #fff"></div><div id="_pfPop" style="display:none;position:absolute;left:0;bottom:62px;background:#13283d;color:#fff;border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.55;width:236px;box-shadow:0 10px 28px rgba(0,0,0,.34)"></div>';
     document.body.appendChild(wrap);
     wrap.addEventListener('click', function(){ try{ if(typeof showView==='function') showView('patients'); }catch(e){} });
     wrap.addEventListener('mouseenter', function(){ var pop=document.getElementById('_pfPop'); var cur=(typeof activePatient==='function')?activePatient():null; if(pop&&cur){ pop.innerHTML=_patientQuickHistory(cur); pop.style.display='block'; } });
@@ -8063,7 +8092,7 @@ function renderBoard(appts){
   if(!sorted.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No appointments on this day. Add one below, or share your booking link.</div>'; }
   sorted.forEach(function(a){
     const t=a.start_at?new Date(a.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';
-    const badge={booked:'#5f7186',checked_in:'#127a55',roomed:'#1f7ae0',completed:'#8a8a8a',cancelled:'#c0392b',no_show:'#c0392b'}[a.status]||'#5f7186';
+    const badge={booked:'#5f7186',checked_in:'#127a55',roomed:'#2E6A4B',completed:'#8a8a8a',cancelled:'#c0392b',no_show:'#c0392b'}[a.status]||'#5f7186';
     h+='<div style="border:1px solid #e2e9f1;border-radius:10px;padding:9px 11px;margin-bottom:7px;background:#fff">';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
     h+='<b>'+esc(a.name||'(no name)')+'</b>';
@@ -8923,10 +8952,10 @@ async function renderTeamGrades(force){
     var docs=d.doctors||[];
     if(!docs.length){ box.innerHTML='<div class="mini" style="color:var(--muted)">No graded visits yet. As your team grades visits (Visit tab → 🌟 Grade experience), each doctor’s ratings appear here.</div>'; return; }
     box.innerHTML=docs.map(function(doc){
-      var avg=doc.avg; var col=avg>=4?'#0f8a63':(avg>=3?'#c47d09':'#d24447');
+      var avg=doc.avg; var col=avg>=4?'#2E6A4B':(avg>=3?'#c47d09':'#d24447');
       var rounded=Math.round(avg||0); var stars=''; for(var i=1;i<=5;i++){ stars+=(i<=rounded?'★':'☆'); }
-      var recent=(doc.recent||[]).map(function(v){ var c=v.score>=4?'#0f8a63':(v.score>=3?'#c47d09':'#d24447'); return '<span title="'+_ce(String(v.date||''))+'" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:'+c+';color:#fff;font-weight:700;font-size:12.5px">'+v.score+'</span>'; }).join('');
-      return '<div style="border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-top:10px;background:var(--soft2,#f5f8fc)">'
+      var recent=(doc.recent||[]).map(function(v){ var c=v.score>=4?'#2E6A4B':(v.score>=3?'#c47d09':'#d24447'); return '<span title="'+_ce(String(v.date||''))+'" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:'+c+';color:#fff;font-weight:700;font-size:12.5px">'+v.score+'</span>'; }).join('');
+      return '<div style="border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-top:10px;background:var(--soft2,#FCFBF8)">'
         +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-weight:700;font-size:15px;flex:1;min-width:140px">'+_ce(doc.name||'Doctor')+'</span>'
         +'<span style="font-size:18px;color:'+col+';letter-spacing:1px">'+stars+'</span>'
         +'<span style="font-weight:700;color:'+col+'">'+(avg!=null?avg+'/5':'—')+'</span>'
@@ -9429,7 +9458,7 @@ function _ptItemHtml(p, activeId){
   const fromAthena=(p.source==='athena-schedule');
   const chip='font-size:11px;color:var(--muted);background:var(--soft);border-radius:999px;padding:2px 9px;white-space:nowrap';
   let chips='';
-  if(fromAthena) chips+='<span style="font-size:11px;color:#1456a8;background:#eaf2ff;border:1px solid #d3e4fb;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap">📥 Athena</span>';
+  if(fromAthena) chips+='<span style="font-size:11px;color:#1456a8;background:#EAF1EC;border:1px solid #d3e4fb;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap">📥 Athena</span>';
   chips+='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
   if(notes.length) chips+='<span style="'+chip+'">'+notes.length+' note'+(notes.length===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
@@ -9442,7 +9471,7 @@ function _ptItemHtml(p, activeId){
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${chips}</div>
       </div>
       <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
-        <button onclick="event.stopPropagation();ptQuickVisit('${p.id}')" title="Start recording a visit for this patient" style="background:var(--brand,#1f7ae0);color:#fff;border:0;border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🎙️ Record</button>
+        <button onclick="event.stopPropagation();ptQuickVisit('${p.id}')" title="Start recording a visit for this patient" style="background:var(--brand,#2E6A4B);color:#fff;border:0;border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🎙️ Record</button>
         <button class="del" title="Delete patient" onclick="event.stopPropagation();deletePatient('${p.id}')">🗑</button>
       </div>
     </div>`;
@@ -10158,7 +10187,7 @@ function _opBlanksHtml(i, row){
   else { var dl='opdl_'+mf.key; var prev=getOpFieldVals(mf.key); input='<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:140px">'+esc(mf.label||mf.key)+'</label><input id="opblank_'+i+'" list="'+dl+'" value="'+esc(row.values[mf.key]||'')+'" placeholder="'+esc(mf.example||'')+'" oninput="window._opPrep['+i+'].values[\''+mf.key+'\']=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();opPrepBlankNext('+i+');}" style="flex:1;min-width:150px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:7px"><datalist id="'+dl+'">'+prev.map(function(v){ return '<option value="'+esc(v)+'">'; }).join('')+'</datalist></div>'; }
   var pct=Math.round(doneN/Math.max(1,totalN)*100);
   var h='<div style="margin-top:10px;background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:11px 13px">';
-  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px"><span style="font-weight:800;font-size:12.5px;color:#7a5a16;white-space:nowrap">Fill in the blanks — '+doneN+'/'+totalN+'</span><div style="flex:1;height:6px;background:#f0e0b0;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:#16a34a;transition:width .2s"></div></div></div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px"><span style="font-weight:800;font-size:12.5px;color:#7a5a16;white-space:nowrap">Fill in the blanks — '+doneN+'/'+totalN+'</span><div style="flex:1;height:6px;background:#f0e0b0;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:#2E6A4B;transition:width .2s"></div></div></div>';
   h+='<div style="font-size:11.5px;color:#9a7b2a;margin-bottom:5px">Blank '+(idx+1)+' of '+remaining.length+' remaining'+(ctx?(' · <i style="color:#7a5a16">'+ctx+'</i>'):'')+'</div>';
   h+=input;
   h+='<div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap">';
@@ -10311,7 +10340,7 @@ function tplPasteText(){
   document.getElementById('tplText').value=t;
 }
 /* Drag & drop onto the template form. */
-function _tplDragOver(ev,on){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='copy'; }catch(e){} var z=document.getElementById('tplDropZone'); if(z){ z.style.borderColor=on?'#1f7ae0':'#cfe0f5'; z.style.background=on?'#eef5ff':'#fafcff'; } }
+function _tplDragOver(ev,on){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='copy'; }catch(e){} var z=document.getElementById('tplDropZone'); if(z){ z.style.borderColor=on?'#2E6A4B':'#cfe0f5'; z.style.background=on?'#EAF1EE':'#fafcff'; } }
 function _tplDrop(ev){ ev.preventDefault(); _tplDragOver(ev,false); var f=ev.dataTransfer&&ev.dataTransfer.files&&ev.dataTransfer.files[0]; if(!f){ try{ toast('No file detected in that drop.','err'); }catch(e){} return; } onTplFile({target:{files:[f],value:''}}); }
 async function onTplFile(ev){
   const file=ev.target.files&&ev.target.files[0];
@@ -11099,7 +11128,7 @@ function renderHistory(){
       ? `<button class="del" title="Attach this visit to ${esc(ap.name)}" style="color:var(--green-dk);font-size:14px;font-weight:700;width:auto;padding:4px 9px" onclick="event.stopPropagation();attachNoteToActive('${n.id}')">＋ Attach</button>`
       : '';
     // Push to Athena right from history (real notes only — a draft with no text has nothing to push).
-    const pushBtn = (!n.isDraft && (n.text||n.soap)) ? `<button title="Push this note (and its codes/orders) into Athena via MLS Assist — stops before Save so you review &amp; sign" style="background:#16a34a;color:#fff;border:1px solid #16a34a;border-radius:8px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">🚀 Athena</button>` : '';
+    const pushBtn = (!n.isDraft && (n.text||n.soap)) ? `<button title="Push this note (and its codes/orders) into Athena via MLS Assist — stops before Save so you review &amp; sign" style="background:#2E6A4B;color:#fff;border:1px solid #2E6A4B;border-radius:8px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">🚀 Athena</button>` : '';
     return `<div class="hist-item" onclick="openNoteFromHistory('${n.id}')">
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
@@ -11338,7 +11367,7 @@ function _showAssistInstallBanner(){
   try{
     if(document.getElementById('assistInstallBanner')) return;
     var bar=document.createElement('div'); bar.id='assistInstallBanner';
-    bar.style.cssText='background:linear-gradient(135deg,#1f7ae0,#1456a8);color:#fff;border-radius:12px;padding:12px 16px;margin:0 0 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(20,60,120,.22)';
+    bar.style.cssText='background:linear-gradient(135deg,#2E6A4B,#1456a8);color:#fff;border-radius:12px;padding:12px 16px;margin:0 0 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(20,60,120,.22)';
     bar.innerHTML='<div style="flex:1;min-width:230px"><div style="font-weight:800;font-size:14.5px">🧩 Install MLS Assist to connect your EMR</div><div style="font-size:13px;opacity:.93">It lets MLS pull your day’s schedule from Athena and push finished notes back into the chart — no copy/paste. Takes about a minute.</div></div>'+
       '<a href="https://mlsscribe.com/assist.html" target="_blank" rel="noopener" style="background:#fff;color:#1456a8;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:800;text-decoration:none;white-space:nowrap">⬇ Get MLS Assist</a>'+
       '<button onclick="_dismissAssistPrompt()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer;white-space:nowrap">Maybe later</button>';
@@ -12041,7 +12070,7 @@ function stopPhoneRec(){
   else { if(phoneRecStream){ try{ phoneRecStream.getTracks().forEach(t=>t.stop()); }catch(e){} phoneRecStream=null; } }
   phoneRec=null;
   const btn=document.getElementById('phoneRecBtn');
-  if(btn){ btn.textContent='\u25CF Record'; btn.style.background='#fff'; btn.style.color='#0b6b6e'; }
+  if(btn){ btn.textContent='\u25CF Record'; btn.style.background='#fff'; btn.style.color='#2E6A4B'; }
   document.getElementById('phoneRecStatus').textContent=phoneRecSentCount?'Stopped. You can close this page.':'Stopped.';
   document.getElementById('phoneDoneBtn').style.display='none';
 }
@@ -13930,7 +13959,7 @@ function printShare(){
   const txt=document.getElementById('shareText').value;
   const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Patient Record — '+esc(p.name)+'</title>'+
     '<style>body{font-family:\'Segoe UI\',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13px;line-height:1.55}'+
-    'h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px}'+
+    'h1{font-size:18px;color:#155fb3;border-bottom:2px solid #2E6A4B;padding-bottom:8px}'+
     'pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0}'+
     '.foot{margin-top:18px;font-size:11px;color:#90a0b3;border-top:1px solid #e2e9f1;padding-top:8px}'+
     '@media print{body{padding:0}}</style></head><body>'+
@@ -14026,7 +14055,7 @@ function buildPrintHTML(){
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
-  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
   .brand{font-size:20px;font-weight:700;color:#155fb3}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
@@ -14621,7 +14650,7 @@ function buildOrdersPrintHTML(){
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.5}
-  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
   .brand{font-size:20px;font-weight:700;color:#155fb3}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
@@ -14631,7 +14660,7 @@ function buildOrdersPrintHTML(){
   .ord{margin-bottom:14px;border:1px solid #e2e9f1;border-radius:9px;padding:10px 14px;page-break-inside:avoid}
   .ord h3{font-size:14.5px;color:#155fb3;margin:0 0 6px}
   table.emr{width:100%;border-collapse:collapse}
-  table.emr td{padding:5px 5px;border-bottom:1px solid #eef2f7;vertical-align:top}
+  table.emr td{padding:5px 5px;border-bottom:1px solid #F4F2EC;vertical-align:top}
   table.emr td.k{color:#5f7186;font-weight:600;width:200px;white-space:nowrap}
   .sign{margin-top:26px;padding-top:16px;border-top:1px solid #e2e9f1;font-size:13px}
   .sign .line{display:inline-block;border-bottom:1px solid #16324f;min-width:280px;margin:0 8px}
@@ -14889,7 +14918,7 @@ function buildPriorAuthPrintHTML(){
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
-  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
   .brand{font-size:20px;font-weight:700;color:#155fb3}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
@@ -15089,10 +15118,10 @@ function _renderVisitGrade(d){
   var box=document.getElementById('visitGradeBox'); if(!box) return; box.style.display='block';
   if(d.score==null){ box.innerHTML='<div class="mini" style="color:var(--muted)">There wasn’t enough conversation in the transcript to fairly grade the patient experience.</div>'; return; }
   var stars=''; for(var i=1;i<=5;i++){ stars+=(i<=d.score?'★':'☆'); }
-  var col=d.score>=4?'#0f8a63':(d.score>=3?'#c47d09':'#d24447');
+  var col=d.score>=4?'#2E6A4B':(d.score>=3?'#c47d09':'#d24447');
   var html='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:22px;color:'+col+';letter-spacing:2px">'+stars+'</span><span style="font-weight:700;font-size:16px;color:'+col+'">'+d.score+'/5</span><span style="color:var(--muted)">'+_ce(d.summary||'')+'</span></div>';
   function lst(t,a,c){ if(!a||!a.length) return ''; return '<div style="margin-top:8px"><div style="font-size:12px;font-weight:700;color:'+c+'">'+t+'</div><ul style="margin:4px 0 0 18px;padding:0;font-size:13.5px">'+a.map(function(x){return '<li>'+_ce(x)+'</li>';}).join('')+'</ul></div>'; }
-  html+=lst('What went well',d.strengths,'#0f8a63')+lst('To improve',d.improve,'#c47d09');
+  html+=lst('What went well',d.strengths,'#2E6A4B')+lst('To improve',d.improve,'#c47d09');
   html+='<div class="mini" style="color:var(--muted);margin-top:8px">AI estimate of the patient’s experience from the conversation — a coaching aid, not a formal evaluation. Saved with this visit and rolled into your Analysis tab.</div>';
   box.innerHTML=html;
 }
@@ -15137,7 +15166,7 @@ function painSparkline(points){
   if(points.length===1){
     const cy = H-pad - (points[0].pain/10)*(H-2*pad);
     return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="max-width:100%">'+
-      '<circle cx="'+(W/2)+'" cy="'+cy.toFixed(1)+'" r="3.5" fill="#1f7ae0"/></svg>';
+      '<circle cx="'+(W/2)+'" cy="'+cy.toFixed(1)+'" r="3.5" fill="#2E6A4B"/></svg>';
   }
   const n=points.length;
   const xs=i=>pad + i*((W-2*pad)/(n-1));
@@ -15145,9 +15174,9 @@ function painSparkline(points){
   let d='';
   points.forEach((pt,i)=>{ d+=(i?' L':'M')+xs(i).toFixed(1)+' '+ys(pt.pain).toFixed(1); });
   let dots='';
-  points.forEach((pt,i)=>{ dots+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(pt.pain).toFixed(1)+'" r="2.6" fill="#1f7ae0"/>'; });
+  points.forEach((pt,i)=>{ dots+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(pt.pain).toFixed(1)+'" r="2.6" fill="#2E6A4B"/>'; });
   return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="max-width:100%">'+
-    '<path d="'+d+'" fill="none" stroke="#1f7ae0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+
+    '<path d="'+d+'" fill="none" stroke="#2E6A4B" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+
     dots+'</svg>';
 }
 function renderOutcomes(){
@@ -16106,7 +16135,7 @@ function printProcNote(){
 <style>
   *{box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;margin:0;padding:34px 40px;font-size:13.5px;line-height:1.55}
-  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1f7ae0;padding-bottom:10px;margin-bottom:16px}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E6A4B;padding-bottom:10px;margin-bottom:16px}
   .brand{font-size:20px;font-weight:700;color:#155fb3}
   .brand small{display:block;font-weight:400;font-size:12px;color:#5f7186}
   .meta{font-size:12px;color:#5f7186;text-align:right;line-height:1.6}
@@ -16690,7 +16719,7 @@ function printExtra(title,bodyId){
   const content=body.tagName==='TABLE'?body.outerHTML:('<pre style="white-space:pre-wrap;font-family:inherit;font-size:13.5px;margin:0">'+esc(bodyText)+'</pre>');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)} — ${esc(patient)}</title>
   <style>body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13.5px;line-height:1.55}
-  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px}
+  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #2E6A4B;padding-bottom:8px}
   .m{font-size:12px;color:#5f7186;margin-bottom:14px}
   table{width:100%;border-collapse:collapse}td{padding:6px 5px;border-bottom:1px solid #e2e9f1;vertical-align:top}
   td.k{color:#5f7186;font-weight:600;width:150px}</style></head><body>
@@ -17661,7 +17690,7 @@ async function loadAdminAgreements(){
             docCell='<button class="btn-primary" style="font-size:13px;padding:6px 12px" onclick="openCountersign('+id+',\''+esc(String(r.name_signed||'')).replace(/\x27/g,"\\\x27")+'\')">Review &amp; countersign</button>';
           }
         }else{
-          status='<span style="color:#127a7d;font-weight:700">Signed</span>';
+          status='<span style="color:#2E6A4B;font-weight:700">Signed</span>';
           docCell=r.has_receipt
             ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+id+')">⬇ Download</button>'
             : '<span style="color:var(--muted)">—</span>';
@@ -18143,7 +18172,7 @@ async function lawyerSubscribe(){
 function recTab(name){
   ['frontdesk','messages','comms','settings'].forEach(function(t){
     var b=document.getElementById('rectab_'+t);
-    if(b){ var on=(t===name); b.style.background=on?'var(--brand,#1f7ae0)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; b.style.borderColor=on?'var(--brand,#1f7ae0)':'var(--line)'; }
+    if(b){ var on=(t===name); b.style.background=on?'var(--brand,#2E6A4B)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; b.style.borderColor=on?'var(--brand,#2E6A4B)':'var(--line)'; }
   });
   var board=document.getElementById('boardBox');
   ['recMessages','recComms','recSettings'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
@@ -18774,7 +18803,7 @@ async function loadLegalAttachments(id){
     if(!listEl) return;
     if(!items.length){ listEl.innerHTML='<div style="margin-top:8px">No documents attached yet. Add the cover letter, signed authorization, and records above.</div>'; return; }
     listEl.innerHTML='<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">'
-      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--soft,#f7f9fc);border:1px solid var(--line);border-radius:8px;padding:7px 10px">'
+      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--soft,#FCFBF8);border:1px solid var(--line);border-radius:8px;padding:7px 10px">'
         +'<span style="flex:1;min-width:160px"><b>'+esc(a.filename||'file')+'</b> <span style="color:var(--muted)">· '+esc(attachCatLabel(a.category))+' · '+esc(fmtBytes(a.size))+'</span></span>'
         +'</div>').join('')
       +'</div>';
@@ -18819,7 +18848,7 @@ async function renderClinicianAttachments(id,safeId){
     if(!items.length){ el.innerHTML='📎 No documents attached.'; return; }
     el.innerHTML='<div style="margin-top:4px"><b>📎 '+items.length+' document'+(items.length===1?'':'s')+'</b></div>'
       +'<div style="margin-top:5px;display:flex;flex-direction:column;gap:6px">'
-      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--soft,#f7f9fc);border:1px solid var(--line);border-radius:8px;padding:6px 10px">'
+      +items.map(a=>'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--soft,#FCFBF8);border:1px solid var(--line);border-radius:8px;padding:6px 10px">'
         +'<span style="flex:1;min-width:160px"><b>'+esc(a.filename||'file')+'</b> <span style="color:var(--muted)">· '+esc(attachCatLabel(a.category))+' · '+esc(fmtBytes(a.size))+'</span></span>'
         +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="downloadLegalAttachment(\''+esc(String(id))+'\',\''+esc(String(a.id))+'\')">⬇ Download</button>'
         +'</div>').join('')
@@ -19100,7 +19129,7 @@ async function loadExpertProfile(){
 function renderExpertProfile(d){
   var box=document.getElementById('expertBody'); if(!box) return;
   var statusTxt=d.listed?'<span style="color:#1f7a4d">Discoverable to attorneys now.</span>':'Currently not listed.';
-  var h='<label style="display:flex;align-items:center;gap:9px;background:var(--soft2,#f5f8fc);border:1px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer;margin-bottom:10px">';
+  var h='<label style="display:flex;align-items:center;gap:9px;background:var(--soft2,#FCFBF8);border:1px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer;margin-bottom:10px">';
   h+='<input type="checkbox" id="expListed" '+(d.listed?'checked':'')+' style="width:17px;height:17px"><span style="font-size:14px"><b>List me in the expert marketplace.</b> '+statusTxt+'</span></label>';
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
   h+='<label class="mini" style="flex:1;min-width:160px">Specialty<input id="expSpec" value="'+esc(d.specialty||'')+'" placeholder="e.g. Interventional Pain / PM&R" style="width:100%"></label>';
@@ -20385,7 +20414,7 @@ function cwRenderLayoutBlocks(w,content){
   if(!body) return;
   body.innerHTML='';
   _cwState[w.id]=content;
-  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#a855f7','#84cc16','#ec4899'];
+  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#9B82D4','#84cc16','#ec4899'];
   let hasInfo=false;
   w.layout.forEach((blk,i)=>{
     const c=content[i];
@@ -20632,7 +20661,7 @@ function cwPrintStyleCss(){
   // their look in a fresh print window (where --line/--muted/etc. don't exist).
   return `
   body{font-family:'Segoe UI',Arial,sans-serif;color:#16324f;padding:34px 40px;font-size:13.5px;line-height:1.55;background:#fff}
-  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #1f7ae0;padding-bottom:8px;margin:0 0 4px}
+  h1{font-size:18px;color:#155fb3;border-bottom:2px solid #2E6A4B;padding-bottom:8px;margin:0 0 4px}
   .cwp-desc{font-size:13px;color:#42566b;margin:6px 0 10px}
   .cwp-meta{font-size:12px;color:#5f7186;margin:0 0 6px}
   .cwp-foot{font-size:11px;color:#7a8aa0;margin:18px 0 0;border-top:1px solid #e2e9f1;padding-top:8px}
@@ -20686,7 +20715,7 @@ async function cwChartToPrintPng(blk,c){
   let Chart=null;
   try{ Chart=await loadChartJs(); }catch(e){ return ''; }
   if(!Chart) return '';
-  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#a855f7','#84cc16','#ec4899'];
+  const palette=['#7b5cff','#22c55e','#f59e0b','#ef4444','#06b6d4','#9B82D4','#84cc16','#ec4899'];
   const isPie=(blk.kind==='pie');
   const cv=document.createElement('canvas');
   cv.width=640; cv.height=300;
@@ -21263,21 +21292,21 @@ function _ptGroupSort(mode){
       'body.'+BODY_CLS+' #patientBar{display:none!important;}'
       +'#'+BAR_ID+'{display:none;align-items:center;gap:12px;flex-wrap:nowrap;margin:8px auto 0;max-width:1180px;'
       +'padding:8px 14px;border-radius:14px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);'
-      +'box-shadow:0 1px 4px rgba(20,40,70,.06);font-size:13px;box-sizing:border-box;}'
+      +'box-shadow:0 1px 4px rgba(20,33,28,.06);font-size:13px;box-sizing:border-box;}'
       +'#'+BAR_ID+' .mlsctx-id{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto;}'
       +'#'+BAR_ID+' .mlsctx-av{width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;'
-      +'justify-content:center;font-weight:700;font-size:12px;color:#fff;background:var(--brand,#2563c9);letter-spacing:.3px;}'
+      +'justify-content:center;font-weight:700;font-size:12px;color:#fff;background:var(--brand,#2E6A4B);letter-spacing:.3px;}'
       +'#'+BAR_ID+' .mlsctx-idtext{display:flex;flex-direction:column;min-width:0;line-height:1.25;}'
-      +'#'+BAR_ID+' .mlsctx-name{font-weight:700;color:var(--ink,#15293f);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+      +'#'+BAR_ID+' .mlsctx-name{font-weight:700;color:var(--ink,#1A211C);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
       +'#'+BAR_ID+' .mlsctx-meta{color:var(--muted,#5b6b7c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;}'
       +'#'+BAR_ID+' .mlsctx-slot:empty{display:none;}'
       +'#'+BAR_ID+' .mlsctx-slot{flex:0 0 auto;}'
       +'#'+BAR_ID+' .mlsctx-actions{display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;}'
       +'#'+BAR_ID+' .mlsctx-actions button{font:inherit;font-size:12px;cursor:pointer;padding:5px 11px;border-radius:9px;'
-      +'border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#15293f);white-space:nowrap;'
+      +'border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#1A211C);white-space:nowrap;'
       +'transition:border-color .12s,color .12s,background .12s;}'
-      +'#'+BAR_ID+' .mlsctx-actions button:hover{border-color:var(--brand,#2563c9);color:var(--brand,#2563c9);}'
-      +'#'+BAR_ID+' .mlsctx-actions button.mlsctx-switch{background:var(--brand,#2563c9);color:#fff;border-color:var(--brand,#2563c9);}'
+      +'#'+BAR_ID+' .mlsctx-actions button:hover{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);}'
+      +'#'+BAR_ID+' .mlsctx-actions button.mlsctx-switch{background:var(--brand,#2E6A4B);color:#fff;border-color:var(--brand,#2E6A4B);}'
       +'#'+BAR_ID+' .mlsctx-actions button.mlsctx-switch:hover{filter:brightness(1.07);color:#fff;}'
       +'@media (max-width:620px){'
       +'#'+BAR_ID+'{flex-direction:column;align-items:stretch;gap:9px;padding:10px 12px;margin:8px 8px 0;border-radius:14px;}'

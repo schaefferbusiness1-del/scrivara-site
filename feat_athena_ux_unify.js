@@ -116,7 +116,7 @@
     p = document.createElement('div');
     p.id = 'mlsuxPanel';
     p.className = 'mlsux-panel';
-    p.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483600;max-width:340px;background:#0f2942;color:#e6eef7;padding:12px 14px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);font:13px/1.45 system-ui,Arial,sans-serif;';
+    p.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483600;max-width:340px;background:#204034;color:#e6eef7;padding:12px 14px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);font:13px/1.45 system-ui,Arial,sans-serif;';
     p.innerHTML = '<div class="mlsux-head" style="font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;cursor:move;">MLS - Athena status<span class="mlsux-x" style="cursor:pointer;opacity:.7;padding:0 4px;">\u00d7</span></div><div class="mlsux-mirror"></div>';
     document.body.appendChild(p);
     var x = p.querySelector('.mlsux-x');

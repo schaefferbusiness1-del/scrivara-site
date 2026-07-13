@@ -36,7 +36,7 @@
     b.title = "Generate an after-visit summary for the active patient (you review before sending)";
     b.setAttribute("aria-label", "After-visit summary");
     b.style.cssText = "font-size:13px;padding:8px 12px;border:1px solid var(--line,#e6e9ef);"
-      + "border-radius:9px;background:var(--card,#fff);color:var(--ink,#15293f);cursor:pointer;white-space:nowrap;";
+      + "border-radius:9px;background:var(--card,#fff);color:var(--ink,#1A211C);cursor:pointer;white-space:nowrap;";
     b.innerHTML = "📤 After-visit summary";
     safe(function () { b.addEventListener("click", function (e) { try { e.preventDefault(); } catch (x) {} trigger(); }); });
     safe(function () { row.appendChild(b); });

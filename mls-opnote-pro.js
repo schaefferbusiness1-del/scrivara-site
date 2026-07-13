@@ -595,7 +595,7 @@
     if (document.getElementById('mlsOpProCss')) return;
     var st = document.createElement('style'); st.id = 'mlsOpProCss';
     st.textContent =
-      '.mlsop-pdf{font:inherit;font-size:13px;cursor:pointer;border:1px solid #1f7ae0;background:#1f7ae0;color:#fff;' +
+      '.mlsop-pdf{font:inherit;font-size:13px;cursor:pointer;border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;' +
       'border-radius:8px;padding:6px 12px;font-weight:600;display:inline-flex;align-items:center;gap:5px}' +
       '.mlsop-pdf:hover{background:#1565c0;border-color:#1565c0}' +
       '.mlsop-pdf:disabled{opacity:.6;cursor:default}';

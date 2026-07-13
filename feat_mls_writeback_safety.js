@@ -306,12 +306,12 @@
       if (body && body.parentElement) body.parentElement.insertBefore(host, body);
       else panel.appendChild(host);
     }
-    var confColor = v.confidence === 'high' ? '#16a34a' : (v.confidence === 'medium' ? '#d97706' : '#c0392b');
-    var statusColor = v.safe ? '#16a34a' : '#c0392b';
+    var confColor = v.confidence === 'high' ? '#2E6A4B' : (v.confidence === 'medium' ? '#d97706' : '#c0392b');
+    var statusColor = v.safe ? '#2E6A4B' : '#c0392b';
     var html = '';
-    html += '<div style="background:#0a0f24;border:1px solid ' + (v.safe ? 'rgba(120,140,220,.3)' : '#c0392b') + ';border-radius:12px;padding:12px 14px;margin-bottom:12px">';
+    html += '<div style="background:#0a0f24;border:1px solid ' + (v.safe ? 'rgba(143,216,190,.3)' : '#c0392b') + ';border-radius:12px;padding:12px 14px;margin-bottom:12px">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
-    html += '<b style="color:#e8ecff;font-size:14px">Write-back safety preview</b>';
+    html += '<b style="color:#EAF1EC;font-size:14px">Write-back safety preview</b>';
     html += '<span style="color:' + statusColor + ';font-weight:800;font-size:12.5px">' + (v.safe ? '✓ Ready to write (after you confirm)' : '⛔ Blocked — not safe to write') + '</span>';
     html += '</div>';
     /* identity grid */
@@ -325,9 +325,9 @@
     html += '</div>';
     /* draft/live status */
     html += '<div style="margin-top:8px">';
-    html += chip('Will write (unsigned): ' + (v.contentSections.length ? cnt(v.contentSections) : 'none'), 'rgba(22,163,74,.20)', '#9be8b8');
+    html += chip('Will write (unsigned): ' + (v.contentSections.length ? cnt(v.contentSections) : 'none'), 'rgba(22,163,74,.20)', '#8FD8BE');
     html += chip('DRAFT / never sent: ' + (v.draftSections.length ? cnt(v.draftSections) : 'none'), 'rgba(217,119,6,.20)', '#ffcf8f');
-    html += chip('Confidence: ' + v.confidence, 'rgba(120,140,220,.18)', confColor);
+    html += chip('Confidence: ' + v.confidence, 'rgba(143,216,190,.18)', confColor);
     html += '</div>';
     if (v.missingFields.length) {
       html += '<div style="margin-top:6px;font:12px system-ui;color:#ffcf8f">Missing: ' + esc(v.missingFields.join(', ')) + '</div>';
@@ -340,7 +340,7 @@
     for (var b = 0; b < v.hardBlocks.length; b++) {
       html += '<div style="margin-top:6px;font:12.5px/1.5 system-ui;color:#ffd7d0"><b>⛔ ' + esc(v.hardBlocks[b].label) + '</b> — ' + esc(v.hardBlocks[b].detail) + '</div>';
     }
-    html += '<div style="margin-top:8px;font:11px system-ui;color:#9fb0d8">Defense-in-depth: MLS Assist re-verifies patient identity in athenaOne at write time and refuses on any mismatch. Orders/prescriptions are never sent. MLS never clicks Save/Sign.</div>';
+    html += '<div style="margin-top:8px;font:11px system-ui;color:#B9CEC2">Defense-in-depth: MLS Assist re-verifies patient identity in athenaOne at write time and refuses on any mismatch. Orders/prescriptions are never sent. MLS never clicks Save/Sign.</div>';
     html += '</div>';
     host.innerHTML = html;
 
@@ -349,7 +349,7 @@
     lastVerdict = v;
     return v;
   }
-  function row(k, val) { return '<div><span style="color:#9fb0d8">' + esc(k) + ':</span> <b style="color:#e8ecff">' + esc(val) + '</b></div>'; }
+  function row(k, val) { return '<div><span style="color:#B9CEC2">' + esc(k) + ':</span> <b style="color:#EAF1EC">' + esc(val) + '</b></div>'; }
   function cnt(list) { var names = []; for (var i = 0; i < list.length; i++) names.push(list[i].key); return names.join(', '); }
 
   function reflectButton(panel, v) {

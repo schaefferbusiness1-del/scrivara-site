@@ -79,7 +79,7 @@
         '#'+POP_ID+' .mps-act{flex:1;cursor:pointer;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);'+
         'color:#fff;font:inherit;font-size:12px;font-weight:600;padding:7px 6px;border-radius:8px;}'+
         '#'+POP_ID+' .mps-act:hover{background:rgba(255,255,255,.15);}'+
-        '#'+POP_ID+' .mps-primary{background:#1f7ae0;border-color:#1f7ae0;}'+
+        '#'+POP_ID+' .mps-primary{background:#2E6A4B;border-color:#2E6A4B;}'+
         '#'+POP_ID+' .mps-primary:hover{background:#2f8af0;}'+
         'body.theme-dark #'+WRAP_ID+' .mps-btn{color:#8fc0f2;}';
       document.head.appendChild(s);}catch(e){}

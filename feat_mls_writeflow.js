@@ -243,13 +243,13 @@
       if (!sugg.length) return;
       var host = document.createElement('div');
       host.id = 'wf2Suggest';
-      host.style.cssText = 'margin-top:6px;font:12px system-ui;color:#9fb0d8;display:flex;flex-wrap:wrap;gap:6px;align-items:center';
+      host.style.cssText = 'margin-top:6px;font:12px system-ui;color:#B9CEC2;display:flex;flex-wrap:wrap;gap:6px;align-items:center';
       host.appendChild(document.createTextNode('We suggest:'));
       sugg.forEach(function (lbl) {
         var chip = document.createElement('button');
         chip.type = 'button';
         chip.textContent = '+ ' + lbl;
-        chip.style.cssText = 'background:rgba(52,82,214,.25);border:1px solid rgba(120,140,220,.45);color:#dfe7ff;border-radius:999px;padding:3px 10px;font:12px system-ui;cursor:pointer';
+        chip.style.cssText = 'background:rgba(52,82,214,.25);border:1px solid rgba(143,216,190,.45);color:#dfe7ff;border-radius:999px;padding:3px 10px;font:12px system-ui;cursor:pointer';
         chip.onclick = function () {
           var cur = S(ta.value).trim();
           if (cur.toLowerCase().indexOf(lbl.toLowerCase()) >= 0) { chip.disabled = true; return; }

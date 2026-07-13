@@ -495,7 +495,7 @@
         if (!box) {
           box = document.createElement('div');
           box.id = 'mlsFpDayFallback';
-          box.style.cssText = 'margin:10px 0;padding:11px 13px;border:1px solid var(--line,#d8e1ec);border-radius:12px;background:var(--card,#fff)';
+          box.style.cssText = 'margin:10px 0;padding:11px 13px;border:1px solid var(--line,#E4E1D8);border-radius:12px;background:var(--card,#fff)';
           panel.insertAdjacentElement('afterbegin', box);
           remember(box);
         }
@@ -514,8 +514,8 @@
   try {
     addStyle('mlsFpQfStyle',
       '#mlsFpQf{position:fixed;inset:0;z-index:99999;background:rgba(15,25,40,.5);display:none;align-items:flex-start;justify-content:center;padding-top:11vh}' +
-      '#mlsFpQf .qf-card{width:600px;max-width:93vw;background:var(--card,#fff);color:var(--ink,#15243a);border:1px solid var(--line,#d8e1ec);border-radius:16px;box-shadow:0 24px 70px rgba(15,25,40,.5);overflow:hidden}' +
-      '#mlsFpQfInput{width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--line,#d8e1ec);padding:15px 17px;font-size:16px;background:transparent;color:inherit;outline:none}' +
+      '#mlsFpQf .qf-card{width:600px;max-width:93vw;background:var(--card,#fff);color:var(--ink,#15243a);border:1px solid var(--line,#E4E1D8);border-radius:16px;box-shadow:0 24px 70px rgba(15,25,40,.5);overflow:hidden}' +
+      '#mlsFpQfInput{width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--line,#E4E1D8);padding:15px 17px;font-size:16px;background:transparent;color:inherit;outline:none}' +
       '#mlsFpQfList{max-height:52vh;overflow:auto;padding:6px}' +
       '#mlsFpQfList .qf-h{font-size:10.5px;font-weight:800;letter-spacing:.7px;opacity:.55;padding:8px 12px 3px;text-transform:uppercase}' +
       '#mlsFpQfList .qf-it{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:10px;cursor:pointer;font-size:14px}' +
@@ -652,7 +652,7 @@
    * ------------------------------------------------------------------ */
   try {
     addStyle('mlsFpFmtStyle',
-      '.mls-fp-fmt{border:1px solid var(--line,#d8e1ec);border-radius:12px;background:var(--card,#fff);margin:8px 0;overflow:hidden}' +
+      '.mls-fp-fmt{border:1px solid var(--line,#E4E1D8);border-radius:12px;background:var(--card,#fff);margin:8px 0;overflow:hidden}' +
       '.mls-fp-fmt .fmt-bar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;font-size:12px;font-weight:800}' +
       '.mls-fp-fmt .fmt-bar button{margin-left:auto;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:3px 10px;font-size:11.5px;font-weight:700;cursor:pointer}' +
       '.mls-fp-fmt .fmt-body{padding:12px 16px;font-size:13.5px;line-height:1.55;max-height:340px;overflow:auto}' +
@@ -754,8 +754,8 @@
     addStyle('mlsFpBlankStyle',
       '#mlsFpBlankBar{position:fixed;right:18px;bottom:18px;z-index:99997;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;border-radius:13px;padding:11px 16px;font-size:13.5px;font-weight:800;box-shadow:0 8px 26px rgba(15,40,90,.45);cursor:pointer;display:none;align-items:center;gap:9px}' +
       '#mlsFpBlankModal{position:fixed;inset:0;z-index:99999;background:rgba(15,25,40,.55);display:none;align-items:center;justify-content:center}' +
-      '#mlsFpBlankModal .bm-card{width:520px;max-width:92vw;background:var(--card,#fff);color:var(--ink,#15243a);border-radius:16px;border:1px solid var(--line,#d8e1ec);box-shadow:0 24px 70px rgba(15,25,40,.5);padding:20px 22px}' +
-      '#mlsFpBlankModal .bm-ctx{background:rgba(33,104,201,.08);border:1px solid var(--line,#d8e1ec);border-radius:10px;padding:10px 13px;font-size:13px;line-height:1.5;margin:10px 0}' +
+      '#mlsFpBlankModal .bm-card{width:520px;max-width:92vw;background:var(--card,#fff);color:var(--ink,#15243a);border-radius:16px;border:1px solid var(--line,#E4E1D8);box-shadow:0 24px 70px rgba(15,25,40,.5);padding:20px 22px}' +
+      '#mlsFpBlankModal .bm-ctx{background:rgba(33,104,201,.08);border:1px solid var(--line,#E4E1D8);border-radius:10px;padding:10px 13px;font-size:13px;line-height:1.5;margin:10px 0}' +
       '#mlsFpBlankModal .bm-ctx b{background:#fff3cd;border-radius:4px;padding:0 4px}' +
       '#mlsFpBlankModal input{width:100%;box-sizing:border-box;border:1px solid var(--line,#c9d5e4);border-radius:10px;padding:11px 13px;font-size:15px;margin:4px 0 12px}' +
       '#mlsFpBlankModal .bm-row{display:flex;gap:9px;justify-content:flex-end}' +

@@ -90,7 +90,7 @@
         '#'+POP_ID+' .alg-h{display:flex;align-items:center;gap:7px;font-weight:800;'+
         'font-size:12px;letter-spacing:.02em;text-transform:uppercase;color:#a4161a;'+
         'margin:0 0 9px;}'+
-        '#'+POP_ID+' .alg-row{display:flex;gap:9px;padding:7px 0;border-top:1px solid #eef2f7;}'+
+        '#'+POP_ID+' .alg-row{display:flex;gap:9px;padding:7px 0;border-top:1px solid #F4F2EC;}'+
         '#'+POP_ID+' .alg-row:first-of-type{border-top:0;}'+
         '#'+POP_ID+' .alg-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;'+
         'background:#dc2626;margin-top:5px;}'+

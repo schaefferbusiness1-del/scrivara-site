@@ -12,7 +12,7 @@
  *       (#mlsProtoAvs).
  *
  *   The 70 sizing/readability pass globally forced
- *       .mlscp-sub { color:#eef5ff !important; ... }   (near-WHITE)
+ *       .mlscp-sub { color:#EAF1EE !important; ... }   (near-WHITE)
  *   which is correct for the .mlscp-note / .mlscp-or lines that sit on the BLUE
  *   container, but makes EVERY in-button .mlscp-sub description WHITE-ON-(near)
  *   WHITE inside the light cards -> unreadable.

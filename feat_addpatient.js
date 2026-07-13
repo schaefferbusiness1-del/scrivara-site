@@ -174,7 +174,7 @@
       '#mlsAddPtModal .ap-modes{display:flex;gap:8px;margin:0 0 10px}' +
       '#mlsAddPtModal .ap-mode{flex:1;cursor:pointer;text-align:center;border:1px solid var(--line,#cdd6e3);border-radius:10px;padding:9px;font-size:12.5px;font-weight:700;background:var(--bg2,#f6f9fc)}' +
       '#mlsAddPtModal .ap-mode.on{border-color:#6366f1;background:#eef2ff;color:#3730a3}' +
-      '#mlsAddPtModal .ap-card{border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:13px;background:var(--bg2,#f8fafc)}' +
+      '#mlsAddPtModal .ap-card{border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:13px;background:var(--bg2,#FCFBF8)}' +
       '#mlsAddPtModal .ap-pending{margin:10px 0 0}' +
       '#mlsAddPtModal .ap-pv{display:flex;align-items:center;gap:10px;border:1px solid var(--line,#e2e8f0);border-radius:9px;padding:7px 10px;margin:0 0 6px;background:var(--card,#fff);font-size:12.5px}' +
       '#mlsAddPtModal .ap-pv b{min-width:92px}' +
@@ -182,9 +182,9 @@
       '#mlsAddPtModal .ap-pv .ap-del{cursor:pointer;border:0;background:transparent;color:#b91c1c;font-weight:800}' +
       '#mlsAddPtModal .ap-pill{font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 7px;background:#e8f5e9;color:#2e7d32}' +
       '#mlsAddPtModal .ap-ft{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 18px;border-top:1px solid var(--line,#e8edf4)}' +
-      '#mlsAddPtModal .ap-btn{cursor:pointer;border:0;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:800;color:#fff;background:linear-gradient(135deg,#4f46e5,#7c3aed)}' +
-      '#mlsAddPtModal .ap-btn.sec{background:var(--bg2,#eef2f7);color:inherit;border:1px solid var(--line,#cdd6e3)}' +
-      '#mlsAddPtModal .ap-btn.ath{background:linear-gradient(135deg,#0ea5e9,#2563eb)}' +
+      '#mlsAddPtModal .ap-btn{cursor:pointer;border:0;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:800;color:#fff;background:linear-gradient(135deg,#4f46e5,#7A5CC0)}' +
+      '#mlsAddPtModal .ap-btn.sec{background:var(--bg2,#F4F2EC);color:inherit;border:1px solid var(--line,#cdd6e3)}' +
+      '#mlsAddPtModal .ap-btn.ath{background:linear-gradient(135deg,#0ea5e9,#2E6A4B)}' +
       '#mlsAddPtModal .ap-btn[disabled]{opacity:.55;cursor:default}' +
       '#mlsAddPtModal .ap-status{font-size:12.5px;opacity:.82;flex:1;min-width:160px}' +
       '#mlsAddPtModal .ap-hint{font-size:11.5px;opacity:.6;margin:6px 0 0}';

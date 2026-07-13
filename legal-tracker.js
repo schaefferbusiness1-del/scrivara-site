@@ -41,7 +41,7 @@
         '.mlt-step.is-current::before{background:var(--green,#1f7a4d)}',
         '.mlt-dot{position:relative;z-index:1;width:28px;height:28px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:var(--card,#fff);border:2px solid var(--line);color:var(--muted);box-sizing:border-box;transition:all .15s ease}',
         '.is-done .mlt-dot{background:var(--green,#1f7a4d);border-color:var(--green,#1f7a4d);color:#fff}',
-        '.is-current .mlt-dot{background:var(--brand,#2563eb);border-color:var(--brand,#2563eb);color:#fff;box-shadow:0 0 0 4px color-mix(in srgb,var(--brand,#2563eb) 22%,transparent)}',
+        '.is-current .mlt-dot{background:var(--brand,#2E6A4B);border-color:var(--brand,#2E6A4B);color:#fff;box-shadow:0 0 0 4px color-mix(in srgb,var(--brand,#2E6A4B) 22%,transparent)}',
         '.mlt-label{margin-top:7px;font-size:11.5px;line-height:1.3;color:var(--muted);font-weight:600}',
         '.is-done .mlt-label{color:var(--ink)}',
         '.is-current .mlt-label{color:var(--brand-dk,var(--brand,#1d4ed8));font-weight:700}',

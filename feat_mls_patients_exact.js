@@ -46,10 +46,10 @@
       "#patientsView #ptSplitWrap{display:grid;grid-template-columns:1fr;gap:20px;align-items:start}",
       "#patientsView #ptSplitWrap.px-has-profile{grid-template-columns:420px 1fr}",
       "#patientsView #ptSplitWrap,#patientsView #ptSplitWrap *{box-sizing:border-box}",
-      "#patientsView .card{border-radius:18px!important;border:1px solid #e4ebf3!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important}",
-      "#patientsView #ptSearch{width:100%!important;height:42px!important;border-radius:11px!important;border:1px solid #e0e8f1!important;background:#f8fafc!important;padding:0 14px!important;font-size:13.5px!important}",
+      "#patientsView .card{border-radius:18px!important;border:1px solid #E7E5DD!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important}",
+      "#patientsView #ptSearch{width:100%!important;height:42px!important;border-radius:11px!important;border:1px solid #e0e8f1!important;background:#FCFBF8!important;padding:0 14px!important;font-size:13.5px!important}",
       "#patientsView #ptList{min-width:0}",
-      "#patientsView .px-prof-hd{background:linear-gradient(135deg,#0d2138,#143560)!important;border-radius:16px!important;margin:-4px -4px 8px!important;padding:20px 22px!important;position:relative;overflow:hidden}",
+      "#patientsView .px-prof-hd{background:linear-gradient(135deg,#204034,#204034)!important;border-radius:16px!important;margin:-4px -4px 8px!important;padding:20px 22px!important;position:relative;overflow:hidden}",
       "#patientsView .px-prof-hd #profName{color:#fff!important;font-family:'Newsreader',Georgia,serif!important;font-weight:500!important;font-size:24px!important}",
       "#patientsView .px-prof-hd .ic{display:none!important}",
       "#patientsView .px-prof-hd .sub,#patientsView .px-prof-hd #profDemo{color:#bcd2ed!important}",
@@ -85,7 +85,7 @@
       for (var i = 0; i < btns.length; i++) {
         var b = btns[i], t = (b.textContent || "");
         if (/Start visit/i.test(t)) {
-          impAll(b, ["background", "linear-gradient(135deg,#19b8a6,#13a18f)"]);
+          impAll(b, ["background", "linear-gradient(135deg,#3B7C5A,#35704F)"]);
           imp(b, "color", "#fff"); imp(b, "border", "0");
         } else {
           imp(b, "background", "rgba(255,255,255,.10)"); imp(b, "color", "#fff");

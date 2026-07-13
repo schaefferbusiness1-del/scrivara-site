@@ -355,7 +355,7 @@
       '.mlswb-emrwrap .mlswb-action{font-weight:600;padding:9px 14px;border-radius:10px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff}' +
       '.mlswb-row{margin:8px 0 2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
       '.mlswb-row .mlswb-note{flex:1 1 100%;font-size:12px;color:#334155}' +
-      '.mlswb-rowbtn{cursor:pointer;font-weight:600;font-size:12px;padding:7px 12px;border-radius:9px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a}' +
+      '.mlswb-rowbtn{cursor:pointer;font-weight:600;font-size:12px;padding:7px 12px;border-radius:9px;border:1px solid #cbd5e1;background:#FCFBF8;color:#0f172a}' +
       '.mlswb-rowbtn.mlswb-primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}' +
       '.mlswb-rowbtn.mlswb-warnbtn{background:#b45309;border-color:#b45309;color:#fff}' +
       '.mlswb-rowbtn.mlswb-cancel{background:#fff}';

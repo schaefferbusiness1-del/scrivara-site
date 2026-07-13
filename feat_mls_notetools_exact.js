@@ -61,15 +61,15 @@
       /* the section wrapper reads as a panel */
       "#visitView .vx-tools{margin-top:24px!important}",
       /* header always visible (vx hides it until a panel opens) */
-      "#visitView .vx-tools .vx-tools-lbl{display:block!important;font-size:12px!important;font-weight:800!important;letter-spacing:.08em!important;text-transform:uppercase!important;color:#5b6b82!important;margin:0 0 14px!important;padding-bottom:10px!important;border-bottom:1px solid #e4ebf3!important}",
+      "#visitView .vx-tools .vx-tools-lbl{display:block!important;font-size:12px!important;font-weight:800!important;letter-spacing:.08em!important;text-transform:uppercase!important;color:#5b6b82!important;margin:0 0 14px!important;padding-bottom:10px!important;border-bottom:1px solid #E7E5DD!important}",
       /* a soft container around the tool host so it feels part of the note workflow */
       "#visitView .vx-tools-host{gap:14px!important}",
       /* every relocated result panel + accordion row: card chrome to match */
-      "#visitView .vx-tools-host .extra-card,#visitView .vx-tools-host .code-card,#visitView .vx-tools-host .opt-card{background:#fff!important;border:1px solid #e4ebf3!important;border-radius:14px!important;box-shadow:0 1px 2px rgba(15,37,64,.04)!important}",
+      "#visitView .vx-tools-host .extra-card,#visitView .vx-tools-host .code-card,#visitView .vx-tools-host .opt-card{background:#fff!important;border:1px solid #E7E5DD!important;border-radius:14px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important}",
       /* collapsible accordion rows: bigger tap targets + readable titles */
       "#visitView .vx-tools-host .extra-card.collapsible{padding:0!important;overflow:hidden!important}",
       "#visitView .vx-tools-host .extra-card.collapsible>h3{font-size:15.5px!important;font-weight:700!important;padding:15px 18px!important;margin:0!important;cursor:pointer;display:flex;align-items:center;gap:9px}",
-      "#visitView .vx-tools-host .extra-card.collapsible:hover>h3{background:#f7f9fc!important}",
+      "#visitView .vx-tools-host .extra-card.collapsible:hover>h3{background:#FCFBF8!important}",
       "#visitView .vx-tools-host .extra-card .xbody,#visitView .vx-tools-host .extra-card textarea{font-size:14px!important;line-height:1.55!important}",
       /* keep the host contents from forcing horizontal overflow */
       "#visitView .vx-tools-host,#visitView .vx-tools-host *{box-sizing:border-box}",

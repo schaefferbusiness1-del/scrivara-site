@@ -590,7 +590,7 @@
       '#mlsObtDim{position:fixed;inset:0;background:rgba(11,18,40,.62);z-index:' + Z + ';}' +
       '#mlsObtCatch{position:fixed;inset:0;z-index:' + (Z + 1) + ';cursor:default;}' +
       '#mlsObtRing{position:fixed;z-index:' + (Z + 2) + ';border:3px solid #63a0ff;border-radius:12px;box-shadow:0 0 0 4px rgba(99,160,255,.35),0 0 0 9999px rgba(11,18,40,.0);pointer-events:none;transition:all .18s ease;}' +
-      '#mlsObtCard{position:fixed;z-index:' + (Z + 3) + ';max-width:380px;width:calc(100vw - 32px);box-sizing:border-box;background:linear-gradient(180deg,#2f6bed,#2257cf);color:#fff;border-radius:16px;padding:18px 18px 14px;box-shadow:0 18px 50px rgba(10,20,50,.5);font-family:system-ui,-apple-system,"Plus Jakarta Sans",sans-serif;}' +
+      '#mlsObtCard{position:fixed;z-index:' + (Z + 3) + ';max-width:380px;width:calc(100vw - 32px);box-sizing:border-box;background:linear-gradient(180deg,#2E6A4B,#204034);color:#fff;border-radius:16px;padding:18px 18px 14px;box-shadow:0 18px 50px rgba(10,20,50,.5);font-family:system-ui,-apple-system,"Plus Jakarta Sans",sans-serif;}' +
       '#mlsObtCard h3{margin:6px 0 2px;font-size:18px;line-height:1.25;}' +
       '#mlsObtDots{display:flex;gap:5px;margin:12px 0 10px;flex-wrap:wrap;}' +
       '.mlsObtDot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35);}' +
@@ -2739,16 +2739,16 @@
     var st = document.createElement('style'); st.id = 'mlsPmpCss';
     st.textContent = [
       '#' + BTN + '{position:fixed;right:14px;bottom:190px;z-index:2147483000;background:#5b21b6;color:#fff;border:0;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)}',
-      '#' + PANEL + '{position:fixed;right:14px;bottom:236px;z-index:2147483001;width:330px;background:#0b1020;color:#e8ecff;border:1px solid rgba(139,120,220,.4);border-radius:14px;padding:16px;font:13px/1.5 system-ui;box-shadow:0 18px 50px rgba(0,0,0,.5)}',
+      '#' + PANEL + '{position:fixed;right:14px;bottom:236px;z-index:2147483001;width:330px;background:#1E2B24;color:#EAF1EC;border:1px solid rgba(139,120,220,.4);border-radius:14px;padding:16px;font:13px/1.5 system-ui;box-shadow:0 18px 50px rgba(0,0,0,.5)}',
       '#' + PANEL + ' h3{margin:0 0 8px;font:800 14.5px system-ui}',
       '#' + PANEL + ' label{display:block;font-size:11px;font-weight:700;color:#b7a8ea;margin:8px 0 3px;text-transform:uppercase;letter-spacing:.4px}',
-      '#' + PANEL + ' select,#' + PANEL + ' input{width:100%;background:#141b3d;color:#e8ecff;border:1px solid rgba(139,120,220,.35);border-radius:8px;padding:7px 9px;font-size:13px;box-sizing:border-box}',
-      '#' + PANEL + ' .pmp-count{font-size:12px;color:#9fb0d8;margin-top:8px;min-height:16px}',
+      '#' + PANEL + ' select,#' + PANEL + ' input{width:100%;background:#24332A;color:#EAF1EC;border:1px solid rgba(139,120,220,.35);border-radius:8px;padding:7px 9px;font-size:13px;box-sizing:border-box}',
+      '#' + PANEL + ' .pmp-count{font-size:12px;color:#B9CEC2;margin-top:8px;min-height:16px}',
       '#' + PANEL + ' .pmp-row{display:flex;gap:8px;margin-top:12px}',
       '#' + PANEL + ' button{flex:1;border:0;border-radius:9px;padding:9px 0;font:700 12.5px system-ui;cursor:pointer}',
-      '#' + PANEL + ' .pmp-go{background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff}',
+      '#' + PANEL + ' .pmp-go{background:linear-gradient(90deg,#7A5CC0,#2E6A4B);color:#fff}',
       '#' + PANEL + ' .pmp-stop{background:#3b1d1d;color:#ffb4a8;border:1px solid rgba(255,120,100,.35)}',
-      '#' + PANEL + ' .pmp-x{position:absolute;top:8px;right:10px;background:none;border:0;color:#9fb0d8;font-size:15px;cursor:pointer;flex:none;padding:2px 6px}'
+      '#' + PANEL + ' .pmp-x{position:absolute;top:8px;right:10px;background:none;border:0;color:#B9CEC2;font-size:15px;cursor:pointer;flex:none;padding:2px 6px}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -2809,7 +2809,7 @@
     el = document.createElement('div'); el.id = PANEL;
     el.innerHTML = '<button class="pmp-x" title="Close">\u2715</button>'
       + '<h3>\ud83d\uddd3\ufe0f Month pull - any provider</h3>'
-      + '<div style="font-size:11.5px;color:#9fb0d8">Pulls every scheduled patient\'s chart history for one provider\'s whole month. athenaOne will be driven (read-only) - it may flicker.</div>'
+      + '<div style="font-size:11.5px;color:#B9CEC2">Pulls every scheduled patient\'s chart history for one provider\'s whole month. athenaOne will be driven (read-only) - it may flicker.</div>'
       + '<label>Provider</label><select id="mlsPmpProv"></select>'
       + '<label>Month</label><input id="mlsPmpMonth" type="month" value="' + thisMonth() + '">'
       + '<div class="pmp-count" id="mlsPmpCount"></div>'
@@ -3067,7 +3067,7 @@
          this panel has no chat thread to fall through to. */
       ans = 'That is a cross-provider comparison - ask it in the MLS Assistant chat, where it is answered by the AI using your real per-provider numbers.';
     }
-    out.innerHTML = '<div style="background:#141b3d;border-left:3px solid #2563eb;border-radius:8px;padding:10px 12px">' + escHtml(ans) + '</div>';
+    out.innerHTML = '<div style="background:#24332A;border-left:3px solid #2E6A4B;border-radius:8px;padding:10px 12px">' + escHtml(ans) + '</div>';
     api.panelAnswers++;
   }
 
@@ -3160,7 +3160,7 @@
  * worst case; the lighter stop is only ever a highlight):
  *   blue   #1d4ed8 -> #1e40af : white on #1e40af = 8.6:1  (was #2350bf = 6.9:1)
  *   green  #047857 -> #065f46 : white on #065f46 = 7.4:1  (was #047857 = 4.8:1)
- *   teal   #0d9488 -> #0f766e : white on #0f766e = 5.3:1  (was #13a18f = 3.4:1 FAIL)
+ *   teal   #0d9488 -> #0f766e : white on #0f766e = 5.3:1  (was #35704F = 3.4:1 FAIL)
  *   indigo #4f46e5 -> #4338ca : white on #4338ca = 7.6:1
  * Every one of these clears AA (4.5:1) for normal text; the old teal
  * "Start recording" pill did NOT, so this pass fixes a real contrast bug.
@@ -3194,7 +3194,7 @@
 
     /* ---- primary blue: Start Recording ------------------------------------ */
     '#ez3Next{',
-    '  background-image:linear-gradient(135deg,#2563eb 0%,#1d4ed8 55%,#1e40af 100%)!important;',
+    '  background-image:linear-gradient(135deg,#2E6A4B 0%,#1d4ed8 55%,#1e40af 100%)!important;',
     '  box-shadow:0 8px 24px rgba(29,78,216,.34), inset 0 1px 0 rgba(255,255,255,.16)!important;',
     '}',
     '#ez3Next:hover{ box-shadow:0 12px 30px rgba(29,78,216,.44), inset 0 1px 0 rgba(255,255,255,.2)!important; }',
@@ -3859,21 +3859,21 @@
     var st = document.createElement('style'); st.id = 'mlsPullProgCss';
     st.textContent = [
       '#' + PANEL + '{position:fixed;inset:0;z-index:100001;background:rgba(6,10,24,.78);display:flex;align-items:center;justify-content:center;padding:22px}',
-      '#' + PANEL + ' .ppc{max-width:620px;width:100%;background:#0b1020;border:1px solid rgba(120,140,220,.32);border-radius:18px;padding:20px 22px;box-shadow:0 24px 70px rgba(0,0,0,.55);color:#e8ecff;font:14px/1.5 system-ui}',
+      '#' + PANEL + ' .ppc{max-width:620px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.32);border-radius:18px;padding:20px 22px;box-shadow:0 24px 70px rgba(0,0,0,.55);color:#EAF1EC;font:14px/1.5 system-ui}',
       '#' + PANEL + ' h3{margin:0 0 4px;font:800 18px system-ui}',
-      '#' + PANEL + ' .pp-sub{color:#9fb0d8;font-size:12.5px;margin-bottom:14px}',
+      '#' + PANEL + ' .pp-sub{color:#B9CEC2;font-size:12.5px;margin-bottom:14px}',
       '#' + PANEL + ' .pp-big{font:800 30px system-ui;letter-spacing:-.02em}',
-      '#' + PANEL + ' .pp-track{height:12px;border-radius:99px;background:#141b3d;overflow:hidden;margin:10px 0 6px;border:1px solid rgba(120,140,220,.25)}',
-      '#' + PANEL + ' .pp-fill{height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width .4s ease}',
-      '#' + PANEL + ' .pp-meta{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#9fb0d8;flex-wrap:wrap}',
-      '#' + PANEL + ' .pp-cur{margin:12px 0;padding:10px 12px;border-radius:10px;background:#0f1530;border:1px solid rgba(120,140,220,.22)}',
-      '#' + PANEL + ' .pp-rows{max-height:200px;overflow:auto;margin-top:10px;border-radius:10px;border:1px solid rgba(120,140,220,.2);background:#0a0f24}',
-      '#' + PANEL + ' .pp-row{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(120,140,220,.1);font-size:12.5px}',
+      '#' + PANEL + ' .pp-track{height:12px;border-radius:99px;background:#24332A;overflow:hidden;margin:10px 0 6px;border:1px solid rgba(143,216,190,.25)}',
+      '#' + PANEL + ' .pp-fill{height:100%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);transition:width .4s ease}',
+      '#' + PANEL + ' .pp-meta{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#B9CEC2;flex-wrap:wrap}',
+      '#' + PANEL + ' .pp-cur{margin:12px 0;padding:10px 12px;border-radius:10px;background:#1E2B24;border:1px solid rgba(143,216,190,.22)}',
+      '#' + PANEL + ' .pp-rows{max-height:200px;overflow:auto;margin-top:10px;border-radius:10px;border:1px solid rgba(143,216,190,.2);background:#0a0f24}',
+      '#' + PANEL + ' .pp-row{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(143,216,190,.1);font-size:12.5px}',
       '#' + PANEL + ' .pp-ok{color:#7ee2a8}',
       '#' + PANEL + ' .pp-bad{color:#ffcf8f}',
       '#' + PANEL + ' .pp-note{font-size:11.5px;color:#8fa1c7;margin-top:12px}',
-      '#' + PANEL + ' .pp-btn{margin-top:14px;background:transparent;color:#e8ecff;border:1px solid rgba(120,140,220,.35);border-radius:10px;padding:9px 14px;font:700 12.5px system-ui;cursor:pointer}',
-      '#' + FAB + '{position:fixed;right:14px;bottom:150px;z-index:100000;background:#2563eb;color:#fff;border:0;border-radius:999px;padding:10px 15px;font:800 12.5px system-ui;box-shadow:0 8px 22px rgba(37,99,235,.45);cursor:pointer}'
+      '#' + PANEL + ' .pp-btn{margin-top:14px;background:transparent;color:#EAF1EC;border:1px solid rgba(143,216,190,.35);border-radius:10px;padding:9px 14px;font:700 12.5px system-ui;cursor:pointer}',
+      '#' + FAB + '{position:fixed;right:14px;bottom:150px;z-index:100000;background:#2E6A4B;color:#fff;border:0;border-radius:999px;padding:10px 15px;font:800 12.5px system-ui;box-shadow:0 8px 22px rgba(32,64,52,.45);cursor:pointer}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -3913,7 +3913,7 @@
     p.innerHTML = '<div class="ppc">' +
       '<h3>📚 Pulling patient histories from athenaOne</h3>' +
       '<div class="pp-sub">MLS is opening each scheduled patient’s chart, reading it, and filing it. Each chart usually takes about 15-30 seconds; a busy day can run a few minutes total.</div>' +
-      '<div class="pp-big">' + done + ' <span style="font-size:16px;color:#9fb0d8">of ' + total + '</span></div>' +
+      '<div class="pp-big">' + done + ' <span style="font-size:16px;color:#B9CEC2">of ' + total + '</span></div>' +
       '<div class="pp-track"><div class="pp-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="pp-meta"><span>' + pct + '% complete</span><span>✓ ' + ok + ' saved · ⚠ ' + failed + ' skipped</span><span>' + mmss(Date.now() - startedAt) + ' elapsed</span></div>' +
       '<div class="pp-cur"><b>Now reading:</b> ' + esc(S.current || '…') + '</div>' +
@@ -4225,13 +4225,13 @@
       "#" + PANEL_ID + " label{font:700 11px system-ui;color:#3b5f9e;display:block;margin-bottom:3px}",
       "#" + PANEL_ID + " input,#" + PANEL_ID + " select{width:100%;box-sizing:border-box;font:500 13px system-ui;padding:7px 9px;border:1px solid #cdd9ea;border-radius:8px;background:#fff;color:#16233a}",
       "#" + PANEL_ID + " .sbv2-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}",
-      "#" + PANEL_ID + " .sbv2-btn{font:700 13px system-ui;border:0;border-radius:9px;padding:9px 14px;cursor:pointer;color:#fff;background:#2563eb}",
-      "#" + PANEL_ID + " .sbv2-btn.grn{background:#16a34a}",
-      "#" + PANEL_ID + " .sbv2-btn.ghost{background:#fff;color:#2563eb;border:1px solid #cdd9ea}",
+      "#" + PANEL_ID + " .sbv2-btn{font:700 13px system-ui;border:0;border-radius:9px;padding:9px 14px;cursor:pointer;color:#fff;background:#2E6A4B}",
+      "#" + PANEL_ID + " .sbv2-btn.grn{background:#2E6A4B}",
+      "#" + PANEL_ID + " .sbv2-btn.ghost{background:#fff;color:#2E6A4B;border:1px solid #cdd9ea}",
       "#" + PANEL_ID + " .sbv2-note{font:600 12.5px system-ui;color:#3b5f9e;margin-top:8px}",
       "#" + OUT_ID + "{margin-top:12px}",
       "." + OUT_ID + "-card{background:#fff;border:1px solid #d5e2f8;border-radius:12px;padding:16px 18px;margin-top:10px}",
-      "." + OUT_ID + "-card h4{margin:0 0 10px;font:800 14px system-ui;color:#0f2540}",
+      "." + OUT_ID + "-card h4{margin:0 0 10px;font:800 14px system-ui;color:#1A211C}",
       "." + OUT_ID + "-tiles{display:flex;gap:10px;flex-wrap:wrap}",
       "." + OUT_ID + "-tile{background:#f6f9ff;border:1px solid #dde7fb;border-radius:10px;padding:9px 13px;min-width:110px}",
       "." + OUT_ID + "-tile b{display:block;font-size:19px;color:#16233a}",
@@ -4239,13 +4239,13 @@
       "." + OUT_ID + "-bar{display:flex;align-items:center;gap:8px;margin:3px 0;font:600 12px system-ui;color:#3b5f9e}",
       "." + OUT_ID + "-bar .lbl{width:72px;flex:none;color:#5a6b82}",
       "." + OUT_ID + "-bar .track{flex:1;background:#eef2fb;border-radius:6px;height:14px;overflow:hidden}",
-      "." + OUT_ID + "-bar .fill{height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed)}",
+      "." + OUT_ID + "-bar .fill{height:100%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0)}",
       "." + OUT_ID + "-bar .n{width:28px;text-align:right;flex:none;color:#16233a}",
       "." + OUT_ID + "-tbl{width:100%;border-collapse:collapse;font:500 12.5px system-ui;margin-top:6px}",
       "." + OUT_ID + "-tbl th,." + OUT_ID + "-tbl td{text-align:left;padding:6px 8px;border-bottom:1px solid #eef2fb;color:#16233a}",
       "." + OUT_ID + "-tbl th{color:#5a6b82;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em}",
       "." + OUT_ID + "-dl{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #cdd9ea;border-radius:9px;padding:7px 12px;font:700 12px system-ui;color:#1e3a8a;cursor:pointer;margin:0 6px 6px 0;text-decoration:none}",
-      "#mlsSbv2Narr{background:#fbfaff;border:1px solid #d5e2f8;border-left:4px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-top:10px;font:500 13.5px/1.6 system-ui;color:#1b2942;white-space:pre-wrap;max-height:420px;overflow:auto}"
+      "#mlsSbv2Narr{background:#fbfaff;border:1px solid #d5e2f8;border-left:4px solid #7A5CC0;border-radius:10px;padding:14px 16px;margin-top:10px;font:500 13.5px/1.6 system-ui;color:#1b2942;white-space:pre-wrap;max-height:420px;overflow:auto}"
     ].join("\n");
     var s = $(STYLE_ID);
     if (!s) { s = document.createElement("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
@@ -4486,7 +4486,7 @@
         if (!x.ok || !text) { status.textContent = x.status === 403 ? "AI narrative unavailable (premium study engine not enabled on this account)." : "AI narrative unavailable."; return; }
         status.remove();
         var div = document.createElement("div"); div.id = "mlsSbv2Narr"; div.textContent = text;
-        var hd = document.createElement("div"); hd.style.cssText = "font:800 13px system-ui;color:#7c3aed;margin-top:12px";
+        var hd = document.createElement("div"); hd.style.cssText = "font:800 13px system-ui;color:#7A5CC0;margin-top:12px";
         hd.innerHTML = "&#129504; Premium AI study narrative" + (x.j.model ? (' <span style="font-weight:600;color:#8a97ad">&middot; ' + esc(x.j.model) + "</span>") : "");
         out.appendChild(hd); out.appendChild(div);
       })
@@ -4590,7 +4590,7 @@
 
   function injectCSS() {
     var css = [
-      "#analysisView{--anp-ink:#0f2540;--anp-sub:#3d4e64;--anp-mini:#46586f;--anp-line:#e4ebf3;--anp-grad:linear-gradient(120deg,#eef5ff,#f6effd)}",
+      "#analysisView{--anp-ink:#1A211C;--anp-sub:#3d4e64;--anp-mini:#46586f;--anp-line:#E7E5DD;--anp-grad:linear-gradient(120deg,#EAF1EE,#f6effd)}",
       "#analysisView > .card{color:var(--anp-ink)}",
       "#analysisView > .card .sub{color:var(--anp-sub)!important}",
       "#analysisView > .card .mini{color:var(--anp-mini)!important}",
@@ -4598,7 +4598,7 @@
       /* header glyph (appended inside the existing .ax-title, or as a
          standalone block if ax isn't active) */
       "#analysisView .anp-glyph-row{display:flex;align-items:center;gap:11px;margin-bottom:2px}",
-      "#analysisView .anp-glyph{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#1e3a8a,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;box-shadow:0 8px 16px -9px rgba(30,58,138,.5)}",
+      "#analysisView .anp-glyph{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#1e3a8a,#7A5CC0);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;box-shadow:0 8px 16px -9px rgba(30,58,138,.5)}",
 
       /* at-a-glance ribbon */
       "#analysisView ." + RIBBON_ID + "{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0 16px;padding:12px 14px;border-radius:14px;background:var(--anp-grad);border:1px solid #e3e9fb}",
@@ -4608,7 +4608,7 @@
       "#analysisView ." + RIBBON_ID + " .anp-pill span.anp-lbl{color:var(--anp-mini)}",
 
       /* category pill inside expanded tile head */
-      "#analysisView .ax-head .anp-cat{flex:none;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#6b7d93;background:#eef2f8;border:1px solid #e0e8f1;border-radius:20px;padding:3px 8px;margin-left:6px}",
+      "#analysisView .ax-head .anp-cat{flex:none;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#79837C;background:#eef2f8;border:1px solid #e0e8f1;border-radius:20px;padding:3px 8px;margin-left:6px}",
 
       /* premium badge + empty state softening (applies whether or not ax/tiles are active) */
       "#analysisView .card [style*='PREMIUM']{letter-spacing:.04em}",
@@ -4805,7 +4805,7 @@
   function injectCSS() {
     var css = [
       /* ---- shared tokens (scoped, no leakage outside #studioView) ---- */
-      "#studioView{--stp-ink:#0f2540;--stp-sub:#46586f;--stp-mini:#6b7d93;--stp-line:#e4ebf3;--stp-grad:linear-gradient(120deg,#eef5ff,#f6effd)}",
+      "#studioView{--stp-ink:#1A211C;--stp-sub:#46586f;--stp-mini:#79837C;--stp-line:#E7E5DD;--stp-grad:linear-gradient(120deg,#EAF1EE,#f6effd)}",
       "#studioView .card{color:var(--stp-ink)}",
       "#studioView .card h2{color:var(--stp-ink);letter-spacing:-.01em}",
       "#studioView .card .sub{color:var(--stp-sub)!important}",
@@ -4815,7 +4815,7 @@
          active; degrades to a plain block above the first card if not) ---- */
       "#studioView .stp-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:14px 18px;border-radius:16px;background:var(--stp-grad);border:1px solid #e3e9fb}",
       "#studioView.sx-grid .stp-head{grid-column:1/-1;margin:0 0 4px}",
-      "#studioView .stp-head .stp-glyph{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1e3a8a,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;box-shadow:0 8px 18px -10px rgba(30,58,138,.55)}",
+      "#studioView .stp-head .stp-glyph{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1e3a8a,#7A5CC0);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;box-shadow:0 8px 18px -10px rgba(30,58,138,.55)}",
       "#studioView .stp-head .stp-copy{flex:1;min-width:180px}",
       "#studioView .stp-head .stp-copy b{display:block;font-size:15.5px;font-weight:800;color:var(--stp-ink)}",
       "#studioView .stp-head .stp-copy span{display:block;font-size:12.5px;color:var(--stp-sub);margin-top:1px}",
@@ -4828,21 +4828,21 @@
       /* ---- build-a-tool composer ---- */
       "#studioView .stp-section-lbl{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--stp-mini);margin:0 0 8px}",
       "#studioView #studioPrompt{transition:border-color .15s ease,box-shadow .15s ease}",
-      "#studioView #studioPrompt:focus{outline:none;border-color:#7c9ceb!important;box-shadow:0 0 0 3px rgba(47,107,237,.12)}",
-      "#studioView #studioGenBtn{background:linear-gradient(135deg,#16a34a,#0f8a3f)!important;box-shadow:0 10px 20px -12px rgba(22,163,74,.55)}",
-      "#studioView #studioTemplates a,#studioView .copilot-chips a{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;background:#f3f6fb;border:1px solid #e0e8f1;color:#2f6bed!important;font-size:12.5px;font-weight:600;text-decoration:none;transition:transform .12s ease,box-shadow .12s ease,background .12s ease}",
-      "#studioView #studioTemplates a:hover,#studioView .copilot-chips a:hover{background:#eaf1ff;transform:translateY(-1px);box-shadow:0 6px 14px -8px rgba(47,107,237,.4)}",
+      "#studioView #studioPrompt:focus{outline:none;border-color:#7c9ceb!important;box-shadow:0 0 0 3px rgba(32,64,52,.12)}",
+      "#studioView #studioGenBtn{background:linear-gradient(135deg,#2E6A4B,#0f8a3f)!important;box-shadow:0 10px 20px -12px rgba(22,163,74,.55)}",
+      "#studioView #studioTemplates a,#studioView .copilot-chips a{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;background:#f3f6fb;border:1px solid #e0e8f1;color:#2E6A4B!important;font-size:12.5px;font-weight:600;text-decoration:none;transition:transform .12s ease,box-shadow .12s ease,background .12s ease}",
+      "#studioView #studioTemplates a:hover,#studioView .copilot-chips a:hover{background:#eaf1ff;transform:translateY(-1px);box-shadow:0 6px 14px -8px rgba(32,64,52,.4)}",
 
       /* ---- copilot chat polish ---- */
       "#studioView #copilotThread .msg,#studioView #copilotThread [class*='bubble']{border-radius:14px!important}",
       "#studioView #copilotChips button,#studioView .copilot-chips button{border-radius:20px!important}",
-      "#studioView #copilotInputRow #copilotInput:focus{outline:none;border-color:#7c9ceb!important;box-shadow:0 0 0 3px rgba(47,107,237,.12)}",
+      "#studioView #copilotInputRow #copilotInput:focus{outline:none;border-color:#7c9ceb!important;box-shadow:0 0 0 3px rgba(32,64,52,.12)}",
 
       /* ---- my creations ---- */
       "#studioView #studioSaved{gap:10px!important}",
       "#studioView #studioSaved > .mini{width:100%;padding:22px 16px;text-align:center;border:1.5px dashed var(--stp-line);border-radius:14px;background:#fbfcfe;color:var(--stp-mini)!important;font-size:13px}",
       "#studioView #studioSaved > *:not(.mini){transition:transform .12s ease,box-shadow .12s ease}",
-      "#studioView #studioSaved > *:not(.mini):hover{transform:translateY(-2px);box-shadow:0 10px 20px -12px rgba(15,37,64,.28)}",
+      "#studioView #studioSaved > *:not(.mini):hover{transform:translateY(-2px);box-shadow:0 10px 20px -12px rgba(20,33,28,.28)}",
 
       /* ---- Study Groups strip (mls-sg-root / mlsSgPro / mlsStudyBuilderV2) ---- */
       "#studioView #mls-sg-root,#studioView #mlsSgPro,#studioView #mlsStudyBuilderV2{color:var(--stp-ink)}",
@@ -5079,10 +5079,10 @@
   function billingCard(panel) {
     var body = panel.querySelector('#emrBody'); if (!body || panel.querySelector('textarea[data-t="billing"]')) return;
     var div = document.createElement('div');
-    div.style.cssText = 'background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:12px;padding:12px 14px;margin-bottom:10px';
-    div.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="color:#e8ecff">Billing / charges</b><label style="font-size:12px;color:#9fb0d8;display:flex;gap:6px;cursor:pointer"><input type="checkbox" data-k="billing">confirm</label></div>' +
-      '<textarea data-t="billing" style="width:100%;margin-top:8px;min-height:38px;background:#141b3d;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:8px 10px;font:13px/1.5 system-ui;resize:vertical" placeholder="(CPT / charges for this visit — reviewed here; filed via the Billing slate)"></textarea>' +
-      '<div style="font-size:11px;color:#9fb0d8;margin-top:4px">Reviewed here for accuracy. Charges are filed through the Billing-slate flow — never auto-submitted by this panel.</div>';
+    div.style.cssText = 'background:#1E2B24;border:1px solid rgba(143,216,190,.22);border-radius:12px;padding:12px 14px;margin-bottom:10px';
+    div.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="color:#EAF1EC">Billing / charges</b><label style="font-size:12px;color:#B9CEC2;display:flex;gap:6px;cursor:pointer"><input type="checkbox" data-k="billing">confirm</label></div>' +
+      '<textarea data-t="billing" style="width:100%;margin-top:8px;min-height:38px;background:#24332A;border:1px solid rgba(143,216,190,.22);border-radius:8px;color:#EAF1EC;padding:8px 10px;font:13px/1.5 system-ui;resize:vertical" placeholder="(CPT / charges for this visit — reviewed here; filed via the Billing slate)"></textarea>' +
+      '<div style="font-size:11px;color:#B9CEC2;margin-top:4px">Reviewed here for accuracy. Charges are filed through the Billing-slate flow — never auto-submitted by this panel.</div>';
     body.appendChild(div);
   }
 
@@ -5099,8 +5099,8 @@
     host.appendChild(b);
     var wrap = insBtn.closest ? (insBtn.closest('div[style*="justify-content"]') || host) : host;
     var log = document.createElement('div'); log.id = 'emrWbLog';
-    log.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;background:#0a0f24;border:1px solid rgba(120,140,220,.25);border-radius:10px;padding:10px 12px;font:12.5px/1.5 system-ui;color:#cdd8f5;display:block';
-    log.innerHTML = '<div style="color:#9fb0d8">Per-section write log — identity-gated; orders/prescriptions are never sent; MLS never clicks Save/Sign.</div>';
+    log.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;background:#0a0f24;border:1px solid rgba(143,216,190,.25);border-radius:10px;padding:10px 12px;font:12.5px/1.5 system-ui;color:#cdd8f5;display:block';
+    log.innerHTML = '<div style="color:#B9CEC2">Per-section write log — identity-gated; orders/prescriptions are never sent; MLS never clicks Save/Sign.</div>';
     (wrap.parentElement || host).appendChild(log);
   }
 
@@ -5363,10 +5363,10 @@
  *   3. Secondary chips/buttons/cards/inputs (.ez3-sm, .ez3-exbtn, .ez3-qchip,
  *      .ez3-card, .ez3-prow, .ez3-chip, .ez3-seg button, the moredots button,
  *      .ez3-more, and a few input borders) move from a neutral white-alpha
- *      tint to a soft blue-alpha tint (rgba(150,190,255,.x)) -- "a bit more
+ *      tint to a soft blue-alpha tint (rgba(143,216,190,.x)) -- "a bit more
  *      colorful" without touching any text color on them.
  *   4. Deliberately UNTOUCHED: the primary action blue (.ez3-big / .ez3-prov
- *      select / .ez3-modeseg .on -- background #2f6df6/#2350bf). Its contrast
+ *      select / .ez3-modeseg .on -- background #2E6A4B/#2350bf). Its contrast
  *      against white button text is already only 4.53:1 -- essentially zero
  *      headroom -- so lightening it further would break AA on Start
  *      Recording/Generate/Send, the most important buttons in the app. Also
@@ -5385,7 +5385,7 @@
  *   #bccff3(new label)  vs NEW top #20508a:          5.19:1  (AA, real margin)
  *   #c9d8f5(modeseg)    vs NEW top #20508a:          5.68:1
  *   #eef4ff(primary txt)vs NEW top #20508a:          7.38:1
- *   #2f6df6(primary btn)vs white text:               4.53:1  (why it is NOT touched)
+ *   #2E6A4B(primary btn)vs white text:               4.53:1  (why it is NOT touched)
  *   New top #20508a is 2.48x the relative luminance of the original top
  *   #15315f -- a clearly visible lightening, chosen so #bccff3 (the color this
  *   module actually ships) still clears WCAG AA (4.5:1) with a real margin.
@@ -5412,15 +5412,15 @@
   var TOP = '#20508a';
   var TOP_MID = '#16375f';
   var LABEL = '#bccff3';
-  var TINT_BG_LO = 'rgba(150,190,255,.075)';
-  var TINT_BG_MD = 'rgba(150,190,255,.09)';
-  var TINT_BG = 'rgba(150,190,255,.10)';
-  var TINT_BG_STRONG = 'rgba(150,190,255,.11)';
-  var TINT_BG_HOVER = 'rgba(150,190,255,.18)';
-  var TINT_BG_HOVER_STRONG = 'rgba(150,190,255,.20)';
-  var TINT_BORDER = 'rgba(150,190,255,.24)';
-  var TINT_BORDER_SOFT = 'rgba(150,190,255,.16)';
-  var TINT_BORDER_STRONG = 'rgba(150,190,255,.30)';
+  var TINT_BG_LO = 'rgba(143,216,190,.075)';
+  var TINT_BG_MD = 'rgba(143,216,190,.09)';
+  var TINT_BG = 'rgba(143,216,190,.10)';
+  var TINT_BG_STRONG = 'rgba(143,216,190,.11)';
+  var TINT_BG_HOVER = 'rgba(143,216,190,.18)';
+  var TINT_BG_HOVER_STRONG = 'rgba(143,216,190,.20)';
+  var TINT_BORDER = 'rgba(143,216,190,.24)';
+  var TINT_BORDER_SOFT = 'rgba(143,216,190,.16)';
+  var TINT_BORDER_STRONG = 'rgba(143,216,190,.30)';
 
   function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
 
@@ -5697,7 +5697,7 @@
     s.id = "mlsGtCss";
     s.textContent = [
       /* menu row */
-      "#mlsGtMenuRow{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;padding:10px 12px;border-radius:8px;background:transparent;border:0;color:#eaf2ff;font:600 14px system-ui;cursor:pointer;box-sizing:border-box}",
+      "#mlsGtMenuRow{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;padding:10px 12px;border-radius:8px;background:transparent;border:0;color:#EAF1EC;font:600 14px system-ui;cursor:pointer;box-sizing:border-box}",
       "#mlsGtMenuRow:hover{background:rgba(255,255,255,.08)}",
       /* retire the stale legacy tour/guide rows (reversible) */
       "#mlsTourMenuItem,#mlsTourMenuItemV2,#mlsB39MenuItem,#mlsUC1HowTo,#mlsHowTo2Row{display:none!important}",
@@ -5723,22 +5723,22 @@
       "#mlsGtCard .gt-badge{font-size:11px;font-weight:800;letter-spacing:.2px;color:#1c3a6e;background:#e8f0fd;" +
         "border:1px solid #d3e0f4;border-radius:999px;padding:3px 10px;white-space:nowrap}",
       "#mlsGtCard .gt-count{margin-left:auto;font-size:11.5px;font-weight:700;color:#7488a3}",
-      "#mlsGtCard .gt-x{background:#eef3fb;border:0;border-radius:8px;width:26px;height:26px;font-size:15px;" +
+      "#mlsGtCard .gt-x{background:#EAF1EE;border:0;border-radius:8px;width:26px;height:26px;font-size:15px;" +
         "color:#3d5168;cursor:pointer;line-height:1;flex:0 0 auto}",
-      "#mlsGtCard h3{margin:2px 0 6px;font-size:17px;line-height:1.25;color:#0f2540;font-weight:800}",
+      "#mlsGtCard h3{margin:2px 0 6px;font-size:17px;line-height:1.25;color:#1A211C;font-weight:800}",
       "#mlsGtCard .gt-body{font-size:13px;color:#3a4b63;line-height:1.55}",
-      "#mlsGtCard .gt-body b{color:#0f2540;font-weight:700}",
+      "#mlsGtCard .gt-body b{color:#1A211C;font-weight:700}",
       "#mlsGtCard .gt-dots{display:flex;gap:6px;flex-wrap:wrap;margin:13px 0 12px}",
       "#mlsGtCard .gt-dot{width:7px;height:7px;border-radius:50%;background:#cfdcef;transition:background .2s,transform .2s;cursor:pointer}",
-      "#mlsGtCard .gt-dot.on{background:linear-gradient(135deg,#2f6bed,#2257cf);transform:scale(1.25)}",
+      "#mlsGtCard .gt-dot.on{background:linear-gradient(135deg,#2E6A4B,#204034);transform:scale(1.25)}",
       "#mlsGtCard .gt-foot{display:flex;align-items:center;gap:9px}",
       "#mlsGtCard .gt-skip{background:transparent;border:0;color:#7488a3;font:600 12.5px system-ui;cursor:pointer;padding:6px 2px}",
       "#mlsGtCard .gt-skip:hover{color:#4a5b72;text-decoration:underline}",
       "#mlsGtCard .gt-sp{flex:1 1 auto}",
       "#mlsGtCard .gt-btn{border:0;border-radius:10px;padding:9px 15px;font:800 13px system-ui;cursor:pointer}",
-      "#mlsGtCard .gt-back{background:#eef3fb;color:#2c405c}",
+      "#mlsGtCard .gt-back{background:#EAF1EE;color:#2c405c}",
       "#mlsGtCard .gt-back:hover{background:#e2ebf8}",
-      "#mlsGtCard .gt-next{background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;box-shadow:0 6px 18px rgba(34,87,207,.35)}",
+      "#mlsGtCard .gt-next{background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;box-shadow:0 6px 18px rgba(34,87,207,.35)}",
       "#mlsGtCard .gt-next:hover{filter:brightness(1.05)}",
       "@media (max-width:520px){#mlsGtCard{width:calc(100vw - 20px)}}"
     ].join("\n");
@@ -6645,7 +6645,7 @@
     s.textContent =
       ".mls-prvb-wrap{display:flex;justify-content:flex-end;margin:0 0 12px}" +
       ".mls-prvb{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:0;border-radius:999px;" +
-      "background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;" +
+      "background:linear-gradient(135deg,#1e3a8a,#2E6A4B);color:#fff;" +
       "font:600 13.5px/1 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;" +
       "box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer;white-space:nowrap}" +
       ".mls-prvb:hover{filter:brightness(1.08)}";
@@ -8415,7 +8415,7 @@
       '.mlsf-note,.mlsf-note *{color:' + C + ' !important}' +
       '.mlsf-note{background:#ffffff !important}' +
       /* define the missing tokens so any leftover color:var(--text)/var(--accent) resolves dark */
-      ':root{--text:' + C + ';--accent:#2f5fd0}' +
+      ':root{--text:' + C + ';--accent:#2E6A4B}' +
       /* 2) provider / all select options readable in normal + hover + selected */
       'select{color:' + C + ' !important}' +
       'select option,option{color:' + C + ' !important;background-color:#ffffff !important}' +
@@ -9044,7 +9044,7 @@
  * __mlsFormat (the module that renders the "Formatted view (live)" SOAP
  * display, b80:24469-24741) styles body paragraphs/list items/sub-labels
  * with `color:var(--text,#1f2937)` and headings with
- * `color:var(--accent,#2f5fd0)` (b80:24598-24607) — but neither `--text` nor
+ * `color:var(--accent,#2E6A4B)` (b80:24598-24607) — but neither `--text` nor
  * `--accent` is EVER defined as a real custom property anywhere in the app
  * (only --ink/--muted/--surface/--line are real tokens), so both always
  * render at their hard fallback. `__mlsEasyV32` already ships a same-selector
@@ -9054,7 +9054,7 @@
  * (b80:26492, its own header comment literally says "note+tools
  * legibility"), and this exact class of regression is already documented in
  * this codebase (b80:816: "Beat feat_mls_settings_exact.js's !important
- * #6b7d93 (4.22:1, fails AA @13px)" -- the *_exact suite has shipped
+ * #79837C (4.22:1, fails AA @13px)" -- the *_exact suite has shipped
  * low-contrast text before). That file isn't available to inspect locally,
  * so rather than add a fourth stylesheet into an unpredictable cascade race,
  * this sets color directly on the note-content elements via inline style
@@ -10726,9 +10726,9 @@
 })();
 
 
-;(function(){try{var A="feat_mls_review_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708rr1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* reputation lane: auto-review doctor trigger */
+;(function(){try{var A="feat_mls_review_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708rr1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* reputation lane: auto-review doctor trigger */
 
-;(function(){try{var A="feat_mls_best_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708bd1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* best-doctors lane: per-visit rating engine satellite */
+;(function(){try{var A="feat_mls_best_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708bd1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* best-doctors lane: per-visit rating engine satellite */
 
 /* ============================================================
  * mls_settings_cleanup_v1.js  ->  window.__mlsSettingsCleanupV1
@@ -10762,10 +10762,10 @@
  *      working integration) sits BELOW the dead athenahealth scaffold.
  *      FIX: promote it to the first field in Integrations.
  *   4) Contrast: the live redesign (feat_mls_settings_exact.js, stx-2.0.0)
- *      hardcodes every section description to #6b7d93 !important, which
+ *      hardcodes every section description to #79837C !important, which
  *      measures 4.22:1 on the white card at 13px -- below WCAG AA (4.5:1)
  *      for normal text. The base app's plain .note helper text inherits
- *      var(--muted) (#5b6b7e), 5.45:1 -- passes AA but not AAA. FIX: a
+ *      var(--muted) (#79837C), 5.45:1 -- passes AA but not AAA. FIX: a
  *      scoped stylesheet override raises both to #3d5066 (~8.3:1, AAA)
  *      inside #settingsModal only. Intentionally-colored callouts (the
  *      amber/green/red .note boxes that already set their own inline
@@ -10914,7 +10914,7 @@
     return safe(function () {
       if ($(CONTRAST_CSS_ID)) return false;
       var css = [
-        /* Beat feat_mls_settings_exact.js's !important #6b7d93 (4.22:1, fails AA @13px).
+        /* Beat feat_mls_settings_exact.js's !important #79837C (4.22:1, fails AA @13px).
            Doubled .set-desc class raises specificity so this wins regardless of
            stylesheet injection order; no element here ever sets its own color inline,
            so !important is safe. Result: ~8.3:1 (AAA). */
@@ -11118,13 +11118,13 @@
       + '.mls-anaclar-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;'
       + 'letter-spacing:.03em;padding:2px 9px;border-radius:999px;margin-left:8px;vertical-align:middle;'
       + 'white-space:nowrap;line-height:1.7;text-transform:uppercase}'
-      + '.mls-anaclar-chip.pw{background:#e8f0fe;color:#1d4ed8;border:1px solid #bfd3f8}'
+      + '.mls-anaclar-chip.pw{background:#EAF1EE;color:#1d4ed8;border:1px solid #bfd3f8}'
       + '.mls-anaclar-chip.prov{background:#e7f5ee;color:#12734b;border:1px solid #b7e0cb}'
       + '.mls-anaclar-chip.split{background:#f3eefb;color:#6d28d9;border:1px solid #d9c9f5}'
       + '.mls-anaclar-exprow{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 2px}'
       + '.mls-anaclar-expbtn{border:1px solid #c9d8ee;background:#f4f8fe;color:#1d4ed8;border-radius:999px;'
       + 'padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.5}'
-      + '.mls-anaclar-expbtn:hover{background:#e8f0fe}'
+      + '.mls-anaclar-expbtn:hover{background:#EAF1EE}'
       + '.mls-anaclar-hint{font-size:12px;color:#5b6b85;margin:6px 0 2px;line-height:1.45}'
       + '.mls-anaclar-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:99985;display:flex;'
       + 'align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}'
@@ -11137,7 +11137,7 @@
       + '.mls-anaclar-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px 18px 0}'
       + '.mls-anaclar-tab{border:1px solid #dbe2ec;background:#fff;color:#3b4c66;border-radius:999px;'
       + 'padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}'
-      + '.mls-anaclar-tab.on{background:#2563eb;border-color:#2563eb;color:#fff}'
+      + '.mls-anaclar-tab.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff}'
       + '.mls-anaclar-mb{padding:14px 18px 18px;font-size:14px;line-height:1.6}'
       + '.mls-anaclar-mb p{margin:0 0 10px}'
       + '.mls-anaclar-mb .eg{background:#f4f7fb;border:1px solid #dbe2ec;border-radius:10px;padding:10px 12px;'
@@ -11149,7 +11149,7 @@
       + 'vertical-align:middle;background:#fff}'
       + '.mls-anaclar-seg button{border:none;background:#fff;padding:6px 13px;font-size:12.5px;cursor:pointer;'
       + 'color:#3b4c66;font-weight:700;font-family:inherit}'
-      + '.mls-anaclar-seg button.on{background:#2563eb;color:#fff}'
+      + '.mls-anaclar-seg button.on{background:#2E6A4B;color:#fff}'
       + '#mlsAnaScopeSel{margin-left:10px;border:1px solid #c9d8ee;border-radius:8px;padding:5px 8px;'
       + 'font-size:13px;font-family:inherit;max-width:240px;vertical-align:middle}'
       + '#mlsAnaScopeCaption{font-size:12.5px;color:#3b5468;margin-top:8px;line-height:1.5}'
@@ -11162,7 +11162,7 @@
       + '#mlsAnaRvuProvPanel .k .v{font-size:20px;font-weight:800;color:#0d6b45;font-variant-numeric:tabular-nums}'
       + '#mlsAnaRvuProvPanel .k .l{font-size:10.5px;color:#5b6b85;text-transform:uppercase;letter-spacing:.03em;margin-top:2px}'
       + '#mlsAnaRvuProvPanel .pnote{font-size:11.5px;color:#3f5c4e;margin-top:8px}'
-      + '#mlsAnaRvuPwLabel{font-weight:800;font-size:12px;color:#1d4ed8;background:#e8f0fe;'
+      + '#mlsAnaRvuPwLabel{font-weight:800;font-size:12px;color:#1d4ed8;background:#EAF1EE;'
       + 'border:1px solid #bfd3f8;border-radius:8px;padding:6px 10px;margin:12px 0 4px;display:block}'
       + '#mlsRvuProd.' + PROVMODE_CLASS + ' .mlsrvu-kpis,'
       + '#mlsRvuProd.' + PROVMODE_CLASS + ' .mlsrvu-bars{opacity:.62}'
@@ -11187,11 +11187,11 @@
       + 'border:1px solid #f0e3c0;border-radius:8px;padding:6px 10px;font-size:11.5px}'
       /* consistent card chrome in the plain fallback; never doubled inside ax tiles */
       + '#analysisView:not(.ax-grid)>.card{border:1px solid #dde6f2!important;border-radius:14px!important;'
-      + 'box-shadow:0 2px 10px -6px rgba(15,37,64,.22)!important;padding:16px 18px!important;margin:0 0 16px!important}'
+      + 'box-shadow:0 2px 10px -6px rgba(20,33,28,.22)!important;padding:16px 18px!important;margin:0 0 16px!important}'
       + '#analysisView.ax-grid .ax-body>.card{border:none!important;box-shadow:none!important}'
       /* scope bar: white card with accent edge, full-width row inside the ax grid */
-      + '#mlsAnaScopeBar{background:#fff;border:1px solid #dde6f2;border-left:4px solid #2563eb;'
-      + 'border-radius:12px;box-shadow:0 2px 10px -6px rgba(15,37,64,.18)}'
+      + '#mlsAnaScopeBar{background:#fff;border:1px solid #dde6f2;border-left:4px solid #2E6A4B;'
+      + 'border-radius:12px;box-shadow:0 2px 10px -6px rgba(20,33,28,.18)}'
       + '#analysisView.ax-grid>#mlsAnaScopeBar{grid-column:1/-1}';
     var s = document.createElement('style');
     s.id = 'mlsAnaClarityCSS';
@@ -12018,7 +12018,7 @@
     var grid = '';
     for (var gv = 0; gv <= 10; gv += 2) {
       var gy = pad + (1 - gv / 10) * (h - pad * 2);
-      grid += '<line x1="' + pad + '" y1="' + gy.toFixed(1) + '" x2="' + (w - pad) + '" y2="' + gy.toFixed(1) + '" stroke="#eef2f7"></line>' +
+      grid += '<line x1="' + pad + '" y1="' + gy.toFixed(1) + '" x2="' + (w - pad) + '" y2="' + gy.toFixed(1) + '" stroke="#F4F2EC"></line>' +
         '<text x="' + (pad - 6) + '" y="' + (gy + 3).toFixed(1) + '" font-size="8" text-anchor="end" fill="#64748b">' + gv + '</text>';
     }
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '">' +
@@ -13289,7 +13289,7 @@
       "#tpfLedger .tpf-lhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:6px}",
       "#tpfLedger .tpf-lhead b{font-size:12.5px;color:#16233a}",
       "#tpfBar{flex:1;min-width:120px;height:8px;background:#e6ecf8;border-radius:6px;overflow:hidden}",
-      "#tpfBarIn{height:100%;width:0%;background:linear-gradient(90deg,#2f6bed,#19b8a6);transition:width .3s}",
+      "#tpfBarIn{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#3B7C5A);transition:width .3s}",
       "#tpfStop{font-size:11.5px;border-radius:8px;border:1px solid #e0b4b4;background:#fff;color:#a12c2c;padding:4px 10px;cursor:pointer}",
       "#tpfLedgerList{max-height:180px;overflow:auto;font-size:11.5px;line-height:1.5}",
       "#tpfLedgerList .ok{color:#127a43}",
@@ -13794,26 +13794,26 @@
     st.textContent = [
       /* one guide entry: retire every stale tour/guide row (reversible) */
       "#mlsTourMenuItem,#mlsTourMenuItemV2,#mlsB39MenuItem,#mlsUC1HowTo{display:none!important}",
-      "#mlsHowTo2Row{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;padding:10px 12px;border-radius:8px;background:transparent;border:0;color:#eaf2ff;font:600 14px system-ui;cursor:pointer}",
+      "#mlsHowTo2Row{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;padding:10px 12px;border-radius:8px;background:transparent;border:0;color:#EAF1EC;font:600 14px system-ui;cursor:pointer}",
       "#mlsHowTo2Row:hover{background:rgba(255,255,255,.07)}",
       /* the guide modal */
       "#mlsHowTo2{position:fixed;inset:0;z-index:2147483400;display:none;align-items:center;justify-content:center;background:rgba(8,16,34,.58);padding:18px}",
       "#mlsHowTo2.open{display:flex}",
       "#mlsHowTo2 .h2-card{width:100%;max-width:680px;max-height:88vh;overflow:auto;background:linear-gradient(180deg,#ffffff,#f6f9ff);border:1px solid #d8e4f6;border-radius:18px;box-shadow:0 26px 70px rgba(8,18,40,.45);padding:24px 26px;color:#16233a;font:14px/1.55 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif}",
-      "#mlsHowTo2 h2{margin:0;font-size:20px;color:#0f2540;display:flex;align-items:center;gap:10px}",
+      "#mlsHowTo2 h2{margin:0;font-size:20px;color:#1A211C;display:flex;align-items:center;gap:10px}",
       "#mlsHowTo2 .h2-sub{margin:4px 0 16px;color:#5a6b80;font-size:13px}",
-      "#mlsHowTo2 .h2-x{margin-left:auto;background:#eef3fb;border:0;border-radius:9px;width:32px;height:32px;font-size:17px;color:#3d5168;cursor:pointer;flex:0 0 auto}",
+      "#mlsHowTo2 .h2-x{margin-left:auto;background:#EAF1EE;border:0;border-radius:9px;width:32px;height:32px;font-size:17px;color:#3d5168;cursor:pointer;flex:0 0 auto}",
       "#mlsHowTo2 .h2-step{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid #e3ecf9;border-radius:12px;background:#fff;margin-bottom:8px}",
-      "#mlsHowTo2 .h2-n{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font:800 13px/26px system-ui;text-align:center}",
-      "#mlsHowTo2 .h2-step b{display:block;font-size:14px;color:#0f2540}",
+      "#mlsHowTo2 .h2-n{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font:800 13px/26px system-ui;text-align:center}",
+      "#mlsHowTo2 .h2-step b{display:block;font-size:14px;color:#1A211C}",
       "#mlsHowTo2 .h2-step span{font-size:12.5px;color:#4a5b72}",
-      "#mlsHowTo2 .h2-step .h2-btn{display:inline-block;font-size:11px;font-weight:800;background:#eef3fb;border:1px solid #d3e0f4;border-radius:7px;padding:1px 7px;color:#1c3a6e;white-space:nowrap}",
+      "#mlsHowTo2 .h2-step .h2-btn{display:inline-block;font-size:11px;font-weight:800;background:#EAF1EE;border:1px solid #d3e0f4;border-radius:7px;padding:1px 7px;color:#1c3a6e;white-space:nowrap}",
       "#mlsHowTo2 .h2-box{margin:14px 0 4px;font-size:12.5px;color:#4a5b72;background:#f2f6fd;border:1px solid #e3ecf9;border-radius:12px;padding:10px 14px}",
-      "#mlsHowTo2 .h2-box b{color:#0f2540}",
+      "#mlsHowTo2 .h2-box b{color:#1A211C}",
       "#mlsHowTo2 .h2-safe{margin-top:10px;font-size:12px;color:#127a43;background:#eefaf3;border:1px solid #bfe6cf;border-radius:10px;padding:8px 12px;font-weight:600}",
       "#mlsHowTo2 .h2-foot{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}",
       "#mlsHowTo2 .h2-foot button{border:0;border-radius:10px;padding:10px 15px;font:700 13px system-ui;cursor:pointer}",
-      ".h2-b-ask{background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff}",
+      ".h2-b-ask{background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff}",
       ".h2-b-close{background:transparent;color:#5a6b80;margin-left:auto}"
     ].join("\n");
     (document.head || document.documentElement).appendChild(st);
@@ -13964,7 +13964,7 @@
  *      created by __mlsT6Stab) and the #authScreen .auth-logo marks still show
  *      the OLD dark-teal mark (svMarkA / b34's svMarkB34). They are replaced
  *      with the CURRENT in-app logo -- the header mark from feat_mls_redesign.js
- *      (rounded tile, linear-gradient(140deg,#19b8a6,#2f6bed), white waveform
+ *      (rounded tile, linear-gradient(140deg,#3B7C5A,#2E6A4B), white waveform
  *      "M3 12h3l2.5 7L13 4l2.5 12L18 9h3"). Pre-empts __mlsFixPackB34's own
  *      veil swap by setting veil.__mlsB34Logo=1 first.
  *  (2) PAY REPORTS: the floating bottom-left #mlsCompBtn (feat_comp_report.js)
@@ -14028,7 +14028,7 @@
     var gid = "uc1MarkGrad" + (++_gradSeq);
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 38 38" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
       '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0.85" y2="1">' +
-      '<stop offset="0" stop-color="#19b8a6"/><stop offset="1" stop-color="#2f6bed"/>' +
+      '<stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/>' +
       '</linearGradient></defs>' +
       '<rect x="0" y="0" width="38" height="38" rx="10" fill="url(#' + gid + ')"/>' +
       '<svg x="8" y="8" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
@@ -14083,9 +14083,9 @@
          (they auto-place as the first sx-grid child and break the layout) */
       "#mlsCompBtn{display:none!important}",
       ".mls-b34-pay{display:none!important}",
-      ".uc1-pay{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;font:600 13.5px/1 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer;white-space:nowrap}",
+      ".uc1-pay{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2E6A4B);color:#fff;font:600 13.5px/1 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer;white-space:nowrap}",
       ".uc1-pay:hover{filter:brightness(1.08)}",
-      ".uc1-pay .uc1-prem{font-size:9.5px;font-weight:800;letter-spacing:.05em;background:linear-gradient(135deg,#7c3aed,#a855f7);border-radius:999px;padding:3px 9px}",
+      ".uc1-pay .uc1-prem{font-size:9.5px;font-weight:800;letter-spacing:.05em;background:linear-gradient(135deg,#7A5CC0,#9B82D4);border-radius:999px;padding:3px 9px}",
       ".uc1-pay-wrap{display:flex;justify-content:flex-end;margin:0 0 12px}",
       /* (3) ONE status indicator on the APP page:
          hide the extension's duplicate in-page UI (badge bottom-right 18/18 +
@@ -15519,7 +15519,7 @@
       'border-radius:999px;padding:3px;}',
     '.ez3-modeseg button{border:0;background:transparent;color:#c9d8f5;border-radius:999px;padding:9px 22px;',
       'font-size:13.5px;font-weight:800;cursor:pointer;transition:.12s;}',
-    '.ez3-modeseg button.on{background:#2f6df6;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
+    '.ez3-modeseg button.on{background:#2E6A4B;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
     '#mlsEz3Body{padding:8px 16px 26px;}',
     '.ez3-wrap{max-width:720px;margin:0 auto;}',
     '.ez3-h1{font-size:23px;font-weight:800;margin:4px 0 6px;text-align:center;letter-spacing:.2px;}',
@@ -15528,7 +15528,7 @@
     '.ez3-prov{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 16px;}',
     '.ez3-prov label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-prov select{appearance:none;-webkit-appearance:none;border:0;border-radius:14px;cursor:pointer;',
-      'background:linear-gradient(135deg,#2f6df6,#2350bf);color:#fff;font-size:15px;font-weight:800;',
+      'background:linear-gradient(135deg,#2E6A4B,#2350bf);color:#fff;font-size:15px;font-weight:800;',
       'padding:12px 40px 12px 16px;box-shadow:0 8px 24px rgba(23,58,140,.45);max-width:70vw;}',
     '.ez3-prov .selwrap{position:relative;}',
     '.ez3-prov .selwrap:after{content:"▾";position:absolute;right:15px;top:50%;transform:translateY(-50%);',
@@ -15536,7 +15536,7 @@
     /* huge primary buttons */
     '.ez3-big{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:82px;',
       'border:0;border-radius:20px;font-size:20px;font-weight:800;cursor:pointer;margin:0 0 14px;',
-      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2f6df6,#2350bf);flex-direction:column;',
+      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2E6A4B,#2350bf);flex-direction:column;',
       'box-shadow:0 12px 34px rgba(23,58,140,.5);transition:transform .08s;text-align:center;}',
     '.ez3-big:active{transform:scale(.986);}',
     '.ez3-big small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
@@ -15566,7 +15566,7 @@
     '.ez3-qchip{flex:none;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;text-align:center;min-width:86px;}',
     '.ez3-qchip .qt{display:block;font-size:10.5px;color:#a7bce4;font-weight:700;}',
-    '.ez3-qchip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-qchip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-qchip.seen{opacity:.45;}',
     '.ez3-qchip.now{border-color:rgba(5,150,105,.7);box-shadow:0 0 0 2px rgba(5,150,105,.35);}',
     /* v3.2: type-a-name search */
@@ -15579,7 +15579,7 @@
     '.ez3-flow{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-fstep{font-size:11.5px;font-weight:700;color:#9db1d8;padding:4px 10px;border-radius:999px;',
       'border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);white-space:nowrap;}',
-    '.ez3-fstep.on{color:#fff;background:#2f6df6;border-color:#2f6df6;}',
+    '.ez3-fstep.on{color:#fff;background:#2E6A4B;border-color:#2E6A4B;}',
     '.ez3-fstep.done{color:#9fd8bd;border-color:rgba(5,150,105,.45);background:rgba(5,150,105,.12);}',
     '.ez3-farr{color:#7789b3;font-size:12px;}',
     /* v3.3: recording-in-progress return banner (home/choose while recording) */
@@ -15594,7 +15594,7 @@
     '.ez3-sm{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:11px 15px;font-size:13.5px;font-weight:700;cursor:pointer;transition:.12s;}',
     '.ez3-sm:hover{background:rgba(255,255,255,.14);}',
-    '.ez3-sm.pri{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-sm.pri{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-sm.warn{border-color:rgba(234,179,8,.6);color:#fbe7a2;}',
     '.ez3-card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);border-radius:18px;',
       'padding:16px;margin:0 0 14px;}',
@@ -15629,7 +15629,7 @@
       'border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;',
       'flex-direction:column;align-items:center;gap:4px;transition:.12s;min-height:60px;justify-content:center;text-align:center;}',
     '.ez3-exbtn:hover{background:rgba(255,255,255,.15);}',
-    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2f6df6,#2350bf);border-color:transparent;}',
+    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2E6A4B,#2350bf);border-color:transparent;}',
     '.ez3-exbtn.send{background:linear-gradient(135deg,#059669,#047857);border-color:transparent;}',
     '.ez3-exbtn small{font-size:10.5px;font-weight:600;opacity:.85;}',
     '.ez3-safety{font-size:12px;color:#9fd8bd;margin-top:6px;display:flex;gap:6px;align-items:flex-start;}',
@@ -15637,7 +15637,7 @@
     '.ez3-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px 0;}',
     '.ez3-chip{border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfe0fc;border-radius:999px;',
       'padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-chip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-chip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-empty{text-align:center;color:#a7bce4;font-size:14px;padding:26px 12px;line-height:1.6;}',
     '.ez3-status{font-size:12.5px;color:#a7bce4;text-align:center;margin:8px 0 0;line-height:1.6;}',
     '.ez3-warnbar{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
@@ -15650,7 +15650,7 @@
     '.ez3-seg{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:2px 0 12px;}',
     '.ez3-seg button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#dce7fb;',
       'border-radius:999px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-seg button.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-seg button.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-daterow{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-daterow input,.ez3-pull input[type=month],.ez3-pull select{border:1px solid rgba(255,255,255,.25);',
       'background:rgba(0,0,0,.25);color:#eef4ff;border-radius:10px;padding:9px 10px;font-size:13.5px;font-family:inherit;}',
@@ -15664,11 +15664,11 @@
     '.ez3-pull .prow label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-pull .conn{font-size:13px;font-weight:700;display:flex;gap:7px;align-items:center;}',
     '.ez3-pull .dot{width:10px;height:10px;border-radius:50%;background:#9aa9bd;flex:none;}',
-    '.ez3-pull .dot.g{background:#16a34a;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
-    '.ez3-pull .dot.spin{background:#2f6df6;animation:ez3PullPulse 1s ease-in-out infinite;}',
+    '.ez3-pull .dot.g{background:#2E6A4B;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
+    '.ez3-pull .dot.spin{background:#2E6A4B;animation:ez3PullPulse 1s ease-in-out infinite;}',
     '@keyframes ez3PullPulse{0%,100%{opacity:1}50%{opacity:.35}}',
     '.ez3-pull .barwrap{background:rgba(0,0,0,.3);border-radius:999px;height:13px;overflow:hidden;margin:10px 0 4px;}',
-    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2f6df6,#4f8bff);transition:width .35s;}',
+    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#4f8bff);transition:width .35s;}',
     '.ez3-pull .counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}',
     '.ez3-pull .c{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 8px;text-align:center;}',
     '.ez3-pull .c b{display:block;font-size:17px;}',
@@ -15693,7 +15693,7 @@
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;',
+    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -15706,10 +15706,10 @@
     '.ez3-advrow button:hover{color:#b9cbf2;}',
     /* polish the app's bare file inputs everywhere (e.g. the "Choose File"
        template/logo uploads) to match the product's button look */
-    'input[type="file"]::file-selector-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::file-selector-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
-    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
     /* ---- v3.5 CONTRAST fixes ------------------------------------------- *
@@ -15724,7 +15724,7 @@
     '.mlsf-note .mlsf-p{color:#1c2740 !important;}',
     '.mlsf-note .mlsf-list li{color:#1c2740 !important;}',
     '.mlsf-note .mlsf-sub{color:#243042 !important;}',
-    '.mlsf-note .mlsf-h{color:#2f5fd0 !important;}',
+    '.mlsf-note .mlsf-h{color:#2E6A4B !important;}',
     '.mlsf-hint{color:#5b6b85 !important;}',
     /* v3.6: patient/history verification chips */
     '.ez3-vrow{display:flex;flex-direction:column;gap:6px;margin:10px 0 2px;}',
@@ -15763,7 +15763,7 @@
     '.ez3-more:active{transform:scale(.99);}',
     '.ez3-back:hover{color:#bcd3fb;}',
     '.ez3-seg button:hover{background:rgba(255,255,255,.12);}',
-    '.ez3-seg button.on:hover{background:#2f6df6;}',
+    '.ez3-seg button.on:hover{background:#2E6A4B;}',
     '.ez3-modeseg button:hover{color:#fff;}',
     '.ez3-chip:hover{background:rgba(255,255,255,.10);}',
     '.ez3-advrow button:focus-visible{outline:2px solid rgba(96,148,255,.6);}',
@@ -17871,7 +17871,7 @@
       buttons.forEach(function (b) {
         var el = document.createElement('button'); el.type = 'button'; el.textContent = b.label;
         el.style.cssText = 'cursor:pointer;border-radius:10px;padding:9px 14px;font:700 13px system-ui;' +
-          (b.primary ? 'background:#2563eb;color:#fff;border:none;' : 'background:#fff;color:#132039;border:1px solid #c3d2ee;');
+          (b.primary ? 'background:#2E6A4B;color:#fff;border:none;' : 'background:#fff;color:#132039;border:1px solid #c3d2ee;');
         el.onclick = function () { closeModal(); res(b.value); };
         row.appendChild(el);
       });
@@ -18516,7 +18516,7 @@
         '#mlsPrfDockChip:hover{filter:brightness(1.15);}',
         '#mlsPrfDockChip .dotc{width:8px;height:8px;border-radius:50%;background:#8fa4c6;flex:none;}',
         '#mlsPrfDockChip.on .dotc{background:#4f8bff;}',
-        '#mlsPrfDockChip.busy .dotc{background:#2f6df6;animation:mlsPrfPulse 1s ease-in-out infinite;}',
+        '#mlsPrfDockChip.busy .dotc{background:#2E6A4B;animation:mlsPrfPulse 1s ease-in-out infinite;}',
         '@keyframes mlsPrfPulse{0%,100%{opacity:1}50%{opacity:.3}}',
         /* the dock opens ABOVE the chip, same right edge (its own CSS already puts it bottom-right) */
         '#mlsScDock{bottom:104px!important;}'
@@ -19843,7 +19843,7 @@
       'border-radius:999px;padding:3px;}',
     '.ez3-modeseg button{border:0;background:transparent;color:#c9d8f5;border-radius:999px;padding:9px 22px;',
       'font-size:13.5px;font-weight:800;cursor:pointer;transition:.12s;}',
-    '.ez3-modeseg button.on{background:#2f6df6;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
+    '.ez3-modeseg button.on{background:#2E6A4B;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
     '#mlsEz3Body{padding:8px 16px 26px;}',
     '.ez3-wrap{max-width:720px;margin:0 auto;}',
     '.ez3-h1{font-size:23px;font-weight:800;margin:4px 0 6px;text-align:center;letter-spacing:.2px;}',
@@ -19852,7 +19852,7 @@
     '.ez3-prov{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 16px;}',
     '.ez3-prov label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-prov select{appearance:none;-webkit-appearance:none;border:0;border-radius:14px;cursor:pointer;',
-      'background:linear-gradient(135deg,#2f6df6,#2350bf);color:#fff;font-size:15px;font-weight:800;',
+      'background:linear-gradient(135deg,#2E6A4B,#2350bf);color:#fff;font-size:15px;font-weight:800;',
       'padding:12px 40px 12px 16px;box-shadow:0 8px 24px rgba(23,58,140,.45);max-width:70vw;}',
     '.ez3-prov .selwrap{position:relative;}',
     '.ez3-prov .selwrap:after{content:"▾";position:absolute;right:15px;top:50%;transform:translateY(-50%);',
@@ -19860,7 +19860,7 @@
     /* huge primary buttons */
     '.ez3-big{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:82px;',
       'border:0;border-radius:20px;font-size:20px;font-weight:800;cursor:pointer;margin:0 0 14px;',
-      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2f6df6,#2350bf);flex-direction:column;',
+      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2E6A4B,#2350bf);flex-direction:column;',
       'box-shadow:0 12px 34px rgba(23,58,140,.5);transition:transform .08s;text-align:center;}',
     '.ez3-big:active{transform:scale(.986);}',
     '.ez3-big small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
@@ -19890,7 +19890,7 @@
     '.ez3-qchip{flex:none;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;text-align:center;min-width:86px;}',
     '.ez3-qchip .qt{display:block;font-size:10.5px;color:#a7bce4;font-weight:700;}',
-    '.ez3-qchip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-qchip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-qchip.seen{opacity:.45;}',
     '.ez3-qchip.now{border-color:rgba(5,150,105,.7);box-shadow:0 0 0 2px rgba(5,150,105,.35);}',
     /* v3.2: type-a-name search */
@@ -19903,7 +19903,7 @@
     '.ez3-flow{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-fstep{font-size:11.5px;font-weight:700;color:#7f96c8;padding:4px 10px;border-radius:999px;',
       'border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);white-space:nowrap;}',
-    '.ez3-fstep.on{color:#fff;background:#2f6df6;border-color:#2f6df6;}',
+    '.ez3-fstep.on{color:#fff;background:#2E6A4B;border-color:#2E6A4B;}',
     '.ez3-fstep.done{color:#9fd8bd;border-color:rgba(5,150,105,.45);background:rgba(5,150,105,.12);}',
     '.ez3-farr{color:#54648f;font-size:12px;}',
     /* v3.3: recording-in-progress return banner (home/choose while recording) */
@@ -19918,7 +19918,7 @@
     '.ez3-sm{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:11px 15px;font-size:13.5px;font-weight:700;cursor:pointer;transition:.12s;}',
     '.ez3-sm:hover{background:rgba(255,255,255,.14);}',
-    '.ez3-sm.pri{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-sm.pri{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-sm.warn{border-color:rgba(234,179,8,.6);color:#fbe7a2;}',
     '.ez3-card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);border-radius:18px;',
       'padding:16px;margin:0 0 14px;}',
@@ -19953,7 +19953,7 @@
       'border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;',
       'flex-direction:column;align-items:center;gap:4px;transition:.12s;min-height:60px;justify-content:center;text-align:center;}',
     '.ez3-exbtn:hover{background:rgba(255,255,255,.15);}',
-    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2f6df6,#2350bf);border-color:transparent;}',
+    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2E6A4B,#2350bf);border-color:transparent;}',
     '.ez3-exbtn.send{background:linear-gradient(135deg,#059669,#047857);border-color:transparent;}',
     '.ez3-exbtn small{font-size:10.5px;font-weight:600;opacity:.85;}',
     '.ez3-safety{font-size:12px;color:#9fd8bd;margin-top:6px;display:flex;gap:6px;align-items:flex-start;}',
@@ -19961,7 +19961,7 @@
     '.ez3-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px 0;}',
     '.ez3-chip{border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfe0fc;border-radius:999px;',
       'padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-chip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-chip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-empty{text-align:center;color:#a7bce4;font-size:14px;padding:26px 12px;line-height:1.6;}',
     '.ez3-status{font-size:12.5px;color:#a7bce4;text-align:center;margin:8px 0 0;line-height:1.6;}',
     '.ez3-warnbar{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
@@ -19974,7 +19974,7 @@
     '.ez3-seg{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:2px 0 12px;}',
     '.ez3-seg button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#dce7fb;',
       'border-radius:999px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-seg button.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-seg button.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-daterow{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-daterow input,.ez3-pull input[type=month],.ez3-pull select{border:1px solid rgba(255,255,255,.25);',
       'background:rgba(0,0,0,.25);color:#eef4ff;border-radius:10px;padding:9px 10px;font-size:13.5px;font-family:inherit;}',
@@ -19988,11 +19988,11 @@
     '.ez3-pull .prow label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-pull .conn{font-size:13px;font-weight:700;display:flex;gap:7px;align-items:center;}',
     '.ez3-pull .dot{width:10px;height:10px;border-radius:50%;background:#9aa9bd;flex:none;}',
-    '.ez3-pull .dot.g{background:#16a34a;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
-    '.ez3-pull .dot.spin{background:#2f6df6;animation:ez3PullPulse 1s ease-in-out infinite;}',
+    '.ez3-pull .dot.g{background:#2E6A4B;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
+    '.ez3-pull .dot.spin{background:#2E6A4B;animation:ez3PullPulse 1s ease-in-out infinite;}',
     '@keyframes ez3PullPulse{0%,100%{opacity:1}50%{opacity:.35}}',
     '.ez3-pull .barwrap{background:rgba(0,0,0,.3);border-radius:999px;height:13px;overflow:hidden;margin:10px 0 4px;}',
-    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2f6df6,#4f8bff);transition:width .35s;}',
+    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#4f8bff);transition:width .35s;}',
     '.ez3-pull .counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}',
     '.ez3-pull .c{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 8px;text-align:center;}',
     '.ez3-pull .c b{display:block;font-size:17px;}',
@@ -20017,7 +20017,7 @@
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;',
+    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -20030,10 +20030,10 @@
     '.ez3-advrow button:hover{color:#b9cbf2;}',
     /* polish the app's bare file inputs everywhere (e.g. the "Choose File"
        template/logo uploads) to match the product's button look */
-    'input[type="file"]::file-selector-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::file-selector-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
-    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
     /* ---- v3.4 visual A+ pass: states, focus, motion, consistency ---- */
@@ -20058,7 +20058,7 @@
     '.ez3-more:active{transform:scale(.99);}',
     '.ez3-back:hover{color:#bcd3fb;}',
     '.ez3-seg button:hover{background:rgba(255,255,255,.12);}',
-    '.ez3-seg button.on:hover{background:#2f6df6;}',
+    '.ez3-seg button.on:hover{background:#2E6A4B;}',
     '.ez3-modeseg button:hover{color:#fff;}',
     '.ez3-chip:hover{background:rgba(255,255,255,.10);}',
     '.ez3-advrow button:focus-visible{outline:2px solid rgba(96,148,255,.6);}',
@@ -21900,7 +21900,7 @@
       'border-radius:999px;padding:3px;}',
     '.ez3-modeseg button{border:0;background:transparent;color:#c9d8f5;border-radius:999px;padding:9px 22px;',
       'font-size:13.5px;font-weight:800;cursor:pointer;transition:.12s;}',
-    '.ez3-modeseg button.on{background:#2f6df6;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
+    '.ez3-modeseg button.on{background:#2E6A4B;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
     '#mlsEz3Body{padding:8px 16px 26px;}',
     '.ez3-wrap{max-width:720px;margin:0 auto;}',
     '.ez3-h1{font-size:23px;font-weight:800;margin:4px 0 6px;text-align:center;letter-spacing:.2px;}',
@@ -21909,7 +21909,7 @@
     '.ez3-prov{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 16px;}',
     '.ez3-prov label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-prov select{appearance:none;-webkit-appearance:none;border:0;border-radius:14px;cursor:pointer;',
-      'background:linear-gradient(135deg,#2f6df6,#2350bf);color:#fff;font-size:15px;font-weight:800;',
+      'background:linear-gradient(135deg,#2E6A4B,#2350bf);color:#fff;font-size:15px;font-weight:800;',
       'padding:12px 40px 12px 16px;box-shadow:0 8px 24px rgba(23,58,140,.45);max-width:70vw;}',
     '.ez3-prov .selwrap{position:relative;}',
     '.ez3-prov .selwrap:after{content:"▾";position:absolute;right:15px;top:50%;transform:translateY(-50%);',
@@ -21917,7 +21917,7 @@
     /* huge primary buttons */
     '.ez3-big{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:82px;',
       'border:0;border-radius:20px;font-size:20px;font-weight:800;cursor:pointer;margin:0 0 14px;',
-      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2f6df6,#2350bf);flex-direction:column;',
+      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2E6A4B,#2350bf);flex-direction:column;',
       'box-shadow:0 12px 34px rgba(23,58,140,.5);transition:transform .08s;text-align:center;}',
     '.ez3-big:active{transform:scale(.986);}',
     '.ez3-big small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
@@ -21947,7 +21947,7 @@
     '.ez3-qchip{flex:none;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;text-align:center;min-width:86px;}',
     '.ez3-qchip .qt{display:block;font-size:10.5px;color:#a7bce4;font-weight:700;}',
-    '.ez3-qchip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-qchip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-qchip.seen{opacity:.45;}',
     '.ez3-qchip.now{border-color:rgba(5,150,105,.7);box-shadow:0 0 0 2px rgba(5,150,105,.35);}',
     /* v3.2: type-a-name search */
@@ -21960,7 +21960,7 @@
     '.ez3-flow{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-fstep{font-size:11.5px;font-weight:700;color:#7f96c8;padding:4px 10px;border-radius:999px;',
       'border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);white-space:nowrap;}',
-    '.ez3-fstep.on{color:#fff;background:#2f6df6;border-color:#2f6df6;}',
+    '.ez3-fstep.on{color:#fff;background:#2E6A4B;border-color:#2E6A4B;}',
     '.ez3-fstep.done{color:#9fd8bd;border-color:rgba(5,150,105,.45);background:rgba(5,150,105,.12);}',
     '.ez3-farr{color:#54648f;font-size:12px;}',
     /* v3.2: tap-and-go rows — small ⋯ opens the 4-action grid */
@@ -21971,7 +21971,7 @@
     '.ez3-sm{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:11px 15px;font-size:13.5px;font-weight:700;cursor:pointer;transition:.12s;}',
     '.ez3-sm:hover{background:rgba(255,255,255,.14);}',
-    '.ez3-sm.pri{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-sm.pri{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-sm.warn{border-color:rgba(234,179,8,.6);color:#fbe7a2;}',
     '.ez3-card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);border-radius:18px;',
       'padding:16px;margin:0 0 14px;}',
@@ -22006,7 +22006,7 @@
       'border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;',
       'flex-direction:column;align-items:center;gap:4px;transition:.12s;min-height:60px;justify-content:center;text-align:center;}',
     '.ez3-exbtn:hover{background:rgba(255,255,255,.15);}',
-    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2f6df6,#2350bf);border-color:transparent;}',
+    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2E6A4B,#2350bf);border-color:transparent;}',
     '.ez3-exbtn.send{background:linear-gradient(135deg,#059669,#047857);border-color:transparent;}',
     '.ez3-exbtn small{font-size:10.5px;font-weight:600;opacity:.85;}',
     '.ez3-safety{font-size:12px;color:#9fd8bd;margin-top:6px;display:flex;gap:6px;align-items:flex-start;}',
@@ -22014,7 +22014,7 @@
     '.ez3-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px 0;}',
     '.ez3-chip{border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfe0fc;border-radius:999px;',
       'padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-chip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-chip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-empty{text-align:center;color:#a7bce4;font-size:14px;padding:26px 12px;line-height:1.6;}',
     '.ez3-status{font-size:12.5px;color:#a7bce4;text-align:center;margin:8px 0 0;line-height:1.6;}',
     '.ez3-warnbar{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
@@ -22027,7 +22027,7 @@
     '.ez3-seg{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:2px 0 12px;}',
     '.ez3-seg button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#dce7fb;',
       'border-radius:999px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-seg button.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-seg button.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-daterow{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-daterow input,.ez3-pull input[type=month],.ez3-pull select{border:1px solid rgba(255,255,255,.25);',
       'background:rgba(0,0,0,.25);color:#eef4ff;border-radius:10px;padding:9px 10px;font-size:13.5px;font-family:inherit;}',
@@ -22041,11 +22041,11 @@
     '.ez3-pull .prow label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-pull .conn{font-size:13px;font-weight:700;display:flex;gap:7px;align-items:center;}',
     '.ez3-pull .dot{width:10px;height:10px;border-radius:50%;background:#9aa9bd;flex:none;}',
-    '.ez3-pull .dot.g{background:#16a34a;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
-    '.ez3-pull .dot.spin{background:#2f6df6;animation:ez3PullPulse 1s ease-in-out infinite;}',
+    '.ez3-pull .dot.g{background:#2E6A4B;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
+    '.ez3-pull .dot.spin{background:#2E6A4B;animation:ez3PullPulse 1s ease-in-out infinite;}',
     '@keyframes ez3PullPulse{0%,100%{opacity:1}50%{opacity:.35}}',
     '.ez3-pull .barwrap{background:rgba(0,0,0,.3);border-radius:999px;height:13px;overflow:hidden;margin:10px 0 4px;}',
-    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2f6df6,#4f8bff);transition:width .35s;}',
+    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#4f8bff);transition:width .35s;}',
     '.ez3-pull .counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}',
     '.ez3-pull .c{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 8px;text-align:center;}',
     '.ez3-pull .c b{display:block;font-size:17px;}',
@@ -22070,7 +22070,7 @@
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;',
+    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -22083,10 +22083,10 @@
     '.ez3-advrow button:hover{color:#b9cbf2;}',
     /* polish the app's bare file inputs everywhere (e.g. the "Choose File"
        template/logo uploads) to match the product's button look */
-    'input[type="file"]::file-selector-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::file-selector-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
-    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
     '@media (max-width:700px){',
@@ -23727,7 +23727,7 @@
       'border-radius:999px;padding:3px;}',
     '.ez3-modeseg button{border:0;background:transparent;color:#c9d8f5;border-radius:999px;padding:9px 22px;',
       'font-size:13.5px;font-weight:800;cursor:pointer;transition:.12s;}',
-    '.ez3-modeseg button.on{background:#2f6df6;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
+    '.ez3-modeseg button.on{background:#2E6A4B;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
     '#mlsEz3Body{padding:8px 16px 26px;}',
     '.ez3-wrap{max-width:720px;margin:0 auto;}',
     '.ez3-h1{font-size:23px;font-weight:800;margin:4px 0 6px;text-align:center;letter-spacing:.2px;}',
@@ -23736,7 +23736,7 @@
     '.ez3-prov{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 16px;}',
     '.ez3-prov label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-prov select{appearance:none;-webkit-appearance:none;border:0;border-radius:14px;cursor:pointer;',
-      'background:linear-gradient(135deg,#2f6df6,#2350bf);color:#fff;font-size:15px;font-weight:800;',
+      'background:linear-gradient(135deg,#2E6A4B,#2350bf);color:#fff;font-size:15px;font-weight:800;',
       'padding:12px 40px 12px 16px;box-shadow:0 8px 24px rgba(23,58,140,.45);max-width:70vw;}',
     '.ez3-prov .selwrap{position:relative;}',
     '.ez3-prov .selwrap:after{content:"▾";position:absolute;right:15px;top:50%;transform:translateY(-50%);',
@@ -23744,7 +23744,7 @@
     /* huge primary buttons */
     '.ez3-big{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:82px;',
       'border:0;border-radius:20px;font-size:20px;font-weight:800;cursor:pointer;margin:0 0 14px;',
-      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2f6df6,#2350bf);flex-direction:column;',
+      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2E6A4B,#2350bf);flex-direction:column;',
       'box-shadow:0 12px 34px rgba(23,58,140,.5);transition:transform .08s;text-align:center;}',
     '.ez3-big:active{transform:scale(.986);}',
     '.ez3-big small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
@@ -23756,7 +23756,7 @@
     '.ez3-sm{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:11px 15px;font-size:13.5px;font-weight:700;cursor:pointer;transition:.12s;}',
     '.ez3-sm:hover{background:rgba(255,255,255,.14);}',
-    '.ez3-sm.pri{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-sm.pri{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-sm.warn{border-color:rgba(234,179,8,.6);color:#fbe7a2;}',
     '.ez3-card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);border-radius:18px;',
       'padding:16px;margin:0 0 14px;}',
@@ -23791,7 +23791,7 @@
       'border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;',
       'flex-direction:column;align-items:center;gap:4px;transition:.12s;min-height:60px;justify-content:center;text-align:center;}',
     '.ez3-exbtn:hover{background:rgba(255,255,255,.15);}',
-    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2f6df6,#2350bf);border-color:transparent;}',
+    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2E6A4B,#2350bf);border-color:transparent;}',
     '.ez3-exbtn.send{background:linear-gradient(135deg,#059669,#047857);border-color:transparent;}',
     '.ez3-exbtn small{font-size:10.5px;font-weight:600;opacity:.85;}',
     '.ez3-safety{font-size:12px;color:#9fd8bd;margin-top:6px;display:flex;gap:6px;align-items:flex-start;}',
@@ -23799,7 +23799,7 @@
     '.ez3-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px 0;}',
     '.ez3-chip{border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfe0fc;border-radius:999px;',
       'padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-chip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-chip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-empty{text-align:center;color:#a7bce4;font-size:14px;padding:26px 12px;line-height:1.6;}',
     '.ez3-status{font-size:12.5px;color:#a7bce4;text-align:center;margin:8px 0 0;line-height:1.6;}',
     '.ez3-warnbar{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
@@ -23812,7 +23812,7 @@
     '.ez3-seg{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:2px 0 12px;}',
     '.ez3-seg button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#dce7fb;',
       'border-radius:999px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-seg button.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-seg button.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-daterow{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-daterow input,.ez3-pull input[type=month],.ez3-pull select{border:1px solid rgba(255,255,255,.25);',
       'background:rgba(0,0,0,.25);color:#eef4ff;border-radius:10px;padding:9px 10px;font-size:13.5px;font-family:inherit;}',
@@ -23826,11 +23826,11 @@
     '.ez3-pull .prow label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-pull .conn{font-size:13px;font-weight:700;display:flex;gap:7px;align-items:center;}',
     '.ez3-pull .dot{width:10px;height:10px;border-radius:50%;background:#9aa9bd;flex:none;}',
-    '.ez3-pull .dot.g{background:#16a34a;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
-    '.ez3-pull .dot.spin{background:#2f6df6;animation:ez3PullPulse 1s ease-in-out infinite;}',
+    '.ez3-pull .dot.g{background:#2E6A4B;}.ez3-pull .dot.r{background:#dc2626;}.ez3-pull .dot.a{background:#f59e0b;}',
+    '.ez3-pull .dot.spin{background:#2E6A4B;animation:ez3PullPulse 1s ease-in-out infinite;}',
     '@keyframes ez3PullPulse{0%,100%{opacity:1}50%{opacity:.35}}',
     '.ez3-pull .barwrap{background:rgba(0,0,0,.3);border-radius:999px;height:13px;overflow:hidden;margin:10px 0 4px;}',
-    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2f6df6,#4f8bff);transition:width .35s;}',
+    '.ez3-pull .bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#4f8bff);transition:width .35s;}',
     '.ez3-pull .counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}',
     '.ez3-pull .c{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 8px;text-align:center;}',
     '.ez3-pull .c b{display:block;font-size:17px;}',
@@ -23855,7 +23855,7 @@
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;',
+    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481500;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -23868,10 +23868,10 @@
     '.ez3-advrow button:hover{color:#b9cbf2;}',
     /* polish the app's bare file inputs everywhere (e.g. the "Choose File"
        template/logo uploads) to match the product's button look */
-    'input[type="file"]::file-selector-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::file-selector-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
-    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2f6df6;background:#2f6df6;color:#fff;',
+    'input[type="file"]::-webkit-file-upload-button{border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;',
       'border-radius:9px;padding:8px 14px;font:700 13px system-ui,-apple-system,"Segoe UI",sans-serif;',
       'cursor:pointer;margin-right:10px;}',
     '@media (max-width:700px){',
@@ -25344,7 +25344,7 @@
     '.ez3-hbtn{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.06);color:#dce7fb;',
       'border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;transition:.12s;}',
     '.ez3-hbtn:hover{background:rgba(255,255,255,.12);}',
-    '.ez3-hbtn.on{background:#2f6df6;border-color:#2f6df6;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
+    '.ez3-hbtn.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;box-shadow:0 4px 14px rgba(23,58,140,.4);}',
     '#mlsEz3Body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 16px 56px;}',
     '.ez3-wrap{max-width:720px;margin:0 auto;}',
     '.ez3-h1{font-size:23px;font-weight:800;margin:4px 0 6px;text-align:center;letter-spacing:.2px;}',
@@ -25353,16 +25353,16 @@
     '.ez3-prov{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 16px;}',
     '.ez3-prov label{font-size:12.5px;color:#a7bce4;font-weight:700;}',
     '.ez3-prov select{appearance:none;-webkit-appearance:none;border:0;border-radius:14px;cursor:pointer;',
-      'background:linear-gradient(135deg,#2f6df6,#2350bf);color:#fff;font-size:15px;font-weight:800;',
+      'background:linear-gradient(135deg,#2E6A4B,#2350bf);color:#fff;font-size:15px;font-weight:800;',
       'padding:12px 40px 12px 16px;box-shadow:0 8px 24px rgba(23,58,140,.45);max-width:70vw;',
-      'background-image:linear-gradient(135deg,#2f6df6,#2350bf);}',
+      'background-image:linear-gradient(135deg,#2E6A4B,#2350bf);}',
     '.ez3-prov .selwrap{position:relative;}',
     '.ez3-prov .selwrap:after{content:"▾";position:absolute;right:15px;top:50%;transform:translateY(-50%);',
       'color:#fff;pointer-events:none;font-size:13px;}',
     /* huge primary buttons */
     '.ez3-big{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:82px;',
       'border:0;border-radius:20px;font-size:20px;font-weight:800;cursor:pointer;margin:0 0 14px;',
-      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2f6df6,#2350bf);flex-direction:column;',
+      'padding:16px 18px;color:#fff;background:linear-gradient(135deg,#2E6A4B,#2350bf);flex-direction:column;',
       'box-shadow:0 12px 34px rgba(23,58,140,.5);transition:transform .08s;text-align:center;}',
     '.ez3-big:active{transform:scale(.986);}',
     '.ez3-big small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
@@ -25374,7 +25374,7 @@
     '.ez3-sm{border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.07);color:#dce7fb;',
       'border-radius:12px;padding:11px 15px;font-size:13.5px;font-weight:700;cursor:pointer;transition:.12s;}',
     '.ez3-sm:hover{background:rgba(255,255,255,.14);}',
-    '.ez3-sm.pri{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-sm.pri{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);border-radius:18px;',
       'padding:16px;margin:0 0 14px;}',
     '.ez3-pt{font-size:27px;font-weight:800;text-align:center;margin:2px 0 4px;line-height:1.15;}',
@@ -25408,7 +25408,7 @@
       'border-radius:12px;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;',
       'flex-direction:column;align-items:center;gap:4px;transition:.12s;min-height:60px;justify-content:center;text-align:center;}',
     '.ez3-exbtn:hover{background:rgba(255,255,255,.15);}',
-    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2f6df6,#2350bf);border-color:transparent;}',
+    '.ez3-exbtn.rec{background:linear-gradient(135deg,#2E6A4B,#2350bf);border-color:transparent;}',
     '.ez3-exbtn.send{background:linear-gradient(135deg,#059669,#047857);border-color:transparent;}',
     '.ez3-exbtn small{font-size:10.5px;font-weight:600;opacity:.85;}',
     '.ez3-safety{font-size:12px;color:#9fd8bd;margin-top:6px;display:flex;gap:6px;align-items:flex-start;}',
@@ -25416,7 +25416,7 @@
     '.ez3-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px 0;}',
     '.ez3-chip{border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfe0fc;border-radius:999px;',
       'padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-chip.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-chip.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-empty{text-align:center;color:#a7bce4;font-size:14px;padding:26px 12px;line-height:1.6;}',
     '.ez3-status{font-size:12.5px;color:#a7bce4;text-align:center;margin:8px 0 0;line-height:1.6;}',
     '.ez3-warnbar{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
@@ -25429,7 +25429,7 @@
     '.ez3-seg{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:2px 0 12px;}',
     '.ez3-seg button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#dce7fb;',
       'border-radius:999px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;}',
-    '.ez3-seg button.on{background:#2f6df6;border-color:#2f6df6;color:#fff;}',
+    '.ez3-seg button.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
     '.ez3-daterow{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:0 0 12px;}',
     '.ez3-daterow input{border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.25);color:#eef4ff;',
       'border-radius:10px;padding:9px 10px;font-size:13px;font-family:inherit;}',
@@ -25447,11 +25447,11 @@
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
     /* launcher chip + toast */
-    '#mlsEz3Launch{border:1px solid rgba(47,109,246,.55);background:linear-gradient(135deg,#2f6df6,#2350bf);',
+    '#mlsEz3Launch{border:1px solid rgba(47,109,246,.55);background:linear-gradient(135deg,#2E6A4B,#2350bf);',
       'color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:800;cursor:pointer;',
       'margin-left:8px;vertical-align:middle;box-shadow:0 4px 14px rgba(23,58,140,.35);}',
     '#mlsEz3Launch.fx{position:fixed;top:10px;right:12px;z-index:2147481100;}',
-    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;',
+    '#ez3Toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;',
       'padding:11px 17px;border-radius:11px;font:600 13px system-ui;box-shadow:0 8px 28px rgba(0,0,0,.4);',
       'z-index:2147481300;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center;}',
     '#ez3Toast.on{opacity:1;}',
@@ -26138,16 +26138,16 @@
     + '.ez2-actions button{flex:1 1 140px;border:0;border-radius:10px;padding:11px 12px;font-weight:700;font-size:13px;cursor:pointer;color:#fff;}'
     + '.ez2-actions .ez2-rec{background:linear-gradient(135deg,#3b6fe0,#2c54b8);}'
     + '.ez2-actions .ez2-sec{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32) !important;}'
-    + '.ez2-actions .ez2-send{background:linear-gradient(135deg,#1f9d6b,#178a5c);}'
+    + '.ez2-actions .ez2-send{background:linear-gradient(135deg,#2E6A4B,#204034);}'
     + '.ez2-actions .ez2-safety{font-size:11.5px;color:rgba(255,255,255,.78);line-height:1.4;}'
-    + '.ez2-modal-bg{position:fixed;inset:0;background:rgba(13,33,56,.6);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;}'
+    + '.ez2-modal-bg{position:fixed;inset:0;background:rgba(20,33,28,.6);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;}'
     + '.ez2-modal{background:#fff;border-radius:16px;padding:22px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:inherit;}'
-    + '.ez2-modal h3{margin:0 0 8px;font-size:17px;color:#0f2540;}'
+    + '.ez2-modal h3{margin:0 0 8px;font-size:17px;color:#1A211C;}'
     + '.ez2-modal p{margin:0;color:#33455e;font-size:13.5px;line-height:1.5;}'
     + '.ez2-modal-row{display:flex;gap:8px;margin-top:18px;}'
     + '.ez2-modal-row button{flex:1;border:0;border-radius:10px;padding:11px 12px;font-weight:700;font-size:13.5px;cursor:pointer;}'
     + '.ez2-modal-cancel{background:#eef1f5;color:#284566;}'
-    + '.ez2-modal-confirm{background:linear-gradient(135deg,#1f9d6b,#178a5c);color:#fff;}'
+    + '.ez2-modal-confirm{background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;}'
     + '@media (max-width:720px){'
     + '  #heroToday .wn-grid{max-height:60vh !important;}'
     + '  #heroToday .wn-chip{padding:13px 14px !important;}'
@@ -28319,16 +28319,16 @@
       "#mlsSgPro h4{margin:0 0 8px;font:800 14px system-ui;color:#16233a}",
       "#mlsSgPro .sgp-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}",
       "#mlsSgPro button{font:700 13px system-ui;border:0;border-radius:9px;padding:9px 14px;cursor:pointer}",
-      "#mlsSgPro .sgp-all{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff}",
-      "#mlsSgPro .sgp-proc{background:#7c3aed;color:#fff}",
+      "#mlsSgPro .sgp-all{background:linear-gradient(135deg,#1e3a8a,#2E6A4B);color:#fff}",
+      "#mlsSgPro .sgp-proc{background:#7A5CC0;color:#fff}",
       "#mlsSgPro input[type=text],#mlsSgPro select{font:500 13px system-ui;padding:8px 10px;border:1px solid #cdd9ea;border-radius:8px;background:#fff;color:#16233a}",
       "#mlsSgPro .sgp-note{font:500 12px system-ui;color:#5a6b82}",
       "#mlsSgProRun{border-top:1px dashed #c7d6ef;margin-top:10px;padding-top:10px}",
       "#mlsSgProRun label{font:700 12px system-ui;color:#3b5f9e;display:block;margin-bottom:3px}",
-      "#mlsSgProRun .sgp-run{background:#16a34a;color:#fff;font-size:14px;padding:10px 18px}",
+      "#mlsSgProRun .sgp-run{background:#2E6A4B;color:#fff;font-size:14px;padding:10px 18px}",
       "#mlsSgProOut{margin-top:10px}",
       "#mlsSgProOut .sgp-dl{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #cdd9ea;border-radius:9px;padding:8px 13px;font:700 12.5px system-ui;color:#1e3a8a;cursor:pointer;margin:0 6px 6px 0;text-decoration:none}",
-      "#mlsSgProNarr{background:#fff;border:1px solid #d5e2f8;border-left:4px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-top:8px;font:500 13.5px/1.6 system-ui;color:#1b2942;white-space:pre-wrap;max-height:420px;overflow:auto}"
+      "#mlsSgProNarr{background:#fff;border:1px solid #d5e2f8;border-left:4px solid #7A5CC0;border-radius:10px;padding:14px 16px;margin-top:8px;font:500 13.5px/1.6 system-ui;color:#1b2942;white-space:pre-wrap;max-height:420px;overflow:auto}"
     ].join("\n");
     (document.head || document.documentElement).appendChild(st);
   }
@@ -28474,7 +28474,7 @@
           return;
         }
         var div = document.createElement("div"); div.id = "mlsSgProNarr"; div.textContent = text;
-        var hd = document.createElement("div"); hd.style.cssText = "font:800 13px system-ui;color:#7c3aed;margin-top:12px"; hd.innerHTML = "\u{1F9E0} Premium AI study narrative" + (x.j.model ? (' <span style="font-weight:600;color:#8a97ad">· ' + esc(x.j.model) + "</span>") : "") + ' <button class="sgp-dl" style="margin-left:8px" onclick="navigator.clipboard.writeText(document.getElementById(\'mlsSgProNarr\').textContent)">\u{1F4CB} Copy</button>';
+        var hd = document.createElement("div"); hd.style.cssText = "font:800 13px system-ui;color:#7A5CC0;margin-top:12px"; hd.innerHTML = "\u{1F9E0} Premium AI study narrative" + (x.j.model ? (' <span style="font-weight:600;color:#8a97ad">· ' + esc(x.j.model) + "</span>") : "") + ' <button class="sgp-dl" style="margin-left:8px" onclick="navigator.clipboard.writeText(document.getElementById(\'mlsSgProNarr\').textContent)">\u{1F4CB} Copy</button>';
         out.appendChild(hd); out.appendChild(div);
         note.textContent = "✓ Full study ready — graph, Excel, PDF and AI narrative below.";
       })
@@ -28522,7 +28522,7 @@
     if ($("mlsVoiceB39Css")) return;
     var st = document.createElement("style"); st.id = "mlsVoiceB39Css";
     st.textContent = [
-      "#mlsCopVoiceBtn{position:fixed;left:12px;bottom:14px;z-index:99997;display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font:800 14px system-ui;box-shadow:0 8px 24px rgba(124,58,237,.45);cursor:pointer}",
+      "#mlsCopVoiceBtn{position:fixed;left:12px;bottom:14px;z-index:99997;display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#7A5CC0,#2E6A4B);color:#fff;font:800 14px system-ui;box-shadow:0 8px 24px rgba(124,58,237,.45);cursor:pointer}",
       "#mlsCopVoiceBtn:hover{filter:brightness(1.1)}",
       "#mlsCopVoiceBtn.listening{animation:mlsCvPulse 1s ease-in-out infinite}",
       "@keyframes mlsCvPulse{50%{box-shadow:0 8px 34px rgba(220,60,60,.8)}}",
@@ -28674,11 +28674,11 @@
       /* Improve-this-tool row */
       "#mlsB39Improve{display:flex;gap:8px;margin-top:10px}",
       "#mlsB39ImproveTx{flex:1;font:500 13.5px system-ui;padding:9px 12px;border:1px solid var(--line,#cdd9ea);border-radius:10px}",
-      "#mlsB39ImproveBtn{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;border:0;border-radius:10px;padding:9px 16px;font:700 13.5px system-ui;cursor:pointer}",
+      "#mlsB39ImproveBtn{background:linear-gradient(135deg,#1e3a8a,#2E6A4B);color:#fff;border:0;border-radius:10px;padding:9px 16px;font:700 13.5px system-ui;cursor:pointer}",
       "#mlsB39ImproveBtn:disabled{opacity:.6}",
       /* Tour */
       "#mlsB39TourOv{position:fixed;inset:0;z-index:2147483200;background:rgba(8,16,34,.55);display:flex;align-items:flex-end;justify-content:center;pointer-events:auto}",
-      "#mlsB39TourCard{margin:0 16px 26px;max-width:560px;width:100%;background:linear-gradient(180deg,#102a49,#0d2138);border:1px solid rgba(140,170,240,.4);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.55);padding:20px 22px;color:#eaf1ff;font-family:system-ui}",
+      "#mlsB39TourCard{margin:0 16px 26px;max-width:560px;width:100%;background:linear-gradient(180deg,#102a49,#204034);border:1px solid rgba(140,170,240,.4);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.55);padding:20px 22px;color:#eaf1ff;font-family:system-ui}",
       "#mlsB39TourCard h3{margin:0 0 6px;font-size:17px}",
       "#mlsB39TourCard p{margin:0 0 14px;font-size:14px;line-height:1.55;color:#c8d6f2}",
       "#mlsB39TourCard .b39-row{display:flex;align-items:center;gap:8px}",
@@ -28686,7 +28686,7 @@
       "#mlsB39TourCard button{font:700 13px system-ui;border-radius:9px;padding:8px 15px;cursor:pointer;border:1px solid rgba(160,190,255,.4)}",
       ".b39-skip{background:none;color:#9fb4dd}",
       ".b39-back{background:rgba(255,255,255,.1);color:#eaf1ff}",
-      ".b39-next{background:#2f6bed;color:#fff;border-color:#2f6bed!important}",
+      ".b39-next{background:#2E6A4B;color:#fff;border-color:#2E6A4B!important}",
       ".mlsB39Spot{outline:3px solid #5b8cff!important;outline-offset:3px;border-radius:10px;box-shadow:0 0 0 6px rgba(91,140,255,.25)!important;transition:outline .15s}"
     ].join("\n");
     (document.head || document.documentElement).appendChild(st);
@@ -28965,7 +28965,7 @@
     st.textContent = [
       "#mlsP1AgFab{display:none!important}",            /* duplicate 'MLS Agent' FAB -> one assistant */
       "#mlsVoiceFab{display:none!important}",           /* floating mic -> mic inside the one chat */
-      ".mls-b35-mic{background:rgba(47,107,237,.9);border:none;color:#fff;border-radius:9px;padding:7px 10px;font-size:14px;cursor:pointer;margin-right:6px}",
+      ".mls-b35-mic{background:rgba(32,64,52,.9);border:none;color:#fff;border-radius:9px;padding:7px 10px;font-size:14px;cursor:pointer;margin-right:6px}",
       ".mls-b35-mic.rec{background:#d33;animation:mlsB35pulse 1s ease-in-out infinite}",
       "@keyframes mlsB35pulse{50%{filter:brightness(1.35)}}",
       ".mls-b35-dot{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;border:2px solid #0d1b33;background:#9aa7b8}",
@@ -29169,7 +29169,7 @@
   applyProv();
 
   /* ---------- (1) boot veil: current logo ---------------------------------- */
-  var MARK = '<svg viewBox="0 0 56 56" width="34" height="34" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB34" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB34)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg>';
+  var MARK = '<svg viewBox="0 0 56 56" width="34" height="34" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkB34" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#svMarkB34)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg>';
   function fixVeilLogo() {
     try {
       var v = $("mlsBootVeil"); if (!v || v.__mlsB34Logo) return;
@@ -29189,7 +29189,7 @@
       "#mlsCompBtn{display:none!important}",                       /* (2) retire floating Pay Report */
       "#emrBtn{display:none!important}",                           /* (6) retire standalone EMR sections */
       "#mlsScDock{transition:right .25s ease}",                    /* (5) smooth dodge */
-      ".mls-b34-pay{display:inline-flex;align-items:center;gap:8px;margin:10px 0 12px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer}",
+      ".mls-b34-pay{display:inline-flex;align-items:center;gap:8px;margin:10px 0 12px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2E6A4B);color:#fff;font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer}",
       ".mls-b34-pay:hover{filter:brightness(1.08)}",
       ".mls-b34-pay .b34-prem{font-size:10px;font-weight:800;letter-spacing:.5px;background:linear-gradient(135deg,#b98aff,#7c4dff);border-radius:999px;padding:2px 8px}",
       ".mls-b34-emr-wrap{padding:8px 12px 2px}",
@@ -29931,7 +29931,7 @@
   var n=0, iv=setInterval(function(){ wrap('sfShowGateLoading',start); wrap('sfHideGateLoading',schedHide); var g=document.getElementById('sfGateLoading'); if(g&&!g.__mlsBLobs){ g.__mlsBLobs=true; try{ var mo=new MutationObserver(function(){ var vis=getComputedStyle(g).display!=='none'; if(vis){ clearTimeout(hideT); if(!g.__on){g.__on=true;start();} } else if(g.__on){ schedHide(); } }); mo.observe(g,{attributes:true,attributeFilter:['style','class']}); }catch(e){} if(getComputedStyle(g).display!=='none'){g.__on=true;start();} } if(++n>60)clearInterval(iv); },150);
 })();
 
-;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705t3c";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
+;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705t3cc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
 
 /* ============================================================================
  * __mlsT6Stab — Task 6: reload / flicker / layout-jump stabilizer (b19).
@@ -29965,7 +29965,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b173';
+  window.__MLS_AV = window.__MLS_AV || 'b175';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -29977,7 +29977,7 @@
       document.documentElement.classList.add('mls-booting');
       var veil=document.createElement('div'); veil.id='mlsBootVeil';
       veil.style.cssText='position:fixed;inset:0;z-index:2147483602;background:linear-gradient(180deg,#0d1b33,#13264a);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .22s ease';
-      veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2f6bed;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#9fb4dd">Scribe</span></span></div>'+
+      veil.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:10px;background:#2E6A4B;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:800 17px system-ui">M</span><span style="font:800 20px system-ui;color:#eaf1ff">MLS <span style="font-weight:500;color:#9fb4dd">Scribe</span></span></div>'+
         '<div style="width:150px;height:4px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden"><div id="mlsBootBar" style="width:8%;height:100%;border-radius:99px;background:#5b8cff"></div></div>'+
         '<div style="font:500 12px system-ui;color:#8ea6d4">Preparing your workspace…</div>';
       (document.body||document.documentElement).appendChild(veil);
@@ -30248,7 +30248,7 @@
     "#visitView.mls-cohere .vx-grid{display:block!important}",
     "#visitView.mls-cohere .vx-grid > *{width:100%!important;max-width:none!important;margin:0 0 14px!important;box-sizing:border-box}",
     "[id^=\"mlsPView_\"].mls-pop{background:rgba(6,12,24,.70)!important;overflow:auto!important;padding:44px 16px 64px!important}",
-    ".mls-pop-card{max-width:980px;width:100%;margin:0 auto;background:linear-gradient(180deg,#102a49,#0d2138);border:1px solid rgba(120,150,220,.28);border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.55);padding:24px 26px 30px;box-sizing:border-box}",
+    ".mls-pop-card{max-width:980px;width:100%;margin:0 auto;background:linear-gradient(180deg,#102a49,#204034);border:1px solid rgba(120,150,220,.28);border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.55);padding:24px 26px 30px;box-sizing:border-box}",
     ".mls-pop-card iframe{width:100%!important;min-height:80vh!important;border:0!important;border-radius:14px!important;background:#0b1428}",
     ".mls-pop-x{position:fixed;top:18px;right:22px;z-index:6000;background:rgba(255,255,255,.14);color:#eef4ff;border:1px solid rgba(160,190,255,.45);border-radius:999px;padding:8px 15px;font-weight:700;cursor:pointer;font-size:14px}",
     ".mls-pop-x:hover{background:rgba(255,255,255,.24)}"
@@ -30279,17 +30279,17 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-12-b173';
+  var MLS_APP_BUILD='2026-07-12-b175';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
   function showBanner(newv){
     if(banner&&banner.parentNode) return;
     banner=document.createElement('div'); banner.id='mlsVerBanner';
-    banner.style.cssText='position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:99999;background:#0d2138;color:#eef4ff;border:1px solid #2f7cf6;border-radius:14px;padding:11px 14px;display:flex;align-items:center;gap:12px;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45);max-width:92vw';
+    banner.style.cssText='position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:99999;background:#204034;color:#eef4ff;border:1px solid #2f7cf6;border-radius:14px;padding:11px 14px;display:flex;align-items:center;gap:12px;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45);max-width:92vw';
     var sp=document.createElement('span'); sp.textContent='\u2728 A newer version of MLS is ready.'; banner.appendChild(sp);
     var b=document.createElement('button'); b.textContent='Refresh'; b.style.cssText='cursor:pointer;background:#2f7cf6;color:#fff;border:none;border-radius:9px;padding:8px 14px;font-weight:700'; b.onclick=function(){ try{location.href=location.pathname+'?rv='+encodeURIComponent(newv);}catch(_){location.reload();} }; banner.appendChild(b);
-    var x=document.createElement('button'); x.textContent='\u00d7'; x.style.cssText='cursor:pointer;background:transparent;color:#9fb0d8;border:none;font-size:18px;line-height:1'; x.onclick=function(){ if(banner){banner.remove();banner=null;} }; banner.appendChild(x);
+    var x=document.createElement('button'); x.textContent='\u00d7'; x.style.cssText='cursor:pointer;background:transparent;color:#B9CEC2;border:none;font-size:18px;line-height:1'; x.onclick=function(){ if(banner){banner.remove();banner=null;} }; banner.appendChild(x);
     (document.body||document.documentElement).appendChild(banner);
   }
   function check(){ try{ fetch(URL+'?nc='+Date.now(),{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){ var m=t.match(/MLS_APP_BUILD='([^']+)'/); if(m&&m[1]&&m[1]!==MLS_APP_BUILD){ showBanner(m[1]); } }).catch(function(){}); }catch(_){} }
@@ -30328,7 +30328,7 @@
 (function(){
   if(window.__mlsTabsInEasy) return;
   window.__mlsTabsInEasy=true;
-  var CSS="#mlsEasyTools{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}#mlsEasyTools .et-btn{cursor:pointer;flex:1 1 240px;min-width:0;display:flex;align-items:center;gap:9px;justify-content:center;border-radius:14px;padding:13px 16px;font:700 14px system-ui;color:#eef4ff;background:rgba(255,255,255,.07);border:1px solid rgba(160,190,255,.28)}#mlsEasyTools .et-btn:hover{filter:brightness(1.12)}#mlsEasyTools .et-prem{margin-left:2px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:2px 6px;border-radius:6px}@media(max-width:640px){#mlsEasyTools .et-btn{flex:1 1 100%}}";
+  var CSS="#mlsEasyTools{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}#mlsEasyTools .et-btn{cursor:pointer;flex:1 1 240px;min-width:0;display:flex;align-items:center;gap:9px;justify-content:center;border-radius:14px;padding:13px 16px;font:700 14px system-ui;color:#eef4ff;background:rgba(255,255,255,.07);border:1px solid rgba(160,190,255,.28)}#mlsEasyTools .et-btn:hover{filter:brightness(1.12)}#mlsEasyTools .et-prem{margin-left:2px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7A5CC0,#2E6A4B);color:#fff;padding:2px 6px;border-radius:6px}@media(max-width:640px){#mlsEasyTools .et-btn{flex:1 1 100%}}";
   function css(){if(document.getElementById('mlsTabsInEasyCss'))return;var s=document.createElement('style');s.id='mlsTabsInEasyCss';s.textContent=CSS;document.head.appendChild(s);}
   var DEFS=[{id:'mlsPtab_reviews',icon:'\u2B50',label:'Reviews & reputation'},{id:'mlsPtab_send',icon:'\uD83D\uDCE4',label:'Send to patient'}];
   function hideTabs(){ DEFS.forEach(function(d){ var t=document.getElementById(d.id); if(t) t.style.setProperty('display','none','important'); }); }
@@ -30350,7 +30350,7 @@
 (function(){
   if(window.__mlsEasyUnified) return;
   window.__mlsEasyUnified=true;
-  var CSS="#mls-rt-bar{display:none!important}#mlsEwStack{display:none!important}#mlsVisitStepper{display:none!important}.mls-bridge-hidden{display:none!important}#mlsCockpit{margin:0 0 14px;color:#eef4ff;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#0d2138,#16324f);border:1px solid rgba(120,150,220,.28);border-radius:18px;padding:16px 16px 6px}#mlsCockpit .ck-eyebrow{font-size:12px;letter-spacing:.5px;color:#8fb0e8;font-weight:700;text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between;gap:7px}#mlsCockpit .ck-showall{cursor:pointer;font-size:11px;font-weight:700;color:#bcd0f5;background:rgba(255,255,255,.08);border:1px solid rgba(150,180,240,.3);border-radius:8px;padding:5px 9px;text-transform:none;letter-spacing:0}#mlsCockpit .ck-showall.on{background:#2f7cf6;color:#fff;border-color:transparent}#mlsCockpit .ck-steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}#mlsCockpit .ck-step{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(150,180,240,.25);cursor:pointer;font-size:13px;font-weight:600;color:#c7d6f5;flex:1 1 auto;justify-content:center;min-width:118px}#mlsCockpit .ck-step .n{width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 auto}#mlsCockpit .ck-step.on{background:linear-gradient(135deg,#2f7cf6,#5b8dff);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(47,124,246,.4)}#mlsCockpit .ck-step.on .n{background:rgba(255,255,255,.25)}#mlsCockpit .ck-step.done{color:#8fe0b4}#mlsCockpit .ck-step.done .n{background:rgba(60,200,130,.3)}#mlsCockpit .ck-body{background:rgba(255,255,255,.05);border:1px solid rgba(150,180,240,.18);border-radius:16px;padding:16px 16px 18px}#mlsCockpit .ck-title{font-size:19px;font-weight:800;margin:0 0 3px}#mlsCockpit .ck-hint{font-size:13px;color:#a8bce6;margin:0 0 14px;line-height:1.45}#mlsCockpit .ck-actions{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}#mlsCockpit .ck-btn{cursor:pointer;border-radius:12px;padding:12px 15px;font-size:14px;font-weight:700;border:1px solid rgba(160,190,255,.3);background:rgba(255,255,255,.08);color:#eef4ff;display:flex;align-items:center;gap:7px}#mlsCockpit .ck-btn:hover{filter:brightness(1.08)}#mlsCockpit .ck-btn.primary{background:linear-gradient(135deg,#2f7cf6,#5b8dff);border-color:transparent;color:#fff;box-shadow:0 6px 18px rgba(47,124,246,.35);flex:1 1 220px;justify-content:center;font-size:15px;padding:14px 18px}#mlsCockpit .ck-nav{display:flex;gap:9px;justify-content:space-between}#mlsCockpit .ck-nav button{cursor:pointer;border-radius:12px;padding:11px 18px;font-size:14px;font-weight:700;border:1px solid rgba(160,190,255,.3);background:rgba(255,255,255,.06);color:#dce8ff}#mlsCockpit .ck-nav .next{background:#fff;color:#12325a;border:none}#mlsCockpit .ck-nav .next:disabled,#mlsCockpit .ck-nav .back:disabled{opacity:.4}@media(max-width:640px){#mlsCockpit .ck-step{min-width:0;flex:1 1 44%;font-size:12px;padding:8px 6px}#mlsCockpit .ck-btn.primary{flex:1 1 100%}#mlsCockpit .ck-btn{flex:1 1 100%;justify-content:center}#mlsCockpit .ck-title{font-size:17px}}";
+  var CSS="#mls-rt-bar{display:none!important}#mlsEwStack{display:none!important}#mlsVisitStepper{display:none!important}.mls-bridge-hidden{display:none!important}#mlsCockpit{margin:0 0 14px;color:#eef4ff;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#204034,#16324f);border:1px solid rgba(120,150,220,.28);border-radius:18px;padding:16px 16px 6px}#mlsCockpit .ck-eyebrow{font-size:12px;letter-spacing:.5px;color:#8fb0e8;font-weight:700;text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between;gap:7px}#mlsCockpit .ck-showall{cursor:pointer;font-size:11px;font-weight:700;color:#bcd0f5;background:rgba(255,255,255,.08);border:1px solid rgba(150,180,240,.3);border-radius:8px;padding:5px 9px;text-transform:none;letter-spacing:0}#mlsCockpit .ck-showall.on{background:#2f7cf6;color:#fff;border-color:transparent}#mlsCockpit .ck-steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}#mlsCockpit .ck-step{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(150,180,240,.25);cursor:pointer;font-size:13px;font-weight:600;color:#c7d6f5;flex:1 1 auto;justify-content:center;min-width:118px}#mlsCockpit .ck-step .n{width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 auto}#mlsCockpit .ck-step.on{background:linear-gradient(135deg,#2f7cf6,#5b8dff);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(47,124,246,.4)}#mlsCockpit .ck-step.on .n{background:rgba(255,255,255,.25)}#mlsCockpit .ck-step.done{color:#8fe0b4}#mlsCockpit .ck-step.done .n{background:rgba(60,200,130,.3)}#mlsCockpit .ck-body{background:rgba(255,255,255,.05);border:1px solid rgba(150,180,240,.18);border-radius:16px;padding:16px 16px 18px}#mlsCockpit .ck-title{font-size:19px;font-weight:800;margin:0 0 3px}#mlsCockpit .ck-hint{font-size:13px;color:#a8bce6;margin:0 0 14px;line-height:1.45}#mlsCockpit .ck-actions{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}#mlsCockpit .ck-btn{cursor:pointer;border-radius:12px;padding:12px 15px;font-size:14px;font-weight:700;border:1px solid rgba(160,190,255,.3);background:rgba(255,255,255,.08);color:#eef4ff;display:flex;align-items:center;gap:7px}#mlsCockpit .ck-btn:hover{filter:brightness(1.08)}#mlsCockpit .ck-btn.primary{background:linear-gradient(135deg,#2f7cf6,#5b8dff);border-color:transparent;color:#fff;box-shadow:0 6px 18px rgba(47,124,246,.35);flex:1 1 220px;justify-content:center;font-size:15px;padding:14px 18px}#mlsCockpit .ck-nav{display:flex;gap:9px;justify-content:space-between}#mlsCockpit .ck-nav button{cursor:pointer;border-radius:12px;padding:11px 18px;font-size:14px;font-weight:700;border:1px solid rgba(160,190,255,.3);background:rgba(255,255,255,.06);color:#dce8ff}#mlsCockpit .ck-nav .next{background:#fff;color:#12325a;border:none}#mlsCockpit .ck-nav .next:disabled,#mlsCockpit .ck-nav .back:disabled{opacity:.4}@media(max-width:640px){#mlsCockpit .ck-step{min-width:0;flex:1 1 44%;font-size:12px;padding:8px 6px}#mlsCockpit .ck-btn.primary{flex:1 1 100%}#mlsCockpit .ck-btn{flex:1 1 100%;justify-content:center}#mlsCockpit .ck-title{font-size:17px}}";
   var showAll=false;
   function css(){if(document.getElementById('mlsCockpitCss'))return;var s=document.createElement('style');s.id='mlsCockpitCss';s.textContent=CSS;document.head.appendChild(s);}
   function vis(e){return e&&e.offsetParent!==null&&!e.disabled;}
@@ -30359,7 +30359,7 @@
   function byText(re){return [].find.call(document.querySelectorAll('button,a,[role=button],.vx-qbtn'),function(x){return !mine(x)&&re.test((x.textContent||'').trim())&&vis(x)&&(x.textContent||'').length<60;})||null;}
   function pick(c){for(var i=0;i<c.length;i++){var e=c[i].id?byId(c[i].id):byText(c[i].re);if(e)return e;}return null;}
   function flash(e){try{var o=e.style.boxShadow;e.style.boxShadow='0 0 0 3px rgba(47,124,246,.7)';setTimeout(function(){e.style.boxShadow=o;},700);}catch(_){}}
-  function toast(m){var t=document.getElementById('mlsCkToast');if(!t){t=document.createElement('div');t.id='mlsCkToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s;max-width:88vw;text-align:center';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2400);}
+  function toast(m){var t=document.getElementById('mlsCkToast');if(!t){t=document.createElement('div');t.id='mlsCkToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s;max-width:88vw;text-align:center';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2400);}
   function go(c,msg){var e=pick(c);if(!e){toast(msg||'Not available on this step yet.');return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);setTimeout(function(){try{e.click();}catch(_){}},170);}
   function focusEl(c,msg){var e=pick(c);if(!e){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);try{e.focus();}catch(_){}}
   function scrollToEl(sel,msg){var e=document.querySelector(sel);if(!e||e.offsetParent===null){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);}
@@ -30410,7 +30410,7 @@
   function clickText(re,sel){var e=byText(re,sel);if(e){e.click();return true;}return false;}
   function focusSel(sel){var e=document.querySelector(sel);if(e){try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}try{e.focus();}catch(_){}return true;}return false;}
   function scrollText(re){var e=byText(re,'*');if(e){try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}return true;}return false;}
-  function toast(m){var t=el('mlsEwToast');if(!t){t=document.createElement('div');t.id='mlsEwToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;padding:10px 16px;border-radius:10px;font:13px system-ui;z-index:9000;opacity:0;transition:opacity .2s;box-shadow:0 6px 24px rgba(0,0,0,.3)';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1800);}
+  function toast(m){var t=el('mlsEwToast');if(!t){t=document.createElement('div');t.id='mlsEwToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;z-index:9000;opacity:0;transition:opacity .2s;box-shadow:0 6px 24px rgba(0,0,0,.3)';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1800);}
   function A(fn,msg){return function(){var ok=false;try{ok=fn();}catch(e){ok=false;}if(!ok)toast(msg||'Not ready yet.');};}
   var WIDS=[
     {icon:'\uD83C\uDFAC',title:'Start a visit',sub:'Pick a patient, then record',btns:[
@@ -30464,7 +30464,7 @@
   function byText(re){return [].find.call(document.querySelectorAll('button,a,[role=button],.vx-qbtn'),function(x){return !mine(x)&&re.test((x.textContent||'').trim())&&vis(x)&&(x.textContent||'').length<60;})||null;}
   function pick(cands){for(var i=0;i<cands.length;i++){var c=cands[i];var e=c.id?byId(c.id):byText(c.re);if(e)return e;}return null;}
   function flash(e){try{var o=e.style.boxShadow;e.style.boxShadow='0 0 0 3px rgba(47,124,246,.7)';setTimeout(function(){e.style.boxShadow=o;},700);}catch(_){}}
-  function toast(m){var t=document.getElementById('mlsWizToast');if(!t){t=document.createElement('div');t.id='mlsWizToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1530;color:#e8ecff;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2200);}
+  function toast(m){var t=document.getElementById('mlsWizToast');if(!t){t=document.createElement('div');t.id='mlsWizToast';t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1E2B24;color:#EAF1EC;padding:10px 16px;border-radius:10px;font:13px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9000;opacity:0;transition:opacity .2s';document.body.appendChild(t);}t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2200);}
   function go(cands,msg){var e=pick(cands);if(!e){toast(msg||'That is not available on this step yet.');return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);setTimeout(function(){try{e.click();}catch(_){}},180);}
   function focusEl(cands,msg){var e=pick(cands);if(!e){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);try{e.focus();}catch(_){}}
   function scrollTo(re,msg){var e=[].find.call(document.querySelectorAll('*'),function(x){return !mine(x)&&re.test((x.textContent||'').trim())&&x.offsetParent!==null&&(x.textContent||'').length<50;});if(!e){toast(msg);return;}try{e.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}flash(e);}
@@ -30488,7 +30488,7 @@
   };
   function curStep(){var h=document.getElementById('mls-rt-hint');if(!h)return 0;var m=(h.textContent||'').match(/Step\s*(\d)\s*of\s*4/i);return m?parseInt(m[1],10):0;}
   function bar(){var b=document.getElementById('mlsWizBar');if(b)return b;b=document.createElement('div');b.id='mlsWizBar';b.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 4px;padding:8px 10px;background:#f3f6ff;border:1px solid #d6e0f5;border-radius:12px';return b;}
-  function mkBtn(cfg){var e2=document.createElement('button');e2.type='button';e2.textContent=cfg.label;e2.style.cssText='cursor:pointer;border-radius:9px;padding:8px 13px;font:600 13px system-ui;'+(cfg.primary?'background:#2563eb;color:#fff;border:none':'background:#fff;color:#12325a;border:1px solid #c3d2ee');e2.onmouseenter=function(){e2.style.filter='brightness(.96)';};e2.onmouseleave=function(){e2.style.filter='none';};e2.onclick=function(ev){try{ev.stopPropagation();ev.preventDefault();}catch(_){}cfg.run();};return e2;}
+  function mkBtn(cfg){var e2=document.createElement('button');e2.type='button';e2.textContent=cfg.label;e2.style.cssText='cursor:pointer;border-radius:9px;padding:8px 13px;font:600 13px system-ui;'+(cfg.primary?'background:#2E6A4B;color:#fff;border:none':'background:#fff;color:#12325a;border:1px solid #c3d2ee');e2.onmouseenter=function(){e2.style.filter='brightness(.96)';};e2.onmouseleave=function(){e2.style.filter='none';};e2.onclick=function(ev){try{ev.stopPropagation();ev.preventDefault();}catch(_){}cfg.run();};return e2;}
   function render(){var step=curStep();if(!step)return;var spec=STEPS[step];if(!spec)return;var hint=document.getElementById('mls-rt-hint');if(!hint)return;var host=hint.parentNode;if(!host)return;var b=bar();if(b.getAttribute('data-step')===String(step)&&b.parentNode)return;b.setAttribute('data-step',String(step));b.innerHTML='';var lab=document.createElement('span');lab.textContent=spec.title;lab.style.cssText='font:700 12px system-ui;color:#5570a8;margin-right:4px';b.appendChild(lab);spec.btns.forEach(function(c){b.appendChild(mkBtn(c));});if(!b.parentNode){if(host.nextSibling)host.parentNode.insertBefore(b,host.nextSibling);else host.parentNode.appendChild(b);}}
   function watch(){var h=document.getElementById('mls-rt-hint');if(!h)return false;if(h.__mlsWizObs){render();return true;}h.__mlsWizObs=true;var mo=new MutationObserver(function(){render();});mo.observe(h,{childList:true,characterData:true,subtree:true});render();return true;}
   var n=0,iv=setInterval(function(){if(watch()||++n>120)clearInterval(iv);},600);
@@ -30504,30 +30504,31 @@
   function overlay(id){
     var vw=document.getElementById(id); if(vw) return vw;
     vw=document.createElement('div'); vw.id=id; vw.setAttribute('data-mls-pview','1');
-    vw.style.cssText='display:none;position:fixed;left:0;right:0;bottom:0;z-index:5000;background:#0b1020;overflow:auto';
+    vw.style.cssText='display:none;position:fixed;left:0;right:0;bottom:0;z-index:5000;background:#1E2B24;overflow:auto';
     document.body.appendChild(vw); return vw;
   }
   function hideMine(){ document.querySelectorAll('[data-mls-pview]').forEach(function(v){v.style.display='none';}); document.querySelectorAll('[data-mls-ptab]').forEach(function(t){t.classList.remove('on');}); }
-  function topPx(){ var nav=document.getElementById('mlsRdNav')||document.getElementById('mainnav')||document.querySelector('.mainnav'); if(!nav){ var _nh=document.getElementById('nav_help'); nav=_nh&&_nh.parentNode; } return nav?Math.round(nav.getBoundingClientRect().bottom):64; }
-  function show(vw){ hideMine(); vw.style.top=topPx()+'px'; vw.style.display='block'; }
+  function topPx(){ var bar=document.getElementById('mlsRdTop'); if(bar&&bar.getBoundingClientRect().height>10) return Math.round(bar.getBoundingClientRect().bottom); var nav=document.getElementById('mlsRdNav')||document.getElementById('mainnav')||document.querySelector('.mainnav'); if(!nav){ var _nh=document.getElementById('nav_help'); nav=_nh&&_nh.parentNode; } return nav?Math.round(nav.getBoundingClientRect().bottom):64; }
+  function leftPx(){ try{ var r=document.getElementById('mlsRdNav'); if(r&&getComputedStyle(r).position==='fixed'&&r.getBoundingClientRect().left===0&&r.offsetWidth>120&&r.offsetWidth<400) return r.offsetWidth; }catch(e){} return 0; }
+  function show(vw){ hideMine(); vw.style.top=topPx()+'px'; vw.style.left=leftPx()+'px'; vw.style.display='block'; }
   function showReviews(){
     var vw=overlay('mlsPView_reviews');
-    if(!vw.querySelector('iframe')){ var f=document.createElement('iframe'); f.src=REVIEW_URL; f.style.cssText='width:100%;height:100%;border:0;background:#0b1020'; vw.appendChild(f); }
+    if(!vw.querySelector('iframe')){ var f=document.createElement('iframe'); f.src=REVIEW_URL; f.style.cssText='width:100%;height:100%;border:0;background:#1E2B24'; vw.appendChild(f); }
     show(vw); var t=document.getElementById('mlsPtab_reviews'); if(t)t.classList.add('on');
   }
   function activePatient(){ try{ var v=window.activePatient; if(typeof v==='function'){ return v()||{}; } return window._activePatient||(typeof v==='object'&&v?v:{}); }catch(e){ return {}; } }
   function isPrem(){ try{ if(typeof window.effectivePremium==='function') return !!window.effectivePremium(); var u=window.bkUser; return !!(u&&(u.premium||u.isAdmin)); }catch(e){ return false; } }
-  function badge(){ return '<span style="margin-left:6px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:2px 5px;border-radius:6px;vertical-align:middle">PREMIUM</span>'; }
+  function badge(){ return '<span style="margin-left:6px;font-size:9px;font-weight:800;letter-spacing:.4px;background:linear-gradient(90deg,#7A5CC0,#2E6A4B);color:#fff;padding:2px 5px;border-radius:6px;vertical-align:middle">PREMIUM</span>'; }
   function showUpsell(title,blurb){
     var vw=overlay('mlsPView_upsell'); vw.innerHTML='';
     var w=document.createElement('div');
-    w.style.cssText='max-width:620px;margin:0 auto;padding:48px 18px;color:#e8ecff;font:15px/1.55 system-ui,-apple-system,sans-serif;text-align:center';
+    w.style.cssText='max-width:620px;margin:0 auto;padding:48px 18px;color:#EAF1EC;font:15px/1.55 system-ui,-apple-system,sans-serif;text-align:center';
     w.innerHTML='<div style="font-size:30px;margin-bottom:6px">\u2728</div>'
       +'<h2 style="font-size:22px;margin:0 0 8px">'+title+' is a Premium feature</h2>'
-      +'<p style="color:#9fb0d8;margin:0 auto 20px;max-width:460px">'+blurb+'</p>'
-      +'<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:14px;padding:18px;max-width:460px;margin:0 auto">'
-      +'<b>Upgrade to Premium</b><div style="font-size:13px;color:#9fb0d8;margin:6px 0 14px">Unlock patient outreach, reputation tools, AI Studio and more.</div>'
-      +'<a href="/index.html#pricing" target="_blank" style="display:inline-block;text-decoration:none;background:#2563eb;color:#fff;border-radius:9px;padding:11px 20px;font-weight:700">See Premium plans</a>'
+      +'<p style="color:#B9CEC2;margin:0 auto 20px;max-width:460px">'+blurb+'</p>'
+      +'<div style="background:#1E2B24;border:1px solid rgba(143,216,190,.22);border-radius:14px;padding:18px;max-width:460px;margin:0 auto">'
+      +'<b>Upgrade to Premium</b><div style="font-size:13px;color:#B9CEC2;margin:6px 0 14px">Unlock patient outreach, reputation tools, AI Studio and more.</div>'
+      +'<a href="/index.html#pricing" target="_blank" style="display:inline-block;text-decoration:none;background:#2E6A4B;color:#fff;border-radius:9px;padding:11px 20px;font-weight:700">See Premium plans</a>'
       +'</div>';
     vw.appendChild(w); show(vw);
   }
@@ -30536,34 +30537,34 @@
     var p=activePatient();
     vw.innerHTML='';
     var wrap=document.createElement('div');
-    wrap.style.cssText='max-width:720px;margin:0 auto;padding:24px 18px;color:#e8ecff;font:15px/1.5 system-ui,-apple-system,sans-serif';
+    wrap.style.cssText='max-width:720px;margin:0 auto;padding:24px 18px;color:#EAF1EC;font:15px/1.5 system-ui,-apple-system,sans-serif';
     wrap.innerHTML=
       '<h2 style="font-size:20px;margin:0 0 4px">Send to your patients</h2>'
-      +'<p style="color:#9fb0d8;font-size:13px;margin:0 0 18px">These are patient-facing. Share the booking link publicly, and send a specific patient their private portal login.</p>'
-      +'<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:14px;padding:16px;margin-bottom:14px">'
-      +  '<b>Booking link</b><div style="font-size:12.5px;color:#9fb0d8;margin:2px 0 10px">Give this to patients or put it on your Google Business Profile and website so anyone can request an appointment.</div>'
-      +  '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mlsBookLink" readonly value="'+BOOK_URL+'" style="flex:1;min-width:220px;background:#141b3d;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:9px 11px"><button id="mlsCopyBook" style="background:#2563eb;border:none;color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">Copy link</button></div>'
-      +  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a href="sms:?&body='+encodeURIComponent('Book your appointment here: '+BOOK_URL)+'" style="text-decoration:none;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:8px;padding:9px 12px">Text a patient</a><a href="mailto:?subject='+encodeURIComponent('Book your appointment')+'&body='+encodeURIComponent('Hi,\n\nYou can request an appointment here: '+BOOK_URL+'\n\nThank you.')+'" style="text-decoration:none;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:8px;padding:9px 12px">Email a patient</a><button id="mlsCfgBook" style="background:transparent;border:1px solid rgba(120,140,220,.3);color:#e8ecff;border-radius:8px;padding:9px 12px;cursor:pointer">Set up / preview page</button></div>'
+      +'<p style="color:#B9CEC2;font-size:13px;margin:0 0 18px">These are patient-facing. Share the booking link publicly, and send a specific patient their private portal login.</p>'
+      +'<div style="background:#1E2B24;border:1px solid rgba(143,216,190,.22);border-radius:14px;padding:16px;margin-bottom:14px">'
+      +  '<b>Booking link</b><div style="font-size:12.5px;color:#B9CEC2;margin:2px 0 10px">Give this to patients or put it on your Google Business Profile and website so anyone can request an appointment.</div>'
+      +  '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mlsBookLink" readonly value="'+BOOK_URL+'" style="flex:1;min-width:220px;background:#24332A;border:1px solid rgba(143,216,190,.22);border-radius:8px;color:#EAF1EC;padding:9px 11px"><button id="mlsCopyBook" style="background:#2E6A4B;border:none;color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">Copy link</button></div>'
+      +  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a href="sms:?&body='+encodeURIComponent('Book your appointment here: '+BOOK_URL)+'" style="text-decoration:none;border:1px solid rgba(143,216,190,.3);color:#EAF1EC;border-radius:8px;padding:9px 12px">Text a patient</a><a href="mailto:?subject='+encodeURIComponent('Book your appointment')+'&body='+encodeURIComponent('Hi,\n\nYou can request an appointment here: '+BOOK_URL+'\n\nThank you.')+'" style="text-decoration:none;border:1px solid rgba(143,216,190,.3);color:#EAF1EC;border-radius:8px;padding:9px 12px">Email a patient</a><button id="mlsCfgBook" style="background:transparent;border:1px solid rgba(143,216,190,.3);color:#EAF1EC;border-radius:8px;padding:9px 12px;cursor:pointer">Set up / preview page</button></div>'
       +'</div>'
-      +'<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:14px;padding:16px">'
-      +  '<b>Patient portal access</b><div style="font-size:12.5px;color:#9fb0d8;margin:2px 0 10px">Email a specific patient a secure login to view their records and chat with them.'+(p&&p.name?(' Active patient: <b>'+String(p.name)+'</b>.'):'')+'</div>'
-      +  '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mlsPortalEmail" placeholder="patient@email.com" style="flex:1;min-width:220px;background:#141b3d;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:9px 11px"><button id="mlsSendPortal" style="background:#16a34a;border:none;color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">Send login</button></div>'
-      +  '<div id="mlsPortalMsg" style="font-size:13px;color:#9fb0d8;margin-top:8px"></div>'
+      +'<div style="background:#1E2B24;border:1px solid rgba(143,216,190,.22);border-radius:14px;padding:16px">'
+      +  '<b>Patient portal access</b><div style="font-size:12.5px;color:#B9CEC2;margin:2px 0 10px">Email a specific patient a secure login to view their records and chat with them.'+(p&&p.name?(' Active patient: <b>'+String(p.name)+'</b>.'):'')+'</div>'
+      +  '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mlsPortalEmail" placeholder="patient@email.com" style="flex:1;min-width:220px;background:#24332A;border:1px solid rgba(143,216,190,.22);border-radius:8px;color:#EAF1EC;padding:9px 11px"><button id="mlsSendPortal" style="background:#2E6A4B;border:none;color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">Send login</button></div>'
+      +  '<div id="mlsPortalMsg" style="font-size:13px;color:#B9CEC2;margin-top:8px"></div>'
       +'</div>'
       +'<div id="mlsCfgFrame"></div>';
     vw.appendChild(wrap);
     wrap.querySelector('#mlsCopyBook').onclick=function(){ var b=this; try{navigator.clipboard.writeText(BOOK_URL);}catch(e){} b.textContent='Copied'; setTimeout(function(){b.textContent='Copy link';},1400); };
-    wrap.querySelector('#mlsCfgBook').onclick=function(){ var c=wrap.querySelector('#mlsCfgFrame'); if(c.querySelector('iframe')){ c.innerHTML=''; return; } var f=document.createElement('iframe'); f.src=BOOK_URL; f.style.cssText='width:100%;height:70vh;border:1px solid rgba(120,140,220,.22);border-radius:12px;margin-top:14px;background:#0b1020'; c.appendChild(f); };
+    wrap.querySelector('#mlsCfgBook').onclick=function(){ var c=wrap.querySelector('#mlsCfgFrame'); if(c.querySelector('iframe')){ c.innerHTML=''; return; } var f=document.createElement('iframe'); f.src=BOOK_URL; f.style.cssText='width:100%;height:70vh;border:1px solid rgba(143,216,190,.22);border-radius:12px;margin-top:14px;background:#1E2B24'; c.appendChild(f); };
     var em=wrap.querySelector('#mlsPortalEmail'); try{ if(p&&p.email) em.value=p.email; }catch(e){}
     wrap.querySelector('#mlsSendPortal').onclick=function(){
       var email=(em.value||'').trim(), msg=wrap.querySelector('#mlsPortalMsg'), btn=this;
       if(!email){ msg.style.color='#ffcf8f'; msg.textContent='Enter the patient email first.'; return; }
       var token=null; try{ token=localStorage.getItem('sf_bk_token'); }catch(e){}
       if(!token){ msg.style.color='#ffcf8f'; msg.textContent='Not signed in to MLS — reload the app and try again.'; return; }
-      msg.style.color='#9fb0d8'; msg.textContent='Sending...'; btn.disabled=true;
+      msg.style.color='#B9CEC2'; msg.textContent='Sending...'; btn.disabled=true;
       var pp=activePatient();
       fetch(BACKEND+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({email:email,name:pp.name||'',external_id:pp.id||pp.patient_external_id||pp.external_id||'',dob:pp.dob||'',mrn:pp.mrn||'',id:pp.id||''})})
-        .then(function(r){ btn.disabled=false; if(r.ok){ msg.style.color='#9be8b8'; msg.textContent='Sent. The patient will get a secure login link by email.'; } else if(r.status===401||r.status===403){ msg.style.color='#ffcf8f'; msg.textContent='This account may not be allowed to send invites (needs the practice/admin login). Send from the admin account.'; } else { msg.style.color='#ffcf8f'; msg.textContent='Could not send (error '+r.status+'). Try again.'; } })
+        .then(function(r){ btn.disabled=false; if(r.ok){ msg.style.color='#8FD8BE'; msg.textContent='Sent. The patient will get a secure login link by email.'; } else if(r.status===401||r.status===403){ msg.style.color='#ffcf8f'; msg.textContent='This account may not be allowed to send invites (needs the practice/admin login). Send from the admin account.'; } else { msg.style.color='#ffcf8f'; msg.textContent='Could not send (error '+r.status+'). Try again.'; } })
         .catch(function(){ btn.disabled=false; msg.style.color='#ffcf8f'; msg.textContent='Network error, try again.'; });
     };
   }
@@ -30619,12 +30620,12 @@
     return Object.keys(b).some(function(k){return b[k];})?b:null;
   }
   var conf={};
-  var CS='border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:8px 10px;font:13px/1.5 system-ui';
+  var CS='border:1px solid rgba(143,216,190,.22);border-radius:8px;color:#EAF1EC;padding:8px 10px;font:13px/1.5 system-ui';
   function count(host){ var n=0; S.forEach(function(s){ if(conf[s.k]) n++; }); var c=host.querySelector('#emrCount'); if(c) c.textContent=n+' / '+S.length+' sections confirmed'; }
-  function card(k,label,val){ return '<div style="background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:12px;padding:12px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="color:#e8ecff">'+label+'</b><label style="font-size:12px;color:#9fb0d8;display:flex;gap:6px;cursor:pointer"><input type="checkbox" data-k="'+k+'" '+(conf[k]?'checked':'')+'>confirm</label></div><textarea data-t="'+k+'" style="width:100%;margin-top:8px;min-height:'+(val?'62px':'38px')+';background:#141b3d;'+CS+';resize:vertical" placeholder="(nothing captured for '+label+')">'+String(val).replace(/</g,'&lt;')+'</textarea></div>'; }
+  function card(k,label,val){ return '<div style="background:#1E2B24;border:1px solid rgba(143,216,190,.22);border-radius:12px;padding:12px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="color:#EAF1EC">'+label+'</b><label style="font-size:12px;color:#B9CEC2;display:flex;gap:6px;cursor:pointer"><input type="checkbox" data-k="'+k+'" '+(conf[k]?'checked':'')+'>confirm</label></div><textarea data-t="'+k+'" style="width:100%;margin-top:8px;min-height:'+(val?'62px':'38px')+';background:#24332A;'+CS+';resize:vertical" placeholder="(nothing captured for '+label+')">'+String(val).replace(/</g,'&lt;')+'</textarea></div>'; }
   function fill(host,b){
     var rows=S.map(function(s){ return card(s.k,s.label,b[s.k]||''); }).join('');
-    if(b._unsorted) rows+='<div style="background:#141b3d;border:1px dashed rgba(217,119,6,.5);border-radius:12px;padding:12px 14px;margin-bottom:10px"><b style="color:#ffcf8f">Unsorted</b><div style="font-size:12px;color:#9fb0d8;margin:2px 0 6px">Could not confidently place these - move into a section above.</div><textarea style="width:100%;min-height:46px;background:#0f1530;'+CS+';resize:vertical">'+String(b._unsorted).replace(/</g,'&lt;')+'</textarea></div>';
+    if(b._unsorted) rows+='<div style="background:#24332A;border:1px dashed rgba(217,119,6,.5);border-radius:12px;padding:12px 14px;margin-bottom:10px"><b style="color:#ffcf8f">Unsorted</b><div style="font-size:12px;color:#B9CEC2;margin:2px 0 6px">Could not confidently place these - move into a section above.</div><textarea style="width:100%;min-height:46px;background:#1E2B24;'+CS+';resize:vertical">'+String(b._unsorted).replace(/</g,'&lt;')+'</textarea></div>';
     host.querySelector('#emrBody').innerHTML=rows;
     var any=S.some(function(s){return b[s.k];})||!!b._unsorted;
     host.querySelector('#emrHint').innerHTML=any?'Organized from the current note. Edit anything, then confirm each section. Nothing is placed into the note until you confirm it.':'No sections detected yet - generate the note first, or type into any section. Try AI sort.';
@@ -30634,8 +30635,8 @@
     var o=document.getElementById('emrPanel'); if(o) o.remove();
     var host=document.createElement('div'); host.id='emrPanel';
     host.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(6,10,24,.72);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px';
-    var B='border:1px solid rgba(120,140,220,.3);border-radius:10px;cursor:pointer';
-    host.innerHTML='<div style="max-width:760px;width:100%;background:#0b1020;border:1px solid rgba(120,140,220,.3);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#e8ecff">EMR sections - review &amp; confirm</div><div style="display:flex;gap:8px"><button id="emrAi" style="background:#7c3aed;border:none;color:#fff;'+B+';padding:6px 12px;font-weight:700">AI sort</button><button id="emrClose" style="background:transparent;color:#e8ecff;'+B+';padding:6px 10px">Close</button></div></div><div id="emrHint" style="font-size:12.5px;color:#9fb0d8;margin-bottom:12px"></div><div id="emrBody"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><span id="emrCount" style="font-size:13px;color:#9fb0d8"></span><div style="display:flex;gap:10px;flex-wrap:wrap"><button id="emrAll" style="background:transparent;color:#e8ecff;'+B+';padding:10px 14px;font-weight:700">Confirm all</button><button id="emrIns" style="background:#16a34a;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800">Insert confirmed into note</button></div></div><div style="font-size:11.5px;color:#9fb0d8;margin-top:8px">MLS never submits medical actions on its own. Review, confirm, then send. Per-field placement into athenaOne is the next extension step.</div></div>';
+    var B='border:1px solid rgba(143,216,190,.3);border-radius:10px;cursor:pointer';
+    host.innerHTML='<div style="max-width:760px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.3);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#EAF1EC">EMR sections - review &amp; confirm</div><div style="display:flex;gap:8px"><button id="emrAi" style="background:#7A5CC0;border:none;color:#fff;'+B+';padding:6px 12px;font-weight:700">AI sort</button><button id="emrClose" style="background:transparent;color:#EAF1EC;'+B+';padding:6px 10px">Close</button></div></div><div id="emrHint" style="font-size:12.5px;color:#B9CEC2;margin-bottom:12px"></div><div id="emrBody"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><span id="emrCount" style="font-size:13px;color:#B9CEC2"></span><div style="display:flex;gap:10px;flex-wrap:wrap"><button id="emrAll" style="background:transparent;color:#EAF1EC;'+B+';padding:10px 14px;font-weight:700">Confirm all</button><button id="emrIns" style="background:#2E6A4B;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800">Insert confirmed into note</button></div></div><div style="font-size:11.5px;color:#B9CEC2;margin-top:8px">MLS never submits medical actions on its own. Review, confirm, then send. Per-field placement into athenaOne is the next extension step.</div></div>';
     document.body.appendChild(host);
     fill(host,organize(noteText()));
     host.addEventListener('change',function(e){ var k=e.target.getAttribute&&e.target.getAttribute('data-k'); if(k){ conf[k]=e.target.checked; count(host); } });
@@ -30728,7 +30729,7 @@
     else if(ok){ hideOnly(target, all); spot(target); }
     else { restoreHidden(); spot(target); } // safe fallback: show all, just spotlight
     var pills=document.querySelectorAll('.mls-rt-pill');
-    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2563eb':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
+    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2E6A4B':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
     var h=document.getElementById('mls-rt-hint'); if(h) h.textContent='Step '+(cur+1)+' of 4 — '+TABS[cur].hint+(cur>0&&!ok?' (showing all — boxes not ready to isolate yet)':'');
     var nx=document.getElementById('mls-rt-next'); if(nx) nx.textContent=(cur<3?('Next: '+TABS[cur+1].label.split('· ')[1]+' →'):'Done ✓');
     var sb=stepBtns(); if(sb){ for(var c=0;c<sb.length;c++) sb[c].style.opacity=(c===cur?'1':'.6'); }
@@ -30749,11 +30750,11 @@
     var hint=document.createElement('span'); hint.id='mls-rt-hint'; hint.style.cssText='flex:1;min-width:200px;font-weight:600;opacity:.92';
     var showAll=document.createElement('button'); showAll.type='button'; showAll.textContent='▤ Show all'; showAll.title='Show every stage at once'; showAll.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer'; showAll.addEventListener('click',function(){ go(0); });
     var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer'; back.addEventListener('click',function(){ go(cur-1); });
-    var next=document.createElement('button'); next.type='button'; next.id='mls-rt-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
+    var next=document.createElement('button'); next.type='button'; next.id='mls-rt-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
     ctrl.appendChild(hint); ctrl.appendChild(showAll); ctrl.appendChild(back); ctrl.appendChild(next);
     bar.appendChild(pillRow); bar.appendChild(ctrl);
     (container.parentNode||container).insertBefore(bar, container.nextSibling);
-    if(!document.getElementById('mls-rt-css')){ var st=document.createElement('style'); st.id='mls-rt-css'; st.textContent='.mls-rt-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important}'; document.head.appendChild(st); }
+    if(!document.getElementById('mls-rt-css')){ var st=document.createElement('style'); st.id='mls-rt-css'; st.textContent='.mls-rt-spot{outline:3px solid #2E6A4B!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(32,64,52,.12)!important}'; document.head.appendChild(st); }
     go(0);
     return true;
   }
@@ -30840,15 +30841,15 @@
   function open(){
     if(document.getElementById('mls-ask-ov')) return;
     var ov=document.createElement('div'); ov.id='mls-ask-ov';
-    ov.style.cssText='position:fixed;left:16px;bottom:150px;z-index:2147483300;width:min(420px,92vw);background:#0f1530;border:1px solid rgba(120,140,220,.35);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.5);color:#e8ecff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden';
-    ov.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(120,140,220,.2);background:linear-gradient(90deg,#151d44,#0f1530)"><span style="font-size:16px">📊</span><b style="flex:1;font-size:14px">Ask your data</b><button id="mls-ask-x" style="background:transparent;border:1px solid rgba(200,210,255,.3);color:inherit;border-radius:8px;padding:4px 9px;cursor:pointer;font-weight:700">✕</button></div>'
-      +'<div style="padding:12px 14px"><div style="display:flex;gap:8px"><input id="mls-ask-q" placeholder="e.g. how many patients did Sarah have this month?" style="flex:1;background:#141b3d;border:1px solid rgba(120,140,220,.35);border-radius:10px;color:#e8ecff;padding:9px 11px;font-size:13px"><button id="mls-ask-go" style="background:#2563eb;border:none;color:#fff;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer">Ask</button></div>'
-      +'<div id="mls-ask-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+CHIPS.map(function(c,i){return '<button class="mls-ask-chip" data-i="'+i+'" style="background:transparent;border:1px solid rgba(120,140,220,.3);color:inherit;border-radius:999px;padding:5px 10px;font-size:11px;cursor:pointer;opacity:.85">'+esc(c)+'</button>';}).join('')+'</div>'
+    ov.style.cssText='position:fixed;left:16px;bottom:150px;z-index:2147483300;width:min(420px,92vw);background:#1E2B24;border:1px solid rgba(143,216,190,.35);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.5);color:#EAF1EC;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden';
+    ov.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(143,216,190,.2);background:linear-gradient(90deg,#151d44,#1E2B24)"><span style="font-size:16px">📊</span><b style="flex:1;font-size:14px">Ask your data</b><button id="mls-ask-x" style="background:transparent;border:1px solid rgba(200,210,255,.3);color:inherit;border-radius:8px;padding:4px 9px;cursor:pointer;font-weight:700">✕</button></div>'
+      +'<div style="padding:12px 14px"><div style="display:flex;gap:8px"><input id="mls-ask-q" placeholder="e.g. how many patients did Sarah have this month?" style="flex:1;background:#24332A;border:1px solid rgba(143,216,190,.35);border-radius:10px;color:#EAF1EC;padding:9px 11px;font-size:13px"><button id="mls-ask-go" style="background:#2E6A4B;border:none;color:#fff;border-radius:10px;padding:9px 14px;font-weight:800;cursor:pointer">Ask</button></div>'
+      +'<div id="mls-ask-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+CHIPS.map(function(c,i){return '<button class="mls-ask-chip" data-i="'+i+'" style="background:transparent;border:1px solid rgba(143,216,190,.3);color:inherit;border-radius:999px;padding:5px 10px;font-size:11px;cursor:pointer;opacity:.85">'+esc(c)+'</button>';}).join('')+'</div>'
       +'<div id="mls-ask-a" style="margin-top:12px;font-size:14px;line-height:1.5;min-height:20px"></div>'
       +'<div style="margin-top:8px;font-size:11px;opacity:.5">Reads the patients you’ve pulled ('+pool().length+' appts loaded). Ask about you, another provider, or the whole practice.</div></div>';
     document.body.appendChild(ov);
     var q=document.getElementById('mls-ask-q');
-    function run(){ var r=ask(q.value); document.getElementById('mls-ask-a').innerHTML='<div style="background:#141b3d;border-left:3px solid #2563eb;border-radius:8px;padding:10px 12px">'+esc(r.answer)+'</div>'; }
+    function run(){ var r=ask(q.value); document.getElementById('mls-ask-a').innerHTML='<div style="background:#24332A;border-left:3px solid #2E6A4B;border-radius:8px;padding:10px 12px">'+esc(r.answer)+'</div>'; }
     document.getElementById('mls-ask-go').onclick=run;
     q.addEventListener('keydown',function(e){ if(e.key==='Enter') run(); });
     document.getElementById('mls-ask-x').onclick=function(){ ov.remove(); };
@@ -30859,7 +30860,7 @@
     if(document.getElementById('mls-ask-btn')) return;
     var b=document.createElement('button'); b.id='mls-ask-btn'; b.type='button'; b.textContent='📊 Ask your data';
     b.title='Ask questions about your patients and providers';
-    b.style.cssText='position:fixed;left:16px;bottom:108px;z-index:2147482000;background:linear-gradient(90deg,#6d28d9,#7c3aed);color:#fff;border:none;border-radius:999px;padding:11px 18px;font:800 13px system-ui;cursor:pointer;box-shadow:0 8px 24px rgba(124,58,237,.4)';
+    b.style.cssText='position:fixed;left:16px;bottom:108px;z-index:2147482000;background:linear-gradient(90deg,#6d28d9,#7A5CC0);color:#fff;border:none;border-radius:999px;padding:11px 18px;font:800 13px system-ui;cursor:pointer;box-shadow:0 8px 24px rgba(124,58,237,.4)';
     b.onclick=open; document.body.appendChild(b);
   }
   if(document.body) addBtn();
@@ -30906,7 +30907,7 @@
     var t=null; try{ t=TABS[cur].find(); }catch(e){}
     spot(t);
     var pills=document.querySelectorAll('.mls-tab-pill');
-    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2563eb':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
+    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2E6A4B':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
     var h=document.getElementById('mls-tab-hint'); if(h) h.textContent='Step '+(cur+1)+' of 4 — '+TABS[cur].hint;
     var nx=document.getElementById('mls-tab-next'); if(nx) nx.textContent=(cur<3?('Next: '+TABS[cur+1].label.split('· ')[1]+' →'):'Done ✓');
     var b=stepBtns(); if(b){ for(var c=0;c<b.length;c++) b[c].style.opacity=(c===cur?'1':'.6'); }
@@ -30927,11 +30928,11 @@
     var ctrl=document.createElement('div'); ctrl.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap';
     var hint=document.createElement('span'); hint.id='mls-tab-hint'; hint.style.cssText='flex:1;min-width:200px;font-weight:600;opacity:.92';
     var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer'; back.addEventListener('click',function(){ go(cur-1); });
-    var next=document.createElement('button'); next.type='button'; next.id='mls-tab-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
+    var next=document.createElement('button'); next.type='button'; next.id='mls-tab-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
     ctrl.appendChild(hint); ctrl.appendChild(back); ctrl.appendChild(next);
     bar.appendChild(pillRow); bar.appendChild(ctrl);
     (container.parentNode||container).insertBefore(bar, container.nextSibling);
-    if(!document.getElementById('mls-tab-css')){ var st=document.createElement('style'); st.id='mls-tab-css'; st.textContent='.mls-tab-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important}'; document.head.appendChild(st); }
+    if(!document.getElementById('mls-tab-css')){ var st=document.createElement('style'); st.id='mls-tab-css'; st.textContent='.mls-tab-spot{outline:3px solid #2E6A4B!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(32,64,52,.12)!important}'; document.head.appendChild(st); }
     go(0);
     return true;
   }
@@ -30967,7 +30968,7 @@
     var t=null; try{ t=TABS[cur].find(); }catch(e){}
     spot(t);
     var pills=document.querySelectorAll('.mls-tab-pill');
-    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2563eb':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
+    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2E6A4B':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
     var h=document.getElementById('mls-tab-hint'); if(h) h.textContent='Step '+(cur+1)+' of 4 — '+TABS[cur].hint;
     var nx=document.getElementById('mls-tab-next'); if(nx) nx.textContent=(cur<3?('Next: '+TABS[cur+1].label.split('· ')[1]+' →'):'Done ✓');
     var b=stepBtns(); if(b){ for(var c=0;c<b.length;c++) b[c].style.opacity=(c===cur?'1':'.6'); }
@@ -30988,11 +30989,11 @@
     var ctrl=document.createElement('div'); ctrl.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap';
     var hint=document.createElement('span'); hint.id='mls-tab-hint'; hint.style.cssText='flex:1;min-width:200px;font-weight:600;opacity:.92';
     var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer'; back.addEventListener('click',function(){ go(cur-1); });
-    var next=document.createElement('button'); next.type='button'; next.id='mls-tab-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
+    var next=document.createElement('button'); next.type='button'; next.id='mls-tab-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;font:800 12px system-ui;cursor:pointer'; next.addEventListener('click',function(){ if(cur<3) go(cur+1); else go(3); });
     ctrl.appendChild(hint); ctrl.appendChild(back); ctrl.appendChild(next);
     bar.appendChild(pillRow); bar.appendChild(ctrl);
     (container.parentNode||container).insertBefore(bar, container.nextSibling);
-    if(!document.getElementById('mls-tab-css')){ var st=document.createElement('style'); st.id='mls-tab-css'; st.textContent='.mls-tab-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important}'; document.head.appendChild(st); }
+    if(!document.getElementById('mls-tab-css')){ var st=document.createElement('style'); st.id='mls-tab-css'; st.textContent='.mls-tab-spot{outline:3px solid #2E6A4B!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(32,64,52,.12)!important}'; document.head.appendChild(st); }
     go(0);
     return true;
   }
@@ -31036,7 +31037,7 @@
     applyTunnel();
     spot(targets[cur]);
     var pills=document.querySelectorAll('.mls-tnl-pill');
-    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2563eb':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
+    Array.prototype.forEach.call(pills,function(p,idx){ p.style.background=(idx===cur?'#2E6A4B':'transparent'); p.style.color=(idx===cur?'#fff':'inherit'); p.style.fontWeight=(idx===cur?'800':'600'); });
     var hint=document.getElementById('mls-tnl-hint'); if(hint) hint.textContent='Step '+(cur+1)+' of 4 — '+TABS[cur].hint;
     var nx=document.getElementById('mls-tnl-next'); if(nx) nx.textContent=(cur<3?('Next: '+TABS[cur+1].label.split('· ')[1]+' →'):'Done ✓');
     var btns=stepBtns(); if(btns){ for(var c=0;c<btns.length;c++){ btns[c].style.opacity=(c===cur?'1':'.55'); } }
@@ -31057,15 +31058,15 @@
     var hint=document.createElement('span'); hint.id='mls-tnl-hint'; hint.style.cssText='flex:1;min-width:200px;font-weight:600;opacity:.92';
     var toggle=document.createElement('button'); toggle.type='button'; toggle.id='mls-tnl-toggle'; toggle.textContent='🚇 Tunnel: off';
     toggle.title='Tunnel mode shows one stage at a time'; toggle.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer';
-    toggle.addEventListener('click',function(){ tunnel=!tunnel; toggle.textContent='🚇 Tunnel: '+(tunnel?'on':'off'); toggle.style.background=tunnel?'rgba(37,99,235,.25)':'transparent'; go(cur); });
+    toggle.addEventListener('click',function(){ tunnel=!tunnel; toggle.textContent='🚇 Tunnel: '+(tunnel?'on':'off'); toggle.style.background=tunnel?'rgba(32,64,52,.25)':'transparent'; go(cur); });
     var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:7px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer';
     back.addEventListener('click',function(){ go(cur-1); });
-    var next=document.createElement('button'); next.type='button'; next.id='mls-tnl-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer';
+    var next=document.createElement('button'); next.type='button'; next.id='mls-tnl-next'; next.style.cssText='padding:7px 14px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;font:800 12px system-ui;cursor:pointer';
     next.addEventListener('click',function(){ if(cur<3) go(cur+1); else { tunnel=false; document.getElementById('mls-tnl-toggle').textContent='🚇 Tunnel: off'; go(3); } });
     ctrlRow.appendChild(hint); ctrlRow.appendChild(toggle); ctrlRow.appendChild(back); ctrlRow.appendChild(next);
     bar.appendChild(pillRow); bar.appendChild(ctrlRow);
     (container.parentNode||container).insertBefore(bar, container.nextSibling);
-    if(!document.getElementById('mls-tnl-css')){ var st=document.createElement('style'); st.id='mls-tnl-css'; st.textContent='.mls-tnl-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important}'; document.head.appendChild(st); }
+    if(!document.getElementById('mls-tnl-css')){ var st=document.createElement('style'); st.id='mls-tnl-css'; st.textContent='.mls-tnl-spot{outline:3px solid #2E6A4B!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(32,64,52,.12)!important}'; document.head.appendChild(st); }
     go(0);
     return true;
   }
@@ -31099,7 +31100,7 @@
     if(ps.__mlsPick) return true; ps.__mlsPick=1;
     var host=ps.parentElement; if(getComputedStyle(host).position==='static') host.style.position='relative';
     var dd=document.createElement('div'); dd.id='mls-pick-dd';
-    dd.style.cssText='position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:2147481000;background:#0f1530;border:1px solid rgba(120,140,220,.35);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);max-height:320px;overflow:auto;display:none;color:#e8ecff;font:13px system-ui,-apple-system,"Segoe UI",sans-serif';
+    dd.style.cssText='position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:2147481000;background:#1E2B24;border:1px solid rgba(143,216,190,.35);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);max-height:320px;overflow:auto;display:none;color:#EAF1EC;font:13px system-ui,-apple-system,"Segoe UI",sans-serif';
     host.appendChild(dd);
     function hide(){ dd.style.display='none'; }
     function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -31109,8 +31110,8 @@
       rows.sort(function(a,b){ return (b.last||'').localeCompare(a.last||''); });
       rows=rows.slice(0,14);
       if(!rows.length){ dd.innerHTML='<div style="padding:12px 14px;opacity:.6">No pulled patient matches — the app will search normally.</div>'; dd.style.display='block'; return; }
-      dd.innerHTML='<div style="padding:7px 14px;font-size:11px;opacity:.55;border-bottom:1px solid rgba(120,140,220,.15)">'+list.length+' pulled patients · pick one</div>'+rows.map(function(p,i){
-        return '<div class="mls-pick-row" data-i="'+i+'" style="padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(120,140,220,.08)">'
+      dd.innerHTML='<div style="padding:7px 14px;font-size:11px;opacity:.55;border-bottom:1px solid rgba(143,216,190,.15)">'+list.length+' pulled patients · pick one</div>'+rows.map(function(p,i){
+        return '<div class="mls-pick-row" data-i="'+i+'" style="padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(143,216,190,.08)">'
           +'<div><div style="font-weight:700">'+esc(p.name)+'</div><div style="font-size:11px;opacity:.6">'+(p.dob?('DOB '+esc(p.dob)):'DOB —')+(p.reason?(' · '+esc(p.reason)):'')+'</div></div>'
           +'<div style="font-size:11px;opacity:.55;text-align:right">'+(p.last||'')+'<br>'+p.visits+' visit'+(p.visits>1?'s':'')+'</div></div>';
       }).join('');
@@ -31184,11 +31185,11 @@
     var hint=document.createElement('span'); hint.id='mls-wiz-hint'; hint.style.cssText='font:600 13px system-ui,-apple-system,"Segoe UI",sans-serif;opacity:.92;flex:1;min-width:210px';
     var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:8px 12px;border-radius:10px;border:1px solid rgba(96,120,224,.45);background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer';
     back.addEventListener('click', function(){ go(cur-1); });
-    var next=document.createElement('button'); next.id='mls-wiz-next'; next.type='button'; next.style.cssText='padding:8px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:800 12px system-ui;cursor:pointer';
+    var next=document.createElement('button'); next.id='mls-wiz-next'; next.type='button'; next.style.cssText='padding:8px 14px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;font:800 12px system-ui;cursor:pointer';
     next.addEventListener('click', function(){ if(cur<STEPS.length-1) go(cur+1); else spotlight(STEPS[3].find()); });
     bar.appendChild(hint); bar.appendChild(back); bar.appendChild(next);
     (container.parentNode||container).insertBefore(bar, container.nextSibling);
-    if(!document.getElementById('mls-wiz-css')){ var st=document.createElement('style'); st.id='mls-wiz-css'; st.textContent='.mls-wiz-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important;transition:outline .2s,box-shadow .2s}'; document.head.appendChild(st); }
+    if(!document.getElementById('mls-wiz-css')){ var st=document.createElement('style'); st.id='mls-wiz-css'; st.textContent='.mls-wiz-spot{outline:3px solid #2E6A4B!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(32,64,52,.12)!important;transition:outline .2s,box-shadow .2s}'; document.head.appendChild(st); }
     go(0);
     return true;
   }
@@ -31248,12 +31249,12 @@
     var hint=document.createElement('span'); hint.id='mls-wiz-hint'; hint.style.cssText='font:500 13px system-ui,-apple-system,"Segoe UI",sans-serif;opacity:.9;flex:1;min-width:200px';
     var back=document.createElement('button'); back.type='button'; back.textContent='← Back'; back.style.cssText='padding:8px 12px;border-radius:10px;border:1px solid rgba(120,120,180,.4);background:transparent;color:inherit;font:600 12px system-ui;cursor:pointer';
     back.addEventListener('click', function(){ go(cur-1); });
-    var next=document.createElement('button'); next.id='mls-wiz-next'; next.type='button'; next.style.cssText='padding:8px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font:700 12px system-ui;cursor:pointer';
+    var next=document.createElement('button'); next.id='mls-wiz-next'; next.type='button'; next.style.cssText='padding:8px 14px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;font:700 12px system-ui;cursor:pointer';
     next.addEventListener('click', function(){ if(cur<STEPS.length-1) go(cur+1); else { var t=STEPS[3].find(); spotlight(t); } });
     bar.appendChild(hint); bar.appendChild(back); bar.appendChild(next);
     row.parentNode.insertBefore(bar, row.nextSibling);
     // spotlight CSS
-    if(!document.getElementById('mls-wiz-css')){ var st=document.createElement('style'); st.id='mls-wiz-css'; st.textContent='.mls-wiz-spot{outline:3px solid #2563eb!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(37,99,235,.12)!important;transition:outline .2s,box-shadow .2s}'; document.head.appendChild(st); }
+    if(!document.getElementById('mls-wiz-css')){ var st=document.createElement('style'); st.id='mls-wiz-css'; st.textContent='.mls-wiz-spot{outline:3px solid #2E6A4B!important;outline-offset:3px;border-radius:14px;box-shadow:0 0 0 6px rgba(32,64,52,.12)!important;transition:outline .2s,box-shadow .2s}'; document.head.appendChild(st); }
     go(0);
     return true;
   }
@@ -31870,17 +31871,17 @@
     if(!months.length){
       h+='<div style="padding:22px;text-align:center;color:#5b6b7c">No provider-linked appointment data yet.<br>Pull today’s / past months’ patients from Athena, then reopen this.</div>';
     } else {
-      h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#15528f"><th style="padding:6px 8px;border-bottom:2px solid #e4ebf3">Month</th>';
-      provs.forEach(function(p){ h+='<th style="padding:6px 8px;border-bottom:2px solid #e4ebf3" colspan="2">'+esc(p)+'</th>'; });
-      h+='<th style="padding:6px 8px;border-bottom:2px solid #e4ebf3" colspan="2">Combined</th></tr>';
+      h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#15528f"><th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Month</th>';
+      provs.forEach(function(p){ h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">'+esc(p)+'</th>'; });
+      h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">Combined</th></tr>';
       h+='<tr style="text-align:left;color:#5b6b7c;font-size:11px"><th></th>';
       provs.forEach(function(){ h+='<th style="padding:2px 8px">Days</th><th style="padding:2px 8px">Patients</th>'; });
       h+='<th style="padding:2px 8px">Days</th><th style="padding:2px 8px">Patients</th></tr></thead><tbody>';
       months.forEach(function(mo){
-        h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #eef2f7;font-weight:700">'+esc(monthName(mo))+'</td>';
-        provs.forEach(function(p){ var d=c.months[mo][p]; h+='<td style="padding:6px 8px;border-bottom:1px solid #eef2f7">'+(d?Object.keys(d.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #eef2f7">'+(d?Object.keys(d.pats).length:0)+'</td>'; });
+        h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+esc(monthName(mo))+'</td>';
+        provs.forEach(function(p){ var d=c.months[mo][p]; h+='<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">'+(d?Object.keys(d.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">'+(d?Object.keys(d.pats).length:0)+'</td>'; });
         var all=c.months[mo].__all;
-        h+='<td style="padding:6px 8px;border-bottom:1px solid #eef2f7;font-weight:700">'+(all?Object.keys(all.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #eef2f7;font-weight:700">'+(all?Object.keys(all.pats).length:0)+'</td></tr>';
+        h+='<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+(all?Object.keys(all.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+(all?Object.keys(all.pats).length:0)+'</td></tr>';
       });
       h+='</tbody></table>';
     }
@@ -31900,7 +31901,7 @@
       var card = (model && model.cloneNode) ? model.cloneNode(false) : document.createElement('div');
       if(!card.className) card.className='card';
       card.id='mlsDWCard';
-      card.innerHTML='<div style="font-weight:800;color:#15528f;font-size:14px">📊 Days worked/patient volume</div><div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days worked &amp; patients seen per provider, by month — separately &amp; combined.</div><button id="mlsDWOpen" type="button" style="border:none;background:#1f7ae0;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
+      card.innerHTML='<div style="font-weight:800;color:#15528f;font-size:14px">📊 Days worked/patient volume</div><div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days worked &amp; patients seen per provider, by month — separately &amp; combined.</div><button id="mlsDWOpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
       card.querySelector('#mlsDWOpen').addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); openModal(); });
       grid.appendChild(card);
     }catch(e){}
@@ -32135,10 +32136,10 @@
     box.innerHTML=''
       +'<div style="font-weight:800;font-size:17px;color:#a12626;margin-bottom:6px">🗑 Delete all templates?</div>'
       +'<div style="font-size:13.5px;color:#5b6b7c;margin-bottom:14px">This permanently removes <b>'+(n==null?'all':n)+'</b> template'+(n===1?'':'s')+'. This cannot be undone. Type <b>DELETE</b> to confirm.</div>'
-      +'<input id="mlsDelInput" type="text" placeholder="Type DELETE" autocomplete="off" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:15px;box-sizing:border-box;letter-spacing:1px" />'
+      +'<input id="mlsDelInput" type="text" placeholder="Type DELETE" autocomplete="off" style="width:100%;padding:11px 12px;border:1px solid #E7E5DD;border-radius:10px;font-size:15px;box-sizing:border-box;letter-spacing:1px" />'
       +'<div id="mlsDelMsg" style="font-size:13px;margin-top:12px;display:none;color:#0f6b49"></div>'
       +'<div style="display:flex;gap:8px;margin-top:18px">'
-      +'  <button id="mlsDelCancel" type="button" style="flex:1;padding:11px;border:1px solid #e4ebf3;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
+      +'  <button id="mlsDelCancel" type="button" style="flex:1;padding:11px;border:1px solid #E7E5DD;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
       +'  <button id="mlsDelGo" type="button" disabled style="flex:1;padding:11px;border:none;background:#d9534f;color:#fff;border-radius:10px;font-weight:700;cursor:pointer;opacity:.5">Delete all</button>'
       +'</div>';
     back.appendChild(box); document.body.appendChild(back);
@@ -32259,7 +32260,7 @@
         b.textContent='🔍 find a doctor';
         b.title='Search all doctors in the practice';
         b.setAttribute('role','button');
-        b.style.cssText='color:#1f7ae0;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap';
+        b.style.cssText='color:#2E6A4B;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap';
         b.addEventListener('click',function(e){
           e.preventDefault(); e.stopPropagation();
           var f=document.getElementById('mlsFindDocBtn');
@@ -32317,11 +32318,11 @@
       +'<div style="font-weight:800;font-size:17px;color:#15528f;margin-bottom:4px">📧 Send portal login</div>'
       +'<div style="font-size:13.5px;color:#5b6b7c;margin-bottom:14px">'+esc(nm)+' will get a secure email with a one-time link to view their records and chat with them.</div>'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin-bottom:5px">Patient email</label>'
-      +'<input id="mlsPiEmail" type="email" value="'+esc(email)+'" placeholder="patient@email.com" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:15px;box-sizing:border-box;color:#0d2338" />'
+      +'<input id="mlsPiEmail" type="email" value="'+esc(email)+'" placeholder="patient@email.com" style="width:100%;padding:11px 12px;border:1px solid #E7E5DD;border-radius:10px;font-size:15px;box-sizing:border-box;color:#0d2338" />'
       +'<div id="mlsPiMsg" style="font-size:13px;margin-top:12px;display:none"></div>'
       +'<div style="display:flex;gap:8px;margin-top:18px">'
-      +'  <button id="mlsPiCancel" type="button" style="flex:1;padding:11px;border:1px solid #e4ebf3;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
-      +'  <button id="mlsPiSend" type="button" style="flex:2;padding:11px;border:none;background:#1f7ae0;color:#fff;border-radius:10px;font-weight:700;cursor:pointer">Send login</button>'
+      +'  <button id="mlsPiCancel" type="button" style="flex:1;padding:11px;border:1px solid #E7E5DD;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
+      +'  <button id="mlsPiSend" type="button" style="flex:2;padding:11px;border:none;background:#2E6A4B;color:#fff;border-radius:10px;font-weight:700;cursor:pointer">Send login</button>'
       +'</div>';
     back.appendChild(box); document.body.appendChild(back);
     var msg=box.querySelector('#mlsPiMsg');
@@ -32415,10 +32416,10 @@
 })();
 
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_navfeat_keep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_navfeat_keep.js?v=20260626nfk1';s.setAttribute('data-mls-asset','feat_mls_navfeat_keep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item37: keep Legal requests/Team in nav unless actually toggled off in Settings (additive, reversible: window.__mlsNavFeatKeep.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_sched_datesync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_sched_datesync.js?v=20260626sds1';s.setAttribute('data-mls-asset','feat_mls_sched_datesync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item38: schedule-bar date sync + viewed-date indicator (additive, reversible: window.__mlsSchedDateSync.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_realtime.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_realtime.js?v=20260626unr1';s.setAttribute('data-mls-asset','feat_mls_upnow_realtime.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item39: UP NOW real-time honesty / no-more-patients-today banner (additive, reversible: window.__mlsUpNowRealtime.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_caption_entityfix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_caption_entityfix.js?v=20260626cef1';s.setAttribute('data-mls-asset','feat_mls_caption_entityfix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item40: fix double-escaped "today's schedule" caption entity (additive, reversible: window.__mlsCaptionEntityFix.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_navfeat_keep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_navfeat_keep.js?v=20260626nfk1c1';s.setAttribute('data-mls-asset','feat_mls_navfeat_keep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item37: keep Legal requests/Team in nav unless actually toggled off in Settings (additive, reversible: window.__mlsNavFeatKeep.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_sched_datesync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_sched_datesync.js?v=20260626sds1c1';s.setAttribute('data-mls-asset','feat_mls_sched_datesync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item38: schedule-bar date sync + viewed-date indicator (additive, reversible: window.__mlsSchedDateSync.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_realtime.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_realtime.js?v=20260626unr1c1';s.setAttribute('data-mls-asset','feat_mls_upnow_realtime.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item39: UP NOW real-time honesty / no-more-patients-today banner (additive, reversible: window.__mlsUpNowRealtime.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_caption_entityfix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_caption_entityfix.js?v=20260626cef1c1';s.setAttribute('data-mls-asset','feat_mls_caption_entityfix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item40: fix double-escaped "today's schedule" caption entity (additive, reversible: window.__mlsCaptionEntityFix.revert()) */
 /* ============================================================
    MLS-CONNECT — connectedness feature bundle (external)
    Loaded by ScribeFlow via a cache-busted <script> loader.
@@ -32573,16 +32574,16 @@
     s.textContent=
       '#'+OV+'{position:fixed;inset:0;z-index:99999;background:rgba(15,28,46,.38);display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 16px;backdrop-filter:saturate(120%) blur(2px);}'
       +'#'+OV+' .mlsck-panel{width:100%;max-width:560px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);overflow:hidden;display:flex;flex-direction:column;max-height:72vh;}'
-      +'#mlsCmdkInput{border:0;outline:0;padding:16px 18px;font-size:16px;color:var(--ink,#15293f);background:transparent;border-bottom:1px solid var(--line,#e6e9ef);font-family:inherit;}'
+      +'#mlsCmdkInput{border:0;outline:0;padding:16px 18px;font-size:16px;color:var(--ink,#1A211C);background:transparent;border-bottom:1px solid var(--line,#e6e9ef);font-family:inherit;}'
       +'#mlsCmdkInput::placeholder{color:var(--muted,#92a0b3);}'
       +'.mlsck-list{overflow:auto;padding:6px;}'
       +'.mlsck-group{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted,#7c8aa0);padding:10px 12px 4px;}'
       +'.mlsck-item{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;cursor:pointer;}'
-      +'.mlsck-item.sel{background:var(--brand,#2563c9);}'
+      +'.mlsck-item.sel{background:var(--brand,#2E6A4B);}'
       +'.mlsck-item.sel .mlsck-title,.mlsck-item.sel .mlsck-sub,.mlsck-item.sel .mlsck-type{color:#fff;}'
       +'.mlsck-ic{flex:0 0 auto;width:22px;text-align:center;font-size:15px;}'
       +'.mlsck-txt{display:flex;flex-direction:column;min-width:0;flex:1 1 auto;}'
-      +'.mlsck-title{font-size:14px;font-weight:600;color:var(--ink,#15293f);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+      +'.mlsck-title{font-size:14px;font-weight:600;color:var(--ink,#1A211C);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
       +'.mlsck-sub{font-size:12px;color:var(--muted,#7c8aa0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
       +'.mlsck-type{flex:0 0 auto;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted,#aab4c2);border:1px solid var(--line,#e6e9ef);border-radius:6px;padding:2px 6px;}'
       +'.mlsck-item.sel .mlsck-type{border-color:rgba(255,255,255,.5);}'
@@ -32732,21 +32733,21 @@
       '#'+OV+'{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:8vh 16px 16px;backdrop-filter:blur(2px);}'
       +'#'+OV+' .mlstl-panel{width:100%;max-width:580px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
       +'.mlstl-head{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line,#e6e9ef);}'
-      +'.mlstl-h-title{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
+      +'.mlstl-h-title{font-weight:700;font-size:15px;color:var(--ink,#1A211C);}'
       +'.mlstl-close{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);line-height:1;padding:4px 6px;border-radius:8px;}'
-      +'.mlstl-close:hover{background:var(--surface,#f1f4f9);color:var(--ink,#15293f);}'
+      +'.mlstl-close:hover{background:var(--surface,#f1f4f9);color:var(--ink,#1A211C);}'
       +'.mlstl-chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line,#e6e9ef);}'
       +'.mlstl-chip{font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--muted,#5b6b7c);border-radius:20px;padding:4px 12px;}'
-      +'.mlstl-chip.on{background:var(--brand,#2563c9);border-color:var(--brand,#2563c9);color:#fff;}'
+      +'.mlstl-chip.on{background:var(--brand,#2E6A4B);border-color:var(--brand,#2E6A4B);color:#fff;}'
       +'.mlstl-body{overflow:auto;padding:6px 10px 12px;}'
       +'.mlstl-ev{display:flex;gap:0;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:0;font:inherit;}'
       +'.mlstl-rail{position:relative;flex:0 0 38px;display:flex;justify-content:center;}'
       +'.mlstl-rail:before{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--line,#e6e9ef);}'
       +'.mlstl-dot{position:relative;z-index:1;width:26px;height:26px;border-radius:50%;background:var(--surface,#f1f4f9);border:1px solid var(--line,#e6e9ef);display:flex;align-items:center;justify-content:center;font-size:13px;margin-top:12px;}'
       +'.mlstl-main{flex:1 1 auto;min-width:0;padding:12px 8px 12px 10px;border-radius:10px;}'
-      +'.mlstl-ev:hover .mlstl-main{background:var(--surface,#f5f8fc);}'
+      +'.mlstl-ev:hover .mlstl-main{background:var(--surface,#FCFBF8);}'
       +'.mlstl-row1{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}'
-      +'.mlstl-title{font-size:14px;font-weight:600;color:var(--ink,#15293f);}'
+      +'.mlstl-title{font-size:14px;font-weight:600;color:var(--ink,#1A211C);}'
       +'.mlstl-date{flex:0 0 auto;font-size:12px;color:var(--muted,#7c8aa0);}'
       +'.mlstl-sub{display:block;font-size:12.5px;color:var(--muted,#5b6b7c);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
       +'.mlstl-tag{display:inline-block;margin-top:6px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted,#8b97a8);border:1px solid var(--line,#e6e9ef);border-radius:6px;padding:1px 6px;}'
@@ -32779,7 +32780,7 @@
   function apptById(id){ return safe(function(){ var arr=Array.isArray(window._calAppts)?window._calAppts:[]; return arr.filter(function(a){return String(a.id)===String(id);})[0]||null; }, null); }
   function findPt(extId){ if(extId==null) return null; return safe(function(){ if(window.findPatient){ var p=window.findPatient(extId); if(p) return p; } var ps=(window.getPatients&&window.getPatients())||[]; return ps.filter(function(p){return String(p.id)===String(extId);})[0]||null; }, null); }
   function mkBtn(t){ var b=document.createElement('button'); b.type='button'; b.textContent=t; b.setAttribute('data-mls-launch','1');
-    b.style.cssText='background:#eef3fb;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;'; return b; }
+    b.style.cssText='background:#EAF1EE;color:#1456a8;border:1px solid #cfe0f5;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;'; return b; }
   function enhancePeek(peek){
     if(!peek || peek.__mlsEnhanced) return;
     // derive appt id from the existing "Start visit" handler (calStartVisit(<id>)) — read only
@@ -32931,7 +32932,7 @@
     s.textContent=
       '.mls-sync{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border-radius:20px;border:1px solid var(--line,#e6e9ef);background:var(--surface,#f6f8fb);color:var(--muted,#5b6b7c);white-space:nowrap;}'
       +'.mls-sync-dot{width:7px;height:7px;border-radius:50%;background:#9aa7b4;flex:0 0 auto;}'
-      +'.mls-sync-ok .mls-sync-dot{background:#16a34a;} .mls-sync-ok{color:#127a55;border-color:#bfe6cf;background:#f0fbf4;}'
+      +'.mls-sync-ok .mls-sync-dot{background:#2E6A4B;} .mls-sync-ok{color:#127a55;border-color:#bfe6cf;background:#f0fbf4;}'
       +'.mls-sync-err .mls-sync-dot{background:#dc2626;} .mls-sync-err{color:#b91c1c;border-color:#f3c9c9;background:#fdf2f2;}'
       +'#mlsSyncPop{position:absolute;z-index:100000;width:320px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:12px;box-shadow:0 16px 40px rgba(15,28,46,.22);font-size:13px;overflow:hidden;}'
       +'#mlsSyncPop .mls-sp-head{display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid var(--line,#e6e9ef);}'
@@ -32942,7 +32943,7 @@
       +'#mlsSyncPop .mls-sp-main{display:flex;flex-direction:column;min-width:0;}'
       +'#mlsSyncPop .mls-sp-t{font-size:11px;color:var(--muted,#9aa7b4);}'
       +'#mlsSyncPop .mls-sp-empty{padding:18px 13px;text-align:center;color:var(--muted,#7c8aa0);}'
-      +'#mlsSyncPop .mls-sp-note{padding:9px 13px;font-size:10.5px;color:var(--muted,#8b97a8);border-top:1px solid var(--line,#e6e9ef);background:var(--surface,#f8fafc);}';
+      +'#mlsSyncPop .mls-sp-note{padding:9px 13px;font-size:10.5px;color:var(--muted,#8b97a8);border-top:1px solid var(--line,#e6e9ef);background:var(--surface,#FCFBF8);}';
     (document.head||document.documentElement).appendChild(s);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
@@ -33059,21 +33060,21 @@
       '#'+OV+'{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:8vh 16px 16px;backdrop-filter:blur(2px);}'
       +'#'+OV+' .mlsact-panel{width:100%;max-width:560px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
       +'.mlsact-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;border-bottom:1px solid var(--line,#e6e9ef);}'
-      +'.mlsact-h{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
+      +'.mlsact-h{font-weight:700;font-size:15px;color:var(--ink,#1A211C);}'
       +'.mlsact-x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);padding:4px 6px;border-radius:8px;}'
       +'.mlsact-x:hover{background:var(--surface,#f1f4f9);}'
       +'.mlsact-chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line,#e6e9ef);}'
       +'.mlsact-chip{font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--muted,#5b6b7c);border-radius:20px;padding:4px 11px;}'
-      +'.mlsact-chip.on{background:var(--brand,#2563c9);border-color:var(--brand,#2563c9);color:#fff;}'
+      +'.mlsact-chip.on{background:var(--brand,#2E6A4B);border-color:var(--brand,#2E6A4B);color:#fff;}'
       +'.mlsact-body{overflow:auto;padding:6px 8px 12px;}'
       +'.mlsact-row{display:flex;gap:11px;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:10px 10px;border-radius:10px;font:inherit;align-items:flex-start;}'
-      +'.mlsact-row:hover{background:var(--surface,#f5f8fc);}'
+      +'.mlsact-row:hover{background:var(--surface,#FCFBF8);}'
       +'.mlsact-row.gated{cursor:default;opacity:.72;}'
       +'.mlsact-row.gated:hover{background:transparent;}'
       +'.mlsact-ic{flex:0 0 auto;width:24px;text-align:center;font-size:15px;margin-top:1px;}'
       +'.mlsact-main{flex:1 1 auto;min-width:0;}'
       +'.mlsact-r1{display:flex;justify-content:space-between;gap:10px;align-items:baseline;}'
-      +'.mlsact-t{font-size:14px;font-weight:600;color:var(--ink,#15293f);}'
+      +'.mlsact-t{font-size:14px;font-weight:600;color:var(--ink,#1A211C);}'
       +'.mlsact-d{flex:0 0 auto;font-size:12px;color:var(--muted,#9aa7b4);}'
       +'.mlsact-s{display:block;font-size:12.5px;color:var(--muted,#5b6b7c);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
       +'.mlsact-empty{padding:30px;text-align:center;color:var(--muted,#7c8aa0);}'
@@ -33140,7 +33141,7 @@
   }
 
   function copy(txt){ safe(function(){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt); } else { var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } toastMini('Copied'); }); }
-  function toastMini(msg){ safe(function(){ if(window.toast){ window.toast(msg,'ok'); return; } var d=document.createElement('div'); d.textContent=msg; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1400); }); }
+  function toastMini(msg){ safe(function(){ if(window.toast){ window.toast(msg,'ok'); return; } var d=document.createElement('div'); d.textContent=msg; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A211C;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1400); }); }
   function scheduleFollowup(){ safe(function(){ var id=activeId(); close(); if(window.calScheduleForPatient&&id){ window.calScheduleForPatient(id); } else if(window.showView){ window.showView('calendar'); } }); }
 
   var SECTIONS=[
@@ -33208,7 +33209,7 @@
       '#'+OV+'{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px;backdrop-filter:blur(2px);}'
       +'#'+OV+' .mlsrec-panel{width:100%;max-width:560px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
       +'.mlsrec-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px 8px;}'
-      +'.mlsrec-h{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
+      +'.mlsrec-h{font-weight:700;font-size:15px;color:var(--ink,#1A211C);}'
       +'.mlsrec-x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);padding:4px 6px;border-radius:8px;}'
       +'.mlsrec-hint{padding:0 18px 12px;color:var(--muted,#7c8aa0);font-size:12.5px;border-bottom:1px solid var(--line,#e6e9ef);}'
       +'.mlsrec-body{overflow:auto;padding:12px 16px 16px;}'
@@ -33216,11 +33217,11 @@
       +'.mlsrec-sectitle{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#7c8aa0);margin-bottom:7px;}'
       +'.mlsrec-chips{display:flex;flex-direction:column;gap:7px;}'
       +'.mlsrec-chip{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line,#e6e9ef);border-radius:10px;padding:8px 8px 8px 12px;background:var(--surface,#fafcff);}'
-      +'.mlsrec-val{font-size:13.5px;color:var(--ink,#15293f);min-width:0;overflow:hidden;text-overflow:ellipsis;}'
-      +'.mlsrec-act{flex:0 0 auto;font:inherit;font-size:12px;font-weight:700;cursor:pointer;border:1px solid var(--brand,#2563c9);color:#fff;background:var(--brand,#2563c9);border-radius:8px;padding:5px 12px;}'
+      +'.mlsrec-val{font-size:13.5px;color:var(--ink,#1A211C);min-width:0;overflow:hidden;text-overflow:ellipsis;}'
+      +'.mlsrec-act{flex:0 0 auto;font:inherit;font-size:12px;font-weight:700;cursor:pointer;border:1px solid var(--brand,#2E6A4B);color:#fff;background:var(--brand,#2E6A4B);border-radius:8px;padding:5px 12px;}'
       +'.mlsrec-act:hover{filter:brightness(1.07);}'
       +'.mlsrec-empty{padding:26px 12px;text-align:center;color:var(--muted,#7c8aa0);font-size:14px;}'
-      +'.mlsrec-gen{margin-top:12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--brand,#2563c9);border-radius:9px;padding:8px 14px;}'
+      +'.mlsrec-gen{margin-top:12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--brand,#2E6A4B);border-radius:9px;padding:8px 14px;}'
       +'.mlsrec-foot{margin-top:6px;text-align:center;}'
       +'@media (max-width:620px){#'+OV+'{padding:4vh 8px 8px;}#'+OV+' .mlsrec-panel{max-height:90vh;}}';
     (document.head||document.documentElement).appendChild(s);
@@ -33320,15 +33321,15 @@
     if(document.getElementById('mlsCascadeCss')) return;
     var s=document.createElement('style'); s.id='mlsCascadeCss';
     s.textContent=
-      '#mlsCascade{position:fixed;right:18px;bottom:18px;z-index:100000;width:300px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-left:4px solid var(--brand,#2563c9);border-radius:13px;box-shadow:0 16px 44px rgba(15,28,46,.24);padding:13px 14px;transition:opacity .8s;font-size:13px;}'
+      '#mlsCascade{position:fixed;right:18px;bottom:18px;z-index:100000;width:300px;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-left:4px solid var(--brand,#2E6A4B);border-radius:13px;box-shadow:0 16px 44px rgba(15,28,46,.24);padding:13px 14px;transition:opacity .8s;font-size:13px;}'
       +'#mlsCascade.fade{opacity:0;}'
       +'#mlsCascade .mlsc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}'
-      +'#mlsCascade .mlsc-title{font-weight:700;color:var(--ink,#15293f);font-size:13.5px;}'
+      +'#mlsCascade .mlsc-title{font-weight:700;color:var(--ink,#1A211C);font-size:13.5px;}'
       +'#mlsCascade .mlsc-x{border:0;background:transparent;cursor:pointer;color:var(--muted,#9aa7b4);font-size:14px;}'
       +'#mlsCascade .mlsc-sub{color:var(--muted,#5b6b7c);font-size:12px;margin:4px 0 10px;}'
       +'#mlsCascade .mlsc-acts{display:flex;flex-direction:column;gap:6px;}'
-      +'#mlsCascade .mlsc-acts button{font:inherit;font-size:12.5px;font-weight:600;text-align:left;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--ink,#15293f);border-radius:9px;padding:8px 11px;}'
-      +'#mlsCascade .mlsc-acts button:hover{border-color:var(--brand,#2563c9);color:var(--brand,#2563c9);}'
+      +'#mlsCascade .mlsc-acts button{font:inherit;font-size:12.5px;font-weight:600;text-align:left;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--ink,#1A211C);border-radius:9px;padding:8px 11px;}'
+      +'#mlsCascade .mlsc-acts button:hover{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);}'
       +'@media (max-width:620px){#mlsCascade{right:8px;left:8px;width:auto;bottom:8px;}}';
     (document.head||document.documentElement).appendChild(s);
   }
@@ -33632,7 +33633,7 @@
     });
   }
   function close(){ var o=document.getElementById('mlsSupOverlay'); if(o) o.remove(); }
-  function toast(m,kind){ safe(function(){ if(window.toast){ window.toast(m, kind||'ok'); return; } var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1600); }); }
+  function toast(m,kind){ safe(function(){ if(window.toast){ window.toast(m, kind||'ok'); return; } var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A211C;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1600); }); }
   var onCosign=null;
 
   function refreshAll(){
@@ -33720,8 +33721,8 @@
       '#mlsSupOverlay{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.4);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px;backdrop-filter:blur(2px);}'
       +'#mlsSupOverlay .mls-sup-panel{width:100%;max-width:580px;max-height:80vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
       +'.mls-sup-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;}'
-      +'.mls-sup-h{font-weight:700;font-size:15px;color:var(--ink,#15293f);}'
-      +'.mls-sup-count{display:inline-block;background:var(--brand,#2563c9);color:#fff;border-radius:20px;font-size:12px;padding:1px 9px;margin-left:6px;}'
+      +'.mls-sup-h{font-weight:700;font-size:15px;color:var(--ink,#1A211C);}'
+      +'.mls-sup-count{display:inline-block;background:var(--brand,#2E6A4B);color:#fff;border-radius:20px;font-size:12px;padding:1px 9px;margin-left:6px;}'
       +'.mls-sup-x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--muted,#7c8aa0);}'
       +'.mls-sup-note{padding:0 18px 12px;color:var(--muted,#7c8aa0);font-size:12px;border-bottom:1px solid var(--line,#e6e9ef);}'
       +'.mls-sup-body{overflow:auto;padding:6px 12px 14px;}'
@@ -33729,11 +33730,11 @@
       +'.mls-sup-secn{display:inline-block;background:var(--line,#eef0f3);color:var(--muted,#5b6b7c);border-radius:20px;font-size:11px;padding:0 7px;margin-left:4px;}'
       +'.mls-sup-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:11px 8px;border-bottom:1px solid var(--line,#f0f2f6);}'
       +'.mls-sup-main{min-width:0;}'
-      +'.mls-sup-t{font-size:13.5px;font-weight:600;color:var(--ink,#15293f);}'
+      +'.mls-sup-t{font-size:13.5px;font-weight:600;color:var(--ink,#1A211C);}'
       +'.mls-sup-s{font-size:12px;color:var(--muted,#9aa7b4);margin-top:2px;}'
       +'.mls-sup-acts{display:flex;gap:6px;flex:0 0 auto;align-items:center;}'
-      +'.mls-sup-act{font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#15293f);border-radius:8px;padding:5px 10px;}'
-      +'.mls-sup-act.primary{background:var(--brand,#2563c9);color:#fff;border-color:var(--brand,#2563c9);}'
+      +'.mls-sup-act{font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--ink,#1A211C);border-radius:8px;padding:5px 10px;}'
+      +'.mls-sup-act.primary{background:var(--brand,#2E6A4B);color:#fff;border-color:var(--brand,#2E6A4B);}'
       +'.mls-sup-wait{font-size:11.5px;color:var(--muted,#7c8aa0);font-style:italic;}'
       +'.mls-sup-badge{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:middle;white-space:nowrap;}'
       +'.mls-sup-empty{padding:30px;text-align:center;color:var(--muted,#7c8aa0);}'
@@ -33852,8 +33853,8 @@
   function injectCss(){
     if(document.getElementById('mlsMatchCss')) return;
     var s=document.createElement('style'); s.id='mlsMatchCss';
-    s.textContent='#mlsMatchPop{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:100001;max-width:520px;width:calc(100% - 32px);display:flex;gap:10px;align-items:flex-start;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-left:4px solid #2563c9;border-radius:12px;box-shadow:0 16px 44px rgba(15,28,46,.22);padding:13px 14px;font-size:13px;color:var(--ink,#15293f);}'
-      +'#mlsMatchPop.mls-match-ok{border-left-color:#16a34a;} #mlsMatchPop.mls-match-warn{border-left-color:#dc2626;} #mlsMatchPop.mls-match-gate{border-left-color:#b45309;} #mlsMatchPop.mls-match-wait{border-left-color:#2563c9;}'
+    s.textContent='#mlsMatchPop{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:100001;max-width:520px;width:calc(100% - 32px);display:flex;gap:10px;align-items:flex-start;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-left:4px solid #2E6A4B;border-radius:12px;box-shadow:0 16px 44px rgba(15,28,46,.22);padding:13px 14px;font-size:13px;color:var(--ink,#1A211C);}'
+      +'#mlsMatchPop.mls-match-ok{border-left-color:#2E6A4B;} #mlsMatchPop.mls-match-warn{border-left-color:#dc2626;} #mlsMatchPop.mls-match-gate{border-left-color:#b45309;} #mlsMatchPop.mls-match-wait{border-left-color:#2E6A4B;}'
       +'#mlsMatchPop .mls-match-msg{flex:1;line-height:1.4;} #mlsMatchPop .mls-match-x{border:0;background:transparent;cursor:pointer;color:var(--muted,#9aa7b4);font-size:14px;}';
     (document.head||document.documentElement).appendChild(s);
   }
@@ -33883,7 +33884,7 @@
   function isFlagged(id){ return !!getFlags()[id]; }
   function activeId(){ return safe(function(){ return window.getActivePtId&&window.getActivePtId(); }, null); }
   function ptName(id){ return safe(function(){ var p=window.findPatient&&window.findPatient(id); return p?(p.name||''):''; }, ''); }
-  function toast(m){ safe(function(){ if(window.toast){window.toast(m,'ok');return;} var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1600); }); }
+  function toast(m){ safe(function(){ if(window.toast){window.toast(m,'ok');return;} var d=document.createElement('div'); d.textContent=m; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A211C;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1600); }); }
 
   function flagCase(id, type){
     id=id||activeId(); if(!id){ toast('Pick an active patient first'); return; }
@@ -33952,7 +33953,7 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
   function email(){ return safe(function(){ if(window.bkUser&&window.bkUser.email) return window.bkUser.email; return (document.body.innerText.match(/[\w.+-]+@[\w.-]+\.\w+/)||[])[0]||null; }, null); }
   function lsKey(){ var e=email(); return e?('sf_u::'+e+'::mlsCodeSheet'):'sf_u::_local::mlsCodeSheet'; }
-  function toast(msg){ safe(function(){ if(window.toast){ window.toast(msg,'ok'); return; } var d=document.createElement('div'); d.textContent=msg; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#15293f;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1500); }); }
+  function toast(msg){ safe(function(){ if(window.toast){ window.toast(msg,'ok'); return; } var d=document.createElement('div'); d.textContent=msg; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A211C;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1500); }); }
   function copyTxt(txt){ safe(function(){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt); } else { var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } toast('Copied'); }); }
 
   /* ---------- SEED (from the practice charge sheet: spine / pain / PM&R) ---------- */
@@ -34156,35 +34157,35 @@
       '.mlscs-ov{position:fixed;inset:0;z-index:99998;background:rgba(15,28,46,.42);display:flex;align-items:flex-start;justify-content:center;padding:7vh 16px 16px;backdrop-filter:blur(2px);}'
       +'.mlscs-panel{width:100%;max-width:760px;max-height:84vh;background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.28);display:flex;flex-direction:column;overflow:hidden;}'
       +'.mlscs-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px 10px;border-bottom:1px solid var(--line,#e6e9ef);}'
-      +'.mlscs-h{font-weight:700;font-size:15.5px;color:var(--ink,#15293f);display:flex;align-items:center;gap:8px;}'
+      +'.mlscs-h{font-weight:700;font-size:15.5px;color:var(--ink,#1A211C);display:flex;align-items:center;gap:8px;}'
       +'.mlscs-x{border:0;background:transparent;font-size:17px;cursor:pointer;color:var(--muted,#7c8aa0);padding:4px 7px;border-radius:8px;}'
       +'.mlscs-x:hover{background:var(--surface,#f1f4f9);}'
       +'.mlscs-tools{display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line,#e6e9ef);}'
-      +'.mlscs-search{flex:1;min-width:140px;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line,#e6e9ef);border-radius:9px;background:var(--surface,#fafcff);color:var(--ink,#15293f);}'
-      +'.mlscs-btn{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--brand,#2563c9);border-radius:9px;padding:7px 12px;}'
+      +'.mlscs-search{flex:1;min-width:140px;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line,#e6e9ef);border-radius:9px;background:var(--surface,#fafcff);color:var(--ink,#1A211C);}'
+      +'.mlscs-btn{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fff);color:var(--brand,#2E6A4B);border-radius:9px;padding:7px 12px;}'
       +'.mlscs-btn:hover{filter:brightness(.98);background:var(--surface,#f1f4f9);}'
-      +'.mlscs-btn.pri{background:var(--brand,#2563c9);color:#fff;border-color:var(--brand,#2563c9);}'
+      +'.mlscs-btn.pri{background:var(--brand,#2E6A4B);color:#fff;border-color:var(--brand,#2E6A4B);}'
       +'.mlscs-btn.danger{color:#b42318;border-color:#f0c5c0;}'
-      +'.mlscs-toggle{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:12.5px;color:var(--ink,#15293f);}'
+      +'.mlscs-toggle{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:12.5px;color:var(--ink,#1A211C);}'
       +'.mlscs-body{overflow:auto;padding:8px 16px 16px;}'
       +'.mlscs-sec{margin-top:14px;}'
       +'.mlscs-sectitle{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted,#7c8aa0);margin:6px 0 6px;display:flex;align-items:center;gap:8px;}'
       +'.mlscs-row{display:flex;align-items:center;gap:9px;padding:6px 6px;border-radius:9px;}'
-      +'.mlscs-row:hover{background:var(--surface,#f7f9fc);}'
-      +'.mlscs-code{font-weight:700;font-size:13px;color:var(--ink,#15293f);min-width:74px;font-variant-numeric:tabular-nums;}'
+      +'.mlscs-row:hover{background:var(--surface,#FCFBF8);}'
+      +'.mlscs-code{font-weight:700;font-size:13px;color:var(--ink,#1A211C);min-width:74px;font-variant-numeric:tabular-nums;}'
       +'.mlscs-desc{font-size:12.7px;color:var(--muted,#56657a);flex:1;min-width:0;}'
       +'.mlscs-rowact{display:flex;gap:4px;flex:0 0 auto;opacity:.55;}'
       +'.mlscs-row:hover .mlscs-rowact{opacity:1;}'
       +'.mlscs-mini{border:0;background:transparent;cursor:pointer;font-size:12px;color:var(--muted,#7c8aa0);padding:3px 6px;border-radius:7px;}'
-      +'.mlscs-mini:hover{background:var(--line,#e6e9ef);color:var(--ink,#15293f);}'
-      +'.mlscs-chk{width:16px;height:16px;flex:0 0 auto;accent-color:var(--brand,#2563c9);cursor:pointer;}'
+      +'.mlscs-mini:hover{background:var(--line,#e6e9ef);color:var(--ink,#1A211C);}'
+      +'.mlscs-chk{width:16px;height:16px;flex:0 0 auto;accent-color:var(--brand,#2E6A4B);cursor:pointer;}'
       +'.mlscs-foot{display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);}'
-      +'.mlscs-tray{flex:1;min-width:0;font-size:12.5px;color:var(--ink,#15293f);}'
+      +'.mlscs-tray{flex:1;min-width:0;font-size:12.5px;color:var(--ink,#1A211C);}'
       +'.mlscs-empty{padding:24px 12px;text-align:center;color:var(--muted,#7c8aa0);font-size:13.5px;}'
       +'.mlscs-vrow{display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid var(--line,#e6e9ef);border-radius:10px;margin-bottom:7px;}'
       +'.mlscs-vdot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}'
       +'.mlscs-vok .mlscs-vdot{background:#1f9d57;} .mlscs-vunk .mlscs-vdot{background:#d98a00;} .mlscs-vret .mlscs-vdot{background:#d64545;}'
-      +'.mlscs-vcode{font-weight:700;font-size:13px;min-width:72px;color:var(--ink,#15293f);}'
+      +'.mlscs-vcode{font-weight:700;font-size:13px;min-width:72px;color:var(--ink,#1A211C);}'
       +'.mlscs-vnote{font-size:12.3px;color:var(--muted,#56657a);flex:1;min-width:0;}'
       +'.mlscs-badge{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:999px;flex:0 0 auto;}'
       +'.mlscs-vok .mlscs-badge{background:#e7f6ee;color:#1f7a45;} .mlscs-vunk .mlscs-badge{background:#fdf3e0;color:#9a6700;} .mlscs-vret .mlscs-badge{background:#fbe9e9;color:#b42318;}'
@@ -34250,7 +34251,7 @@
     if(!rows.length) return '';
     var html='<div class="mlscs-sec"><div class="mlscs-sectitle">'+esc(title)+' ('+rows.length+')</div>';
     if(grouped){ var gb=groupBy(rows); gb.order.forEach(function(gname){
-      html+='<div class="mlscs-sectitle" style="font-weight:700;text-transform:none;letter-spacing:0;color:var(--ink,#15293f);opacity:.7;margin-top:8px">'+esc(gname)+'</div>';
+      html+='<div class="mlscs-sectitle" style="font-weight:700;text-transform:none;letter-spacing:0;color:var(--ink,#1A211C);opacity:.7;margin-top:8px">'+esc(gname)+'</div>';
       gb.g[gname].forEach(function(r){ html+=mgrRow(kind,r); });
     }); }
     else rows.forEach(function(r){ html+=mgrRow(kind,r); });
@@ -34314,7 +34315,7 @@
       rows=rows.filter(match); if(!rows.length) return '';
       var html='<div class="mlscs-sec"><div class="mlscs-sectitle">'+esc(title)+'</div>';
       function rowHtml(r){ var id=kind+'::'+r.code; return '<label class="mlscs-row"><input type="checkbox" class="mlscs-chk" data-id="'+esc(id)+'" data-kind="'+kind+'" data-code="'+esc(r.code)+'" '+(picked[id]?'checked':'')+'><span class="mlscs-code">'+esc(r.code)+'</span><span class="mlscs-desc">'+esc(r.desc||'')+'</span></label>'; }
-      if(grouped){ var gb=groupBy(rows); gb.order.forEach(function(g){ html+='<div class="mlscs-sectitle" style="font-weight:700;text-transform:none;letter-spacing:0;opacity:.65;color:var(--ink,#15293f);margin-top:6px">'+esc(g)+'</div>'; gb.g[g].forEach(function(r){ html+=rowHtml(r); }); }); }
+      if(grouped){ var gb=groupBy(rows); gb.order.forEach(function(g){ html+='<div class="mlscs-sectitle" style="font-weight:700;text-transform:none;letter-spacing:0;opacity:.65;color:var(--ink,#1A211C);margin-top:6px">'+esc(g)+'</div>'; gb.g[g].forEach(function(r){ html+=rowHtml(r); }); }); }
       else rows.forEach(function(r){ html+=rowHtml(r); });
       return html+'</div>';
     }
@@ -34754,7 +34755,7 @@
         'padding:14px 16px;font-size:14.5px;line-height:1.5;color:var(--text,#1f2937);max-height:60vh;overflow:auto;'+
         'font-family:inherit;-webkit-font-smoothing:antialiased}'+
       '.mlsf-note .mlsf-h{font-weight:800;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;'+
-        'color:var(--accent,#2f5fd0);margin:14px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--line,#e8edf5)}'+
+        'color:var(--accent,#2E6A4B);margin:14px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--line,#e8edf5)}'+
       '.mlsf-note .mlsf-h:first-child{margin-top:0}'+
       '.mlsf-note .mlsf-p{margin:3px 0;white-space:pre-wrap}'+
       '.mlsf-note .mlsf-sub{font-weight:700;color:var(--text,#243042)}'+
@@ -34763,10 +34764,10 @@
       '.mlsf-note ol.mlsf-list{list-style:decimal}'+
       '.mlsf-bar{display:flex;align-items:center;gap:8px;margin:0 0 8px}'+
       '.mlsf-toggle{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--line,#cdd7e6);'+
-        'background:var(--surface,#fff);color:var(--accent,#2f5fd0);border-radius:7px;padding:5px 11px}'+
+        'background:var(--surface,#fff);color:var(--accent,#2E6A4B);border-radius:7px;padding:5px 11px}'+
       '.mlsf-toggle:hover{background:#eef4ff}'+
       '.mlsf-hint{font-size:11.5px;color:var(--muted,#7a8699)}'+
-      '.xbody .mlsf-ih{font-weight:800;color:var(--accent,#2f5fd0)}';
+      '.xbody .mlsf-ih{font-weight:800;color:var(--accent,#2E6A4B)}';
     (document.head||document.documentElement).appendChild(st);
   }
 
@@ -35721,25 +35722,25 @@
     var s=document.createElement('style'); s.id='mlsStudyCss';
     s.textContent=''
       +'#mlsStudyOv{position:fixed;inset:0;z-index:100002;background:rgba(15,28,46,.42);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;}'
-      +'#mlsStudyOv .mls-study-card{background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.3);width:640px;max-width:100%;font-size:13px;color:var(--ink,#15293f);}'
+      +'#mlsStudyOv .mls-study-card{background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.3);width:640px;max-width:100%;font-size:13px;color:var(--ink,#1A211C);}'
       +'#mlsStudyOv .mls-study-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line,#e6e9ef);}'
       +'#mlsStudyOv .mls-study-title{font-weight:700;font-size:15px;}'
       +'#mlsStudyOv .mls-study-x{border:0;background:transparent;cursor:pointer;color:var(--muted,#9aa7b4);font-size:16px;}'
       +'#mlsStudyOv .mls-study-tabs{display:flex;gap:4px;padding:10px 12px 0;}'
       +'#mlsStudyOv .mls-study-tabs button{flex:1;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--muted,#5b6b7c);border-radius:9px 9px 0 0;padding:8px;}'
-      +'#mlsStudyOv .mls-study-tabs button.on{background:var(--card,#fff);color:var(--brand,#2563c9);border-bottom-color:transparent;}'
+      +'#mlsStudyOv .mls-study-tabs button.on{background:var(--card,#fff);color:var(--brand,#2E6A4B);border-bottom-color:transparent;}'
       +'#mlsStudyOv .mls-study-body{padding:14px 16px;max-height:70vh;overflow:auto;}'
       +'#mlsStudyOv .mls-study-help{color:var(--muted,#5b6b7c);font-size:12px;line-height:1.5;margin:0 0 10px;}'
       +'#mlsStudyOv code{background:var(--surface,#f1f5fb);padding:1px 5px;border-radius:5px;font-size:11.5px;}'
-      +'#mlsStudyOv .mls-study-lab{display:block;font-weight:600;font-size:11.5px;margin:8px 0 4px;color:var(--ink,#15293f);}'
-      +'#mlsStudyOv .mls-study-in,#mlsStudyOv .mls-study-ta{width:100%;box-sizing:border-box;font:inherit;border:1px solid var(--line,#e6e9ef);border-radius:9px;padding:8px 10px;background:var(--surface,#fafcff);color:var(--ink,#15293f);}'
+      +'#mlsStudyOv .mls-study-lab{display:block;font-weight:600;font-size:11.5px;margin:8px 0 4px;color:var(--ink,#1A211C);}'
+      +'#mlsStudyOv .mls-study-in,#mlsStudyOv .mls-study-ta{width:100%;box-sizing:border-box;font:inherit;border:1px solid var(--line,#e6e9ef);border-radius:9px;padding:8px 10px;background:var(--surface,#fafcff);color:var(--ink,#1A211C);}'
       +'#mlsStudyOv select.mls-study-in{cursor:pointer;}'
       +'#mlsStudyOv .mls-study-ta{resize:vertical;}'
       +'#mlsStudyOv .mls-study-daterow{display:flex;gap:10px;}'
       +'#mlsStudyOv .mls-study-daterow>div{flex:1;}'
       +'#mlsStudyOv .mls-study-actions{display:flex;gap:8px;margin:10px 0;}'
-      +'#mlsStudyOv .mls-study-btn{font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--brand,#2563c9);background:var(--brand,#2563c9);color:#fff;border-radius:9px;padding:8px 14px;}'
-      +'#mlsStudyOv .mls-study-btn.ghost{background:var(--surface,#fafcff);color:var(--brand,#2563c9);}'
+      +'#mlsStudyOv .mls-study-btn{font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--brand,#2E6A4B);background:var(--brand,#2E6A4B);color:#fff;border-radius:9px;padding:8px 14px;}'
+      +'#mlsStudyOv .mls-study-btn.ghost{background:var(--surface,#fafcff);color:var(--brand,#2E6A4B);}'
       +'#mlsStudyOv .mls-study-btn:disabled{opacity:.5;cursor:not-allowed;}'
       +'#mlsStudyOv .mls-study-results{margin-top:8px;}'
       +'#mlsStudyOv .mls-study-sum{font-weight:600;margin:6px 0;}'
@@ -35749,7 +35750,7 @@
       +'#mlsStudyOv .mls-study-rn{flex:1;font-weight:600;}'
       +'#mlsStudyOv .mls-study-rd{color:var(--muted,#5b6b7c);font-size:12px;min-width:84px;}'
       +'#mlsStudyOv .mls-study-rs{font-size:11.5px;font-weight:600;}'
-      +'#mlsStudyOv .mls-study-rs.ok{color:#16a34a;} #mlsStudyOv .mls-study-rs.bad{color:#dc2626;} #mlsStudyOv .mls-study-rs.warn{color:#b45309;} #mlsStudyOv .mls-study-rs.gate{color:#7c5cff;} #mlsStudyOv .mls-study-rs.wait{color:var(--muted,#9aa7b4);}'
+      +'#mlsStudyOv .mls-study-rs.ok{color:#2E6A4B;} #mlsStudyOv .mls-study-rs.bad{color:#dc2626;} #mlsStudyOv .mls-study-rs.warn{color:#b45309;} #mlsStudyOv .mls-study-rs.gate{color:#7c5cff;} #mlsStudyOv .mls-study-rs.wait{color:var(--muted,#9aa7b4);}'
       +'#mlsStudyOv .mls-study-empty{color:var(--muted,#9aa7b4);padding:14px;text-align:center;}'
       +'#mlsStudyOv .mls-study-gate{background:#fff7ec;border:1px solid #f0c98a;color:#7a4f12;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12px;line-height:1.5;}'
       +'#mlsStudyOv .mls-study-sec{border:1px solid var(--line,#eef1f6);border-radius:11px;padding:11px 12px;margin-bottom:12px;}'
@@ -35765,9 +35766,9 @@
       +'#mlsStudyOv .mls-study-candlist{max-height:230px;overflow:auto;margin:4px 0 8px;}'
       +'#mlsStudyOv .mls-study-cand{display:flex;align-items:center;gap:10px;padding:5px 8px;border:1px solid var(--line,#eef1f6);border-radius:8px;margin-bottom:4px;background:var(--surface,#fcfdff);cursor:pointer;}'
       +'#mlsStudyOv .mls-study-cohlist{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}'
-      +'#mlsStudyOv .mls-study-coh{display:flex;justify-content:space-between;align-items:center;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--ink,#15293f);border-radius:9px;padding:9px 12px;}'
-      +'#mlsStudyOv .mls-study-coh:hover{border-color:var(--brand,#2563c9);color:var(--brand,#2563c9);}'
-      +'#mlsStudyOv .mls-study-open{font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;border:1px solid var(--brand,#2563c9);background:transparent;color:var(--brand,#2563c9);border-radius:7px;padding:3px 9px;}'
+      +'#mlsStudyOv .mls-study-coh{display:flex;justify-content:space-between;align-items:center;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--ink,#1A211C);border-radius:9px;padding:9px 12px;}'
+      +'#mlsStudyOv .mls-study-coh:hover{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);}'
+      +'#mlsStudyOv .mls-study-open{font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;border:1px solid var(--brand,#2E6A4B);background:transparent;color:var(--brand,#2E6A4B);border-radius:7px;padding:3px 9px;}'
       +'#mlsStudyOv .mls-study-export{margin:6px 0;}';
     (document.head||document.documentElement).appendChild(s);
   }
@@ -35837,7 +35838,7 @@
   "use strict";
   try {
     var PILL_CLASS = 'mls-prem-pill';
-    var PILL_STYLE = 'font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px;display:inline-block;line-height:1.4';
+    var PILL_STYLE = 'font-size:11px;font-weight:700;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px;display:inline-block;line-height:1.4';
     var PILL_TEXT  = 'PREMIUM';
     var GRAD_RE = /linear-gradient/i;
     var PURPLE_RE = /(7b5cff|123, *92, *255|a855f7|168, *85, *247)/i;
@@ -35883,7 +35884,7 @@
         ensurePill(h); return;
       }
     }
-    function makeNavPill(){ var s=document.createElement('span'); s.className=PILL_CLASS; s.setAttribute('data-mls-prem-pill','1'); s.style.cssText='font-size:9px;font-weight:700;letter-spacing:.3px;color:#fff;background:linear-gradient(90deg,#7b5cff,#a855f7);padding:1px 6px;border-radius:999px;line-height:1.5;display:inline-block;vertical-align:middle;flex:0 0 auto'; s.textContent=PILL_TEXT; return s; }
+    function makeNavPill(){ var s=document.createElement('span'); s.className=PILL_CLASS; s.setAttribute('data-mls-prem-pill','1'); s.style.cssText='font-size:9px;font-weight:700;letter-spacing:.3px;color:#fff;background:linear-gradient(90deg,#7b5cff,#9B82D4);padding:1px 6px;border-radius:999px;line-height:1.5;display:inline-block;vertical-align:middle;flex:0 0 auto'; s.textContent=PILL_TEXT; return s; }
     function ensurePillOnNav(id){ var el=document.getElementById(id); if(!el) return; try{ el.style.whiteSpace='nowrap'; el.style.flex='0 0 auto'; }catch(e){} if(hasPurplePill(el)) return; el.appendChild(makeNavPill()); }
     function normalizeSettingsLabel(hintId){
       try{
@@ -36352,10 +36353,10 @@
 })();
 
 ;/* === Outcome Study feature loader (loads mls-outcome-study.js) === */
-(function(){try{if(document.getElementById('mlsOutcomeStudyLoader'))return;var s=document.createElement('script');s.id='mlsOutcomeStudyLoader';s.src='mls-outcome-study.js?v=20260618b';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.getElementById('mlsOutcomeStudyLoader'))return;var s=document.createElement('script');s.id='mlsOutcomeStudyLoader';s.src='mls-outcome-study.js?v=20260618bc1';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;/* === RVU feature loader (loads mls-rvu.js) === */
-(function(){try{if(document.getElementById('mlsRvuLoader'))return;var s=document.createElement('script');s.id='mlsRvuLoader';s.src='mls-rvu.js?v=20260617b';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.getElementById('mlsRvuLoader'))return;var s=document.createElement('script');s.id='mlsRvuLoader';s.src='mls-rvu.js?v=20260617bc1';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* ===== feat_premium_studio_lock.js — MLS premium UI lock for AI Studio (additive, fail-safe) =====
    Complements the server-side premiumGate. For NON-premium users it locks the AI Studio
@@ -36433,7 +36434,7 @@
   } catch(e){}
 })();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=b84';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=b84c1';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 ;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+(window.__MLS_AV||Date.now());s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */
@@ -36447,7 +36448,7 @@
 (function(){try{if(!document.querySelector('script[data-mls-asset="feat_ease.js"]')){var s=document.createElement('script');s.src='feat_ease.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_ease.js');s.async=false;(document.head||document.documentElement).appendChild(s);}}catch(e){}})();
 
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_guard.js"]'))return;var s=document.createElement('script');s.src='feat_athena_guard.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_guard.js');document.head.appendChild(s);}catch(e){}})(); /* MLS — athenaOne-open guard (block fake progress/saves when logged out) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_honest.js"]'))return;var s=document.createElement('script');s.src='feat_visits_honest.js?v=b85';s.setAttribute('data-mls-asset','feat_visits_honest.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_honest.js"]'))return;var s=document.createElement('script');s.src='feat_visits_honest.js?v=b85c1';s.setAttribute('data-mls-asset','feat_visits_honest.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_counter_guard.js"]'))return;var s=document.createElement('script');s.src='feat_visits_counter_guard.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_visits_counter_guard.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
@@ -36461,10 +36462,10 @@
 
 
 /* ---- loader: mls-opnote-pro (op-note professional format + Save-as-PDF) ---- */
-(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.js?v=20260619a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.js?v=20260619ac1';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* ---- loader: mls-procedure-report (Analysis › 📊 Procedure Report: counts by type, Office/ASC place-of-service, RVU/$ totals, PDF/CSV) ---- */
-(function(){try{if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.js?v=20260619a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.js?v=20260619ac1';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(!document.querySelector('script[data-mls-asset="feat_source_clarity.js"]')){var s=document.createElement('script');s.src='feat_source_clarity.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_source_clarity.js');document.head.appendChild(s);}}catch(e){}})();
 /* ---- loader: feat_athena_autopull (one-click open-chart auto-pull; fixes false name-match safety stop; additive, reversible) ---- */
@@ -36474,14 +36475,14 @@
 
 
 /* ---- loader: feat_opnote_history_pdf (one-click PDF on op-note history rows) ---- */
-(function(){try{if(window.__mlsOpNoteHistPdfLoader)return;window.__mlsOpNoteHistPdfLoader=1;var s=document.createElement('script');s.src='feat_opnote_history_pdf.js?v=20260620a';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(window.__mlsOpNoteHistPdfLoader)return;window.__mlsOpNoteHistPdfLoader=1;var s=document.createElement('script');s.src='feat_opnote_history_pdf.js?v=20260620ac1';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy.js"]'))return;var s=document.createElement('script');s.src='feat_mls_easy.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_easy.js');document.head.appendChild(s);}catch(e){}})();
 /* ---- loader: feat_save_verify.js (save-integrity verification) ---- */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
 
 /* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=b102a';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=b102ac1';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: mls-template-stdline (reusable standard line for Templates tab) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');document.head.appendChild(s);}catch(e){}})();
@@ -36511,16 +36512,16 @@
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_picker.js"]'))return; var s=document.createElement('script'); s.src='/feat_athena_provider_picker.js?v='+(window.__MLS_AV||Date.now()); s.setAttribute('data-mls-asset','feat_athena_provider_picker.js'); document.head.appendChild(s); }catch(e){}})();(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_contrast.js"]'))return; var s=document.createElement('script'); s.src='/feat_mls_easy_contrast.js?v='+(window.__MLS_AV||Date.now()); s.setAttribute('data-mls-asset','feat_mls_easy_contrast.js'); document.head.appendChild(s); }catch(e){}})();(function(){try{if(document.querySelector('script[data-mls-asset="feat_after_visit_summary.js"]'))return; var s=document.createElement('script'); s.src='/feat_after_visit_summary.js?v='+(window.__MLS_AV||Date.now()); s.setAttribute('data-mls-asset','feat_after_visit_summary.js'); document.head.appendChild(s); }catch(e){}})()
 /* ---- loader: feat_mls_protocol (MLS Easy protocol: auto-advance to NEXT UP Slide 2, record textbox, full ordered flow, provider-name-everywhere, sizing/readability; additive, reversible) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol.js"]'))return;var s=document.createElement('script');s.src='feat_mls_protocol.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_protocol.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_protocol_pickfix.js?v=20260622';s.setAttribute('data-mls-asset','feat_mls_protocol_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_protocol_pickfix.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_mls_protocol_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{var A='mls-connection-truth.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{var A='mls-fabrication-sentinel.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_easy_pickfix.js?v=20260622c';s.setAttribute('data-mls-asset','feat_mls_easy_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_contrast_fix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_contrast_fix.js?v=20260622';s.setAttribute('data-mls-asset','feat_mls_contrast_fix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_easy_pickfix.js?v=20260622cc1';s.setAttribute('data-mls-asset','feat_mls_easy_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_contrast_fix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_contrast_fix.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_mls_contrast_fix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{['feat_opnote_history.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — history-aware op-note generation + real loading/ready indicator (append-only, guarded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_roster.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_roster.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_provider_roster.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_stdline_insert.js"]'))return;var s=document.createElement('script');s.src='/feat_stdline_insert.js?v=20260622';s.setAttribute('data-mls-asset','feat_stdline_insert.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_pdf_anyview.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_pdf_anyview.js?v=20260622';s.setAttribute('data-mls-asset','feat_opnote_pdf_anyview.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_stdline_insert.js"]'))return;var s=document.createElement('script');s.src='/feat_stdline_insert.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_stdline_insert.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_pdf_anyview.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_pdf_anyview.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_opnote_pdf_anyview.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* LOADER for feat_athena_truthcheck.js  (PART 1)
  * Append this ONE guarded, idempotent, cache-busted, ;-prefixed line/block at
@@ -36583,7 +36584,7 @@
 
 ;(function(){try{var A='feat_athena_narration.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_hardening.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_easy_hardening.js?v=20260622a';s.setAttribute('data-mls-asset','feat_mls_easy_hardening.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_easy_hardening.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_easy_hardening.js?v=20260622ac1';s.setAttribute('data-mls-asset','feat_mls_easy_hardening.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{var A='feat_athena_cardtips_noinfo.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
@@ -36594,8 +36595,8 @@
 ;(function(){try{['feat_patient_quicksearch.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})();
 
 ;(function(){try{['feat_fullhistory_pdf.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — Export full patient visit history as ONE PDF (additive, guarded, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewpersist.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewpersist.js?v=20260623a';s.setAttribute('data-mls-asset','feat_mls_viewpersist.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260623a';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewpersist.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewpersist.js?v=20260623ac1';s.setAttribute('data-mls-asset','feat_mls_viewpersist.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260623ac1';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{
   var A='feat_athena_signin_prompt.js';
@@ -36606,157 +36607,157 @@
   s.async=false;
   (document.body||document.head||document.documentElement).appendChild(s);
 }catch(e){}})();
-;(function(){try{if(document.getElementById('mlsEasy4FixesLoader'))return;var s=document.createElement('script');s.id='mlsEasy4FixesLoader';s.src='feat_mls_easy_4fixes.js?v=20260623';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS Easy 4 fixes: dictation->record textbox, reliable Back, manual->active patient+banner+generation, prep-op-note on slide 2 */
+;(function(){try{if(document.getElementById('mlsEasy4FixesLoader'))return;var s=document.createElement('script');s.id='mlsEasy4FixesLoader';s.src='feat_mls_easy_4fixes.js?v=20260623c1';s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS Easy 4 fixes: dictation->record textbox, reliable Back, manual->active patient+banner+generation, prep-op-note on slide 2 */
 
 ;(function(){try{var A='feat_athena_tooltip_dedupe.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-     ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+     ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260623c1';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260623k';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_redesign.js"]'))return;var s=document.createElement('script');s.src='feat_mls_redesign.js?v=20260712calm3c1';s.setAttribute('data-mls-asset','feat_mls_redesign.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: additive, reversible (delete this line + feat_mls_redesign.js) */
 
 
 ;(function(){try{if(!document.querySelector('script[data-mls-exact-enable]')){var m=document.createElement('script');m.type='text/plain';m.src='data:,mls-connect.staging.js';m.setAttribute('data-mls-exact-enable','1');(document.head||document.documentElement).appendChild(m);}}catch(e){}})(); /* MLS prod-enable: satisfies *_exact isStaging() gate without loading the staging bundle; REVERT: delete this line + the 14 *_exact loader lines below */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_exact.js?v=20260624vx6';s.setAttribute('data-mls-asset','feat_mls_visit_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Visit design-exact rebuild (STAGING ONLY) — additive, reversible (delete this line + feat_mls_visit_exact.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_exact.js?v=20260624vx6c1';s.setAttribute('data-mls-asset','feat_mls_visit_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Visit design-exact rebuild (STAGING ONLY) — additive, reversible (delete this line + feat_mls_visit_exact.js) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_header_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_header_exact.js?v=20260630mo1';s.setAttribute('data-mls-asset','feat_mls_header_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe header/nav design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_header_exact.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_header_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_header_exact.js?v=20260712hx300c1';s.setAttribute('data-mls-asset','feat_mls_header_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe header/nav design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_header_exact.js) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calendar_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calendar_exact.js?v=20260624cx8';s.setAttribute('data-mls-asset','feat_mls_calendar_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Calendar design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_calendar_exact.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calendar_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calendar_exact.js?v=20260624cx8c1';s.setAttribute('data-mls-asset','feat_mls_calendar_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Calendar design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_calendar_exact.js) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patients_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patients_exact.js?v=20260624px2';s.setAttribute('data-mls-asset','feat_mls_patients_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patients_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patients_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patients_exact.js?v=20260624px2c1';s.setAttribute('data-mls-asset','feat_mls_patients_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patients_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_exact.js?v=20260624hy2';s.setAttribute('data-mls-asset','feat_mls_history_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_history_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_exact.js?v=20260624hy2c1';s.setAttribute('data-mls-asset','feat_mls_history_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_history_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_exact.js?v=20260624ox1';s.setAttribute('data-mls-asset','feat_mls_orders_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_orders_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_exact.js?v=20260624ox1c1';s.setAttribute('data-mls-asset','feat_mls_orders_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_orders_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recs_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recs_exact.js?v=20260624rx1';s.setAttribute('data-mls-asset','feat_mls_recs_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_recs_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recs_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recs_exact.js?v=20260624rx1c1';s.setAttribute('data-mls-asset','feat_mls_recs_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_recs_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legal_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legal_exact.js?v=20260624lx1';s.setAttribute('data-mls-asset','feat_mls_legal_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_legal_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legal_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legal_exact.js?v=20260624lx1c1';s.setAttribute('data-mls-asset','feat_mls_legal_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_legal_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_team_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_team_exact.js?v=20260624tx2';s.setAttribute('data-mls-asset','feat_mls_team_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_team_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_team_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_team_exact.js?v=20260624tx2c1';s.setAttribute('data-mls-asset','feat_mls_team_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_team_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_analysis_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_analysis_exact.js?v=20260706ax7';s.setAttribute('data-mls-asset','feat_mls_analysis_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_analysis_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_analysis_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_analysis_exact.js?v=20260706ax7c1';s.setAttribute('data-mls-asset','feat_mls_analysis_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_analysis_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260706sx5';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260706sx5c1';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_help_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_help_exact.js?v=20260624hpx1';s.setAttribute('data-mls-asset','feat_mls_help_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_help_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_help_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_help_exact.js?v=20260624hpx1c1';s.setAttribute('data-mls-asset','feat_mls_help_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_help_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_settings_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_settings_exact.js?v=20260624stx2';s.setAttribute('data-mls-asset','feat_mls_settings_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_settings_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_settings_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_settings_exact.js?v=20260624stx2c1';s.setAttribute('data-mls-asset','feat_mls_settings_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_settings_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_exact.js?v=20260624lgx2';s.setAttribute('data-mls-asset','feat_mls_login_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_login_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_exact.js?v=20260624lgx2c1';s.setAttribute('data-mls-asset','feat_mls_login_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_login_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patientpick.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patientpick.js?v=20260624pick6';s.setAttribute('data-mls-asset','feat_mls_patientpick.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patientpick.js (shared pull-and-select) — additive, reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simple_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_simple_exact.js?v=20260624simx5';s.setAttribute('data-mls-asset','feat_mls_simple_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_simple_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patientpick.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patientpick.js?v=20260624pick6c1';s.setAttribute('data-mls-asset','feat_mls_patientpick.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patientpick.js (shared pull-and-select) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simple_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_simple_exact.js?v=20260624simx5c1';s.setAttribute('data-mls-asset','feat_mls_simple_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_simple_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_notetools_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_notetools_exact.js?v=20260624nt1';s.setAttribute('data-mls-asset','feat_mls_notetools_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_notetools_exact.js (PROD) - note+tools legibility, additive, reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widgetinsert.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widgetinsert.js?v=20260624wi2';s.setAttribute('data-mls-asset','feat_mls_widgetinsert.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* FIX 2: robust custom-widget Add-to-note (body/mirror fallback) + surface generated widgets (PROD) - additive, reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_notetools_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_notetools_exact.js?v=20260624nt1c1';s.setAttribute('data-mls-asset','feat_mls_notetools_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_notetools_exact.js (PROD) - note+tools legibility, additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widgetinsert.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widgetinsert.js?v=20260624wi2c1';s.setAttribute('data-mls-asset','feat_mls_widgetinsert.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* FIX 2: robust custom-widget Add-to-note (body/mirror fallback) + surface generated widgets (PROD) - additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260624asst3';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v=20260712si110';s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.1.0 - idempotent schedule import with wrong-day fail-closed */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260624asst3c1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v=20260712si110c1';s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.1.0 - idempotent schedule import with wrong-day fail-closed */
 
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_opnote_writeback.js"]'))return;var s=document.createElement('script');s.src='feat_athena_opnote_writeback.js?v=20260624wb1';s.setAttribute('data-mls-asset','feat_athena_opnote_writeback.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe op-note writeback (PE>Procedure Documentation>template, erase+insert; never signs), additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simple_autosend.js"]'))return;var s=document.createElement('script');s.src='feat_mls_simple_autosend.js?v=20260624wb1';s.setAttribute('data-mls-asset','feat_mls_simple_autosend.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Simple-view auto-send (note+codes, gated, honest), additive reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_opnote_writeback.js"]'))return;var s=document.createElement('script');s.src='feat_athena_opnote_writeback.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_athena_opnote_writeback.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe op-note writeback (PE>Procedure Documentation>template, erase+insert; never signs), additive reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simple_autosend.js"]'))return;var s=document.createElement('script');s.src='feat_mls_simple_autosend.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_simple_autosend.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Simple-view auto-send (note+codes, gated, honest), additive reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_uifix_20260624.js"]'))return;var s=document.createElement('script');s.src='feat_mls_uifix_20260624.js?v=20260624uifix1';s.setAttribute('data-mls-asset','feat_mls_uifix_20260624.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe UI fix pack (search results panel + tile tidy), additive reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_uifix_20260624.js"]'))return;var s=document.createElement('script');s.src='feat_mls_uifix_20260624.js?v=20260624uifix1c1';s.setAttribute('data-mls-asset','feat_mls_uifix_20260624.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe UI fix pack (search results panel + tile tidy), additive reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_apptabs_menu.js"]'))return;var s=document.createElement('script');s.src='feat_mls_apptabs_menu.js?v=20260624tm1';s.setAttribute('data-mls-asset','feat_mls_apptabs_menu.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item3b: App-tab OFF -> Menu dropdown row (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_apptabs_menu.js"]'))return;var s=document.createElement('script');s.src='feat_mls_apptabs_menu.js?v=20260624tm1c1';s.setAttribute('data-mls-asset','feat_mls_apptabs_menu.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item3b: App-tab OFF -> Menu dropdown row (additive, reversible) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_clinicaltools_scroll.js"]'))return;var s=document.createElement('script');s.src='feat_mls_clinicaltools_scroll.js?v=20260625cts2';s.setAttribute('data-mls-asset','feat_mls_clinicaltools_scroll.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item4: Clinical tools auto-scroll (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_commands.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_commands.js?v=20260625vc1';s.setAttribute('data-mls-asset','feat_mls_voice_commands.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item5: Alexa-style voice commands (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_chartautofill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_chartautofill.js?v=20260625cf1';s.setAttribute('data-mls-asset','feat_mls_chartautofill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item6: auto-fill patient name from open athenaOne chart (read-only, additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_clean.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_clean.js?v=20260625lc2';s.setAttribute('data-mls-asset','feat_mls_login_clean.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item7: login shows only login UI (gate app chrome pre-login, additive reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_timeline_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_timeline_sync.js?v=20260625tl1';s.setAttribute('data-mls-asset','feat_mls_timeline_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item8: visit timeline includes visits referenced in the summary (additive reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calbox_uniform.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calbox_uniform.js?v=20260625cb1';s.setAttribute('data-mls-asset','feat_mls_calbox_uniform.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item9: uniform blue calendar Week/Day appt boxes (additive reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_gen_speed.js"]'))return;var s=document.createElement('script');s.src='feat_mls_gen_speed.js?v=20260625gs1';s.setAttribute('data-mls-asset','feat_mls_gen_speed.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item10: keep backend warm to cut op-note cold-start latency (additive reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_nextup_controls.js"]'))return;var s=document.createElement('script');s.src='feat_mls_nextup_controls.js?v=20260625nu1';s.setAttribute('data-mls-asset','feat_mls_nextup_controls.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item11: remove redundant white Complex picker list; add Today/any-day/Show-more to blue NEXT UP (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_clinicaltools_scroll.js"]'))return;var s=document.createElement('script');s.src='feat_mls_clinicaltools_scroll.js?v=20260625cts2c1';s.setAttribute('data-mls-asset','feat_mls_clinicaltools_scroll.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item4: Clinical tools auto-scroll (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_commands.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_commands.js?v=20260625vc1c1';s.setAttribute('data-mls-asset','feat_mls_voice_commands.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item5: Alexa-style voice commands (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_chartautofill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_chartautofill.js?v=20260625cf1c1';s.setAttribute('data-mls-asset','feat_mls_chartautofill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item6: auto-fill patient name from open athenaOne chart (read-only, additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_clean.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_clean.js?v=20260625lc2c1';s.setAttribute('data-mls-asset','feat_mls_login_clean.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item7: login shows only login UI (gate app chrome pre-login, additive reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_timeline_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_timeline_sync.js?v=20260625tl1c1';s.setAttribute('data-mls-asset','feat_mls_timeline_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item8: visit timeline includes visits referenced in the summary (additive reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calbox_uniform.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calbox_uniform.js?v=20260625cb1c1';s.setAttribute('data-mls-asset','feat_mls_calbox_uniform.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item9: uniform blue calendar Week/Day appt boxes (additive reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_gen_speed.js"]'))return;var s=document.createElement('script');s.src='feat_mls_gen_speed.js?v=20260625gs1c1';s.setAttribute('data-mls-asset','feat_mls_gen_speed.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item10: keep backend warm to cut op-note cold-start latency (additive reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_nextup_controls.js"]'))return;var s=document.createElement('script');s.src='feat_mls_nextup_controls.js?v=20260625nu1c1';s.setAttribute('data-mls-asset','feat_mls_nextup_controls.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item11: remove redundant white Complex picker list; add Today/any-day/Show-more to blue NEXT UP (additive, reversible) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_glitch_sweep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_glitch_sweep.js?v=20260625gsweep1';s.setAttribute('data-mls-asset','feat_mls_glitch_sweep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item12: glitch sweep -- Analysis scroll-keep + tile tidy, copilot scroll stability, Find-anything reopen (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_glitch_sweep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_glitch_sweep.js?v=20260625gsweep1c1';s.setAttribute('data-mls-asset','feat_mls_glitch_sweep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item12: glitch sweep -- Analysis scroll-keep + tile tidy, copilot scroll stability, Find-anything reopen (additive, reversible) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_offtab_navhide.js"]'))return;var s=document.createElement('script');s.src='feat_mls_offtab_navhide.js?v=20260625oth1';s.setAttribute('data-mls-asset','feat_mls_offtab_navhide.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item13: off App-tabs disappear from nav (kept in Menu) -- 6b nav half (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fillblank.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fillblank.js?v=20260625of1';s.setAttribute('data-mls-asset','feat_mls_opnote_fillblank.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item14: restore one-click fill-in-the-blank op note (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_baricon.js"]'))return;var s=document.createElement('script');s.src='feat_mls_baricon.js?v=20260625bi1';s.setAttribute('data-mls-asset','feat_mls_baricon.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item15: patient-bar Chart/Visit/History/Schedule -> icons (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_avs.js?v=20260625havs1';s.setAttribute('data-mls-asset','feat_mls_history_avs.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item16: After-visit summary trigger added to History view (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item17: Visit-timeline rows open the real per-visit detail (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_offtab_navhide.js"]'))return;var s=document.createElement('script');s.src='feat_mls_offtab_navhide.js?v=20260625oth1c1';s.setAttribute('data-mls-asset','feat_mls_offtab_navhide.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item13: off App-tabs disappear from nav (kept in Menu) -- 6b nav half (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fillblank.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fillblank.js?v=20260625of1c1';s.setAttribute('data-mls-asset','feat_mls_opnote_fillblank.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item14: restore one-click fill-in-the-blank op note (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_baricon.js"]'))return;var s=document.createElement('script');s.src='feat_mls_baricon.js?v=20260625bi1c1';s.setAttribute('data-mls-asset','feat_mls_baricon.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item15: patient-bar Chart/Visit/History/Schedule -> icons (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_avs.js?v=20260625havs1c1';s.setAttribute('data-mls-asset','feat_mls_history_avs.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item16: After-visit summary trigger added to History view (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item17: Visit-timeline rows open the real per-visit detail (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1c1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v=20260711unify1';s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 2: unified Copilot conversation store (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260711afx3';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260712cv2111';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260625chk1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v=20260711unify1c1';s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 2: unified Copilot conversation store (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260711afx3c1';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2c1';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2c1';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260712cv2111c1';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260625chk1c1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3c1';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
-;(function(){try{var A='feat_mls_voice_ai.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625a';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS — voice AI command layer: speech/NL -> chained intents -> existing app fns (additive, reversible: window.__mlsVoiceAI.revert()) */
+;(function(){try{var A='feat_mls_voice_ai.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625ac1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS — voice AI command layer: speech/NL -> chained intents -> existing app fns (additive, reversible: window.__mlsVoiceAI.revert()) */
 
-;(function(){try{var A='feat_mls_voice_ai_micbridge.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625mb1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item24: bridge existing mic transcripts into __mlsVoiceAI for chained natural-language commands (additive, reversible: window.__mlsVoiceMicBridge.revert()) */
+;(function(){try{var A='feat_mls_voice_ai_micbridge.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625mb1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item24: bridge existing mic transcripts into __mlsVoiceAI for chained natural-language commands (additive, reversible: window.__mlsVoiceMicBridge.revert()) */
 
-;(function(){try{var A='feat_mls_upnow_activeselect.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625uas2';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item25: align active patient with auto-pulled up-now patient on load so header/Outcomes/After-visit match the banner/NEXT UP highlight (guarded: skips during capture/recording and deliberate chart switch) -- additive, reversible (window.__mlsUpNowActiveSelect.revert()) */
+;(function(){try{var A='feat_mls_upnow_activeselect.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625uas2c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item25: align active patient with auto-pulled up-now patient on load so header/Outcomes/After-visit match the banner/NEXT UP highlight (guarded: skips during capture/recording and deliberate chart switch) -- additive, reversible (window.__mlsUpNowActiveSelect.revert()) */
 
-;(function(){try{var A='feat_mls_nextup_autoscroll.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625nas2';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item26: auto-scroll the NEXT UP / today-patients picker (mlspk) to the current-time patient on load and advance as time passes (additive, reversible: window.__mlsNextUpAutoScroll.revert()) */
+;(function(){try{var A='feat_mls_nextup_autoscroll.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625nas2c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item26: auto-scroll the NEXT UP / today-patients picker (mlspk) to the current-time patient on load and advance as time passes (additive, reversible: window.__mlsNextUpAutoScroll.revert()) */
 
-;(function(){try{var A='feat_mls_active_patient_sync.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625aps1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item27: keep the active patient consistent across surfaces - sync hero Patient name (#heroPtName) + Patient label (#patientLabel) to activePatient() on every switch path, not just the NEXT UP picker (additive, reversible: window.__mlsActivePtSync.revert()) */
+;(function(){try{var A='feat_mls_active_patient_sync.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625aps1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item27: keep the active patient consistent across surfaces - sync hero Patient name (#heroPtName) + Patient label (#patientLabel) to activePatient() on every switch path, not just the NEXT UP picker (additive, reversible: window.__mlsActivePtSync.revert()) */
 
-;(function(){try{var A='feat_mls_athena_chip_conn.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625acc1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item30: unify context-bar Athena chip with the connection source of truth (__mlsConnTruth) -- idle chip shows honest connected/not-connected instead of bare "idle" -- additive, reversible (window.__mlsAthenaChipConn.revert()) */
+;(function(){try{var A='feat_mls_athena_chip_conn.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625acc1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item30: unify context-bar Athena chip with the connection source of truth (__mlsConnTruth) -- idle chip shows honest connected/not-connected instead of bare "idle" -- additive, reversible (window.__mlsAthenaChipConn.revert()) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_athena_chip_conn_all.js"]'))return;var s=document.createElement('script');s.src='feat_mls_athena_chip_conn_all.js?v=20260625acca1';s.setAttribute('data-mls-asset','feat_mls_athena_chip_conn_all.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item31: extend item30 -- Athena context-bar chip honours __mlsConnTruth in the non-idle "synced" state too, so the chip says the same honest connected/not-connected on every tab (additive, reversible: window.__mlsAthenaChipConnAll.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_lastseen_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_lastseen_unify.js?v=20260625ls1';s.setAttribute('data-mls-asset','feat_mls_lastseen_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item32: unify context-bar "last <date>" -> "last seen <date>" to match patient quick-history/profile/face surfaces (one consistent last-visit label) -- additive, reversible (window.__mlsLastSeenUnify.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_athena_chip_conn_all.js"]'))return;var s=document.createElement('script');s.src='feat_mls_athena_chip_conn_all.js?v=20260625acca1c1';s.setAttribute('data-mls-asset','feat_mls_athena_chip_conn_all.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item31: extend item30 -- Athena context-bar chip honours __mlsConnTruth in the non-idle "synced" state too, so the chip says the same honest connected/not-connected on every tab (additive, reversible: window.__mlsAthenaChipConnAll.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_lastseen_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_lastseen_unify.js?v=20260625ls1c1';s.setAttribute('data-mls-asset','feat_mls_lastseen_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item32: unify context-bar "last <date>" -> "last seen <date>" to match patient quick-history/profile/face surfaces (one consistent last-visit label) -- additive, reversible (window.__mlsLastSeenUnify.revert()) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_lastseen_rows.js"]'))return;var s=document.createElement('script');s.src='feat_mls_lastseen_rows.js?v=20260625lsr1';s.setAttribute('data-mls-asset','feat_mls_lastseen_rows.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item33: unify Patients-list row last-visit chip ("Seen M/D/YYYY") to the canonical "last seen <Mon D, YYYY>" wording+format used by the context bar (item32), profile chips and quick-history (one consistent last-seen label everywhere) -- additive, reversible (window.__mlsLastSeenRows.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_lastseen_rows.js"]'))return;var s=document.createElement('script');s.src='feat_mls_lastseen_rows.js?v=20260625lsr1c1';s.setAttribute('data-mls-asset','feat_mls_lastseen_rows.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item33: unify Patients-list row last-visit chip ("Seen M/D/YYYY") to the canonical "last seen <Mon D, YYYY>" wording+format used by the context bar (item32), profile chips and quick-history (one consistent last-seen label everywhere) -- additive, reversible (window.__mlsLastSeenRows.revert()) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avs_label_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avs_label_unify.js?v=20260625avslbl1';s.setAttribute('data-mls-asset','feat_mls_avs_label_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item34: unify the "After-visit summary" action name across all trigger surfaces (#mlsavsBtn, #mlsHistAvsBtn, #avsBtn) -- one canonical name, icons preserved -- additive, reversible (window.__mlsAvsLabelUnify.revert()) */
-;(function(){try{var A='feat_mls_ctxbar_dob_slash.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260626cds1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item35: unify the patient context-bar DOB to the canonical MM/DD/YYYY slash format (matches DOB input, profile cards, scheduler cards & timeline) -- removes the lone dash-format outlier in #mlsCtxBar .mlsctx-meta -- additive, reversible (window.__mlsCtxDobSlash.revert()) */
-;(function(){try{var A='feat_mls_chartautofill_guard.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260626cfg2';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item36: harden chart-autofill -- never fill visit name/label with junk scraped from a non-chart (sign-in/dashboard) athenaOne tab; scrub junk already filled (additive, reversible: window.__mlsChartFillGuard.revert()) */
-;(function(){try{var A="feat_mls_schedpull_honest.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626honest1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item28: kill residual false "No new appointments were imported..." status line (honest status only) -- additive, reversible (window.__mlsSchedPullHonest.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avs_label_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avs_label_unify.js?v=20260625avslbl1c1';s.setAttribute('data-mls-asset','feat_mls_avs_label_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item34: unify the "After-visit summary" action name across all trigger surfaces (#mlsavsBtn, #mlsHistAvsBtn, #avsBtn) -- one canonical name, icons preserved -- additive, reversible (window.__mlsAvsLabelUnify.revert()) */
+;(function(){try{var A='feat_mls_ctxbar_dob_slash.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260626cds1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item35: unify the patient context-bar DOB to the canonical MM/DD/YYYY slash format (matches DOB input, profile cards, scheduler cards & timeline) -- removes the lone dash-format outlier in #mlsCtxBar .mlsctx-meta -- additive, reversible (window.__mlsCtxDobSlash.revert()) */
+;(function(){try{var A='feat_mls_chartautofill_guard.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260626cfg2c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item36: harden chart-autofill -- never fill visit name/label with junk scraped from a non-chart (sign-in/dashboard) athenaOne tab; scrub junk already filled (additive, reversible: window.__mlsChartFillGuard.revert()) */
+;(function(){try{var A="feat_mls_schedpull_honest.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626honest1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item28: kill residual false "No new appointments were imported..." status line (honest status only) -- additive, reversible (window.__mlsSchedPullHonest.revert()) */
 
-;(function(){try{var A="feat_mls_asst_provname.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626pn1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item37: MLS Assistant doctor-picker shows REAL providers in clean human form ("Kelly Carter, PA-C") instead of raw athenaOne machine usernames ("Carter_Kelly_PA-C"); option.value preserved so schedule pulls are unchanged -- additive, reversible (window.__mlsAsstProvName.revert()) */
-;(function(){try{var A="feat_mls_dob_format_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626dob1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item38: unify displayed patient DOB format to canonical MM/DD/YYYY across all card surfaces (picker/assistant/simple/profile/scheduler/timeline) to match context-bar item35; normalizes dash & ISO stored dobs display-only, no patient-data mutation -- additive, reversible (window.__mlsDobFormatUnify.revert()) */
+;(function(){try{var A="feat_mls_asst_provname.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626pn1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item37: MLS Assistant doctor-picker shows REAL providers in clean human form ("Kelly Carter, PA-C") instead of raw athenaOne machine usernames ("Carter_Kelly_PA-C"); option.value preserved so schedule pulls are unchanged -- additive, reversible (window.__mlsAsstProvName.revert()) */
+;(function(){try{var A="feat_mls_dob_format_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626dob1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item38: unify displayed patient DOB format to canonical MM/DD/YYYY across all card surfaces (picker/assistant/simple/profile/scheduler/timeline) to match context-bar item35; normalizes dash & ISO stored dobs display-only, no patient-data mutation -- additive, reversible (window.__mlsDobFormatUnify.revert()) */
 
-;(function(){try{var A="feat_mls_calendar_polish.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629cp2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item67: calendar polish -- cleaner Month/Week/Day nav, clickable providers roster, honest empty states (additive, reversible: window.__mlsCalPolish.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legal_paywidget.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legal_paywidget.js?v=20260629a';s.setAttribute('data-mls-asset','feat_mls_legal_paywidget.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A="feat_mls_calendar_polish.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629cp2c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item67: calendar polish -- cleaner Month/Week/Day nav, clickable providers roster, honest empty states (additive, reversible: window.__mlsCalPolish.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legal_paywidget.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legal_paywidget.js?v=20260629ac1';s.setAttribute('data-mls-asset','feat_mls_legal_paywidget.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{var A="feat_mls_caldedupe_render.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629dd1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item68: calendar/agenda duplicate-appointment fix -- idempotent read-layer dedupe of window._calAppts by stable identity (name|date|time|provider) before each render; display-only, never deletes records (additive, reversible: window.__mlsCalDedupe.revert()) */
+;(function(){try{var A="feat_mls_caldedupe_render.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629dd1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item68: calendar/agenda duplicate-appointment fix -- idempotent read-layer dedupe of window._calAppts by stable identity (name|date|time|provider) before each render; display-only, never deletes records (additive, reversible: window.__mlsCalDedupe.revert()) */
 
-;(function(){try{var A="feat_mls_expert_top.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630et1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item75: Expert marketplace listing -> first card at top of Legal requests view (#expertCard moved to top of #legalReqView; moves existing node so the opt-in form travels with it; idempotent, additive, reversible: window.__mlsExpertTop.revert()) */
+;(function(){try{var A="feat_mls_expert_top.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630et1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item75: Expert marketplace listing -> first card at top of Legal requests view (#expertCard moved to top of #legalReqView; moves existing node so the opt-in form travels with it; idempotent, additive, reversible: window.__mlsExpertTop.revert()) */
 
 ;/* === item69,70,72,73,77,78 promoted staging->prod 2026-06-30 (item74 snapshot & item76 allergy SKIPPED: already present in prod, no duplicates) === */
-;(function(){try{var A="feat_mls_outcome_pdf.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629os1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item69 (STAGING): Outcome Study report exports -- multi-page PDF report + standalone SVG chart download added to the existing Outcome Study results panel (sources live rendered cohort data; athenaOne untouched; never writes/deletes records) -- additive, reversible: window.__mlsOutcomePdf.revert() */
-;(function(){try{var A="feat_mls_pervisit_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629pvu1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item70: unify copy-every-visit + per-visit records into one coherent timeline/detail surface + verify single model; additive, reversible: window.__mlsPerVisitUnify.revert() */
-;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630dp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
-;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630rp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73 (STAGING): Recent-patients one-click quick-switcher in the patient bar -- jump back to the last charts opened this session via the app's own setActivePtId path (additive, reversible: window.__mlsRecentPts.revert()) */
-;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ag1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77 (STAGING): Today's agenda popover in the patient bar -- full ordered schedule (seen/up-now/upcoming) sharing Day-Progress's source of truth; click a row to load that patient via _heroPickPatient; navigation-only (additive, reversible: window.__mlsAgenda.revert()) */
-;(function(){try{var A="feat_mls_visit_useactivept.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ua2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item78 (STAGING): "Use current patient" autofill on the Visit hero -- one click fills name+DOB+de-identified label from the active patient (no auto-submit, no record writes) (additive, reversible: window.__mlsUseActivePt.revert()) */
-;(function(){try{var A="feat_mls_find_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630fd1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Find Doctors button + provider picker (additive, reversible: window.__mlsFindDoctors) */
-;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706wn5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
-;(function(){try{var A="feat_mls_wb_console.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630wbc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: writeback console "change where things go" button (additive, reversible: window.__mlsWbConsole) */
-;(function(){try{var A="feat_mls_settings_wb.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630swb1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Settings writeback entry (additive, reversible: window.__mlsSettingsWb) */
-;(function(){try{var A="feat_mls_assistant_selffix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630asf1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Assistant self-diagnose/fix (additive, reversible: window.__mlsAssistantSelfFix) */
-;(function(){try{var A="feat_mls_whosnext_cleanfix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630wncf1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next styling cleanfix - nice blue .wn-* boxes (item60 regression fix; additive, reversible: window.__mlsWhosNextCleanFix) */
-;(function(){try{var A="feat_mls_appwidth_responsive.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630aw1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: full-width/responsive calendar+app layout (additive, reversible: window.__mlsAppWidth) */
-;(function(){try{var A="feat_mls_note_metrics.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630nm1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: note metrics meter (window.__mlsNoteMetrics) */
-;(function(){try{var A="feat_mls_note_autofit.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630na1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: generated-note auto-fit (window.__mlsNoteAutofit) */
-;(function(){try{var A="feat_mls_note_jump.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630nj1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: note section quick-jump (window.__mlsNoteJump) */
-;(function(){try{var A="feat_mls_visit_stepper.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630vs1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: visit flow stepper (window.__mlsVisitStepper) */
-;(function(){try{var A="feat_mls_visit_stepper_orderfix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630vso1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: visit stepper order fix (window.__mlsVisitStepperOrderFix) */
-;(function(){try{var A="feat_mls_patient_age.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630pa1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: patient age chip (window.__mlsPatientAge) */
-;(function(){try{var A="feat_mls_patient_snapshot.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ps1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: patient snapshot popover (window.__mlsPatientSnapshot) */
-;(function(){try{var A="feat_mls_ctxbar_age_dedupe.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630cad1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: context-bar age de-dup (window.__mlsCtxbarAgeDedupe) */
-;(function(){try{var A="feat_mls_ctx_appt.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ca1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: context-bar appointment (window.__mlsCtxAppt) */
-;(function(){try{var A="feat_mls_hero_search.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hs1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: hero search (window.__mlsHeroSearch) */
-;(function(){try{var A="feat_mls_hero_glance.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hg1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: hero glance (window.__mlsHeroGlance) */
-;(function(){try{var A="feat_mls_pick_smartscope.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630pss1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: picker smart scope (window.__mlsPickSmartScope) */
-;(function(){try{var A="feat_mls_keyboard_layer.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630kl1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: unified keyboard layer (window.__mlsKbd) */
-;(function(){try{var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630dk1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
-;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630as1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: allergy safety strip (window.__mlsAllergyStrip) */
-;(function(){try{var A="feat_mls_legal_pay_setup.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630lps1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: legal Stripe pay setup (window.__mlsLegalPaySetup) */
-;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sg1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: study groups (window.__mlsStudyGroups) */
-;(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sa1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
-;(function(){try{var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: stop-recording confirm popup (window.__mlsStopConfirm) */
+;(function(){try{var A="feat_mls_outcome_pdf.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629os1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item69 (STAGING): Outcome Study report exports -- multi-page PDF report + standalone SVG chart download added to the existing Outcome Study results panel (sources live rendered cohort data; athenaOne untouched; never writes/deletes records) -- additive, reversible: window.__mlsOutcomePdf.revert() */
+;(function(){try{var A="feat_mls_pervisit_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260629pvu1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item70: unify copy-every-visit + per-visit records into one coherent timeline/detail surface + verify single model; additive, reversible: window.__mlsPerVisitUnify.revert() */
+;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630dp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
+;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630rp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73 (STAGING): Recent-patients one-click quick-switcher in the patient bar -- jump back to the last charts opened this session via the app's own setActivePtId path (additive, reversible: window.__mlsRecentPts.revert()) */
+;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ag1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77 (STAGING): Today's agenda popover in the patient bar -- full ordered schedule (seen/up-now/upcoming) sharing Day-Progress's source of truth; click a row to load that patient via _heroPickPatient; navigation-only (additive, reversible: window.__mlsAgenda.revert()) */
+;(function(){try{var A="feat_mls_visit_useactivept.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ua2c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item78 (STAGING): "Use current patient" autofill on the Visit hero -- one click fills name+DOB+de-identified label from the active patient (no auto-submit, no record writes) (additive, reversible: window.__mlsUseActivePt.revert()) */
+;(function(){try{var A="feat_mls_find_doctors.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630fd1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Find Doctors button + provider picker (additive, reversible: window.__mlsFindDoctors) */
+;(function(){try{var A="feat_mls_whosnext.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706wn5c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next framework (additive, reversible: window.__mlsWhosNext) */
+;(function(){try{var A="feat_mls_wb_console.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630wbc1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: writeback console "change where things go" button (additive, reversible: window.__mlsWbConsole) */
+;(function(){try{var A="feat_mls_settings_wb.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630swb1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Settings writeback entry (additive, reversible: window.__mlsSettingsWb) */
+;(function(){try{var A="feat_mls_assistant_selffix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630asf1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Assistant self-diagnose/fix (additive, reversible: window.__mlsAssistantSelfFix) */
+;(function(){try{var A="feat_mls_whosnext_cleanfix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630wncf1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: Who's-Next styling cleanfix - nice blue .wn-* boxes (item60 regression fix; additive, reversible: window.__mlsWhosNextCleanFix) */
+;(function(){try{var A="feat_mls_appwidth_responsive.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630aw1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: full-width/responsive calendar+app layout (additive, reversible: window.__mlsAppWidth) */
+;(function(){try{var A="feat_mls_note_metrics.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630nm1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: note metrics meter (window.__mlsNoteMetrics) */
+;(function(){try{var A="feat_mls_note_autofit.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630na1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: generated-note auto-fit (window.__mlsNoteAutofit) */
+;(function(){try{var A="feat_mls_note_jump.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630nj1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: note section quick-jump (window.__mlsNoteJump) */
+;(function(){try{var A="feat_mls_visit_stepper.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630vs1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: visit flow stepper (window.__mlsVisitStepper) */
+;(function(){try{var A="feat_mls_visit_stepper_orderfix.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630vso1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: visit stepper order fix (window.__mlsVisitStepperOrderFix) */
+;(function(){try{var A="feat_mls_patient_age.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630pa1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: patient age chip (window.__mlsPatientAge) */
+;(function(){try{var A="feat_mls_patient_snapshot.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ps1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: patient snapshot popover (window.__mlsPatientSnapshot) */
+;(function(){try{var A="feat_mls_ctxbar_age_dedupe.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630cad1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: context-bar age de-dup (window.__mlsCtxbarAgeDedupe) */
+;(function(){try{var A="feat_mls_ctx_appt.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ca1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: context-bar appointment (window.__mlsCtxAppt) */
+;(function(){try{var A="feat_mls_hero_search.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hs1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: hero search (window.__mlsHeroSearch) */
+;(function(){try{var A="feat_mls_hero_glance.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hg1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: hero glance (window.__mlsHeroGlance) */
+;(function(){try{var A="feat_mls_pick_smartscope.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630pss1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: picker smart scope (window.__mlsPickSmartScope) */
+;(function(){try{var A="feat_mls_keyboard_layer.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630kl1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: unified keyboard layer (window.__mlsKbd) */
+;(function(){try{var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630dk1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
+;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630as1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: allergy safety strip (window.__mlsAllergyStrip) */
+;(function(){try{var A="feat_mls_legal_pay_setup.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630lps1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: legal Stripe pay setup (window.__mlsLegalPaySetup) */
+;(function(){try{var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sg1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: study groups (window.__mlsStudyGroups) */
+;(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sa1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
+;(function(){try{var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sc1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: stop-recording confirm popup (window.__mlsStopConfirm) */
 
 /* ============================================================================
    FIX (additive, reversible): bridge Find Doctors selection -> Who's Next.
@@ -36859,9 +36860,9 @@
   try { setTimeout(install, 1500); } catch(e){}
   try { window.addEventListener('load', install); } catch(e){}
 })();
-(function(){try{var s=document.createElement('script');s.src='feat_mls_force_full_phone.js?v=20260630';s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{var s=document.createElement('script');s.src='feat_mls_force_full_phone.js?v=20260630c1';s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-/* item68: restore WIDE calendar layout (appwidth_responsive complement for #calendarView) + honest, ACTIONABLE per-provider empty state. Additive, reversible, guarded; never modifies app fns, never reorders/drops loaders, never touches data. Root cause: appointments carry no provider/doctor_user_id (backend does not persist provider), so the per-provider filter matches nothing. Revert: window.__mlsCalWideHonest.revert() */ ;(function(){ 'use strict'; if (window.__mlsCalWideHonest) return; var API = { version:'cwh-1.0.0' }; var WIDTH_ID='__mlsCalWideHonestCss', ACT_CSS_ID='__mlsCalEmptyActionsCss', ACT_ID='mlsCalEmptyActions'; function $(id){ try{ return document.getElementById(id); }catch(e){ return null; } } function injectWidthCss(){ if ($(WIDTH_ID)) return; try{ var st=document.createElement('style'); st.id=WIDTH_ID; st.textContent='#appWrap.wrap:has(#calendarView[style*="block"]){max-width:min(1680px,95vw)!important;}'; (document.head||document.documentElement).appendChild(st); }catch(e){} } function injectActCss(){ if ($(ACT_CSS_ID)) return; try{ var s=document.createElement('style'); s.id=ACT_CSS_ID; s.textContent='.mlsCalEmptyActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}' +'.mlsCalEmptyBtn{font:inherit;font-size:13px;padding:7px 13px;border-radius:8px;border:1px solid rgba(120,140,170,.35);background:rgba(255,255,255,.06);color:inherit;cursor:pointer;line-height:1.2}' +'.mlsCalEmptyBtn.primary{background:#2563eb;border-color:#2563eb;color:#fff}' +'.mlsCalEmptyBtn:hover{filter:brightness(1.08)}'; (document.head||document.documentElement).appendChild(s); }catch(e){} } function showAll(){ try{ var chip=document.querySelector('#mlsCalRoster .mlsRosChip[data-prov=""]'); if(chip){ chip.click(); return; } var pf=$('calProvFilter'); if(pf){ pf.value=''; pf.dispatchEvent(new Event('change',{bubbles:true})); } }catch(e){} } function enhanceEmpty(){ try{ var box=$('mlsCalEmpty'); if(!box) return; if(box.querySelector('#'+ACT_ID)) return; var pf=$('calProvFilter'); var pfVal=pf?String(pf.value||''):''; if(!pfVal) return; injectActCss(); var bar=document.createElement('div'); bar.id=ACT_ID; bar.className='mlsCalEmptyActions'; var b1=document.createElement('button'); b1.type='button'; b1.className='mlsCalEmptyBtn primary'; b1.textContent='Show full schedule (All providers)'; b1.onclick=function(){ showAll(); }; bar.appendChild(b1); if(typeof window.pullScheduleViaAssist==='function'){ var b2=document.createElement('button'); b2.type='button'; b2.className='mlsCalEmptyBtn'; b2.textContent='Pull this schedule from athenaOne →'; b2.title='Read-only athenaOne pull. Patients link to a doctor only once the provider is stored on each appointment.'; b2.onclick=function(){ try{ window.pullScheduleViaAssist(); }catch(e){} }; bar.appendChild(b2); } box.appendChild(bar); }catch(e){} } var _t=null; function tick(){ injectWidthCss(); enhanceEmpty(); } function schedule(){ if(_t) return; _t=setTimeout(function(){ _t=null; tick(); },120); } var mo=null, iv=null; function start(){ tick(); try{ mo=new MutationObserver(schedule); mo.observe(document.body,{childList:true,subtree:true}); }catch(e){} try{ iv=setInterval(tick,2000); }catch(e){} } API.revert=function(){ try{ if(mo) mo.disconnect(); }catch(e){} try{ if(iv) clearInterval(iv); }catch(e){} [WIDTH_ID,ACT_CSS_ID].forEach(function(id){ var el=$(id); if(el&&el.parentNode) el.parentNode.removeChild(el); }); var b=$(ACT_ID); if(b&&b.parentNode) b.parentNode.removeChild(b); }; window.__mlsCalWideHonest=API; if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start(); })();
+/* item68: restore WIDE calendar layout (appwidth_responsive complement for #calendarView) + honest, ACTIONABLE per-provider empty state. Additive, reversible, guarded; never modifies app fns, never reorders/drops loaders, never touches data. Root cause: appointments carry no provider/doctor_user_id (backend does not persist provider), so the per-provider filter matches nothing. Revert: window.__mlsCalWideHonest.revert() */ ;(function(){ 'use strict'; if (window.__mlsCalWideHonest) return; var API = { version:'cwh-1.0.0' }; var WIDTH_ID='__mlsCalWideHonestCss', ACT_CSS_ID='__mlsCalEmptyActionsCss', ACT_ID='mlsCalEmptyActions'; function $(id){ try{ return document.getElementById(id); }catch(e){ return null; } } function injectWidthCss(){ if ($(WIDTH_ID)) return; try{ var st=document.createElement('style'); st.id=WIDTH_ID; st.textContent='#appWrap.wrap:has(#calendarView[style*="block"]){max-width:min(1680px,95vw)!important;}'; (document.head||document.documentElement).appendChild(st); }catch(e){} } function injectActCss(){ if ($(ACT_CSS_ID)) return; try{ var s=document.createElement('style'); s.id=ACT_CSS_ID; s.textContent='.mlsCalEmptyActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}' +'.mlsCalEmptyBtn{font:inherit;font-size:13px;padding:7px 13px;border-radius:8px;border:1px solid rgba(120,140,170,.35);background:rgba(255,255,255,.06);color:inherit;cursor:pointer;line-height:1.2}' +'.mlsCalEmptyBtn.primary{background:#2E6A4B;border-color:#2E6A4B;color:#fff}' +'.mlsCalEmptyBtn:hover{filter:brightness(1.08)}'; (document.head||document.documentElement).appendChild(s); }catch(e){} } function showAll(){ try{ var chip=document.querySelector('#mlsCalRoster .mlsRosChip[data-prov=""]'); if(chip){ chip.click(); return; } var pf=$('calProvFilter'); if(pf){ pf.value=''; pf.dispatchEvent(new Event('change',{bubbles:true})); } }catch(e){} } function enhanceEmpty(){ try{ var box=$('mlsCalEmpty'); if(!box) return; if(box.querySelector('#'+ACT_ID)) return; var pf=$('calProvFilter'); var pfVal=pf?String(pf.value||''):''; if(!pfVal) return; injectActCss(); var bar=document.createElement('div'); bar.id=ACT_ID; bar.className='mlsCalEmptyActions'; var b1=document.createElement('button'); b1.type='button'; b1.className='mlsCalEmptyBtn primary'; b1.textContent='Show full schedule (All providers)'; b1.onclick=function(){ showAll(); }; bar.appendChild(b1); if(typeof window.pullScheduleViaAssist==='function'){ var b2=document.createElement('button'); b2.type='button'; b2.className='mlsCalEmptyBtn'; b2.textContent='Pull this schedule from athenaOne →'; b2.title='Read-only athenaOne pull. Patients link to a doctor only once the provider is stored on each appointment.'; b2.onclick=function(){ try{ window.pullScheduleViaAssist(); }catch(e){} }; bar.appendChild(b2); } box.appendChild(bar); }catch(e){} } var _t=null; function tick(){ injectWidthCss(); enhanceEmpty(); } function schedule(){ if(_t) return; _t=setTimeout(function(){ _t=null; tick(); },120); } var mo=null, iv=null; function start(){ tick(); try{ mo=new MutationObserver(schedule); mo.observe(document.body,{childList:true,subtree:true}); }catch(e){} try{ iv=setInterval(tick,2000); }catch(e){} } API.revert=function(){ try{ if(mo) mo.disconnect(); }catch(e){} try{ if(iv) clearInterval(iv); }catch(e){} [WIDTH_ID,ACT_CSS_ID].forEach(function(id){ var el=$(id); if(el&&el.parentNode) el.parentNode.removeChild(el); }); var b=$(ACT_ID); if(b&&b.parentNode) b.parentNode.removeChild(b); }; window.__mlsCalWideHonest=API; if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start(); })();
 
 
 /* ============================================================
@@ -37004,7 +37005,7 @@
       ".mlsTourCard{position:fixed;max-width:430px;width:calc(100vw - 40px);background:#fff;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:24px 24px 18px;box-sizing:border-box;}"+
       ".mlsTourCard h3{margin:0 0 10px;font-size:22px;line-height:1.25;color:#0f172a;font-weight:700;}"+
       ".mlsTourCard p{margin:0;font-size:18px;line-height:1.5;color:#334155;}"+
-      ".mlsTourSample{margin:14px 0 4px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;padding:12px 14px;font-size:14px;line-height:1.45;color:#0f172a;white-space:pre-wrap;max-height:230px;overflow:auto;}"+
+      ".mlsTourSample{margin:14px 0 4px;border:1px solid #cbd5e1;border-radius:10px;background:#FCFBF8;padding:12px 14px;font-size:14px;line-height:1.45;color:#0f172a;white-space:pre-wrap;max-height:230px;overflow:auto;}"+
       ".mlsTourSampleTag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:2px 8px;margin-bottom:8px;}"+
       ".mlsTourFoot{display:flex;align-items:center;gap:10px;margin-top:18px;}"+
       ".mlsTourFoot .sp{flex:1;}"+
@@ -37210,7 +37211,7 @@
       out.setAttribute("data-mlsTourPrev", out.innerHTML);
       out.style.display = "";
       out.innerHTML =
-        '<div style="border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;padding:12px 14px;font-size:14px;color:#0f172a;line-height:1.5;">' +
+        '<div style="border:1px solid #cbd5e1;border-radius:10px;background:#FCFBF8;padding:12px 14px;font-size:14px;color:#0f172a;line-height:1.5;">' +
         '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:2px 8px;margin-bottom:8px;">SAMPLE — NOT REAL DATA</span><br>' +
         '<b>Average pain score:</b> 6.2 → 3.8 after 6 visits<br>' +
         '<b>Most common diagnosis:</b> Lumbar radiculopathy<br>' +
@@ -37323,7 +37324,7 @@
       ".mlsTourBtns{display:flex;gap:8px;align-items:center;margin-top:18px;}" +
       ".mlsTourBtns .sp{flex:1;}" +
       ".mlsTourBtns button{font-size:15px;font-weight:700;border-radius:10px;padding:9px 16px;cursor:pointer;border:1px solid transparent;}" +
-      ".mlsTbNextV2{background:#2563eb;color:#fff;}" +
+      ".mlsTbNextV2{background:#2E6A4B;color:#fff;}" +
       ".mlsTbBackV2{background:#f1f5f9;color:#0f172a;}" +
       ".mlsTbSkipV2{background:transparent;color:#64748b;border:none;text-decoration:underline;}";
     document.head.appendChild(s);
@@ -37496,26 +37497,26 @@
   };
 })();
 
-;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701fp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- pull progress panel + any-day pull clarity, op-prep procedure autodetect (removes "No procedure entered yet"), note model gpt-5o with honest fallback cascade, today-button blink cap, agenda chip primary + full label, day/week honest fallback list, Find-anything Pro (screens+menus+templates+patients), formatted note preview in text boxes, op-note fill-in-the-blanks restore. Revert: window.__mlsFixpack.revert() */
+;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701fp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- pull progress panel + any-day pull clarity, op-prep procedure autodetect (removes "No procedure entered yet"), note model gpt-5o with honest fallback cascade, today-button blink cap, agenda chip primary + full label, day/week honest fallback list, Find-anything Pro (screens+menus+templates+patients), formatted note preview in text boxes, op-note fill-in-the-blanks restore. Revert: window.__mlsFixpack.revert() */
 
-;(function(){try{var A="feat_mls_staging_pack1.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701sp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item80 PROMOTED to prod (Michael picked 1+2+3, 2026-07-01): Templates suite + Simple-mode tunnel + MLS Agent dock. Same module as staging. Revert: window.__mlsPack1.revert() */
+;(function(){try{var A="feat_mls_staging_pack1.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701sp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item80 PROMOTED to prod (Michael picked 1+2+3, 2026-07-01): Templates suite + Simple-mode tunnel + MLS Agent dock. Same module as staging. Revert: window.__mlsPack1.revert() */
 
-;(function(){try{var A="feat_mls_pull_dateguard.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701dg1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item81: pull DATE GUARD -- root-cause fix for the misdated-pull bug (stray "July 4, 2026" holiday text poisoned _detectSchedDate; three pulls filed on Sat Jul 4; data repaired Jul 1, backup in localStorage mlsRepairBackup_20260701). Fallback date now requires a weekday-adjacent day-header date, else within 3 days of today, else defers to the current clinic day, with an honest status line. Revert: window.__mlsDateGuard.revert() */
+;(function(){try{var A="feat_mls_pull_dateguard.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260701dg1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item81: pull DATE GUARD -- root-cause fix for the misdated-pull bug (stray "July 4, 2026" holiday text poisoned _detectSchedDate; three pulls filed on Sat Jul 4; data repaired Jul 1, backup in localStorage mlsRepairBackup_20260701). Fallback date now requires a weekday-adjacent day-header date, else within 3 days of today, else defers to the current clinic day, with an honest status line. Revert: window.__mlsDateGuard.revert() */
 
-;(function(){try{var A="feat_mls_provider_passthrough.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260702pp1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item82: provider passthrough -- completes per-doctor scoping: "Pulling as" doctor chip by the Athena pull button; stamps provider onto imported appointments (import-window only) now that the backend persists+returns provider (d9e9a0c, live-verified); restores the imported-day jump button (late re-wrap after item81). Revert: window.__mlsProv.revert() */
-
-
-;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705b18v3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
-;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705sc1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* task-4: MLS Status Center -- ONE honest Athena/MLS status surface (current task, current step, patient/day being read, data source, per-area statuses, retries, what-changed, what-next); fixes "connected but shown disconnected" via evidence+retry ConnTruth wrap; dedupes duplicate spinners; survives reload. Revert: window.__mlsStatusCenter.revert() */
-
-;(function(){try{var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708pr2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Monthly Pay Report -- per-provider patient counts, half-day credits, days x daily rate, AI-estimated collections (clearly labeled, manual override) + xlsx export + floating Pay Report button. Read-only. Revert: remove this loader. */
-;(function(){try{var A="feat_mls_task7_analysis_sg.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706t7a";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* task7: Analysis dashboard refresh-stamp + Study Groups validation/wrong-group fix/remove+rename/inline status/empty-guards/2-col layout. Revert: window.__mlsT7.revert() */
+;(function(){try{var A="feat_mls_provider_passthrough.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260702pp1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item82: provider passthrough -- completes per-doctor scoping: "Pulling as" doctor chip by the Athena pull button; stamps provider onto imported appointments (import-window only) now that the backend persists+returns provider (d9e9a0c, live-verified); restores the imported-day jump button (late re-wrap after item81). Revert: window.__mlsProv.revert() */
 
 
-;(function(){try{var A="feat_mls_lastmonth_b51.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706b51";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b51: Pull Last Month button + honest relabel of the rolling pull button - see feat_mls_lastmonth_b51.js header. Revert: window.__mlsLastMonthB51.revert() */
+;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705b18v3c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
+;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260705sc1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* task-4: MLS Status Center -- ONE honest Athena/MLS status surface (current task, current step, patient/day being read, data source, per-area statuses, retries, what-changed, what-next); fixes "connected but shown disconnected" via evidence+retry ConnTruth wrap; dedupes duplicate spinners; survives reload. Revert: window.__mlsStatusCenter.revert() */
+
+;(function(){try{var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260708pr2c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Monthly Pay Report -- per-provider patient counts, half-day credits, days x daily rate, AI-estimated collections (clearly labeled, manual override) + xlsx export + floating Pay Report button. Read-only. Revert: remove this loader. */
+;(function(){try{var A="feat_mls_task7_analysis_sg.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706t7ac1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* task7: Analysis dashboard refresh-stamp + Study Groups validation/wrong-group fix/remove+rename/inline status/empty-guards/2-col layout. Revert: window.__mlsT7.revert() */
 
 
-;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260707b53";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Revert: window.__mlsPatientLock.revert() */
+;(function(){try{var A="feat_mls_lastmonth_b51.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706b51c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b51: Pull Last Month button + honest relabel of the rolling pull button - see feat_mls_lastmonth_b51.js header. Revert: window.__mlsLastMonthB51.revert() */
+
+
+;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260707b53c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Revert: window.__mlsPatientLock.revert() */
 
 
 /* =========================================================================
@@ -37599,7 +37600,7 @@
       '#mlsPmpBtn,#mlsPmpPanel{display:none !important}', /* the duplicate floating month-pull */
       '#mlsMpoBtn{display:block;width:100%;margin-top:10px;border:0;border-radius:9px;padding:9px 0;font:700 12.5px system-ui;cursor:pointer;background:linear-gradient(135deg,#2E67EF,#1D46AF);color:#fff}',
       '#mlsMpoBtn[disabled]{opacity:.55;cursor:default}',
-      '#mlsMpoNote{font-size:11.5px;color:#9fb0d8;margin-top:6px;line-height:1.45}'
+      '#mlsMpoNote{font-size:11.5px;color:#B9CEC2;margin-top:6px;line-height:1.45}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(s);
   }
@@ -37873,24 +37874,24 @@
   window.__mlsWipeGuard = G;
 })();
 
-;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260712sc11';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.1.0 fallback loader; normal builds install the cache at byte zero before boot work */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v=20260711pcs1';s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 6: per-patient Copilot conversation isolation + identity confirm (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260711rs1';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260711ne1';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=wbs100';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v=20260711pf1';s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260712cp103';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11 calendar controls; cp-1.0.3 prevents its calendar observer from self-triggering forever */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260712opnp3';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.0.0; revert()) */
+;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260712sc11c1';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.1.0 fallback loader; normal builds install the cache at byte zero before boot work */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v=20260711pcs1c1';s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 6: per-patient Copilot conversation isolation + identity confirm (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260711rs1c1';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260711ne1c1';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=wbs100c1';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100c1';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v=20260711pf1c1';s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260712cp103c1';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11 calendar controls; cp-1.0.3 prevents its calendar observer from self-triggering forever */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260712opnp3c1';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legalpack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legalpack.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_mls_legalpack.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS - legal full-history workflow + medical-legal narrative generator (Tasks 13+14; additive, guarded, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260712cpal11';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v=20260712thm111';s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: lighter-blue scheme + button polish + view transitions (window.__mlsThemePolish thm-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260712wd101';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260712onf16';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: bulk template assign (unblocks Draft All when Athena carries no procedure text) + [FILL] placeholders -> form fields (window.__mlsOpNoteFill onf-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260712ct100';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_command_palette.js"]'))return;var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260712cpal11c1';s.setAttribute('data-mls-asset','feat_mls_command_palette.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: Ctrl+K command palette - patients/actions/notes fuzzy search (window.__mlsCmdPalette cpal-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260712vtl102c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: profile pain-and-visit trend chart from note text (window.__mlsVisitTimeline vtl-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v=20260712thm200c1';s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: lighter-blue scheme + button polish + view transitions (window.__mlsThemePolish thm-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widget_deck.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widget_deck.js?v=20260712wd101c1';s.setAttribute('data-mls-asset','feat_mls_widget_deck.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260712onf16c1';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: bulk template assign (unblocks Draft All when Athena carries no procedure text) + [FILL] placeholders -> form fields (window.__mlsOpNoteFill onf-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260712ct100c1';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b173: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_names.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_names.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_provider_names.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar provider dropdowns: stop rendering Provider-undefined phantom rows (window.__mlsProviderNames pn-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_ptcard_contain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_ptcard_contain.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_ptcard_contain.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient-list card containment: names/chips/context can no longer paint outside the card box on narrow widths (window.__mlsPtCardContain ptc-1.0.0; revert()) */

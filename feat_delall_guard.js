@@ -56,10 +56,10 @@
     box.innerHTML=''
       +'<div style="font-weight:800;font-size:17px;color:#a12626;margin-bottom:6px">🗑 Delete all templates?</div>'
       +'<div style="font-size:13.5px;color:#5b6b7c;margin-bottom:14px">This permanently removes <b>'+(n==null?'all':n)+'</b> template'+(n===1?'':'s')+'. This cannot be undone. Type <b>DELETE</b> to confirm.</div>'
-      +'<input id="mlsDelInput" type="text" placeholder="Type DELETE" autocomplete="off" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:15px;box-sizing:border-box;letter-spacing:1px" />'
+      +'<input id="mlsDelInput" type="text" placeholder="Type DELETE" autocomplete="off" style="width:100%;padding:11px 12px;border:1px solid #E7E5DD;border-radius:10px;font-size:15px;box-sizing:border-box;letter-spacing:1px" />'
       +'<div id="mlsDelMsg" style="font-size:13px;margin-top:12px;display:none;color:#0f6b49"></div>'
       +'<div style="display:flex;gap:8px;margin-top:18px">'
-      +'  <button id="mlsDelCancel" type="button" style="flex:1;padding:11px;border:1px solid #e4ebf3;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
+      +'  <button id="mlsDelCancel" type="button" style="flex:1;padding:11px;border:1px solid #E7E5DD;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
       +'  <button id="mlsDelGo" type="button" disabled style="flex:1;padding:11px;border:none;background:#d9534f;color:#fff;border-radius:10px;font-weight:700;cursor:pointer;opacity:.5">Delete all</button>'
       +'</div>';
     back.appendChild(box); document.body.appendChild(back);

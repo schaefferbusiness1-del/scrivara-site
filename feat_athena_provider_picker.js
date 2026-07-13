@@ -261,7 +261,7 @@
       '.mlspp-wrap{margin:2px 0 10px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.30);color:#fff;}',
       '.mlspp-wrap label{display:block;font-size:12px;font-weight:700;margin:0 0 5px;}',
       '.mlspp-wrap select{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.5);background:#fff;color:#13243a;font-size:13px;font-weight:600;cursor:pointer;}',
-      '.mlspp-hint{font-size:11px;line-height:1.35;opacity:.92;margin:6px 1px 0;color:#eaf2ff;}'
+      '.mlspp-hint{font-size:11px;line-height:1.35;opacity:.92;margin:6px 1px 0;color:#EAF1EC;}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
   }

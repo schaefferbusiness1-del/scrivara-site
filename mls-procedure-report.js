@@ -242,9 +242,9 @@
       '#mlsProcReport h2{margin:0 0 4px;font-size:19px;color:#15396b;display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
       '#mlsProcReport .mlspr-sub{color:#5f7186;font-size:12.5px;margin:0 0 12px}',
       '#mlsProcReport .mlspr-presets{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}',
-      '#mlsProcReport .mlspr-btn{cursor:pointer;border:1px solid #c3d0e4;background:#eef3fb;color:#1f3a63;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:600;line-height:1}',
+      '#mlsProcReport .mlspr-btn{cursor:pointer;border:1px solid #c3d0e4;background:#EAF1EE;color:#1f3a63;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:600;line-height:1}',
       '#mlsProcReport .mlspr-btn:hover{background:#e1ebf9}',
-      '#mlsProcReport .mlspr-btn.on{background:#1f7ae0;border-color:#1f7ae0;color:#fff}',
+      '#mlsProcReport .mlspr-btn.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
       '#mlsProcReport .mlspr-custom{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;font-size:12.5px;color:#33415a}',
       '#mlsProcReport input[type=date]{border:1px solid #c3d0e4;border-radius:7px;padding:5px 8px;font-size:12.5px;color:#1f2a37;background:#fff}',
       '#mlsProcReport .mlspr-kpis{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}',
@@ -257,7 +257,7 @@
       '#mlsProcReport h3{font-size:14px;color:#15396b;margin:16px 0 7px;font-weight:700}',
       '#mlsProcReport table{width:100%;border-collapse:collapse;font-size:12.5px}',
       '#mlsProcReport th,#mlsProcReport td{text-align:left;padding:6px 8px;border-bottom:1px solid #e7edf6;color:#28344a}',
-      '#mlsProcReport th{background:#eef3fb;color:#33507e;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}',
+      '#mlsProcReport th{background:#EAF1EE;color:#33507e;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}',
       '#mlsProcReport td.num,#mlsProcReport th.num{text-align:right;font-variant-numeric:tabular-nums}',
       '#mlsProcReport tr.total td{font-weight:800;background:#f5f8fd;color:#15396b;border-top:2px solid #c3d0e4}',
       '#mlsProcReport .mlspr-code{font-weight:700;color:#15396b}',
@@ -271,7 +271,7 @@
       '#mlsProcReport .mlspr-tagrow .d{font-weight:700;color:#15396b;min-width:88px}',
       '#mlsProcReport select.mlspr-set{border:1px solid #c3d0e4;border-radius:7px;padding:4px 7px;font-size:12.5px;color:#1f2a37;background:#fff}',
       '#mlsProcReport .mlspr-note{font-size:11.5px;color:#7a8aa0;margin-top:8px}',
-      '#mlsProcReport a.mlspr-toggle{color:#1f7ae0;font-size:12.5px;cursor:pointer;font-weight:600;text-decoration:none}'
+      '#mlsProcReport a.mlspr-toggle{color:#2E6A4B;font-size:12.5px;cursor:pointer;font-weight:600;text-decoration:none}'
     ].join('\n');
     var s = document.createElement('style'); s.id = 'mlsProcReportCSS'; s.textContent = css; document.head.appendChild(s);
   }

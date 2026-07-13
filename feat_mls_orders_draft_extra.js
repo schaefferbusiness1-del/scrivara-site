@@ -51,11 +51,11 @@
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 
   function cardHtml(c) {
-    return '<div style="background:#141b3d;border:1px dashed rgba(217,119,6,.5);border-radius:12px;padding:12px 14px;margin-bottom:10px" data-ode-card="' + c.k + '">' +
+    return '<div style="background:#24332A;border:1px dashed rgba(217,119,6,.5);border-radius:12px;padding:12px 14px;margin-bottom:10px" data-ode-card="' + c.k + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">' +
       '<b style="color:#ffcf8f">' + esc(c.label) + '</b>' +
-      '<label style="font-size:12px;color:#9fb0d8;display:flex;gap:6px;cursor:pointer"><input type="checkbox" data-k="' + c.k + '">confirm</label></div>' +
-      '<textarea data-t="' + c.k + '" style="width:100%;margin-top:8px;min-height:38px;background:#0f1530;border:1px solid rgba(120,140,220,.22);border-radius:8px;color:#e8ecff;padding:8px 10px;font:13px/1.5 system-ui;resize:vertical" placeholder="' + esc(c.ph) + '"></textarea>' +
+      '<label style="font-size:12px;color:#B9CEC2;display:flex;gap:6px;cursor:pointer"><input type="checkbox" data-k="' + c.k + '">confirm</label></div>' +
+      '<textarea data-t="' + c.k + '" style="width:100%;margin-top:8px;min-height:38px;background:#1E2B24;border:1px solid rgba(143,216,190,.22);border-radius:8px;color:#EAF1EC;padding:8px 10px;font:13px/1.5 system-ui;resize:vertical" placeholder="' + esc(c.ph) + '"></textarea>' +
       '<div style="font-size:11px;color:#ffcf8f;margin-top:4px">DRAFT &mdash; kept here for your reference; <b>never sent to athenaOne</b>.</div>' +
       '</div>';
   }

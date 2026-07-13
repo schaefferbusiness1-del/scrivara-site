@@ -49,10 +49,10 @@
     if ($(STYLE_ID)) return;
     var css = [
       "#" + IND_ID + "{display:inline-flex;align-items:center;gap:5px;margin-left:6px;",
-      "font-size:11.5px;font-weight:700;color:#0f2540;background:#eef3fb;border:1px solid #cfe0f5;",
+      "font-size:11.5px;font-weight:700;color:#1A211C;background:#EAF1EE;border:1px solid #cfe0f5;",
       "border-radius:999px;padding:3px 10px;font-family:inherit;line-height:1.2;white-space:nowrap}",
-      "#" + IND_ID + " .mlssi-dot{width:6px;height:6px;border-radius:50%;background:#2563eb;display:inline-block}",
-      "#" + IND_ID + ".is-today .mlssi-dot{background:#16a34a}"
+      "#" + IND_ID + " .mlssi-dot{width:6px;height:6px;border-radius:50%;background:#2E6A4B;display:inline-block}",
+      "#" + IND_ID + ".is-today .mlssi-dot{background:#2E6A4B}"
     ].join("");
     var s = safe(function () { return document.createElement("style"); }, null);
     if (!s) return;

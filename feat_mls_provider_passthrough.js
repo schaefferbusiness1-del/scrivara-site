@@ -70,7 +70,7 @@
     st.textContent =
       '#mlsProvChip{display:inline-flex;align-items:center;gap:6px;margin:6px 0 0;padding:6px 11px;border-radius:9px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:12px;font-weight:700;cursor:pointer;max-width:280px}' +
       '#mlsProvChip .pv-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-      '#mlsProvMenu{position:absolute;z-index:99999;background:var(--card,#fff);color:var(--ink,#15243a);border:1px solid var(--line,#d8e1ec);border-radius:11px;box-shadow:0 14px 40px rgba(15,25,40,.3);padding:6px;min-width:230px;display:none}' +
+      '#mlsProvMenu{position:absolute;z-index:99999;background:var(--card,#fff);color:var(--ink,#15243a);border:1px solid var(--line,#E4E1D8);border-radius:11px;box-shadow:0 14px 40px rgba(15,25,40,.3);padding:6px;min-width:230px;display:none}' +
       '#mlsProvMenu .pv-it{padding:8px 11px;border-radius:8px;cursor:pointer;font-size:13px}' +
       '#mlsProvMenu .pv-it:hover{background:rgba(33,104,201,.1)}' +
       '#mlsProvMenu .pv-h{font-size:10.5px;font-weight:800;opacity:.55;padding:6px 11px 2px;text-transform:uppercase;letter-spacing:.6px}';

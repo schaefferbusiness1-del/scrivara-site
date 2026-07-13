@@ -272,11 +272,11 @@
       '#' + PANEL_ID + ' .mlsdoc-ok{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:10px;' +
       'padding:11px 13px;margin:0 0 14px;font-size:14px;font-weight:700;}' +
       '#' + PANEL_ID + ' ul.mlsdoc-list{list-style:none;margin:0 0 14px;padding:0;}' +
-      '#' + PANEL_ID + ' li.mlsdoc-step{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid #eef2f7;}' +
+      '#' + PANEL_ID + ' li.mlsdoc-step{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid #F4F2EC;}' +
       '#' + PANEL_ID + ' li.mlsdoc-step:first-child{border-top:none;}' +
       '#' + PANEL_ID + ' .mlsdoc-ic{flex:0 0 22px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;' +
       'justify-content:center;font-size:13px;font-weight:900;color:#fff;margin-top:1px;}' +
-      '#' + PANEL_ID + ' .ic-pass{background:#16a34a;}' +
+      '#' + PANEL_ID + ' .ic-pass{background:#2E6A4B;}' +
       '#' + PANEL_ID + ' .ic-fail{background:#dc2626;}' +
       '#' + PANEL_ID + ' .ic-warn{background:#d97706;}' +
       '#' + PANEL_ID + ' .ic-check{background:#94a3b8;}' +
@@ -287,7 +287,7 @@
       'padding:5px 8px;margin-top:5px;font-weight:600;line-height:1.4;}' +
       '#' + PANEL_ID + ' .mlsdoc-actions{display:flex;gap:10px;justify-content:flex-end;}' +
       '#' + PANEL_ID + ' .mlsdoc-btn{border:none;border-radius:9px;padding:9px 15px;font-size:14px;font-weight:700;cursor:pointer;}' +
-      '#' + PANEL_ID + ' .mlsdoc-btn.primary{background:#2563eb;color:#fff;}' +
+      '#' + PANEL_ID + ' .mlsdoc-btn.primary{background:#2E6A4B;color:#fff;}' +
       '#' + PANEL_ID + ' .mlsdoc-btn.ghost{background:#e2e8f0;color:#0f172a;}' +
       // top-right troubleshoot control
       '#' + BTN_ID + '{position:fixed;top:8px;right:30px;z-index:2147483601;background:rgba(15,23,42,.82);color:#fff;' +
@@ -301,7 +301,7 @@
       'display:flex;align-items:center;gap:10px;line-height:1.4;}' +
       '#' + TOAST_ID + '.ok{background:#15803d;}' +
       '#' + TOAST_ID + '.warn{background:#b45309;}' +
-      '#' + TOAST_ID + '.info{background:#1f3a5f;}' +
+      '#' + TOAST_ID + '.info{background:#204034;}' +
       '#' + TOAST_ID + ' .mlsdoc-x{margin-left:6px;cursor:pointer;opacity:.85;font-weight:900;}';
     (document.head || document.documentElement).appendChild(st);
   }

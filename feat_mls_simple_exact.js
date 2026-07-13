@@ -133,9 +133,9 @@
       /* DUP BAR fix (item 1): hide the second lighter Simple-visit patient bar; keep the main #mlsCtxBar (Chart/Visit/History/Schedule/Switch). Idempotent, reversible. */
       "html.mls-sv-active #mlsSimWrap #simBanner{display:none!important}",
 
-      "#" + WRAP_ID + "{max-width:760px;margin:6px auto 0;padding:0 2px 24px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#0f2540;box-sizing:border-box}",
+      "#" + WRAP_ID + "{max-width:760px;margin:6px auto 0;padding:0 2px 24px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#1A211C;box-sizing:border-box}",
       "#" + WRAP_ID + " *{box-sizing:border-box}",
-      "#" + WRAP_ID + " ::placeholder{color:#9aa8bb}",
+      "#" + WRAP_ID + " ::placeholder{color:#A6AEA6}",
       "#" + WRAP_ID + " .sim-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}",
       "#" + WRAP_ID + " button{font-family:inherit}",
       "#" + WRAP_ID + " .sim-opt:hover{background:#f2f6fc}",
@@ -157,12 +157,12 @@
     w.innerHTML =
       '<div id="simStepper" style="display:flex;align-items:center;gap:0;margin-bottom:30px"></div>' +
       '<div id="simBanner"></div>' +
-      '<section style="background:#fff;border:1px solid #e4ebf3;border-radius:20px;box-shadow:0 12px 40px -18px rgba(13,33,56,.3);overflow:hidden">' +
+      '<section style="background:#fff;border:1px solid #E7E5DD;border-radius:20px;box-shadow:0 12px 40px -18px rgba(20,33,28,.3);overflow:hidden">' +
         '<div id="simHead" style="padding:30px 32px 0"></div>' +
         '<div id="simBody" style="padding:24px 32px 30px"></div>' +
-        '<div id="simFoot" class="sim-foot" style="border-top:1px solid #eef2f7;background:#f8fafc;padding:22px 32px;display:flex;align-items:center;gap:18px;flex-wrap:wrap"></div>' +
+        '<div id="simFoot" class="sim-foot" style="border-top:1px solid #F4F2EC;background:#FCFBF8;padding:22px 32px;display:flex;align-items:center;gap:18px;flex-wrap:wrap"></div>' +
       '</section>' +
-      '<p style="text-align:center;color:#9aa8bb;font-size:12px;margin-top:20px">' + E.lock + ' Synthetic data only &middot; HIPAA-ready architecture &middot; You sign every note</p>';
+      '<p style="text-align:center;color:#A6AEA6;font-size:12px;margin-top:20px">' + E.lock + ' Synthetic data only &middot; HIPAA-ready architecture &middot; You sign every note</p>';
     v.insertBefore(w, v.firstChild);
     return w;
   }
@@ -176,12 +176,12 @@
     for (var i = 1; i <= 5; i++) {
       var d = done(i), a = isActive(i);
       var dot = "width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;" +
-        (a ? "background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;box-shadow:0 8px 18px -6px rgba(47,107,237,.6);"
-           : d ? "background:#1f9d6b;color:#fff;"
-               : "background:#fff;color:#9aa8bb;border:1.5px solid #e0e8f1;");
-      var lbl = "font-size:11.5px;font-weight:" + (a ? "700" : "600") + ";color:" + (a ? "#0f2540" : "#9aa8bb") + ";white-space:nowrap;";
+        (a ? "background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;box-shadow:0 8px 18px -6px rgba(32,64,52,.6);"
+           : d ? "background:#2E6A4B;color:#fff;"
+               : "background:#fff;color:#A6AEA6;border:1.5px solid #e0e8f1;");
+      var lbl = "font-size:11.5px;font-weight:" + (a ? "700" : "600") + ";color:" + (a ? "#1A211C" : "#A6AEA6") + ";white-space:nowrap;";
       var bar = (i < 5)
-        ? '<div style="flex:1;height:2px;margin:0 6px;margin-bottom:24px;border-radius:2px;background:' + (d ? "#1f9d6b" : "#e0e8f1") + '"></div>'
+        ? '<div style="flex:1;height:2px;margin:0 6px;margin-bottom:24px;border-radius:2px;background:' + (d ? "#2E6A4B" : "#e0e8f1") + '"></div>'
         : "";
       html += '<div style="display:flex;align-items:center;flex:1;min-width:0">' +
         '<div style="display:flex;flex-direction:column;align-items:center;gap:7px;flex-shrink:0">' +
@@ -205,27 +205,27 @@
       if (p.dob) bits.push("DOB " + esc(p.dob));
       title = esc(p.name || "Active patient");
       sub = (bits.join(" &middot; ") || "Active patient") + " &middot; visits attach to this chart";
-      avatarHTML = esc(initials(p.name)); avatarBg = "#eef3fb";
+      avatarHTML = esc(initials(p.name)); avatarBg = "#EAF1EE";
     } else if (_manualPending && _manualPending.name) {
       title = esc(_manualPending.name);
       sub = (_manualPending.dob ? ("DOB " + esc(_manualPending.dob) + " &middot; ") : "") + "manual entry &middot; will attach when you record";
-      avatarHTML = esc(initials(_manualPending.name)); avatarBg = "#eef3fb";
+      avatarHTML = esc(initials(_manualPending.name)); avatarBg = "#EAF1EE";
     } else {
       title = "No active patient yet";
       sub = "Pull the day's patients below, then tap one to select.";
       avatarHTML = E.person;
     }
     var athConn = athenaConnected();
-    var statusDot = '<span style="display:flex;align-items:center;gap:6px;background:' + (athConn ? "#eef7f3" : "#f5f7fa") + ';border:1px solid ' + (athConn ? "#cfe9dd" : "#e4ebf3") + ';border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:600;color:' + (athConn ? "#1f7d5c" : "#8a9cb2") + '"><span style="width:7px;height:7px;border-radius:50%;background:' + (athConn ? "#27b07a" : "#c2cdda") + '"></span>Athena &middot; ' + (athConn ? "connected" : "idle") + '</span>';
+    var statusDot = '<span style="display:flex;align-items:center;gap:6px;background:' + (athConn ? "#eef7f3" : "#f5f7fa") + ';border:1px solid ' + (athConn ? "#cfe9dd" : "#E7E5DD") + ';border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:600;color:' + (athConn ? "#1f7d5c" : "#8a9cb2") + '"><span style="width:7px;height:7px;border-radius:50%;background:' + (athConn ? "#27b07a" : "#c2cdda") + '"></span>Athena &middot; ' + (athConn ? "connected" : "idle") + '</span>';
     host.innerHTML =
-      '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ' + (active ? "#cfe0fb" : "#e4ebf3") + ';border-radius:13px;padding:13px 16px;margin-bottom:18px;box-shadow:0 1px 2px rgba(15,37,64,.04)">' +
-        '<span style="width:36px;height:36px;border-radius:10px;background:' + avatarBg + ';color:#2f6bed;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">' + avatarHTML + '</span>' +
+      '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ' + (active ? "#cfe0fb" : "#E7E5DD") + ';border-radius:13px;padding:13px 16px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,33,28,.04)">' +
+        '<span style="width:36px;height:36px;border-radius:10px;background:' + avatarBg + ';color:#2E6A4B;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">' + avatarHTML + '</span>' +
         '<div style="flex:1;min-width:0;line-height:1.35">' +
-          '<div style="font-weight:700;font-size:13.5px;color:#0f2540">' + title + '</div>' +
-          '<div style="color:#6b7d93;font-size:12.5px">' + sub + '</div>' +
+          '<div style="font-weight:700;font-size:13.5px;color:#1A211C">' + title + '</div>' +
+          '<div style="color:#79837C;font-size:12.5px">' + sub + '</div>' +
         '</div>' +
         statusDot +
-        '<button id="simSwitch" style="height:34px;padding:0 14px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#2f6bed;font-weight:600;font-size:12.5px;cursor:pointer">Switch patient</button>' +
+        '<button id="simSwitch" style="height:34px;padding:0 14px;border-radius:9px;border:1px solid #e0e8f1;background:#fff;color:#2E6A4B;font-weight:600;font-size:12.5px;cursor:pointer">Switch patient</button>' +
       '</div>';
     var sw = $("simSwitch"); if (sw) sw.onclick = function () { openPicker(); };
   }
@@ -257,16 +257,16 @@
     };
     var m = map[step] || map[1];
     h.innerHTML =
-      '<div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#2f6bed;margin-bottom:10px">' + m[0] + '</div>' +
-      '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:32px;line-height:1.12;letter-spacing:-.015em;margin-bottom:9px;color:#0f2540">' + m[1] + '</h1>' +
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#2E6A4B;margin-bottom:10px">' + m[0] + '</div>' +
+      '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:32px;line-height:1.12;letter-spacing:-.015em;margin-bottom:9px;color:#1A211C">' + m[1] + '</h1>' +
       '<p style="color:#5a6b80;font-size:15px;line-height:1.55;max-width:520px;margin:0">' + m[2] + '</p>';
   }
 
   function optBtn(id, icon, title, sub) {
-    return '<button id="' + id + '" class="sim-opt" style="display:flex;align-items:center;gap:13px;text-align:left;padding:15px 16px;border-radius:14px;border:1px solid #e4ebf3;background:#fbfcfe;cursor:pointer">' +
-      '<span style="width:40px;height:40px;border-radius:11px;background:#eef3fb;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' + icon + '</span>' +
-      '<span><span style="display:block;font-weight:700;font-size:14px;color:#0f2540">' + title + '</span>' +
-      '<span style="display:block;color:#6b7d93;font-size:12px;margin-top:2px;line-height:1.4">' + sub + '</span></span>' +
+    return '<button id="' + id + '" class="sim-opt" style="display:flex;align-items:center;gap:13px;text-align:left;padding:15px 16px;border-radius:14px;border:1px solid #E7E5DD;background:#fbfcfe;cursor:pointer">' +
+      '<span style="width:40px;height:40px;border-radius:11px;background:#EAF1EE;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' + icon + '</span>' +
+      '<span><span style="display:block;font-weight:700;font-size:14px;color:#1A211C">' + title + '</span>' +
+      '<span style="display:block;color:#79837C;font-size:12px;margin-top:2px;line-height:1.4">' + sub + '</span></span>' +
     '</button>';
   }
 
@@ -277,22 +277,22 @@
       b.innerHTML =
         '<label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:8px;color:#3d5168">Whose patients?</label>' +
         '<div style="position:relative;margin-bottom:22px">' +
-          '<select id="simWhose" style="width:100%;height:50px;border-radius:13px;border:1px solid #e0e8f1;background:#f8fafc;padding:0 42px 0 16px;font-size:15px;font-weight:600;outline:none;color:#0f2540;-webkit-appearance:none;appearance:none;cursor:pointer">' + providerOptions() + '</select>' +
-          '<span style="position:absolute;right:16px;top:50%;transform:translateY(-50%);pointer-events:none;color:#9aa8bb;font-size:12px">' + E.tri + '</span>' +
+          '<select id="simWhose" style="width:100%;height:50px;border-radius:13px;border:1px solid #e0e8f1;background:#FCFBF8;padding:0 42px 0 16px;font-size:15px;font-weight:600;outline:none;color:#1A211C;-webkit-appearance:none;appearance:none;cursor:pointer">' + providerOptions() + '</select>' +
+          '<span style="position:absolute;right:16px;top:50%;transform:translateY(-50%);pointer-events:none;color:#A6AEA6;font-size:12px">' + E.tri + '</span>' +
         '</div>' +
-        '<button id="simPullToday" class="sim-hero" style="width:100%;text-align:left;display:flex;align-items:center;gap:18px;padding:22px 24px;border-radius:16px;border:none;cursor:pointer;background:linear-gradient(135deg,#0d2138,#15406f);box-shadow:0 14px 34px -16px rgba(13,33,56,.6);position:relative;overflow:hidden;transition:transform .06s ease">' +
-          '<span style="position:absolute;inset:0;background-image:radial-gradient(circle at 92% -30%,rgba(25,184,166,.4),transparent 50%);pointer-events:none"></span>' +
+        '<button id="simPullToday" class="sim-hero" style="width:100%;text-align:left;display:flex;align-items:center;gap:18px;padding:22px 24px;border-radius:16px;border:none;cursor:pointer;background:linear-gradient(135deg,#204034,#204034);box-shadow:0 14px 34px -16px rgba(20,33,28,.6);position:relative;overflow:hidden;transition:transform .06s ease">' +
+          '<span style="position:absolute;inset:0;background-image:radial-gradient(circle at 92% -30%,rgba(46,106,75,.4),transparent 50%);pointer-events:none"></span>' +
           '<span style="position:relative;width:54px;height:54px;border-radius:14px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:24px">' + E.cal + '</span>' +
           '<span style="position:relative;flex:1">' +
-            '<span style="display:flex;align-items:center;gap:9px;margin-bottom:3px"><span style="color:#fff;font-weight:700;font-size:17px">Pull today\'s patients</span><span style="font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#0d2138;background:#5fe3cf;padding:2px 8px;border-radius:20px">READ-ONLY</span></span>' +
+            '<span style="display:flex;align-items:center;gap:9px;margin-bottom:3px"><span style="color:#fff;font-weight:700;font-size:17px">Pull today\'s patients</span><span style="font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#204034;background:#8FD8BE;padding:2px 8px;border-radius:20px">READ-ONLY</span></span>' +
             '<span style="display:block;color:#bcd2ed;font-size:13px;line-height:1.45">Brings in today\'s schedule from athenaOne. The fastest way to start.</span>' +
           '</span>' +
           '<span style="position:relative;color:#8fe9da;font-size:22px;font-weight:700">' + E.arrow + '</span>' +
         '</button>' +
         '<div style="display:flex;gap:9px;align-items:center;margin:12px 2px 2px;flex-wrap:wrap">' +
           '<label style="font-size:12.5px;font-weight:700;color:#3d5168">Or pick a day:</label>' +
-          '<input type="date" id="simPullDate" style="height:38px;border-radius:10px;border:1px solid #e0e8f1;background:#fff;padding:0 10px;font-size:13.5px;color:#0f2540">' +
-          '<button id="simPullDay" style="height:38px;padding:0 16px;border-radius:10px;border:none;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font-weight:700;font-size:13px;cursor:pointer">Pull that day</button>' +
+          '<input type="date" id="simPullDate" style="height:38px;border-radius:10px;border:1px solid #e0e8f1;background:#fff;padding:0 10px;font-size:13.5px;color:#1A211C">' +
+          '<button id="simPullDay" style="height:38px;padding:0 16px;border-radius:10px;border:none;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font-weight:700;font-size:13px;cursor:pointer">Pull that day</button>' +
           '<span id="simDayStatus" style="display:none;width:100%;font-size:11.5px;color:#5a6b80;margin-top:2px"></span>' +
         '</div>' +
         '<div class="sim-grid">' +
@@ -301,20 +301,20 @@
           optBtn("simFind", E.find, "Find a patient by name", "Search and pull one patient") +
           optBtn("simManual", E.pen, "Enter manually", "Type name &amp; DOB yourself") +
         '</div>' +
-        '<button id="simPrepOp" class="sim-opt" style="width:100%;margin-top:12px;display:flex;align-items:center;gap:13px;text-align:left;padding:15px 16px;border-radius:14px;border:1px solid #e4ebf3;background:#fbfcfe;cursor:pointer">' +
+        '<button id="simPrepOp" class="sim-opt" style="width:100%;margin-top:12px;display:flex;align-items:center;gap:13px;text-align:left;padding:15px 16px;border-radius:14px;border:1px solid #E7E5DD;background:#fbfcfe;cursor:pointer">' +
           '<span style="width:40px;height:40px;border-radius:11px;background:#fdeef0;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#128137;</span>' +
-          '<span><span style="display:block;font-weight:700;font-size:14px;color:#0f2540">Prep op note</span>' +
-          '<span style="display:block;color:#6b7d93;font-size:12px;margin-top:2px;line-height:1.4">Pre-draft a procedure / operative note for the active patient</span></span>' +
+          '<span><span style="display:block;font-weight:700;font-size:14px;color:#1A211C">Prep op note</span>' +
+          '<span style="display:block;color:#79837C;font-size:12px;margin-top:2px;line-height:1.4">Pre-draft a procedure / operative note for the active patient</span></span>' +
         '</button>' +
         '<div id="simPickGrid" style="margin-top:18px"></div>' +
-        '<div id="simManualBox" style="display:none;margin-top:14px;background:#fbfcfe;border:1px solid #e4ebf3;border-radius:14px;padding:16px">' +
+        '<div id="simManualBox" style="display:none;margin-top:14px;background:#fbfcfe;border:1px solid #E7E5DD;border-radius:14px;padding:16px">' +
           '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
             '<div style="flex:1;min-width:180px"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:6px;color:#3d5168">Patient name</label>' +
-              '<input id="simMName" placeholder="First Last" style="width:100%;height:44px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;padding:0 14px;font-size:14.5px;color:#0f2540"></div>' +
+              '<input id="simMName" placeholder="First Last" style="width:100%;height:44px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;padding:0 14px;font-size:14.5px;color:#1A211C"></div>' +
             '<div style="width:160px"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:6px;color:#3d5168">Date of birth</label>' +
-              '<input id="simMDob" placeholder="MM/DD/YYYY" style="width:100%;height:44px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;padding:0 14px;font-size:14.5px;color:#0f2540"></div>' +
+              '<input id="simMDob" placeholder="MM/DD/YYYY" style="width:100%;height:44px;border-radius:11px;border:1px solid #e0e8f1;background:#fff;padding:0 14px;font-size:14.5px;color:#1A211C"></div>' +
           '</div>' +
-          '<button id="simMUse" style="margin-top:12px;height:42px;padding:0 18px;border-radius:11px;border:none;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font-weight:700;font-size:13.5px;cursor:pointer">Use this patient</button>' +
+          '<button id="simMUse" style="margin-top:12px;height:42px;padding:0 18px;border-radius:11px;border:none;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font-weight:700;font-size:13.5px;cursor:pointer">Use this patient</button>' +
         '</div>' +
         '<p style="text-align:center;color:#8a9cb2;font-size:12.5px;margin-top:16px">Not connected? Use the &ldquo;Whose patients?&rdquo; box above to pick a doctor, then pull.</p>';
       $("simPullToday").onclick = function () { _pickScope = "today"; if (athenaConnected()) clickById("mlscpToday"); renderPick("today"); setTimeout(function () { renderPick("today"); }, 1600); };
@@ -348,10 +348,10 @@
       var rec = isRecording(), canNext = hasTranscript();
       b.innerHTML =
         '<button id="simRec" style="width:100%;display:flex;align-items:center;justify-content:center;gap:12px;padding:22px;border-radius:16px;border:none;cursor:pointer;font-weight:700;font-size:17px;color:#fff;background:' +
-          (rec ? "linear-gradient(135deg,#ef4444,#dc2626)" : "linear-gradient(135deg,#0d2138,#15406f)") + ';box-shadow:0 14px 34px -16px rgba(13,33,56,.5)">' +
+          (rec ? "linear-gradient(135deg,#ef4444,#dc2626)" : "linear-gradient(135deg,#204034,#204034)") + ';box-shadow:0 14px 34px -16px rgba(20,33,28,.5)">' +
           (rec ? '<span style="width:12px;height:12px;border-radius:50%;background:#fff;display:inline-block"></span> Stop recording' : (E.mic + ' Start recording')) +
         '</button>' +
-        '<div style="margin-top:14px;display:flex;align-items:flex-start;gap:9px;color:#5a6b80;font-size:13.5px;line-height:1.5;background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;padding:13px 15px">' +
+        '<div style="margin-top:14px;display:flex;align-items:flex-start;gap:9px;color:#5a6b80;font-size:13.5px;line-height:1.5;background:#FCFBF8;border:1px solid #F4F2EC;border-radius:12px;padding:13px 15px">' +
           (rec ? "Recording&hellip; the conversation is being captured." : (canNext ? (E.check + " Transcript captured &mdash; you can move on to generate the note.") : "No microphone? You can also type or paste the conversation in the full view.")) +
         '</div>';
       $("simRec").onclick = function () { if (isRecording()) callFn("stopCapture"); else callFn("startCapture"); setTimeout(renderCard, 280); };
@@ -361,10 +361,10 @@
     if (step === 3) {
       var noteReady = hasNote(), working = !!window.__mlsEzGenerating;
       b.innerHTML =
-        '<button id="simGen" ' + (working ? "disabled" : "") + ' style="width:100%;display:flex;align-items:center;justify-content:center;gap:12px;padding:22px;border-radius:16px;border:none;cursor:' + (working ? "default" : "pointer") + ';font-weight:700;font-size:17px;color:#fff;background:linear-gradient(135deg,#1f9d6b,#178a5c);box-shadow:0 14px 30px -14px rgba(31,157,107,.6);opacity:' + (working ? ".7" : "1") + '">' +
+        '<button id="simGen" ' + (working ? "disabled" : "") + ' style="width:100%;display:flex;align-items:center;justify-content:center;gap:12px;padding:22px;border-radius:16px;border:none;cursor:' + (working ? "default" : "pointer") + ';font-weight:700;font-size:17px;color:#fff;background:linear-gradient(135deg,#2E6A4B,#204034);box-shadow:0 14px 30px -14px rgba(46,106,75,.6);opacity:' + (working ? ".7" : "1") + '">' +
           (working ? "Generating&hellip;" : (noteReady ? (E.check + " Note ready &mdash; review it") : (E.spark + " Generate note"))) +
         '</button>' +
-        '<div style="margin-top:14px;color:#5a6b80;font-size:13.5px;line-height:1.5;background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;padding:13px 15px">' +
+        '<div style="margin-top:14px;color:#5a6b80;font-size:13.5px;line-height:1.5;background:#FCFBF8;border:1px solid #F4F2EC;border-radius:12px;padding:13px 15px">' +
           (noteReady ? (E.check + " The note is ready below.") : (hasTranscript() ? "This turns the captured conversation into a structured note." : "No transcript yet &mdash; go back to record first.")) +
         '</div>';
       $("simGen").onclick = function () {
@@ -380,7 +380,7 @@
     if (step === 4) {
       var preview = val("noteBox");
       b.innerHTML =
-        '<div style="background:#f8fafc;border:1px solid #eef2f7;border-radius:14px;padding:16px 18px;max-height:280px;overflow:auto;white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:#243a55">' +
+        '<div style="background:#FCFBF8;border:1px solid #F4F2EC;border-radius:14px;padding:16px 18px;max-height:280px;overflow:auto;white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:#243a55">' +
           (preview.trim() ? esc(preview) : "No note text found &mdash; go back and generate the note.") + '</div>';
       return;
     }
@@ -388,12 +388,12 @@
     if (step === 5) {
       var did = (easy() && easy().state && easy().state.did) || {};
       b.innerHTML =
-        '<button id="simSave" style="width:100%;display:flex;align-items:center;justify-content:center;gap:12px;padding:22px;border-radius:16px;border:none;cursor:pointer;font-weight:700;font-size:17px;color:#fff;background:linear-gradient(135deg,#1f9d6b,#178a5c);box-shadow:0 14px 30px -14px rgba(31,157,107,.6)">' + E.save + ' Save to chart</button>' +
+        '<button id="simSave" style="width:100%;display:flex;align-items:center;justify-content:center;gap:12px;padding:22px;border-radius:16px;border:none;cursor:pointer;font-weight:700;font-size:17px;color:#fff;background:linear-gradient(135deg,#2E6A4B,#204034);box-shadow:0 14px 30px -14px rgba(46,106,75,.6)">' + E.save + ' Save to chart</button>' +
         '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px">' +
-          '<button id="simCopy" class="sim-opt" style="flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:13px;border:1px solid #e4ebf3;background:#fbfcfe;cursor:pointer;font-weight:700;font-size:13.5px;color:#0f2540">' + (did.copied ? (E.check + " Copied") : (E.clip + " Copy to Athena")) + '</button>' +
-          '<button id="simPdf" class="sim-opt" style="flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:13px;border:1px solid #e4ebf3;background:#fbfcfe;cursor:pointer;font-weight:700;font-size:13.5px;color:#0f2540">' + (did.pdf ? (E.check + " PDF saved") : (E.receipt + " Save as PDF")) + '</button>' +
+          '<button id="simCopy" class="sim-opt" style="flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:13px;border:1px solid #E7E5DD;background:#fbfcfe;cursor:pointer;font-weight:700;font-size:13.5px;color:#1A211C">' + (did.copied ? (E.check + " Copied") : (E.clip + " Copy to Athena")) + '</button>' +
+          '<button id="simPdf" class="sim-opt" style="flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:13px;border:1px solid #E7E5DD;background:#fbfcfe;cursor:pointer;font-weight:700;font-size:13.5px;color:#1A211C">' + (did.pdf ? (E.check + " PDF saved") : (E.receipt + " Save as PDF")) + '</button>' +
         '</div>' +
-        '<div style="margin-top:14px;color:#5a6b80;font-size:13px;line-height:1.5;background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;padding:13px 15px">Saving to chart records this visit in the patient\'s history. You review and sign every note.</div>';
+        '<div style="margin-top:14px;color:#5a6b80;font-size:13px;line-height:1.5;background:#FCFBF8;border:1px solid #F4F2EC;border-radius:12px;padding:13px 15px">Saving to chart records this visit in the patient\'s history. You review and sign every note.</div>';
       $("simSave").onclick = function () { callFn("saveCurrentNote", true); if (easy() && easy().state) easy().state.did.saved = true; setTimeout(function () { easyGoto("done"); }, 600); };
       $("simCopy").onclick = function () { callFn("copyForEMR"); if (easy() && easy().state) easy().state.did.copied = true; renderCard(); };
       $("simPdf").onclick = function () { var btn = findPdfBtn(); if (btn) { try { btn.click(); if (easy() && easy().state) easy().state.did.pdf = true; } catch (e) {} } renderCard(); };
@@ -402,9 +402,9 @@
 
     if (step === "done") {
       b.innerHTML =
-        '<div style="text-align:center;padding:10px 0 4px"><div style="width:60px;height:60px;border-radius:50%;background:#e7f5ee;color:#1f9d6b;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 14px">' + E.check + '</div>' +
-        '<div style="font-weight:700;font-size:16px;color:#0f2540">This visit is done.</div>' +
-        '<div style="color:#6b7d93;font-size:13.5px;margin-top:4px">The note is saved. Start the next patient when you\'re ready.</div></div>';
+        '<div style="text-align:center;padding:10px 0 4px"><div style="width:60px;height:60px;border-radius:50%;background:#e7f5ee;color:#2E6A4B;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 14px">' + E.check + '</div>' +
+        '<div style="font-weight:700;font-size:16px;color:#1A211C">This visit is done.</div>' +
+        '<div style="color:#79837C;font-size:13.5px;margin-top:4px">The note is saved. Start the next patient when you\'re ready.</div></div>';
       return;
     }
   }
@@ -428,14 +428,14 @@
     if (step === 1) {
       f.innerHTML =
         '<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:14px">Ready when you are</div>' +
-        '<div style="color:#6b7d93;font-size:12.5px;margin-top:1px">Choose who you\'re seeing, then move on to recording.</div></div>' +
-        '<button id="simGoRec" class="sim-gorec" style="height:54px;padding:0 28px;border-radius:14px;border:none;background:linear-gradient(135deg,#1f9d6b,#178a5c);color:#fff;font-weight:700;font-size:15.5px;cursor:pointer;display:flex;align-items:center;gap:10px;box-shadow:0 12px 26px -10px rgba(31,157,107,.6)">' + E.mic + ' Go to recording <span style="font-size:17px">' + E.arrow + '</span></button>';
+        '<div style="color:#79837C;font-size:12.5px;margin-top:1px">Choose who you\'re seeing, then move on to recording.</div></div>' +
+        '<button id="simGoRec" class="sim-gorec" style="height:54px;padding:0 28px;border-radius:14px;border:none;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font-weight:700;font-size:15.5px;cursor:pointer;display:flex;align-items:center;gap:10px;box-shadow:0 12px 26px -10px rgba(46,106,75,.6)">' + E.mic + ' Go to recording <span style="font-size:17px">' + E.arrow + '</span></button>';
       $("simGoRec").onclick = function () { easyGoto(2); };
       return;
     }
     if (step === "done") {
       f.innerHTML = '<div style="flex:1;min-width:160px"></div>' +
-        '<button id="simNext" class="sim-gorec" style="height:50px;padding:0 24px;border-radius:13px;border:none;background:linear-gradient(135deg,#2f6bed,#2257cf);color:#fff;font-weight:700;font-size:14.5px;cursor:pointer">Start next patient ' + E.arrow + '</button>';
+        '<button id="simNext" class="sim-gorec" style="height:50px;padding:0 24px;border-radius:13px;border:none;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font-weight:700;font-size:14.5px;cursor:pointer">Start next patient ' + E.arrow + '</button>';
       $("simNext").onclick = function () { callFn("newVisit"); _manual = false; easyGoto(1); };
       return;
     }
@@ -446,12 +446,12 @@
     else if (step === 4) { primaryId = "simNext4"; primaryLabel = "Looks good " + E.arrow; primaryOn = true; }
     else if (step === 5) { primaryId = "simNext5"; primaryLabel = "Finish " + E.arrow; primaryOn = true; }
     var extra = (step === 4)
-      ? '<button id="simEdit" style="height:46px;padding:0 18px;border-radius:12px;border:1px solid #e0e8f1;background:#fff;color:#2f6bed;font-weight:700;font-size:14px;cursor:pointer">Edit the note</button>'
+      ? '<button id="simEdit" style="height:46px;padding:0 18px;border-radius:12px;border:1px solid #e0e8f1;background:#fff;color:#2E6A4B;font-weight:700;font-size:14px;cursor:pointer">Edit the note</button>'
       : "";
     f.innerHTML =
       '<button id="simBack" style="height:46px;padding:0 16px;border-radius:12px;border:1px solid #e0e8f1;background:#fff;color:#3d5168;font-weight:600;font-size:14px;cursor:pointer">' + E.larrow + ' Back</button>' +
       '<div style="flex:1"></div>' + extra +
-      '<button id="' + primaryId + '" ' + (primaryOn ? "" : "disabled") + ' style="height:50px;padding:0 24px;border-radius:13px;border:none;background:linear-gradient(135deg,#1f9d6b,#178a5c);color:#fff;font-weight:700;font-size:14.5px;cursor:' + (primaryOn ? "pointer" : "not-allowed") + ';opacity:' + (primaryOn ? "1" : ".5") + ';display:flex;align-items:center;gap:8px">' + primaryLabel + '</button>';
+      '<button id="' + primaryId + '" ' + (primaryOn ? "" : "disabled") + ' style="height:50px;padding:0 24px;border-radius:13px;border:none;background:linear-gradient(135deg,#2E6A4B,#204034);color:#fff;font-weight:700;font-size:14.5px;cursor:' + (primaryOn ? "pointer" : "not-allowed") + ';opacity:' + (primaryOn ? "1" : ".5") + ';display:flex;align-items:center;gap:8px">' + primaryLabel + '</button>';
     var back = $("simBack"); if (back) back.onclick = function () { var s = curStep(); if (typeof s === "number" && s > 1) easyGoto(s - 1); };
     var ed = $("simEdit"); if (ed) ed.onclick = function () { var e = easy(); if (e && e.state) { e.state.mode = "full"; if (typeof e.render === "function") { try { e.render(); } catch (x) {} } } var nb = $("noteBox"); if (nb) { try { nb.scrollIntoView({ behavior: "smooth", block: "center" }); nb.focus(); } catch (x) {} } };
     var pr = $(primaryId);

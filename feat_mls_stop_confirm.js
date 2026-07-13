@@ -39,24 +39,24 @@
           "background:rgba(16,40,70,.55);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}"+
         "#"+BACKDROP_ID+".mls-sc-show{display:flex;}"+
         "#"+BACKDROP_ID+" .mls-sc-card{box-sizing:border-box;width:100%;max-width:380px;"+
-          "background:var(--card,#fff);color:var(--ink,#15293f);"+
-          "border:1px solid var(--line,#e2e8f1);border-radius:16px;"+
+          "background:var(--card,#fff);color:var(--ink,#1A211C);"+
+          "border:1px solid var(--line,#E7E5DD);border-radius:16px;"+
           "padding:24px 24px 20px;text-align:center;"+
           "box-shadow:0 24px 70px rgba(0,0,0,.32);"+
           "font-family:inherit;animation:mlsScPop .14s ease-out;}"+
         "@keyframes mlsScPop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}"+
         "#"+BACKDROP_ID+" .mls-sc-icon{font-size:30px;line-height:1;margin:0 0 10px;}"+
-        "#"+BACKDROP_ID+" .mls-sc-title{font-size:18px;font-weight:700;letter-spacing:-.2px;margin:0 0 6px;color:var(--ink,#15293f);}"+
-        "#"+BACKDROP_ID+" .mls-sc-msg{font-size:14px;line-height:1.45;color:var(--muted,#5b6b7e);margin:0 0 20px;}"+
+        "#"+BACKDROP_ID+" .mls-sc-title{font-size:18px;font-weight:700;letter-spacing:-.2px;margin:0 0 6px;color:var(--ink,#1A211C);}"+
+        "#"+BACKDROP_ID+" .mls-sc-msg{font-size:14px;line-height:1.45;color:var(--muted,#79837C);margin:0 0 20px;}"+
         "#"+BACKDROP_ID+" .mls-sc-actions{display:flex;gap:10px;justify-content:center;}"+
         "#"+BACKDROP_ID+" .mls-sc-btn{flex:1 1 0;min-width:0;cursor:pointer;font-family:inherit;"+
           "font-size:14.5px;font-weight:650;padding:11px 14px;border-radius:10px;border:1px solid transparent;"+
           "transition:filter .12s ease,box-shadow .12s ease;}"+
-        "#"+BACKDROP_ID+" .mls-sc-keep{background:var(--card,#fff);color:var(--brand-dk,#1b4fa6);"+
-          "border:1px solid var(--line,#e2e8f1);}"+
-        "#"+BACKDROP_ID+" .mls-sc-keep:hover{filter:brightness(.98);box-shadow:0 1px 3px rgba(20,40,70,.10);}"+
+        "#"+BACKDROP_ID+" .mls-sc-keep{background:var(--card,#fff);color:var(--brand-dk,#204034);"+
+          "border:1px solid var(--line,#E7E5DD);}"+
+        "#"+BACKDROP_ID+" .mls-sc-keep:hover{filter:brightness(.98);box-shadow:0 1px 3px rgba(20,33,28,.10);}"+
         "#"+BACKDROP_ID+" .mls-sc-stop{background:var(--red,#e0606b);color:#fff;border-color:var(--red,#e0606b);"+
-          "box-shadow:0 1px 2px rgba(20,40,70,.12);}"+
+          "box-shadow:0 1px 2px rgba(20,33,28,.12);}"+
         "#"+BACKDROP_ID+" .mls-sc-stop:hover{filter:brightness(1.04);}"+
         "#"+BACKDROP_ID+" .mls-sc-btn:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(37,99,201,.35);}";
       var st = document.createElement("style");

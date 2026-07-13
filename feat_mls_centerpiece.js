@@ -82,7 +82,7 @@
       '.mlscp-acting b{font-weight:700;}',
       '.mlscp-acting .mlscp-dim{opacity:.85;font-weight:400;}',
       '.mlscp-pulls{display:flex;flex-direction:column;gap:9px;margin-top:4px;}',
-      '.mlscp-note{font-size:11px;line-height:1.35;opacity:.85;margin:2px 2px 0;color:#eaf2ff;}',
+      '.mlscp-note{font-size:11px;line-height:1.35;opacity:.85;margin:2px 2px 0;color:#EAF1EC;}',
       '.mlscp-or{display:flex;align-items:center;gap:10px;margin:4px 0 2px;color:#dbe7ff;font-size:11px;opacity:.8;}',
       '.mlscp-or:before,.mlscp-or:after{content:"";flex:1;height:1px;background:rgba(255,255,255,.25);}',
       '.mlscp-sub{display:block;font-size:11px;font-weight:400;opacity:.9;margin-top:3px;line-height:1.3;}',

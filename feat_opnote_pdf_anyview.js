@@ -169,8 +169,8 @@
     if (gid(STYLE_ID)) return;
     var css =
       '.' + BTN_CLASS + '{cursor:pointer;}' +
-      'button.' + BTN_CLASS + ':not(.mlsvd-btn){border:1px solid var(--line,#cdd8e6);background:var(--card,#fff);' +
-      'color:var(--ink,#15293f);border-radius:8px;padding:6px 11px;font:inherit;font-weight:600;margin-left:8px;}';
+      'button.' + BTN_CLASS + ':not(.mlsvd-btn){border:1px solid var(--line,#D6D2C6);background:var(--card,#fff);' +
+      'color:var(--ink,#1A211C);border-radius:8px;padding:6px 11px;font:inherit;font-weight:600;margin-left:8px;}';
     var st = document.createElement('style');
     st.id = STYLE_ID; st.textContent = css;
     (document.head || document.documentElement).appendChild(st);

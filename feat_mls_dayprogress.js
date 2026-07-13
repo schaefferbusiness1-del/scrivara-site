@@ -58,7 +58,7 @@
         '#'+WRAP_ID+' .mdp-bar{position:relative;width:44px;height:6px;border-radius:4px;'+
         'background:rgba(12,44,77,.16);overflow:hidden;flex:0 0 auto;}'+
         '#'+WRAP_ID+' .mdp-fill{position:absolute;left:0;top:0;bottom:0;width:0;'+
-        'background:linear-gradient(90deg,#1f7ae0,#27c98f);transition:width .3s ease;}'+
+        'background:linear-gradient(90deg,#2E6A4B,#27c98f);transition:width .3s ease;}'+
         '#'+WRAP_ID+' .mdp-txt{font-weight:600;white-space:nowrap;}'+
         '#'+WRAP_ID+' .mdp-next{display:inline-flex;align-items:center;gap:4px;'+
         'cursor:pointer;border:0;background:none;color:#1463c8;font:inherit;font-weight:600;'+

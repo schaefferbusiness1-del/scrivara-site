@@ -426,7 +426,7 @@
     if ($(STYLE_ID)) return;
     var st = document.createElement("style"); st.id = STYLE_ID;
     st.textContent = [
-      "#" + BAR_ID + "{margin:10px 0 2px;border:1px solid rgba(120,150,220,.28);border-radius:12px;padding:10px 11px;background:rgba(47,107,237,.05)}",
+      "#" + BAR_ID + "{margin:10px 0 2px;border:1px solid rgba(120,150,220,.28);border-radius:12px;padding:10px 11px;background:rgba(32,64,52,.05)}",
       "#" + BAR_ID + " .ne-hd{font:700 12.5px system-ui;color:#1f3350;margin-bottom:7px;display:flex;align-items:center;gap:8px}",
       "#" + BAR_ID + " .ne-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}",
       "#" + BAR_ID + " button.ne-b{cursor:pointer;border:1px solid #cfd9ea;background:#fff;color:#33465f;border-radius:8px;padding:5px 9px;font:600 11.5px system-ui}",

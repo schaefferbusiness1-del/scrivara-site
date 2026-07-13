@@ -71,7 +71,7 @@
    * ==================================================================== */
   try {
     addStyle('mlsP1TplStyle',
-      '#mlsP1TplBar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0;padding:10px 12px;border:1px solid var(--line,#d8e1ec);border-radius:12px;background:var(--card,#fff)}' +
+      '#mlsP1TplBar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0;padding:10px 12px;border:1px solid var(--line,#E4E1D8);border-radius:12px;background:var(--card,#fff)}' +
       '#mlsP1TplBar .p1-b{border:0;border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff}' +
       '#mlsP1TplBar .p1-b.ghost{background:rgba(33,104,201,.1);color:#0d3c78}' +
       '#mlsP1TplBar .p1-b.danger{background:#8f1d2c}' +
@@ -254,7 +254,7 @@
       '#mlsP1Tunnel .tn-nav{margin-top:16px;display:flex;justify-content:space-between;align-items:center}' +
       '#mlsP1Tunnel .tn-nav button{border:0;border-radius:10px;padding:10px 18px;font-weight:800;cursor:pointer;font-size:13.5px}' +
       '#mlsP1Tunnel .tn-status{min-height:22px;font-size:13px;opacity:.9;margin-top:8px}' +
-      '#mlsP1TunnelLaunch{border:0;border-radius:11px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;background:#10b981;color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.4)}');
+      '#mlsP1TunnelLaunch{border:0;border-radius:11px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;background:#2E6A4B;color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.4)}');
     var tun = { step: 0, name: '', dob: '' };
     function tunEl() { return $('mlsP1Tunnel'); }
     function ensureTunnel() {
@@ -392,7 +392,7 @@
       var b = document.createElement('button');
       b.id = 'mlsP1TunnelLaunch'; b.type = 'button'; b.textContent = '\uD83C\uDFAF Simple mode (tunnel)';
       b.title = 'One thing at a time: Who -> Talk -> Generate -> Review -> Finish';
-      if (fixed) b.style.cssText = 'position:fixed;right:18px;bottom:128px;z-index:99995;border:0;border-radius:11px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;background:#10b981;color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.4)';
+      if (fixed) b.style.cssText = 'position:fixed;right:18px;bottom:128px;z-index:99995;border:0;border-radius:11px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;background:#2E6A4B;color:#fff;box-shadow:0 3px 10px rgba(16,185,129,.4)';
       b.onclick = function () { tun = { step: 0, name: '', dob: '' }; paintTunnel(); };
       row.appendChild(b); remember(b);
     }
@@ -406,15 +406,15 @@
    * ==================================================================== */
   try {
     addStyle('mlsP1AgStyle',
-      '#mlsP1Ag{position:fixed;top:0;right:0;bottom:0;width:340px;z-index:99996;background:var(--card,#fff);color:var(--ink,#15243a);border-left:1px solid var(--line,#d8e1ec);box-shadow:-10px 0 30px rgba(15,25,40,.18);display:none;flex-direction:column;font-size:13.5px}' +
+      '#mlsP1Ag{position:fixed;top:0;right:0;bottom:0;width:340px;z-index:99996;background:var(--card,#fff);color:var(--ink,#15243a);border-left:1px solid var(--line,#E4E1D8);box-shadow:-10px 0 30px rgba(15,25,40,.18);display:none;flex-direction:column;font-size:13.5px}' +
       '#mlsP1Ag .ag-h{display:flex;align-items:center;gap:8px;padding:12px 14px;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;font-weight:850}' +
       '#mlsP1Ag .ag-h button{margin-left:auto;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:3px 10px;cursor:pointer;font-weight:700}' +
       '#mlsP1AgMsgs{flex:1;overflow:auto;padding:12px}' +
       '#mlsP1AgMsgs .m{border-radius:12px;padding:9px 12px;margin:6px 0;max-width:92%;line-height:1.5;white-space:pre-wrap}' +
       '#mlsP1AgMsgs .m.you{background:rgba(33,104,201,.12);margin-left:auto}' +
-      '#mlsP1AgMsgs .m.ai{background:rgba(15,37,64,.06);border:1px solid var(--line,#e2e9f2)}' +
+      '#mlsP1AgMsgs .m.ai{background:rgba(20,33,28,.06);border:1px solid var(--line,#e2e9f2)}' +
       '#mlsP1AgMsgs .m.step{font-size:12.5px;background:transparent;border:1px dashed var(--line,#cdd9e8);opacity:.9}' +
-      '#mlsP1AgIn{display:flex;gap:7px;padding:10px;border-top:1px solid var(--line,#d8e1ec)}' +
+      '#mlsP1AgIn{display:flex;gap:7px;padding:10px;border-top:1px solid var(--line,#E4E1D8)}' +
       '#mlsP1AgIn input{flex:1;border:1px solid var(--line,#c9d5e4);border-radius:10px;padding:10px 12px;font-size:13.5px}' +
       '#mlsP1AgIn button{border:0;border-radius:10px;padding:9px 13px;font-weight:800;cursor:pointer;background:#2168c9;color:#fff}' +
       '#mlsP1AgFab{position:fixed;right:18px;bottom:76px;z-index:99995;border:0;border-radius:999px;padding:12px 18px;font-size:14px;font-weight:850;cursor:pointer;background:linear-gradient(135deg,#0d3c78,#2168c9);color:#fff;box-shadow:0 8px 26px rgba(15,40,90,.45)}');

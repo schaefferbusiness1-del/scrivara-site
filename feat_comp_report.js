@@ -126,14 +126,14 @@
     if (document.getElementById("mlsCompCss")) return;
     var s = document.createElement("style"); s.id = "mlsCompCss";
     s.textContent =
-      "#mlsCompBtn{position:fixed;left:12px;bottom:140px;z-index:99990;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;font:600 14px/1 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer}" +
+      "#mlsCompBtn{position:fixed;left:12px;bottom:140px;z-index:99990;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,#1e3a8a,#2E6A4B);color:#fff;font:600 14px/1 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 6px 18px rgba(30,58,138,.35);cursor:pointer}" +
       "#mlsCompBtn:hover{filter:brightness(1.08)}" +
       "#mlsCompOvl{position:fixed;inset:0;z-index:99991;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}" +
       "#mlsCompPanel{background:#fff;color:#0f172a;border-radius:14px;max-width:1060px;width:100%;padding:22px 26px;font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)}" +
       "#mlsCompPanel h2{margin:0 0 4px;font-size:20px}#mlsCompPanel h3{margin:18px 0 6px;font-size:15px}" +
       ".mlsCompBar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0}" +
       ".mlsCompBar input[type=month],.mlsCompBar input[type=text]{padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}" +
-      ".mlsCompBar button{padding:8px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:600 13px/1 inherit;cursor:pointer}" +
+      ".mlsCompBar button{padding:8px 14px;border:0;border-radius:8px;background:#2E6A4B;color:#fff;font:600 13px/1 inherit;cursor:pointer}" +
       ".mlsCompBar button.sec{background:#e2e8f0;color:#0f172a}.mlsCompBar button:disabled{opacity:.5;cursor:default}" +
       ".mlsCompGrid{display:flex;flex-wrap:wrap;gap:18px}" +
       "table.mlsCompT{border-collapse:collapse;font-size:12.5px;min-width:250px}table.mlsCompT th,table.mlsCompT td{border:1px solid #dbe3ee;padding:3px 9px;text-align:right}" +

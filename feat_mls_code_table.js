@@ -183,7 +183,7 @@
       '#' + MODAL_ID + ' button.ghost{background:#fff}',
       '#' + MODAL_ID + ' .ctprev{margin-top:12px;border:1px solid #e2ecf6;border-radius:9px;max-height:210px;overflow:auto;font-size:12px}',
       '#' + MODAL_ID + ' .ctprev table{border-collapse:collapse;width:100%}',
-      '#' + MODAL_ID + ' .ctprev td,#' + MODAL_ID + ' .ctprev th{border-bottom:1px solid #eef2f7;padding:4px 8px;text-align:left}',
+      '#' + MODAL_ID + ' .ctprev td,#' + MODAL_ID + ' .ctprev th{border-bottom:1px solid #F4F2EC;padding:4px 8px;text-align:left}',
       '#' + MODAL_ID + ' .ctnote{font-size:12px;color:#15803d;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-top:12px}'
     ].join('');
     (document.head || document.documentElement).appendChild(s);

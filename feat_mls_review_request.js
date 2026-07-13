@@ -120,7 +120,7 @@
     if ($('mlsRevReqCss')) return;
     var s = document.createElement('style'); s.id = 'mlsRevReqCss';
     s.textContent = [
-      '#' + CHIP_ID + '{position:fixed;right:18px;bottom:78px;z-index:2147481000;background:linear-gradient(90deg,#19b8a6,#2f6bed);color:#fff;border:0;border-radius:999px;padding:11px 16px;font:700 13px system-ui,Segoe UI,Arial;box-shadow:0 6px 18px rgba(20,60,120,.28);cursor:pointer}',
+      '#' + CHIP_ID + '{position:fixed;right:18px;bottom:78px;z-index:2147481000;background:linear-gradient(90deg,#3B7C5A,#2E6A4B);color:#fff;border:0;border-radius:999px;padding:11px 16px;font:700 13px system-ui,Segoe UI,Arial;box-shadow:0 6px 18px rgba(20,60,120,.28);cursor:pointer}',
       '#' + MODAL_ID + '{position:fixed;inset:0;z-index:2147482000;background:rgba(15,25,45,.5);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,Segoe UI,Arial}',
       '#' + MODAL_ID + ' .box{background:#fff;max-width:520px;width:100%;border-radius:16px;padding:20px;max-height:90vh;overflow:auto}',
       '#' + MODAL_ID + ' h3{margin:0 0 6px;font-size:18px;color:#15243c}',
@@ -130,7 +130,7 @@
       '#' + MODAL_ID + ' input{width:100%;border:1px solid #d7e0ef;border-radius:9px;padding:9px;font-size:14px;box-sizing:border-box}',
       '#' + MODAL_ID + ' label{display:block;font-size:12px;font-weight:700;margin:10px 0 4px;color:#15243c}',
       '#' + MODAL_ID + ' .btn{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:14px}',
-      '#' + MODAL_ID + ' .btn.primary{background:linear-gradient(90deg,#19b8a6,#2f6bed);color:#fff}',
+      '#' + MODAL_ID + ' .btn.primary{background:linear-gradient(90deg,#3B7C5A,#2E6A4B);color:#fff}',
       '#' + MODAL_ID + ' .btn.ghost{background:#eef2fa;color:#24406e}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(s);

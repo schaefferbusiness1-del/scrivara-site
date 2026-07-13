@@ -37,17 +37,17 @@
     if(!months.length){
       h+='<div style="padding:22px;text-align:center;color:#5b6b7c">No provider-linked appointment data yet.<br>Pull today’s / past months’ patients from Athena, then reopen this.</div>';
     } else {
-      h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#15528f"><th style="padding:6px 8px;border-bottom:2px solid #e4ebf3">Month</th>';
-      provs.forEach(function(p){ h+='<th style="padding:6px 8px;border-bottom:2px solid #e4ebf3" colspan="2">'+esc(p)+'</th>'; });
-      h+='<th style="padding:6px 8px;border-bottom:2px solid #e4ebf3" colspan="2">Combined</th></tr>';
+      h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#15528f"><th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Month</th>';
+      provs.forEach(function(p){ h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">'+esc(p)+'</th>'; });
+      h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">Combined</th></tr>';
       h+='<tr style="text-align:left;color:#5b6b7c;font-size:11px"><th></th>';
       provs.forEach(function(){ h+='<th style="padding:2px 8px">Days</th><th style="padding:2px 8px">Patients</th>'; });
       h+='<th style="padding:2px 8px">Days</th><th style="padding:2px 8px">Patients</th></tr></thead><tbody>';
       months.forEach(function(mo){
-        h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #eef2f7;font-weight:700">'+esc(monthName(mo))+'</td>';
-        provs.forEach(function(p){ var d=c.months[mo][p]; h+='<td style="padding:6px 8px;border-bottom:1px solid #eef2f7">'+(d?Object.keys(d.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #eef2f7">'+(d?Object.keys(d.pats).length:0)+'</td>'; });
+        h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+esc(monthName(mo))+'</td>';
+        provs.forEach(function(p){ var d=c.months[mo][p]; h+='<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">'+(d?Object.keys(d.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">'+(d?Object.keys(d.pats).length:0)+'</td>'; });
         var all=c.months[mo].__all;
-        h+='<td style="padding:6px 8px;border-bottom:1px solid #eef2f7;font-weight:700">'+(all?Object.keys(all.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #eef2f7;font-weight:700">'+(all?Object.keys(all.pats).length:0)+'</td></tr>';
+        h+='<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+(all?Object.keys(all.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+(all?Object.keys(all.pats).length:0)+'</td></tr>';
       });
       h+='</tbody></table>';
     }
@@ -67,7 +67,7 @@
       var card = (model && model.cloneNode) ? model.cloneNode(false) : document.createElement('div');
       if(!card.className) card.className='card';
       card.id='mlsDWCard';
-      card.innerHTML='<div style="font-weight:800;color:#15528f;font-size:14px">📊 Days worked/patient volume</div><div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days worked &amp; patients seen per provider, by month — separately &amp; combined.</div><button id="mlsDWOpen" type="button" style="border:none;background:#1f7ae0;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
+      card.innerHTML='<div style="font-weight:800;color:#15528f;font-size:14px">📊 Days worked/patient volume</div><div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days worked &amp; patients seen per provider, by month — separately &amp; combined.</div><button id="mlsDWOpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
       card.querySelector('#mlsDWOpen').addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); openModal(); });
       grid.appendChild(card);
     }catch(e){}

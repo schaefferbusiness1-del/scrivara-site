@@ -35,11 +35,11 @@
       +'<div style="font-weight:800;font-size:17px;color:#15528f;margin-bottom:4px">📧 Send portal login</div>'
       +'<div style="font-size:13.5px;color:#5b6b7c;margin-bottom:14px">'+esc(nm)+' will get a secure email with a one-time link to view their records and chat with them.</div>'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#15528f;margin-bottom:5px">Patient email</label>'
-      +'<input id="mlsPiEmail" type="email" value="'+esc(email)+'" placeholder="patient@email.com" style="width:100%;padding:11px 12px;border:1px solid #e4ebf3;border-radius:10px;font-size:15px;box-sizing:border-box;color:#0d2338" />'
+      +'<input id="mlsPiEmail" type="email" value="'+esc(email)+'" placeholder="patient@email.com" style="width:100%;padding:11px 12px;border:1px solid #E7E5DD;border-radius:10px;font-size:15px;box-sizing:border-box;color:#0d2338" />'
       +'<div id="mlsPiMsg" style="font-size:13px;margin-top:12px;display:none"></div>'
       +'<div style="display:flex;gap:8px;margin-top:18px">'
-      +'  <button id="mlsPiCancel" type="button" style="flex:1;padding:11px;border:1px solid #e4ebf3;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
-      +'  <button id="mlsPiSend" type="button" style="flex:2;padding:11px;border:none;background:#1f7ae0;color:#fff;border-radius:10px;font-weight:700;cursor:pointer">Send login</button>'
+      +'  <button id="mlsPiCancel" type="button" style="flex:1;padding:11px;border:1px solid #E7E5DD;background:#eef4fc;color:#15528f;border-radius:10px;font-weight:700;cursor:pointer">Cancel</button>'
+      +'  <button id="mlsPiSend" type="button" style="flex:2;padding:11px;border:none;background:#2E6A4B;color:#fff;border-radius:10px;font-weight:700;cursor:pointer">Send login</button>'
       +'</div>';
     back.appendChild(box); document.body.appendChild(back);
     var msg=box.querySelector('#mlsPiMsg');

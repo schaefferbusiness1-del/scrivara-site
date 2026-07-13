@@ -309,15 +309,15 @@
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
     var css =
-      ".mls-opx{color:var(--ink,#15293f);font-size:13px;line-height:1.5;}" +
-      ".mls-opx-hdr{color:var(--ink,#15293f);opacity:.85;font-size:12px;margin:2px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line,#e3e8ef);}" +
+      ".mls-opx{color:var(--ink,#1A211C);font-size:13px;line-height:1.5;}" +
+      ".mls-opx-hdr{color:var(--ink,#1A211C);opacity:.85;font-size:12px;margin:2px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line,#e3e8ef);}" +
       ".mls-opx-hdr div{margin:1px 0;}" +
       ".mls-opx-sec{margin:0 0 11px;}" +
-      ".mls-opx-h{font-weight:700;color:var(--brand,#2563c9);letter-spacing:.04em;font-size:11.5px;text-transform:uppercase;margin:0 0 3px;}" +
-      ".mls-opx-p{color:var(--ink,#15293f);margin:0 0 3px;white-space:pre-wrap;}" +
-      ".mls-opx-na{color:var(--ink,#15293f);opacity:.5;font-style:italic;margin:0 0 3px;}" +
+      ".mls-opx-h{font-weight:700;color:var(--brand,#2E6A4B);letter-spacing:.04em;font-size:11.5px;text-transform:uppercase;margin:0 0 3px;}" +
+      ".mls-opx-p{color:var(--ink,#1A211C);margin:0 0 3px;white-space:pre-wrap;}" +
+      ".mls-opx-na{color:var(--ink,#1A211C);opacity:.5;font-style:italic;margin:0 0 3px;}" +
       ".mls-opx-ul{margin:2px 0 4px;padding-left:18px;}" +
-      ".mls-opx-ul li{color:var(--ink,#15293f);margin:1px 0;}" +
+      ".mls-opx-ul li{color:var(--ink,#1A211C);margin:1px 0;}" +
       ".mls-opx-gap{height:5px;}" +
       "details.mls-opx-rawmoved>summary{opacity:.6;font-size:12px;}";
     var st = document.createElement("style");

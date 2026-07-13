@@ -235,7 +235,7 @@
     var bars = months.map(function (m, i) {
       var bh = (a.byMonth[m] / max) * (h - pad * 2);
       var x = pad + i * bw + 2, y = h - pad - bh;
-      return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + Math.max(1, bw - 4).toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="#2563eb"></rect>' +
+      return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + Math.max(1, bw - 4).toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="#2E6A4B"></rect>' +
         '<text x="' + (x + (bw - 4) / 2).toFixed(1) + '" y="' + (h - pad + 12) + '" font-size="8" text-anchor="middle" fill="#475569" transform="rotate(45 ' + (x + (bw - 4) / 2).toFixed(1) + ' ' + (h - pad + 12) + ')">' + esc(m) + '</text>';
     }).join('');
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '">' +
@@ -340,7 +340,7 @@
       '.mls-sg-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}' +
       '.mls-sg-wrap input,.mls-sg-wrap select,.mls-sg-wrap textarea{border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font:inherit}' +
       '.mls-sg-wrap textarea{width:100%;min-height:84px}' +
-      '.mls-sg-btn{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:8px 13px;cursor:pointer;font:inherit}' +
+      '.mls-sg-btn{background:#2E6A4B;color:#fff;border:0;border-radius:8px;padding:8px 13px;cursor:pointer;font:inherit}' +
       '.mls-sg-btn.alt{background:#0ea5e9}.mls-sg-btn.gray{background:#64748b}.mls-sg-btn:disabled{opacity:.5;cursor:default}' +
       '.mls-sg-muted{color:#64748b;font-size:12px}.mls-sg-pill{background:#eff6ff;color:#1d4ed8;border-radius:999px;padding:2px 9px;font-size:12px}' +
       '.mls-sg-warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:8px 10px;font-size:12px}' +
@@ -473,7 +473,7 @@
       var btn = el('button', { 'class': 'mls-sg-btn', id: 'mls-sg-launch', style: 'position:fixed;right:18px;bottom:18px;z-index:99999;box-shadow:0 4px 14px rgba(0,0,0,.2)' }, '👥 Study Groups');
       btn.onclick = function () {
         var host = el('div', { id: 'mls-sg-modal', style: 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100000;overflow:auto;padding:24px' });
-        var panel = el('div', { style: 'background:#f8fafc;max-width:960px;margin:0 auto;border-radius:14px;padding:16px;position:relative' });
+        var panel = el('div', { style: 'background:#FCFBF8;max-width:960px;margin:0 auto;border-radius:14px;padding:16px;position:relative' });
         var x = el('button', { 'class': 'mls-sg-btn gray', style: 'position:absolute;right:12px;top:12px' }, '✕ Close'); x.onclick = function () { host.remove(); };
         panel.appendChild(x); host.appendChild(panel); document.body.appendChild(host); render(panel);
       };

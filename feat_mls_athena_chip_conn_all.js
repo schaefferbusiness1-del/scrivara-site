@@ -105,7 +105,7 @@
     s.id = 'mlsConnDecorAllCss';
     s.textContent =
         '.mls-sync.mlsconn-green{color:#127a55;border-color:#bfe6cf;background:#f0fbf4;}'
-      + '.mls-sync.mlsconn-green .mls-sync-dot{background:#16a34a;}'
+      + '.mls-sync.mlsconn-green .mls-sync-dot{background:#2E6A4B;}'
       + '.mls-sync.mlsconn-amber{color:#92600a;border-color:#f3e0b6;background:#fdf8ec;}'
       + '.mls-sync.mlsconn-amber .mls-sync-dot{background:#d97706;}'
       + '.mls-sync.mlsconn-red{color:#b91c1c;border-color:#f3c9c9;background:#fdf2f2;}'

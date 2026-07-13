@@ -313,18 +313,18 @@
     styleEl.id = 'mls-checker-style';
     styleEl.textContent =
       '#' + SECTION_ID + '{border:1px solid #e7edf5;border-radius:13px;padding:12px;background:#fbfcff;margin-bottom:13px;}' +
-      '#' + SECTION_ID + ' h4{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:16px;margin:0 0 4px;color:#0f2540;}' +
-      '#' + SECTION_ID + ' .mc-sub{font-size:11px;color:#6b7d93;margin:0 0 9px;}' +
+      '#' + SECTION_ID + ' h4{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:16px;margin:0 0 4px;color:#1A211C;}' +
+      '#' + SECTION_ID + ' .mc-sub{font-size:11px;color:#79837C;margin:0 0 9px;}' +
       '#' + SECTION_ID + ' .mc-run{width:100%;height:38px;border-radius:10px;border:none;cursor:pointer;background:linear-gradient(135deg,#0f6b3a,#0c844a);color:#fff;font:800 12.5px/1 "Plus Jakarta Sans";}' +
       '#' + SECTION_ID + ' .mc-run:disabled{opacity:.6;cursor:default;}' +
-      '#' + SECTION_ID + ' .mc-summary{font:700 11.5px/1.3 "Plus Jakarta Sans";margin:10px 0 6px;color:#0f2540;}' +
-      '#' + SECTION_ID + ' .mc-item{border:1px solid #eef2f7;border-radius:10px;padding:8px 10px;margin-top:7px;background:#fff;}' +
+      '#' + SECTION_ID + ' .mc-summary{font:700 11.5px/1.3 "Plus Jakarta Sans";margin:10px 0 6px;color:#1A211C;}' +
+      '#' + SECTION_ID + ' .mc-item{border:1px solid #F4F2EC;border-radius:10px;padding:8px 10px;margin-top:7px;background:#fff;}' +
       '#' + SECTION_ID + ' .mc-row{display:flex;align-items:center;gap:8px;}' +
       '#' + SECTION_ID + ' .mc-ic{width:18px;height:18px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font:800 11px/1 "Plus Jakarta Sans";color:#fff;}' +
-      '#' + SECTION_ID + ' .mc-pass .mc-ic{background:#16a34a;}' +
+      '#' + SECTION_ID + ' .mc-pass .mc-ic{background:#2E6A4B;}' +
       '#' + SECTION_ID + ' .mc-fail .mc-ic{background:#dc2626;}' +
       '#' + SECTION_ID + ' .mc-unknown .mc-ic{background:#d97706;}' +
-      '#' + SECTION_ID + ' .mc-name{font:700 12px/1.25 "Plus Jakarta Sans";color:#0f2540;flex:1 1 auto;}' +
+      '#' + SECTION_ID + ' .mc-name{font:700 12px/1.25 "Plus Jakarta Sans";color:#1A211C;flex:1 1 auto;}' +
       '#' + SECTION_ID + ' .mc-code{font:700 10px/1 ui-monospace,Menlo,monospace;color:#5a6b80;background:#f1f5fb;border-radius:5px;padding:3px 5px;}' +
       '#' + SECTION_ID + ' .mc-cause{font-size:11px;color:#7a2718;margin-top:5px;}' +
       '#' + SECTION_ID + ' .mc-fix{font-size:11px;color:#0f3b66;margin-top:3px;}' +

@@ -36,7 +36,7 @@
     if ($(STYLE_ID)) return;
     var st = document.createElement('style'); st.id = STYLE_ID;
     st.textContent = [
-      '#' + CARD_ID + '{margin:12px 0;padding:14px 16px 10px;border:1px solid #dbe7f5;border-radius:14px;background:linear-gradient(180deg,#f7faff 0%,#eef5ff 100%)}',
+      '#' + CARD_ID + '{margin:12px 0;padding:14px 16px 10px;border:1px solid #E7E5DD;border-radius:14px;background:linear-gradient(180deg,#f7faff 0%,#EAF1EE 100%)}',
       '#' + CARD_ID + ' .vtl-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;font:800 13px/1.3 "Plus Jakarta Sans",system-ui,sans-serif;color:#1b3a66}',
       '#' + CARD_ID + ' .vtl-h .n{font-weight:600;font-size:11.5px;color:#5c749b}',
       '#' + CARD_ID + ' svg{display:block;width:100%;height:86px}',

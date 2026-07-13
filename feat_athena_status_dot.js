@@ -36,7 +36,7 @@
   var PING_MS = 1500;
   var ATHENA_MS = 6000;
 
-  var COLORS = { connected: '#16a34a', red: '#dc2626', checking: '#9aa0a6' };
+  var COLORS = { connected: '#2E6A4B', red: '#dc2626', checking: '#9aa0a6' };
 
   function ensureStyle() {
     if (document.getElementById('mlsAthenaStatusDotStyle')) return;

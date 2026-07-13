@@ -260,9 +260,9 @@
       }
       var lbl = dayLabel(), n = visibleCount();
       var scope = (provFilter() && provFilter().getAttribute('data-mls-scope')) || '';
-      bar.innerHTML = '<span style="background:var(--brand,#1f7ae0);color:#fff;border-radius:999px;padding:2px 10px">Viewing: '+esc(lbl||'—')+'</span>' +
+      bar.innerHTML = '<span style="background:var(--brand,#2E6A4B);color:#fff;border-radius:999px;padding:2px 10px">Viewing: '+esc(lbl||'—')+'</span>' +
         '<span>'+n+' appointment'+(n===1?'':'s')+' · deduped</span>' +
-        (scope ? '<span style="color:var(--brand,#1f7ae0)">· '+esc(scope)+'</span>' : '');
+        (scope ? '<span style="color:var(--brand,#2E6A4B)">· '+esc(scope)+'</span>' : '');
     }catch(e){}
   }
 

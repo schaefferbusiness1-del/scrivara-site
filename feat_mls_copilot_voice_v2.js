@@ -139,7 +139,7 @@
     if ($(STYLE_ID)) return;
     var st = document.createElement('style'); st.id = STYLE_ID;
     st.textContent = [
-      '#' + BTN_ID + '{position:fixed;left:12px;bottom:14px;z-index:99997;display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font:800 14px system-ui;box-shadow:0 8px 24px rgba(124,58,237,.45);cursor:pointer}',
+      '#' + BTN_ID + '{position:fixed;left:12px;bottom:14px;z-index:99997;display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#7A5CC0,#2E6A4B);color:#fff;font:800 14px system-ui;box-shadow:0 8px 24px rgba(124,58,237,.45);cursor:pointer}',
       '#' + BTN_ID + ':hover{filter:brightness(1.1)}',
       '#' + BTN_ID + '.listening{animation:mlsCv2Pulse 1s ease-in-out infinite}',
       '#' + BTN_ID + '.denied{background:linear-gradient(135deg,#9aa4b2,#6b7684)}',

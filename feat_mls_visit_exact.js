@@ -82,9 +82,9 @@
   /* ===================== HERO ===================== */
   function buildHero() {
     var hero = $("visitHero"); if (!hero) return;
-    imp(hero, "background", "linear-gradient(135deg,#0d2138 0%,#143560 55%,#15406f 100%)");
+    imp(hero, "background", "linear-gradient(135deg,#204034 0%,#204034 55%,#204034 100%)");
     imp(hero, "color", "#fff"); imp(hero, "border", "0"); imp(hero, "border-radius", "22px");
-    imp(hero, "box-shadow", "0 22px 50px -22px rgba(13,33,56,.6)"); imp(hero, "padding", "0");
+    imp(hero, "box-shadow", "0 22px 50px -22px rgba(20,33,28,.6)"); imp(hero, "padding", "0");
     imp(hero, "overflow", "hidden"); imp(hero, "position", "relative"); imp(hero, "margin-bottom", "0");
 
     if (hero.querySelector(":scope > .vx-hero-wrap")) return;
@@ -92,10 +92,10 @@
     var nameInp = $("heroPtName"), dob = $("heroPtDob"), rec = $("heroRecBtn"),
         list = $("heroPtList"), pull = $("heroPullStatus"), today = $("heroToday");
     var inpCss = ["width:100%", "height:48px", "border-radius:12px", "border:1px solid rgba(255,255,255,.16)",
-      "background:rgba(255,255,255,.96)", "color:#0f2540", "padding:0 15px", "font-size:14.5px"];
+      "background:rgba(255,255,255,.96)", "color:#1A211C", "padding:0 15px", "font-size:14.5px"];
 
     hero.innerHTML = "";
-    hero.appendChild(mk("div", "position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(circle at 88% -20%,rgba(25,184,166,.35),transparent 45%),radial-gradient(circle at 100% 120%,rgba(47,107,237,.3),transparent 40%)"));
+    hero.appendChild(mk("div", "position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(circle at 88% -20%,rgba(46,106,75,.35),transparent 45%),radial-gradient(circle at 100% 120%,rgba(32,64,52,.3),transparent 40%)"));
     var inner = mk("div", "position:relative;padding:30px 34px;display:grid;grid-template-columns:1.15fr .85fr;gap:34px;align-items:center");
     inner.className = "vx-hero-wrap vx-hero-inner";
     hero.appendChild(inner);
@@ -103,14 +103,14 @@
     var left = mk("div");
     left.innerHTML =
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">' +
-        '<span style="font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#0d2138;background:#5fe3cf;padding:4px 11px;border-radius:20px">MLS Easy</span>' +
-        '<span style="color:#9fc0ff;font-size:12.5px;font-weight:600">Ready for your next patient</span>' +
+        '<span style="font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#204034;background:#8FD8BE;padding:4px 11px;border-radius:20px">MLS Easy</span>' +
+        '<span style="color:#B9CEC2;font-size:12.5px;font-weight:600">Ready for your next patient</span>' +
       '</div>' +
       '<h1 style="font-family:\'Newsreader\',Georgia,serif;font-weight:500;font-size:38px;line-height:1.08;letter-spacing:-.015em;color:#fff;margin:0 0 12px">Just talk &mdash; <span style="font-style:italic;color:#8fe9da">MLS writes the note.</span></h1>' +
       '<p style="color:#bcd2ed;font-size:15px;line-height:1.55;max-width:440px;margin:0 0 22px">Enter the patient\'s name and DOB, hit record, and have a natural visit. No typing, no clicks &mdash; you review and sign.</p>';
     var row = mk("div", "display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap"); row.className = "vx-cap-row";
-    var nameWrap = mk("div", "flex:1;min-width:200px", '<label style="display:block;color:#9fc0ff;font-size:11.5px;font-weight:600;margin-bottom:6px">Patient name</label>');
-    var dobWrap = mk("div", "width:150px", '<label style="display:block;color:#9fc0ff;font-size:11.5px;font-weight:600;margin-bottom:6px">Date of birth</label>');
+    var nameWrap = mk("div", "flex:1;min-width:200px", '<label style="display:block;color:#B9CEC2;font-size:11.5px;font-weight:600;margin-bottom:6px">Patient name</label>');
+    var dobWrap = mk("div", "width:150px", '<label style="display:block;color:#B9CEC2;font-size:11.5px;font-weight:600;margin-bottom:6px">Date of birth</label>');
     row.appendChild(nameWrap); row.appendChild(dobWrap); left.appendChild(row); inner.appendChild(left);
 
     if (nameInp) { impAll(nameInp, inpCss); nameWrap.appendChild(nameInp); }
@@ -118,13 +118,13 @@
     if (dob) { impAll(dob, inpCss); dobWrap.appendChild(dob); }
     if (rec) {
       impAll(rec, ["height:48px", "padding:0 22px", "border-radius:12px", "border:0",
-        "background:linear-gradient(135deg,#19b8a6,#13a18f)", "color:#fff", "font-weight:700",
-        "font-size:14.5px", "box-shadow:0 10px 22px -8px rgba(25,184,166,.7)", "white-space:nowrap"]);
+        "background:linear-gradient(135deg,#3B7C5A,#35704F)", "color:#fff", "font-weight:700",
+        "font-size:14.5px", "box-shadow:0 10px 22px -8px rgba(46,106,75,.7)", "white-space:nowrap"]);
       row.appendChild(rec);
     }
 
     var right = mk("div", "display:flex;flex-direction:column;gap:11px",
-      '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9fc0ff;font-size:12px;font-weight:600">Quick actions</span></div>');
+      '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#B9CEC2;font-size:12px;font-weight:600">Quick actions</span></div>');
     var qa = [
       { h: "pullScheduleViaAssist(this)", icon: E.inbox, t: "Pull today's patients", s: "Import schedule &amp; history", tag: "READ-ONLY" },
       { h: "emrConnectFromHero()", icon: E.plug, t: "Connect to EMR", s: "HL7 FHIR R4 &middot; SMART on FHIR", tag: "" },
@@ -137,7 +137,7 @@
         '<span style="width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:16px">' + q.icon + '</span>' +
         '<span style="flex:1"><span style="display:block;font-weight:600;font-size:13.5px">' + q.t + '</span>' +
         '<span style="display:block;color:#9fb6d6;font-size:11.5px;margin-top:1px">' + q.s + '</span></span>' +
-        (q.tag ? '<span style="font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#5fe3cf;border:1px solid rgba(95,227,207,.4);padding:2px 7px;border-radius:20px">' + q.tag + '</span>' : '');
+        (q.tag ? '<span style="font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#8FD8BE;border:1px solid rgba(95,227,207,.4);padding:2px 7px;border-radius:20px">' + q.tag + '</span>' : '');
       right.appendChild(b);
     });
     inner.appendChild(right);
@@ -163,12 +163,12 @@
     if (oldGrid && oldGrid !== grid) { oldGrid.classList.remove("grid"); oldGrid.classList.add("vx-oldgrid"); imp(oldGrid, "display", "contents"); }
 
     [cap, note].forEach(function (c) {
-      imp(c, "background", "#fff"); imp(c, "border", "1px solid #e4ebf3"); imp(c, "border-radius", "18px");
-      imp(c, "padding", "24px"); imp(c, "box-shadow", "0 1px 2px rgba(15,37,64,.04)"); imp(c, "margin", "0");
+      imp(c, "background", "#fff"); imp(c, "border", "1px solid #E7E5DD"); imp(c, "border-radius", "18px");
+      imp(c, "padding", "24px"); imp(c, "box-shadow", "0 1px 2px rgba(20,33,28,.04)"); imp(c, "margin", "0");
     });
     if (emr) {
-      imp(emr, "background", "#fff"); imp(emr, "border", "1px solid #e4ebf3"); imp(emr, "border-radius", "18px");
-      imp(emr, "padding", "20px"); imp(emr, "box-shadow", "0 1px 2px rgba(15,37,64,.04)"); imp(emr, "margin", "0");
+      imp(emr, "background", "#fff"); imp(emr, "border", "1px solid #E7E5DD"); imp(emr, "border-radius", "18px");
+      imp(emr, "padding", "20px"); imp(emr, "box-shadow", "0 1px 2px rgba(20,33,28,.04)"); imp(emr, "margin", "0");
       emr.classList.add("vx-emr");
     }
     /* IDEMPOTENT placement (glitch fix #1/#2/#3): only (re)append the cards when
@@ -189,7 +189,7 @@
   /* ===================== header chrome inside cards ===================== */
   function restyleCardChrome() {
     var heads = [
-      { card: "captureCard", icon: E.mic, bg: "#eef3fb" },
+      { card: "captureCard", icon: E.mic, bg: "#EAF1EE" },
       { card: "noteCard", icon: E.note, bg: "#f3eefb" },
       { card: "emrCard", icon: E.folder, bg: "#fbf3e3", small: true },
       { card: "outcomesCard", icon: E.chart, bg: "#e7f5ee" }
@@ -242,8 +242,8 @@
   /* ===================== OUTCOMES ===================== */
   function buildOutcomes() {
     var o = $("outcomesCard"); if (!o) return;
-    imp(o, "background", "#fff"); imp(o, "border", "1px solid #e4ebf3"); imp(o, "border-radius", "18px");
-    imp(o, "padding", "24px"); imp(o, "box-shadow", "0 1px 2px rgba(15,37,64,.04)"); imp(o, "margin-top", "20px");
+    imp(o, "background", "#fff"); imp(o, "border", "1px solid #E7E5DD"); imp(o, "border-radius", "18px");
+    imp(o, "padding", "24px"); imp(o, "box-shadow", "0 1px 2px rgba(20,33,28,.04)"); imp(o, "margin-top", "20px");
     var v = $("visitView"), grid = v && v.querySelector(":scope > .vx-grid");
     if (grid && o.parentElement === v && o !== v.lastElementChild) { try { v.appendChild(o); } catch (e) {} } /* idempotent: only move when not already last */
   }

@@ -131,7 +131,7 @@
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     var s = document.createElement('style'); s.id = STYLE_ID;
-    s.textContent = '.mlsopwb-btn{cursor:pointer;font-weight:600;padding:9px 14px;border-radius:10px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;margin-top:8px}' +
+    s.textContent = '.mlsopwb-btn{cursor:pointer;font-weight:600;padding:9px 14px;border-radius:10px;border:1px solid #7A5CC0;background:#7A5CC0;color:#fff;margin-top:8px}' +
       '.mlsopwb-cap{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#475569;margin-left:8px}' +
       '.mlsopwb-tag{display:inline-block;font-weight:700;font-size:10px;letter-spacing:.04em;padding:2px 6px;border-radius:6px;background:#ede9fe;color:#5b21b6;border:1px solid #a78bfa}';
     (document.head || document.documentElement).appendChild(s);

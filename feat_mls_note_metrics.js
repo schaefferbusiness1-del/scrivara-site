@@ -36,7 +36,7 @@
       'background:#eef2f9;border:1px solid #e0e7f2;border-radius:999px;' +
       'padding:3px 9px;white-space:nowrap;color:#3a4a63;}' +
       '.mls-nm-pill b{font-weight:800;color:#2f3b52;}' +
-      '.mls-nm-dot{width:5px;height:5px;border-radius:50%;background:#2f6bed;' +
+      '.mls-nm-dot{width:5px;height:5px;border-radius:50%;background:#2E6A4B;' +
       'display:inline-block;opacity:.7;}';
     (document.head || document.documentElement).appendChild(st);
   }

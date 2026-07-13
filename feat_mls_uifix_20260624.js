@@ -37,7 +37,7 @@
       "#studioView #copilotThread{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}",
       /* gentle Analysis tile tidy (even collapsed previews, soft hover) */
       "#analysisView.ax-grid .ax-tile:not(.ax-exp){min-height:150px}",
-      "#analysisView.ax-grid .ax-tile:not(.ax-exp):hover{box-shadow:0 8px 22px -14px rgba(13,33,56,.45);transform:translateY(-1px)}",
+      "#analysisView.ax-grid .ax-tile:not(.ax-exp):hover{box-shadow:0 8px 22px -14px rgba(20,33,28,.45);transform:translateY(-1px)}",
       "#analysisView.ax-grid .ax-prev{gap:2px}"
     ].join("");
     var s = document.createElement("style");
