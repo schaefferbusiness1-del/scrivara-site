@@ -553,6 +553,22 @@
       b.addEventListener('click', function (ev) {
         try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {}
         safe(function () { window.openTemplates(); });
+        /* the Templates modal shares z-index 9400 with the op modal and sits
+           EARLIER in the DOM - it opened BEHIND the op modal, which read as
+           "the button does nothing" (owner bug 2026-07-13). Raise it. */
+        setTimeout(function () {
+          safe(function () {
+            var cands = document.querySelectorAll('.modal-bg, [id*=emplate]');
+            for (var k = 0; k < cands.length; k++) {
+              var c = cands[k];
+              if (!c.offsetParent && getComputedStyle(c).position !== 'fixed') continue;
+              if (!/Use templates when generating|Add a template|Upload templates \(one PDF/i.test(c.textContent || '')) continue;
+              var root = c.closest('.modal-bg') || c;
+              root.style.zIndex = '99500';
+              break;
+            }
+          });
+        }, 80);
       });
     }
   }
