@@ -266,7 +266,7 @@
             '<button type="button" class="mlsavs-btn primary" id="mlsavsSend" disabled>Send to patient</button>' +
           '</div>' +
           '<div class="mlsavs-status" id="mlsavsStatus"></div>' +
-          '<div class="mlsavs-note">The summary is built only from this visit\'s note &mdash; it is never auto-sent. Review and edit it, then click <b>Send to patient</b>. Text/SMS delivery is planned for a future update.</div>' +
+          '<div class="mlsavs-note">The summary is built only from this visit\'s note &mdash; it is never auto-sent. Review and edit it, then click <b>Send to patient</b>. Text/SMS goes live the moment Twilio is configured in the backend (Settings > Integrations).</div>' +
         '</div>' +
       '</div>';
 
