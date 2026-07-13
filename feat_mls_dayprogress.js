@@ -99,7 +99,7 @@
       if(a&&a.time_display)return String(a.time_display);
       if(a&&a.start_local){var s=h12(a.start_local);if(s)return s;}
       var t=String((a&&a.time)||'');
-      if(/^\d\d?:\d\d$/.test(t.trim())&&a&&a.name){
+      if((/^\d\d?:\d\d$/.test(t.trim())||!t.trim())&&a&&a.name){
         var key=String(a.name).toUpperCase().slice(0,12);
         var today=new Date();var iso=today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
         var hit=(window._calAppts||[]).filter(function(x){
