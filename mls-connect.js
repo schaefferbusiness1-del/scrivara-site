@@ -14416,6 +14416,12 @@
       ".uc1-pay:hover{filter:brightness(1.08)}",
       ".uc1-pay .uc1-prem{font-size:9.5px;font-weight:800;letter-spacing:.05em;background:linear-gradient(135deg,#7A5CC0,#9B82D4);border-radius:999px;padding:3px 9px}",
       ".uc1-pay-wrap{display:flex;justify-content:flex-end;align-items:flex-start;align-self:start;margin:0 0 12px}",
+      /* the partially-open widget form */
+      ".uc1-pay.uc1-paycard{flex-direction:column;align-items:flex-start;gap:4px;background:#fff!important;border:1px solid #E7E5DD!important;color:#1A211C!important;border-radius:14px;padding:13px 16px;max-height:none!important;box-shadow:0 1px 2px rgba(20,33,28,.05)!important;text-align:left;min-width:225px}",
+      ".uc1-pay.uc1-paycard:hover{filter:none;border-color:#B9C7BE!important;box-shadow:0 2px 8px rgba(20,33,28,.09)!important}",
+      ".uc1-paycard .pc-top{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}",
+      ".uc1-paycard .pc-stat{font-size:12px;color:#55605A;font-weight:500}",
+      ".uc1-paycard .pc-cta{font-size:12px;font-weight:700;color:#2E6A4B}",
       /* (3) ONE status indicator on the APP page:
          hide the extension's duplicate in-page UI (badge bottom-right 18/18 +
          its panel) and stray duplicate dots. The app's own MLS Assistant
@@ -14449,10 +14455,22 @@
     } catch (e) {}
   }
   function payBtn() {
+    /* owner 2026-07-13: "a bare floating pill isn't going to fly" - a
+       partially-open widget: title, an honest local stat, one open action */
     var b = document.createElement("button");
-    b.type = "button"; b.className = "uc1-pay";
+    b.type = "button"; b.className = "uc1-pay uc1-paycard";
     b.title = "Monthly pay / compensation report \u2014 Premium feature";
-    b.innerHTML = "\uD83D\uDCB5 Pay Reports <span class=\"uc1-prem\">PREMIUM FEATURE</span>";
+    var count = 0;
+    try {
+      var now = new Date(), iso = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2);
+      count = (window._calAppts || []).filter(function (a) {
+        return String(a.appt_date || String(a.start_at || "").slice(0, 10)).indexOf(iso) === 0;
+      }).length;
+    } catch (e) {}
+    b.innerHTML =
+      "<span class=\"pc-top\">\uD83D\uDCB5 Pay Reports <span class=\"uc1-prem\">PREMIUM</span></span>" +
+      "<span class=\"pc-stat\">" + (count ? count + " practice visits logged this month" : "This month\u2019s visits, coded and totaled") + "</span>" +
+      "<span class=\"pc-cta\">Open full report \u2192</span>";
     b.onclick = openPayReports;
     return b;
   }
@@ -30299,7 +30317,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b223';
+  window.__MLS_AV = window.__MLS_AV || 'b224';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30613,7 +30631,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b223';
+  var MLS_APP_BUILD='2026-07-13-b224';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
