@@ -386,25 +386,25 @@
     if ($(STYLE_ID)) return;
     var s = document.createElement('style'); s.id = STYLE_ID;
     s.textContent =
-      '.' + BTN_CLASS + '{cursor:pointer;font-weight:600;font-size:12px;padding:7px 12px;border-radius:9px;border:1px solid #7A5CC0;background:#ede9fe;color:#2E6A4B;margin-top:8px;margin-left:8px}' +
-      '#' + PANEL_ID + '{position:fixed;inset:0;z-index:2147483601;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.45)}' +
-      '#' + PANEL_ID + ' .sa-card{background:#fff;color:#0f172a;width:min(560px,94vw);max-height:88vh;overflow:auto;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif}' +
-      '#' + PANEL_ID + ' .sa-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid #e2e8f0}' +
-      '#' + PANEL_ID + ' .sa-hd h2{margin:0;font-size:16px}' +
-      '#' + PANEL_ID + ' .sa-hd .sa-sub{margin-top:3px;font-size:12px;color:#64748b}' +
-      '#' + PANEL_ID + ' .sa-x{cursor:pointer;border:1px solid #cbd5e1;background:#FCFBF8;border-radius:8px;padding:4px 10px;font-weight:700}' +
+      '.' + BTN_CLASS + '{cursor:pointer;font-weight:600;font-size:12px;padding:7px 12px;border-radius:9px;border:1px solid #204034;background:#204034;color:#fff;margin-top:8px;margin-left:8px}' +
+      '#' + PANEL_ID + '{position:fixed;inset:0;z-index:2147483601;display:flex;align-items:center;justify-content:center;background:rgba(26,33,28,.45)}' +
+      '#' + PANEL_ID + ' .sa-card{background:#fff;color:#1A211C;width:min(560px,94vw);max-height:88vh;overflow:auto;border-radius:14px;box-shadow:0 20px 60px rgba(26,33,28,.18);font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif}' +
+      '#' + PANEL_ID + ' .sa-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid #E7E5DD}' +
+      '#' + PANEL_ID + ' .sa-hd h2{margin:0;font:600 19px Newsreader,Georgia,serif}' +
+      '#' + PANEL_ID + ' .sa-hd .sa-sub{margin-top:3px;font-size:12px;color:#79837C}' +
+      '#' + PANEL_ID + ' .sa-x{cursor:pointer;border:1px solid #D9D6CD;background:#fff;border-radius:8px;padding:4px 10px;font-weight:700}' +
       '#' + PANEL_ID + ' .sa-bd{padding:14px 18px}' +
       '#' + PANEL_ID + ' .sa-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}' +
-      '#' + PANEL_ID + ' .sa-row label{flex:0 0 110px;font-size:12px;color:#334155}' +
-      '#' + PANEL_ID + ' select{flex:1 1 200px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px}' +
-      '#' + PANEL_ID + ' .sa-learn{font-size:12.5px;background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:8px;padding:9px 11px;margin:6px 0}' +
+      '#' + PANEL_ID + ' .sa-row label{flex:0 0 110px;font-size:12px;color:#3D453E}' +
+      '#' + PANEL_ID + ' select{flex:1 1 200px;padding:7px 9px;border:1px solid #D6D2C6;border-radius:8px;font-size:13px}' +
+      '#' + PANEL_ID + ' .sa-learn{font-size:12.5px;background:#FCFBF8;border:1px dashed #D6D2C6;border-radius:8px;padding:9px 11px;margin:6px 0}' +
       '#' + PANEL_ID + ' .sa-learn b{color:#2E6A4B}' +
-      '#' + PANEL_ID + ' .sa-note{font-size:11.5px;color:#64748b;margin-top:8px}' +
-      '#' + PANEL_ID + ' .sa-go{cursor:pointer;font-weight:700;border:1px solid #7A5CC0;background:#7A5CC0;color:#fff;border-radius:9px;padding:9px 16px}' +
-      '#' + PANEL_ID + ' .sa-clear{cursor:pointer;font-weight:600;border:1px solid #cbd5e1;background:#FCFBF8;color:#334155;border-radius:9px;padding:8px 13px}' +
-      '#' + PANEL_ID + ' .sa-ft{display:flex;justify-content:flex-end;gap:10px;padding:12px 18px 16px;border-top:1px solid #e2e8f0}' +
-      '#' + BANNER_ID + '{position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:2147483602;max-width:min(760px,94vw);padding:11px 14px;border-radius:11px;font:13px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;box-shadow:0 12px 36px rgba(0,0,0,.22)}' +
-      '#' + BANNER_ID + '.watch{background:#eff6ff;border:1px solid #2E6A4B;color:#204034}' +
+      '#' + PANEL_ID + ' .sa-note{font-size:11.5px;color:#79837C;margin-top:8px}' +
+      '#' + PANEL_ID + ' .sa-go{cursor:pointer;font-weight:700;border:1px solid #204034;background:#204034;color:#fff;border-radius:9px;padding:9px 16px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}' +
+      '#' + PANEL_ID + ' .sa-clear{cursor:pointer;font-weight:600;border:1px solid #D9D6CD;background:#fff;color:#3D453E;border-radius:9px;padding:8px 13px}' +
+      '#' + PANEL_ID + ' .sa-ft{display:flex;justify-content:flex-end;gap:10px;padding:12px 18px 16px;border-top:1px solid #E7E5DD}' +
+      '#' + BANNER_ID + '{position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:2147483602;max-width:min(760px,94vw);padding:11px 14px;border-radius:11px;font:13px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;box-shadow:0 12px 36px rgba(26,33,28,.22)}' +
+      '#' + BANNER_ID + '.watch{background:#F6FBF8;border:1px solid #2E6A4B;color:#204034}' +
       '#' + BANNER_ID + '.warn{background:#fffbeb;border:1px solid #f59e0b;color:#92400e}' +
       '#' + BANNER_ID + '.ok{background:#ecfdf5;border:1px solid #2E6A4B;color:#065f46}' +
       '#' + BANNER_ID + ' button{margin-left:10px;cursor:pointer;font-weight:700;font-size:12px;border-radius:8px;border:1px solid currentColor;background:#fff;padding:4px 10px}';
@@ -474,8 +474,8 @@
     }
     var viaTxt = l.via === 'extension' ? 'from athenaOne' : 'in-page (athenaOne observer pending in MLS Assist)';
     box.innerHTML = 'Learned for <b>' + esc(kindLabel(teachKind)) + '</b>: <b>' + esc(l.label || l.selector || '(target)') + '</b>' +
-      (l.selector ? '<br><span style="color:#64748b">selector: <code>' + esc(l.selector.length > 90 ? l.selector.slice(0, 90) + '...' : l.selector) + '</code></span>' : '') +
-      '<br><span style="color:#64748b">' + esc(viaTxt) + (l.at ? ' &middot; ' + esc(l.at.slice(0, 10)) : '') + '</span>';
+      (l.selector ? '<br><span style="color:#79837C">selector: <code>' + esc(l.selector.length > 90 ? l.selector.slice(0, 90) + '...' : l.selector) + '</code></span>' : '') +
+      '<br><span style="color:#79837C">' + esc(viaTxt) + (l.at ? ' &middot; ' + esc(l.at.slice(0, 10)) : '') + '</span>';
   }
 
   /* ================================================================
@@ -510,7 +510,7 @@
           grp.className = 'wbc-grp mls-showasst-modalgrp'; grp.setAttribute('data-mls-showasst', '1');
           var hh = document.createElement('h3'); hh.textContent = 'Or: teach the location by showing it'; hh.style.textTransform = 'none';
           grp.appendChild(hh);
-          var p = document.createElement('div'); p.style.cssText = 'font-size:12.5px;color:#475569;margin-bottom:8px';
+          var p = document.createElement('div'); p.style.cssText = 'font-size:12.5px;color:#55605A;margin-bottom:8px';
           p.textContent = 'Instead of picking from the fields above, click "Show MLS Assistant", then go to athenaOne and click the exact section/field. MLS watches (read-only), captures it, and saves it as the destination.';
           grp.appendChild(p);
           grp.appendChild(makeButton());

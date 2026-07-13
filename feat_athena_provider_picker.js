@@ -118,10 +118,10 @@
       if (!bannerEl) {
         bannerEl = document.createElement('div');
         bannerEl.id = 'mlsppBanner';
-        bannerEl.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:2147483631;max-width:580px;padding:11px 16px;border-radius:10px;font:13px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;font-weight:600;box-shadow:0 8px 24px rgba(8,20,36,.22);display:flex;gap:12px;align-items:center;';
+        bannerEl.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:2147483631;max-width:580px;padding:11px 16px;border-radius:10px;font:13px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;font-weight:600;box-shadow:0 1px 2px rgba(20,33,28,.04),0 18px 44px -18px rgba(20,33,28,.25);display:flex;gap:12px;align-items:center;';
         (document.body || document.documentElement).appendChild(bannerEl);
       }
-      var pal = kind === 'ok' ? ['#dcfce7', '#86efac', '#14532d'] : kind === 'warn' ? ['#fef3c7', '#fcd34d', '#7c4a03'] : ['#e6f0fb', '#EAF1EE', '#204034'];
+      var pal = kind === 'ok' ? ['#F2F0E9', '#E4E1D8', '#2E6A4B'] : kind === 'warn' ? ['#FCF8EF', '#EFE4CE', '#B07636'] : ['#FCFBF8', '#E7E5DD', '#204034'];
       bannerEl.style.background = pal[0]; bannerEl.style.border = '1px solid ' + pal[1]; bannerEl.style.color = pal[2];
       bannerEl.innerHTML = '';
       var span = document.createElement('span'); span.style.flex = '1 1 auto'; span.textContent = msg; bannerEl.appendChild(span);
@@ -260,7 +260,7 @@
     st.textContent = [
       '.mlspp-wrap{margin:2px 0 10px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.30);color:#fff;}',
       '.mlspp-wrap label{display:block;font-size:12px;font-weight:700;margin:0 0 5px;}',
-      '.mlspp-wrap select{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.5);background:#fff;color:#13243a;font-size:13px;font-weight:600;cursor:pointer;}',
+      '.mlspp-wrap select{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.5);background:#fff;color:#1A211C;font-size:13px;font-weight:600;cursor:pointer;}',
       '.mlspp-hint{font-size:11px;line-height:1.35;opacity:.92;margin:6px 1px 0;color:#EAF1EC;}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);

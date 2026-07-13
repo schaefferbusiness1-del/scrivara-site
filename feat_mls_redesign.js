@@ -79,10 +79,11 @@
 "#mlsRdNav .mainnav{ display:flex !important; flex-direction:column !important; gap:2px !important; align-items:stretch !important; height:auto !important;",
 "  background:transparent !important; border:0 !important; box-shadow:none !important; border-radius:0 !important; padding:0 !important; margin:0 !important;",
 "  overflow-y:auto !important; overflow-x:hidden !important; flex:0 1 auto; min-height:0; position:static !important; top:auto !important; }",
-"#mlsRdNav .navtab{ display:flex !important; align-items:center !important; gap:11px !important; width:100%; min-width:0 !important; height:auto !important;",
-"  padding:9px 11px !important; border-radius:10px !important; font-weight:600 !important; font-size:13.5px !important;",
+"#mlsRdNav .navtab{ display:flex !important; align-items:center !important; justify-content:flex-start !important; text-align:left !important; gap:11px !important; width:100%; min-width:0 !important; height:auto !important; min-height:38px;",
+"  padding:9px 11px !important; border-radius:10px !important; font-weight:600 !important; font-size:13.5px !important; line-height:1.2 !important;",
 "  color:#55605A !important; background:transparent !important; border:0 !important; box-shadow:none !important;",
 "  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; transition:background .13s,color .13s; }",
+"#mlsRdNav .navtab .nbadge, #mlsRdNav .navtab [class*='badge'], #mlsRdNav .navtab [class*='pill']{ margin-left:auto !important; flex:none !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; min-width:22px; line-height:1 !important; }",
 "body.theme-dark #mlsRdNav .navtab{ color:#9CA89E !important; }",
 "#mlsRdNav .navtab:hover{ background:#F0EEE7 !important; color:var(--ink) !important; }",
 "body.theme-dark #mlsRdNav .navtab:hover{ background:#1F2721 !important; }",
@@ -159,13 +160,15 @@
 "body.mls-redesign #patientBar .pname{ color:var(--ink) !important; font-weight:700 !important; }",
 "body.mls-redesign #mlsCtxBar{ background:var(--card) !important; border:1px solid var(--line) !important; border-radius:0 !important; border-left:none !important; border-right:none !important; box-shadow:none !important; }",
 
-"/* ---- visit hero: calm white card, serif heading ---- */",
-"body.mls-redesign #visitHero{ background:var(--card) !important; color:var(--ink) !important; border:1px solid var(--line) !important; border-radius:16px !important; box-shadow:0 1px 2px rgba(20,33,28,.04) !important; }",
-"body.mls-redesign #visitHero h1,body.mls-redesign #visitHero h2{ font-family:'Newsreader',Georgia,serif !important; font-weight:600 !important; color:var(--ink) !important; letter-spacing:-.015em; }",
-"body.mls-redesign #visitHero, body.mls-redesign #visitHero p, body.mls-redesign #visitHero label, body.mls-redesign #visitHero span{ color:var(--ink); }",
-"body.mls-redesign #visitHero .muted, body.mls-redesign #visitHero small{ color:var(--muted) !important; }",
-"body.mls-redesign #visitHero input{ background:var(--field-bg) !important; color:var(--ink) !important; border:1px solid #E4E1D8 !important; border-radius:10px !important; }",
-"body.mls-redesign #visitHero #heroRecBtn{ background:var(--brand-dk) !important; color:#fff !important; border:0 !important; box-shadow:0 8px 20px -8px rgba(32,64,52,.6) !important; }",
+"/* ---- legacy visit hero (#visitHero): deep-green brand band. Several",
+"   satellites paint white/translucent chrome INSIDE it, so it must stay a",
+"   dark-green surface for contrast; the modern Visit hero is the LIGHT #mlsEz3",
+"   card. Serif headings, calm inputs. ---- */",
+"body.mls-redesign #visitHero{ background:#204034 !important; color:#EAF1EC !important; border:0 !important; border-radius:16px !important; box-shadow:0 18px 44px -24px rgba(32,64,52,.5) !important; }",
+"body.mls-redesign #visitHero h1,body.mls-redesign #visitHero h2{ font-family:'Newsreader',Georgia,serif !important; font-weight:600 !important; color:#fff !important; letter-spacing:-.015em; }",
+"body.mls-redesign #visitHero .muted, body.mls-redesign #visitHero small{ color:#B9CEC2 !important; }",
+"body.mls-redesign #visitHero input{ background:rgba(255,255,255,.96) !important; color:#1A211C !important; border:0 !important; border-radius:10px !important; }",
+"body.mls-redesign #visitHero #heroRecBtn{ background:#fff !important; color:#204034 !important; border:0 !important; box-shadow:0 8px 20px -8px rgba(0,0,0,.35) !important; font-weight:700 !important; }",
 
 "/* ---- modals ---- */",
 "body.mls-redesign .modal{ background:var(--surface) !important; border:1px solid var(--line) !important; border-radius:18px !important; box-shadow:0 40px 80px -30px rgba(20,33,28,.4) !important; }",
@@ -211,6 +214,16 @@
   var GEAR_ICON='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.4 5.4l2.1 2.1M16.5 16.5l2.1 2.1M18.6 5.4l-2.1 2.1M7.5 16.5l-2.1 2.1"/></svg>';
   var BURGER_ICON='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>';
 
+  /* Belt-and-suspenders mobile drawer: the class-based CSS is primary, but an
+     inline transform makes open/close deterministic even if a foreign rule or
+     stale renderer interferes. Desktop (>900px) never gets an inline value. */
+  function railSlide(open){
+    try{
+      var r=$('mlsRdNav'); if(!r) return;
+      if(window.matchMedia && !window.matchMedia('(max-width: 900px)').matches){ r.style.transform=''; return; }
+      r.style.transform = open ? 'none' : '';
+    }catch(e){}
+  }
   function isOnLogin(){
     try{ var a=document.querySelector('#authScreen, .auth-wrap'); if(!a) return false;
       var cs=getComputedStyle(a); if(cs.display==='none'||cs.visibility==='hidden') return false;
@@ -257,7 +270,7 @@
       /* ---- TOP BAR ---- */
       top=mk('div'); top.id='mlsRdTop';
       var burger=mk('button','','<span style="display:flex">'+BURGER_ICON+'</span>'); burger.id='mlsRdRailBtn'; burger.type='button'; burger.title='Menu';
-      burger.addEventListener('click',function(e){ try{e.stopPropagation(); document.documentElement.classList.toggle('mls-rail-open'); }catch(_){} });
+      burger.addEventListener('click',function(e){ try{e.stopPropagation(); var open=document.documentElement.classList.toggle('mls-rail-open'); railSlide(open); }catch(_){} });
       top.appendChild(burger);
       var title=mk('div'); title.id='mlsRdTitle'; title.textContent='MLS Scribe'; top.appendChild(title);
       var tgSlot=mk('div','display:flex;align-items:center'); tgSlot.id='mlsRdToggleSlot'; top.appendChild(tgSlot);
@@ -290,9 +303,9 @@
       navWrap.appendChild(foot);
 
       /* scrim for mobile off-canvas */
-      if(!$('mlsRdScrim')){ var sc=mk('div'); sc.id='mlsRdScrim'; sc.addEventListener('click',function(){ document.documentElement.classList.remove('mls-rail-open'); }); document.body.appendChild(sc); }
+      if(!$('mlsRdScrim')){ var sc=mk('div'); sc.id='mlsRdScrim'; sc.addEventListener('click',function(){ document.documentElement.classList.remove('mls-rail-open'); railSlide(false); }); document.body.appendChild(sc); }
       /* close rail after choosing a view on mobile */
-      navWrap.addEventListener('click',function(e){ try{ if(e.target&&e.target.closest&&e.target.closest('.navtab')) document.documentElement.classList.remove('mls-rail-open'); }catch(_){} });
+      navWrap.addEventListener('click',function(e){ try{ if(e.target&&e.target.closest&&e.target.closest('.navtab')){ document.documentElement.classList.remove('mls-rail-open'); railSlide(false); } }catch(_){} });
     }
     /* relocate real controls into slots (idempotent: appendChild moves) */
     var tgSlot=$('mlsRdToggleSlot'), seSlot=$('mlsRdSearchSlot'), meSlot=$('mlsRdMenuSlot'), navWrap=$('mlsRdNav');
@@ -396,7 +409,56 @@
 "body.mls-redesign .mlsRdAnaGrip{ position:absolute; right:5px; bottom:5px; width:16px; height:16px; cursor:nwse-resize; z-index:6; opacity:.55; background:linear-gradient(135deg,transparent 45%,#B7BBB2 45%,#B7BBB2 60%,transparent 60%,transparent 72%,#B7BBB2 72%,#B7BBB2 86%,transparent 86%); }",
 "body.mls-redesign .mlsRdAnaGrip:hover{ opacity:.9; }",
 "body.mls-redesign .mlsRdAnaGrid > .card > h2, body.mls-redesign .mlsRdAnaGrid > .card > h3{ cursor:move; user-select:none; }",
-"body.mls-redesign .mlsRdAnaDragging{ opacity:.55 !important; outline:2px dashed #2E6A4B !important; }"
+"body.mls-redesign .mlsRdAnaDragging{ opacity:.55 !important; outline:2px dashed #2E6A4B !important; }",
+"",
+"/* ---- fixed chrome vs the rail: left-anchored FABs sit right of the rail ---- */",
+"body.mls-rd-shell #mlsAsstFab{ left:calc(var(--rail-w) + 14px) !important; }",
+"body.mls-rd-shell #mlsCopVoiceBtn{ left:calc(var(--rail-w) + 14px) !important; }",
+"@media (max-width:900px){",
+"  body.mls-rd-shell #mlsAsstFab{ left:14px !important; }",
+"  body.mls-rd-shell #mlsCopVoiceBtn{ left:14px !important; }",
+"}",
+"",
+"/* ---- Visit hero: STRUCTURAL calm-agenda rebuild (owner: complete new UI, not a reskin).",
+"   Pure CSS grid re-layout of EZ3's real children -- no DOM moves, so the EZ3",
+"   renderer never fights it. Date becomes the serif headline; clock is a quiet",
+"   sub-line; provider select sits top-right; the day CTA is a full-width calm",
+"   primary row; secondary actions align on one row with Advanced tools at right. ---- */",
+"body.mls-redesign #mlsEz3{ padding:18px 20px 14px !important; }",
+"body.mls-redesign #mlsEz3Head{ display:flex !important; justify-content:flex-end !important; margin:0 0 2px !important; }",
+"body.mls-redesign #ez3Wrap{ display:grid !important; grid-template-columns:minmax(0,1fr) auto !important; gap:12px 18px !important; align-items:center !important; }",
+"body.mls-redesign #ez3Wrap > *{ grid-column:1 / -1; }",
+"body.mls-redesign #ez3Wrap > .ez3-clockbar{ grid-column:1 !important; grid-row:1 !important; display:flex !important; flex-direction:column !important; align-items:flex-start !important; gap:1px !important; margin:0 !important; }",
+"body.mls-redesign #ez3Wrap > .ez3-clockbar .ez3-date{ order:-1; font-family:'Newsreader',Georgia,serif !important; font-weight:600 !important; font-size:23px !important; letter-spacing:-.015em !important; color:#1A211C !important; }",
+"body.mls-redesign #ez3Wrap > .ez3-clockbar .ez3-clock{ font-size:12.5px !important; font-weight:600 !important; color:#8A8F86 !important; }",
+"body.mls-redesign #ez3Wrap > .ez3-prov{ grid-column:2 !important; grid-row:1 !important; display:flex !important; align-items:center !important; gap:9px !important; margin:0 !important; justify-self:end; }",
+"body.mls-redesign #ez3Wrap > .ez3-prov label{ font-size:11px !important; font-weight:700 !important; letter-spacing:.06em !important; text-transform:uppercase !important; color:#8A8F86 !important; margin:0 !important; }",
+"body.mls-redesign #ez3Wrap > #ez3AllProv{ grid-row:2 !important; min-height:50px !important; border-radius:12px !important; font-size:14.5px !important; margin:2px 0 0 !important; }",
+"body.mls-redesign #ez3Wrap > .ez3-row2{ grid-column:1 !important; grid-row:3 !important; display:flex !important; gap:8px !important; margin:0 !important; }",
+"body.mls-redesign #ez3Wrap > .ez3-advrow{ grid-column:2 !important; grid-row:3 !important; justify-self:end; margin:0 !important; }",
+"body.mls-redesign #ez3Wrap > #ez3HomeStatus{ grid-row:4 !important; margin:2px 0 0 !important; font-size:12.5px !important; color:#79837C !important; }",
+"@media (max-width:760px){",
+"  body.mls-redesign #ez3Wrap{ grid-template-columns:1fr !important; }",
+"  body.mls-redesign #ez3Wrap > .ez3-prov{ grid-column:1 !important; grid-row:2 !important; justify-self:start; }",
+"  body.mls-redesign #ez3Wrap > #ez3AllProv{ grid-row:3 !important; }",
+"  body.mls-redesign #ez3Wrap > .ez3-row2{ grid-column:1 !important; grid-row:4 !important; flex-wrap:wrap; }",
+"  body.mls-redesign #ez3Wrap > .ez3-advrow{ grid-column:1 !important; grid-row:5 !important; justify-self:start; }",
+"  body.mls-redesign #ez3Wrap > #ez3HomeStatus{ grid-row:6 !important; }",
+"}",
+"",
+"/* ---- phone-size layer (Editorial Calm mobile) ---- */",
+"@media (max-width:640px){",
+"  body.mls-redesign #appWrap{ padding:12px 10px !important; }",
+"  body.mls-redesign .card{ border-radius:14px !important; }",
+"  body.mls-redesign #patientBar{ flex-wrap:wrap !important; padding:12px 12px !important; gap:9px !important; }",
+"  body.mls-redesign #mlsCtxBar{ overflow-x:auto !important; }",
+"  #mlsRdTop{ height:54px; }",
+"  #mlsRdSearchSlot{ flex:1 1 auto; }",
+"  #mlsRdToggleSlot{ display:none; }",
+"  body.mls-redesign #mlsEz3{ border-radius:14px !important; }",
+"  body.mls-redesign .modal{ max-width:calc(100vw - 20px) !important; margin:10px !important; max-height:92vh !important; overflow-y:auto !important; }",
+"  body.mls-redesign #mlsDayHistBtn, body.mls-redesign #mlsAddPtLauncher, body.mls-redesign #mlsTabPickerChip{ transform:scale(.92); }",
+"}"
   ].join("\n");
 
   function applyAll(){

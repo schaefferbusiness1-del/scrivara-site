@@ -33,23 +33,23 @@
     if ($(STYLE_ID)) return;
     var st = document.createElement('style'); st.id = STYLE_ID;
     st.textContent = [
-      '#' + OV_ID + '{position:fixed;inset:0;z-index:2147483000;background:rgba(10,22,44,.38);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px}',
-      '#' + OV_ID + ' .cpal-card{width:100%;max-width:640px;background:#fff;border-radius:16px;box-shadow:0 30px 90px rgba(8,20,45,.45);overflow:hidden;font:500 14px/1.45 "Plus Jakarta Sans",system-ui,sans-serif;color:#1E2B24}',
-      '#' + OV_ID + ' .cpal-inp{width:100%;box-sizing:border-box;border:0;outline:none;padding:16px 18px;font:600 16px/1.4 inherit;color:#1A211C;border-bottom:1px solid #e6edf6;background:#fbfdff}',
+      '#' + OV_ID + '{position:fixed;inset:0;z-index:2147483000;background:rgba(26,33,28,.45);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 16px}',
+      '#' + OV_ID + ' .cpal-card{width:100%;max-width:640px;background:#fff;border:1px solid #E7E5DD;border-radius:16px;box-shadow:0 30px 90px rgba(26,33,28,.3);overflow:hidden;font:500 14px/1.45 "Plus Jakarta Sans",system-ui,sans-serif;color:#1E2B24}',
+      '#' + OV_ID + ' .cpal-inp{width:100%;box-sizing:border-box;border:0;outline:none;padding:16px 18px;font:600 16px/1.4 inherit;color:#1A211C;border-bottom:1px solid #E7E5DD;background:#FCFBF8}',
       '#' + OV_ID + ' .cpal-list{max-height:52vh;overflow-y:auto;padding:6px}',
       '#' + OV_ID + ' .cpal-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;cursor:pointer}',
-      '#' + OV_ID + ' .cpal-row.sel{background:#EAF1EC}',
+      '#' + OV_ID + ' .cpal-row.sel{background:#EAF1EE}',
       '#' + OV_ID + ' .cpal-row .ic{width:22px;text-align:center;flex:none}',
       '#' + OV_ID + ' .cpal-row .main{flex:1;min-width:0}',
       '#' + OV_ID + ' .cpal-row .t{font-weight:700;color:#1E2B24;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '#' + OV_ID + ' .cpal-row .d{font-size:12px;color:#65788f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '#' + OV_ID + ' .cpal-sec{font:700 11px/1 inherit;letter-spacing:.08em;text-transform:uppercase;color:#8296ad;padding:10px 12px 4px}',
-      '#' + OV_ID + ' .cpal-empty{padding:22px 16px;color:#65788f;text-align:center}',
-      '#' + OV_ID + ' .cpal-foot{display:flex;gap:14px;padding:9px 14px;border-top:1px solid #e6edf6;background:#f8fbff;color:#7d90a8;font-size:11.5px}',
-      '#' + OV_ID + ' .cpal-foot kbd{background:#eef3fa;border:1px solid #d9e4f0;border-bottom-width:2px;border-radius:5px;padding:1px 5px;font:700 10.5px/1.3 inherit;color:#204034}',
-      '#' + BTN_ID + '{display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#dbe7ff;font:600 12px/1 "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer;transition:background .15s}',
-      '#' + BTN_ID + ':hover{background:rgba(255,255,255,.22)}',
-      '#' + BTN_ID + ' kbd{background:rgba(255,255,255,.16);border-radius:4px;padding:1px 5px;font-size:10.5px}',
+      '#' + OV_ID + ' .cpal-row .d{font-size:12px;color:#79837C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '#' + OV_ID + ' .cpal-sec{font:700 11px/1 inherit;letter-spacing:.08em;text-transform:uppercase;color:#A6AEA6;padding:10px 12px 4px}',
+      '#' + OV_ID + ' .cpal-empty{padding:22px 16px;color:#79837C;text-align:center}',
+      '#' + OV_ID + ' .cpal-foot{display:flex;gap:14px;padding:9px 14px;border-top:1px solid #E7E5DD;background:#F4F2EC;color:#79837C;font-size:11.5px}',
+      '#' + OV_ID + ' .cpal-foot kbd{background:#FCFBF8;border:1px solid #D6D2C6;border-bottom-width:2px;border-radius:5px;padding:1px 5px;font:700 10.5px/1.3 inherit;color:#204034}',
+      '#' + BTN_ID + '{display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:6px 12px;border-radius:10px;border:1px solid #E4E1D8;background:#fff;color:#55605A;font:600 12px/1 "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer;transition:background .15s}',
+      '#' + BTN_ID + ':hover{background:#F4F2EC}',
+      '#' + BTN_ID + ' kbd{background:#F4F2EC;border-radius:4px;padding:1px 5px;font-size:10.5px}',
       '@media (max-width:700px){#' + BTN_ID + '{display:none}}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);

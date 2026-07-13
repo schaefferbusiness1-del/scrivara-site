@@ -306,16 +306,16 @@
       if (body && body.parentElement) body.parentElement.insertBefore(host, body);
       else panel.appendChild(host);
     }
-    var confColor = v.confidence === 'high' ? '#2E6A4B' : (v.confidence === 'medium' ? '#d97706' : '#c0392b');
-    var statusColor = v.safe ? '#2E6A4B' : '#c0392b';
+    var confColor = v.confidence === 'high' ? '#2E6A4B' : (v.confidence === 'medium' ? '#B07636' : '#B23B3B');
+    var statusColor = v.safe ? '#2E6A4B' : '#B23B3B';
     var html = '';
-    html += '<div style="background:#0a0f24;border:1px solid ' + (v.safe ? 'rgba(143,216,190,.3)' : '#c0392b') + ';border-radius:12px;padding:12px 14px;margin-bottom:12px">';
+    html += '<div style="background:#FCFBF8;border:1px solid ' + (v.safe ? '#E7E5DD' : '#B23B3B') + ';border-radius:12px;padding:12px 14px;margin-bottom:12px">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
-    html += '<b style="color:#EAF1EC;font-size:14px">Write-back safety preview</b>';
+    html += '<b style="color:#1A211C;font-size:14px">Write-back safety preview</b>';
     html += '<span style="color:' + statusColor + ';font-weight:800;font-size:12.5px">' + (v.safe ? '✓ Ready to write (after you confirm)' : '⛔ Blocked — not safe to write') + '</span>';
     html += '</div>';
     /* identity grid */
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font:12.5px/1.5 system-ui;color:#EAF1EE">';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font:12.5px/1.5 system-ui;color:#1A211C">';
     html += row('Patient', v.fields.patient);
     html += row('DOB', v.fields.dob);
     html += row('MRN', v.fields.mrn);
@@ -325,22 +325,22 @@
     html += '</div>';
     /* draft/live status */
     html += '<div style="margin-top:8px">';
-    html += chip('Will write (unsigned): ' + (v.contentSections.length ? cnt(v.contentSections) : 'none'), 'rgba(22,163,74,.20)', '#8FD8BE');
-    html += chip('DRAFT / never sent: ' + (v.draftSections.length ? cnt(v.draftSections) : 'none'), 'rgba(217,119,6,.20)', '#ffcf8f');
-    html += chip('Confidence: ' + v.confidence, 'rgba(143,216,190,.18)', confColor);
+    html += chip('Will write (unsigned): ' + (v.contentSections.length ? cnt(v.contentSections) : 'none'), '#F2F0E9', '#2E6A4B');
+    html += chip('DRAFT / never sent: ' + (v.draftSections.length ? cnt(v.draftSections) : 'none'), '#FCF8EF', '#B07636');
+    html += chip('Confidence: ' + v.confidence, '#F2F0E9', confColor);
     html += '</div>';
     if (v.missingFields.length) {
-      html += '<div style="margin-top:6px;font:12px system-ui;color:#ffcf8f">Missing: ' + esc(v.missingFields.join(', ')) + '</div>';
+      html += '<div style="margin-top:6px;font:12px system-ui;color:#B07636">Missing: ' + esc(v.missingFields.join(', ')) + '</div>';
     }
     /* warnings */
     for (var w = 0; w < v.warnings.length; w++) {
-      html += '<div style="margin-top:6px;font:12px/1.5 system-ui;color:#ffcf8f">⚠ <b>' + esc(v.warnings[w].label) + '</b> — ' + esc(v.warnings[w].detail) + '</div>';
+      html += '<div style="margin-top:6px;font:12px/1.5 system-ui;color:#B07636">⚠ <b>' + esc(v.warnings[w].label) + '</b> — ' + esc(v.warnings[w].detail) + '</div>';
     }
     /* hard blocks */
     for (var b = 0; b < v.hardBlocks.length; b++) {
-      html += '<div style="margin-top:6px;font:12.5px/1.5 system-ui;color:#ffd7d0"><b>⛔ ' + esc(v.hardBlocks[b].label) + '</b> — ' + esc(v.hardBlocks[b].detail) + '</div>';
+      html += '<div style="margin-top:6px;font:12.5px/1.5 system-ui;color:#B23B3B"><b>⛔ ' + esc(v.hardBlocks[b].label) + '</b> — ' + esc(v.hardBlocks[b].detail) + '</div>';
     }
-    html += '<div style="margin-top:8px;font:11px system-ui;color:#B9CEC2">Defense-in-depth: MLS Assist re-verifies patient identity in athenaOne at write time and refuses on any mismatch. Orders/prescriptions are never sent. MLS never clicks Save/Sign.</div>';
+    html += '<div style="margin-top:8px;font:11px system-ui;color:#79837C">Defense-in-depth: MLS Assist re-verifies patient identity in athenaOne at write time and refuses on any mismatch. Orders/prescriptions are never sent. MLS never clicks Save/Sign.</div>';
     html += '</div>';
     host.innerHTML = html;
 
@@ -349,7 +349,7 @@
     lastVerdict = v;
     return v;
   }
-  function row(k, val) { return '<div><span style="color:#B9CEC2">' + esc(k) + ':</span> <b style="color:#EAF1EC">' + esc(val) + '</b></div>'; }
+  function row(k, val) { return '<div><span style="color:#55605A">' + esc(k) + ':</span> <b style="color:#1A211C">' + esc(val) + '</b></div>'; }
   function cnt(list) { var names = []; for (var i = 0; i < list.length; i++) names.push(list[i].key); return names.join(', '); }
 
   function reflectButton(panel, v) {
@@ -403,9 +403,9 @@
   function flashBlocked(panel, v) {
     try {
       var host = panel.querySelector('#mlsWbSafety');
-      if (host) { host.scrollIntoView({ block: 'nearest' }); host.animate ? host.animate([{ outline: '0 solid #c0392b' }, { outline: '3px solid #c0392b' }, { outline: '0 solid #c0392b' }], { duration: 700 }) : 0; }
+      if (host) { host.scrollIntoView({ block: 'nearest' }); host.animate ? host.animate([{ outline: '0 solid #B23B3B' }, { outline: '3px solid #B23B3B' }, { outline: '0 solid #B23B3B' }], { duration: 700 }) : 0; }
       var logEl = panel.querySelector('#emrWbLog');
-      if (logEl) { logEl.innerHTML += '<div style="margin:3px 0;color:#ffd7d0">⛔ <b>Write blocked by the safety preview.</b> ' + esc(v.hardBlocks.map(function (h) { return h.label; }).join('; ')) + '. Nothing was sent.</div>'; logEl.scrollTop = logEl.scrollHeight; }
+      if (logEl) { logEl.innerHTML += '<div style="margin:3px 0;color:#B23B3B">⛔ <b>Write blocked by the safety preview.</b> ' + esc(v.hardBlocks.map(function (h) { return h.label; }).join('; ')) + '. Nothing was sent.</div>'; logEl.scrollTop = logEl.scrollHeight; }
     } catch (e) {}
   }
 

@@ -49,15 +49,15 @@
       "#patientsView .card{border-radius:18px!important;border:1px solid #E7E5DD!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important}",
       "#patientsView #ptSearch{width:100%!important;height:42px!important;border-radius:11px!important;border:1px solid #e0e8f1!important;background:#FCFBF8!important;padding:0 14px!important;font-size:13.5px!important}",
       "#patientsView #ptList{min-width:0}",
-      "#patientsView .px-prof-hd{background:linear-gradient(135deg,#204034,#204034)!important;border-radius:16px!important;margin:-4px -4px 8px!important;padding:20px 22px!important;position:relative;overflow:hidden}",
-      "#patientsView .px-prof-hd #profName{color:#fff!important;font-family:'Newsreader',Georgia,serif!important;font-weight:500!important;font-size:24px!important}",
+      "#patientsView .px-prof-hd{background:#FCFBF8!important;border:1px solid #E7E5DD!important;border-radius:16px!important;margin:-4px -4px 10px!important;padding:20px 22px!important;position:relative;overflow:hidden}",
+      "#patientsView .px-prof-hd #profName{color:#1A211C!important;font-family:'Newsreader',Georgia,serif!important;font-weight:600!important;font-size:24px!important;letter-spacing:-.015em}",
       "#patientsView .px-prof-hd .ic{display:none!important}",
-      "#patientsView .px-prof-hd .sub,#patientsView .px-prof-hd #profDemo{color:#EAF1EE!important}",
+      "#patientsView .px-prof-hd .sub,#patientsView .px-prof-hd #profDemo{color:#55605A!important}",
       "@media (min-width:981px){#patientsView #ptSplitWrap.px-has-profile > .card:first-child{position:sticky;top:138px}}",
       "@media (max-width:980px){#patientsView #ptSplitWrap.px-has-profile{grid-template-columns:1fr}}",
       /* narrow widths: let the stacked grid items shrink to the viewport (no h-overflow) */
       "@media (max-width:980px){#patientsView #ptSplitWrap{min-width:0!important}#patientsView #ptSplitWrap>*{min-width:0!important;max-width:100%!important}#patientsView #ptSplitWrap .card *{max-width:100%}}",
-      "@media (max-width:1100px){#mlsRdTop,#mlsRdNav,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
+      "@media (max-width:1100px){#mlsRdTop,#mlsCtxBar{max-width:100vw!important;overflow-x:auto!important}}"
     ].join("\n");
     var s = $(STYLE_ID);
     if (!s) { s = mk("style"); s.id = STYLE_ID; (document.head || document.documentElement).appendChild(s); }
@@ -80,18 +80,20 @@
         imp(demo, "flex-basis", "100%"); imp(demo, "margin", "4px 0 0"); imp(demo, "font-size", "13px");
         h2.appendChild(demo);
       }
-      /* restyle the action buttons inside the band for contrast on dark bg */
+      /* Editorial Calm: the band is LIGHT now — primary action deep green,
+         everything else calm white secondaries */
       var btns = h2.querySelectorAll("button");
       for (var i = 0; i < btns.length; i++) {
         var b = btns[i], t = (b.textContent || "");
         if (/Start visit/i.test(t)) {
-          impAll(b, ["background", "linear-gradient(135deg,#3B7C5A,#35704F)"]);
+          imp(b, "background", "#204034");
           imp(b, "color", "#fff"); imp(b, "border", "0");
+          imp(b, "box-shadow", "0 8px 20px -8px rgba(32,64,52,.6)");
         } else {
-          imp(b, "background", "rgba(255,255,255,.10)"); imp(b, "color", "#fff");
-          imp(b, "border", "1px solid rgba(255,255,255,.18)");
+          imp(b, "background", "#fff"); imp(b, "color", "#1A211C");
+          imp(b, "border", "1px solid #D9D6CD");
         }
-        imp(b, "border-radius", "11px");
+        imp(b, "border-radius", "10px");
       }
     }
   }

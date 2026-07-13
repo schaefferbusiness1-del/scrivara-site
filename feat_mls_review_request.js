@@ -120,18 +120,18 @@
     if ($('mlsRevReqCss')) return;
     var s = document.createElement('style'); s.id = 'mlsRevReqCss';
     s.textContent = [
-      '#' + CHIP_ID + '{position:fixed;right:18px;bottom:78px;z-index:2147481000;background:linear-gradient(90deg,#3B7C5A,#2E6A4B);color:#fff;border:0;border-radius:999px;padding:11px 16px;font:700 13px system-ui,Segoe UI,Arial;box-shadow:0 6px 18px rgba(20,60,120,.28);cursor:pointer}',
-      '#' + MODAL_ID + '{position:fixed;inset:0;z-index:2147482000;background:rgba(15,25,45,.5);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,Segoe UI,Arial}',
+      '#' + CHIP_ID + '{position:fixed;right:18px;bottom:78px;z-index:2147481000;background:#204034;color:#fff;border:0;border-radius:999px;padding:11px 16px;font:700 13px system-ui,Segoe UI,Arial;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);cursor:pointer}',
+      '#' + MODAL_ID + '{position:fixed;inset:0;z-index:2147482000;background:rgba(26,33,28,.45);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,Segoe UI,Arial}',
       '#' + MODAL_ID + ' .box{background:#fff;max-width:520px;width:100%;border-radius:16px;padding:20px;max-height:90vh;overflow:auto}',
-      '#' + MODAL_ID + ' h3{margin:0 0 6px;font-size:18px;color:#15243c}',
-      '#' + MODAL_ID + ' .note{font-size:12.5px;color:#5b6b83}',
-      '#' + MODAL_ID + ' .own{background:#eef4ff;border:1px solid #EAF1EE;border-radius:10px;padding:9px 11px;font-size:12px;color:#204034;margin:8px 0}',
-      '#' + MODAL_ID + ' textarea{width:100%;min-height:96px;border:1px solid #d7e0ef;border-radius:9px;padding:9px;font:14px system-ui;box-sizing:border-box}',
-      '#' + MODAL_ID + ' input{width:100%;border:1px solid #d7e0ef;border-radius:9px;padding:9px;font-size:14px;box-sizing:border-box}',
-      '#' + MODAL_ID + ' label{display:block;font-size:12px;font-weight:700;margin:10px 0 4px;color:#15243c}',
+      '#' + MODAL_ID + ' h3{margin:0 0 6px;font:600 19px Newsreader,Georgia,serif;color:#1A211C}',
+      '#' + MODAL_ID + ' .note{font-size:12.5px;color:#79837C}',
+      '#' + MODAL_ID + ' .own{background:#F6FBF8;border:1px solid #EAF1EE;border-radius:10px;padding:9px 11px;font-size:12px;color:#204034;margin:8px 0}',
+      '#' + MODAL_ID + ' textarea{width:100%;min-height:96px;border:1px solid #E7E5DD;border-radius:9px;padding:9px;font:14px system-ui;box-sizing:border-box}',
+      '#' + MODAL_ID + ' input{width:100%;border:1px solid #E7E5DD;border-radius:9px;padding:9px;font-size:14px;box-sizing:border-box}',
+      '#' + MODAL_ID + ' label{display:block;font-size:12px;font-weight:700;margin:10px 0 4px;color:#1A211C}',
       '#' + MODAL_ID + ' .btn{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:14px}',
-      '#' + MODAL_ID + ' .btn.primary{background:linear-gradient(90deg,#3B7C5A,#2E6A4B);color:#fff}',
-      '#' + MODAL_ID + ' .btn.ghost{background:#eef2fa;color:#204034}'
+      '#' + MODAL_ID + ' .btn.primary{background:#204034;color:#fff;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}',
+      '#' + MODAL_ID + ' .btn.ghost{background:#fff;color:#1A211C;border:1px solid #D9D6CD}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(s);
   }
@@ -161,7 +161,7 @@
         '<label>Suggested starting draft (the patient can change or clear it)</label>' +
         '<textarea id="mrrDraft">Generating a starting point\u2026</textarea>' +
         '<label>Send to the patient by</label>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="mrrChannel" style="flex:1;min-width:120px;border:1px solid #d7e0ef;border-radius:9px;padding:9px"><option value="email">Email</option><option value="portal">Patient portal</option><option value="sms">Text</option><option value="link">Just give me the link</option></select>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="mrrChannel" style="flex:1;min-width:120px;border:1px solid #E7E5DD;border-radius:9px;padding:9px"><option value="email">Email</option><option value="portal">Patient portal</option><option value="sms">Text</option><option value="link">Just give me the link</option></select>' +
         '<input id="mrrContact" style="flex:2;min-width:160px" placeholder="patient email or phone" value="' + esc(context.email || context.phone) + '"></div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">' +
           '<button class="btn primary" id="mrrSend">Send the request</button>' +
@@ -173,6 +173,10 @@
     document.body.appendChild(m);
     $('mrrClose').onclick = close;
     m.addEventListener('click', function (e) { if (e.target === m) close(); });
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e && e.key === 'Escape') { document.removeEventListener('keydown', onEsc); close(); }
+      else if (!$(MODAL_ID)) { document.removeEventListener('keydown', onEsc); }
+    });
 
     makeDraft(context, function (draft) { var ta = $('mrrDraft'); if (ta) ta.value = draft; context.draft = draft; });
 

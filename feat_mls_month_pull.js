@@ -167,42 +167,42 @@
   function injectCss() {
     if ($(STYLE_ID)) return;
     var css = [
-      "#mlsMPback{position:fixed;inset:0;background:rgba(10,20,35,.55);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:18px;}",
-      "#mlsMPmodal{width:600px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.4);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#1E2B24;overflow:hidden;}",
-      "#mlsMPmodal .mp-head{background:#1E2B24;color:#fff;padding:13px 18px;display:flex;align-items:center;gap:10px;}",
+      "#mlsMPback{position:fixed;inset:0;background:rgba(26,33,28,.45);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:18px;}",
+      "#mlsMPmodal{width:600px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:14px;box-shadow:0 1px 2px rgba(20,33,28,.04),0 18px 44px -18px rgba(20,33,28,.25);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#1A211C;overflow:hidden;}",
+      "#mlsMPmodal .mp-head{background:#FCFBF8;color:#1A211C;border-bottom:1px solid #E7E5DD;padding:13px 18px;display:flex;align-items:center;gap:10px;}",
       "#mlsMPmodal .mp-head b{font-size:15.5px;font-weight:800;letter-spacing:.2px;}",
-      "#mlsMPmodal .mp-x{margin-left:auto;cursor:pointer;border:0;background:transparent;color:#cfe0f5;font-size:19px;font-weight:800;padding:2px 8px;border-radius:8px;}",
-      "#mlsMPmodal .mp-x:hover{background:rgba(255,255,255,.12);color:#fff;}",
+      "#mlsMPmodal .mp-x{margin-left:auto;cursor:pointer;border:0;background:transparent;color:#8A8F86;font-size:19px;font-weight:800;padding:2px 8px;border-radius:8px;}",
+      "#mlsMPmodal .mp-x:hover{background:#F2F0E9;color:#1A211C;}",
       "#mlsMPmodal .mp-body{padding:14px 18px;overflow:auto;}",
       "#mlsMPmodal .mp-row{display:flex;align-items:center;gap:9px;margin:7px 0;flex-wrap:wrap;}",
-      "#mlsMPmodal .mp-dot{width:10px;height:10px;border-radius:50%;background:#9aa9bd;flex:none;}",
-      "#mlsMPmodal .mp-dot.g{background:#2E6A4B;}#mlsMPmodal .mp-dot.r{background:#dc2626;}#mlsMPmodal .mp-dot.a{background:#f59e0b;}",
+      "#mlsMPmodal .mp-dot{width:10px;height:10px;border-radius:50%;background:#79837C;flex:none;}",
+      "#mlsMPmodal .mp-dot.g{background:#2E6A4B;}#mlsMPmodal .mp-dot.r{background:#B23B3B;}#mlsMPmodal .mp-dot.a{background:#B07636;}",
       "#mlsMPmodal .mp-dot.spin{background:#2E6A4B;animation:mlsMPpulse 1s ease-in-out infinite;}",
       "@keyframes mlsMPpulse{0%,100%{opacity:1}50%{opacity:.35}}",
       "#mlsMPmodal .mp-conn{font-weight:700;}",
-      "#mlsMPmodal .mp-sub{color:#2E6A4B;font-size:12.5px;}",
-      "#mlsMPmodal .mp-range{background:#eef4ff;border:1px solid #EAF1EE;border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}",
+      "#mlsMPmodal .mp-sub{color:#55605A;font-size:12.5px;}",
+      "#mlsMPmodal .mp-range{background:#FCFBF8;border:1px solid #E7E5DD;border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}",
       "#mlsMPmodal .mp-range b{color:#204034;}",
-      "#mlsMPmodal select{border:1px solid #c6d3e4;border-radius:8px;padding:5px 8px;font:600 13px system-ui;color:#1E2B24;background:#fff;}",
-      "#mlsMPmodal .mp-barwrap{background:#e8eef7;border-radius:999px;height:14px;overflow:hidden;margin:10px 0 4px;}",
-      "#mlsMPmodal .mp-bar{height:100%;width:0%;background:linear-gradient(90deg,#2E6A4B,#C9DCD2);transition:width .35s;}",
+      "#mlsMPmodal select{border:1px solid #D9D6CD;border-radius:8px;padding:5px 8px;font:600 13px system-ui;color:#1A211C;background:#fff;}",
+      "#mlsMPmodal .mp-barwrap{background:#EFEDE6;border-radius:999px;height:14px;overflow:hidden;margin:10px 0 4px;}",
+      "#mlsMPmodal .mp-bar{height:100%;width:0%;background:#204034;transition:width .35s;}",
       "#mlsMPmodal .mp-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}",
-      "#mlsMPmodal .mp-c{background:#f4f7fc;border:1px solid #e1e9f5;border-radius:10px;padding:7px 10px;text-align:center;}",
+      "#mlsMPmodal .mp-c{background:#FCFBF8;border:1px solid #EFEDE6;border-radius:10px;padding:7px 10px;text-align:center;}",
       "#mlsMPmodal .mp-c b{display:block;font-size:17px;color:#204034;}",
-      "#mlsMPmodal .mp-c span{font-size:11px;color:#2E6A4B;font-weight:700;text-transform:uppercase;letter-spacing:.4px;}",
-      "#mlsMPmodal .mp-now{background:#f8fafd;border:1px solid #e1e9f5;border-radius:10px;padding:9px 12px;min-height:52px;}",
+      "#mlsMPmodal .mp-c span{font-size:11px;color:#79837C;font-weight:700;text-transform:uppercase;letter-spacing:.4px;}",
+      "#mlsMPmodal .mp-now{background:#FCFBF8;border:1px solid #EFEDE6;border-radius:10px;padding:9px 12px;min-height:52px;}",
       "#mlsMPmodal .mp-now .l1{font-weight:800;color:#204034;}",
       "#mlsMPmodal .mp-now .l2{color:#204034;font-size:13px;margin-top:2px;}",
-      "#mlsMPmodal .mp-log{background:#1E2B24;color:#d7e6f8;border-radius:10px;padding:9px 12px;height:130px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;margin-top:10px;white-space:pre-wrap;}",
-      "#mlsMPmodal .mp-log .err{color:#ffb4b4;}#mlsMPmodal .mp-log .ok{color:#9ff2bf;}",
-      "#mlsMPmodal .mp-days{display:none;margin-top:10px;background:#fff7ed;border:1px solid #fcd9b0;border-radius:10px;padding:8px 12px;font-size:12.5px;color:#7c3f00;}",
-      "#mlsMPmodal .mp-foot{display:flex;gap:9px;padding:12px 18px;border-top:1px solid #e6edf6;background:#fbfdff;align-items:center;flex-wrap:wrap;}",
-      "#mlsMPmodal .mp-btn{cursor:pointer;border-radius:9px;padding:8px 15px;font:700 13.5px system-ui;border:1px solid #2E6A4B;background:#2E6A4B;color:#fff;}",
+      "#mlsMPmodal .mp-log{background:#FCFBF8;color:#55605A;border:1px solid #EFEDE6;border-radius:10px;padding:9px 12px;height:130px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;margin-top:10px;white-space:pre-wrap;}",
+      "#mlsMPmodal .mp-log .err{color:#B23B3B;}#mlsMPmodal .mp-log .ok{color:#2E6A4B;}",
+      "#mlsMPmodal .mp-days{display:none;margin-top:10px;background:#FCF8EF;border:1px solid #EFE4CE;border-radius:10px;padding:8px 12px;font-size:12.5px;color:#B07636;}",
+      "#mlsMPmodal .mp-foot{display:flex;gap:9px;padding:12px 18px;border-top:1px solid #E7E5DD;background:#FCFBF8;align-items:center;flex-wrap:wrap;}",
+      "#mlsMPmodal .mp-btn{cursor:pointer;border-radius:9px;padding:8px 15px;font:700 13.5px system-ui;border:1px solid #204034;background:#204034;color:#fff;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);}",
       "#mlsMPmodal .mp-btn[disabled]{opacity:.45;cursor:default;}",
-      "#mlsMPmodal .mp-btn.sec{background:#fff;color:#2E6A4B;border-color:#C9DCD2;}",
-      "#mlsMPmodal .mp-btn.warn{background:#fff;color:#b45309;border-color:#e5b46b;}",
-      "#mlsMPmodal .mp-sync{margin-left:auto;font-size:12px;color:#2E6A4B;text-align:right;}",
-      "#mlsMPmodal .mp-note{display:none;background:#fffbe6;border:1px solid #f2dd9a;color:#6b5407;border-radius:10px;padding:8px 12px;font-size:12.5px;margin:8px 0;}"
+      "#mlsMPmodal .mp-btn.sec{background:#fff;color:#1A211C;border-color:#D9D6CD;box-shadow:none;}",
+      "#mlsMPmodal .mp-btn.warn{background:#FCF8EF;color:#B07636;border-color:#EFE4CE;box-shadow:none;}",
+      "#mlsMPmodal .mp-sync{margin-left:auto;font-size:12px;color:#79837C;text-align:right;}",
+      "#mlsMPmodal .mp-note{display:none;background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;border-radius:10px;padding:8px 12px;font-size:12.5px;margin:8px 0;}"
     ].join("\n");
     var s = document.createElement("style"); s.id = STYLE_ID; s.textContent = css;
     (document.head || document.documentElement).appendChild(s);
@@ -215,7 +215,7 @@
     var back = document.createElement("div"); back.id = "mlsMPback";
     back.innerHTML =
       '<div id="mlsMPmodal" role="dialog" aria-label="Full month Athena pull">' +
-        '<div class="mp-head"><b>Full-month Athena pull</b><span class="mp-sub" style="color:#C9DCD2">read-only in Athena</span><button class="mp-x" id="mlsMPclose" title="Close">&times;</button></div>' +
+        '<div class="mp-head"><b>Full-month Athena pull</b><span class="mp-sub" style="color:#79837C">read-only in Athena</span><button class="mp-x" id="mlsMPclose" title="Close">&times;</button></div>' +
         '<div class="mp-body">' +
           '<div class="mp-row"><span class="mp-dot spin" id="mlsMPconnDot"></span><span class="mp-conn" id="mlsMPconn">Checking Athena connection</span></div>' +
           '<div class="mp-sub" id="mlsMPconnSub" style="margin:-3px 0 6px 19px;">Verifying the extension, the athenaOne tab, and that the schedule can actually be read.</div>' +
@@ -612,7 +612,7 @@
     var btn = document.createElement("button");
     btn.id = "mlsMPasstBtn"; btn.type = "button";
     btn.textContent = "Pull last month from Athena";
-    btn.style.cssText = "display:block;width:100%;margin:8px 0 4px;cursor:pointer;border:1px solid #2E6A4B;background:#eef4ff;color:#2E6A4B;font:700 12.5px system-ui;border-radius:9px;padding:8px 10px;";
+    btn.style.cssText = "display:block;width:100%;margin:8px 0 4px;cursor:pointer;border:1px solid #D9D6CD;background:#fff;color:#1A211C;font:700 12.5px system-ui;border-radius:9px;padding:8px 10px;";
     btn.addEventListener("click", function () { open({}); });
     host.insertBefore(btn, host.firstChild);
   }

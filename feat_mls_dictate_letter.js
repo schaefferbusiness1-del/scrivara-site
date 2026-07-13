@@ -262,14 +262,14 @@
       };
       recog.onend = function () { if (listening) { try { recog.start(); } catch (e) {} } };
       recog.start();
-      listening = true; btn.textContent = 'Stop dictation'; btn.style.background = '#c0392b';
+      listening = true; btn.textContent = 'Stop dictation'; btn.style.background = '#B23B3B';
       status.textContent = 'Listening... dictate the letter body. Click Stop when done.';
     } catch (e) { status.textContent = 'Could not start dictation — type or paste below.'; }
   }
   function stopDictation(btn, status) {
     listening = false;
     try { if (recog) recog.stop(); } catch (e) {}
-    if (btn) { btn.textContent = 'Dictate'; btn.style.background = '#2E6A4B'; }
+    if (btn) { btn.textContent = 'Dictate'; btn.style.background = '#204034'; }
     if (status && /Listening/.test(status.textContent)) status.textContent = 'Dictation stopped. Edit the letter below, then preview.';
   }
 
@@ -316,8 +316,8 @@
     for (var k in RECIPIENTS) { if (RECIPIENTS.hasOwnProperty(k)) o += '<option value="' + k + '">' + appEsc(RECIPIENTS[k].label) + '</option>'; }
     return o;
   }
-  var IN = 'width:100%;box-sizing:border-box;background:#24332A;border:1px solid rgba(143,216,190,.28);border-radius:8px;color:#EAF1EC;padding:8px 10px;font:13px/1.4 system-ui';
-  var LB = 'font:600 12px system-ui;color:#B9CEC2;display:block;margin:8px 0 3px';
+  var IN = 'width:100%;box-sizing:border-box;background:#FCFBF8;border:1px solid #E7E5DD;border-radius:8px;color:#1A211C;padding:8px 10px;font:13px/1.4 system-ui';
+  var LB = 'font:600 12px system-ui;color:#55605A;display:block;margin:8px 0 3px';
   var BT = 'border:none;border-radius:9px;color:#fff;padding:8px 12px;font:700 12.5px system-ui;cursor:pointer';
 
   function openModal() {
@@ -326,11 +326,11 @@
     var p = activePt();
     var host = document.createElement('div');
     host.id = 'mlsdlModal';
-    host.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(6,10,24,.72);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:22px';
+    host.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(26,33,28,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:22px';
     host.innerHTML =
-      '<div style="max-width:820px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.3);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#EAF1EC">Dictate a letter</div><button id="mlsdlClose" style="background:transparent;color:#EAF1EC;border:1px solid rgba(143,216,190,.3);border-radius:10px;padding:6px 10px;cursor:pointer">Close</button></div>' +
-      '<div style="font-size:12px;color:#B9CEC2;margin-bottom:10px">Draft &amp; preview only. MLS never sends, faxes, emails, or writes to athenaOne from here.</div>' +
+      '<div style="max-width:820px;width:100%;background:#FFFFFF;border:1px solid #E7E5DD;border-radius:16px;padding:18px;box-shadow:0 1px 2px rgba(20,33,28,.04),0 18px 44px -18px rgba(20,33,28,.25);margin:0 auto">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#1A211C">Dictate a letter</div><button id="mlsdlClose" style="background:#fff;color:#1A211C;border:1px solid #D9D6CD;border-radius:10px;padding:6px 10px;cursor:pointer">Close</button></div>' +
+      '<div style="font-size:12px;color:#55605A;margin-bottom:10px">Draft &amp; preview only. MLS never sends, faxes, emails, or writes to athenaOne from here.</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
       '<div><label style="' + LB + '">Patient (from the open chart; edit for a general letter)</label><input id="mlsdlPatient" style="' + IN + '" value="' + appEsc(p && p.name ? p.name : '') + '"></div>' +
       '<div><label style="' + LB + '">Recipient type</label><select id="mlsdlType" style="' + IN + '">' + optionsHtml() + '</select></div>' +
@@ -341,27 +341,34 @@
       '<div><label style="' + LB + '">Recipient email</label><input id="mlsdlEmail" style="' + IN + '" placeholder="For the email preview (optional)"></div>' +
       '<div style="grid-column:1 / -1"><label style="' + LB + '">Subject / Re</label><input id="mlsdlSubject" style="' + IN + '" placeholder="Defaults to the patient name/DOB"></div>' +
       '</div>' +
-      '<div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px"><button id="mlsdlDictate" style="background:#2E6A4B;' + BT + '">Dictate</button><span id="mlsdlStatus" style="font:12px system-ui;color:#B9CEC2"></span></div>' +
+      '<div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px"><button id="mlsdlDictate" style="background:#204034;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);' + BT + '">Dictate</button><span id="mlsdlStatus" style="font:12px system-ui;color:#55605A"></span></div>' +
       '<label style="' + LB + '">Letter body (dictate above, or type/edit here)</label>' +
       '<textarea id="mlsdlBody" style="' + IN + ';min-height:150px;resize:vertical" placeholder="Dictate or type the letter body..."></textarea>' +
-      '<label style="font:12px system-ui;color:#B9CEC2;display:flex;gap:6px;align-items:center;margin-top:8px;cursor:pointer"><input type="checkbox" id="mlsdlClinical">Include a clinical summary (problems / meds / allergies) from the open chart</label>' +
+      '<label style="font:12px system-ui;color:#55605A;display:flex;gap:6px;align-items:center;margin-top:8px;cursor:pointer"><input type="checkbox" id="mlsdlClinical">Include a clinical summary (problems / meds / allergies) from the open chart</label>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">' +
-      '<button class="mlsdlPv" data-k="chart" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Draft chart copy</button>' +
-      '<button class="mlsdlPv" data-k="print" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Print preview</button>' +
-      '<button class="mlsdlPv" data-k="fax" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Fax preview</button>' +
-      '<button class="mlsdlPv" data-k="email" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Email preview</button>' +
-      '<button id="mlsdlOpenPrint" style="background:#1E2B24;border:1px solid rgba(143,216,190,.35);' + BT + ';color:#EAF1EE">Open printable page</button>' +
-      '<button id="mlsdlCopy" style="background:#2E6A4B;' + BT + '">Copy</button>' +
+      '<button class="mlsdlPv" data-k="chart" style="background:#fff;border:1px solid #D9D6CD;' + BT + ';color:#1A211C">Draft chart copy</button>' +
+      '<button class="mlsdlPv" data-k="print" style="background:#fff;border:1px solid #D9D6CD;' + BT + ';color:#1A211C">Print preview</button>' +
+      '<button class="mlsdlPv" data-k="fax" style="background:#fff;border:1px solid #D9D6CD;' + BT + ';color:#1A211C">Fax preview</button>' +
+      '<button class="mlsdlPv" data-k="email" style="background:#fff;border:1px solid #D9D6CD;' + BT + ';color:#1A211C">Email preview</button>' +
+      '<button id="mlsdlOpenPrint" style="background:#fff;border:1px solid #D9D6CD;' + BT + ';color:#1A211C">Open printable page</button>' +
+      '<button id="mlsdlCopy" style="background:#204034;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);' + BT + '">Copy</button>' +
       '</div>' +
-      '<div id="mlsdlPreviewLabel" style="font:700 12px system-ui;color:#ffcf8f;margin:12px 0 4px">Letter preview</div>' +
-      '<textarea id="mlsdlPreviewBody" readonly style="' + IN + ';min-height:170px;background:#0a0f24;resize:vertical" placeholder="Pick a preview above..."></textarea>' +
-      '<div id="mlsdlNote" style="font:12px system-ui;color:#8FD8BE;margin-top:6px;min-height:16px"></div>' +
+      '<div id="mlsdlPreviewLabel" style="font:700 12px system-ui;color:#B07636;margin:12px 0 4px">Letter preview</div>' +
+      '<textarea id="mlsdlPreviewBody" readonly style="' + IN + ';min-height:170px;background:#F2F0E9;resize:vertical" placeholder="Pick a preview above..."></textarea>' +
+      '<div id="mlsdlNote" style="font:12px system-ui;color:#2E6A4B;margin-top:6px;min-height:16px"></div>' +
       '</div>';
     document.body.appendChild(host);
 
     var closeBtn = host.querySelector('#mlsdlClose');
     closeBtn.onclick = function () { stopDictation(host.querySelector('#mlsdlDictate'), host.querySelector('#mlsdlStatus')); host.remove(); };
     host.addEventListener('click', function (e) { if (e.target === host) { stopDictation(host.querySelector('#mlsdlDictate'), host.querySelector('#mlsdlStatus')); host.remove(); } });
+    /* Escape closes the modal by clicking its existing Close button (additive, guarded) */
+    document.addEventListener('keydown', function onEsc(e) {
+      if (!e || e.key !== 'Escape') return;
+      if (!document.getElementById('mlsdlModal')) { try { document.removeEventListener('keydown', onEsc); } catch (err) {} return; }
+      try { if (closeBtn) closeBtn.click(); } catch (err) {}
+      try { document.removeEventListener('keydown', onEsc); } catch (err) {}
+    });
     /* default clinical toggle + resets by recipient type */
     var typeSel = host.querySelector('#mlsdlType'), clin = host.querySelector('#mlsdlClinical');
     function applyType() { var m = RECIPIENTS[typeSel.value] || RECIPIENTS.other; clin.checked = !!m.clinicalDefault; }

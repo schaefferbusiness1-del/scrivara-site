@@ -36,28 +36,28 @@
     if ($(STYLE_ID)) return;
     var st = document.createElement('style'); st.id = STYLE_ID;
     st.textContent = [
-      '#' + DECK_ID + '{margin:14px 0;padding:14px 16px;border:1px solid #d5e4f7;border-radius:16px;background:linear-gradient(180deg,#f6faff 0%,#EAF1EE 100%)}',
+      '#' + DECK_ID + '{margin:14px 0;padding:14px 16px;border:1px solid #E7E5DD;border-radius:16px;background:linear-gradient(180deg,#F6FBF8 0%,#EAF1EE 100%)}',
       '#' + DECK_ID + ' .wd-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}',
       '#' + DECK_ID + ' .wd-title{font:800 14px/1.3 "Plus Jakarta Sans",system-ui,sans-serif;color:#204034}',
       '#' + DECK_ID + ' .wd-note{font:600 11px/1.3 system-ui;color:#2E6A4B;flex:1;min-width:140px}',
       '#' + DECK_ID + ' .wd-btn{border:1px solid #E7E5DD;background:#fff;color:#2E6A4B;border-radius:9px;padding:5px 12px;font:700 12px/1.2 system-ui;cursor:pointer;transition:transform .12s,box-shadow .12s}',
-      '#' + DECK_ID + ' .wd-btn:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(45,99,214,.16)}',
+      '#' + DECK_ID + ' .wd-btn:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(32,64,52,.16)}',
       '#' + DECK_ID + ' .wd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}',
-      '#' + DECK_ID + ' .wd-card{background:#fff;border:1px solid #dde9f8;border-radius:12px;padding:11px 13px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 8px rgba(30,70,150,.06)}',
+      '#' + DECK_ID + ' .wd-card{background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:11px 13px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 8px rgba(26,33,28,.06)}',
       '#' + DECK_ID + ' .wd-card h4{margin:0;font:800 13px/1.35 "Plus Jakarta Sans",system-ui,sans-serif;color:#1E2B24;display:flex;align-items:center;gap:6px}',
       '#' + DECK_ID + ' .wd-desc{font:500 11.5px/1.4 system-ui;color:#2E6A4B}',
-      '#' + DECK_ID + ' .wd-body{font:500 12.5px/1.5 system-ui;color:#204034;max-height:220px;overflow-y:auto;border-top:1px dashed #e3edf9;padding-top:6px}',
+      '#' + DECK_ID + ' .wd-body{font:500 12.5px/1.5 system-ui;color:#204034;max-height:220px;overflow-y:auto;border-top:1px dashed #E7E5DD;padding-top:6px}',
       '#' + DECK_ID + ' .wd-body:empty:before{content:"Fills when you generate a note.";color:#C9DCD2;font-weight:600}',
       '#' + DECK_ID + ' .wd-acts{display:flex;gap:6px;margin-top:auto;padding-top:4px}',
       '#' + DECK_ID + ' .wd-acts button{border:0;background:#EAF1EE;color:#2E6A4B;border-radius:8px;padding:4px 10px;font:700 11.5px/1.2 system-ui;cursor:pointer}',
-      '#' + DECK_ID + ' .wd-acts button:hover{background:#dcebff}',
-      '#' + DECK_ID + ' .wd-starter{border:1px dashed #EAF1EE;border-radius:12px;background:#fbfdff;padding:11px 13px}',
+      '#' + DECK_ID + ' .wd-acts button:hover{background:#DEEAE3}',
+      '#' + DECK_ID + ' .wd-starter{border:1px dashed #EAF1EE;border-radius:12px;background:#FCFBF8;padding:11px 13px}',
       '#' + DECK_ID + ' .wd-starter b{font:800 12.5px/1.4 system-ui;color:#204034}',
       '#' + DECK_ID + ' .wd-starter p{margin:3px 0 8px;font:500 11.5px/1.45 system-ui;color:#2E6A4B}',
       '#' + DECK_ID + ' .wd-starter button{width:100%}',
       '#' + CHIPS_ID + '{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}',
-      '#' + CHIPS_ID + ' button{border:1px solid #cfe0f5;background:#f4f9ff;color:#2E6A4B;border-radius:999px;padding:4px 11px;font:600 11.5px/1.3 system-ui;cursor:pointer}',
-      '#' + CHIPS_ID + ' button:hover{background:#e7f1ff}',
+      '#' + CHIPS_ID + ' button{border:1px solid #D6D2C6;background:#F6FBF8;color:#2E6A4B;border-radius:999px;padding:4px 11px;font:600 11.5px/1.3 system-ui;cursor:pointer}',
+      '#' + CHIPS_ID + ' button:hover{background:#EAF1EE}',
       '@media (max-width:600px){#' + DECK_ID + ' .wd-grid{grid-template-columns:1fr}}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
@@ -193,7 +193,7 @@
     var wrap = box.parentNode; if (!wrap) return;
     var row = document.createElement('div'); row.id = CHIPS_ID;
     var lbl = document.createElement('span');
-    lbl.style.cssText = 'font:600 11px/2 system-ui;color:#7d90a8;margin-right:2px';
+    lbl.style.cssText = 'font:600 11px/2 system-ui;color:#79837C;margin-right:2px';
     lbl.textContent = 'Try:';
     row.appendChild(lbl);
     EXAMPLES.forEach(function (ex) {

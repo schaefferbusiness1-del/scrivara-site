@@ -7,6 +7,20 @@
   /* MLS Assist v1.35 — scope guard: never run on github.com (perf+privacy; via <all_urls> the panel/observers used to inject into GitHub and could freeze its renderer). Belt-and-suspenders with manifest exclude_matches. athenaOne + mlsscribe.com are unaffected. */
   try { var __mlsHost = (location && location.hostname || '').toLowerCase(); if (__mlsHost === 'github.com' || __mlsHost.slice(-11) === '.github.com' || __mlsHost === 'githubusercontent.com' || __mlsHost.slice(-22) === '.githubusercontent.com' || __mlsHost === 'github.dev' || __mlsHost.slice(-11) === '.github.dev') { return; } } catch (e) {}
   if (window.__mlsAssistLoaded) return; window.__mlsAssistLoaded = true;
+  /* v1.90: athena-tab REGISTRATION heartbeat. Fires ONLY on the raw product host
+     (athenanet.athenahealth.com — identity./login hosts never register), carries
+     NO data beyond the message type (no PHI, no URL), and lets the background's
+     unified mlsPickAthenaTab prefer the tab whose content script is actually
+     alive. Event-driven only — no timers. */
+  try {
+    if ((location.hostname || '').toLowerCase() === 'athenanet.athenahealth.com') {
+      var __mlsAthHello = function () { try { chrome.runtime.sendMessage({ type: 'mlsAthenaHello' }, function () { var _ = chrome.runtime.lastError; }); } catch (e) {} };
+      __mlsAthHello();
+      window.addEventListener('focus', __mlsAthHello, true);
+      window.addEventListener('pageshow', __mlsAthHello, true);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) __mlsAthHello(); }, true);
+    }
+  } catch (e) {}
   // SECURITY (v1.26) -- trusted-origin gate for the page->extension postMessage bridge.
   // The content script runs on <all_urls> so the doctor can open the MLS Assist panel
   // on ANY page (that any-page behavior is intentional and unchanged). BUT the bridge
@@ -17,7 +31,11 @@
   // panel/popup actions do NOT use this bridge (they use chrome.runtime messaging),
   // so a malicious page can neither puppet the extension nor receive chart data, while
   // the doctor's any-page usage is fully preserved.
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1 };
+  /* v1.52 fix #2 (broken allowlist): mlsAppGotoDate + mlsAppScrapeReviews had handlers but were gate-dropped here - hands-free month-pull nav and review scraping were dead. Two keys added; gate semantics unchanged. */
+  /* v1.55: mlsAppGoHome added — the app-side day/month history orchestrator needs to
+     return athenaOne to the CLINICAL SCHEDULE (home) between patients so each patient's
+     row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -77,6 +95,19 @@
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppPasteResult', resp: { error: 'extension error' } }); }
     }
+    /* v1.70: PER-SECTION verified write for the app's "EMR sections - review &
+       confirm" console. Relays to the existing mlsVerifiedWrite worker path:
+       identity gate (refuse-by-default; force only via the doctor's explicit
+       in-app override) -> mlsSegmentNote -> per-section field scan -> paste ->
+       per-section confirmed/notfound results. The worker's hard ORDERS block
+       and never-Save/Sign behavior are untouched. */
+    if (d.type === 'mlsAppVerifiedWrite') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsVerifiedWrite', note: mlsStr(d.note), force: !!d.force }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppVerifiedWriteResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppVerifiedWriteResult', resp: { error: 'extension error' } }); }
+    }
     // Pull TODAY'S SCHEDULE from the EMR tab (Athena) so MLS can pre-load the day's patients.
     if (d.type === 'mlsAppPullSchedule') {
       try {
@@ -93,6 +124,51 @@
           reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', resp: { error: 'extension error' } }); }
+    }
+    // v1.55: return athenaOne to the CLINICAL SCHEDULE (home) by clicking the athenaOne
+    // Home logo. Read-only navigation. Lets the app-side day/month orchestrator re-ground
+    // between patients (each patient's schedule row must be on screen to open the chart).
+    if (d.type === 'mlsAppGoHome') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppGoHomeRequest' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: { error: 'extension error' } }); }
+    }
+    // v1.60 DEV: reload the unpacked extension from disk (build iteration without a
+    // manual chrome://extensions click). Reload only - nothing else.
+    if (d.type === 'mlsDevReload') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsDevReloadRequest' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsDevReloadResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsDevReloadResult', resp: { error: 'extension error' } }); }
+    }
+    // v1.56: return focus to the MLS (mlsscribe) tab. The app posts this when a history
+    // pull ends so the doctor is brought back from athenaOne instead of being stranded there.
+    if (d.type === 'mlsAppFocusMlsTab') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppFocusMlsTab' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppFocusMlsTabResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppFocusMlsTabResult', resp: { error: 'extension error' } }); }
+    }
+    // v1.75: read-only focus-guardian state (which tab is active, is a return owed).
+    // No DOM access, no PHI — used to VERIFY the doctor was returned to MLS.
+    if (d.type === 'mlsFgState') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsFgState' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsFgStateResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsFgStateResult', resp: { error: 'extension error' } }); }
+    }
+    // v1.77: read-only identity diagnostic (initials + scores only, no PHI).
+    if (d.type === 'mlsIdDiag') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsIdDiag' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsIdDiagResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsIdDiagResult', resp: { error: 'extension error' } }); }
     }
     // v1.51: reviews scrape driver (reputation lane) — background opens each PUBLIC
     // review URL in a background tab, runs the reader, returns normalized data. No PHI.
@@ -112,6 +188,32 @@
           reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'extension error' } }); }
+    }
+    /* v1.89: READ-ONLY, identity-gated read of the OPEN chart's left-rail
+       "Visits and Cases" pane - individual visit entries {date,type,provider,
+       textHead}. The injected driver verifies the open chart matches the
+       requested {patient,dob,athenaId} on the live DOM BEFORE reading and
+       refuses honestly otherwise (wrong-chart / wrong-dob / unverified-dob /
+       wrong-id / no-rail). Never clicks Save/Sign/orders.
+       BRIDGE CONTRACT (app side):
+        - timeout must be >= 100s (90s injection budget + relay overhead) and
+          ABSOLUTE-DEADLINE based: a Worker timer or Date.now() checks on
+          capture-phase message events - NEVER bare setTimeout/setInterval in
+          the (possibly hidden, ~0-tick-throttled) MLS tab.
+        - one call at a time: overlapping calls come back reason:'busy' -
+          do NOT auto-refire while a read may still be running.
+        - call ReadVisits AFTER ReadChart for a patient (the rail click
+          navigates the chart frame to the Visits pane), and re-verify
+          chartName/chartDob/chartMrn on the response before ingesting.
+        - the athenaOne tab should be visible/foreground during the read.
+        - dedup limitation: two byte-identical same-day pane rows collapse
+          into one entry. */
+    if (d.type === 'mlsAppReadVisits') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAppReadVisitsRequest', patient: mlsStr(d.patient || d.name, 200), dob: mlsStr(d.dob, 20), athenaId: mlsStr(d.athenaId, 40) }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: { error: 'extension error' } }); }
     }
     // READ-ONLY: read the open Athena REPORT / claims / procedure / patient LIST tab so MLS
     // can enumerate patients by procedure/CPT (Study cohort, Mode B). Unlike mlsAppPullSchedule
@@ -171,12 +273,50 @@
     var _to = trustedOrigin || 'https://mlsscribe.com';
     var post = function (type, payload) { try { window.postMessage(Object.assign({ source: 'mls-ext', type: type }, payload || {}), _to); } catch (e) {} };
     if (!goal) { post('mlsAppPushResult', { resp: { error: 'Nothing to push.' } }); return; }
-    /* v1.51 WRITEBACK TARGETING GATE: verify the OPEN athena encounter belongs to
-       the patient this push is FOR, before the autopilot types a single character.
-       Wrong chart open → refuse loudly, nothing written. If the app didn't send a
-       patient (older build), we still ANNOUNCE whose chart is open so the doctor
-       sees the target. The stop-before-Save/Sign rule downstream is unchanged. */
+    /* v2.00 ORDERS POLICY (owner-directed, 2026-07-10 night): the v1.52
+       categorical ORDER hard-block is LIFTED — orders are now a valid,
+       doctor-driven write destination. Every other gate is UNCHANGED and
+       still applies to orders: the identity gate below must pass, the run is
+       an explicit doctor action, and the autopilot's deny-list still refuses
+       Save/Sign/Post/Approve/Submit-class clicks — MLS enters content but
+       never finalizes. A caution is surfaced because athenaOne executes
+       orders on ITS OWN submit, which stays in the doctor's hands. */
+    if (/open the ORDERS? area|\bORDER ENTRY\b/i.test(String(goal).slice(0, 300))) {
+      post('mlsAppPushProgress', { msg: '⚠ Orders destination: MLS will fill order content but NEVER submits/signs — review and submit the order in athenaOne yourself.' });
+    }
+    /* v1.51 WRITEBACK TARGETING GATE (v1.52-hardened): verify the OPEN athena
+       encounter belongs to the patient this push is FOR, before the autopilot
+       types a single character. Wrong chart open → refuse loudly, nothing
+       written. v1.52: when the app didn't send a patient (older app build),
+       fall back to the ACTIVE patient shown in the MLS patient bar ON THIS
+       PAGE — the push is by definition for that patient — so the safe-write
+       guarantee does not depend on the app pack being deployed. If neither is
+       readable, ANNOUNCE whose chart is open. Stop-before-Save/Sign unchanged. */
     try {
+      if (!(patient && patient.name)) {
+        /* Deterministic source: the app's own storage (content scripts share the
+           page's localStorage). uns()-namespaced keys: sf_u::<email>::activePt
+           holds the active patient id; ::patients holds the records. The pushed
+           note is BY DEFINITION for the active patient, so gating on it can not
+           false-refuse a legitimate push. Unreadable → announce-only (v1.51). */
+        try {
+          var aid = null, ptsRaw = null;
+          for (var ki = 0; ki < localStorage.length; ki++) {
+            var kk = localStorage.key(ki);
+            if (/::activePt$/.test(kk)) aid = String(localStorage.getItem(kk) || '').replace(/^"|"$/g, '');
+            else if (/::patients$/.test(kk)) ptsRaw = localStorage.getItem(kk);
+          }
+          if (aid && ptsRaw) {
+            var ptsArr = JSON.parse(ptsRaw);
+            var ap = null;
+            for (var pi = 0; pi < ptsArr.length; pi++) { if (ptsArr[pi] && String(ptsArr[pi].id) === aid) { ap = ptsArr[pi]; break; } }
+            if (ap && ap.name) {
+              patient = { name: String(ap.name), dob: String(ap.dob || '') };
+              post('mlsAppPushProgress', { msg: 'Write-safety: verifying against the active MLS patient (' + patient.name + ').' });
+            }
+          }
+        } catch (e0) {}
+      }
       var idr = await _bg('mlsAssistChartIdentity');
       var openId = (idr && idr.ok && idr.identity) ? idr.identity : null;
       if (patient && patient.name && openId && openId.name) {
@@ -1048,7 +1188,34 @@
     if (!trusted(ev.origin)) return;
     activeOrigin = ev.origin; activeUntil = Date.now() + 120000;
     try {
-      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '' }, function (res) {
+      /* v1.78: forward the app's DOB when it sends one - the findpatient route
+         verifies the result row's DOB BEFORE opening the chart. Optional.
+         v1.85: when the app did NOT send one, look it up in the app's OWN
+         patient store (same-origin localStorage) by exact normalized name -
+         this is what disambiguates two same-name patients (live: two Marie
+         Dunnes, different DOBs). A wrong-twin dob cannot misfile: the pull's
+         read gate still verifies the roster row against the opened chart. */
+      var dobHint = d.dob || '';
+      if (!dobHint) {
+        try {
+          var nrmN = function (s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); };
+          var wantN = nrmN(d.name || d.raw);
+          if (wantN) {
+            for (var ki = 0; ki < localStorage.length; ki++) {
+              var kk = localStorage.key(ki);
+              if (!/::patients$/.test(kk || '')) continue;
+              var arrP = [];
+              try { arrP = JSON.parse(localStorage.getItem(kk)) || []; } catch (e0) { continue; }
+              for (var pi = 0; pi < arrP.length; pi++) {
+                var pp = arrP[pi];
+                if (pp && pp.name && pp.dob && nrmN(pp.name) === wantN) { dobHint = pp.dob; break; }
+              }
+              if (dobHint) break;
+            }
+          }
+        } catch (e1) {}
+      }
+      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         if (err || !res) { post(activeOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true }); return; }
         var out = {}; for (var k in res) out[k] = res[k];
@@ -1087,4 +1254,129 @@
     });
     say(); setTimeout(say, 2500); setTimeout(say, 8000);
   } catch (e) {}
+})();
+
+/* ===================== v1.99 ATHENA TAB PICKER (app-page UI) =================
+ * Lets the user point MLS Assist at an already-open athenaOne tab and walk
+ * away: pick a tab -> it is PINNED (background honors it for every driver) and
+ * the gentle 55s Worker keep-alive holds it signed in (armed on pin, re-checked
+ * by a 5-min alarm). Never navigates the pinned tab outside a user-started
+ * pull; if the session drops the panel says so - MLS never re-auths.
+ * Renders ONLY on the MLS app page. Launcher chip #mlsTabPickerChip; panel
+ * opens on click or on window message {source:'mls-app', type:'mlsShowTabPicker'}. */
+(function () {
+  try {
+    if (!/(^|\.)mlsscribe\.com$/i.test(location.hostname || '')) return;
+    if (!/ScribeFlow/i.test(location.pathname || '')) return;
+    if (window.__mlsTabPickerInstalled) return; window.__mlsTabPickerInstalled = 1;
+    var PANEL_ID = 'mlsTabPickerPanel';
+    function el(tag, css, txt) { var n = document.createElement(tag); if (css) n.style.cssText = css; if (txt != null) n.textContent = txt; return n; }
+    function bg(type, payload) {
+      return new Promise(function (res) {
+        try { chrome.runtime.sendMessage(Object.assign({ type: type }, payload || {}), function (r) { var _ = chrome.runtime.lastError; res(r || null); }); }
+        catch (e) { res(null); }
+      });
+    }
+    function closePanel() { var p = document.getElementById(PANEL_ID); if (p) p.remove(); }
+    function render() {
+      closePanel();
+      var p = el('div', 'position:fixed;right:16px;bottom:64px;z-index:2147483000;width:344px;background:#0b1020;border:1px solid rgba(120,140,220,.35);border-radius:14px;padding:14px;box-shadow:0 12px 40px rgba(0,0,0,.5);font:13px/1.45 system-ui;color:#e8ecff');
+      p.id = PANEL_ID;
+      var h = el('div', 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px');
+      h.appendChild(el('b', 'font-size:13.5px', 'Athena tab — hand off to MLS Assist'));
+      var x = el('button', 'background:none;border:0;color:#9fb0d8;font-size:17px;cursor:pointer;line-height:1', String.fromCharCode(215));
+      x.onclick = closePanel; h.appendChild(x);
+      p.appendChild(h);
+      var status = el('div', 'font-size:12px;color:#9fb0d8;margin-bottom:8px', 'Checking...');
+      p.appendChild(status);
+      var list = el('div', 'max-height:260px;overflow:auto');
+      p.appendChild(list);
+      var foot = el('div', 'display:flex;gap:8px;margin-top:10px');
+      var B = 'flex:1;border:1px solid rgba(120,140,220,.3);background:#141b3d;color:#e8ecff;border-radius:9px;padding:7px 8px;font:600 12px system-ui;cursor:pointer';
+      var rf = el('button', B, 'Refresh'); rf.onclick = render; foot.appendChild(rf);
+      var un = el('button', B, 'Auto-pick (unpin)');
+      un.onclick = function () { bg('mlsPinAthenaTabRequest', { tabId: null }).then(render); };
+      foot.appendChild(un);
+      p.appendChild(foot);
+      p.appendChild(el('div', 'font-size:11px;color:#7f8db0;margin-top:8px', 'The pinned tab is held signed in by a gentle 55s keep-alive. MLS only navigates it during a pull you start, and never signs in for you - if the session drops, work pauses and this panel says so.'));
+      document.body.appendChild(p);
+      Promise.all([bg('mlsPinStateRequest'), bg('mlsListAthenaTabsRequest')]).then(function (rs) {
+        var st = rs[0], resp = rs[1];
+        if (st && st.pinned) status.textContent = st.signedOut ? '⚠ Pinned tab looks SIGNED OUT - sign back in on that tab; keep-alive is paused and MLS will not re-auth.' : ('✓ Pinned: "' + (st.title || 'athenaOne') + '" - keep-alive ' + (st.ka || 'arming...'));
+        else status.textContent = 'No tab pinned - MLS auto-picks. Choose your athenaOne tab below to pin it.';
+        list.innerHTML = '';
+        var tabs = (resp && resp.tabs) || [];
+        if (!tabs.length) { list.appendChild(el('div', 'color:#9fb0d8;padding:8px 2px', 'No athenaOne tabs found. Open athenaOne in another tab, then Refresh.')); return; }
+        tabs.forEach(function (t) {
+          var row = el('div', 'display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid rgba(120,140,220,.18);border-radius:9px;margin-bottom:6px;background:' + (t.pinned ? 'rgba(37,99,201,.28)' : '#0f1530'));
+          var lab = el('div', 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap');
+          lab.textContent = (t.pinned ? '📌 ' : '') + t.title; lab.title = t.title;
+          row.appendChild(lab);
+          row.appendChild(el('span', 'font-size:10.5px;white-space:nowrap;color:' + (t.loginish ? '#f2b8b5' : '#9fe0b0'), t.loginish ? 'sign-in page' : (t.hello ? 'connected' : 'athena')));
+          var b = el('button', 'border:1px solid rgba(120,140,220,.35);background:#1b2a5e;color:#e8ecff;border-radius:8px;padding:5px 9px;font:600 11.5px system-ui;cursor:pointer;white-space:nowrap', t.pinned ? 'Pinned' : 'Use this tab');
+          if (t.pinned) b.disabled = true;
+          b.onclick = function () {
+            b.textContent = '...';
+            bg('mlsPinAthenaTabRequest', { tabId: t.id }).then(function (r) {
+              if (r && r.ok) render();
+              else { b.textContent = 'Use this tab'; status.textContent = '⚠ ' + ((r && r.error) || 'Could not pin that tab.'); }
+            });
+          };
+          row.appendChild(b);
+          list.appendChild(row);
+        });
+      });
+    }
+    function chip() {
+      try {
+        if (document.getElementById('mlsTabPickerChip') || !document.body) return;
+        var c = el('button', 'position:fixed;right:184px;bottom:14px;z-index:2147482999;border:1px solid rgba(120,140,220,.4);background:#0b1020;color:#cfd9ff;border-radius:999px;padding:7px 12px;font:600 12px system-ui;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)', '🔗 Athena tab');
+        c.id = 'mlsTabPickerChip';
+        c.title = 'Pick which open athenaOne tab MLS Assist should use (and keep signed in)';
+        c.onclick = function () { if (document.getElementById(PANEL_ID)) closePanel(); else render(); };
+        document.body.appendChild(c);
+      } catch (e) {}
+    }
+    window.addEventListener('message', function (ev) {
+      var d = ev && ev.data;
+      if (d && d.source === 'mls-app' && d.type === 'mlsShowTabPicker' && ev.origin === location.origin) render();
+    }, false);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', chip); else chip();
+    setTimeout(chip, 2500);
+  } catch (e) {}
+})();
+
+
+/* =========================================================================
+ * MLS Assist v2.05 - relay for the unified write bridge (APPEND-ONLY).
+ * App page posts {type:'mlsAppWriteV2', patient, dob, athenaId, sections[]}
+ * -> background mlsAppWriteV2Request -> reply 'mlsAppWriteV2Result'.
+ * Sections carry {key,label,text,execute}; order-class keys are forced
+ * target-only in the background driver regardless of what arrives here.
+ * ========================================================================= */
+(function () {
+  'use strict';
+  function trusted(origin) {
+    try { var h = new URL(origin).host; return /(^|\.)mlsscribe\.com$/i.test(h) || /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(h); } catch (e) { return false; }
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.source !== 'mls-app' || d.type !== 'mlsAppWriteV2') return;
+    if (!trusted(ev.origin)) return;
+    var origin = ev.origin;
+    function post(type, payload) {
+      try { var o = {}; for (var k in payload) o[k] = payload[k]; o.source = 'mls-ext'; o.type = type; window.postMessage(o, origin); } catch (e) {}
+    }
+    try {
+      chrome.runtime.sendMessage({
+        type: 'mlsAppWriteV2Request',
+        patient: d.patient || '', dob: d.dob || '', athenaId: d.athenaId || '',
+        sections: Array.isArray(d.sections) ? d.sections : []
+      }, function (res) {
+        var err = chrome.runtime && chrome.runtime.lastError;
+        if (err || !res) { post('mlsAppWriteV2Result', { ok: false, error: (err && err.message) || 'No response from MLS Assist' }); return; }
+        post('mlsAppWriteV2Result', { resp: res });
+      });
+    } catch (e) { post('mlsAppWriteV2Result', { ok: false, error: String((e && e.message) || e) }); }
+  }, false);
 })();

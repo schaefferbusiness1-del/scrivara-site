@@ -173,19 +173,19 @@
       st.textContent = [
         '#mlsSignInPrompt{position:fixed;right:16px;bottom:16px;left:auto;transform:none;',
         'z-index:2147483646;max-width:310px;width:auto;box-sizing:border-box;',
-        'background:#1E2B24;color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:12px;',
-        'box-shadow:0 6px 20px rgba(8,20,45,.35);padding:10px 30px 10px 12px;font-size:12.5px;line-height:1.35;',
+        'background:#FFFFFF;color:#1A211C;border:1px solid #E7E5DD;border-radius:12px;',
+        'box-shadow:0 1px 2px rgba(20,33,28,.04),0 18px 44px -18px rgba(20,33,28,.25);padding:10px 30px 10px 12px;font-size:12.5px;line-height:1.35;',
         'font-family:inherit;position:fixed;}',
         '@media (max-width:480px){#mlsSignInPrompt{right:8px;left:8px;max-width:none;}}',
         '#mlsSignInPrompt .mlssip-h{font-weight:800;display:flex;align-items:center;gap:6px;margin:0 0 2px;font-size:12.5px;}',
-        '#mlsSignInPrompt .mlssip-sub{font-size:11.5px;opacity:.88;margin:0;}',
-        '#mlsSignInPrompt .mlssip-detail{font-size:10.5px;opacity:.7;margin:4px 0 0;}',
+        '#mlsSignInPrompt .mlssip-sub{font-size:11.5px;opacity:.88;margin:0;color:#55605A;}',
+        '#mlsSignInPrompt .mlssip-detail{font-size:10.5px;opacity:.7;margin:4px 0 0;color:#79837C;}',
         '#mlsSignInPrompt .mlssip-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}',
         '#mlsSignInPrompt button{cursor:pointer;border-radius:8px;font-size:11.5px;font-weight:700;',
-        'padding:5px 10px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.14);color:#fff;}',
-        '#mlsSignInPrompt button.mlssip-primary{background:#2E6A4B;border-color:#2E6A4B;}',
+        'padding:5px 10px;border:1px solid #D9D6CD;background:#fff;color:#1A211C;}',
+        '#mlsSignInPrompt button.mlssip-primary{background:#204034;border-color:#204034;color:#fff;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);}',
         '#mlsSignInPrompt .mlssip-x{position:absolute;top:6px;right:7px;background:none;border:none;',
-        'color:#fff;opacity:.65;font-size:14px;padding:2px 5px;}'
+        'color:#8A8F86;opacity:.65;font-size:14px;padding:2px 5px;}'
       ].join('');
       (document.head || document.documentElement).appendChild(st);
     } catch (e) {}
