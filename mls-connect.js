@@ -5441,8 +5441,25 @@
     '#mlsEz3 .ez3-modeseg .on,#mlsEz3 .ez3-seg button.on{background:#fff !important;color:#1A211C !important;box-shadow:0 1px 3px rgba(20,33,28,.15) !important;}',
     '#mlsEz3 select,#mlsEz3 input{background:#FCFBF8 !important;color:#1A211C !important;border:1px solid #E4E1D8 !important;}',
     '#mlsEz3 .ez3-safety{color:#79837C !important;}',
-    /* 1c) light-band text: every secondary control reads as ink on the light card */
-    '#mlsEz3 .ez3-sm,#mlsEz3 .ez3-exbtn,#mlsEz3 .ez3-qchip,#mlsEz3 .ez3-chip,#mlsEz3 .ez3-more{color:#1A211C !important;}',
+    /* 1c) light-band text: every secondary control reads as ink on the light
+       card — but ACTIVE (.on) chips keep their dark fills, so they stay white. */
+    '#mlsEz3 .ez3-sm:not(.pri),#mlsEz3 .ez3-exbtn:not(.rec):not(.send),#mlsEz3 .ez3-qchip:not(.on),#mlsEz3 .ez3-chip:not(.on),#mlsEz3 .ez3-more{color:#1A211C !important;}',
+    '#mlsEz3 .ez3-qchip.on,#mlsEz3 .ez3-chip.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;}',
+    /* 1d) Easy step-flow sub-states on the light card */
+    '#mlsEz3 .ez3-back{color:#55605A !important;}',
+    '#mlsEz3 .ez3-badge.dob{color:#1A211C !important;background:#F2F0E9 !important;border-color:#E4E1D8 !important;}',
+    '#mlsEz3 .ez3-fstep{color:#79837C !important;background:#F2F0E9 !important;border-color:#E4E1D8 !important;}',
+    '#mlsEz3 .ez3-fstep.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;}',
+    '#mlsEz3 .ez3-prow .dob,#mlsEz3 .ez3-prow .tm{color:#79837C !important;}',
+    '#mlsEz3 .ez3-prow{color:#1A211C !important;}',
+    '#mlsEz3 .ez3-loadcard,#mlsEz3 .ez3-loadcard .l2{color:#55605A !important;}',
+    '#mlsEz3 .ez3-pull .plog{color:#55605A !important;}',
+    '#mlsEz3 .ez3-qchip .qt{color:#79837C !important;}',
+    '#mlsEz3 .ez3-qchip.on .qt{color:#EAF1EC !important;}',
+    '#mlsEz3 .ez3-search input::placeholder{color:#A6AEA6 !important;}',
+    '#mlsEz3 .ez3-spin{color:#79837C !important;border-top-color:#2E6A4B !important;}',
+    '#mlsEz3 .ez3-nowtag.next{color:#2E6A4B !important;}',
+    '#mlsEz3 .ez3-note,#mlsEz3 .ez3-timer{color:#1A211C !important;}',
     '#mlsEz3 .ez3-modeseg button{color:#55605A !important;}',
     '#mlsEz3 .ez3-modeseg button.on{color:#1A211C !important;}',
     '#mlsEz3 .ez3-advrow button,#mlsEz3 #ez3Adv{color:#55605A !important;}',
@@ -29986,7 +30003,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b182';
+  window.__MLS_AV = window.__MLS_AV || 'b183';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30300,7 +30317,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b182';
+  var MLS_APP_BUILD='2026-07-13-b183';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
