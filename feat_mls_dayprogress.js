@@ -83,7 +83,10 @@
   }
 
   function appts(){try{var a=window._heroTodayList||[];if(!Array.isArray(a))return [];
-    return a.filter(function(x){return x&&String(x.name||'').trim();});}catch(e){return [];}}
+    return a.filter(function(x){if(!(x&&String(x.name||'').trim()))return false;
+      /* b254: owner-marked staff (office-manager blocks) never count in the day strip */
+      try{if(window.__mlsStaffMark&&window.__mlsStaffMark.isStaff(x.name))return false;}catch(eSm){}
+      return true;});}catch(e){return [];}}
   function seenOf(list){var n=0;if(typeof window._seenToday!=='function')return null;
     list.forEach(function(a){try{if(window._seenToday(a.name))n++;}catch(e){}});return n;}
   function nextIdx(list){try{if(typeof window._calPickNowIdx==='function'){var i=window._calPickNowIdx(list);
