@@ -107,7 +107,7 @@
   /* cv2-1.1.1: intent replies echo into the shared conversation thread (chat feel on
    *   both surfaces, not toast-only), and speech output only plays while voice mode is
    *   actually listening (typed commands no longer talk back unexpectedly). */
-  var VERSION = 'cv2-1.1.1';
+  var VERSION = 'cv2-1.1.2';
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -250,6 +250,18 @@
         var p = $('mlsAsstPanel');
         if (!p || getComputedStyle(p).display === 'none') { var fab = $('mlsAsstFab'); if (fab) fab.click(); }
         window.__mlsAsstFix._handleSend(text);
+        return;
+      }
+      /* The assistant bridge can load after the mic. Deterministic voice
+         controls must still work during that window instead of dropping the
+         utterance or claiming the assistant is unavailable. */
+      if (/^(?:hello|hi|hey)(?:\s+(?:there|mls))?|^(?:hello\s+)?are\s+you\s+working\??$/i.test(S(text).trim())) {
+        speakToast('I am here. You can say "start recording", "stop recording", "generate the note", or "open" and a patient name.');
+        return;
+      }
+      var local = runLeg(text);
+      if (local === 'unknown') {
+        speakToast('I heard you, but the full assistant is still loading. Try that again in a moment.');
       }
     });
   }

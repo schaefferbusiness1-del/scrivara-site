@@ -5490,7 +5490,7 @@
        __mlsEz3Flow layer below) and carries an explicit Back button. ===== */
     '#mlsEz3 .ez3-modeseg{display:none !important;}',
     /* quiet label over the doctor secondary actions: instant comprehension */
-    '#mlsEz3Body .ez3-row2::before{content:"GET THE DAY READY";flex-basis:100%;font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#8A8F86;margin-bottom:2px;}',
+    '#mlsEz3Body .ez3-row2:has(#ez3Change)::before{content:"GET THE DAY READY";flex-basis:100%;font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#8A8F86;margin-bottom:2px;}',
     /* the batch "Pull day histories" action lives in Staff day-prep now (owner:
        a floating button bottom corner made no sense) — real button stays in the
        DOM (hidden) and the flow layer proxies it from the staff tools row */
@@ -5512,10 +5512,32 @@
     '#mlsEz3 .ez3fl-record{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin:2px 0 0;}',
     '#mlsEz3 .ez3fl-recbtn{display:inline-flex;align-items:center;gap:10px;background:#204034;border:1px solid #204034;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;padding:13px 22px;box-shadow:0 1px 2px rgba(20,33,28,.10);transition:background .16s ease;}',
     '#mlsEz3 .ez3fl-recbtn:hover{background:#2E6A4B;border-color:#2E6A4B;}',
+    '#mlsEz3 .ez3fl-recbtn[hidden]{display:none!important;}',
+    '#mlsEz3 .ez3fl-recbtn.live{background:#B83D42;border-color:#B83D42;}',
     '#mlsEz3 .ez3fl-recbtn .dot{width:9px;height:9px;border-radius:50%;background:#8FD8BE;flex:0 0 auto;}',
+    '#mlsEz3 .ez3fl-recbtn.live .dot{background:#fff;box-shadow:0 0 0 5px rgba(255,255,255,.14);}',
     '#mlsEz3 .ez3fl-openws{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #D9D6CD;border-radius:12px;color:#1A211C;font-size:13px;font-weight:600;cursor:pointer;padding:12px 16px;}',
     '#mlsEz3 .ez3fl-openws:hover{background:#F4F2EC;}',
+    '#mlsEz3 .ez3fl-openws[hidden]{display:none!important;}',
+    '#mlsEz3 .ez3fl-gen{display:inline-flex;align-items:center;justify-content:center;background:#2E6A4B;border:1px solid #2E6A4B;border-radius:12px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;padding:12px 18px;}',
+    '#mlsEz3 .ez3fl-gen:hover{background:#204034;}',
+    '#mlsEz3 .ez3fl-gen:disabled{opacity:.62;cursor:wait;}',
+    '#mlsEz3 .ez3fl-gen[hidden]{display:none!important;}',
     '#mlsEz3 .ez3fl-rechint{flex-basis:100%;font-size:12px;color:#79837C;margin-top:-2px;}',
+    '#mlsEz3 .ez3fl-transcript{flex-basis:100%;background:#F8FAF7;border:1px solid #DCE4DD;border-radius:14px;padding:13px 14px;margin-top:2px;}',
+    '#mlsEz3 .ez3fl-txhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px;color:#1A211C;font-size:13px;font-weight:700;}',
+    '#mlsEz3 .ez3fl-txhead span{color:#79837C;font-size:11.5px;font-weight:600;}',
+    '#mlsEz3 .ez3fl-tx{display:block;width:100%;min-height:126px;resize:vertical;box-sizing:border-box;background:#fff!important;color:#1A211C!important;border:1px solid #D9DFD9!important;border-radius:10px;padding:11px 12px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;}',
+    '#mlsEz3 .ez3fl-tx:focus{outline:none!important;border-color:#78B99D!important;box-shadow:0 0 0 3px rgba(46,106,75,.14)!important;}',
+    '#mlsEz3 .ez3fl-txmeta{display:flex;justify-content:space-between;gap:10px;margin-top:7px;color:#79837C;font-size:11.5px;}',
+    '#mlsEz3 .ez3fl-note{flex-basis:100%;background:#F4F8F4;border:1px solid #CFE0D2;border-radius:14px;padding:13px 14px;margin-top:2px;}',
+    '#mlsEz3 .ez3fl-note[hidden]{display:none!important;}',
+    '#mlsEz3 .ez3fl-note label{display:block;color:#204034;font-size:13px;font-weight:750;margin-bottom:7px;}',
+    '#mlsEz3 .ez3fl-note textarea{display:block;width:100%;min-height:220px;resize:vertical;box-sizing:border-box;background:#fff!important;color:#1A211C!important;border:1px solid #CFE0D2!important;border-radius:10px;padding:12px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}',
+    '#mlsEz3 .ez3fl-nextrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;}',
+    '#mlsEz3 .ez3fl-review{display:inline-flex;align-items:center;justify-content:center;background:#204034;border:1px solid #204034;border-radius:11px;color:#fff;font-size:14px;font-weight:750;cursor:pointer;padding:11px 17px;}',
+    '#mlsEz3 .ez3fl-review:hover{background:#2E6A4B;border-color:#2E6A4B;}',
+    '#mlsEz3 .ez3fl-nextrow span{color:#68756E;font-size:11.5px;}',
     '#mlsEz3 .ez3fl-quick{flex-basis:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}',
     '#mlsEz3 .ez3fl-qlbl{font-size:10px;font-weight:700;letter-spacing:.07em;color:#A6AEA6;}',
     '#mlsEz3 .ez3fl-qchip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;color:#55605A;font-size:12.5px;font-weight:600;cursor:pointer;padding:6px 12px;transition:background .15s ease,color .15s ease;}',
@@ -5615,8 +5637,8 @@
 (function () {
   'use strict';
   if (window.__mlsEz3Flow) return;
-  var VERSION = 'fl-1.3.0';
-  var _obs = null, _deb = null, _iv = null;
+  var VERSION = 'fl-1.4.0';
+  var _obs = null, _deb = null, _iv = null, _laneIv = null;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function onStaffScreen(body) {
     try { var h = body.querySelector('.ez3-h1'); return !!(h && /staff prep/i.test(h.textContent || '')); } catch (e) { return false; }
@@ -5650,23 +5672,100 @@
   function revealRange(seg) {
     try { setTimeout(function () { seg.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 80); } catch (e) {}
   }
-  /* open the REAL visit workspace via the engine's own toggle; optionally
-     press the REAL Start Visit button (toggleCapture) - guarded so it can
-     only ever START, never accidentally stop a running capture */
-  function openWorkspace(startRec) {
+  /* The workspace remains an optional power-user destination. Primary capture,
+     transcript editing, stop/resume and generation all stay in the top lane. */
+  function openWorkspace() {
     var wasOpen = false;
     try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
     if (!wasOpen) { try { var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
     setTimeout(function () {
       try { var cc = $('captureCard'); if (cc) cc.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
-      if (!startRec) return;
-      setTimeout(function () {
-        try {
-          var cb = $('captureBtn');
-          if (cb && /start/i.test(cb.textContent || '')) cb.click();
-        } catch (e) {}
-      }, 350);
     }, wasOpen ? 80 : 650);
+  }
+  function recordingNow() {
+    try {
+      var cb = $('captureBtn');
+      return !!(cb && /recording|stop visit|stop recording/i.test(cb.textContent || ''));
+    } catch (e) { return false; }
+  }
+  function flowToast(msg, kind) {
+    try {
+      if (typeof window.toast === 'function') { window.toast(msg, kind || ''); return; }
+      if (window.__mlsPullRecFix && typeof window.__mlsPullRecFix.toast === 'function') { window.__mlsPullRecFix.toast(msg, kind || ''); }
+    } catch (e) {}
+  }
+  function syncRealTranscript(value) {
+    var tx = $('transcript'); if (!tx) return;
+    tx.value = value;
+    try { if (typeof finalText !== 'undefined') finalText = value ? value + ' ' : ''; } catch (e) {}
+    try { tx.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  }
+  function toggleTopRecording() {
+    var cb = $('captureBtn');
+    if (!cb) { flowToast('The recorder is still loading. Try again in a moment.', 'err'); return; }
+    try { cb.click(); } catch (e) { flowToast('The recorder could not start. Please try again.', 'err'); }
+    setTimeout(function () { syncTopLane(document.querySelector('.ez3fl-record')); }, 250);
+    setTimeout(function () { syncTopLane(document.querySelector('.ez3fl-record')); }, 900);
+  }
+  function generateTopNote() {
+    if (recordingNow()) { flowToast('Stop recording first. Your transcript will stay safe.', 'err'); return; }
+    var tx = $('transcript'), text = tx ? (tx.value || '').trim() : '';
+    if (!text) { flowToast('Type, paste, or record some visit text first.', 'err'); var top = $('ez3flTranscript'); if (top) top.focus(); return; }
+    var gen = $('genBtn');
+    if (!gen || gen.disabled) { flowToast('Note generation is not ready yet. Try again in a moment.', 'err'); return; }
+    try { gen.click(); } catch (e) { flowToast('The note could not start generating. Please try again.', 'err'); return; }
+    syncTopLane(document.querySelector('.ez3fl-record'));
+  }
+  function openReviewStep() {
+    var note = $('noteBox');
+    if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
+    var wasOpen = false;
+    try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
+    if (!wasOpen) { try { var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
+    setTimeout(function () {
+      try {
+        var target = $('noteCard') || $('pushAllEmrBtn');
+        if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        var send = $('pushAllEmrBtn'); if (send) send.focus();
+      } catch (e) {}
+    }, wasOpen ? 100 : 700);
+  }
+  function syncTopLane(rec) {
+    if (!rec || !rec.parentNode) return;
+    var live = recordingNow();
+    var tx = $('transcript'), note = $('noteBox'), genReal = $('genBtn');
+    var text = tx ? (tx.value || '') : '';
+    var noteText = note ? (note.value || '') : '';
+    var rb = rec.querySelector('.ez3fl-recbtn');
+    var ob = rec.querySelector('.ez3fl-openws');
+    var gb = $('ez3flGen');
+    var hint = rec.querySelector('.ez3fl-rechint');
+    var topTx = $('ez3flTranscript'), count = $('ez3flCount');
+    var noteWrap = $('ez3flNoteWrap'), topNote = $('ez3flNote');
+    var nmEl = document.querySelector('.mlsctx-name');
+    var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
+    if (rb) {
+      rb.hidden = !!noteText.trim() && !live;
+      rb.classList.toggle('live', live);
+      rb.innerHTML = '<span class="dot"></span>' + (live ? '&#9208; Stop recording' : (text.trim() ? '&#127908; Resume recording' : '&#127908; ' + (pname ? 'Start recording &mdash; ' + pname.replace(/&/g, '&amp;').replace(/</g, '&lt;') : 'Start a visit recording')));
+      rb.setAttribute('aria-pressed', live ? 'true' : 'false');
+    }
+    if (ob) ob.hidden = !!noteText.trim();
+    if (gb) {
+      gb.hidden = live || !text.trim() || !!noteText.trim();
+      gb.disabled = !genReal || !!genReal.disabled;
+      gb.textContent = genReal && genReal.disabled && !noteText.trim() ? 'Generating note...' : '✨ Generate one note';
+    }
+    if (hint) {
+      hint.textContent = live ? 'Recording now. Stop whenever you need to; everything captured stays here so you can resume later.' :
+        (noteText.trim() ? 'Your note is ready below. Review and edit it here before using any send tools.' :
+        (text.trim() ? 'Recording stopped. Resume to add more, or generate one note from every segment.' :
+        'Records locally and drafts the note here - nothing goes to Athena until you review and send it.'));
+    }
+    if (topTx && tx && document.activeElement !== topTx && topTx.value !== text) topTx.value = text;
+    if (count) { var words = text.trim() ? text.trim().split(/\s+/).length : 0; count.textContent = words + ' word' + (words === 1 ? '' : 's') + ' captured'; }
+    if (noteWrap) noteWrap.hidden = !noteText.trim();
+    if (topNote && note && document.activeElement !== topNote && topNote.value !== noteText) topNote.value = noteText;
   }
   function ensure() {
     /* the day-hist FAB's own body-appended stylesheet wins the !important
@@ -5681,19 +5780,14 @@
     try {
       var kill = staff ? '.ez3fl-staffLink,.ez3fl-record' : '.ez3fl-back,.ez3fl-staffbadge';
       body.querySelectorAll(kill).forEach(function (n) { n.remove(); });
-      /* the record CTA duplicates the workspace once it is open */
-      if (document.body.classList.contains('ez3adv')) {
-        body.querySelectorAll('.ez3fl-record').forEach(function (n) { n.remove(); });
-      }
+      /* Opening the optional workspace must not destroy an in-progress top-lane
+         transcript. It stays mounted and mirrors the same underlying controls. */
     } catch (e) {}
     /* (1) doctor screen: quiet staff entry under the actions row */
     if (!staff) {
-      /* (1a) the follow-through CTA: patient picked -> time to record.
-         The REAL workflow (capture card, transcript, note, Athena tools) hides
-         behind the engine's "Advanced tools" toggle; a doctor sees no way to
-         record. One press opens the real workspace and presses the real
-         Start Visit button - engine handlers only, nothing reimplemented. */
-      if (!document.body.classList.contains('ez3adv') && !body.querySelector('.ez3fl-record')) {
+      /* (1a) Complete primary workflow: record, stop/resume, edit transcript,
+         generate and edit the note without opening the optional workspace. */
+      if (!body.querySelector('.ez3fl-record')) {
         var wrap = body.querySelector('#ez3Wrap');
         var row2 = wrap ? wrap.querySelector('.ez3-row2') : null;
         if (wrap && row2) {
@@ -5704,16 +5798,41 @@
           var rb = document.createElement('button');
           rb.type = 'button'; rb.className = 'ez3fl-recbtn';
           rb.innerHTML = '<span class="dot"></span>&#127908; ' + (pname ? 'Start recording &mdash; ' + pname.replace(/&/g, '&amp;').replace(/</g, '&lt;') : 'Start a visit recording');
-          rb.addEventListener('click', function () { openWorkspace(true); });
+          rb.addEventListener('click', toggleTopRecording);
           var ob = document.createElement('button');
           ob.type = 'button'; ob.className = 'ez3fl-openws';
           ob.innerHTML = 'Open visit workspace';
           ob.title = 'Type or paste a transcript, edit the note, use the Athena tools';
-          ob.addEventListener('click', function () { openWorkspace(false); });
+          ob.addEventListener('click', openWorkspace);
+          var gb = document.createElement('button');
+          gb.type = 'button'; gb.className = 'ez3fl-gen'; gb.id = 'ez3flGen'; gb.hidden = true;
+          gb.textContent = '✨ Generate one note';
+          gb.addEventListener('click', generateTopNote);
           var hint = document.createElement('div');
           hint.className = 'ez3fl-rechint';
           hint.textContent = 'Records locally and drafts the note here - nothing goes to Athena until you review and send it.';
-          rec.appendChild(rb); rec.appendChild(ob); rec.appendChild(hint);
+          rec.appendChild(rb); rec.appendChild(ob); rec.appendChild(gb); rec.appendChild(hint);
+          var txWrap = document.createElement('div');
+          txWrap.className = 'ez3fl-transcript';
+          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript</label><span>Type, paste, stop, and resume without losing anything</span></div>' +
+            '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="The visit conversation appears here as you speak. You can also type or paste text."></textarea>' +
+            '<div class="ez3fl-txmeta"><span id="ez3flCount">0 words captured</span><span>Every segment is combined into one note.</span></div>';
+          rec.appendChild(txWrap);
+          var topTx = txWrap.querySelector('#ez3flTranscript');
+          topTx.addEventListener('input', function () { syncRealTranscript(topTx.value); syncTopLane(rec); });
+          var noteWrap = document.createElement('div');
+          noteWrap.className = 'ez3fl-note'; noteWrap.id = 'ez3flNoteWrap'; noteWrap.hidden = true;
+          noteWrap.innerHTML = '<label for="ez3flNote">Generated note - review and edit</label><textarea id="ez3flNote"></textarea>' +
+            '<div class="ez3fl-nextrow"><button type="button" class="ez3fl-review" id="ez3flReview">Next: Review &amp; send to Athena</button>' +
+            '<span>Nothing sends automatically. You review every section and confirm the final action.</span></div>';
+          rec.appendChild(noteWrap);
+          var topNote = noteWrap.querySelector('#ez3flNote');
+          topNote.addEventListener('input', function () {
+            var real = $('noteBox'); if (!real) return;
+            real.value = topNote.value;
+            try { real.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+          });
+          noteWrap.querySelector('#ez3flReview').addEventListener('click', openReviewStep);
           /* (1a1) QUICK TOOLS - owner directive: surface the buried-but-useful
              tools on the main easy section. Chips open the REAL controls via the
              workspace (engine handlers only); the row lives inside .ez3fl-record
@@ -5722,9 +5841,8 @@
           q.className = 'ez3fl-quick';
           var ql = document.createElement('span'); ql.className = 'ez3fl-qlbl'; ql.textContent = 'QUICK TOOLS'; q.appendChild(ql);
           var mkq = function (html, tip, fn) { var c = document.createElement('button'); c.type = 'button'; c.className = 'ez3fl-qchip'; c.innerHTML = html; c.title = tip; c.addEventListener('click', fn); q.appendChild(c); };
-          mkq('&#128203; Paste a transcript', 'Open the visit workspace with the transcript box ready - type or paste the conversation', function () {
-            openWorkspace(false);
-            setTimeout(function () { try { var tx = $('transcript'); if (tx) { tx.scrollIntoView({ block: 'center', behavior: 'smooth' }); tx.focus(); } } catch (e) {} }, 800);
+          mkq('&#128203; Paste a transcript', 'Type or paste the conversation in the transcript box above', function () {
+            try { var top = $('ez3flTranscript'); if (top) { top.scrollIntoView({ block: 'center', behavior: 'smooth' }); top.focus(); } } catch (e) {}
           });
           mkq('&#128241; Record on phone', 'Use your phone as the microphone - a QR code pairs it to this visit', function () {
             openWorkspace(false);
@@ -5741,7 +5859,10 @@
           rec.appendChild(q);
 
           wrap.insertBefore(rec, row2);
+          syncTopLane(rec);
         }
+      } else {
+        syncTopLane(body.querySelector('.ez3fl-record'));
       }
       /* (1a1b) the home status line duplicated the banner strip's seen-count
          ("0/0 seen today") - keep provider + guards, drop the duplicate */
@@ -5890,6 +6011,7 @@
     try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
     run();
     var n = 0; _iv = setInterval(function () { run(); if (++n > 20) clearInterval(_iv); }, 900);
+    _laneIv = setInterval(function () { try { syncTopLane(document.querySelector('.ez3fl-record')); } catch (e) {} }, 500);
     /* b233: the duplicate seen-count is now removed at the SOURCE (homeStatus in
        every engine copy). The b232 trim interval fought the engine's 700ms status
        rewrite and made the line flip between two texts - deleted, nothing to trim. */
@@ -5899,6 +6021,7 @@
     revert: function () {
       try { if (_obs) _obs.disconnect(); } catch (e) {}
       try { if (_iv) clearInterval(_iv); } catch (e) {}
+      try { if (_laneIv) clearInterval(_laneIv); } catch (e) {}
       try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
       try { window.__mlsEz3Flow.installed = false; } catch (e) {}
     }
@@ -6038,7 +6161,7 @@
       title: "Record &amp; generate \u2014 one big button",
       body: "The big button is already loaded for whoever is up now: <b>Start Recording \u2014 [patient]</b>. " +
             "Tap it and have your normal visit \u2014 just talk. When you\u2019re done, the same button becomes " +
-            "<b>\u23f9 Stop &amp; Generate Note</b> and MLS writes the full note right there. " +
+            "<b>\u23f8 Stop recording</b>. Your transcript stays safe; resume if needed, then generate one combined note. " +
             "Identity guards lock everything to that patient; <b>Wrong patient? Switch</b> is right beside it.",
       badge: "One tap"
     },
@@ -14330,8 +14453,8 @@
       '<div class="h2-step"><span class="h2-n">2</span><div><b>Tap your patient \u2014 recording is one tap</b>' +
       '<span>The big button already reads <span class="h2-btn">\uD83C\uDF99 Start Recording \u2014 [patient name]</span> for whoever is up now. Tap it and have your normal visit \u2014 just talk. Or tap any patient row (or the quick-select strip) to jump to their room. Identity guards lock everything to that patient; <span class="h2-btn">Wrong patient? Switch</span> is right there, and switching mid-recording is blocked until you stop.</span></div></div>' +
 
-      '<div class="h2-step"><span class="h2-n">3</span><div><b>Stop &amp; Generate</b>' +
-      '<span>When the visit is over, tap <span class="h2-btn">\u23F9 Stop &amp; Generate Note</span>. MLS confirms, then writes the full note and shows it right there.</span></div></div>' +
+      '<div class="h2-step"><span class="h2-n">3</span><div><b>Stop, resume, then generate</b>' +
+      '<span>Tap <span class="h2-btn">\u23F8 Stop recording</span> whenever you need a break. Resume without losing earlier text, then tap <span class="h2-btn">\u2728 Generate one note</span> when the transcript is complete.</span></div></div>' +
 
       '<div class="h2-step"><span class="h2-n">4</span><div><b>Review</b>' +
       '<span>Read the note. <span class="h2-btn">\u270F\uFE0F Edit note</span> to change anything, <span class="h2-btn">\uD83D\uDD04 Regenerate</span> for a fresh draft. <span class="h2-btn">\u2714 Review &amp; Sign</span> signs and saves the note in MLS \u2014 it never signs anything in Athena (or <span class="h2-btn">Send without signing</span>). One tap away: <span class="h2-btn">\uD83D\uDCE4 Send to patient</span>, <span class="h2-btn">\uD83E\uDD16 Ask Copilot</span>, <span class="h2-btn">\uD83D\uDCA1 Recommendations</span>.</span></div></div>' +
@@ -15686,7 +15809,7 @@
   'use strict';
   if (window.__mlsEasyV32) return;
 
-  var VER = '3.6.0'; /* 3.6 = patient/history verification strip; incl. 3.5.1 one-provider-selector + 3.4.1 b58 data guard */
+  var VER = '3.7.0'; /* 3.7 = visible transcript editor + stop/resume without auto-generation */
 
   /* ---------------- kill switch (always defined, even when dormant) ------- */
   function easyEnabled() {
@@ -15788,10 +15911,15 @@
   }
   function t12(a) {
     if (a && a.time_display) return a.time_display;
-    if (a && a.start_local) { var mm = String(a.start_local).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
+    if (a && (a.start_local || a.time)) { var mm = String(a.start_local || a.time).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
       var h = +mm[1], mn = mm[2], ap = mm[3]; if (!ap) { ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; }
       return h + ':' + mn + ' ' + ap.toUpperCase(); } }
-    try { var dt = new Date(a.start_at); var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
+    /* A missing or date-only start_at used to become the Unix epoch and show a
+       fake evening time (often 6:00/7:00 PM). Only format a real timestamp. */
+    try {
+      if (!a || a.start_at == null || !/T\d{2}:/.test(String(a.start_at))) return '';
+      var dt = new Date(a.start_at); if (isNaN(dt.getTime())) return '';
+      var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
       var ap2 = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12; if (hh === 0) hh = 12; return hh + ':' + m2 + ' ' + ap2;
     } catch (e) { return ''; }
   }
@@ -16134,6 +16262,15 @@
     '.ez3-timer{font-size:36px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0;}',
     '.ez3-tx{background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-radius:12px;',
       'padding:10px 12px;font-size:13px;color:#EAF1EE;max-height:118px;overflow-y:auto;white-space:pre-wrap;}',
+    '.ez3-transcript-card{padding:14px 16px!important;}',
+    '.ez3-transcript-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;}',
+    '.ez3-transcript-head label{font-size:13px;font-weight:800;color:#eef4ff;}',
+    '.ez3-transcript-head span{font-size:11.5px;font-weight:650;color:#C9DCD2;text-align:right;}',
+    '.ez3-transcript{display:block;width:100%;min-height:142px;resize:vertical;background:#fff;color:#1A211C;',
+      'border:1px solid rgba(255,255,255,.28);border-radius:12px;padding:12px 13px;font:14.5px/1.48 system-ui,-apple-system,"Segoe UI",sans-serif;}',
+    '.ez3-transcript:focus{outline:none;border-color:#78b9a1;box-shadow:0 0 0 3px rgba(60,150,115,.22);}',
+    '.ez3-transcript-meta{display:flex;justify-content:space-between;gap:10px;margin-top:7px;color:#C9DCD2;font-size:11.5px;line-height:1.35;}',
+    '.ez3-transcript-meta strong{color:#fff;}',
     '.ez3-note{width:100%;min-height:320px;background:#f8fbff;color:#1E2B24;border:1px solid #EAF1EE;',
       'border-radius:12px;padding:14px;font-size:14.5px;line-height:1.5;font-family:inherit;}',
     '.ez3-note[readonly]{background:#eef4fe;}',
@@ -16617,8 +16754,19 @@
     if (isRecording()) { if (S.phase !== 'rec') { S.phase = 'rec'; if (!S.recStart) S.recStart = Date.now(); } return; }
     if (S.phase === 'rec') { S.phase = 'stopped'; S.recStart = 0; }
     var n = noteText();
-    if (S.genClickedAt && Date.now() - S.genClickedAt < 120000 && n.trim().length < 30) { S.phase = 'gen'; return; }
-    if (n.trim().length >= 30) { S.phase = 'note'; S.genClickedAt = 0; return; }
+    if (S.genClickedAt && n.trim().length < 30) {
+      var waited = Date.now() - S.genClickedAt, gb = $('genBtn');
+      if (waited > 1200 && gb && !gb.disabled) {
+        S.phase = 'stopped'; S.genClickedAt = 0;
+        S.lastWarn = 'The note was not generated. Your full transcript is still safe below — try Generate again or check the connection message.';
+        return;
+      }
+      if (waited < 180000) { S.phase = 'gen'; return; }
+      S.phase = 'stopped'; S.genClickedAt = 0;
+      S.lastWarn = 'Note generation timed out. Your full transcript is still safe below — try Generate again.';
+      return;
+    }
+    if (n.trim().length >= 30) { S.phase = 'note'; S.genClickedAt = 0; S.lastWarn = ''; return; }
     if (S.phase !== 'stopped') S.phase = 'idle';
   }
   function fmtTimer() {
@@ -17086,8 +17234,8 @@
     return h + '</div>';
   }
 
-  /* ---- doctor room (one huge action at a time) ----------------------------
-   * Ladder: Record → Stop & Generate → Review/edit → Sign (#signBtn) → Send. */
+  /* ---- doctor room (one clear action at a time) ---------------------------
+   * Ladder: Record → Stop/resume → Generate → Review → Sign → Send. */
   function renderDoctor() {
     computePhase();
     var a = S.appt, an = activeName();
@@ -17108,13 +17256,24 @@
     '</div>';
     if (a) h += flowHtml(); /* what's next + the road ahead, always visible */
 
+    /* v3.7: the real transcript is part of the primary visit workspace. It is
+       always editable before generation and mirrors #transcript both ways. */
+    if (a && S.phase !== 'gen' && S.phase !== 'note') {
+      h += '<div class="ez3-card ez3-transcript-card">' +
+             '<div class="ez3-transcript-head"><label for="ez3Transcript">Visit transcript</label>' +
+               '<span>' + (S.phase === 'rec' ? '🔴 Recording now' : 'Type, paste, or resume recording') + '</span></div>' +
+             (S.phase === 'rec' ? '<div class="ez3-timer">' + fmtTimer() + '</div>' : '') +
+             '<textarea class="ez3-transcript" id="ez3Transcript" placeholder="The visit conversation appears here. You can also type or paste notes before generating."></textarea>' +
+             '<div class="ez3-transcript-meta"><span id="ez3TranscriptCount">0 words captured</span>' +
+               '<span><strong>Every recording segment is combined</strong> into one note.</span></div>' +
+           '</div>';
+    }
+
     if (!a) {
       h += '<button type="button" class="ez3-big ok" id="ez3PickBig">👥 Choose a patient<small>Then record, generate, review, sign, send</small></button>';
     } else if (S.phase === 'rec') {
-      h += '<div class="ez3-card"><div class="ez3-timer">🔴 ' + fmtTimer() + '</div>' +
-           '<div class="ez3-tx" id="ez3Tx"></div></div>' +
-           '<button type="button" class="ez3-big rec" id="ez3Stop">⏹ Stop &amp; Generate Note</button>' +
-           '<p class="ez3-status">Recording — put the device down. Stopping asks you to confirm, then the note writes itself.</p>' +
+      h += '<button type="button" class="ez3-big rec" id="ez3Stop">⏸ Stop recording</button>' +
+           '<p class="ez3-status">Stopping keeps everything captured. Resume as many times as needed, then generate one combined note when you are ready.</p>' +
            '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3CancelRec">✕ Cancel recording</button></div>';
     } else if (S.phase === 'gen') {
       h += '<button type="button" class="ez3-big dim" disabled>✨ Generating the note…</button>' +
@@ -17143,10 +17302,10 @@
     } else { /* idle / stopped */
       var stopped = S.phase === 'stopped';
       var tx = ($('transcript') && $('transcript').value) || '';
-      if (stopped || tx.trim().length > 10) {
-        h += '<button type="button" class="ez3-big" id="ez3Gen">✨ Generate Note' +
-             '<small>' + (tx.trim().length > 10 ? 'From the captured visit' : 'Transcript is empty — record or paste first') + '</small></button>' +
-             '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3Rec2">🎙 Record more</button></div>';
+      if (stopped || tx.trim().length) {
+        h += '<button type="button" class="ez3-big" id="ez3Gen"' + (tx.trim().length ? '' : ' disabled') + '>✨ Generate one note' +
+             '<small>' + (tx.trim().length ? 'Uses every recorded and typed segment above' : 'Add some transcript text first') + '</small></button>' +
+             '<div class="ez3-row2"><button type="button" class="ez3-sm pri" id="ez3Rec2">🎙 Resume recording</button></div>';
       } else {
         h += '<button type="button" class="ez3-big" id="ez3Rec">🎙 Start Recording<small>' + esc(nm) + '</small></button>';
       }
@@ -17182,7 +17341,7 @@
     on('ez3PickBig', function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; S.query = ''; render(); });
     on('ez3Rec', function () { if (!S.appt) { toast('Pick a patient first.'); return; } lockAndStart(S.appt, { record: true }); });
     on('ez3Rec2', function () { var c = captureBtn(); if (c) { c.click(); setTimeout(render, 400); } });
-    on('ez3Stop', stopAndGenerate);
+    on('ez3Stop', stopRecordingOnly);
     on('ez3CancelRec', function () {
       confirmBox({
         title: 'Discard this recording?',
@@ -17192,7 +17351,12 @@
         onYes: doDiscardRecording
       });
     });
-    on('ez3Gen', function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } S.genClickedAt = Date.now(); S.signedAt = 0; g.click(); S.phase = 'gen'; render(); });
+    on('ez3Gen', function () {
+      var t = $('transcript'), text = t ? (t.value || '').trim() : '';
+      if (!text) { toast('Type, paste, or record some visit text first.'); var top = $('ez3Transcript'); if (top) top.focus(); return; }
+      var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; }
+      S.lastWarn = ''; S.genClickedAt = Date.now(); S.signedAt = 0; g.click(); S.phase = 'gen'; render();
+    });
     on('ez3Regen', function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } S.genClickedAt = Date.now(); S.signedAt = 0; g.click(); S.phase = 'gen'; render(); });
     on('ez3Copy', function (btn) {
       var c = $('copyEmrBtn'); if (c) { c.click(); btn.textContent = '✅ Copied'; setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
@@ -17230,6 +17394,16 @@
         if (n) { n.value = ta.value; try { n.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
       });
     }
+    var txTop = $('ez3Transcript'), txReal = $('transcript');
+    if (txTop && txReal) {
+      txTop.value = txReal.value || '';
+      txTop.addEventListener('input', function () {
+        txReal.value = txTop.value;
+        try { if (typeof finalText !== 'undefined') finalText = txReal.value ? (txReal.value + ' ') : ''; } catch (e) {}
+        try { txReal.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+        syncTx();
+      });
+    }
     /* note-style chips as HTML with data-chip — resolved at click time */
     var chipHost = $('ez3StyleChips');
     if (chipHost) {
@@ -17244,30 +17418,30 @@
   }
 
   function syncTx() {
-    var box = $('ez3Tx'), t = $('transcript');
-    if (box && t) { var v = t.value || ''; box.textContent = v ? ('…' + v.slice(-500)) : 'Listening — the live transcript preview appears here.'; box.scrollTop = box.scrollHeight; }
+    var box = $('ez3Tx'), edit = $('ez3Transcript'), count = $('ez3TranscriptCount'), t = $('transcript');
+    if (!t) return;
+    var v = t.value || '';
+    if (box) { box.textContent = v ? ('…' + v.slice(-500)) : 'Listening — the live transcript preview appears here.'; box.scrollTop = box.scrollHeight; }
+    if (edit && document.activeElement !== edit && edit.value !== v) { edit.value = v; edit.scrollTop = edit.scrollHeight; }
+    if (count) { var words = v.trim() ? v.trim().split(/\s+/).length : 0; count.textContent = words + ' word' + (words === 1 ? '' : 's') + ' captured'; }
   }
 
-  /* ---- stop -> (confirm) -> generate -> review ---------------------------- */
+  /* ---- stop recording only; transcript stays intact for resume/generate --- */
   var stopIv = null;
-  function stopAndGenerate() {
+  function stopRecordingOnly() {
     var c = captureBtn(); if (!c) { toast('Recorder not found.'); return; }
-    handOff(function () { c.click(); }, 'Confirm the stop — the note writes itself right here.');
-    watchStopThenGen();
-  }
-  function watchStopThenGen() {
-    var t0 = Date.now(), genTried = false;
+    if (!isRecording()) { S.phase = 'stopped'; S.recStart = 0; render(); return; }
+    c.click(); /* the existing safety confirmation remains the stop gate */
+    var t0 = Date.now();
     if (stopIv) clearInterval(stopIv);
     stopIv = setInterval(function () {
-      if (Date.now() - t0 > 180000) { clearInterval(stopIv); stopIv = null; return; }
-      if (isRecording()) return;                        /* still recording / confirm pending / cancelled */
-      if (!genTried && noteText().trim().length < 30) { /* app didn't auto-generate — click gen once */
-        genTried = true; var g = genBtnResolve(); if (g) { S.genClickedAt = Date.now(); g.click(); }
-      }
-      if (noteText().trim().length >= 30) {
-        clearInterval(stopIv); stopIv = null; S.phase = 'note'; S.genClickedAt = 0; render();
-      }
-    }, 900);
+      if (Date.now() - t0 > 120000) { clearInterval(stopIv); stopIv = null; return; }
+      if (isRecording()) return; /* confirmation pending or the user kept recording */
+      clearInterval(stopIv); stopIv = null;
+      S.phase = 'stopped'; S.recStart = 0; S.genClickedAt = 0;
+      toast('Recording stopped. Everything captured is saved below — resume or generate one note.');
+      render();
+    }, 400);
   }
   cleanup.push(function () { if (stopIv) clearInterval(stopIv); });
 
@@ -17339,9 +17513,9 @@
   function blockSwitchWhileRecording() {
     confirmBox({
       title: 'Still recording ' + ((S.locked && S.locked.name) || 'this patient'),
-      body: 'Finish this visit first so nothing gets mixed up. Stop the recording — the note writes itself — then switch patients.',
-      yesLabel: '⏹ Stop & Generate note', noLabel: 'Keep recording',
-      onYes: function () { S.mode = 'doctor'; S.screen = 'doctor'; render(); stopAndGenerate(); }
+      body: 'Stop this recording first so nothing gets mixed up. The transcript stays safe and no note is generated until you choose Generate.',
+      yesLabel: '⏸ Stop recording', noLabel: 'Keep recording',
+      onYes: function () { S.mode = 'doctor'; S.screen = 'doctor'; render(); stopRecordingOnly(); }
     });
   }
 
@@ -17939,8 +18113,7 @@
       },
       stopRecording: function () {
         if (!isRecording()) return false;
-        stopAndGenerate(); /* the app's own stop-confirm dialog still gates this,
-                              ON THE DESKTOP SCREEN — see the FINAL_REPORT flag */
+        stopRecordingOnly(); /* transcript stays intact; generation is explicit */
         return true;
       },
       generate: function () {
@@ -18901,7 +19074,7 @@
       var head = $('mlsEz3Head');
       if (!head) return null;                     /* classic mode: hero status is visible anyway */
       el = document.createElement('div'); el.id = 'mlsPrfProgress';
-      el.style.cssText = 'display:none;margin:8px 12px 0;padding:8px 12px;border-radius:10px;background:rgba(47,109,246,.14);border:1px solid rgba(120,150,240,.35);color:#EAF1EE;font:600 13px system-ui;';
+      el.style.cssText = 'display:none;margin:8px 12px 0;padding:8px 12px;border-radius:10px;background:#FFF6D8;border:1px solid #D9A531;color:#6A4700;font:700 13px system-ui;';
       head.appendChild(el);
     }
     return el;
@@ -18912,7 +19085,9 @@
     var el = progressStrip(); if (!el) return;
     el.textContent = msg;
     el.style.display = 'block';
-    el.style.background = kind === 'err' ? 'rgba(220,60,60,.16)' : (kind === 'ok' ? 'rgba(30,160,90,.16)' : 'rgba(47,109,246,.14)');
+    el.style.background = kind === 'err' ? '#FFF0EC' : (kind === 'ok' ? '#E7F5EC' : '#FFF6D8');
+    el.style.color = kind === 'err' ? '#7A2428' : (kind === 'ok' ? '#185C3D' : '#6A4700');
+    el.style.borderColor = kind === 'err' ? '#D98C83' : (kind === 'ok' ? '#86B99C' : '#D9A531');
     clearTimeout(stripHideT);
     stripHideT = setTimeout(function () { el.style.display = 'none'; }, kind ? 12000 : 120000);
   }
@@ -19117,7 +19292,7 @@
       }
       /* (b) voice button silent-failure watchdog */
       var vb = t.closest('#mlsCopVoiceBtn');
-      if (vb) {
+      if (vb && !(window.__mlsCopilotVoiceV2 && window.__mlsCopilotVoiceV2.installed)) {
         setTimeout(function () {
           var panel = $('mls-assist-panel');
           var micEl = document.querySelector('#mls-assist-panel .mls-b35-mic');
@@ -20165,10 +20340,13 @@
   }
   function t12(a) {
     if (a && a.time_display) return a.time_display;
-    if (a && a.start_local) { var mm = String(a.start_local).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
+    if (a && (a.start_local || a.time)) { var mm = String(a.start_local || a.time).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
       var h = +mm[1], mn = mm[2], ap = mm[3]; if (!ap) { ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; }
       return h + ':' + mn + ' ' + ap.toUpperCase(); } }
-    try { var dt = new Date(a.start_at); var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
+    try {
+      if (!a || a.start_at == null || !/T\d{2}:/.test(String(a.start_at))) return '';
+      var dt = new Date(a.start_at); if (isNaN(dt.getTime())) return '';
+      var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
       var ap2 = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12; if (hh === 0) hh = 12; return hh + ':' + m2 + ' ' + ap2;
     } catch (e) { return ''; }
   }
@@ -22233,10 +22411,13 @@
   }
   function t12(a) {
     if (a && a.time_display) return a.time_display;
-    if (a && a.start_local) { var mm = String(a.start_local).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
+    if (a && (a.start_local || a.time)) { var mm = String(a.start_local || a.time).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
       var h = +mm[1], mn = mm[2], ap = mm[3]; if (!ap) { ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; }
       return h + ':' + mn + ' ' + ap.toUpperCase(); } }
-    try { var dt = new Date(a.start_at); var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
+    try {
+      if (!a || a.start_at == null || !/T\d{2}:/.test(String(a.start_at))) return '';
+      var dt = new Date(a.start_at); if (isNaN(dt.getTime())) return '';
+      var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
       var ap2 = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12; if (hh === 0) hh = 12; return hh + ':' + m2 + ' ' + ap2;
     } catch (e) { return ''; }
   }
@@ -24125,10 +24306,13 @@
   }
   function t12(a) {
     if (a && a.time_display) return a.time_display;
-    if (a && a.start_local) { var mm = String(a.start_local).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
+    if (a && (a.start_local || a.time)) { var mm = String(a.start_local || a.time).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
       var h = +mm[1], mn = mm[2], ap = mm[3]; if (!ap) { ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; }
       return h + ':' + mn + ' ' + ap.toUpperCase(); } }
-    try { var dt = new Date(a.start_at); var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
+    try {
+      if (!a || a.start_at == null || !/T\d{2}:/.test(String(a.start_at))) return '';
+      var dt = new Date(a.start_at); if (isNaN(dt.getTime())) return '';
+      var hh = dt.getHours(), m2 = pad2(dt.getMinutes());
       var ap2 = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12; if (hh === 0) hh = 12; return hh + ':' + m2 + ' ' + ap2;
     } catch (e) { return ''; }
   }
@@ -25756,10 +25940,13 @@
   }
   function t12(a) {
     if (a && a.time_display) return a.time_display;
-    if (a && a.start_local) { var mm = String(a.start_local).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
+    if (a && (a.start_local || a.time)) { var mm = String(a.start_local || a.time).match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (mm) {
       var h = +mm[1], mn = mm[2], ap = mm[3]; if (!ap) { ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12; }
       return h + ':' + mn + ' ' + ap.toUpperCase(); } }
-    try { var dt = new Date(a.start_at); var hh = dt.getHours(), m2 = ('0' + dt.getMinutes()).slice(-2);
+    try {
+      if (!a || a.start_at == null || !/T\d{2}:/.test(String(a.start_at))) return '';
+      var dt = new Date(a.start_at); if (isNaN(dt.getTime())) return '';
+      var hh = dt.getHours(), m2 = ('0' + dt.getMinutes()).slice(-2);
       var ap2 = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12; if (hh === 0) hh = 12; return hh + ':' + m2 + ' ' + ap2;
     } catch (e) { return ''; }
   }
@@ -27459,8 +27646,13 @@
   }
   function t12(a) {
     if (a.time_display) return a.time_display;
+    var raw = a && (a.start_local || a.time);
+    var tm = String(raw || '').match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
+    if (tm) { var th = +tm[1], tap = tm[3] ? tm[3].toUpperCase() : (th >= 12 ? 'PM' : 'AM'); th = th % 12 || 12; return th + ':' + tm[2] + ' ' + tap; }
     try {
+      if (!a || a.start_at == null || !/T\d{2}:/.test(String(a.start_at))) return '';
       var d = new Date(a.start_at);
+      if (isNaN(d.getTime())) return '';
       var h = d.getHours(), m = ('0' + d.getMinutes()).slice(-2);
       var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
       return h + ':' + m + ' ' + ap;
@@ -27574,8 +27766,13 @@
   }
   function t12(a) {
     if (a.time_display) return a.time_display;
+    var raw = a && (a.start_local || a.time);
+    var tm = String(raw || '').match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
+    if (tm) { var th = +tm[1], tap = tm[3] ? tm[3].toUpperCase() : (th >= 12 ? 'PM' : 'AM'); th = th % 12 || 12; return th + ':' + tm[2] + ' ' + tap; }
     try {
+      if (!a || a.start_at == null || !/T\d{2}:/.test(String(a.start_at))) return '';
       var d = new Date(a.start_at);
+      if (isNaN(d.getTime())) return '';
       var h = d.getHours(), m = ('0' + d.getMinutes()).slice(-2);
       var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
       return h + ':' + m + ' ' + ap;
@@ -28059,6 +28256,9 @@
     if (!ctl().voiceStandalone) return; /* toggle off -> original behavior */
     var b = ev.target && ev.target.closest && ev.target.closest('#mlsCopVoiceBtn');
     if (!b) return;
+    /* The continuous V2 controller owns this button. Do not let the legacy
+       one-shot recognizer intercept it in capture phase. */
+    if (window.__mlsCopilotVoiceV2 && window.__mlsCopilotVoiceV2.installed) return;
     ev.preventDefault(); ev.stopImmediatePropagation();
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('Voice not supported in this browser.'); return; }
@@ -30541,7 +30741,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b263';
+  window.__MLS_AV = window.__MLS_AV || 'b266';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +31055,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b263';
+  var MLS_APP_BUILD='2026-07-13-b266';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -37292,7 +37492,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260711afx3c1';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2c1';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2c1';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260712cv2111c1';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260713cv2112c1';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260625chk1c1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3c1';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */

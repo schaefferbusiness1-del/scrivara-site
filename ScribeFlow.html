@@ -11450,10 +11450,20 @@ function pullScheduleViaAssist(btn){
       var r=e.data.resp||{};
       (async function(){
         try{
-          window.__schedRaw={text:r.text||'',url:r.url||'',frames:r.frames};   // kept for diagnostics
-          if(!r.ok || !r.text){ setS(r.error||'Couldn’t read your EMR tab. Open your Athena Day schedule in another tab and try again.','err'); return; }
+          window.__schedRaw={text:r.text||'',url:r.url||'',frames:r.frames,appts:r.appts||[],schedDate:r.schedDate||''};   // kept for diagnostics
+          if(!r.ok || (!r.text && !(r.appts&&r.appts.length))){ setS(r.error||'Couldn’t read your EMR tab. Open your Athena Day schedule in another tab and try again.','err'); return; }
           setS('Read your Athena schedule ('+Math.round((r.text||'').length/100)/10+'k chars) — finding today’s patients…');
-          var appts=await _parseScheduleText(r.text);
+          /* b265 TIME TRUTH: current MLS Assist already returns structured rows
+             read directly from each Athena appointment container. Prefer those
+             rows over asking AI to re-infer the clock time from the whole page.
+             This preserves the exact Athena time and avoids the old null
+             start_at -> fake 6:00/7:00 PM display. Older extensions still use
+             the existing text parser below. */
+          var direct=Array.isArray(r.appts)?r.appts.filter(function(a){ return a&&String(a.name||'').trim(); }):[];
+          var appts=direct.length?direct.map(function(a){
+            return {name:String(a.name||'').trim(),dob:String(a.dob||''),date:String(a.date||a.appt_date||r.schedDate||''),
+              time:_normTime(a.time||a.start_local||a.time_display||''),reason:String(a.reason||''),provider:String(a.provider||'')};
+          }):await _parseScheduleText(r.text);
           if(!appts.length){
             var noneToday=/0\s*appointments|no\s*appointments/i.test(r.text||'');
             if(noneToday){ setS('Athena shows 0 appointments for the day currently in view. Open a clinic day that has patients in Athena’s Day view, then pull again.','err'); }
@@ -11750,9 +11760,13 @@ async function _importPulledSchedule(appts){
       var np={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:name, dob:String(a.dob||''), reason:String(a.reason||''), source:'athena-schedule', created:Date.now() };
       try{ upsertPatient(np); pts.push(np); ext=np.id; }catch(e){}
     } else if(existing && a.dob && !existing.dob){ existing.dob=String(a.dob); try{ upsertPatient(existing); }catch(e){} }
-    var startIso=null; if(/^\d\d?:\d\d$/.test(String(a.time||''))){ startIso=_acctWallToUtcIso(date, ('0'+a.time).slice(-5)); }
+    /* Accept both Athena's canonical "4:00 PM" and 24-hour "16:00". The old
+       strict HH:MM gate discarded meridian times, stored start_at:null, and the
+       UI later rendered that missing timestamp as a fake evening appointment. */
+    var time24=_normTime(a.time||a.start_local||a.time_display||'');
+    var startIso=time24?_acctWallToUtcIso(date,time24):null;
     try{
-      var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name, dob:String(a.dob||''), reason:String(a.reason||''), patient_external_id:ext||null, appt_date:date, start_at:startIso})});
+      var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name, dob:String(a.dob||''), reason:String(a.reason||''), provider:String(a.provider||''), patient_external_id:ext||null, appt_date:date, start_at:startIso})});
       if(r.ok){ created++; days[date]=(days[date]||0)+1; }
     }catch(e){}
   }
@@ -21436,4 +21450,3 @@ function _ptGroupSort(mode){
 <script>/* MLS-CONNECT loader (cache-busted external feature bundle) */(function(){try{var s=document.createElement("script");s.src="mls-connect.js?cb="+Date.now();s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
-
