@@ -40,7 +40,7 @@
       "#studioView." + GRID_CLASS + "{max-width:1320px;margin:0 auto;display:grid!important;grid-template-columns:1.35fr 1fr;grid-template-rows:auto 1fr;gap:16px;align-items:stretch}",
       "#studioView." + GRID_CLASS + ",#studioView." + GRID_CLASS + " *{box-sizing:border-box}",
       "#studioView." + GRID_CLASS + " .sx-title{grid-column:1 / -1;display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin:0}",
-      "#studioView." + GRID_CLASS + " #copilotCard{grid-column:1;grid-row:2;display:flex!important;flex-direction:column;min-width:0;min-height:0;height:calc(100vh - 188px);max-height:820px;overflow:hidden;margin:0!important;padding:0!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;background:#fff!important}",
+      "#studioView." + GRID_CLASS + " #copilotCard{grid-column:1;grid-row:2;display:flex!important;flex-direction:column;min-width:0;min-height:0;height:auto;max-height:calc(100vh - 188px);overflow:hidden;margin:0!important;padding:0!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;background:#fff!important}",
       "#studioView." + GRID_CLASS + " .sx-right{grid-column:2;grid-row:2;display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0;height:calc(100vh - 188px);max-height:820px}",
       /* copilot internals */
       "#studioView #copilotHero{flex-shrink:0;display:flex!important;align-items:center;gap:11px;margin:0!important;padding:15px 20px!important;background:linear-gradient(120deg,#f6effd,#EAF1EE)!important;border:0!important;border-bottom:1px solid #F4F2EC!important;border-radius:0!important;color:#1A211C!important}",
@@ -71,7 +71,7 @@
       "#studioView." + GRID_CLASS + "{grid-template-rows:auto auto 1fr!important}",
       "#studioView." + GRID_CLASS + " .sx-title{grid-row:1}",
       "#studioView." + GRID_CLASS + " #mls-sg-root{grid-column:1 / -1;grid-row:2;display:grid;grid-template-columns:1.2fr 1.4fr .8fr;gap:16px;align-items:stretch;min-width:0}",
-      "#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important;height:auto!important;min-height:520px}",
+      "#studioView." + GRID_CLASS + " #copilotCard{grid-row:3!important;height:auto!important;min-height:0}",
       "#studioView." + GRID_CLASS + " .sx-right{grid-row:3!important;height:auto!important;min-height:520px}",
       "#studioView #studioResultCard{grid-row:4!important}",
       "#mls-sg-root .mls-sg-card{margin:0!important;background:#fff!important;border:1px solid #E7E5DD!important;border-radius:18px!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;padding:18px 20px!important;min-width:0}",
