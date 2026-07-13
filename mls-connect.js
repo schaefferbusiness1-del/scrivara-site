@@ -30541,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b262';
+  window.__MLS_AV = window.__MLS_AV || 'b263';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b262';
+  var MLS_APP_BUILD='2026-07-13-b263';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -39628,8 +39628,30 @@
       });
     } catch (e) {}
   }
-  var cardIv = setInterval(function () { try { ensureCard(); } catch (e) {} }, 1500);
+  var cardIv = setInterval(function () { try { ensureCard(); ensureMenuRow(); } catch (e) {} }, 1500);
   api.ensureCard = ensureCard;
+  api.ensureMenuRow = function () { try { ensureMenuRow(); } catch (e) {} };
+  /* b263 (design gap #5): "Use on your phone" one click from anywhere - a Menu
+     row that opens Settings and lands on the QR card. */
+  function ensureMenuRow() {
+    try {
+      var menu = $('mlsTbMenuPanel');
+      if (!menu || $('mlsRlMenuRow')) return;
+      var mi = document.createElement('button');
+      mi.id = 'mlsRlMenuRow'; mi.className = 'mlsTbItem'; mi.type = 'button';
+      mi.innerHTML = '📱 Use on your phone';
+      mi.addEventListener('click', function () {
+        try { menu.classList.remove('open'); menu.style.display = ''; } catch (e) {}
+        try { if (typeof window.openSettings === 'function') window.openSettings(); } catch (e) {}
+        setTimeout(function () {
+          try { ensureCard(); var c = $('mlsRlCard'); if (c) c.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+        }, 450);
+      });
+      var sRow = null;
+      for (var i = 0; i < menu.children.length; i++) { if (/settings/i.test(menu.children[i].textContent || '')) { sRow = menu.children[i]; break; } }
+      if (sRow) menu.insertBefore(mi, sRow); else menu.appendChild(mi);
+    } catch (e) {}
+  }
 
   api.revert = function () {
     try { clearInterval(agentIv); clearInterval(cardIv); clearInterval(beaconIv); clearInterval(phoneIv); } catch (e) {}
