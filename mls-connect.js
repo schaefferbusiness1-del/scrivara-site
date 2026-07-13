@@ -30299,7 +30299,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b206';
+  window.__MLS_AV = window.__MLS_AV || 'b207';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30613,7 +30613,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b206';
+  var MLS_APP_BUILD='2026-07-13-b207';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -36986,7 +36986,7 @@
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_analysis_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_analysis_exact.js?v=20260706ax7c1';s.setAttribute('data-mls-asset','feat_mls_analysis_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_analysis_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260713sx6';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_studio_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_studio_exact.js?v=20260713sx7';s.setAttribute('data-mls-asset','feat_mls_studio_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_studio_exact.js (STAGING ONLY) — additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_help_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_help_exact.js?v=20260624hpx1c1';s.setAttribute('data-mls-asset','feat_mls_help_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_help_exact.js (STAGING ONLY) — additive, reversible */
 
@@ -38267,6 +38267,15 @@
   st.id = 'mlsFtCss';
   st.textContent = '#_patientFace,#mlsAddPtLauncher{display:none !important;}';
   (document.head || document.documentElement).appendChild(st);
+  /* something re-shows the launcher with an inline-important display — the
+     day-hist FAB lesson: inline-important is the only deterministic hide */
+  function forceHide() {
+    ['_patientFace', 'mlsAddPtLauncher'].forEach(function (id) {
+      try { var el = $(id); if (el && el.style.getPropertyValue('display') !== 'none') el.style.setProperty('display', 'none', 'important'); } catch (e) {}
+    });
+  }
+  forceHide();
+  var fhT = setInterval(forceHide, 1500);   /* write-only-when-needed; negligible */
 
   function row(label, fn) {
     var b = document.createElement('button'); b.type = 'button'; b.textContent = label;
