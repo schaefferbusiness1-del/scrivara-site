@@ -56,7 +56,11 @@
     t.type = 'button'; t.id = TOGGLE_ID;
     t.innerHTML = '<span class="car">&#9656;</span> Manage named groups &amp; manual patient lists <span style="color:#A6AEA6;font-weight:500">(add by name/DOB, CSV import, pull visits from Athena)</span>';
     t.addEventListener('click', function () { document.body.classList.toggle('sg2-open'); });
-    root.parentElement.insertBefore(t, root);
+    /* live INSIDE the advanced card - as a bare grid child the studio sx-grid
+       stretched the lone toggle into a giant empty "card" cell */
+    var pro = document.getElementById('mlsSgPro');
+    if (pro) pro.appendChild(t);
+    else root.parentElement.insertBefore(t, root);
   }
 
   var n = 0;

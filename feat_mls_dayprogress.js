@@ -90,7 +90,28 @@
     if(typeof i==='number'&&i>=0)return i;}}catch(e){}return -1;}
   function shortName(nm){var p=String(nm||'').trim().split(/\s+/);if(!p.length||!p[0])return 'patient';
     if(p.length===1)return p[0];return p[0]+' '+(p[p.length-1][0]||'')+'.';}
-  function apptTime(a){try{if(typeof window._fmtApptTime==='function')return window._fmtApptTime(a.time||'')||'';}catch(e){}return String((a&&a.time)||'');}
+  /* Bare times like "4:00" carry no meridian and used to default to AM
+     ("Next 4:00 AM" for a 4:00 PM appointment, owner-visible 2026-07-13).
+     Prefer the pulled record's own time_display / start_local. */
+  function h12(hm){var m=String(hm||'').match(/^(\d\d?):(\d\d)/);if(!m)return '';var h=+m[1],ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m[2]+' '+ap;}
+  function apptTime(a){
+    try{
+      if(a&&a.time_display)return String(a.time_display);
+      if(a&&a.start_local){var s=h12(a.start_local);if(s)return s;}
+      var t=String((a&&a.time)||'');
+      if(/^\d\d?:\d\d$/.test(t.trim())&&a&&a.name){
+        var key=String(a.name).toUpperCase().slice(0,12);
+        var today=new Date();var iso=today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
+        var hit=(window._calAppts||[]).filter(function(x){
+          var d=String(x.appt_date||String(x.start_at||'').slice(0,10));
+          return d===iso&&String(x.name||'').toUpperCase().indexOf(key)===0&&(x.time_display||x.start_local);
+        })[0];
+        if(hit){ if(hit.time_display)return String(hit.time_display); var s2=h12(hit.start_local); if(s2)return s2; }
+      }
+      if(typeof window._fmtApptTime==='function')return window._fmtApptTime(t)||'';
+      return t;
+    }catch(e){return String((a&&a.time)||'');}
+  }
 
   function jumpNext(){
     try{var list=appts();if(!list.length)return;var idx=nextIdx(list);if(idx<0)idx=0;
