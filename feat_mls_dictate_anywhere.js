@@ -28,8 +28,10 @@
   if (!SR) { api.revert = function () {}; return; }
 
   var CHIP_ID = 'mlsDaChip';
+  var DOCK_ID = 'mlsDaDock';
   var STYLE_ID = 'mlsDaCss';
   var field = null;      /* the field the chip is attached to */
+  var lastField = null;  /* survives blur - the bottom dock targets this */
   var rec = null;        /* active recognition */
   var listening = false;
   var hideT = null;
@@ -47,7 +49,16 @@
       '#' + CHIP_ID + ' .da-dot{width:7px;height:7px;border-radius:50%;background:#8A8F86;flex:0 0 auto;}',
       '#' + CHIP_ID + '.on{color:#B23B3B;border-color:#EAD3CE;background:#FBF1EF;}',
       '#' + CHIP_ID + '.on .da-dot{background:#B23B3B;animation:mlsDaPulse 1.1s ease-in-out infinite;}',
-      '@keyframes mlsDaPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.45;transform:scale(.8);}}'
+      '@keyframes mlsDaPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.45;transform:scale(.8);}}',
+      /* the always-there bottom dock */
+      '#' + DOCK_ID + '{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:2147482900;',
+      '  display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #D9D6CD;border-radius:999px;',
+      '  padding:8px 15px;cursor:pointer;font:600 12.5px "Public Sans",system-ui,sans-serif;color:#55605A;',
+      '  box-shadow:0 1px 2px rgba(20,33,28,.08),0 8px 22px -10px rgba(20,33,28,.28);}',
+      '#' + DOCK_ID + ':hover{color:#1A211C;border-color:#B9C7BE;}',
+      '#' + DOCK_ID + ' .da-dot{width:7px;height:7px;border-radius:50%;background:#2E6A4B;}',
+      '#' + DOCK_ID + '.on{color:#B23B3B;border-color:#EAD3CE;background:#FBF1EF;}',
+      '#' + DOCK_ID + '.on .da-dot{background:#B23B3B;animation:mlsDaPulse 1.1s ease-in-out infinite;}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(s);
   }
@@ -112,10 +123,12 @@
   }
   function setLabel() {
     var c = document.getElementById(CHIP_ID);
-    if (!c) return;
-    c.classList.toggle('on', listening);
-    var t = c.querySelector('.da-t');
-    if (t) t.textContent = listening ? 'Listening - click to stop' : 'Dictate';
+    if (c) {
+      c.classList.toggle('on', listening);
+      var t = c.querySelector('.da-t');
+      if (t) t.textContent = listening ? 'Listening - click to stop' : 'Dictate';
+    }
+    try { syncDock(); } catch (e) {}
   }
 
   function insertText(el, text) {
@@ -179,10 +192,42 @@
     if (!field || document.activeElement !== field) hide();
   }
 
+  /* ---- persistent bottom dock: dictate into the LAST-focused text box ---- */
+  function dock() {
+    var d = document.getElementById(DOCK_ID);
+    if (d) return d;
+    css();
+    d = document.createElement('button');
+    d.type = 'button'; d.id = DOCK_ID;
+    d.innerHTML = '<span class="da-dot"></span><span class="da-t">Dictate</span>';
+    d.title = 'Dictate into the text box you last clicked';
+    d.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (listening) { stop(); return; }
+      var t = (field && document.contains(field)) ? field
+            : (lastField && document.contains(lastField) && lastField.getBoundingClientRect().height > 0) ? lastField : null;
+      if (!t) { try { if (typeof window.toast === 'function') window.toast('Click into a text box first, then hit Dictate.', 'err'); } catch (e2) {} return; }
+      field = t;
+      try { t.focus(); } catch (e3) {}
+      start();
+      syncDock();
+    });
+    (document.body || document.documentElement).appendChild(d);
+    return d;
+  }
+  function syncDock() {
+    var d = document.getElementById(DOCK_ID);
+    if (!d) return;
+    d.classList.toggle('on', listening);
+    var t = d.querySelector('.da-t');
+    if (t) t.textContent = listening ? 'Listening - tap to stop' : 'Dictate';
+  }
+  if (document.body) dock(); else document.addEventListener('DOMContentLoaded', function () { dock(); }, { once: true });
+
   function onFocusIn(e) {
     var el = e.target;
     if (hideT) { clearTimeout(hideT); hideT = null; }
-    if (eligible(el)) show(el);
+    if (eligible(el)) { lastField = el; show(el); }
     else if (!listening) hide();
   }
   function onFocusOut() {
@@ -207,6 +252,7 @@
     window.removeEventListener('scroll', onMove, true);
     window.removeEventListener('resize', onMove);
     try { var c = document.getElementById(CHIP_ID); if (c) c.remove(); } catch (e) {}
+    try { var dk = document.getElementById(DOCK_ID); if (dk) dk.remove(); } catch (e) {}
     try { var s = document.getElementById(STYLE_ID); if (s) s.remove(); } catch (e) {}
     api.installed = false;
     delete window.__mlsDictateAnywhere;
