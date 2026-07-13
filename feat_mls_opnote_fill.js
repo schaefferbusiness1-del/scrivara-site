@@ -338,9 +338,22 @@
       for (var i = 1; i < spec.opts.length; i++) { var o = S(spec.opts[i]).toLowerCase(); if (o && ctx.indexOf(o) >= 0) return spec.opts[i]; }
       return spec.opts[1] || '';
     }
-    /* free-text: a conservative, near-universal best-guess (shown "suggested",
-       one-click editable). NEVER a specific dose / volume / level / count -
-       those are patient/procedure-specific and must not be invented. */
+    /* OWNER DIRECTIVE 2026-07-13: standard procedure fields PRE-FILL with the
+       widely-standard value instead of sitting blank — always rendered as
+       "suggested" (amber) at the top of the draft for the doctor to correct,
+       and nothing signs or leaves MLS without review. Chart-derived values
+       (known > saved > chart) still take precedence over these. */
+    var STD = [
+      [/local anesthetic.*volume|local anesthetic\b/, '1% lidocaine, 3 mL'],
+      [/steroid.*dose|steroid \+/, 'Dexamethasone 10 mg'],
+      [/anesthetic.*volume|injectate.*anesthetic/, '0.25% bupivacaine, 1 mL'],
+      [/contrast.*volume/, '1 mL'],
+      [/^interval\b|follow.?up interval/, '6 weeks'],
+      [/needle length/, '3.5-inch']
+    ];
+    for (var s2 = 0; s2 < STD.length; s2++) { if (STD[s2][0].test(l)) return STD[s2][1]; }
+    /* anything else dose/level/count-like stays blank - patient-specific,
+       never invented. */
     if (/\b(dose|dosage|volume|amount|\bmg\b|\bml\b|\bcc\b|mcg|units|concentration|levels?|which level|how many|number of|count)\b/.test(l)) return '';
     var CD = [
       [/type of anesthesia|anesthesia type/, 'Local anesthesia'],
