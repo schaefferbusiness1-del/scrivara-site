@@ -9926,7 +9926,18 @@ async function extractPdfText(file){
    toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
    ========================================================= */
 function getTemplates(){
-  try{ const a=JSON.parse(localStorage.getItem(uns('templates'))||'[]'); return Array.isArray(a)?a:[]; }
+  try{
+    const a=JSON.parse(localStorage.getItem(uns('templates'))||'[]');
+    if(!Array.isArray(a)) return [];
+    /* Self-heal templates saved without an id (seed packs / bulk imports).
+       Symptom before 2026-07-13: several <option value="undefined"> entries,
+       so picking any of them selected the LAST one and the op-note prep row
+       lost its template ("Trigger point injections" shown for a TFESI). */
+    let healed=false;
+    a.forEach((t,i)=>{ if(t && (t.id==null || t.id==='' || t.id==='undefined')){ t.id='tplfix'+Date.now().toString(36)+'_'+i; healed=true; } });
+    if(healed){ try{ localStorage.setItem(uns('templates'),JSON.stringify(a)); }catch(e2){} }
+    return a;
+  }
   catch(e){ return []; }
 }
 function setTemplates(arr){
