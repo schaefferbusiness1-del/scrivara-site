@@ -30541,7 +30541,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b256';
+  window.__MLS_AV = window.__MLS_AV || 'b257';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30855,7 +30855,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b256';
+  var MLS_APP_BUILD='2026-07-13-b257';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38869,6 +38869,27 @@
 
   function startPull() {
     if (DS.pulling) return;                               /* duplicate-click guard */
+    /* b257: NO extension here (a phone) -> route the SAME button through the
+       relay: the office computer runs the pull, this device shows live status
+       and syncs the result. Same UI, zero extra steps. */
+    if (window.__mlsRelayLink && window.__mlsRelayLink.shouldRelay && window.__mlsRelayLink.shouldRelay()) {
+      DS.pulling = true;
+      var rday = DS.day;
+      var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
+      if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
+      if (rstat) { rstat.style.display = 'block'; rstat.textContent = 'Contacting your office computer...'; }
+      window.__mlsRelayLink.pullDay(rday, {
+        onStatus: function (m) { try { if (rstat) rstat.textContent = String(m); } catch (e) {} },
+        onDone: function (ok, msg) {
+          DS.pulling = false;
+          if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 Pull this day'; }
+          if (rstat) rstat.style.display = 'none';
+          try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
+          renderList();
+        }
+      });
+      return;
+    }
     var si = window.__mlsSI;
     if (!si || typeof si.pull !== 'function') {
       try { if (typeof window.toast === 'function') window.toast('The Athena day-pull engine is not available on this build.', 'err'); } catch (e) {}
@@ -39351,5 +39372,198 @@
     } catch (e) {}
     try { st.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsProfCalm;
+  };
+})();
+
+/* ===== __mlsRelayLink rl-1.0.0 (2026-07-13, b257 - phone->Athena relay PHASE 1
+ * app-side halves + QR pairing, owner: "dead simple - scan a QR and the phone
+ * just connects").
+ *  PAIRING = the account. The QR (Settings > Integrations "Use MLS on your
+ *  phone") encodes only https://mlsscribe.com/ScribeFlow.html?phone=1 - no
+ *  tokens, no credentials; the phone signs into the same account once and the
+ *  relay is scoped to that account server-side (b250 queue, requireClinician).
+ *  DESKTOP AGENT: when this tab has the extension + a signed-in session, it
+ *  polls /api/relay/jobs/next (4s, fetch - runs while hidden) and executes
+ *  READ jobs through the existing lanes: pullDay -> __mlsSI.pull (same engine
+ *  as every pull), pullChart -> mlsAppReadVisits (identity-verified). Busy
+ *  pill shows "phone is driving". Results post back; ORDERS/writes are not
+ *  relay kinds (server rejects them, phase 1).
+ *  PHONE: with no extension, the day strip's "Pull this day" routes through
+ *  the relay (window.__mlsRelayLink.pullDay) with live status ("Waiting for
+ *  your office computer..."), then refreshes from the server sync.
+ * Reversible: revert(). ES5. */
+(function () {
+  if (window.__mlsRelayLink) return;
+  var api = { installed: true, version: 'rl-1.0.0', agentRuns: 0 };
+  window.__mlsRelayLink = api;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
+  function tok() { try { return (typeof window.bkToken === 'function') ? window.bkToken() : ''; } catch (e) { return ''; } }
+  function base() { try { return (typeof window.bkBase === 'function') ? window.bkBase() : ''; } catch (e) { return ''; } }
+  function authed() { try { return typeof window.backendMode === 'function' && window.backendMode() && !!tok(); } catch (e) { return false; } }
+  function H() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() }; }
+
+  /* ---- extension presence: the bundle already records mlsPong versions;
+     also ping once ourselves at boot (listener-only). */
+  var extSeen = false;
+  try { if (window.__mlsExtReportedVersion) extSeen = true; } catch (e) {}
+  try {
+    window.addEventListener('message', function (ev) {
+      var d = ev && ev.data;
+      if (d && d.source === 'mls-ext' && d.type === 'mlsPong') extSeen = true;
+    });
+    window.postMessage({ source: 'mls-app', type: 'mlsPing' }, '*');
+  } catch (e) {}
+  api.extPresent = function () { try { return extSeen || !!window.__mlsExtReportedVersion; } catch (e) { return extSeen; } };
+  api.shouldRelay = function () { return authed() && !api.extPresent(); };
+
+  /* =================== DESKTOP AGENT =================== */
+  var agentBusy = false;
+  function lb(on, label) {
+    try {
+      var L = window.__mlsLoadingCalm;
+      if (!L) return;
+      if (on) L.begin(label); else L.end();
+    } catch (e) {}
+  }
+  function postResult(id, ok, data, error) {
+    return fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id) + '/result', {
+      method: 'POST', headers: H(), body: JSON.stringify({ ok: !!ok, data: data == null ? null : data, error: error || null })
+    }).catch(function () {});
+  }
+  function runPullDay(job) {
+    return new Promise(function (res) {
+      var si = window.__mlsSI;
+      var date = (job.payload && job.payload.date) || '';
+      if (!si || typeof si.pull !== 'function' || !date) { res({ ok: false, error: 'day-pull engine unavailable on the office computer' }); return; }
+      var settled = false;
+      function fin(ok, err) { if (settled) return; settled = true; res({ ok: ok, data: ok ? { pulled: date } : null, error: err || null }); }
+      try {
+        var p = si.pull({ date: date, onStatus: function (m) { try { lb(true, '📱 Phone pull — ' + String(m || '').slice(0, 70)); } catch (e) {} } });
+        if (p && typeof p.then === 'function') { p.then(function () { fin(true); }, function (e2) { fin(false, (e2 && e2.message) || 'pull failed'); }); }
+        else { setTimeout(function () { fin(true); }, 90000); }
+        setTimeout(function () { fin(false, 'pull timed out on the office computer'); }, 150000);
+      } catch (e3) { fin(false, 'pull could not start (is athenaOne open?)'); }
+    });
+  }
+  function runPullChart(job) {
+    return new Promise(function (res) {
+      var pl = job.payload || {};
+      if (!pl.name) { res({ ok: false, error: 'no patient named' }); return; }
+      var done = false;
+      function onMsg(ev) {
+        var d = ev && ev.data;
+        if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppReadVisitsResult') return;
+        if (done) return; done = true;
+        try { window.removeEventListener('message', onMsg); } catch (e) {}
+        var r = d.resp || d;
+        res(r && r.ok ? { ok: true, data: { visits: (r.visits || []).slice(0, 200) } } : { ok: false, error: (r && r.reason) || 'read failed' });
+      }
+      window.addEventListener('message', onMsg);
+      try { window.postMessage({ source: 'mls-app', type: 'mlsAppReadVisits', name: pl.name, dob: pl.dob || '', athenaId: pl.athenaId || '' }, '*'); }
+      catch (e) { done = true; try { window.removeEventListener('message', onMsg); } catch (e2) {} res({ ok: false, error: 'bridge unavailable' }); return; }
+      setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} res({ ok: false, error: 'chart read timed out' }); } }, 110000);
+    });
+  }
+  function agentTick() {
+    if (agentBusy) return;
+    if (!authed() || !api.extPresent()) return;
+    agentBusy = true;
+    fetch(base() + '/api/relay/jobs/next', { headers: H() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var job = j && j.job;
+        if (!job) { agentBusy = false; return; }
+        api.agentRuns++;
+        lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : 'read a chart…'));
+        toast('📱 Phone request received — running it here (' + job.kind + ').', '');
+        var run = job.kind === 'pullDay' ? runPullDay(job) : runPullChart(job);
+        run.then(function (out) {
+          lb(false);
+          postResult(job.id, out.ok, out.data, out.error).then(function () { agentBusy = false; });
+          toast(out.ok ? '📱 Done — result sent back to your phone.' : ('📱 Phone request failed: ' + (out.error || '')), out.ok ? 'ok' : 'err');
+        });
+      })
+      .catch(function () { agentBusy = false; });
+  }
+  var agentIv = setInterval(function () { try { agentTick(); } catch (e) { agentBusy = false; } }, 4000);
+
+  /* =================== PHONE SIDE =================== */
+  api.pullDay = function (date, hooks) {
+    hooks = hooks || {};
+    function stat(m) { try { if (hooks.onStatus) hooks.onStatus(m); } catch (e) {} }
+    function done(ok, msg) { try { if (hooks.onDone) hooks.onDone(ok, msg); } catch (e) {} }
+    if (!authed()) { done(false, 'Sign in first.'); return; }
+    stat('Asking your office computer to pull ' + date + '…');
+    fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify({ kind: 'pullDay', payload: { date: date } }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.ok) { done(false, (j && j.error) || 'Could not queue the request.'); return; }
+        var id = j.id, tries = 0;
+        var pi = setInterval(function () {
+          tries++;
+          if (tries > 64) { clearInterval(pi); done(false, 'No answer from the office computer — make sure MLS is open there with the extension, then try again.'); return; }
+          fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (s) {
+              var job = s && s.job; if (!job) return;
+              if (job.status === 'queued') stat('Waiting for your office computer… (MLS must be open there)');
+              if (job.status === 'taken') stat('Your office computer is pulling from Athena…');
+              if (job.status === 'done') {
+                clearInterval(pi);
+                if (job.result && job.result.ok) {
+                  stat('Pulled — syncing to this phone…');
+                  try { if (typeof window.loadPatientsFromServer === 'function') window.loadPatientsFromServer(); } catch (e) {}
+                  setTimeout(function () { done(true, date + ' pulled on your office computer — synced here.'); }, 2500);
+                } else { done(false, 'The office computer reported: ' + ((job.result && job.result.error) || 'pull failed') + '.'); }
+              }
+            }).catch(function () {});
+        }, 2500);
+      })
+      .catch(function () { done(false, 'Network error — try again.'); });
+  };
+
+  /* =================== QR PAIRING CARD (Settings > Integrations) =================== */
+  var PHONE_URL = 'https://mlsscribe.com/ScribeFlow.html?phone=1';
+  function ensureQrLib(cb) {
+    if (window.QRCode) { cb(true); return; }
+    if (document.querySelector('script[data-mls-asset="vendor_qrcode.js"]')) { setTimeout(function () { cb(!!window.QRCode); }, 600); return; }
+    var s = document.createElement('script');
+    s.src = 'vendor_qrcode.js?v=1'; s.setAttribute('data-mls-asset', 'vendor_qrcode.js');
+    s.onload = function () { cb(!!window.QRCode); };
+    s.onerror = function () { cb(false); };
+    (document.head || document.documentElement).appendChild(s);
+  }
+  function ensureCard() {
+    try {
+      var modal = $('settingsModal');
+      if (!modal || getComputedStyle(modal).display === 'none') return;
+      if ($('mlsRlCard')) return;
+      var heads = modal.querySelectorAll('.set-head'); var host = null;
+      for (var i = 0; i < heads.length; i++) { if (/integrations/i.test(heads[i].textContent || '')) { host = heads[i].parentElement; break; } }
+      if (!host) return;
+      var card = document.createElement('div');
+      card.id = 'mlsRlCard'; card.className = 'field';
+      card.innerHTML = '<label style="font-weight:600">📱 Use MLS on your phone</label>' +
+        '<p class="set-desc" style="margin:4px 0 8px">Scan with your phone camera and sign in with this same account — that’s the whole setup. Athena pulls you start on the phone run on THIS computer (keep MLS open here with the extension), and the results sync to the phone.</p>' +
+        '<div id="mlsRlQr" style="width:148px;height:148px;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:8px;box-sizing:content-box"></div>' +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="mlsRlCopy" style="border:1px solid #E4E1D8;background:#FCFBF8;color:#1A211C;font:600 12px system-ui;border-radius:8px;padding:7px 12px;cursor:pointer">Copy link</button><span class="set-desc" style="align-self:center;margin:0">' + esc(PHONE_URL) + '</span></div>';
+      host.appendChild(card);
+      $('mlsRlCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_URL); toast('Link copied — text or email it to your phone.', 'ok'); } catch (e) {} });
+      ensureQrLib(function (ok) {
+        var box = $('mlsRlQr'); if (!box) return;
+        if (!ok) { box.innerHTML = '<p class="set-desc" style="margin:0">QR unavailable — use the link below.</p>'; return; }
+        try { new window.QRCode(box, { text: PHONE_URL, width: 148, height: 148, correctLevel: window.QRCode.CorrectLevel.M }); } catch (e) { box.innerHTML = '<p class="set-desc" style="margin:0">QR unavailable — use the link below.</p>'; }
+      });
+    } catch (e) {}
+  }
+  var cardIv = setInterval(function () { try { ensureCard(); } catch (e) {} }, 1500);
+  api.ensureCard = ensureCard;
+
+  api.revert = function () {
+    try { clearInterval(agentIv); clearInterval(cardIv); } catch (e) {}
+    try { var c = $('mlsRlCard'); if (c) c.remove(); } catch (e) {}
+    api.installed = false; delete window.__mlsRelayLink;
   };
 })();
