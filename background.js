@@ -92,7 +92,207 @@ const _mlsFrameMap = {};
     chrome.runtime.onMessage.addListener(function (m) {
       try {
         const ty = (m && m.type) || '';
-        if (ty.indexOf('mlsApp') === 0 && ty !== 'mlsAppFocusMlsTab') { self.__mlsFgBump && self.__mlsFgBump(); }
+        if (ty.indexOf('mlsApp') === 0 && ty !== 'mlsAppFocusMlsTab') { self.__mlsFgBump && self.__mlsFgBump(); self.__mlsQpTouch && self.__mlsQpTouch(); }
+      } catch (e) {}
+    });
+  } catch (e) {}
+})();
+
+/* ===========================================================================
+ * v2.9.5 QUIET PULL (__mlsQp) — pulls must never steal the doctor's focus.
+ * Live-measured ground truth (2026-07-13, this machine): a Chrome window that
+ * is fully COVERED (or minimized) is occluded — visibilityState hidden, rAF
+ * 0/s, timers 1/s then 1/min. So a pull genuinely needs the athena tab VISIBLE
+ * somewhere; the old approach made it visible by foregrounding it over the
+ * doctor's work (tab yank) and the guardian yanked back after — the reported
+ * "keeps pulling me to the athena tab". Instead:
+ *   - qpEnsure(tab, senderTabId): make athena visible WITHOUT touching focus —
+ *     move it once into a narrow work-strip window on the right edge (created
+ *     focused:false), shrinking the doctor's window just enough that the strip
+ *     is genuinely on-screen. Already visible -> no-op. If it STILL is not
+ *     visible afterwards (user re-maximized over it, another app on top),
+ *     return 'limp': the read proceeds throttled under the callers' existing
+ *     budgets/retries, and the strip flashes the taskbar ONCE. Never focuses.
+ *   - qpRelease(): put everything back exactly as it was (athena tab to its
+ *     original window+index NOT activated, doctor's window bounds/state
+ *     restored) — fired by the app's end-of-run mlsAppFocusMlsTab, a 120s
+ *     quiet watchdog + alarms backstop (worker restarts), and before any
+ *     write op (writes keep the proven foreground-for-write behavior).
+ * Quiet pulls record NO focus debt, so the guardian never yanks the doctor
+ * back to MLS either. Moves/resizes windows only; clicks nothing; never
+ * focuses a window the doctor is using.
+ * =========================================================================== */
+(function () {
+  'use strict';
+  var QP = { active: false, winId: null, athenaTabId: null, orig: null, soloWin: false, athOrig: null,
+             hostWinId: null, hostOrig: null, lastUse: 0, flashed: false, pending: null, restoring: null };
+  self.__mlsQp = QP;
+  var QP_QUIET_MS = 120000; /* run considered over after 2 min without op traffic */
+
+  function qpTouch() {
+    QP.lastUse = Date.now();
+    if (QP.active) { try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (e) {} }
+  }
+  self.__mlsQpTouch = qpTouch;
+
+  function persist() {
+    try {
+      chrome.storage.session.set({ mlsQpState: QP.active ? {
+        winId: QP.winId, athenaTabId: QP.athenaTabId, orig: QP.orig, soloWin: QP.soloWin,
+        athOrig: QP.athOrig, hostWinId: QP.hostWinId, hostOrig: QP.hostOrig, strip: QP.strip || null, at: Date.now() } : null });
+    } catch (e) {}
+  }
+
+  function tabVisible(tabId) {
+    return Promise.race([
+      chrome.scripting.executeScript({ target: { tabId: tabId }, func: function () { return document.visibilityState; } })
+        .then(function (r) { return !!(r && r[0] && r[0].result === 'visible'); })
+        .catch(function () { return false; }),
+      new Promise(function (res) { setTimeout(function () { res(false); }, 4000); })
+    ]);
+  }
+
+  function qpSleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  async function ensureBody(tab, senderTabId) {
+    if (await tabVisible(tab.id)) return 'visible'; /* already on screen (incl. doctor parked on athena) */
+
+    /* strip exists? re-assert it (user may have minimized it or covered it) —
+       never focus. Live-measured: an unfocused bounds update RAISES the window
+       above whatever covers it without stealing focus, so re-applying the strip
+       bounds is the covered-mid-run recovery. */
+    if (QP.active && QP.winId != null) {
+      try {
+        var w0 = await chrome.windows.get(QP.winId);
+        if (w0.state === 'minimized') await chrome.windows.update(QP.winId, { state: 'normal' });
+        if (QP.strip) await chrome.windows.update(QP.winId, { left: QP.strip.left, top: QP.strip.top, width: QP.strip.width, height: QP.strip.height });
+      } catch (e) { QP.active = false; QP.winId = null; }
+    }
+
+    if (!QP.active) {
+      /* the doctor's window = the window of the asking app tab, else last focused */
+      var hostWin = null;
+      try { if (senderTabId != null) { var st = await chrome.tabs.get(senderTabId); hostWin = await chrome.windows.get(st.windowId); } } catch (e) {}
+      if (!hostWin) { try { hostWin = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }); } catch (e) {} }
+      var athWin = null;
+      try { athWin = await chrome.windows.get(tab.windowId, { populate: true }); } catch (e) {}
+      var soloAthena = !!(athWin && athWin.tabs && athWin.tabs.length === 1 && athWin.tabs[0].id === tab.id);
+      var base = (hostWin && hostWin.state !== 'minimized') ? hostWin : athWin;
+      if (!base) return 'limp';
+      var b = { left: base.left | 0, top: base.top | 0, width: base.width | 0, height: base.height | 0 };
+      var stripW = Math.min(780, Math.max(520, Math.floor(b.width * 0.3)));
+      var strip = { left: b.left + b.width - stripW, top: b.top, width: stripW, height: b.height };
+
+      /* shrink the doctor's window so the strip is genuinely visible (restored on release) */
+      if (hostWin && hostWin.id !== tab.windowId && hostWin.state !== 'minimized') {
+        QP.hostWinId = hostWin.id;
+        QP.hostOrig = { left: hostWin.left, top: hostWin.top, width: hostWin.width, height: hostWin.height, state: hostWin.state };
+        try {
+          if (hostWin.state === 'maximized' || hostWin.state === 'fullscreen') await chrome.windows.update(hostWin.id, { state: 'normal' });
+          await chrome.windows.update(hostWin.id, { left: b.left, top: b.top, width: Math.max(760, b.width - stripW), height: b.height });
+        } catch (e) { QP.hostWinId = null; QP.hostOrig = null; }
+      }
+
+      if (soloAthena) {
+        /* athena already has its own window: just place it — never focus it */
+        QP.winId = tab.windowId; QP.soloWin = true; QP.orig = null;
+        QP.athOrig = athWin ? { left: athWin.left, top: athWin.top, width: athWin.width, height: athWin.height, state: athWin.state } : null;
+        try {
+          var aw = await chrome.windows.get(tab.windowId);
+          if (aw.state !== 'normal') await chrome.windows.update(tab.windowId, { state: 'normal' });
+          await chrome.windows.update(tab.windowId, { left: strip.left, top: strip.top, width: strip.width, height: strip.height });
+        } catch (e) {}
+      } else {
+        QP.orig = { windowId: tab.windowId, index: tab.index, active: !!tab.active }; QP.soloWin = false; QP.athOrig = null;
+        try {
+          var nw = await chrome.windows.create({ tabId: tab.id, focused: false, type: 'normal', left: strip.left, top: strip.top, width: strip.width, height: strip.height });
+          QP.winId = (nw && nw.id != null) ? nw.id : null;
+        } catch (e) { QP.winId = null; }
+      }
+      QP.athenaTabId = tab.id; QP.active = QP.winId != null; QP.flashed = false; QP.strip = strip;
+      persist();
+      if (!QP.active) return 'limp';
+    }
+
+    /* the moved tab should be the active tab of the strip window */
+    try { var t2 = await chrome.tabs.get(tab.id); if (!t2.active) await chrome.tabs.update(tab.id, { active: true }); } catch (e) {}
+    await qpSleep(400); /* let the compositor recompute occlusion */
+    if (await tabVisible(tab.id)) return 'strip';
+    await qpSleep(700);
+    if (await tabVisible(tab.id)) return 'strip';
+    /* still covered (doctor re-maximized / another app on top): read anyway,
+       throttled, under the callers' existing budgets. Nudge ONCE, never focus. */
+    if (!QP.flashed) { QP.flashed = true; try { if (QP.winId != null) chrome.windows.update(QP.winId, { drawAttention: true }); } catch (e) {} }
+    return 'limp';
+  }
+
+  async function qpEnsure(tab, senderTabId) {
+    qpTouch();
+    if (!tab || tab.id == null) return 'limp';
+    while (QP.pending) { try { await QP.pending; } catch (e) {} } /* serialize window surgery */
+    if (QP.restoring) { try { await QP.restoring; } catch (e) {} }
+    var p = ensureBody(tab, senderTabId).catch(function () { return 'limp'; });
+    QP.pending = p;
+    try { return await p; } finally { if (QP.pending === p) QP.pending = null; qpTouch(); }
+  }
+  self.__mlsQpEnsure = qpEnsure;
+
+  async function releaseBody() {
+    /* athena tab back to its original window+index — NOT activated */
+    if (!QP.soloWin && QP.athenaTabId != null && QP.orig && QP.orig.windowId != null) {
+      try {
+        await chrome.windows.get(QP.orig.windowId);
+        await chrome.tabs.move(QP.athenaTabId, { windowId: QP.orig.windowId, index: QP.orig.index });
+      } catch (e) { /* original window is gone — athena keeps its own window; harmless */ }
+    }
+    if (QP.soloWin && QP.winId != null && QP.athOrig) {
+      try {
+        await chrome.windows.update(QP.winId, { left: QP.athOrig.left, top: QP.athOrig.top, width: QP.athOrig.width, height: QP.athOrig.height });
+        if (QP.athOrig.state === 'maximized') await chrome.windows.update(QP.winId, { state: 'maximized' });
+      } catch (e) {}
+    }
+    /* doctor's window back exactly as it was */
+    if (QP.hostWinId != null && QP.hostOrig) {
+      try {
+        await chrome.windows.update(QP.hostWinId, { left: QP.hostOrig.left, top: QP.hostOrig.top, width: QP.hostOrig.width, height: QP.hostOrig.height });
+        if (QP.hostOrig.state === 'maximized' || QP.hostOrig.state === 'fullscreen') await chrome.windows.update(QP.hostWinId, { state: QP.hostOrig.state });
+      } catch (e) {}
+    }
+  }
+
+  async function qpRelease(reason) {
+    if (!QP.active && QP.hostOrig == null) return;
+    if (QP.restoring) { try { await QP.restoring; } catch (e) {} return; }
+    if (QP.pending) { try { await QP.pending; } catch (e) {} }
+    var r = releaseBody().catch(function () {});
+    QP.restoring = r;
+    try { await r; } finally {
+      QP.restoring = null; QP.active = false; QP.winId = null; QP.orig = null; QP.soloWin = false;
+      QP.athOrig = null; QP.hostWinId = null; QP.hostOrig = null; QP.athenaTabId = null; QP.flashed = false;
+      try { chrome.alarms.clear('mlsQpWatch'); } catch (e) {}
+      persist();
+    }
+  }
+  self.__mlsQpRelease = qpRelease;
+
+  /* end-of-run detection: quiet watchdog + alarm backstop (worker restarts) */
+  setInterval(function () { if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS) { qpRelease('quiet'); } }, 5000);
+  try {
+    chrome.alarms.onAlarm.addListener(function (a) {
+      if (!a || a.name !== 'mlsQpWatch') return;
+      if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS) qpRelease('alarm');
+      else if (QP.active) { try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (e) {} }
+    });
+  } catch (e) {}
+  /* adopt state across service-worker restarts so the layout is never stranded */
+  try {
+    chrome.storage.session.get(['mlsQpState'], function (st) {
+      try {
+        var s = st && st.mlsQpState;
+        if (!s || QP.active) return;
+        QP.active = true; QP.winId = s.winId; QP.athenaTabId = s.athenaTabId; QP.orig = s.orig || null;
+        QP.soloWin = !!s.soloWin; QP.athOrig = s.athOrig || null; QP.hostWinId = s.hostWinId; QP.hostOrig = s.hostOrig || null; QP.strip = s.strip || null;
+        QP.lastUse = Date.now(); qpTouch();
       } catch (e) {}
     });
   } catch (e) {}
@@ -1996,8 +2196,7 @@ var mlsProv = (function () {
           if (self.__mlsGroundBusy) { const tw = Date.now(); while (self.__mlsGroundBusy && Date.now() - tw < 25000) { await mlsSleepW(500); } }
           self.__mlsGroundBusy = true;
           try {
-            try { await chrome.tabs.update(tab.id, { active: true }); if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }); } catch (eF) {}
-            try { self.__mlsFgNote && self.__mlsFgNote(sender && sender.tab && sender.tab.id); } catch (eN) {}
+            try { await (self.__mlsQpEnsure ? self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id) : null); } catch (eF) {} /* v2.9.5 quiet pull: athena made visible in its work strip, never focused, no focus debt */
             for (let rec = 0; rec < 2 && !found; rec++) {
               /* v1.92: per-round try/catch + mlsExecTO everywhere. (v1.91/v1.92 root
                  cause found live: `found` was const, so the ladder's reassignment
@@ -2082,8 +2281,7 @@ var mlsProv = (function () {
         const all = await chrome.tabs.query({});
         const tab = await mlsPickAthenaTab(all, { athenaOnly: true }); /* v1.90 unified picker */
         if (!tab) return sendResponse({ ok: false, error: 'No signed-in athenaOne tab found.' });
-        try { await chrome.tabs.update(tab.id, { active: true }); if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }); } catch (e) {}
-        try { self.__mlsFgNote && self.__mlsFgNote(sender && sender.tab && sender.tab.id); } catch (e) {} /* v1.74 focus guardian; v1.75 remembers the asking tab */
+        try { await (self.__mlsQpEnsure ? self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id) : null); } catch (e) {} /* v2.9.5 quiet pull: visible-not-focused replaces foreground-for-read; no focus debt */
         /* v1.59: serialize concurrent go-home attempts (the app retries on its own
            18s timer while a recovery may still be running - don't reload twice). */
         if (self.__mlsGroundBusy) { const tw = Date.now(); while (self.__mlsGroundBusy && Date.now() - tw < 25000) { await mlsSleepW(500); } }
@@ -2184,6 +2382,7 @@ var mlsProv = (function () {
         const FGv = self.__mlsFg || {};
         const owed = !!FGv.debt || (FGv.endAt && (Date.now() - FGv.endAt) < 15000);
         try { self.__mlsFgEnd && self.__mlsFgEnd(); } catch (e) {} /* v1.74: op ended — settle the guardian debt */
+        try { self.__mlsQpRelease && self.__mlsQpRelease('app-end'); } catch (e) {} /* v2.9.5: run over — restore the work-strip layout */
         if (!owed) { return sendResponse({ ok: true, activated: false, skipped: 'no-focus-debt' }); }
         const all = await chrome.tabs.query({});
         /* v1.75: return to the tab that ASKED (the app), never to the review-finder
@@ -2815,7 +3014,7 @@ async function mlsSchedDomInline(doc, CFG){
             /* the chart load runs page JS; a hidden tab is throttled ~9x - foreground
                it for the load (day pulls already run foregrounded via go-home; when
                we take focus ourselves we hand it back to MLS below). */
-            try { if (!tab.active && !fgByUs) { await chrome.tabs.update(tab.id, { active: true }); if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }); fgByUs = true; try { self.__mlsFgNote && self.__mlsFgNote(); } catch (e2) {} } } catch (e) {}
+            try { await (self.__mlsQpEnsure ? self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id) : null); } catch (e) {} /* v2.9.5 quiet pull: work strip instead of tab yank (fgByUs stays false -> restoreFocus stays dormant) */
             await mlsSleepW(3200); continue;
           }
           if (navClicked) {
@@ -3369,7 +3568,7 @@ async function mlsSchedDomInline(doc, CFG){
           }
 
           foundField = true;
-          if (!_fg) { try { await chrome.tabs.update(tab.id, { active: true }); await chrome.windows.update(tab.windowId, { focused: true }); } catch (e) {} _fg = true; }
+          if (!_fg) { try { if (self.__mlsQp && self.__mlsQp.active) await self.__mlsQpRelease('write'); } catch (eQ) {} try { await chrome.tabs.update(tab.id, { active: true }); await chrome.windows.update(tab.windowId, { focused: true }); } catch (e) {} _fg = true; } /* v2.9.5: paste keeps foreground-for-write; strip released first */
           const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [winnerFrame] }, args: [note, null, winnerScan], func: mlsNotePaster });
           last = (r && r.result) || { ok: false };
           if (last.ok && last.confirmed) break;
@@ -3827,8 +4026,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // focused, so athenaOne is a throttled background tab). Verified live:
       // foreground athenaOne read 38 visits; the same read timed out in the
       // background. We restore focus to the MLS tab when the read finishes.
-      try { chrome.tabs.update(emrId, { active: true }); if (emr.windowId != null) chrome.windows.update(emr.windowId, { focused: true }); } catch (e) {}
-      try { self.__mlsFgNote && self.__mlsFgNote(); } catch (e) {} /* v1.74 focus guardian */
+      try { self.__mlsQpEnsure && self.__mlsQpEnsure(emr, appTabId); } catch (e) {} /* v2.9.5 quiet pull: work strip, never focused; settles during initialWaitMs; no focus debt */
       emit(appTabId, '🔍 Reading visits from athenaOne… (read-only)');
       return sleep(cfg.initialWaitMs)
         // identity
@@ -3903,7 +4101,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }).catch(function (e) { return { ok: false, identity: identity, diag: diag, error: String((e && e.message) || e) }; })
       // v1.54: restore focus to the MLS tab after the read (we brought athenaOne to the foreground above to avoid background-tab throttling).
       // v1.74: also focus the window and settle the guardian debt (straggler sweep armed).
-      .then(function (res) { try { if (appTabId != null) chrome.tabs.update(appTabId, { active: true }, function (t) { try { if (t && t.windowId != null) chrome.windows.update(t.windowId, { focused: true }); } catch (e) {} }); } catch (e) {} try { self.__mlsFgEnd && self.__mlsFgEnd(); } catch (e) {} return res; });
+      .then(function (res) { try { var FGv = self.__mlsFg || {}; if (FGv.debt && appTabId != null) chrome.tabs.update(appTabId, { active: true }, function (t) { try { if (t && t.windowId != null) chrome.windows.update(t.windowId, { focused: true }); } catch (e) {} }); } catch (e) {} try { self.__mlsFgEnd && self.__mlsFgEnd(); } catch (e) {} return res; }); /* v2.9.5: only return focus if a legacy foreground actually took it (quiet pulls owe nothing) */
   }
 
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
@@ -5995,13 +6193,9 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
            does: foreground athena for the read; note focus debt ONLY when we
            took focus ourselves, so the guardian returns the doctor to MLS
            afterwards and a user already parked on athena is never yanked. */
-        try {
-          if (!tab.active) {
-            await chrome.tabs.update(tab.id, { active: true });
-            if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
-            try { self.__mlsFgNote && self.__mlsFgNote(sender && sender.tab && sender.tab.id); } catch (eN) {}
-          }
-        } catch (eF) {}
+        /* v2.9.5 quiet pull: the visible-for-read contract is now met by the
+           work strip (visible, never focused) instead of stealing focus. */
+        try { await (self.__mlsQpEnsure ? self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id) : null); } catch (eF) {}
         /* 90s TOTAL budget (live: the athenaOne renderer can freeze 45+s after
            heavy interactions - every new injected driver must be mlsExecTO-
            wrapped and must not assume the tab is responsive). Identity gating
@@ -6810,6 +7004,9 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
         var tab = await mlsPickAthenaTab(all, { athenaOnly: true });
         if (!tab) { sendResponse({ ok: false, reason: 'no-athena-tab', version: V, error: 'Open your signed-in athenaOne in another tab, then try again.' }); return; }
         if (__mlsReadsSinceReload >= 5) { try { await mlsRecoverAthenaTab(tab.id); } catch (eRc) {} }
+        /* v2.9.5: writes keep the proven foreground-for-write path — leave quiet-pull
+           mode first so the tab.active check below sees the restored layout. */
+        try { if (self.__mlsQp && self.__mlsQp.active) { await self.__mlsQpRelease('write'); tab = await chrome.tabs.get(tab.id); } } catch (eQ) {}
         try {
           if (!tab.active) {
             await chrome.tabs.update(tab.id, { active: true });
