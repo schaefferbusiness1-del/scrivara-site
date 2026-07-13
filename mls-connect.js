@@ -30607,7 +30607,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b197';
+  var MLS_APP_BUILD='2026-07-13-b198';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -36937,7 +36937,7 @@
 
 ;(function(){try{['feat_fullhistory_pdf.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — Export full patient visit history as ONE PDF (additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewpersist.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewpersist.js?v=20260623ac1';s.setAttribute('data-mls-asset','feat_mls_viewpersist.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260713tb3';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_topbar_unify.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_topbar_unify.js?v=20260713tb4';s.setAttribute('data-mls-asset','feat_mls_topbar_unify.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{
   var A='feat_athena_signin_prompt.js';

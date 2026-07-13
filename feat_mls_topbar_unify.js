@@ -110,9 +110,9 @@
       "#" + PANEL_ID + " button.mlsTbItem:hover{background:#F0EEE7;}" +
       "#" + PANEL_ID + " button.mlsTbItem .mlsTbIco{width:18px;text-align:center;}" +
       /* rows other modules append (guided tour) inherit the same look */
-      "#" + PANEL_ID + " #mlsObtMenuRow{width:100%;text-align:left;background:transparent;border:0;color:#1A211C;" +
+      "#" + PANEL_ID + " #mlsObtMenuRow{width:100%;text-align:left;background:transparent;border:0;color:#1A211C !important;" +
         "font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:8px;padding:10px 12px;" +
-        "display:flex;align-items:center;gap:10px;justify-content:flex-start !important;}" +
+        "display:flex !important;align-items:center;gap:10px;justify-content:flex-start !important;}" +
       "#" + PANEL_ID + " #mlsObtMenuRow:hover{background:#F0EEE7;}";
     var st = document.createElement("style");
     st.id = STYLE_ID; st.textContent = css;
