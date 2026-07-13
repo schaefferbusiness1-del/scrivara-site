@@ -15859,7 +15859,12 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
-      if (prov && (a.provider || '') !== prov) return false;
+      /* b238: normalized provider match. Rows with NO provider recorded stay
+         VISIBLE for every provider (they were silently binned as "other
+         providers" — 721 of the account's 2977 stored appts had provider:null,
+         which hid a doctor's own pulled day and made the empty-state lie). */
+      var _ap = String(a.provider || '').replace(/^provider\s+/i, '').trim().toLowerCase();
+      if (prov && _ap && _ap !== String(prov).replace(/^provider\s+/i, '').trim().toLowerCase()) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -16888,7 +16893,7 @@
           '<span class="ez3-badge ' + cls + '">' + esc(st) + '</span></div>' +
         (S.mode === 'doctor' ? '<button type="button" class="moredots" data-more="' + esc(k) + '" title="More actions for this patient">⋯</button>' : '') +
       '</div>' +
-      '<div class="sub">🩺 ' + esc(a.provider || '—') + ' · ' + esc(visitType(a)) + '</div>' +
+      '<div class="sub">🩺 ' + esc(a.provider || 'Provider not recorded') + ' · ' + esc(visitType(a)) + '</div>' +
       '<div class="ex">' +
         '<div class="ez3-exgrid">' +
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
@@ -20182,7 +20187,12 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
-      if (prov && (a.provider || '') !== prov) return false;
+      /* b238: normalized provider match. Rows with NO provider recorded stay
+         VISIBLE for every provider (they were silently binned as "other
+         providers" — 721 of the account's 2977 stored appts had provider:null,
+         which hid a doctor's own pulled day and made the empty-state lie). */
+      var _ap = String(a.provider || '').replace(/^provider\s+/i, '').trim().toLowerCase();
+      if (prov && _ap && _ap !== String(prov).replace(/^provider\s+/i, '').trim().toLowerCase()) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -21037,7 +21047,7 @@
           '<span class="ez3-badge ' + cls + '">' + esc(st) + '</span></div>' +
         (S.mode === 'doctor' ? '<button type="button" class="moredots" data-more="' + esc(k) + '" title="More actions for this patient">⋯</button>' : '') +
       '</div>' +
-      '<div class="sub">🩺 ' + esc(a.provider || '—') + ' · ' + esc(visitType(a)) + '</div>' +
+      '<div class="sub">🩺 ' + esc(a.provider || 'Provider not recorded') + ' · ' + esc(visitType(a)) + '</div>' +
       '<div class="ex">' +
         '<div class="ez3-exgrid">' +
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
@@ -22238,7 +22248,12 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
-      if (prov && (a.provider || '') !== prov) return false;
+      /* b238: normalized provider match. Rows with NO provider recorded stay
+         VISIBLE for every provider (they were silently binned as "other
+         providers" — 721 of the account's 2977 stored appts had provider:null,
+         which hid a doctor's own pulled day and made the empty-state lie). */
+      var _ap = String(a.provider || '').replace(/^provider\s+/i, '').trim().toLowerCase();
+      if (prov && _ap && _ap !== String(prov).replace(/^provider\s+/i, '').trim().toLowerCase()) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -22943,7 +22958,7 @@
           '<span class="ez3-badge ' + cls + '">' + esc(st) + '</span></div>' +
         (S.mode === 'doctor' ? '<button type="button" class="moredots" data-more="' + esc(k) + '" title="More actions for this patient">⋯</button>' : '') +
       '</div>' +
-      '<div class="sub">🩺 ' + esc(a.provider || '—') + ' · ' + esc(visitType(a)) + '</div>' +
+      '<div class="sub">🩺 ' + esc(a.provider || 'Provider not recorded') + ' · ' + esc(visitType(a)) + '</div>' +
       '<div class="ex">' +
         '<div class="ez3-exgrid">' +
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
@@ -24118,7 +24133,12 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
-      if (prov && (a.provider || '') !== prov) return false;
+      /* b238: normalized provider match. Rows with NO provider recorded stay
+         VISIBLE for every provider (they were silently binned as "other
+         providers" — 721 of the account's 2977 stored appts had provider:null,
+         which hid a doctor's own pulled day and made the empty-state lie). */
+      var _ap = String(a.provider || '').replace(/^provider\s+/i, '').trim().toLowerCase();
+      if (prov && _ap && _ap !== String(prov).replace(/^provider\s+/i, '').trim().toLowerCase()) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -24568,7 +24588,7 @@
         '<div class="meta"><span class="tm">🕐 ' + esc(t12(a)) + '</span>' +
           '<span class="ez3-badge ' + cls + '">' + esc(st) + '</span></div>' +
       '</div>' +
-      '<div class="sub">🩺 ' + esc(a.provider || '—') + ' · ' + esc(visitType(a)) + '</div>' +
+      '<div class="sub">🩺 ' + esc(a.provider || 'Provider not recorded') + ' · ' + esc(visitType(a)) + '</div>' +
       '<div class="ex">' +
         '<div class="ez3-exgrid">' +
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
@@ -25734,7 +25754,12 @@
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
       if (d < fromStr || d > toStr) return false;
-      if (prov && (a.provider || '') !== prov) return false;
+      /* b238: normalized provider match. Rows with NO provider recorded stay
+         VISIBLE for every provider (they were silently binned as "other
+         providers" — 721 of the account's 2977 stored appts had provider:null,
+         which hid a doctor's own pulled day and made the empty-state lie). */
+      var _ap = String(a.provider || '').replace(/^provider\s+/i, '').trim().toLowerCase();
+      if (prov && _ap && _ap !== String(prov).replace(/^provider\s+/i, '').trim().toLowerCase()) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -26126,7 +26151,7 @@
         '<div class="meta"><span class="tm">🕐 ' + esc(t12(a)) + '</span>' +
           '<span class="ez3-badge ' + cls + '">' + esc(st) + '</span></div>' +
       '</div>' +
-      '<div class="sub">🩺 ' + esc(a.provider || '—') + ' · ' + esc(visitType(a)) + '</div>' +
+      '<div class="sub">🩺 ' + esc(a.provider || 'Provider not recorded') + ' · ' + esc(visitType(a)) + '</div>' +
       '<div class="ex">' +
         '<div class="ez3-exgrid">' +
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
@@ -30451,7 +30476,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b237';
+  window.__MLS_AV = window.__MLS_AV || 'b238';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30765,7 +30790,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b237';
+  var MLS_APP_BUILD='2026-07-13-b238';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
