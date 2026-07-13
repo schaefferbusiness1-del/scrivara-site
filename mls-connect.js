@@ -7801,6 +7801,8 @@
     if (sbtn) {
       sbtn.onclick = function () {
         close();
+        /* arm the wfr pass-through so the review's OWN send is not re-intercepted */
+        safe(function () { if (window.__mlsWfReview) window.__mlsWfReview.armed = true; });
         var real = document.getElementById('pushAllEmrBtn');
         if (real) { safe(function () { real.click(); }); }   /* app's own confirm + autopilot */
         else { safe(function () { if (isFn(window.toast)) window.toast('Send control not found on this build.', 'err'); }); }
@@ -30317,7 +30319,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b225';
+  window.__MLS_AV = window.__MLS_AV || 'b226';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -30631,7 +30633,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b225';
+  var MLS_APP_BUILD='2026-07-13-b226';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -38346,4 +38348,39 @@
     if (ev.target && ev.target.closest && ev.target.closest('#mlsFab')) setTimeout(augment, 90);
   }, true);
   api.revert = function () { try { st.remove(); } catch (e) {} api.installed = false; delete window.__mlsFabTidy; };
+})();
+
+/* =============================================================================
+ * __mlsWfReview  wfr-1.0.0   (2026-07-13, owner HIGH priority)
+ * -----------------------------------------------------------------------------
+ * EVERY "Send full visit to Athena" click routes THROUGH the review sheet
+ * (__mlsAthenaPreview: exactly what goes into which athenaOne section) -
+ * the doctor sees everything, then ONE "Looks right - send to Athena" click
+ * proceeds into the app's own confirm + autopilot with every existing
+ * wrong-patient / stop-before-sign guard intact. Fail-open: if the preview
+ * module is unavailable, the original flow runs untouched.
+ * Reversible: window.__mlsWfReview.revert(). ASCII-only.
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  if (window.__mlsWfReview) return;
+  var api = { version: 'wfr-1.0.0', armed: false, intercepts: 0, installed: true };
+  window.__mlsWfReview = api;
+  function onClick(ev) {
+    try {
+      var b = ev.target && ev.target.closest && ev.target.closest('#pushAllEmrBtn');
+      if (!b) return;
+      if (api.armed) { api.armed = false; return; }              /* review's own send passes through */
+      if (typeof window.__mlsAthenaPreview_open !== 'function') return;   /* fail-open */
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      api.intercepts++;
+      window.__mlsAthenaPreview_open();
+    } catch (e) {}
+  }
+  document.addEventListener('click', onClick, true);
+  api.revert = function () {
+    try { document.removeEventListener('click', onClick, true); } catch (e) {}
+    api.installed = false; delete window.__mlsWfReview;
+  };
 })();
