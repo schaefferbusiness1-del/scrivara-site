@@ -7,11 +7,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>For Attorneys — Expert physician reports in 24 hours | MLS</title>
 <meta name="description" content="MLS connects attorneys with board-certified, actively-practicing spine, pain and PM&R physicians for IME, expert narrative, causation and record-review reports — signed and back to you within 24 hours. Transparent fees, deposition & trial availability, encrypted portal. For plaintiff and defense counsel.">
-<meta name="theme-color" content="#0e2238">
+<meta name="theme-color" content="#204034">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="icon" type="image/png" href="icon-32.png">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 :root{
 --ink:#0e2238; --ink2:#3a5575; --muted:#6a829c; --line:#e7edf4;
@@ -169,13 +170,111 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:46px 0 36
 .foot a{color:var(--ink2);font-weight:600;font-size:14.5px}
 .foot .links{display:flex;gap:26px;flex-wrap:wrap}
 .foot .fineprint{color:var(--muted);font-size:12.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:20px}
+
+/* Editorial Calm redesign — shared visual language with the MLS homepage. */
+:root{
+  --paper:#FBFAF7;--alt:#F4F2EC;--card:#FFFFFF;--bar:#FCFBF8;
+  --line:#E7E5DD;--line-in:#EFEDE6;--line-soft:#E4E1D8;
+  --ink:#1A211C;--ink2:#55605A;--muted:#79837C;
+  --deep:#204034;--green:#2E6A4B;--green-mid:#3B7C5A;--mint:#8FD8BE;
+  --wash:#EAF1EE;--wash2:#F6FBF8;--gold:#9A7728;
+  --brand:var(--green);--brand-dk:var(--deep);--bg:var(--paper);--soft:var(--alt);--soft2:var(--wash);
+  --serif:'Newsreader',Georgia,serif;--sans:'Public Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --shadow:0 1px 2px rgba(20,33,28,.04);--maxw:1080px;
+}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans)}
+h1,h2{font-family:var(--serif);font-weight:500;letter-spacing:-.018em}
+h3{letter-spacing:-.01em}
+a{color:var(--green)}
+.wrap{padding:0 28px}
+section{padding:84px 0}
+section[id]{scroll-margin-top:82px}
+.eyebrow{display:block;color:var(--green);font-size:12.5px;letter-spacing:.15em}
+.lead,.sec-head p{color:var(--ink2)}
+.sec-head{margin-bottom:48px}
+.sec-head h2{font-size:40px}
+.sec-head p{font-size:17px;max-width:640px;margin-left:auto;margin-right:auto}
+.btn{font-family:var(--sans);font-weight:600;border-radius:11px;border-width:1px;box-shadow:none}
+.btn-primary{background:var(--deep);border-color:var(--deep);color:#fff}
+.btn-primary:hover{background:#28503f;border-color:#28503f;transform:none}
+.btn-ghost{background:transparent;border-color:#D9D6CD;color:var(--ink)}
+.btn-ghost:hover{background:#fff;border-color:var(--ink2);color:var(--ink)}
+.btn-light{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.24)}
+header{background:rgba(251,250,247,.88);border-color:var(--line);backdrop-filter:blur(10px)}
+.nav{height:68px;gap:26px}
+.brand{gap:11px;color:var(--ink);font-size:inherit}
+.brand .mk{width:34px;height:34px;border-radius:9px;background:var(--deep)}
+.brand .mk svg{width:20px;height:20px}
+.brand b{font-family:var(--serif);font-weight:600;font-size:21px;letter-spacing:-.01em}
+.brand .tagpill{color:var(--green);background:var(--wash);border-color:#D9E6DF;font-size:10px;padding:3px 8px}
+.nav .links{gap:24px;margin-left:8px}
+.nav .links a{color:var(--ink2);font-size:14.5px;font-weight:500}
+.nav .signin{color:var(--ink);font-size:14.5px;font-weight:600}
+.hero{padding:92px 0 72px;background:var(--paper);text-align:center}
+.hero .wrap{max-width:1060px}
+.hero .badge24{margin-bottom:22px;background:var(--wash);border-color:#D4E5DC;color:var(--green);font-size:12.5px;letter-spacing:.04em}
+.hero h1{font-size:clamp(42px,6.2vw,64px);font-weight:500;line-height:1.03;max-width:940px;margin:0 auto}
+.hero h1 .grad{background:none;color:var(--green);font-style:italic}
+.hero p.lead{font-size:19px;line-height:1.65;max-width:760px;margin:26px auto 0}
+.hero .cta{justify-content:center;margin-top:34px}
+.hero .trust-line{justify-content:center;margin-top:28px;font-size:13.5px}
+.stats{gap:0;margin-top:56px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.stat{background:transparent;border:0;border-right:1px solid var(--line);border-radius:0;padding:22px 16px}
+.stat:last-child{border-right:0}
+.stat b{font-family:var(--serif);font-size:24px;font-weight:600;color:var(--ink)}
+.stat span{font-size:12.5px;color:var(--muted)}
+#how,#why,#faq{background:var(--alt)!important;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.steps{gap:0;border-top:1px solid #E0DDD3;border-left:1px solid #E0DDD3}
+.step{border:0;border-right:1px solid #E0DDD3;border-bottom:1px solid #E0DDD3;border-radius:0;padding:30px 26px;box-shadow:none;background:transparent}
+.step .n{font-family:var(--serif);font-size:30px;font-weight:500;background:transparent;color:var(--green);margin-bottom:10px;justify-content:flex-start}
+.step p{color:var(--ink2)}
+.dark{background:var(--deep);color:#EAF1EC}
+.dark .eyebrow{color:var(--mint)}
+.dark .sec-head p{color:#B9CEC2}
+.hl{gap:18px}
+.hl .c{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.14);border-radius:14px}
+.hl .c p{color:#C6D8CE}
+.dir-controls input,.dir-controls select,.dir-statebar select{border-color:#D9D6CD;background:#fff;color:var(--ink)}
+.dir-controls input:focus,.dir-controls select:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(46,106,75,.12)}
+.dir-statebar.detected{background:#FCF8EF;border-color:#E7D8B4}
+.dir-grouphead .pin,.docs-card .match-tag{background:#FCF8EF;border-color:#E7D8B4;color:var(--gold)}
+.docs-card{border-color:#E4E2DA;border-radius:16px;box-shadow:var(--shadow)}
+.docs-card:hover{transform:translateY(-2px);border-color:#CAD8D0}
+.docs-card.is-match{border-color:#D9C78E;box-shadow:0 0 0 2px #F5EDD1,var(--shadow)}
+.docs-card .av{background:var(--deep)}
+.docs-card .spec{color:var(--green)}
+.dir-state{background:var(--alt);border-color:#D8D5CA}
+.grid{gap:0;border-top:1px solid #E0DDD3;border-left:1px solid #E0DDD3}
+.card{border:0;border-right:1px solid #E0DDD3;border-bottom:1px solid #E0DDD3;border-radius:0;box-shadow:none;background:transparent}
+.card:hover{transform:none;background:var(--wash2);border-color:#E0DDD3}
+.card .ic{background:var(--wash);color:var(--green)}
+.card p{color:var(--ink2)}
+.req-wrap{background:var(--deep);border:1px solid #2C5041;border-radius:20px;box-shadow:0 30px 60px -34px rgba(20,33,28,.5)}
+.req-wrap .eyebrow{color:var(--mint)!important}
+.req-wrap p{color:#BFD2C7}
+.req-wrap li{color:#D7E4DC}
+.req-wrap li:before{color:var(--mint)}
+.req-form{border:1px solid #E4E2DA;border-radius:16px}
+.req-form input,.req-form textarea,.req-form select{border-color:#D9D6CD;background:#FCFBF8}
+.req-form input:focus,.req-form textarea:focus,.req-form select:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(46,106,75,.12);background:#fff}
+details{border-color:var(--line)}
+details summary:after{color:var(--green)}
+footer{background:var(--alt);border-color:var(--line)}
+@media(max-width:720px){
+  .hero{padding:64px 0 52px;text-align:left}
+  .hero h1,.hero p.lead{margin-left:0;margin-right:0}
+  .hero .cta,.hero .trust-line{justify-content:flex-start}
+  .stats{grid-template-columns:1fr 1fr}
+  .stat:nth-child(2){border-right:0}.stat:nth-child(-n+2){border-bottom:1px solid var(--line)}
+}
+@media(max-width:640px){section{padding:62px 0}.wrap{padding:0 20px}.sec-head h2{font-size:34px}.req-wrap{padding:26px 20px}}
 </style>
 </head>
 <body id="top">
 
 <header>
 <div class="wrap nav">
-<a class="brand" href="index.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS <span class="tagpill">For Attorneys</span></a>
+<a class="brand" href="index.html"><span class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>MLS Scribe</b><span class="tagpill">For Attorneys</span></a>
 <nav class="links">
 <a href="#how">How it works</a>
 <a href="#reports">Report types</a>
@@ -315,11 +414,11 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:46px 0 36
 </ul>
 <p style="font-size:14.5px;margin-top:18px">Prefer email? <a href="mailto:michael@mlsscribe.com" style="color:#fff;text-decoration:underline">michael@mlsscribe.com</a> &nbsp;·&nbsp; <a id="sampleLink" href="MLS_Sample_Report.pdf" target="_blank" rel="noopener" style="color:#fff;text-decoration:underline">See a sample report</a></p>
 </div>
-<form class="req-form" onsubmit="return submitRequest(event)">
+<form class="req-form" action="https://formsubmit.co/michael@mlsscribe.com" method="POST" onsubmit="return submitRequest(event)">
 <label for="r-name">Your name / firm</label>
-<input id="r-name" name="name" required placeholder="Jane Doe, Esq. / Doe &amp; Associates">
+<input id="r-name" name="name" autocomplete="name" required placeholder="Jane Doe, Esq. / Doe &amp; Associates">
 <label for="r-email">Email</label>
-<input id="r-email" name="email" type="email" required placeholder="you@lawfirm.com">
+<input id="r-email" name="email" type="email" autocomplete="email" required placeholder="you@lawfirm.com">
 <label for="r-side">You represent</label>
 <select id="r-side" name="side">
 <option value="">Select…</option>
@@ -370,7 +469,7 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:46px 0 36
 <div class="wrap">
 <div class="foot">
 <div>
-<a class="brand" href="index.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</a>
+<a class="brand" href="index.html"><span class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>MLS Scribe</b></a>
 <p class="muted">Connecting attorneys with board-certified spine, pain and PM&amp;R physicians for fast, defensible medico-legal reports. By MLS Scribe LLC.</p>
 </div>
 <div class="links">
