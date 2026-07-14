@@ -147,9 +147,9 @@
         if(loc.anchor&&loc.anchor.parentNode===loc.bar) loc.bar.insertBefore(existing,loc.anchor);
         else loc.bar.appendChild(existing);
       }
-      existing.innerHTML=html;
+      if(existing.innerHTML!==html) existing.innerHTML=html;
       var btn=existing.querySelector('.mdp-next');
-      if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();jumpNext();});
+      if(btn&&!btn.__mlsDayProgressBound){btn.__mlsDayProgressBound=true;btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();jumpNext();});}
       attachObs(loc.bar);
     }catch(e){}
   }

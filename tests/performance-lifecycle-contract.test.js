@@ -25,6 +25,15 @@ for (const file of lifecycleFiles) {
 }
 
 const app = read('ScribeFlow.html');
+const patientCardStart = app.indexOf('function renderInto(bar, p)');
+const patientCard = app.slice(patientCardStart, app.indexOf('var _syncHtml', patientCardStart));
+assert(patientCard.includes('bar.__mlsCardBaseHtml !== baseHtml'), 'active-patient header must diff its base facts before replacing the subtree');
+assert(patientCard.includes('if (needsBase){'), 'active-patient header refresh must preserve an unchanged live subtree');
+
+for (const file of ['feat_mls_dayprogress.js','feat_mls_recentpts.js','feat_mls_ptsnapshot.js','feat_mls_ctx_appt.js']) {
+  const source = read(file);
+  assert(/innerHTML\s*!==\s*html/.test(source), `${file} must not rebuild an unchanged header chip on its heartbeat`);
+}
 const tooltip = app.slice(app.indexOf('function _stripOneTitle'), app.indexOf('/* ---------------- Boot ---------------- */'));
 assert(tooltip.includes('roots.forEach(_stripTitles)'), 'tooltip cleanup must process added subtrees');
 const observerStart = tooltip.indexOf('new MutationObserver');

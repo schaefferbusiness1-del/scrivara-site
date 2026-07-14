@@ -168,7 +168,8 @@ for (const field of ['mrn', 'encounterId', 'encounterUrl', 'visitDate', 'provide
 assert(/!lockedContextShape\(got\)/.test(probeContextMatcher), 'an incomplete execute probeContext must fail closed');
 assert(/!expectedContextShape\(c, mode === ['"]execute['"]\)/.test(handler), 'execute expectedContext must require the complete encounter identity');
 assert(/expectedContextMatches\(c, rec\.expectedContext, rec\.locked\)/.test(executeSection), 'execute must validate expectedContext against both the probe request and locked encounter');
-assert(/rec\.lockedContextHash\s*!==\s*simpleHash\(expectedContextKey\(c\)\)/.test(executeSection), 'execute must bind the full expected encounter hash');
+assert(/rec\.expectedContextHash\s*!==\s*simpleHash\(expectedContextKey\(c\)\)/.test(executeSection), 'execute must preserve the immutable caller context hash');
+assert(/rec\.lockedContextHash\s*!==\s*simpleHash\(expectedContextKey\(rec\.locked\)\)/.test(executeSection), 'execute must bind the immutable probe-discovered encounter hash independently of the caller context');
 const consumeAt = handler.indexOf('rec.used = true');
 const liveTabRequeryAt = handler.indexOf('liveCandidates = exactAthenaTabs');
 const contextRecheckAt = handler.indexOf('probeContextMatches(msg.probeContext, rec.locked)');
@@ -195,14 +196,18 @@ for (const incomplete of [
 }
 assert.strictEqual(contextHelpers.expectedContextShape({ visitDate: '07/14/2026', provider: 'Example Provider, MD' }, true), false, 'execute must still require encounter ID and URL');
 assert.strictEqual(contextHelpers.expectedContextShape(fullExpected, true), true, 'execute accepts the complete locked encounter only');
-assert.strictEqual(contextHelpers.expectedContextMatches(fullExpected, {}, fullExpected), true, 'an omitted original probe expectation must not prevent exact locked-context execution');
-assert.strictEqual(contextHelpers.expectedContextMatches(fullExpected, { visitDate: '07/14/2026', provider: 'Example Provider, MD' }, fullExpected), true, 'supplied probe expectations must remain bound through execute');
-assert.strictEqual(contextHelpers.expectedContextMatches(fullExpected, { visitDate: '07/15/2026', provider: 'Example Provider, MD' }, fullExpected), false, 'a changed originally supplied expectation must be rejected');
+const richerLocked = Object.assign({ appointmentId: '54321' }, fullExpected);
+assert.strictEqual(contextHelpers.expectedContextMatches(fullExpected, fullExpected, richerLocked), true, 'encounter-only authorization must allow the probe to discover a stronger appointment ID');
+const appointmentExpected = { appointmentId: '54321', visitDate: '07/14/2026', provider: 'Example Provider, MD' };
+assert.strictEqual(contextHelpers.expectedContextMatches(appointmentExpected, appointmentExpected, richerLocked), true, 'appointment-only authorization must allow the probe to discover encounter identity');
+assert.strictEqual(contextHelpers.expectedContextMatches(Object.assign({}, fullExpected, { visitDate: '07/15/2026' }), fullExpected, richerLocked), false, 'a changed execute-time expectation must be rejected');
+assert.strictEqual(contextHelpers.expectedContextMatches(fullExpected, Object.assign({}, fullExpected, { visitDate: '07/15/2026' }), richerLocked), false, 'a changed originally supplied expectation must be rejected');
 
 /* A final action belongs to the one selected top-level Athena document. It
  * must never spray clicks into every frame. */
 assert(/target\s*:\s*\{\s*tabId\s*:\s*(?:tab\.id|tabId)\s*\}/.test(handler), 'driver must target one Athena tab');
-assert(!/allFrames\s*:\s*true/.test(handler), 'final actions must not mutate all frames');
+assert(!/target\s*:\s*\{[^}]*allFrames\s*:\s*true[^}]*\}[\s\S]{0,300}func\s*:\s*mlsAthenaActionV2DriverFn/.test(handler), 'final actions must not mutate all frames');
+assert(/allFrames\s*:\s*true[\s\S]{0,300}func\s*:\s*mlsAthenaTeachWatcherFn/.test(handler), 'read-only teaching safety watcher must cover every frame so a cross-origin click cannot slip through');
 
 /* An uncertain result is never retried, reloaded, or reported as verified. */
 for (const forbidden of ['mlsRecoverAthenaTab', 'chrome.tabs.reload', 'location.reload']) {

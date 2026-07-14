@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.1.4)
+ * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.1.5)
  * ---------------------------------------------------------------------------
  * REPLACES the b39 "MLS Copilot Voice" button (window.__mlsCopilotVoiceB39,
  * bundle-inline) with a version that ACTUALLY WORKS as continuous hands-free
@@ -107,7 +107,7 @@
   /* cv2-1.1.1: intent replies echo into the shared conversation thread (chat feel on
    *   both surfaces, not toast-only), and speech output only plays while voice mode is
    *   actually listening (typed commands no longer talk back unexpectedly). */
-  var VERSION = 'cv2-1.1.4';
+  var VERSION = 'cv2-1.1.5';
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -184,6 +184,89 @@
   var recSessionEpoch = 0;
   var deniedPermanently = false;
   var unregisterSpeech = null;
+  /* A cold page can hear speech before the enhanced assistant bridge is
+     ready. Keep a small, short-lived FIFO instead of dropping the utterance.
+     Every entry freezes its patient/visit owner and recognition session; it
+     is removed before its one permitted dispatch, so a thrown/late handler
+     can never cause an automatic duplicate action. */
+  var ASSISTANT_QUEUE_MAX = 4;
+  var ASSISTANT_QUEUE_TTL_MS = 10000;
+  var pendingAssistant = [];
+  var pendingAssistantSeq = 0;
+
+  function assistantBridge() {
+    return safe(function () {
+      var fx = window.__mlsAsstFix;
+      return fx && fx.installed === true && isFn(fx._handleSend) && isFn(fx.registerIntent) ? fx : null;
+    }, null);
+  }
+  function clearPendingAssistant() {
+    var count = pendingAssistant.length;
+    pendingAssistant.length = 0;
+    return count;
+  }
+  function queueAssistantText(text) {
+    text = S(text).trim();
+    if (!text) return false;
+    var dropped = 0;
+    while (pendingAssistant.length >= ASSISTANT_QUEUE_MAX) {
+      pendingAssistant.shift();
+      dropped++;
+    }
+    pendingAssistant.push({
+      id: ++pendingAssistantSeq,
+      text: text,
+      owner: captureVoiceActionToken(),
+      sessionEpoch: recSessionEpoch,
+      expiresAt: Date.now() + ASSISTANT_QUEUE_TTL_MS
+    });
+    if (dropped) speakToast('The assistant queue was full, so I did not run the oldest command. I saved the newest command while setup finishes.');
+    else speakToast('The full assistant is finishing setup. I saved that command and will run it once if the assistant becomes ready.');
+    return true;
+  }
+  /* Returns sent / not-ready / failed. A failed call is never retried because
+     the receiver may have started an action before throwing. */
+  function dispatchAssistantText(text) {
+    var fx = assistantBridge();
+    if (!fx) return 'not-ready';
+    /* If voice-specific intent registration had a transient failure, handle a
+       deterministic visit command locally and do not also send it to chat. */
+    if (!registerIntents()) {
+      var local = runLeg(text);
+      if (local !== 'unknown') return 'sent';
+    }
+    try {
+      var p = $('mlsAsstPanel');
+      if (!p || getComputedStyle(p).display === 'none') { var fab = $('mlsAsstFab'); if (fab) fab.click(); }
+    } catch (e0) {}
+    try { fx._handleSend(text); return 'sent'; }
+    catch (e1) { return 'failed'; }
+  }
+  function flushPendingAssistant() {
+    var now = Date.now(), expired = 0, ownerChanged = 0;
+    while (pendingAssistant.length) {
+      var head = pendingAssistant[0];
+      if (now >= head.expiresAt) { pendingAssistant.shift(); expired++; continue; }
+      if (head.sessionEpoch !== recSessionEpoch || !voiceActionTokenStillSafe(head.owner)) {
+        pendingAssistant.shift(); ownerChanged++; continue;
+      }
+      break;
+    }
+    if (expired) speakToast('The assistant did not finish loading in time, so I did not run ' + (expired === 1 ? 'that command' : 'those commands') + '. Refresh MLS and try again. Recording controls still work.');
+    if (ownerChanged) speakToast('The patient, visit, or voice session changed, so I canceled ' + (ownerChanged === 1 ? 'the queued assistant command' : 'the queued assistant commands') + ' before anything ran.');
+    if (!pendingAssistant.length || !assistantBridge()) return false;
+
+    /* Remove before dispatch: exactly one call is allowed for this entry. */
+    var item = pendingAssistant.shift();
+    var outcome = dispatchAssistantText(item.text);
+    if (outcome === 'not-ready') {
+      /* No receiver was called, so placing it back at the head is safe. */
+      pendingAssistant.unshift(item);
+      return false;
+    }
+    if (outcome === 'failed') speakToast('The assistant handoff failed after it started, so I did not retry the command and risk running it twice. Please check the assistant panel.');
+    return outcome === 'sent';
+  }
 
   function SR() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
   function speechHub() {
@@ -196,7 +279,8 @@
     if (!h || unregisterSpeech) return h;
     unregisterSpeech = h.register('copilot', 'MLS Copilot Voice', function () {
       enabled = false;
-      stopRec();
+      var canceled = stopRec();
+      if (canceled) toast('Copilot Voice stopped, so the queued assistant command was canceled before anything ran.');
       paintBtn($(BTN_ID));
     });
     return h;
@@ -267,7 +351,8 @@
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         deniedPermanently = true; enabled = false;
         recSessionEpoch++; releaseSpeech(); rec = null;
-        toast('Microphone was blocked. Allow mic access for this site, then click MLS Copilot Voice again.');
+        var deniedCanceled = clearPendingAssistant();
+        toast('Microphone was blocked. Allow mic access for this site, then click MLS Copilot Voice again.' + (deniedCanceled ? ' The queued assistant command was canceled.' : ''));
         speak('Microphone access is blocked. Please allow it, then try again.');
         paintBtn($(BTN_ID));
         return;
@@ -276,7 +361,8 @@
       if (err === 'audio-capture') {
         enabled = false;
         recSessionEpoch++; releaseSpeech(); rec = null;
-        toast('No microphone found -- check your input device, then try again.');
+        var audioCanceled = clearPendingAssistant();
+        toast('No microphone found -- check your input device, then try again.' + (audioCanceled ? ' The queued assistant command was canceled.' : ''));
         paintBtn($(BTN_ID));
         return;
       }
@@ -290,7 +376,8 @@
           catch (e) {
             if (instance !== rec || sessionEpoch !== recSessionEpoch) return;
             enabled = false; rec = null; recSessionEpoch++; releaseSpeech();
-            toast('Copilot Voice could not restart the microphone. Wait a moment, then tap it again.');
+            var restartCanceled = clearPendingAssistant();
+            toast('Copilot Voice could not restart the microphone. Wait a moment, then tap it again.' + (restartCanceled ? ' The queued assistant command was canceled.' : ''));
             paintBtn($(BTN_ID));
           }
         }, 250);
@@ -309,8 +396,10 @@
     var old = rec;
     recSessionEpoch++;
     rec = null;
+    var canceled = clearPendingAssistant();
     safe(function () { if (old) { old.onend = null; old.onresult = null; old.onerror = null; old.stop(); } });
     releaseSpeech();
+    return canceled;
   }
 
   function setEnabled(on, btn) {
@@ -321,8 +410,8 @@
       if (ok) { toast('Listening -- say things like "open James Smith and record", "pull today’s patients", "start a visit for Jones", "generate the note", or "go to history".'); speak('Listening.'); }
       else enabled = false;
     } else {
-      stopRec();
-      toast('Voice control off.');
+      var canceled = stopRec();
+      toast(canceled ? 'Voice control off. The queued assistant command was canceled before anything ran.' : 'Voice control off.');
     }
     paintBtn(btn);
   }
@@ -330,11 +419,10 @@
   function handleSaid(text) {
     safe(function () {
       if (/\bstop listening\b|\bturn off voice\b/i.test(text)) { setEnabled(false); return; }
-      if (window.__mlsAsstFix && isFn(window.__mlsAsstFix._handleSend)) {
-        /* open the panel so the user sees the exchange, same as b39 did */
-        var p = $('mlsAsstPanel');
-        if (!p || getComputedStyle(p).display === 'none') { var fab = $('mlsAsstFab'); if (fab) fab.click(); }
-        window.__mlsAsstFix._handleSend(text);
+      var dispatched = dispatchAssistantText(text);
+      if (dispatched === 'sent') return;
+      if (dispatched === 'failed') {
+        speakToast('The assistant handoff failed after it started, so I did not retry the command and risk running it twice. Please check the assistant panel.');
         return;
       }
       /* The assistant bridge can load after the mic. Deterministic voice
@@ -346,7 +434,7 @@
       }
       var local = runLeg(text);
       if (local === 'unknown') {
-        speakToast('I heard you, but the full assistant is still loading. Try that again in a moment.');
+        queueAssistantText(text);
       }
     });
   }
@@ -647,10 +735,11 @@
   /* ---------------- register new deterministic intents ---------------- */
   var unregs = [], registered = false;
   function registerIntents() {
-    if (registered) return;
-    var fx = window.__mlsAsstFix;
-    if (!fx || !isFn(fx.registerIntent)) return;
-    registered = true;
+    if (registered) return true;
+    var fx = assistantBridge();
+    if (!fx) return false;
+    var registrationStart = unregs.length;
+    try {
 
     /* highest priority: explicit safety refusal for anything sign/submit/order-shaped */
     unregs.push(fx.registerIntent('voice-safety-refuse', function (q) {
@@ -749,12 +838,25 @@
       toast('🗂️ Review & confirm opened -- nothing goes to Athena until you confirm it there.');
       return true;
     }, true));
+      for (var i = registrationStart; i < unregs.length; i++) {
+        if (!isFn(unregs[i])) throw new Error('assistant intent registration did not return an unregister function');
+      }
+      registered = true;
+      return true;
+    } catch (e) {
+      /* Roll back every registration from this attempt before the next tick
+         retries, so partial startup cannot create duplicate intent actions. */
+      for (var j = unregs.length - 1; j >= registrationStart; j--) safe(unregs[j]);
+      unregs.length = registrationStart;
+      registered = false;
+      return false;
+    }
   }
 
   /* ---------------- boot / revert ---------------- */
   var bootIv = null;
   function tick() {
-    safe(css); safe(ensureBtn); safe(registerIntents);
+    safe(css); safe(ensureBtn); safe(registerIntents); safe(flushPendingAssistant);
     /* Consume a click made during the legacy-shell -> V2 hand-off. This keeps
        one voice controller and one microphone lease while making the very
        first click reliable on a cold asset load. */
@@ -793,7 +895,13 @@
       legOpenPatient: legOpenPatient,
       openPatientVerified: openPatientVerified,
       captureVoiceActionToken: captureVoiceActionToken,
-      voiceActionTokenStillSafe: voiceActionTokenStillSafe
+      voiceActionTokenStillSafe: voiceActionTokenStillSafe,
+      assistantBridgeReady: function () { return !!assistantBridge(); },
+      registerIntents: registerIntents,
+      queueAssistantText: queueAssistantText,
+      flushPendingAssistant: flushPendingAssistant,
+      pendingAssistant: function () { return pendingAssistant.slice(); },
+      tick: tick
     },
     isListening: function () { return enabled; },
     start: function () { setEnabled(true); },

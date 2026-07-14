@@ -105,10 +105,11 @@
         if(loc.anchor&&loc.anchor.parentNode===loc.bar) loc.bar.insertBefore(existing,loc.anchor);
         else loc.bar.appendChild(existing);
       }
-      existing.innerHTML='<button type="button" class="mps-btn" title="Patient snapshot + quick actions">ⓘ Snapshot</button>';
+      var html='<button type="button" class="mps-btn" title="Patient snapshot + quick actions">ⓘ Snapshot</button>';
+      if(existing.innerHTML!==html) existing.innerHTML=html;
       var btn=existing.querySelector('.mps-btn');
-      if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();
-        if(document.getElementById(POP_ID))closePop();else openPop(existing);});
+      if(btn&&!btn.__mlsSnapshotBound){btn.__mlsSnapshotBound=true;btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();
+        if(document.getElementById(POP_ID))closePop();else openPop(existing);});}
       attachObs(loc.bar);
     }catch(e){}
   }

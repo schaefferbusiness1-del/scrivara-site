@@ -170,6 +170,8 @@
       "#mlsVisitHistoryExt .mlsxh-btn{cursor:pointer;border:1px solid var(--line,#E7E5DD);background:var(--card,#fff);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;color:var(--ink,#1A211C)}",
       "#mlsVisitHistoryExt .mlsxh-btn:hover{background:var(--soft,#EAF1EE)}",
       "#mlsVisitHistoryExt .mlsxh-btn[disabled]{opacity:.55;cursor:default}",
+      "#mlsVisitHistoryExt .mlsxh-collapse{margin-left:auto}",
+      "#mlsVisitHistoryExt .mlsxh-content[hidden]{display:none !important}",
       /* overview */
       "#mlsVisitHistoryExt .mlsxh-ov{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px}",
       "#mlsVisitHistoryExt .mlsxh-stat{flex:1 1 150px;min-width:150px;background:var(--soft,#EAF1EE);border:1px solid var(--line,#E7E5DD);border-radius:12px;padding:10px 12px}",
@@ -194,7 +196,12 @@
       "#mlsVisitHistoryExt .mlsxh-clear{cursor:pointer;border:1px solid var(--line,#E7E5DD);background:var(--card,#fff);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:var(--muted,#79837C)}",
       "#mlsVisitHistoryExt .mlsxh-clear:hover{color:var(--ink,#1A211C);background:var(--soft,#EAF1EE)}",
       /* timeline */
-      "#mlsVisitHistoryExt .mlsxh-year{font-weight:800;font-size:13px;color:var(--ink,#1A211C);margin:14px 0 2px;padding-bottom:4px;border-bottom:2px solid var(--line,#E7E5DD)}",
+      "#mlsVisitHistoryExt .mlsxh-yeargroup{margin:10px 0}",
+      "#mlsVisitHistoryExt .mlsxh-year{list-style:none;cursor:pointer;font-weight:800;font-size:13px;color:var(--ink,#1A211C);margin:14px 0 6px;padding:6px 2px;border-bottom:2px solid var(--line,#E7E5DD)}",
+      "#mlsVisitHistoryExt .mlsxh-year::-webkit-details-marker{display:none}",
+      "#mlsVisitHistoryExt .mlsxh-year:before{content:'▶';display:inline-block;margin-right:7px;color:var(--muted,#79837C);font-size:10px;transition:transform .15s}",
+      "#mlsVisitHistoryExt .mlsxh-yeargroup[open]>.mlsxh-year:before{transform:rotate(90deg)}",
+      "#mlsVisitHistoryExt .mlsxh-yearbody{padding-left:2px}",
       "#mlsVisitHistoryExt .mlsxh-month{font-weight:700;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted,#79837C);margin:10px 0 6px}",
       "#mlsVisitHistoryExt .mlsxh-card{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--line,#E7E5DD);border-left:4px solid var(--muted,#79837C);border-radius:11px;background:var(--card,#fff);padding:10px 12px;margin:0 0 8px;cursor:pointer;transition:box-shadow .12s,transform .12s}",
       "#mlsVisitHistoryExt .mlsxh-card:hover{box-shadow:0 4px 14px rgba(15,28,46,.10);transform:translateY(-1px)}",
@@ -228,7 +235,7 @@
   /* ---- per-patient filter/sort state (preserved across re-renders) ---- */
   var state = {};
   function stateFor(pid) {
-    if (!state[pid]) state[pid] = { q: "", type: "", dx: "", from: "", to: "", sort: "newest" };
+    if (!state[pid]) state[pid] = { q: "", type: "", dx: "", from: "", to: "", sort: "newest", collapsed: false };
     return state[pid];
   }
 
@@ -342,9 +349,11 @@
     listEl.innerHTML = "";
     var filtered = sortVisits(applyFilters(visits, f), f.sort);
     if (statusEl) {
-      statusEl.textContent = filtered.length === visits.length
+      var baseStatus = statusEl.getAttribute("data-base-status") || "";
+      var filterStatus = filtered.length === visits.length
         ? ""
         : "Showing " + filtered.length + " of " + visits.length + " visit" + (visits.length === 1 ? "" : "s");
+      statusEl.textContent = [baseStatus, filterStatus].filter(Boolean).join(" ");
     }
     if (!filtered.length) {
       var none = document.createElement("div"); none.className = "mlsxh-empty";
@@ -358,28 +367,32 @@
       return;
     }
     // group by year -> month, in the chosen sort order
-    var curYear = null, curMonth = null, monthBox = null;
+    var curYear = null, curMonth = null, yearBody = null;
     filtered.forEach(function (v) {
       var d = ymd(v.date);
       var year = d ? d.slice(0, 4) : "Undated";
       var monthKey = d ? d.slice(0, 7) : "Undated";
       if (year !== curYear) {
         curYear = year; curMonth = null;
-        var yh = document.createElement("div"); yh.className = "mlsxh-year"; yh.textContent = year;
-        listEl.appendChild(yh);
+        var yg = document.createElement("details"); yg.className = "mlsxh-yeargroup"; yg.open = true;
+        var yh = document.createElement("summary"); yh.className = "mlsxh-year"; yh.textContent = year;
+        yearBody = document.createElement("div"); yearBody.className = "mlsxh-yearbody";
+        yg.appendChild(yh); yg.appendChild(yearBody); listEl.appendChild(yg);
       }
       if (monthKey !== curMonth) {
         curMonth = monthKey;
         var mh = document.createElement("div"); mh.className = "mlsxh-month";
         mh.textContent = d ? MONTHS[parseInt(d.slice(5, 7), 10) - 1] + " " + d.slice(0, 4) : "Undated";
-        listEl.appendChild(mh);
-        monthBox = listEl;
+        (yearBody || listEl).appendChild(mh);
       }
-      listEl.appendChild(makeCard(p, v));
+      (yearBody || listEl).appendChild(makeCard(p, v));
     });
   }
 
-  function resetFilters(pid) { state[pid] = { q: "", type: "", dx: "", from: "", to: "", sort: "newest" }; }
+  function resetFilters(pid) {
+    var collapsed = !!(state[pid] && state[pid].collapsed);
+    state[pid] = { q: "", type: "", dx: "", from: "", to: "", sort: "newest", collapsed: collapsed };
+  }
 
   /* ---- build overview block ---- */
   function buildOverview(visits) {
@@ -532,9 +545,15 @@
     try { var M = MODEL(); if (M) { try { M.deriveFromLegacy(p); } catch (e) {} return M.getVisits(p) || []; } } catch (e) {}
     return Array.isArray(p && p.visits) ? p.visits.slice() : [];
   }
+  function sigText(value) {
+    var s = S(value);
+    return s.length + ":" + s.slice(0, 140) + ":" + (s.length > 140 ? s.slice(-140) : "");
+  }
   function dataSig(p, visits) {
     return p.id + "|" + visits.length + "|" + visits.map(function (v) {
-      return S(v.id) + ":" + S(v.date) + ":" + ((v.aiSummary ? 1 : 0)) + ":" + (v.cpt || []).length + ":" + (v.icd10 || []).length;
+      return [S(v.id), S(v.date), sigText(v.type), sigText(v.aiSummary), sigText(v.raw),
+        sigText(v.findings), sigText(v.plan), (v.cpt || []).join(","), (v.icd10 || []).join(","),
+        v.identityVerified === true ? "verified" : "unverified", S(v.identityBinding)].join(":");
     }).join(",");
   }
 
@@ -558,34 +577,57 @@
     var title = document.createElement("div"); title.className = "mlsxh-title";
     title.innerHTML = '🗂 Visit history <span class="mlsxh-count">' + visits.length + " visit" + (visits.length === 1 ? "" : "s") + "</span>";
     head.appendChild(title);
-    var missing = visits.filter(function (v) { return !trim(v.aiSummary); }).length;
-    if (missing) {
-      var sumBtn = document.createElement("button"); sumBtn.className = "mlsxh-btn";
-      sumBtn.textContent = "✨ Summarize all (" + missing + ")";
-      sumBtn.addEventListener("click", function () {
-        sumBtn.disabled = true;
-        var stEl = sec.querySelector(".mlsxh-status");
-        try {
-          MODEL().ensureSummaries(p.id, function (m) { if (stEl) stEl.textContent = m; }).then(function () {
-            if (stEl) stEl.textContent = "Summaries complete.";
-            _lastSig = ""; rebuild(true);
-          }, function () { sumBtn.disabled = false; });
-        } catch (e) { sumBtn.disabled = false; }
-      });
-      head.appendChild(sumBtn);
-    }
+    var usable = (MODEL() && isFn(MODEL().usableVisits)) ? MODEL().usableVisits(p) : visits;
+    var missing = usable.filter(function (v) { return !trim(v.aiSummary); }).length;
+    var sumBtn = document.createElement("button"); sumBtn.className = "mlsxh-btn";
+    sumBtn.textContent = missing ? ("✨ Summarize all (" + missing + ")") : "✨ Refresh overall summary";
+    sumBtn.addEventListener("click", function () {
+      sumBtn.disabled = true;
+      var stEl = sec.querySelector(".mlsxh-status");
+      try {
+        var fn = MODEL() && (MODEL().summarizeAll || MODEL().ensureSummaries);
+        if (!isFn(fn)) throw new Error("history summarizer unavailable");
+        fn.call(MODEL(), p.id, function (m) { if (stEl) stEl.textContent = m; }).then(function (receipt) {
+          if (receipt && receipt.ok === false) {
+            if (stEl) stEl.textContent = "Summary blocked because the imported visits are not identity-verified. Pull this chart again first.";
+            sumBtn.disabled = false; return;
+          }
+          if (stEl) stEl.textContent = "Verified visit summaries and patient profile sections are up to date.";
+          try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
+          _lastSig = ""; rebuild(true);
+        }, function () {
+          sumBtn.disabled = false;
+          if (stEl) stEl.textContent = "Could not finish summarizing. No existing history was removed.";
+        });
+      } catch (e) { sumBtn.disabled = false; }
+    });
+    head.appendChild(sumBtn);
+    var f = stateFor(p.id);
+    var collapseBtn = document.createElement("button"); collapseBtn.className = "mlsxh-btn mlsxh-collapse";
+    collapseBtn.setAttribute("aria-expanded", f.collapsed ? "false" : "true");
+    collapseBtn.textContent = f.collapsed ? "Show history" : "Hide history";
+    head.appendChild(collapseBtn);
     sec.appendChild(head);
 
-    var statusEl = document.createElement("div"); statusEl.className = "mlsxh-status"; sec.appendChild(statusEl);
+    var content = document.createElement("div"); content.className = "mlsxh-content"; content.hidden = !!f.collapsed; sec.appendChild(content);
+    collapseBtn.addEventListener("click", function () {
+      f.collapsed = !f.collapsed;
+      content.hidden = f.collapsed;
+      collapseBtn.textContent = f.collapsed ? "Show history" : "Hide history";
+      collapseBtn.setAttribute("aria-expanded", f.collapsed ? "false" : "true");
+    });
+    var statusEl = document.createElement("div"); statusEl.className = "mlsxh-status"; content.appendChild(statusEl);
+    if (visits.length > usable.length) {
+      statusEl.setAttribute("data-base-status", (visits.length - usable.length) + " older imported row(s) are visible for review but excluded from clinical summaries until a fresh identity-verified pull.");
+    }
 
     if (!visits.length) {
-      sec.appendChild(emptyState(p));
+      content.appendChild(emptyState(p));
     } else {
-      sec.appendChild(buildOverview(visits));
-      var f = stateFor(p.id);
+      content.appendChild(buildOverview(visits));
       var listEl = document.createElement("div"); listEl.className = "mlsxh-list";
-      sec.appendChild(controlsBlock(p, visits, f, function () { renderList(listEl, p, visits, f, statusEl); }));
-      sec.appendChild(listEl);
+      content.appendChild(controlsBlock(p, visits, f, function () { renderList(listEl, p, visits, f, statusEl); }));
+      content.appendChild(listEl);
       renderList(listEl, p, visits, f, statusEl);
     }
 
@@ -602,16 +644,38 @@
   }
   function removeExt() { var s = document.getElementById("mlsVisitHistoryExt"); if (s) s.remove(); }
 
-  var _iv = null;
+  var _iv = null, _obs = null, _obsTarget = null, _deb = null;
+  function scheduleRebuild() {
+    if (_deb) clearTimeout(_deb);
+    _deb = setTimeout(function () { _deb = null; try { rebuild(false); } catch (e) {} }, 140);
+  }
+  function bindObserver() {
+    try {
+      var pc = document.getElementById("profileCard");
+      if (pc === _obsTarget) return;
+      if (_obs) _obs.disconnect();
+      _obs = null; _obsTarget = pc || null;
+      if (pc && window.MutationObserver) {
+        _obs = new MutationObserver(scheduleRebuild);
+        _obs.observe(pc, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-vid"] });
+      }
+    } catch (e) {}
+  }
   function start() {
     injectStyle();
     try { rebuild(false); } catch (e) {}
-    _iv = setInterval(function () { try { rebuild(false); } catch (e) {} }, 900);
+    /* Mutation-driven updates keep patient switches responsive without a
+       sub-second full history poll. The slow fallback covers changes that do
+       not touch the profile DOM. Signature checks make both paths cheap. */
+    bindObserver();
+    _iv = setInterval(function () { try { bindObserver(); rebuild(false); } catch (e) {} }, 3000);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 
   function revert() {
     try { if (_iv) clearInterval(_iv); _iv = null; } catch (e) {}
+    try { if (_deb) clearTimeout(_deb); _deb = null; } catch (e) {}
+    try { if (_obs) _obs.disconnect(); _obs = null; _obsTarget = null; } catch (e) {}
     removeExt();
     try { var st = document.getElementById("mls-xh-style"); if (st) st.remove(); } catch (e) {}
     // un-hide the base list

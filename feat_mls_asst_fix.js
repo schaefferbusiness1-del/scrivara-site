@@ -1,4 +1,4 @@
-/* feat_mls_asst_fix.js  ->  window.__mlsAsstFix  (v1.2.0)  [item19 + Task 2]
+/* feat_mls_asst_fix.js  ->  window.__mlsAsstFix  (v1.3.0)  [item19 + Task 2]
  *
  * v1.2.0 (Task 2 -- unified Copilot conversation): FIX 3's chat now shares ONE
  * conversation store with AI Studio via window.__mlsCopilotConvo (feat_mls_copilot_unify.js).
@@ -47,16 +47,27 @@
 ;(function () {
   "use strict";
   var NS = "__mlsAsstFix";
-  var VERSION = "1.2.0";
+  var VERSION = "1.3.0";
   /* Task 2: the shared Copilot conversation store (feat_mls_copilot_unify.js).
      When present, the panel's history reads/writes go through it so Studio and
      this panel are ONE conversation. Absent -> fall back to the private chatLog. */
   function CONVO() { try { var c = window.__mlsCopilotConvo; return (c && typeof c.append === "function") ? c : null; } catch (e) { return null; } }
-  try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
+  /* The extension-version handshake historically reused this namespace and
+     could leave {installed:true, version:"<extension>"} here before this
+     asset executed. Treat only the complete assistant bridge as installed;
+     an incomplete marker must be replaced so voice/chat can self-heal on the
+     same page load. */
+  try {
+    var priorApi = window[NS];
+    if (priorApi && priorApi.installed &&
+        typeof priorApi._handleSend === "function" &&
+        typeof priorApi.registerIntent === "function") return;
+  } catch (e) { return; }
 
-  /* ---------- self-gate: same as the assistant (staging page OR prod staging-marker) ---------- */
+  /* ---------- self-gate: production MLS plus staging marker/pages ---------- */
   function gateOn() {
     try {
+      if (/(^|\.)mlsscribe\.com$/i.test(String(location.hostname || ""))) return true;
       if (/staging/i.test(location.pathname)) return true;
       if (document.querySelector('script[src*="mls-connect.staging.js"]')) return true;
     } catch (e) {}
@@ -395,13 +406,16 @@
     return null;
   }
   function matchProvider(token) {
-    token = String(token || "").toLowerCase();
-    var list = rosterProviders();
+    token = String(token || "").toLowerCase().trim();
+    if (!token) return null;
+    var list = rosterProviderEntries(), matches = [];
     for (var i = 0; i < list.length; i++) {
-      var p = String(list[i] || "");
-      if (p.toLowerCase().indexOf(token) >= 0) return p;
+      var e = list[i], hay = (String(e.name || "") + " " + String(e.raw || "")).toLowerCase();
+      if (hay.indexOf(token) >= 0) matches.push(e);
     }
-    return null;
+    /* A one-word request such as "Dr Schaeffer" is unsafe when two distinct
+       provider identities share that name/token. Never pick the first row. */
+    return matches.length === 1 ? matches[0] : null;
   }
   function selectByName(q) {
     var ps = getPatients(), s = String(q || "").toLowerCase(), found = null;
@@ -433,9 +447,13 @@
     var a = ASST(), c = CT(), si = SI();
     var ds = intent.day === "tomorrow" ? addDaysStr(todayStr(), 1) : todayStr();
     var pv = intent.provider ? (matchProvider(intent.provider) || null) : null;
+    if (intent.provider && !pv) {
+      addAi("I couldn't uniquely match that provider. Choose the exact clinician in the provider list, then try the pull again.");
+      return;
+    }
     safe(function () { if (a && isFn(a.setTab)) a.setTab("schedule"); });
     safe(function () { if (a && isFn(a.setDate)) a.setDate(ds); });
-    if (pv) safe(function () { if (a && isFn(a.setProvider)) a.setProvider(pv); });
+    if (pv) safe(function () { if (a && isFn(a.setProvider)) a.setProvider(providerValue(pv)); });
     var connected = safe(function () { return c && isFn(c.isConnected) && c.isConnected(); }, false);
     if (!connected) {
       var d = safe(function () { return c && isFn(c.describe) ? c.describe() : null; }, null);
@@ -444,7 +462,7 @@
       return;
     }
     if (!(si && isFn(si.pull))) { addAi("Schedule pull isn't available right now."); return; }
-    addAi("On it -- pulling the " + (intent.day || "today's") + " schedule" + (pv ? (" for " + pv) : "") + " from athenaOne now. You can keep working; I'll store them when done.");
+    addAi("On it -- pulling the " + (intent.day || "today's") + " schedule" + (pv ? (" for " + pv.name) : "") + " from athenaOne now. You can keep working; I'll store them when done.");
     safe(function () {
       si.pull({ date: ds, provider: pv || "All doctors", onStatus: function () {} })
         .then(function (res) {
@@ -648,49 +666,104 @@
   }
   function provName(p) {
     // _calProviders entries may be strings OR objects ({id,name,specialty,...}).
-    if (p && typeof p === "object") return String(p.name || p.displayName || p.label || p.provider || "").trim();
+    if (p && typeof p === "object") return String(p.name || p.displayName || p.label || p.raw || p.provider || "").trim();
     return String(p == null ? "" : p).trim();
   }
-  function rosterProviders() {
-    var set = {}, out = [];
-    function addRaw(n) { // trusted, verbatim (objects -> their name)
-      n = provName(n);
-      if (!n || /^all doctors$/i.test(n)) return;
-      var k = n.toLowerCase(); if (!set[k]) { set[k] = 1; out.push(n); }
+  function providerStableKey(p) {
+    if (p && typeof p === "object") {
+      if (p.stableKey) return String(p.stableKey);
+      var id = p.id || p.providerId || p.provider_id || p.doctor_user_id;
+      if (id !== undefined && id !== null && String(id).trim()) return "backend:" + String(id).trim();
+      var raw = p.raw || p.provider_raw || p.provider_key || p.provider;
+      if (raw) return "athena:" + String(raw).replace(/\s+/g, " ").trim().toLowerCase();
     }
-    function addFiltered(n) { // roster-recovered, sanitized
-      n = cleanProviderName(n);
-      if (!n || /^all doctors$/i.test(n) || !isProviderName(n)) return;
-      var k = n.toLowerCase(); if (!set[k]) { set[k] = 1; out.push(n); }
-    }
-    var cal = providers(); for (var k = 0; k < cal.length; k++) addRaw(cal[k]);
-    var pk = safe(function () { return window.__mlsProviderPicker; }, null);
-    if (pk && isFn(pk.cachedProviders)) { var c = safe(function () { return pk.cachedProviders(); }, []) || []; for (var i = 0; i < c.length; i++) addFiltered(c[i]); }
+    var s = provName(p); return s ? "legacy-name:" + s.toLowerCase() : "";
+  }
+  function providerEntry(p, source) {
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
-    if (rp && isFn(rp.providers)) { var c2 = safe(function () { return rp.providers(); }, []) || []; for (var j = 0; j < c2.length; j++) addFiltered(c2[j]); }
+    if (rp && isFn(rp._makeEntry)) {
+      var made = safe(function () { return rp._makeEntry(p, source); }, null);
+      if (made) return made;
+    }
+    var nm = cleanProviderName(provName(p)), key = providerStableKey(p);
+    if (!nm || !key || /^all doctors$/i.test(nm)) return null;
+    var obj = p && typeof p === "object" ? p : {};
+    return { stableKey: key, id: String(obj.id || obj.providerId || obj.provider_id || ""), raw: String(obj.raw || obj.provider_raw || obj.provider || nm), name: nm, source: source || "legacy", rosterVerified: obj.rosterVerified === true };
+  }
+  function rosterProviderEntries() {
+    var seen = {}, out = [];
+    function add(p, source, filtered) {
+      var e = providerEntry(p, source); if (!e) return;
+      if (filtered && !isProviderName(e.raw || e.name) && !isProviderName(e.name)) return;
+      if (seen[e.stableKey]) return;
+      seen[e.stableKey] = 1; out.push(e);
+    }
+    var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+    if (rp && isFn(rp.list)) {
+      var canonical = safe(function () { return rp.list(); }, []) || [];
+      for (var r = 0; r < canonical.length; r++) add(canonical[r], "canonical", false);
+    }
+    var cal = providers(); for (var k = 0; k < cal.length; k++) add(cal[k], "calendar", false);
+    /* Compatibility only: older pages may not have the structured roster yet. */
+    if (!(rp && isFn(rp.list))) {
+      var pk = safe(function () { return window.__mlsProviderPicker; }, null);
+      if (pk && isFn(pk.cachedProviders)) { var c = safe(function () { return pk.cachedProviders(); }, []) || []; for (var i = 0; i < c.length; i++) add(c[i], "legacy-picker", true); }
+      if (rp && isFn(rp.providers)) { var c2 = safe(function () { return rp.providers(); }, []) || []; for (var j = 0; j < c2.length; j++) add(c2[j], "legacy-roster", true); }
+    }
     return out;
+  }
+  function rosterProviders() { return rosterProviderEntries().map(function (e) { return e.name; }); }
+  function providerValue(e) { return e && e.stableKey ? ("pv:" + encodeURIComponent(e.stableKey)) : ""; }
+  function resolveProviderValue(v) {
+    if (!v || v === "all" || /^all doctors$/i.test(v)) return null;
+    var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+    if (rp && isFn(rp.resolve)) {
+      var hit = safe(function () { return rp.resolve(v); }, null); if (hit) return hit;
+    }
+    var raw = String(v); if (raw.indexOf("pv:") === 0) { try { raw = decodeURIComponent(raw.slice(3)); } catch (e) { return null; } }
+    var list = rosterProviderEntries(), hits = list.filter(function (e) { return e.stableKey === raw || e.id === raw || String(e.raw).toLowerCase() === raw.toLowerCase() || String(e.name).toLowerCase() === raw.toLowerCase(); });
+    return hits.length === 1 ? hits[0] : null;
+  }
+  function renderProviderReceipt() {
+    var p = panel(); if (!p) return;
+    var sel = p.querySelector(".as-prov"); if (!sel) return;
+    var line = p.querySelector(".as-provstatus");
+    if (!line) { line = document.createElement("div"); line.className = "as-provstatus"; line.style.cssText = "font-size:11px;line-height:1.35;color:#5d6b64;margin:-5px 0 9px;"; sel.parentNode.insertAdjacentElement("afterend", line); }
+    var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+    var rec = rp && isFn(rp.getReceipt) ? safe(function () { return rp.getReceipt(); }, null) : null;
+    var n = rosterProviderEntries().length;
+    if (rec && rec.complete) { line.textContent = n + " provider" + (n === 1 ? "" : "s") + " verified from the full Athena schedule."; line.style.color = "#2E6A4B"; }
+    else if (n) { line.textContent = "Provider list may be partial" + (rec && rec.reason ? " (" + rec.reason.replace(/-/g, " ") + ")" : "") + ". Pull the schedule again to finish loading it."; line.style.color = "#8A5A22"; }
+    else { line.textContent = "Provider list is unavailable. Open the Athena Day schedule and pull it again."; line.style.color = "#9A3E38"; }
   }
   function rebuildProvDropdown(real) {
     var p = panel(); if (!p) return;
     var sel = p.querySelector(".as-prov"); if (!sel) return;
     if (document.activeElement === sel) return;
-    real = real || rosterProviders();
-    var html = '<option>All doctors</option>';
-    for (var i = 0; i < real.length; i++) html += '<option>' + esc(real[i]) + '</option>';
+    real = real || rosterProviderEntries();
+    var nameCounts = {}; real.forEach(function (e) { var k = String(e.name || "").toLowerCase(); nameCounts[k] = (nameCounts[k] || 0) + 1; });
+    var html = '<option value="all">All doctors</option>';
+    for (var i = 0; i < real.length; i++) {
+      var e = real[i], label = e.name;
+      if (nameCounts[String(e.name || "").toLowerCase()] > 1) label += " - " + (e.id ? ("ID " + e.id) : (e.raw && e.raw !== e.name ? e.raw : e.source));
+      html += '<option value="' + esc(providerValue(e)) + '">' + esc(label) + '</option>';
+    }
     if (sel.getAttribute("data-mlsfix-prov") === html) return;
     var cur = sel.value;
     sel.innerHTML = html;
     try { sel.setAttribute("data-mlsfix-prov", html); } catch (e) {}
+    if (cur && cur !== "all" && cur.indexOf("pv:") !== 0) { var old = resolveProviderValue(cur); if (old) cur = providerValue(old); }
     var opts = sel.options, restored = false;
     for (var j = 0; j < opts.length; j++) { if (opts[j].value === cur) { sel.value = cur; restored = true; break; } }
-    if (!restored) sel.value = "All doctors";
+    if (!restored) sel.value = "all";
+    renderProviderReceipt();
   }
   function syncProviders() {
-    var real = rosterProviders();
+    var real = rosterProviderEntries();
     try {
       var cal = Array.isArray(window._calProviders) ? window._calProviders : [];
-      var have = {}; for (var i = 0; i < cal.length; i++) have[provName(cal[i]).toLowerCase()] = 1;
-      for (var j = 0; j < real.length; j++) { var k = real[j].toLowerCase(); if (!have[k]) { cal.push(real[j]); have[k] = 1; } }
+      var have = {}; for (var i = 0; i < cal.length; i++) have[providerStableKey(cal[i])] = 1;
+      for (var j = 0; j < real.length; j++) { var k = real[j].stableKey; if (!have[k]) { cal.push(real[j]); have[k] = 1; } }
       window._calProviders = cal;
     } catch (e) {}
     rebuildProvDropdown(real);
@@ -709,12 +782,13 @@
     try { el.classList.toggle("ok", !!ok); } catch (e) {}
   }
   function curSelDateProv() {
-    var p = panel(), ds = todayStr(), pv = "All doctors";
+    var p = panel(), ds = todayStr(), pv = "All doctors", ref = "all", entry = null;
     if (p) {
       var di = p.querySelector(".as-date"); if (di && di.value) ds = di.value;
-      var pr = p.querySelector(".as-prov"); if (pr && pr.value) pv = pr.value;
+      var pr = p.querySelector(".as-prov"); if (pr && pr.value) ref = pr.value;
     }
-    return { date: ds, provider: pv };
+    if (ref !== "all" && !/^all doctors$/i.test(ref)) { entry = resolveProviderValue(ref); if (entry) pv = entry; }
+    return { date: ds, provider: pv, providerRef: ref, providerEntry: entry, invalidProvider: ref !== "all" && !entry };
   }
   function doPullHonest(btn) {
     if (pullBusy) return;
@@ -728,6 +802,11 @@
     }
     if (!(si && isFn(si.pull))) { setPullStatus("Schedule pull is unavailable right now.", false); return; }
     var sel = curSelDateProv();
+    if (sel.invalidProvider) {
+      setPullStatus("That provider selection is no longer verifiable. Choose the clinician again; MLS will not silently pull everyone.", false);
+      safe(syncProviders);
+      return;
+    }
     pullBusy = true; if (btn) btn.disabled = true;
     setPullStatus("Reading your athenaOne Day schedule...", false);
     safe(function () {
@@ -743,7 +822,10 @@
         var created = (res && res.created) || 0;
         var a = ASST(); safe(function () { if (a && isFn(a._renderSchedule)) a._renderSchedule(); });
         safe(syncProviders);
-        if (created > 0) setPullStatus("Imported " + created + " appointment" + (created === 1 ? "" : "s") + " for " + sel.date + ".", true);
+        if (res && res.complete === false) {
+          setPullStatus((res.error || "The provider/day pull could not be verified. Nothing was imported; reopen the full Athena Day schedule and retry."), false);
+        } else if (created > 0) setPullStatus("Imported " + created + " appointment" + (created === 1 ? "" : "s") + " for " + sel.date + ".", true);
+        else if (res && res.providerReceipt && res.providerReceipt.complete && res.reason === "provider-empty") setPullStatus("Athena verified no appointments for " + (sel.providerEntry && sel.providerEntry.name || "that provider") + " on " + sel.date + ".", true);
         else setPullStatus("No new appointments for " + sel.date + ". Open that day's Day-schedule grid (the patient list) in athenaOne, then pull again.", false);
       })
       .catch(function () { pullBusy = false; if (btn) btn.disabled = false; setPullStatus("Couldn't finish the import -- open your athenaOne Day schedule and try again.", false); });

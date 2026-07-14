@@ -16,7 +16,7 @@
  *     • EARLY-ABORTS the perceived "endless spinner": the moment Layer A writes
  *       a definitive error into #heroPullStatus (seconds), we stop showing the
  *       spinner and show a clear terminal card — instead of spinning up to 120s.
- *     • Offers Retry / Cancel / Restart, at most ONE safe auto-retry, resume on
+ *     • Offers explicit Retry / Cancel / Restart actions, passive status on
  *       refresh, and a "What happened?" debug panel.
  *
  *   It does NOT change what the extension does, does NOT add/alter any mlsApp*
@@ -177,8 +177,8 @@
       var raw = ss(PKEY()); if (!raw) return;
       var o = JSON.parse(raw); if (!o) return;
       /* Only restore a *terminal* state on refresh — a "running" snapshot is
-         stale after a reload (the in-page pull machinery is gone), so we let the
-         app's own auto-pull re-arm and we re-observe live. */
+         stale after a reload (the in-page pull machinery is gone). Restoring
+         status must never restart an Athena read. */
       if (o.phase === 'terminal') {
         ST.phase = 'terminal'; ST.terminalKind = o.terminalKind || 'generic';
         ST.stepKey = o.stepKey; ST.lastGoodKey = o.lastGoodKey; ST.failedKey = o.failedKey;
@@ -237,8 +237,8 @@
     return null;
   }
   function pullActive() {
-    /* Are we in a pull cycle at all? Either EZ3 says running, or Layer A left a
-       non-idle status, or we're mid auto-pull for today. */
+    /* Are we in a user-requested pull cycle? Either EZ3 says running or Layer A
+       left an in-flight status. Merely observing these signals never starts one. */
     if (cancelledThisCycle) return false;
     if (ez3Running()) return true;
     var hs = heroStatus();
@@ -357,6 +357,9 @@
 
   /* ---- recovery actions ---------------------------------------------------- */
   function doRetry(isAuto) {
+    /* Fail closed against stale timers or restored state. Every Athena retry
+       requires a fresh click on this panel. */
+    if (isAuto) return;
     cancelledThisCycle = false;
     ST.retryCount += (isAuto ? 0 : 1);
     if (isAuto) ST.autoRetried = true;
@@ -378,8 +381,8 @@
     render();
   }
   function doRestart() {
-    /* clear the app's once-per-day guard so the auto-pull machinery re-arms,
-       then run a fresh pull. */
+    /* Clear the legacy once-per-day marker, then honor the user's explicit
+       Restart click with one fresh pull. */
     try { ss('mlsEz3AutoPull.' + todayKey(), null); } catch (e) {}
     ST.dataAccessed = false; ST.autoRetried = false;
     doRetry(false);
@@ -639,16 +642,8 @@
           });
         })(res.terminal);
       }
-      /* safe auto-retry: ONE time, only for transient classes, never signed-out */
-      var t = TERMINAL_COPY[res.terminal];
-      if (t && t.transient && !ST.autoRetried && !cancelledThisCycle) {
-        ST.autoRetried = true;
-        render();  /* show the terminal briefly with a "retrying" beat */
-        markRetrying();
-        setTimeout(function () { if (ST.phase === 'terminal') doRetry(true); }, 900);
-        persist();
-        return;
-      }
+      /* Terminal states are passive. A retry may read Athena only after the
+         user presses the visible Retry or Restart button. */
       render(); persist(); return;
     }
 

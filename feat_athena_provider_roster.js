@@ -1,4 +1,4 @@
-/* feat_athena_provider_roster.js  ->  window.__mlsProviderRoster  (v1.0.0)
+/* feat_athena_provider_roster.js  ->  window.__mlsProviderRoster  (v2.0.0)
  *
  * "Whose patients?" dropdown — make the list REAL.
  *
@@ -62,7 +62,7 @@
   'use strict';
   try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {}
 
-  var VERSION = '1.0.0';
+  var VERSION = '2.0.0';
   var ASSET = 'feat_athena_provider_roster.js';
 
   // ---------- tiny safe helpers ----------
@@ -173,33 +173,144 @@
   }
 
   // ============================================================
-  //  Bridge to the picker (single source of truth for the cache + render)
+  //  Canonical structured roster + legacy picker bridge
   // ============================================================
   function picker() { return safe(function () { return root.__mlsProviderPicker || null; }, null); }
 
-  // Fallback cache if the picker isn't present yet (same key the picker reads).
-  var CACHE_KEY = 'mlsSchedProviders';
+  var CACHE_KEY = 'mlsSchedProviders';       // legacy display-only cache
+  var CACHE_V2_KEY = 'mlsProviderRosterV2';  // stable-identity structured cache
+  var RECEIPT_KEY = 'mlsProviderRosterReceiptV2';
   function unsGet(name) { return safe(function () { if (!isFn(root.uns)) return ''; return S(localStorage.getItem(root.uns(name)) || ''); }, '') || ''; }
   function unsSet(name, v) { safe(function () { if (isFn(root.uns)) localStorage.setItem(root.uns(name), S(v)); }); }
-  function fallbackMerge(list) {
-    var have = safe(function () { var a = JSON.parse(unsGet(CACHE_KEY) || '[]'); return Array.isArray(a) ? a : []; }, []) || [];
-    var seen = {}, out = [];
-    have.concat(list || []).forEach(function (p) { p = clean(p); var k = p.toLowerCase(); if (p && !seen[k]) { seen[k] = 1; out.push(p); } });
-    unsSet(CACHE_KEY, JSON.stringify(out.slice(0, 40)));
+  function normKey(v) { return clean(v).toLowerCase(); }
+  function humanName(raw) {
+    var v = clean(raw);
+    var shared = safe(function () { return isFn(root.__mlsProviderLabel) ? root.__mlsProviderLabel(v) : ''; }, '');
+    if (shared) return clean(shared);
+    if (/^[A-Za-z][A-Za-z'\-]*_[A-Za-z]/.test(v)) {
+      var p = v.split('_').filter(Boolean), last = p.shift() || '', first = p.shift() || '', cred = p.join(' ');
+      return clean(first + ' ' + last + (cred ? ', ' + cred : ''));
+    }
+    return v;
+  }
+  function makeEntry(input, source) {
+    if (input == null) return null;
+    var obj = typeof input === 'object' ? input : {}, raw = clean(typeof input === 'string' ? input : (obj.raw || obj.provider_raw || obj.provider_key || obj.provider || ''));
+    var id = clean(obj.id || obj.providerId || obj.provider_id || obj.doctor_user_id || obj.user_id || '');
+    var name = humanName(obj.name || obj.displayName || obj.label || raw);
+    var stableKey = clean(obj.stableKey || obj.stable_key || '');
+    if (!stableKey && id) stableKey = 'backend:' + id;
+    if (!stableKey && raw) stableKey = 'athena:' + normKey(raw);
+    if (!stableKey && name) stableKey = 'legacy-name:' + normKey(name);
+    if (!stableKey || !name) return null;
+    return {
+      stableKey: stableKey,
+      id: id,
+      raw: raw || clean(obj.name || name),
+      name: name,
+      source: clean(obj.source || source || 'legacy-unverified'),
+      rosterVerified: obj.rosterVerified === true || (!!id && (source === 'backend-calendar' || obj.source === 'backend-calendar'))
+    };
+  }
+  function storedEntries() {
+    var saved = safe(function () { return JSON.parse(unsGet(CACHE_V2_KEY) || '[]'); }, []);
+    var arr = Array.isArray(saved) ? saved : [];
+    if (!arr.length) {
+      var legacy = safe(function () { return JSON.parse(unsGet(CACHE_KEY) || '[]'); }, []);
+      if (Array.isArray(legacy)) arr = legacy.map(function (x) { return makeEntry(x, 'legacy-cache'); }).filter(Boolean);
+    }
+    return arr.map(function (x) { return makeEntry(x, x && x.source); }).filter(Boolean);
+  }
+  function mergeEntries(list, source) {
+    var have = storedEntries(), byKey = {}, order = [];
+    have.concat(list || []).forEach(function (raw) {
+      var e = makeEntry(raw, source); if (!e) return;
+      var k = e.stableKey;
+      if (!byKey[k]) { byKey[k] = e; order.push(k); return; }
+      var prior = byKey[k];
+      if (!prior.id && e.id) prior.id = e.id;
+      if ((!prior.raw || /^legacy-name:/.test(prior.stableKey)) && e.raw) prior.raw = e.raw;
+      if (e.name) prior.name = e.name;
+      if (e.source && (!prior.source || /legacy/.test(prior.source))) prior.source = e.source;
+      prior.rosterVerified = prior.rosterVerified || e.rosterVerified;
+    });
+    var out = order.map(function (k) { return byKey[k]; }).slice(-240);
+    unsSet(CACHE_V2_KEY, JSON.stringify(out));
+    /* Keep the old picker usable, but never use its name-only cache as the
+       canonical roster. Same-name clinicians remain distinct in V2. */
+    var legacyNames = [], legacySeen = {};
+    out.forEach(function (e) { var k = normKey(e.name); if (k && !legacySeen[k]) { legacySeen[k] = 1; legacyNames.push(e.name); } });
+    unsSet(CACHE_KEY, JSON.stringify(legacyNames.slice(-200)));
+    var pk = picker();
+    if (pk && isFn(pk.mergeProviders)) safe(function () { pk.mergeProviders(legacyNames); });
+    mergeIntoCalendar(out);
     return out;
   }
-  function cachedCount() {
-    var pk = picker();
-    if (pk && isFn(pk.cachedProviders)) return safe(function () { return pk.cachedProviders().length; }, 0) || 0;
-    return safe(function () { var a = JSON.parse(unsGet(CACHE_KEY) || '[]'); return Array.isArray(a) ? a.length : 0; }, 0) || 0;
+  function mergeIntoCalendar(entries) {
+    safe(function () {
+      var arr = Array.isArray(root._calProviders) ? root._calProviders : [], seen = {}, out = [];
+      arr.concat(entries || []).forEach(function (raw) {
+        var e = makeEntry(raw, raw && raw.source || 'calendar'); if (!e || seen[e.stableKey]) return;
+        seen[e.stableKey] = 1;
+        /* Preserve backend-specific fields while supplying canonical identity. */
+        if (raw && typeof raw === 'object') {
+          Object.keys(raw).forEach(function (k) { if (e[k] == null || e[k] === '') e[k] = raw[k]; });
+        }
+        out.push(e);
+      });
+      root._calProviders = out;
+    });
   }
-  function mergeProviders(list) {
-    var pk = picker();
-    if (pk && isFn(pk.mergeProviders)) return safe(function () { return pk.mergeProviders(list); }, null) || fallbackMerge(list);
-    return fallbackMerge(list);
+  function syncCalendarProviders() {
+    var cal = safe(function () { return Array.isArray(root._calProviders) ? root._calProviders.slice() : []; }, []);
+    if (cal.length) return mergeEntries(cal, 'backend-calendar');
+    mergeIntoCalendar(storedEntries());
+    return storedEntries();
   }
+  function cachedCount() { return storedEntries().length; }
+  function mergeProviders(list) { return mergeEntries(list, 'legacy-structured'); }
   function renderDropdown() { var pk = picker(); if (pk && isFn(pk.renderDropdown)) safe(pk.renderDropdown); }
   function setLastResp(r) { var pk = picker(); if (pk && isFn(pk._setLastResp)) safe(function () { pk._setLastResp(r); }); }
+
+  var lastReceipt = safe(function () { var r = JSON.parse(unsGet(RECEIPT_KEY) || 'null'); return r && typeof r === 'object' ? r : null; }, null);
+  function normalizeReceipt(receipt, observed, reason) {
+    var r = receipt && typeof receipt === 'object' ? receipt : {};
+    var complete = r.complete === true && r.partial !== true;
+    return {
+      complete: complete,
+      partial: !complete,
+      reason: clean(r.reason || reason || (complete ? 'complete' : 'legacy-unverified')),
+      expectedCount: r.expectedCount == null ? null : Number(r.expectedCount),
+      observedCount: r.observedCount == null ? Number(observed || 0) : Number(r.observedCount),
+      reachedEnd: r.reachedEnd === true,
+      capReached: r.capReached === true,
+      budgetExpired: r.budgetExpired === true,
+      restored: r.restored == null ? null : r.restored === true,
+      steps: Number(r.steps || 0),
+      updatedAt: Date.now()
+    };
+  }
+  function setReceipt(receipt, observed, reason) {
+    lastReceipt = normalizeReceipt(receipt, observed, reason);
+    unsSet(RECEIPT_KEY, JSON.stringify(lastReceipt));
+    return lastReceipt;
+  }
+  function listEntries() { syncCalendarProviders(); return storedEntries().map(function (e) { var c = {}; Object.keys(e).forEach(function (k) { c[k] = e[k]; }); return c; }); }
+  function resolveProvider(ref) {
+    var entries = listEntries(), raw = ref;
+    if (ref && typeof ref === 'object') raw = ref.stableKey || ref.id || ref.raw || ref.name || '';
+    raw = clean(raw);
+    if (raw.indexOf('pv:') === 0) { try { raw = decodeURIComponent(raw.slice(3)); } catch (e) { return null; } }
+    if (!raw) return null;
+    var exact = entries.filter(function (e) { return e.stableKey === raw; });
+    if (exact.length === 1) return exact[0];
+    exact = entries.filter(function (e) { return e.id && e.id === raw; });
+    if (exact.length === 1) return exact[0];
+    exact = entries.filter(function (e) { return normKey(e.raw) === normKey(raw); });
+    if (exact.length === 1) return exact[0];
+    exact = entries.filter(function (e) { return normKey(e.name) === normKey(raw); });
+    return exact.length === 1 ? exact[0] : null; // same-name ambiguity fails closed
+  }
 
   // diag for the live tuning run (PHI-FREE — provider names + counts only)
   var lastDiag = null;
@@ -215,6 +326,7 @@
   function ingestResp(resp) {
     return safe(function () {
       var r = resp || {};
+      var structuredRoster = Array.isArray(r.providerRoster) ? r.providerRoster : [];
       var structuredProviders = Array.isArray(r.providers) ? r.providers.filter(Boolean) : [];
       var structuredAppts = Array.isArray(r.appts) ? r.appts : [];
       var hasStructuredScope = structuredAppts.some(function (a) { return a && a.provider; });
@@ -224,13 +336,20 @@
 
       // 1+2+3+4: union of every REAL provider signal (no fabrication)
       var union = [];
-      structuredProviders.forEach(function (p) { union.push(p); });
-      structuredAppts.forEach(function (a) { if (a && a.provider) union.push(a.provider); });
-      rec.providers.forEach(function (p) { union.push(p); });
+      structuredRoster.forEach(function (p) {
+        var c = {}; Object.keys(p || {}).forEach(function (k) { c[k] = p[k]; });
+        c.source = c.source || 'athena-schedule-header';
+        c.rosterVerified = !!(r.providerRosterReceipt && r.providerRosterReceipt.complete);
+        union.push(c);
+      });
+      structuredProviders.forEach(function (p) { union.push(makeEntry(p, 'legacy-extension-provider')); });
+      structuredAppts.forEach(function (a) { if (a && a.provider) union.push(makeEntry(a.provider, 'appointment-attribution')); });
+      rec.providers.forEach(function (p) { union.push(makeEntry(p, 'text-recovery')); });
 
       var diag = {
         version: VERSION,
-        source: structuredProviders.length || hasStructuredScope ? 'structured(v1.37)+text' : (rec.providers.length ? 'text-recovery' : 'none'),
+        source: structuredRoster.length ? 'structured-roster' : (structuredProviders.length || hasStructuredScope ? 'legacy-structured+text' : (rec.providers.length ? 'text-recovery' : 'none')),
+        structuredRosterCount: structuredRoster.length,
         structuredProviderCount: structuredProviders.length,
         structuredApptScoped: hasStructuredScope,
         textProviderCount: rec.providers.length,
@@ -241,12 +360,12 @@
       };
 
       var before = cachedCount();
-      if (union.length) mergeProviders(union);
-      var pk = picker();
-      var afterList = pk && isFn(pk.cachedProviders) ? safe(function () { return pk.cachedProviders(); }, []) : safe(function () { var a = JSON.parse(unsGet(CACHE_KEY) || '[]'); return Array.isArray(a) ? a : []; }, []);
-      afterList = afterList || [];
-      diag.providerNames = afterList.slice(0, 20);
+      var afterList = union.length ? mergeEntries(union, 'schedule-result') : listEntries();
+      var receiptReason = r.error ? 'schedule-read-error' : (structuredRoster.length ? 'structured-roster-unverified' : (afterList.length ? 'legacy-unverified' : 'no-provider-headers'));
+      var receipt = setReceipt(r.providerRosterReceipt, structuredRoster.length || afterList.length, receiptReason);
+      diag.providerNames = afterList.map(function (e) { return e.name; }).slice(0, 50);
       diag.added = afterList.length - before;
+      diag.receipt = receipt;
 
       // Enable §68 scoping WITHOUT v1.37: if the extension supplied no structured
       // per-appt provider but we recovered one from the flat text, hand the picker
@@ -262,7 +381,7 @@
 
       // Re-render only if we actually added real names (avoid needless churn /
       // fighting the picker's glitch-fix signature guard).
-      if (diag.added > 0) renderDropdown();
+      if (diag.added > 0 || structuredRoster.length || r.providerRosterReceipt) renderDropdown();
       return diag;
     }, null);
   }
@@ -274,7 +393,7 @@
       if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppScheduleResult') return;
       var r = d.resp || {};
       // de-dupe identical back-to-back deliveries
-      var key = S(r.text).length + '|' + (Array.isArray(r.providers) ? r.providers.length : 0) + '|' + (Array.isArray(r.appts) ? r.appts.length : 0);
+      var key = S(r.text).length + '|' + (Array.isArray(r.providers) ? r.providers.length : 0) + '|' + (Array.isArray(r.providerRoster) ? r.providerRoster.length : 0) + '|' + (Array.isArray(r.appts) ? r.appts.length : 0) + '|' + S(r.providerRosterReceipt && r.providerRosterReceipt.reason);
       if (key === _lastTextKey) { ingestResp(r); return; }
       _lastTextKey = key;
       ingestResp(r);   // r is never mutated or forwarded
@@ -287,7 +406,7 @@
       var raw = root.__schedRaw;
       if (!raw) return;
       // __schedRaw may be the resp object or carry {text}
-      var resp = (raw && (raw.text || raw.providers || raw.appts)) ? raw : (raw && raw.resp ? raw.resp : null);
+      var resp = (raw && (raw.text || raw.providers || raw.providerRoster || raw.appts)) ? raw : (raw && raw.resp ? raw.resp : null);
       if (resp) ingestResp(resp);
     });
   }
@@ -326,7 +445,13 @@
     recoverFromText: recoverFromText,
     ingestResp: ingestResp,
     sweepSchedRaw: sweepSchedRaw,
+    list: listEntries,
+    providers: function () { return listEntries().map(function (e) { return e.name; }); },
+    merge: mergeEntries,
+    resolve: resolveProvider,
+    getReceipt: function () { return lastReceipt || normalizeReceipt(null, listEntries().length, 'not-yet-verified'); },
     getDiag: function () { return lastDiag; },
+    _makeEntry: makeEntry,
     _looksLikeProviderHeader: looksLikeProviderHeader,
     _cleanProvider: cleanProvider,
     _patientNameFromRow: patientNameFromRow,

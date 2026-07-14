@@ -1,4 +1,4 @@
-/* feat_mls_find_doctors.js  ->  window.__mlsFindDoctors  (v1.0.0)  [item54]
+/* feat_mls_find_doctors.js  ->  window.__mlsFindDoctors  (v1.0.2)  [item54]
  *
  * FIX #2 -- real doctor names + a "Find Doctors" button that scopes the pull.
  *
@@ -27,7 +27,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.0.1", ASSET = "feat_mls_find_doctors.js", STYLE_ID = "mlsFindDocStyle", BTN_ID = "mlsFindDocBtn", MODAL_ID = "mlsFindDocModal";
+  var VERSION = "1.0.2", ASSET = "feat_mls_find_doctors.js", STYLE_ID = "mlsFindDocStyle", BTN_ID = "mlsFindDocBtn", MODAL_ID = "mlsFindDocModal";
   try { if (window.__mlsFindDoctors && window.__mlsFindDoctors.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -59,7 +59,14 @@
       var ks = Object.keys(p);
       var isChar = ks.length > 0 && ks.every(function (k) { return /^\d+$/.test(k); });
       if (isChar) { var s = ""; for (var j = 0; j < ks.length; j++) s += p[j]; return { id: null, raw: s, name: humanize(s) }; }
-      if (p.name) return { id: (p.id != null ? p.id : null), raw: p.name, name: humanize(p.name) };
+      if (p.name) {
+        var sid = p.id;
+        if (sid == null || String(sid).trim() === '') sid = p.providerId;
+        if (sid == null || String(sid).trim() === '') sid = p.provider_id;
+        if (sid == null || String(sid).trim() === '') sid = p.doctor_user_id;
+        if (sid == null || String(sid).trim() === '') sid = p.user_id;
+        return { id: (sid != null && String(sid).trim() !== '' ? sid : null), raw: p.name, name: humanize(p.name) };
+      }
     }
     return null;
   }
@@ -69,13 +76,26 @@
     try {
       var list = window._calProviders;
       if (!Array.isArray(list)) return;
-      var seen = {}, out = [], changed = false;
+      var seenIds = {}, seenNames = {}, idBackedNames = {}, out = [], changed = false;
+      for (var p = 0; p < list.length; p++) {
+        var pe = entryToProv(list[p], p);
+        if (pe && pe.name && pe.id != null) idBackedNames[pe.name.toLowerCase()] = 1;
+      }
       for (var i = 0; i < list.length; i++) {
         var e = entryToProv(list[i], i);
         if (e && e.name) {
           var key = e.name.toLowerCase();
-          if (seen[key]) { changed = true; continue; }   /* collapse duplicates -> prevents unbounded growth from roster re-append */
-          seen[key] = 1;
+          if (e.id != null) {
+            var ik = String(e.id);
+            if (seenIds[ik]) { changed = true; continue; }
+            seenIds[ik] = 1;
+          } else {
+            /* Raw schedule labels are often appended after the API roster.
+               Collapse that id-less echo, but never collapse two real IDs just
+               because the clinicians share a display name. */
+            if (idBackedNames[key] || seenNames[key]) { changed = true; continue; }
+            seenNames[key] = 1;
+          }
           out.push({ id: e.id, name: e.name, raw: e.raw, specialty: (list[i] && list[i].specialty) || null });
         } else { out.push(list[i]); }                    /* keep unrecognizable entries as-is (no data loss) */
       }
@@ -90,7 +110,7 @@
     for (var i = 0; i < list.length; i++) {
       var e = entryToProv(list[i], i);
       if (!e || !e.name) continue;
-      var k = e.name.toLowerCase(); if (seen[k]) continue; seen[k] = 1;
+      var k = e.id != null ? ('id:' + String(e.id)) : ('name:' + e.name.toLowerCase()); if (seen[k]) continue; seen[k] = 1;
       out.push(e);
     }
     return out;

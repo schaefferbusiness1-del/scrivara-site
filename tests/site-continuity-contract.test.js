@@ -42,13 +42,16 @@ assert(apptMins.includes('_apptMinsTz(a.start_at)'), 'up-now selection must pref
 assert(apptMins.includes('([AaPp])'), 'up-now selection must understand AM/PM schedule labels');
 
 // Operative-note drafting must carry the immutable appointment/chart id and full history.
-const opCtx = app.slice(app.indexOf('function _opPatientCtx'), app.indexOf('function _opNewRow', app.indexOf('function _opPatientCtx')));
-assert(opCtx.includes('patientId') && opCtx.includes("String(x.id)===String(patientId)"), 'op notes must resolve an exact chart id first');
+const opCtx = app.slice(app.indexOf('function _opResolvePatient(name,dob,patientId)'), app.indexOf('function _opNewRow', app.indexOf('function _opResolvePatient(name,dob,patientId)')));
+assert(opCtx.includes('function _opResolvePatient(name,dob,patientId)') && opCtx.includes("String(x&&x.id||'')===pid"), 'op notes must resolve an exact chart id first');
+assert(opCtx.includes("if(nm && String(byId.name||'')") && opCtx.includes("if(dk && _opDobKey(byId.dob)!==dk)"), 'op-note identity must reject a mismatched name or DOB even when an id is supplied');
 assert(opCtx.includes('compilePatientRecord(p)'), 'op notes must compile the attached patient history');
-const opGenerate = app.slice(app.indexOf('async function opPrepGenerateOne'), app.indexOf('function _opResolvePatient', app.indexOf('async function opPrepGenerateOne')));
-assert(opGenerate.includes('row.appt.patientId') && opGenerate.includes('_genOpNote'), 'op-note generation must pass the appointment chart id into drafting');
+const opGenerate = app.slice(app.indexOf('async function opPrepGenerateOne'), app.indexOf('/* Save (or update)', app.indexOf('async function opPrepGenerateOne')));
+assert(opGenerate.includes('_opPatientCtx(row.appt.name,row.appt.dob,row.patientId)') && opGenerate.includes('_genOpNote'), 'op-note generation must pass the immutable patient id and DOB into drafting');
 assert(app.includes('PATIENT CHART / PRIOR HISTORY') && app.includes('ctx.history'), 'the drafting prompt must receive the attached chart history');
-assert(app.includes('function _opResolvePatient(row)') && app.includes('if(!p && row._patientAmbiguous) return;'), 'draft autosave must refuse an ambiguous same-name chart');
+const opAutosave = app.slice(app.indexOf('function opPrepAutosaveDraft'), app.indexOf('async function opPrepGenerateAll', app.indexOf('function opPrepAutosaveDraft')));
+assert(opAutosave.includes('_opResolvePatient(row.appt.name,row.appt.dob,row.patientId)') && opAutosave.includes('if(!p)'), 'draft autosave must refuse an unverified or ambiguous chart');
+assert(!opAutosave.includes("source:'athena-schedule'"), 'draft autosave must never manufacture a patient from a schedule label');
 
 // Attorney requests may suggest a chart only when there is one unambiguous match.
 const legalMatch = app.slice(app.indexOf('function _legalMatchPatient'), app.indexOf('function setLegalAttachedPatient', app.indexOf('function _legalMatchPatient')));

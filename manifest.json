@@ -8,6 +8,7 @@
     "tabs",
     "activeTab",
     "scripting",
+    "webNavigation",
     "alarms",
     "offscreen"
   ],

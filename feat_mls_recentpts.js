@@ -112,10 +112,11 @@
         if(loc.anchor&&loc.anchor.parentNode===loc.bar) loc.bar.insertBefore(existing,loc.anchor);
         else loc.bar.appendChild(existing);
       }
-      existing.innerHTML='<button type="button" class="mrp-btn" title="Jump back to a recent chart">↻ Recent ('+others.length+') ▾</button>';
+      var html='<button type="button" class="mrp-btn" title="Jump back to a recent chart">↻ Recent ('+others.length+') ▾</button>';
+      if(existing.innerHTML!==html) existing.innerHTML=html;
       var btn=existing.querySelector('.mrp-btn');
-      if(btn)btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();
-        if(document.getElementById(MENU_ID)){closeMenu();}else{openMenu(existing);}});
+      if(btn&&!btn.__mlsRecentBound){btn.__mlsRecentBound=true;btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();
+        if(document.getElementById(MENU_ID)){closeMenu();}else{openMenu(existing);}});}
       attachObs(loc.bar);
     }catch(e){}
   }

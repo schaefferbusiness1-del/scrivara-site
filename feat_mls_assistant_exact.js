@@ -1,4 +1,4 @@
-/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.3)
+/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.4)
  *
  *  THE full design-language MLS Assistant panel (Slice 3 of the Assistant rework).
  *  STAGING-FIRST, then prod via the data: staging marker (self-gated exactly like the
@@ -48,7 +48,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "asst-2.1.3";
+  var VERSION = "asst-2.1.4";
   try { if (window.__mlsAsst && window.__mlsAsst.installed) return; } catch (e) { return; }
 
   /* ---------- self-gate: staging page OR prod staging-marker (active on both) ---------- */
@@ -273,24 +273,39 @@
     if (nm && idx.byName[nm]) return idx.byName[nm];
     return null;
   }
-  function providerId(name) {
-    var list = providers();
-    for (var i = 0; i < list.length; i++) {
-      var nm = (list[i].name || list[i].displayName || "").toString();
-      if (nm && nm.toLowerCase() === String(name || "").toLowerCase()) return list[i].id;
-    }
-    return null;
+  function providerTokenKey(raw) {
+    var noise = { dr:1, doctor:1, md:1, do:1, np:1, pa:1, c:1, pac:1, aprn:1, fnp:1, dnp:1, rn:1, crnp:1, dpm:1, dds:1, dmd:1, phd:1, mbbs:1, od:1 };
+    var seen = {}, t = String(raw == null ? "" : raw).toLowerCase().replace(/[_/]+/g, " ").replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(function (x) { if (!x || noise[x] || seen[x]) return false; seen[x] = 1; return true; });
+    if (t.length < 2) return ""; t.sort(); return t.join("|");
   }
+  function resolveProvider(ref) {
+    if (!ref || /^(all|all doctors|all providers)$/i.test(String(ref))) return null;
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    if (roster && isFn(roster.resolve)) { var rr = safe(function () { return roster.resolve(ref); }, null); if (rr) return rr; }
+    var raw = ref && typeof ref === "object" ? (ref.stableKey || ref.id || ref.raw || ref.name || "") : String(ref);
+    if (String(raw).indexOf("pv:") === 0) { try { raw = decodeURIComponent(String(raw).slice(3)); } catch (e) { return null; } }
+    raw = String(raw || "").trim(); var list = providers(), hits = [];
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i] || {}, id = p.id || p.providerId || p.provider_id || "", stable = p.stableKey || (id ? ("backend:" + id) : ""), nm = String(p.name || p.displayName || p.raw || p.provider || "").trim(), pr = String(p.raw || p.provider_raw || p.provider || nm).trim();
+      if (stable === raw || (id && String(id) === raw) || pr.toLowerCase() === raw.toLowerCase() || nm.toLowerCase() === raw.toLowerCase()) hits.push(p);
+    }
+    return hits.length === 1 ? hits[0] : null;
+  }
+  function providerId(name) { var p = resolveProvider(name); return p && p.id != null ? p.id : null; }
 
   /* ---------- the honest day list for an EXPLICIT date (NO silent fallback) ---------- */
   function dayList(dateStr, provider) {
     var all = appts(), idx = buildIndex();
     var pool = all.filter(function (a) { return apptDate(a) === dateStr; });
     if (provider && !/all/i.test(provider)) {
-      var pid = providerId(provider);
-      if (pid != null) {
-        var narrowed = pool.filter(function (a) { return a.doctor_user_id != null && String(a.doctor_user_id) === String(pid); });
-        if (narrowed.length) pool = narrowed;   /* only narrow when it actually leaves someone */
+      var resolved = resolveProvider(provider);
+      if (!resolved) return []; /* explicit selection cannot silently become All */
+      var pid = resolved.id != null && String(resolved.id).trim() ? String(resolved.id) : "";
+      if (pid) pool = pool.filter(function (a) { return a.doctor_user_id != null && String(a.doctor_user_id) === pid; });
+      else {
+        var pk = providerTokenKey(resolved.raw || resolved.name || "");
+        if (!pk) return [];
+        pool = pool.filter(function (a) { return providerTokenKey(a.provider || a.provider_raw || a.provider_name || "") === pk; });
       }
     }
     pool = pool.slice().sort(function (a, b) { return String(a.start_at || a.appt_date || "").localeCompare(String(b.start_at || b.appt_date || "")); });
@@ -316,12 +331,16 @@
   /* ---------- provider <option>s (dynamic, from _calProviders) ---------- */
   function providerOptionsHTML(selected) {
     try { if (window.__mlsPick && isFn(window.__mlsPick.providerOptionsHTML)) return window.__mlsPick.providerOptionsHTML(selected); } catch (e) {}
-    var sel = selected || "All doctors";
-    var opts = ['<option' + (/all/i.test(sel) ? " selected" : "") + ">All doctors</option>"];
-    var list = providers();
+    var sel = selected || "all";
+    var opts = ['<option value="all"' + (/^(all|all doctors)$/i.test(sel) ? " selected" : "") + '>All doctors</option>'];
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var list = roster && isFn(roster.list) ? (safe(function () { return roster.list(); }, []) || []) : providers();
+    var counts = {}; list.forEach(function (p) { var n = String((p && (p.name || p.displayName || p.raw || p.provider)) || "").trim().toLowerCase(); counts[n] = (counts[n] || 0) + 1; });
     for (var i = 0; i < list.length; i++) {
-      var nm = (list[i].name || list[i].displayName || ("Provider " + (list[i].id || (i + 1)))).toString();
-      opts.push("<option" + (nm === sel ? " selected" : "") + ">" + esc(nm) + "</option>");
+      var p = list[i] || {}, nm = String(p.name || p.displayName || p.raw || p.provider || "").trim(); if (!nm) continue;
+      var id = p.id || p.providerId || p.provider_id || "", stable = p.stableKey || (id ? ("backend:" + id) : ("legacy-name:" + nm.toLowerCase())), value = "pv:" + encodeURIComponent(stable), label = nm;
+      if (counts[nm.toLowerCase()] > 1) label += " - " + (id ? ("ID " + id) : (p.raw && p.raw !== nm ? p.raw : (p.source || stable)));
+      opts.push('<option value="' + esc(value) + '"' + (value === sel ? " selected" : "") + ">" + esc(label) + "</option>");
     }
     return opts.join("");
   }

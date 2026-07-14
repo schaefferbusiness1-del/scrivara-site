@@ -35,7 +35,7 @@
   /* v1.55: mlsAppGoHome added — the app-side day/month history orchestrator needs to
      return athenaOne to the CLINICAL SCHEDULE (home) between patients so each patient's
      row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -69,8 +69,7 @@
   /* v2 Athena mutations are armed only by a real, freshly trusted click on the
      exact action button. Page scripts cannot manufacture Event.isTrusted. The
      arm is short-lived and consumed by the first matching bridge request. */
-  var _mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '' };
-  globalThis.__mlsAdvancedWriteArm = { until: 0, serial: '' };
+  var _mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
   function _mlsGestureSerial() {
     try { var a = new Uint32Array(4); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (n) { return n.toString(16); }).join(''); }
     catch (e) { return String(Date.now()) + '-' + String(Math.random()).slice(2); }
@@ -81,6 +80,7 @@
     if (action === 'stage_billing') return /\bconfirm\s+stage\s+billing\s+codes?\b/i.test(label);
     if (action === 'save_draft') return /\bconfirm\s+save\s+draft(?:\s+in\s+athena)?\b/i.test(label);
     if (action === 'sign_encounter') return /\bconfirm\s+sign\s*(?:&|and)\s*save(?:\s+in\s+athena)?\b/i.test(label);
+    if (action === 'place_order') return /\bconfirm\s*(?:&|and)?\s*place\s+(?:one\s+)?(?:reviewed\s+)?order\b/i.test(label);
     return false;
   }
   try {
@@ -98,16 +98,15 @@
           if (actionable) {
             try { var cs = getComputedStyle(t), rect = t.getBoundingClientRect(); actionable = cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0.05 && rect.width > 2 && rect.height > 2; } catch (eVisible) { actionable = false; }
           }
-          if (actionable && /^(write_note|stage_billing|save_draft|sign_encounter)$/.test(action) && _mlsActionLabelMatches(action, label)) {
+          if (actionable && /^(write_note|stage_billing|save_draft|sign_encounter|place_order)$/.test(action) && _mlsActionLabelMatches(action, label)) {
             _mlsAthenaActionGesture = {
               action: action,
               until: Date.now() + 20000,
               serial: _mlsGestureSerial(),
-              previewHash: String(actionEl.getAttribute('data-mls-preview-hash') || '').slice(0, 160)
+              previewHash: String(actionEl.getAttribute('data-mls-preview-hash') || '').slice(0, 160),
+              rowHash: String(actionEl.getAttribute('data-mls-row-hash') || '').slice(0, 160),
+              clientOrderId: String(actionEl.getAttribute('data-mls-client-order-id') || '').slice(0, 160)
             };
-          }
-          if (t.getAttribute('data-mls-advanced-write') === '1' && !t.disabled && /^write selected drafts$/i.test(label)) {
-            globalThis.__mlsAdvancedWriteArm = { until: Date.now() + 20000, serial: _mlsGestureSerial() };
           }
         } catch (e) {}
       }, true);
@@ -125,7 +124,7 @@
     if (!mlsTrustedOrigin(e.origin)) return;
     var origin = e.origin;
     var reply = function (payload) { try { window.postMessage(payload, origin); } catch (err) {} };
-    if (d.type === 'mlsPing') { var __v = ''; try { __v = chrome.runtime.getManifest().version; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', version: __v }); return; }
+    if (d.type === 'mlsPing') { var __v = ''; try { __v = chrome.runtime.getManifest().version; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', version: __v, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true } }); return; }
     if (d.type === 'mlsAppCapture') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsAppCaptureRequest' }, function (resp) {
@@ -161,19 +160,21 @@
     // Pull TODAY'S SCHEDULE from the EMR tab (Athena) so MLS can pre-load the day's patients.
     if (d.type === 'mlsAppPullSchedule') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppScheduleRequest' }, function (resp) {
-          reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: resp || { error: 'no response' } });
+        chrome.runtime.sendMessage({ type: 'mlsAppScheduleRequest', id: mlsStr(d.id, 80) }, function (resp) {
+          var out = resp || { error: 'no response' }; if (d.id && !out.id) { out = Object.assign({}, out, { id: mlsStr(d.id, 80) }); }
+          reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', id: mlsStr(d.id, 80), resp: out });
         });
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', resp: { error: 'extension error' } }); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppScheduleResult', id: mlsStr(d.id, 80), resp: { id: mlsStr(d.id, 80), error: 'extension error' } }); }
     }
     // v1.51: navigate the athena schedule to a specific DATE (read-only navigation;
     // probe:true just reports whether hands-free date-nav is available on this view).
     if (d.type === 'mlsAppGotoDate') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe }, function (resp) {
-          reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', resp: resp || { error: 'no response' } });
+        chrome.runtime.sendMessage({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe, id: mlsStr(d.id, 80) }, function (resp) {
+          var out = resp || { error: 'no response' }; if (d.id && !out.id) { out = Object.assign({}, out, { id: mlsStr(d.id, 80) }); }
+          reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', id: mlsStr(d.id, 80), resp: out });
         });
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', resp: { error: 'extension error' } }); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', id: mlsStr(d.id, 80), resp: { id: mlsStr(d.id, 80), error: 'extension error' } }); }
     }
     // v1.55: return athenaOne to the CLINICAL SCHEDULE (home) by clicking the athenaOne
     // Home logo. Read-only navigation. Lets the app-side day/month orchestrator re-ground
@@ -244,7 +245,14 @@
     if (d.type === 'mlsAppReadChart') {
       try {
         var chartRequestId = mlsStr(d.requestId, 100);
-        chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: mlsStr(d.patient, 200) }, function (resp) {
+        chrome.runtime.sendMessage({
+          type: 'mlsAppChartRequest',
+          patient: mlsStr(d.patient, 200),
+          patientDob: mlsStr(d.patientDob || d.dob, 20),
+          patientMrn: mlsStr(d.patientMrn || d.mrn || d.athenaId, 40),
+          patientId: mlsStr(d.patientId, 100),
+          requestId: chartRequestId
+        }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: chartRequestId, resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: mlsStr(d.requestId, 100), resp: { error: 'extension error' } }); }
@@ -266,8 +274,9 @@
           navigates the chart frame to the Visits pane), and re-verify
           chartName/chartDob/chartMrn on the response before ingesting.
         - the athenaOne tab should be visible/foreground during the read.
-        - dedup limitation: two byte-identical same-day pane rows collapse
-          into one entry. */
+        - every DOM row is retained through the read receipt; downstream
+          reconciliation may merge only records with the same verified visit
+          identity, never merely because their visible text is identical. */
     if (d.type === 'mlsAppReadVisits') {
       try {
         var visitPatient = mlsStr(d.patient || d.name, 200);
@@ -383,6 +392,42 @@
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppSignAndSaveResult', resp: { error: 'extension error' } }); }
     }
+    /* Read-only destination teaching. The app supplies an immutable row and
+       patient/writeflow binding. The background owns the one signed-in Athena
+       tab watcher and streams explicit progress back through this trusted
+       origin. No in-app click fallback exists. */
+    if (d.type === 'mlsAppTeachStart' || d.type === 'mlsAppTeachCancel') {
+      function safeTeachPatient(v) {
+        v = v && typeof v === 'object' ? v : {};
+        return { name: mlsStr(v.name, 200), dob: mlsStr(v.dob, 40), mrn: mlsStr(v.mrn || v.athenaId, 80), patientId: mlsStr(v.patientId || v.id, 200) };
+      }
+      function safeTeachContext(v) {
+        v = v && typeof v === 'object' ? v : {};
+        return { appointmentId: mlsStr(v.appointmentId || v.id, 160), encounterId: mlsStr(v.encounterId, 100), encounterUrl: mlsStr(v.encounterUrl, 1000), visitDate: mlsStr(v.visitDate, 40), provider: mlsStr(v.provider, 200) };
+      }
+      function safeTeachBinding(v) {
+        v = v && typeof v === 'object' ? v : {};
+        return {
+          schema: mlsStr(v.schema, 80), contextHash: mlsStr(v.contextHash, 160), action: mlsStr(v.action, 80), kind: mlsStr(v.kind, 80),
+          rowId: mlsStr(v.rowId, 180), rowHash: mlsStr(v.rowHash, 160), manifestHash: mlsStr(v.manifestHash, 160), previewHash: mlsStr(v.previewHash, 160),
+          patientHash: mlsStr(v.patientHash, 160), visitHash: mlsStr(v.visitHash, 160)
+        };
+      }
+      var teachRequestId = mlsStr(d.requestId, 120);
+      try {
+        chrome.runtime.sendMessage({
+          type: d.type === 'mlsAppTeachStart' ? 'mlsAppTeachStartRequest' : 'mlsAppTeachCancelRequest',
+          requestId: teachRequestId, action: mlsStr(d.action, 80), binding: safeTeachBinding(d.binding),
+          expectedPatient: safeTeachPatient(d.patient || d.expectedPatient), expectedContext: safeTeachContext(d.expectedContext),
+          timeoutMs: Math.max(5000, Math.min(60000, Number(d.timeoutMs || 60000)))
+        }, function (resp) {
+          reply({ source: 'mls-ext', type: d.type === 'mlsAppTeachStart' ? 'mlsAppTeachStartResult' : 'mlsAppTeachCancelResult', requestId: teachRequestId, resp: resp || { ok: false, state: 'failed', reason: 'no-response', message: 'MLS Assist returned no watcher response.' } });
+        });
+      } catch (errTeach) {
+        reply({ source: 'mls-ext', type: d.type === 'mlsAppTeachStart' ? 'mlsAppTeachStartResult' : 'mlsAppTeachCancelResult', requestId: teachRequestId, resp: { ok: false, state: 'failed', reason: 'extension-error', message: 'MLS Assist could not start the read-only watcher.' } });
+      }
+      return;
+    }
     /* Supervised typed Athena actions. `probe` is read-only and obtains one
        short-lived background token. An execute request additionally consumes a
        fresh trusted-click arm captured from data-mls-athena-action above. */
@@ -393,29 +438,36 @@
          mode:'probe'|'execute' plus the concrete action. */
       if (!athMode && athAction === 'probe') { athMode = 'probe'; athAction = String(d.targetAction || '').toLowerCase().trim(); }
       var mutating = athMode === 'execute';
-      if (!/^(probe|execute)$/.test(athMode) || !/^(write_note|stage_billing|save_draft|sign_encounter)$/.test(athAction)) {
-        reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'bad-action', error: 'Choose write_note, stage_billing, save_draft, or sign_encounter.' } });
+      if (!/^(probe|execute)$/.test(athMode) || !/^(write_note|stage_billing|save_draft|sign_encounter|place_order)$/.test(athAction)) {
+        reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'bad-action', error: 'Choose one typed note, billing, save, sign, or single reviewed-order action.' } });
         return;
       }
       var previewHash = mlsStr(d.previewHash, 160);
+      var orderRowHash = mlsStr(d.rowHash, 160);
+      var orderClientOrderId = mlsStr(d.clientOrderId || (d.order && d.order.clientOrderId) || (d.payload && d.payload.order && d.payload.order.clientOrderId), 160);
+      if (athAction === 'place_order' && ((typeof d.rowHash === 'string' && d.rowHash.length > 160) || (typeof d.clientOrderId === 'string' && d.clientOrderId.length > 160))) {
+        reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'order-row-mismatch', error: 'The immutable order-row binding exceeds the exact transport limit.' } });
+        return;
+      }
       var gestureProof = '';
       if (mutating) {
         var arm = _mlsAthenaActionGesture || {};
         var armHashOk = !!arm.previewHash && !!previewHash && arm.previewHash === previewHash;
-        if (arm.action !== athAction || Date.now() > Number(arm.until || 0) || !armHashOk || !arm.serial) {
+        var exactOrderArm = athAction !== 'place_order' || (!!orderRowHash && !!orderClientOrderId && arm.rowHash === orderRowHash && arm.clientOrderId === orderClientOrderId);
+        if (arm.action !== athAction || Date.now() > Number(arm.until || 0) || !armHashOk || !exactOrderArm || !arm.serial) {
           reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'fresh-trusted-click-required', error: 'Click the matching Athena action button again before continuing.' } });
           return;
         }
         gestureProof = arm.serial;
-        _mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '' }; // consumed once
+        _mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' }; // consumed once
       }
       function safePatient(v) {
         v = (v && typeof v === 'object') ? v : {};
-        return { name: mlsStr(v.name, 200), dob: mlsStr(v.dob, 40), mrn: mlsStr(v.mrn || v.athenaId, 80) };
+        return { name: mlsStr(v.name, 200), dob: mlsStr(v.dob, 40), mrn: mlsStr(v.mrn || v.athenaId, 80), patientId: mlsStr(v.patientId || v.id, 200) };
       }
       function safeContext(v) {
         v = (v && typeof v === 'object') ? v : {};
-        return { encounterId: mlsStr(v.encounterId, 100), encounterUrl: mlsStr(v.encounterUrl, 1000), visitDate: mlsStr(v.visitDate, 40), provider: mlsStr(v.provider, 200) };
+        return { appointmentId: mlsStr(v.appointmentId || v.id, 160), encounterId: mlsStr(v.encounterId, 100), encounterUrl: mlsStr(v.encounterUrl, 1000), visitDate: mlsStr(v.visitDate, 40), provider: mlsStr(v.provider, 200) };
       }
       function safeBilling(v) {
         v = (v && typeof v === 'object') ? v : {};
@@ -429,6 +481,39 @@
           return { key: mlsStr(s.key, 80), text: mlsStr(s.text, 180000), execute: s.execute === true, destination: mlsStr(s.destination, 160) };
         });
       }
+      function safeTaughtDestination(v) {
+        v = v && typeof v === 'object' ? v : {};
+        return {
+          schema: mlsStr(v.schema, 80), contextHash: mlsStr(v.contextHash, 160), action: mlsStr(v.action, 80), rowId: mlsStr(v.rowId, 180),
+          rowHash: mlsStr(v.rowHash, 160), manifestHash: mlsStr(v.manifestHash, 160), patientHash: mlsStr(v.patientHash, 160), visitHash: mlsStr(v.visitHash, 160),
+          capturedAt: mlsStr(v.capturedAt, 80), expiresAt: Number(v.expiresAt || 0), selector: mlsStr(v.selector, 2000), sectionLabel: mlsStr(v.sectionLabel, 240),
+          label: mlsStr(v.label, 240), framePath: mlsStr(v.framePath, 100), frameUrl: mlsStr(v.frameUrl, 1200), tag: mlsStr(v.tag, 40), targetFingerprint: mlsStr(v.targetFingerprint, 120)
+        };
+      }
+      function safeOrder(v) {
+        v = (v && typeof v === 'object') ? v : {};
+        var rawFields = (v.fields && typeof v.fields === 'object') ? v.fields : {}, fields = {}, error = '';
+        var rawKeys = Object.keys(rawFields);
+        if (rawKeys.length > 32) error = 'unsupported-order-fields';
+        rawKeys.slice(0, 32).sort().forEach(function (key) {
+          if (!/^[a-z][a-z0-9_]{0,39}$/i.test(key)) { error = 'unsupported-order-fields'; return; }
+          if (typeof rawFields[key] !== 'string' || rawFields[key].length > 2000) { error = 'order-field-too-long'; return; }
+          fields[key] = rawFields[key];
+        });
+        var values = {
+          clientOrderId: mlsStr(v.clientOrderId, 160), type: mlsStr(v.type, 60),
+          displayLabel: mlsStr(v.displayLabel, 300), catalogCode: mlsStr(v.catalogCode, 100),
+          catalogId: mlsStr(v.catalogId, 160), query: mlsStr(v.query, 300), fields: fields,
+          reviewStatus: mlsStr(v.reviewStatus, 80), source: mlsStr(v.source, 100)
+        };
+        if ((typeof v.clientOrderId === 'string' && v.clientOrderId.length > 160) || (typeof v.displayLabel === 'string' && v.displayLabel.length > 300) || (typeof v.catalogCode === 'string' && v.catalogCode.length > 100) || (typeof v.catalogId === 'string' && v.catalogId.length > 160) || (typeof v.query === 'string' && v.query.length > 300)) error = 'order-field-too-long';
+        return { value: values, error: error };
+      }
+      var safeOrderResult = safeOrder(d.order || (d.payload && d.payload.order));
+      if (athAction === 'place_order' && safeOrderResult.error) {
+        reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: safeOrderResult.error, error: safeOrderResult.error === 'unsupported-order-fields' ? 'The reviewed order contains unsupported structured fields.' : 'One or more reviewed order fields exceeds the exact transport limit.' } });
+        return;
+      }
       try {
         chrome.runtime.sendMessage({
           type: 'mlsAppAthenaActionV2Request',
@@ -436,17 +521,24 @@
           action: athAction,
           requestId: mlsStr(d.requestId, 100),
           previewHash: previewHash,
+          manifestHash: mlsStr(d.manifestHash, 160),
           actionToken: mlsStr(d.actionToken || d.token, 220),
           noteWriteProof: mlsStr(d.noteWriteProof || (d.payload && d.payload.noteWriteProof), 220),
           expectedPatient: safePatient(d.expectedPatient || d.patient || (d.payload && d.payload.patient)),
           expectedContext: safeContext(d.expectedContext || d.context || (d.payload && d.payload.context)),
-          probeContext: (function (v) { v = (v && typeof v === 'object') ? v : {}; return { patientName: mlsStr(v.patientName, 200), dob: mlsStr(v.dob, 40), mrn: mlsStr(v.mrn, 80), encounterId: mlsStr(v.encounterId, 100), encounterUrl: mlsStr(v.encounterUrl, 1000), visitDate: mlsStr(v.visitDate, 40), provider: mlsStr(v.provider, 200), framePath: mlsStr(v.framePath, 80), encounterRootFingerprint: mlsStr(v.encounterRootFingerprint, 120), controlLabel: mlsStr(v.controlLabel, 200), controlFingerprint: mlsStr(v.controlFingerprint, 120), noteScopeFingerprint: mlsStr(v.noteScopeFingerprint, 120), actionContainerFingerprint: mlsStr(v.actionContainerFingerprint, 120), editorFingerprint: mlsStr(v.editorFingerprint, 120), contextHash: mlsStr(v.contextHash, 120) }; })(d.probeContext || (d.payload && d.payload.probeContext)),
+          probeContext: (function (v) { v = (v && typeof v === 'object') ? v : {}; return { patientName: mlsStr(v.patientName, 200), dob: mlsStr(v.dob, 40), mrn: mlsStr(v.mrn, 80), encounterId: mlsStr(v.encounterId, 100), encounterUrl: mlsStr(v.encounterUrl, 1000), visitDate: mlsStr(v.visitDate, 40), provider: mlsStr(v.provider, 200), framePath: mlsStr(v.framePath, 80), encounterRootFingerprint: mlsStr(v.encounterRootFingerprint, 120), controlLabel: mlsStr(v.controlLabel, 200), controlFingerprint: mlsStr(v.controlFingerprint, 120), noteScopeFingerprint: mlsStr(v.noteScopeFingerprint, 120), actionContainerFingerprint: mlsStr(v.actionContainerFingerprint, 120), editorFingerprint: mlsStr(v.editorFingerprint, 120), contextHash: mlsStr(v.contextHash, 120), taughtDestinationFingerprint: mlsStr(v.taughtDestinationFingerprint, 120), taughtDestinationLabel: mlsStr(v.taughtDestinationLabel, 240) }; })(d.probeContext || (d.payload && d.payload.probeContext)),
           billing: safeBilling(d.billing || (d.payload && d.payload.billing)),
+          order: safeOrderResult.value,
+          rowHash: orderRowHash,
+          clientOrderId: orderClientOrderId,
           noteText: mlsStr(d.noteText != null ? d.noteText : (d.payload && d.payload.noteText), 180000),
           notePolicy: mlsStr(d.notePolicy || (d.payload && d.payload.notePolicy) || 'empty_only', 40),
           sections: safeNoteSections(d.sections || (d.payload && d.payload.sections)),
+          taughtDestination: safeTaughtDestination(d.taughtDestination || (d.payload && d.payload.taughtDestination)),
           userGesture: mutating,
-          gestureProof: gestureProof
+          gestureProof: gestureProof,
+          gestureRowHash: mutating && athAction === 'place_order' ? orderRowHash : '',
+          gestureClientOrderId: mutating && athAction === 'place_order' ? orderClientOrderId : ''
         }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: resp || { ok: false, error: 'no response' } });
         });
@@ -457,6 +549,15 @@
     }
     /* ATHENA_ACTION_V2_BRIDGE_END */
   });
+  /* Background progress is delivered only to the originating trusted MLS app
+     tab, then forwarded to that same origin. */
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (!msg || msg.type !== 'mlsAppTeachProgress' || !mlsTrustedOrigin(location.origin)) return false;
+      try { window.postMessage({ source: 'mls-ext', type: 'mlsAppTeachProgress', requestId: mlsStr(msg.requestId, 120), resp: msg.resp || {} }, location.origin); } catch (e) {}
+      return false;
+    });
+  } catch (eTeachProgress) {}
   // Headless autopilot loop that enters a finished visit into the EMR encounter.
   function _bg(type, payload) { return new Promise(function (res) { try { chrome.runtime.sendMessage(Object.assign({ type: type }, payload || {}), function (r) { res(r || {}); }); } catch (e) { res({}); } }); }
   async function _mlsPushVisit(goal, trustedOrigin, patient) {
@@ -1261,15 +1362,16 @@
   window.addEventListener('message', function (ev) {
     var d = ev && ev.data; if (!d || d.type !== 'mlsAppReadAllVisits' || d.source !== 'mls-app' || !trusted(ev.origin)) return;
     var origin = ev.origin;
+    var requestId = String(d.id || d.requestId || '').slice(0, 100);
     activeOrigin = origin; activeUntil = Date.now() + 300000;
     try {
-      chrome.runtime.sendMessage({ type: 'mlsAppAllVisitsRequest', hint: d.hint || {} }, function (res) {
+      chrome.runtime.sendMessage({ type: 'mlsAppAllVisitsRequest', hint: d.hint || {}, requestId: requestId }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
-        if (err || !res) { post(origin, 'mlsAppAllVisitsResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist' }); return; }
-        var out = {}; for (var k in res) out[k] = res[k]; out.type = 'mlsAppAllVisitsResult';
+        if (err || !res) { post(origin, 'mlsAppAllVisitsResult', { id: requestId, ok: false, error: (err && err.message) || 'No response from MLS Assist' }); return; }
+        var out = {}; for (var k in res) out[k] = res[k]; out.type = 'mlsAppAllVisitsResult'; out.id = requestId;
         post(origin, 'mlsAppAllVisitsResult', out);
       });
-    } catch (e) { post(origin, 'mlsAppAllVisitsResult', { ok: false, error: String((e && e.message) || e) }); }
+    } catch (e) { post(origin, 'mlsAppAllVisitsResult', { id: requestId, ok: false, error: String((e && e.message) || e) }); }
   }, false);
   try {
     chrome.runtime.onMessage.addListener(function (msg) {
@@ -1545,11 +1647,9 @@
 
 
 /* =========================================================================
- * MLS Assist v2.05 - relay for the unified write bridge (APPEND-ONLY).
- * App page posts {type:'mlsAppWriteV2', patient, dob, athenaId, sections[]}
- * -> background mlsAppWriteV2Request -> reply 'mlsAppWriteV2Result'.
- * Sections carry {key,label,text,execute}; order-class keys are forced
- * target-only in the background driver regardless of what arrives here.
+ * Deprecated advanced-section writer. This former mlsAppWriteV2 relay is kept
+ * only as a fail-closed compatibility receipt for stale cached pages. Current
+ * pages must use the unified mlsAppAthenaActionV2 manifest review above.
  * ========================================================================= */
 (function () {
   'use strict';
@@ -1567,26 +1667,9 @@
     function post(type, payload) {
       try { var o = {}; for (var k in payload) o[k] = payload[k]; o.source = 'mls-ext'; o.type = type; window.postMessage(o, origin); } catch (e) {}
     }
-    try {
-      var arm = globalThis.__mlsAdvancedWriteArm || {};
-      if (!arm.serial || Date.now() > Number(arm.until || 0)) {
-        post('mlsAppWriteV2Result', { resp: { ok: false, blocked: true, reason: 'fresh-trusted-click-required', error: 'Click Write selected drafts yourself, then try again.' } });
-        return;
-      }
-      var gestureProof = String(arm.serial);
-      globalThis.__mlsAdvancedWriteArm = { until: 0, serial: '' };
-      chrome.runtime.sendMessage({
-        type: 'mlsAppWriteV2Request',
-        patient: d.patient || '', dob: d.dob || '', athenaId: d.athenaId || '',
-        sections: Array.isArray(d.sections) ? d.sections : [],
-        noReload: d.noReload === true,
-        userGesture: true,
-        gestureProof: gestureProof
-      }, function (res) {
-        var err = chrome.runtime && chrome.runtime.lastError;
-        if (err || !res) { post('mlsAppWriteV2Result', { ok: false, error: (err && err.message) || 'No response from MLS Assist' }); return; }
-        post('mlsAppWriteV2Result', { resp: res });
-      });
-    } catch (e) { post('mlsAppWriteV2Result', { ok: false, error: String((e && e.message) || e) }); }
+    post('mlsAppWriteV2Result', { resp: {
+      ok: false, blocked: true, reason: 'unified-confirmation-required',
+      error: 'This older direct writer is disabled. Refresh MLS and use Review selected Athena routes so the exact immutable manifest and read-only encounter check are shown first.'
+    } });
   }, false);
 })();

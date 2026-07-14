@@ -2012,10 +2012,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="Review exactly what goes to Athena, then choose one independent write, billing, save, or sign action.">Review Athena actions</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
-      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: see exactly what belongs where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders). Write, billing, and Save each require their own exact-encounter check and final confirmation; that final confirmation immediately performs only the named Athena action. Sign &amp; Save unlocks only after this receipt verifies its exact note write, then requires another confirmation. Nothing auto-chains; orders and prescriptions stay separate and manual.</div>
+      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: see exactly what belongs where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders). Write, billing, and Save each require their own exact-encounter check and final confirmation; that final confirmation immediately performs only the named Athena action. Sign &amp; Save unlocks only after this receipt verifies its exact note write, then requires another confirmation. Nothing auto-chains. A supported, complete order can be placed only from its own <b>Review &amp; place in Athena</b> button and separate Confirm; prescriptions and unsupported order types remain manual.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:11px 14px">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">AI suggestions stay suggestions until you add and review them</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
         <div id="visitOrdersBody"></div>
       </div>
       <div id="visitGradeBox" style="display:none;margin-top:12px;background:var(--soft2,#FCFBF8);border:1px solid var(--line);border-radius:12px;padding:13px 15px"></div>
@@ -9643,6 +9643,16 @@ function savePatient(){
 }
 
 /* ---------- PROFILE RENDER ---------- */
+function _athenaProfileEmptyText(p,key,fallback){
+  try{
+    var receipt=p&&p.athenaProfileCoverage, card=receipt&&receipt.cards&&receipt.cards[key];
+    if(receipt&&receipt.complete===true&&receipt.exactIdentityVerified===true&&String(receipt.patientId||'')===String(p&&p.id||'')&&card&&card.status==='not_documented'){
+      var when=String(receipt.capturedAt||'').slice(0,10);
+      return 'Athena chart verified'+(when?' '+when:'')+': none documented.';
+    }
+  }catch(e){}
+  return fallback;
+}
 function fieldBody(elId,txt,placeholder){
   const el=document.getElementById(elId);
   if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', '); else if(txt!=null && typeof txt!=='string') txt=String(txt);
@@ -9668,10 +9678,10 @@ function renderProfile(){
   const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
   document.getElementById('profDemo').textContent=demo||'No demographics on file (optional).';
   try{ if(typeof _renderProfAtGlance==='function') _renderProfAtGlance(p); }catch(e){}
-  fieldBody('profProblems',p.problems,'No problems recorded. Generate a visit or analyze a document to populate, or edit.');
-  fieldBody('profMeds',p.meds,'No medications recorded.');
-  fieldBody('profAllergies',p.allergies,'No allergies recorded.');
-  fieldBody('profSummary',p.summary,'No summary yet. The AI updates this from visits & documents; you can also edit it.');
+  fieldBody('profProblems',p.problems,_athenaProfileEmptyText(p,'problems','No problems recorded. Generate a visit or analyze a document to populate, or edit.'));
+  fieldBody('profMeds',p.meds,_athenaProfileEmptyText(p,'meds','No medications recorded.'));
+  fieldBody('profAllergies',p.allergies,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
+  fieldBody('profSummary',p.summary,_athenaProfileEmptyText(p,'summary','No summary yet. The AI updates this from visits & documents; you can also edit it.'));
   renderInsurance(p);
   renderDocs(p);
   renderPtTimeline(p);
@@ -10079,30 +10089,51 @@ function _ptAge(dob){ try{ if(!dob) return null; var d=new Date(dob); if(isNaN(d
 function _ptBmi(p){ try{ if(!p) return null; if(p.bmi){ var b=parseFloat(p.bmi); if(b>0) return b; } var hay=[p.summary,p.vitals,p.problems,p.note].filter(Boolean).join(' \n '); var m=String(hay).match(/\bBMI\b[^0-9]{0,8}(\d{2}(?:\.\d)?)/i); if(m){ var v=parseFloat(m[1]); if(v>=10&&v<=90) return v; } return null; }catch(e){ return null; } }
 /* Spinal-needle length usually scales with body habitus: heavier patients need a longer needle. */
 function _predictNeedleSize(bmi){ if(bmi==null) return ''; return (bmi>=30) ? '5.0' : '3.5'; }
-/* Gather everything we already know about this patient for the op note (so it auto-fills, no prompt). */
-function _opPatientCtx(name, patientId){
+/* Resolve op-note ownership by immutable patient id, or by one unique exact name+DOB pair.
+   Never use a display-name-only match: two patients can legitimately have the same name. */
+function _opDobKey(v){
+  var s=String(v||'').trim(); if(!s) return '';
+  var m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/); if(m) return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);
+  m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); if(m) return m[3]+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2);
+  return s.toLowerCase();
+}
+function _opResolvePatient(name,dob,patientId){
   try{
     var pts=(typeof getPatients==='function'?getPatients():[])||[];
-    var nm=String(name||'').trim().toLowerCase();
-    var p=patientId?pts.find(function(x){ return String(x.id)===String(patientId); }):null;
-    if(!p){ var matches=pts.filter(function(x){ return String(x.name||'').trim().toLowerCase()===nm; }); if(matches.length===1) p=matches[0]; }
+    var pid=String(patientId||'').trim(), nm=String(name||'').trim().toLowerCase().replace(/\s+/g,' '), dk=_opDobKey(dob);
+    if(pid){
+      var byId=pts.find(function(x){ return String(x&&x.id||'')===pid; })||null;
+      if(!byId) return null;
+      if(nm && String(byId.name||'').trim().toLowerCase().replace(/\s+/g,' ')!==nm) return null;
+      if(dk && _opDobKey(byId.dob)!==dk) return null;
+      return byId;
+    }
+    if(!nm||!dk) return null;
+    var exact=pts.filter(function(x){ return String(x&&x.name||'').trim().toLowerCase().replace(/\s+/g,' ')===nm && _opDobKey(x&&x.dob)===dk; });
+    return exact.length===1?exact[0]:null;
+  }catch(e){ return null; }
+}
+/* Gather everything we already know about this exact patient for the op note. */
+function _opPatientCtx(name,dob,patientId){
+  try{
+    var p=_opResolvePatient(name,dob,patientId);
     if(!p) return {};
     var history='';
     try{ if(typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
-    if(!history){ history=['Problems: '+String(p.problems||''),'Medications: '+String(p.meds||p.medications||''),'Allergies: '+String(p.allergies||''),'Chart summary: '+String(p.summary||'')].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
-    return { patientId:String(p.id||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||''), history:String(history||'').slice(0,14000) };
+    if(!history){ history=['Problems: '+String(p.problems||''),'Medications: '+String(p.meds||p.medications||''),'Allergies: '+String(p.allergies||''),'Chart summary: '+String(p.summary||''),'Vitals: '+String(p.vitals||''),'History & background: '+String(p.background||p.history||'')].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
+    return { patientId:String(p.id||''), name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||''), history:String(history||'').slice(0,14000) };
   }catch(e){ return {}; }
 }
 function _opNewRow(name, reason, dob, dateStr, patientId){
   var rank=_opRankTemplates(reason||'');
-  return { appt:{name:name, reason:reason||'', dob:dob||'', patientId:String(patientId||'')}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
+  return { patientId:String(patientId||''), appt:{name:name, reason:reason||'', dob:dob||'', patientId:String(patientId||'')}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
 }
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
 function _opApptsForDay(key){
   try{ return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
-    .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', patientId:String(a.patient_external_id||''), time:_apptHHMMTz(a.start_at)}; })
+    .map(function(a){ return {patientId:String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||''), name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at)}; })
     .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
 function openOpPrep(dayKey){
@@ -10120,7 +10151,13 @@ function opPrepSetDayTomorrow(){ var d=new Date(); d.setDate(d.getDate()+1); ope
 function openOpPrepForPatient(pid){
   var p=null; try{ var pts=(typeof getPatients==='function'?getPatients():[])||[]; p=pid?pts.find(function(x){return x.id===pid;}):(typeof activePatient==='function'?activePatient():null); }catch(e){}
   if(!p){ try{ toast('Open a patient first, then draft their op note.','err'); }catch(e){} return; }
-  var reason=''; try{ var ap=((window._calAppts||[])||[]).filter(function(a){ return String(a.patient_external_id||'')===p.id || String(a.name||'').trim().toLowerCase()===String(p.name||'').trim().toLowerCase(); }).sort(function(a,b){ return String(b.start_at||'').localeCompare(String(a.start_at||'')); })[0]; if(ap) reason=ap.reason||p.reason||''; else reason=p.reason||''; }catch(e){}
+  var reason=''; try{
+    var cal=((window._calAppts||[])||[]), exactId=cal.filter(function(a){ return String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||'')===String(p.id||''); });
+    var exactDob=cal.filter(function(a){ return String(a.name||'').trim().toLowerCase().replace(/\s+/g,' ')===String(p.name||'').trim().toLowerCase().replace(/\s+/g,' ') && _opDobKey(a.dob) && _opDobKey(a.dob)===_opDobKey(p.dob); });
+    var matches=exactId.length?exactId:(exactDob.length===1?exactDob:[]);
+    var ap=matches.sort(function(a,b){ return String(b.start_at||'').localeCompare(String(a.start_at||'')); })[0];
+    if(ap) reason=ap.reason||p.reason||''; else reason=p.reason||'';
+  }catch(e){}
   window._opPrepMode='patient'; window._opPrepPatientId=p.id; window._opPrepPatientName=p.name;
   window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date(_acctTodayKey()+'T12:00')).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}), p.id) ];
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
@@ -10244,7 +10281,8 @@ async function opPrepGenerateOne(i){
   if(!tpl){ try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
   var st=document.getElementById('opPrepStatus'); if(st) st.textContent='Drafting '+row.appt.name+'’s op note…';
   try{
-    var ctx=_opPatientCtx(row.appt.name,row.appt.patientId); row._ctx=ctx; // exact chart id first; full chart/history is drafting context
+    var ctx=_opPatientCtx(row.appt.name,row.appt.dob,row.patientId); row._ctx=ctx;
+    if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} return; }
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
@@ -10256,29 +10294,18 @@ async function opPrepGenerateOne(i){
     if(st) st.textContent='Drafted '+row.appt.name+'’s op note'+(nblank?(' — '+nblank+' blank'+(nblank===1?'':'s')+' to confirm'):'')+' · saved as a draft to History.';
   }catch(e){ if(st) st.textContent='Couldn’t draft that one — try again.'; }
 }
-/* Resolve an op-note row to exactly one chart. An immutable appointment/chart id wins;
-   legacy name-only rows are accepted only when name (+DOB when available) is unique. */
-function _opResolvePatient(row){
-  row=row||{}; var a=row.appt||{}; var pts=(typeof getPatients==='function'?getPatients():[])||[];
-  var pid=String(a.patientId||row.patientId||''); if(pid){ var byId=pts.find(function(x){return String(x.id)===pid;}); if(byId){ row._patientAmbiguous=false; return byId; } }
-  var nm=String(a.name||'').trim().toLowerCase(); var matches=pts.filter(function(x){return String(x.name||'').trim().toLowerCase()===nm;});
-  var dob=String(a.dob||'').replace(/[^0-9]/g,''); if(dob){ var dm=matches.filter(function(x){return String(x.dob||'').replace(/[^0-9]/g,'')===dob;}); if(dm.length) matches=dm; }
-  row._patientAmbiguous=matches.length>1; return matches.length===1?matches[0]:null;
-}
 /* Save (or update) this op-note row as a DRAFT in History immediately, so it's never lost even
    if the doctor navigates away without clicking Save. Re-uses the same note id on re-draft. */
 function opPrepAutosaveDraft(i){
   try{
     var row=(window._opPrep||[])[i]; if(!row||!row.note) return;
-    var nm=row.appt.name; var p=_opResolvePatient(row);
-    if(!p && row._patientAmbiguous) return; // never file a draft to an arbitrary same-name chart
-    if(!p){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:row.appt.dob||'', created:Date.now(), source:'athena-schedule' }; if(typeof upsertPatient==='function') upsertPatient(p); }
-    row.appt.patientId=p.id;
+    var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
+    if(!p){ try{ toast('Draft not saved: exact patient identity could not be verified.','err'); }catch(e){} return false; }
     var ns=getNotes(); var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
-    saveNotes(ns); try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){}
-  }catch(e){}
+    saveNotes(ns); try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){} return true;
+  }catch(e){ return false; }
 }
 async function opPrepGenerateAll(){
   var rows=window._opPrep||[]; var st=document.getElementById('opPrepStatus');
@@ -10340,6 +10367,16 @@ function opPrepBlankSkip(i){ var row=(window._opPrep||[])[i]; if(!row) return; v
 function opPrepApplyAll(i){ var row=(window._opPrep||[])[i]; if(!row) return; (row.missing||[]).forEach(function(mf){ var v=String(row.values[mf.key]||'').trim(); if(v){ row.note=(row.note||'').split('[['+mf.key+']]').join(v); addOpFieldVal(mf.key, v); } }); row._blankIdx=0; try{ opPrepAutosaveDraft(i); }catch(e){} opPrepRender(); }
 async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   ctx=ctx||{};
+  var exactPatient=_opResolvePatient(name,ctx.dob,ctx.patientId);
+  if(!exactPatient||!String(ctx.patientId||'').trim()||String(exactPatient.id||'')!==String(ctx.patientId||'')){
+    var identityErr=new Error('Op-note generation stopped: exact patient identity could not be verified.');
+    identityErr.code='MLS_OPNOTE_IDENTITY'; throw identityErr;
+  }
+  /* Re-read demographics from the immutable-id-owned profile. A stale/enriched
+     ctx object may add provider fields, but it may never override patient facts. */
+  name=String(exactPatient.name||name||'');
+  ctx.dob=String(exactPatient.dob||''); ctx.sex=String(exactPatient.sex||exactPatient.gender||'');
+  ctx.age=_ptAge(exactPatient.dob); ctx.bmi=_ptBmi(exactPatient); ctx.mrn=String(exactPatient.mrn||'');
   var known=[]; if(name) known.push('name: '+name); if(ctx.sex) known.push('sex: '+ctx.sex); if(ctx.dob) known.push('date of birth: '+ctx.dob); if(ctx.age!=null) known.push('age: '+ctx.age); if(ctx.bmi!=null) known.push('BMI: '+ctx.bmi); if(ctx.mrn) known.push('MRN: '+ctx.mrn);
   var sys='You draft an OPERATIVE / PROCEDURE NOTE for a pain/spine physician by adapting ONE of their OWN prior operative notes (the TEMPLATE) to a new patient and procedure. Keep the template’s exact structure, section headings, wording and style. Fill in the patient name, the date of procedure, and the specific procedure with its laterality and spinal levels. Keep all standard boilerplate. '
     +'CRITICAL — the KNOWN PATIENT FACTS and PATIENT CHART/HISTORY below come from the chart attached to this exact operative-note row. Use only documented facts relevant to the procedure; never transfer facts from another patient or invent new findings. Fill known facts directly wherever the template needs them and NEVER list a documented fact in "missing". '
@@ -10352,7 +10389,7 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
     +(known.length?('\n\nKNOWN PATIENT FACTS (already in our chart — fill these in, do NOT ask for them):\n- '+known.join('\n- ')):'')
     +(ctx.history?('\n\nPATIENT CHART / PRIOR HISTORY (use only documented, procedure-relevant facts; do not invent):\n'+String(ctx.history).slice(0,14000)):'')
     +'\n\nTEMPLATE (the doctor’s own prior op note — match its structure & style exactly):\n'+String(tplText||'').slice(0,9000);
-  var raw=await aiCallRaw(sys, user, (typeof getKey==='function'?getKey():''), {freeform:true});
+  var raw=await aiCallRaw(sys, user, (typeof getKey==='function'?getKey():''), {freeform:true,mlsOpNotePatientId:String(exactPatient.id)});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   var obj=null; try{ obj=JSON.parse(s); }catch(e){ try{ var m=s.match(/\{[\s\S]*\}/); if(m) obj=JSON.parse(m[0]); }catch(_){} }
   if(!obj||typeof obj!=='object') return {note:s, missing:[]};
@@ -10371,11 +10408,8 @@ function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
   var leftover=(note.match(/\[\[[a-z0-9_]+\]\]/gi)||[]).length;
-  var nm=row.appt.name;
-  var p=_opResolvePatient(row);
-  if(!p && row._patientAmbiguous){ try{ toast('More than one chart has this name. Open the correct patient and draft their op note from that chart.','err'); }catch(e){} return; }
-  if(!p){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:row.appt.dob||'', created:Date.now(), source:'athena-schedule' }; if(typeof upsertPatient==='function') upsertPatient(p); }
-  row.appt.patientId=p.id;
+  var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
+  if(!p){ try{ toast('Op note not saved: exact patient identity could not be verified. Re-open it from that patient’s chart.','err'); }catch(e){} return; }
   try{
     var ns=getNotes();
     var cc=(row.proc||row.appt.reason||'Operative note')+' (op note)';
@@ -11734,7 +11768,8 @@ function _assistReadChart(patientRef, onStatus){
     var patientName=String(target.name||'').trim();
     var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
     var ponged=false, tries=0, iv=null, got=false, deadline=null;
-    var requestId='chart-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
+    var readStartedAt=Date.now();
+    var requestId='chart-'+readStartedAt.toString(36)+'-'+Math.random().toString(36).slice(2,8);
     function cleanup(){ if(iv) clearInterval(iv); if(deadline) clearTimeout(deadline); iv=null; deadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); }
     function fail(err){ if(got) return; got=true; cleanup(); reject(err); }
     function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); iv=null; window.removeEventListener('message',onPong); proceed(); } }
@@ -11750,7 +11785,31 @@ function _assistReadChart(patientRef, onStatus){
       if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read the chart from your Athena tab.')); return; }
       var observed={chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''};
       if(!_athenaHistoryProofMatches(target,observed)){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
-      resolve({text:r.text||'', url:r.url||'', opened:!!r.opened, chartName:observed.chartName, chartDob:observed.chartDob, chartMrn:observed.chartMrn, targetPatientId:target.patientId});
+      var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
+      var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000);
+      var receiptFrames=!!(rawReceipt&&Number(rawReceipt.expectedClinicalFrames||0)>=1&&Number(rawReceipt.readClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.boundClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.unboundClinicalFrames||0)===0&&Number(rawReceipt.oversizeClinicalFrames||0)===0&&Number(rawReceipt.unreadFrames||0)===0&&Number(rawReceipt.omittedForCap||0)===0);
+      var receiptBound=!!(rawReceipt&&String(rawReceipt.requestId||'')===requestId&&String(r.requestId||requestId)===requestId);
+      if(!rawReceipt||rawReceipt.kind!=='athena-chart-coverage'||rawReceipt.complete!==true||rawReceipt.truncated===true||String(rawReceipt.readerVersion||'')!=='2.9.19-chart-r3'||rawReceipt.identityObserved!==true||!receiptFresh||!receiptFrames||!receiptBound||Number(rawReceipt.textChars||0)!==String(r.text||'').length){ reject(new Error('MLS Assist could not prove that every patient chart frame finished loading and belonged to the selected patient. Nothing was saved; update the extension and retry.')); return; }
+      var receipt=r.receipt&&typeof r.receipt==='object'?{
+        kind:String(r.receipt.kind||''),
+        requestId:String(r.receipt.requestId||''),
+        complete:r.receipt.complete===true,
+        readerVersion:String(r.receipt.readerVersion||''),
+        capturedAt:Number(r.receipt.capturedAt||0),
+        expectedClinicalFrames:Number(r.receipt.expectedClinicalFrames||0),
+        readClinicalFrames:Number(r.receipt.readClinicalFrames||0),
+        boundClinicalFrames:Number(r.receipt.boundClinicalFrames||0),
+        unboundClinicalFrames:Number(r.receipt.unboundClinicalFrames||0),
+        oversizeClinicalFrames:Number(r.receipt.oversizeClinicalFrames||0),
+        unreadFrames:Number(r.receipt.unreadFrames||0),
+        omittedForCap:Number(r.receipt.omittedForCap||0),
+        consideredFrames:Number(r.receipt.consideredFrames||0),
+        textChars:Number(r.receipt.textChars||0),
+        truncated:r.receipt.truncated===true,
+        identityObserved:r.receipt.identityObserved===true,
+        identityVia:String(r.receipt.identityVia||'')
+      }:null;
+      resolve({requestId:requestId,text:r.text||'',receipt:receipt,coverageReceipt:receipt,url:r.url||'',opened:!!r.opened,chartName:observed.chartName,chartDob:observed.chartDob,chartMrn:observed.chartMrn,targetPatientId:target.patientId});
     }
     function proceed(){
       say(patientName?('Opening '+patientName+'’s chart in Athena…'):'Reading the chart from Athena…');
@@ -11791,8 +11850,8 @@ async function pullPatientChartViaAssist(btn, opts){
     if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
     setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
     var chart=await _parsePatientChart(rd.text);
-    if(!chart || (!chart.problems && !chart.meds && !chart.allergies && !(chart.history&&chart.history.length) && !chart.summary)){
-      setT('Read the page but couldn’t find a patient chart. Open the patient’s CHART in Athena (problems / meds / history), then pull again.','err');
+    if(!chart || _athenaChartProfileCoverage(chart).complete!==true){
+      setT('Read the page, but all six patient-history sections were not verified. Nothing was saved as a complete pull; keep the exact chart open and retry.','err');
       if(btn){ btn.disabled=false; btn.innerHTML=orig; } return false;
     }
     var saveRef=_athenaHistoryVerifiedRef(pullTarget,rd);
@@ -11810,6 +11869,59 @@ async function pullPatientChartViaAssist(btn, opts){
 }
 /* Save a parsed Athena chart only to the exact, pre-resolved MLS patient ID after the
    returned Athena DOB/MRN re-verifies it; legacy name-only callers fail closed. */
+function _athenaChartHistoryObject(chart){
+  var keys=['pmh','psh','social','family','smoking','immunizations','lmp','codeStatus','pcp','pharmacy'];
+  var out={}; keys.forEach(function(k){out[k]='';});
+  var add=function(k,v){
+    if(keys.indexOf(k)<0)return;
+    var vals=Array.isArray(v)?v:[v], seen={}, merged=[];
+    String(out[k]||'').split(/[;\n]+/).concat(vals).forEach(function(x){
+      x=String(x==null?'':x).replace(/^\s*[\u2022\-*]+\s*/,'').replace(/\s+/g,' ').trim();
+      var id=x.toLowerCase(); if(x&&!/^(?:none|not documented|not recorded|unknown|n\/?a)$/i.test(x)&&!seen[id]){seen[id]=1;merged.push(x);}
+    });
+    out[k]=merged.join('; ');
+  };
+  var h=chart&&chart.history;
+  if(h&&!Array.isArray(h)&&typeof h==='object') keys.forEach(function(k){add(k,h[k]);});
+  var legacy=Array.isArray(h)?h:(Array.isArray(chart&&chart.historyItems)?chart.historyItems:[]);
+  legacy.forEach(function(item){
+    item=String(item==null?'':item).trim(); if(!item)return;
+    var key='pmh', value=item, m=item.match(/^\s*(PMH|past medical history|PSH|past surgical history|social(?: history)?|family(?: history)?|smoking(?: status)?|tobacco use|immunizations?|LMP|code status|PCP|referring provider|pharmacy)\s*[:\-]\s*(.*)$/i);
+    if(m){
+      value=m[2]||''; var label=m[1].toLowerCase();
+      if(/psh|surgical/.test(label))key='psh'; else if(/social/.test(label))key='social'; else if(/family/.test(label))key='family'; else if(/smoking|tobacco/.test(label))key='smoking'; else if(/immun/.test(label))key='immunizations'; else if(/^lmp/.test(label))key='lmp'; else if(/code/.test(label))key='codeStatus'; else if(/pcp|referring/.test(label))key='pcp'; else if(/pharmacy/.test(label))key='pharmacy';
+    }
+    add(key,value);
+  });
+  return out;
+}
+function _athenaChartVitalsObject(chart){
+  var raw=chart&&chart.vitals&&typeof chart.vitals==='object'?chart.vitals:{};
+  var first=function(names){for(var i=0;i<names.length;i++){var v=raw[names[i]];if(v!=null&&String(v).trim())return String(v).trim();}return '';};
+  return {bp:first(['bp','bloodPressure','blood_pressure']),hr:first(['hr','heartRate','heart_rate','pulse']),temp:first(['temp','temperature']),rr:first(['rr','respiratoryRate','respiratory_rate']),spo2:first(['spo2','spO2','oxygenSaturation','oxygen_saturation']),heightIn:first(['heightIn','height_in','height']),weightLb:first(['weightLb','weight_lb','weight']),bmi:first(['bmi']),takenAt:first(['takenAt','taken_at','date','recordedAt'])};
+}
+function _athenaChartProfileCoverage(chart,history,vitals){
+  chart=chart||{}; history=history||_athenaChartHistoryObject(chart); vitals=vitals||_athenaChartVitalsObject(chart);
+  var declared=chart.coverage||chart.fieldCoverage||{}, cards={}, invalid=[];
+  var hasText=function(v){if(Array.isArray(v))return v.some(hasText);if(v&&typeof v==='object')return Object.keys(v).some(function(k){return hasText(v[k]);});return !!String(v==null?'':v).trim();};
+  var values={problems:chart.problems,meds:chart.meds,allergies:chart.allergies,summary:chart.summary,vitals:vitals,history:history};
+  var aliases={problems:['problems','problemList'],meds:['meds','medications'],allergies:['allergies'],summary:['summary'],vitals:['vitals'],history:['history','historyBackground']};
+  Object.keys(values).forEach(function(key){
+    var raw=''; (aliases[key]||[key]).some(function(k){if(declared[k]!=null){raw=String(declared[k]);return true;}return false;});
+    var status=/^(?:found|present|documented)$/i.test(raw)?'found':(/^(?:not[_ -]?documented|none|absent)$/i.test(raw)?'not_documented':'');
+    var present=hasText(values[key]);
+    if(!status||(status==='found'&&!present)||(status==='not_documented'&&present)) invalid.push(key);
+    cards[key]={status:status||'unverified',populated:present};
+  });
+  return {complete:invalid.length===0,cards:cards,invalid:invalid};
+}
+function _patientHistoryCardCoverage(patientOrId){
+  var p=(patientOrId&&typeof patientOrId==='object')?patientOrId:null, id=p&&p.id;
+  if(!p&&patientOrId!=null){id=String(patientOrId);try{p=typeof findPatient==='function'?findPatient(id):null;}catch(e){}}
+  var r=p&&p.athenaProfileCoverage;
+  var pid=String(id||(p&&p.id)||'');
+  return r&&r.complete===true&&String(r.patientId||'')===pid?r:null;
+}
 function _savePatientChart(name, appt, chart){
   if(!chart) return false;
   var ref=(name&&typeof name==='object')?name:{};
@@ -11823,25 +11935,125 @@ function _savePatientChart(name, appt, chart){
   var observed={chartName:String(ref.verifiedName||(appt&&appt._mlsVerifiedName)||''),chartDob:String(ref.verifiedDob||(appt&&appt._mlsVerifiedDob)||''),chartMrn:String(ref.verifiedMrn||(appt&&appt._mlsVerifiedMrn)||'')};
   if(!_athenaHistoryProofMatches(target,observed)) return false;
   p=Object.assign({},p);
-  var merge=function(cur,add){ add=(add||'').trim(); if(!add) return cur||''; cur=(cur||'').trim(); if(!cur) return add; if(cur.toLowerCase().indexOf(add.toLowerCase())>=0) return cur; return cur+'; '+add; };
-  if(chart.problems)  p.problems  = merge(p.problems,  chart.problems);
-  if(chart.meds)      p.meds      = merge(p.meds,      chart.meds);
-  if(chart.allergies) p.allergies = merge(p.allergies, chart.allergies);
+  var priorAthenaSnapshot=(p.athenaChartSnapshot&&typeof p.athenaChartSnapshot==='object')?p.athenaChartSnapshot:{};
+  /* Merge clinical lists fact-by-fact. Athena commonly changes separators between
+     pulls ("A; B" vs "A, B, C"); comparing the whole string either duplicated A/B
+     or hid C. Existing/manual facts stay first and only genuinely new facts append. */
+  var listItems=function(value){
+    var src=Array.isArray(value)?value:[value], out=[];
+    src.forEach(function(part){
+      String(part==null?'':part).split(/[\r\n;,]+/).forEach(function(item){
+        item=String(item||'').replace(/^\s*[\u2022\-*]+\s*/,'').replace(/\s+/g,' ').trim();
+        if(item) out.push(item);
+      });
+    });
+    return out;
+  };
+  var listKey=function(item){ return String(item||'').toLowerCase().replace(/[.\s]+$/,'').replace(/\s+/g,' ').trim(); };
+  var isNoData=function(item){ return /^(?:none(?: recorded| on file)?|not recorded|unknown|n\s*\/\s*a|na|not available|not applicable|no data)$/i.test(listKey(item)); };
+  var merge=function(cur,add){
+    var combined=listItems(cur).concat(listItems(add)), meaningful=combined.filter(function(item){return !isNoData(item);});
+    /* A no-data value is provisional, never a peer of real clinical facts. If
+       everything is still unknown retain only the newest placeholder; otherwise
+       drop every placeholder and retain the canonical union of meaningful facts. */
+    var candidates=meaningful.length?meaningful:(combined.length?[combined[combined.length-1]]:[]), out=[], seen={};
+    candidates.forEach(function(item){ var k=listKey(item); if(k&&!seen[k]){seen[k]=1;out.push(item);} });
+    return out.join('; ');
+  };
+  var snapshotList=function(value){
+    var out=[],seen={}; listItems(value).forEach(function(item){var k=listKey(item);if(k&&!isNoData(item)&&!seen[k]){seen[k]=1;out.push(item);}});return out;
+  };
+  /* Replace the prior Athena-owned slice on every verified refresh. Facts entered
+     manually remain; facts that disappeared from Athena (including an explicit
+     not_documented result) must not survive forever as stale clinical data. */
+  var mergeOwned=function(current,oldOwned,fresh){
+    var owned={}; listItems(oldOwned).forEach(function(item){var k=listKey(item);if(k)owned[k]=1;});
+    var manual=listItems(current).filter(function(item){return !owned[listKey(item)];});
+    return merge(manual,fresh);
+  };
+  var structuredHistory=_athenaChartHistoryObject(chart), structuredVitals=_athenaChartVitalsObject(chart);
+  var profileCoverage=_athenaChartProfileCoverage(chart,structuredHistory,structuredVitals);
+  /* A fully-read frame set is not enough: every visible patient-profile card
+     must be explicitly classified as populated or genuinely absent. */
+  if(profileCoverage.complete!==true) return false;
+  p.problems  = mergeOwned(p.problems,  priorAthenaSnapshot.problems,  chart.problems);
+  p.meds      = mergeOwned(p.meds,      priorAthenaSnapshot.meds,      chart.meds);
+  p.allergies = mergeOwned(p.allergies, priorAthenaSnapshot.allergies, chart.allergies);
+  var priorHistory=(p.history&&!Array.isArray(p.history)&&typeof p.history==='object')?p.history:_athenaChartHistoryObject({history:Array.isArray(p.history)?p.history:[]});
+  var oldAthenaHistory=(priorAthenaSnapshot.history&&typeof priorAthenaSnapshot.history==='object')?priorAthenaSnapshot.history:{};
+  p.history={}; Object.keys(structuredHistory).forEach(function(k){p.history[k]=mergeOwned(priorHistory[k],oldAthenaHistory[k],structuredHistory[k]);});
+  var priorVitals=(p.vitals&&typeof p.vitals==='object')?p.vitals:{}, oldAthenaVitals=priorAthenaSnapshot.vitals||{}, nextVitals={};
+  Object.keys(structuredVitals).forEach(function(k){
+    var cur=String(priorVitals[k]==null?'':priorVitals[k]).trim(), prev=String(oldAthenaVitals[k]==null?'':oldAthenaVitals[k]).trim(), fresh=String(structuredVitals[k]==null?'':structuredVitals[k]).trim();
+    nextVitals[k]=(cur&&(!prev||cur!==prev))?cur:fresh;
+  });
+  p.vitals=nextVitals;
+  if(!p.vitals.bmi&&p.vitals.heightIn&&p.vitals.weightLb){var h=parseFloat(p.vitals.heightIn),w=parseFloat(p.vitals.weightLb);if(h>0&&w>0)p.vitals.bmi=String(Math.round((703*w/(h*h))*10)/10);}
+  if(!p.bmi||String(p.bmi)===String(oldAthenaVitals.bmi||''))p.bmi=p.vitals.bmi||'';
   if(!p.dob && observed.chartDob) p.dob=observed.chartDob;
   if(!p.mrn && observed.chartMrn) p.mrn=observed.chartMrn;
-  var stamp='— Pulled from Athena '+(new Date()).toLocaleDateString()+' —';
+  var importedAt=new Date(), importedAtIso=importedAt.toISOString(), importedAtMs=importedAt.getTime();
+  var stamp='— Pulled from Athena '+importedAt.toLocaleDateString()+' —';
+  var historyLines=[]; Object.keys(structuredHistory).forEach(function(k){if(structuredHistory[k])historyLines.push(k.toUpperCase()+': '+structuredHistory[k]);});
+  var visitLines=Array.isArray(chart.visits)?chart.visits.map(function(x){if(x&&typeof x==='object')return [x.date,x.type||x.summary||x.raw].filter(Boolean).join(' — ');return String(x||'').trim();}).filter(Boolean):[];
   var block=stamp+'\n'+(chart.summary||'');
-  if(chart.history && chart.history.length){ block+='\n\nPrior history:\n• '+chart.history.join('\n• '); }
-  if(chart.visits && chart.visits.length){ block+='\n\nRecent visits:\n• '+chart.visits.join('\n• '); }
-  if(!(p.summary||'').includes(stamp)){ p.summary=((p.summary||'').trim()+'\n\n'+block).trim(); }
+  if(historyLines.length){ block+='\n\nPrior history:\n• '+historyLines.join('\n• '); }
+  if(visitLines.length){ block+='\n\nRecent visits:\n• '+visitLines.join('\n• '); }
+  /* The latest exact-patient pull replaces the prior snapshot. Keep the source
+     fields structured so normal chart/profile and op-note consumers see the same
+     current facts, rather than an ever-growing series of stale daily snapshots. */
+  p.athenaChartSnapshot={
+    capturedAt:importedAtIso,
+    problems:snapshotList(chart.problems),
+    meds:snapshotList(chart.meds),
+    allergies:snapshotList(chart.allergies),
+    summary:String(chart.summary||'').trim(),
+    vitals:structuredVitals,
+    history:structuredHistory,
+    visits:visitLines
+  };
+  profileCoverage.patientId=String(p.id||''); profileCoverage.exactIdentityVerified=true; profileCoverage.capturedAt=importedAtIso;
+  p.athenaProfileCoverage=profileCoverage;
+  p.athenaChartImportedAt=importedAtIso;
+
+  /* Refresh the one Athena-owned block in the normal profile summary while
+     preserving text the clinician wrote before, after, or between pulls. Exact
+     previous note text is a safe migration anchor for records saved before the
+     dedicated athenaChartSummaryBlock field existed. */
+  var notes=[]; try{ notes=(typeof getNotes==='function'?getNotes():[])||[]; }catch(eNotes){ notes=[]; }
+  var importNotes=notes.filter(function(n){ return String(n&&n.patientId||'')===String(p.id||'')&&n.cc==='Athena chart import'; });
+  var oldBlocks=[];
+  if(String(p.athenaChartSummaryBlock||'').trim()) oldBlocks.push(String(p.athenaChartSummaryBlock).trim());
+  importNotes.forEach(function(n){ var t=String(n&&n.text||'').trim(); if(t&&oldBlocks.indexOf(t)<0) oldBlocks.push(t); });
+  var manualSummary=String(p.summary||'').trim();
+  oldBlocks.forEach(function(oldBlock){
+    var at; while(oldBlock&&(at=manualSummary.indexOf(oldBlock))>=0){ manualSummary=(manualSummary.slice(0,at)+manualSummary.slice(at+oldBlock.length)).replace(/\n{3,}/g,'\n\n').trim(); }
+  });
+  p.athenaChartSummaryBlock=block;
+  p.summary=(manualSummary?manualSummary+'\n\n':'')+block;
   if(typeof upsertPatient!=='function') return false;
   try{ upsertPatient(p); }catch(e){ return false; }
-  try{ if(typeof getNotes==='function' && typeof saveNotes==='function'){ var ns=getNotes(); if(!ns.some(function(n){ return n.patientId===p.id && n.cc==='Athena chart import'; })){ ns.unshift({ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:'Athena chart import', text:block, created:Date.now(), updated:Date.now(), signed:false, isDraft:false }); saveNotes(ns); } } }catch(e){}
+  try{
+    if(typeof saveNotes==='function'){
+      var keep=null;
+      importNotes.forEach(function(n){ if(!keep||Number(n.created||0)<Number(keep.created||0)) keep=n; });
+      var refreshedAtMs=keep?Math.max(importedAtMs,Number(keep.updated||0)+1):importedAtMs;
+      var refreshed=keep?Object.assign({},keep,{patient:p.name,patientId:p.id,cc:'Athena chart import',text:block,updated:refreshedAtMs}):{id:'n'+importedAtMs.toString(36)+Math.random().toString(36).slice(2,6),patient:p.name,patientId:p.id,cc:'Athena chart import',text:block,created:importedAtMs,updated:importedAtMs,signed:false,isDraft:false};
+      var written=false, ns=[];
+      notes.forEach(function(n){
+        var isThisImport=String(n&&n.patientId||'')===String(p.id||'')&&n.cc==='Athena chart import';
+        if(!isThisImport) ns.push(n); else if(keep&&n===keep&&!written){ns.push(refreshed);written=true;}
+      });
+      if(!written) ns.unshift(refreshed);
+      saveNotes(ns);
+    }
+  }catch(e){}
   return true;
 }
 /* Bulk: after pulling the schedule, auto-pull EACH patient's chart/history from Athena
    (the extension finds + opens each chart — no manual clicking) and save it durably. */
-/* True if this patient already has an Athena chart imported (so we don't re-pull it). */
+/* Historical marker retained for display/migration only. A requested pull never
+   skips on this marker: verified refreshes replace the prior Athena-owned slice. */
 function _hasImportedHistory(ref){
   try{ var obj=(ref&&typeof ref==='object')?ref:null; if(!obj)return false;
     var pts=(typeof getPatients==='function'?getPatients():[])||[];
@@ -11850,7 +12062,7 @@ function _hasImportedHistory(ref){
     if(obj.name&&_athenaHistoryName(obj.name)!==_athenaHistoryName(p.name))return false;
     if(obj.dob&&p.dob&&_athenaHistoryDigits(obj.dob)!==_athenaHistoryDigits(p.dob))return false;
     if((obj.mrn||obj.athenaId)&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(obj.mrn||obj.athenaId)!==_athenaHistoryDigits(p.mrn||p.athenaId))return false;
-    if(p && /Pulled from Athena/i.test(p.summary||'')) return true;
+    if(p && (String(p.athenaChartSnapshot||'').trim() || /Pulled from Athena/i.test(p.summary||''))) return true;
     return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patientId||'')===String(p.id||'') && n.cc==='Athena chart import'; });
   }catch(e){ return false; }
 }
@@ -11864,17 +12076,17 @@ async function _pullAllHistories(appts){
     var target=_athenaHistoryTargetSnapshot({patientId:String(a.patient_external_id||a._mlsTargetPatientId||''),name:String(a.name||''),dob:String(a.dob||''),mrn:String(a.mrn||a.athenaId||'')},false);
     if(!target){failed++;return;}
     if(seen[target.patientId])return;seen[target.patientId]=1;
-    if(!_hasImportedHistory(target))todo.push({appt:a,target:target});
+    todo.push({appt:a,target:target});
   });
-  if(!todo.length){ setT(failed?('No histories were saved — '+failed+' patient match'+(failed===1?' was':'es were')+' missing DOB/MRN or ambiguous.'):'✅ All pulled patients already have their chart history saved — nothing new to fetch.',failed?'err':'ok'); return; }
+  if(!todo.length){ setT(failed?('No histories were saved; '+failed+' patient match'+(failed===1?' was':'es were')+' missing DOB/MRN or ambiguous.'):'No exact patients were available to refresh.',failed?'err':''); return; }
   var saved=0, oldExt=false;
   for(var i=0;i<todo.length;i++){
     var item=todo[i]||{};var a=item.appt||{};var target=item.target;if(!target){failed++;continue;}var name=target.name;
-    setT('📥 Pulling new histories from Athena… '+(i+1)+'/'+todo.length+' — '+name);
+    setT('📥 Refreshing histories from Athena… '+(i+1)+'/'+todo.length+' — '+name);
     try{
       var rd=await _assistReadChart(target, function(){});
       var chart=await _parsePatientChart(rd.text);
-      if(chart && (chart.problems||chart.meds||chart.allergies||chart.summary||(chart.history&&chart.history.length))){
+      if(chart && _athenaChartProfileCoverage(chart).complete===true){
         var saveRef=_athenaHistoryVerifiedRef(target,rd);
         if(saveRef&&_savePatientChart(saveRef,a,chart)===true)saved++;else failed++;
       }else failed++;
@@ -11882,13 +12094,15 @@ async function _pullAllHistories(appts){
     await new Promise(function(r){ setTimeout(r, 350); });
   }
   if(oldExt){ setT('Imported the schedule. To also auto-pull each chart, update MLS Assist to the latest version (Settings → Download).','err'); return; }
-  setT('✅ Pulled '+saved+' new chart histor'+(saved===1?'y':'ies')+' from Athena — saved to your account.'+(failed?(' '+failed+' could not be identity-verified and were skipped.') :''),failed?'err':'ok');
+  setT('✅ Refreshed '+saved+' chart histor'+(saved===1?'y':'ies')+' from Athena — saved to your account.'+(failed?(' '+failed+' could not be identity-verified and were skipped.') :''),failed?'err':'ok');
   try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
   try{ if(typeof loadPatients==='function') loadPatients(); }catch(e){}
 }
 async function _parsePatientChart(text){
-  var sys='You extract ONE patient’s clinical chart from raw EMR/Athena page text (messy, with menus/UI noise). Return ONLY JSON (no prose, no code fence): {"dob":"<MM/DD/YYYY or empty>","problems":"<active problem list, comma-separated, or empty>","meds":"<current medications w/ doses, comma-separated, or empty>","allergies":"<allergies, comma-separated, or NKDA/empty>","summary":"<2-4 sentence clinical summary of who this patient is and their main issues>","history":["<relevant PMH/PSH/social item>", "..."],"visits":["<MM/DD/YYYY — brief reason/dx of a prior visit>", "..."]}. RULES: extract only THIS patient’s clinical data. IGNORE navigation, buttons, column headers, provider/department names, billing codes lists, and other patients. If a field is not present, use "" or []. Keep arrays short (max ~10).';
-  var raw=await aiCallRaw(sys, 'EMR CHART PAGE TEXT:\n'+String(text||'').slice(0,16000), (typeof getKey==='function'?getKey():''), {freeform:true});
+  var sys='You extract ONE exact patient’s clinical chart from a COMPLETE raw Athena frame-set read. Return ONLY JSON (no prose/code fence) with this exact shape: {"name":"","dob":"MM/DD/YYYY or empty","mrn":"","problems":"active problems with ICD-10 when shown, separated by semicolons or empty","meds":"current medications with dose/route/frequency when shown, separated by semicolons or empty","allergies":"allergies/reactions, or NKDA when explicitly documented, or empty","summary":"2-4 factual sentences summarizing this patient and main clinical issues, or empty only when no clinical facts are documented","vitals":{"bp":"","hr":"","temp":"","rr":"","spo2":"","heightIn":"","weightLb":"","bmi":"","takenAt":"latest measurement date/time or empty"},"history":{"pmh":"","psh":"","social":"","family":"","smoking":"","immunizations":"","lmp":"","codeStatus":"","pcp":"","pharmacy":""},"visits":["MM/DD/YYYY — brief reason/diagnoses"],"coverage":{"problems":"found|not_documented","meds":"found|not_documented","allergies":"found|not_documented","summary":"found|not_documented","vitals":"found|not_documented","history":"found|not_documented"}}. RULES: use only this patient’s facts; ignore navigation, buttons, provider/department names, billing menus/codes, and other patients. Scan the ENTIRE supplied frame text. For each coverage field use found only when its matching output contains real data; use not_documented only after confirming that category is absent from the supplied chart. Never guess, copy another patient, or call an unparsed/uncertain field not_documented. Prefer the latest vitals and current medication/problem lists. Keep visits concise (max 15) because full encounter bodies are captured separately.';
+  var page=String(text||'');
+  if(page.length>90000) throw new Error('The chart read was too large to verify every profile section in one pass. Nothing was saved as complete; retry with the latest extension.');
+  var raw=await aiCallRaw(sys, 'COMPLETE EMR CHART FRAME TEXT:\n'+page, (typeof getKey==='function'?getKey():''), {freeform:true});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   try{ var o=JSON.parse(s); if(o&&typeof o==='object') return o; }catch(e){}
   try{ var m=s.match(/\{[\s\S]*\}/); if(m) return JSON.parse(m[0]); }catch(e){}
@@ -12986,7 +13200,6 @@ function autoPopulateExtras(result){
   try{
     const so=Array.isArray(result.suggested_orders)?result.suggested_orders.filter(Boolean).map(String):[];
     renderAiSuggestedOrders(so);
-    try{ _autoSaveAiOrders(); }catch(e){}   // auto-save AI orders into the Orders list so they're ready to submit
   }catch(e){ /* */ }
 
   // --- Recommendations (auto) ---
@@ -14478,6 +14691,32 @@ function _athenaCanonicalBilling(coding){
   var invalidSeen={}; invalid=invalid.filter(function(x){if(!x||invalidSeen[x])return false;invalidSeen[x]=1;return true;});
   return {emCode:em,cptCodes:cpt,invalid:invalid};
 }
+/* Freeze reviewed order drafts separately from generated suggestions. An item
+   is not a reviewed draft merely because AI proposed it. Legacy auto-added
+   `_ai` items are downgraded back to suggestion-only for safety. */
+function _athenaOrderReviewBundle(orders,suggestions){
+  var drafts=[],pending=[],acceptedText={};
+  (Array.isArray(orders)?orders:[]).forEach(function(o){
+    if(!o)return;
+    var type=String(o.type||'').trim();
+    var summary=''; try{summary=typeof orderSummary==='function'?orderSummary(o):'';}catch(e){}
+    summary=String(summary||o._src||type||'Order').trim();
+    var original=String(o._src||'').trim();
+    var source=String(o._source||(o._ai?'legacy-auto-suggestion':'provider-entered'));
+    var fields=Object.assign({},o.fields||{}), complete=false;
+    try{complete=!!(ORDER_DEFS[type]&&orderFormHasContent(type,fields));}catch(e2){complete=false;}
+    var item={type:type,fields:fields,summary:summary,originalText:original,source:source,complete:complete};
+    if(o._ai&&!o._reviewStatus){ item.source='legacy-auto-suggestion'; pending.push(item); }
+    else { item.source=source==='ai-suggestion'?'ai-suggestion-accepted':(source==='rule-suggestion'?'rule-suggestion-accepted':source); drafts.push(item); if(original)acceptedText[original.toLowerCase()]=1; }
+  });
+  (Array.isArray(suggestions)?suggestions:[]).forEach(function(text){
+    text=String(text||'').trim(); if(!text||acceptedText[text.toLowerCase()])return;
+    var parsed={type:'',fields:{}}; try{parsed=parseSuggestedOrder(text)||parsed;}catch(e){}
+    pending.push({type:String(parsed.type||''),fields:Object.assign({},parsed.fields||{}),summary:text,originalText:text,source:'ai-suggestion',complete:false});
+  });
+  var seen={}; pending=pending.filter(function(item){var k=[item.type,String(item.originalText||item.summary).toLowerCase()].join('|');if(seen[k])return false;seen[k]=1;return true;});
+  return {drafts:drafts,suggestions:pending};
+}
 /* One plan builder keeps every review surface on the same source of truth. */
 function _athenaBuildPlan(binding){
   var noteText=''; try{ noteText=emrReadyText(); }catch(e){}
@@ -14492,7 +14731,16 @@ function _athenaBuildPlan(binding){
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+'  ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   var hasBill=(c&&c.em)||(c&&c.cpt&&c.cpt.length);
   if(hasBill){ var bb='BILLING:\n'+(c&&c.em?('E/M level: '+c.em+'\n'):'')+((c&&c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c&&c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb, billing:_athenaCanonicalBilling(c)}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
-  if(orders&&orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+'  ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
+  var orderReview=_athenaOrderReviewBundle(orders,(typeof aiSuggestedOrders!=='undefined'&&Array.isArray(aiSuggestedOrders))?aiSuggestedOrders:[]);
+  if(orderReview.drafts.length||orderReview.suggestions.length){
+    var ol=orderReview.drafts.map(function(o){return o.summary;});
+    var sl=orderReview.suggestions.map(function(o){return o.summary;});
+    var orderBody=[];
+    if(ol.length)orderBody.push('REVIEWED ORDER DRAFTS (manual entry only):\n• '+ol.join('\n• '));
+    if(sl.length)orderBody.push('UNACCEPTED SUGGESTIONS (do not execute):\n• '+sl.join('\n• '));
+    plan.push({kind:'orders',body:orderBody.join('\n\n'),orderDrafts:orderReview.drafts,orderSuggestions:orderReview.suggestions});
+    lines.push('');lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS PROPOSED FOR ATHENA  →  '+ATHENA_SECTIONS.orders.dest+'  ('+orderReview.drafts.length+' reviewed, '+orderReview.suggestions.length+' suggestion-only)');
+  }
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
@@ -14666,6 +14914,15 @@ function _athenaReceiptAction(action){
    confirmed; Sign additionally requires this receipt's verified note-write proof. */
 function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext){
   try{
+    /* wf2-1.5 owns the first-class Athena review when it is available. Keep the
+       legacy receipt below only as a fail-closed loading fallback; the unified
+       page removes any stale receipt/action modal so the two can never overlap. */
+    var unifiedWf=window.__mlsWriteFlow;
+    if(unifiedWf&&typeof unifiedWf.openUnifiedConfirmation==='function'){
+      var unifiedPatient={name:String((immutablePatient&&immutablePatient.name)||who||''),dob:String((immutablePatient&&immutablePatient.dob)||''),mrn:String((immutablePatient&&immutablePatient.mrn)||''),patientId:String((immutablePatient&&immutablePatient.patientId)||'')};
+      var unifiedExpected=visitContext?{visitDate:String(visitContext.visitDate||visitContext.encounterDate||''),provider:String(visitContext.provider||visitContext.providerName||''),appointmentId:String(visitContext.appointmentId||visitContext.id||''),encounterId:String(visitContext.encounterId||visitContext.visitId||''),encounterUrl:String(visitContext.encounterUrl||visitContext.visitUrl||'')}:null;
+      return unifiedWf.openUnifiedConfirmation({patient:unifiedPatient,plan:sections||[],expectedContext:unifiedExpected,noteTimestamp:(visitContext&&visitContext.noteTimestamp)||null,requireExpectedVisit:!!(visitContext&&visitContext.historical),preferredAction:'write_note'});
+    }
     var old=document.getElementById('athenaReceipt'); if(old) old.remove();
     var patientCopy={name:String((immutablePatient&&immutablePatient.name)||who||''),dob:String((immutablePatient&&immutablePatient.dob)||''),mrn:String((immutablePatient&&immutablePatient.mrn)||''),patientId:String((immutablePatient&&immutablePatient.patientId)||'')};
     var sectionCopy=(sections||[]).map(function(s){
@@ -14746,6 +15003,11 @@ function pushSuperbillToAthena(){
     try{toast('MLS Assist is still loading. Nothing changed.','err');}catch(e){} return;
   }
   if(status){status.style.display='block';status.style.color='#6f5a20';status.textContent='Checking the exact Athena patient, encounter and Billing / Charges destination read-only…';}
+  if(typeof wf.openUnifiedConfirmation==='function'){
+    var billingBody='BILLING:\n'+(billing.emCode?('E/M level: '+billing.emCode+'\n'):'')+(billing.cptCodes.length?('CPT / HCPCS codes:\n- '+billing.cptCodes.join('\n- ')):'');
+    wf.openUnifiedConfirmation({patient:snap.patient,plan:[{kind:'billing',body:billingBody,billing:billing}],statusEl:status,expectedContext:snap.expectedContext||null,noteTimestamp:snap.noteTimestamp||null,requireExpectedVisit:snap.historical===true,preferredAction:'stage_billing'});
+    return;
+  }
   wf.startAthenaAction('stage_billing',{patient:snap.patient,billing:billing,statusEl:status,expectedContext:snap.expectedContext||null,noteTimestamp:snap.noteTimestamp||null,requireExpectedVisit:snap.historical===true});
 }
 /* Preview a SAVED visit using the identity stored with that record. Never use
@@ -14763,7 +15025,7 @@ function pushHistoryNoteToAthena(id){
   var plan=[{kind:'note', body:'NOTE TEXT:\n'+bundle}]; var lines=[ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest];
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+' ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb,billing:_athenaCanonicalBilling(c)}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
-  if(orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+' ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
+  if(orders.length){ var savedOrderReview=_athenaOrderReviewBundle(orders,[]); var ol=savedOrderReview.drafts.map(function(o){return o.summary;}); var sl=savedOrderReview.suggestions.map(function(o){return o.summary;}); var ob=[]; if(ol.length)ob.push('REVIEWED ORDER DRAFTS (manual entry only):\n• '+ol.join('\n• ')); if(sl.length)ob.push('UNACCEPTED SUGGESTIONS (do not execute):\n• '+sl.join('\n• ')); plan.push({kind:'orders',body:ob.join('\n\n'),orderDrafts:savedOrderReview.drafts,orderSuggestions:savedOrderReview.suggestions}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS PROPOSED FOR ATHENA  →  '+ATHENA_SECTIONS.orders.dest+' ('+savedOrderReview.drafts.length+' reviewed, '+savedOrderReview.suggestions.length+' suggestion-only)'); }
   /* Historical writes must use visit metadata stored with this record. The
      record's later save/update time and the currently signed-in provider are
      not evidence of the original encounter and must never be substituted. */
@@ -15264,25 +15526,116 @@ function parseSuggestedOrder(str){
   // default: medication
   return {type:'medication', fields:{drug:s, dose:'', freq:'', notes:''}};
 }
-/* Auto-save EVERY AI-suggested order into the Orders list (no manual "Add" needed), so
-   they ride along in the one-click submit to Athena. Re-running a generate refreshes the
-   auto-added set instead of duplicating it. The doctor can still edit/remove in the Orders tab. */
+/* Compatibility no-op: AI suggestions must remain suggestions until the
+   clinician explicitly adds and reviews one in the Orders workspace. */
 function _autoSaveAiOrders(){
+  return false;
+}
+/* Build one typed, clinician-reviewed order for the supervised Athena adapter.
+   The executable object deliberately contains only the canonical order keys;
+   prose shown in the confirmation is never reinterpreted as an order. */
+function _athenaOrderPlacementCapabilityReady(){
+  try{return !!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(e){return false;}
+}
+(function _wireAthenaOrderPlacementCapability(){
   try{
-    if(!Array.isArray(currentOrders)) return;
-    for(var i=currentOrders.length-1;i>=0;i--){ if(currentOrders[i] && currentOrders[i]._ai) currentOrders.splice(i,1); }   // drop prior auto-added
-    if(Array.isArray(aiSuggestedOrders) && aiSuggestedOrders.length){
-      aiSuggestedOrders.forEach(function(s){
-        if(!s) return;
-        var p=parseSuggestedOrder(s); var def=ORDER_DEFS[p.type]; if(!def) return;
-        var fields={}; def.fields.forEach(function(f){ fields[f.key]=p.fields[f.key]||''; });
-        currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:p.type, fields, _ai:1, _src:s });
-      });
+    if(typeof window==='undefined'||window.__mlsOrderCapabilityListenerWired)return;
+    window.__mlsOrderCapabilityListenerWired=true;
+    if(!window.__mlsExtensionCapabilities)window.__mlsExtensionCapabilities=Object.freeze({});
+    function onPong(e){
+      var d=e&&e.data;
+      if(!d||d.source!=='mls-ext'||d.type!=='mlsPong')return;
+      window.__mlsExtensionHandshake=Object.freeze({seen:true,version:String(d.version||'')});
+      if(d.capabilities&&d.capabilities.supervisedOrderPlacementV2===true){
+        window.__mlsExtensionCapabilities=Object.freeze({supervisedOrderPlacementV2:true});
+      }
+      try{if(typeof renderVisitOrders==='function')renderVisitOrders();}catch(_e1){}
+      try{if(typeof renderOrderList==='function')renderOrderList();}catch(_e2){}
     }
-    try{ renderOrderList(); }catch(e){}
-    try{ renderVisitOrders(); }catch(e){}
-    try{ updateNavCounts(); }catch(e){}
+    window.addEventListener('message',onPong,false);
+    function ping(){try{window.postMessage({source:'mls-app',type:'mlsPing'},'*');}catch(_e3){}}
+    ping();setTimeout(ping,500);setTimeout(ping,1500);
   }catch(e){}
+})();
+function _athenaOrderPlacementCandidate(order){
+  var item=order||{},type=String(item.type||'').toLowerCase().trim();
+  var MAX_ORDER_FIELD=2000;
+  var specs={
+    pt:{required:['dx','freq','duration','modalities'],all:['dx','freq','duration','modalities','notes']},
+    dme:{required:['item','dx','icd'],all:['item','dx','icd','notes']},
+    imaging:{required:['study','region','indication'],all:['study','region','indication','laterality','contrast','notes']},
+    referral:{required:['specialty','reason'],all:['specialty','reason','notes']}
+  };
+  function blocked(badge,reason){return Object.freeze({eligible:false,badge:badge,reason:reason,order:null});}
+  if(type==='medication'||type==='injection')return blocked('Manual in Athena','Medication and injection schemas are not enabled for typed Athena placement.');
+  var spec=specs[type];
+  if(!spec)return blocked('Manual in Athena','This order type does not have a proven typed Athena adapter.');
+  if(!String(item.id||'').trim())return blocked('Review required','This order is missing its immutable local order id.');
+  if(String(item.id||'').trim().length>160)return blocked('Review required','This order id is too long for the exact Athena adapter.');
+  if(item.complete===false||String(item._reviewStatus||'').toLowerCase()!=='accepted'||(item._ai&&!item._reviewStatus))return blocked('Review required','Only a clinician-accepted reviewed order can be placed.');
+  var raw=item.fields||{},normalizedFields={},fields={};
+  spec.all.forEach(function(key){normalizedFields[key]=String(raw[key]||'').trim();});
+  var overlong=spec.all.filter(function(key){return normalizedFields[key].length>MAX_ORDER_FIELD;});
+  if(overlong.length)return blocked('Shorten order details','The following order field exceeds '+MAX_ORDER_FIELD+' characters: '+overlong.join(', ')+'.');
+  var missing=spec.required.filter(function(key){return !normalizedFields[key];});
+  if(missing.length)return blocked('Complete required fields','Required order fields are missing: '+missing.join(', ')+'.');
+  spec.all.forEach(function(key){if(normalizedFields[key])fields[key]=normalizedFields[key];});
+  var displayLabel='';
+  if(type==='imaging')displayLabel=[fields.study,fields.region].filter(Boolean).join(' ');
+  else if(type==='pt')displayLabel='Physical therapy';
+  else if(type==='dme')displayLabel=fields.item;
+  else if(type==='referral')displayLabel='Referral to '+fields.specialty;
+  displayLabel=String(displayLabel||'').trim();
+  if(!displayLabel)return blocked('Review required','The exact Athena catalog query could not be built from the structured order.');
+  if(displayLabel.length>300)return blocked('Shorten order details','The Athena catalog label/search query is too long.');
+  var source=String(item._source||'provider-entered').trim()||'provider-entered';
+  if(source==='ai-suggestion')source='ai-suggestion-accepted';
+  if(source==='rule-suggestion')source='rule-suggestion-accepted';
+  if(!/^(provider-entered|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(source))return blocked('Review required','This order source is not approved for supervised placement.');
+  var catalogCode=String(item.catalogCode||raw.catalogCode||raw.catalog_code||'').trim();
+  var catalogId=String(item.catalogId||raw.catalogId||raw.catalog_id||'').trim();
+  if(!catalogCode&&!catalogId)return blocked('Bind exact Athena catalog item','A durable Athena catalog code or catalog ID is required before this order can be placed.');
+  if(catalogCode.length>100||catalogId.length>160)return blocked('Review required','The Athena catalog code or ID is too long.');
+  var canonical={
+    clientOrderId:String(item.id),type:type,displayLabel:displayLabel,
+    catalogCode:catalogCode,
+    catalogId:catalogId,
+    query:displayLabel,fields:fields,reviewStatus:'accepted',source:source
+  };
+  try{Object.freeze(fields);Object.freeze(canonical);}catch(e2){}
+  return Object.freeze({eligible:true,badge:'Ready for confirmation',reason:'',order:canonical});
+}
+/* Freeze the already-bound patient and visit separately from the order. The
+   adapter still has to discover exactly one matching Athena encounter; a
+   missing/ambiguous encounter fails before final Confirm. */
+function _athenaOrderPlacementVisitSnapshot(binding){
+  function blocked(reason){return Object.freeze({eligible:false,reason:reason});}
+  if(!binding||!binding.id||!Object.isFrozen(binding))return blocked('Start or reopen this visit so MLS can freeze one immutable visit binding.');
+  if(binding.identityConflict||binding.routeBlocked||typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised)return blocked('The patient or visit binding is not safe for an Athena action.');
+  var pt=binding.patient||{};
+  if(!String(pt.patientId||'').trim()||!String(pt.name||'').trim()||!String(pt.dob||'').trim()||!String(pt.mrn||'').trim())return blocked('An exact local patient id, name, DOB, and MRN are required.');
+  try{if(typeof _athenaCurrentMatchesBound==='function'&&!_athenaCurrentMatchesBound(binding))return blocked('The active patient no longer matches this visit.');}catch(e){return blocked('The active patient could not be verified against this visit.');}
+  var ctx=binding.visitContext||{};
+  var visitDate=String(ctx.visitDate||binding.displayDate||'').trim();
+  var provider=String(ctx.provider||binding.displayProvider||'').trim();
+  if(!visitDate||!provider)return blocked('The exact visit date and provider are required before Athena placement.');
+  var patient={name:String(pt.name),dob:String(pt.dob),mrn:String(pt.mrn),patientId:String(pt.patientId)};
+  var expected={
+    visitDate:visitDate,provider:provider,appointmentId:String(ctx.appointmentId||''),
+    encounterId:String(ctx.encounterId||''),encounterUrl:String(ctx.encounterUrl||''),
+    bindingId:String(binding.id),noteTimestamp:Number(binding.noteTimestamp||ctx.noteTimestamp||0)||null
+  };
+  try{Object.freeze(patient);Object.freeze(expected);}catch(e2){}
+  return Object.freeze({eligible:true,patient:patient,expectedContext:expected,bindingId:String(binding.id),noteTimestamp:expected.noteTimestamp,historical:binding.historical===true});
+}
+function _athenaOrderPlacementControl(order){
+  var candidate=_athenaOrderPlacementCandidate(order);
+  if(!candidate.eligible)return '<span style="font-size:11.5px;color:var(--muted);font-weight:700" title="'+esc(candidate.reason)+'">'+esc(candidate.badge)+'</span>';
+  if(!_athenaOrderPlacementCapabilityReady())return '<span style="display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap"><button type="button" class="btn-ghost" style="font-size:12px;padding:7px 11px;white-space:nowrap" disabled aria-disabled="true" title="Update MLS Assist before using supervised order placement.">Review &amp; place in Athena</button><span style="font-size:11.5px;color:var(--amber);font-weight:700" title="Your installed extension did not advertise the exact supervised-order safety contract.">Update MLS Assist · manual in Athena</span></span>';
+  var visit=_athenaOrderPlacementVisitSnapshot(typeof currentVisitAthenaBinding!=='undefined'?currentVisitAthenaBinding:null);
+  if(!visit.eligible)return '<span style="display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap"><button type="button" class="btn-ghost" style="font-size:12px;padding:7px 11px;white-space:nowrap" disabled aria-disabled="true" title="'+esc(visit.reason)+'">Review &amp; place in Athena</button><span style="font-size:11.5px;color:var(--amber);font-weight:700">Needs exact Athena patient / visit</span></span>';
+  var encoded=encodeURIComponent(String(order.id||''));
+  return '<button type="button" class="btn-green" style="font-size:12px;padding:7px 11px;white-space:nowrap" onclick="event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(\''+encoded+'\'),this)" title="Opens one separate confirmation for this exact order. Nothing is placed until you press Confirm.">Review &amp; place in Athena</button>';
 }
 /* Compact orders list shown ON the Visit page (Orders combined into Visit). */
 function renderVisitOrders(){
@@ -15290,12 +15643,12 @@ function renderVisitOrders(){
     var card=document.getElementById('visitOrdersCard'); var box=document.getElementById('visitOrdersBody'); if(!card||!box) return;
     var ords=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
     card.style.display='block';
-    if(!ords.length){ box.innerHTML='<span style="font-size:12.5px;color:var(--muted)">No orders yet — the AI adds these from your note, or tap ＋ Add. They ride along to Athena when you hit Submit.</span>'; return; }
+    if(!ords.length){ box.innerHTML='<span style="font-size:12.5px;color:var(--muted)">No reviewed order drafts yet. AI proposals stay suggestion-only until you add and review one.</span>'; return; }
     box.innerHTML=ords.map(function(o){
       var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{};
       var label=o._src||((def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''));
       var icon=def.icon||'•';
-      return '<span style="display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #d2e4fb;border-radius:999px;padding:5px 7px 5px 12px;margin:0 7px 7px 0;font-size:12.5px">'+icon+' '+esc(label)+(o._ai?' <span style="font-size:9.5px;color:var(--brand);font-weight:800;letter-spacing:.3px">AI</span>':'')+' <button onclick="removeVisitOrder(\''+o.id+'\')" title="Remove this order" aria-label="Remove order" style="background:none;border:0;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px;line-height:1">✕</button></span>';
+      return '<div style="display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap;background:#fff;border:1px solid #d2e4fb;border-radius:12px;padding:6px 8px 6px 12px;margin:0 7px 7px 0;font-size:12.5px"><span>'+icon+' '+esc(label)+(o._ai?' <span style="font-size:9.5px;color:var(--brand);font-weight:800;letter-spacing:.3px">AI</span>':'')+'</span>'+_athenaOrderPlacementControl(o)+' <button onclick="removeVisitOrder(\''+o.id+'\')" title="Remove this order" aria-label="Remove order" style="background:none;border:0;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px;line-height:1">✕</button></div>';
     }).join('');
   }catch(e){}
 }
@@ -15315,7 +15668,7 @@ function acceptAiSuggestion(i){
   const def=ORDER_DEFS[p.type]; if(!def) return;
   const fields={};
   def.fields.forEach(f=>{ fields[f.key]=p.fields[f.key]||''; });
-  currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:p.type, fields });
+  currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:p.type, fields, _src:s, _source:'ai-suggestion', _reviewStatus:'accepted' });
   renderOrderList();
   updateNavCounts();
   toast('Added suggested order: '+s+'. Edit in the list if needed.','ok');
@@ -15329,7 +15682,7 @@ function acceptSuggestion(i){
   def.fields.forEach(f=>{ fields[f.key]=s.fields[f.key]||''; });
   // if the suggestion didn't set an ICD but we have one, drop it into dme/icd
   if(s.type==='dme' && !fields.icd && ordersDx.icd.length) fields.icd=ordersDx.icd[0].split(' — ')[0];
-  currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:s.type, fields });
+  currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type:s.type, fields, _src:String(s.label||''), _source:'rule-suggestion', _reviewStatus:'accepted' });
   renderOrderList();
   updateNavCounts();
   toast('Added: '+def.label+' — '+(s.label||'')+'. Edit in the list if needed.','ok');
@@ -15360,7 +15713,7 @@ function renderOrderFields(){
         f.quick.map(q=>'<span class="dotchip" onclick="setOrderField(\''+id+'\',this.dataset.q)" data-q="'+esc(q)+'">'+esc(q)+'</span>').join('')+'</div>';
     }
     return '<div class="field" style="margin-bottom:12px"><label>'+esc(f.label)+'</label>'+control+quick+'</div>';
-  }).join('');
+  }).join('')+((/^(pt|dme|imaging|referral)$/.test(type))?'<div style="border:1px solid #d7e2db;background:#f7fbf8;border-radius:10px;padding:10px 12px;margin:2px 0 12px"><div style="font-size:12.5px;font-weight:800;color:var(--brand-dk);margin-bottom:5px">Exact Athena catalog binding <span style="font-weight:600;color:var(--muted)">(required only for supervised placement)</span></div><div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Enter the exact catalog code or catalog ID shown by Athena. MLS will not place a label-only match.</div><div class="row tight"><div class="field" style="flex:1"><label>Athena catalog code</label><input type="text" id="ordCatalogCode" maxlength="100" placeholder="e.g. exact code from Athena"></div><div class="field" style="flex:1"><label>Athena catalog ID</label><input type="text" id="ordCatalogId" maxlength="160" placeholder="e.g. exact catalog item ID"></div></div></div>':'');
   // prefill diagnosis fields if we have a pulled dx
   prefillDxIntoForm();
 }
@@ -15390,14 +15743,16 @@ function addOrderFromForm(){
   const type=document.getElementById('ordType').value;
   if(!type){ toast('Choose an order type first.','err'); return; }
   const fields=readOrderForm(type);
+  const catalogCode=((document.getElementById('ordCatalogCode')||{}).value||'').trim();
+  const catalogId=((document.getElementById('ordCatalogId')||{}).value||'').trim();
   if(!orderFormHasContent(type,fields)){ toast('Fill in at least the '+ORDER_DEFS[type].fields[0].label.toLowerCase()+'.','err'); return; }
   if(editingOrderId){
     const o=currentOrders.find(x=>x.id===editingOrderId);
-    if(o){ o.type=type; o.fields=fields; }
+    if(o){ o.type=type; o.fields=fields; o.catalogCode=catalogCode; o.catalogId=catalogId; o._reviewStatus='accepted'; if(!/^(provider-entered|ai-suggestion|rule-suggestion|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(String(o._source||'')))o._source='provider-entered'; try{delete o.complete;}catch(_e){} }
     editingOrderId=null;
     toast('Order updated.','ok');
   } else {
-    currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type, fields });
+    currentOrders.push({ id:'o'+Date.now()+Math.random().toString(36).slice(2,5), type, fields, catalogCode:catalogCode, catalogId:catalogId, _source:'provider-entered', _reviewStatus:'accepted' });
     toast('Order added.','ok');
   }
   cancelOrderEdit();
@@ -15416,6 +15771,8 @@ function editOrder(id){
   renderOrderFields();
   // fill values
   (ORDER_DEFS[o.type].fields).forEach(f=>{ const el=document.getElementById('ordf_'+f.key); if(el) el.value=o.fields[f.key]||''; });
+  const catalogCode=document.getElementById('ordCatalogCode'); if(catalogCode) catalogCode.value=o.catalogCode||'';
+  const catalogId=document.getElementById('ordCatalogId'); if(catalogId) catalogId.value=o.catalogId||'';
   document.getElementById('ordAddBtn').textContent='✔ Update order';
   document.getElementById('ordersBuilderCard').scrollIntoView({behavior:'smooth'});
 }
@@ -15465,6 +15822,7 @@ function renderOrderList(){
         <div class="t">${esc(def.label)}</div>
         <div class="s">${esc(orderSummary(o))}</div>
       </div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">${_athenaOrderPlacementControl(o)}</div>
       <button class="del" title="Remove" onclick="event.stopPropagation();removeOrder('${o.id}')">🗑</button>
     </div>`;
   }).join('');
@@ -15514,12 +15872,70 @@ function copyOrders(){
     .then(()=>toast('Orders copied.','ok'))
     .catch(()=>toast('Could not copy.','err'));
 }
-/* Push the order sheet straight into the EMR's note/order field via MLS Assist
-   — same one-shot, cross-frame paste the visit note uses (no Athena API needed). */
+/* Open a supervised confirmation for exactly one typed order. This function
+   never calls the Athena action bridge itself: the clinician must separately
+   press Confirm in the unified review after the adapter proves an exact patient,
+   encounter, and catalog match. */
+function reviewAndPlaceOrderInAthena(orderId,btn){
+  if(!_athenaOrderPlacementCapabilityReady()){toast('Update MLS Assist before supervised order placement. Until then, review and enter this order manually in Athena. Nothing was sent.','err');return null;}
+  var matches=(Array.isArray(currentOrders)?currentOrders:[]).filter(function(item){return item&&String(item.id)===String(orderId);});
+  if(matches.length!==1){toast('MLS could not freeze exactly one order. Nothing was sent to Athena.','err');return null;}
+  var candidate=_athenaOrderPlacementCandidate(matches[0]);
+  if(!candidate.eligible){toast(candidate.reason+' Nothing was sent to Athena.','err');return null;}
+  var binding=(typeof _athenaBoundVisitForAction==='function')?_athenaBoundVisitForAction('reviewing and placing one order',true):null;
+  if(!binding)return null;
+  var visit=_athenaOrderPlacementVisitSnapshot(binding);
+  if(!visit.eligible){toast(visit.reason+' Nothing was sent to Athena.','err');return null;}
+  var wf=window.__mlsWriteFlow;
+  if(!wf||typeof wf.openUnifiedConfirmation!=='function'){
+    toast('The Athena confirmation is still loading. Nothing was sent; wait a moment and try again.','err');
+    return null;
+  }
+  var consequence='One exact '+candidate.order.type+' order only. It will be placed in the exact bound Athena encounter only after you separately press Confirm. It will not write, Save, or Sign the note; add billing; submit a claim; place any other order; or start another action.';
+  var drafts=Object.freeze([candidate.order]);
+  var orderPlan=Object.freeze({kind:'orders',body:consequence,consequence:consequence,orderDrafts:drafts,orderSuggestions:Object.freeze([])});
+  var manifest=wf.openUnifiedConfirmation({
+    patient:visit.patient,plan:Object.freeze([orderPlan]),expectedContext:visit.expectedContext,
+    noteTimestamp:visit.noteTimestamp,requireExpectedVisit:true,visitBindingId:visit.bindingId,
+    receiptSessionId:'place-order-review-'+visit.bindingId+'-'+candidate.order.clientOrderId,
+    preferredAction:'place_order'
+  });
+  if(manifest)toast('One exact order confirmation opened. Nothing is placed until you press Confirm.','');
+  return manifest||null;
+}
+/* Keep the overview as a route/manual-review surface. Executable placement is
+   intentionally available only from each order's separate button above. */
 function sendOrdersToEMR(btn){
-  if(!currentOrders.length){ toast('No orders to send.','err'); return; }
-  try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(btn||null,{text:ordersAsText()}); return; } }catch(e){}
-  copyOrders();
+  if(!currentOrders.length){ toast('No orders to review.','err'); return null; }
+  var binding=(typeof _athenaBoundVisitForAction==='function')?_athenaBoundVisitForAction('reviewing orders',false):null;
+  if(!binding)return null;
+  var wf=window.__mlsWriteFlow;
+  if(!wf||typeof wf.openUnifiedConfirmation!=='function'){
+    toast('The Athena review is still loading. Nothing was sent; wait a moment and try again.','err');
+    return null;
+  }
+  var suggestions=(typeof aiSuggestedOrders!=='undefined'&&Array.isArray(aiSuggestedOrders))?aiSuggestedOrders:[];
+  var review=_athenaOrderReviewBundle(currentOrders,suggestions);
+  function freezeItems(items){
+    var out=(items||[]).map(function(item){
+      var copy=Object.assign({},item||{}); copy.fields=Object.freeze(Object.assign({},copy.fields||{}));
+      try{Object.freeze(copy);}catch(e){} return copy;
+    });
+    try{Object.freeze(out);}catch(e){} return out;
+  }
+  var drafts=freezeItems(review.drafts), pending=freezeItems(review.suggestions), body=[];
+  if(drafts.length)body.push('REVIEWED ORDER DRAFTS (route overview; use an eligible row\'s separate placement button):\n• '+drafts.map(function(o){return o.summary;}).join('\n• '));
+  if(pending.length)body.push('UNACCEPTED OR INCOMPLETE SUGGESTIONS (do not execute):\n• '+pending.map(function(o){return o.summary;}).join('\n• '));
+  var patient=Object.freeze({name:String(binding.patient.name||''),dob:String(binding.patient.dob||''),mrn:String(binding.patient.mrn||''),patientId:String(binding.patient.patientId||'')});
+  var expected=binding.visitContext?Object.freeze(Object.assign({},binding.visitContext)):null;
+  var orderPlan=Object.freeze({kind:'orders',body:body.join('\n\n'),orderDrafts:drafts,orderSuggestions:pending});
+  var manifest=wf.openUnifiedConfirmation({
+    patient:patient,plan:Object.freeze([orderPlan]),expectedContext:expected,
+    noteTimestamp:binding.noteTimestamp||null,requireExpectedVisit:binding.historical===true,
+    receiptSessionId:'orders-review-'+String(binding.id||Date.now()),preferredAction:''
+  });
+  if(manifest)toast('Order route/manual overview opened. Nothing was sent to Athena.','');
+  return manifest||null;
 }
 
 /* ---- printable order sheet (mirrors buildPrintHTML) ---- */
@@ -22421,7 +22837,7 @@ function _ptGroupSort(mode){
                  st.count ? (st.count+' visit'+(st.count===1?'':'s')) : 'no visits',
                  st.last ? ('last '+st.last) : '' ].filter(Boolean).join('  ·  ');
     bar.style.display='flex';
-    bar.innerHTML =
+    var baseHtml =
       '<div class="mlsctx-id">'
       +   '<span class="mlsctx-av">'+escapeHtml(initials(p.name))+'</span>'
       +   '<span class="mlsctx-idtext">'
@@ -22437,17 +22853,25 @@ function _ptGroupSort(mode){
       +   '<button type="button" data-act="schedule">Schedule</button>'
       +   '<button type="button" data-act="switch" class="mlsctx-switch">Switch patient</button>'
       + '</div>';
-    var id = p.id;
-    bar.querySelectorAll('button[data-act]').forEach(function(b){
-      b.onclick = function(){
-        var a = b.getAttribute('data-act');
-        if (a==='chart') openChart(id);
-        else if (a==='visit') go('visit');
-        else if (a==='history') go('history');
-        else if (a==='schedule') openSchedule(id);
-        else if (a==='switch') doSwitch();
-      };
-    });
+    /* Cross-tab patient saves can call refresh repeatedly. Preserve the existing
+       subtree (focus, popovers and add-on chips) when the rendered facts did not
+       change instead of visibly tearing the whole header down and rebuilding it. */
+    var needsBase = bar.__mlsCardBaseHtml !== baseHtml || !bar.querySelector('.mlsctx-id') || !bar.querySelector('.mlsctx-actions');
+    if (needsBase){
+      bar.innerHTML = baseHtml;
+      bar.__mlsCardBaseHtml = baseHtml;
+      var id = p.id;
+      bar.querySelectorAll('button[data-act]').forEach(function(b){
+        b.onclick = function(){
+          var a = b.getAttribute('data-act');
+          if (a==='chart') openChart(id);
+          else if (a==='visit') go('visit');
+          else if (a==='history') go('history');
+          else if (a==='schedule') openSchedule(id);
+          else if (a==='switch') doSwitch();
+        };
+      });
+    }
     if (_syncHtml) { var slot = bar.querySelector('#mlsCardSlot'); if (slot) slot.innerHTML = _syncHtml; }
   }
   var _syncHtml = '';

@@ -12,6 +12,7 @@ const ROOT = path.resolve(__dirname, '..');
 const EXPECTED_FILES = [
   'manifest.json',
   'background.js',
+  'destination_teach_navigation_guard.js',
   'content.js',
   'content.css',
   'popup.html',
@@ -37,7 +38,7 @@ function readJson(relativePath) {
 }
 
 function assertSameList(actual, expected, label) {
-  assert.deepStrictEqual(actual, expected, `${label} must contain the audited 16-file allowlist in release order`);
+  assert.deepStrictEqual(actual, expected, `${label} must contain the audited ${expected.length}-file allowlist in release order`);
 }
 
 function findPython() {
@@ -184,7 +185,7 @@ assert(builderListMatch, 'build_extension_zip.py must declare PACKAGE_FILES');
 const builderFiles = Array.from(builderListMatch[1].matchAll(/"([^"]+)"/g), match => match[1]);
 assertSameList(builderFiles, EXPECTED_FILES, 'build_extension_zip.py');
 
-assert.strictEqual(new Set(EXPECTED_FILES).size, 16, 'release allowlist must contain 16 unique files');
+assert.strictEqual(new Set(EXPECTED_FILES).size, 17, 'release allowlist must contain 17 unique files');
 for (const name of EXPECTED_FILES) {
   assert.strictEqual(path.posix.basename(name), name, `release entry must be at ZIP root: ${name}`);
   assert(!name.includes('\\') && !name.includes('..'), `unsafe release entry: ${name}`);
@@ -209,6 +210,8 @@ assert(EXPECTED_FILES.includes('offscreen.html') && /['"]offscreen\.html['"]/.te
   'offscreen document must be packaged and referenced by background.js');
 assert(EXPECTED_FILES.includes('feat_codes_driver.js') && /importScripts\(['"]feat_codes_driver\.js['"]\)/.test(read('background.js')),
   'background importScripts dependency must be packaged');
+assert(EXPECTED_FILES.includes('destination_teach_navigation_guard.js') && /destination_teach_navigation_guard\.js/.test(read('background.js')),
+  'document-start teaching navigation guard must be packaged and registered');
 for (const [html, script] of [['popup.html', 'popup.js'], ['offscreen.html', 'offscreen.js']]) {
   assert(new RegExp(`<script\\s+src=["']${script.replace('.', '\\.')}`).test(read(html)), `${html} must reference ${script}`);
   assert(EXPECTED_FILES.includes(script), `${script} must be packaged`);

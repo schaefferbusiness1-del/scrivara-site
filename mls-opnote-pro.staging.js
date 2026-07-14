@@ -699,6 +699,16 @@
       try {
         if (typeof window.aiCallRaw !== 'function') return await orig(name, dateStr, procedure, tplText, ctx);
         ctx = ctx || {};
+        var exactPatient = (typeof window._opResolvePatient === 'function') ? window._opResolvePatient(name, ctx.dob, ctx.patientId) : null;
+        if (!exactPatient || !String(ctx.patientId || '').trim() || String(exactPatient.id || '') !== String(ctx.patientId || '')) {
+          var identityErr = new Error('Op-note generation stopped: exact patient identity could not be verified.');
+          identityErr.code = 'MLS_OPNOTE_IDENTITY'; throw identityErr;
+        }
+        name = String(exactPatient.name || name || '');
+        ctx.dob = String(exactPatient.dob || ''); ctx.sex = String(exactPatient.sex || exactPatient.gender || '');
+        ctx.age = (typeof window._ptAge === 'function') ? window._ptAge(exactPatient.dob) : ctx.age;
+        ctx.bmi = (typeof window._ptBmi === 'function') ? window._ptBmi(exactPatient) : ctx.bmi;
+        ctx.mrn = String(exactPatient.mrn || '');
         var known = [];
         if (name) known.push('name: ' + name);
         if (ctx.sex) known.push('sex: ' + ctx.sex);
@@ -718,14 +728,15 @@
           + (known.length ? ('\n\nKNOWN PATIENT FACTS (already in our chart — fill these in, do NOT ask for them):\n- ' + known.join('\n- ')) : '')
           + '\n\nTEMPLATE (the doctor\'s own prior op note — match its structure & style, expand to the full professional format above):\n' + String(tplText || '').slice(0, 9000);
         var key = (typeof getKey === 'function') ? getKey() : '';
-        var raw = await window.aiCallRaw(sys, user, key, { freeform: true });
+        var raw = await window.aiCallRaw(sys, user, key, { freeform: true, mlsOpNotePatientId: String(exactPatient.id) });
         var s = String(raw || '').replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
         var obj = null;
         try { obj = JSON.parse(s); } catch (e) { try { var m = s.match(/\{[\s\S]*\}/); if (m) obj = JSON.parse(m[0]); } catch (_) {} }
         if (!obj || typeof obj !== 'object') return { note: s, missing: [] };
         return { note: String(obj.note || ''), missing: Array.isArray(obj.missing) ? obj.missing : [] };
       } catch (e) {
-        try { return await orig(name, dateStr, procedure, tplText, ctx); } catch (e2) { return { note: '', missing: [] }; }
+        if (e && e.code === 'MLS_OPNOTE_IDENTITY') throw e;
+        try { return await orig(name, dateStr, procedure, tplText, ctx); } catch (e2) { if (e2 && e2.code === 'MLS_OPNOTE_IDENTITY') throw e2; return { note: '', missing: [] }; }
       }
     };
     enhanced.__mlsopWrapped = true;

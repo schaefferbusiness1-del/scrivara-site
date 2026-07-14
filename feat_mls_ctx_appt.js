@@ -104,7 +104,7 @@
     var html = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>' +
       '<span>Appt ' + esc(time) + "</span>";
     if (reason) html += '<span class="mlsca-sep">&middot;</span><span class="mlsca-rsn">' + esc(reason) + "</span>";
-    chip.innerHTML = html;
+    if (chip.innerHTML !== html) chip.innerHTML = html;
   }
 
   function start() { render(); if (timer) clearInterval(timer); timer = setInterval(render, 1200); }

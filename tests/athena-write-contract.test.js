@@ -104,9 +104,10 @@ assert(/held\.push/.test(gather), 'structured actions must remain held for manua
 assert(/Follow-up:/.test(gather) && /byKey\[route\.key\]\.text \+=/.test(gather), 'follow-up must merge into the canonical Plan payload');
 
 const runV2 = between(writeflow, 'function runV2(panel)', '/* -------------------- panel takeover');
-assert(runV2.indexOf('gathered.errors.length') < runV2.indexOf("bridge('mlsAppWriteV2'"), 'unknown routes must block before any bridge message');
-assert(runV2.indexOf('if (!secs.length)') < runV2.indexOf("bridge('mlsAppWriteV2'"), 'structured-only plans must return before any bridge message');
-const resultUi = between(writeflow, 'function renderResp(logEl, resp, want)', '/* ------------------------- v2 write from the panel');
+assert(runV2.includes('openPanelUnifiedConfirmation'), 'advanced workspace must delegate to the unified manifest review');
+assert(!/bridge\(\s*['"]mlsAppWriteV2['"]/.test(runV2), 'advanced workspace must not use the deprecated direct writer');
+assert(!/startAthenaAction\(/.test(runV2), 'advanced workspace must not open the older per-action confirmation');
+const resultUi = between(writeflow, 'function renderResp(logEl, resp, want)', '/* -------------------- unified review from the panel');
 assert(/r\.written && r\.verified && durable/.test(resultUi), 'Done must require written, verified, and durable evidence');
 assert(/persisted\|\|r\.serverVerified/.test(resultUi), 'durable evidence must be persisted or server verified');
 

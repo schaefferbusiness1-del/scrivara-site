@@ -86,7 +86,7 @@ finding('top note placement uses the exact-encounter AthenaActionV2 lane', funct
     ['app action controller', explicitActions]
   ]) assert(/\bwrite_note\b/.test(source), `${label} must recognize canonical action write_note`);
 
-  assert(/startAthenaAction\(\s*['"]write_note['"]/.test(writeReceiptDrafts), 'top writeReceiptDrafts must enter the probe/token/confirm write_note action');
+  assert(/openUnifiedConfirmation\(/.test(writeReceiptDrafts), 'top writeReceiptDrafts must enter the single immutable manifest review');
   assert(!/bridge\(\s*['"]mlsAppWriteV2['"]/.test(writeReceiptDrafts), 'top writeReceiptDrafts must not bypass exact-encounter authorization through mlsAppWriteV2');
   assert(/data-mls-athena-action/.test(showActionConfirm) && /data-mls-preview-hash/.test(showActionConfirm), 'write_note confirmation must use the same trusted-click binding as final actions');
   assert(/noteText\s*:/.test(actionBridge), 'the typed content bridge must carry the reviewed note text');
@@ -237,7 +237,7 @@ finding('Sign is locked to a verified write_note proof from the same receipt and
   const executeAt = handler.indexOf('/* ATHENA_ACTION_V2_EXECUTE_INJECTION */');
   assert(signGateAt >= 0 && executeAt > signGateAt, 'Sign prerequisite must be checked before Athena execution');
 
-  assert(/writeReceiptDrafts/.test(receiptAction) && /startAthenaAction\(\s*['"]write_note['"]/.test(writeReceiptDrafts), 'the top receipt write button must reach canonical write_note through writeReceiptDrafts');
+  assert(/writeReceiptDrafts/.test(receiptAction) && /openUnifiedConfirmation\(/.test(writeReceiptDrafts), 'the top receipt write button must reach canonical write_note through the unified manifest review');
   assert(/noteWriteProof\s*[:=]\s*(?:null|['"]['"])/.test(receiptUi), 'a new receipt must begin without a note-write proof');
   assert(/id=[\\'"]athenaReceiptSign[\\'"][^]{0,300}\bdisabled\b/.test(receiptUi), 'Sign & Save must render disabled on a new receipt');
   assert(/(?:written|writeVerified)[^]{0,250}verified[^]{0,350}noteWriteProof|noteWriteProof[^]{0,350}(?:written|writeVerified)[^]{0,250}verified/.test(receiptAction + explicitActions), 'receipt may enable Sign only from a written+verified write_note response carrying proof');
@@ -282,10 +282,13 @@ finding('second-pass authorization and honest-outcome gaps stay closed', functio
   assert(/rec\.notePayload\s*!==\s*canonicalNotePayload/.test(handler), 'execute must compare the complete canonical note payload, not only its short hash');
 
   const advancedRelay = content.slice(content.indexOf("d.type !== 'mlsAppWriteV2'"), content.length);
-  assert(/fresh-trusted-click-required/.test(advancedRelay) && /gestureProof/.test(advancedRelay), 'advanced section writes must require and consume a real click');
+  assert(/unified-confirmation-required/.test(advancedRelay), 'stale advanced direct-write messages must fail closed');
+  assert(!/chrome\.runtime\.sendMessage\s*\(/.test(advancedRelay), 'deprecated advanced direct writes must never reach the background');
   const advancedHandlerAt = background.indexOf("msg.type !== 'mlsAppWriteV2Request'");
   const advancedHandler = background.slice(advancedHandlerAt, advancedHandlerAt + 5000);
-  assert(/msg\.userGesture\s*!==\s*true/.test(advancedHandler) && /msg\.gestureProof/.test(advancedHandler), 'background must independently enforce the advanced-write click proof');
+  const disabledAt = advancedHandler.indexOf('unified-confirmation-required');
+  const legacyTabPickAt = advancedHandler.indexOf('chrome.tabs.query');
+  assert(disabledAt >= 0 && legacyTabPickAt > disabledAt, 'background must reject the deprecated direct writer before any Athena tab selection');
 
   const pasteAt = background.indexOf("msg.type === 'mlsAppPasteRequest'");
   const pasteHandler = background.slice(pasteAt, pasteAt + 1800);

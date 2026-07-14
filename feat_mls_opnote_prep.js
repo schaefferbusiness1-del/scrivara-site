@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_opnote_prep.js  ->  window.__mlsOpNotePrep   (opnp-1.0.0)
+ * feat_mls_opnote_prep.js  ->  window.__mlsOpNotePrep   (opnp-1.3.0)
  * -----------------------------------------------------------------------------
  * TASK 12 — OP-NOTE DRAFTING (schedule-prep flow). Hardens the LIVE
  * "Prep op notes" surface in ScribeFlow.html (openOpPrep / openOpPrepForPatient
@@ -38,7 +38,7 @@
   'use strict';
   try { if (window.__mlsOpNotePrep && window.__mlsOpNotePrep.installed) return; } catch (e) { return; }
 
-  var VERSION = 'opnp-1.2.0';
+  var VERSION = 'opnp-1.3.0';
   var STYLE_ID = 'mlsOpnpCss';
 
   function S(x) { return x == null ? '' : String(x); }
@@ -328,30 +328,25 @@
 
     // (1) identity-safe patient ctx + (2)(3) provider/facility enrichment.
     wrap('_opPatientCtx', function (orig) {
-      return function (name) {
-        // Resolve the patient safely from the current prep row's appt when possible.
-        // IDENTITY-SAFE for SAME-NAME patients: prefer the EXACT row being drafted
-        // (window.__opnpActiveIdx, pinned by the opPrepGenerateOne wrap below) so two
-        // patients who share a name never get each other's DOB/MRN in the note body.
-        // A bare first-name-match is only a last resort for non-drafting/display calls.
-        var appt = null;
+      return function (name, dob, patientId) {
+        /* The base app now owns exact resolution by immutable app patient id.
+           Preserve that result verbatim: this enhancement may add provider and
+           facility facts, but it may never re-resolve by active patient/name. */
+        var base = {}, appt = null, suppliedId = trim(patientId);
+        try { base = orig.apply(this, arguments) || {}; } catch (e) { base = {}; }
         try {
-          var rows = window._opPrep || [];
-          var ai = window.__opnpActiveIdx;
-          if (ai != null && rows[ai] && rows[ai].appt && nname(rows[ai].appt.name) === nname(name)) appt = rows[ai].appt;
-          if (!appt) { for (var i = 0; i < rows.length; i++) { if (rows[i] && rows[i].appt && nname(rows[i].appt.name) === nname(name)) { appt = rows[i].appt; break; } } }
-        } catch (e) {}
-        var base;
-        var res = resolvePatient(appt || { name: name });
-        if (res.patient) {
-          var p = res.patient;
-          base = { dob: S(p.dob || ''), sex: S(p.sex || p.gender || ''), age: (isFn(window._ptAge) ? window._ptAge(p.dob) : null), bmi: (isFn(window._ptBmi) ? window._ptBmi(p) : null), mrn: S(p.mrn || p.athenaId || '') };
+          var rows = window._opPrep || [], ai = window.__opnpActiveIdx;
+          var row = (ai != null && rows[ai]) ? rows[ai] : null;
+          if (row && trim(row.patientId) === suppliedId && row.appt && nname(row.appt.name) === nname(name)) appt = row.appt;
+        } catch (e2) {}
+        if (!suppliedId || trim(base.patientId) !== suppliedId) {
+          base = {};
+          base._idStatus = suppliedId ? 'id-mismatch' : 'missing-id';
+          base._idWarnings = ['Exact patient id was not preserved; op-note generation is blocked.'];
+          base._resolvedId = '';
         } else {
-          // fall back to the original (name-based) ONLY for demographics display; identity
-          // status is recorded so the save path can still refuse an unsafe write.
-          try { base = orig.apply(this, arguments) || {}; } catch (e2) { base = {}; }
+          base._idStatus = 'id-match'; base._idWarnings = []; base._resolvedId = suppliedId;
         }
-        base._idStatus = res.status; base._idWarnings = res.warnings; base._resolvedId = res.patient ? ptId(res.patient) : '';
         return enrichCtx(name, base, appt);
       };
     });

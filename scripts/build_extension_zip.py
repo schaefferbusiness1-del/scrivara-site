@@ -17,6 +17,7 @@ FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 PACKAGE_FILES = (
     "manifest.json",
     "background.js",
+    "destination_teach_navigation_guard.js",
     "content.js",
     "content.css",
     "popup.html",

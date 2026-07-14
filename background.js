@@ -153,10 +153,13 @@ async function mlsAthenaActionV2DriverFn(req) {
     var expectedPatient = req.expectedPatient || {};
     var expectedContext = req.expectedContext || {};
     var locked = req.locked || null;
+    var taughtDestination = req.taughtDestination && typeof req.taughtDestination === 'object' ? req.taughtDestination : null;
     var billing = req.billing || {};
+    var order = req.order || {};
     var mutationAttempted = false;
+    var orderFinalActionAttempted = false;
     var sleep = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
-    var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1 };
+    var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
     if (!ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
 
     function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
@@ -234,6 +237,31 @@ async function mlsAthenaActionV2DriverFn(req) {
       var s = String(url || '');
       var m = /\/(?:encounter|visit|appointment)\/(\d{3,})/i.exec(s) || /(?:encounter|appointment|visit)(?:id)?[=\/](\d{3,})/i.exec(s);
       return m ? m[1] : '';
+    }
+    function appointmentIdFor(frame, actionRoot, identityRoot) {
+      var values = {}, url = String(frame && frame.url || '');
+      var fromUrl = /\/appointment\/(\d{3,})/i.exec(url) || /(?:appointment|appointmentid|appointment_id|apptid)[=\/:](\d{3,})/i.exec(url);
+      if (fromUrl) values[fromUrl[1]] = 1;
+      var roots = [actionRoot, identityRoot].filter(Boolean);
+      for (var ri = 0; ri < roots.length; ri++) {
+        var nodes = [roots[ri]];
+        try { nodes = nodes.concat(deepQueryAll(roots[ri], '[data-appointment-id],[data-appointmentid],[data-appt-id],[appointmentid],a[href*="appointment"]')).slice(0, 500); } catch (eNodes) {}
+        for (var ni = 0; ni < nodes.length; ni++) {
+          var raw = '';
+          try {
+            raw = nodes[ni].getAttribute('data-appointment-id') || nodes[ni].getAttribute('data-appointmentid') ||
+              nodes[ni].getAttribute('data-appt-id') || nodes[ni].getAttribute('appointmentid') || '';
+            if (!raw) {
+              var href = nodes[ni].getAttribute('href') || '';
+              var hm = /\/appointment\/(\d{3,})/i.exec(href) || /(?:appointment|appointmentid|appointment_id|apptid)[=\/:](\d{3,})/i.exec(href);
+              raw = hm ? hm[1] : '';
+            }
+          } catch (eAttr) {}
+          raw = digits(raw); if (raw) values[raw] = 1;
+        }
+      }
+      var ids = Object.keys(values);
+      return ids.length === 1 ? ids[0] : '';
     }
     function sameOriginFrames() {
       var out = [];
@@ -388,6 +416,14 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (src.some(function (n) { return /\b(unsign|sign out|submit|post|bill|charge|claim|delete|discard|void)\b/.test(n); })) return false;
       return src.some(function (n) { return n === 'sign and save'; });
     }
+    function exactPlaceOrder(el) {
+      var raw = [];
+      try { raw = [el.textContent, el.value, el.getAttribute && el.getAttribute('aria-label'), el.getAttribute && el.getAttribute('title')].filter(function (v) { return String(v || '').trim(); }); } catch (e) {}
+      if (!raw.length) raw = [label(el)];
+      var src = raw.map(norm);
+      if (src.some(function (n) { return /\b(save|sign|submit|prescribe|e\s*rx|billing|bill|charge|claim|delete|remove|cancel|continue|next|finish|done|confirm)\b/.test(n); })) return false;
+      return src.some(function (n) { return n === 'place order' || n === 'add order'; });
+    }
     function interactive(doc, win) {
       return deepQueryAll(doc, 'button,[role="button"],input[type="button"],input[type="submit"]').filter(function (el) { return visible(el, win); });
     }
@@ -412,6 +448,29 @@ async function mlsAthenaActionV2DriverFn(req) {
       }
       if (root === hits[0]) return { error: 'billing-context-unverified' };
       return { el: hits[0], root: root };
+    }
+    function orderWorkspace(frame) {
+      var selector = [
+        '[data-testid="orders"]','[data-testid="order-entry"]','[data-testid="orders-workspace"]','[data-testid="order-workspace"]',
+        '[data-component="orders"]','[data-component="order-entry"]','[data-component="orders-workspace"]',
+        '[aria-label="Orders"]','[aria-label="Order entry"]','[aria-label="Orders workspace"]',
+        '#orders','#order-entry','#orderEntry','.orders-workspace','.order-workspace','.order-entry'
+      ].join(',');
+      var roots = deepQueryAll(frame.doc, selector).filter(function (el) {
+        if (!visible(el, frame.w)) return false;
+        var d = scopeDescriptor(el);
+        return /\border(?:s| entry| workspace)\b/.test(d) && !/\b(prescription|medication|e\s*rx|billing|charge|claim)\b/.test(d);
+      });
+      roots = collapseContainedMatches(roots);
+      if (roots.length !== 1) return { error: roots.length ? 'order-workspace-duplicate-rejected' : 'order-workspace-unverified' };
+      var root = roots[0];
+      var controls = deepQueryAll(root, 'input:not([type="hidden"]),textarea,[contenteditable="true"],[contenteditable="plaintext-only"]').filter(function (el) {
+        if (!visible(el, frame.w)) return false;
+        var h = fieldHay(el);
+        return /\border\b/.test(h) && /\b(search|catalog|find|add)\b/.test(h) && !/\b(prescription|medication|drug|billing|charge|claim|diagnosis)\b/.test(h);
+      });
+      if (controls.length !== 1) return { error: controls.length ? 'order-search-duplicate-rejected' : 'order-search-unverified' };
+      return { root: root, search: controls[0] };
     }
     /* ATHENA_ACTION_V2_NOTE_SCOPE_START */
     function scopeDescriptor(el) {
@@ -490,6 +549,55 @@ async function mlsAthenaActionV2DriverFn(req) {
       var pool = action === 'sign_encounter' ? sign : (preferred.length ? preferred : generic);
       return pool.length === 1 ? pool[0] : null;
     }
+    /* A taught selector is only an additional exact anchor inside the typed
+       action scope discovered above. It can never create a new generic write
+       lane or bypass the patient/encounter/action checks. */
+    function taughtSectionLabel(el, stopAt) {
+      var own = '';
+      try {
+        own = text((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '') + ' ' + (el.getAttribute('placeholder') || ''));
+        if (!own && el.labels && el.labels.length === 1) own = text(el.labels[0].textContent);
+      } catch (e) {}
+      if (own && own.length <= 240) return own;
+      var cur = el, guard = 0;
+      while (cur && guard++ < 8) {
+        var heads = []; try { heads = deepQueryAll(cur, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > header,:scope > [role="heading"]'); } catch (e2) {}
+        if (heads.length === 1) { var h = text(heads[0].textContent); if (h && h.length <= 240) return h; }
+        if (cur === stopAt) break;
+        cur = parentAcrossRoots(cur);
+      }
+      var fallback = label(el); return fallback.length <= 240 ? fallback : fallback.slice(0, 240);
+    }
+    function taughtQuery(frame, selector) {
+      var parts = String(selector || '').split(/\s*>>>\s*/).filter(Boolean), scope = frame.doc, el = null;
+      if (!parts.length || parts.length > 10) return null;
+      for (var i = 0; i < parts.length; i++) {
+        var hits = []; try { hits = Array.prototype.slice.call(scope.querySelectorAll(parts[i])); } catch (e) { return null; }
+        if (hits.length !== 1) return null;
+        el = hits[0];
+        if (i < parts.length - 1) { try { scope = el.shadowRoot; } catch (e2) { scope = null; } if (!scope) return null; }
+      }
+      return el;
+    }
+    function validateTaughtDestination(frame, actionScope, actionControl, td) {
+      if (!td || !text(td.selector)) return { ok: false, reason: 'taught-destination-required' };
+      var selector = String(td.selector || ''), sectionLabel = text(td.sectionLabel), framePath = text(td.framePath), frameUrl = String(td.frameUrl || '').split('#')[0];
+      var tag = text(td.tag).toLowerCase(), suppliedFingerprint = text(td.targetFingerprint);
+      if (!selector || selector.length > 2000 || !sectionLabel || sectionLabel.length > 240 || !framePath || framePath.length > 100 || !suppliedFingerprint) return { ok: false, reason: 'taught-destination-invalid' };
+      if (framePath !== frame.path || (frameUrl && frameUrl !== String(frame.url || '').split('#')[0])) return { ok: false, reason: 'taught-destination-frame-mismatch' };
+      var target = taughtQuery(frame, selector);
+      if (!target || !visible(target, frame.w) || !deepContains(actionScope, target)) return { ok: false, reason: 'taught-destination-selector-mismatch' };
+      /* Teaching identifies the exact typed mutation control, not merely a
+         heading, editor, Save button, or sibling somewhere in the same broad
+         encounter section. SVG/icon clicks are canonicalized to their owning
+         control by the watcher before the selector is created. */
+      if (!actionControl || target !== actionControl) return { ok: false, reason: 'taught-destination-control-mismatch' };
+      var observedTag = String(target.tagName || '').toLowerCase(), observedLabel = taughtSectionLabel(target, actionScope);
+      if ((tag && tag !== observedTag) || norm(observedLabel) !== norm(sectionLabel)) return { ok: false, reason: 'taught-destination-label-mismatch' };
+      var fingerprint = stableHash([frame.path, selector, sectionLabel, observedTag].join('|'));
+      if (fingerprint !== suppliedFingerprint) return { ok: false, reason: 'taught-destination-fingerprint-mismatch' };
+      return { ok: true, target: target, binding: { selector: selector, sectionLabel: sectionLabel, label: text(td.label || sectionLabel), framePath: frame.path, frameUrl: String(frame.url || '').split('#')[0], tag: observedTag, targetFingerprint: fingerprint } };
+    }
     /* ATHENA_ACTION_V2_NOTE_SCOPE_END */
     /* ATHENA_ACTION_V2_SCOPED_STATUS_START */
     function statusElements(root) {
@@ -521,7 +629,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     }
     /* ATHENA_ACTION_V2_SCOPED_STATUS_END */
     function canonicalContext(c) {
-      return [nameKey(c.patientName), dateKey(c.dob), digits(c.mrn), String(c.encounterId || ''), String(c.encounterUrl || ''), dateKey(c.visitDate), norm(c.provider), String(c.framePath || ''), String(c.encounterRootFingerprint || ''), String(c.controlFingerprint || ''), String(c.actionContainerFingerprint || ''), String(c.editorFingerprint || '')].join('|');
+      return [nameKey(c.patientName), dateKey(c.dob), digits(c.mrn), digits(c.appointmentId), String(c.encounterId || ''), String(c.encounterUrl || ''), dateKey(c.visitDate), norm(c.provider), String(c.framePath || ''), String(c.encounterRootFingerprint || ''), String(c.controlFingerprint || ''), String(c.actionContainerFingerprint || ''), String(c.editorFingerprint || ''), String(c.taughtDestinationFingerprint || '')].join('|');
     }
     function discoverLabeled(doc, kind) {
       var found = {}, els = [];
@@ -561,49 +669,86 @@ async function mlsAthenaActionV2DriverFn(req) {
       return null;
     }
 
-    if (!text(expectedPatient.name) || !dateKey(expectedPatient.dob)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'Expected patient name and DOB are required.' };
-    var reviewedNote = noteNorm(req.noteText), notePolicy = String(req.notePolicy || 'empty_only');
-    if (action !== 'stage_billing' && !reviewedNote) return { ok: false, blocked: true, reason: 'note-content-required', error: 'The exact reviewed note text is required.' };
-    if (action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy', error: 'Only empty_only note placement is allowed.' };
+    function driverOrderContract(value) {
+      value = value && typeof value === 'object' ? value : {};
+      var type = norm(value.type).replace(/ /g, '_');
+      var schemas = {
+        imaging: { allowed: ['study','region','indication','laterality','contrast','notes'], required: ['study','region','indication'] },
+        pt: { allowed: ['dx','freq','duration','modalities','notes'], required: ['dx','freq','duration','modalities'] },
+        referral: { allowed: ['specialty','reason','notes'], required: ['specialty','reason'] },
+        dme: { allowed: ['item','dx','icd','notes'], required: ['item','dx','icd'] }
+      };
+      var schema = schemas[type], fields = value.fields && typeof value.fields === 'object' ? value.fields : {};
+      if (!schema) return { ok: false, reason: /^(medication|rx|injection|procedure)$/.test(type) ? 'high-risk-order-blocked' : 'unsupported-order-type' };
+      var keys = Object.keys(fields), unknown = keys.filter(function (key) { return schema.allowed.indexOf(key) < 0 || !text(fields[key]); });
+      if (unknown.length) return { ok: false, reason: 'unsupported-order-fields' };
+      if (keys.some(function (key) { return String(fields[key] == null ? '' : fields[key]).length > 2000; })) return { ok: false, reason: 'order-field-too-long' };
+      if (schema.required.some(function (key) { return !text(fields[key]); })) return { ok: false, reason: 'missing-order-fields' };
+      if (!text(value.clientOrderId) || !text(value.displayLabel) || !text(value.query) || norm(value.reviewStatus) !== 'accepted') return { ok: false, reason: 'order-payload-incomplete' };
+      if (!text(value.catalogCode) && !text(value.catalogId)) return { ok: false, reason: 'catalog-identity-required' };
+      if (String(value.clientOrderId || '').length > 160 || String(value.displayLabel || '').length > 300 || String(value.query || '').length > 300 || String(value.catalogCode || '').length > 100 || String(value.catalogId || '').length > 160) return { ok: false, reason: 'order-field-too-long' };
+      if (!/^(provider entered|ai suggestion accepted|rule suggestion accepted)$/.test(norm(value.source))) return { ok: false, reason: 'unsupported-order-source' };
+      return { ok: true, order: value, schema: schema };
+    }
 
-    var frames = sameOriginFrames(), candidates = [];
+    if (!text(expectedPatient.name) || !dateKey(expectedPatient.dob) || !digits(expectedPatient.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'Expected patient name, DOB, and MRN are required.' };
+    var reviewedNote = noteNorm(req.noteText), notePolicy = String(req.notePolicy || 'empty_only');
+    var checkedOrder = action === 'place_order' ? driverOrderContract(order) : null;
+    if (action === 'place_order' && !checkedOrder.ok) return { ok: false, blocked: true, reason: checkedOrder.reason, error: 'The reviewed order payload is incomplete or unsupported.' };
+    if (mode !== 'teach' && action !== 'stage_billing' && action !== 'place_order' && !reviewedNote) return { ok: false, blocked: true, reason: 'note-content-required', error: 'The exact reviewed note text is required.' };
+    if (mode !== 'teach' && action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy', error: 'Only empty_only note placement is allowed.' };
+
+    var frames = sameOriginFrames(), candidates = [], sawOtherPatient = false;
     for (var fi = 0; fi < frames.length; fi++) {
       var fr = frames[fi], eid = encounterId(fr.url);
       if (!eid) continue;
       var chartHeader = anchoredIdentity(fr), observedIdentity = chartHeader.identity;
       if (!observedIdentity || chartHeader.ambiguous) continue;
-      if (nameKey(observedIdentity.name) !== nameKey(expectedPatient.name) || dateKey(observedIdentity.dob) !== dateKey(expectedPatient.dob)) continue;
+      if (nameKey(observedIdentity.name) !== nameKey(expectedPatient.name) || dateKey(observedIdentity.dob) !== dateKey(expectedPatient.dob)) { sawOtherPatient = true; continue; }
       var wantMrn = digits(expectedPatient.mrn);
-      if (wantMrn && digits(observedIdentity.mrn) !== wantMrn) continue;
+      if (wantMrn && digits(observedIdentity.mrn) !== wantMrn) { sawOtherPatient = true; continue; }
       if (expectedContext.encounterUrl && String(expectedContext.encounterUrl).split('#')[0] !== String(fr.url).split('#')[0]) continue;
       if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) continue;
-      var noteTarget = null, billTarget = null;
+      var noteTarget = null, billTarget = null, orderTarget = null;
       if (action === 'stage_billing') { billTarget = billingField(fr); if (!billTarget.el) continue; }
+      else if (action === 'place_order') { orderTarget = orderWorkspace(fr); if (!orderTarget.search) continue; }
       else {
         noteTarget = findNoteAction(fr, action); if (!noteTarget) continue;
         var currentNote = editorValue(noteTarget.editor);
-        if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) continue; }
-        else if (currentNote !== reviewedNote) continue;
+        if (mode !== 'teach') {
+          if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) continue; }
+          else if (currentNote !== reviewedNote) continue;
+        }
       }
-      var targetRoot = billTarget ? billTarget.root : noteTarget.root;
+      var targetRoot = billTarget ? billTarget.root : (orderTarget ? orderTarget.root : noteTarget.root);
+      var observedAppointmentId = appointmentIdFor(fr, targetRoot, observedIdentity.root);
+      if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) continue;
       var encounterMeta = encounterMetadataFor(fr, targetRoot, observedIdentity.root);
       if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) continue;
       if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) continue;
       if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;
-      candidates.push({ frame: fr, observedIdentity: observedIdentity, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget });
+      candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget });
     }
-    if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : 'context-unverified', error: 'Could not identify one exact patient encounter frame.' };
+    if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
     var hit = candidates[0], observedPatient = hit.observedIdentity, noteScope = hit.noteTarget && hit.noteTarget.root, noteEditor = hit.noteTarget && hit.noteTarget.editor;
-    var bill = hit.bill, actionControl = bill ? bill.el : hit.noteTarget.control;
-    var actionScope = bill ? bill.root : noteScope;
+    var bill = hit.bill, orderTarget = hit.orderTarget, actionControl = bill ? bill.el : (orderTarget ? orderTarget.search : hit.noteTarget.control);
+    var actionScope = bill ? bill.root : (orderTarget ? orderTarget.root : noteScope);
+    var taughtValidation = null;
+    if (taughtDestination && text(taughtDestination.selector)) {
+      taughtValidation = validateTaughtDestination(hit.frame, actionScope, actionControl, taughtDestination);
+      if (!taughtValidation.ok) return { ok: false, blocked: true, reason: taughtValidation.reason, error: 'The taught destination no longer resolves to this exact typed Athena action scope.' };
+    } else if (mode === 'teach') {
+      return { ok: false, blocked: true, reason: 'taught-destination-required', error: 'No exact Athena destination was captured.' };
+    }
     var controlLabels = labelSources(actionControl).map(text).filter(Boolean);
     var controlFallback = '';
     try { controlFallback = text(actionControl.getAttribute('placeholder') || actionControl.getAttribute('name') || actionControl.getAttribute('data-testid') || ''); } catch (eLabel) {}
-    if (!controlFallback) controlFallback = action === 'write_note' ? 'Encounter note editor' : (action === 'stage_billing' ? 'Athena Billing / Charges field' : '');
+    if (!controlFallback) controlFallback = action === 'write_note' ? 'Encounter note editor' : (action === 'stage_billing' ? 'Athena Billing / Charges field' : (action === 'place_order' ? 'Athena Orders catalog search' : ''));
     var context = {
       mrn: digits(observedPatient.mrn),
       patientName: text(observedPatient.name),
       dob: dateKey(observedPatient.dob),
+      appointmentId: hit.appointmentId,
       encounterId: hit.encounterId,
       encounterUrl: hit.frame.url,
       visitDate: hit.visitDate,
@@ -613,15 +758,18 @@ async function mlsAthenaActionV2DriverFn(req) {
       controlFingerprint: controlFingerprint(actionControl, hit.frame.url, action),
       noteScopeFingerprint: controlFingerprint(actionScope, hit.frame.url, 'action_scope'),
       actionContainerFingerprint: controlFingerprint(actionScope, hit.frame.url, 'action_scope'),
-      editorFingerprint: noteEditor ? editorFingerprint(noteEditor, hit.frame.url) : controlFingerprint(actionControl, hit.frame.url, 'billing_field'),
-      controlLabel: controlLabels[0] || controlFallback
+      editorFingerprint: noteEditor ? editorFingerprint(noteEditor, hit.frame.url) : controlFingerprint(actionControl, hit.frame.url, action === 'place_order' ? 'order_search' : 'billing_field'),
+      controlLabel: controlLabels[0] || controlFallback,
+      taughtDestinationFingerprint: taughtValidation ? taughtValidation.binding.targetFingerprint : '',
+      taughtDestinationLabel: taughtValidation ? taughtValidation.binding.sectionLabel : ''
     };
     context.contextHash = stableHash(canonicalContext(context));
-    if (locked && (String(locked.contextHash || '') !== context.contextHash || String(locked.encounterRootFingerprint || '') !== context.encounterRootFingerprint || String(locked.controlFingerprint || '') !== context.controlFingerprint || String(locked.noteScopeFingerprint || '') !== context.noteScopeFingerprint || String(locked.editorFingerprint || '') !== context.editorFingerprint || nameKey(locked.patientName) !== nameKey(context.patientName) || dateKey(locked.dob) !== dateKey(context.dob) || digits(locked.mrn) !== digits(context.mrn) || String(locked.encounterId || '') !== String(context.encounterId || ''))) {
+    if (locked && (String(locked.contextHash || '') !== context.contextHash || String(locked.encounterRootFingerprint || '') !== context.encounterRootFingerprint || String(locked.controlFingerprint || '') !== context.controlFingerprint || String(locked.noteScopeFingerprint || '') !== context.noteScopeFingerprint || String(locked.editorFingerprint || '') !== context.editorFingerprint || nameKey(locked.patientName) !== nameKey(context.patientName) || dateKey(locked.dob) !== dateKey(context.dob) || digits(locked.mrn) !== digits(context.mrn) || digits(locked.appointmentId) !== digits(context.appointmentId) || String(locked.encounterId || '') !== String(context.encounterId || ''))) {
       return { ok: false, blocked: true, reason: 'context-mismatch', context: context };
     }
+    if (mode === 'teach') return { ok: true, mode: 'teach', action: action, readOnly: true, reason: 'taught-destination-validated', contextVerified: true, context: context, targetValidated: true, target: taughtValidation.binding, noAutomaticChaining: 'no-automatic-chaining' };
     /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
-    if (mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: action === 'stage_billing' ? 'billing-context-verified' : 'context-verified', contextVerified: true, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+    if (mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: action === 'stage_billing' ? 'billing-context-verified' : (action === 'place_order' ? 'order-workspace-context-verified' : 'context-verified'), contextVerified: true, context: context, noAutomaticChaining: 'no-automatic-chaining' };
     if (mode !== 'execute') return { ok: false, blocked: true, reason: 'unknown-action' };
     /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
 
@@ -806,6 +954,281 @@ async function mlsAthenaActionV2DriverFn(req) {
         try { el.dispatchEvent(new hit.frame.w.InputEvent('input', { bubbles: true, inputType: 'insertText', data: value.charAt(i) })); } catch (e5) { el.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); }
       }
     }
+
+    /* ATHENA_ACTION_V2_ORDER_HELPERS_START */
+    function orderIdentitySignals(el, wanted) {
+      var labelSignals = [], catalogIds = [], codes = [], attrs = [];
+      try {
+        attrs = elementAttributes(el);
+        labelSignals = [el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('data-label'), el.getAttribute('data-display-label')].map(text).filter(Boolean);
+        var named = deepQueryAll(el, '[data-label],[data-display-label],[data-catalog-id],[data-order-id],[data-item-id],[data-catalog-code],[data-order-code],[data-code],[aria-label],h1,h2,h3,[role="heading"]').slice(0, 32);
+        for (var ni = 0; ni < named.length; ni++) {
+          labelSignals.push(text((named[ni].getAttribute && (named[ni].getAttribute('data-display-label') || named[ni].getAttribute('data-label') || named[ni].getAttribute('aria-label'))) || named[ni].textContent));
+          attrs = attrs.concat(elementAttributes(named[ni]));
+        }
+        for (var i = 0; i < attrs.length; i++) {
+          var key = attrs[i][0], value = text(attrs[i][1]);
+          if (!value) continue;
+          /* `data-order-id`/generic `data-id` identify a placed row instance,
+             not necessarily the catalog item. Never confuse them with the
+             durable catalog binding authorized by the clinician. */
+          if (/^(data-catalog-id|data-catalog-item-id|data-item-id)$/.test(key)) catalogIds.push(value);
+          if (/^(data-catalog-code|data-order-code|data-code|data-cpt|data-hcpcs)$/.test(key)) codes.push(value);
+        }
+        if (el.value && /^(OPTION)$/.test(String(el.tagName || ''))) catalogIds.push(text(el.value));
+      } catch (e) {}
+      var wantedCode = text(wanted && wanted.catalogCode), wantedId = text(wanted && wanted.catalogId);
+      function cleanLabel(raw) {
+        var out = text(raw).replace(/^\s*(?:select|choose|use|add)\s*[:\-]?\s*/i, '');
+        if (wantedCode) out = out.replace(new RegExp('(^|[^A-Za-z0-9])' + wantedCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[^A-Za-z0-9])', 'ig'), '$1 ');
+        if (wantedId) out = out.replace(new RegExp('(^|[^A-Za-z0-9])' + wantedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[^A-Za-z0-9])', 'ig'), '$1 ');
+        return norm(out.replace(/[()\[\]]/g, ' '));
+      }
+      return { labels: labelSignals.map(cleanLabel).filter(Boolean), catalogIds: uniqueBy(catalogIds, norm).map(norm), codes: uniqueBy(codes, norm).map(norm) };
+    }
+    function exactCatalogOrderElement(el, wanted) {
+      var signals = orderIdentitySignals(el, wanted), labelKey = norm(wanted && wanted.displayLabel);
+      if (!labelKey || signals.labels.indexOf(labelKey) < 0) return false;
+      var wantId = norm(wanted && wanted.catalogId), wantCode = norm(wanted && wanted.catalogCode);
+      if (!wantId && !wantCode) return false;
+      if (wantId && (signals.catalogIds.indexOf(wantId) < 0 || signals.catalogIds.some(function (v) { return v !== wantId; }))) return false;
+      if (wantCode) {
+        var raw = text((el && el.textContent) || ''), escaped = String(wanted.catalogCode).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var rawHas = new RegExp('(^|[^A-Za-z0-9])' + escaped + '(?=$|[^A-Za-z0-9])', 'i').test(raw);
+        if (signals.codes.length ? (signals.codes.indexOf(wantCode) < 0 || signals.codes.some(function (v) { return v !== wantCode; })) : !rawHas) return false;
+      }
+      return true;
+    }
+    function orderFieldValueKey(value) { return text(value).toLowerCase(); }
+    function placedOrderFieldValues(el, type, key) {
+      var aliases = uniqueBy(orderFieldAliases(type, key).concat([key]).map(norm), function (v) { return v; }), values = [], seenOccurrences = Object.create(null);
+      function descriptorMatch(raw) {
+        var d = norm(raw).replace(/^order (?:field )?/, '').replace(/^field /, '').replace(new RegExp('^' + type.replace(/_/g, ' ') + ' '), '').replace(/ (?:field|input|select|control)$/, '');
+        return aliases.indexOf(d) >= 0;
+      }
+      function add(value, source) {
+        value = text(value); if (!value) return;
+        var occurrence = String(source || 'unknown') + '|' + orderFieldValueKey(value);
+        if (!seenOccurrences[occurrence]) { seenOccurrences[occurrence] = 1; values.push(value); }
+      }
+      var nodes = [el].concat(deepQueryAll(el, 'input:not([type="hidden"]),textarea,select,[contenteditable="true"],[contenteditable="plaintext-only"],[data-order-field],[data-field],[data-value],dt,dd,th,td'));
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i], descriptor = '', direct = '';
+        try {
+          descriptor = [node.getAttribute('data-order-field'), node.getAttribute('data-field'), node.name, node.id, node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('placeholder'), node.getAttribute('data-testid')].join(' ');
+          var directNames = ['data-' + key.replace(/_/g, '-'), 'data-order-' + key.replace(/_/g, '-')];
+            for (var ai = 0; ai < directNames.length; ai++) if (text(node.getAttribute(directNames[ai]))) add(node.getAttribute(directNames[ai]), 'node:' + i);
+          if (node.id) {
+            var ownedLabels = deepQueryAll(el, 'label[for="' + String(node.id).replace(/"/g, '\\"') + '"]');
+            for (var li = 0; li < ownedLabels.length; li++) descriptor += ' ' + text(ownedLabels[li].textContent);
+          }
+          if (descriptorMatch(descriptor)) {
+            if (String(node.tagName || '').toUpperCase() === 'SELECT') {
+              var selected = node.options && node.selectedIndex >= 0 ? node.options[node.selectedIndex] : null;
+              direct = selected ? (selected.value || selected.textContent) : node.value;
+            } else if (node.isContentEditable) direct = node.textContent;
+            else direct = node.getAttribute('data-value') || node.value || node.textContent;
+            add(direct, 'node:' + i);
+          }
+          var ownText = text(node.textContent);
+          if (descriptorMatch(ownText) && node.nextElementSibling) add(node.nextElementSibling.textContent, 'sibling:' + i);
+        } catch (e) {}
+      }
+      var raw = ''; try { raw = String(el.innerText || el.textContent || ''); } catch (eRaw) {}
+      var lines = raw.split(/[\r\n]+/);
+      for (var a = 0; a < aliases.length; a++) {
+        var escaped = aliases[a].replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+        var re = new RegExp('^\\s*' + escaped + '\\s*[:\\-]\\s*(.+?)\\s*$', 'i');
+        for (var ln = 0; ln < lines.length; ln++) { var match = re.exec(lines[ln]); if (match) add(match[1], 'line:' + ln); }
+      }
+      return values;
+    }
+    function exactPlacedOrderElement(el, wanted) {
+      if (!exactCatalogOrderElement(el, wanted)) return false;
+      var fields = wanted && wanted.fields && typeof wanted.fields === 'object' ? wanted.fields : {}, keys = Object.keys(fields).filter(function (key) { return text(fields[key]); }).sort();
+      if (!keys.length) return false;
+      for (var i = 0; i < keys.length; i++) {
+        var values = placedOrderFieldValues(el, wanted.type, keys[i]), expected = orderFieldValueKey(fields[keys[i]]);
+        if (values.length !== 1 || orderFieldValueKey(values[0]) !== expected) return false;
+      }
+      return true;
+    }
+    function exactOrderElement(el, wanted) { return exactPlacedOrderElement(el, wanted); }
+    function oneExactOrderChoice(items, missingReason, duplicateReason) {
+      items = Array.isArray(items) ? items : [];
+      if (!items.length) return { ok: false, reason: missingReason };
+      if (items.length !== 1) return { ok: false, reason: duplicateReason };
+      return { ok: true, item: items[0] };
+    }
+    function existingExactOrderDecision(rows) {
+      var matches = (Array.isArray(rows) ? rows : []).filter(function (row) { return row && row.exact; });
+      if (matches.length > 1) return { ok: false, reason: 'order-existing-duplicate-rejected' };
+      if (matches.length === 1) return { ok: true, alreadyPresent: true };
+      return { ok: true, alreadyPresent: false };
+    }
+    function orderPickerFor(target) {
+      var scope = null, owns = '';
+      try { owns = target.search.getAttribute('aria-controls') || target.search.getAttribute('aria-owns') || ''; } catch (e) {}
+      if (owns) try { scope = hit.frame.doc.getElementById(owns); } catch (e2) {}
+      if (!scope) {
+        var boxes = deepQueryAll(target.root, '[role="listbox"],[data-testid*="order-result" i],[data-testid*="catalog-result" i],.order-results,.catalog-results,.autocomplete,.typeahead').filter(function (el) { return visible(el, hit.frame.w); });
+        boxes = collapseContainedMatches(boxes);
+        if (boxes.length === 1) scope = boxes[0];
+      }
+      if (!scope || !visible(scope, hit.frame.w)) return { error: 'order-catalog-missing' };
+      var descriptor = norm([scope.getAttribute && scope.getAttribute('role'), scope.getAttribute && scope.getAttribute('aria-label'), scope.getAttribute && scope.getAttribute('data-testid'), String(scope.className || '')].join(' '));
+      if (!/\b(listbox|order result|catalog result|autocomplete|typeahead)\b/.test(descriptor)) return { error: 'order-catalog-unverified' };
+      return { scope: scope };
+    }
+    function exactCatalogCandidate(target, wanted) {
+      var pick = orderPickerFor(target); if (!pick.scope) return pick;
+      var rows = deepQueryAll(pick.scope, '[role="option"],option,[data-testid*="order-result" i],[data-testid*="catalog-result" i],li,tr,[role="row"]').filter(function (el) {
+        if (!visible(el, hit.frame.w) || !deepContains(pick.scope, el)) return false;
+        var role = norm(el.getAttribute && el.getAttribute('role'));
+        var descriptor = norm([label(el), el.getAttribute && el.getAttribute('data-testid'), el.getAttribute && el.getAttribute('data-action'), String(el.className || '')].join(' '));
+        if (/\b(remove|delete|discard|void|replace|substitute|bundle|save|sign|submit|prescribe|billing|claim|place order|add order)\b/.test(descriptor)) return false;
+        if (el.disabled || norm(el.getAttribute && el.getAttribute('aria-disabled')) === 'true' || norm(el.getAttribute && el.getAttribute('aria-selected')) === 'true') return false;
+        return String(el.tagName || '').toUpperCase() === 'OPTION' || role === 'option' || /\b(order result|catalog result|option)\b/.test(descriptor);
+      });
+      /* Catalog search results have not received the clinician-entered order
+         details yet. Bind that click to the exact durable catalog identity;
+         the placed-row readback below separately requires every structured
+         field to match. */
+      rows = collapseContainedMatches(rows).filter(function (el) { return exactCatalogOrderElement(el, wanted); });
+      var decision = oneExactOrderChoice(rows, 'order-catalog-near-match-rejected', 'order-catalog-duplicate-rejected');
+      if (!decision.ok) return { error: decision.reason, scope: pick.scope };
+      return { option: decision.item, scope: pick.scope, fingerprint: controlFingerprint(decision.item, hit.frame.url, 'order_catalog_option') };
+    }
+    function orderFieldAliases(type, key) {
+      var aliases = {
+        imaging: { study: ['study','imaging study','modality'], region: ['region','body region'], indication: ['indication','reason for exam'], laterality: ['laterality'], contrast: ['contrast'], notes: ['notes','order notes'] },
+        pt: { dx: ['dx','diagnosis','associated diagnosis'], freq: ['frequency','freq'], duration: ['duration'], modalities: ['modalities','modalities goals','goals'], notes: ['notes','order notes'] },
+        referral: { specialty: ['specialty','specialty provider','provider specialty'], reason: ['reason','referral reason'], notes: ['notes','order notes'] },
+        dme: { item: ['item','dme item','equipment'], dx: ['dx','diagnosis','indication diagnosis'], icd: ['icd','icd 10'], notes: ['notes','order notes'] }
+      };
+      return aliases[type] && aliases[type][key] || [];
+    }
+    function exactOrderField(target, type, key) {
+      var aliases = orderFieldAliases(type, key), controls = deepQueryAll(target.root, 'input:not([type="hidden"]),textarea,select,[contenteditable="true"],[contenteditable="plaintext-only"]').filter(function (el) {
+        if (!visible(el, hit.frame.w) || el === target.search) return false;
+        var signals = [];
+        try {
+          signals = [el.name, el.id, el.getAttribute('data-field'), el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('placeholder'), el.getAttribute('data-testid')].map(norm).filter(Boolean);
+          if (el.id) {
+            var labels = deepQueryAll(target.root, 'label[for="' + String(el.id).replace(/"/g, '\\"') + '"]');
+            for (var i = 0; i < labels.length; i++) signals.push(norm(labels[i].textContent));
+          }
+        } catch (e) { return false; }
+        signals = signals.map(function (s) {
+          return s.replace(/^order (?:field )?/, '').replace(/^field /, '').replace(new RegExp('^' + type.replace(/_/g, ' ') + ' '), '').replace(/ (?:field|input|select|control)$/, '');
+        });
+        return aliases.some(function (a) { return signals.indexOf(norm(a)) >= 0; });
+      });
+      controls = collapseContainedMatches(controls);
+      if (controls.length !== 1) return { error: controls.length ? 'order-field-duplicate-rejected' : 'order-required-field-missing', field: key };
+      return { el: controls[0] };
+    }
+    function setOrderFieldExact(el, value) {
+      value = text(value);
+      if (String(el.tagName || '').toUpperCase() === 'SELECT') {
+        var options = Array.prototype.slice.call(el.options || []).filter(function (opt) { return norm(opt.value) === norm(value) || norm(opt.textContent) === norm(value); });
+        if (options.length !== 1) return false;
+        try { el.value = options[0].value; el.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); el.dispatchEvent(new hit.frame.w.Event('change', { bubbles: true })); } catch (e) { return false; }
+        return norm(el.value) === norm(options[0].value);
+      }
+      setField(el, value);
+      var got = ''; try { got = el.isContentEditable ? el.textContent : el.value; } catch (e2) {}
+      try { el.dispatchEvent(new hit.frame.w.Event('change', { bubbles: true })); } catch (e3) {}
+      return text(got) === value;
+    }
+    function persistedOrderRows(target, exclude) {
+      var rows = deepQueryAll(target.root, '[data-testid*="order-row" i],[data-component*="order-row" i],.order-row,tr,[role="row"],li').filter(function (el) {
+        if (!visible(el, hit.frame.w) || (exclude && deepContains(exclude, el)) || deepContains(el, target.search)) return false;
+        if (closestAcrossRoots(el, '[role="listbox"],.autocomplete,.typeahead,.order-results,.catalog-results', target.root)) return false;
+        var d = norm([el.getAttribute && el.getAttribute('data-testid'), el.getAttribute && el.getAttribute('data-component'), String(el.className || '')].join(' '));
+        return /\border row\b/.test(d) || /\border\b/.test(d) || exactOrderElement(el, order);
+      });
+      return collapseToOutermostMatches(rows);
+    }
+    function orderRowState(el) {
+      var parts = [], nodes = [el].concat(deepQueryAll(el, '*'));
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i], val = ''; try { if ('value' in n) val = String(n.value == null ? '' : n.value); } catch (e) {}
+        parts.push(JSON.stringify([String(n.tagName || ''), elementAttributes(n), val, n.checked === true, n.selected === true, String(n.textContent || '')]));
+      }
+      return JSON.stringify(parts);
+    }
+    function orderRowsSnapshot(target, exclude, wanted) {
+      return persistedOrderRows(target, exclude).map(function (el) { return { state: orderRowState(el), exact: exactOrderElement(el, wanted) }; });
+    }
+    function sameOrderRows(before, after) {
+      if (!Array.isArray(before) || !Array.isArray(after) || before.length !== after.length) return false;
+      return JSON.stringify(before.map(function (r) { return r.state; }).sort()) === JSON.stringify(after.map(function (r) { return r.state; }).sort());
+    }
+    function verifiedIsolatedOrderAdd(before, after) {
+      if (!Array.isArray(before) || !Array.isArray(after) || after.length !== before.length + 1) return false;
+      if (before.some(function (r) { return r.exact; }) || after.filter(function (r) { return r.exact; }).length !== 1) return false;
+      var added = -1;
+      for (var i = 0; i < after.length; i++) if (after[i].exact) { if (added >= 0) return false; added = i; }
+      var remaining = after.filter(function (_, index) { return index !== added; }).map(function (r) { return r.state; }).sort();
+      return JSON.stringify(before.map(function (r) { return r.state; }).sort()) === JSON.stringify(remaining);
+    }
+    async function stableOrderRows(target, exclude, wanted) {
+      var prior = null;
+      for (var i = 0; i < 5; i++) {
+        await sleep(i ? 350 : 700);
+        var next = orderRowsSnapshot(target, exclude, wanted);
+        if (prior && JSON.stringify(prior) === JSON.stringify(next)) return next;
+        prior = next;
+      }
+      return null;
+    }
+    /* ATHENA_ACTION_V2_ORDER_HELPERS_END */
+
+    /* ATHENA_ACTION_V2_PLACE_ORDER_START */
+    if (action === 'place_order') {
+      var wantedOrder = checkedOrder.order, beforeOrderRows = orderRowsSnapshot(orderTarget, null, wantedOrder);
+      function uncertainOrderMutation(detail, field) {
+        var result = { ok: false, attempted: true, verified: false, orderPlaced: false, partialMutation: true, reason: 'outcome-uncertain', detail: detail, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        if (field) result.field = field;
+        return result;
+      }
+      var existingDecision = existingExactOrderDecision(beforeOrderRows);
+      if (!existingDecision.ok) return { ok: false, blocked: true, attempted: false, verified: false, orderPlaced: false, reason: existingDecision.reason, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      if (existingDecision.alreadyPresent) return { ok: true, action: action, attempted: false, verified: true, orderPlaced: false, alreadyPresent: true, reason: 'order-exact-already-present', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      setField(orderTarget.search, wantedOrder.query); await sleep(650);
+      var candidate = exactCatalogCandidate(orderTarget, wantedOrder);
+      var afterSearchRows = orderRowsSnapshot(orderTarget, candidate.scope || null, wantedOrder);
+      if (!sameOrderRows(beforeOrderRows, afterSearchRows)) return { ok: false, attempted: false, verified: false, orderPlaced: false, reason: 'outcome-uncertain', detail: 'order-search-side-effect', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      if (!candidate.option) return { ok: false, blocked: true, attempted: false, verified: false, orderPlaced: false, reason: candidate.error || 'order-catalog-unverified', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      /* Selecting a catalog item can immediately create or mutate a draft
+         order in Athena. Treat this as the first mutation boundary; after
+         this point MLS may never claim that nothing was attempted. */
+      mutationAttempted = true;
+      try { candidate.option.click(); } catch (eCandidate) { return uncertainOrderMutation('order-catalog-selection-click-outcome-uncertain'); }
+      await sleep(450);
+      var selectedRows = orderRowsSnapshot(orderTarget, candidate.scope, wantedOrder);
+      if (!sameOrderRows(beforeOrderRows, selectedRows)) return uncertainOrderMutation('order-catalog-selection-side-effect');
+      var fieldKeys = Object.keys(wantedOrder.fields).sort();
+      for (var ofi = 0; ofi < fieldKeys.length; ofi++) {
+        var fieldKey = fieldKeys[ofi], fieldHit = exactOrderField(orderTarget, wantedOrder.type, fieldKey);
+        if (!fieldHit.el) return uncertainOrderMutation(fieldHit.error, fieldKey);
+        if (!setOrderFieldExact(fieldHit.el, wantedOrder.fields[fieldKey])) return uncertainOrderMutation('order-field-value-rejected', fieldKey);
+      }
+      await sleep(250);
+      var beforePlaceRows = orderRowsSnapshot(orderTarget, candidate.scope, wantedOrder);
+      if (!sameOrderRows(beforeOrderRows, beforePlaceRows)) return uncertainOrderMutation('order-form-side-effect');
+      var placeControls = interactive(orderTarget.root, hit.frame.w).filter(function (el) { return exactPlaceOrder(el) && !deepContains(candidate.scope, el); });
+      placeControls = collapseContainedMatches(placeControls);
+      var placeDecision = oneExactOrderChoice(placeControls, 'order-place-control-missing', 'order-place-control-duplicate-rejected');
+      if (!placeDecision.ok) return uncertainOrderMutation(placeDecision.reason);
+      orderFinalActionAttempted = true;
+      try { placeDecision.item.click(); } catch (ePlace) { return uncertainOrderMutation('order-place-click-outcome-uncertain'); }
+      var afterPlaceRows = await stableOrderRows(orderTarget, candidate.scope, wantedOrder);
+      if (!afterPlaceRows || !verifiedIsolatedOrderAdd(beforeOrderRows, afterPlaceRows)) return { ok: false, attempted: true, verified: false, orderPlaced: false, partialMutation: true, reason: 'outcome-uncertain', detail: !afterPlaceRows ? 'order-readback-not-stable' : (afterPlaceRows.filter(function (r) { return r.exact; }).length !== 1 ? 'order-exact-readback-missing-or-duplicate' : 'order-unrelated-row-change'), context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      return { ok: true, action: action, attempted: true, verified: true, orderPlaced: true, alreadyPresent: false, reason: 'one-exact-order-isolated-readback-verified', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+    }
+    /* ATHENA_ACTION_V2_PLACE_ORDER_END */
 
     /* ATHENA_ACTION_V2_STAGE_BILLING_START */
     /* STAGE_BILLING_START */
@@ -1002,12 +1425,213 @@ async function mlsAthenaActionV2DriverFn(req) {
     return { ok: false, blocked: true, reason: 'unknown-action' };
   } catch (e) {
     if (mutationAttempted) {
-      return { ok: false, attempted: true, verified: false, partialMutation: action === 'stage_billing', reason: 'outcome-uncertain', detail: action === 'stage_billing' ? 'billing-action-threw-after-mutation-boundary' : 'action-threw-after-mutation-boundary', error: String((e && e.message) || e).slice(0, 220), noAutomaticChaining: 'no-automatic-chaining' };
+      return { ok: false, attempted: true, verified: false, partialMutation: action === 'stage_billing' || action === 'place_order' || orderFinalActionAttempted, reason: 'outcome-uncertain', detail: action === 'stage_billing' ? 'billing-action-threw-after-mutation-boundary' : (action === 'place_order' ? 'order-action-threw-after-mutation-boundary' : 'action-threw-after-mutation-boundary'), error: String((e && e.message) || e).slice(0, 220), noAutomaticChaining: 'no-automatic-chaining' };
     }
     return { ok: false, blocked: true, attempted: false, verified: false, reason: 'context-unverified', error: String((e && e.message) || e).slice(0, 220) };
   }
 }
 /* ATHENA_ACTION_V2_DRIVER_END */
+
+/* DESTINATION_TEACH_WATCHER_START */
+/* Injected into the isolated world of the one signed-in Athena tab. It observes
+ * one trusted teaching click, suppresses that click before Athena can activate
+ * the underlying control, and reports a robust selector. It never focuses a
+ * tab, navigates, reloads, types, or otherwise mutates the DOM. */
+function mlsAthenaTeachWatcherFn(config) {
+  try {
+    config = config || {};
+    var KEY = '__mlsDestinationTeachWatcherV2';
+    var prior = globalThis[KEY];
+    var sessionId = String(config.sessionId || ''), timeoutMs = Math.max(5000, Math.min(60000, Number(config.timeoutMs || 60000)));
+    if (!sessionId) return { ok: false, state: 'failed', reason: 'missing-session' };
+    if (config.mode === 'cancel') {
+      /* A late cancel may never tear down a newer watcher installed in the same
+         frame. Cleanup is scoped to the immutable teaching session id. */
+      if (!prior || prior.sessionId !== sessionId) return { ok: true, state: 'failed', reason: 'not-watching' };
+      try { if (typeof prior.cancel === 'function') prior.cancel(); else if (typeof prior.cleanup === 'function') prior.cleanup(); } catch (eCancel) {}
+      return { ok: true, state: 'failed', reason: 'cancelled' };
+    }
+    if (prior && typeof prior.cancel === 'function') try { prior.cancel(); } catch (ePrior) {}
+    else if (prior && typeof prior.cleanup === 'function') try { prior.cleanup(); } catch (ePriorCleanup) {}
+    var listeners = [], expiryTimer = null, cleanupTimer = null, finished = false, cancelRequested = false;
+    var pointers = Object.create(null), mouseDown = false, touchCount = 0;
+    function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+    function hash(v) { var s = String(v || ''), h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8); }
+    function ident(v) {
+      try { if (globalThis.CSS && typeof globalThis.CSS.escape === 'function') return globalThis.CSS.escape(String(v)); } catch (e) {}
+      return String(v).replace(/(^-?\d)|[^a-zA-Z0-9_-]/g, function (m, digit) { return digit ? '\\3' + digit + ' ' : '\\' + m; });
+    }
+    function attr(v) { return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"'); }
+    function unique(root, selector) { try { var all = root.querySelectorAll(selector); return all.length === 1; } catch (e) { return false; } }
+    function selectorWithin(el, root) {
+      var tag = String(el.tagName || '').toLowerCase(); if (!tag) return '';
+      var id = ''; try { id = el.id || ''; } catch (e) {}
+      if (id) { var byId = '#' + ident(id); if (unique(root, byId)) return byId; }
+      var attrs = ['data-testid','data-component','name','aria-label','placeholder'];
+      for (var ai = 0; ai < attrs.length; ai++) {
+        var val = ''; try { val = el.getAttribute(attrs[ai]) || ''; } catch (e2) {}
+        if (!val || val.length > 180) continue;
+        var byAttr = tag + '[' + attrs[ai] + '="' + attr(val) + '"]'; if (unique(root, byAttr)) return byAttr;
+      }
+      var parts = [], cur = el, guard = 0;
+      while (cur && cur.nodeType === 1 && guard++ < 9) {
+        var part = String(cur.tagName || '').toLowerCase(), parent = cur.parentElement;
+        if (!part) break;
+        if (parent) {
+          var peers = Array.prototype.filter.call(parent.children || [], function (n) { return n.tagName === cur.tagName; });
+          if (peers.length > 1) part += ':nth-of-type(' + (peers.indexOf(cur) + 1) + ')';
+        }
+        parts.unshift(part);
+        var candidate = parts.join(' > '); if (unique(root, candidate)) return candidate;
+        if (!parent || parent === root || parent.nodeType !== 1) break;
+        cur = parent;
+      }
+      return '';
+    }
+    function robustSelector(el) {
+      var parts = [], cur = el, guard = 0;
+      while (cur && guard++ < 8) {
+        var root = null; try { root = cur.getRootNode(); } catch (e) { root = cur.ownerDocument; }
+        if (!root || !root.querySelectorAll) return '';
+        var part = selectorWithin(cur, root); if (!part) return '';
+        parts.unshift(part);
+        if (root.nodeType === 11 && root.host) cur = root.host; else break;
+      }
+      return parts.join(' >>> ');
+    }
+    function parentAcrossRoots(node) {
+      if (!node) return null; if (node.parentElement) return node.parentElement;
+      try { var root = node.getRootNode(); return root && root.host ? root.host : null; } catch (e) { return null; }
+    }
+    function canonicalControl(path, fallback) {
+      var nodes = Array.isArray(path) ? path.slice(0, 16) : [];
+      if (fallback && nodes.indexOf(fallback) < 0) nodes.push(fallback);
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i]; if (!el || el.nodeType !== 1) continue;
+        try {
+          if (String(el.tagName || '').toLowerCase() === 'label' && el.control) return el.control;
+          if (el.matches('button,input:not([type="hidden"]),textarea,select,[role="button"],[role="textbox"],[role="combobox"],[contenteditable="true"],[contenteditable="plaintext-only"]')) return el;
+        } catch (eMatch) {}
+      }
+      var cur = fallback, guard = 0;
+      while (cur && guard++ < 12) {
+        try {
+          if (String(cur.tagName || '').toLowerCase() === 'label' && cur.control) return cur.control;
+          if (cur.matches && cur.matches('button,input:not([type="hidden"]),textarea,select,[role="button"],[role="textbox"],[role="combobox"],[contenteditable="true"],[contenteditable="plaintext-only"]')) return cur;
+        } catch (eClosest) {}
+        cur = parentAcrossRoots(cur);
+      }
+      return null;
+    }
+    function sectionLabel(el, stopAt) {
+      var own = '';
+      try { own = text((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '') + ' ' + (el.getAttribute('placeholder') || '')); if (!own && el.labels && el.labels.length === 1) own = text(el.labels[0].textContent); } catch (e) {}
+      if (own && own.length <= 240) return own;
+      var cur = el, guard = 0;
+      while (cur && guard++ < 8) {
+        var heads = []; try { heads = Array.prototype.slice.call(cur.querySelectorAll(':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > header,:scope > [role="heading"]')); } catch (e2) {}
+        if (heads.length === 1) { var h = text(heads[0].textContent); if (h && h.length <= 240) return h; }
+        if (cur === stopAt) break; cur = parentAcrossRoots(cur);
+      }
+      var fallback = ''; try { fallback = text((el.textContent || el.value || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')); } catch (e3) {}
+      return fallback.slice(0, 240);
+    }
+    function frames() {
+      var out = [];
+      function walk(w, depth, path) {
+        if (depth > 6) return;
+        try { void w.document; out.push({ w: w, doc: w.document, path: path, url: String(w.location.href || '').split('#')[0] }); } catch (e) { return; }
+        for (var i = 0; i < w.frames.length; i++) try { void w.frames[i].document; walk(w.frames[i], depth + 1, path + '.' + i); } catch (e2) {}
+      }
+      walk(window, 0, 'top'); return out;
+    }
+    function cleanup() {
+      if (expiryTimer) clearTimeout(expiryTimer); expiryTimer = null;
+      if (cleanupTimer) clearTimeout(cleanupTimer); cleanupTimer = null;
+      for (var i = 0; i < listeners.length; i++) try { listeners[i].target.removeEventListener(listeners[i].type, listeners[i].fn, true); } catch (e) {}
+      listeners = [];
+      try { if (globalThis[KEY] && globalThis[KEY].sessionId === sessionId) delete globalThis[KEY]; } catch (e2) { globalThis[KEY] = null; }
+    }
+    function gestureActive() { return Object.keys(pointers).length > 0 || mouseDown || touchCount > 0; }
+    function scheduleShieldCleanup(trailing) {
+      if (!finished && !cancelRequested) return;
+      if (gestureActive()) return;
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+      cleanupTimer = setTimeout(cleanup, trailing === false ? 0 : 1550);
+    }
+    function cancel() {
+      cancelRequested = true; finished = true;
+      /* Never drop the shield mid-gesture: a long press can release well after
+         the old fixed 1.5s timer and activate pointerup/touchend handlers. */
+      scheduleShieldCleanup(gestureActive());
+    }
+    function consume(ev) {
+      try { ev.preventDefault(); } catch (ePrevent) {}
+      try { ev.stopImmediatePropagation(); } catch (eImmediate) {}
+      try { ev.stopPropagation(); } catch (eStop) {}
+    }
+    function capture(frame, ev) {
+      if (!ev || ev.isTrusted !== true) return;
+      /* Consume every phase before selector/label work. This protects icon/SVG,
+         unlabeled, touch, and pointer targets even when they cannot be taught. */
+      consume(ev);
+      var type = String(ev.type || '').toLowerCase(), pointerId = String(ev.pointerId == null ? 'primary' : ev.pointerId);
+      if (type === 'pointerdown') pointers[pointerId] = true;
+      if (type === 'mousedown') mouseDown = true;
+      if (type === 'touchstart') try { touchCount = Math.max(1, Number(ev.touches && ev.touches.length || 1)); } catch (eTouchStart) { touchCount = 1; }
+      if (type === 'pointerup' || type === 'pointercancel') delete pointers[pointerId];
+      if (type === 'mouseup') mouseDown = false;
+      if (type === 'touchend' || type === 'touchcancel') try { touchCount = Number(ev.touches && ev.touches.length || 0); } catch (eTouchEnd) { touchCount = 0; }
+      if (finished) {
+        scheduleShieldCleanup(true); return;
+      }
+      var path = []; try { path = ev.composedPath ? ev.composedPath() : []; } catch (e) {}
+      var el = canonicalControl(path, path[0] || ev.target); if (!el || el.nodeType !== 1) return;
+      var selector = robustSelector(el), label = sectionLabel(el, frame.doc.body);
+      if (!selector || !label) return;
+      var tag = String(el.tagName || '').toLowerCase(), fingerprint = hash([frame.path, selector, label, tag].join('|'));
+      /* Keep the shield through the matching release, however long the press,
+         then through the trailing click/double-click window. */
+      finished = true;
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAthenaTeachCaptured', sessionId: sessionId, target: { selector: selector, sectionLabel: label, label: label, framePath: frame.path, frameUrl: frame.url, tag: tag, targetFingerprint: fingerprint } }, function () { var ignored = chrome.runtime.lastError; });
+      } catch (eSend) {}
+      scheduleShieldCleanup(true);
+    }
+    /* Top injection recursively covers every same-origin frame with stable
+       top.N paths. allFrames injection separately covers cross-origin frames;
+       same-origin descendants skip their duplicate listener set. */
+    if (window !== window.top) {
+      try { void window.top.document; return { ok: true, state: 'covered-by-top', frameCount: 0 }; } catch (eCrossOrigin) {}
+    }
+    var found = frames();
+    if (window !== window.top) {
+      var isolatedPrefix = 'isolated-' + hash(String(window.location && window.location.href || 'frame'));
+      for (var fp = 0; fp < found.length; fp++) found[fp].path = found[fp].path.replace(/^top/, isolatedPrefix);
+    }
+    /* Swallow the complete activation gesture. Some Athena controls attach to
+       release/context events instead of click; leaving even one release phase
+       live would let a teaching gesture mutate the chart. */
+    var eventTypes = ['pointerdown','pointerup','pointercancel','mousedown','mouseup','touchstart','touchend','touchcancel','click','auxclick','dblclick','contextmenu'];
+    for (var fi = 0; fi < found.length; fi++) {
+      (function (frame) {
+        var listenerTarget = frame.w && frame.w.addEventListener ? frame.w : frame.doc;
+        for (var ei = 0; ei < eventTypes.length; ei++) {
+          (function (type) {
+            var fn = function (ev) { capture(frame, ev); };
+            listenerTarget.addEventListener(type, fn, { capture: true, passive: false });
+            listeners.push({ target: listenerTarget, type: type, fn: fn });
+          })(eventTypes[ei]);
+        }
+      })(found[fi]);
+    }
+    if (!listeners.length) return { ok: false, state: 'failed', reason: 'watcher-unavailable' };
+    expiryTimer = setTimeout(function () { finished = true; cancelRequested = true; scheduleShieldCleanup(gestureActive()); }, timeoutMs);
+    globalThis[KEY] = { sessionId: sessionId, cleanup: cleanup, cancel: cancel };
+    return { ok: true, state: 'waiting', frameCount: found.length, listenerCount: listeners.length };
+  } catch (e) { return { ok: false, state: 'failed', reason: 'watcher-unavailable', error: String((e && e.message) || e).slice(0, 220) }; }
+}
+/* DESTINATION_TEACH_WATCHER_END */
 
 /* ATHENA_ACTION_V2_HANDLER_START */
 (function () {
@@ -1024,7 +1648,7 @@ async function mlsAthenaActionV2DriverFn(req) {
   function digits(v) { return clean(v).replace(/\D/g, ''); }
   function dateKey(v) { var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(clean(v)); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
   function simpleHash(v) { var s = String(v || ''), h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8); }
-  function patientKey(p) { p = p || {}; return [norm(p.name), dateKey(p.dob)].join('|'); }
+  function patientKey(p) { p = p || {}; return [clean(p.patientId), norm(p.name), dateKey(p.dob)].join('|'); }
   function noteNorm(v) { return String(v == null ? '' : v).replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').split('\n').map(function (line) { return line.replace(/[ \t]+$/g, ''); }).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
   function notePayloadKey(noteText, sections, policy) {
     var safe = Array.isArray(sections) ? sections : [];
@@ -1037,19 +1661,22 @@ async function mlsAthenaActionV2DriverFn(req) {
     return JSON.stringify([String(noteText == null ? '' : noteText), clean(policy || 'empty_only'), sectionPayloads]);
   }
   function urlKey(v) { return clean(v).split('#')[0]; }
-  function expectedContextKey(c) { c = c || {}; return [digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider)].join('|'); }
+  function expectedContextKey(c) { c = c || {}; return [digits(c.appointmentId), digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider)].join('|'); }
   function expectedContextShape(c, requireEncounter) {
     c = c || {};
     var hasDate = !!clean(c.visitDate), hasProvider = !!clean(c.provider);
+    var hasAppointmentId = !!clean(c.appointmentId);
     var hasEncounterId = !!clean(c.encounterId), hasEncounterUrl = !!clean(c.encounterUrl);
-    var hasAny = hasDate || hasProvider || hasEncounterId || hasEncounterUrl;
-    if (requireEncounter) return !!dateKey(c.visitDate) && !!norm(c.provider) && !!digits(c.encounterId) && !!urlKey(c.encounterUrl);
+    var hasAny = hasDate || hasProvider || hasAppointmentId || hasEncounterId || hasEncounterUrl;
+    if (requireEncounter) return !!dateKey(c.visitDate) && !!norm(c.provider) &&
+      ((!!digits(c.encounterId) && !!urlKey(c.encounterUrl)) || !!digits(c.appointmentId));
     /* A probe with no schedule context may safely use the driver's unique,
        labeled date/provider discovery. Once the caller supplies any context,
        it must provide a usable date/provider pair; encounter ID and URL are
        optional, but may only be supplied together. */
     if (!hasAny) return true;
     if (!dateKey(c.visitDate) || !norm(c.provider)) return false;
+    if (hasAppointmentId && !digits(c.appointmentId)) return false;
     if (hasEncounterId !== hasEncounterUrl) return false;
     if (hasEncounterId && (!digits(c.encounterId) || !urlKey(c.encounterUrl))) return false;
     return true;
@@ -1063,9 +1690,18 @@ async function mlsAthenaActionV2DriverFn(req) {
   function expectedContextMatches(got, expectedAtProbe, locked) {
     got = got || {}; expectedAtProbe = expectedAtProbe || {}; locked = locked || {};
     if (!expectedContextShape(got, true)) return false;
-    if (expectedContextKey(got) !== expectedContextKey(locked)) return false;
+    if (expectedContextKey(got) !== expectedContextKey(expectedAtProbe)) return false;
+    /* The probe may discover a stronger appointment ID than the app originally
+       knew. Require every caller-supplied locator to match the immutable probe
+       lock, but do not reject a valid encounter-ID+URL caller merely because
+       Athena added that stronger appointment ID to the locked receipt. */
+    if (dateKey(got.visitDate) !== dateKey(locked.visitDate) || norm(got.provider) !== norm(locked.provider)) return false;
+    if (digits(got.appointmentId) && digits(got.appointmentId) !== digits(locked.appointmentId)) return false;
+    if (digits(got.encounterId) && digits(got.encounterId) !== digits(locked.encounterId)) return false;
+    if (urlKey(got.encounterUrl) && urlKey(got.encounterUrl) !== urlKey(locked.encounterUrl)) return false;
     if (dateKey(expectedAtProbe.visitDate) && dateKey(got.visitDate) !== dateKey(expectedAtProbe.visitDate)) return false;
     if (norm(expectedAtProbe.provider) && norm(got.provider) !== norm(expectedAtProbe.provider)) return false;
+    if (digits(expectedAtProbe.appointmentId) && digits(got.appointmentId) !== digits(expectedAtProbe.appointmentId)) return false;
     if (digits(expectedAtProbe.encounterId) && digits(got.encounterId) !== digits(expectedAtProbe.encounterId)) return false;
     if (urlKey(expectedAtProbe.encounterUrl) && urlKey(got.encounterUrl) !== urlKey(expectedAtProbe.encounterUrl)) return false;
     return true;
@@ -1076,6 +1712,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     return digits(got.mrn) === digits(locked.mrn) &&
       norm(got.patientName) === norm(locked.patientName) &&
       dateKey(got.dob) === dateKey(locked.dob) &&
+      digits(got.appointmentId) === digits(locked.appointmentId) &&
       digits(got.encounterId) === digits(locked.encounterId) &&
       urlKey(got.encounterUrl) === urlKey(locked.encounterUrl) &&
       dateKey(got.visitDate) === dateKey(locked.visitDate) &&
@@ -1089,6 +1726,50 @@ async function mlsAthenaActionV2DriverFn(req) {
   }
   function encounterProofKey(c) { c = c || {}; return [norm(c.patientName), dateKey(c.dob), digits(c.mrn), digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider), clean(c.framePath), clean(c.encounterRootFingerprint), clean(c.noteScopeFingerprint), clean(c.editorFingerprint)].join('|'); }
   function billingKey(b) { b = b || {}; var c = Array.isArray(b.cptCodes) ? b.cptCodes : [], out = []; for (var i = 0; i < c.length; i++) out.push(clean(c[i]).toUpperCase()); return JSON.stringify([clean(b.emCode).toUpperCase(), out]); }
+  function canonicalTaughtDestination(v) {
+    v = v && typeof v === 'object' ? v : {};
+    if (!clean(v.selector)) return { ok: true, value: null, payload: '' };
+    var value = {
+      schema: clean(v.schema), contextHash: clean(v.contextHash), action: clean(v.action).toLowerCase(), rowId: clean(v.rowId), rowHash: clean(v.rowHash),
+      manifestHash: clean(v.manifestHash), patientHash: clean(v.patientHash), visitHash: clean(v.visitHash), capturedAt: clean(v.capturedAt), expiresAt: Number(v.expiresAt || 0),
+      selector: clean(v.selector), sectionLabel: clean(v.sectionLabel), label: clean(v.label), framePath: clean(v.framePath), frameUrl: clean(v.frameUrl).split('#')[0],
+      tag: clean(v.tag).toLowerCase(), targetFingerprint: clean(v.targetFingerprint)
+    };
+    if (value.schema !== 'mls-taught-destination-v2' || !value.contextHash || !value.action || !value.rowId || !value.rowHash || !value.manifestHash || !value.patientHash || !value.visitHash ||
+        !value.selector || value.selector.length > 2000 || !value.sectionLabel || value.sectionLabel.length > 240 || !value.framePath || value.framePath.length > 100 ||
+        !value.frameUrl || value.frameUrl.length > 1200 || !value.tag || value.tag.length > 40 || !value.targetFingerprint || value.targetFingerprint.length > 120 ||
+        !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now()) return { ok: false, reason: value.expiresAt && value.expiresAt <= Date.now() ? 'taught-destination-expired' : 'taught-destination-invalid' };
+    return { ok: true, value: value, payload: JSON.stringify(value) };
+  }
+  function canonicalOrderPayload(value) {
+    value = value && typeof value === 'object' ? value : {};
+    var type = norm(value.type).replace(/ /g, '_');
+    var schemas = {
+      imaging: { allowed: ['study','region','indication','laterality','contrast','notes'], required: ['study','region','indication'] },
+      pt: { allowed: ['dx','freq','duration','modalities','notes'], required: ['dx','freq','duration','modalities'] },
+      referral: { allowed: ['specialty','reason','notes'], required: ['specialty','reason'] },
+      dme: { allowed: ['item','dx','icd','notes'], required: ['item','dx','icd'] }
+    };
+    var schema = schemas[type];
+    if (!schema) return { ok: false, reason: /^(medication|rx|injection|procedure)$/.test(type) ? 'high-risk-order-blocked' : 'unsupported-order-type' };
+    var rawFields = value.fields && typeof value.fields === 'object' ? value.fields : {}, fields = {}, keys = Object.keys(rawFields).sort();
+    for (var i = 0; i < keys.length; i++) {
+      if (schema.allowed.indexOf(keys[i]) < 0 || !clean(rawFields[keys[i]])) return { ok: false, reason: 'unsupported-order-fields' };
+      if (String(rawFields[keys[i]] == null ? '' : rawFields[keys[i]]).length > 2000) return { ok: false, reason: 'order-field-too-long' };
+      fields[keys[i]] = clean(rawFields[keys[i]]);
+    }
+    if (schema.required.some(function (key) { return !clean(fields[key]); })) return { ok: false, reason: 'missing-order-fields' };
+    var canonical = {
+      clientOrderId: clean(value.clientOrderId), type: type, displayLabel: clean(value.displayLabel),
+      catalogCode: clean(value.catalogCode), catalogId: clean(value.catalogId), query: clean(value.query),
+      fields: fields, reviewStatus: clean(value.reviewStatus).toLowerCase(), source: clean(value.source).toLowerCase()
+    };
+    if (!canonical.clientOrderId || !canonical.displayLabel || !canonical.query || canonical.reviewStatus !== 'accepted') return { ok: false, reason: 'order-payload-incomplete' };
+    if (!canonical.catalogCode && !canonical.catalogId) return { ok: false, reason: 'catalog-identity-required' };
+    if (!/^(provider-entered|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(canonical.source)) return { ok: false, reason: 'unsupported-order-source' };
+    if (canonical.clientOrderId.length > 160 || canonical.displayLabel.length > 300 || canonical.query.length > 300 || canonical.catalogCode.length > 100 || canonical.catalogId.length > 160) return { ok: false, reason: 'order-field-too-long' };
+    return { ok: true, order: canonical, payload: JSON.stringify(canonical) };
+  }
   function appSender(sender) {
     try { var u = new URL(sender && sender.tab && sender.tab.url || ''); return u.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(u.hostname); } catch (e) { return false; }
   }
@@ -1133,11 +1814,304 @@ async function mlsAthenaActionV2DriverFn(req) {
     return 'verified-note-write-required';
   }
 
+  /* DESTINATION_TEACH_HANDLER_START */
+  var teachSessions = Object.create(null);
+  var TEACH_GUARD_ID = 'mls-destination-teach-navigation-guard-v1';
+  var teachGuardOwner = '';
+  var teachGuardQueue = Promise.resolve().then(async function () {
+    try { if (chrome.scripting && chrome.scripting.unregisterContentScripts) await chrome.scripting.unregisterContentScripts({ ids: [TEACH_GUARD_ID] }); } catch (eStartupGuard) {}
+  });
+  function teachCurrent(session) { return !!(session && teachSessions[session.requestId] === session && !session.cancelled); }
+  function registerTeachGuard(session) {
+    teachGuardQueue = teachGuardQueue.then(async function () {
+      try { if (chrome.scripting && chrome.scripting.unregisterContentScripts) await chrome.scripting.unregisterContentScripts({ ids: [TEACH_GUARD_ID] }); } catch (eOldGuard) {}
+      teachGuardOwner = '';
+      if (!teachCurrent(session) || !chrome.scripting || typeof chrome.scripting.registerContentScripts !== 'function') return false;
+      try {
+        await chrome.scripting.registerContentScripts([{
+          id: TEACH_GUARD_ID, matches: ['https://athenanet.athenahealth.com/*'],
+          js: ['destination_teach_navigation_guard.js'], runAt: 'document_start',
+          allFrames: true, matchOriginAsFallback: true, persistAcrossSessions: false
+        }]);
+      } catch (eRegisterGuard) { return false; }
+      if (!teachCurrent(session)) {
+        try { await chrome.scripting.unregisterContentScripts({ ids: [TEACH_GUARD_ID] }); } catch (eLateGuard) {}
+        return false;
+      }
+      teachGuardOwner = session.requestId; return true;
+    });
+    return teachGuardQueue;
+  }
+  function releaseTeachGuard(session) {
+    var requestId = clean(session && session.requestId);
+    teachGuardQueue = teachGuardQueue.then(async function () {
+      if (!requestId || teachGuardOwner !== requestId) return true;
+      teachGuardOwner = '';
+      try { await chrome.scripting.unregisterContentScripts({ ids: [TEACH_GUARD_ID] }); } catch (eReleaseGuard) {}
+      return true;
+    });
+    return teachGuardQueue;
+  }
+  function teachBinding(v) {
+    v = v && typeof v === 'object' ? v : {};
+    return {
+      schema: clean(v.schema).slice(0, 80), contextHash: clean(v.contextHash).slice(0, 160), action: clean(v.action).slice(0, 80), kind: clean(v.kind).slice(0, 80),
+      rowId: clean(v.rowId).slice(0, 180), rowHash: clean(v.rowHash).slice(0, 160), manifestHash: clean(v.manifestHash).slice(0, 160), previewHash: clean(v.previewHash).slice(0, 160),
+      patientHash: clean(v.patientHash).slice(0, 160), visitHash: clean(v.visitHash).slice(0, 160)
+    };
+  }
+  function validTeachBinding(v, action) {
+    return v.schema === 'mls-taught-destination-context-v2' && v.action === action && !!v.contextHash && !!v.rowId && !!v.rowHash && !!v.manifestHash && !!v.patientHash && !!v.visitHash;
+  }
+  function teachTarget(v) {
+    v = v && typeof v === 'object' ? v : {};
+    return {
+      selector: clean(v.selector).slice(0, 2000), sectionLabel: clean(v.sectionLabel || v.label).slice(0, 240), label: clean(v.label || v.sectionLabel).slice(0, 240),
+      framePath: clean(v.framePath).slice(0, 100), frameUrl: clean(v.frameUrl).slice(0, 1200), tag: clean(v.tag).slice(0, 40).toLowerCase(), targetFingerprint: clean(v.targetFingerprint).slice(0, 120)
+    };
+  }
+  function validTeachTarget(v) { return !!(v.selector && v.sectionLabel && v.framePath && v.tag && v.targetFingerprint); }
+  function teachProgress(session, state, details) {
+    if (!session) return;
+    var resp = Object.assign({ ok: state === 'captured' || state === 'connected' || state === 'waiting', state: state }, details || {});
+    try { chrome.tabs.sendMessage(session.appTabId, { type: 'mlsAppTeachProgress', requestId: session.requestId, resp: resp }, function () { var ignored = chrome.runtime.lastError; }); } catch (e) {}
+  }
+  function clearTeachSession(session) {
+    if (!session) return;
+    if (session.timer) clearTimeout(session.timer); session.timer = null;
+    if (teachSessions[session.requestId] === session) delete teachSessions[session.requestId];
+    session.cancelled = true;
+    releaseTeachGuard(session);
+  }
+  async function teachWatcher(tabId, config) {
+    try {
+      var out = await chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, world: 'ISOLATED', args: [config], func: mlsAthenaTeachWatcherFn });
+      var results = (out || []).map(function (entry) { return entry && entry.result; }).filter(Boolean);
+      var installedFrameIds = (out || []).map(function (entry) { return Number(entry && entry.frameId); }).filter(function (id) { return Number.isFinite(id); }).sort(function (a, b) { return a - b; });
+      if (!results.length) {
+        if (config && config.mode === 'start') try { await chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, world: 'ISOLATED', args: [{ mode: 'cancel', sessionId: config.sessionId }], func: mlsAthenaTeachWatcherFn }); } catch (eEmptyCleanup) {}
+        return { ok: false, state: 'failed', reason: 'watcher-unavailable' };
+      }
+      if (config && config.mode === 'cancel') return { ok: true, state: 'failed', reason: 'cancelled', frameResults: results.length };
+      if (results.some(function (result) { return result.ok !== true; })) {
+        /* executeScript can report a mixed all-frame result. Always broadcast
+           session-scoped cleanup before returning failure so successful frames
+           cannot keep consuming Athena clicks for the remainder of the TTL. */
+        try { await chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, world: 'ISOLATED', args: [{ mode: 'cancel', sessionId: config.sessionId }], func: mlsAthenaTeachWatcherFn }); } catch (ePartialCleanup) {}
+        return { ok: false, state: 'failed', reason: 'watcher-unavailable' };
+      }
+      var frameCount = results.reduce(function (sum, result) { return sum + Number(result.frameCount || 0); }, 0);
+      if (!frameCount) {
+        try { await chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, world: 'ISOLATED', args: [{ mode: 'cancel', sessionId: config.sessionId }], func: mlsAthenaTeachWatcherFn }); } catch (eZeroCleanup) {}
+        return { ok: false, state: 'failed', reason: 'watcher-unavailable' };
+      }
+      return { ok: true, state: 'waiting', frameCount: frameCount, frameResults: results.length, installedFrameIds: installedFrameIds };
+    } catch (e) {
+      if (config && config.mode === 'start') try { await chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, world: 'ISOLATED', args: [{ mode: 'cancel', sessionId: config.sessionId }], func: mlsAthenaTeachWatcherFn }); } catch (eThrowCleanup) {}
+      return { ok: false, state: 'failed', reason: 'watcher-unavailable', error: String((e && e.message) || e).slice(0, 220) };
+    }
+  }
+  async function teachFrameSnapshot(tabId) {
+    try {
+      if (!chrome.webNavigation || typeof chrome.webNavigation.getAllFrames !== 'function') return null;
+      var frames = await chrome.webNavigation.getAllFrames({ tabId: tabId });
+      if (!Array.isArray(frames) || !frames.length) return null;
+      return frames.map(function (frame) {
+        return {
+          frameId: Number(frame.frameId), parentFrameId: Number(frame.parentFrameId),
+          documentId: clean(frame.documentId), url: urlKey(frame.url)
+        };
+      }).sort(function (a, b) { return a.frameId - b.frameId; });
+    } catch (e) { return null; }
+  }
+  function sameTeachFrameSnapshot(a, b, installedFrameIds) {
+    if (!Array.isArray(a) || !Array.isArray(b) || !Array.isArray(installedFrameIds) || !a.length || a.length !== b.length || a.length !== installedFrameIds.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].frameId !== b[i].frameId || a[i].frameId !== installedFrameIds[i] || a[i].parentFrameId !== b[i].parentFrameId ||
+          (a[i].documentId && b[i].documentId && a[i].documentId !== b[i].documentId) || a[i].url !== b[i].url) return false;
+    }
+    return true;
+  }
+  function detachTeachSession(session) {
+    if (!teachCurrent(session)) return false;
+    session.cancelled = true;
+    if (session.timer) clearTimeout(session.timer); session.timer = null;
+    delete teachSessions[session.requestId];
+    releaseTeachGuard(session);
+    return true;
+  }
+  async function retireTeachSession(session, reason, message, state, skipWatcherCancel) {
+    if (!detachTeachSession(session)) return false;
+    teachProgress(session, state || 'failed', { ok: false, reason: reason, message: message || 'The taught destination could not be validated. Nothing was changed.' });
+    if (!skipWatcherCancel && session.athenaTabId != null) await teachWatcher(session.athenaTabId, { mode: 'cancel', sessionId: session.requestId });
+    return true;
+  }
+
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || (msg.type !== 'mlsAppTeachStartRequest' && msg.type !== 'mlsAppTeachCancelRequest' && msg.type !== 'mlsAthenaTeachCaptured' && msg.type !== 'mlsAthenaTeachNavigationGuardReady')) return;
+    (async function () {
+      if (msg.type === 'mlsAthenaTeachNavigationGuardReady') {
+        var owner = teachSessions[teachGuardOwner];
+        if (owner && sender && sender.tab && (owner.athenaTabId == null || Number(sender.tab.id) === Number(owner.athenaTabId))) {
+          await retireTeachSession(owner, 'athena-page-changed', 'Athena changed while teaching. Click Teach destination again; nothing was captured or changed.', 'failed', owner.athenaTabId == null);
+          return { ok: true, state: 'failed', reason: 'athena-page-changed' };
+        }
+        return { ok: true, state: 'ignored' };
+      }
+      var requestId = clean(msg.requestId || msg.sessionId).slice(0, 120);
+      if (!requestId) return { ok: false, state: 'failed', reason: 'missing-session' };
+      if (msg.type === 'mlsAthenaTeachCaptured') {
+        var capturedSession = teachSessions[requestId];
+        if (!capturedSession) return { ok: false, state: 'expired', reason: 'session-expired' };
+        if (!teachCurrent(capturedSession)) return { ok: false, state: 'expired', reason: 'session-expired' };
+        if (!sender || !sender.tab || Number(sender.tab.id) !== Number(capturedSession.athenaTabId)) {
+          await retireTeachSession(capturedSession, 'wrong-tab', 'The click came from a different tab. Nothing was captured or changed.');
+          return { ok: false, state: 'failed', reason: 'wrong-tab' };
+        }
+        if (Date.now() > capturedSession.expiresAt) {
+          await retireTeachSession(capturedSession, 'timeout', 'The read-only watcher expired. Nothing was captured or changed.', 'expired');
+          return { ok: false, state: 'expired', reason: 'timeout' };
+        }
+        var target = teachTarget(msg.target);
+        if (!validTeachTarget(target)) {
+          await retireTeachSession(capturedSession, 'invalid-target', 'The clicked Athena element did not produce a robust selector and section label.');
+          return { ok: false, state: 'failed', reason: 'invalid-target' };
+        }
+        var checked = await injectOnce(capturedSession.athenaTabId, {
+          mode: 'teach', action: capturedSession.action, expectedPatient: capturedSession.patient, expectedContext: capturedSession.context,
+          billing: {}, order: {}, noteText: '', notePolicy: 'empty_only', locked: null, taughtDestination: target
+        });
+        if (!teachCurrent(capturedSession)) {
+          await teachWatcher(capturedSession.athenaTabId, { mode: 'cancel', sessionId: requestId });
+          return { ok: false, state: 'expired', reason: 'session-expired' };
+        }
+        if (!checked || !checked.ok || checked.targetValidated !== true || !checked.contextVerified || !lockedContextShape(checked.context)) {
+          var why = clean(checked && (checked.reason || checked.error)) || 'destination-unverified';
+          await retireTeachSession(capturedSession, why, why === 'patient-mismatch' ? 'The open Athena chart is not the patient in this review. Nothing was captured.' : 'That click is not inside the exact typed Athena destination for this patient and action. Nothing was captured.');
+          return { ok: false, state: 'failed', reason: why };
+        }
+        var validatedTarget = teachTarget(checked.target || target);
+        if (!detachTeachSession(capturedSession)) return { ok: false, state: 'expired', reason: 'session-expired' };
+        teachProgress(capturedSession, 'captured', { ok: true, message: 'Captured and validated for this exact patient and destination.', target: validatedTarget, binding: capturedSession.binding, context: checked.context });
+        await teachWatcher(capturedSession.athenaTabId, { mode: 'cancel', sessionId: requestId });
+        return { ok: true, state: 'captured' };
+      }
+
+      if (!appSender(sender)) return { ok: false, state: 'failed', reason: 'untrusted-sender' };
+      var existing = teachSessions[requestId];
+      if (msg.type === 'mlsAppTeachCancelRequest') {
+        if (!existing || Number(existing.appTabId) !== Number(sender.tab.id)) return { ok: false, state: 'failed', reason: 'not-watching' };
+        await retireTeachSession(existing, 'cancelled', 'Teaching was cancelled. Nothing was captured or changed.');
+        return { ok: true, state: 'failed', reason: 'cancelled' };
+      }
+
+      var action = clean(msg.action).toLowerCase(), ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
+      var binding = teachBinding(msg.binding), patient = msg.expectedPatient || {}, context = msg.expectedContext || {};
+      if (!ACTIONS[action] || !validTeachBinding(binding, action)) return { ok: false, state: 'failed', reason: 'invalid-binding', message: 'The destination is not bound to one exact review row.' };
+      if (existing) return { ok: false, state: 'failed', reason: 'duplicate-session', message: 'This teaching request is already active.' };
+      if (!clean(patient.patientId) || !clean(patient.name) || !dateKey(patient.dob) || !digits(patient.mrn)) return { ok: false, state: 'failed', reason: 'patient-mismatch', message: 'An exact local patient ID, name, DOB, and Athena MRN are required before teaching.' };
+      if (!expectedContextShape(context, false) || !dateKey(context.visitDate) || !norm(context.provider) ||
+          (!digits(context.appointmentId) && !(digits(context.encounterId) && urlKey(context.encounterUrl)))) {
+        return { ok: false, state: 'failed', reason: 'context-mismatch', message: 'The exact visit needs its date, provider, and appointment ID (or bound encounter ID and URL).' };
+      }
+      /* Register the pending session before the first await. An immediate Cancel
+         can now mark/remove it, and every later await verifies ownership before
+         it is allowed to install a watcher. */
+      var timeoutMs = Math.max(5000, Math.min(60000, Number(msg.timeoutMs || 60000))), now = Date.now();
+      var session = { requestId: requestId, appTabId: sender.tab.id, athenaTabId: null, action: action, binding: binding, patient: patient, context: context, issuedAt: now, expiresAt: now + timeoutMs, timer: null, cancelled: false };
+      teachSessions[requestId] = session;
+      /* One browser-wide teaching gesture at a time. Retire every older exact
+         generation synchronously before the first tab query so an old capture
+         already in flight can no longer complete while a new row is arming. */
+      var priorSessions = Object.keys(teachSessions).map(function (id) { return teachSessions[id]; }).filter(function (prior) { return prior && prior !== session; });
+      var retirePromises = priorSessions.map(function (prior) { return retireTeachSession(prior, 'replaced', 'A newer teaching request replaced this watcher. Nothing was captured.'); });
+      if (retirePromises.length) await Promise.all(retirePromises);
+      if (!teachCurrent(session)) return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled before the watcher started.' };
+      var guardReady = await registerTeachGuard(session);
+      if (!teachCurrent(session)) return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled before the watcher started.' };
+      if (!guardReady) {
+        detachTeachSession(session);
+        return { ok: false, state: 'failed', reason: 'watcher-unavailable', message: 'MLS Assist could not arm the navigation-safe Athena watcher.' };
+      }
+      var tabs = exactAthenaTabs(await chrome.tabs.query({}));
+      if (!teachCurrent(session)) return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled before the watcher started.' };
+      if (tabs.length !== 1) {
+        clearTeachSession(session);
+        return { ok: false, state: 'failed', reason: tabs.length ? 'ambiguous-athena-tabs' : 'no-athena-tab', message: tabs.length ? 'Leave exactly one signed-in Athena tab open, then try again.' : 'Open one signed-in Athena tab, then try again.' };
+      }
+      session.athenaTabId = tabs[0].id;
+      var framesBefore = await teachFrameSnapshot(session.athenaTabId);
+      if (!teachCurrent(session)) return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled while Athena was being checked.' };
+      if (!framesBefore) {
+        await retireTeachSession(session, 'frame-coverage-unverified', 'MLS Assist could not verify every current Athena frame. Click Teach destination again; nothing was changed.');
+        return { ok: false, state: 'failed', reason: 'frame-coverage-unverified' };
+      }
+      var started = await teachWatcher(session.athenaTabId, { mode: 'start', sessionId: requestId, timeoutMs: timeoutMs });
+      if (!teachCurrent(session)) {
+        await teachWatcher(session.athenaTabId, { mode: 'cancel', sessionId: requestId });
+        return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled before the watcher finished attaching.' };
+      }
+      if (!started || !started.ok) {
+        await retireTeachSession(session, clean(started && (started.reason || started.error)) || 'watcher-unavailable', 'MLS Assist could not attach the read-only Athena watcher.');
+        return { ok: false, state: 'failed', reason: clean(started && (started.reason || started.error)) || 'watcher-unavailable', message: 'MLS Assist could not attach the read-only Athena watcher.' };
+      }
+      var framesAfter = await teachFrameSnapshot(session.athenaTabId);
+      if (!teachCurrent(session)) {
+        await teachWatcher(session.athenaTabId, { mode: 'cancel', sessionId: requestId });
+        return { ok: false, state: 'failed', reason: 'cancelled', message: 'Teaching was cancelled while Athena was being checked.' };
+      }
+      if (!sameTeachFrameSnapshot(framesBefore, framesAfter, started.installedFrameIds)) {
+        await retireTeachSession(session, 'frame-generation-changed', 'Athena changed while the watcher was attaching. Click Teach destination again; nothing was captured or changed.');
+        return { ok: false, state: 'failed', reason: 'frame-generation-changed' };
+      }
+      session.timer = setTimeout(function () {
+        if (!teachCurrent(session)) return;
+        retireTeachSession(session, 'timeout', 'The read-only watcher expired. Nothing was captured or changed.', 'expired');
+      }, timeoutMs + 50);
+      teachProgress(session, 'waiting', { ok: true, message: 'Waiting for the next Athena click. That teaching click will be blocked from activating the control.' });
+      return { ok: true, state: 'waiting', requestId: requestId, expiresAt: session.expiresAt, message: 'Connected. Waiting for the next Athena click.' };
+    })().then(function (result) { try { sendResponse(result); } catch (e) {} }).catch(function (e) { try { sendResponse({ ok: false, state: 'failed', reason: 'watcher-error', message: String((e && e.message) || e).slice(0, 220) }); } catch (e2) {} });
+    return true;
+  });
+  function activeTeachSessionsForTab(tabId) {
+    return Object.keys(teachSessions).map(function (id) { return teachSessions[id]; }).filter(function (session) {
+      return teachCurrent(session) && (Number(session.appTabId) === Number(tabId) || Number(session.athenaTabId) === Number(tabId));
+    });
+  }
+  function retireTeachForTab(tabId, reason, message, closedTab) {
+    activeTeachSessionsForTab(tabId).forEach(function (session) {
+      var skipWatcher = !!closedTab && Number(session.athenaTabId) === Number(tabId);
+      retireTeachSession(session, reason, message, 'failed', skipWatcher);
+    });
+  }
+  try {
+    chrome.tabs.onRemoved.addListener(function (tabId) {
+      retireTeachForTab(tabId, 'teaching-tab-closed', 'The MLS or Athena tab closed while teaching. Click Teach destination again; nothing was captured or changed.', true);
+    });
+    chrome.tabs.onUpdated.addListener(function (tabId, changeInfo) {
+      if (!changeInfo || (changeInfo.status !== 'loading' && !Object.prototype.hasOwnProperty.call(changeInfo, 'url'))) return;
+      retireTeachForTab(tabId, 'teaching-tab-navigated', 'The MLS or Athena page changed while teaching. Click Teach destination again; nothing was captured or changed.', false);
+    });
+  } catch (eTabLifecycle) {}
+  try {
+    chrome.webNavigation.onBeforeNavigate.addListener(function (details) {
+      if (!details || details.tabId == null) return;
+      var sessions = activeTeachSessionsForTab(details.tabId).filter(function (session) { return Number(session.athenaTabId) === Number(details.tabId); });
+      sessions.forEach(function (session) {
+        /* onBeforeNavigate fires for every frame generation. Retire ownership
+           synchronously; the document_start guard blocks the replacement frame
+           until this cancellation is acknowledged. */
+        retireTeachSession(session, 'athena-frame-navigated', 'Athena changed while teaching. Click Teach destination again; nothing was captured or changed.', 'failed', false);
+      });
+    });
+  } catch (eFrameLifecycle) {}
+  /* DESTINATION_TEACH_HANDLER_END */
+
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppAthenaActionV2Request') return;
     (async function () {
       var mode = clean(msg.mode).toLowerCase(), action = clean(msg.action).toLowerCase();
-      var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1 };
+      var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
       if (!/^(probe|execute)$/.test(mode) || !ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
       var actionToken = '', rec = null;
       if (mode === 'execute') {
@@ -1148,16 +2122,27 @@ async function mlsAthenaActionV2DriverFn(req) {
         /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
         rec.used = true; // the first execute attempt consumes the token, even on a later mismatch
       }
-      var previewHash = clean(msg.previewHash), p = msg.expectedPatient || {}, c = msg.expectedContext || {}, b = msg.billing || {};
+      var previewHash = clean(msg.previewHash), manifestHash = clean(msg.manifestHash), p = msg.expectedPatient || {}, c = msg.expectedContext || {}, b = msg.billing || {}, suppliedOrder = msg.order || {};
+      var rowHash = clean(msg.rowHash), clientOrderId = clean(msg.clientOrderId);
       var noteText = String(msg.noteText == null ? '' : msg.noteText), notePolicy = clean(msg.notePolicy || 'empty_only'), noteSections = Array.isArray(msg.sections) ? msg.sections : [];
       var canonicalNotePayload = notePayloadKey(noteText, noteSections, notePolicy);
       var canonicalBillingPayload = billingKey(b);
+      var checkedOrder = action === 'place_order' ? canonicalOrderPayload(suppliedOrder) : { ok: true, order: {}, payload: '' };
+      var canonicalOrderKey = checkedOrder.ok ? checkedOrder.payload : '';
+      var checkedTaught = canonicalTaughtDestination(msg.taughtDestination), canonicalTaughtKey = checkedTaught.ok ? checkedTaught.payload : '';
       var noteHash = simpleHash(canonicalNotePayload);
       var noteWriteProofId = clean(msg.noteWriteProof), proofRecord = null;
       if (!previewHash) return { ok: false, blocked: true, reason: 'preview-hash-mismatch' };
-      if (!clean(p.name) || !dateKey(p.dob)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
-      if (!expectedContextShape(c, mode === 'execute')) return { ok: false, blocked: true, reason: 'context-mismatch' };
-      if (action !== 'stage_billing' && !noteNorm(noteText)) return { ok: false, blocked: true, reason: 'note-content-required' };
+      if (!checkedTaught.ok) return { ok: false, blocked: true, reason: checkedTaught.reason };
+      if (checkedTaught.value && (checkedTaught.value.action !== action || checkedTaught.value.rowHash !== rowHash || checkedTaught.value.manifestHash !== manifestHash)) return { ok: false, blocked: true, reason: 'taught-destination-binding-mismatch' };
+      if (!clean(p.patientId)) return { ok: false, blocked: true, reason: 'local-patient-id-required' };
+      if (!clean(p.name) || !dateKey(p.dob) || !digits(p.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      if (action === 'place_order' && (!rowHash || rowHash.length > 160)) return { ok: false, blocked: true, reason: 'order-row-mismatch' };
+      if (!expectedContextShape(c, mode === 'execute') || !dateKey(c.visitDate) || !norm(c.provider) ||
+          (!digits(c.appointmentId) && !(digits(c.encounterId) && urlKey(c.encounterUrl)))) return { ok: false, blocked: true, reason: 'context-mismatch' };
+      if (action === 'place_order' && !checkedOrder.ok) return { ok: false, blocked: true, reason: checkedOrder.reason };
+      if (action === 'place_order' && (!clientOrderId || clientOrderId.length > 160 || clientOrderId !== checkedOrder.order.clientOrderId)) return { ok: false, blocked: true, reason: 'order-client-id-mismatch' };
+      if (action !== 'stage_billing' && action !== 'place_order' && !noteNorm(noteText)) return { ok: false, blocked: true, reason: 'note-content-required' };
       if (action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy' };
       if (action === 'stage_billing') {
         var rawCodes = []; if (clean(b.emCode)) rawCodes.push(clean(b.emCode).toUpperCase()); if (Array.isArray(b.cptCodes)) rawCodes = rawCodes.concat(b.cptCodes.map(function (x) { return clean(x).toUpperCase(); }));
@@ -1172,40 +2157,59 @@ async function mlsAthenaActionV2DriverFn(req) {
           proofRecord = matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, null);
           if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId), error: 'Write and verify this exact reviewed note in this encounter before signing.' };
         }
-        var probe = await injectOnce(tab.id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, noteText: noteText, notePolicy: notePolicy, locked: null });
+        var probe = await injectOnce(tab.id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, order: checkedOrder.order, noteText: noteText, notePolicy: notePolicy, locked: null, taughtDestination: checkedTaught.value });
         if (!probe || !probe.ok || !probe.contextVerified || !lockedContextShape(probe.context)) return probe && probe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (probe || { ok: false, blocked: true, reason: 'context-unverified' });
         if (action === 'sign_encounter' && !matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, probe.context)) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch', error: 'The verified note write does not match this encounter.' };
         if ((dateKey(c.visitDate) && dateKey(c.visitDate) !== dateKey(probe.context.visitDate)) ||
             (norm(c.provider) && norm(c.provider) !== norm(probe.context.provider)) ||
+            (digits(c.appointmentId) && digits(c.appointmentId) !== digits(probe.context.appointmentId)) ||
             (digits(c.encounterId) && digits(c.encounterId) !== digits(probe.context.encounterId)) ||
             (urlKey(c.encounterUrl) && urlKey(c.encounterUrl) !== urlKey(probe.context.encounterUrl))) return { ok: false, blocked: true, reason: 'context-mismatch' };
+        /* Only the newest authorization for one manifest may remain live.
+           Without this, a click intended for row B could replay an older token
+           minted for row A because both rows share the manifest preview hash. */
+        if (action === 'place_order') Object.keys(tokens).forEach(function (id) {
+          var prior = tokens[id];
+          if (prior && !prior.used && prior.action === 'place_order' && Number(prior.senderTabId) === Number(sender.tab.id) && prior.previewHash === previewHash) {
+            prior.used = true; prior.invalidated = true;
+          }
+        });
         var tok = tokenValue(), now = Date.now();
         tokens[tok] = {
           used: false, issuedAt: now, expiresAt: now + TOKEN_TTL_MS,
           senderTabId: sender.tab.id, athenaTabId: tab.id, action: action,
           previewHash: previewHash, patientHash: simpleHash(patientKey(p)), expectedMrn: digits(p.mrn),
-          expectedContextHash: simpleHash(expectedContextKey(c)), billingHash: simpleHash(canonicalBillingPayload), billingPayload: canonicalBillingPayload, noteHash: noteHash, notePayload: canonicalNotePayload,
+          expectedContextHash: simpleHash(expectedContextKey(c)), billingHash: simpleHash(canonicalBillingPayload), billingPayload: canonicalBillingPayload, orderHash: simpleHash(canonicalOrderKey), orderPayload: canonicalOrderKey, noteHash: noteHash, notePayload: canonicalNotePayload,
+          manifestHash: manifestHash, taughtDestinationHash: simpleHash(canonicalTaughtKey), taughtDestinationPayload: canonicalTaughtKey,
+          patientId: clean(p.patientId), clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', rowHash: action === 'place_order' ? rowHash : '',
           noteWriteProof: action === 'sign_encounter' ? noteWriteProofId : '',
-          expectedContext: { encounterId: digits(c.encounterId), encounterUrl: urlKey(c.encounterUrl), visitDate: dateKey(c.visitDate), provider: norm(c.provider) },
+          expectedContext: { appointmentId: digits(c.appointmentId), encounterId: digits(c.encounterId), encounterUrl: urlKey(c.encounterUrl), visitDate: dateKey(c.visitDate), provider: norm(c.provider) },
           lockedContextHash: simpleHash(expectedContextKey(probe.context)),
           locked: probe.context
         };
         /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
-        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
+        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
       }
 
       if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
       if (Number(rec.senderTabId) !== Number(sender.tab.id)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
       if (rec.action !== action) return { ok: false, blocked: true, reason: 'token-action-mismatch' };
       if (rec.previewHash !== previewHash) return { ok: false, blocked: true, reason: 'preview-hash-mismatch' };
+      if (rec.manifestHash !== manifestHash) return { ok: false, blocked: true, reason: 'taught-destination-binding-mismatch' };
+      if (action === 'place_order' && rec.rowHash !== rowHash) return { ok: false, blocked: true, reason: 'order-row-mismatch' };
+      if (action === 'place_order' && (rec.clientOrderId !== clientOrderId || rec.clientOrderId !== checkedOrder.order.clientOrderId)) return { ok: false, blocked: true, reason: 'order-client-id-mismatch' };
       if (rec.patientHash !== simpleHash(patientKey(p))) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      if (rec.patientId !== clean(p.patientId)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       if (digits(p.mrn) && digits(p.mrn) !== digits(rec.locked && rec.locked.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       if (rec.expectedMrn && rec.expectedMrn !== digits(rec.locked && rec.locked.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       if (rec.billingPayload !== canonicalBillingPayload || rec.billingHash !== simpleHash(canonicalBillingPayload)) return { ok: false, blocked: true, reason: 'billing-payload-mismatch' };
+      if (rec.orderPayload !== canonicalOrderKey || rec.orderHash !== simpleHash(canonicalOrderKey)) return { ok: false, blocked: true, reason: 'order-payload-mismatch' };
       if (rec.notePayload !== canonicalNotePayload || rec.noteHash !== noteHash) return { ok: false, blocked: true, reason: 'note-payload-mismatch' };
-      if (!expectedContextMatches(c, rec.expectedContext, rec.locked) || rec.lockedContextHash !== simpleHash(expectedContextKey(c))) return { ok: false, blocked: true, reason: 'context-mismatch' };
+      if (rec.taughtDestinationPayload !== canonicalTaughtKey || rec.taughtDestinationHash !== simpleHash(canonicalTaughtKey)) return { ok: false, blocked: true, reason: 'taught-destination-binding-mismatch' };
+      if (!expectedContextMatches(c, rec.expectedContext, rec.locked) || rec.expectedContextHash !== simpleHash(expectedContextKey(c)) || rec.lockedContextHash !== simpleHash(expectedContextKey(rec.locked))) return { ok: false, blocked: true, reason: 'context-mismatch' };
       if (!probeContextMatches(msg.probeContext, rec.locked)) return { ok: false, blocked: true, reason: 'context-mismatch' };
       if (msg.userGesture !== true || !clean(msg.gestureProof)) return { ok: false, blocked: true, reason: 'fresh-trusted-click-required' };
+      if (action === 'place_order' && (clean(msg.gestureRowHash) !== rec.rowHash || clean(msg.gestureClientOrderId) !== rec.clientOrderId)) return { ok: false, blocked: true, reason: 'fresh-trusted-click-required' };
       /* Re-query the complete tab set at the last pre-mutation gate. A token
          cannot remain valid if another signed-in Athena tab appeared, the
          locked tab signed out, or a different Athena tab replaced it. */
@@ -1222,7 +2226,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       var executed;
       try {
         /* ATHENA_ACTION_V2_EXECUTE_INJECTION */
-        executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, noteText: noteText, notePolicy: notePolicy, locked: rec.locked });
+        executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { appointmentId: rec.locked.appointmentId, encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, order: checkedOrder.order, noteText: noteText, notePolicy: notePolicy, locked: rec.locked, taughtDestination: checkedTaught.value });
       } finally { executeBusy = false; }
       if (!executed) return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', noAutomaticChaining: 'no-automatic-chaining' };
       if (action === 'write_note' && executed.written === true && executed.verified === true && executed.draftVerified === true && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {
@@ -1238,6 +2242,8 @@ async function mlsAthenaActionV2DriverFn(req) {
         executed.noteWriteProofExpiresAt = proofNow + NOTE_PROOF_TTL_MS;
       }
       if (action === 'sign_encounter' && proofRecord && proofRecord.used) executed.noteWriteProofConsumed = true;
+      executed.patientId = clean(p.patientId);
+      if (action === 'place_order') { executed.clientOrderId = checkedOrder.order.clientOrderId; executed.rowHash = rowHash; }
       executed.actionTokenConsumed = true;
       executed.noAutomaticChaining = 'no-automatic-chaining';
       return executed;
@@ -2241,25 +3247,21 @@ function mlsEnsureClinicalChartFn() {
     return out;
   } catch (e) { return { clicked: '', briefing: false, error: String((e && e.message) || e).slice(0, 100) }; }
 }
-/* Injected: after a reload athenaNet can show the "unable to complete the
- * requested action" CSRF interstitial with Continue/Cancel. Clicking Continue
- * restores the signed-in session (documented + live-proven recovery). Clicks
- * ONLY a button whose exact text is "Continue" and only when that interstitial
- * text is actually present. */
+/* Injected read-only interstitial detector. Session/CSRF screens require a
+ * human decision; the extension never clicks Continue, reloads, or attempts to
+ * re-authenticate on the user's behalf. */
 function mlsAthenaContinueFn() {
   try {
     var body = String((document.body && document.body.innerText) || '').slice(0, 12000);
     if (!/unable to complete|could not complete|session (has )?(expired|timed)|please try again/i.test(body)) return { seen: false };
-    var ctrls = [].slice.call(document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit]'));
-    for (var i = 0; i < ctrls.length; i++) {
-      var t = String(ctrls[i].textContent || ctrls[i].value || '').replace(/\s+/g, ' ').trim();
-      if (/^continue$/i.test(t)) { try { ctrls[i].click(); } catch (e) {} return { seen: true, clicked: true }; }
-    }
-    return { seen: true, clicked: false };
+    return { seen: true, clicked: false, manualActionRequired: true };
   } catch (e) { return { seen: false, error: String((e && e.message) || e).slice(0, 80) }; }
 }
-/* Worker-scope: reload the athena tab (the documented freeze recovery), wait for
- * load, then clear the "Continue" interstitial if it appears. Session survives. */
+/* Worker-scope: session-safe recovery. Automatic reloads proved capable of
+ * invalidating Athena's CSRF/session state and could also discard unsaved chart
+ * work. A read timeout now leaves the user's tab and URL untouched, re-arms the
+ * lightweight page heartbeat only when the tab is still signed in, and reports
+ * that a manual refresh may be needed. */
 var __mlsReadsSinceReload = 0;
 async function mlsRecoverAthenaTab(tabId) {
   /* Central fail-closed rail: several legacy callers retain generic-EMR
@@ -2270,43 +3272,18 @@ async function mlsRecoverAthenaTab(tabId) {
     return { ok: false, skipped: 'tab-missing' };
   }
   if (!mlsIsAthenaTab(recoverTab)) return { ok: false, skipped: 'non-athena-tab' };
-  try { await chrome.tabs.reload(tabId); } catch (eReload) {
-    return { ok: false, error: String((eReload && eReload.message) || eReload) };
-  }
-  await new Promise(function (res) {
-    var done = false;
-    var to = setTimeout(function () { if (!done) { done = true; try { chrome.tabs.onUpdated.removeListener(li); } catch (e) {} res(); } }, 20000);
-    function li(id, info) { if (id === tabId && info && info.status === 'complete' && !done) { done = true; clearTimeout(to); try { chrome.tabs.onUpdated.removeListener(li); } catch (e) {} res(); } }
-    chrome.tabs.onUpdated.addListener(li);
-  });
-  await mlsSleepW(1500);
-  for (var k = 0; k < 3; k++) {
-    var x = await mlsExecTO({ target: { tabId: tabId, allFrames: true }, func: mlsAthenaContinueFn }, 8000);
-    var seen = ((x && x.r) || []).map(function (m) { return m && m.result; }).filter(Boolean).some(function (v) { return v.seen; });
-    if (!seen) break;
-    await mlsSleepW(2200);
-  }
+  if (mlsAthIsLoginish(recoverTab)) return { ok: false, skipped: 'athena-signed-out', manualSignIn: true };
+  try { await mlsArmKeepAlive(tabId, true); } catch (eKa) {}
   __mlsReadsSinceReload = 0;
-  try { await mlsArmKeepAlive(tabId, true); } catch (eKa) {} /* v1.95: the reload just killed the page keep-alive - re-arm it ourselves */
-  return { ok: true };
+  return { ok: false, skipped: 'automatic-reload-disabled', manualRefresh: true, tabUntouched: true };
 }
-/* v1.95 KEEP-ALIVE SELF-HEALING: the gentle ~55s Worker keep-alive lives in the
- * athena page and DIES on every reload/navigation (live 07-10: the freeze-guard
- * reload killed it mid-pull; a signed-out athena then blocks everything). The
- * extension now re-arms it itself: after every mlsRecoverAthenaTab, and on each
- * athena content-script hello while an MLS app tab is open. Page-context
- * (world MAIN), idempotent, tiny synthetic mousemove + 1px scroll only - the
- * exact gentle recipe the ops handbook mandates. NEVER re-authenticates. */
+/* Session ownership stays with Athena. MLS Assist never synthesizes user input
+ * or scrolling to defeat an inactivity policy; this marker is retained only so
+ * older callers can safely discover that automatic keep-alive is disabled. */
 self.__mlsKaArmAt = self.__mlsKaArmAt || {};
 function mlsKeepAlivePageFn() {
-  try { if (window.__mlsKeepAlive && window.__mlsKeepAlive.armed) return 'already'; } catch (e) {}
-  try {
-    var w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},55000)'], { type: 'text/javascript' })));
-    var KA = { armed: true, ticks: 0, errors: 0, by: 'mls-ext', stop: function () { try { w.terminate(); } catch (e) {} KA.armed = false; } };
-    w.onmessage = function () { try { KA.ticks++; document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 200 + (KA.ticks % 5), clientY: 300 + (KA.ticks % 7) })); window.scrollBy(0, 1); window.scrollBy(0, -1); } catch (e) { KA.errors++; } };
-    window.__mlsKeepAlive = KA;
-    return 'armed';
-  } catch (e) { return 'err:' + String((e && e.message) || e).slice(0, 40); }
+  try { window.__mlsKeepAlive = { armed: false, disabled: 'athena-session-policy', by: 'mls-ext', stop: function () {} }; } catch (e) {}
+  return 'session-owned-by-athena';
 }
 async function mlsArmKeepAlive(tabId, force) {
   try {
@@ -2931,7 +3908,8 @@ async function mlsPickAthenaTab(all, opts) {
         if (pr.cal || pr.fs) { shell = known[i]; break; } /* signed-in athenanet shell */
       }
       /* nothing alive: KEEP the top-scored pick — go-home freeze recovery must
-         still receive the frozen tab so mlsRecoverAthenaTab can reload it. */
+         still receive the stalled tab so mlsRecoverAthenaTab can report that
+         manual attention is required without reloading Athena. */
       pick = shell || alive || known[0];
     }
     C.tabId = pick.id; C.at = Date.now();
@@ -3357,6 +4335,29 @@ var mlsProv = (function () {
         if (p) { var cm = p.match(RE_CRED); if (cm && cm[1]) credSet[cm[1].toUpperCase()] = 1; }
         return p;
       }
+      function sourceIds(row, providerCell) {
+        var outIds = { appointmentId: '', providerId: '' };
+        function attr(nodes, names) {
+          for (var ni = 0; ni < nodes.length; ni++) for (var ai = 0; ai < names.length; ai++) {
+            try { var v = nodes[ni].getAttribute && nodes[ni].getAttribute(names[ai]); if (v != null && String(v).trim()) return String(v).trim(); } catch (e0) {}
+          }
+          return '';
+        }
+        var rowNodes = [row], providerNodes = providerCell ? [providerCell] : [];
+        try { rowNodes = rowNodes.concat([].slice.call(row.querySelectorAll('[data-appointment-id],[data-appt-id],[data-appointmentid],[appointmentid],[data-provider-id],[data-rendering-provider-id],[data-resource-id],a[href]')).slice(0, 40)); } catch (e1) {}
+        try { if (providerCell) providerNodes = providerNodes.concat([].slice.call(providerCell.querySelectorAll('[data-provider-id],[data-rendering-provider-id],[data-resource-id],[providerid],a[href]')).slice(0, 20)); } catch (e2) {}
+        outIds.appointmentId = attr(rowNodes, ['data-appointment-id', 'data-appt-id', 'data-appointmentid', 'appointmentid']);
+        outIds.providerId = attr(providerNodes.concat(rowNodes), ['data-provider-id', 'data-rendering-provider-id', 'data-resource-id', 'providerid']);
+        for (var li = 0; li < rowNodes.length && (!outIds.appointmentId || !outIds.providerId); li++) {
+          var href = ''; try { href = rowNodes[li].getAttribute && rowNodes[li].getAttribute('href') || ''; } catch (e3) {}
+          if (!href) continue;
+          var am = String(href).match(/[?&#/](?:appointmentid|appointment_id|appointment|apptid)[=/:]([a-z0-9_-]{2,})/i);
+          var pm = String(href).match(/[?&#/](?:providerid|provider_id|provider|resourceid)[=/:]([a-z0-9_-]{2,})/i);
+          if (!outIds.appointmentId && am) outIds.appointmentId = am[1];
+          if (!outIds.providerId && pm) outIds.providerId = pm[1];
+        }
+        return outIds;
+      }
 
       /* Legacy athenaOne renders one <ul.appointments-container> per scoped
          provider list (and can duplicate that list for alternate sort modes).
@@ -3408,9 +4409,13 @@ var mlsProv = (function () {
           if (!cells.length) return;
           var rowText = txt(r);
           if (!hasTime(rowText)) return;
-          var prov = cells[provIdx] ? noteProv(txt(cells[provIdx])) : '';
+          var providerCell = cells[provIdx] || null;
+          var prov = providerCell ? noteProv(txt(providerCell)) : '';
           var nm = nameIdx >= 0 && cells[nameIdx] ? txt(cells[nameIdx]) : patientNameFromRow(rowText);
-          if (nm) out.appts.push({ time: firstTime(rowText), name: clean(nm), provider: prov || '' });
+          if (nm) {
+            var ids = sourceIds(r, providerCell);
+            out.appts.push({ time: firstTime(rowText), name: clean(nm), provider: prov || '', appointmentId: ids.appointmentId || '', providerId: ids.providerId || '' });
+          }
         });
         if (out.appts.length) out.diag.via = 'table-column';
       }
@@ -3443,7 +4448,10 @@ var mlsProv = (function () {
               if (mNme) inRow = noteProv(mNme[1]);
             }
             var nm2 = patientNameFromRow(n.text);
-            if (nm2) out.appts.push({ time: firstTime(n.text), name: nm2, provider: inRow || cur || '' });
+            if (nm2) {
+              var ids2 = sourceIds(n.el, null);
+              out.appts.push({ time: firstTime(n.text), name: nm2, provider: inRow || cur || '', appointmentId: ids2.appointmentId || '', providerId: ids2.providerId || '' });
+            }
           }
         });
         if (out.appts.length && !out.diag.via) out.diag.via = 'grouped-dom';
@@ -3456,6 +4464,8 @@ var mlsProv = (function () {
       out.diag.providerCount = out.providers.length;
       out.diag.providerNames = out.providers.slice(0, 20);
       out.diag.credsSeen = Object.keys(credSet);
+      out.diag.appointmentIdCount = out.appts.filter(function (a) { return !!clean(a && a.appointmentId); }).length;
+      out.diag.providerIdCount = out.appts.filter(function (a) { return !!clean(a && a.providerId); }).length;
     } catch (e) { out.diag.err = S(e && e.message || e).slice(0, 120); }
     return out;
   }
@@ -3464,31 +4474,72 @@ var mlsProv = (function () {
     var dom = domRes || { appts: [], providers: [], diag: {} };
     var text = textRes || { appts: [], providers: [], diag: {} };
     function filterSource(src) {
-      var kept = [], slots = 0, empty = 0;
+      var kept = [], slots = 0, empty = 0, invalid = 0;
       (src && src.appts || []).forEach(function (a) {
         var n = clean(a && a.name);
         if (!n) { empty++; return; }
         if (isCapacitySlotName(n)) { slots++; return; }
+        /* Merge only validated patient rows. Schedule chrome/reason fragments
+           can also contain a time; require two surviving name tokens and no
+           provider credential. This rejects false rows such as "Spine,No". */
+        var nt = nameTokens(n);
+        if (!hasTime(a && a.time) || nt.length < 2 || isProviderUiLabel(n) || RE_CRED.test(n)) { invalid++; return; }
         kept.push(a);
       });
-      return { appts: kept, slotRowsRemoved: slots, emptyRowsRemoved: empty };
+      return { appts: kept, slotRowsRemoved: slots, emptyRowsRemoved: empty, invalidRowsRemoved: invalid };
     }
-    /* Filter BOTH readers before choosing one. If the provider-rich reader saw
-       capacity cells only, a valid alternate parse must still win. */
+    /* Athena virtualizes schedule rows. A provider-rich DOM result can be a
+       partial viewport, so union both independently validated readers instead
+       of discarding the alternate whenever DOM found one provider. */
     var domFiltered = filterSource(dom), textFiltered = filterSource(text);
-    var preferred = (dom.providers && dom.providers.length) ? dom : text;
-    var alternate = preferred === dom ? text : dom;
-    var preferredFiltered = preferred === dom ? domFiltered : textFiltered;
-    var alternateFiltered = alternate === dom ? domFiltered : textFiltered;
-    var primary = (!preferredFiltered.appts.length && alternateFiltered.appts.length) ? alternate : preferred;
+    var primary = domFiltered.appts.length >= textFiltered.appts.length ? dom : text;
     var other = primary === dom ? text : dom;
-    var chosenFiltered = primary === dom ? domFiltered : textFiltered;
     var seen = {}, providers = [];
     (primary.providers || []).concat(other.providers || []).forEach(function (p) {
       var cp = cleanProvider(p), k = cp.toLowerCase();
       if (cp && !seen[k]) { seen[k] = 1; providers.push(cp); }
     });
-    var appts = chosenFiltered.appts;
+    var byRow = {}, rowsByBase = {}, appts = [], mergedFields = 0;
+    function copyRow(a) { var b = {}; for (var k in (a || {})) { if (Object.prototype.hasOwnProperty.call(a, k)) b[k] = a[k]; } return b; }
+    function rowBase(a) {
+      return clean(a && a.time).toLowerCase() + '|' + clean(a && a.name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    }
+    function rowProviderKey(a) {
+      return cleanProvider(a && a.provider).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    }
+    function mergeRowFields(prior, a, lane) {
+      ['provider', 'providerId', 'provider_id', 'athenaProviderId', 'athena_provider_id', 'appointmentId', 'appointment_id', 'athenaAppointmentId', 'athena_appointment_id', 'dob', 'mrn', 'athenaId', 'athena_id', 'date', 'appt_date', 'reason'].forEach(function (field) {
+        if (!clean(prior[field]) && clean(a && a[field])) { prior[field] = a[field]; mergedFields++; }
+      });
+      if (prior.__lane !== lane) prior.__lane = 'both';
+    }
+    function addRows(rows, lane) {
+      (rows || []).forEach(function (a) {
+        var base = rowBase(a), providerKey = rowProviderKey(a), key = base + '|' + providerKey;
+        if (!base || base === '|') return;
+        var bucket = rowsByBase[base] || (rowsByBase[base] = []);
+        var prior = byRow[key];
+        /* A providerless alternate parser may enrich one unambiguous structured
+           row, but it must never collapse the same patient/time booked under
+           two different providers. Conversely, promote one lone providerless
+           row when the other lane supplies its provider. */
+        if (!prior && !providerKey && bucket.length === 1) prior = bucket[0];
+        if (!prior && providerKey && bucket.length === 1 && !rowProviderKey(bucket[0])) {
+          prior = bucket[0];
+          delete byRow[base + '|'];
+          prior.provider = a.provider;
+          byRow[key] = prior;
+        }
+        if (!prior) {
+          prior = copyRow(a); prior.__lane = lane; byRow[key] = prior;
+          bucket.push(prior); appts.push(prior); return;
+        }
+        mergeRowFields(prior, a, lane);
+      });
+    }
+    /* Structured fields win conflicts; validated text rows are additive. */
+    addRows(domFiltered.appts, 'dom');
+    addRows(textFiltered.appts, 'text');
     /* One recognized name is NOT proof that the page is single-provider: a
        partially parsed multi-provider grid has that same shape. Only an
        explicit parser scope assertion may fill blanks. Current readers make no
@@ -3528,17 +4579,25 @@ var mlsProv = (function () {
       var p2 = p1.filter(function (a) { if (!a.provider && hasProv[(a.time || '') + '|' + String(a.name || '').toLowerCase()]) { dropped++; return false; } return true; });
       appts = p2;
     } catch (eD) {}
+    appts.forEach(function (a) { try { delete a.__lane; } catch (e) {} });
     return {
       appts: appts,
       providers: providers,
       providerDiag: {
-        source: primary === dom ? 'dom' : 'text',
+        source: 'merged',
+        primaryByCount: primary === dom ? 'dom' : 'text',
+        domValidRows: domFiltered.appts.length,
+        textValidRows: textFiltered.appts.length,
+        mergedRows: appts.length,
+        mergedFields: mergedFields,
         dupRowsRemoved: dropped,
-        slotRowsRemoved: chosenFiltered.slotRowsRemoved,
+        slotRowsRemoved: domFiltered.slotRowsRemoved + textFiltered.slotRowsRemoved,
         domSlotRowsRemoved: domFiltered.slotRowsRemoved,
         textSlotRowsRemoved: textFiltered.slotRowsRemoved,
-        emptyRowsRemoved: chosenFiltered.emptyRowsRemoved,
-        alternateFallback: primary !== preferred,
+        emptyRowsRemoved: domFiltered.emptyRowsRemoved + textFiltered.emptyRowsRemoved,
+        invalidRowsRemoved: domFiltered.invalidRowsRemoved + textFiltered.invalidRowsRemoved,
+        domInvalidRowsRemoved: domFiltered.invalidRowsRemoved,
+        textInvalidRowsRemoved: textFiltered.invalidRowsRemoved,
         soleProviderFilled: soleProviderFilled,
         providerFillScope: scopeProvider || '',
         dom: dom.diag || {},
@@ -4129,9 +5188,15 @@ var mlsProv = (function () {
         {
           var __scrapeLeft = __schedLeft();
           if (__scrapeLeft < 500) return sendResponse({ ok: false, reason: 'schedule-request-timeout', scheduleVerified: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(tab.url), id: msg.id, error: 'Athena took too long to finish the schedule read. Nothing was imported; try again.' });
+          var __schedCfgArg = {}, __schedCfgBase = (__mlsCfg && (__mlsCfg.schedule || __mlsCfg)) || {};
+          try { Object.keys(__schedCfgBase || {}).forEach(function (k) { __schedCfgArg[k] = __schedCfgBase[k]; }); } catch (eCfgCopy) {}
+          /* Pass the injected reader its share of the request's absolute
+             budget. This gives the new vertical sweep real time to finish,
+             while still returning before the app bridge's 30-second guard. */
+          __schedCfgArg.__maxSweepMs = Math.max(3000, Math.min(16500, __scrapeLeft - 800));
           const __scrapeX = await mlsExecTO({
             target: { tabId: tab.id, allFrames: true },
-            args: [ (__mlsCfg && (__mlsCfg.schedule || __mlsCfg)) || null ],
+            args: [ __schedCfgArg ],
             func: async (CFG) => { try { /* inject_dom.js — SELF-CONTAINED DOM schedule/provider reader.
  * This exact function body is inlined into MLS Assist background.js's executeScript
  * `func` so it runs INSIDE the athenaOne schedule frame. It must reference nothing
@@ -4374,14 +5439,41 @@ async function mlsSchedDomInline(doc, CFG){
            another patient's row (unlike a flat-text parse). */
         function _reasonS(t){try{var nm=_nmS(t);var s=' '+cl(t)+' ';s=s.replace(RTG,' ');if(nm){nm.split(/[\s,]+/).forEach(function(w){w=w.replace(/[^A-Za-z]/g,'');if(w.length>1){try{s=s.replace(new RegExp('\\b'+w+'\\b','ig'),' ');}catch(_e){}}});}s=s.replace(/\b[01]?\d[\/\-.][0-3]?\d[\/\-.]\d{2,4}\b/g,' ');s=s.replace(/\b\d{1,3}\s*(?:yo|y\/o|yrs?|years?\s*old)\b/gi,' ');s=s.replace(/#\s?\d{3,}/g,' ').replace(/\b\d{2,}\b/g,' ');s=s.replace(/\b(arrived|checked\s*in|checked\s*out|scheduled|confirmed|cancell?ed|no\s*show|room|status|self\s*pay|copay|balance|male|female|mins?|minutes?)\b/gi,' ');s=s.replace(/[^A-Za-z0-9\/&'\- ]/g,' ').replace(/\s+/g,' ').trim();return s.slice(0,120);}catch(_e){return '';}}
         function _hdrsS(){var hs=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _prS.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});var o=[],sn={};hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var mm=cl(e.textContent).match(_prCS);if(mm){var nm=mm[1];if(!sn[nm]){sn[nm]=1;o.push({nm:nm,cx:r.left+r.width/2});}}}}catch(_e){}});return o;}
-        var _byIdS={};
-        function _collectS(){var hdr=_hdrsS();[].slice.call(doc.querySelectorAll('[class*="ScheduleColumn_schedule-column"]')).forEach(function(col){var r;try{r=col.getBoundingClientRect();}catch(_e){return;}if(r.width<40)return;var ccx=r.left+r.width/2,best='',bd=1e9;hdr.forEach(function(h){var dd=Math.abs(ccx-h.cx);if(dd<bd){bd=dd;best=h.nm;}});var prov=(best&&bd<r.width)?best:'';[].slice.call(col.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).forEach(function(b){var id=b.id||cl(b.textContent);if(_byIdS[id])return;var t=cl(b.textContent);_byIdS[id]={prov:prov,time:ft(t),name:_nmS(t),reason:_reasonS(t)};});});}
+        var _byIdS={},_candS={},_provAllS={},_provOrderS=[];
+        function _noteProvS(raw){var n=cl(raw);if(!n)return '';var k=n.toLowerCase();if(!_provAllS[k]){_provAllS[k]=n;_provOrderS.push(n);}return n;}
+        function _slotS(n){var z=cl(n).toLowerCase().replace(/[\-_\/|]+/g,' ').replace(/[()[\]{}:;,]+/g,' ').replace(/\s+/g,' ').trim();var h=/^(open|available|unavailable|block(?:ed)?|hold|reserved|lunch|break|admin(?:istrative)?|meeting|closed|buffer)\b/.exec(z);if(!h)return false;var rest=z.slice(h[0].length).replace(/\b\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?\b/gi,' ').replace(/\b\d+(?:\.\d+)?\s*(?:min(?:ute)?s?|hrs?|hours?)?\b/gi,' ').replace(/\b(?:open|available|unavailable|block(?:ed)?|hold|reserved|lunch|break|admin(?:istrative)?|meeting|closed|buffer|slot|slots|time|appointment|appointments|appt|appts|capacity)\b/gi,' ').replace(/\s+/g,' ').trim();return !rest;}
+        function _collectS(forcedHdr){var hdr=(forcedHdr&&forcedHdr.length)?forcedHdr:_hdrsS();hdr.forEach(function(h){_noteProvS(h.nm);});[].slice.call(doc.querySelectorAll('[class*="ScheduleColumn_schedule-column"]')).forEach(function(col){var r;try{r=col.getBoundingClientRect();}catch(_e){return;}if(r.width<40)return;var ccx=r.left+r.width/2,best='',bd=1e9;hdr.forEach(function(h){var dd=Math.abs(ccx-h.cx);if(dd<bd){bd=dd;best=h.nm;}});var prov=(best&&bd<r.width)?_noteProvS(best):'';[].slice.call(col.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).forEach(function(b){var t=cl(b.textContent),tm=ft(t),nm=_nmS(t);if(!tm||_slotS(nm||t))return;/* React can recycle a viewport node id for a different patient, while the same patient/time can legitimately appear under two providers. Provider therefore participates in both candidate completeness and row identity. */var logicalKey=tm+'|'+String(nm||t).toLowerCase().replace(/\s+/g,' ').trim()+'|'+String(prov||'').toLowerCase().replace(/\s+/g,' ').trim();var id=(b.id||b.getAttribute('data-appointment-id')||b.getAttribute('data-testid')||'row')+'|'+logicalKey;_candS[logicalKey]=1;if(_byIdS[id])return;_byIdS[id]={prov:prov,time:tm,name:nm,reason:_reasonS(t)};});});}
+        /* Athena virtualizes both provider columns and time rows. A horizontal
+           pass followed by a vertical pass misses the bottom-right cells. Walk
+           a bounded Cartesian product instead; success is impossible unless
+           both bounds stay stable, every planned cell is visited, and both axes
+           restore to the user's original position. */
+        function _axisS(max,step,cap){max=Math.max(0,Number(max||0));step=Math.max(1,Number(step||1));var raw=[];for(var p=0;p<=max;p+=step)raw.push(Math.min(p,max));if(!raw.length||raw[raw.length-1]!==max)raw.push(max);var capped=raw.length>cap;if(capped)raw=raw.slice(0,cap-1).concat([max]);return{values:raw,capped:capped,max:max};}
+        var _budgetEndS=Date.now()+Math.max(4000,Math.min(24000,Number(CFG&&CFG.__maxSweepMs||15000)));
         var _scS=null,_allS=[].slice.call(doc.querySelectorAll('*')),_dvS=(doc.defaultView||window);
         for(var _si=0;_si<_allS.length;_si++){try{var _csS=_dvS.getComputedStyle(_allS[_si]);if(/(auto|scroll)/.test(_csS.overflowX)&&_allS[_si].scrollWidth>_allS[_si].clientWidth+50&&_allS[_si].clientWidth>300){if(!_scS||_allS[_si].scrollWidth>_scS.scrollWidth)_scS=_allS[_si];}}catch(_e){}}
-        if(_scS){var _frS=(CFG&&CFG.scrollStepFrac)||0.45,_wmS=(CFG&&CFG.scrollWaitMs)||820;var _spS=Math.max(160,Math.round(_scS.clientWidth*_frS));var _ogS=_scS.scrollLeft;for(var _xS=0;_xS<=_scS.scrollWidth;_xS+=_spS){_scS.scrollLeft=_xS;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));await _sleepS(_wmS);_collectS();}_scS.scrollLeft=0;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));await _sleepS(400);_collectS();_scS.scrollLeft=_ogS;}else{_collectS();}
+        var _ogS=_scS?(_scS.scrollLeft||0):0,_hMaxS=_scS?Math.max(0,_scS.scrollWidth-_scS.clientWidth):0,_hAxisS=_axisS(_hMaxS,_scS?Math.max(160,Math.round(_scS.clientWidth*((CFG&&CFG.scrollStepFrac)||0.55))):1,24);
+        var _vS=[],_vSeenS=[];
+        _allS.forEach(function(el){try{var cs=_dvS.getComputedStyle(el),sh=el.scrollHeight||0,ch=el.clientHeight||0,shaped=!!el.querySelector('[class*="PatientAppointment_appointment-container"], [class~="filled-appointment-row"]');if(shaped&&/(auto|scroll)/.test(cs.overflowY)&&sh>ch+40&&ch>100)_vS.push({el:el,score:(sh-ch)+1000000});}catch(_e){}});
+        try{var _deS=doc.scrollingElement;if(_deS&&_deS.scrollHeight>_deS.clientHeight+40&&_deS.querySelector('[class*="PatientAppointment_appointment-container"], [class~="filled-appointment-row"]'))_vS.push({el:_deS,score:(_deS.scrollHeight-_deS.clientHeight)+500000});}catch(_e){}
+        _vS.sort(function(a,b){return b.score-a.score;});_vS=_vS.filter(function(v){if(_vSeenS.indexOf(v.el)>=0)return false;_vSeenS.push(v.el);return true;});
+        var _vContainerCapS=_vS.length>2,_vWorkS=_vS.slice(0,2);if(!_vWorkS.length)_vWorkS=[{el:null,score:0}];
+        var _coverageS={complete:false,reason:'unverified',horizontalScrollable:!!_scS,horizontalMax:_hMaxS,horizontalSteps:_hAxisS.values.length,verticalContainers:_vS.length,verticalContainersSwept:0,cellsPlanned:0,cellsVisited:0,axisCap:!!_hAxisS.capped,containerCap:_vContainerCapS,budgetExpired:false,boundsStable:true,restored:true};
+        var _hSeenS={},_hReachedS=!_scS;
+        for(var _viS=0;_viS<_vWorkS.length;_viS++){var _vsS=_vWorkS[_viS].el,_voyS=_vsS?(_vsS.scrollTop||0):0,_vmaxS=_vsS?Math.max(0,(_vsS.scrollHeight||0)-(_vsS.clientHeight||0)):0,_vAxisS=_axisS(_vmaxS,_vsS?Math.max(120,Math.round((_vsS.clientHeight||240)*0.65)):1,24);_coverageS.axisCap=_coverageS.axisCap||_vAxisS.capped;_coverageS.cellsPlanned+=_hAxisS.values.length*_vAxisS.values.length;var _finishedS=true;
+          for(var _xiS=0;_xiS<_hAxisS.values.length&&_finishedS;_xiS++){if(Date.now()>=_budgetEndS){_finishedS=false;break;}var _xPosS=_hAxisS.values[_xiS];if(_scS){_scS.scrollLeft=_xPosS;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));}_hSeenS[String(_xPosS)]=1;if(Math.abs(_xPosS-_hMaxS)<=2)_hReachedS=true;var _cachedHdrS=null;
+            for(var _yiS=0;_yiS<_vAxisS.values.length;_yiS++){if(Date.now()>=_budgetEndS){_finishedS=false;break;}if(_vsS){_vsS.scrollTop=_vAxisS.values[_yiS];_vsS.dispatchEvent(new Event('scroll',{bubbles:true}));}await _sleepS(Math.min(160,Math.max(60,Number(CFG&&CFG.scrollWaitMs||90))));var _liveHdrS=_hdrsS();if(_liveHdrS.length)_cachedHdrS=_liveHdrS;_collectS(_cachedHdrS);_coverageS.cellsVisited++;}
+          }
+          _coverageS.verticalContainersSwept++;if(!_finishedS)_coverageS.budgetExpired=true;
+          if(_vsS){var _vEndMaxS=Math.max(0,(_vsS.scrollHeight||0)-(_vsS.clientHeight||0));if(_vEndMaxS!==_vmaxS)_coverageS.boundsStable=false;_vsS.scrollTop=_voyS;_vsS.dispatchEvent(new Event('scroll',{bubbles:true}));if(Math.abs(Number(_vsS.scrollTop||0)-Number(_voyS||0))>2)_coverageS.restored=false;}
+          if(!_finishedS)break;
+        }
+        if(_scS){var _hEndMaxS=Math.max(0,_scS.scrollWidth-_scS.clientWidth);if(_hEndMaxS!==_hMaxS)_coverageS.boundsStable=false;_scS.scrollLeft=_ogS;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));if(Math.abs(Number(_scS.scrollLeft||0)-Number(_ogS||0))>2)_coverageS.restored=false;}
+        _coverageS.complete=!_coverageS.axisCap&&!_coverageS.containerCap&&!_coverageS.budgetExpired&&_coverageS.boundsStable&&_coverageS.restored&&_coverageS.cellsVisited===_coverageS.cellsPlanned&&_coverageS.verticalContainersSwept===_vWorkS.length;_coverageS.reason=_coverageS.complete?'complete':(_coverageS.budgetExpired?'sweep-budget':(_coverageS.axisCap?'axis-cap':(_coverageS.containerCap?'container-cap':(!_coverageS.boundsStable?'bounds-changed':(!_coverageS.restored?'restore-failed':'incomplete-cross-product')))));
+        var _hMetaS={scrollable:!!_scS,steps:Object.keys(_hSeenS).length,reachedEnd:!!_hReachedS,capReached:!!_hAxisS.capped,budgetExpired:!!(_coverageS.budgetExpired&&!_hReachedS),restored:!!_coverageS.restored,boundsStable:!!_coverageS.boundsStable,maxScroll:_hMaxS};
         try{var _dhS=doc.querySelector((CFG&&CFG.dateHdrSel)||'h1.fe_c_heading--subsection');if(_dhS){var _dS=new Date(cl(_dhS.textContent).replace(/^[A-Za-z]+,\s*/,''));if(!isNaN(_dS.getTime())){var _p2S=function(n){n=String(n);return n.length<2?'0'+n:n;};out.schedDate=_dS.getFullYear()+'-'+_p2S(_dS.getMonth()+1)+'-'+_p2S(_dS.getDate());}}}catch(_e){}
         var _idsS=Object.keys(_byIdS);
-        if(_idsS.length){var _upS={},_unmS=0;_idsS.forEach(function(id){var a=_byIdS[id];if(!a.name)_unmS++;out.appts.push({time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||''});if(a.prov)_upS[a.prov]=1;});out.providers=Object.keys(_upS);out.diag.via='structure-id';out.diag.strategy='structure-id';out.diag.apptCount=out.appts.length;out.diag.unnamedCount=_unmS;/* v2.9.9: rows whose name failed to parse are VISIBLE in diag, never silent */out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice(0,20);if(out.appts.length)return out;}
+        if(_idsS.length||_provOrderS.length){var _unmS=0;_idsS.forEach(function(id){var a=_byIdS[id];if(!a.name)_unmS++;out.appts.push({time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||''});if(a.prov)_noteProvS(a.prov);});var _declProvS=0;try{var _pmS,_ptS=String(doc.body&&doc.body.innerText||''),_preS=/\b(\d{1,3})\s+providers?\b/gi;while((_pmS=_preS.exec(_ptS)))_declProvS=Math.max(_declProvS,Number(_pmS[1]||0));}catch(_e){}out.providers=_provOrderS.slice();out.providerRoster=out.providers.map(function(raw){return{stableKey:'athena:'+raw.toLowerCase().replace(/\s+/g,' ').trim(),raw:raw,name:raw,source:'athena-schedule-header'};});var _provObservedS=out.providers.length,_provCompleteS=_provObservedS>0&&_hMetaS.reachedEnd&&_hMetaS.restored&&_hMetaS.boundsStable&&!_hMetaS.capReached&&!_hMetaS.budgetExpired&&(!_declProvS||_provObservedS>=_declProvS);var _provReasonS=_provCompleteS?'complete':(!_provObservedS?'no-provider-headers':(_hMetaS.capReached?'scroll-cap':(_hMetaS.budgetExpired?'scroll-budget':(!_hMetaS.boundsStable?'bounds-changed':(!_hMetaS.reachedEnd?'scroll-incomplete':(_declProvS&&_provObservedS<_declProvS?'declared-count-mismatch':'unverified'))))));out.providerRosterReceipt={complete:!!_provCompleteS,partial:!_provCompleteS,reason:_provReasonS,expectedCount:_declProvS||null,observedCount:_provObservedS,horizontalScrollable:_hMetaS.scrollable,reachedEnd:_hMetaS.reachedEnd,capReached:_hMetaS.capReached,budgetExpired:_hMetaS.budgetExpired,restored:_hMetaS.restored,boundsStable:_hMetaS.boundsStable,steps:_hMetaS.steps};out.diag.via='structure-id';out.diag.strategy='structure-id';out.diag.apptCount=out.appts.length;out.diag.candidateCount=Object.keys(_candS).length;out.diag.parsedCount=out.appts.length-_unmS;out.diag.unnamedCount=_unmS;/* v2.9.9: rows whose name failed to parse are VISIBLE in diag, never silent */out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice();out.diag.providerRosterReceipt=out.providerRosterReceipt;out.diag.viewportCoverage=_coverageS;if(out.appts.length||out.providers.length)return out;}
       }
     }catch(_seS){out.diag.structErr=String(_seS&&_seS.message||_seS).slice(0,100);}
     // === v1.46 COORD STRATEGY (scroll-scrape): athenaOne Day grid VIRTUALIZES columns — only appts
@@ -4465,7 +5557,7 @@ async function mlsSchedDomInline(doc, CFG){
   return out;
 }
  if (/stm\.esp|\/coordinator\/|messaging|letters/i.test(location.pathname || '')) { return { u: location.href, t: '', s: null }; } /* v2.9.8: messaging/coordinator frames are NOT schedule sources (fabricated-appt guard) */ var T = (document.body && document.body.innerText || '').slice(0, 22000); var s = null; try { s = await mlsSchedDomInline(document, CFG); } catch (e) { s = { diag: { err: String(e && e.message || e).slice(0,120) } }; } return { u: location.href, t: T, s: s }; } catch (e) { return { u: '', t: '', s: null }; } }
-          }, Math.min(12000, __scrapeLeft));
+          }, Math.min(18000, __scrapeLeft));
           if (__scrapeX && __scrapeX.r) results = __scrapeX.r;
           else {
             return sendResponse({ ok: false, reason: 'schedule-surface-changed', scheduleVerified: false, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(tab.url), id: msg.id, error: 'The verified schedule stopped responding before it could be read. Nothing was imported; try again.', surfaceDiag: { verifiedFrames: (__surface.frameIds || []).length, scrapeTimeout: !!(__scrapeX && __scrapeX.timeout), scrapeError: String((__scrapeX && __scrapeX.err) || '').slice(0, 100) } });
@@ -4504,6 +5596,67 @@ async function mlsSchedDomInline(doc, CFG){
         pick = pick || { u: tab.url, t: '' };
         // Include the page title so the parser can anchor the date range of a multi-day view.
         var __mlsTS = (typeof mlsProv!=='undefined') ? mlsProv.fromText((pick && pick.t) || '') : {appts:[],providers:[],diag:{}}; var __mlsM = (typeof mlsProv!=='undefined') ? mlsProv.merge(pick && pick.s, __mlsTS) : {appts:[],providers:[],diag:{}};
+        /* Keep the provider roster separate from appointment reconciliation.
+           A provider may legitimately have zero appointments, so deriving the
+           selector only from merged appointment rows silently drops them. */
+        var __providerRoster = [], __providerRosterSeen = {};
+        function __addProviderRosterEntry(entry) {
+          var e = entry && typeof entry === 'object' ? entry : { raw: String(entry || ''), name: String(entry || '') };
+          var raw = String(e.raw || e.name || '').replace(/\s+/g, ' ').trim();
+          var id = String(e.id || e.providerId || '').trim();
+          var stableKey = String(e.stableKey || (id ? ('athena-id:' + id) : (raw ? ('athena:' + raw.toLowerCase()) : ''))).trim();
+          if (!stableKey || __providerRosterSeen[stableKey]) return;
+          __providerRosterSeen[stableKey] = 1;
+          __providerRoster.push({ stableKey: stableKey, id: id, raw: raw, name: String(e.name || raw).replace(/\s+/g, ' ').trim(), source: String(e.source || 'athena-schedule-header') });
+        }
+        (((pick && pick.s && pick.s.providerRoster) || [])).forEach(__addProviderRosterEntry);
+        /* Older structure lanes do not yet emit structured entries. Preserve
+           exact raw header identity as an explicitly unverified fallback. */
+        (__mlsM.providers || []).forEach(__addProviderRosterEntry);
+        var __providerRosterReceipt = (pick && pick.s && pick.s.providerRosterReceipt) || {
+          complete: false, partial: true, reason: __providerRoster.length ? 'legacy-unverified' : 'no-provider-headers',
+          expectedCount: null, observedCount: __providerRoster.length, horizontalScrollable: null,
+          reachedEnd: false, capReached: false, budgetExpired: false, restored: null, steps: 0
+        };
+        /* Completeness receipt: a verified surface is not enough to claim a
+           verified result. Reconcile every appointment-shaped candidate the
+           virtualized sweep observed with the validated merged rows. A real
+           empty day is accepted only when the schedule surface itself exposes
+           an explicit empty-state signal. Partial rows are returned only as
+           retry diagnostics and are never advertised as a successful pull. */
+        var __pd = (__mlsM && __mlsM.providerDiag) || {};
+        var __dd = (pick && pick.s && pick.s.diag) || {};
+        /* Structure-id supplies a de-duplicated rendered-candidate count. Do
+           not re-inflate it with hidden duplicate DOM copies; older lanes do
+           not expose candidateCount and fall back to their validated rows. */
+        var __candidateCount = (__dd.candidateCount != null)
+          ? Number(__dd.candidateCount || 0)
+          : Math.max(Number(__dd.apptCount || 0), Number(__pd.domValidRows || 0));
+        var __parsedCount = (__mlsM.appts || []).length;
+        var __unnamedCount = Number(__dd.unnamedCount || 0);
+        var __declaredCount = 0;
+        try {
+          var __dm, __dre = /\b(\d{1,3})\s+appointments?\b/gi, __dt = String((pick && pick.t) || '');
+          while ((__dm = __dre.exec(__dt))) __declaredCount = Math.max(__declaredCount, Number(__dm[1] || 0));
+        } catch (eDc) {}
+        /* A per-provider declaration is an authoritative total only for a
+           single-provider surface; on a multi-provider grid it is merely one
+           column's count and candidate coverage remains the invariant. */
+        var __providerCount = (__mlsM.providers || []).length;
+        var __expectedCount = Math.max(__candidateCount, __providerCount <= 1 ? __declaredCount : 0);
+        var __authoritativeEmpty = __parsedCount === 0 && (__surface.probes || []).some(function (p) { return p && p.verified && p.empty; });
+        var __viewportCoverage = __dd.viewportCoverage || null;
+        var __coverageRequired = __dd.strategy === 'structure-id' || __dd.via === 'structure-id';
+        var __coverageComplete = !__coverageRequired || !!(__viewportCoverage && __viewportCoverage.complete === true);
+        var __complete = __coverageComplete && (__authoritativeEmpty || (__parsedCount > 0 && __parsedCount >= __expectedCount && __unnamedCount === 0));
+        var __receipt = {
+          scheduleVerified: true, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
+          expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount,
+          declaredCount: __declaredCount, unnamedCount: __unnamedCount,
+          domValidRows: Number(__pd.domValidRows || 0), textValidRows: Number(__pd.textValidRows || 0),
+          mergedRows: Number(__pd.mergedRows || __parsedCount), invalidRowsRemoved: Number(__pd.invalidRowsRemoved || 0),
+          viewportCoverage: __viewportCoverage, viewportCoverageComplete: __coverageComplete
+        };
         /* v2.9.11: ACCUMULATE the shadow-parser evidence across pulls/days — the per-pull
            nameShadow would otherwise evaporate with the response, and the canonical-parser
            cutover needs durable counts (>=3 days incl. month pull + structure lane,
@@ -4537,7 +5690,11 @@ async function mlsSchedDomInline(doc, CFG){
             });
           }
         } catch (eSh) {}
-        sendResponse({ ok: true, scheduleVerified: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
+        if (!__complete) {
+          var __incompleteError = !__coverageComplete ? ('MLS could not finish the full two-dimensional Athena schedule sweep (' + String(__viewportCoverage && __viewportCoverage.reason || 'coverage-unverified').replace(/-/g, ' ') + '). Nothing was imported; keep the full Day schedule open and retry.') : ('Athena showed ' + __expectedCount + ' appointment row' + (__expectedCount === 1 ? '' : 's') + ', but MLS could verify only ' + __parsedCount + '. Nothing was imported; keep Athena on this day and retry.');
+          return sendResponse({ ok: false, reason: 'schedule-incomplete', scheduleVerified: true, receipt: __receipt, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: '', url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', error: __incompleteError, surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
+        }
+        sendResponse({ ok: true, scheduleVerified: true, receipt: __receipt, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -4680,14 +5837,44 @@ async function mlsSchedDomInline(doc, CFG){
         if (!tab) { const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\/|athena/i.test(t.url || '')); cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); tab = cand[0]; }
         if (!tab) return sendResponse({ ok: false, error: 'Open the patient in your Athena tab, then try again.' });
         const want = String(msg.patient || '').trim();
+        const wantDob = String(msg.patientDob || '').trim();
+        const wantMrn = String(msg.patientMrn || '').trim();
         let opened = false;
         // Click a visible patient name, OR type the name into an Athena search box, so we
         // can OPEN the chart without the doctor having to click it themselves.
-        const openFn = (name) => {
+        const openFn = (name, expectedDob, expectedMrn) => {
           try {
-            const parts = name.toLowerCase().replace(/[^a-z\s,]/g, '').split(/[\s,]+/).filter(Boolean);
+            const cleanedName = name.toLowerCase().replace(/[^a-z\s,]/g, '');
+            const parts = cleanedName.split(/[\s,]+/).filter(Boolean);
             if (!parts.length) return 'no';
-            const last = parts[parts.length - 1], first = parts[0];
+            const commaName = cleanedName.split(',');
+            const last = commaName.length > 1 ? (commaName[0].trim().split(/\s+/).filter(Boolean).pop() || '') : parts[parts.length - 1];
+            const first = commaName.length > 1 ? ((commaName[1] || '').trim().split(/\s+/).filter(Boolean)[0] || '') : parts[0];
+            const idDigits = (v) => String(v || '').replace(/\D/g, '');
+            const dateKey = (v) => {
+              const m = String(v || '').match(/\b(\d{1,4})[\/\-.](\d{1,2})[\/\-.](\d{1,4})\b/); if (!m) return '';
+              let y, mo, d;
+              if (m[1].length === 4) { y = m[1]; mo = m[2]; d = m[3]; } else { mo = m[1]; d = m[2]; y = m[3]; }
+              if (String(y).length === 2) y = (+y > 40 ? '19' : '20') + y;
+              return String(y).padStart(4, '0') + String(+mo).padStart(2, '0') + String(+d).padStart(2, '0');
+            };
+            const dobDigits = dateKey(expectedDob), mrnDigits = idDigits(expectedMrn);
+            const textHasExactDob = (raw) => {
+              if (!dobDigits) return false;
+              const re = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/g;
+              let m;
+              while ((m = re.exec(String(raw || '')))) {
+                let y = m[3]; if (y.length === 2) y = (+y > 40 ? '19' : '20') + y;
+                const got = y + String(+m[1]).padStart(2, '0') + String(+m[2]).padStart(2, '0');
+                if (got === dobDigits) return true;
+              }
+              return false;
+            };
+            const textHasExactMrn = (raw) => {
+              if (!mrnDigits) return false;
+              return new RegExp('(?:^|\\D)' + mrnDigits + '(?:\\D|$)').test(String(raw || ''));
+            };
+            const rowProof = (raw) => textHasExactDob(raw) || textHasExactMrn(raw);
             /* v1.62: athenaOne v26.3 schedule rows are React-wired <div>s - a bare
                el.click() never navigates. Dispatch the real pointer/mouse sequence. */
             const realClick = (el) => {
@@ -4705,19 +5892,31 @@ async function mlsSchedDomInline(doc, CFG){
               /* v1.59 perf: textContent (no innerText layout-forcing walk) + element cap.
                  The all-frames innerText walk is what froze athenaOne for 78s. */
               const els = Array.from(document.querySelectorAll('a,button,[role="link"],[role="button"],[onclick],td,li,span,div')).slice(0, 5000);
-              /* prefer the SMALLEST matching element (the name cell), not a huge wrapper */
-              let best = null, bestLen = 1e9;
+              /* Group nested name nodes by patient/result row. Never choose an
+                 arbitrary duplicate display name: a unique DOB/MRN row wins;
+                 multiple unproved rows fall through to search/refusal. */
+              const rows = [];
               for (const el of els) {
                 const t = (el.textContent || '').trim().toLowerCase();
                 if (t && t.length < 70 && t.indexOf(last) >= 0 && (parts.length < 2 || t.indexOf(first) >= 0)) {
                   const r = el.getBoundingClientRect();
-                  if (r.width > 0 && r.height > 0 && t.length < bestLen) { best = el; bestLen = t.length; }
+                  if (!(r.width > 0 && r.height > 0)) continue;
+                  let root = null;
+                  try { root = el.closest('tr,[role="row"],li,[data-patient-id],[data-patientid],[data-testid*="patient" i]'); } catch (e0) {}
+                  if (!root) { try { root = el.closest('a,button,[role="link"],[role="button"],[onclick]'); } catch (e1) {} }
+                  root = root || el;
+                  let entry = rows.find((x) => x.root === root || (x.root.contains && x.root.contains(root)) || (root.contains && root.contains(x.root)));
+                  if (!entry) { entry = { root: root, el: el, len: t.length, text: String(root.textContent || t).slice(0, 800) }; rows.push(entry); }
+                  else if (t.length < entry.len) { entry.el = el; entry.len = t.length; }
                 }
               }
-              if (best) { realClick(best); return true; }
-              return false;
+              const proved = rows.filter((x) => rowProof(x.text));
+              if (proved.length === 1) { realClick(proved[0].el); return 'clicked'; }
+              if (proved.length > 1) return 'ambiguous';
+              if (rows.length === 1) { realClick(rows[0].el); return 'clicked'; }
+              return rows.length > 1 ? 'ambiguous' : 'no';
             };
-            if (clickName()) return 'clicked';
+            if (clickName() === 'clicked') return 'clicked';
             const inputs = Array.from(document.querySelectorAll('input[type="text"],input[type="search"],input:not([type])'));
             const box = inputs.find((i) => {
               const h = ((i.placeholder || '') + ' ' + (i.name || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.id || '')).toLowerCase();
@@ -4741,12 +5940,12 @@ async function mlsSchedDomInline(doc, CFG){
         };
         if (want) {
           let statuses = [];
-          try { const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: openFn, args: [want] }); statuses = res.map((r) => r && r.result); } catch (e) {}
+          try { const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: openFn, args: [want, wantDob, wantMrn] }); statuses = res.map((r) => r && r.result); } catch (e) {}
           if (statuses.indexOf('clicked') >= 0) { opened = true; await new Promise((r) => setTimeout(r, 1900)); }
           else if (statuses.indexOf('searched') >= 0) {
             // gave Athena the name — wait for results, then click the matching result.
             await new Promise((r) => setTimeout(r, 2600));
-            try { const res2 = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: openFn, args: [want] }); if (res2.map((r) => r && r.result).indexOf('clicked') >= 0) { opened = true; await new Promise((r) => setTimeout(r, 1900)); } } catch (e) {}
+            try { const res2 = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: openFn, args: [want, wantDob, wantMrn] }); if (res2.map((r) => r && r.result).indexOf('clicked') >= 0) { opened = true; await new Promise((r) => setTimeout(r, 1900)); } } catch (e) {}
           }
         }
         /* ===== v1.59 CHART-READY GATE =====
@@ -4757,7 +5956,7 @@ async function mlsSchedDomInline(doc, CFG){
            chart identity; when the exam-prep view is detected, click its read-only
            "REFRESH CHART" / "Chart" control and WAIT for the real patient banner.
            Fails honestly if the clinical chart never loads. Gates untouched. */
-        let ident = null, sawBriefing = false, navClicked = '', clickAt = 0, polls = 0, injFails = 0, noClickRounds = 0, fgByUs = false, identDiag = [];
+        let ident = null, sawBriefing = false, navClicked = '', clickAt = 0, polls = 0, injFails = 0, noClickRounds = 0, fgByUs = false, identDiag = [], identityFrameResults = [];
         const T0 = Date.now(), BUDGET_MS = 52000; /* stays inside the app's 75s bridge timeout */
         /* v1.60: EXPECTED patient - a bare read that follows a search-open (the
            day/month pull pattern) must wait for THAT patient's banner, not accept
@@ -4767,19 +5966,20 @@ async function mlsSchedDomInline(doc, CFG){
         while (Date.now() - T0 < BUDGET_MS) {
           polls++;
           /* v1.63: 15s -> 20s. A heavy-but-alive chart load could eat two 15s injection
-             timeouts and trigger a FALSE "athena-frozen-recovered" reload (v1.61 live
+             timeouts and trigger a false automatic-recovery path (v1.61 live
              finding). 2 x 20s + sleep still fits the 52s budget. */
           const ix = await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, func: mlsReadChartIdentity }, 20000);
           if (ix.timeout) {
             injFails++;
             if (injFails >= 2) { /* frozen renderer - documented recovery, then honest fail (the app retries) */
               await mlsRecoverAthenaTab(tab.id);
-              return sendResponse({ ok: false, reason: 'athena-frozen-recovered', opened: opened, error: 'athenaOne stopped responding mid-read; the tab was reloaded and recovered. Pull again.' });
+              return sendResponse({ ok: false, reason: 'athena-read-stalled', opened: opened, error: 'athenaOne stopped responding mid-read. MLS Assist left the Athena tab untouched; check it, then retry.' });
             }
             await mlsSleepW(1800); continue;
           }
           injFails = 0;
-          const idrArr = ((ix && ix.r) || []).map((m) => m && m.result).filter(Boolean);
+          identityFrameResults = (ix && ix.r) || [];
+          const idrArr = identityFrameResults.map((m) => m && m.result).filter(Boolean);
           identDiag = idrArr.map((r) => ({ via: r.via || '', named: !!r.name, sc: Math.round((r.score || 0) * 10) / 10, w: r.w || 0, h: r.h || 0 })).slice(0, 24);
           let cand = mlsBestIdentityFrom((ix && ix.r) || []);
           /* v1.78: shadow-DOM banner fallback (clientsummary/airlock surfaces) -
@@ -4851,57 +6051,118 @@ async function mlsSchedDomInline(doc, CFG){
         }
         let results = [];
         {
-          const tx = await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, func: () => { try { return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 18000) }; } catch (e) { return { u: '', t: '' }; } } }, 25000);
+          const tx = await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, func: () => {
+            const PER_FRAME_CAP = 90000;
+            let u = ''; try { u = location.href; } catch (e0) {}
+            try {
+              if (!document.body) return { u: u, t: '', fullLen: 0, truncated: false, readOk: false, reason: 'body-missing' };
+              const raw = String(document.body.innerText || '');
+              return { u: u, t: raw.slice(0, PER_FRAME_CAP), fullLen: raw.length, truncated: raw.length > PER_FRAME_CAP, readOk: true };
+            } catch (e) { return { u: u, t: '', fullLen: 0, truncated: false, readOk: false, reason: 'frame-read-failed' }; }
+          } }, 25000);
           if (tx.timeout) { /* frozen mid-read - recover and fail honestly (the app retries) */
             await mlsRecoverAthenaTab(tab.id);
             await restoreFocus();
-            return sendResponse({ ok: false, reason: 'athena-frozen-recovered', opened: opened, version: V59, error: 'athenaOne stopped responding during the chart read; the tab was reloaded and recovered. Pull again.' });
+            return sendResponse({ ok: false, reason: 'athena-read-stalled', opened: opened, version: V59, error: 'athenaOne stopped responding during the chart read. MLS Assist left the Athena tab untouched; check it, then retry.' });
           }
           if (tx.r) results = tx.r;
-          else { try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 18000) }) }); } catch (e) { results = []; } }
+          else { try { results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => { const raw = String(document.body && document.body.innerText || ''); return { u: location.href, t: raw.slice(0, 90000), fullLen: raw.length, truncated: raw.length > 90000, readOk: !!document.body }; } }); } catch (e) { results = []; } }
         }
         __mlsReadsSinceReload++;
-        /* v1.60 diag: per-frame text sizes BEFORE filtering (PHI-free) - tells us
-           which frames the worker can even see when a pane goes missing. */
-        const textDiag = (results || []).map((r) => (r && r.result ? (r.result.t || '').length : -1)).slice(0, 24);
-        /* v1.50: drop messaging/nav/status noise frames (athenaText etc.) BEFORE scoring */
-        /* v1.81: also drop findpatient.esp - its RESULTS table carries the patient's
-           name AND DOB, and a read that runs while it is on screen must never hand
-           that page back as "the chart" (live: the app gate had to refuse it). */
-        const frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim() && !/stm\.esp|coordinator\/enterprise|globalnav\.esp|statusbar\.esp|schedulenavclose|findpatient\.esp/i.test(r.u || ''));
-        const score = (txt) => { const s = (txt || '').toLowerCase(); let n = 0; ['problem', 'medication', 'allerg', 'history', 'vital', 'diagnos', 'assessment', 'date of birth', 'dob', 'surg', 'imaging', 'mri', 'immuniz'].forEach((k) => { if (s.indexOf(k) >= 0) n++; }); ['full encounter summary', 'encounter summary', 'performed by', 'reason for visit', 'follow-up', 'assessment & plan'].forEach((k) => { if (s.indexOf(k) >= 0) n += 3; }); if (/inbox|unread messages|message thread/.test(s)) n -= 4; return n; };
-        /* v1.50: MERGE the clinical frames instead of picking ONE — on athenaOne the
-           encounter summary (procedure name/date, performed by, assessment & plan,
-           follow-up) lives in a SMALL separate frame that single-frame picking dropped,
-           which is why pulled summaries were missing encounter-level detail. */
-        const ranked = frames.map((f) => ({ f: f, s: score(f.t) })).sort((a, b) => b.s - a.s);
-        const chosen = [];
-        let used = 0; const CAP = 26000;
-        ranked.forEach((r) => { if (r.s <= 0 || used >= CAP) return; chosen.push(r.f); used += Math.min((r.f.t || '').length, CAP - used); });
-        frames.forEach((f) => { if (/full encounter summary|encounter summary/i.test(f.t || '') && chosen.indexOf(f) < 0) chosen.unshift(f); });
-        let merged = ''; chosen.forEach((f) => { if (merged.length >= CAP) return; merged += (merged ? '\n\n===== (next chart frame) =====\n\n' : '') + (f.t || '').slice(0, Math.max(0, CAP - merged.length)); });
-        const pick = (ranked.length ? ranked[0].f : null) || { u: tab.url, t: '' };
-        /* v1.50 IDENTITY GATE: if a specific patient was requested and the open chart
-           belongs to someone else, FAIL HONESTLY — never hand back another patient's
-           chart (this once filed one chart into 62 records).
-           v1.59: `ident` was already resolved (banner-verified) by the chart-ready
-           gate above — no second heavy identity pass. */
-        const nrm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-        const nMatch = (a, bb) => { if (!a || !bb) return true; const ta = nrm(a).split(' ').filter((x) => x.length > 1), tb = nrm(bb).split(' ').filter((x) => x.length > 1); const o = ta.filter((x) => tb.indexOf(x) >= 0).length; return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1); };
-        const V = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
-        if (want && ident && ident.name && !nMatch(ident.name, want)) {
+        {
+          /* A complete chart read requires every contributing clinical frame to be
+             read in full and independently bound to the requested patient. */
+          const NOISE_FRAME_RE = /stm\.esp|coordinator\/enterprise|globalnav\.esp|statusbar\.esp|schedulenavclose|findpatient\.esp/i;
+          const rawFrames = (results || []).map((r) => {
+            const x = (r && r.result) || {};
+            return { frameId: (r && typeof r.frameId === 'number') ? r.frameId : -1, u: x.u || '', t: x.t || '', fullLen: Number(x.fullLen || 0), truncated: x.truncated === true, readOk: x.readOk === true, reason: x.reason || '' };
+          });
+          const textDiagStrict = rawFrames.map((f) => ({ n: f.fullLen, got: f.t.length, ok: f.readOk, cut: f.truncated })).slice(0, 24);
+          const eligibleFrames = rawFrames.filter((f) => !NOISE_FRAME_RE.test(f.u || ''));
+          const unreadFrames = eligibleFrames.filter((f) => !f.readOk).length;
+          const oversizeFrames = eligibleFrames.filter((f) => f.truncated || (f.readOk && f.fullLen !== f.t.length)).length;
+          const readableFrames = eligibleFrames.filter((f) => f.readOk && f.t && f.t.trim());
+          const scoreStrict = (txt) => { const s = (txt || '').toLowerCase(); let n = 0; ['problem', 'medication', 'allerg', 'history', 'vital', 'diagnos', 'assessment', 'date of birth', 'dob', 'surg', 'imaging', 'mri', 'immuniz'].forEach((k) => { if (s.indexOf(k) >= 0) n++; }); ['full encounter summary', 'encounter summary', 'performed by', 'reason for visit', 'follow-up', 'assessment & plan'].forEach((k) => { if (s.indexOf(k) >= 0) n += 3; }); if (/inbox|unread messages|message thread/.test(s)) n -= 4; return n; };
+          const nrmStrict = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+          const nameTokensStrict = (s) => nrmStrict(s).split(' ').filter((x) => x.length > 1);
+          const strictNameMatch = (observed, expected) => {
+            const have = nameTokensStrict(observed), need = nameTokensStrict(expected);
+            if (have.length < 2 || need.length < 2) return false;
+            return have.indexOf(need[0]) >= 0 && have.indexOf(need[need.length - 1]) >= 0;
+          };
+          const dobPartsStrict = (s) => {
+            const m = String(s || '').match(/\b(\d{1,4})[\/.\-](\d{1,2})[\/.\-](\d{1,4})\b/);
+            if (!m) return null;
+            let y, mo, d;
+            if (m[1].length === 4) { y = m[1]; mo = m[2]; d = m[3]; } else { mo = m[1]; d = m[2]; y = m[3]; }
+            if (String(y).length !== 4) return null;
+            return { y: String(y), m: String(Number(mo)), d: String(Number(d)) };
+          };
+          const sameDobStrict = (a, b) => { const aa = dobPartsStrict(a), bb = dobPartsStrict(b); return !!(aa && bb && aa.y === bb.y && aa.m === bb.m && aa.d === bb.d); };
+          const mrnKeyStrict = (s) => String(s || '').replace(/\D/g, '');
+          const textHasDobStrict = (txt, expectedDob) => {
+            const p = dobPartsStrict(expectedDob); if (!p) return false;
+            const sep = '[\\/\\.\\-\\s]+';
+            return new RegExp('(?:\\b0?' + p.m + sep + '0?' + p.d + sep + p.y + '\\b|\\b' + p.y + sep + '0?' + p.m + sep + '0?' + p.d + '\\b)').test(String(txt || ''));
+          };
+          const textHasMrnStrict = (txt, expectedMrn) => { const k = mrnKeyStrict(expectedMrn); return !!(k && new RegExp('(?:^|\\D)' + k + '(?:\\D|$)').test(String(txt || ''))); };
+          const identityMatchesTarget = (who) => {
+            if (!who || !strictNameMatch(who.name, want)) return false;
+            const observedDob = String(who.dob || '').trim(), observedMrn = mrnKeyStrict(who.mrn);
+            if (wantDob && observedDob && !sameDobStrict(observedDob, wantDob)) return false;
+            if (wantMrn && observedMrn && observedMrn !== mrnKeyStrict(wantMrn)) return false;
+            return !!((wantDob && observedDob && sameDobStrict(observedDob, wantDob)) || (wantMrn && observedMrn && observedMrn === mrnKeyStrict(wantMrn)));
+          };
+          const frameIdentity = {};
+          (identityFrameResults || []).forEach((r) => { if (r && typeof r.frameId === 'number' && r.result) frameIdentity[r.frameId] = r.result; });
+          const frameBoundToTarget = (f) => {
+            if (!want || (!wantDob && !wantMrn)) return false;
+            if (identityMatchesTarget(frameIdentity[f.frameId])) return true;
+            if (!strictNameMatch(f.t, want)) return false;
+            return !!((wantDob && textHasDobStrict(f.t, wantDob)) || (wantMrn && textHasMrnStrict(f.t, wantMrn)));
+          };
+          const rankedStrict = readableFrames.map((f) => ({ f: f, s: scoreStrict(f.t) })).filter((r) => r.s > 0).sort((a, b) => b.s - a.s);
+          const chosenStrict = [];
+          const MERGE_CAP = 85000;
+          let mergedStrict = '', unboundClinicalFrames = 0, oversizeClinicalFrames = oversizeFrames, omittedForCap = 0;
+          rankedStrict.forEach((r) => {
+            const f = r.f;
+            if (!frameBoundToTarget(f)) { unboundClinicalFrames++; return; }
+            if (f.truncated || f.fullLen !== f.t.length) return;
+            const separator = mergedStrict ? '\n\n===== (next chart frame) =====\n\n' : '';
+            if (mergedStrict.length + separator.length + f.t.length > MERGE_CAP) { omittedForCap++; return; }
+            mergedStrict += separator + f.t;
+            chosenStrict.push(f);
+          });
+          const pickStrict = (chosenStrict[0] || (rankedStrict.length ? rankedStrict[0].f : null)) || { u: tab.url, t: '' };
+          const versionStrict = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
+          const globalNameMatches = !!(want && ident && ident.name && strictNameMatch(ident.name, want));
+          const globalStrongMismatch = !!(globalNameMatches && ((wantDob && ident.dob && !sameDobStrict(ident.dob, wantDob)) || (wantMrn && ident.mrn && mrnKeyStrict(ident.mrn) !== mrnKeyStrict(wantMrn))));
+          if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {
+            await restoreFocus();
+            return sendResponse({ ok: false, reason: 'wrong-chart', chartName: ident.name, chartDob: ident.dob || '', opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
+          }
+          if (want && !opened && !(ident && ident.name)) {
+            await restoreFocus();
+            return sendResponse({ ok: false, reason: 'unverified', opened: false, version: versionStrict, error: 'Could not open or verify ' + want + '\u2019s chart (no patient identity readable on the open page). Open the patient\u2019s chart in athenaOne, then pull again \u2014 nothing was captured.' });
+          }
           await restoreFocus();
-          return sendResponse({ ok: false, reason: 'wrong-chart', chartName: ident.name, chartDob: ident.dob || '', opened: opened, version: V, error: 'The open athenaOne chart is ' + ident.name + ', not ' + want + '. Nothing was captured for ' + want + '.' });
+          const exactGlobalIdentity = identityMatchesTarget(ident);
+          const chartTextStrict = mergedStrict;
+          const expectedClinicalFramesStrict = rankedStrict.length;
+          const chartTruncatedStrict = oversizeClinicalFrames > 0 || omittedForCap > 0;
+          const chartReceiptStrict = {
+            kind: 'athena-chart-coverage', requestId: String(msg.requestId || '').slice(0, 100),
+            complete: !!(chartTextStrict.trim() && chosenStrict.length && exactGlobalIdentity && !chartTruncatedStrict && unreadFrames === 0 && unboundClinicalFrames === 0 && chosenStrict.length === expectedClinicalFramesStrict),
+            readerVersion: '2.9.19-chart-r3', capturedAt: Date.now(),
+            expectedClinicalFrames: expectedClinicalFramesStrict, readClinicalFrames: chosenStrict.length,
+            boundClinicalFrames: chosenStrict.length, unboundClinicalFrames: unboundClinicalFrames,
+            oversizeClinicalFrames: oversizeClinicalFrames, unreadFrames: unreadFrames, omittedForCap: omittedForCap,
+            consideredFrames: eligibleFrames.length, textChars: chartTextStrict.length, truncated: chartTruncatedStrict,
+            identityObserved: exactGlobalIdentity, identityVia: (ident && ident.via) || ''
+          };
+          return sendResponse({ ok: true, requestId: chartReceiptStrict.requestId, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
         }
-        if (want && !opened && !(ident && ident.name)) {
-          await restoreFocus();
-          return sendResponse({ ok: false, reason: 'unverified', opened: false, version: V, error: 'Could not open or verify ' + want + '\u2019s chart (no patient identity readable on the open page). Open the patient\u2019s chart in athenaOne, then pull again \u2014 nothing was captured.' });
-        }
-        await restoreFocus();
-        /* v1.89: chartMrn - the athena patient/chart ID from the banner. The app
-           uses it as the PRIMARY dedup key (name+DOB fallback), so it must ride
-           along on every read that verified an identity. */
-        sendResponse({ ok: true, text: merged.slice(0, 26000), url: pick.u || tab.url, title: tab.title, opened: opened, frames: frames.length, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: V, via: (ident && ident.via) || '', briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiag, expected: expectName ? 1 : 0 });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -5454,9 +6715,9 @@ try { chrome.runtime.onInstalled.addListener(mlsCheckBadge); } catch (e) {}
 
 
 // ===========================================================================
-// NIGHTLY BACKUP (browser-side). At the chosen local time, the extension finds
-// your logged-in EMR tab, captures the open chart, then walks the patient-list
-// links it can see and captures each chart — sending them to MLS (encrypted).
+// NIGHTLY BACKUP (browser-side). At the chosen local time, the extension may
+// capture only the chart already open in the signed-in EMR tab; it never walks
+// patient links or changes the user's Athena URL. Captures remain encrypted.
 // REQUIRES: this computer ON, Chrome running, and the EMR tab still SIGNED IN.
 // Best-effort by design: web-UI scraping can miss patients an API sync wouldn't.
 // ===========================================================================
@@ -5532,24 +6793,14 @@ async function runNightlyBackup(trigger) {
     const c = await callBackend('/api/assist/extract', { pageText: firstText, url: emr.url });
     if (c && c.ok) { captured++; if (c.patient) patients++; } else if (c && c.error) { errors++; }
   }
-  // 2) walk patient-list links and capture each
-  const roster = await collectRoster(emr.id);
-  const origUrl = emr.url;
-  const cap = Math.min(roster.length, cfg.maxPatients || 250);
-  for (let i = 0; i < cap; i++) {
-    try {
-      await chrome.tabs.update(emr.id, { url: roster[i].href });
-      await waitTabComplete(emr.id, 15000);
-      await new Promise(r => setTimeout(r, 1300));
-      const txt = await tabInnerText(emr.id, 20000);
-      if (!txt.trim()) continue;
-      const c = await callBackend('/api/assist/extract', { pageText: txt, url: roster[i].href });
-      if (c && c.ok) { captured++; if (c.patient) patients++; } else if (c && c.error) { errors++; }
-    } catch (e) { errors++; }
-    await new Promise(r => setTimeout(r, 400));
-  }
-  try { await chrome.tabs.update(emr.id, { url: origUrl }); } catch (e) {}
-  return finish({ ok: true, captured, patients, errors, scanned: roster.length, trigger: trigger || 'manual', at: new Date().toISOString(), seconds: Math.round((Date.now() - started) / 1000) });
+  /* The legacy backup walked every chart link by repeatedly changing the
+     user's Athena tab URL. That could yank focus, disturb unsaved work, and
+     invalidate the signed-in session. Backups are now non-navigating: they may
+     capture only the chart that is already open. Full-history imports use the
+     separate supervised read-only visit pipeline. */
+  return finish({ ok: true, captured, patients, errors, scanned: firstText.trim() ? 1 : 0,
+    navigationDisabled: true, trigger: trigger || 'manual', at: new Date().toISOString(),
+    seconds: Math.round((Date.now() - started) / 1000) });
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -5559,13 +6810,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'mlsRunBackupNow') { runNightlyBackup('manual').then(sendResponse); return true; }
 });
 
-/* === MLS Assist v1.34 — Copy-every-visit driver (APPEND-ONLY to background.js) ==
+/* === MLS Assist visit-reader lineage (active: v2.9.19 r3) ===
  * Self-contained. Adds its own chrome.runtime.onMessage handler for
  * mlsAppAllVisitsRequest; does not modify existing handlers. Genuinely walks the
  * OPEN patient's encounters/visits list in athenaOne (frame-aware, content-scored),
  * reads each encounter's real content, and returns {ok, identity, visits[], diag}.
  *
- * v1.34 changes vs v1.32:
+ * Historical v1.34 notes (superseded by the active v2.9.19 r3 reader below):
+ *  - r3 treats every list row as index-only, binds a stable source key, and clicks
+ *    each exact row before accepting encounter-scoped clinical detail.
+ *  - r3 returns visits only when the patient identity, complete index, every body,
+ *    and all unique source keys are independently verified in its receipt.
  *  - Frame-aware enumeration: scores every frame's candidate row-groups by
  *    encounter-likeness (date + type-keyword + clickable + code signals), not just
  *    "has a date", and picks the single best frame+group.
@@ -5590,14 +6845,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   'use strict';
   try { if (self.__mlsAllVisitsHandler) return; self.__mlsAllVisitsHandler = 1; } catch (e) {}
 
-  var ORCH_DEFAULT = { maxVisits: 60, waitMs: 1400, initialWaitMs: 1000, visitTabWaitMs: 2200 };
+  var ORCH_DEFAULT = { maxVisits: 500, waitMs: 1400, initialWaitMs: 1000, visitTabWaitMs: 2200, maxReadMs: 165000, detailPollMs: 180 };
   var EMR_RE = /(athenahealth|athenanet|athenaone|athena\.io|\.px\.athena)/i;
 
   /* CANONICAL self-contained injected driver. Passed to chrome.scripting
    * .executeScript({func: mlsVisitsDriverFn}) — must reference no outer scope and
    * no eval (athenaOne CSP-safe). Read-only: only clicks dated encounter rows,
    * never Save/Sign/Submit. Embedded verbatim in background.js. */
-  function mlsVisitsDriverFn(op, cfg, idx) {
+  function mlsVisitsDriverFn(op, cfg, idx, expectedBinding) {
     cfg = cfg || {};
     var DEFAULT = {
       rowSelectors: [
@@ -5626,7 +6881,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         'delete', 'lock', 'addend', 'amend', 'discard', 'cancel appointment',
         'close encounter', 'check out', 'checkout'
       ],
-      maxVisits: 60,
+      maxVisits: 500,
       minRealLen: 60,
       visitTabWaitMs: 2200
     };
@@ -5641,6 +6896,83 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     function hasCpt(s) { CPT_RE.lastIndex = 0; return CPT_RE.test(String(s || '')); }
     function hasIcd(s) { ICD_RE.lastIndex = 0; return ICD_RE.test(String(s || '')); }
     function codes(s, re) { var out = [], m; re.lastIndex = 0; while ((m = re.exec(String(s || '')))) { var c = m[0].toUpperCase(); if (out.indexOf(c) < 0) out.push(c); if (out.length > 40) break; } return out; }
+    function hashText(s) {
+      s = String(s || ''); var h = 2166136261;
+      for (var hi = 0; hi < s.length; hi++) { h ^= s.charCodeAt(hi); h = Math.imul(h, 16777619); }
+      return (h >>> 0).toString(36);
+    }
+    function visible(n) {
+      if (!n) return false;
+      try {
+        if (n.hidden || n.getAttribute('aria-hidden') === 'true') return false;
+        var cs = getComputedStyle(n); if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+        var r = n.getBoundingClientRect(); return r.width > 1 && r.height > 1;
+      } catch (e) { return true; }
+    }
+    function encounterId(n) {
+      var cur = n, depth = 0, keys = ['data-encounter-id', 'data-encounterid', 'data-case-id', 'data-visit-id'];
+      while (cur && depth++ < 3) {
+        for (var ki = 0; ki < keys.length; ki++) {
+          try { var av = cur.getAttribute && cur.getAttribute(keys[ki]); if (av) return String(av).trim(); } catch (e0) {}
+        }
+        cur = cur.parentElement;
+      }
+      try {
+        var a = n.querySelector && n.querySelector('a[href*="encounter" i],a[href*="patientcase" i],a[href*="case" i],a[href*="visit" i]');
+        var href = a && (a.getAttribute('href') || '');
+        var hm = String(href).match(/(?:encounter|patientcase|case|visit)(?:id)?[=\/#:-]+([a-z0-9_-]{2,})/i);
+        if (hm) return hm[1];
+      } catch (e1) {}
+      return '';
+    }
+    function indexText(n) {
+      var head = null;
+      try { head = n.querySelector && n.querySelector('.accordion-header,.encounter-header,[class*="encounter-header" i],[aria-expanded],a[href],button,[role="button"],[role="link"]'); } catch (e0) {}
+      var s = txt(head || n);
+      /* When Athena offers no explicit header element, keep only the leading
+         index-sized text so expanding the detail does not mutate row identity. */
+      return s.slice(0, 260);
+    }
+    function stableRowAnchor(n) {
+      var vals = [], cur = n, depth = 0, keys = ['data-case-id', 'data-visit-id', 'data-document-id', 'aria-controls', 'data-target', 'id'];
+      while (cur && depth++ < 2) {
+        for (var ai = 0; ai < keys.length; ai++) {
+          try { var v = cur.getAttribute && cur.getAttribute(keys[ai]); if (v) vals.push(keys[ai] + '=' + String(v)); } catch (e0) {}
+        }
+        cur = cur.parentElement;
+      }
+      try {
+        var link = n.querySelector && n.querySelector('a[href]');
+        var href = link && link.getAttribute('href'); if (href) vals.push('href=' + String(href));
+      } catch (e1) {}
+      return vals.join('|').toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+    function rowBinding(n, index) {
+      var raw = indexText(n), dm = raw.match(DATE_RE), eid = encounterId(n);
+      var normalized = raw.toLowerCase().replace(/\s+/g, ' ').trim();
+      var anchor = stableRowAnchor(n);
+      return {
+        index: Number(index), encounterId: eid, date: dm && dm[1] ? dm[1] : '',
+        /* rowKey/sourceVisitKey must survive list reordering. Never mix the
+           volatile rendered index into persistent encounter identity. */
+        rowKey: (eid ? ('enc:' + eid) : ('row:' + hashText(anchor + '|' + normalized))),
+        indexTextHash: hashText(normalized), indexTextLen: raw.length
+      };
+    }
+    function sameBinding(actual, expected) {
+      if (!actual || !expected) return false;
+      if (Number(actual.index) !== Number(expected.index)) return false;
+      if (!actual.rowKey || actual.rowKey !== expected.rowKey) return false;
+      if (expected.encounterId && actual.encounterId !== expected.encounterId) return false;
+      if (expected.date && actual.date && expected.date !== actual.date) return false;
+      return true;
+    }
+    function clinicalBody(s) {
+      s = String(s || '').replace(/\s+/g, ' ').trim();
+      if (s.length < Math.max(60, Number(cfg.minRealLen || 60))) return false;
+      var clinical = /\b(?:assessment|plan|history|hpi|chief complaint|diagnos|medication|allerg|physical exam|examination|imaging|procedure|findings|impression|follow[- ]?up|review of systems|ros|past medical|past surgical|social history|family history|vitals?)\b/i.test(s);
+      return clinical || hasCpt(s) || hasIcd(s);
+    }
     function clickable(n) {
       try {
         if (n.matches && n.matches('a[href],button,[role="link"],[role="button"],[onclick],.clickable,.accordion-trigger')) return true;
@@ -5679,7 +7011,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           byParent.get(par).push(n);
         }
         byParent.forEach(function (rows, par) {
-          if (rows.length < 2) return; // a list has multiple dated rows
+          /* A real chart may have exactly one historical encounter. Require a
+             multi-row list only for generic selectors; Athena's explicit
+             encounter contract is authoritative even at count=1. */
+          if (rows.length < 2 && cfg.rowSelectors[s] !== 'li.encounter-list-item') return;
           var sc = 0, withType = 0, withCode = 0, withClick = 0, strongRows = 0, lens = [], uniqueDates = {};
           for (var j = 0; j < rows.length; j++) {
             var rt = txt(rows[j]);
@@ -5720,6 +7055,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (g[i0].selector === 'li.encounter-list-item' && g[i0].strongRows === g[i0].count) return g[i0];
       }
       return g.length ? g[0] : null;
+    }
+
+    function declaredEncounterCount(group) {
+      if (!group || !group.parent) return null;
+      var scopes = [group.parent, group.parent.parentElement, group.parent.parentElement && group.parent.parentElement.parentElement];
+      for (var si0 = 0; si0 < scopes.length; si0++) {
+        var st = txt(scopes[si0]); if (!st) continue;
+        var m = st.match(/(?:visits|encounters|events|cases)\s*(?:\(|:|-)?\s*(\d{1,4})(?![\/\-.]\d)/i) || st.match(/\b(\d{1,4})\s+(?:visits|encounters|events|cases)\b/i);
+        if (m && Number(m[1]) >= group.count) return Number(m[1]);
+      }
+      return null;
+    }
+
+    function explicitEmptyVisits() {
+      /* A zero-row result is complete only when the active patient-scoped Visits
+         surface itself says zero/none. Page-wide text is deliberately excluded. */
+      var nodes = [];
+      try { nodes = Array.prototype.slice.call(document.querySelectorAll('[data-testid*="visit" i],[data-testid*="encounter" i],[aria-label*="visit" i],[aria-label*="encounter" i],[class*="visit" i],[id*="visit" i],[class*="encounter" i],[id*="encounter" i],[class*="empty-state" i],[data-empty-state]')); } catch (e) { nodes = []; }
+      for (var ei = 0; ei < nodes.length && ei < 500; ei++) {
+        var n = nodes[ei], hidden = false;
+        try { var cs = getComputedStyle(n); hidden = n.hidden || cs.display === 'none' || cs.visibility === 'hidden'; } catch (e2) {}
+        if (hidden) continue;
+        var value = txt(n).replace(/\s+/g, ' ').trim();
+        if (!value || value.length > 260) continue;
+        if (/^(?:(?:there (?:are|is) )?no (?:prior |previous |historical )?(?:visits|encounters|events|cases)(?: (?:found|available|recorded|on file|to display|have been recorded|were found|are available))?|0\s+(?:visits|encounters|events|cases)|(?:visits|encounters|events|cases)\s*(?:\(\s*0\s*\)|:\s*0|-\s*0))\.?$/i.test(value)) return true;
+      }
+      return false;
     }
 
     // ---- redacted structural fingerprint (NO PHI) ----------------------------
@@ -5787,85 +7149,138 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { tab.click(); return { ok: true, clicked: true }; } catch (e2) { return { ok: false, reason: 'visits-tab-click-failed' }; }
     }
     if (op === 'identity') {
-      var body = txt(document.body), dob = '', name = '';
+      var body = txt(document.body), dob = '', name = '', mrn = '';
       var dm = body.match(/\b(?:DOB|D\.O\.B\.|Date of Birth|Born)\D{0,8}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/i); if (dm) dob = dm[1];
+      var mm = body.match(/\b(?:MRN|Medical Record(?: Number| No\.?| ID)?|Patient ID)\s*[:#\-]?\s*([A-Z0-9\-]{4,})/i); if (mm) mrn = mm[1];
       var nm = body.match(/\bPatient\D{0,4}([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)/); if (nm) name = nm[1];
       if (!name) { var h = document.querySelector('h1,h2,[data-patient-name],.patient-name,[class*="patientname" i]'); if (h) name = txt(h).slice(0, 60); }
-      return { name: name, dob: dob };
+      return { name: name, dob: dob, mrn: mrn };
     }
     if (op === 'diagnose') { return diagnose(); }
     if (op === 'enumerate') {
       var g = bestGroup();
-      if (!g) return { ok: false, count: 0, score: 0 };
+      if (!g) {
+        if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state', count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true };
+        return { ok: false, count: 0, score: 0 };
+      }
       var rows = g.rows.map(function (n, i) {
         var t = txt(n); var d = t.match(DATE_RE);
+        var binding = rowBinding(n, i);
         return {
           index: i, date: d ? d[1] : '',
           type: t.replace(DATE_RE, '').slice(0, 80).trim(),
           rowText: t, textLen: t.length, hasCode: (hasCpt(t) || hasIcd(t)),
-          // 'rich' = this row likely already contains the visit content
-          rich: (t.length >= cfg.minRealLen && (hasCpt(t) || hasIcd(t) || t.length >= 220))
+          /* Rich list rows remain INDEX metadata. They can help a human find an
+             encounter but are never accepted as its clinical body. */
+          rich: false, indexOnly: true, binding: binding, rowKey: binding.rowKey,
+          encounterId: binding.encounterId || ''
         };
       });
-      var richCount = rows.filter(function (r) { return r.rich; }).length;
+      var keySet = {}, uniqueBindings = true;
+      for (var ri0 = 0; ri0 < rows.length; ri0++) {
+        if (!rows[ri0].rowKey || keySet[rows[ri0].rowKey]) uniqueBindings = false;
+        keySet[rows[ri0].rowKey] = 1;
+      }
+      var declaredCount = declaredEncounterCount(g);
+      var expectedCount = declaredCount == null ? g.count : declaredCount;
       return {
-        ok: true, selector: g.selector, count: g.count, score: g.score,
+        ok: true, selector: g.selector, count: expectedCount, renderedCount: g.count, declaredCount: declaredCount, score: g.score,
         median: g.median, withClick: g.withClick, strongRows: g.strongRows || 0,
-        uniqueDates: g.uniqueDates || 0, richCount: richCount, rows: rows
+        uniqueDates: g.uniqueDates || 0, richCount: 0, rows: rows,
+        indexComplete: uniqueBindings && rows.length === expectedCount
       };
     }
     if (op === 'readExpanded') {
-      // Build visits directly from the chosen group's rows (no clicks).
+      /* Expose list rows only as an honest encounter index. This operation is
+         retained for backwards diagnostics, but its output can never satisfy
+         the full-detail receipt. */
       var g2 = bestGroup(); if (!g2) return { ok: false, visits: [] };
-      var visits = g2.rows.map(function (n) {
+      var visits = g2.rows.map(function (n, i) {
         var raw = txt(n); var d = raw.match(DATE_RE);
         return {
           date: d ? d[1] : '',
           type: raw.replace(DATE_RE, '').slice(0, 80).trim(),
-          raw: raw, cpt: codes(raw, CPT_RE), icd10: codes(raw, ICD_RE),
-          source: 'athena-copy'
+          textHead: raw.slice(0, 500), raw: '', cpt: [], icd10: [],
+          source: 'athena-copy', indexOnly: true, fullDetail: false,
+          binding: rowBinding(n, i)
         };
       });
-      return { ok: true, visits: visits };
+      return { ok: true, visits: visits, indexOnly: true, fullDetail: false };
     }
     if (op === 'click') {
       var g3 = bestGroup(); if (!g3) return { clicked: false, reason: 'no-group' };
       var row = g3.rows[idx]; if (!row) return { clicked: false, reason: 'no-row', count: g3.rows.length };
+      var liveBinding = rowBinding(row, idx);
+      if (!sameBinding(liveBinding, expectedBinding)) {
+        return { clicked: false, reason: 'row-binding-changed', binding: liveBinding };
+      }
       if (excluded(txt(row))) return { clicked: false, reason: 'excluded' };
+      var preDetailHashes = {};
+      try {
+        var preSel = cfg.detailSelectors.concat(['.accordion-content', '.accordion-body', '[role="region"]', '[class*="detail" i]', '[class*="note" i]', '[class*="documentation" i]']).join(',');
+        var preNodes = Array.prototype.slice.call(row.querySelectorAll(preSel));
+        for (var pi0 = 0; pi0 < preNodes.length; pi0++) if (visible(preNodes[pi0])) {
+          var preText = txt(preNodes[pi0]).toLowerCase().replace(/\s+/g, ' ').trim();
+          if (preText) preDetailHashes[hashText(preText)] = 1;
+        }
+      } catch (ePre) {}
       var target = row;
       try { var c = row.querySelector && row.querySelector('a[href],button,[role="link"],[role="button"],td a,td'); if (c && !excluded(txt(c))) target = c; } catch (e) {}
       try { target.click(); } catch (e2) { return { clicked: false, reason: 'click-failed', error: String(e2) }; }
-      return { clicked: true, len: txt(row).length };
+      try { window.__mlsVisitReadBinding = { index: idx, rowKey: liveBinding.rowKey, encounterId: liveBinding.encounterId || '', date: liveBinding.date || '', preDetailHashes: preDetailHashes, at: Date.now() }; } catch (e3) {}
+      return { clicked: true, len: txt(row).length, binding: liveBinding };
     }
     if (op === 'detail') {
-      // pick the container that best looks like a clinical note (content-scored)
-      var best = null, bestScore = -1;
-      /* Athena's Visits chart expands the selected encounter in-place. Reading
-         that accordion row is both more precise and safer than selecting a page-
-         sized generic container (which duplicated the whole chart for every
-         dated row). */
-      try {
-        var opened = Array.prototype.slice.call(document.querySelectorAll('li.encounter-list-item.accordion-open,[class*="encounter" i].accordion-open'));
-        for (var o2 = 0; o2 < opened.length; o2++) {
-          var ot = txt(opened[o2]);
-          if (ot.length >= cfg.minRealLen && ot.length > bestScore) { bestScore = ot.length; best = opened[o2]; }
-        }
-      } catch (e0) {}
-      var sels = cfg.detailSelectors;
-      for (var s2 = 0; !best && s2 < sels.length; s2++) {
-        var nodes2; try { nodes2 = Array.prototype.slice.call(document.querySelectorAll(sels[s2])); } catch (e) { continue; }
-        for (var j2 = 0; j2 < nodes2.length; j2++) {
-          var t2 = txt(nodes2[j2]); if (t2.length < cfg.minRealLen) continue;
-          var sc2 = Math.min(t2.length, 4000) / 1000;
-          if (hasCpt(t2)) sc2 += 2; if (hasIcd(t2)) sc2 += 2; if (hasType(t2)) sc2 += 1; if (hasDate(t2)) sc2 += 1;
-          if (sc2 > bestScore) { bestScore = sc2; best = nodes2[j2]; }
-        }
+      var g4 = bestGroup(); if (!g4) return { raw: '', len: 0, fullDetail: false, reason: 'no-group' };
+      var exactRow = g4.rows[idx]; if (!exactRow) return { raw: '', len: 0, fullDetail: false, reason: 'no-row' };
+      var actualBinding = rowBinding(exactRow, idx), marker = null;
+      try { marker = window.__mlsVisitReadBinding || null; } catch (e0) {}
+      if (!sameBinding(actualBinding, expectedBinding) || !sameBinding(marker, expectedBinding)) {
+        return { raw: '', len: 0, fullDetail: false, reason: 'detail-binding-mismatch', binding: actualBinding };
       }
-      /* Fail honestly when no encounter-scoped detail exists. A whole-document
-         fallback fabricates duplicates and must never be treated as a visit. */
-      if (!best) return { date: '', type: '', raw: '', cpt: [], icd10: [], len: 0, reason: 'no-encounter-detail' };
-      var raw2 = txt(best); var d3 = raw2.match(DATE_RE);
-      return { date: d3 ? d3[1] : '', type: '', raw: raw2, cpt: codes(raw2, CPT_RE), icd10: codes(raw2, ICD_RE), len: raw2.length };
+
+      /* Only inspect detail owned by the exact clicked row (or an element that
+         row explicitly controls). Never score page-wide notes: a different open
+         encounter elsewhere in the chart would otherwise be rebound to idx. */
+      var candidates = [], seen = [];
+      function addCandidate(n) { if (!n || n === exactRow || seen.indexOf(n) >= 0 || !visible(n)) return; seen.push(n); candidates.push(n); }
+      var localSelectors = cfg.detailSelectors.concat(['.accordion-content', '.accordion-body', '[role="region"]', '[class*="detail" i]', '[class*="note" i]', '[class*="documentation" i]']);
+      for (var s2 = 0; s2 < localSelectors.length; s2++) {
+        var local = []; try { local = Array.prototype.slice.call(exactRow.querySelectorAll(localSelectors[s2])); } catch (e1) {}
+        for (var l2 = 0; l2 < local.length; l2++) addCandidate(local[l2]);
+      }
+      try {
+        var controlIds = [exactRow.getAttribute('aria-controls'), exactRow.getAttribute('data-target')];
+        var ctl = exactRow.querySelector('[aria-controls],[data-target],a[href^="#"]');
+        if (ctl) controlIds.push(ctl.getAttribute('aria-controls'), ctl.getAttribute('data-target'), ctl.getAttribute('href'));
+        for (var ci = 0; ci < controlIds.length; ci++) {
+          var id = String(controlIds[ci] || '').replace(/^#/, '').trim();
+          if (id) addCandidate(document.getElementById(id));
+        }
+      } catch (e2) {}
+
+      var best = null, bestRaw = '', bestScore = -1;
+      for (var j2 = 0; j2 < candidates.length; j2++) {
+        var t2 = txt(candidates[j2]); if (!clinicalBody(t2)) continue;
+        /* A copied list summary is not a clinical body even if it is long. The
+           owned detail must differ from the frozen index text. */
+        var norm2 = t2.toLowerCase().replace(/\s+/g, ' ').trim();
+        var candidateHash = hashText(norm2);
+        if (candidateHash === expectedBinding.indexTextHash || (marker.preDetailHashes && marker.preDetailHashes[candidateHash])) continue;
+        var sc2 = Math.min(t2.length, 8000) / 1000;
+        if (hasCpt(t2)) sc2 += 2; if (hasIcd(t2)) sc2 += 2;
+        if (/\b(?:assessment|plan|hpi|exam|diagnos|procedure)\b/i.test(t2)) sc2 += 3;
+        if (sc2 > bestScore) { bestScore = sc2; best = candidates[j2]; bestRaw = t2; }
+      }
+      if (!best || !clinicalBody(bestRaw)) {
+        return { date: expectedBinding.date || '', type: '', raw: '', cpt: [], icd10: [], len: 0, fullDetail: false, indexOnly: true, reason: 'no-bound-clinical-detail', binding: actualBinding };
+      }
+      var d3 = bestRaw.match(DATE_RE);
+      return {
+        date: (d3 && d3[1]) || expectedBinding.date || '', type: '', raw: bestRaw,
+        cpt: codes(bestRaw, CPT_RE), icd10: codes(bestRaw, ICD_RE), len: bestRaw.length,
+        fullDetail: true, indexOnly: false, binding: actualBinding
+      };
     }
     return null;
   }
@@ -5909,156 +7324,226 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (results || []).forEach(function (r) { if (!r || r.result == null) return; var sc = scoreFn(r.result); if (sc > bestScore) { bestScore = sc; best = r.result; bestFrame = r.frameId; } });
     return { result: best, frameId: bestFrame, score: bestScore };
   }
+  function freezeVisitHint(hint) {
+    hint = hint || {};
+    var out = {
+      name: String(hint.name || hint.patientName || '').trim(),
+      dob: String(hint.dob || hint.patientDob || hint.dateOfBirth || '').trim(),
+      mrn: String(hint.mrn || hint.athenaId || '').trim()
+    };
+    try { return Object.freeze(out); } catch (e) { return out; }
+  }
+  function visitIdentityGate(frozen, live) {
+    frozen = frozen || {}; live = live || {};
+    function words(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }); }
+    function dob(s) {
+      s = String(s || ''); var iso = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/), m;
+      if (iso) return iso[1] + ('0' + iso[2]).slice(-2) + ('0' + iso[3]).slice(-2);
+      m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if (!m) return '';
+      var y = String(m[3]); if (y.length === 2) y = (Number(y) > 40 ? '19' : '20') + y;
+      return y + ('0' + m[1]).slice(-2) + ('0' + m[2]).slice(-2);
+    }
+    function id(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    var wantName = words(frozen.name), haveName = words(live.name);
+    var wantDob = dob(frozen.dob), haveDob = dob(live.dob);
+    var wantMrn = id(frozen.mrn), haveMrn = id(live.mrn);
+    if (wantName.length < 2 || (!wantDob && !wantMrn)) return { ok: false, reason: 'identity-hint-incomplete' };
+    if (haveName.length < 2) return { ok: false, reason: 'same-frame-name-missing' };
+    var have = {}; haveName.forEach(function (w) { have[w] = 1; });
+    var hits = 0; wantName.forEach(function (w) { if (have[w]) hits++; });
+    var nameOk = hits >= 2 && have[wantName[0]] && have[wantName[wantName.length - 1]];
+    if (!nameOk) return { ok: false, reason: 'same-frame-name-mismatch' };
+    /* DOB is preferred when frozen. MRN is the exact fallback for records that
+       intentionally omit DOB. Never accept a name-only chart. */
+    if (wantDob) {
+      if (!haveDob) return { ok: false, reason: 'same-frame-dob-missing' };
+      if (wantDob !== haveDob) return { ok: false, reason: 'same-frame-dob-mismatch' };
+    } else {
+      if (!haveMrn) return { ok: false, reason: 'same-frame-mrn-missing' };
+      if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
+    }
+    if (wantMrn && haveMrn && wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
+    return { ok: true, reason: 'name+' + (wantDob ? 'dob' : 'mrn') };
+  }
   function realVisit(v, minLen) {
     if (!v) return false;
     var raw = String(v.raw || '').trim();
     var hasCode = (Array.isArray(v.cpt) && v.cpt.length) || (Array.isArray(v.icd10) && v.icd10.length);
-    return (raw.length >= (minLen || 60)) || hasCode;
+    return v.fullDetail === true && v.indexOnly !== true && ((raw.length >= Math.max(60, (minLen || 60))) || hasCode);
   }
   function saveDiag(diag) {
     try { chrome.storage.local.set({ mlsAthenaVisitsDiag: { at: Date.now(), diag: diag } }); } catch (e) {}
     // Redacted (no-PHI) structural map — safe to log so it can be copied for selector tuning.
-    try { console.log('[MLS Assist v1.34 diag — redacted, no PHI]', JSON.stringify(diag)); } catch (e) {}
+    try { console.log('[MLS Assist v2.9.19 r3 diag — redacted, no PHI]', JSON.stringify(diag)); } catch (e) {}
   }
 
+  /* v2.9.19 r3: exact-patient, exact-encounter, full-body reader. This
+     implementation fails closed unless the complete index and all
+     encounter-scoped clinical bodies are proven. */
   function runAllVisits(appTabId, hint, cfg) {
-    var identity = {}, identityResults = null, listFrame = 0, enumRes = null, diag = null;
-    var qpOwnedByThisRead = false;
-    var minLen = cfg.minRealLen || 60;
+    var identity = {}, listFrame = 0, enumRes = null, diag = null;
+    var qpOwnedByThisRead = false, frozenHint = freezeVisitHint(hint);
+    var minLen = Math.max(60, Number(cfg.minRealLen || 60));
     return pickEmrTab().then(async function (emr) {
-      if (!emr) return { ok: false, error: 'No signed-in athenaOne tab found. Open athenaOne with the patient chart, then retry.' };
+      if (!emr) return { ok: false, reason: 'no-athena-tab', visits: [], error: 'No signed-in athenaOne tab found. Open athenaOne with the patient chart, then retry.' };
       var emrId = emr.id;
-      // === v1.54 THROTTLING FIX ===
-      // Bring the athenaOne tab to the FOREGROUND before the read. A background
-      // (unfocused) tab is throttled by Chrome: its rendering pauses and DOM
-      // reads/layout run ~9x slower, so the per-encounter walk of the all-visits
-      // reader overruns its timeout ("Couldn't read your visits…") — this is the
-      // real cause of the reader failing during normal use (the MLS app tab is
-      // focused, so athenaOne is a throttled background tab). Verified live:
-      // foreground athenaOne read 38 visits; the same read timed out in the
-      // background. We restore focus to the MLS tab when the read finishes.
+      /* Quiet-pull visibility lease: make Athena render without focusing it or
+         changing the clinician's selected tab. No reload, URL navigation,
+         session-screen click, or write action is performed by this reader. */
       try {
         var qpWasActive = !!(self.__mlsQp && self.__mlsQp.active);
         if (self.__mlsQpEnsure) await self.__mlsQpEnsure(emr, appTabId);
         qpOwnedByThisRead = !qpWasActive && !!(self.__mlsQp && self.__mlsQp.active && self.__mlsQp.athenaTabId === emrId);
-      } catch (e) {} /* await visibility setup before touching the Visits pane */
-      emit(appTabId, '🔍 Reading visits from athenaOne… (read-only)');
-      return exec(emrId, null, ['openVisits', cfg])
-        .then(function () { return sleep(cfg.visitTabWaitMs || 2200); })
-        .then(function () { return sleep(cfg.initialWaitMs); })
-        // identity
-        .then(function () { return exec(emrId, null, ['identity', cfg]); })
-        .then(function (idRes) { identityResults = idRes || []; identity = bestResult(idRes, function (r) { return (r && ((r.name ? 2 : 0) + (r.dob ? 1 : 0))) || 0; }).result || {}; })
-        // redacted diagnostic (always, across frames; pick the richest frame's diag)
-        .then(function () { return exec(emrId, null, ['diagnose', cfg]); })
-        .then(function (dgRes) { var b = bestResult(dgRes, function (r) { return (r && r.groupCount) || 0; }); diag = b.result || null; saveDiag(diag); })
-        // enumerate: pick the best frame+group
-        .then(function () { return exec(emrId, null, ['enumerate', cfg]); })
-        .then(function (enR) {
-          /* Prefer Athena's explicit briefing-chart encounter contract across
-             frames too. Messaging/status frames can contain many dated-looking
-             <li> nodes and must never outscore the patient-scoped visit list. */
-          var b = bestResult(enR, function (r) {
-            if (!(r && r.ok)) return 0;
-            return (r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0);
-          });
-          enumRes = b.result; listFrame = b.frameId;
-          /* Bind identity to the SAME patient-scoped briefing frame that won
-             encounter enumeration. Global/status/messaging frames may expose
-             unrelated name/date text and must never supply the safety identity. */
-          try {
-            var sameFrameIds = (identityResults || []).filter(function (oneId) {
-              return oneId && oneId.frameId === listFrame && oneId.result && (oneId.result.name || oneId.result.dob);
-            });
-            var exactIdentity = bestResult(sameFrameIds, function (r) {
-              if (!r) return 0;
-              return (r.score || 0) + (r.via === 'banner' ? 20 : 0) + (/shadow/i.test(String(r.via || '')) ? 15 : 0);
-            }).result;
-            if (exactIdentity) identity = exactIdentity;
-          } catch (eId) {}
-          if (!enumRes || !enumRes.ok || !enumRes.count) {
-            return { ok: false, identity: identity, visits: [], diag: diag,
-              error: 'No encounters/visits list recognized on this chart. Open the patient’s Encounters/Visits tab (or chart timeline), then retry. (A redacted DOM map was captured to tune the selectors — nothing was saved.)' };
-          }
-          var rows = enumRes.rows || [];
-          var total = Math.min(rows.length, cfg.maxVisits);
-          var richFrac = total ? (enumRes.richCount / total) : 0;
-          // Path A: rows already carry real content -> read in place, no clicks.
-          if (richFrac >= 0.6) {
-            return exec(emrId, [listFrame], ['readExpanded', cfg]).then(function (rxR) {
-              var rx = bestResult(rxR, function (r) { return (r && r.visits) ? r.visits.length : 0; }).result || { visits: [] };
-              var visits = [];
-              (rx.visits || []).slice(0, total).forEach(function (v) {
-                if (realVisit(v, minLen)) { visits.push(v); emit(appTabId, 'Read visit ' + (v.date || (visits.length)) + ' (' + visits.length + ' of ' + total + ')…', visits.length, total); }
-              });
-              if (!visits.length) {
-                return { ok: false, identity: identity, visits: [], diag: diag,
-                  error: 'Found a visit list but none of the rows contained readable visit content. (Redacted DOM map captured; nothing saved.)' };
-              }
-              emit(appTabId, 'Read ' + visits.length + ' visit(s).', visits.length, total);
-              return { ok: true, identity: identity, visits: visits, diag: diag, strategy: 'expanded', found: rows.length };
-            });
-          }
-          // Path B: thin rows -> open each and read the detail pane.
-          var visitsB = [];
-          var i = 0;
-          function step() {
-            if (i >= total) {
-              if (!visitsB.length) {
-                return { ok: false, identity: identity, visits: [], diag: diag,
-                  error: 'Opened the encounters but could not read readable content from any. The detail selectors need a tuning pass. (Redacted DOM map captured; nothing saved.)' };
-              }
-              emit(appTabId, 'Read ' + visitsB.length + ' visit(s).', visitsB.length, total);
-              return { ok: true, identity: identity, visits: visitsB, diag: diag, strategy: 'click', found: rows.length };
-            }
-            var snap = rows[i] || {};
-            return exec(emrId, [listFrame], ['click', cfg, i])
-              .then(function () { return sleep(cfg.waitMs); })
-              .then(function () { return exec(emrId, null, ['detail', cfg]); })
-              .then(function (dR) {
-                var d = bestResult(dR, function (r) { return (r && r.raw) ? r.raw.length : 0; }).result || {};
-                var visit = {
-                  date: snap.date || d.date || '',
-                  type: snap.type || d.type || '',
-                  raw: (d.raw && d.raw.length > (snap.textLen || 0)) ? d.raw : (d.raw || snap.rowText || ''),
-                  cpt: d.cpt || [], icd10: d.icd10 || [],
-                  source: 'athena-copy'
-                };
-                /* An explicit Athena encounter row is authoritative even when a
-                   patient-case entry has only a short label/date and no long
-                   note body. Preserve it as a minimal dated visit; generic
-                   fallback rows still require the normal clinical-text length. */
-                var acceptMin = (enumRes && enumRes.selector === 'li.encounter-list-item' && visit.date) ? Math.min(minLen, 20) : minLen;
-                if (realVisit(visit, acceptMin)) {
-                  visitsB.push(visit);
-                  emit(appTabId, 'Read visit ' + (visit.date || visitsB.length) + ' (' + visitsB.length + ' of ' + total + ')…', visitsB.length, total);
-                }
-                i++;
-                return step();
-              });
-          }
-          return step();
-        });
-    }).catch(function (e) { return { ok: false, identity: identity, diag: diag, error: String((e && e.message) || e) }; })
-      // v1.54: restore focus to the MLS tab after the read (we brought athenaOne to the foreground above to avoid background-tab throttling).
-      // v1.74: also focus the window and settle the guardian debt (straggler sweep armed).
-      .then(async function (res) {
-        res = res || {};
-        res.readerVersion = '2.9.15-visits-r1';
-        if (enumRes) {
-          res.selected = { selector: enumRes.selector || '', count: enumRes.count || 0,
-            uniqueDates: enumRes.uniqueDates || 0, strongRows: enumRes.strongRows || 0 };
-        }
-        return res;
-      })
-      .finally(async function () {
-        /* This legacy reader creates its own one-shot visibility lease. Restore
-           the tab/window deterministically on success, failure, or cancellation;
-           never tear down a strip that belonged to another pull. */
-        if (qpOwnedByThisRead && self.__mlsQpRelease) {
-          try { await self.__mlsQpRelease('all-visits-finally'); } catch (e) {}
-        }
+      } catch (e) {}
+
+      emit(appTabId, 'Reading every encounter from athenaOne… (read-only)');
+      await exec(emrId, null, ['openVisits', cfg]);
+      await sleep(cfg.visitTabWaitMs || 2200);
+      await sleep(cfg.initialWaitMs || 1000);
+
+      var dgRes = await exec(emrId, null, ['diagnose', cfg]);
+      var db = bestResult(dgRes, function (r) { return (r && r.groupCount) || 0; });
+      diag = db.result || null; saveDiag(diag);
+
+      var enR = await exec(emrId, null, ['enumerate', cfg]);
+      var eb = bestResult(enR, function (r) {
+        if (!(r && r.ok)) return 0;
+        return (r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0);
       });
+      enumRes = eb.result; listFrame = eb.frameId;
+      var authoritativeEmptyIndex = !!(enumRes && enumRes.ok && enumRes.count === 0 && enumRes.indexComplete === true && enumRes.authoritativeEmpty === true);
+      if (!enumRes || !enumRes.ok || (!enumRes.count && !authoritativeEmptyIndex) || !enumRes.indexComplete) {
+        return {
+          ok: false, reason: 'encounter-index-incomplete', identity: {}, visits: [], diag: diag,
+          receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
+          error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
+        };
+      }
+      var rows = enumRes.rows || [], total = rows.length;
+      if (total > cfg.maxVisits) {
+        return {
+          ok: false, reason: 'visits-cap-exceeded', identity: {}, visits: [], diag: diag,
+          receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits },
+          error: 'Athena exposed ' + total + ' encounters, above this reader\'s safety cap of ' + cfg.maxVisits + '. Nothing was reported as complete.'
+        };
+      }
+
+      /* Verify identity LIVE in the exact frame that supplied the encounter
+         index. A stale identity from another frame cannot authorize any body. */
+      var liveIds = await exec(emrId, [listFrame], ['identity', cfg]);
+      identity = bestResult(liveIds, function (r) {
+        if (!r) return 0;
+        return (r.score || 0) + (r.name ? 20 : 0) + (r.dob ? 15 : 0) + (r.mrn ? 10 : 0) + (r.via === 'banner' ? 20 : 0);
+      }).result || {};
+      var gate = visitIdentityGate(frozenHint, identity);
+      if (!gate.ok) {
+        return {
+          ok: false, reason: gate.reason, identity: identity, visits: [], diag: diag,
+          receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, identityVerified: false },
+          error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
+        };
+      }
+
+      var detailWaitMs = Math.max(300, Math.min(2500, Number(cfg.waitMs || 1400)));
+      var readBudgetMs = Math.max(30000, Math.min(180000, Number(cfg.maxReadMs || 165000)));
+      var maxByBudget = Math.max(1, Math.floor((readBudgetMs - 15000) / (detailWaitMs + 350)));
+      if (total > maxByBudget) {
+        return {
+          ok: false, reason: 'visits-time-budget-exceeded', identity: identity, visits: [], diag: diag,
+          receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, timeBudgetMs: readBudgetMs, maxEncountersByBudget: maxByBudget, identityVerified: true },
+          error: 'Athena exposed ' + total + ' encounters, which cannot all be verified inside this pull\'s bounded read budget. Nothing was opened or reported as complete.'
+        };
+      }
+
+      var visits = [], failures = [];
+      for (var i = 0; i < total; i++) {
+        var snap = rows[i] || {}, expected = snap.binding || null;
+        if (!expected || Number(expected.index) !== i || !expected.rowKey) {
+          failures.push({ index: i, reason: 'index-binding-missing' });
+          continue;
+        }
+        emit(appTabId, 'Opening encounter ' + (i + 1) + ' of ' + total + '…', i, total);
+        var clickR = await exec(emrId, [listFrame], ['click', cfg, i, expected]);
+        var clicked = bestResult(clickR, function (r) { return (r && r.clicked === true) ? 1 : 0; }).result || {};
+        if (!clicked.clicked) {
+          failures.push({ index: i, reason: clicked.reason || 'click-failed' });
+          continue;
+        }
+        var detailDeadline = Date.now() + detailWaitMs, d = {}, detailR;
+        do {
+          await sleep(Math.max(80, Math.min(300, Number(cfg.detailPollMs || 180))));
+          detailR = await exec(emrId, [listFrame], ['detail', cfg, i, expected]);
+          d = bestResult(detailR, function (r) { return (r && r.fullDetail === true && r.raw) ? r.raw.length : 0; }).result || {};
+          if (d.fullDetail === true && d.raw) break;
+        } while (Date.now() < detailDeadline);
+        var bound = d.binding && Number(d.binding.index) === i && d.binding.rowKey === expected.rowKey && (!expected.encounterId || d.binding.encounterId === expected.encounterId);
+        var visit = {
+          date: snap.date || d.date || '', type: snap.type || d.type || '', raw: d.raw || '',
+          cpt: d.cpt || [], icd10: d.icd10 || [], source: 'athena-copy',
+          patientName: identity.name || '', patientDob: identity.dob || '', patientMrn: identity.mrn || identity.athenaId || '',
+          indexOnly: false, fullDetail: d.fullDetail === true, encounterIndex: i,
+          encounterId: expected.encounterId || '', sourceVisitKey: expected.rowKey,
+          rowKey: expected.rowKey
+        };
+        if (!bound || !realVisit(visit, minLen)) {
+          failures.push({ index: i, reason: d.reason || (!bound ? 'detail-binding-mismatch' : 'clinical-body-incomplete') });
+          continue;
+        }
+        visits.push(visit);
+        emit(appTabId, 'Read full encounter ' + (i + 1) + ' of ' + total + '…', i + 1, total);
+      }
+
+      /* Refuse a batch if the chart changed while encounter rows were open. */
+      var finalIds = await exec(emrId, [listFrame], ['identity', cfg]);
+      var finalIdentity = bestResult(finalIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
+      var finalGate = visitIdentityGate(frozenHint, finalIdentity);
+      if (!finalGate.ok) failures.push({ index: -1, reason: 'identity-changed-during-read' });
+      else identity = finalIdentity;
+
+      var sourceKeys = {}, stableKeysComplete = visits.length === total;
+      for (var sk = 0; sk < visits.length; sk++) {
+        var sourceKey = String(visits[sk] && visits[sk].sourceVisitKey || '');
+        if (!sourceKey || sourceKeys[sourceKey]) stableKeysComplete = false;
+        sourceKeys[sourceKey] = 1;
+      }
+      if (!stableKeysComplete) failures.push({ index: -1, reason: 'stable-source-keys-incomplete' });
+      var bodyComplete = failures.length === 0 && visits.length === total && stableKeysComplete;
+      var receipt = {
+        complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
+        fullDetail: bodyComplete, expected: total, parsed: visits.length,
+        attempted: total, failures: failures.length, cap: cfg.maxVisits,
+        identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete,
+        authoritativeEmpty: total === 0 && authoritativeEmptyIndex
+      };
+      if (!bodyComplete) {
+        return {
+          ok: false, reason: 'visit-bodies-incomplete', identity: identity, visits: [], diag: diag,
+          strategy: 'bound-click', found: total, receipt: receipt, failedIndexes: failures,
+          error: 'Athena exposed ' + total + ' encounters, but only ' + visits.length + ' had full clinical detail bound to the exact encounter row. Nothing was reported as complete or saved.'
+        };
+      }
+      emit(appTabId, 'Read all ' + visits.length + ' full encounter(s).', visits.length, total);
+      return { ok: true, identity: identity, visits: visits, diag: diag, strategy: 'bound-click', found: total, receipt: receipt };
+    }).catch(function (e) {
+      return { ok: false, identity: identity, visits: [], diag: diag, receipt: { complete: false, indexComplete: !!enumRes, bodyComplete: false, fullDetail: false }, error: String((e && e.message) || e) };
+    }).then(function (res) {
+      res = res || {};
+      res.readerVersion = '2.9.19-visits-r3';
+      if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
+      var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true);
+      res.receipt.complete = proven;
+      res.receipt.fullDetail = proven;
+      res.receipt.readerVersion = res.readerVersion;
+      if (enumRes) {
+        res.selected = { selector: enumRes.selector || '', count: enumRes.count || 0,
+          uniqueDates: enumRes.uniqueDates || 0, strongRows: enumRes.strongRows || 0 };
+      }
+      return res;
+    }).finally(async function () {
+      if (qpOwnedByThisRead && self.__mlsQpRelease) {
+        try { await self.__mlsQpRelease('all-visits-finally'); } catch (e) {}
+      }
+    });
   }
 
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
@@ -7712,7 +9197,10 @@ function mlsDismissNavMenuFn() {
 async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
   try {
     var T0 = Date.now();
-    var CAP = 40;
+    /* Bounded for renderer safety, but high enough that an ordinary long-term
+       chart is never silently truncated. Completeness is reconciled against
+       Athena's declared All Events count below. */
+    var CAP = 500;
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     if (!String(name || '').trim()) return { ok: false, reason: 'no-patient', error: 'mlsReadVisitsPaneDriverFn requires the requested patient name - refusing an un-gated visits read.' };
     /* ---- normalizers (inline; no background helpers exist in an injected fn) */
@@ -8084,11 +9572,10 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
            day rows are kept (today's completed visit is history). */
         if (/\(upcoming\)/i.test(type) || /\(upcoming\)/i.test(lines2[li]) || dateIso > TODAY_ISO) { upcomingSkipped++; continue; }
         var textHead = ((type ? type + ' | ' : '') + lines2[li]).slice(0, 220);
-        /* dedup key = date + full textHead. KNOWN LIMITATION (documented in the
-           bridge contract): two byte-identical same-day rows collapse to one. */
+        /* Track repeated shapes for diagnostics, but retain every Athena row:
+           byte-identical same-day encounters are still distinct events. */
         var key = dateIso + '::' + textHead.toLowerCase();
-        if (seen[key]) continue;
-        seen[key] = 1;
+        seen[key] = (seen[key] || 0) + 1;
         visits.push({ date: dateIso, type: type, provider: provider, textHead: textHead });
       }
       var ptext = '';
@@ -8134,9 +9621,14 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
     if (!parsed.visits.length && !parsed.explicitEmpty) {
       return { ok: false, reason: 'rows-not-parsed', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', declaredEvents: (parsed.declN == null ? -1 : parsed.declN), error: 'The Visits and Cases heading rendered but no visit rows could be read within the settle deadline' + (parsed.declN != null ? ' (the pane declares ' + parsed.declN + ' events)' : ' (no event count found - probably the summary card, not the real pane)') + '. Refusing to report an empty history that may not be empty - retry will re-open the pane.' };
     }
+    var accountedEvents = parsed.visits.length + Number(parsed.upcomingSkipped || 0);
+    if (parsed.declN != null && accountedEvents < parsed.declN) {
+      return { ok: false, reason: 'visits-incomplete', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', declaredEvents: parsed.declN, parsedVisits: parsed.visits.length, upcomingSkipped: parsed.upcomingSkipped || 0, error: 'Athena declares ' + parsed.declN + ' events, but MLS could account for only ' + accountedEvents + '. Nothing was reported as complete; retry after the Visits list finishes loading.' };
+    }
     var visits = parsed.visits;
     return {
       ok: true, visits: visits, via: 'visits-pane',
+      receipt: { complete: true, declaredEvents: parsed.declN, parsedVisits: visits.length, upcomingSkipped: parsed.upcomingSkipped || 0, accountedEvents: accountedEvents },
       chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '',
       frame: (function () { try { return String(W.location.pathname || '').slice(0, 120); } catch (e) { return ''; } })(),
       ms: Date.now() - T0
@@ -8229,7 +9721,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
              (reload + Continue-clear) so the caller's retry finds a live tab,
              instead of leaving every subsequent open/read to fail on the frozen one. */
           try { await mlsRecoverAthenaTab(tab.id); } catch (eRc) {}
-          sendResponse({ ok: false, reason: 'visits-timeout', version: V, error: 'athenaOne did not finish the visits read within 90s (renderer was frozen; the tab has been reloaded and recovered). Pull again.' });
+          sendResponse({ ok: false, reason: 'visits-timeout', version: V, error: 'athenaOne did not finish the visits read within 90s. MLS Assist left the Athena tab untouched; check it, then retry.' });
           return;
         }
         if (fx.err) {
@@ -8246,7 +9738,11 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
           return;
         }
         try { __mlsReadsSinceReload++; } catch (eC) {} /* v1.91 (§2.9): visits reads are heavy too — count them toward the freeze-guard boundary */
-        sendResponse({ ok: true, visits: (r.visits || []).slice(0, 40), via: r.via || 'visits-pane', frame: r.frame || '', chartName: r.chartName || '', chartDob: r.chartDob || '', chartMrn: r.chartMrn || '', ms: r.ms || 0, version: V });
+        /* The injected reader already enforces its renderer-safety cap and proves
+           declared-vs-accounted completeness. Do not silently truncate the
+           verified batch here (the former slice(0, 40) lost older visits after
+           the driver had successfully read them). Carry its receipt end to end. */
+        sendResponse({ ok: true, visits: (r.visits || []).slice(0, 500), receipt: r.receipt || { complete: true, declaredEvents: null, parsedVisits: (r.visits || []).length, upcomingSkipped: 0, accountedEvents: (r.visits || []).length }, via: r.via || 'visits-pane', frame: r.frame || '', chartName: r.chartName || '', chartDob: r.chartDob || '', chartMrn: r.chartMrn || '', ms: r.ms || 0, version: V });
       } catch (e) {
         sendResponse({ ok: false, reason: 'error', version: V, error: String((e && e.message) || e) });
       } finally {
@@ -9111,6 +10607,11 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
     (async function () {
       var V = '';
       try { V = chrome.runtime.getManifest().version; } catch (eV) {}
+      /* The section-by-section writer predates the immutable manifest review.
+         Keep this message name only so stale cached pages receive an explicit
+         fail-closed result; never enter its legacy tab-pick or mutation code. */
+      sendResponse({ ok: false, blocked: true, reason: 'unified-confirmation-required', version: V, error: 'The legacy direct writer is disabled. Refresh MLS and use the unified Athena review.' });
+      return;
       var trustedSender = false;
       try { var senderUrl = new URL(sender && sender.tab && sender.tab.url || ''); trustedSender = senderUrl.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(senderUrl.hostname); } catch (eSender) {}
       if (!trustedSender || msg.userGesture !== true || !String(msg.gestureProof || '').trim()) { sendResponse({ ok: false, blocked: true, reason: 'fresh-trusted-click-required', version: V, error: 'Click Write selected drafts yourself, then try again.' }); return; }

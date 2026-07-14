@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_calendar_polish.js  ->  window.__mlsCalPolish   (cp-1.1.0)
+ * feat_mls_calendar_polish.js  ->  window.__mlsCalPolish   (cp-1.2.0)
  * ---------------------------------------------------------------------------
  * ITEM 67: make the Complex-view Calendar genuinely cleaner and easier to use
  * (Month / Week / Day), building on items 63/64/66 (calendar sync, full-width
@@ -38,10 +38,16 @@
   'use strict';
   try { if (window.__mlsCalPolish && window.__mlsCalPolish.installed) return; } catch (e) { return; }
 
-  var VERSION = 'cp-1.1.0';
+  var VERSION = 'cp-1.3.0';
   var STYLE_ID = 'mlsCalPolishStyle';
   var ROSTER_ID = 'mlsCalRoster';
   var EMPTY_ID = 'mlsCalEmpty';
+  var PULL_ID = 'mlsCalProviderPull';
+  var PULL_STATUS_ID = 'mlsCalProviderPullStatus';
+  var HISTORY_ID = 'mlsCalProviderPullHistory';
+  var HISTORY_CHECK_ID = 'mlsCalProviderPullHistoryCheck';
+  var HISTORY_PREF = 'providerDayIncludeHistoryV1';
+  var _pullRunning = false;
   var _origRender = null;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -74,6 +80,15 @@
         + 'box-shadow:0 2px 7px rgba(31,122,224,.30)}',
       '#' + ROSTER_ID + ' .mlsRosChip .mlsRosDot{display:inline-block;width:7px;height:7px;border-radius:50%;'
         + 'background:#2bb673;margin-right:6px;vertical-align:middle}',
+      '#' + HISTORY_ID + '{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #d7e2ef;'
+        + 'border-radius:8px;background:#fff;color:#344b40;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap}',
+      '#' + HISTORY_CHECK_ID + '{margin:0;accent-color:#2E6A4B}',
+      '#' + PULL_ID + '{margin-left:0;border:0;border-radius:9px;padding:7px 12px;background:#204034;color:#fff;'
+        + 'font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 2px 7px rgba(32,64,52,.18)}',
+      '#' + PULL_ID + ':disabled{cursor:not-allowed;background:#dce5e0;color:#62726a;box-shadow:none}',
+      '#' + PULL_STATUS_ID + '{flex:1 1 100%;font-size:12px;line-height:1.35;color:var(--muted,#5f7168);min-height:16px}',
+      '#' + PULL_STATUS_ID + '[data-kind="err"]{color:#8b2525}',
+      '#' + PULL_STATUS_ID + '[data-kind="ok"]{color:#23603f;font-weight:700}',
       '#' + EMPTY_ID + '{margin:0 0 12px;background:#f7faff;border:1px solid #dbe7f7;border-radius:12px;'
         + 'padding:16px 18px;color:var(--ink,#2a3b50);font-size:13.5px;line-height:1.5}',
       '#' + EMPTY_ID + ' b{color:#204034}',
@@ -172,6 +187,66 @@
     safe(function () { if (typeof window.renderCalendar === 'function') window.renderCalendar(); });
   }
 
+  function pullStatus(msg, kind) {
+    var st = $(PULL_STATUS_ID); if (!st) return;
+    st.textContent = String(msg || '');
+    st.setAttribute('data-kind', kind || '');
+  }
+  function historyPrefKey() {
+    return safe(function () { return typeof window.uns === 'function' ? window.uns(HISTORY_PREF) : ''; }, '') || '';
+  }
+  function includeHistory() {
+    var k = historyPrefKey(); if (!k) return true;
+    return safe(function () { var v = localStorage.getItem(k); return v == null ? true : v !== '0'; }, true);
+  }
+  function saveIncludeHistory(on) {
+    var k = historyPrefKey(); if (!k) return;
+    safe(function () { localStorage.setItem(k, on ? '1' : '0'); });
+  }
+  function paintProviderPull() {
+    var b = $(PULL_ID); if (!b) return;
+    var api = safe(function () { return window.__mlsSI; }, null);
+    var sel = api && typeof api.calendarSelection === 'function' ? safe(function () { return api.calendarSelection(); }, null) : null;
+    b.disabled = _pullRunning || !(sel && sel.ok);
+    if (_pullRunning) b.textContent = 'Pulling selected provider day...';
+    else if (sel && sel.ok) b.textContent = 'Pull ' + sel.provider.name + ' - ' + sel.date;
+    else if (sel && sel.reason === 'provider-required') b.textContent = 'Choose a provider to pull';
+    else b.textContent = 'Open a day to pull this provider';
+    var withHistory = includeHistory();
+    b.title = sel && sel.ok
+      ? (withHistory ? 'Reads every appointment for this provider and day, then requires verified full history and visits for every exact patient.' : 'Reads and verifies this provider-day schedule only; patient history is not requested.')
+      : ((sel && sel.error) || 'Choose one provider and open one calendar day first.');
+  }
+  function runProviderPull() {
+    if (_pullRunning) return;
+    var api = safe(function () { return window.__mlsSI; }, null);
+    if (!api || typeof api.pullCalendarSelection !== 'function') { pullStatus('The verified schedule pull is still loading. Try again in a moment.', 'err'); return; }
+    var sel = safe(function () { return api.calendarSelection(); }, null);
+    if (!sel || !sel.ok) { pullStatus((sel && sel.error) || 'Choose one provider and open one day first.', 'err'); paintProviderPull(); return; }
+    var withHistory = includeHistory();
+    _pullRunning = true; paintProviderPull();
+    pullStatus(withHistory ? 'Starting the verified provider-day + full-history pull...' : 'Starting the verified schedule-only provider-day pull...', '');
+    Promise.resolve(api.pullCalendarSelection({ includeHistory: withHistory, onStatus: function (m, k) { pullStatus(m, k); } })).then(function (res) {
+      _pullRunning = false; paintProviderPull();
+      var cr = res && res.calendarReceipt || {}, hr = res && res.historyReceipt || {};
+      var scheduleDone = Number(cr.accounted != null ? cr.accounted : (Number(res && res.created || 0) + Number(res && res.repaired || 0) + Number(res && res.skipped || 0)));
+      var scheduleTotal = Number(cr.attempted != null ? cr.attempted : scheduleDone);
+      var historyDone = Number(hr.processed || 0), historyTotal = Number(hr.requested || 0);
+      var failures = Number(cr.failed || 0) + Number(hr.failures != null ? hr.failures : ((hr.retry || []).length));
+      if (res && res.ok === true && res.complete === true) {
+        pullStatus(withHistory
+          ? ('Verified complete: schedule ' + scheduleDone + '/' + scheduleTotal + '; histories ' + historyDone + '/' + historyTotal + '; failures 0.')
+          : ('Schedule-only complete: ' + scheduleDone + '/' + scheduleTotal + ' appointments accounted for; history was not requested.'), 'ok');
+      } else {
+        var detail = withHistory ? (' Schedule ' + scheduleDone + '/' + scheduleTotal + '; histories ' + historyDone + '/' + historyTotal + '; failures ' + failures + '.') : (' Schedule ' + scheduleDone + '/' + scheduleTotal + '; history not requested; failures ' + failures + '.');
+        pullStatus(((res && res.error) || 'This provider-day pull is incomplete. Nothing was widened to other providers; it is safe to retry.') + detail, 'err');
+      }
+    }, function () {
+      _pullRunning = false; paintProviderPull();
+      pullStatus('The provider-day pull stopped before completion. It is safe to retry.', 'err');
+    });
+  }
+
   function ensureRoster() {
     var wrap = $('calSplitWrap'); if (!wrap || !wrap.parentNode) return;
     var prov = normProviders();
@@ -192,15 +267,28 @@
       html += '<span class="mlsRosChip' + (on ? ' mlsRosOn' : '') + '" data-prov="' + escq(p.fval)
         + '" title="Show only ' + escq(p.name) + '">' + dot + escq(p.name) + '</span>';
     });
+    html += '<label id="' + HISTORY_ID + '" title="When enabled, this pull is complete only after every exact patient has verified organized history and old visits.">'
+      + '<input type="checkbox" id="' + HISTORY_CHECK_ID + '"' + (includeHistory() ? ' checked' : '') + '> Also pull &amp; verify full history/visits</label>';
+    html += '<button type="button" id="' + PULL_ID + '">Choose a provider to pull</button>';
+    html += '<span id="' + PULL_STATUS_ID + '" aria-live="polite"></span>';
     ros.innerHTML = html;
     if (!ros.__wired) {
       ros.addEventListener('click', function (e) {
+        var pull = e.target.closest ? e.target.closest('#' + PULL_ID) : null;
+        if (pull) { e.preventDefault(); runProviderPull(); return; }
         var chip = e.target.closest ? e.target.closest('.mlsRosChip') : null;
         if (!chip) return;
         setFilter(chip.getAttribute('data-prov') || '');
       });
+      ros.addEventListener('change', function (e) {
+        if (!e.target || e.target.id !== HISTORY_CHECK_ID) return;
+        saveIncludeHistory(!!e.target.checked);
+        paintProviderPull();
+        pullStatus(e.target.checked ? 'Full verified history and visits will be included.' : 'Schedule-only mode: history and visits will not be requested.', '');
+      });
       ros.__wired = true;
     }
+    paintProviderPull();
   }
 
   /* -------------------------------------------------------- empty states ---- */
@@ -265,6 +353,7 @@
     safe(tagControlRow);
     safe(fixNavTooltips);
     safe(ensureRoster);
+    safe(paintProviderPull);
     safe(ensureEmptyState);
   }
 

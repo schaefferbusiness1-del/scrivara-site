@@ -48,7 +48,7 @@
   'use strict';
   try { if (window.__mlsProviderLabel && window.__mlsProviderLabel.installed) return; } catch (e) { return; }
 
-  var VERSION = 'plbl-1.1.0';
+  var VERSION = 'plbl-1.2.0';
 
   /* labels that carry no real identity -> treat as unnameable ('') */
   var JUNK = /^(provider\s*(#?\s*\d+|undefined|null)?|no provider|unassigned|\[object object\]|undefined|null|n\/?a|all doctors|all providers|no preference)$/i;
@@ -101,6 +101,29 @@
     } catch (e) { return ''; }
   }
 
+  /* Identity is deliberately separate from the display label. Two clinicians
+     may have the same human name; an Athena/backend id or exact machine header
+     keeps both selectable. A display-name key is only the last-resort legacy
+     identity when no stronger source exists. */
+  function stableIdentity(entry) {
+    try {
+      if (entry == null) return '';
+      if (typeof entry === 'string') {
+        var rs = String(entry).replace(/\s+/g, ' ').trim();
+        return rs ? ('athena:' + rs.toLowerCase()) : '';
+      }
+      if (typeof entry !== 'object') return '';
+      var explicit = entry.stableKey || entry.stable_key;
+      if (explicit) return String(explicit).trim();
+      var id = entry.id || entry.providerId || entry.provider_id || entry.doctor_user_id || entry.user_id;
+      if (id !== undefined && id !== null && String(id).trim()) return 'backend:' + String(id).trim();
+      var raw = entry.raw || entry.provider_raw || entry.provider_key || entry.provider;
+      if (raw) return 'athena:' + String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
+      var nm = labelOf(entry);
+      return nm ? ('legacy-name:' + nm.toLowerCase()) : '';
+    } catch (e) { return ''; }
+  }
+
   /* Normalize window._calProviders in place: promote strings to {name}, humanize
      machine names, preserve object fields (incl. id), drop unnameable phantoms,
      dedupe by name. Idempotent: returns true only when it actually changed. */
@@ -113,14 +136,15 @@
         var e = arr[i];
         var nm = labelOf(e);
         if (!nm) { changed = true; continue; }            /* dropped a phantom */
-        var k = nm.toLowerCase();
+        var k = stableIdentity(e) || ('legacy-name:' + nm.toLowerCase());
         if (seen[k]) { changed = true; continue; }         /* dropped a dupe */
         seen[k] = 1;
         if (e && typeof e === 'object' && !isCharSpread(e)) {
           if (e.name !== nm) { e.name = nm; changed = true; }
+          if (!e.stableKey) { e.stableKey = k; changed = true; }
           out.push(e);
         } else {
-          out.push({ name: nm });                          /* string/char-spread -> object */
+          out.push({ name: nm, raw: typeof e === 'string' ? cleanRaw(e) : nm, stableKey: k });
           changed = true;
         }
       }
@@ -129,6 +153,8 @@
       return changed;
     } catch (e) { return false; }
   }
+
+  function cleanRaw(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
 
   var to = null, stopped = false, stableTicks = 0;
   function tick() {
@@ -161,6 +187,7 @@
   api.asset = 'feat_mls_provider_label.js';
   api.label = labelOf;
   api.humanize = humanize;
+  api.stableIdentity = stableIdentity;
   api.normalize = normalizeCalProviders;
   api.revert = revert;
   window.__mlsProviderLabel = api;

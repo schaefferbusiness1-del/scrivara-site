@@ -5,7 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const testsDir = __dirname;
-const excluded = /^(?:extension-|athena-)|^(?:schedule-time-contract|static-site)\.test\.js$/;
+const excluded = /^(?:extension-|athena-)|^(?:destination-teaching-runtime|full-visit-reader-runtime|history-duplicate-name-binding|schedule-pull-integrity|schedule-time-contract|static-site)\.test\.js$/;
 const tests = fs.readdirSync(testsDir)
   .filter(name => name.endsWith('.test.js') && !excluded.test(name))
   .sort();
