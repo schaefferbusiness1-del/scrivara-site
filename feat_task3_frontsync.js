@@ -35,8 +35,9 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.2';
-  var ivs = [], wrapped = [], nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
+  var VERSION = 't3-1.0.4';
+  var wrapped = [], trackedTimeouts = [], destroyed = false;
+  var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -125,14 +126,28 @@
     }
     el.style.display = 'none'; stripState = { txt: '', kind: '' };
   }
-  /* settle watcher -> stage 8 */
-  var hadActivity = false;
-  ivs.push(setInterval(function () {
-    safe(function () {
-      if (S.running()) { hadActivity = true; return; }
-      if (hadActivity && Date.now() - S.activity > 1100) { hadActivity = false; S.set(8, 'ok'); }
-    });
-  }, 400));
+  /* Settle stage 8 from status transitions instead of a permanent 400ms poll. */
+  var hadActivity = false, settleTimer = null, stripHideTimer = null;
+  var originalStatusSet = S.set;
+  function afterStatusChange() {
+    if (destroyed) return;
+    safe(renderStrip);
+    try { if (stripHideTimer) clearTimeout(stripHideTimer); stripHideTimer = setTimeout(function () { stripHideTimer = null; safe(renderStrip); }, 3200); } catch (e) {}
+    safe(function () { if (typeof scheduleTick === 'function') scheduleTick(30); });
+    if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+    if (S.running()) { hadActivity = true; return; }
+    if (!hadActivity) return;
+    var wait = Math.max(0, 1150 - (Date.now() - Number(S.activity || 0)));
+    settleTimer = setTimeout(function () {
+      settleTimer = null;
+      if (destroyed || S.running() || !hadActivity) return;
+      hadActivity = false; S.set(8, 'ok');
+    }, wait);
+  }
+  var statusSet = function () { var r = originalStatusSet.apply(S, arguments); afterStatusChange(); return r; };
+  statusSet.__t3Wrapped = 1; statusSet.__t3Orig = originalStatusSet;
+  S.set = statusSet;
+  wrapped.push(['MLSStatus.set', function () { if (S.set === statusSet) S.set = originalStatusSet; }]);
 
   /* --- fetch instrumentation: stages 1/2/3 driven by the REAL requests --- */
   if (!window.fetch.__t3Wrapped) {
@@ -181,8 +196,20 @@
   }
   function hhmmOf(a) {
     if (!a) return '';
-    var t = String(a.time || ''); var m = /^(\d\d?):(\d\d)/.exec(t); if (m) return pad(+m[1]) + ':' + m[2];
-    if (a.start_at && /T/.test(String(a.start_at))) return tzHHMM(a.start_at);
+    function wall(v) {
+      var s = String(v == null ? '' : v).trim(); if (!s) return '';
+      var m = /(?:^|T|\s)(\d{1,2}):(\d{2})\s*([AP])\.?\s*M\.?(?=\s|$)/i.exec(s);
+      if (m) { var h = +m[1]; if (h < 1 || h > 12) return ''; if (m[3].toUpperCase() === 'P' && h < 12) h += 12; if (m[3].toUpperCase() === 'A' && h === 12) h = 0; return pad(h) + ':' + m[2]; }
+      m = /(?:^|T|\s)([01]?\d|2[0-3]):([0-5]\d)(?:\b|:)/.exec(s);
+      return m ? pad(+m[1]) + ':' + m[2] : '';
+    }
+    /* Explicit wall-clock fields are authoritative. A real UTC instant is next
+       and is converted in the account time zone. Legacy `time` is last. Never
+       construct Date from null/empty (new Date(null) is the Unix epoch). */
+    var t = wall(a.time_display); if (t) return t;
+    t = wall(a.start_local); if (t) return t;
+    if (String(a.start_at == null ? '' : a.start_at).trim()) { t = tzHHMM(a.start_at); if (t) return t; }
+    t = wall(a.time); if (t) return t;
     return '';
   }
 
@@ -652,6 +679,7 @@
   }
   var lastStoreSig = '', lastDate = '', lastCalVis = false;
   function tick() {
+    if (destroyed) return;
     injectCSS();
     retireCompetitors();
     ensureWraps();
@@ -674,18 +702,38 @@
     safe(glanceNote);
     safe(renderStrip);
   }
-  ivs.push(setInterval(tick, 900));
-  ivs.push(setInterval(renderStrip, 300));
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { safe(tick); });
-  try { document.addEventListener('click', function (ev) {
-    var chip = ev.target && ev.target.closest ? ev.target.closest('.wn-chip') : null; if (!chip) return;
-    setTimeout(function () { safe(function () { var nm = $('heroPtName'); if (nm && String(nm.value || '').trim()) persistPick(nm.value.trim(), ($('heroPtDob') || {}).value || ''); S.set(7, 'run'); S.set(7, 'ok'); }); }, 120);
-  }, true); } catch (e) {}
-  try { document.addEventListener('visibilitychange', function () { safe(tick); }); } catch (e) {}
-  try { window.addEventListener('focus', function () { safe(tick); }); } catch (e) {}
-  try { window.addEventListener('pageshow', function () { safe(tick); }); } catch (e) {}
+  var tickTimer = null, slowTimer = null;
+  function scheduleTick(delay) {
+    if (destroyed || tickTimer) return;
+    tickTimer = setTimeout(function () { tickTimer = null; safe(tick); }, delay == null ? 60 : delay);
+  }
+  function slowPulse() {
+    if (destroyed) return;
+    if (!document.hidden) safe(tick);
+    slowTimer = setTimeout(slowPulse, document.hidden ? 30000 : 10000);
+  }
+  function onReady() { scheduleTick(0); }
+  function onDocumentClick(ev) {
+    var chip = ev.target && ev.target.closest ? ev.target.closest('.wn-chip') : null;
+    if (chip) trackedTimeouts.push(setTimeout(function () { safe(function () { var nm = $('heroPtName'); if (nm && String(nm.value || '').trim()) persistPick(nm.value.trim(), ($('heroPtDob') || {}).value || ''); S.set(7, 'run'); S.set(7, 'ok'); }); }, 120));
+    scheduleTick(80);
+  }
+  function onDocumentInput(ev) {
+    var t = ev && ev.target;
+    if (!t) return;
+    if (t.id === 'calProvFilter' || t.id === 'calJump' || t.type === 'date' || t.type === 'month') scheduleTick(40);
+  }
+  function onVisibility() { if (!document.hidden) scheduleTick(0); }
+  function onFocus() { scheduleTick(0); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
+  try { document.addEventListener('click', onDocumentClick, true); } catch (e) {}
+  try { document.addEventListener('input', onDocumentInput, true); document.addEventListener('change', onDocumentInput, true); } catch (e) {}
+  try { document.addEventListener('visibilitychange', onVisibility); } catch (e) {}
+  try { window.addEventListener('focus', onFocus); } catch (e) {}
+  try { window.addEventListener('pageshow', onFocus); } catch (e) {}
   safe(tick);
-  [400, 1200, 2500, 5000, 9000].forEach(function (ms) { setTimeout(function () { safe(tick); }, ms); });
+  [400, 1200, 2500, 5000, 9000].forEach(function (ms) { trackedTimeouts.push(setTimeout(function () { safe(tick); }, ms)); });
+  slowTimer = setTimeout(slowPulse, 10000);
 
   /* ==================== API / REVERT ====================================== */
   window.__mlsT3 = {
@@ -695,7 +743,10 @@
     status: S,
     rerender: rerenderAll,
     revert: function () {
-      ivs.forEach(function (i) { safe(function () { clearInterval(i); }); });
+      destroyed = true;
+      safe(function () { if (tickTimer) clearTimeout(tickTimer); if (slowTimer) clearTimeout(slowTimer); if (settleTimer) clearTimeout(settleTimer); if (stripHideTimer) clearTimeout(stripHideTimer); });
+      trackedTimeouts.forEach(function (i) { safe(function () { clearTimeout(i); }); });
+      safe(function () { document.removeEventListener('DOMContentLoaded', onReady); document.removeEventListener('click', onDocumentClick, true); document.removeEventListener('input', onDocumentInput, true); document.removeEventListener('change', onDocumentInput, true); document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('focus', onFocus); window.removeEventListener('pageshow', onFocus); });
       wrapped.forEach(function (p) { safe(p[1]); });
       nodes.forEach(function (id) { safe(function () { var el = $(id); if (el && el.parentNode) el.parentNode.removeChild(el); }); });
       safe(function () {                                                    /* restore pruned duplicate rows */

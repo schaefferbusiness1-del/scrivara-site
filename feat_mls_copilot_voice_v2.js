@@ -704,7 +704,17 @@
 
   /* ---------------- boot / revert ---------------- */
   var bootIv = null;
-  function tick() { safe(css); safe(ensureBtn); safe(registerIntents); }
+  function tick() {
+    safe(css); safe(ensureBtn); safe(registerIntents);
+    /* Consume a click made during the legacy-shell -> V2 hand-off. This keeps
+       one voice controller and one microphone lease while making the very
+       first click reliable on a cold asset load. */
+    if (window.__mlsVoiceStartWhenReady) {
+      window.__mlsVoiceStartWhenReady = false;
+      var queuedBtn = $(BTN_ID);
+      if (queuedBtn && !enabled) safe(function () { queuedBtn.click(); });
+    }
+  }
   function boot() {
     retireOld();
     tick();

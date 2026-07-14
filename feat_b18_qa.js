@@ -4,6 +4,91 @@
  * Every module is a guarded IIFE: additive, idempotent, reversible by flag.
  * ========================================================================== */
 
+/* One lifecycle for the bundle: a single filtered MutationObserver fans relevant
+ * changes out to coalesced tasks. Short-lived timers are registered here so a
+ * single revert reliably leaves no background work behind. */
+(function(){
+  "use strict";
+  if(window.__mlsB18QA && window.__mlsB18QA.installed) return;
+  var timers=[], listeners=[], cleanups=[], watchers=[], mutationSubs=[];
+  var tasks={}, pending={}, queued=false, observer=null;
+  var Q={installed:true,v:'b18.1'};
+
+  function drop(arr,item){ var i=arr.indexOf(item); if(i>=0) arr.splice(i,1); }
+  Q.later=function(fn,ms){
+    if(!Q.installed) return null;
+    var id=setTimeout(function(){ drop(timers,id); if(Q.installed){ try{ fn(); }catch(e){} } },ms);
+    timers.push(id); return id;
+  };
+  Q.cancel=function(id){ if(!id) return null; try{ clearTimeout(id); }catch(e){} drop(timers,id); return null; };
+  Q.listen=function(target,type,fn,opts){
+    var rec={target:target,type:type,fn:fn,opts:opts,active:false};
+    try{ target.addEventListener(type,fn,opts); rec.active=true; listeners.push(rec); }catch(e){}
+    return function(){
+      if(!rec.active) return; rec.active=false;
+      try{ rec.target.removeEventListener(rec.type,rec.fn,rec.opts); }catch(e){}
+      drop(listeners,rec);
+    };
+  };
+  Q.cleanup=function(fn){ if(typeof fn==='function') cleanups.push(fn); return fn; };
+  Q.schedule=function(name,fn){
+    if(!Q.installed) return;
+    if(fn){ tasks[name]=fn; }
+    if(!tasks[name]) return;
+    pending[name]=tasks[name];
+    if(queued) return; queued=true;
+    Promise.resolve().then(function(){
+      if(!Q.installed){ pending={}; queued=false; return; }
+      var run=pending; pending={}; queued=false;
+      Object.keys(run).forEach(function(k){ try{ run[k](); }catch(e){} });
+    });
+  };
+  function element(node){ if(!node) return null; return node.nodeType===1?node:node.parentElement; }
+  function nodeTouches(node,selectors){
+    var el=element(node); if(!el) return false;
+    for(var i=0;i<selectors.length;i++){
+      var s=selectors[i];
+      try{ if(el.matches(s)||el.closest(s)||el.querySelector(s)) return true; }catch(e){}
+    }
+    return false;
+  }
+  function recordTouches(r,selectors){
+    if(nodeTouches(r.target,selectors)) return true;
+    for(var i=0;i<r.addedNodes.length;i++) if(nodeTouches(r.addedNodes[i],selectors)) return true;
+    for(var j=0;j<r.removedNodes.length;j++) if(nodeTouches(r.removedNodes[j],selectors)) return true;
+    return false;
+  }
+  Q.watch=function(name,selectors,fn){
+    if(typeof selectors==='string') selectors=[selectors];
+    tasks[name]=fn; watchers.push({name:name,selectors:selectors,fn:fn});
+    Q.schedule(name,fn);
+  };
+  Q.onMutations=function(fn){ mutationSubs.push(fn); return function(){ drop(mutationSubs,fn); }; };
+  Q.trigger=function(name){ Q.schedule(name); };
+  Q.revert=function(){
+    if(!Q.installed) return true; Q.installed=false;
+    if(observer){ try{ observer.disconnect(); }catch(e){} observer=null; }
+    while(timers.length) Q.cancel(timers[timers.length-1]);
+    while(listeners.length){ var l=listeners.pop(); if(l.active){ try{ l.target.removeEventListener(l.type,l.fn,l.opts); }catch(e){} l.active=false; } }
+    for(var i=cleanups.length-1;i>=0;i--){ try{ cleanups[i](); }catch(e){} }
+    cleanups=[]; watchers=[]; mutationSubs=[]; tasks={}; pending={}; queued=false;
+    return true;
+  };
+  Q.stats=function(){ return {timers:timers.length,listeners:listeners.length,watchers:watchers.length,observer:!!observer}; };
+  window.__mlsB18QA=Q;
+  try{
+    observer=new MutationObserver(function(records){
+      if(!Q.installed) return;
+      mutationSubs.slice().forEach(function(fn){ try{ fn(records); }catch(e){} });
+      watchers.forEach(function(w){
+        for(var i=0;i<records.length;i++) if(recordTouches(records[i],w.selectors)){ Q.schedule(w.name,w.fn); break; }
+      });
+    });
+    observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});
+  }catch(e){}
+})();
+var __mlsB18Q=window.__mlsB18QA;
+
 /* __mlsCalDataFix — calendar month/day render-before-data race + wipe-on-error.
  * ROOT CAUSES FIXED:
  *  (1) loadCalendar() sets _calAppts=[] when the fetch fails -> a transient
@@ -24,6 +109,7 @@
     return a.length+':'+(f.id||'')+':'+(l.id||'')+':'+(f.appt_date||'')+':'+(l.appt_date||'');
   }
   /* (1) resilient loadCalendar */
+  var origLoad=null, wrappedLoad=null;
   function wrapLoad(){
     if(typeof window.loadCalendar!=='function' || window.loadCalendar.__mlsWrapped) return;
     var orig=window.loadCalendar;
@@ -38,20 +124,18 @@
             try{ if(typeof window.toast==='function') window.toast('Calendar refresh failed — showing the last good data. It will retry automatically.',''); }catch(e){}
           }
         }catch(e){}
+        __mlsB18Q.schedule('cal-data-refresh',refresh);
         return r;
       });
     };
     wrapped.__mlsWrapped=1;
+    origLoad=orig; wrappedLoad=wrapped;
     window.loadCalendar=wrapped;
   }
   /* (2) change-watcher re-render */
   var last=null, mouseDown=false;
-  try{
-    document.addEventListener('mousedown',function(){mouseDown=true;},true);
-    document.addEventListener('mouseup',function(){mouseDown=false;},true);
-  }catch(e){}
   var lastVis=false;
-  setInterval(function(){
+  function refresh(){
     try{
       wrapLoad();
       var v=visible(calView());
@@ -67,7 +151,24 @@
         if(typeof window.renderCalCheckin==='function'){ try{ window.renderCalCheckin(); }catch(e){} }
       }
     }catch(e){}
-  }, 900);
+  }
+  function onDown(){ mouseDown=true; }
+  function onUp(){ mouseDown=false; __mlsB18Q.schedule('cal-data-refresh',refresh); }
+  __mlsB18Q.listen(document,'mousedown',onDown,true);
+  __mlsB18Q.listen(document,'mouseup',onUp,true);
+  __mlsB18Q.listen(document,'change',function(e){ try{ if(e.target&&e.target.closest('#calendarView,#visitView')) __mlsB18Q.schedule('cal-data-refresh',refresh); }catch(err){} },true);
+  __mlsB18Q.watch('cal-data-refresh',['#calendarView','#calDayPanel'],refresh);
+  var bootTries=0, bootTimer=null;
+  function bootWrap(){
+    bootTimer=null; wrapLoad(); refresh();
+    if(!wrappedLoad && bootTries++<40) bootTimer=__mlsB18Q.later(bootWrap,250);
+  }
+  bootWrap();
+  __mlsB18Q.cleanup(function(){
+    if(bootTimer) bootTimer=__mlsB18Q.cancel(bootTimer);
+    try{ if(origLoad && window.loadCalendar===wrappedLoad) window.loadCalendar=origLoad; }catch(e){}
+    window.__mlsCalDataFix=null;
+  });
 })();
 
 /* __mlsPullScreenFix — the athenaOne pull loading UX.
@@ -84,7 +185,7 @@
 (function(){
   "use strict";
   if(window.__mlsPullScreenFix) return; window.__mlsPullScreenFix={v:'b18'};
-  var startTs=0, tick=null;
+  var startTs=0, pulseTimer=null;
   function pill(){ return document.getElementById('mls-pull-progress'); }
   function modal(){ var m=document.getElementById('mlsPickModal'); return (m && m.offsetParent!==null)?m:null; }
   function ensureCss(){
@@ -113,10 +214,11 @@
     }
     return r;
   }
-  setInterval(function(){
+  function update(){
     try{
       ensureCss();
-      var p=pill(); if(!p) return;
+      var p=pill();
+      if(!p){ if(pulseTimer) pulseTimer=__mlsB18Q.cancel(pulseTimer); return; }
       var showing = p.style.display!=='none' && p.style.display!=='';
       var txtEl=p.querySelector('.mlspp-txt');
       var txt=txtEl?txtEl.textContent:'';
@@ -133,26 +235,41 @@
           var el=p.querySelector('.mlspp-elapsed');
           if(!el){ el=document.createElement('span'); el.className='mlspp-elapsed'; if(txtEl&&txtEl.parentNode) txtEl.parentNode.insertBefore(el, txtEl.nextSibling); }
           var secs=Math.round((Date.now()-startTs)/1000);
-          el.textContent=secs+'s';
+          if(el.textContent!==secs+'s') el.textContent=secs+'s';
           if(secs>45 && txtEl && !/open Calendar/i.test(txt)){ txtEl.textContent='Still pulling… if nothing happens, open Calendar → View Calendar in your athenaOne tab (the day grid), then retry.'; }
           if(secs>100){ p.style.display='none'; startTs=0; }
+          else if(!pulseTimer){ pulseTimer=__mlsB18Q.later(function(){ pulseTimer=null; update(); },1000); }
         } else { startTs=0; }
-      } else { startTs=0; }
+      } else { startTs=0; if(pulseTimer) pulseTimer=__mlsB18Q.cancel(pulseTimer); }
       /* mirror into the picker modal */
       var m=modal();
       if(m && showing){
-        p.style.visibility='hidden';
+        if(p.style.visibility!=='hidden') p.style.visibility='hidden';
         var r=inModalRow(m);
         var t=r.querySelector('.mlspim-txt');
         var e2=Math.round((Date.now()-(startTs||Date.now()))/1000);
-        if(t) t.textContent=(txt||'Pulling from athenaOne…')+(spinning&&e2>0?(' · '+e2+'s'):'');
+        var mt=(txt||'Pulling from athenaOne…')+(spinning&&e2>0?(' · '+e2+'s'):'');
+        if(t && t.textContent!==mt) t.textContent=mt;
         r.classList.toggle('done', !spinning);
       } else {
-        if(p) p.style.visibility='';
+        if(p && p.style.visibility) p.style.visibility='';
         if(!showing){ var r2=document.getElementById('mlsPullInModal'); if(r2 && r2.classList.contains('done')){ /* leave result visible */ } }
       }
     }catch(e){}
-  }, 500);
+  }
+  __mlsB18Q.watch('pull-screen',['#mls-pull-progress','#mlsPickModal'],update);
+  __mlsB18Q.cleanup(function(){
+    if(pulseTimer) pulseTimer=__mlsB18Q.cancel(pulseTimer);
+    var p=pill();
+    if(p){
+      p.style.visibility='';
+      var close=p.querySelector('.mlspp-close'); if(close) close.remove();
+      var elapsed=p.querySelector('.mlspp-elapsed'); if(elapsed) elapsed.remove();
+    }
+    var row=document.getElementById('mlsPullInModal'); if(row) row.remove();
+    var css=document.getElementById('mls-pullfix-css'); if(css) css.remove();
+    window.__mlsPullScreenFix=null;
+  });
 })();
 /* __mlsWbSafetyGate — LAST-LINE writeback safety gate + preview.
  * Every chart-WRITE message the app sends to the MLS Assist extension funnels
@@ -171,8 +288,9 @@
   "use strict";
   if(window.__mlsWbSafetyGate && window.__mlsWbSafetyGate.installed) return;
   var GATED=/^mlsApp(PasteNote|PasteRequest|PushVisit|PrepProcTemplate|PrepProcTemplateRequest|SignAndSave)$/;
-  var origPost=window.postMessage.bind(window);
-  var open=false;
+  var originalPost=window.postMessage;
+  var origPost=originalPost.bind(window);
+  var open=false, activeHost=null;
   var api={installed:true,v:'b18',intercepted:0,confirmed:0,blocked:0,cancelled:0};
   window.__mlsWbSafetyGate=api;
 
@@ -218,17 +336,18 @@
         }
       }
       /* fall back: ask the extension directly (read-only chart read) */
-      var done=false, to=setTimeout(function(){ if(!done){done=true; try{window.removeEventListener('message',on);}catch(e){} resolve(null);} },6000);
+      var done=false, off=null, to=__mlsB18Q.later(function(){ if(!done){done=true; if(off) off(); resolve(null);} },6000);
       function on(e){
         var d=e&&e.data; if(!d||d.source!=='mls-ext') return;
         if(d.type==='mlsAppChartResult'||d.type==='mlsAppCaptureResult'){
-          if(done) return; done=true; clearTimeout(to);
-          try{window.removeEventListener('message',on);}catch(e2){}
+          if(done) return; done=true; to=__mlsB18Q.cancel(to);
+          if(off) off();
           var idn=(d.resp&&(d.resp.identity||d.resp.patient))||d.identity||null;
           resolve(idn);
         }
       }
-      try{ window.addEventListener('message',on); origPost({source:'mls-app',type:'mlsAppReadChart'},'*'); }catch(e){ resolve(null); }
+      try{ off=__mlsB18Q.listen(window,'message',on); origPost({source:'mls-app',type:'mlsAppReadChart'},'*'); }
+      catch(e){ to=__mlsB18Q.cancel(to); if(off) off(); resolve(null); }
     });
   }
   function destFor(msg){
@@ -240,8 +359,13 @@
     var orderTarget = /order|cpt/.test(section) || /order/i.test(String(msg.sectionName||''));
     return {kind:kind,label:label,section:section,orderTarget:orderTarget};
   }
-  var lastPtName='', lastPtSwitch=0;
-  setInterval(function(){ try{ var n=trim(activePt().name); if(n!==lastPtName){ lastPtName=n; lastPtSwitch=Date.now(); } }catch(e){} },1500);
+  var lastPtName=trim(activePt().name), lastPtSwitch=0;
+  function notePatientSwitch(){
+    try{ var n=trim(activePt().name); if(n!==lastPtName){ lastPtName=n; lastPtSwitch=Date.now(); } }catch(e){}
+  }
+  __mlsB18Q.watch('wb-patient-switch',['#patientBar','#heroPtName','#patientsView'],notePatientSwitch);
+  __mlsB18Q.listen(document,'input',function(e){ try{ if(e.target&&e.target.id==='heroPtName') notePatientSwitch(); }catch(err){} },true);
+  __mlsB18Q.listen(document,'change',function(e){ try{ if(e.target&&e.target.id==='heroPtName') notePatientSwitch(); }catch(err){} },true);
 
   function log(entry){
     try{
@@ -261,6 +385,7 @@
   }
 
   function showGate(msg,args){
+    notePatientSwitch();
     open=true; api.intercepted++;
     var pt=activePt();
     var note=contentOf(msg);
@@ -273,9 +398,10 @@
 
     var host=document.createElement('div'); host.id='mlsWbGate';
     host.style.cssText='position:fixed;inset:0;z-index:2147483200;display:flex;align-items:flex-start;justify-content:center;background:rgba(26,33,28,.55);padding:4vh 14px 14px;overflow:auto;font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif';
-    document.body.appendChild(host);
+    document.body.appendChild(host); activeHost=host;
 
-    function close(){ try{host.remove();}catch(e){} try{ clearTimeout(host.__autoT); }catch(e){} open=false; }
+    var offOutside=null;
+    function close(){ try{host.remove();}catch(e){} host.__autoT=__mlsB18Q.cancel(host.__autoT); if(offOutside){ offOutside(); offOutside=null; } if(activeHost===host) activeHost=null; open=false; }
     function cancel(reason){
       api.cancelled++; close();
       log({ts:Date.now(),type:msg.type,patient:trim(pt.name),decision:'cancelled',reason:reason||'user'});
@@ -285,7 +411,7 @@
     }
     /* keep the gate shorter than the writeback engine's own 60s timeout so the
        two flows can never desync into a late surprise paste */
-    host.__autoT=setTimeout(function(){ if(open){ cancel('timeout'); safe(function(){ if(typeof window.toast==='function') window.toast('The final write check waited 45 seconds with no answer — nothing was written. Click Send again and confirm the check when it appears.','err'); }); } },45000);
+    host.__autoT=__mlsB18Q.later(function(){ if(open){ cancel('timeout'); safe(function(){ if(typeof window.toast==='function') window.toast('The final write check waited 45 seconds with no answer — nothing was written. Click Send again and confirm the check when it appears.','err'); }); } },45000);
 
     readChart().then(function(chart){
       chart=chart||{};
@@ -379,12 +505,12 @@
         };
       }
       card.querySelector('#mlsWbCancel').onclick=function(){ cancel('user'); };
-      host.addEventListener('mousedown',function(e){ if(e.target===host) cancel('outside'); });
+      offOutside=__mlsB18Q.listen(host,'mousedown',function(e){ if(e.target===host) cancel('outside'); });
       log({ts:Date.now(),type:msg.type,patient:trim(pt.name),chart:chartName||'(unread)',dest:dest.label,decision:blocked?'blocked':'shown',hard:hard});
     });
   }
 
-  window.postMessage=function(message,targetOrigin,transfer){
+  var wrappedPost=function(message,targetOrigin,transfer){
     try{
       if(message && typeof message==='object' && message.source==='mls-app' && GATED.test(String(message.type||'')) && !message.__mlsGateOk){
         if(open){ safe(function(){ if(typeof window.toast==='function') window.toast('A write confirmation is already open — finish that one first.','err'); }); return; }
@@ -396,6 +522,14 @@
        targetOrigin must keep its default-origin behavior) */
     return origPost.apply(null, Array.prototype.slice.call(arguments));
   };
+  window.postMessage=wrappedPost;
+  api.revert=__mlsB18Q.revert;
+  __mlsB18Q.cleanup(function(){
+    if(activeHost){ try{ activeHost.remove(); }catch(e){} activeHost=null; }
+    open=false;
+    try{ if(window.postMessage===wrappedPost) window.postMessage=originalPost; }catch(e){}
+    window.__mlsWbSafetyGate=null;
+  });
 })();
 /* __mlsSmartEmpty — smart empty states for empty clinic days (e.g. Sundays).
  * The old state was a bare "No patients on the Athena calendar for this day."
@@ -454,7 +588,7 @@
     var b1=box.querySelector('#mlsSeAll');
     if(b1) b1.onclick=function(){
       var t=document.getElementById('heroToday');
-      if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.style.transition='box-shadow .3s'; t.style.boxShadow='0 0 0 3px #C9DCD2'; setTimeout(function(){ t.style.boxShadow=''; },1600); }
+      if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.style.transition='box-shadow .3s'; t.style.boxShadow='0 0 0 3px #C9DCD2'; __mlsB18Q.later(function(){ t.style.boxShadow=''; },1600); }
     };
     var b2=box.querySelector('#mlsSeNext');
     if(b2) b2.onclick=function(){
@@ -462,7 +596,14 @@
       if(d){ d.value=next; try{ d.dispatchEvent(new Event('input',{bubbles:true})); d.dispatchEvent(new Event('change',{bubbles:true})); }catch(e){} }
     };
   }
-  setInterval(function(){ try{ build(); }catch(e){} },1200);
+  __mlsB18Q.watch('smart-empty',['#mlsPtfBox','#visitView'],build);
+  __mlsB18Q.listen(document,'input',function(e){ try{ if(e.target&&e.target.matches('#visitView input[type=date]')) __mlsB18Q.schedule('smart-empty',build); }catch(err){} },true);
+  __mlsB18Q.listen(document,'change',function(e){ try{ if(e.target&&e.target.matches('#visitView input[type=date]')) __mlsB18Q.schedule('smart-empty',build); }catch(err){} },true);
+  __mlsB18Q.cleanup(function(){
+    var box=document.getElementById('mlsPtfBox');
+    if(box){ delete box.__mlsSmart; delete box.__mlsSmartSig; }
+    window.__mlsSmartEmpty=null;
+  });
 })();
 
 /* __mlsJunkNameShield — old pulls stored scrape junk as "patients" (ALL, POST,
@@ -501,7 +642,7 @@
       };
     } else if(marker){ marker.remove(); }
   }
-  setInterval(function(){
+  function run(){
     try{
       var dp=document.getElementById('calDayPanel');
       if(dp && dp.offsetParent!==null){
@@ -512,7 +653,20 @@
         });
       }
     }catch(e){}
-  },1500);
+  }
+  __mlsB18Q.watch('junk-name-shield',['#calDayPanel'],run);
+  __mlsB18Q.cleanup(function(){
+    var dp=document.getElementById('calDayPanel');
+    if(dp){
+      var rows=dp.querySelectorAll('[onclick*="calApptInfo"], [data-appt]');
+      for(var i=0;i<rows.length;i++){
+        if(rows[i].__mlsJunkHidden) rows[i].style.display='';
+        delete rows[i].__mlsJunkHidden; delete rows[i].__mlsJunkChecked;
+      }
+      var marker=dp.querySelector('.mls-junk-note'); if(marker) marker.remove();
+    }
+    window.__mlsJunkNameShield=null;
+  });
 })();
 
 /* __mlsUpNextDayFix — the Up-Next strip said "N still ahead today" while
@@ -530,7 +684,7 @@
     for(var i=0;i<a.length;i++){ if(String(a[i].name||'').trim().toLowerCase()===nm) return a[i]; }
     return null;
   }
-  setInterval(function(){
+  function run(){
     try{
       var vv=document.getElementById('visitView');
       if(!vv || vv.offsetParent===null) return;
@@ -555,7 +709,9 @@
         } else { el.__mlsUpFixed=t; }
       }
     }catch(e){}
-  },1600);
+  }
+  __mlsB18Q.watch('up-next-day',['#visitView'],run);
+  __mlsB18Q.cleanup(function(){ window.__mlsUpNextDayFix=null; });
 })();
 
 /* __mlsStatusTruthUnify — the tiny Athena status dot could say "not connected"
@@ -576,7 +732,7 @@
     }catch(e){}
     return null;
   }
-  setInterval(function(){
+  function sync(){
     try{
       var dot=document.getElementById('mlsAthenaStatusDot');
       if(!dot) return;
@@ -588,7 +744,14 @@
         dot.style.opacity='.85';
       }
     }catch(e){}
-  },3000);
+  }
+  __mlsB18Q.watch('status-truth',['#mlsAthenaStatusDot','#mlsPickModal'],sync);
+  __mlsB18Q.listen(window,'message',function(){ __mlsB18Q.schedule('status-truth',sync); });
+  __mlsB18Q.listen(window,'focus',function(){ __mlsB18Q.schedule('status-truth',sync); });
+  __mlsB18Q.listen(window,'online',function(){ __mlsB18Q.schedule('status-truth',sync); });
+  __mlsB18Q.listen(window,'offline',function(){ __mlsB18Q.schedule('status-truth',sync); });
+  __mlsB18Q.listen(document,'visibilitychange',function(){ if(!document.hidden) __mlsB18Q.schedule('status-truth',sync); });
+  __mlsB18Q.cleanup(function(){ window.__mlsStatusTruthUnify=null; });
 })();
 
 /* __mlsFabStack — the bottom-right floating buttons (mic / Add patient /
@@ -598,18 +761,33 @@
   "use strict";
   if(window.__mlsFabStack) return; window.__mlsFabStack={v:'b18'};
   var SLOTS=[['mlsP1AgFab',18],['mlsAddPtLauncher',72],['mlsVoiceFab',126]];
-  setInterval(function(){
+  var originals=[];
+  function remember(el){
+    for(var i=0;i<originals.length;i++) if(originals[i].el===el) return;
+    originals.push({el:el,bottom:el.style.getPropertyValue('bottom'),bottomP:el.style.getPropertyPriority('bottom'),right:el.style.getPropertyValue('right'),rightP:el.style.getPropertyPriority('right'),left:el.style.getPropertyValue('left'),leftP:el.style.getPropertyPriority('left')});
+  }
+  function place(){
     try{
       for(var i=0;i<SLOTS.length;i++){
         var el=document.getElementById(SLOTS[i][0]); if(!el) continue;
-        if(el.__mlsSlot===SLOTS[i][1]) continue;
-        el.style.setProperty('bottom',SLOTS[i][1]+'px','important');
+        var bottom=SLOTS[i][1]+'px';
+        if(el.__mlsSlot===SLOTS[i][1] && el.style.getPropertyValue('bottom')===bottom && el.style.getPropertyValue('right')==='18px' && el.style.getPropertyValue('left')==='auto') continue;
+        remember(el);
+        el.style.setProperty('bottom',bottom,'important');
         el.style.setProperty('right','18px','important');
         el.style.setProperty('left','auto','important');
         el.__mlsSlot=SLOTS[i][1];
       }
     }catch(e){}
-  },2000);
+  }
+  __mlsB18Q.watch('fab-stack',['#mlsP1AgFab','#mlsAddPtLauncher','#mlsVoiceFab'],place);
+  __mlsB18Q.cleanup(function(){
+    for(var i=0;i<originals.length;i++){
+      var x=originals[i], el=x.el; if(!el) continue;
+      el.style.setProperty('bottom',x.bottom,x.bottomP); el.style.setProperty('right',x.right,x.rightP); el.style.setProperty('left',x.left,x.leftP); delete el.__mlsSlot;
+    }
+    originals=[]; window.__mlsFabStack=null;
+  });
 })();
 /* __mlsAnalysisPolish — Analysis + AI Studio layout hygiene.
  *  (1) Two widget tiles were stuck expanded at ~670px with almost no content —
@@ -639,9 +817,13 @@
   }
   function pass(){
     var _av=document.getElementById('analysisView'), _sv=document.getElementById('studioView');
-    if((!_av||_av.offsetParent===null) && (!_sv||_sv.offsetParent===null)) return; /* b171: skip whole-doc scan when Analysis/Studio views are closed */
+    var roots=[];
+    if(_av&&_av.offsetParent!==null) roots.push(_av);
+    if(_sv&&_sv.offsetParent!==null) roots.push(_sv);
+    if(!roots.length) return;
     ensureCss();
-    var tiles=document.querySelectorAll('.ax-tile.ax-exp');
+    var tiles=[];
+    for(var r=0;r<roots.length;r++) tiles=tiles.concat([].slice.call(roots[r].querySelectorAll('.ax-tile.ax-exp')));
     for(var i=0;i<tiles.length;i++){
       var t=tiles[i];
       if(t.__mlsPolished) continue;
@@ -651,7 +833,8 @@
         t.__mlsPolished=1;
       } else if(t.offsetHeight<=480){ t.__mlsPolished=1; }
     }
-    var cards=document.querySelectorAll('div,section');
+    var cards=[];
+    for(var q=0;q<roots.length;q++) cards=cards.concat([].slice.call(roots[q].querySelectorAll('div,section')));
     for(var j=0;j<cards.length;j++){
       var c=cards[j];
       if(c.childElementCount>0 && c.childElementCount<8){
@@ -664,7 +847,12 @@
       }
     }
   }
-  setInterval(function(){ try{ pass(); }catch(e){} },2500);
+  __mlsB18Q.watch('analysis-polish',['#analysisView','#studioView'],pass);
+  __mlsB18Q.listen(document,'click',function(e){ try{ if(e.target&&e.target.closest('#nav_analysis,#nav_studio,#analysisView,#studioView')) __mlsB18Q.schedule('analysis-polish',pass); }catch(err){} },true);
+  __mlsB18Q.cleanup(function(){
+    var css=document.getElementById('mls-anapolish-css'); if(css) css.remove();
+    window.__mlsAnalysisPolish=null;
+  });
 })();
 
 /* __mlsCalmBoot — stable app loading screen.
@@ -685,19 +873,26 @@
       '<div style="font:500 12px system-ui;color:#C9DCD2">Preparing your workspace…</div>';
     (document.body||document.documentElement).appendChild(veil);
     var t0=Date.now(), muts=0, released=false;
-    var mo=new MutationObserver(function(ms){ muts+=ms.length; });
-    mo.observe(document.documentElement,{childList:true,subtree:true,attributes:true});
+    var offMut=__mlsB18Q.onMutations(function(ms){ muts+=ms.length; });
     var bar=veil.querySelector('#mlsBootBar'), pct=24;
-    var barIv=setInterval(function(){ pct=Math.min(92,pct+9); if(bar) bar.style.width=pct+'%'; },300);
+    var barTimer=null, settleTimer=null, failTimer=null, removeTimer=null, fadeTimer=null, fadeRemoveTimer=null, offError=null;
+    function stepBar(){
+      barTimer=null; if(released) return;
+      pct=Math.min(92,pct+9); if(bar) bar.style.width=pct+'%';
+      barTimer=__mlsB18Q.later(stepBar,300);
+    }
     function release(){
       if(released) return; released=true;
       window.__mlsCalmBootDone=1; window.__mlsCalmBoot.shownMs=Date.now()-t0;
-      clearInterval(iv); clearInterval(barIv); try{ mo.disconnect(); }catch(e){}
+      settleTimer=__mlsB18Q.cancel(settleTimer); barTimer=__mlsB18Q.cancel(barTimer);
+      failTimer=__mlsB18Q.cancel(failTimer); removeTimer=__mlsB18Q.cancel(removeTimer);
+      if(offMut){ offMut(); offMut=null; } if(offError){ offError(); offError=null; }
       if(bar) bar.style.width='100%';
-      setTimeout(function(){ veil.style.opacity='0'; setTimeout(function(){ try{ veil.remove(); }catch(e){} },260); },80);
+      fadeTimer=__mlsB18Q.later(function(){ veil.style.opacity='0'; fadeRemoveTimer=__mlsB18Q.later(function(){ try{ veil.remove(); }catch(e){} },260); },80);
     }
     var lastCount=0;
-    var iv=setInterval(function(){
+    function checkSettled(){
+      settleTimer=null;
       var dt=Date.now()-t0;
       var delta=muts-lastCount; lastCount=muts;
       var login=false;
@@ -705,11 +900,22 @@
       if(dt>=2600) return release();
       if(login && dt>=700) return release();
       if(dt>=450 && delta<90) return release();
-    },220);
-    window.addEventListener('error',function(){ if(Date.now()-t0>1200) release(); },true);
+      settleTimer=__mlsB18Q.later(checkSettled,220);
+    }
+    stepBar();
+    settleTimer=__mlsB18Q.later(checkSettled,220);
+    offError=__mlsB18Q.listen(window,'error',function(){ if(Date.now()-t0>1200) release(); },true);
     /* absolute failsafe: the veil can never outlive 4s no matter what breaks */
-    setTimeout(release,4000);
-    setTimeout(function(){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); }catch(e){} },5200);
+    failTimer=__mlsB18Q.later(release,4000);
+    removeTimer=__mlsB18Q.later(function(){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); }catch(e){} },5200);
+    __mlsB18Q.cleanup(function(){
+      released=true;
+      settleTimer=__mlsB18Q.cancel(settleTimer); barTimer=__mlsB18Q.cancel(barTimer);
+      failTimer=__mlsB18Q.cancel(failTimer); removeTimer=__mlsB18Q.cancel(removeTimer);
+      fadeTimer=__mlsB18Q.cancel(fadeTimer); fadeRemoveTimer=__mlsB18Q.cancel(fadeRemoveTimer);
+      if(offMut){ offMut(); offMut=null; } if(offError){ offError(); offError=null; }
+      try{ veil.remove(); }catch(e){} window.__mlsCalmBoot=null;
+    });
   }catch(e){ try{ var v=document.getElementById('mlsBootVeil'); if(v) v.remove(); }catch(e2){} }
 })();
 
@@ -723,7 +929,7 @@
     var cands=document.querySelectorAll('input[placeholder*="Find anything" i],input[placeholder*="patients & screens" i]');
     return cands.length?cands[0]:null;
   }
-  var chip=null;
+  var chip=null, askTimer=null;
   function showChip(inp){
     var q=String(inp.value||'').trim(); if(q.length<3) return;
     if(!chip){
@@ -743,7 +949,9 @@
            openCopilot alone opened a hero-only card = "empty Copilot panel". */
         if(typeof window.openCopilotDock==='function') window.openCopilotDock();
         else if(typeof window.openCopilot==='function') window.openCopilot();
-        setTimeout(function(){
+        askTimer=__mlsB18Q.cancel(askTimer);
+        askTimer=__mlsB18Q.later(function(){
+          askTimer=null;
           var ci=document.getElementById('copilotInput');
           if(ci){ ci.value=q; try{ ci.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){} }
           if(typeof window.copilotAsk==='function') window.copilotAsk();
@@ -751,14 +959,19 @@
         },650);
       }catch(e){}
     };
-    clearTimeout(chip.__t); chip.__t=setTimeout(function(){ chip.style.display='none'; },8000);
+    chip.__t=__mlsB18Q.cancel(chip.__t); chip.__t=__mlsB18Q.later(function(){ chip.__t=null; chip.style.display='none'; },8000);
   }
-  document.addEventListener('keydown',function(e){
+  __mlsB18Q.listen(document,'keydown',function(e){
     try{
       if(e.key!=='Enter') return;
       var inp=findInput();
       if(inp && e.target===inp) showChip(inp);
     }catch(err){}
   },true);
-  document.addEventListener('mousedown',function(e){ try{ if(chip && chip.style.display==='block' && e.target!==chip) chip.style.display='none'; }catch(err){} },true);
+  __mlsB18Q.listen(document,'mousedown',function(e){ try{ if(chip && chip.style.display==='block' && e.target!==chip) chip.style.display='none'; }catch(err){} },true);
+  __mlsB18Q.cleanup(function(){
+    askTimer=__mlsB18Q.cancel(askTimer);
+    if(chip){ chip.__t=__mlsB18Q.cancel(chip.__t); try{ chip.remove(); }catch(e){} chip=null; }
+    window.__mlsSearchAssistHint=null;
+  });
 })();

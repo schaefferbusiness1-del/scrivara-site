@@ -1,5 +1,7 @@
 /* =============================================================================
- * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.1.0)
+ * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.2.0)
+ * wf2-1.2.0 (2026-07-14): canonical HPI/follow-up routing, fail-closed
+ *   section keys, preview-only structured actions, and durable-result wording.
  * wf2-1.1.0 (2026-07-12): WRITE-BACK SAFETY. The panel now independently
  *   re-checks the chart identity the driver reports it wrote under against the
  *   patient we intended, and REFUSES to print any success line unless a content
@@ -10,21 +12,20 @@
  * -----------------------------------------------------------------------------
  * Owner-requested write-back UX, generic for ANY account/patient/provider:
  *
- * 1) ONE-CLICK WRITE: a "Write to Athena" button on the active-patient banner.
+ * 1) SUPERVISED DRAFT: a "Place Athena draft" button on the patient banner.
  *    Click -> the chart is opened in athenaOne (pull), the note is organized
  *    into sections (generate), and the EMR review-and-confirm panel opens with
  *    content sections pre-ticked (preview). The clinician reviews and presses
- *    "Insert confirmed to athenaOne" (confirm) -> identity-gated write. The
+ *    "Insert confirmed to athenaOne" (confirm) -> identity-gated draft attempt. The
  *    safety gates are unchanged: identity verification + explicit on-screen
  *    confirm remain between the click and any write.
  *
  * 2) UNIFIED BRIDGE: the panel's write button is rewired to the v2.05
  *    mlsAppWriteV2 bridge (one top-frame shadow-aware driver). Sections:
- *      - history/exam/assessment/plan: execute (write into the matching
- *        athena field; unsigned; the driver verifies identity first)
- *      - orders/prescriptions/billing: TARGET-ONLY, always - the driver
- *        locates and reports the destination field but never touches it and
- *        never submits. (Also forced inside the extension driver itself.)
+ *      - hpi/exam/assessment/plan: explicit canonical destinations only
+ *      - history -> hpi; followup/follow_up -> plan (merged, never generic)
+ *      - orders/prescriptions/billing/documents: retained in the visible
+ *        routing review for manual entry and never sent to this bridge
  *
  * 3) SUGGESTED ORDERS: one-click chips derived from the visit note content
  *    ("We suggest: [+ MRI lumbar spine]") - clicking adds that order line to
@@ -42,7 +43,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-1.1.0';
+  var VERSION = 'wf2-1.2.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
   var stopped = false;
@@ -84,24 +85,54 @@
   function nrmId(s) { return S(s).replace(/\D/g, ''); }
 
   /* -------------------- sections from the review panel --------------------- */
-  /* Panel card keys (bundle organizer): history, exam, assessment, plan,
-     orders, rx, referrals, pt, imaging, followup, billing. Order-class keys
-     are ALWAYS sent execute:false (target-only); the extension driver forces
-     this too, so no caller can widen it. */
-  var ORDER_CLASS = { orders: 1, rx: 1, referrals: 1, pt: 1, imaging: 1, billing: 1 };
-  var EXEC_KEYS = { history: 1, exam: 1, assessment: 1, plan: 1, followup: 1 };
+  /* One explicit app-side routing table. Legacy aliases are normalized before
+     crossing the bridge; unknown keys never reach the extension's generic
+     fallback. Follow-up is merged into Plan because that is the driver's exact
+     supported destination. Structured actions remain in the review panel only. */
+  var EXEC_ALIAS = {
+    hpi: 'hpi', history: 'hpi',
+    exam: 'exam', physical_exam: 'exam',
+    assessment: 'assessment', assessment_narrative: 'assessment',
+    plan: 'plan', followup: 'plan', follow_up: 'plan'
+  };
+  var PREVIEW_ONLY = {
+    orders: 1, rx: 1, referrals: 1, pt: 1, imaging: 1, billing: 1,
+    surgctr: 1, consent: 1, handouts: 1, instructions: 1
+  };
+  var DESTINATION = {
+    hpi: 'Athena encounter > HPI',
+    exam: 'Athena encounter > Physical Exam',
+    assessment: 'Athena encounter > Assessment narrative',
+    plan: 'Athena encounter > Plan / Follow-up',
+    orders: 'Athena Orders (manual entry)', rx: 'Athena Prescriptions (manual entry)',
+    referrals: 'Athena Orders > Referral (manual entry)', pt: 'Athena Orders > PT (manual entry)',
+    imaging: 'Athena Orders > Imaging (manual entry)', billing: 'Athena Billing / Charges (manual entry)',
+    surgctr: 'Surgery scheduling workflow (manual entry)', consent: 'Patient documents / consent (manual entry)',
+    handouts: 'Patient documents / handout (manual entry)', instructions: 'Patient instructions (manual entry)'
+  };
+  function canonicalSectionKey(raw) {
+    raw = S(raw).toLowerCase().trim();
+    if (EXEC_ALIAS[raw]) return { key: EXEC_ALIAS[raw], execute: true };
+    if (PREVIEW_ONLY[raw]) return { key: raw, execute: false, previewOnly: true };
+    return null;
+  }
   function gatherSections(panel) {
-    var out = [];
+    var out = [], held = [], errors = [], byKey = {};
     var boxes = panel.querySelectorAll('input[data-k]');
     for (var i = 0; i < boxes.length; i++) {
-      var k = boxes[i].getAttribute('data-k');
+      var raw = S(boxes[i].getAttribute('data-k')).toLowerCase().trim();
       if (!boxes[i].checked) continue;
-      var ta = panel.querySelector('textarea[data-t="' + k + '"]');
+      var ta = panel.querySelector('textarea[data-t="' + raw + '"]');
       var v = ta ? S(ta.value).trim() : '';
       if (!v) continue;
-      out.push({ key: k, text: v, execute: !!EXEC_KEYS[k] && !ORDER_CLASS[k] });
+      var route = canonicalSectionKey(raw);
+      if (!route) { errors.push(raw || '(blank)'); continue; }
+      if (route.previewOnly) { held.push({ key: raw, text: v, destination: DESTINATION[raw] || 'Manual destination required' }); continue; }
+      if (/^follow_?up$/.test(raw) || raw === 'followup') v = 'Follow-up:\n' + v;
+      if (byKey[route.key]) byKey[route.key].text += '\n\n' + v;
+      else { byKey[route.key] = { key: route.key, text: v, execute: true, destination: DESTINATION[route.key] }; out.push(byKey[route.key]); }
     }
-    return out;
+    return { sections: out, held: held, errors: errors };
   }
 
   /* --------------------------- result rendering ---------------------------- */
@@ -109,17 +140,13 @@
   function bigRefusal(logEl, html) {
     try { logEl.innerHTML += '<div style="margin:6px 0;padding:8px 10px;border-radius:8px;background:rgba(220,38,38,.16);border:1px solid rgba(248,113,113,.55);color:#ffd9d9;font-weight:600">' + html + '</div>'; logEl.scrollTop = logEl.scrollHeight; } catch (e) {}
   }
-  /* HONEST result rendering. The write driver returns ok:true whenever its
-     identity gate PASSED and it attempted the sections -- ok:true is NOT a
-     guarantee that anything landed, nor that it landed on the RIGHT chart.
-     So we independently re-check the chart identity the driver reports it
-     wrote under against the patient we intended, and we NEVER print a success
-     line unless a content section is BOTH written AND verified (read-back). */
+  /* `ok`, `written`, and DOM read-back are not durable completion evidence.
+     Done requires a section-specific persisted/serverVerified receipt. */
   function renderResp(logEl, resp, want) {
     want = want || {};
-    if (!resp || resp.__timeout) { bigRefusal(logEl, '&#9888; No response from MLS Assist (timed out). Nothing was written. Is your signed-in athenaOne open in another tab?'); return; }
+    if (!resp || resp.__timeout) { bigRefusal(logEl, '&#9888; No completion response from MLS Assist. This is not marked Done; inspect the open Athena note for any partial draft before retrying.'); return; }
     if (!resp.ok) {
-      bigRefusal(logEl, '&#9940; <b>Nothing was written.</b> ' + esc(resp.error || resp.reason || 'The write was refused.'));
+      bigRefusal(logEl, '&#9940; <b>No durable completion evidence.</b> ' + esc(resp.error || resp.reason || 'The draft attempt was refused.'));
       return;
     }
     /* ---- independent chart-identity check (must match the intended patient) -- */
@@ -137,44 +164,50 @@
         '.<br>Open the correct patient&#39;s chart in athenaOne, then write.');
       return;
     }
-    logTo(logEl, '&#10003; Chart identity confirmed: <b>' + esc(cName) + '</b>' + (cDob ? ' (' + esc(cDob) + ')' : '') + (cMrn ? ' #' + esc(cMrn) : '') + ' &mdash; writing to THIS chart only.');
+    logTo(logEl, '&#10003; Chart identity confirmed for supervised draft placement: <b>' + esc(cName) + '</b>' + (cDob ? ' (' + esc(cDob) + ')' : '') + (cMrn ? ' #' + esc(cMrn) : '') + '.');
     var rs = resp.results || [];
-    var okN = 0, tgtN = 0, warnN = 0, execTotal = 0;
+    var okN = 0, draftN = 0, warnN = 0, execTotal = 0;
     for (var i = 0; i < rs.length; i++) {
       var r = rs[i];
       var label = r.key.charAt(0).toUpperCase() + r.key.slice(1);
+      var destination = DESTINATION[r.key] || 'explicit Athena section';
       if (r.execute) {
         execTotal++;
-        if (r.written && r.verified) { okN++; logTo(logEl, '&nbsp;&nbsp;&#10003; <b>' + esc(label) + '</b> — written &amp; verified' + (r.persisted ? ' &amp; saved' : '') + ' (' + esc(r.method || '') + ').'); }
-        else if (r.written) { warnN++; logTo(logEl, '&nbsp;&nbsp;&#9888; ' + esc(label) + ' — wrote but could <b>not</b> verify it landed; check in Athena before you trust it.'); }
+        var durable=!!(r.persisted||r.serverVerified);
+        if (r.written && r.verified && durable) { okN++; logTo(logEl, '&nbsp;&nbsp;&#10003; <b>' + esc(label) + '</b> &rarr; ' + esc(destination) + ' — <b>Done</b>: durable Athena persistence was verified' + (r.method ? ' (' + esc(r.method) + ')' : '') + '.'); }
+        else if (r.written || r.verified) { draftN++; logTo(logEl, '&nbsp;&nbsp;&#9888; <b>' + esc(label) + '</b> &rarr; ' + esc(destination) + ' — supervised draft placement reported, but no durable save/server verification was returned. Review it manually; not marked Done.'); }
         else { warnN++; logTo(logEl, '&nbsp;&nbsp;&#9888; ' + esc(label) + ' — ' + esc(r.error === 'target-not-on-open-chart' ? 'the field found was not on this patient’s chart' : (r.error || 'no matching field on this chart')) + ' (<b>NOT written</b>).'); }
       } else {
-        if (r.found) { tgtN++; logTo(logEl, '&nbsp;&nbsp;&#127919; <b>' + esc(label) + '</b> — destination identified: ' + esc(r.fieldLabel || r.fieldTag || 'field') + '. Preview only, never sent.'); }
+        if (r.found) { logTo(logEl, '&nbsp;&nbsp;&#127919; <b>' + esc(label) + '</b> — destination identified: ' + esc(r.fieldLabel || r.fieldTag || 'field') + '. Preview only, never sent.'); }
         else { logTo(logEl, '&nbsp;&nbsp;&#183; ' + esc(label) + ' — no destination field on this screen (preview kept here).'); }
       }
     }
-    /* ---- final verdict: only ever claim success on verified content ---------- */
-    if (execTotal > 0 && okN === 0) {
-      bigRefusal(logEl, '&#9940; <b>Nothing was written.</b> No section could be verified as landed on this chart &mdash; do not trust any partial paste. Confirm the right chart is open and try again.');
-    } else if (warnN > 0) {
-      logTo(logEl, '&#9888; <b>' + okN + ' section(s) written &amp; verified</b> · ' + warnN + ' need a manual check in athenaOne. Unsigned &mdash; review and sign in Athena. MLS never clicks Save/Sign.');
+    if (okN > 0 && draftN === 0 && warnN === 0) {
+      logTo(logEl, '&#10003; <b>Done &mdash; ' + okN + ' section(s) durably verified on ' + esc(cName) + '.</b> Review and sign in Athena; MLS never clicks Save/Sign.');
     } else if (okN > 0) {
-      logTo(logEl, '&#10003; <b>Done &mdash; ' + okN + ' section(s) written &amp; verified on ' + esc(cName) + '.</b> Unsigned &mdash; review and sign in athenaOne. MLS never clicks Save/Sign.');
+      logTo(logEl, '&#9888; <b>' + okN + ' section(s) durably verified.</b> ' + (draftN + warnN) + ' section(s) remain draft-only or blocked and need manual review.');
+    } else if (execTotal > 0) {
+      logTo(logEl, '&#9888; <b>No section is marked Done.</b> Athena returned no durable persistence/server verification. Any reported placement remains a supervised draft that you must check manually.');
     } else {
-      logTo(logEl, 'Destination(s) identified (preview only). Nothing was written.');
+      logTo(logEl, 'Preview-only/manual destinations were kept in MLS. Nothing was sent.');
     }
   }
 
   /* ------------------------- v2 write from the panel ------------------------ */
   function runV2(panel) {
     var logEl = panel.querySelector('#emrWbLog'); if (!logEl) return;
-    var secs = gatherSections(panel);
-    if (!secs.length) { logTo(logEl, 'Confirm at least one section first (tick "confirm" on the cards above).'); return; }
+    var gathered = gatherSections(panel);
+    if (gathered.errors.length) { bigRefusal(logEl, '&#9940; <b>Blocked unknown route(s):</b> ' + esc(gathered.errors.join(', ')) + '. Nothing was sent; choose a supported destination explicitly.'); return; }
+    if (gathered.held.length) {
+      logTo(logEl, '&#128065; <b>Preview-only/manual:</b> ' + gathered.held.map(function(x){return esc(x.key) + ' &rarr; ' + esc(x.destination);}).join(' · ') + '. These structured actions stay in MLS and are not sent through the note bridge.');
+    }
+    var secs = gathered.sections;
+    if (!secs.length) { logTo(logEl, gathered.held.length ? 'No supervised free-text section was selected. Nothing was sent.' : 'Confirm at least one supported section first.'); return; }
     var p = activePt() || {};
     var want = { name: S(p.name), dob: S(p.dob), mrn: S(p.athenaId || p.mrn || '') };
     if (!want.name) { bigRefusal(logEl, '&#9940; No active patient selected. Pick the patient first, then write.'); return; }
     STATE.writes++;
-    logTo(logEl, 'Verifying <b>' + esc(want.name) + '</b> is the chart open in athenaOne before writing anything&#8230;');
+    logTo(logEl, 'Verifying <b>' + esc(want.name) + '</b> before supervised draft placement: ' + secs.map(function(s){return '<b>'+esc(s.key)+'</b> &rarr; '+esc(s.destination);}).join(' · ') + '. No generic fallback is allowed.');
     bridge('mlsAppWriteV2', { patient: want.name, dob: want.dob, athenaId: want.mrn, sections: secs }, 'mlsAppWriteV2Result', 150000)
       .then(function (resp) { STATE.lastResp = resp; renderResp(logEl, resp, want); });
   }
@@ -307,7 +340,8 @@
       var boxes = panel.querySelectorAll('input[data-k]');
       for (var i = 0; i < boxes.length; i++) {
         var k = boxes[i].getAttribute('data-k');
-        if (ORDER_CLASS[k]) continue;
+        var route = canonicalSectionKey(k);
+        if (!route || route.previewOnly) continue;
         var ta = panel.querySelector('textarea[data-t="' + k + '"]');
         if (ta && S(ta.value).trim() && !boxes[i].checked) { boxes[i].checked = true; try { boxes[i].dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {} }
       }
@@ -323,8 +357,8 @@
       var b = document.createElement('button');
       b.id = 'wf2OneClick';
       b.type = 'button';
-      b.textContent = 'Write to Athena';
-      b.title = 'One click: opens the chart, organizes the note into sections, and shows the review-and-confirm screen. Nothing is sent until you confirm.';
+      b.textContent = 'Place Athena draft';
+      b.title = 'Opens the chart and review panel. Only canonical HPI, Exam, Assessment and Plan drafts may be attempted; structured actions remain manual, and Done requires durable verification.';
       b.style.cssText = 'margin-left:6px;background:#d97706;border:none;color:#fff;border-radius:10px;padding:6px 12px;font-weight:800;font-size:12.5px;cursor:pointer';
       b.onclick = oneClick;
       sw.parentElement.insertBefore(b, sw.nextSibling);
@@ -356,6 +390,8 @@
   window.__mlsWriteFlow = {
     installed: true, version: VERSION, state: STATE,
     suggestOrders: suggestOrders, oneClick: oneClick, runV2: runV2,
+    canonicalSectionKey: canonicalSectionKey, destinations: DESTINATION,
+    inspectSections: gatherSections,
     revert: revert
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

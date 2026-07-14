@@ -1,0 +1,243 @@
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const vm = require('vm');
+const zlib = require('zlib');
+const { spawnSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+const EXPECTED_FILES = [
+  'manifest.json',
+  'background.js',
+  'content.js',
+  'content.css',
+  'popup.html',
+  'popup.js',
+  'mls-popup.js',
+  'mls-popup.css',
+  'offscreen.html',
+  'offscreen.js',
+  'feat_codes_driver.js',
+  'ext_reviews_reader.js',
+  'icon-16.png',
+  'icon-32.png',
+  'icon-48.png',
+  'icon-128.png'
+];
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+}
+
+function readJson(relativePath) {
+  return JSON.parse(read(relativePath));
+}
+
+function assertSameList(actual, expected, label) {
+  assert.deepStrictEqual(actual, expected, `${label} must contain the audited 16-file allowlist in release order`);
+}
+
+function findPython() {
+  const candidates = [];
+  if (process.env.PYTHON) candidates.push([process.env.PYTHON, []]);
+  if (process.platform === 'win32') {
+    candidates.push([
+      path.join(os.homedir(), '.cache', 'codex-runtimes', 'codex-primary-runtime', 'dependencies', 'python', 'python.exe'),
+      []
+    ]);
+  }
+  candidates.push(['python3', []], ['python', []]);
+  if (process.platform === 'win32') candidates.push(['py', ['-3']]);
+
+  for (const [command, prefix] of candidates) {
+    const probe = spawnSync(command, [...prefix, '--version'], { encoding: 'utf8', windowsHide: true });
+    if (probe.status === 0) return { command, prefix };
+  }
+  throw new Error('Python 3 is required to build the deterministic extension ZIP');
+}
+
+function runBuilder(python, output) {
+  const script = path.join(ROOT, 'scripts', 'build_extension_zip.py');
+  const result = spawnSync(
+    python.command,
+    [...python.prefix, script, '--output', output],
+    { cwd: ROOT, encoding: 'utf8', windowsHide: true }
+  );
+  assert.strictEqual(result.status, 0, `extension ZIP builder failed:\n${result.stdout || ''}${result.stderr || ''}`);
+  assert(fs.existsSync(output) && fs.statSync(output).isFile(), `builder did not create ${output}`);
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let crc = 0xFFFFFFFF;
+  for (const byte of buffer) crc = CRC_TABLE[(crc ^ byte) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function findEndOfCentralDirectory(buffer) {
+  const minimum = Math.max(0, buffer.length - 22 - 0xFFFF);
+  for (let offset = buffer.length - 22; offset >= minimum; offset--) {
+    if (buffer.readUInt32LE(offset) === 0x06054B50) return offset;
+  }
+  throw new Error('ZIP end-of-central-directory record was not found');
+}
+
+function parseZip(buffer) {
+  const eocd = findEndOfCentralDirectory(buffer);
+  assert.strictEqual(buffer.readUInt16LE(eocd + 4), 0, 'multi-disk ZIPs are forbidden');
+  assert.strictEqual(buffer.readUInt16LE(eocd + 6), 0, 'multi-disk ZIPs are forbidden');
+  const diskEntries = buffer.readUInt16LE(eocd + 8);
+  const totalEntries = buffer.readUInt16LE(eocd + 10);
+  assert.strictEqual(diskEntries, totalEntries, 'all ZIP entries must be on one disk');
+  const centralSize = buffer.readUInt32LE(eocd + 12);
+  const centralOffset = buffer.readUInt32LE(eocd + 16);
+  const commentLength = buffer.readUInt16LE(eocd + 20);
+  assert.strictEqual(commentLength, 0, 'release ZIP must not contain an archive comment');
+  assert.strictEqual(eocd + 22, buffer.length, 'release ZIP must not have trailing bytes');
+
+  const entries = [];
+  let cursor = centralOffset;
+  for (let index = 0; index < totalEntries; index++) {
+    assert.strictEqual(buffer.readUInt32LE(cursor), 0x02014B50, `invalid central directory entry ${index}`);
+    const flags = buffer.readUInt16LE(cursor + 8);
+    const method = buffer.readUInt16LE(cursor + 10);
+    const modifiedTime = buffer.readUInt16LE(cursor + 12);
+    const modifiedDate = buffer.readUInt16LE(cursor + 14);
+    const expectedCrc = buffer.readUInt32LE(cursor + 16);
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const uncompressedSize = buffer.readUInt32LE(cursor + 24);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const entryCommentLength = buffer.readUInt16LE(cursor + 32);
+    const localOffset = buffer.readUInt32LE(cursor + 42);
+    const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8');
+
+    assert.strictEqual(flags & 1, 0, `${name} must not be encrypted`);
+    assert.strictEqual(modifiedTime, 0, `${name} must use the fixed midnight timestamp`);
+    assert.strictEqual(modifiedDate, 33, `${name} must use the fixed 1980-01-01 date`);
+    assert.strictEqual(extraLength, 0, `${name} must not contain ZIP extra fields`);
+    assert.strictEqual(entryCommentLength, 0, `${name} must not contain an entry comment`);
+    assert.strictEqual(buffer.readUInt32LE(localOffset), 0x04034B50, `${name} has an invalid local header`);
+
+    const localFlags = buffer.readUInt16LE(localOffset + 6);
+    const localMethod = buffer.readUInt16LE(localOffset + 8);
+    const localTime = buffer.readUInt16LE(localOffset + 10);
+    const localDate = buffer.readUInt16LE(localOffset + 12);
+    const localNameLength = buffer.readUInt16LE(localOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+    const localName = buffer.subarray(localOffset + 30, localOffset + 30 + localNameLength).toString('utf8');
+    assert.strictEqual(localFlags, flags, `${name} local flags differ from the central directory`);
+    assert.strictEqual(localMethod, method, `${name} local compression differs from the central directory`);
+    assert.strictEqual(localTime, modifiedTime, `${name} local timestamp differs from the central directory`);
+    assert.strictEqual(localDate, modifiedDate, `${name} local date differs from the central directory`);
+    assert.strictEqual(localExtraLength, 0, `${name} local header must not contain extra fields`);
+    assert.strictEqual(localName, name, `${name} local filename differs from the central directory`);
+
+    const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = buffer.subarray(dataOffset, dataOffset + compressedSize);
+    let data;
+    if (method === 0) data = Buffer.from(compressed);
+    else if (method === 8) data = zlib.inflateRawSync(compressed);
+    else throw new Error(`${name} uses unsupported ZIP compression method ${method}`);
+    assert.strictEqual(data.length, uncompressedSize, `${name} has the wrong uncompressed size`);
+    assert.strictEqual(crc32(data), expectedCrc, `${name} failed CRC validation`);
+    entries.push({ name, data });
+    cursor += 46 + nameLength + extraLength + entryCommentLength;
+  }
+  assert.strictEqual(cursor, centralOffset + centralSize, 'central directory size is inconsistent');
+  return entries;
+}
+
+const manifest = readJson('manifest.json');
+const published = readJson('extension-version.json');
+const checker = read('feat_mls_checker.js');
+const checkerMatch = checker.match(/SERVER_EXT_VERSION\s*=\s*['"]([^'"]+)['"]/);
+assert(checkerMatch, 'feat_mls_checker.js must declare SERVER_EXT_VERSION');
+assert.strictEqual(manifest.version, published.version, 'manifest and extension-version versions differ');
+assert.strictEqual(manifest.version, checkerMatch[1], 'manifest and checker versions differ');
+assert(/^\d+(?:\.\d+){0,3}$/.test(manifest.version), 'manifest version is not Chrome-compatible');
+
+const downloadPage = read('get-extension.html');
+const pageFilesMatch = downloadPage.match(/var\s+FILES\s*=\s*(\[[^;]+\])/s);
+assert(pageFilesMatch, 'get-extension.html must expose its extension FILES allowlist');
+const pageFiles = vm.runInNewContext(pageFilesMatch[1], Object.create(null), { timeout: 100 });
+assertSameList(Array.from(pageFiles), EXPECTED_FILES, 'get-extension.html');
+
+const builder = read('scripts/build_extension_zip.py');
+const builderListMatch = builder.match(/PACKAGE_FILES\s*=\s*\((.*?)\)\s*\n/s);
+assert(builderListMatch, 'build_extension_zip.py must declare PACKAGE_FILES');
+const builderFiles = Array.from(builderListMatch[1].matchAll(/"([^"]+)"/g), match => match[1]);
+assertSameList(builderFiles, EXPECTED_FILES, 'build_extension_zip.py');
+
+assert.strictEqual(new Set(EXPECTED_FILES).size, 16, 'release allowlist must contain 16 unique files');
+for (const name of EXPECTED_FILES) {
+  assert.strictEqual(path.posix.basename(name), name, `release entry must be at ZIP root: ${name}`);
+  assert(!name.includes('\\') && !name.includes('..'), `unsafe release entry: ${name}`);
+  const source = path.join(ROOT, name);
+  assert(fs.statSync(source).isFile(), `release source is missing or not a file: ${name}`);
+  assert(!fs.lstatSync(source).isSymbolicLink(), `release source must not be a symlink: ${name}`);
+}
+
+const manifestAssets = [
+  manifest.background && manifest.background.service_worker,
+  manifest.action && manifest.action.default_popup,
+  ...Object.values(manifest.icons || {}),
+  ...Object.values((manifest.action && manifest.action.default_icon) || {}),
+  ...(manifest.content_scripts || []).flatMap(script => [...(script.js || []), ...(script.css || [])])
+].filter(Boolean);
+for (const asset of new Set(manifestAssets)) {
+  assert(EXPECTED_FILES.includes(asset), `manifest asset is outside the release allowlist: ${asset}`);
+  const assetPath = path.join(ROOT, asset);
+  assert(fs.existsSync(assetPath) && fs.statSync(assetPath).isFile(), `manifest asset is missing: ${asset}`);
+}
+assert(EXPECTED_FILES.includes('offscreen.html') && /['"]offscreen\.html['"]/.test(read('background.js')),
+  'offscreen document must be packaged and referenced by background.js');
+assert(EXPECTED_FILES.includes('feat_codes_driver.js') && /importScripts\(['"]feat_codes_driver\.js['"]\)/.test(read('background.js')),
+  'background importScripts dependency must be packaged');
+for (const [html, script] of [['popup.html', 'popup.js'], ['offscreen.html', 'offscreen.js']]) {
+  assert(new RegExp(`<script\\s+src=["']${script.replace('.', '\\.')}`).test(read(html)), `${html} must reference ${script}`);
+  assert(EXPECTED_FILES.includes(script), `${script} must be packaged`);
+}
+
+for (const name of EXPECTED_FILES.filter(name => name.endsWith('.js'))) {
+  const syntax = spawnSync(process.execPath, ['--check', path.join(ROOT, name)], { encoding: 'utf8' });
+  assert.strictEqual(syntax.status, 0, `${name} failed JavaScript syntax validation:\n${syntax.stderr || syntax.stdout}`);
+}
+
+const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'mls-extension-package-'));
+try {
+  const python = findPython();
+  const expectedName = `MLS_Assist_v${manifest.version}.zip`;
+  const firstPath = path.join(temporary, 'first', expectedName);
+  const secondPath = path.join(temporary, 'second', expectedName);
+  runBuilder(python, firstPath);
+  runBuilder(python, secondPath);
+  const firstZip = fs.readFileSync(firstPath);
+  const secondZip = fs.readFileSync(secondPath);
+  assert(firstZip.equals(secondZip), 'building identical sources twice must produce byte-identical ZIPs');
+
+  const entries = parseZip(firstZip);
+  assertSameList(entries.map(entry => entry.name), EXPECTED_FILES, 'release ZIP');
+  for (const entry of entries) {
+    assert(!entry.name.includes('/') && !entry.name.includes('\\') && !entry.name.includes('..'),
+      `ZIP contains a non-root or unsafe entry: ${entry.name}`);
+    const source = fs.readFileSync(path.join(ROOT, entry.name));
+    assert(entry.data.equals(source), `ZIP entry differs from its source: ${entry.name}`);
+  }
+} finally {
+  fs.rmSync(temporary, { recursive: true, force: true });
+}
+
+console.log(`PASS extension package: v${manifest.version}, ${EXPECTED_FILES.length} exact root files, deterministic and byte-verified`);

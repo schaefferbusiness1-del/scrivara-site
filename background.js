@@ -294,12 +294,35 @@ const _mlsFrameMap = {};
         if (focusedTabs[pi].active && focusedTabs[pi].id !== QP.athenaTabId) { preserveTabId = focusedTabs[pi].id; break; }
       }
     } catch (e) {}
-    /* athena tab back to its original window+index — NOT activated */
+    /* Preserve the destination window's selected tab too. Moving the worker
+       Athena tab out of its one-tab strip can otherwise activate it in the
+       original (possibly unfocused) window; the user then appears to be
+       "yanked" to Athena the next time that window is used. Capture the
+       selection immediately before the move, so a newer human choice wins. */
+    var destinationActiveTabId = null, movedHome = false;
     if (!QP.soloWin && QP.athenaTabId != null && QP.orig && QP.orig.windowId != null) {
       try {
-        await chrome.windows.get(QP.orig.windowId);
+        var destinationBefore = await chrome.windows.get(QP.orig.windowId, { populate: true });
+        var destinationTabs = (destinationBefore && destinationBefore.tabs) || [];
+        for (var di = 0; di < destinationTabs.length; di++) {
+          if (destinationTabs[di] && destinationTabs[di].active && destinationTabs[di].id !== QP.athenaTabId) {
+            destinationActiveTabId = destinationTabs[di].id;
+            break;
+          }
+        }
         await chrome.tabs.move(QP.athenaTabId, { windowId: QP.orig.windowId, index: QP.orig.index });
+        movedHome = true;
       } catch (e) { /* original window is gone — athena keeps its own window; harmless */ }
+    }
+    if (movedHome && destinationActiveTabId != null) {
+      try {
+        var destinationAfter = await chrome.windows.get(QP.orig.windowId, { populate: true });
+        var destinationNow = ((destinationAfter && destinationAfter.tabs) || []).filter(function (t) { return t && t.active; })[0] || null;
+        var destinationPrior = await chrome.tabs.get(destinationActiveTabId);
+        if (destinationNow && destinationNow.id === QP.athenaTabId && destinationPrior && destinationPrior.windowId === QP.orig.windowId) {
+          await chrome.tabs.update(destinationActiveTabId, { active: true });
+        }
+      } catch (e) {}
     }
     if (QP.soloWin && QP.winId != null && QP.athOrig) {
       try {
@@ -591,6 +614,7 @@ function mlsFieldScanner(noteText, forcedSection) {
 async function mlsNotePaster(text, forcedSection, scan) {
   if (!scan) { try { scan = mlsFieldScanner(text, forcedSection); } catch (e) { scan = { has: false }; } }
   if (!scan || !scan.has) return { ok: false, notfound: true, target: scan && scan.target, targetLabel: scan && scan.targetLabel, candidates: scan && scan.candidates };
+  if (/^(insurance|diagnoses|orders|procedure)$/i.test(String(scan.chosenSection || forcedSection || ''))) return { ok: false, blocked: true, reason: 'structured-route-blocked', target: scan.target, targetLabel: scan.targetLabel, chosenSection: scan.chosenSection, candidates: scan.candidates };
   function vis(el) { try { if (el.disabled || el.readOnly) return false; var s = getComputedStyle(el); if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < .05) return false; var r = el.getBoundingClientRect(); return r.width > 110 && r.height > 18; } catch (e) { return false; } }
   function ownLabel(el) { try { var l = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('name'))) || ''; if (!l && el.id) { var lb = document.querySelector('label[for="' + el.id + '"]'); if (lb) l = (lb.textContent || '').trim(); } return String(l).replace(/\s+/g, ' ').trim().slice(0, 48); } catch (e) { return ''; } }
   function sectionHeading(el) { try { var n = el, hops = 0; while (n && hops < 5) { n = n.parentElement; hops++; if (!n) break; var hd = n.querySelector && n.querySelector('h1,h2,h3,h4,h5,h6,legend,[role="heading"]'); if (hd) { var ht = (hd.textContent || '').trim(); if (ht && ht.length <= 64) return ht.replace(/\s+/g, ' '); } } } catch (e) {} return ''; }
@@ -1587,6 +1611,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       const params = msg.params || {};
       const mode = msg.mode === 'probe' ? 'probe' : 'prep';
+      if (mode !== 'probe') {
+        sendResponse({ ok: false, blocked: true, reason: 'procedure-template-mutation-disabled', error: 'Procedure-template creation is disabled until patient and encounter identity are verified before the first mutation. Read-only readiness checks are still available.' });
+        return;
+      }
       const isMls = (u) => /mlsscribe\.com/.test(u || '');
       let emrTab = null;
       const su = (sender && sender.tab && sender.tab.url) || '';
@@ -2097,7 +2125,32 @@ var mlsProv = (function () {
     t = t.replace(/\b\d+\s*appointments?\b/i, '');
     t = t.replace(/\(\s*\d+\s*\)\s*$/, '');
     t = t.replace(/[\s,;:|–—-]+$/, '');
-    return clean(t);
+    t = t.replace(/\s*close\s*$/i, '');
+    t = clean(t);
+    return isProviderUiLabel(t) ? '' : t;
+  }
+
+  /* A provider candidate can come from either the DOM reader or the plain-text
+     fallback. Keep one predicate for both paths so table chrome can never
+     become the current provider (and then be stamped onto patient rows). */
+  function isProviderUiLabel(s) {
+    var t = clean(s).toLowerCase().replace(/[\s:|\-–—]+$/g, '').trim();
+    return /^(?:(?:appointment|appt)\s+)?(?:date(?:\s*(?:\/|&|and)\s*time)?|time|type|status|duration|reason|patient(?:\s+(?:name|details?))?|provider(?:\s+name)?|rendering\s+provider|resource(?:\s+name)?|department(?:\s+name)?|schedule|scheduling|location|room)$/i.test(t);
+  }
+
+  /* Capacity cells share the same visual/time-row shape as patient visits.
+     Normalize only labels that BEGIN with a capacity-state word, then require
+     the remainder to contain descriptors/durations only. A real name such as
+     "Block, John" therefore remains a patient. */
+  function isCapacitySlotName(s) {
+    var t = clean(s).toLowerCase().replace(/[\-–—_\/|]+/g, ' ').replace(/[()[\]{}:;,]+/g, ' ').replace(/\s+/g, ' ').trim();
+    var head = /^(open|available|unavailable|block(?:ed)?|hold|reserved|lunch|break|admin(?:istrative)?|meeting|closed|buffer)\b/.exec(t);
+    if (!head) return false;
+    var rest = t.slice(head[0].length);
+    rest = rest.replace(/\b\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?\b/gi, ' ');
+    rest = rest.replace(/\b\d+(?:\.\d+)?\s*(?:min(?:ute)?s?|hrs?|hours?)?\b/gi, ' ');
+    rest = rest.replace(/\b(?:open|available|unavailable|block(?:ed)?|hold|reserved|lunch|break|admin(?:istrative)?|meeting|closed|buffer|slot|slots|time|appointment|appointments|appt|appts|capacity)\b/gi, ' ');
+    return !clean(rest);
   }
 
   function looksLikeProviderHeader(line) {
@@ -2172,6 +2225,25 @@ var mlsProv = (function () {
     var out = { appts: [], providers: [], diag: { strategy: 'dom', tables: 0, rowsScanned: 0, apptCount: 0, providerCount: 0, via: '', providerNames: [], credsSeen: [] } };
     try {
       if (!doc || !doc.querySelectorAll) return out;
+      /* Non-PHI structure diagnostics for athenaOne's legacy day grid. These
+         make it possible to distinguish one scoped provider schedule from a
+         generic/mixed clinic view without exposing appointment content. */
+      try {
+        out.diag.legacyContainers = doc.querySelectorAll('[class~="appointments-container"]').length;
+        out.diag.legacyFilledRows = doc.querySelectorAll('[class~="filled-appointment-row"]').length;
+        out.diag.providerHeaderShapes = [].slice.call(doc.querySelectorAll('div,span,h1,h2,h3,h4,th,td'))
+          .filter(function (el) {
+            var t = txt(el);
+            return t && t.length <= 90 && looksLikeProviderHeader(t) && el.querySelectorAll('*').length <= 6;
+          }).slice(0, 12).map(function (el) {
+            return {
+              tag: String(el.tagName || '').toLowerCase(),
+              cls: String(el.className || '').replace(/\s+/g, ' ').trim().slice(0, 140),
+              parentTag: String(el.parentElement && el.parentElement.tagName || '').toLowerCase(),
+              parentCls: String(el.parentElement && el.parentElement.className || '').replace(/\s+/g, ' ').trim().slice(0, 140)
+            };
+          });
+      } catch (eShape) {}
       var provSet = {}, provOrder = [], credSet = {};
       function noteProv(p) {
         p = cleanProvider(p);
@@ -2179,6 +2251,35 @@ var mlsProv = (function () {
         if (p) { var cm = p.match(RE_CRED); if (cm && cm[1]) credSet[cm[1].toUpperCase()] = 1; }
         return p;
       }
+
+      /* Legacy athenaOne renders one <ul.appointments-container> per scoped
+         provider list (and can duplicate that list for alternate sort modes).
+         Treat the page as single-provider ONLY when every non-empty container
+         has exactly one provider header, every appointment row is contained by
+         such a header, and all container headers normalize to the same name. */
+      try {
+        var legacyLists = [].slice.call(doc.querySelectorAll('[class~="appointments-container"]'));
+        var legacyNames = {}, legacyNameOrder = [], legacyRows = 0, legacyBoundRows = 0, legacySafe = !!legacyLists.length;
+        legacyLists.forEach(function (list) {
+          var rows = [].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));
+          if (!rows.length) return;
+          legacyRows += rows.length;
+          var local = {}, localOrder = [];
+          [].slice.call(list.querySelectorAll('[class~="appointment-header2"]')).forEach(function (header) {
+            var raw = txt(header), p = looksLikeProviderHeader(raw) ? cleanProvider(raw) : '';
+            if (p && !local[p.toLowerCase()]) { local[p.toLowerCase()] = 1; localOrder.push(p); }
+          });
+          if (localOrder.length !== 1) { legacySafe = false; return; }
+          var name = localOrder[0], nk = name.toLowerCase();
+          if (!legacyNames[nk]) { legacyNames[nk] = 1; legacyNameOrder.push(name); }
+          legacyBoundRows += rows.length;
+        });
+        if (legacySafe && legacyRows > 0 && legacyBoundRows === legacyRows && legacyNameOrder.length === 1) {
+          out.diag.singleProviderScope = true;
+          out.diag.singleProviderName = noteProv(legacyNameOrder[0]);
+          out.diag.legacyScopeContainers = legacyLists.length;
+        }
+      } catch (eLegacyScope) {}
 
       var grids = [].slice.call(doc.querySelectorAll('table, [role="grid"], [role="table"]'));
       out.diag.tables = grids.length;
@@ -2256,13 +2357,53 @@ var mlsProv = (function () {
   function mlsMergeSchedule(domRes, textRes) {
     var dom = domRes || { appts: [], providers: [], diag: {} };
     var text = textRes || { appts: [], providers: [], diag: {} };
-    var primary = (dom.providers && dom.providers.length) ? dom : text;
+    function filterSource(src) {
+      var kept = [], slots = 0, empty = 0;
+      (src && src.appts || []).forEach(function (a) {
+        var n = clean(a && a.name);
+        if (!n) { empty++; return; }
+        if (isCapacitySlotName(n)) { slots++; return; }
+        kept.push(a);
+      });
+      return { appts: kept, slotRowsRemoved: slots, emptyRowsRemoved: empty };
+    }
+    /* Filter BOTH readers before choosing one. If the provider-rich reader saw
+       capacity cells only, a valid alternate parse must still win. */
+    var domFiltered = filterSource(dom), textFiltered = filterSource(text);
+    var preferred = (dom.providers && dom.providers.length) ? dom : text;
+    var alternate = preferred === dom ? text : dom;
+    var preferredFiltered = preferred === dom ? domFiltered : textFiltered;
+    var alternateFiltered = alternate === dom ? domFiltered : textFiltered;
+    var primary = (!preferredFiltered.appts.length && alternateFiltered.appts.length) ? alternate : preferred;
     var other = primary === dom ? text : dom;
+    var chosenFiltered = primary === dom ? domFiltered : textFiltered;
     var seen = {}, providers = [];
     (primary.providers || []).concat(other.providers || []).forEach(function (p) {
-      var k = clean(p).toLowerCase(); if (p && !seen[k]) { seen[k] = 1; providers.push(p); }
+      var cp = cleanProvider(p), k = cp.toLowerCase();
+      if (cp && !seen[k]) { seen[k] = 1; providers.push(cp); }
     });
-    var appts = primary.appts && primary.appts.length ? primary.appts : (other.appts || []);
+    var appts = chosenFiltered.appts;
+    /* One recognized name is NOT proof that the page is single-provider: a
+       partially parsed multi-provider grid has that same shape. Only an
+       explicit parser scope assertion may fill blanks. Current readers make no
+       such assertion, so unattributed rows stay honest and the app may apply
+       its separately selected provider scope downstream. */
+    function explicitScope(src) {
+      var d = src && src.diag || {};
+      if (d.singleProviderScope !== true) return '';
+      return cleanProvider(d.singleProviderName || (d.providerNames && d.providerNames.length === 1 ? d.providerNames[0] : ''));
+    }
+    var ds = explicitScope(dom), ts = explicitScope(text);
+    var scopeProvider = ds && ts && ds.toLowerCase() !== ts.toLowerCase() ? '' : (ds || ts);
+    var soleProviderFilled = 0;
+    if (scopeProvider && providers.length === 1 && providers[0].toLowerCase() === scopeProvider.toLowerCase()
+        && appts.every(function (a) { return !clean(a && a.provider) || clean(a.provider).toLowerCase() === scopeProvider.toLowerCase(); })) {
+      appts = appts.map(function (a) {
+        if (!a || clean(a.provider)) return a;
+        var b = {}; for (var ak in a) { if (Object.prototype.hasOwnProperty.call(a, ak)) b[ak] = a[ak]; }
+        b.provider = scopeProvider; soleProviderFilled++; return b;
+      });
+    }
     /* v2.9.9 DEDUP (live: athenaOne renders the dashboard day list TWICE —
        sort-by-department + sort-by-time copies — so a 20-appt day arrived as 50
        rows incl. OPEN slots). Pass 1: exact provider|time|name dupes. Pass 2: a
@@ -2287,6 +2428,13 @@ var mlsProv = (function () {
       providerDiag: {
         source: primary === dom ? 'dom' : 'text',
         dupRowsRemoved: dropped,
+        slotRowsRemoved: chosenFiltered.slotRowsRemoved,
+        domSlotRowsRemoved: domFiltered.slotRowsRemoved,
+        textSlotRowsRemoved: textFiltered.slotRowsRemoved,
+        emptyRowsRemoved: chosenFiltered.emptyRowsRemoved,
+        alternateFallback: primary !== preferred,
+        soleProviderFilled: soleProviderFilled,
+        providerFillScope: scopeProvider || '',
         dom: dom.diag || {},
         text: text.diag || {},
         providerCount: providers.length,
@@ -2296,6 +2444,47 @@ var mlsProv = (function () {
   }
   return { fromText: mlsExtractScheduleFromText, fromDom: mlsExtractScheduleFromDom, merge: mlsMergeSchedule };
 })();
+
+  /* A schedule surface must be proven by schedule-specific structure. Generic
+     subsection headings and arbitrary clock strings also occur throughout
+     patient charts/messages and are not sufficient. This function is injected
+     per frame both before navigation and immediately before scraping. */
+  function mlsAthenaScheduleSurfaceFn() {
+    try {
+      var d = document, u = String(location.href || '').toLowerCase(), p = String(location.pathname || '').toLowerCase();
+      if (/stm\.esp|\/coordinator\/|messaging|letters/.test(p)) return { verified: false, grid: false, via: 'excluded-frame' };
+      if (/schedulenavclose|navclose|close\.esp/.test(u)) return { verified: false, grid: false, via: 'nav-plumbing' };
+      var text = String(d.body && d.body.innerText || '').slice(0, 18000), tl = text.toLowerCase();
+      var structure = !!d.querySelector('[class*="PatientAppointment_appointment-container"], [class*="ScheduleColumn_schedule-column"], [data-testid*="schedule-grid" i], [aria-label*="schedule grid" i], [class~="appointments-container"], [class~="filled-appointment-row"]');
+      var legacyHeading = !!d.querySelector('h1.fe_c_heading--subsection');
+      var appointmentEls = [].slice.call(d.querySelectorAll('[class*="appointment" i], [data-testid*="appointment" i], [aria-label*="appointment" i]'));
+      var appointmentNodes = appointmentEls.length, appointmentClasses = [];
+      appointmentEls.slice(0, 80).forEach(function (e) { var c = String(e.className || '').replace(/\s+/g, ' ').trim(); if (c && appointmentClasses.indexOf(c) < 0) appointmentClasses.push(c.slice(0, 180)); });
+      var headings = [].slice.call(d.querySelectorAll('h1,h2,[role="heading"],[class*="heading"][class*="date"], [class*="date"][role="heading"]'));
+      var dateText = '';
+      for (var hi = 0; hi < headings.length && hi < 120; hi++) {
+        var ht = String(headings[hi].textContent || '').replace(/\s+/g, ' ').trim();
+        if (/^(?:(?:sun|mon|tues|wednes|thurs|fri|satur)day,?\s+)?(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d\d$/i.test(ht)
+            || /^(?:(?:sun|mon|tue|wed|thu|fri|sat)[a-z]*,?\s+)?(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/20\d\d$/i.test(ht)) { dateText = ht; break; }
+      }
+      var table = false, grids = [].slice.call(d.querySelectorAll('table,[role="grid"],[role="table"]'));
+      for (var gi = 0; gi < grids.length && !table; gi++) {
+        var hdr = [].slice.call(grids[gi].querySelectorAll('thead th,[role="columnheader"],th')).map(function (e) { return String(e.textContent || '').replace(/\s+/g, ' ').trim(); }).join(' ').toLowerCase();
+        if (/\bpatient(?:\s+name)?\b/.test(hdr) && /\b(?:time|provider|resource|appointment|appt)\b/.test(hdr)) table = true;
+      }
+      var scheduleUrl = /schedul|calendar|booking|frontoffice|viewdepartment|dashboard/.test(u);
+      var urlHint = scheduleUrl || /appointment/.test(u);
+      var scheduleWords = /\b(?:appointments?|schedule|scheduling|provider schedule|day sheet)\b/.test(tl);
+      var empty = /\b(?:no appointments?|nothing scheduled|no patients? scheduled|no visits? scheduled)\b/.test(tl);
+      var providerContext = /\b(?:provider|resource|clinician|doctor)\b/.test(tl);
+      var timeCount = (text.match(/\b\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?)\b/gi) || []).length;
+      var verified = structure || (table && (scheduleUrl || (!!dateText && scheduleWords)))
+        || (!!dateText && scheduleUrl && scheduleWords && (timeCount > 0 || empty || providerContext));
+      var via = structure ? 'schedule-structure' : (table && (scheduleUrl || (!!dateText && scheduleWords))) ? 'schedule-table'
+        : verified ? (empty ? 'dated-empty-schedule' : 'dated-schedule') : 'unverified';
+      return { verified: !!verified, grid: !!verified, via: via, dateHeader: dateText.slice(0, 60), timeCount: timeCount, table: !!table, structure: !!structure, legacyHeading: !!legacyHeading, appointmentNodes: Math.min(appointmentNodes, 999), appointmentClasses: appointmentClasses.slice(0, 8), urlHint: !!urlHint, scheduleWords: !!scheduleWords, empty: !!empty, providerContext: !!providerContext };
+    } catch (e) { return { verified: false, grid: false, via: 'probe-error', error: String(e && e.message || e).slice(0, 80) }; }
+  }
 
   /* v1.47 AUTO-NAVIGATE (athenaOne-aware, two-step): when no schedule grid is showing,
      load the day view before scraping. READ-ONLY navigation: a hard deny-list blocks any
@@ -2309,7 +2498,7 @@ var mlsProv = (function () {
     try{
       var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};
       var cl=function(x){return String(x==null?'':x).replace(/\s+/g,' ').trim();};
-      var DENY=/save|sign|bill|charge|payment|checkout|delete|remove|cancel|submit|logout|log out|new appointment|book|create|reschedul|add\b/i;
+      var DENY=/save|sign|bill|charge|payment|checkout|delete|remove|cancel|submit|logout|log out|new appointment|book|create|reschedul|add\b|close|back|return/i;
       var OPENER=(NAV&&NAV.openerReSource)?new RegExp(NAV.openerReSource):/OpenMenu\(\{\s*"MENUNAME":\s*"calendar"/;
       var DIRECT=(NAV&&NAV.directLabels)||['calendar','schedule','scheduling','day sheet','front office'];
       var SUB=(NAV&&NAV.subLabels)||["today's appointments","view calendar","provider schedule","daily schedule","today's schedule","staff calendar","department calendar",'schedule','appointments'];
@@ -2321,7 +2510,7 @@ var mlsProv = (function () {
       var els=[].slice.call(document.querySelectorAll('a,button,div,li,span,[role="tab"],[role="menuitem"],[onclick]'));
       // STEP 1a: a real (non-menu) direct schedule link/tab in this frame
       var directClicked=false;
-      for(var i=0;i<els.length;i++){var e=els[i];var t=cl(e.textContent).toLowerCase();if(!t||t.length>28||DENY.test(t))continue;var href='';try{href=e.getAttribute('href')||'';}catch(_e){}var lm=(DIRECT.indexOf(t)>=0 && !/OpenMenu/.test(oc(e)));var hm=!!href&&HREF.test(href);if((lm||hm)&&vis(e)){ e.click(); directClicked=true; did.direct=t; break; }}
+      for(var i=0;i<els.length;i++){var e=els[i];var t=cl(e.textContent).toLowerCase();if(!t||t.length>28||DENY.test(t))continue;var href='';try{href=e.getAttribute('href')||'';}catch(_e){}var lm=(DIRECT.indexOf(t)>=0 && !/OpenMenu/.test(oc(e)));/* v2.9.15: never follow athena's schedulenavclose/nav-close plumbing merely because its URL contains "schedule". Require a schedule-shaped visible label as well as a safe href. */var hm=!!href&&HREF.test(href)&&!/schedulenavclose|navclose|close(?:\.esp)?/i.test(href)&&/(?:schedule|scheduling|calendar|appointments?|day sheet|front office)/i.test(t);if((lm||hm)&&vis(e)){ e.click(); directClicked=true; did.direct=t; break; }}
       // STEP 1b: else click the calendar menu-opener (athenaOne)
       if(!directClicked){
         for(var j=0;j<els.length;j++){var e2=els[j];if(OPENER.test(oc(e2))&&vis(e2)){ e2.click(); did.opener=cl(e2.textContent).slice(0,20); break; }}
@@ -2346,10 +2535,10 @@ var mlsProv = (function () {
         const date = String(msg.date || '').slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return sendResponse({ ok: false, supported: false, error: 'bad date' });
         const all = await chrome.tabs.query({});
-        const tab = await mlsPickAthenaTab(all, { athenaOnly: true }); /* v1.90 unified verified pick (live 07-10 two-window failure) */
+        const tab = await mlsPickAthenaTab(all, { athenaOnly: true, noPing: !!msg.probe }); /* a capability probe must answer inside its short app budget; the real navigation still uses the verified picker */
         if (!tab) return sendResponse({ ok: false, supported: false, error: 'No athenaOne tab open.' });
-        const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [date, !!msg.probe], func: mlsAthenaGotoDate });
-        const hits = (res || []).map((r) => r && r.result).filter(Boolean);
+        const initX = await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, args: [date, !!msg.probe], func: mlsAthenaGotoDate }, msg.probe ? 3000 : 12000);
+        const hits = ((initX && initX.r) || []).map((r) => r && r.result).filter(Boolean);
         let found = hits.find((h) => h.found) || null;
         /* v1.93 diag (PHI-free: tab id + path + counts only) */
         const GDIAG = { tabId: tab.id, tabPath: (function () { try { return new URL(tab.url || '').pathname.slice(0, 40); } catch (e) { return ''; } })(), initFrames: hits.length, initFound: !!found, rounds: [] };
@@ -2366,6 +2555,7 @@ var mlsProv = (function () {
              Foregrounds athena for the dashboard render (same anti-throttle reason
              as go-home) and notes focus debt so the guardian returns MLS after. */
           if (self.__mlsGroundBusy) { const tw = Date.now(); while (self.__mlsGroundBusy && Date.now() - tw < 25000) { await mlsSleepW(500); } }
+          if (self.__mlsGroundBusy) return sendResponse({ ok: false, supported: true, reason: 'athena-navigation-busy', error: 'Another Athena navigation is still finishing. Nothing else was started; retry this day in a moment.' });
           self.__mlsGroundBusy = true;
           try {
             try { await (self.__mlsQpEnsure ? self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id) : null); } catch (eF) {} /* v2.9.5 quiet pull: athena made visible in its work strip, never focused, no focus debt */
@@ -2408,7 +2598,7 @@ var mlsProv = (function () {
            even when the weekstrip click WORKED. Verify weekstrip navs by the SELECTED
            day tab instead. */
         if (found.via === 'weekstrip') {
-          const chk2 = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [date, found.visibleStart || ''], func: function (want, expectedStart) {
+          const chk2X = await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, args: [date, found.visibleStart || ''], func: function (want, expectedStart) {
             try {
               var nav = document.querySelector('.calendar-nav'); if (!nav) return null;
               function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
@@ -2440,13 +2630,15 @@ var mlsProv = (function () {
               }
               return null;
             } catch (e) { return null; }
-          } });
+          } }, 8000);
+          const chk2 = (chk2X && chk2X.r) || [];
           const oks = (chk2 || []).map((r) => r && r.result).filter(Boolean);
           const hit = oks.find((o) => o.match);
           const shown = (oks[0] && oks[0].sel) || '';
           return sendResponse({ ok: !!hit, supported: true, via: 'weekstrip', schedDate: hit ? date : shown, diag: GDIAG, error: hit ? '' : ('athena week strip shows ' + (shown || 'no selected day') + ' instead of ' + date + '.') });
         }
-        const chk = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaReadHeaderDate });
+        const chkX = await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaReadHeaderDate }, 8000);
+        const chk = (chkX && chkX.r) || [];
         const dates = (chk || []).map((r) => (r && r.result) || '').filter(Boolean);
         const onTarget = dates.indexOf(date) >= 0;
         return sendResponse({ ok: onTarget, supported: true, via: found.via, schedDate: onTarget ? date : (dates[0] || ''), error: onTarget ? '' : ('athena is showing ' + (dates[0] || 'an unreadable date') + ' instead of ' + date + '.') });
@@ -2469,6 +2661,7 @@ var mlsProv = (function () {
         /* v1.59: serialize concurrent go-home attempts (the app retries on its own
            18s timer while a recovery may still be running - don't reload twice). */
         if (self.__mlsGroundBusy) { const tw = Date.now(); while (self.__mlsGroundBusy && Date.now() - tw < 25000) { await mlsSleepW(500); } }
+        if (self.__mlsGroundBusy) return sendResponse({ ok: false, reason: 'athena-navigation-busy', error: 'Another Athena navigation is still finishing. Nothing else was started; retry in a moment.' });
         self.__mlsGroundBusy = true;
         try {
           /* v1.59: athenaOne freezes after ~7-9 consecutive chart reads. Chunk the
@@ -2746,6 +2939,11 @@ var mlsProv = (function () {
   if (msg.type === 'mlsAppScheduleRequest') {
     (async () => {
       try {
+        /* The page listener gives this request 30s. Keep a hard worker budget
+           below that so a slow frame returns an honest retryable error instead
+           of being misreported as an old extension. */
+        const __schedDeadline = Date.now() + 27000;
+        const __schedLeft = function () { return Math.max(0, __schedDeadline - Date.now()); };
         const all = await chrome.tabs.query({});
         /* v1.90: unified verified picker (heartbeat-preferred, reachability-pinged,
            identity/login excluded); non-athena EMR keyword fallback preserved. */
@@ -2754,24 +2952,78 @@ var mlsProv = (function () {
         // v1.38 truth fix: do NOT fall back to an unrelated most-recently-active tab and report it connected (phantom-tab bug).
         if (!tab) return sendResponse({ ok: false, reason: 'no-athena-tab', emr: 'none', host: '', id: msg.id, error: 'Open a signed-in athenaOne tab, then try again.' });
         const isRealAthena = /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(tab.url || '');
+        /* v2.9.15: schedule reads need the same focus-safe visibility lease as
+           date/history reads.  Without it, an occluded athena dashboard can
+           expose only the tiny schedulenavclose frame and we would honestly
+           parse zero appointments while still reporting ok:true.  The quiet
+           work strip lets athena render without activating its tab or yanking
+           the doctor's current work. */
+        if (isRealAthena) {
+          try { await (self.__mlsQpEnsure ? self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id) : null); } catch (eQpSched) {}
+        }
         // Read every frame WITH its URL so we can isolate the SCHEDULE/CALENDAR frame and
         // drop the noise (athenaText messaging, department lists) that would pollute parsing.
         // v1.45: fetch hosted config (data, not code) so selectors are tunable via the site w/o a store update.
-        var __mlsCfg = null; try { var __cr = await fetch('https://mlsscribe.com/mls-assist-config.json?cb=' + Date.now()); if (__cr.ok) { __mlsCfg = await __cr.json(); } } catch (e) { __mlsCfg = null; }
+        var __mlsCfg = null; try { var __cr = await Promise.race([fetch('https://mlsscribe.com/mls-assist-config.json?cb=' + Date.now()), new Promise(function (_, rej) { setTimeout(function () { rej(new Error('config-timeout')); }, 1200); })]); if (__cr.ok) { __mlsCfg = await __cr.json(); } } catch (e) { __mlsCfg = null; }
         // v1.47 AUTO-NAVIGATE pre-step: only when NO frame currently shows a schedule grid,
         // click the Calendar/Schedule nav and wait for the day view to load, then scrape below.
+        var __surface = { verified: false, frameIds: [], hits: [], probes: [] }, __navAttempted = false, __navClicked = false, __homeClicked = false;
         try {
-          var __det = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: function(){ try{ var d=document; var hdr=!!d.querySelector('h1.fe_c_heading--subsection'); var times=((d.body&&d.body.innerText||'').match(/\b\d{1,2}:\d{2}\s*[ap]\.?m/gi)||[]).length; return { grid: hdr || times>=4 }; }catch(e){ return { grid:false }; } } });
-          var __hasGrid = (__det||[]).some(function(r){ return r && r.result && r.result.grid; });
-          if (!__hasGrid) {
-            var __nav = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, args: [ (__mlsCfg && __mlsCfg.nav) || null ], func: mlsAthenaGotoSchedule });
-            var __clicked = (__nav||[]).some(function(r){ return r && r.result && r.result.clicked; });
-            if (__clicked) { await new Promise(function(r){ setTimeout(r, (__mlsCfg && __mlsCfg.navWaitMs) || 3500); }); }
+          var __gridProbe = async function () {
+            var __left = __schedLeft();
+            if (__left < 500) return { verified: false, frameIds: [], hits: [], probes: [], error: 'request-budget-exhausted' };
+            var __detX = await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaScheduleSurfaceFn }, Math.min(6500, __left));
+            if (!(__detX && __detX.r)) return { verified: false, frameIds: [], hits: [], probes: [], error: (__detX && __detX.timeout) ? 'surface-probe-timeout' : String((__detX && __detX.err) || 'surface-probe-failed').slice(0, 100) };
+            var __det = __detX.r;
+            var __probes = (__det || []).filter(function (r) { return r && r.result; }).map(function (r) {
+              var p = r.result || {};
+              return { frameId: r.frameId, verified: !!p.verified, via: p.via || '', dateHeader: p.dateHeader || '', timeCount: p.timeCount || 0, table: !!p.table, structure: !!p.structure, legacyHeading: !!p.legacyHeading, appointmentNodes: p.appointmentNodes || 0, appointmentClasses: (p.appointmentClasses || []).slice(0, 8), urlHint: !!p.urlHint, scheduleWords: !!p.scheduleWords, empty: !!p.empty, providerContext: !!p.providerContext };
+            }).slice(0, 40);
+            var __hits = (__det || []).filter(function (r) { return r && r.result && r.result.verified; }).map(function (r) {
+              return { frameId: r.frameId, via: r.result.via || '', dateHeader: r.result.dateHeader || '', timeCount: r.result.timeCount || 0 };
+            });
+            return { verified: __hits.length > 0, frameIds: __hits.map(function (h) { return h.frameId; }), hits: __hits, probes: __probes };
+          };
+          __surface = await __gridProbe();
+          /* v2.9.15 self-heal: a prior/legacy pull can leave athena inside
+             schedulenavclose.esp or another schedule plumbing frame.  Go Home
+             first and re-probe the dashboard; only use the Calendar menu if a
+             real schedule grid is still absent.  Home is read-only and the
+             quiet visibility lease above keeps this from stealing focus. */
+          if (!__surface.verified && isRealAthena) {
+            var __homeLeft = __schedLeft();
+            var __homeX = __homeLeft >= 500 ? await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, func: mlsGoHomeDriverFn }, Math.min(6000, __homeLeft)) : { timeout: true };
+            var __home = (__homeX && __homeX.r) || [];
+            __homeClicked = (__home||[]).some(function(r){ return r && r.result && r.result.clicked; });
+            if (__homeClicked) {
+              await new Promise(function(r){ setTimeout(r, Math.min(5200, Math.max(0, __schedLeft() - 700))); });
+              __surface = await __gridProbe();
+            }
           }
-        } catch (e) {}
+          if (!__surface.verified) {
+            __navAttempted = true;
+            var __navLeft = __schedLeft();
+            var __navX = __navLeft >= 500 ? await mlsExecTO({ target: { tabId: tab.id, allFrames: true }, args: [ (__mlsCfg && __mlsCfg.nav) || null ], func: mlsAthenaGotoSchedule }, Math.min(6000, __navLeft)) : { timeout: true };
+            var __nav = (__navX && __navX.r) || [];
+            __navClicked = (__nav||[]).some(function(r){ return r && r.result && r.result.clicked; });
+            if (__navClicked) { await new Promise(function(r){ setTimeout(r, Math.min((__mlsCfg && __mlsCfg.navWaitMs) || 3500, Math.max(0, __schedLeft() - 700))); }); }
+          }
+          /* Verify after navigation/settling. A real empty day still passes via
+             schedule structure/date+empty-state; an arbitrary chart does not. */
+          for (var __pr = 0; !__surface.verified && __pr < 3; __pr++) {
+            if (__schedLeft() < 500) { __surface.error = 'request-budget-exhausted'; break; }
+            if (__pr || !__navAttempted) await new Promise(function(r){ setTimeout(r, Math.min(900, Math.max(0, __schedLeft() - 500))); });
+            __surface = await __gridProbe();
+          }
+        } catch (e) { __surface = { verified: false, frameIds: [], hits: [], probes: (__surface && __surface.probes) || [], error: String(e && e.message || e).slice(0, 100) }; }
+        if (!__surface.verified) {
+          return sendResponse({ ok: false, reason: 'schedule-surface-unverified', scheduleVerified: false, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(tab.url), id: msg.id, error: 'Could not verify a real schedule surface in the EHR, so nothing was imported. Open Calendar/Schedule and try again.', surfaceDiag: { navAttempted: __navAttempted, navClicked: __navClicked, homeClicked: __homeClicked, error: __surface.error || '', probes: (__surface.probes || []).slice(0, 40) } });
+        }
         let results = [];
-        try {
-          results = await chrome.scripting.executeScript({
+        {
+          var __scrapeLeft = __schedLeft();
+          if (__scrapeLeft < 500) return sendResponse({ ok: false, reason: 'schedule-request-timeout', scheduleVerified: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(tab.url), id: msg.id, error: 'Athena took too long to finish the schedule read. Nothing was imported; try again.' });
+          const __scrapeX = await mlsExecTO({
             target: { tabId: tab.id, allFrames: true },
             args: [ (__mlsCfg && (__mlsCfg.schedule || __mlsCfg)) || null ],
             func: async (CFG) => { try { /* inject_dom.js — SELF-CONTAINED DOM schedule/provider reader.
@@ -2928,6 +3180,7 @@ async function mlsSchedDomInline(doc, CFG){
        so the app's time_display/start_local enrichment knows to take over. */
     function ft(s){var m=String(s).match(RTG);if(!m)return '';var t=cl(m[0]);var p=/^(\d{1,2}):(\d{2})\s*([ap])/i.exec(t);if(p)return String(+p[1])+':'+p[2]+' '+p[3].toUpperCase()+'M';out.diag.bareTimes=(out.diag.bareTimes||0)+1;return t;}
     function cp(s){var t=cl(s);t=t.replace(/[•‣▪●>*\-–—]+\s*$/g,'');t=t.replace(/[-–—:|(]*\s*\d+\s*appointments?\b.*$/i,'');t=t.replace(/\b\d+\s*appointments?\b/i,'');t=t.replace(/\(\s*\d+\s*\)\s*$/,'');t=t.replace(/[\s,;:|–—-]+$/,'');t=t.replace(/\s*[Cc]lose\s*$/,'');return cl(t);}
+    function pui(s){var t=cl(s).toLowerCase().replace(/[\s:|\-–—]+$/g,'').trim();return /^(?:(?:appointment|appt)\s+)?(?:date(?:\s*(?:\/|&|and)\s*time)?|time|type|status|duration|reason|patient(?:\s+(?:name|details?))?|provider(?:\s+name)?|rendering\s+provider|resource(?:\s+name)?|department(?:\s+name)?|schedule|scheduling|location|room)$/i.test(t);}
     function lh(line){var t=cl(line);if(!t||t.length>80)return false;if(ht(t))return false;var hc=RC.test(t),ha=RA.test(t),hn=RN.test(t)||/[A-Z][a-z]+[ _][A-Z][a-z]+/.test(t);if((hc&&hn)||(ha&&hn))return true;if(hc&&RN.test(t)&&t.split(/\s+/).length<=5)return true;return false;}
     /* v2.9.13 shadow (Codex counter fix): checked counts DISTINCT normalized raw
        rows once; canonical FALSE NEGATIVES count as disagreements (kind:
@@ -2956,6 +3209,10 @@ async function mlsSchedDomInline(doc, CFG){
     function tx(el){try{return cl(el.textContent);}catch(e){return '';}}
     var provSet={},provOrder=[],credSet={};
     function np(p){p=cp(p);
+      /* v2.9.15 live pull: dashboard table headers such as "Appointment Date"
+         are column labels, never clinicians.  Keep unattributed rows honest
+         instead of poisoning provider filters with UI chrome. */
+      if(pui(p))return '';
       /* v2.9.7 LOCATION GUARD: "PA"/"MD" are US states AND credentials, so a
          location line like "Newtown Square, PA" passed the credential test and
          became a PROVIDER (live capture). If the candidate is exactly
@@ -2970,6 +3227,20 @@ async function mlsSchedDomInline(doc, CFG){
       if(lm){var pre=lm[1];var hasCred=RC.test(pre);var hasMI=/\b[A-Z]\.?\s/.test(pre.replace(/^[A-Z]/,'x'));if(!hasCred&&!hasMI)return '';}
       if(p&&/[A-Za-z]/.test(p)&&p.length<=60&&!provSet[p.toLowerCase()]){provSet[p.toLowerCase()]=1;provOrder.push(p);}if(p){var cm=p.match(RC);if(cm&&cm[1])credSet[cm[1].toUpperCase()]=1;}return p;}
     if(!doc||!doc.querySelectorAll)return out;
+    try{out.diag.scheduleStructure=!!doc.querySelector('[class*="PatientAppointment_appointment-container"], [class*="ScheduleColumn_schedule-column"], [data-testid*="schedule-grid" i], [aria-label*="schedule grid" i], [class~="appointments-container"], [class~="filled-appointment-row"]');}catch(_eSs){out.diag.scheduleStructure=false;}
+    /* Non-PHI structure diagnostics for athenaOne's legacy day grid. */
+    try{
+      out.diag.legacyContainers=doc.querySelectorAll('[class~="appointments-container"]').length;
+      out.diag.legacyFilledRows=doc.querySelectorAll('[class~="filled-appointment-row"]').length;
+      out.diag.providerHeaderShapes=[].slice.call(doc.querySelectorAll('div,span,h1,h2,h3,h4,th,td')).filter(function(el){var t=tx(el);return t&&t.length<=90&&lh(t)&&el.querySelectorAll('*').length<=6;}).slice(0,12).map(function(el){return{tag:String(el.tagName||'').toLowerCase(),cls:String(el.className||'').replace(/\s+/g,' ').trim().slice(0,140),parentTag:String(el.parentElement&&el.parentElement.tagName||'').toLowerCase(),parentCls:String(el.parentElement&&el.parentElement.className||'').replace(/\s+/g,' ').trim().slice(0,140)};});
+    }catch(_eShape){}
+    /* Strong legacy provider-scope proof: every non-empty legacy schedule
+       container owns exactly one provider header and every container agrees. */
+    try{
+      var _legacyLists=[].slice.call(doc.querySelectorAll('[class~="appointments-container"]')),_legacyNames={},_legacyNameOrder=[],_legacyRows=0,_legacyBoundRows=0,_legacySafe=!!_legacyLists.length;
+      _legacyLists.forEach(function(list){var rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));if(!rows.length)return;_legacyRows+=rows.length;var local={},localOrder=[];[].slice.call(list.querySelectorAll('[class~="appointment-header2"]')).forEach(function(header){var raw=tx(header),p=lh(raw)?cp(raw):'';if(p&&!local[p.toLowerCase()]){local[p.toLowerCase()]=1;localOrder.push(p);}});if(localOrder.length!==1){_legacySafe=false;return;}var name=localOrder[0],nk=name.toLowerCase();if(!_legacyNames[nk]){_legacyNames[nk]=1;_legacyNameOrder.push(name);}_legacyBoundRows+=rows.length;});
+      if(_legacySafe&&_legacyRows>0&&_legacyBoundRows===_legacyRows&&_legacyNameOrder.length===1){var _legacyName=_legacyNameOrder[0],_legacyKey=_legacyName.toLowerCase();out.diag.singleProviderScope=true;out.diag.singleProviderName=_legacyName;out.diag.legacyScopeContainers=_legacyLists.length;if(!provSet[_legacyKey]){provSet[_legacyKey]=1;provOrder.push(_legacyName);}var _legacyCred=_legacyName.match(RC);if(_legacyCred&&_legacyCred[1])credSet[_legacyCred[1].toUpperCase()]=1;}
+    }catch(_eLegacyScope){}
     /* v2.9.8: NEVER parse schedule data out of the staff-messaging/coordinator/
        letters frames. Live catch: the stm.esp staff-message thread "LAURA
        ZAKORCHEMNY 4:00 pm meeting Matthew Schaeffer" was parsed into a 4:00 PM
@@ -3088,22 +3359,24 @@ async function mlsSchedDomInline(doc, CFG){
   return out;
 }
  if (/stm\.esp|\/coordinator\/|messaging|letters/i.test(location.pathname || '')) { return { u: location.href, t: '', s: null }; } /* v2.9.8: messaging/coordinator frames are NOT schedule sources (fabricated-appt guard) */ var T = (document.body && document.body.innerText || '').slice(0, 22000); var s = null; try { s = await mlsSchedDomInline(document, CFG); } catch (e) { s = { diag: { err: String(e && e.message || e).slice(0,120) } }; } return { u: location.href, t: T, s: s }; } catch (e) { return { u: '', t: '', s: null }; } }
-          });
-        } catch (e) {
-          results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => ({ u: location.href, t: (document.body && document.body.innerText || '').slice(0, 22000), s: null }) });
+          }, Math.min(12000, __scrapeLeft));
+          if (__scrapeX && __scrapeX.r) results = __scrapeX.r;
+          else {
+            return sendResponse({ ok: false, reason: 'schedule-surface-changed', scheduleVerified: false, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(tab.url), id: msg.id, error: 'The verified schedule stopped responding before it could be read. Nothing was imported; try again.', surfaceDiag: { verifiedFrames: (__surface.frameIds || []).length, scrapeTimeout: !!(__scrapeX && __scrapeX.timeout), scrapeError: String((__scrapeX && __scrapeX.err) || '').slice(0, 100) } });
+          }
         }
-        let frames = results.map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
-        /* v2.9.10 (Codex E3 p3): ZERO readable frames = transient injection/renderer state
-           (a live athena tab always exposes frame text; an honestly-empty schedule still
-           does). Recover the tab once and re-read with the simple text reader before
-           failing — bounded, never loops. */
-        if (!frames.length && tab && tab.id != null) {
-          try {
-            await mlsRecoverAthenaTab(tab.id);
-            const r2 = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => { try { if (/stm\.esp|\/coordinator\/|messaging|letters/i.test(location.pathname || '')) return { u: location.href, t: '', s: null }; return { u: location.href, t: (document.body && document.body.innerText || '').slice(0, 22000), s: null }; } catch (e) { return { u: '', t: '', s: null }; } } });
-            const f2 = (r2 || []).map((r) => r && r.result).filter((r) => r && r.t && r.t.trim());
-            if (f2.length) frames = f2;
-          } catch (eR2) {}
+        var __verifiedFrameIds = {};
+        (__surface.frameIds || []).forEach(function (id) { __verifiedFrameIds[String(id)] = 1; });
+        let frames = results.map((r) => {
+          if (!(r && r.result)) return null;
+          var f = {}; Object.keys(r.result).forEach(function (k) { f[k] = r.result[k]; }); f.__frameId = r.frameId;
+          return f;
+        }).filter((r) => r && __verifiedFrameIds[String(r.__frameId)] && ((r.t && r.t.trim()) || (r.s && r.s.diag && r.s.diag.scheduleStructure)));
+        /* Never score or return an unrelated chart/message frame just because it
+           contains many clock strings. If the proven schedule frame navigated
+           away during the scrape, fail honestly and let the caller retry. */
+        if (!frames.length) {
+          return sendResponse({ ok: false, reason: 'schedule-surface-changed', scheduleVerified: false, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(tab.url), id: msg.id, error: 'The verified schedule surface changed or stopped responding before it could be read. Nothing was imported; try again.', surfaceDiag: { verifiedFrames: (__surface.frameIds || []).length } });
         }
         // CONTENT-SCORE each frame for "looks like a schedule" — appointment times, day/date
         // labels, scheduling words. This is what makes us resilient to Athena changing their
@@ -3158,7 +3431,7 @@ async function mlsSchedDomInline(doc, CFG){
             });
           }
         } catch (eSh) {}
-        sendResponse({ ok: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '' });
+        sendResponse({ ok: true, scheduleVerified: true, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), id: msg.id, text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -3602,6 +3875,19 @@ async function mlsSchedDomInline(doc, CFG){
     (async () => {
       try {
         const action = msg.action || {};
+        /* Defense in depth for the generic AI executor. Dedicated typed
+           adapters never use this route. A model/prompt may navigate and fill
+           ordinary text, but it can never finalize clinical/financial actions
+           or type into structured order/code destinations through this API. */
+        const _finalAction = /\b(save|sign|submit|approve|post|transmit|authorize|finali[sz]e|place\s+(?:the\s+)?order|send\s+(?:the\s+)?(?:rx|prescription)|e-?prescribe|file\s+(?:the\s+)?claim|check\s*-?\s*out|delete|remove|void)\b/i;
+        const _structuredTarget = /\b(order|prescri(?:ption|be)?|\brx\b|medication\s+order|pharmacy|diagnos(?:is|es|tic)|\bicd(?:-?10)?\b|\bcpt\b|billing|charge|superbill|claim|referral|imaging\s+order|lab(?:oratory)?\s+order)\b/i;
+        const _outerHay = String(action.target || '') + ' ' + String(action.text || '');
+        if (/^(click|confirm|select)$/i.test(String(action.type || '')) && _finalAction.test(_outerHay)) {
+          return sendResponse({ ok: false, blocked: true, reason: 'final-action-blocked', msg: 'MLS Assist cannot Save, Sign, Submit, Post, approve, delete, transmit, or place an order.' });
+        }
+        if (/^type$/i.test(String(action.type || '')) && _structuredTarget.test(String(action.target || ''))) {
+          return sendResponse({ ok: false, blocked: true, reason: 'structured-route-blocked', msg: 'Generic AI typing into diagnoses, billing, prescription or order fields is disabled. Use the typed preview workflow.' });
+        }
         if (action.type === 'switchtab') {
           const tabs = await chrome.tabs.query({});
           const t = String(action.target || '').toLowerCase().trim();
@@ -3652,6 +3938,8 @@ async function mlsSchedDomInline(doc, CFG){
             function labelOf(e) {
               return ((e.innerText || e.value || (e.getAttribute && (e.getAttribute('aria-label') || e.getAttribute('title') || e.getAttribute('placeholder') || e.getAttribute('name') || e.id)) || '') + '').toLowerCase().replace(/\s+/g, ' ').trim();
             }
+            var FINAL_ACTION = /\b(save|sign|submit|approve|post|transmit|authorize|finali[sz]e|place\s+(?:the\s+)?order|send\s+(?:the\s+)?(?:rx|prescription)|e-?prescribe|file\s+(?:the\s+)?claim|check\s*-?\s*out|delete|remove|void)\b/i;
+            var STRUCTURED_TARGET = /\b(order|prescri(?:ption|be)?|\brx\b|medication\s+order|pharmacy|diagnos(?:is|es|tic)|\bicd(?:-?10)?\b|\bcpt\b|billing|charge|superbill|claim|referral|imaging\s+order|lab(?:oratory)?\s+order)\b/i;
             // Rebuild the SAME ordered inventory the agent saw, so a "#index" target
             // maps to the exact element. Must match mlsAssistElements above.
             function _inv() {
@@ -3761,6 +4049,7 @@ async function mlsSchedDomInline(doc, CFG){
               if (!sel) sel = [...document.querySelectorAll('select')].find(s => (((s.id || '') + ' ' + (s.name || '') + ' ' + (s.getAttribute('aria-label') || '') + ' ' + (s.getAttribute('title') || '')).toLowerCase().includes(t)));
               if (!sel) sel = [...document.querySelectorAll('select')].find(s => [...s.options].some(o => (o.textContent || '').toLowerCase().includes(String(a.text || '').toLowerCase().trim())));
               if (!sel) return { ok: false, notfound: true, msg: 'No dropdown found for: ' + (a.target || '') };
+              if (FINAL_ACTION.test(labelOf(sel) + ' ' + String(a.target || '') + ' ' + String(a.text || ''))) return { ok: false, blocked: true, reason: 'final-action-blocked', msg: 'Final clinical and financial actions are blocked.' };
               return setSelectByText(sel, a.text) ? { ok: true, msg: 'Set ' + (a.target || 'dropdown') + ' to ' + (a.text || '') } : { ok: false, msg: 'Option not found: ' + (a.text || '') };
             }
             if (a.type === 'click' || a.type === 'confirm') {
@@ -3770,6 +4059,7 @@ async function mlsSchedDomInline(doc, CFG){
                 for (const s of document.querySelectorAll('select')) { const o = [...s.options].find(o => (o.textContent || '').toLowerCase().trim().includes(t)); if (o) { s.value = o.value; s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true })); return { ok: true, msg: 'Selected option: ' + (a.target || '') }; } }
                 return { ok: false, notfound: true, msg: 'Could not find: ' + (a.target || '') };
               }
+              if (FINAL_ACTION.test(labelOf(el) + ' ' + String(a.target || ''))) return { ok: false, blocked: true, reason: 'final-action-blocked', msg: 'MLS Assist cannot Save, Sign, Submit, Post, approve, delete, transmit, or place an order.' };
               fireClick(el); return { ok: true, msg: 'Clicked: ' + (a.target || '') };
             }
             if (a.type === 'type') {
@@ -3777,6 +4067,7 @@ async function mlsSchedDomInline(doc, CFG){
               // "Name / label *"; typeInto._resolve() climbs to the real <input>.
               const el = _local() || _byIdx(a.target) || findEl(a.target) || (visible(document.activeElement) ? document.activeElement : null);
               if (!el) return { ok: false, notfound: true, msg: 'No field to type into.' };
+              if (STRUCTURED_TARGET.test(labelOf(el) + ' ' + String(a.target || ''))) return { ok: false, blocked: true, reason: 'structured-route-blocked', msg: 'Generic AI typing into diagnoses, billing, prescription or order fields is disabled.' };
               if (el.tagName === 'SELECT') return setSelectByText(el, a.text) ? { ok: true, confirmed: true, msg: 'Selected ' + (a.text || '') + ' in ' + (a.target || 'dropdown') } : { ok: false, msg: 'Option not found in dropdown.' };
               var _tr = await typeInto(el, a.text || '');
               if (_tr && _tr.confirmed) return { ok: true, confirmed: true, msg: 'Typed "' + String(a.text || '').slice(0, 40) + '" into ' + (a.target || 'field') + ' — verified (' + _tr.method + ').' };
@@ -3785,7 +4076,7 @@ async function mlsSchedDomInline(doc, CFG){
             }
             if (a.type === 'pastenote') {
               function isEd(el2) { if (!el2) return false; var tg = (el2.tagName || '').toUpperCase(); if (tg === 'TEXTAREA') return true; if (tg === 'INPUT') return /^(text|search|email|url|tel|)$/i.test(el2.type || ''); return !!el2.isContentEditable; }
-              var cs = [...document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')].filter(function (el2) { if (!visible(el2)) return false; var rr = el2.getBoundingClientRect(); return rr.width > 120 && rr.height > 36; });
+              var cs = [...document.querySelectorAll('textarea,[contenteditable=""],[contenteditable="true"]')].filter(function (el2) { if (!visible(el2) || STRUCTURED_TARGET.test(labelOf(el2))) return false; var rr = el2.getBoundingClientRect(); return rr.width > 120 && rr.height > 36; });
               cs.sort(function (x, y) { var rx = x.getBoundingClientRect(), ry = y.getBoundingClientRect(); return (ry.width * ry.height) - (rx.width * rx.height); });
               var pe = cs[0] || (isEd(document.activeElement) ? document.activeElement : null);
               if (!pe) return { ok: false, notfound: true, msg: 'No note field found to paste into.' };
@@ -3827,12 +4118,14 @@ async function mlsSchedDomInline(doc, CFG){
           let winnerFrame = null, bestScore = -1e12, winnerScan = null;
           (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); winnerScan = m.result; } });
           if (winnerFrame === null) { last = { ok: false, notfound: true }; await new Promise(r => setTimeout(r, 450)); continue; }
+          if (winnerScan && /^(insurance|diagnoses|orders|procedure)$/i.test(String(winnerScan.chosenSection || ''))) { last = { ok: false, blocked: true, reason: 'structured-route-blocked', chosenSection: winnerScan.chosenSection }; break; }
           const [r] = await chrome.scripting.executeScript({ target: { tabId, frameIds: [winnerFrame] }, args: [note, null, winnerScan], func: mlsNotePaster });
           last = (r && r.result) || { ok: false };
           if (last.ok && last.confirmed) break;
           await new Promise(res2 => setTimeout(res2, 450));
         }
-        if (last.ok) sendResponse({ ok: true, confirmed: !!last.confirmed, into: last.into, method: last.method, target: last.target, targetLabel: last.targetLabel, chosenSection: last.chosenSection, chosenLabel: last.chosenLabel, targetMatched: !!last.targetMatched, candidates: last.candidates });
+        if (last.blocked) sendResponse({ ok: false, blocked: true, reason: last.reason || 'structured-route-blocked', chosenSection: last.chosenSection || '', error: 'Generic paste is narrative-only; use the typed destination preview for structured content.' });
+        else if (last.ok) sendResponse({ ok: true, confirmed: !!last.confirmed, into: last.into, method: last.method, target: last.target, targetLabel: last.targetLabel, chosenSection: last.chosenSection, chosenLabel: last.chosenLabel, targetMatched: !!last.targetMatched, candidates: last.candidates });
         else sendResponse({ ok: false, reason: last.notfound ? 'no-note-field' : 'paste-failed', error: last.notfound ? 'No note field was found on this page — open the note area, then try again.' : 'Found a note field but the paste did not land — click into the note area, then try again.' }); /* v2.9.9: never a bare false (Codex E3) */
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
@@ -3845,6 +4138,8 @@ async function mlsSchedDomInline(doc, CFG){
   // route each part to its matching Athena field (insurance->insurance, ICD-10->diagnoses,
   // CPT->orders, op-note->Procedure Documentation, ...), confirming each. Never Save/Sign.
   if (msg.type === 'mlsVerifiedWrite') {
+    sendResponse({ ok: false, blocked: true, reason: 'legacy-segment-writer-disabled', error: 'The older generic multi-field writer is disabled. Use the typed destination workflow; unknown, diagnosis, billing and order routes fail closed.' });
+    return;
     (async () => {
       try {
         const note = String(msg.note || '');
@@ -4006,10 +4301,10 @@ async function mlsSchedDomInline(doc, CFG){
           (measure || []).forEach(function (m) { if (m && m.result && m.result.has && m.result.score > bestScore) { bestScore = m.result.score; winnerFrame = (m.frameId != null ? m.frameId : 0); winnerScan = m.result; } });
           if (winnerFrame === null) { await new Promise(r => setTimeout(r, 450)); continue; }
 
-          // v1.57: refuse outright if the winning field classifies as Orders -- never foreground,
-          // never paste. Matches the mlsAppPushVisit autopilot's existing hard order-block intent.
-          if (winnerScan && winnerScan.chosenSection === 'orders') {
-            return sendResponse({ error: 'Order entry by MLS Assist is disabled for safety — athenaOne orders auto-execute. Enter any orders in Athena yourself.', ordersBlocked: true });
+          // Generic paste is narrative-only. Structured destinations require
+          // dedicated exact adapters and are never inferred from note text.
+          if (winnerScan && /^(insurance|diagnoses|orders|procedure)$/i.test(String(winnerScan.chosenSection || ''))) {
+            return sendResponse({ error: 'This destination requires the typed preview workflow and is disabled for generic paste.', blocked: true, reason: 'structured-route-blocked', chosenSection: winnerScan.chosenSection });
           }
 
           foundField = true;
@@ -5238,7 +5533,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              boundary: reload-recover the tab BEFORE the next open once enough reads
              accumulated. Live 07-10 repro this prevents: alternating open-failures
              (Zakorchemny / Boyle / Pownall) with the tab CDP-frozen afterward. */
-          if (__mlsReadsSinceReload >= 5) {
+          if (__mlsReadsSinceReload >= 5 && !msg.noReload) {
             if (senderTab) progress(senderTab, 'Giving athenaOne a breather (freeze-guard reload)…');
             await mlsRecoverAthenaTab(tab.id);
           }
@@ -5279,7 +5574,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 /* v1.60: remember WHO we just opened - the follow-up bare chart read
                    uses this to wait for the RIGHT patient's banner instead of
                    accepting a stale/lurking frame's identity. */
-                try { self.__mlsExpectOpen = { name: msg.name || '', at: Date.now() }; } catch (e0) {}
+                try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
                 sendResponse({ ok: true, opened: true, via: 'schedule-click', candidates: sched.candidates, diag: sched.diag }); return;
               }
             } else {
@@ -5302,7 +5597,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 if (findRes && findRes.opened) break;
                 var rzn = (findRes && findRes.reason) || '';
                 var retryable = (fx && fx.timeout) || !findRes || !!(findRes && findRes.error) || /^(findpatient-no-load|results-timeout|fill-not-sticking|no-content-frame|rows-not-rendered|blank-error|no-find-button)$/.test(rzn); /* v1.98: no-find-button = findpatient rendered inside an odd view layout (live: dept-calendar-parked tab) - a reload recovery restores the normal frameset */
-                if (fpTry === 0 && retryable) {
+                if (fpTry === 0 && retryable && !msg.noReload) {
                   if (senderTab) progress(senderTab, 'athenaOne stopped responding — reloading it and retrying “' + (msg.name || '') + '”…');
                   await mlsRecoverAthenaTab(tab.id);
                   continue;
@@ -5322,7 +5617,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 var fro = (fxo && fxo.r && fxo.r[0] && fxo.r[0].result) || null;
                 if (fro && fro.opened) {
                   try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}
-                  try { self.__mlsExpectOpen = { name: msg.name || '', at: Date.now() }; } catch (e0) {}
+                  try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
                   sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, dobOverride: true, rowDob: fro.rowDob || '', diag: { route: 'findpatient-dob-override', rowDobKnown: fro.rowDob ? 1 : 0 } }); return;
                 }
                 findRes = fro || findRes;
@@ -5351,7 +5646,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               if (findRes && findRes.opened) {
                 try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}
-                try { self.__mlsExpectOpen = { name: msg.name || '', at: Date.now() }; } catch (e0) {}
+                try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
                 sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, rowDob: findRes.rowDob || '', diag: { route: 'findpatient', rowDobKnown: findRes.rowDob ? 1 : 0 } }); return;
               }
               /* v1.84: if the search RAN and left its RESULTS page on screen
@@ -5383,7 +5678,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var openRes = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: mlsSearchOpenDriverFn, args: [msg.name || '', 'open'] });
           var opened = bestFrameResult(openRes, 'open');
           if (opened && opened.opened) {
-            try { self.__mlsExpectOpen = { name: msg.name || '', at: Date.now() }; } catch (e0) {}
+            try { self.__mlsExpectOpen = { name: msg.name || '', tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
             sendResponse({ ok: true, opened: true, candidates: opened.candidates, diag: opened.diag });
           } else {
             var cands = (openRes || []).map(function (r) { return r && r.result; }).filter(Boolean).reduce(function (a, r) { return a + ((r && r.candidates) || 0); }, 0);
@@ -5860,6 +6155,10 @@ async function mlsAthenaSignSave(mode) {
     // auto-click Athena's Sign & Save and report "signed" ONLY if Athena confirms.
     if (msg.type === 'MLS_OVL_SIGNSAVE') {
       if (msg.userInitiated !== true) { sendResponse({ error: 'not-user-initiated', message: 'Sign & Save must be triggered by your own click.' }); return true; }
+      if (!(msg.probe === true && msg.note == null && msg.codes == null)) {
+        sendResponse({ error: 'sign-route-disabled', blocked: true, signed: false, message: 'Automatic Save/Sign is disabled until exact encounter, provider and visit-date identity can be locked and verified. Review and sign directly in athenaOne.' });
+        return true;
+      }
       if (!ext.signSave) { sendResponse({ error: 'sign-unavailable', message: 'Sign path unavailable - reload the extension.' }); return true; }
 
       // Read the MLS active patient (read-only) as a gate target fallback.
@@ -6329,6 +6628,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
       return mo + '/' + dy + '/' + y;
     }
+    function nrmText(s) { return String(s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
     /* ---- 1) locate the chart content frame: deepest big same-origin frame,
        skipping nav/status/results frames (same recursive walk as the proven
        mlsFindPatientOpenDriverFn, + findpatient.esp in SKIP). Also remember
@@ -6778,7 +7078,20 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
         /* v1.90: unified verified athena-tab pick (heartbeat + reachability ping;
            identity/login hosts excluded — raw athenanet.athenahealth.com only). */
         var all = await chrome.tabs.query({});
-        var tab = await mlsPickAthenaTab(all, { athenaOnly: true });
+        /* Stay on the exact Athena tab that the verified patient search just
+           opened. With two signed-in Athena tabs, re-running the generic picker
+           here could select a different patient's chart between search and
+           verify/write. Identity gates still remain mandatory downstream. */
+        var tab = null, expected = null;
+        try { expected = self.__mlsExpectOpen; } catch (eEx) {}
+        try {
+          var nn = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); };
+          if (expected && expected.tabId != null && (Date.now() - Number(expected.at || 0)) < 10 * 60 * 1000 && nn(expected.name) === nn(msg.patient)) {
+            var exactTab = await chrome.tabs.get(expected.tabId);
+            if (exactTab && mlsAthTabHost(exactTab) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(exactTab)) tab = exactTab;
+          }
+        } catch (eExact) { tab = null; }
+        if (!tab) tab = await mlsPickAthenaTab(all, { athenaOnly: true });
         if (!tab) {
           sendResponse({ ok: false, reason: 'no-athena-tab', version: V, error: 'Open your signed-in athenaOne in another tab, then try again.' });
           return;
@@ -6874,7 +7187,53 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     if (!String(name || '').trim()) return { ok: false, reason: 'no-patient', error: 'mlsUnifiedWriteDriverFn requires the patient name - refusing an un-gated write.' };
     if (!sections || !sections.length) return { ok: false, reason: 'no-sections', error: 'No sections supplied.' };
-    var NEVER_EXECUTE = /^(orders?|rx|prescriptions?|billing|charges?|referrals?|pt|pt.?orders?|imaging|imaging.?orders?)$/i;
+    /* Versioned destination contract. Aliases are explicit; an unknown or
+       ambiguous key NEVER falls back to a generic note field. Structured and
+       order-chain destinations are target/preview-only until dedicated exact
+       adapters are independently proven. */
+    var ROUTE_CONTRACT_VERSION = 'athena-routes-1';
+    var ROUTE_ALIASES = {
+      note: 'encounter_note', encounter_note: 'encounter_note',
+      hpi: 'hpi', ros: 'ros',
+      exam: 'physical_exam', physical_exam: 'physical_exam',
+      assessment: 'assessment_narrative', assessment_narrative: 'assessment_narrative',
+      plan: 'plan', followup: 'follow_up', follow_up: 'follow_up',
+      procedure: 'procedure_note', procedure_note: 'procedure_note',
+      past_surgical_history: 'past_surgical_history',
+      diagnoses: 'diagnoses_icd10', diagnosis: 'diagnoses_icd10', dx: 'diagnoses_icd10', icd: 'diagnoses_icd10', diagnoses_icd10: 'diagnoses_icd10',
+      rx: 'medications_rx', prescriptions: 'medications_rx', medications_rx: 'medications_rx',
+      orders: 'orders_preview', order: 'orders_preview', orders_preview: 'orders_preview',
+      lab_order: 'lab_order', imaging: 'imaging_order', imaging_order: 'imaging_order',
+      referrals: 'referral_order', referral: 'referral_order', referral_order: 'referral_order',
+      pt: 'pt_order', pt_order: 'pt_order',
+      billing: 'billing_preview', charges: 'billing_preview', billing_preview: 'billing_preview',
+      billing_em: 'billing_em', billing_cpt: 'billing_cpt'
+    };
+    var ROUTE_POLICY = {
+      encounter_note: { kind: 'narrative', draft: true },
+      hpi: { kind: 'narrative', draft: true },
+      ros: { kind: 'narrative', draft: true },
+      physical_exam: { kind: 'narrative', draft: true },
+      assessment_narrative: { kind: 'narrative', draft: true },
+      plan: { kind: 'narrative', draft: true },
+      follow_up: { kind: 'narrative', draft: true },
+      procedure_note: { kind: 'template-narrative', draft: false },
+      past_surgical_history: { kind: 'history-narrative', draft: false },
+      diagnoses_icd10: { kind: 'structured-code', draft: false },
+      medications_rx: { kind: 'order-chain', draft: false },
+      orders_preview: { kind: 'order-chain', draft: false },
+      lab_order: { kind: 'order-chain', draft: false },
+      imaging_order: { kind: 'order-chain', draft: false },
+      referral_order: { kind: 'order-chain', draft: false },
+      pt_order: { kind: 'order-chain', draft: false },
+      billing_preview: { kind: 'structured-billing', draft: false },
+      billing_em: { kind: 'structured-billing', draft: false },
+      billing_cpt: { kind: 'structured-billing', draft: false }
+    };
+    function canonicalRouteKey(k) {
+      k = String(k || '').toLowerCase().replace(/[\s-]+/g, '_').trim();
+      return ROUTE_ALIASES[k] || '';
+    }
     /* ---- normalizers (identical to the proven visits driver) -------------- */
     function nrmName(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
     function nameMatch(a, b) {
@@ -6892,6 +7251,7 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
       if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
       return mo + '/' + dy + '/' + y;
     }
+    function nrmText(s) { return String(s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
     /* ---- frame walk (same SKIP/JUNK as the visits driver) ------------------ */
     var SKIP = /globalnav|statusbar|stm\.esp|schedulenavclose|coordinator\/enterprise|blank\.html|findpatient\.esp/i;
     var JUNK = /letter|athenatext|communicat|\bfax|printer|documentviewer|clinicaldocument|inbox|messag/i;
@@ -7028,7 +7388,8 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
       if (haveDob !== wantDob) return { ok: false, reason: 'wrong-dob', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The open chart DOB (' + ident.dob + ') does not match the requested DOB (' + dob + '). Nothing was written.' };
     }
     var wantId = String(athenaId || '').replace(/\D/g, '');
-    if (wantId && ident.mrn && String(ident.mrn).replace(/\D/g, '') !== wantId) return { ok: false, reason: 'wrong-id', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The open chart patient ID #' + ident.mrn + ' does not match the requested #' + wantId + '. Nothing was written.' };
+    if (wantId && !String(ident.mrn || '').replace(/\D/g, '')) return { ok: false, reason: 'unverified-id', chartName: ident.name, chartDob: ident.dob || '', error: 'A patient ID was requested but no readable patient ID is shown on the open chart - refusing to write.' };
+    if (wantId && String(ident.mrn).replace(/\D/g, '') !== wantId) return { ok: false, reason: 'wrong-id', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The open chart patient ID #' + ident.mrn + ' does not match the requested #' + wantId + '. Nothing was written.' };
     /* ---- v2.9.2 WRITE-TARGET SAFETY (owner: never write to the wrong place) -
        The identity gate above can legitimately match a patient whose chart is
        loaded in a BACKGROUND frame (e.g. the app opener pre-loaded it) while a
@@ -7061,7 +7422,7 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
             if (!c || !c.name) continue;
             if (!nameMatch(c.name, String(name || ''))) continue;
             if (wantDob && nrmDob(c.dob) !== wantDob) continue;
-            if (wantId && c.mrn && String(c.mrn).replace(/\D/g, '') !== wantId) continue;
+            if (wantId && String(c.mrn || '').replace(/\D/g, '') !== wantId) continue;
             return true;
           }
         }
@@ -7134,35 +7495,44 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
     }
     /* ---- section map (generic, by meaning - nothing account-specific) ----- */
     var DEFS = {
-      history:    /surgical|procedure\s*history|past\s*medical|family\s*history|social\s*history|implant|histor/i,
-      hpi:        /\bhpi\b|history of present|present illness|subjective|chief complaint|interval history/i,
-      exam:       /physical exam|\bexam\b|objective|findings/i,
-      assessment: /assess|impression|a&p|a\/p|diagnos|\bicd\b/i,
-      plan:       /\bplan\b|follow.?up|recommendation|decision\s*making/i,
-      orders:     /\borders?\b|\bcpt\b|procedure\s*code|hcpcs/i,
-      rx:         /prescri|\brx\b|\bsig\b|pharmacy|dispense|refill|medication order/i,
-      billing:    /billing|charge|superbill|e&m|e\/m|claim|\bcpt\b/i,
-      note:       /note|progress|narrative|free.?text|document/i
+      encounter_note: /encounter\s+note|progress\s+note|clinical\s+note|narrative|free.?text|documentation/i,
+      hpi: /\bhpi\b|history of present|present illness|subjective|chief complaint|interval history/i,
+      ros: /review of systems|\bros\b/i,
+      physical_exam: /physical exam|\bexam\b|objective|findings/i,
+      assessment_narrative: /assessment\s*(?:narrative|note|text)?|impression|a&p|a\/p/i,
+      plan: /\bplan\b|recommendation|decision\s*making/i,
+      follow_up: /follow.?up|return to clinic|\brtc\b|next visit/i,
+      procedure_note: /procedure\s*(?:documentation|note)|operative\s+note/i,
+      past_surgical_history: /surgical\s*(?:&|and)?\s*procedure\s*history|past\s+surgical\s+history/i,
+      diagnoses_icd10: /add assessment|diagnos(?:is|es)|\bicd(?:-?10)?\b|problem\s+list/i,
+      medications_rx: /prescri|\brx\b|\bsig\b|pharmacy|dispense|refill|medication order/i,
+      orders_preview: /\borders?\b|add\s+order/i,
+      lab_order: /lab(?:oratory)?\s+order|order\s+lab/i,
+      imaging_order: /imaging\s+order|radiology\s+order|order\s+imaging/i,
+      referral_order: /referral\s+order|order\s+referral/i,
+      pt_order: /physical\s+therapy\s+order|\bpt\s+order/i,
+      billing_preview: /billing|charge|superbill|e&m|e\/m|claim|\bcpt\b/i,
+      billing_em: /e&m|e\/m|evaluation\s+and\s+management/i,
+      billing_cpt: /add\s+charge|\bcpt\b|procedure\s+code|hcpcs/i
     };
-    function bestFieldFor(key, allowFocusFallback) {
-      var re = DEFS[key] || DEFS.note;
+    function bestFieldFor(key) {
+      var re = DEFS[key];
+      if (!re) return null;
       var cands = collectEditables();
       var top = null, topScore = -1e12;
       for (var i = 0; i < cands.length; i++) {
         var c = cands[i];
+        if (!re.test(c.hay)) continue;
         var sc = c.area / 1000;
-        if (re.test(c.hay)) sc += 2000;
-        if (DEFS.note.test(c.hay)) sc += 300;
+        sc += 2000;
         if (BADF.test(c.hay)) sc -= 1800;
         if (c.tag === 'TEXTAREA') sc += 120;
         if (c.ce) sc += 100;
-        if (c.focused) sc += 9000;
+        if (c.focused) sc += 40;
         c.score = sc;
         if (sc > topScore) { topScore = sc; top = c; }
       }
       if (!top) return null;
-      var matched = re.test(top.hay);
-      if (!matched && !(allowFocusFallback && top.focused)) return null;
       return top;
     }
     /* ---- History-pane navigation + NOTE-editor opener (read-only nav) ----- */
@@ -7412,10 +7782,10 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
       return { ok: false, error: sawAffordance ? 'editor-did-not-appear' : 'note-affordance-not-found' };
     }
     /* ---- field writer (notes only; never invoked for order-class) --------- */
-    async function writeField(el, txt, head) {
+    async function writeField(el, txt, head, mergePolicy, replaceConfirmed) {
       var CE = !!el.isContentEditable;
       function rd() { return CE ? String(el.innerText || el.textContent || '') : String(el.value || ''); }
-      function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+      function norm(s) { return nrmText(s); }
       function setNative(v) {
         if (CE) { try { el.textContent = v; } catch (e) {} return; }
         var pr = (el.tagName === 'TEXTAREA') ? W.HTMLTextAreaElement.prototype : W.HTMLInputElement.prototype;
@@ -7423,6 +7793,14 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
         if (d && d.set) d.set.call(el, v); else el.value = v;
       }
       function fire(type, data) { try { el.dispatchEvent(new W.InputEvent('input', { bubbles: true, inputType: type || 'insertText', data: data })); } catch (e) { try { el.dispatchEvent(new W.Event('input', { bubbles: true })); } catch (e2) {} } }
+      txt = String(txt == null ? '' : txt);
+      if (!norm(txt)) return { written: false, verified: false, draftEntered: false, draftVerified: false, persisted: false, serverVerified: false, error: 'empty-write-disabled', method: 'none', into: rd().length };
+      var before = rd();
+      mergePolicy = String(mergePolicy || 'append').toLowerCase();
+      if (mergePolicy !== 'append' && mergePolicy !== 'replace') mergePolicy = 'append';
+      if (mergePolicy === 'replace' && norm(before) && replaceConfirmed !== true) return { written: false, verified: false, draftEntered: false, draftVerified: false, persisted: false, serverVerified: false, error: 'replace-needs-explicit-confirmation', method: 'none', into: before.length };
+      if (norm(before).indexOf(norm(txt)) >= 0) return { written: false, verified: true, draftEntered: false, draftVerified: true, alreadyPresent: true, persisted: false, serverVerified: false, method: 'already-present', into: before.length };
+      var next = (mergePolicy === 'replace' || !norm(before)) ? txt : (before.replace(/\s+$/, '') + '\n\n' + txt);
       try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
       realClick(el, W);
       try { el.focus(); } catch (e) {}
@@ -7430,55 +7808,41 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
       if (CE) {
         try { var rg = W.document.createRange(); rg.selectNodeContents(el); var se = W.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
         var okc = false;
-        try { okc = W.document.execCommand('insertText', false, txt); } catch (e) { okc = false; }
-        if (!okc) setNative(txt);
+        try { okc = W.document.execCommand('insertText', false, next); } catch (e) { okc = false; }
+        if (!okc) setNative(next);
       } else {
         try { if (el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length); } catch (e) {}
-        setNative(txt);
+        setNative(next);
       }
-      fire('insertText', txt);
+      fire('insertText', next);
       try { el.dispatchEvent(new W.Event('change', { bubbles: true })); } catch (e) {}
       await sleep(120);
       var cur = rd();
-      var landed = txt ? (norm(cur).indexOf(norm(txt).slice(0, Math.min(norm(txt).length, 40))) >= 0) : (norm(cur) === '');
-      /* v2.08 SAVE/PERSIST (owner requirement): a paste left focused is an
-         unsaved DRAFT the clinician would have to re-save by hand - athena's
-         History NOTE saves on BLUR. Blur the field, then click the section
-         heading (neutral text, not a control) to move focus the way a human
-         would; then confirm the section shows the text (athena usually
-         collapses the editor and renders the saved note inline). */
-      var persisted = false;
-      if (landed) {
-        try { el.dispatchEvent(new W.FocusEvent('blur', { bubbles: false })); } catch (e) {}
-        try { el.dispatchEvent(new W.FocusEvent('focusout', { bubbles: true })); } catch (e) {}
-        try { el.blur(); } catch (e) {}
-        if (head) { try { realClick(head, W); } catch (e) {} }
-        await sleep(900);
-        if (txt) {
-          var probe = norm(txt).slice(0, 30);
-          try {
-            var secTxt = '';
-            if (head && head.parentElement) secTxt = norm(String(head.parentElement.textContent || ''));
-            if (secTxt.indexOf(probe) >= 0) persisted = true;
-            else if (norm(rd()).indexOf(probe) >= 0) persisted = true;
-          } catch (e) {}
-        } else {
-          persisted = true; /* clear-then-blur = the manual delete gesture */
-        }
-      }
-      return { written: true, verified: landed, persisted: persisted, into: cur.length, method: CE ? 'ce-insert' : 'native' };
+      var probe = norm(txt).slice(0, Math.min(norm(txt).length, 40));
+      var landed = !!probe && norm(cur).indexOf(probe) >= 0;
+      /* A same-editor readback proves only that the draft entered the client
+         DOM. It is NOT evidence of an Athena server save. The field stays open
+         for clinician review; only a future independent commit + cold readback
+         may set serverVerified/persisted. */
+      return { written: landed, verified: landed, draftEntered: landed, draftVerified: landed, commitObserved: false, persisted: false, serverVerified: false, into: cur.length, method: CE ? 'ce-insert' : 'native', mergePolicy: mergePolicy };
     }
     /* ---- run the sections -------------------------------------------------- */
     var results = [], forcedHeld = [];
     for (var s = 0; s < sections.length; s++) {
       var sec = sections[s] || {};
-      var key = String(sec.key || 'note');
-      var wantExecute = !!sec.execute;
-      if (NEVER_EXECUTE.test(key)) {
-        if (wantExecute) forcedHeld.push(key);
-        wantExecute = false; /* HARD: order-class is target-only, always */
+      var requestedKey = String(sec.key || '');
+      var key = canonicalRouteKey(requestedKey);
+      var policy = key && ROUTE_POLICY[key];
+      var requestedExecute = !!sec.execute;
+      var wantExecute = !!(requestedExecute && policy && policy.draft === true);
+      if (requestedExecute && (!policy || policy.draft !== true)) forcedHeld.push(requestedKey || '(missing)');
+      var entry = { key: key || requestedKey || '(missing)', requestedKey: requestedKey, routeKind: (policy && policy.kind) || '', execute: wantExecute, found: false, written: false, verified: false, draftEntered: false, draftVerified: false, persisted: false, serverVerified: false, fieldLabel: '', fieldHeading: '', fieldTag: '', method: '', error: '' };
+      if (!key || !policy || !DEFS[key]) {
+        entry.error = 'unknown-section-key';
+        entry.blocked = true;
+        results.push(entry);
+        continue;
       }
-      var entry = { key: key, execute: wantExecute, found: false, written: false, verified: false, fieldLabel: '', fieldHeading: '', fieldTag: '', method: '', error: '' };
       try {
         if (sec.verify) {
           /* v2.09 READ-ONLY VERIFY: open the section's note editor and report
@@ -7486,14 +7850,14 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
              landed" leg of write->verify->delete. Never modifies content. */
           entry.execute = false; entry.verifyRead = true;
           var elv = null, hVer = null;
-          if (key === 'history') {
+          if (key === 'past_surgical_history') {
             var okPv = await openHistoryPane();
             if (okPv) {
               hVer = onScreenHeading(HIST_HEAD);
               var opv = await openNoteEditor(HIST_HEAD);
               if (opv.ok) { elv = opv.el; hVer = opv.head || hVer; } else entry.error = opv.error;
             } else entry.error = 'history-pane-not-reachable';
-          } else entry.error = 'verify-supported-for-history-only';
+          } else entry.error = 'verify-supported-for-past-surgical-history-only';
           /* read-only diagnostics: what the driver actually sees around the
              heading (frame tail, rendered section text, chip/editor census) -
              lets a caller distinguish "summary card" from the real drawer. */
@@ -7532,13 +7896,50 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
                 try { var ry2 = edv[ev2].getBoundingClientRect().y - hy; if (ry2 >= -10 && ry2 <= 320) cens.editors++; } catch (eC2) {}
               }
               entry.census = cens;
+              /* Read-only, bounded control census near Surgical & Procedure
+                 History. Used to distinguish the note editor from Athena's
+                 saved-note controls without clicking anything. */
+              try {
+                entry.controlScan = [];
+                var cv = W.document.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"]');
+                for (var ci = 0; ci < cv.length && entry.controlScan.length < 24; ci++) {
+                  if (!visEl(cv[ci], W)) continue;
+                  var cr = cv[ci].getBoundingClientRect(), dy = cr.y - hy;
+                  if (dy < -30 || dy > 520) continue;
+                  entry.controlScan.push({
+                    tag: String(cv[ci].tagName || '').toLowerCase(),
+                    text: String(cv[ci].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+                    aria: String(cv[ci].getAttribute && cv[ci].getAttribute('aria-label') || '').slice(0, 90),
+                    title: String(cv[ci].getAttribute && cv[ci].getAttribute('title') || '').slice(0, 90),
+                    cls: String(cv[ci].className || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+                    dy: Math.round(dy)
+                  });
+                }
+              } catch (eCtl) {}
+              try {
+                entry.sectionControlScan = [];
+                var sv = hpv.querySelectorAll('button,a,[role="button"],[onclick],[aria-label],[title],[data-testid]');
+                for (var si2 = 0; si2 < sv.length && entry.sectionControlScan.length < 32; si2++) {
+                  entry.sectionControlScan.push({
+                    tag: String(sv[si2].tagName || '').toLowerCase(),
+                    text: String(sv[si2].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+                    aria: String(sv[si2].getAttribute && sv[si2].getAttribute('aria-label') || '').slice(0, 90),
+                    title: String(sv[si2].getAttribute && sv[si2].getAttribute('title') || '').slice(0, 90),
+                    testid: String(sv[si2].getAttribute && sv[si2].getAttribute('data-testid') || '').slice(0, 90),
+                    cls: String(sv[si2].className || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+                    visible: !!visEl(sv[si2], W)
+                  });
+                }
+              } catch (eSectCtl) {}
             }
           } catch (eDg) {}
           if (elv) {
             entry.found = true;
             var txtv = elv.isContentEditable ? String(elv.innerText || elv.textContent || '') : String(elv.value || '');
-            entry.textHead = txtv.replace(/\s+/g, ' ').trim().slice(0, 220);
-            entry.textLen = txtv.replace(/\s+/g, ' ').trim().length;
+            entry.textCodes = txtv.slice(0, 8).split('').map(function (ch) { return ch.charCodeAt(0); });
+            var semv = txtv.replace(/[\u200B-\u200D\u2060\uFEFF]/g, '');
+            entry.textHead = semv.replace(/\s+/g, ' ').trim().slice(0, 220);
+            entry.textLen = semv.replace(/\s+/g, ' ').trim().length;
             /* leave the untouched editor the way a human closes it: blur only */
             try { elv.blur(); } catch (eBv) {}
             if (hVer) { try { realClick(hVer, W); } catch (eCv) {} }
@@ -7547,12 +7948,12 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
           continue;
         }
         if (!wantExecute) {
-          var t = bestFieldFor(key, false);
+          var t = bestFieldFor(key);
           if (t) { entry.found = true; entry.fieldTag = t.tag + (t.ce ? '/contenteditable' : ''); entry.fieldLabel = t.label; entry.fieldHeading = t.hay.slice(0, 90); }
           else entry.error = 'no-matching-field-on-screen';
         } else {
           var el = null, opHead = null;
-          if (key === 'history') {
+          if (key === 'past_surgical_history') {
             var okPane = await openHistoryPane();
             if (okPane) {
               var op = await openNoteEditor(HIST_HEAD);
@@ -7560,8 +7961,8 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
             } else entry.error = 'history-pane-not-reachable';
           }
           if (!el) {
-            var b2 = bestFieldFor(key, true);
-            if (b2 && (b2.focused || (DEFS[key] || DEFS.note).test(b2.hay))) el = b2.el;
+            var b2 = bestFieldFor(key);
+            if (b2 && DEFS[key].test(b2.hay)) el = b2.el;
           }
           if (!el) { if (!entry.error) entry.error = 'no-matching-field-on-screen'; }
           else if (!targetChartMatches(el)) {
@@ -7572,16 +7973,24 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
           }
           else {
             entry.found = true;
-            var wr = await writeField(el, String(sec.text == null ? '' : sec.text), opHead);
+            var wr = await writeField(el, String(sec.text == null ? '' : sec.text), opHead, sec.mergePolicy, sec.replaceConfirmed === true);
             entry.written = wr.written; entry.verified = wr.verified; entry.method = wr.method;
+            entry.draftEntered = !!wr.draftEntered;
+            entry.draftVerified = !!wr.draftVerified;
+            entry.commitObserved = !!wr.commitObserved;
+            entry.serverVerified = !!wr.serverVerified;
             entry.persisted = !!wr.persisted;
             entry.into = wr.into;
+            if (wr.alreadyPresent) entry.alreadyPresent = true;
+            if (wr.mergePolicy) entry.mergePolicy = wr.mergePolicy;
+            if (wr.error) entry.error = wr.error;
+            if (wr.afterCodes) entry.afterCodes = wr.afterCodes;
           }
         }
       } catch (eSec) { entry.error = String((eSec && eSec.message) || eSec).slice(0, 140); }
       results.push(entry);
     }
-    return { ok: true, chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', forcedHeld: forcedHeld, results: results, ms: Date.now() - T0 };
+    return { ok: true, routeContractVersion: ROUTE_CONTRACT_VERSION, chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', forcedHeld: forcedHeld, results: results, ms: Date.now() - T0 };
   } catch (e) { return { ok: false, reason: 'driver-error', error: String((e && e.message) || e).slice(0, 200) }; }
 }
 
@@ -7598,17 +8007,46 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
       try { V = chrome.runtime.getManifest().version; } catch (eV) {}
       if (busy) { sendResponse({ ok: false, reason: 'busy', version: V, error: 'A write is already running - one at a time.' }); return; }
       busy = 1;
+      var usedWriteTarget = false;
       try {
         var secs = Array.isArray(msg.sections) ? msg.sections : [];
         if (!String(msg.patient || '').trim() || !secs.length) { sendResponse({ ok: false, reason: 'bad-args', version: V, error: 'patient and sections are required.' }); return; }
+        var KNOWN_WRITE_KEYS = { note:1, encounter_note:1, hpi:1, ros:1, exam:1, physical_exam:1, assessment:1, assessment_narrative:1, plan:1, followup:1, follow_up:1, procedure:1, procedure_note:1, past_surgical_history:1, diagnoses:1, diagnosis:1, dx:1, icd:1, diagnoses_icd10:1, rx:1, prescriptions:1, medications_rx:1, orders:1, order:1, orders_preview:1, lab_order:1, imaging:1, imaging_order:1, referrals:1, referral:1, referral_order:1, pt:1, pt_order:1, billing:1, charges:1, billing_preview:1, billing_em:1, billing_cpt:1 };
+        var EXECUTABLE_NARRATIVE = { note:1, encounter_note:1, hpi:1, ros:1, exam:1, physical_exam:1, assessment:1, assessment_narrative:1, plan:1, followup:1, follow_up:1 };
+        var unknown = [];
+        var hasNarrativeExecute = false;
+        for (var vsi = 0; vsi < secs.length; vsi++) {
+          var vk = String((secs[vsi] && secs[vsi].key) || '').toLowerCase().replace(/[\s-]+/g, '_').trim();
+          if (!KNOWN_WRITE_KEYS[vk]) unknown.push(vk || '(missing)');
+          if (secs[vsi] && secs[vsi].execute === true && EXECUTABLE_NARRATIVE[vk]) hasNarrativeExecute = true;
+        }
+        if (unknown.length) { sendResponse({ ok: false, reason: 'unknown-section-key', version: V, unknownKeys: unknown, error: 'Unknown Athena destination key(s): ' + unknown.join(', ') + '. Nothing was touched.' }); return; }
         var all = await chrome.tabs.query({});
-        var tab = await mlsPickAthenaTab(all, { athenaOnly: true });
+        var tab = null, wt = null;
+        var senderTabId = sender && sender.tab && sender.tab.id;
+        function nKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+        function dKey(s) { var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
+        try { wt = self.__mlsWriteTarget || null; } catch (eWt) {}
+        try {
+          var wtFresh = wt && wt.tabId != null && (Date.now() - Number(wt.at || 0)) < 10 * 60 * 1000;
+          var wtApp = wtFresh && (wt.appTabId == null || senderTabId == null || Number(wt.appTabId) === Number(senderTabId));
+          var wtName = wtFresh && nKey(wt.name) === nKey(msg.patient);
+          var wtDob = wtFresh && (!dKey(wt.dob) || !dKey(msg.dob) || dKey(wt.dob) === dKey(msg.dob));
+          if (wtFresh && wtApp && wtName && wtDob) {
+            var exact = await chrome.tabs.get(wt.tabId);
+            if (exact && mlsAthTabHost(exact) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(exact)) { tab = exact; usedWriteTarget = true; }
+          }
+        } catch (eExactWrite) { tab = null; }
+        if (!tab) {
+          var candidates = all.filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (e) { return false; } });
+          if (candidates.length > 1) { sendResponse({ ok: false, reason: 'ambiguous-athena-tabs', version: V, error: 'More than one signed-in athenaOne tab is open and none is locked to this patient. Re-open the patient from MLS, then try again. Nothing was touched.' }); return; }
+          tab = candidates.length === 1 ? candidates[0] : await mlsPickAthenaTab(all, { athenaOnly: true });
+        }
         if (!tab) { sendResponse({ ok: false, reason: 'no-athena-tab', version: V, error: 'Open your signed-in athenaOne in another tab, then try again.' }); return; }
-        if (__mlsReadsSinceReload >= 5) { try { await mlsRecoverAthenaTab(tab.id); } catch (eRc) {} }
         /* v2.9.5: writes keep the proven foreground-for-write path — leave quiet-pull
            mode first so the tab.active check below sees the restored layout. */
-        try { if (self.__mlsQp && self.__mlsQp.active) { await self.__mlsQpRelease('write'); tab = await chrome.tabs.get(tab.id); } } catch (eQ) {}
-        try {
+        if (hasNarrativeExecute) try { if (self.__mlsQp && self.__mlsQp.active) { await self.__mlsQpRelease('write'); tab = await chrome.tabs.get(tab.id); } } catch (eQ) {}
+        if (hasNarrativeExecute) try {
           if (!tab.active) {
             await chrome.tabs.update(tab.id, { active: true });
             if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
@@ -7617,8 +8055,7 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
         } catch (eF) {}
         var fx = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [String(msg.patient || ''), String(msg.dob || ''), String(msg.athenaId || ''), secs], func: mlsUnifiedWriteDriverFn }, 90000);
         if (fx.timeout) {
-          try { await mlsRecoverAthenaTab(tab.id); } catch (eR2) {}
-          sendResponse({ ok: false, reason: 'write-timeout', version: V, error: 'athenaOne did not finish the write within 90s (renderer recovered). Try again.' });
+          sendResponse({ ok: false, reason: 'write-timeout', version: V, error: 'athenaOne did not finish within 90s. The tab was not reloaded or retried because the outcome may be uncertain; inspect it manually before trying again.' });
           return;
         }
         if (fx.err) { sendResponse({ ok: false, reason: 'inject-failed', version: V, error: 'Could not inject the write driver: ' + fx.err }); return; }
@@ -7629,7 +8066,7 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
         sendResponse(r);
       } catch (e) {
         sendResponse({ ok: false, reason: 'error', version: V, error: String((e && e.message) || e) });
-      } finally { busy = 0; }
+      } finally { if (usedWriteTarget) { try { self.__mlsWriteTarget = null; } catch (eClear) {} } busy = 0; }
     })();
     return true;
   });

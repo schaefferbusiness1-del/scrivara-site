@@ -51,10 +51,10 @@ button.secondary:hover:not(:disabled){background:#F4F2EC}
 <button id="dl" class="secondary" onclick="buildZip()">⬇ Download MLS Assist (.zip)</button>
 <div id="status"></div>
 <ol>
-<li>Click the button above — it saves <code>mls-assist-extension.zip</code> to your Downloads. <b>Unzip it</b> (right-click → Extract All).</li>
+<li>Click the button above — it saves a versioned <code id="zipName">MLS_Assist_v…zip</code> to your Downloads. Create a new folder and <b>unzip it there</b> (right-click → Extract All).</li>
 <li>Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right toggle).</li>
 <li><b>Already have an older MLS Assist?</b> Click <b>Remove</b> on it first (so the new one replaces it cleanly).</li>
-<li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder.</li>
+<li>Click <b>Load unpacked</b> and pick the unzipped folder that contains <code>manifest.json</code>.</li>
 <li>Make sure you're <b>signed in to MLS in a tab</b> — no key to paste. Then open your Athena schedule and use <b>📅 Pull schedule</b> in MLS.</li>
 </ol>
 <div class="note">If the schedule pull still says "older version" after this, double-check you clicked <b>Remove</b> on the old copy in step 3 — Chrome can otherwise keep running the old one.</div>
@@ -62,15 +62,19 @@ button.secondary:hover:not(:disabled){background:#F4F2EC}
 </div>
 <script>
 // Keep the version badge + title in sync with extension-version.json (single source of truth, never goes stale).
+var MLS_EXTENSION_VERSION='';
 (function(){
 try{
 fetch('/extension-version.json?t='+Date.now(),{cache:'no-store'})
 .then(function(r){return r.ok?r.json():null;})
 .then(function(j){
 if(!j||!j.version) return;
-var v='v'+String(j.version).trim();
+MLS_EXTENSION_VERSION=String(j.version).trim();
+var v='v'+MLS_EXTENSION_VERSION;
 var badge=document.getElementById('verBadge');
 if(badge) badge.textContent=v;
+var zipName=document.getElementById('zipName');
+if(zipName) zipName.textContent='MLS_Assist_v'+MLS_EXTENSION_VERSION+'.zip';
 document.title='Download MLS Assist '+v;
 })
 .catch(function(){/* leave static fallback in place */});
@@ -80,28 +84,50 @@ document.title='Download MLS Assist '+v;
 <script>
 var FILES=['manifest.json','background.js','content.js','content.css','popup.html','popup.js','mls-popup.js','mls-popup.css','offscreen.html','offscreen.js','feat_codes_driver.js','ext_reviews_reader.js','icon-16.png','icon-32.png','icon-48.png','icon-128.png'];
 function setS(msg,cls){var el=document.getElementById('status');el.innerHTML=msg;el.className=cls||'';}
+async function getExtensionVersion(){
+if(/^\d+(?:\.\d+){0,3}$/.test(MLS_EXTENSION_VERSION)) return MLS_EXTENSION_VERSION;
+var response=await fetch('/manifest.json?t='+Date.now(),{cache:'no-store'});
+if(!response.ok) throw new Error('fetch manifest.json → '+response.status);
+var manifest=await response.json();
+var version=String(manifest&&manifest.version||'').trim();
+if(!/^\d+(?:\.\d+){0,3}$/.test(version)) throw new Error('invalid extension version');
+MLS_EXTENSION_VERSION=version;
+return version;
+}
 async function buildZip(){
 var btn=document.getElementById('dl');btn.disabled=true;
 try{
-if(typeof JSZip==='undefined'){setS('Could not load the zip library — check your connection and retry.','err');btn.disabled=false;return;}
-var zip=new JSZip();var folder=zip.folder('mls-assist-extension');
+var version=await getExtensionVersion();
+var releaseName='MLS_Assist_v'+version+'.zip';
+setS('Checking the verified v'+version+' package…');
+try{
+var packaged=await fetch('/'+encodeURIComponent(releaseName)+'?t='+Date.now(),{method:'HEAD',cache:'no-store'});
+if(packaged.ok){
+var direct=document.createElement('a');direct.href='/'+encodeURIComponent(releaseName);direct.download=releaseName;document.body.appendChild(direct);direct.click();direct.remove();
+setS('✅ Downloaded '+releaseName+' — now follow steps 1–5 below.','ok');
+return;
+}
+}catch(staticError){/* A release ZIP may not have been published yet; build the same allowlisted package locally. */}
+if(typeof JSZip==='undefined') throw new Error('could not load the zip library and the verified package is not published yet');
+var zip=new JSZip();
 for(var i=0;i<FILES.length;i++){
 var f=FILES[i];setS('Packaging '+f+' ('+(i+1)+'/'+FILES.length+')…');
 var r=await fetch('/'+f+'?t='+Date.now(),{cache:'no-store'});
 if(!r.ok) throw new Error('fetch '+f+' → '+r.status);
 var buf=await r.arrayBuffer();
-folder.file(f,buf);
+zip.file(f,buf,{date:new Date('1980-01-01T00:00:00Z')});
 }
 setS('Building zip…');
-var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:9}});
 var url=URL.createObjectURL(blob);
-var a=document.createElement('a');a.href=url;a.download='mls-assist-extension.zip';document.body.appendChild(a);a.click();
+var a=document.createElement('a');a.href=url;a.download=releaseName;document.body.appendChild(a);a.click();
 setTimeout(function(){URL.revokeObjectURL(url);a.remove();},2000);
-setS('✅ Downloaded mls-assist-extension.zip — now follow steps 1–5 below.','ok');
+setS('✅ Downloaded '+releaseName+' — now follow steps 1–5 below.','ok');
 }catch(e){
 setS('Something went wrong: '+(e&&e.message?e.message:e)+'. Refresh and try again.','err');
-}
+}finally{
 btn.disabled=false;
+}
 }
 </script>
 </body>

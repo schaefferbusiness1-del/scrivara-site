@@ -29,7 +29,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "1.3.1", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
+  var VERSION = "1.3.2", ASSET = "feat_mls_whosnext.js", STYLE_ID = "mlsWhosNextStyle", BOX_ID = "mlsWhosNextBox";
   try { if (window.__mlsWhosNext && window.__mlsWhosNext.installed) return; } catch (e) { return; }
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -53,15 +53,46 @@
 
   /* ---------- data sources ---------- */
   var _pull = null;
-  function dOf(a) { return a.appt_date || a.date || S(a.start_at).slice(0, 10); }
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function accountTz() { try { var t = typeof window._acctTz === "function" ? window._acctTz() : ""; return S(t).trim() || "America/New_York"; } catch (e) { return "America/New_York"; } }
+  function wallDate(v) { var m = /^(\d{4}-\d{2}-\d{2})/.exec(S(v).trim()); return m ? m[1] : ""; }
+  function instantDate(v) {
+    if (!S(v).trim() && !(v instanceof Date)) return "";
+    try {
+      var d = v instanceof Date ? v : new Date(v); if (isNaN(d.getTime())) return "";
+      var ps = new Intl.DateTimeFormat("en-US", { timeZone: accountTz(), year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d), y = "", m = "", day = "";
+      ps.forEach(function (p) { if (p.type === "year") y = p.value; if (p.type === "month") m = p.value; if (p.type === "day") day = p.value; });
+      return y && m && day ? y + "-" + m + "-" + day : "";
+    } catch (e) { return ""; }
+  }
+  function dOf(a) { return wallDate(a.appt_date) || wallDate(a.date) || wallDate(a.day_local) || wallDate(a.start_local) || instantDate(a.start_at); }
+  function wallTime(v) {
+    var s = S(v).trim(); if (!s) return "";
+    var m = /(?:^|T|\s)(\d{1,2}):(\d{2})\s*([AP])\.?\s*M\.?(?=\s|$)/i.exec(s);
+    if (m) { var h = +m[1]; if (h < 1 || h > 12) return ""; if (m[3].toUpperCase() === "P" && h < 12) h += 12; if (m[3].toUpperCase() === "A" && h === 12) h = 0; return pad2(h) + ":" + m[2]; }
+    m = /(?:^|T|\s)([01]?\d|2[0-3]):([0-5]\d)(?:\b|:)/.exec(s);
+    return m ? pad2(+m[1]) + ":" + m[2] : "";
+  }
+  function instantTime(v) {
+    if (!S(v).trim()) return ""; /* new Date(null) is epoch, not a missing time */
+    try {
+      var d = new Date(v); if (isNaN(d.getTime())) return "";
+      var ps = new Intl.DateTimeFormat("en-US", { timeZone: accountTz(), hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d), h = 0, m = 0;
+      ps.forEach(function (p) { if (p.type === "hour") h = +p.value; if (p.type === "minute") m = +p.value; });
+      if (h === 24) h = 0; return pad2(h) + ":" + pad2(m);
+    } catch (e) { return ""; }
+  }
   function hhmm(a) {
-    if (/^\d\d?:\d\d/.test(S(a.time))) return ("0" + a.time).slice(-5);
-    try { var d = new Date(a.start_at); if (!isNaN(d.getTime())) return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); } catch (e) {}
+    if (!a) return "";
+    var t = wallTime(a.time_display); if (t) return t;
+    t = wallTime(a.start_local); if (t) return t;
+    t = instantTime(a.start_at); if (t) return t;
+    t = wallTime(a.time); if (t) return t;
     return "";
   }
   function calSmart() {
     var ap = window._calAppts || []; if (!ap.length) return [];
-    var today = new Date().toISOString().slice(0, 10);
+    var today = instantDate(new Date());
     var has = ap.some(function (a) { return dOf(a) === today; });
     var day = today;
     if (!has) { var ds = {}; ap.forEach(function (a) { var d = dOf(a); if (d) ds[d] = 1; }); var k = Object.keys(ds).sort(); day = k[k.length - 1]; }
@@ -69,9 +100,11 @@
       .map(function (a) { return { name: a.name, dob: a.dob || "", reason: a.reason || "", time: hhmm(a), provider: a.provider || "" }; });
   }
   function activeList() {
-    var src = (_pull && _pull.length) ? _pull.slice() : calSmart();
+    /* [] is an authoritative successfully-read empty day. Only null means no
+       pull has happened and may fall back to the calendar store. */
+    var src = Array.isArray(_pull) ? _pull.slice() : calSmart();
     var seen = {}, out = [];
-    src.forEach(function (a) { var nm = S(a.name).trim(); if (!nm) return; var k = nm.toLowerCase() + "|" + S(a.time); if (seen[k]) return; seen[k] = 1; out.push({ name: nm, dob: a.dob || "", reason: a.reason || "", time: hhmm(a), provider: a.provider || "" }); });
+    src.forEach(function (a) { var nm = S(a.name).trim(); if (!nm) return; var tm = hhmm(a); var k = nm.toLowerCase() + "|" + tm; if (seen[k]) return; seen[k] = 1; out.push({ name: nm, dob: a.dob || "", reason: a.reason || "", time: tm, provider: a.provider || "" }); });
     out.sort(function (a, b) { return S(a.time).localeCompare(S(b.time)); });
     return out;
   }
@@ -284,7 +317,7 @@
       _origParse = window._parseScheduleText;
       var f = async function () {
         var arr = await _origParse.apply(this, arguments);
-        try { if (Array.isArray(arr) && arr.length) { _pull = arr.map(function (a) { return { name: a.name, dob: a.dob || "", reason: a.reason || "", time: a.time || "", provider: a.provider || "", date: a.date || "" }; }); setTimeout(render, 50); setTimeout(render, 800); } } catch (e) {}
+        try { if (Array.isArray(arr)) { _pull = arr.map(function (a) { return { name: a.name, dob: a.dob || "", reason: a.reason || "", time_display: a.time_display || "", start_local: a.start_local || "", start_at: a.start_at || "", time: a.time || "", provider: a.provider || "", date: a.date || "" }; }); setTimeout(render, 50); setTimeout(render, 800); } } catch (e) {}
         return arr;
       };
       f.__wnWrapped = true; window._parseScheduleText = f; _wrapParse = true;
@@ -293,7 +326,12 @@
   function installRenderer() {
     try {
       if (window._renderTodayPatients && window._renderTodayPatients.__wnRender) return;
-      var fn = function (appts) { try { render(); } catch (e) {} };
+      var fn = function (appts) {
+        try {
+          if (Array.isArray(appts)) _pull = appts.slice();
+          render();
+        } catch (e) {}
+      };
       fn.__wnRender = true; fn.__mlsUnrGuard = true; fn.__mlsUpNowWrapped = true;
       window._renderTodayPatients = fn;
     } catch (e) {}

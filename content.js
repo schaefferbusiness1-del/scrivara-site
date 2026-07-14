@@ -210,10 +210,11 @@
     // then reads the frame that looks most like a clinical chart (not the schedule).
     if (d.type === 'mlsAppReadChart') {
       try {
+        var chartRequestId = mlsStr(d.requestId, 100);
         chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: mlsStr(d.patient, 200) }, function (resp) {
-          reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: resp || { error: 'no response' } });
+          reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: chartRequestId, resp: resp || { error: 'no response' } });
         });
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', resp: { error: 'extension error' } }); }
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: mlsStr(d.requestId, 100), resp: { error: 'extension error' } }); }
     }
     /* v1.89: READ-ONLY, identity-gated read of the OPEN chart's left-rail
        "Visits and Cases" pane - individual visit entries {date,type,provider,
@@ -251,7 +252,7 @@
                the dashboard or a different chart. The reader correctly refuses
                that state; recover ONCE through the already-proven, DOB-gated
                patient opener, then repeat the identity-gated read. */
-            if (canOpen && visitPatient && /^(wrong-chart|unverified-patient)$/.test(String(resp.reason || ''))) {
+            if (canOpen && visitPatient && /^(wrong-chart|unverified|unverified-patient)$/.test(String(resp.reason || ''))) {
               chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob }, function (opened) {
                 var openErr = chrome.runtime.lastError;
                 if (openErr || !opened || !opened.opened) {
@@ -295,10 +296,15 @@
     // ICD-10, E/M + CPT, orders, etc.) via the AI autopilot. NEVER clicks Save/Sign --
     // it stops and hands off to the doctor to review + sign in Athena.
     if (d.type === 'mlsAppPushVisit') {
-      /* v1.51: the app may attach {patient:{name,dob}} — the push then VERIFIES the
-         open athena encounter belongs to that patient before typing anything. */
-      try { _mlsPushVisit(mlsStr(d.goal, 4000), origin, (d.patient && d.patient.name) ? { name: mlsStr(d.patient.name, 120), dob: mlsStr(d.patient.dob, 20) } : null); }
-      catch (err) { reply({ source: 'mls-ext', type: 'mlsAppPushResult', resp: { error: 'extension error' } }); }
+      /* Retired: this mixed narrative, diagnoses, charges and order-chain
+         actions in one free-form AI goal and could not prove destination-level
+         persistence. Older app builds now fail closed instead of invoking it. */
+      reply({ source: 'mls-ext', type: 'mlsAppPushResult', resp: {
+        ok: false,
+        blocked: true,
+        reason: 'legacy-untyped-write-disabled',
+        error: 'This older mixed Athena writer is disabled for safety. Use the supervised note-only workflow; diagnoses, billing and orders remain preview-only.'
+      } });
     }
     // READ-ONLY autopilot (Mode C): DRIVE an athenaOne procedure/claims search, run it, and
     // PAGINATE through every result page, harvesting each row's text. The app parses + filters
@@ -316,6 +322,16 @@
     // confirmed save/sign. Never autonomous; never Save/Sign without this click.
     if (d.type === 'mlsAppSignAndSave') {
       var readOnlySignProbe = d.probe === true && d.note == null && d.codes == null;
+      if (!readOnlySignProbe) {
+        reply({ source: 'mls-ext', type: 'mlsAppSignAndSaveResult', resp: {
+          ok: false,
+          blocked: true,
+          signed: false,
+          reason: 'sign-route-disabled',
+          error: 'Automatic Save/Sign is disabled until the exact encounter, provider and visit date can be locked and verified. Review and sign directly in athenaOne.'
+        } });
+        return;
+      }
       if (!readOnlySignProbe && Date.now() > _mlsSignGestureUntil) {
         reply({ source: 'mls-ext', type: 'mlsAppSignAndSaveResult', resp: { blocked: true, signed: false, error: 'fresh-user-gesture-required', message: 'Click the Sign & Save button yourself, then confirm again.' } });
         return;
@@ -1290,7 +1306,7 @@
           }
         } catch (e1) {}
       }
-      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint }, function (res) {
+      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, noReload: d.noReload === true }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         if (err || !res) { post(activeOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true }); return; }
         var out = {}; for (var k in res) out[k] = res[k];
@@ -1449,7 +1465,8 @@
       chrome.runtime.sendMessage({
         type: 'mlsAppWriteV2Request',
         patient: d.patient || '', dob: d.dob || '', athenaId: d.athenaId || '',
-        sections: Array.isArray(d.sections) ? d.sections : []
+        sections: Array.isArray(d.sections) ? d.sections : [],
+        noReload: d.noReload === true
       }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         if (err || !res) { post('mlsAppWriteV2Result', { ok: false, error: (err && err.message) || 'No response from MLS Assist' }); return; }

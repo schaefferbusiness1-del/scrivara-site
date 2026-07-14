@@ -343,8 +343,9 @@
     return h;
   }
 
+  var _destroyed = false;
   function render() {
-    if (!gateOn()) return;
+    if (_destroyed || !gateOn()) return;
     var h = host(); if (!h) return;
     ensureCss();
     var p = activePt();
@@ -405,7 +406,10 @@
   }
 
   /* ---------- react to patient switches (shared-context aware) ---------- */
-  var _switchHandler = null, _pollIv = null, _lastPtKey = null;
+  var _switchHandler = null, _lastPtKey = null;
+  var _domMo = null, _captureMo = null, _captureBtn = null;
+  var _mountTimer = null, _mutationTimer = null, _tries = 0, _loaded = false;
+  var _domReadyHandler = null;
   function ptKey() { var p = activePt(); return p ? (p.id + "|" + p.dob) : ""; }
   function onMaybeSwitch() {
     var k = ptKey();
@@ -418,37 +422,103 @@
       render();
     }
   }
+  function syncCaptureState() {
+    safe(onMaybeSwitch);
+    /* The top workflow and microphone coordinator can stop the base recorder
+       without going through this panel. #captureBtn changes synchronously when
+       that happens, so its observer can finalize the armed segment without a
+       permanent polling loop. */
+    if (armed && !isCapturing()) safe(stopSegment);
+  }
+  function bindCaptureObserver() {
+    var btn = $("captureBtn");
+    if (btn === _captureBtn) return;
+    safe(function () { if (_captureMo) _captureMo.disconnect(); });
+    _captureMo = null; _captureBtn = btn || null;
+    if (!btn || !window.MutationObserver || _destroyed) return;
+    _captureMo = new MutationObserver(function () { safe(syncCaptureState); });
+    safe(function () {
+      _captureMo.observe(btn, {
+        attributes: true,
+        attributeFilter: ["class", "aria-pressed", "disabled"],
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    });
+  }
+  function queueDomSync() {
+    if (_destroyed || _mutationTimer) return;
+    _mutationTimer = setTimeout(function () {
+      _mutationTimer = null;
+      if (_destroyed) return;
+      safe(function () {
+        if ($("captureCard") && !$(HOST_ID)) tryMount();
+        bindCaptureObserver();
+        syncCaptureState();
+      });
+    }, 0);
+  }
+  function installDomWatch() {
+    if (_domMo || !window.MutationObserver || _destroyed) return;
+    _domMo = new MutationObserver(queueDomSync);
+    safe(function () {
+      _domMo.observe(document.documentElement || document.body, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    });
+  }
   function installSwitchWatch() {
-    _switchHandler = function () { safe(onMaybeSwitch); };
-    safe(function () { document.addEventListener("mls:patientpicked", _switchHandler); });
-    /* also poll: not every switch path fires the event */
-    _pollIv = setInterval(function () {
-      safe(onMaybeSwitch);
-      /* The top workflow and microphone coordinator can stop the base recorder
-         without going through this panel. Finalize its armed segment as soon as
-         that happens so the advanced list always matches what was captured. */
-      if (armed && !isCapturing()) safe(stopSegment);
-    }, 1200);
-    _lastPtKey = ptKey();
+    if (!_switchHandler) {
+      _switchHandler = function () { safe(syncCaptureState); };
+      safe(function () { document.addEventListener("mls:patientpicked", _switchHandler); });
+    }
+    installDomWatch();
+    bindCaptureObserver();
+    if (_lastPtKey === null) _lastPtKey = ptKey();
+    else safe(onMaybeSwitch);
   }
 
   /* ---------- boot / revert ---------- */
-  var _mountIv = null, _tries = 0;
+  function stopMountRetry() {
+    try { if (_mountTimer) clearTimeout(_mountTimer); } catch (e) {}
+    _mountTimer = null;
+  }
   function tryMount() {
+    if (_destroyed) return false;
     if (!$("captureCard")) return false;
-    load(); ensureCss(); render(); installSwitchWatch();
+    if (!_loaded) { load(); _loaded = true; }
+    ensureCss(); render(); installSwitchWatch();
+    stopMountRetry();
     return true;
   }
+  function retryMount() {
+    if (_destroyed || _mountTimer || _tries >= 60) return;
+    _mountTimer = setTimeout(function () {
+      _mountTimer = null;
+      if (_destroyed || tryMount()) return;
+      _tries++;
+      retryMount();
+    }, 500);
+  }
   function boot() {
-    if (tryMount()) return;
-    _mountIv = setInterval(function () { _tries++; if (tryMount() || _tries > 60) { clearInterval(_mountIv); _mountIv = null; } }, 500);
-    /* keep the panel present if the view re-renders */
-    setInterval(function () { safe(function () { if ($("captureCard") && !$(HOST_ID)) render(); }); }, 2500);
+    if (_destroyed) return;
+    installDomWatch();
+    if (!tryMount()) retryMount();
   }
   function revert() {
-    try { if (_mountIv) clearInterval(_mountIv); } catch (e) {}
-    try { if (_pollIv) clearInterval(_pollIv); } catch (e) {}
+    _destroyed = true;
+    stopMountRetry();
+    try { if (_mutationTimer) clearTimeout(_mutationTimer); } catch (e) {}
+    _mutationTimer = null;
+    try { if (_domMo) _domMo.disconnect(); } catch (e) {}
+    try { if (_captureMo) _captureMo.disconnect(); } catch (e) {}
+    _domMo = null; _captureMo = null; _captureBtn = null;
     try { if (_switchHandler) document.removeEventListener("mls:patientpicked", _switchHandler); } catch (e) {}
+    try { if (_domReadyHandler) document.removeEventListener("DOMContentLoaded", _domReadyHandler); } catch (e) {}
+    _switchHandler = null; _domReadyHandler = null;
     try { var h = $(HOST_ID); if (h && h.parentNode) h.parentNode.removeChild(h); } catch (e) {}
     try { var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e) {}
     try { window[NS].installed = false; } catch (e) {}
@@ -476,6 +546,9 @@
     KINDS: KINDS
   };
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { safe(boot); }, { once: true });
+  if (document.readyState === "loading") {
+    _domReadyHandler = function () { _domReadyHandler = null; safe(boot); };
+    document.addEventListener("DOMContentLoaded", _domReadyHandler, { once: true });
+  }
   else safe(boot);
 })();

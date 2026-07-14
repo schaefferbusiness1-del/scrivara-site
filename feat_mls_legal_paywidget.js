@@ -4,22 +4,25 @@
      (GET /api/connect/status -> { ready:false }).
    - Auto-clears itself the moment Connect becomes ready (ready:true / charges_enabled).
    - Button launches the EXISTING Connect onboarding (POST /api/connect/onboard -> { url }).
-   Performance: one lightweight setInterval + periodic fetch. NO body MutationObserver
-   (avoids stacking observers on ScribeFlow.html). Remove this file + its loader line to revert.
+   Performance: one status timer plus a scoped Legal-view observer. Remove this
+   file + its loader line (or call revert()) to revert.
 */
 (function () {
   'use strict';
   if (window.__mlsLegalPayWidget) return;            // dedupe across reloads
-  window.__mlsLegalPayWidget = true;
+  var api = window.__mlsLegalPayWidget = { version: '1.1.0' };
 
   var BASE = 'https://scrivara-backend.onrender.com';
   var BANNER_ID = 'mlsLegalPayBanner';
   var MOUNT_IDS = ['legalCard', 'legalReqView'];     // top of the legal section
   var POLL_MS = 20000;                               // connect-status poll cadence
-  var TICK_MS = 1500;                                // cheap DOM upkeep cadence
   var state = { ready: null, checking: false, lastPoll: 0 };
+  var pollTimer = null, mountTimer = null, observer = null, stopped = false, mountTries = 0;
 
-  function token() { try { return localStorage.getItem('sf_bk_token'); } catch (e) { return null; } }
+  function token() {
+    try { return sessionStorage.getItem('sf_bk_token') || localStorage.getItem('sf_bk_token'); }
+    catch (e) { return null; }
+  }
 
   function pollStatus() {
     var t = token();
@@ -32,7 +35,7 @@
         else if (j && typeof j.charges_enabled !== 'undefined') state.ready = (j.charges_enabled === true);
       })
       .catch(function () {})
-      .then(function () { state.checking = false; state.lastPoll = Date.now(); upkeep(); });
+      .then(function () { state.checking = false; state.lastPoll = Date.now(); upkeep(); schedulePoll(); });
   }
 
   function startOnboarding(btn) {
@@ -72,12 +75,11 @@
   }
 
   function mount() {
-    for (var i = 0; i < MOUNT_IDS.length; i++) {
-      var host = document.getElementById(MOUNT_IDS[i]);
-      if (host && !host.querySelector('#' + BANNER_ID)) {
-        host.insertBefore(buildBanner(), host.firstChild);
-      }
-    }
+    var all = document.querySelectorAll('#' + BANNER_ID);
+    if (all.length) { for (var j = 1; j < all.length; j++) all[j].remove(); return; }
+    var host = null;
+    for (var i = 0; i < MOUNT_IDS.length; i++) { host = document.getElementById(MOUNT_IDS[i]); if (host) break; }
+    if (host) host.insertBefore(buildBanner(), host.firstChild);
   }
 
   function removeAll() {
@@ -93,11 +95,38 @@
     // state.ready === null: wait for first poll
   }
 
-  function tick() {
-    if (Date.now() - state.lastPoll > POLL_MS) pollStatus();
-    upkeep();
+  function schedulePoll() {
+    if (stopped || pollTimer) return;
+    pollTimer = setTimeout(function () { pollTimer = null; if (!stopped) pollStatus(); }, POLL_MS);
   }
 
-  pollStatus();
-  setInterval(tick, TICK_MS);
+  function retryMount() {
+    if (stopped) return;
+    upkeep();
+    if (++mountTries < 60 && !document.getElementById('legalCard') && !document.getElementById('legalReqView')) mountTimer = setTimeout(retryMount, 500);
+  }
+  function observeLegal() {
+    var host = document.getElementById('legalReqView') || document.getElementById('legalCard');
+    if (!host || observer) return;
+    try {
+      observer = new MutationObserver(function () { if (!stopped) setTimeout(upkeep, 0); });
+      observer.observe(host, { childList: true, subtree: true });
+    } catch (e) {}
+  }
+  function onClick(ev) {
+    try { var t = ev.target && ev.target.closest ? ev.target.closest('#nav_legalreq,[data-view="legalreq"]') : null; if (t) setTimeout(function () { upkeep(); observeLegal(); }, 0); } catch (e) {}
+  }
+  document.addEventListener('click', onClick, true);
+  pollStatus(); schedulePoll(); retryMount(); observeLegal();
+
+  api.state = state;
+  api.refresh = function () { state.lastPoll = 0; pollStatus(); };
+  api.revert = function () {
+    stopped = true;
+    try { if (pollTimer) clearTimeout(pollTimer); if (mountTimer) clearTimeout(mountTimer); } catch (e) {}
+    try { if (observer) observer.disconnect(); } catch (e) {}
+    try { document.removeEventListener('click', onClick, true); } catch (e) {}
+    removeAll();
+    try { delete window.__mlsLegalPayWidget; } catch (e) {}
+  };
 })();

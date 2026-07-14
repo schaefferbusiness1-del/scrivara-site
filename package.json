@@ -1,0 +1,15 @@
+{
+  "name": "mls-scribe-site-regression",
+  "private": true,
+  "scripts": {
+    "check": "node tests/static-site.test.js",
+    "test:write-routing": "node tests/athena-write-contract.test.js",
+    "test:workflow": "node tests/primary-workflow-contract.test.js",
+    "test:schedule-time": "node tests/schedule-time-contract.test.js",
+    "test:performance": "node tests/performance-lifecycle-contract.test.js",
+    "test:extension-read": "node tests/extension-read-path.test.js",
+    "test:extension-package": "node tests/extension-package.test.js",
+    "build:extension": "node scripts/build-extension-zip.js",
+    "test": "node tests/run-all.js"
+  }
+}

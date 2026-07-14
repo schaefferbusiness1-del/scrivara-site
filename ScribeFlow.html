@@ -1830,7 +1830,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <!-- Superbill -->
       <div class="extra-card" id="billCard" style="display:none">
         <h3>🧾 Superbill <span style="font-weight:400;font-size:13px;color:var(--muted)">(dx + CPT for billing)</span>
-          <button class="sec-copy" style="margin-left:auto;background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:700" onclick="pushSuperbillToAthena()" title="Push these charges (E/M, CPT and diagnoses) into Athena's billing for the open encounter">🚀 Push to Athena</button>
+          <button class="sec-copy" style="margin-left:auto;background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:700" onclick="pushSuperbillToAthena()" title="Review the suggested E/M, CPT and diagnosis routing before entering it manually in Athena">👁 Review Athena billing plan</button>
           <button class="sec-copy" onclick="copyExtra('billBodyText')">📑 Copy</button>
           <button class="sec-copy" onclick="printExtra('Superbill','billBody')">🖨 Print</button>
         </h3>
@@ -2008,11 +2008,11 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="note-actions">
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
-        <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Clean, sectioned text ready to paste into Athena / your EMR">📋 Copy for EMR / Athena</button>
-        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="The last step: opens a review of EXACTLY what will be entered into the patient's open Athena encounter and where — note, each diagnosis, E/M + CPT, orders — then MLS Assist types each piece into its proper athenaOne section and stops before Save/Sign so you review and sign.">🚀 Review &amp; send to Athena</button>
+        <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Copy only the generated clinical note text. Diagnoses, billing and orders remain separate for manual review.">📋 Copy note text</button>
+        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="Review the note, diagnoses, billing and orders with their intended Athena destinations. This is a manual-entry plan and does not write to Athena.">👁 Review manual Athena plan</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
-      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6">🚀 <b>Last step — Review &amp; send</b>: first a review of exactly what goes where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders), then MLS enters each part into its own athenaOne section and gives you a receipt. Nothing is written until you confirm the review, and MLS never touches Save / Sign.</div>
+      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6">👁 <b>Last step — Review the manual entry plan</b>: see exactly what belongs where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders). This preview does not write, save, sign, submit, or place orders in Athena.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:11px 14px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
@@ -2228,7 +2228,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div id="ordList" class="hist-list"></div>
         <div class="row" id="ordActionsRow" style="display:none">
           <button class="btn-primary" onclick="printOrders()">🖨 Print orders</button>
-          <button class="btn-ghost" onclick="sendOrdersToEMR(this)" title="Drop the order sheet straight into your EMR via MLS Assist">📤 Send to EMR</button>
+          <button class="btn-ghost" onclick="sendOrdersToEMR(this)" title="Review the order sheet and its intended EMR destination. Preview only; nothing is submitted.">👁 Review EMR route</button>
           <button class="btn-ghost" onclick="copyOrders()">📑 Copy orders</button>
           <button class="btn-ghost" onclick="saveOrdersToHistory()">💾 Save with visit</button>
           <button class="btn-ghost btn-red-ghost" onclick="clearAllOrders()" style="margin-left:auto">🗑 Clear all</button>
@@ -2280,7 +2280,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <label>Draft letter <span style="font-weight:400;color:var(--muted)">(editable — review and complete any [bracketed] items before sending)</span></label>
           <textarea id="paLetter" style="min-height:300px"></textarea>
           <div class="row tight">
-            <button class="btn-ghost" onclick="sendPaToEMR(this)" title="Drop this letter into your EMR via MLS Assist">📤 Send to EMR</button>
+            <button class="btn-ghost" onclick="sendPaToEMR(this)" title="Review this letter and its intended EMR destination. Preview only; nothing is submitted.">👁 Review EMR route</button>
             <button class="btn-ghost" onclick="copyPriorAuth()">📑 Copy</button>
             <button class="btn-ghost" onclick="printPriorAuth()">🖨 Print</button>
           </div>
@@ -3040,7 +3040,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="field">
         <label for="autoSendEMR" style="display:flex;align-items:center;gap:9px;cursor:pointer">
           <input type="checkbox" id="autoSendEMR" style="width:17px;height:17px;cursor:pointer" onchange="applyAutoSendPreview(this.checked)">
-          <span>Auto-send signed notes to the EMR <span style="font-weight:400;color:var(--muted)">(via MLS Assist — drops the note + Dx/CPT codes into your EMR the moment you sign)</span></span>
+          <span>Show the Athena routing review after signing <span style="font-weight:400;color:var(--muted)">(shows the note, Dx/CPT suggestions, and their intended destinations; it never signs or submits automatically)</span></span>
         </label>
       </div>
     </div>
@@ -3698,7 +3698,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div class="su_guide"><b>⚖️ Legal reports &amp; 📋 prior-auth.</b> From a patient, generate a narrative/IME/utilization-review report or a payer-ready prior-authorization request and denial appeal — all built only from that chart. Copy or save as a clean PDF.</div>
         <div class="su_guide"><b>🗓️ Scheduling &amp; booking.</b> Set your hours in <b>🕘 Availability</b>. Share your booking link; patients pick only open slots and get a confirmation email with a link to confirm or cancel. See everyone on the <b>🗓️ Check-in board</b>.</div>
         <div class="su_guide"><b>📞 Phone assistant.</b> Your AI phone line answers calls, quotes your hours, books real open slots, and takes a message (reschedule/cancel/billing) that's emailed to you.</div>
-        <div class="su_guide"><b>🧩 MLS Assist (browser extension).</b> Install it to let MLS work inside your real EMR (e.g. Athena): capture a chart into MLS in one click, and drop the finished note back into the EMR. Reload to the latest version at chrome://extensions.</div>
+        <div class="su_guide"><b>🧩 MLS Assist (browser extension).</b> Install it to let MLS work with your real EMR (e.g. Athena): read a chart into MLS and prepare the finished note with an exact, visible destination plan. You remain in control of every Athena save or submission. Reload to the latest version at chrome://extensions.</div>
         <div class="su_guide"><b>✨ Create your own + 🔗 connectors.</b> Build custom tabs/widgets by describing them, and connect via the FHIR API. All under the tools menu.</div>
         <div class="su_guide"><b>❓ Stuck?</b> Hit <b>❓ Help</b> anytime and ask “where is…” or “how do I…”. Answers are specific to this app.</div>
       </div>
@@ -8825,7 +8825,7 @@ async function _studioHandleRpc(req, source){
     if(m==='aiJSON'){ var rj=await fetch(bkBase()+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:a.prompt,system:'You output ONLY valid minified JSON — no prose, no markdown, no code fences.'})}); var dj=await rj.json().catch(function(){return {};}); if(!rj.ok) return reply(false,null,dj.error||'AI error'); var tj=String(dj.text||'').replace(/^```[a-z]*\s*/i,'').replace(/```\s*$/i,'').trim(); var obj=null; try{ obj=JSON.parse(tj); }catch(e){ var mm=tj.match(/[\{\[][\s\S]*[\}\]]/); if(mm){ try{ obj=JSON.parse(mm[0]); }catch(_){} } } return reply(true, obj); }
     if(m==='download'){ try{ var blob=new Blob([String(a.content||'')],{type:String(a.mime||'text/plain')}); var url=URL.createObjectURL(blob); var aEl=document.createElement('a'); aEl.href=url; aEl.download=String(a.name||'export.csv').replace(/[\/\\<>:"|?*]/g,'_').slice(0,120); document.body.appendChild(aEl); aEl.click(); setTimeout(function(){ try{ URL.revokeObjectURL(url); aEl.remove(); }catch(e){} },200); try{ toast('Downloaded '+aEl.download,'ok'); }catch(e){} return reply(true,{downloaded:true}); }catch(e){ return reply(false,null,'Download failed.'); } }
     if(m==='copy'){ try{ navigator.clipboard.writeText(String(a.text||'')); }catch(e){ try{ var ta=document.createElement('textarea'); ta.value=String(a.text||''); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }catch(_){} } try{ toast('Copied to clipboard.','ok'); }catch(e){} return reply(true,{copied:true}); }
-    if(m==='sendToEMR'){ var txt=String(a.text||''); if(!txt.trim()) return reply(false,null,'Nothing to send.'); try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(null,{silent:false,text:txt}); return reply(true,{sent:true}); } }catch(e){} return reply(false,null,'MLS Assist isn’t available to send to your EMR.'); }
+    if(m==='sendToEMR'){ var txt=String(a.text||''); if(!txt.trim()) return reply(false,null,'Nothing to review.'); try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(null,{silent:false,text:txt}); return reply(false,{previewOnly:true},'This untyped item was not sent. Review it and place it manually in its intended Athena section.'); } }catch(e){} return reply(false,null,'MLS Assist isn’t available.'); }
     return reply(false,null,'Unknown method.');
   }catch(e){ reply(false,null,'Bridge error.'); }
 }
@@ -9114,7 +9114,7 @@ function _copilotArtifactHtml(m, i){
     +'<div class="c-art-head"><span>'+_copilotArtIcon(ar.kind)+'</span><span class="c-art-title">'+_ce(ar.title||'Draft')+'</span><span class="c-art-kind">'+_ce(ar.kind||'text')+'</span></div>'
     +'<textarea id="cArt_'+i+'" class="c-art-text" spellcheck="true" oninput="_copilotSyncArtifact('+i+',this.value);_copilotAutogrowArtifact(this)">'+_ce(ar.content)+'</textarea>'
     +'<div class="c-art-tweak"><input id="cTw_'+i+'" placeholder="Tweak it — “shorter”, “warmer tone”, “add the next-steps line”…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();copilotTweak('+i+');}"><button class="btn-primary" id="cTwBtn_'+i+'" style="font-size:12.5px;padding:8px 13px" onclick="copilotTweak('+i+')">✦ Tweak</button></div>'
-    +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'<button class="cact-btn" onclick="copilotArtifactToEMR('+i+',this)">📤 Send to EMR</button><button class="cact-btn" onclick="copilotArtifactToTool('+i+')">🧩 Build a tool</button></div>'
+    +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'<button class="cact-btn" onclick="copilotArtifactToEMR('+i+',this)">👁 Review EMR route</button><button class="cact-btn" onclick="copilotArtifactToTool('+i+')">🧩 Build a tool</button></div>'
     +'</div>';
 }
 function _copilotSyncArtifact(i,val){ var m=_copilotHistory[i]; if(m&&m.artifact) m.artifact.content=val; }
@@ -11178,8 +11178,8 @@ function renderHistory(){
     const attachBtn = isOrphan
       ? `<button class="del" title="Attach this visit to ${esc(ap.name)}" style="color:var(--green-dk);font-size:14px;font-weight:700;width:auto;padding:4px 9px" onclick="event.stopPropagation();attachNoteToActive('${n.id}')">＋ Attach</button>`
       : '';
-    // Push to Athena right from history (real notes only — a draft with no text has nothing to push).
-    const pushBtn = (!n.isDraft && (n.text||n.soap)) ? `<button title="Push this note (and its codes/orders) into Athena via MLS Assist — stops before Save so you review &amp; sign" style="background:#2E6A4B;color:#fff;border:1px solid #2E6A4B;border-radius:8px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">🚀 Athena</button>` : '';
+    // Review the saved visit's manual Athena routing plan (real notes only).
+    const pushBtn = (!n.isDraft && (n.text||n.soap)) ? `<button title="Review this saved visit and its intended Athena destinations. Preview only; nothing is written." style="background:#2E6A4B;color:#fff;border:1px solid #2E6A4B;border-radius:8px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">👁 Athena plan</button>` : '';
     return `<div class="hist-item" onclick="openNoteFromHistory('${n.id}')">
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
@@ -11506,7 +11506,7 @@ function pullScheduleViaAssist(btn){
     }
     window.addEventListener('message',onResult);
     try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
-    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } setS('Your MLS Assist is an OLDER version that can’t read the schedule yet. Update it: chrome://extensions → remove MLS Assist → Load unpacked → pick the latest mls-assist-extension folder (the newest version). Then reload this page and try again.','err'); } }, 30000);
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } setS('Athena took too long to answer this schedule pull. Nothing was imported; make sure the Day schedule is open, then try again.','err'); } }, 30000);
   }
 }
 /* Reusable: ping MLS Assist, ask it to read the open Athena tab, resolve with {text,url}.
@@ -11531,35 +11531,41 @@ function _assistReadAthenaTab(onStatus){
       say('Reading from your Athena tab…');
       window.addEventListener('message',onResult);
       try{ window.postMessage({source:'mls-app',type:'mlsAppPullSchedule'},'*'); }catch(e){}
-      setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); reject(new Error('Your MLS Assist is an OLDER version. Update it from Settings → Download MLS Assist (latest), then reload this page.')); } }, 30000);
+      setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); reject(new Error('Athena took too long to answer the schedule read. Make sure the Day schedule is open, then try again.')); } }, 30000);
     }
   });
 }
 /* Like _assistReadAthenaTab but for ONE patient's chart: passes the patient name so the
-   extension (v1.18+) can click them open in Athena, and listens for mlsAppChartResult.
-   Rejects with Error('OLDEXT') if no chart result arrives (older extension) so the caller
-   can fall back to reading whatever tab is open. */
+   current extension can open and identity-verify that exact chart. Never falls back to
+   reading arbitrary schedule text as a patient chart. */
 function _assistReadChart(patientName, onStatus){
   return new Promise(function(resolve,reject){
     var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
-    var ponged=false, tries=0, iv=null, got=false;
-    function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
+    var ponged=false, tries=0, iv=null, got=false, deadline=null;
+    var requestId='chart-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
+    function cleanup(){ if(iv) clearInterval(iv); if(deadline) clearTimeout(deadline); iv=null; deadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); }
+    function fail(err){ if(got) return; got=true; cleanup(); reject(err); }
+    function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); iv=null; window.removeEventListener('message',onPong); proceed(); } }
     window.addEventListener('message',onPong);
     var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
     say('Looking for MLS Assist…'); ping();
-    iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); reject(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled and your Athena tab is open.')); } else ping(); }, 350);
+    iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); iv=null; return; } if(tries>8){ fail(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled and your Athena tab is open.')); } else ping(); }, 350);
     function onResult(e){
       if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppChartResult')) return;
-      got=true; window.removeEventListener('message',onResult);
+      if(e.data.requestId && e.data.requestId!==requestId) return;
+      if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
       if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read the chart from your Athena tab.')); return; }
-      resolve({text:r.text||'', url:r.url||'', opened:!!r.opened});
+      resolve({text:r.text||'', url:r.url||'', opened:!!r.opened, chartName:r.chartName||'', chartDob:r.chartDob||'', chartMrn:r.chartMrn||''});
     }
     function proceed(){
       say(patientName?('Opening '+patientName+'’s chart in Athena…'):'Reading the chart from Athena…');
       window.addEventListener('message',onResult);
-      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||''},'*'); }catch(e){}
-      setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); reject(new Error('OLDEXT')); } }, 30000);
+      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||'',requestId:requestId},'*'); }catch(e){ fail(e); return; }
+      /* The extension's bounded chart-ready + text-read budget can legitimately
+         exceed 30 seconds on a heavy Athena renderer. Leave relay overhead and
+         fail honestly without issuing a second/bare read. */
+      deadline=setTimeout(function(){ fail(new Error('Athena took too long to open and verify this chart. Nothing was captured; check the Athena tab, then try again.')); }, 100000);
     }
   });
 }
@@ -11596,8 +11602,7 @@ async function pullPatientChartViaAssist(btn, opts){
   var setT=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
   try{
     var rd;
-    try{ rd=await _assistReadChart(p.name, setT); }
-    catch(e0){ if((e0&&e0.message)==='OLDEXT'){ setT('Tip: update MLS Assist to the latest version (Settings → Download) so it can open the chart for you. Reading the open tab…',''); rd=await _assistReadAthenaTab(setT); } else { throw e0; } }
+    rd=await _assistReadChart(p.name, setT);
     if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
     setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
     var chart=await _parsePatientChart(rd.text);
@@ -13795,92 +13800,70 @@ function downloadNote(){
   toast('Downloaded .txt','ok');
 }
 
-/* ---- Copy for EMR: clean structured block a doctor pastes straight in ---- */
+/* ---- Note-only text for the generic EMR paste lane. Structured diagnoses,
+   billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
   if(nb && nb.style.display!=='none'){ if(currentFormat==='soap') currentSoap=nb.value; else currentInsurance=nb.value; }
   const note=(currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'';
-  const p=activePatient();
-  const e=lastEMR||{}; const c=currentCoding;
-  let t='';
-  t+='PATIENT: '+(p?p.name:(document.getElementById('patientLabel').value.trim()||'Unlabeled'))+'\n';
-  t+='DATE: '+new Date().toLocaleString()+'\n';
-  if(getName()) t+='PROVIDER: '+getName()+(getSpec()?' ('+getSpec()+')':'')+'\n';
-  t+='\n'+note.trim()+'\n';
-  // structured fields
-  const rows=[['Chief complaint',e.cc],['Diagnoses',e.dx],['Medications',e.meds],['Orders',e.orders],['Follow-up',e.fu]].filter(r=>r[1]&&r[1]!=='—');
-  if(rows.length){ t+='\n--- STRUCTURED FIELDS ---\n'; rows.forEach(r=>t+=r[0]+': '+r[1]+'\n'); }
-  // Clearly-sectioned blocks for pasting into Athena / any EMR.
-  if(c){
-    const icd=(c.icd&&c.icd.length)?c.icd:[];
-    t+='\n=== DIAGNOSES (ICD-10) ===\n';
-    t+=icd.length?icd.map((x,i)=>(i+1)+'. '+x).join('\n')+'\n':'None documented\n';
-    t+='\n=== CPT / E-M ===\n';
-    if(c.em) t+='E/M: '+c.em+(c.emJust?' — '+c.emJust:'')+'\n';
-    const cpt=(c.cpt&&c.cpt.length)?c.cpt:[];
-    t+='CPT procedures: '+(cpt.length?cpt.join('; '):'None performed in visit')+'\n';
-  }
-  // ORDERS section — pull from the Orders module if any were built; else fall back to note's structured Orders field.
-  t+='\n=== ORDERS ===\n';
-  if(typeof currentOrders!=='undefined' && currentOrders && currentOrders.length){
-    t+=savedOrdersText(currentOrders)+'\n';
-  } else if(e.orders && e.orders!=='—'){
-    t+=e.orders+'\n';
-  } else {
-    t+='None\n';
-  }
-  t+='\n[Suggested codes/orders — provider confirms before submission. Bridge export for pasting into Athena / EMR.]\n';
-  const line=document.getElementById('signLine');
-  if(line && line.style.display!=='none') t+='\n'+line.textContent+'\n';
-  return t.trim();
+  return String(note||'').trim();
 }
 function copyForEMR(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   navigator.clipboard.writeText(emrReadyText())
-    .then(()=>toast('Clean note + Dx + CPT + Orders copied — paste straight into Athena / your EMR.','ok'))
+    .then(()=>toast('Clinical note text copied. Diagnoses, billing and orders stay separate for manual review.','ok'))
     .catch(()=>toast('Could not copy — use Copy or Download instead.','err'));
 }
-/* ===== Send the finished note (incl. diagnosis + CPT codes for billing) straight
-   into the EMR via MLS Assist — no copy/paste. Pings the extension, then asks it
-   to drop the text into the patient open in the EMR tab. ===== */
+/* ===== Place only the finished clinical note text through the generic paste
+   lane. Diagnoses, billing, orders and generated documents are never bundled
+   into this untyped route. ===== */
 function sendToEMRviaAssist(btn, opts){
   opts=opts||{};
   var emr='';
-  if(opts.text){ emr=String(opts.text); }            // a widget (or caller) can send arbitrary text
-  else { if(!currentSoap){ if(!opts.silent) toast('Generate a note first.','err'); return; } try{ emr=emrReadyText(); }catch(e){} }
+  /* This generic bridge has no typed destination. Refuse arbitrary artifacts,
+     orders, letters and billing payloads rather than guessing a field. */
+  if(opts.text){ if(!opts.silent) toast('Only the generated clinical note can use the note-text lane. Copy this item and place it manually in its intended Athena section.','err'); return; }
+  if(opts.silent){ return; } /* no automatic/background chart writes */
+  if(!currentSoap){ if(!opts.silent) toast('Generate a note first.','err'); return; }
+  try{ emr=emrReadyText(); }catch(e){}
   if(!emr.trim()){ if(!opts.silent) toast('Nothing to send yet.','err'); return; }
   var orig = btn?btn.innerHTML:'';
   if(btn){ btn.disabled=true; btn.innerHTML='… connecting'; }
   var ponged=false, tries=0, iv=null;
-  function done(msg, ok){ if(btn){ btn.disabled=false; btn.innerHTML=orig||'✅ Submit to Athena'; } try{ toast(msg, ok?'ok':'err'); }catch(_){} }
+  function done(msg, kind){ if(btn){ btn.disabled=false; btn.innerHTML=orig||'📋 Paste note text only'; } try{ toast(msg, kind==='ok'?'ok':(kind==='err'?'err':'')); }catch(_){} }
   function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
   window.addEventListener('message',onPong);
   var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
   ping();
-  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); done('MLS Assist isn’t responding here. Make sure it’s installed, enabled, and on the latest version (chrome://extensions → reload), then refresh this page.', false); } else ping(); }, 350);
+  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); done('MLS Assist isn’t responding here. Make sure it’s installed, enabled, and on the latest version (chrome://extensions → reload), then refresh this page.', 'err'); } else ping(); }, 350);
   function proceed(){
     if(btn) btn.innerHTML='… sending to your EMR';
     var got=false;
-    function onResult(e){ if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppPasteResult')) return; got=true; window.removeEventListener('message',onResult); var r=e.data.resp||{}; if(r.ok){ done('✓ Note + codes sent into your EMR'+(r.into?(' ('+r.into+')'):'')+'. Review and sign/submit there.', true); } else { done(r.error||'Could not find a note field in your EMR. Open the patient and click into the note area, then try again.', false); } }
+    function onResult(e){
+      if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppPasteResult')) return;
+      got=true; window.removeEventListener('message',onResult);
+      var r=e.data.resp||{};
+      var durable=!!(r.persisted||r.serverVerified);
+      if(r.ok&&durable){ done('Clinical note placement was durably verified. Review and sign in Athena.', 'ok'); }
+      else if(r.ok){ done('A draft paste was attempted, but Athena did not provide durable save verification. Review the open note manually; MLS is not marking this complete.', ''); }
+      else { done(r.error||'Could not find a verified note field in your EMR. Open the patient note and try again.', 'err'); }
+    }
     window.addEventListener('message',onResult);
     try{ window.postMessage({source:'mls-app',type:'mlsAppPasteNote', note:emr},'*'); }catch(e){}
-    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); done('No response from MLS Assist. Make sure your EMR tab is open, then try again.', false); } }, 30000);
+    setTimeout(function(){ if(!got){ window.removeEventListener('message',onResult); done('No response from MLS Assist. Make sure your EMR tab is open, then try again.', 'err'); } }, 30000);
   }
 }
-/* ===== PUSH THE ENTIRE VISIT BACK INTO ATHENA — note + diagnoses + ICD-10 + E/M + CPT
-   + orders, each into its proper Athena field, via the MLS Assist AI autopilot. Shows a
-   confirm of exactly what will be written first, and the autopilot NEVER clicks Save/Sign
-   (it stops so the doctor reviews + signs in Athena). ===== */
-/* ONE plan builder (b241): the pre-send review sheet AND the actual send both use
-   THIS function, so what the doctor reviews is byte-for-byte what the autopilot
-   receives — the plan can never drift from the preview. */
+/* ===== FULL-VISIT ATHENA ROUTING PLAN. This preserves the exact clinical-note,
+   diagnosis, billing and order destinations in a visible review surface. It is
+   preview-only/manual and never starts the retired AI autopilot. ===== */
+/* One plan builder keeps every review surface on the same source of truth. */
 function _athenaBuildPlan(){
   var noteText=''; try{ noteText=emrReadyText(); }catch(e){}
   var p=(typeof activePatient==='function')?activePatient():null;
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
   var orders=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
   var who=p?p.name:'this patient';
-  // ONE plan: each piece → its own athenaOne section. The labels here are the SAME destinations the autopilot targets.
+  // One plan: each piece → its intended manual Athena destination.
   var plan=[]; var lines=[];
   plan.push({kind:'note', body:'NOTE TEXT:\n'+noteText});
   lines.push(ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest);
@@ -13891,37 +13874,23 @@ function _athenaBuildPlan(){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  if(!currentSoap){ try{ toast('Generate the note first, then push the visit to Athena.','err'); }catch(e){} return; }
+  if(!currentSoap){ try{ toast('Generate the note first, then review the Athena entry plan.','err'); }catch(e){} return; }
   var built=_athenaBuildPlan();
-  if(!built.noteText.trim()){ try{ toast('Nothing to push yet.','err'); }catch(e){} return; }
-  /* b241: when the send comes from the calm review sheet (__mlsAthenaPreview),
-     that sheet WAS the confirmation — showing the same plan again in a native
-     confirm() was a redundant second mechanism (and native dialogs block the
-     render thread, the b234 class). Direct button paths still get the confirm. */
-  var pre=false;
-  try{ if(window.__mlsApvConfirmed && (Date.now()-window.__mlsApvConfirmed)<30000){ pre=true; } window.__mlsApvConfirmed=0; }catch(e){}
-  var ok=pre;
-  if(!ok){ try{ ok=window.confirm('PUSH TO ATHENA — '+built.who+'\n\nMLS Assist will enter each piece into its OWN athenaOne section, one at a time:\n\n'+built.lines.join('\n')+'\n\n⚠ It STOPS before Save/Sign — you review & sign in Athena.\nOpen '+built.who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; } }
-  if(!ok) return;
-  _athenaPushPlan(built.plan, built.who);
+  if(!built.noteText.trim()){ try{ toast('Nothing to review yet.','err'); }catch(e){} return; }
+  var p=(typeof activePatient==='function')?activePatient():null;
+  var immutablePatient=p?{name:String(p.name||''),dob:String(p.dob||''),mrn:String(p.mrn||p.athenaId||''),patientId:String(p.id||'')}:null;
+  _athenaPushPlan(built.plan, built.who, immutablePatient);
 }
-/* Shared Athena push runner — pings MLS Assist, hands the autopilot a goal, reports progress. */
-function _athenaPushRun(goal, startMsg, onDone){
-  var statusToast=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
-  var ponged=false, tries=0, iv=null, finished=false;
-  function cleanup(){ try{ window.removeEventListener('message',onPong); }catch(e){} try{ window.removeEventListener('message',onMsg); }catch(e){} if(iv) clearInterval(iv); }
-  function finish(msg,kind,reason){ finished=true; statusToast(msg,kind); cleanup(); if(typeof onDone==='function'){ try{ onDone(kind==='ok', reason||'', msg); }catch(e){} } }
-  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
-  function onMsg(e){ if(!(e.data&&e.data.source==='mls-ext')) return; if(e.data.type==='mlsAppPushProgress'){ statusToast(e.data.msg||'Working…',''); return; } if(e.data.type==='mlsAppPushResult'){ var r=e.data.resp||{}; finish(r.ok?('🚀 '+(r.msg||'Entered into Athena — review and sign there.')):(r.error||'Couldn’t enter into Athena. Open the encounter and try again.'), r.ok?'ok':'err'); } }
-  window.addEventListener('message',onPong);
-  var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
-  statusToast(startMsg||'Looking for MLS Assist…',''); ping();
-  iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong); finish('MLS Assist isn’t responding. Make sure it’s installed/enabled (latest version) and your Athena tab is open.','err','noext'); } else ping(); }, 350);
-  function proceed(){ window.addEventListener('message',onMsg); try{ window.postMessage({source:'mls-app',type:'mlsAppPushVisit', goal:goal},'*'); }catch(e){} setTimeout(function(){ if(!finished){ finish('The send did not finish — nothing was written. If the “Final check” box appeared and was not confirmed, click Send again and confirm it; also make sure the patient’s encounter is open in Athena.','err','timeout'); } }, 180000); }
+/* Legacy natural-language autopilot is intentionally contained. Typed V2 is
+   the only app write lane; this runner never posts mlsAppPushVisit. */
+function _athenaPushRun(goal, startMsg, onDone, immutablePatient){
+  var msg='Preview only — no Athena action ran. Review the destination plan and enter structured items manually.';
+  try{ toast(msg,''); }catch(e){}
+  if(typeof onDone==='function'){ try{ onDone(false,'preview-only',msg,{patient:immutablePatient||null}); }catch(e){} }
 }
-/* ===== ATHENA DESTINATION MAP — every piece of the visit has a SPECIFIC athenaOne home.
-   One source of truth for (a) the on-screen "send to ___" labels and (b) the autopilot's
-   section-by-section goals, so each thing lands in the right athenaOne section. ===== */
+/* ===== ATHENA DESTINATION MAP — visible source of truth for the manual plan.
+   Historical goal text is retained for compatibility but is never executed by
+   the contained runner above. ===== */
 var ATHENA_SECTIONS={
   note:{ icon:'📝', label:'NOTE', dest:'Athena » Encounter note (HPI / Assessment & Plan)',
     goalHead:'In the patient encounter CURRENTLY OPEN in athenaOne, go to the CLINICAL DOCUMENTATION area — the encounter note: the Intake/Exam or the "Assessment & Plan" / HPI text fields (athenaOne lays out the encounter as Chief Complaint, HPI, ROS, Exam, Assessment & Plan). Click into the main note / Assessment & Plan text area and enter the note text below. Announce "athenaOne: Encounter note" when you start.' },
@@ -13942,81 +13911,80 @@ function _athenaItemsOf(s){
   if(s.kind==='note') return ['Full clinical note text'];
   var out=[]; String(s.body||'').split('\n').forEach(function(ln){ ln=ln.trim(); if(ln.indexOf('•')===0) out.push(ln.replace(/^•\s*/,'')); else if(/^E\/M level:/i.test(ln)) out.push(ln); else if(/^Attach these (diagnoses|ICD)/i.test(ln)) out.push(ln); }); return out;
 }
-function _athenaPushPlan(sections, who){
+function _athenaPushPlan(sections, who, immutablePatient){
+  var allowed={note:1,dx:1,billing:1,orders:1};
   sections=(sections||[]).filter(function(s){ return s && s.body && String(s.body).trim(); });
-  if(!sections.length){ try{ toast('Nothing to push.',''); }catch(e){} return; }
-  var i=0, results=[];
-  function step(){
-    if(i>=sections.length){ _athenaShowReceipt(who, results); return; }
-    var s=sections[i]; var meta=ATHENA_SECTIONS[s.kind]||{label:s.kind,dest:''};
-    _athenaPushRun(_athenaSectionGoal(s.kind, s.body), '→ Sending to '+meta.dest+' …', function(ok, reason){
-      // Stop the WHOLE plan if the extension is missing OR a section timed out (it's stuck) —
-      // don't keep firing the next section onto Athena while a prior one may still be running.
-      if(!ok && (reason==='noext' || reason==='timeout')){
-        try{ toast(reason==='noext' ? 'MLS Assist isn’t responding — install/enable the latest version and open your Athena tab, then try again.' : 'MLS Assist didn’t finish the “'+meta.label+'” section in time — stopped so nothing piles up. Check Athena, then retry.', 'err'); }catch(e){}
-        results.push({ kind:s.kind, label:meta.label, dest:meta.dest, icon:(meta.icon||'•'), ok:false, items:_athenaItemsOf(s) });
-        _athenaShowReceipt(who, results, true); return;
-      }
-      results.push({ kind:s.kind, label:meta.label, dest:meta.dest, icon:(meta.icon||'•'), ok:ok, items:_athenaItemsOf(s) });
-      i++; setTimeout(step, 500);
-    });
-  }
-  step();
+  var unknown=sections.filter(function(s){ return !allowed[s.kind]; });
+  if(unknown.length){ try{ toast('Preview stopped: unsupported Athena route '+unknown.map(function(s){return String(s.kind||'?');}).join(', ')+'. Nothing was written.','err'); }catch(e){} return; }
+  if(!sections.length){ try{ toast('Nothing to review.',''); }catch(e){} return; }
+  var results=sections.map(function(s){
+    var meta=ATHENA_SECTIONS[s.kind]||{label:s.kind,dest:''};
+    return {kind:s.kind,label:meta.label,dest:meta.dest,icon:(meta.icon||'•'),ok:false,previewOnly:true,items:_athenaItemsOf(s)};
+  });
+  _athenaShowReceipt(who,results,false,immutablePatient);
 }
-/* RECEIPT — a clear after-the-fact confirmation of EXACTLY what was sent to Athena and where. */
-function _athenaShowReceipt(who, results, partial){
+/* Review card — this is a plan, never a write receipt. */
+function _athenaShowReceipt(who, results, partial, immutablePatient){
   try{
     var old=document.getElementById('athenaReceipt'); if(old) old.remove();
     var when=new Date().toLocaleString();
+    var identityBits=[];
+    if(immutablePatient&&immutablePatient.dob) identityBits.push('DOB '+String(immutablePatient.dob));
+    if(immutablePatient&&immutablePatient.mrn) identityBits.push('MRN '+String(immutablePatient.mrn));
+    var identityLine=identityBits.length?(' · '+identityBits.join(' · ')):'';
     var rows=results.map(function(r){
       var itemsHtml=(r.items&&r.items.length)?('<ul style="margin:4px 0 0 0;padding-left:18px;font-size:12.5px;color:#204034">'+r.items.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('')+'</ul>'):'';
-      return '<div style="border:1px solid #e2e8f2;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:'+(r.ok?'#f3fbf6':'#fff6f6')+'">'
-        +'<div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px">'+(r.ok?'✅':'⚠️')+'</span><b style="font-size:13.5px">'+r.icon+' '+esc(r.label)+'</b></div>'
+      return '<div style="border:1px solid #e2e8f2;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#f7f9fb">'
+        +'<div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px">👁</span><b style="font-size:13.5px">'+r.icon+' '+esc(r.label)+'</b><span style="margin-left:auto;font-size:11px;color:#7a5a16">MANUAL</span></div>'
         +'<div style="font-size:11.5px;color:#5b7186;margin-top:2px">→ '+esc(r.dest)+'</div>'+itemsHtml+'</div>';
     }).join('');
-    var anyFail=results.some(function(r){ return !r.ok; });
     var card=document.createElement('div'); card.id='athenaReceipt';
     card.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(10,25,50,.45);display:flex;align-items:center;justify-content:center;padding:18px';
     card.innerHTML='<div style="background:#fff;border-radius:16px;max-width:540px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 24px 70px rgba(10,30,70,.4);padding:20px 22px">'
-      +'<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:17px;font-weight:800;color:#204034">🚀 Sent to Athena — '+esc(who||'patient')+'</div><div style="font-size:12px;color:#5b7186;margin-top:2px">'+esc(when)+(partial?' · stopped early':'')+'</div></div><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="background:none;border:none;font-size:22px;color:#9aa7b4;cursor:pointer;line-height:1">×</button></div>'
-      +'<div style="font-size:12.5px;color:#204034;margin:10px 0 12px">Exactly what MLS Assist entered, each into its own athenaOne section:</div>'
+      +'<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:17px;font-weight:800;color:#204034">👁 Manual Athena entry plan — '+esc(who||'patient')+'</div><div style="font-size:12px;color:#5b7186;margin-top:2px">'+esc(when+identityLine)+'</div></div><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="background:none;border:none;font-size:22px;color:#9aa7b4;cursor:pointer;line-height:1">×</button></div>'
+      +'<div style="font-size:12.5px;color:#204034;margin:10px 0 12px">Review each suggested destination, then enter it manually in the verified patient encounter.</div>'
       +rows
-      +'<div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#7a5a16;margin-top:4px">⚠ MLS Assist <b>stopped before Save / Sign</b> — open Athena and confirm each item looks right, then save & sign there.'+(anyFail?' One or more items are marked ⚠ — double-check those in Athena.':'')+'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:14px"><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="flex:1;background:#204034;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer">Got it — I’ll review in Athena</button></div>'
+      +'<div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#7a5a16;margin-top:4px">⚠ <b>Nothing was written, saved, signed, submitted, ordered, or billed.</b> Verify the patient and encounter in Athena before manual entry.</div>'
+      +'<div style="display:flex;gap:8px;margin-top:14px"><button onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="flex:1;background:#204034;color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer">Close plan</button></div>'
       +'</div>';
     document.body.appendChild(card);
     card.addEventListener('click', function(e){ if(e.target===card) card.remove(); });
-    try{ toast('🚀 Sent to Athena — review the receipt, then sign in athenaOne.','ok'); }catch(e){}
-  }catch(e){ try{ toast('Sent to Athena — review & sign there.','ok'); }catch(_){} }
+    try{ toast('Athena entry plan ready. Preview only — nothing was written.',''); }catch(e){}
+  }catch(e){ try{ toast('Could not open the manual Athena plan. Nothing was written.','err'); }catch(_){} }
 }
-/* Push ONLY the superbill / charges (E/M + CPT + ICD) into Athena billing. */
+/* Preview the superbill routing. Structured billing remains manual-only. */
 function pushSuperbillToAthena(){
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
-  if(!c || (!c.em && !(c.cpt&&c.cpt.length) && !(c.icd&&c.icd.length))){ try{ toast('Generate the note + coding first — there are no charges to push yet.','err'); }catch(e){} return; }
+  if(!c || (!c.em && !(c.cpt&&c.cpt.length) && !(c.icd&&c.icd.length))){ try{ toast('Generate the note + coding first — there are no charges to review yet.','err'); }catch(e){} return; }
   var p=(typeof activePatient==='function')?activePatient():null; var who=p?p.name:'this patient';
   var lines=[]; if(c.em) lines.push('• E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('• CPT  '+x); }); if(c.icd&&c.icd.length) c.icd.forEach(function(x){ lines.push('• Dx (attach)  '+x); });
-  var ok=false; try{ ok=window.confirm('PUSH SUPERBILL TO ATHENA — '+who+'\n\nSEND TO: '+ATHENA_SECTIONS.billing.dest+'\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save — you review & submit the claim in Athena.\nMake sure '+who+'’s encounter is open in your Athena tab.\n\nPush the charges now?'); }catch(e){ ok=true; }
-  if(!ok) return;
   var body='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these ICD-10 diagnoses to the charges: '+c.icd.join('; ')):'')+(p&&p.name?('\n\nPatient: '+p.name):'');
-  _athenaPushPlan([{kind:'billing', body:body}], who);
+  var immutablePatient=p?{name:String(p.name||''),dob:String(p.dob||''),mrn:String(p.mrn||p.athenaId||''),patientId:String(p.id||'')}:null;
+  _athenaPushPlan([{kind:'billing', body:body}], who, immutablePatient);
 }
-/* Push a SAVED history note (its text + stored codes + orders) into Athena, right from History. */
+/* Preview a SAVED visit using the identity stored with that record. Never use
+   whichever patient happens to be active when History is opened. */
 function pushHistoryNoteToAthena(id){
   var ns=(typeof getNotes==='function'?getNotes():[])||[];
   var n=ns.find(function(x){ return x.id===id; }); if(!n){ try{ toast('That visit no longer exists.','err'); }catch(e){} return; }
-  var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ try{ toast('This visit has no note text to push.','err'); }catch(e){} return; }
+  var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ try{ toast('This visit has no note text to review.','err'); }catch(e){} return; }
   var c=n.coding||null; var orders=Array.isArray(n.orders)?n.orders:[];
-  var who=n.patient||'this patient';
+  var savedPatient=null;
+  try{ if(n.patientId&&typeof findPatient==='function') savedPatient=findPatient(n.patientId)||null; }catch(e){}
+  var immutablePatient=savedPatient?{name:String(savedPatient.name||''),dob:String(savedPatient.dob||''),mrn:String(savedPatient.mrn||savedPatient.athenaId||''),patientId:String(savedPatient.id||n.patientId||'')}:{name:String(n.patient||''),dob:'',mrn:'',patientId:String(n.patientId||'')};
+  var who=immutablePatient.name||'this saved patient';
   var plan=[{kind:'note', body:'NOTE TEXT:\n'+bundle}]; var lines=[ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest];
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+' ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
   if(orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+' ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
-  var ok=false; try{ ok=window.confirm('PUSH TO ATHENA — '+who+'\n\nMLS Assist enters each piece into its OWN athenaOne section, one at a time:\n\n'+lines.join('\n')+'\n\n⚠ Stops before Save/Sign — you review & sign in Athena.\nOpen '+who+'’s encounter in your Athena tab first.\n\nPush it now?'); }catch(e){ ok=true; }
-  if(!ok) return;
-  if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who); else { try{ toast('Update MLS to the latest version to push from History.','err'); }catch(e){} }
+  if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who, immutablePatient); else { try{ toast('Could not open the Athena manual-entry plan. Nothing was written.','err'); }catch(e){} }
 }
-function getAutoSendEMR(){ return localStorage.getItem(uns('autoSendEMR'))==='1'; }
-function applyAutoSendPreview(c){ try{ localStorage.setItem(uns('autoSendEMR'), c?'1':'0'); }catch(e){} try{ toast(c?'On — signed notes will auto-send to your EMR via MLS Assist.':'Off — notes won’t auto-send.', 'ok'); }catch(e){} }
+function getAutoSendEMR(){ return false; }
+function applyAutoSendPreview(c){
+  try{ localStorage.setItem(uns('autoSendEMR'),'0'); }catch(e){}
+  try{ var box=document.getElementById('autoSendEMR'); if(box) box.checked=false; }catch(e){}
+  try{ toast(c?'Automatic EMR writes stay off. The Athena destination review will remain available after signing.':'Automatic EMR writes are off. You can still review every intended Athena destination.', ''); }catch(e){}
+}
 
 /* =========================================================
    SHARE / EXPORT PATIENT RECORD
@@ -21172,9 +21140,27 @@ function initTooltips(){
     ptNewBtn:'Add a new patient', ptMoreBtn:'More patient and practice tools' };
   Object.keys(tips).forEach(function(id){ var el=document.getElementById(id); if(el && !el.getAttribute('title') && !el.getAttribute('data-tip')) el.setAttribute('data-tip',tips[id]); });
   // Convert EVERY title→data-tip so the browser's native tooltip never ALSO shows (no double/stacked tooltips).
-  function _stripTitles(root){ try{ (root||document).querySelectorAll('[title]').forEach(function(el){ var t=el.getAttribute('title'); if(t){ if(!el.getAttribute('data-tip')) el.setAttribute('data-tip',t); el.removeAttribute('title'); } }); }catch(e){} }
+  function _stripOneTitle(el){ try{ if(!el||el.nodeType!==1||!el.hasAttribute('title')) return; var t=el.getAttribute('title'); if(t&&!el.getAttribute('data-tip')) el.setAttribute('data-tip',t); el.removeAttribute('title'); }catch(e){} }
+  function _stripTitles(root){ try{ if(!root) return; _stripOneTitle(root); if(root.querySelectorAll) root.querySelectorAll('[title]').forEach(_stripOneTitle); }catch(e){} }
   _stripTitles(document);
-  try{ var _mo=new MutationObserver(function(muts){ var hit=false; for(var i=0;i<muts.length;i++){ var m=muts[i]; if((m.addedNodes&&m.addedNodes.length) || (m.type==='attributes'&&m.attributeName==='title')){ hit=true; break; } } if(hit){ clearTimeout(window.__stripTo); window.__stripTo=setTimeout(function(){ _stripTitles(document); },0); } }); _mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['title']}); }catch(e){}
+  /* New controls used to trigger a full-document [title] scan for every DOM
+     mutation. Process only the added subtree/changed element instead so busy
+     calendar and recording renders cannot turn tooltip cleanup into a freeze. */
+  try{
+    var _titleRoots=[], _titleTo=null;
+    var _mo=new MutationObserver(function(muts){
+      for(var i=0;i<muts.length;i++){
+        var m=muts[i];
+        if(m.type==='attributes'){ _stripOneTitle(m.target); continue; }
+        for(var j=0;m.addedNodes&&j<m.addedNodes.length;j++){
+          var n=m.addedNodes[j]; if(n&&n.nodeType===1&&_titleRoots.indexOf(n)<0) _titleRoots.push(n);
+        }
+      }
+      if(!_titleRoots.length||_titleTo) return;
+      _titleTo=setTimeout(function(){ var roots=_titleRoots.splice(0); _titleTo=null; roots.forEach(_stripTitles); },0);
+    });
+    _mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['title']});
+  }catch(e){}
   function find(t){ var hops=0; while(t && t.nodeType===1 && t!==document.body && hops<6){ var tx=(t.getAttribute('data-tip')||t.getAttribute('title')); if(tx && tx.trim()) return [t,tx.trim()]; t=t.parentNode; hops++; } return null; }
   function place(el){ var r=el.getBoundingClientRect(); var tw=tip.offsetWidth, th=tip.offsetHeight; var x=r.left+r.width/2-tw/2; var y=r.top-th-8; if(y<6) y=r.bottom+8; x=Math.max(6,Math.min(x,window.innerWidth-tw-6)); tip.style.left=Math.round(x)+'px'; tip.style.top=Math.round(y)+'px'; }
   document.addEventListener('mouseover',function(e){

@@ -40,7 +40,7 @@
  * or write to Athena). Patient creation in Fix 3 uses the app's own upsertPatient --
  * the same call the manual "New patient" modal and the schedule import already use --
  * it is ordinary local patient-list management, not a chart write. Idempotent injections,
- * marker-guarded, with a slow poll + rAF-debounced observer so it cannot drive an idle
+ * marker-guarded, with event-driven transcript mirroring + one coalesced observer so it cannot drive an idle
  * re-render loop. window.__mlsEasy4Fixes.revert() removes every listener/timer/wrap and
  * restores any relocated node. NUL-free. No PHI in any log.
  */
@@ -48,7 +48,7 @@
   'use strict';
   try { if (window.__mlsEasy4Fixes && window.__mlsEasy4Fixes.installed) return; } catch (e) { return; }
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var ASSET = 'feat_mls_easy_4fixes.js';
 
   /* ---------------- tiny safe helpers ---------------- */
@@ -85,7 +85,7 @@
    * its [Typed notes]-block model, replacing it with this simpler merge). If S70 ever
    * rebuilds the box, ensureFix1() re-acquires it.
    */
-  var F1 = { lastT: null, poll: null, ownedBox: null };
+  var F1 = { lastT: null, ownedBox: null, transcript: null, ownValue: null, replacements: [] };
 
   function fx1Capturing() {
     return safe(function () { return !!window.capturing; }, false);
@@ -137,10 +137,15 @@
     var box = scratchBox();
     if (!box) { F1.ownedBox = null; return; }
     if (box.getAttribute('data-mls4fx-mirror') === '1' && F1.ownedBox === box) return;
+    if (F1.ownedBox) { safe(function () { F1.ownedBox.removeEventListener('input', fx1OnBoxInput); }); }
     /* clone to strip any pre-existing listeners (e.g. S70 syncScratch), keep value/attrs */
     var fresh = box.cloneNode(true);
     fresh.setAttribute('data-mls4fx-mirror', '1');
-    if (box.parentNode) box.parentNode.replaceChild(fresh, box);
+    if (box.parentNode) {
+      var parent = box.parentNode;
+      parent.replaceChild(fresh, box);
+      F1.replacements.push({ original: box, fresh: fresh, parent: parent });
+    }
     F1.ownedBox = fresh;
     /* seed the box from the current transcript so any existing dictation/text shows */
     var tr = transcriptEl();
@@ -155,15 +160,61 @@
   function fx1Tick() {
     if (!(inEasy() && curStep() === 2)) return;
     fx1AcquireBox();
+    fx1HookTranscript();
     fx1MirrorTranscriptToBox();
   }
 
-  function fx1Start() {
-    if (F1.poll) return;
-    /* a modest poll catches the recognizer's SILENT writes to #transcript */
-    F1.poll = setInterval(function () { safe(fx1Tick); }, 300);
+  function fx1ValueDescriptor(el) {
+    var p = el;
+    while (p) {
+      var d = safe(function () { return Object.getOwnPropertyDescriptor(p, 'value'); }, null);
+      if (d) return d;
+      p = safe(function () { return Object.getPrototypeOf(p); }, null);
+    }
+    return null;
   }
-  function fx1Stop() { if (F1.poll) { clearInterval(F1.poll); F1.poll = null; } }
+
+  function fx1HookTranscript() {
+    var tr = transcriptEl();
+    if (!tr) return false;
+    if (F1.transcript === tr) return true;
+    fx1UnhookTranscript();
+    var own = safe(function () { return Object.getOwnPropertyDescriptor(tr, 'value'); }, null);
+    var base = own || fx1ValueDescriptor(safe(function () { return Object.getPrototypeOf(tr); }, null));
+    if (!base || !isFn(base.get) || !isFn(base.set)) return false;
+    var ok = safe(function () {
+      Object.defineProperty(tr, 'value', {
+        configurable: true,
+        enumerable: !!base.enumerable,
+        get: function () { return base.get.call(this); },
+        set: function (v) {
+          base.set.call(this, v);
+          if (!_reverted && inEasy() && curStep() === 2) schedule();
+        }
+      });
+      return true;
+    }, false);
+    if (ok) { F1.transcript = tr; F1.ownValue = own; }
+    return ok;
+  }
+
+  function fx1UnhookTranscript() {
+    var tr = F1.transcript;
+    if (!tr) return;
+    safe(function () {
+      if (F1.ownValue) Object.defineProperty(tr, 'value', F1.ownValue);
+      else delete tr.value;
+    });
+    F1.transcript = null;
+    F1.ownValue = null;
+  }
+
+  function fx1Start() {
+    /* Programmatic recognizer writes are caught at the textarea value setter,
+       so there is no permanent editor poll while the app is idle. */
+    safe(fx1Tick);
+  }
+  function fx1Stop() { fx1UnhookTranscript(); }
 
   /* ============================================================
    *  FIX 2 -- reliable "<- Back"
@@ -380,7 +431,27 @@
   /* ============================================================
    *  ensure() -- idempotent UI upkeep, tamed (no idle re-render loop)
    * ============================================================ */
-  var _obs = null, _poll = null, _raf = 0, _reverted = false;
+  var _obs = null, _raf = 0, _scheduleTimer = null, _bootTimer = null;
+  var _bootAttempts = 0, _reverted = false, _domReadyHandler = null;
+  var _timers = [], _watchListeners = [];
+
+  function later(fn, delay) {
+    var id = setTimeout(function () {
+      var i = _timers.indexOf(id); if (i >= 0) _timers.splice(i, 1);
+      if (!_reverted) safe(fn);
+    }, delay);
+    _timers.push(id);
+    return id;
+  }
+  function cancelLater(id) {
+    if (!id) return null;
+    safe(function () { clearTimeout(id); });
+    var i = _timers.indexOf(id); if (i >= 0) _timers.splice(i, 1);
+    return null;
+  }
+  function watchEvent(target, type, fn, options) {
+    safe(function () { target.addEventListener(type, fn, options); _watchListeners.push([target, type, fn, options]); });
+  }
 
   function ensure() {
     if (_reverted) return;
@@ -401,23 +472,83 @@
     _raf = safe(function () {
       return requestAnimationFrame(function () { _raf = 0; if (!_reverted) safe(ensure); });
     }, 0) || 0;
-    if (!_raf) { safe(function () { setTimeout(function () { if (!_reverted) safe(ensure); }, 16); }); }
+    if (!_raf && !_scheduleTimer) {
+      _scheduleTimer = later(function () { _scheduleTimer = null; safe(ensure); }, 16);
+    }
+  }
+
+  function relevantNode(node) {
+    if (!node) return false;
+    if (node.nodeType !== 1) node = node.parentElement;
+    if (!node) return false;
+    var sel = '#mlsEasyPanel,#visitHero,#visitView,#transcript,#captureBtn,#mlsProtoSlide2,#mlsProtoScratch,#procResultWrap';
+    return safe(function () { return !!(node.matches(sel) || node.closest(sel) || node.querySelector(sel)); }, false);
+  }
+
+  function relevantMutations(records) {
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      if (relevantNode(r.target)) return true;
+      for (var j = 0; j < r.addedNodes.length; j++) { if (relevantNode(r.addedNodes[j])) return true; }
+      for (var k = 0; k < r.removedNodes.length; k++) { if (relevantNode(r.removedNodes[k])) return true; }
+    }
+    return false;
+  }
+
+  function onWatchEvent(ev) {
+    if (relevantNode(ev && ev.target)) schedule();
+  }
+
+  function bootRetry() {
+    _bootTimer = null;
+    if (_reverted) return;
+    safe(ensure);
+    if ((!easy() || !F3.wrapped) && _bootAttempts++ < 40) {
+      _bootTimer = later(bootRetry, 250);
+    }
   }
 
   function startWatch() {
+    if (_obs) return;
     safe(function () {
-      _obs = new MutationObserver(function () { if (!_reverted) schedule(); });
-      _obs.observe(document.body, { childList: true, subtree: true });
+      _obs = new MutationObserver(function (records) { if (!_reverted && relevantMutations(records)) schedule(); });
+      _obs.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style'] });
     });
-    _poll = setInterval(function () { if (!_reverted) safe(ensure); }, 900);
+    watchEvent(document, 'input', onWatchEvent, true);
+    watchEvent(document, 'change', onWatchEvent, true);
+    watchEvent(document, 'click', onWatchEvent, true);
+    _bootAttempts = 0;
+    bootRetry();
   }
 
   /* ---------------- revert ---------------- */
   function revert() {
     _reverted = true;
     safe(function () { if (_obs) _obs.disconnect(); }); _obs = null;
-    safe(function () { if (_poll) clearInterval(_poll); }); _poll = null;
+    if (_raf) { safe(function () { cancelAnimationFrame(_raf); }); _raf = 0; }
+    _scheduleTimer = cancelLater(_scheduleTimer);
+    _bootTimer = cancelLater(_bootTimer);
+    while (_timers.length) cancelLater(_timers[_timers.length - 1]);
+    while (_watchListeners.length) {
+      var l = _watchListeners.pop();
+      safe(function () { l[0].removeEventListener(l[1], l[2], l[3]); });
+    }
+    if (_domReadyHandler) {
+      safe(function () { document.removeEventListener('DOMContentLoaded', _domReadyHandler); });
+      _domReadyHandler = null;
+    }
     fx1Stop();
+    if (F1.ownedBox) safe(function () { F1.ownedBox.removeEventListener('input', fx1OnBoxInput); });
+    for (var ri = F1.replacements.length - 1; ri >= 0; ri--) {
+      (function (rep) {
+        safe(function () {
+          if (rep.fresh && rep.original) rep.original.value = txtval(rep.fresh);
+          if (rep.fresh && rep.fresh.parentNode === rep.parent) rep.parent.replaceChild(rep.original, rep.fresh);
+        });
+      })(F1.replacements[ri]);
+    }
+    F1.replacements = [];
+    F1.ownedBox = null;
     fx2Remove();
     fx3Unwrap();
     safe(fx4Remove);
@@ -451,6 +582,11 @@
   // install it immediately: Back works from the first paint. boot() re-calls it (idempotent).
   safe(fx2Install);
 
-  try { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot(); }
+  try {
+    if (document.readyState === 'loading') {
+      _domReadyHandler = function () { _domReadyHandler = null; boot(); };
+      document.addEventListener('DOMContentLoaded', _domReadyHandler);
+    } else boot();
+  }
   catch (e) { safe(boot); }
 })();

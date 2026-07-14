@@ -23,7 +23,7 @@
   'use strict';
   if (window.__mlsEasy && window.__mlsEasy.installed) { return; }
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var PANEL_ID = 'mlsEasyPanel';
   var STYLE_ID = 'mlsEasyStyle';
   var HIDE_CLASS = 'mlsEasyHidden';
@@ -38,8 +38,37 @@
     manual: false,  // manual patient entry shown
     did: { saved: false, copied: false, pdf: false } // honest action tracking
   };
-  var _tickTimer = null;
+  var _bootObs = null;
+  var _refreshTimer = null;
+  var _pullTimer = null;
+  var _genTimer = null;
+  var _operation = null;
+  var _timers = [];
+  var _listeners = [];
+  var _domReadyHandler = null;
+  var _reverted = false;
   var _lastSig = '';
+
+  function later(fn, delay) {
+    var id = setTimeout(function () {
+      var i = _timers.indexOf(id); if (i >= 0) { _timers.splice(i, 1); }
+      if (!_reverted) { try { fn(); } catch (e) {} }
+    }, delay);
+    _timers.push(id);
+    return id;
+  }
+  function cancelLater(id) {
+    if (!id) { return null; }
+    try { clearTimeout(id); } catch (e) {}
+    var i = _timers.indexOf(id); if (i >= 0) { _timers.splice(i, 1); }
+    return null;
+  }
+  function listen(target, type, fn, options) {
+    try {
+      target.addEventListener(type, fn, options);
+      _listeners.push([target, type, fn, options]);
+    } catch (e) {}
+  }
 
   // ---------- tiny helpers ----------
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -306,8 +335,10 @@
       p.innerHTML = html; wire();
       bind('ezRec', function () {
         // drive the REAL recorder
-        if (isRecording()) { call('stopCapture'); } else { call('startCapture'); }
-        setTimeout(render, 250);
+        var wasRecording = isRecording();
+        if (wasRecording) { call('stopCapture'); } else { call('startCapture'); }
+        startOperationWatch('record', wasRecording);
+        later(render, 250);
       });
       bindNext(function () {
         if (!hasTranscript()) { flashHint('There’s no transcript yet — record or type the visit first.'); return; }
@@ -339,8 +370,15 @@
         call('generateNote');
         // generation is async; the tick() watcher flips to "Review" when #noteBox fills.
         // safety: clear the spinner flag after a while if nothing appeared.
-        clearTimeout(window.__mlsEzGenT);
-        window.__mlsEzGenT = setTimeout(function () { window.__mlsEzGenerating = false; if (state.step === 3) { render(); } }, 45000);
+        _genTimer = cancelLater(_genTimer);
+        _genTimer = later(function () {
+          _genTimer = null; window.__mlsEzGenT = null;
+          window.__mlsEzGenerating = false;
+          stopOperationWatch();
+          if (state.step === 3) { render(); }
+        }, 45000);
+        window.__mlsEzGenT = _genTimer;
+        startOperationWatch('generate');
       });
       bindNext(function () { state.step = 4; render(); });
       return;
@@ -389,7 +427,7 @@
       bind('ezSave', function () {
         call('saveCurrentNote', true);
         state.did.saved = true;
-        setTimeout(function () { state.step = 'done'; render(); }, 600);
+        later(function () { state.step = 'done'; render(); }, 600);
       });
       bind('ezCopy', function () {
         call('copyForEMR');
@@ -432,13 +470,19 @@
     // the real autopull is async; tick() will notice when #heroPtName fills.
     // give a gentle confirmation path:
     var tries = 0;
-    clearInterval(window.__mlsEzPullW);
-    window.__mlsEzPullW = setInterval(function () {
+    _pullTimer = cancelLater(_pullTimer);
+    function checkPull() {
+      _pullTimer = null; window.__mlsEzPullW = null;
       tries++;
       var now = patientName();
-      if (now && now !== before) { clearInterval(window.__mlsEzPullW); if (state.step === 1) { render(); } }
-      if (tries > 30) { clearInterval(window.__mlsEzPullW); }
-    }, 500);
+      if (now && now !== before) { if (state.step === 1) { render(); } return; }
+      if (tries <= 30) {
+        _pullTimer = later(checkPull, 500);
+        window.__mlsEzPullW = _pullTimer;
+      }
+    }
+    _pullTimer = later(checkPull, 500);
+    window.__mlsEzPullW = _pullTimer;
   }
 
   // ---------- connectivity (honest, read-only) ----------
@@ -475,7 +519,12 @@
     if (state.step === 2) { render(); return; }
     // step 3: note appeared while generating -> advance to review
     if (state.step === 3) {
-      if (hasNote()) { window.__mlsEzGenerating = false; clearTimeout(window.__mlsEzGenT); state.step = 4; render(); return; }
+      if (hasNote()) {
+        window.__mlsEzGenerating = false;
+        _genTimer = cancelLater(_genTimer); window.__mlsEzGenT = null;
+        stopOperationWatch();
+        state.step = 4; render(); return;
+      }
       render(); return;
     }
     // step 1: patient name changed -> reflect
@@ -489,14 +538,99 @@
     if (!$(PANEL_ID)) { render(); }
   }
 
-  var _bootObs = null;
+  function stopOperationWatch() {
+    if (_operation && _operation.timer) { _operation.timer = cancelLater(_operation.timer); }
+    _operation = null;
+  }
+
+  function operationPulse() {
+    if (!_operation || _reverted) { return; }
+    var op = _operation;
+    op.timer = null;
+    tick();
+    var keep = false;
+    if (op.kind === 'record') {
+      var active = isRecording();
+      if (active) { op.sawActive = true; op.idle = 0; }
+      else if (op.sawActive) { op.idle++; }
+      keep = active || (!op.sawActive && Date.now() < op.deadline) || (op.sawActive && op.idle < 4);
+    } else if (op.kind === 'generate') {
+      keep = !hasNote() && !!window.__mlsEzGenerating && Date.now() < op.deadline;
+    }
+    if (keep) { op.timer = later(operationPulse, 250); }
+    else { stopOperationWatch(); }
+  }
+
+  function startOperationWatch(kind, sawActive) {
+    stopOperationWatch();
+    _operation = {
+      kind: kind,
+      sawActive: !!sawActive,
+      idle: 0,
+      deadline: Date.now() + (kind === 'generate' ? 45000 : 5000),
+      timer: null
+    };
+    operationPulse();
+  }
+
+  function scheduleRefresh() {
+    if (_refreshTimer || _reverted) { return; }
+    _refreshTimer = later(function () {
+      _refreshTimer = null;
+      boot();
+      tick();
+      if (state.step === 2 && isRecording() && (!_operation || _operation.kind !== 'record')) {
+        startOperationWatch('record', true);
+      }
+    }, 0);
+  }
+
+  function relevantNode(node) {
+    if (!node) { return false; }
+    if (node.nodeType !== 1) { node = node.parentElement; }
+    if (!node) { return false; }
+    var sel = '#visitView, #visitHero, #' + PANEL_ID + ', #transcript, #noteBox, #heroPtName, #captureBtn';
+    try { return !!(node.matches(sel) || node.closest(sel) || node.querySelector(sel)); } catch (e) { return false; }
+  }
+
+  function relevantMutations(records) {
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      if (relevantNode(r.target)) { return true; }
+      for (var j = 0; j < r.addedNodes.length; j++) { if (relevantNode(r.addedNodes[j])) { return true; } }
+      for (var k = 0; k < r.removedNodes.length; k++) { if (relevantNode(r.removedNodes[k])) { return true; } }
+    }
+    return false;
+  }
+
   function startObserver() {
     try {
-      _bootObs = new MutationObserver(function () {
-        if (hero() && !$(PANEL_ID)) { boot(); }
+      if (_bootObs) { return; }
+      _bootObs = new MutationObserver(function (records) {
+        if (relevantMutations(records)) { scheduleRefresh(); }
       });
-      _bootObs.observe(document.body, { childList: true, subtree: true });
+      _bootObs.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['class', 'style', 'aria-pressed']
+      });
     } catch (e) {}
+  }
+
+  function onStateEvent(e) {
+    var t = e && e.target;
+    if (!t || t === document || t === window) { scheduleRefresh(); return; }
+    try {
+      if (t.id === 'transcript' || t.id === 'noteBox' || t.id === 'heroPtName' ||
+          t.id === 'captureBtn' || t.closest('#visitHero, #visitView')) { scheduleRefresh(); }
+    } catch (err) { scheduleRefresh(); }
+  }
+
+  function onFocusRefresh() {
+    if (_reverted || state.mode !== 'easy' || state.step !== 1 || patientName()) { return; }
+    refreshConn();
   }
 
   // ---------- public API ----------
@@ -507,9 +641,23 @@
     goto: function (s) { state.step = s; render(); },
     state: state,
     revert: function () {
-      try { if (_tickTimer) { clearInterval(_tickTimer); } } catch (e) {}
-      try { clearInterval(window.__mlsEzPullW); } catch (e) {}
+      _reverted = true;
+      stopOperationWatch();
+      _refreshTimer = cancelLater(_refreshTimer);
+      _pullTimer = cancelLater(_pullTimer); window.__mlsEzPullW = null;
+      _genTimer = cancelLater(_genTimer); window.__mlsEzGenT = null;
+      window.__mlsEzGenerating = false;
+      while (_timers.length) { cancelLater(_timers[_timers.length - 1]); }
       try { if (_bootObs) { _bootObs.disconnect(); } } catch (e) {}
+      _bootObs = null;
+      while (_listeners.length) {
+        var l = _listeners.pop();
+        try { l[0].removeEventListener(l[1], l[2], l[3]); } catch (e) {}
+      }
+      if (_domReadyHandler) {
+        try { document.removeEventListener('DOMContentLoaded', _domReadyHandler); } catch (e) {}
+        _domReadyHandler = null;
+      }
       try { setSimpleHidden(false); } catch (e) {}
       var p = $(PANEL_ID); if (p && p.parentNode) { p.parentNode.removeChild(p); }
       var st = $(STYLE_ID); if (st && st.parentNode) { st.parentNode.removeChild(st); }
@@ -523,15 +671,19 @@
 
   // init
   function init() {
+    if (_reverted) { return; }
     boot();
     refreshConn();
     startObserver();
-    _tickTimer = setInterval(tick, 800);
-    // periodic connectivity refresh while on step 1
-    setInterval(function () { if (state.mode === 'easy' && state.step === 1 && !patientName()) { refreshConn(); } }, 12000);
+    listen(document, 'input', onStateEvent, true);
+    listen(document, 'change', onStateEvent, true);
+    listen(window, 'focus', onFocusRefresh, false);
+    listen(document, 'visibilitychange', function () { if (!document.hidden) { onFocusRefresh(); scheduleRefresh(); } }, false);
+    scheduleRefresh();
   }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    _domReadyHandler = function () { _domReadyHandler = null; init(); };
+    document.addEventListener('DOMContentLoaded', _domReadyHandler);
   } else {
     init();
   }

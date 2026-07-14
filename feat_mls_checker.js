@@ -41,7 +41,7 @@
   if (win[NS] && win[NS].installed) { return; }
 
   var BACKEND = 'https://scrivara-backend.onrender.com';
-  var SERVER_EXT_VERSION = '1.39'; // current published MLS Assist (extension-version.json)
+  var SERVER_EXT_VERSION = '2.9.16'; // current published MLS Assist (extension-version.json)
 
   function isFn(f) { return typeof f === 'function'; }
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -384,31 +384,78 @@
     box.innerHTML = html;
   }
 
-  function openPanel() { var s = ensureSection(); if (s) safe(function () { s.scrollIntoView({ block: 'nearest' }); }); return !!s; }
-  function closePanel() { var s = document.getElementById(SECTION_ID); if (s && s.parentNode) s.parentNode.removeChild(s); }
+  function openPanel() {
+    beginMount();
+    var s = document.getElementById(SECTION_ID);
+    if (s) safe(function () { s.scrollIntoView({ block: 'nearest' }); });
+    return !!s;
+  }
+  function closePanel() {
+    stopMountWatch();
+    var s = document.getElementById(SECTION_ID); if (s && s.parentNode) s.parentNode.removeChild(s);
+  }
 
   /* ---- boot: wait for the assistant panel, then mount the section ---- */
   var mountTimer = null, mountTries = 0, panelMo = null;
+  var panelStateHandler = null, domReadyHandler = null, destroyed = false;
+  function stopMountWatch() {
+    safe(function () { if (mountTimer) clearTimeout(mountTimer); });
+    mountTimer = null;
+    safe(function () { if (panelMo) panelMo.disconnect(); });
+    panelMo = null;
+  }
   function tryMount() {
-    if (ensureSection()) return true;
+    if (destroyed) return false;
+    if (ensureSection()) { stopMountWatch(); return true; }
     return false;
   }
-  function boot() {
-    registerBuiltins();
-    if (tryMount()) return;
-    // poll briefly, and observe for the panel being (re)built
-    mountTimer = setInterval(function () {
-      if (tryMount() || mountTries++ > 120) { clearInterval(mountTimer); mountTimer = null; }
+  function retryMount() {
+    if (destroyed || mountTimer || mountTries >= 120) return;
+    mountTimer = setTimeout(function () {
+      mountTimer = null;
+      if (destroyed || tryMount()) return;
+      mountTries++;
+      retryMount();
     }, 500);
+  }
+  function beginMount() {
+    if (destroyed) return false;
+    stopMountWatch();
+    mountTries = 0;
+    if (tryMount()) return true;
+    /* Observe only while a mount is outstanding. Successful mounting always
+       disconnects this document-wide observer; later remounts are initiated by
+       explicit assistant-open/schedule-tab actions or openPanel(). */
     if (win.MutationObserver) {
       panelMo = new MutationObserver(function () { safe(tryMount); });
       safe(function () { panelMo.observe(document.documentElement || document.body, { childList: true, subtree: true }); });
     }
+    retryMount();
+    return false;
+  }
+  function installPanelStateWatch() {
+    if (panelStateHandler) return;
+    panelStateHandler = function (ev) {
+      var t = ev && ev.target;
+      var trigger = safe(function () {
+        return t && t.closest && t.closest('#mlsAsstFab,#mlsAsstPanel .as-tab[data-tab="schedule"]');
+      }, null);
+      if (trigger && !document.getElementById(SECTION_ID)) beginMount();
+    };
+    document.addEventListener('click', panelStateHandler, false);
+  }
+  function boot() {
+    registerBuiltins();
+    installPanelStateWatch();
+    beginMount();
   }
 
   function revert() {
-    safe(function () { if (mountTimer) clearInterval(mountTimer); });
-    safe(function () { if (panelMo) panelMo.disconnect(); }); panelMo = null;
+    destroyed = true;
+    stopMountWatch();
+    safe(function () { if (panelStateHandler) document.removeEventListener('click', panelStateHandler, false); });
+    safe(function () { if (domReadyHandler) document.removeEventListener('DOMContentLoaded', domReadyHandler); });
+    panelStateHandler = null; domReadyHandler = null;
     closePanel();
     safe(function () { if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl); }); styleEl = null;
     registry = [];
@@ -427,6 +474,9 @@
     revert: revert
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  if (document.readyState === 'loading') {
+    domReadyHandler = function () { domReadyHandler = null; boot(); };
+    document.addEventListener('DOMContentLoaded', domReadyHandler, { once: true });
+  }
   else boot();
 })();
