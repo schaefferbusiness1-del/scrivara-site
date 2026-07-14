@@ -18,7 +18,7 @@ assert(
   'Copilot dock body must be a non-scrolling full-height flex column'
 );
 assert(
-  code.includes('#copilotDockBody>#copilotCard{box-sizing:border-box;display:flex!important;flex:1 1 auto!important;flex-direction:column;min-height:0!important;height:100%!important;width:100%!important;'),
+  code.includes('#copilotDockBody>#copilotCard{box-sizing:border-box;display:flex!important;flex:1 1 auto!important;flex-direction:column;min-height:0!important;max-height:none!important;height:100%!important;width:100%!important;'),
   'Copilot card must fill the dock body'
 );
 assert(

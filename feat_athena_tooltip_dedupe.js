@@ -473,7 +473,7 @@
          thread absorb the available space and keep a full-width composer at
          the bottom instead of bunching every control at the top. */
       '#copilotDockBody{min-height:0;overflow:hidden!important;padding:0!important;display:flex!important;flex-direction:column;}',
-      '#copilotDockBody>#copilotCard{box-sizing:border-box;display:flex!important;flex:1 1 auto!important;flex-direction:column;min-height:0!important;height:100%!important;width:100%!important;margin:0!important;padding:0!important;overflow:hidden!important;border-radius:0!important;}',
+      '#copilotDockBody>#copilotCard{box-sizing:border-box;display:flex!important;flex:1 1 auto!important;flex-direction:column;min-height:0!important;max-height:none!important;height:100%!important;width:100%!important;margin:0!important;padding:0!important;overflow:hidden!important;border:0!important;border-radius:0!important;}',
       '#copilotDockBody #copilotHero{box-sizing:border-box;order:1;flex:0 0 auto!important;width:100%;margin:0!important;padding:18px 16px!important;border-radius:0!important;}',
       '#copilotDockBody #copilotThread{box-sizing:border-box;order:2;flex:1 1 auto!important;min-height:120px!important;max-height:none!important;width:100%;margin:0!important;padding:14px!important;overflow-y:auto!important;}',
       '#copilotDockBody #copilotChips{box-sizing:border-box;order:3;flex:0 0 auto!important;width:100%;margin:0!important;padding:8px 12px 4px!important;}',
