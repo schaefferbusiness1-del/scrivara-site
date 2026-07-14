@@ -469,6 +469,18 @@
          collapse and reflow the patient bar while the second writer settles. */
       '#mlsCtxBar>#mlsDayProgress{box-sizing:border-box;flex:0 0 361px;min-width:361px;justify-content:flex-start;}',
       'body.mls-has-active-pt #patientBar>#mlsDayProgress,body.mls-has-active-pt #patientBar>#mlsAgendaChip{display:none!important;}',
+      /* The Copilot dock owns the full viewport-height sidebar. Let its chat
+         thread absorb the available space and keep a full-width composer at
+         the bottom instead of bunching every control at the top. */
+      '#copilotDockBody{min-height:0;overflow:hidden!important;padding:0!important;display:flex!important;flex-direction:column;}',
+      '#copilotDockBody>#copilotCard{box-sizing:border-box;display:flex!important;flex:1 1 auto!important;flex-direction:column;min-height:0!important;height:100%!important;width:100%!important;margin:0!important;padding:0!important;overflow:hidden!important;border-radius:0!important;}',
+      '#copilotDockBody #copilotHero{box-sizing:border-box;order:1;flex:0 0 auto!important;width:100%;margin:0!important;padding:18px 16px!important;border-radius:0!important;}',
+      '#copilotDockBody #copilotThread{box-sizing:border-box;order:2;flex:1 1 auto!important;min-height:120px!important;max-height:none!important;width:100%;margin:0!important;padding:14px!important;overflow-y:auto!important;}',
+      '#copilotDockBody #copilotChips{box-sizing:border-box;order:3;flex:0 0 auto!important;width:100%;margin:0!important;padding:8px 12px 4px!important;}',
+      '#copilotDockBody #copilotCard>.note{box-sizing:border-box;order:4;flex:0 0 auto!important;width:100%;margin:0!important;padding:8px 14px 0!important;background:#fff;}',
+      '#copilotDockBody #copilotInputRow{box-sizing:border-box;order:5;flex:0 0 auto!important;display:grid!important;grid-template-columns:minmax(0,1fr) 46px 46px;align-items:end;gap:8px;width:100%;margin:0!important;padding:10px 12px 12px!important;border-top:1px solid #E7E5DD;background:#fff;}',
+      '#copilotDockBody #copilotInput{box-sizing:border-box;width:100%!important;min-width:0!important;margin:0!important;}',
+      '#copilotDockBody #copilotMicBtn,#copilotDockBody #copilotSendBtn{box-sizing:border-box;width:46px!important;height:46px!important;margin:0!important;padding:0!important;}',
       '.mls-qtp-overlay{position:fixed;inset:0;z-index:2147483200;background:rgba(20,31,25,.48);display:flex;align-items:center;justify-content:center;padding:20px;}',
       '.mls-qtp-card{width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;background:#fff;color:#1A211C;border:1px solid #DCE4DE;border-radius:18px;box-shadow:0 24px 70px rgba(17,35,25,.28);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}',
       '.mls-qtp-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 13px;border-bottom:1px solid #E6ECE8;}',
