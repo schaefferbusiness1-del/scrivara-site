@@ -11,6 +11,11 @@ const pages = [
   'intake.html', 'send-portal-invite.html', 'phone.html'
 ];
 
+const lawyerCopy = fs.readFileSync(path.join(root, 'lawyers.html'), 'utf8');
+const expertCopy = fs.readFileSync(path.join(root, 'expert.html'), 'utf8');
+assert(!/payment (?:through the portal )?is being finalized|online payment is being finalized/i.test(lawyerCopy + expertCopy), 'public attorney pages must not claim that live portal checkout is unfinished');
+assert(lawyerCopy.includes('Stripe-confirmed payment unlocks the full signed report') && expertCopy.includes('Stripe-confirmed payment unlocks the full signed report'), 'public attorney pages must explain the live checkout and unlock flow consistently');
+
 let handlers = 0;
 const missing = [];
 const deadLinks = [];
