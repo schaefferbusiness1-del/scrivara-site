@@ -49,8 +49,8 @@
       'background:#fff;border:1px solid #E7E5DD;border-radius:999px;padding:9px 16px;max-width:420px;',
       'box-shadow:0 1px 2px rgba(20,33,28,.06),0 12px 32px rgba(20,33,28,.14);',
       'font:600 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;',
-      'opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .18s ease,transform .18s ease;}',
-      '#mlsBusyPill.on{opacity:1;transform:none;}',
+      'opacity:0;visibility:hidden;transform:translateY(8px);pointer-events:none;transition:opacity .18s ease,transform .18s ease,visibility 0s linear .18s;}',
+      '#mlsBusyPill.on{opacity:1;visibility:visible;transform:none;transition-delay:0s;}',
       '#mlsBusyPill .bp-spin{width:14px;height:14px;border:2px solid #D8E5DE;border-top-color:#2E6A4B;border-radius:50%;flex:none;animation:mlsBpSpin .8s linear infinite;}',
       '@keyframes mlsBpSpin{to{transform:rotate(360deg)}}',
       '#mlsBusyPill .bp-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
@@ -77,6 +77,9 @@
     css();
     p = document.createElement('div');
     p.id = 'mlsBusyPill';
+    p.setAttribute('role', 'status');
+    p.setAttribute('aria-live', 'polite');
+    p.setAttribute('aria-hidden', 'true');
     p.innerHTML = '<span class="bp-spin"></span><span class="bp-txt">Working…</span>';
     (document.body || document.documentElement).appendChild(p);
     return p;
@@ -88,8 +91,10 @@
       var t = p.querySelector('.bp-txt');
       if (t) t.textContent = pillLabel || 'Working…';
       p.classList.add('on');
+      p.setAttribute('aria-hidden', 'false');
     } else {
       p.classList.remove('on');
+      p.setAttribute('aria-hidden', 'true');
       pillLabel = '';
     }
   }

@@ -542,7 +542,9 @@ async function detectState(){
 
 function expertCard(e){
   const name=field(e,['name','display_name','doctor_name','full_name'])||'Participating physician';
-  const cred=field(e,['credentials']);
+  const cred=String(field(e,['credentials'])||'')
+    .replace(/\s*\(sample profile;\s*edit your board certifications here\)\s*/ig,' ')
+    .replace(/\s{2,}/g,' ').trim();
   const spec=field(e,['specialty','expert_specialty']);
   const sub=field(e,['subspecialty']);
   const juris=field(e,['jurisdiction','expert_jurisdiction']);

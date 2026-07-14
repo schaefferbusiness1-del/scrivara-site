@@ -2824,7 +2824,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <footer id="appFooter">
-  <span class="noprint">⚕️ <b>Always review AI notes before signing.</b> Don't use with real patient data until you're HIPAA-compliant
+  <span class="noprint" id="appFooterNotice">⚕️ <b>Always review AI notes before signing.</b> Don't use with real patient data until you're HIPAA-compliant
   (a signed BAA with OpenAI, encryption, and patient consent). Your notes and patient data are encrypted and stored on your MLS account, synced across the devices you sign into.</span>
 </footer>
 </div>
@@ -3943,6 +3943,12 @@ const _SF_DEMO = (function(){
 const BACKEND_URL = _SF_DEMO ? "" : "https://scrivara-backend.onrender.com"; // hosted mode: server holds the OpenAI key; no key needed on this device
 function backendMode(){ return !!(BACKEND_URL && BACKEND_URL.trim()); }
 function bkBase(){ return BACKEND_URL.replace(/\/$/,''); }
+function reconcileAppFooterNotice(){
+  const notice=document.getElementById('appFooterNotice');
+  if(!notice || backendMode()) return;
+  notice.innerHTML='⚕️ <b>Always review AI notes before signing.</b> This local demo stores its synthetic patient and note data only in this browser on this device. Do not enter real patient information.';
+}
+reconcileAppFooterNotice();
 
 /* ---------- backend token + user (hosted Bearer auth) ---------- */
 /* PER-TAB SESSIONS: the active session lives in sessionStorage (unique per

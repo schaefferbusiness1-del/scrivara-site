@@ -241,21 +241,43 @@ function qp(k){ try{ return new URLSearchParams(location.search).get(k)||''; }ca
 function initials(name){ const p=String(name||'').replace(/^(dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i,'').trim().split(/\s+/); return (((p[0]||'')[0]||'')+((p[p.length-1]||'')[0]||'')).toUpperCase()||'DR'; }
 function money(cents){ const n=Number(cents); if(!n||isNaN(n)) return ''; return '$'+(n/100).toLocaleString('en-US',{maximumFractionDigits:0}); }
 function paras(text){ return String(text||'').split(/\n{2,}/).map(function(p){ return p.trim(); }).filter(Boolean).map(function(p){ return '<p>'+esc(p).replace(/\n/g,'<br>')+'</p>'; }).join(''); }
+function publicCredentials(value){
+  return String(value||'')
+    .replace(/\s*\(sample profile;\s*edit your board certifications here\)\s*/ig,' ')
+    .replace(/\s{2,}/g,' ').trim();
+}
+function publicExperience(value, fallback){
+  const text=String(value||'').trim();
+  if(!text) return '';
+  return /\b(sample|placeholder|edit(?:\s+with)?\b)/i.test(text) ? fallback : text;
+}
+function publicDocuments(list){
+  return (Array.isArray(list)?list:[]).filter(function(d){
+    return d && d.url && !/\b(sample|placeholder)\b/i.test(String(d.label||'')+' '+String(d.filename||''));
+  });
+}
 
 const STATE_NAMES={AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',PR:'Puerto Rico'};
 
 function render(e){
   const yourState=(qp('state')||'').toUpperCase();
   const states=Array.isArray(e.states)?e.states:[];
+  const credentials=publicCredentials(e.credentials);
+  const years=publicExperience(e.years,'Practice details confirmed with each engagement');
+  const depoExperience=publicExperience(e.depo_experience,'Availability confirmed with each engagement');
+  const trialExperience=publicExperience(e.trial_experience,'Availability confirmed with each engagement');
+  const availability=publicExperience(e.availability,'');
+  const feeInfo=publicExperience(e.fee_info,'Report fee provided with engagement terms.');
+  const documents=publicDocuments(e.documents);
   const match = yourState && states.indexOf(yourState)!==-1;
   const photo = e.has_photo
     ? '<img class="photo" alt="'+esc(e.name)+'" src="'+BACKEND_URL+esc(e.photo_url)+'">'
     : '<div class="photo-ph">'+esc(initials(e.name))+'</div>';
 
   const badges=[];
-  badges.push('<span class="badge green">🩺 Actively practicing</span>');
-  if(e.credentials && /board/i.test(e.credentials)) badges.push('<span class="badge">🎓 Board-certified</span>');
-  badges.push('<span class="badge">⏱️ 24-hour reports</span>');
+  badges.push('<span class="badge green">🩺 Independent physician expert</span>');
+  if(/board[ -]?cert/i.test(credentials)) badges.push('<span class="badge">🎓 Board-certified</span>');
+  if(/24[ -]?hour/i.test(availability)) badges.push('<span class="badge">⏱️ 24-hour reports</span>');
   if(match) badges.unshift('<span class="badge match">📍 Licensed in '+esc(STATE_NAMES[yourState]||yourState)+'</span>');
 
   const reqHref='lawyers.html#request';
@@ -263,7 +285,7 @@ function render(e){
   // header card
   let h='<div class="phero">'+photo+'<div>'
     +'<h1>'+esc(e.name)+'</h1>'
-    +(e.credentials?'<div class="cred">'+esc(e.credentials)+'</div>':'')
+    +(credentials?'<div class="cred">'+esc(credentials)+'</div>':'')
     +((e.specialty||e.subspecialty)?'<div class="spec">'+esc([e.specialty,e.subspecialty].filter(Boolean).join(' · '))+'</div>':'')
     +(e.headline?'<div class="headline">'+esc(e.headline)+'</div>':'')
     +'<div class="badges">'+badges.join('')+'</div>'
@@ -285,10 +307,10 @@ function render(e){
 
   const kvRows=[];
   if(e.specialty||e.subspecialty) kvRows.push(['Specialty', [e.specialty,e.subspecialty].filter(Boolean).join(' · ')]);
-  if(e.years) kvRows.push(['Experience', e.years]);
-  if(e.depo_experience) kvRows.push(['Deposition', e.depo_experience]);
-  if(e.trial_experience) kvRows.push(['Trial / testimony', e.trial_experience]);
-  if(e.availability) kvRows.push(['Availability', e.availability]);
+  if(years) kvRows.push(['Experience', years]);
+  if(depoExperience) kvRows.push(['Deposition', depoExperience]);
+  if(trialExperience) kvRows.push(['Trial / testimony', trialExperience]);
+  if(availability) kvRows.push(['Availability', availability]);
   if(e.contact_pref) kvRows.push(['Contact', e.contact_pref]);
   if(kvRows.length){
     h+='<div class="block"><h2>Credentials &amp; experience</h2><div class="kv">'
@@ -302,9 +324,9 @@ function render(e){
       +'</div></div>';
   }
 
-  if(Array.isArray(e.documents) && e.documents.length){
+  if(documents.length){
     h+='<div class="block"><h2>Documents</h2><ul class="docs">'
-      +e.documents.map(function(d){ return '<a href="'+BACKEND_URL+esc(d.url)+'" target="_blank" rel="noopener">📄 '+esc(d.label||d.filename||'Document')+'</a>'; }).join('')
+      +documents.map(function(d){ return '<a href="'+BACKEND_URL+esc(d.url)+'" target="_blank" rel="noopener">📄 '+esc(d.label||d.filename||'Document')+'</a>'; }).join('')
       +'</ul><p class="note">Documents are provided by the physician (e.g. CV, de-identified sample report, certifications).</p></div>';
   }
 
@@ -314,10 +336,10 @@ function render(e){
   h+='<div class="aside"><div class="block">';
   h+='<h2>Engagement</h2>';
   const depo=money(e.depo_rate_cents), trial=money(e.trial_rate_cents);
-  if(depo||trial||e.fee_info){
+  if(depo||trial||feeInfo){
     if(depo) h+='<div class="fee"><span>Deposition</span><span class="v">'+esc(depo)+'/hr</span></div>';
     if(trial) h+='<div class="fee"><span>Trial / testimony</span><span class="v">'+esc(trial)+'/hr</span></div>';
-    if(e.fee_info) h+='<p class="note">'+esc(e.fee_info)+'</p>';
+    if(feeInfo) h+='<p class="note">'+esc(feeInfo)+'</p>';
   } else {
     h+='<p class="note">Fees on request — included with your engagement quote.</p>';
   }

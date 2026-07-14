@@ -354,6 +354,7 @@ body.mdl-lock{overflow:hidden}
   .band blockquote p{font-size:21px}
   .finalcta h2{font-size:36px}
   .foot .links{max-height:none}
+  #mlsChatBtn{position:static;right:auto;bottom:auto;box-shadow:none;padding:13px 18px}
 }
 </style>
 </head>
@@ -392,6 +393,7 @@ body.mdl-lock{overflow:hidden}
 <a class="btn btn-primary btn-lg" href="#demo">Book a 20-minute demo</a>
 <a class="btn btn-ghost btn-lg" href="#pricing">See pricing</a>
 <a class="btn btn-ghost btn-lg" href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">Founder rewards on Kickstarter <span class="arrow">&nearr;</span></a>
+<button id="mlsChatBtn" type="button" onclick="mlsChatToggle(true)">💬 Ask us anything</button>
 </div>
 <div class="trust"><span>HIPAA-ready architecture</span><i>·</i><span>You sign every note</span><i>·</i><span>Built for spine, pain &amp; PM&amp;R</span></div>
 </div>
@@ -800,7 +802,7 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <a href="#security">Security</a>
 <a href="lawyers.html">For attorneys</a>
 <a href="review-finder.html">Reviews</a>
-<a href="easy-book.html">Book</a>
+<a href="#demo">Book a demo</a>
 <a href="privacy.html">Privacy</a>
 <a href="ScribeFlow.html">Sign in</a>
 <a href="mailto:michael@mlsscribe.com">Contact</a>
@@ -811,7 +813,6 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 </footer>
 
 <!-- AI sales chat -->
-<button id="mlsChatBtn" onclick="mlsChatToggle(true)">💬 Ask us anything</button>
 <div id="mlsChatPanel" role="dialog" aria-label="MLS assistant">
 <div id="mlsChatHead"><div><b>MLS Assistant</b><small>Features, pricing, anything</small></div><button id="mlsChatClose" onclick="mlsChatToggle(false)" aria-label="Close">×</button></div>
 <div id="mlsChatMsgs"></div>

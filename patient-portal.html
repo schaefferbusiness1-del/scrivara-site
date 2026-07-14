@@ -417,6 +417,8 @@
   $("demoBtn").addEventListener("click", function(){
     DEMO=true; enterApp(); show($("demoBanner"));
     renderPatient(DEMO_DATA);
+    var booking=$("bookingBtn");
+    if(booking){ booking.removeAttribute("href"); booking.setAttribute("aria-disabled","true"); booking.style.opacity=".65"; booking.style.cursor="not-allowed"; booking.title="A real booking link is available after portal sign-in."; booking.textContent="Booking available after sign-in"; }
     addSys("This is sample data so you can preview the portal. Try a question below.");
   });
 
