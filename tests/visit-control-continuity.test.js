@@ -45,6 +45,8 @@ assert(code.includes("flex:0 0 361px;min-width:361px"), 'day-progress final widt
 assert(asset.includes("continuityStyle.__mlsStabilizePatientBar();"), 'patient-bar same-frame shared mutation pass is missing');
 assert(code.includes("st.__mlsStabilizePatientBar = stabilizePatientBar"), 'patient-bar stabilizer must survive global cleanup');
 assert(code.includes("document.body.classList.contains('mls-has-active-pt')"), 'active-patient ownership guard is missing');
+assert(code.includes("byId('mlsDayProgress') || dayProgressNode"), 'removed day-progress node is not retained across refreshes');
+assert(code.includes("byId('mlsAgendaChip') || dayAgendaNode"), 'removed agenda node is not retained across refreshes');
 assert(code.includes("Math.max(0, currentCounts.total - currentCounts.seen) + ' remaining'"), 'temporary day-progress label is not normalized');
 
 console.log('PASS visit-control continuity: fixed voice row, in-place Quick Tool dialogs, stable day-progress header');

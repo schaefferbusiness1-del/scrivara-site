@@ -441,6 +441,8 @@
   var priorFocus = null;
   var dayStableText = '';
   var dayBusy = false;
+  var dayProgressNode = null;
+  var dayAgendaNode = null;
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -675,11 +677,14 @@
     try {
       var active = document.body && document.body.classList.contains('mls-has-active-pt');
       var ctx = byId('mlsCtxBar');
-      var progress = byId('mlsDayProgress');
-      var agenda = byId('mlsAgendaChip');
+      var progress = byId('mlsDayProgress') || dayProgressNode;
+      var agenda = byId('mlsAgendaChip') || dayAgendaNode;
+      if (progress) dayProgressNode = progress;
+      if (agenda) dayAgendaNode = agenda;
       /* A transient hidden-state check in the two legacy renderers can move
-         these chips into #patientBar even though the active-patient bar still
-         owns the page. Return them before paint; do not alter no-patient mode. */
+         or remove these chips even though the active-patient bar still owns
+         the page. Retain and return the SAME nodes before paint so flex never
+         loses a column and never gets a chance to reorient. */
       if (active && ctx) {
         var anchor = ctx.querySelector('.mlsctx-actions');
         if (progress && progress.parentNode !== ctx) ctx.insertBefore(progress, anchor || null);
@@ -722,7 +727,7 @@
   function revertContinuity() {
     document.removeEventListener('click', onQuickToolClick, true);
     document.removeEventListener('keydown', onKeydown, true);
-    dayStableText = ''; dayBusy = false;
+    dayStableText = ''; dayBusy = false; dayProgressNode = null; dayAgendaNode = null;
     closePopup();
     var st = byId(STYLE_ID); if (st && st.parentNode) st.parentNode.removeChild(st);
     if (W.__mlsVisitControlContinuity) W.__mlsVisitControlContinuity.installed = false;
