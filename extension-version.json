@@ -1,5 +1,5 @@
 {
-  "version": "2.9.19",
+  "version": "2.9.20",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.19 - Exact patient history and prior visits now flow into six organized chart sections and operative-note context. Provider/day pulls verify complete schedule coverage, preserve stable patient and provider identities, enrich repeat pulls without duplicates, and fail closed on partial reads. Recording can stop and resume into one note, and every Athena note, billing, Save, Sign, or order action stays behind one exact human-reviewed confirmation."
+  "notes": "v2.9.20 - Athena day pulls now wait for virtual rows to finish rendering, parse Last/First names canonically, reconcile hidden provider copies without collapsing real cross-provider visits, verify every requested scroll position, and fail closed on unresolved rows. The packaged reader is regression-tested against the live 38-rendered-copy to 18-appointment schedule shape, with an optional PHI-safe redacted support receipt for live diagnosis."
 }
