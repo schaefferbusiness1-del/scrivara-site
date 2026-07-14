@@ -100,7 +100,10 @@
   // merges by name+DOB so no duplicate is created).
   function addVisitForActive() {
     var p = activePt();
-    PENDING_PREFILL = p ? { name: p.name || '', dob: p.dob || p.dateOfBirth || '' } : null;
+    PENDING_PREFILL = p ? {
+      name: p.name || '', dob: p.dob || p.dateOfBirth || '', mrn: p.mrn || '',
+      sex: p.sex || p.gender || '', phone: p.phone || '', existing: true
+    } : null;
     try {
       if (window.__mlsAddPatient && typeof window.__mlsAddPatient.open === 'function') {
         window.__mlsAddPatient.open();
@@ -177,7 +180,7 @@
   var PENDING_PREFILL = null;
 
   function findModalRoot() {
-    var nameInput = document.querySelector('input[name=apName]');
+    var nameInput = document.querySelector('#apName,input[name=apName]');
     if (!nameInput) return null;
     var n = nameInput;
     while (n && getComputedStyle(n).position !== 'fixed') n = n.parentElement;
@@ -210,11 +213,11 @@
     root.setAttribute('data-mlsease-modal', '1');
 
     // 1) default visit date = today (only if empty)
-    var dateEl = root.querySelector('[name=apgDate]');
+    var dateEl = root.querySelector('#apgDate,[name=apgDate]');
     if (dateEl && !dateEl.value) dateEl.value = todayYMD();
 
     // 2) remember last visit type
-    var typeEl = root.querySelector('[name=apgType]');
+    var typeEl = root.querySelector('#apgType,[name=apgType]');
     if (typeEl) {
       if (!typeEl.value) {
         var last = getStore(LAST_TYPE_KEY);
@@ -227,11 +230,11 @@
     }
 
     // 3) score scales on the labels
-    var painEl = root.querySelector('[name=apgPain], [name=apgVas], [name=apgScore]') ||
+    var painEl = root.querySelector('#apgPain,[name=apgPain], [name=apgVas], [name=apgScore]') ||
       Array.prototype.find.call(root.querySelectorAll('input'), function (i) {
         return /7\/10/.test(i.placeholder || '');
       });
-    var odiEl = root.querySelector('[name=apgOdi], [name=apgFunction]') ||
+    var odiEl = root.querySelector('#apgOdi,[name=apgOdi], [name=apgFunction]') ||
       Array.prototype.find.call(root.querySelectorAll('input'), function (i) {
         return /42%/.test(i.placeholder || '');
       });
@@ -253,10 +256,31 @@
 
   function applyPrefill(root) {
     if (!PENDING_PREFILL || !root) return;
-    var nameEl = root.querySelector('[name=apName]');
-    var dobEl = root.querySelector('[name=apDob]');
-    if (nameEl && PENDING_PREFILL.name && !nameEl.value) nameEl.value = PENDING_PREFILL.name;
-    if (dobEl && PENDING_PREFILL.dob && !dobEl.value) dobEl.value = PENDING_PREFILL.dob;
+    var pref = PENDING_PREFILL;
+    var nameEl = root.querySelector('#apName,[name=apName]');
+    var dobEl = root.querySelector('#apDob,[name=apDob]');
+    var mrnEl = root.querySelector('#apMrn,[name=apMrn]');
+    var sexEl = root.querySelector('#apSex,[name=apSex]');
+    var phoneEl = root.querySelector('#apPhone,[name=apPhone]');
+    if (nameEl && pref.name && !nameEl.value) nameEl.value = pref.name;
+    if (dobEl && pref.dob && !dobEl.value) dobEl.value = pref.dob;
+    if (mrnEl && pref.mrn && !mrnEl.value) mrnEl.value = pref.mrn;
+    if (sexEl && pref.sex && !sexEl.value) sexEl.value = pref.sex;
+    if (phoneEl && pref.phone && !phoneEl.value) phoneEl.value = pref.phone;
+    if (pref.existing) {
+      root.setAttribute('data-mlsease-visitmode', '1');
+      var hd = root.querySelector('.ap-hd h3');
+      if (hd) hd.textContent = '➕ Add visit — ' + (pref.name || 'selected patient');
+      var patientSec = nameEl && nameEl.closest ? nameEl.closest('.ap-sec') : null;
+      if (patientSec) {
+        var patientLab = patientSec.querySelector('.ap-lab');
+        if (patientLab) patientLab.textContent = 'Selected patient (locked for this visit)';
+        Array.prototype.forEach.call(patientSec.querySelectorAll('input'), function (inp) {
+          inp.readOnly = true; inp.setAttribute('aria-readonly', 'true');
+        });
+      }
+      var save = root.querySelector('#apSave'); if (save) save.textContent = '💾 Save visit';
+    }
     PENDING_PREFILL = null;
   }
 

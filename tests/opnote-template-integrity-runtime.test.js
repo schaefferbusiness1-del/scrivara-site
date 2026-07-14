@@ -69,6 +69,15 @@ async function main() {
 
   const api = context.__mlsOpNoteIntegrity;
   assert(api && api.installed, 'op-note integrity owner did not install');
+  assert.strictEqual(context._genOpNote.__opnpWrapped, true, 'legacy prep heartbeat can take generator ownership back');
+  assert.strictEqual(context._genOpNote.__mlsopWrapped, true, 'legacy pro heartbeat can take generator ownership back');
+  assert.strictEqual(context._genOpNote.__mlsOpTemplateOwner, true, 'strict template generator is not marked as the final owner');
+  assert.strictEqual(context.opPrepGenerateOne.__opnpWrapped, true, 'legacy prep heartbeat can rewrap single-note generation');
+  const strictOwner = context._genOpNote;
+  const prepHeartbeat = fn => fn.__opnpWrapped ? fn : Object.assign(function () { return fn.apply(this, arguments); }, { __opnpWrapped: true });
+  const proHeartbeat = fn => fn.__mlsopWrapped ? fn : Object.assign(function () { return fn.apply(this, arguments); }, { __mlsopWrapped: true });
+  assert.strictEqual(prepHeartbeat(strictOwner), strictOwner, 'prep heartbeat replaced the final template owner');
+  assert.strictEqual(proHeartbeat(strictOwner), strictOwner, 'pro heartbeat replaced the final template owner');
   const cases = [
     ['Left L5-S1 TFESI', 'tfesi'],
     ['L4-5 interlaminar ESI', 'ilesi'],
@@ -127,6 +136,7 @@ async function main() {
   const repaired = await context._genOpNote('Jordan Lee', '2026-07-14', 'Left L5-S1 TFESI', tplText, { patientId: 'p-exact', dob: '1984-05-12' });
   assert.strictEqual(calls, 2, 'a structure-breaking draft did not receive exactly one repair attempt');
   assert.strictEqual(repaired.note, correct, 'repair did not return the template-faithful note');
+  assert(!repaired.note.includes('Noah Williams'), 'another patient name leaked into the generated note');
   assert.strictEqual(repaired.templateFidelity.pass, true, 'successful draft lacks a fidelity receipt');
 
   calls = 0;
@@ -138,8 +148,8 @@ async function main() {
   );
   assert.strictEqual(calls, 2, 'fidelity failure retried more or less than once');
 
-  assert(connect.includes('feat_mls_opnote_integrity.js?v=20260714oni200'), 'production does not load the final op-note integrity owner');
-  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v=20260714oni200'), 'staging does not load the same op-note integrity owner');
+  assert(connect.includes('feat_mls_opnote_integrity.js?v=20260714oni210'), 'production does not load the final op-note integrity owner');
+  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v=20260714oni210'), 'staging does not load the same op-note integrity owner');
   assert(scribeFlow.includes('✍️ Type or paste below') && stagingScribeFlow.includes('✍️ Type or paste below'), 'template text entry is not the same clear inline control in production and staging');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(scribeFlow), 'production template text entry still opens a blocking JavaScript prompt');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(stagingScribeFlow), 'staging template text entry still opens a blocking JavaScript prompt');

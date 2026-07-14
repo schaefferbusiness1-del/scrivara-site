@@ -393,7 +393,9 @@
     var mrn = S(appt.athenaId || appt.mrn || '').trim();
     var dt = S((row && row.dateStr) || '').replace(/^[A-Za-z]+,\s*/, '').trim();
     var isProv = /(provider|physician|surgeon|\bdoctor\b|operator|attending|clinician|proceduralist|performed by|operating|rendering)/.test(l);
-    if (/\bnpi\b/.test(l) && S(prof.npi).trim()) return S(prof.npi).trim();
+    /* An NPI field may only receive an actual NPI. Falling through to the
+       generic provider-name rule put "Matthew Schaeffer, MD" in NPI blanks. */
+    if (/\bnpi\b/.test(l)) return S(prof.npi).trim();
     if (/(practice name|\bpractice\b|group name|group practice)/.test(l) && S(prof.practice || prof.facility).trim()) return S(prof.practice || prof.facility).trim();
     if (/(facility|clinic|location|site|hospital|center|ambulatory|surgery center|\basc\b)/.test(l) && S(prof.facility || prof.practice).trim()) return S(prof.facility || prof.practice).trim();
     if (isProv && prov) return prov;
