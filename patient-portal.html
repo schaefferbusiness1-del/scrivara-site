@@ -159,7 +159,7 @@
   <div class="wrap">
     <div id="demoBanner" class="demo-banner hide">👀 You're viewing <b>sample demo data</b> — this is not a real patient. Sign in to see your own records.</div>
 
-    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Request your next visit in under a minute.</div></div><a href="easy-book.html" style="text-decoration:none;background:#204034;color:#fff;font-weight:800;border-radius:11px;padding:12px 18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Book an appointment</a></div>
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Choose a real opening from your practice calendar.</div></div><a id="bookingBtn" href="easy-book.html" style="text-decoration:none;background:#204034;color:#fff;font-weight:800;border-radius:11px;padding:12px 18px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Book an appointment</a></div>
 
     <div class="grid">
       <!-- LEFT: records -->
@@ -323,7 +323,15 @@
       if(r.status===401){ throw {auth:true}; }
       return r.json();
     }).then(function(j){
-      renderPatient((j && j.patient) || j || {});
+      j = j || {};
+      var patient = Object.assign({}, j.patient || j, {
+        medications: j.medications || (j.patient && j.patient.medications) || [],
+        problems: j.problems || (j.patient && j.patient.problems) || [],
+        appointments: j.appointments || (j.patient && j.patient.appointments) || [],
+        visits: j.visits || (j.patient && j.patient.visits) || []
+      });
+      renderPatient(patient);
+      if(j.booking_url){ $("bookingBtn").href=j.booking_url; }
     });
   }
 
@@ -454,6 +462,7 @@
       .then(function(res){
         if(res.status===401){ thinking.textContent="Your session ended. Please sign in again."; return; }
         var ans = res.j && (res.j.answer||res.j.reply||res.j.text||res.j.message||res.j.content);
+        while(ans && typeof ans === "object") ans = ans.content || ans.text || ans.reply || ans.answer || ans.message || "";
         thinking.textContent = ans || (res.ok ? "I couldn't find an answer to that in your records." : ((res.j&&res.j.error)||"Something went wrong. Please try again."));
       })
       .catch(function(){ thinking.textContent="Network error — please try again."; })

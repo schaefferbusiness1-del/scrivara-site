@@ -101,14 +101,21 @@
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function cfg(){return {practice:$('sPractice').value,doctor:$('sDoctor').value,phone:$('sPhone').value,email:$('sEmail').value,gbp:$('sGbp').value,api:$('sApi').value};}
-function loadSettings(){ try{ var d=JSON.parse(localStorage.getItem('mlsEasyBook')||'{}'); ['practice','doctor','phone','email','gbp','api'].forEach(function(k){ var el=$('s'+k.charAt(0).toUpperCase()+k.slice(1)); if(el&&d[k])el.value=d[k]; }); }catch(e){} applyCfg(); }
+function loadSettings(){
+  var d={}; try{ d=JSON.parse(localStorage.getItem('mlsEasyBook')||'{}')||{}; }catch(e){}
+  try{ var q=new URLSearchParams(location.search); ['practice','doctor','phone','email','gbp','api'].forEach(function(k){ if(q.get(k))d[k]=q.get(k); }); }catch(e){}
+  ['practice','doctor','phone','email','gbp','api'].forEach(function(k){ var el=$('s'+k.charAt(0).toUpperCase()+k.slice(1)); if(el&&d[k])el.value=d[k]; });
+  applyCfg();
+}
 function saveSettings(){ try{ localStorage.setItem('mlsEasyBook', JSON.stringify(cfg())); }catch(e){} $('savedMsg').textContent='Saved.'; setTimeout(function(){$('savedMsg').textContent='';},1500); applyCfg(); }
 function applyCfg(){
   var c=cfg();
   if(c.practice){ $('hTitle').textContent='Book with '+c.practice; }
   var tel=(c.phone||'').replace(/[^0-9+]/g,'');
   var call=$('callBtn'); call.href = tel? 'tel:'+tel : '#'; call.textContent = c.phone? '📞 Call '+c.phone : '📞 Call the office';
-  var g=$('gbpBtn'); if(c.gbp){ g.href=c.gbp; } else { g.href='#'; }
+  var g=$('gbpBtn');
+  var mapsQuery=(c.practice||c.doctor||'medical clinic').trim();
+  g.href=c.gbp || ('https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(mapsQuery));
 }
 function submitReq(){
   var name=$('pName').value.trim(), phone=$('pPhone').value.trim(), reason=$('pReason').value.trim();

@@ -28,6 +28,7 @@ const tests = [
   'performance-lifecycle-contract.test.js',
   'extension-read-path.test.js',
   'extension-package.test.js'
+  ,'portal-staff-booking-contract.test.js'
 ];
 
 for (const test of tests) {
