@@ -508,9 +508,9 @@
 
   // ---- main flow -------------------------------------------------------------
   var running = false;
-  function run(onStatus) {
+  function run(onStatus, patientOverride) {
     if (running) return Promise.resolve();
-    var p = activeP();
+    var p = patientOverride || activeP();
     if (!p) { onStatus && onStatus('Open a patient first.'); return Promise.resolve(); }
     running = true;
     var engaged = false;
@@ -572,7 +572,14 @@
     return M().ensureSummaries(p.id, function (msg) { st(msg); }).then(function () {
       try { window.__mlsVisitUI && window.__mlsVisitUI.render(true); } catch (e) {}
       try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
-      var n = M().getVisits(p).length;
+      /* addVisit persists through a freshly-fetched patient clone. Re-read that
+         record instead of reporting against the stale pre-pull object. */
+      var fresh = null;
+      try { if (isFn(window.findPatient)) fresh = window.findPatient(p.id); } catch (e) {}
+      if (!fresh) {
+        try { fresh = ((isFn(window.getPatients) ? window.getPatients() : []) || []).find(function (x) { return x && x.id === p.id; }) || null; } catch (e) {}
+      }
+      var n = M().getVisits(fresh || p).length;
       st('✓ Done — ' + n + ' visit' + (n === 1 ? '' : 's') + ' on file, each with an AI summary.' + (fallback ? ' (basic capture)' : ''));
       return n;
     });

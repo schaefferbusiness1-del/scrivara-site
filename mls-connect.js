@@ -9241,6 +9241,16 @@
         if (r.chartDob) { var ndB = dg(r.chartDob), odB = dg(p2.dob || ''); if (ndB && ndB !== odB) { if (p2.dob) p2._dobPrev = p2.dob; p2.dob = r.chartDob; if (typeof window.upsertPatient === 'function') window.upsertPatient(p2); } } /* b126: banner-verified DOB corrects a junk stored DOB */
       } catch (e) {}
       try { var p3 = findPatient(name); if (window.__mlsSummarySanitize && p3 && typeof p3.summary === 'string' && hasCode(p3.summary)) { p3.summary = strip(p3.summary); if (typeof window.upsertPatient === 'function') window.upsertPatient(p3); } } catch (e) {}
+      /* Optional full-detail leg: the organized chart summary above is always
+         saved; when enabled, capture each dated visit through the existing
+         strict name+DOB gate too. */
+      try {
+        var vp = window.__mlsVisitSavePref;
+        var pFull = findPatient(name);
+        if (vp && vp.enabled && vp.enabled() && pFull) {
+          row.fullVisits = await vp.runForPatient(pFull, function () {});
+        }
+      } catch (eFull) { row.fullVisitsError = String((eFull && eFull.message) || eFull).slice(0, 100); }
       var pf = findPatient(name);
       row.visits = (pf && pf.visits || []).length;
       row.ok = isRealChart(summaryOf(pf));
@@ -17545,6 +17555,25 @@
   function bkBase() { return safe(function () { return window.bkBase(); }, '') || 'https://scrivara-backend.onrender.com'; }
   function bkToken() { return safe(function () { return window.bkToken(); }, '') || ''; }
   function signedIn() { return !!(safe(function () { return isFn(window.backendMode) && window.backendMode(); }, false) && bkToken()); }
+  /* Month pulls continue while MLS is in the background. Chrome can clamp
+     ordinary page timers there to roughly one tick per minute, making a
+     healthy pull look frozen. Worker timers keep deadlines and pacing honest. */
+  var _ez3WaitUrl = null;
+  try { _ez3WaitUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
+  function bgWait(ms) {
+    return new Promise(function (resolve) {
+      if (_ez3WaitUrl) {
+        try {
+          var w = new Worker(_ez3WaitUrl);
+          w.onmessage = function () { try { w.terminate(); } catch (e) {} resolve(); };
+          w.onerror = function () { try { w.terminate(); } catch (e) {} setTimeout(resolve, ms); };
+          w.postMessage(ms);
+          return;
+        } catch (e) {}
+      }
+      setTimeout(resolve, ms);
+    });
+  }
   function apptKey(name, date, time) {
     if (isFn(window._apptKey)) return safe(function () { return window._apptKey(name, date, time); }, String(name || '').trim().toLowerCase() + '|' + date);
     return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ') + '|' + String(date || '');
@@ -17563,7 +17592,7 @@
       var msg = { source: 'mls-app', type: reqType };
       if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; } }
       safe(function () { window.postMessage(msg, '*'); });
-      setTimeout(function () { fin(null); }, timeoutMs || 15000);
+      bgWait(timeoutMs || 15000).then(function () { fin(null); });
     });
   }
   function extPing() { return bridge('mlsPing', null, 'mlsPong', 3500).then(function (r) { return !!r; }); }
@@ -17641,8 +17670,7 @@
   }
   function loadExistingKeys() {
     return fetch(bkBase() + '/api/appointments', { headers: { Authorization: 'Bearer ' + bkToken() } })
-      .then(function (r) { return r.ok ? r.json() : { appointments: [] }; })
-      .then(null, function () { return { appointments: [] }; })
+      .then(function (r) { if (!r.ok) throw new Error('calendar preflight returned ' + r.status); return r.json(); })
       .then(function (d) {
         var map = {};
         (d.appointments || []).forEach(function (x) {
@@ -17730,7 +17758,7 @@
           var sd = respSchedDate(r);
           if (r && r.ok === true && sd === dayKey) return { preRead: r, navConfirmed: dayKey };
           pSet('ez3PullNow2', sd && sd !== dayKey ? ('Athena is on ' + prettyDay(sd) + ' — move it to ' + pd + ' (' + polls + '/40).') : ('Waiting for athenaOne to show ' + pd + ' (' + polls + '/40).'));
-          return new Promise(function (res) { setTimeout(res, 4000); }).then(waitFor);
+          return bgWait(4000).then(waitFor);
         });
       })();
     }
@@ -17801,11 +17829,17 @@
       P.keysToRun.forEach(function (dayKey) {
         chain = chain.then(function () {
           if (P.cancelled) return;
-          return pullDay(dayKey).then(function () { pCounts(); return new Promise(function (res) { setTimeout(res, 1100); }); });
+          return pullDay(dayKey).then(function () { pCounts(); return bgWait(1100); });
         });
       });
       return chain.then(finishMonthPull);
-    }).then(null, function (e) { plog('Unexpected error: ' + String((e && e.message) || e), 'err'); P.running = false; pCounts(); });
+    }).then(null, function (e) {
+      var why = String((e && e.message) || e);
+      plog('Stopped safely: ' + why, 'err');
+      pSet('ez3PullNow', 'Month pull paused safely.');
+      pSet('ez3PullNow2', 'MLS could not confirm the existing calendar before saving. Nothing new was added; try again when the connection is stable.');
+      P.running = false; pCounts();
+    });
   }
   function finishMonthPull() {
     if (!P) return;
@@ -19147,10 +19181,23 @@
                 .then(function (rd) { return window._parsePatientChart(rd.text); })
                 .then(function (chart) {
                   if (chart && (chart.problems || chart.meds || chart.allergies || chart.summary || (chart.history && chart.history.length))) {
-                    window._savePatientChart(name, a, chart); saved++;
-                    if (ms) ms.stepDone('prf_h' + i, 'Saved ' + name + '’s history');
-                    progressSay('✅ Saved ' + name + '’s history (' + i + ' of ' + todo.length + ')');
-                    return true;
+                    window._savePatientChart(name, a, chart);
+                    var pSaved = null;
+                    safe(function () {
+                      var ps2 = (isFn(window.getPatients) ? window.getPatients() : []) || [];
+                      for (var pi2 = 0; pi2 < ps2.length; pi2++) { if (ps2[pi2] && normName(ps2[pi2].name) === normName(name)) { pSaved = ps2[pi2]; break; } }
+                    });
+                    var fullLeg = Promise.resolve();
+                    try {
+                      var vp2 = window.__mlsVisitSavePref;
+                      if (vp2 && vp2.enabled && vp2.enabled() && pSaved) fullLeg = vp2.runForPatient(pSaved, function (m) { if (m) progressSay(m); });
+                    } catch (eV) {}
+                    return Promise.resolve(fullLeg).then(function () {
+                      saved++;
+                      if (ms) ms.stepDone('prf_h' + i, 'Saved ' + name + '’s history');
+                      progressSay('✅ Saved ' + name + '’s history (' + i + ' of ' + todo.length + ')');
+                      return true;
+                    });
                   }
                   return false;
                 });
@@ -39151,6 +39198,78 @@
     try { st.remove(); } catch (e) {}
     try { var a = $('mlsDsStrip'); if (a) a.remove(); var b = $('mlsDsList'); if (b) b.remove(); } catch (e) {}
     api.installed = false; delete window.__mlsDaySwitch;
+  };
+})();
+
+/* ===== __mlsVisitSavePref v1.0.0 (2026-07-13)
+ * The normal chart pull always saves the organized history. When this optional
+ * Settings toggle is ON, MLS additionally saves every dated Athena visit with
+ * its own summary through the existing strict identity gate. Athena read-only. */
+(function () {
+  if (window.__mlsVisitSavePref) return;
+  var KEY = 'mls_save_every_athena_visit';
+  var api = { installed: true, version: '1.0.0', running: false, current: null };
+  window.__mlsVisitSavePref = api;
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function enabled() { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
+  function setEnabled(v) { try { localStorage.setItem(KEY, v ? '1' : '0'); } catch (e) {} }
+  function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
+  function activeP() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
+  api.enabled = enabled;
+  api.setEnabled = setEnabled;
+  api.runForPatient = function (p, onStatus) {
+    if (!enabled()) return Promise.resolve({ ok: true, skipped: 'preference-off' });
+    if (!p || !p.id || !p.name) return Promise.reject(new Error('No patient is selected for the full-visit pull.'));
+    if (api.running && api.current) return api.current;
+    var cv = window.__mlsCopyVisits;
+    if (!cv || typeof cv.run !== 'function') return Promise.reject(new Error('The individual-visit reader is still loading. Reload MLS and try again.'));
+    api.running = true;
+    api.current = Promise.resolve(cv.run(function (m) { try { if (onStatus) onStatus(m); } catch (e) {} }, p))
+      .then(function (n) { api.running = false; api.current = null; return { ok: true, visits: (typeof n === 'number' ? n : null) }; },
+            function (e) { api.running = false; api.current = null; throw e; });
+    return api.current;
+  };
+  function ensureSettings() {
+    try {
+      var modal = $('settingsModal');
+      if (!modal || getComputedStyle(modal).display === 'none') return;
+      var old = $('mlsSaveEveryVisitTgl');
+      if (old) { old.checked = enabled(); return; }
+      var heads = modal.querySelectorAll('.set-head'), host = null;
+      for (var i = 0; i < heads.length; i++) { if (/integrations/i.test(heads[i].textContent || '')) { host = heads[i].parentElement; break; } }
+      if (!host) return;
+      var row = document.createElement('div'); row.id = 'mlsSaveEveryVisitRow'; row.className = 'field';
+      row.innerHTML = '<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600">' +
+        '<input type="checkbox" id="mlsSaveEveryVisitTgl" style="width:16px;height:16px;margin:0"> Save every individual Athena visit</label>' +
+        '<p class="set-desc" style="margin:4px 0 0">After the normal organized chart pull, also open and save every dated visit with its own AI summary. This is read-only in Athena and can add several minutes for long charts, so it is off by default.</p>';
+      host.appendChild(row);
+      var tg = $('mlsSaveEveryVisitTgl'); tg.checked = enabled();
+      tg.addEventListener('change', function () { setEnabled(tg.checked); toast(tg.checked ? 'Full individual-visit saving is ON for future chart pulls.' : 'Chart pulls will save the organized history only.', ''); });
+    } catch (e) {}
+  }
+  var wrapped = false, origSingle = null;
+  function wrapSinglePull() {
+    if (wrapped || typeof window.pullPatientChartViaAssist !== 'function') return;
+    origSingle = window.pullPatientChartViaAssist;
+    var w = function () {
+      var args = arguments, self = this;
+      return Promise.resolve(origSingle.apply(self, args)).then(function (r) {
+        var p = activeP();
+        if (!enabled() || !p || !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(p.name))) return r;
+        return api.runForPatient(p, function (m) { if (m) toast(m, ''); }).then(function () { return r; });
+      });
+    };
+    w.__mlsFullVisitPref = true;
+    window.pullPatientChartViaAssist = w;
+    wrapped = true;
+  }
+  var iv = setInterval(function () { ensureSettings(); wrapSinglePull(); }, 1200);
+  ensureSettings(); wrapSinglePull();
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    try { var r = $('mlsSaveEveryVisitRow'); if (r) r.remove(); } catch (e) {}
+    if (wrapped && origSingle) { try { window.pullPatientChartViaAssist = origSingle; } catch (e) {} }
+    delete window.__mlsVisitSavePref;
   };
 })();
 
