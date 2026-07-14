@@ -42,7 +42,8 @@ assert(code.includes("MODAL_ID = 'mlsQuickToolPopup'"), 'in-place Quick Tool dia
 // normalized before paint and its final width is reserved, preventing the
 // intermittent compressed blue-pill/header reflow shown by the owner.
 assert(code.includes("flex:0 0 361px;min-width:361px"), 'day-progress final width is not reserved');
-assert(asset.includes("W.__mlsVisitControlContinuity.stabilizePatientBar();"), 'patient-bar same-frame shared mutation pass is missing');
+assert(asset.includes("continuityStyle.__mlsStabilizePatientBar();"), 'patient-bar same-frame shared mutation pass is missing');
+assert(code.includes("st.__mlsStabilizePatientBar = stabilizePatientBar"), 'patient-bar stabilizer must survive global cleanup');
 assert(code.includes("document.body.classList.contains('mls-has-active-pt')"), 'active-patient ownership guard is missing');
 assert(code.includes("Math.max(0, currentCounts.total - currentCounts.seen) + ' remaining'"), 'temporary day-progress label is not normalized');
 

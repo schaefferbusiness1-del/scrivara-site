@@ -279,8 +279,9 @@
       /* This asset already owns the one document mutation observer. Let the
          visit-control continuation share that pass instead of adding another
          page-wide observer for the patient-bar stability repair. */
-      if (W.__mlsVisitControlContinuity && typeof W.__mlsVisitControlContinuity.stabilizePatientBar === 'function') {
-        W.__mlsVisitControlContinuity.stabilizePatientBar();
+      var continuityStyle = document.getElementById('mlsVisitControlContinuityStyle');
+      if (continuityStyle && typeof continuityStyle.__mlsStabilizePatientBar === 'function') {
+        continuityStyle.__mlsStabilizePatientBar();
       }
     } catch (e) {}
   }
@@ -711,6 +712,8 @@
 
   function bootContinuity() {
     injectContinuityStyle();
+    var st = byId(STYLE_ID);
+    if (st) st.__mlsStabilizePatientBar = stabilizePatientBar;
     document.addEventListener('click', onQuickToolClick, true);
     document.addEventListener('keydown', onKeydown, true);
     stabilizePatientBar();
