@@ -276,6 +276,12 @@
       seedClarityTips();
       var btns = hostButtons();
       for (var i = 0; i < btns.length; i++) processButton(btns[i]);
+      /* This asset already owns the one document mutation observer. Let the
+         visit-control continuation share that pass instead of adding another
+         page-wide observer for the patient-bar stability repair. */
+      if (W.__mlsVisitControlContinuity && typeof W.__mlsVisitControlContinuity.stabilizePatientBar === 'function') {
+        W.__mlsVisitControlContinuity.stabilizePatientBar();
+      }
     } catch (e) {}
   }
 
@@ -414,4 +420,325 @@
       boot();
     }
   } catch (e) { try { boot(); } catch (e2) {} }
+})();
+
+/*! visit-control continuity -> window.__mlsVisitControlContinuity (v1.0.0)
+ * Keeps the three desktop voice controls stable when the inline Quick Tools
+ * lane enters/leaves the viewport. Athena tab is intentionally untouched.
+ * Also makes the buried Quick Tools actions open their real in-place dialogs
+ * instead of expanding and scrolling the advanced visit workspace.
+ */
+(function () {
+  'use strict';
+  var W = (typeof window !== 'undefined') ? window : null;
+  if (!W || (W.__mlsVisitControlContinuity && W.__mlsVisitControlContinuity.installed)) return;
+
+  var VERSION = '1.0.0';
+  var STYLE_ID = 'mlsVisitControlContinuityStyle';
+  var MODAL_ID = 'mlsQuickToolPopup';
+  var phoneSyncT = null;
+  var priorFocus = null;
+  var dayStableText = '';
+  var dayBusy = false;
+
+  function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function toast(msg, kind) {
+    safe(function () {
+      if (typeof W.toast === 'function') W.toast(msg, kind || '');
+    });
+  }
+
+  function injectContinuityStyle() {
+    if (byId(STYLE_ID)) return;
+    var st = document.createElement('style');
+    st.id = STYLE_ID;
+    st.textContent = [
+      /* The legacy handoff class may continue to update for inline chip state,
+         but it can no longer hide these three fixed desktop controls. */
+      '@media (min-width:761px){',
+      'html body.mls-top-voice-tools #mlsCopVoiceBtn,',
+      'html body.mls-top-voice-tools #mlsAsstFab,',
+      'html body.mls-top-voice-tools #mlsDaDock{display:inline-flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}',
+      '}',
+      /* The legacy day-progress renderer briefly replaces the provider-scoped
+         label every 15 seconds. Reserve the final width so that write cannot
+         collapse and reflow the patient bar while the second writer settles. */
+      '#mlsCtxBar>#mlsDayProgress{box-sizing:border-box;flex:0 0 361px;min-width:361px;justify-content:flex-start;}',
+      'body.mls-has-active-pt #patientBar>#mlsDayProgress,body.mls-has-active-pt #patientBar>#mlsAgendaChip{display:none!important;}',
+      '.mls-qtp-overlay{position:fixed;inset:0;z-index:2147483200;background:rgba(20,31,25,.48);display:flex;align-items:center;justify-content:center;padding:20px;}',
+      '.mls-qtp-card{width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;background:#fff;color:#1A211C;border:1px solid #DCE4DE;border-radius:18px;box-shadow:0 24px 70px rgba(17,35,25,.28);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}',
+      '.mls-qtp-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 13px;border-bottom:1px solid #E6ECE8;}',
+      '.mls-qtp-headcopy{min-width:0;flex:1;}',
+      '.mls-qtp-head h3{margin:0;font-size:19px;line-height:1.25;}',
+      '.mls-qtp-sub{margin-top:4px;color:#66726A;font-size:13px;line-height:1.45;}',
+      '.mls-qtp-x{border:1px solid #D7DFD9;background:#fff;color:#34423A;border-radius:9px;width:34px;height:34px;cursor:pointer;font-size:20px;line-height:1;}',
+      '.mls-qtp-body{padding:18px 20px;}',
+      '.mls-qtp-foot{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;padding:13px 20px 18px;}',
+      '.mls-qtp-btn{border:1px solid #D4DDD7;background:#fff;color:#254B38;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer;}',
+      '.mls-qtp-btn.primary{border-color:#245C42;background:#245C42;color:#fff;}',
+      '.mls-qtp-btn.danger{color:#A33636;}',
+      '.mls-qtp-textarea{display:block;width:100%;min-height:220px;resize:vertical;box-sizing:border-box;border:1px solid #CAD5CE;border-radius:11px;padding:12px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1A211C;background:#FCFDFB;}',
+      '.mls-qtp-note{font-size:12.5px;line-height:1.45;color:#68746C;margin-top:9px;}',
+      '.mls-qtp-phone{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:18px;align-items:center;}',
+      '.mls-qtp-code{font:800 34px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:4px;margin:7px 0;}',
+      '.mls-qtp-link{display:block;color:#245C42;font-size:12px;word-break:break-all;}',
+      '.mls-qtp-qr{width:180px;height:180px;border:1px solid #D7DFD9;border-radius:10px;background:#F5F7F5;object-fit:contain;}',
+      '.mls-qtp-orders{border:1px solid #D7E4F3;background:#F5F9FE;border-radius:12px;padding:13px;min-height:54px;}',
+      '@media (max-width:900px){#mlsCtxBar>#mlsDayProgress{flex:1 1 100%;min-width:0;width:100%;max-width:100%;overflow:hidden;}}',
+      '@media (max-width:620px){.mls-qtp-phone{grid-template-columns:1fr}.mls-qtp-qr{justify-self:center}}'
+    ].join('');
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function clearPhoneSync() {
+    if (phoneSyncT) { clearInterval(phoneSyncT); phoneSyncT = null; }
+  }
+
+  function closePopup() {
+    clearPhoneSync();
+    var old = byId(MODAL_ID);
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var focus = priorFocus; priorFocus = null;
+    safe(function () { if (focus && document.documentElement.contains(focus)) focus.focus(); });
+  }
+
+  function popup(title, subtitle) {
+    closePopup();
+    priorFocus = safe(function () { return document.activeElement; }, null);
+    var overlay = document.createElement('div');
+    overlay.id = MODAL_ID;
+    overlay.className = 'mls-qtp-overlay';
+    overlay.innerHTML =
+      '<section class="mls-qtp-card" role="dialog" aria-modal="true" aria-labelledby="mlsQtpTitle">' +
+        '<header class="mls-qtp-head"><div class="mls-qtp-headcopy"><h3 id="mlsQtpTitle"></h3><div class="mls-qtp-sub"></div></div>' +
+        '<button type="button" class="mls-qtp-x" aria-label="Close">&times;</button></header>' +
+        '<div class="mls-qtp-body"></div><footer class="mls-qtp-foot"></footer>' +
+      '</section>';
+    overlay.querySelector('#mlsQtpTitle').textContent = title;
+    overlay.querySelector('.mls-qtp-sub').textContent = subtitle || '';
+    overlay.querySelector('.mls-qtp-x').addEventListener('click', closePopup);
+    overlay.addEventListener('mousedown', function (ev) { if (ev.target === overlay) closePopup(); });
+    document.body.appendChild(overlay);
+    safe(function () { overlay.querySelector('.mls-qtp-x').focus(); });
+    return {
+      overlay: overlay,
+      body: overlay.querySelector('.mls-qtp-body'),
+      foot: overlay.querySelector('.mls-qtp-foot')
+    };
+  }
+
+  function button(label, cls, fn) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'mls-qtp-btn' + (cls ? ' ' + cls : ''); b.textContent = label;
+    b.addEventListener('click', fn); return b;
+  }
+
+  function dispatchInput(el) {
+    if (!el) return;
+    safe(function () { el.dispatchEvent(new Event('input', { bubbles: true })); });
+    safe(function () { el.dispatchEvent(new Event('change', { bubbles: true })); });
+  }
+
+  function openPasteTranscript() {
+    var ui = popup('Paste a transcript', 'Paste or type the visit conversation here. It stays attached to the current visit; nothing is generated until you choose Generate note.');
+    var ta = document.createElement('textarea');
+    ta.className = 'mls-qtp-textarea';
+    ta.setAttribute('aria-label', 'Visit transcript');
+    var top = byId('ez3flTranscript'), real = byId('transcript');
+    ta.value = (top && top.value) || (real && real.value) || '';
+    ui.body.appendChild(ta);
+    var note = document.createElement('div'); note.className = 'mls-qtp-note';
+    note.textContent = 'This only updates the transcript. It does not draft, sign, or send anything.';
+    ui.body.appendChild(note);
+    ui.foot.appendChild(button('Cancel', '', closePopup));
+    ui.foot.appendChild(button('Use this transcript', 'primary', function () {
+      var value = ta.value;
+      real = byId('transcript'); top = byId('ez3flTranscript');
+      if (real) { real.value = value; dispatchInput(real); }
+      if (top) { top.value = value; dispatchInput(top); }
+      safe(function () { if (typeof W._markVisitDirty === 'function') W._markVisitDirty(); });
+      closePopup();
+      toast('Transcript added to this visit.', 'ok');
+    }));
+    setTimeout(function () { safe(function () { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }); }, 0);
+  }
+
+  function syncPhonePopup(ui) {
+    var code = byId('phoneMicCode'), link = byId('phoneMicLink'), qr = byId('phoneMicQR');
+    var codeText = String((code && code.textContent) || '').trim();
+    var href = String((link && (link.href || link.textContent)) || '').trim();
+    var src = String((qr && qr.src) || '').trim();
+    var ready = !!(codeText && !/^[-]+$/.test(codeText) && href && href !== '#');
+    var status = ui.body.querySelector('[data-qtp-phone-status]');
+    var codeOut = ui.body.querySelector('[data-qtp-phone-code]');
+    var linkOut = ui.body.querySelector('[data-qtp-phone-link]');
+    var qrOut = ui.body.querySelector('[data-qtp-phone-qr]');
+    if (status) status.textContent = ready ? 'Ready. Scan the code or open the secure link on your phone.' : 'Preparing a secure phone link...';
+    if (codeOut) codeOut.textContent = ready ? codeText : '------';
+    if (linkOut) { linkOut.textContent = ready ? href : ''; linkOut.href = ready ? href : '#'; }
+    if (qrOut) { if (src && src !== location.href) qrOut.src = src; qrOut.style.opacity = ready ? '1' : '.35'; }
+    return ready;
+  }
+
+  function startPhonePairing() {
+    if (typeof W.startPhoneMic === 'function') { safe(function () { W.startPhoneMic(); }); return true; }
+    var real = byId('phoneMicBtn');
+    if (real) { safe(function () { real.click(); }); return true; }
+    toast('Phone recording is not available on this screen yet.', 'err');
+    return false;
+  }
+
+  function openPhonePopup() {
+    var ui = popup('Record on phone', 'Pair your phone as the microphone for the active patient and visit.');
+    ui.body.innerHTML =
+      '<div class="mls-qtp-phone"><div><div data-qtp-phone-status>Preparing a secure phone link...</div>' +
+      '<div class="mls-qtp-code" data-qtp-phone-code>------</div>' +
+      '<a class="mls-qtp-link" data-qtp-phone-link href="#" target="_blank" rel="noopener"></a>' +
+      '<div class="mls-qtp-note">The phone transcript feeds this visit only. Confirm the active patient before recording.</div></div>' +
+      '<img class="mls-qtp-qr" data-qtp-phone-qr alt="QR code for phone recording"></div>';
+    ui.foot.appendChild(button('Close', '', closePopup));
+    ui.foot.appendChild(button('Stop phone mic', 'danger', function () {
+      safe(function () { if (typeof W.stopPhoneMic === 'function') W.stopPhoneMic(); });
+      closePopup();
+    }));
+    ui.foot.appendChild(button('Try again', 'primary', startPhonePairing));
+    var alreadyReady = syncPhonePopup(ui);
+    if (!alreadyReady) startPhonePairing();
+    phoneSyncT = setInterval(function () {
+      if (!byId(MODAL_ID)) { clearPhoneSync(); return; }
+      syncPhonePopup(ui);
+    }, 250);
+  }
+
+  function openAfterVisitSummary() {
+    var avs = safe(function () { return W.__mlsAfterVisitSummary; }, null);
+    if (avs && typeof avs.open === 'function') { safe(function () { avs.open(); }); return; }
+    var real = byId('mlsavsBtn');
+    if (real) { safe(function () { real.click(); }); return; }
+    toast('After-visit summary is still loading. Try again in a moment.', 'err');
+  }
+
+  function refreshOrdersPopup(ui) {
+    safe(function () { if (typeof W.renderVisitOrders === 'function') W.renderVisitOrders(); });
+    var source = byId('visitOrdersBody');
+    var host = ui.body.querySelector('.mls-qtp-orders');
+    if (!host) return;
+    host.innerHTML = source && String(source.innerHTML || '').trim()
+      ? source.innerHTML
+      : '<span style="font-size:13px;color:#66726A">No orders are staged for this visit yet.</span>';
+  }
+
+  function openOrdersPopup() {
+    var ui = popup('Orders for this visit', 'Review the orders tied to the current visit. Nothing is sent until you complete the separate Athena review and confirmation.');
+    var host = document.createElement('div'); host.className = 'mls-qtp-orders'; ui.body.appendChild(host);
+    host.addEventListener('click', function () { setTimeout(function () { refreshOrdersPopup(ui); }, 80); });
+    refreshOrdersPopup(ui);
+    ui.foot.appendChild(button('Close', '', closePopup));
+    ui.foot.appendChild(button('Add or manage orders', 'primary', function () {
+      closePopup();
+      if (typeof W.showView === 'function') safe(function () { W.showView('orders'); });
+      else toast('The Orders page is still loading. Try again in a moment.', 'err');
+    }));
+  }
+
+  function quickAction(btn) {
+    var text = String((btn && btn.textContent) || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (text.indexOf('paste a transcript') >= 0) return openPasteTranscript;
+    if (text.indexOf('record on phone') >= 0) return openPhonePopup;
+    if (text.indexOf('after-visit summary') >= 0) return openAfterVisitSummary;
+    if (/\borders\b/.test(text)) return openOrdersPopup;
+    return null;
+  }
+
+  function onQuickToolClick(ev) {
+    var btn = safe(function () { return ev.target.closest('.ez3fl-quick .ez3fl-qchip'); }, null);
+    var action = quickAction(btn);
+    if (!action) return; // Copilot Voice, Assistant, and Dictate keep their real owners.
+    safe(function () { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); });
+    action();
+  }
+
+  function onKeydown(ev) {
+    if (ev && ev.key === 'Escape' && byId(MODAL_ID)) closePopup();
+  }
+
+  function progressCounts(text) {
+    var m = String(text || '').match(/(\d+)\s*\/\s*(\d+)\s+seen/i);
+    return m ? { seen: parseInt(m[1], 10), total: parseInt(m[2], 10) } : null;
+  }
+
+  function stabilizePatientBar() {
+    if (dayBusy) return;
+    dayBusy = true;
+    try {
+      var active = document.body && document.body.classList.contains('mls-has-active-pt');
+      var ctx = byId('mlsCtxBar');
+      var progress = byId('mlsDayProgress');
+      var agenda = byId('mlsAgendaChip');
+      /* A transient hidden-state check in the two legacy renderers can move
+         these chips into #patientBar even though the active-patient bar still
+         owns the page. Return them before paint; do not alter no-patient mode. */
+      if (active && ctx) {
+        var anchor = ctx.querySelector('.mlsctx-actions');
+        if (progress && progress.parentNode !== ctx) ctx.insertBefore(progress, anchor || null);
+        if (agenda && agenda.parentNode !== ctx) ctx.insertBefore(agenda, anchor || null);
+      }
+      var txt = progress && progress.querySelector('.mdp-txt');
+      if (txt) {
+        var current = String(txt.textContent || '').replace(/\s+/g, ' ').trim();
+        var currentCounts = progressCounts(current);
+        var stableCounts = progressCounts(dayStableText);
+        if (/\bremaining\b/i.test(current)) {
+          dayStableText = current;
+        } else if (currentCounts) {
+          /* The short legacy label is a temporary writer, not a new state.
+             Preserve a matching provider-scoped label; when counts genuinely
+             changed, build its final-width equivalent immediately. */
+          if (stableCounts && stableCounts.seen === currentCounts.seen && stableCounts.total === currentCounts.total) {
+            txt.textContent = dayStableText;
+          } else {
+            var suffix = /all providers/i.test(dayStableText) ? ' · all providers' : '';
+            dayStableText = currentCounts.seen + ' / ' + currentCounts.total + ' seen · ' +
+              Math.max(0, currentCounts.total - currentCounts.seen) + ' remaining' + suffix;
+            txt.textContent = dayStableText;
+          }
+        }
+      }
+    } catch (e) {}
+    dayBusy = false;
+  }
+
+  function bootContinuity() {
+    injectContinuityStyle();
+    document.addEventListener('click', onQuickToolClick, true);
+    document.addEventListener('keydown', onKeydown, true);
+    stabilizePatientBar();
+  }
+
+  function revertContinuity() {
+    document.removeEventListener('click', onQuickToolClick, true);
+    document.removeEventListener('keydown', onKeydown, true);
+    dayStableText = ''; dayBusy = false;
+    closePopup();
+    var st = byId(STYLE_ID); if (st && st.parentNode) st.parentNode.removeChild(st);
+    if (W.__mlsVisitControlContinuity) W.__mlsVisitControlContinuity.installed = false;
+  }
+
+  W.__mlsVisitControlContinuity = {
+    installed: true,
+    version: VERSION,
+    openPasteTranscript: openPasteTranscript,
+    openPhonePopup: openPhonePopup,
+    openAfterVisitSummary: openAfterVisitSummary,
+    openOrdersPopup: openOrdersPopup,
+    stabilizePatientBar: stabilizePatientBar,
+    close: closePopup,
+    revert: revertContinuity
+  };
+
+  try {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootContinuity, { once: true });
+    else bootContinuity();
+  } catch (e) { safe(bootContinuity); }
 })();
