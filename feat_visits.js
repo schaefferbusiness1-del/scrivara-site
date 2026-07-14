@@ -112,6 +112,10 @@
     var key = _visitKey(v);
     var existing = p.visits.find(function (x) { return _visitKey(x) === key; });
     if (existing) {
+      /* Older organized-history imports created date/type placeholders without
+         a stable visit id. A later full-detail pull must upgrade that same row
+         in place so per-visit AI summarization can address and persist it. */
+      if (!existing.id) existing.id = v.id || _uid();
       if (v.raw.length > S(existing.raw).length) existing.raw = v.raw;
       ['cpt', 'icd10', 'meds'].forEach(function (k) {
         var set = {}; (existing[k] || []).concat(v[k] || []).forEach(function (c) { if (c) set[c] = 1; });
