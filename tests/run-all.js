@@ -23,6 +23,7 @@ const tests = [
   'history-duplicate-name-binding.test.js',
   'voice-dock-layout-contract.test.js',
   'portal-invite-placement-runtime.test.js',
+  'patient-card-contrast-contract.test.js',
   'schedule-time-contract.test.js',
   'performance-lifecycle-contract.test.js',
   'extension-read-path.test.js',

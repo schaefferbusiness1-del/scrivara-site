@@ -5445,6 +5445,18 @@
     /* 1d) Easy step-flow sub-states on the light card */
     '#mlsEz3 .ez3-back{color:#55605A !important;}',
     '#mlsEz3 .ez3-badge.dob{color:#1A211C !important;background:#F2F0E9 !important;border-color:#E4E1D8 !important;}',
+    /* b272: patient-card contrast. These badges and verification rows kept
+       their pale dark-theme ink after the workspace became a light paper card.
+       Give every state an opaque light surface and dark AA/AAA text; scope and
+       !important keep all guarded Easy-workspace copies visually consistent. */
+    '#mlsEz3 .ez3-badge:not(.dob):not(.a):not(.g){color:#244B78 !important;background:#EFF4FF !important;border-color:#7EA6E8 !important;}',
+    '#mlsEz3 .ez3-badge.a{color:#6F4300 !important;background:#FFF6DF !important;border-color:#D99A26 !important;}',
+    '#mlsEz3 .ez3-badge.g{color:#1F6248 !important;background:#EAF7F0 !important;border-color:#4C9F7D !important;}',
+    '#mlsEz3 .ez3-vchip.warn{color:#6F4300 !important;background:#FFF6DF !important;border-color:#D99A26 !important;}',
+    '#mlsEz3 .ez3-vchip.dim{color:#3E4B44 !important;background:#F4F6F3 !important;border-color:#D9DFD9 !important;}',
+    '#mlsEz3 .ez3-vchip.ok{color:#1F6248 !important;background:#EAF7F0 !important;border-color:#4C9F7D !important;}',
+    '#mlsEz3 .ez3-vbtn{color:#204034 !important;background:#FFFFFF !important;border-color:#AEB8B0 !important;}',
+    '#mlsEz3 .ez3-vbtn:hover{color:#1A211C !important;background:#F0EEE7 !important;border-color:#8E9B91 !important;}',
     '#mlsEz3 .ez3-fstep{color:#79837C !important;background:#F2F0E9 !important;border-color:#E4E1D8 !important;}',
     '#mlsEz3 .ez3-fstep.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;}',
     '#mlsEz3 .ez3-prow .dob,#mlsEz3 .ez3-prow .tm{color:#79837C !important;}',
@@ -31259,7 +31271,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b271';
+  window.__MLS_AV = window.__MLS_AV || 'b272';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31585,7 +31597,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-14-b271';
+  var MLS_APP_BUILD='2026-07-14-b272';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
