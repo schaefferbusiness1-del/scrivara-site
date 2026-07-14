@@ -5419,6 +5419,81 @@ async function mlsSchedDomInline(doc, CFG){
        schedule. Schedule data may only come from schedule-shaped frames (the
        chart-identity readers already treat these frames as junk). */
     try{var _pth=String((doc.location&&doc.location.pathname)||'');if(/stm\.esp|\/coordinator\/|messaging|letters/i.test(_pth)){out.diag.skipped='non-schedule-frame';return out;}}catch(_eFx){}
+    /* v2.9.21 LEGACY DAY-GRID STRATEGY. The live Athena dashboard can render
+       the same <ul.appointments-container> twice (alternate sort modes). The
+       generic grouped-DOM fallback both counted those hidden copies and
+       discarded unusually detailed appointment rows at 300 characters. Read
+       only Athena's explicit legacy appointment rows here, with no arbitrary
+       text-length ceiling; remove capacity slots; reconcile duplicate copies;
+       and keep every unresolved non-slot row in candidate accounting so an
+       ambiguous roster fails closed instead of silently importing a subset. */
+    try{
+      var _legacyGridListsL=[].slice.call(doc.querySelectorAll('[class~="appointments-container"]'));
+      var _legacyGridRowsL=[].slice.call(doc.querySelectorAll('[class~="filled-appointment-row"]'));
+      if(_legacyGridListsL.length&&_legacyGridRowsL.length){
+        var _legacyObsL=[],_legacyUnresolvedL=[],_legacyProvidersL={},_legacyProviderOrderL=[];
+        var _legacyRawObsL=0,_legacySlotsL=0,_legacyAllBoundL=true,_legacyHeaderProofL=true;
+        function _legacyNormL(v){return cl(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+        function _legacyProviderL(raw){
+          var p=lh(raw)?cp(raw):'';if(!p)return '';
+          var k=_legacyNormL(p);if(k&&!_legacyProvidersL[k]){_legacyProvidersL[k]=p;_legacyProviderOrderL.push(p);}
+          if(k&&!provSet[k]){provSet[k]=1;provOrder.push(p);}var cm=p.match(RC);if(cm&&cm[1])credSet[cm[1].toUpperCase()]=1;return p;
+        }
+        function _legacyAttrL(row,names){
+          var nodes=[row];try{nodes=nodes.concat([].slice.call(row.querySelectorAll('[data-appointment-id],[data-appt-id],[data-appointmentid],[appointmentid],[data-provider-id],[data-rendering-provider-id],[data-resource-id],a[href]')).slice(0,40));}catch(_eAN){}
+          for(var ni=0;ni<nodes.length;ni++)for(var ai=0;ai<names.length;ai++){try{var av=nodes[ni].getAttribute&&nodes[ni].getAttribute(names[ai]);if(av!=null&&String(av).trim())return String(av).trim();}catch(_eAV){}}
+          for(var hi=0;hi<nodes.length;hi++){var href='';try{href=nodes[hi].getAttribute&&nodes[hi].getAttribute('href')||'';}catch(_eAH){}if(!href)continue;var re=names[0]==='data-provider-id'?/[?&#/](?:providerid|provider_id|provider|resourceid)[=\/:]([a-z0-9_-]{2,})/i:/[?&#/](?:appointmentid|appointment_id|appointment|apptid)[=\/:]([a-z0-9_-]{2,})/i;var hm=String(href).match(re);if(hm)return hm[1];}
+          return '';
+        }
+        function _legacyReasonL(row){
+          try{var re=row.querySelector('[class*="reason"], [data-testid*="reason"], [aria-label*="reason"]');var rt=re&&tx(re);return rt&&rt.length<=500?rt:'';}catch(_eLR){return '';}
+        }
+        function _legacySlotL(raw){
+          var tail=cl(String(raw||'').replace(RTG,' '));
+          return /^(?:(?:\d+\s*(?:min(?:ute)?s?|mins?)\s*)?)(?:open|blocked?|hold|unavailable|lunch|closed|administrative|admin|reserved)(?:\b|\s)/i.test(tail);
+        }
+        _legacyGridListsL.forEach(function(list){
+          var rows=[];try{rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));}catch(_eLRs){}
+          if(!rows.length)return;
+          var local=[],localSeen={};try{[].slice.call(list.querySelectorAll('[class~="appointment-header2"]')).forEach(function(h){var p=_legacyProviderL(tx(h)),k=_legacyNormL(p);if(k&&!localSeen[k]){localSeen[k]=1;local.push(p);}});}catch(_eLH){}
+          if(local.length!==1)_legacyHeaderProofL=false;
+          var provider=local.length===1?local[0]:(out.diag.singleProviderName||'');
+          if(!provider)_legacyAllBoundL=false;
+          rows.forEach(function(row){
+            out.diag.rowsScanned++;
+            var raw=tx(row),tm=ft(raw),appointmentId=_legacyAttrL(row,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid']),providerId=_legacyAttrL(row,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid']);
+            if(_legacySlotL(raw)){_legacySlotsL++;return;}
+            _legacyRawObsL++;
+            var parsed=null,name='';try{parsed=mlsParseName(raw);}catch(_ePN){}
+            if(parsed&&parsed.confident)name=cl(parsed.display);else name=cl(pn(raw));
+            var nameTokens=name.replace(/[^A-Za-z'â€™\-]+/g,' ').trim().split(/\s+/).filter(Boolean);
+            if(!tm||nameTokens.length<2){_legacyUnresolvedL.push({time:tm||'',provider:provider||'',appointmentId:appointmentId||'',rawKey:_legacyNormL(raw)});return;}
+            _legacyObsL.push({time:tm,name:name,provider:provider||'',providerKey:_legacyNormL(provider),appointmentId:appointmentId||'',providerId:providerId||'',reason:_legacyReasonL(row)});
+          });
+        });
+        var _legacyByIdL={},_legacyByKeyL={},_legacyRowsFinalL=[];
+        _legacyObsL.forEach(function(a){
+          var base=a.time+'|'+_legacyNormL(a.name),key=base+'|'+(a.providerKey||''),prior=null;
+          if(a.appointmentId&&_legacyByIdL[a.appointmentId])prior=_legacyByIdL[a.appointmentId];
+          if(!prior&&_legacyByKeyL[key])prior=_legacyByKeyL[key];
+          if(prior){if(!prior.provider&&a.provider){prior.provider=a.provider;prior.providerKey=a.providerKey;}if(!prior.providerId&&a.providerId)prior.providerId=a.providerId;if(!prior.appointmentId&&a.appointmentId)prior.appointmentId=a.appointmentId;if(!prior.reason&&a.reason)prior.reason=a.reason;return;}
+          _legacyByKeyL[key]=a;if(a.appointmentId)_legacyByIdL[a.appointmentId]=a;_legacyRowsFinalL.push(a);
+        });
+        var _legacyAttributedL={};_legacyRowsFinalL.forEach(function(a){if(a.providerKey)_legacyAttributedL[a.time+'|'+_legacyNormL(a.name)]=1;});
+        _legacyRowsFinalL=_legacyRowsFinalL.filter(function(a){return !!a.providerKey||!_legacyAttributedL[a.time+'|'+_legacyNormL(a.name)];});
+        var _legacyUnresolvedSeenL={},_legacyUnresolvedCountL=0;
+        _legacyUnresolvedL.forEach(function(a){var k=a.appointmentId?('id:'+a.appointmentId):('row:'+a.time+'|'+_legacyNormL(a.provider)+'|'+a.rawKey);if(!_legacyUnresolvedSeenL[k]){_legacyUnresolvedSeenL[k]=1;_legacyUnresolvedCountL++;}});
+        out.appts=_legacyRowsFinalL.map(function(a){return{time:a.time,name:a.name,provider:a.provider||'',providerId:a.providerId||'',appointmentId:a.appointmentId||'',reason:a.reason||''};});
+        out.providers=_legacyProviderOrderL.slice();
+        var _legacyRosterCompleteL=_legacyHeaderProofL&&_legacyAllBoundL&&out.providers.length>0;
+        out.providerRoster=out.providers.map(function(raw){return{stableKey:'athena:'+_legacyNormL(raw),raw:raw,name:raw,source:'athena-schedule-header'};});
+        out.providerRosterReceipt={complete:!!_legacyRosterCompleteL,partial:!_legacyRosterCompleteL,reason:_legacyRosterCompleteL?'complete':(!out.providers.length?'no-provider-headers':'legacy-unverified'),expectedCount:_legacyRosterCompleteL?out.providers.length:null,observedCount:out.providers.length,horizontalScrollable:false,reachedEnd:true,capReached:false,budgetExpired:false,restored:true,boundsStable:true,steps:1};
+        out.diag.via='legacy-day-grid';out.diag.strategy='legacy-day-grid';out.diag.apptCount=out.appts.length;out.diag.candidateCount=out.appts.length+_legacyUnresolvedCountL;out.diag.parsedCount=out.appts.length;out.diag.unnamedCount=_legacyUnresolvedCountL;
+        out.diag.rawCandidateObservations=_legacyRawObsL;out.diag.confidentCandidateCount=_legacyObsL.length;out.diag.duplicateRowsRemoved=Math.max(0,_legacyRawObsL-out.diag.candidateCount);out.diag.slotRowsRemoved=_legacySlotsL;
+        out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice();out.diag.providerRosterReceipt=out.providerRosterReceipt;
+        if(out.appts.length||_legacyUnresolvedCountL)return out;
+      }
+    }catch(_legacyGridErrL){out.diag.legacyGridErr=String(_legacyGridErrL&&_legacyGridErrL.message||_legacyGridErrL).slice(0,100);}
     // === v1.48 STRUCTURE STRATEGY (athenaOne): appts are .PatientAppointment_appointment-container
     // buttons (UNIQUE id) inside per-provider .ScheduleColumn_schedule-column sections. Dedup by button id
     // (scroll-invariant); assign provider via the appt's ancestor column SECTION matched to its header by
@@ -5748,7 +5823,11 @@ async function mlsSchedDomInline(doc, CFG){
            single-provider surface; on a multi-provider grid it is merely one
            column's count and candidate coverage remains the invariant. */
         var __providerCount = (__mlsM.providers || []).length;
-        var __expectedCount = Math.max(__candidateCount, __providerCount <= 1 ? __declaredCount : 0);
+        /* The legacy day grid exposes explicit appointment rows and OPEN slots.
+           Its free-text header count can include capacity slots, so the
+           reconciled class-specific candidate count is authoritative here. */
+        var __legacyExactCount = __dd.strategy === 'legacy-day-grid' || __dd.via === 'legacy-day-grid';
+        var __expectedCount = __legacyExactCount ? __candidateCount : Math.max(__candidateCount, __providerCount <= 1 ? __declaredCount : 0);
         var __authoritativeEmpty = __parsedCount === 0 && (__surface.probes || []).some(function (p) { return p && p.verified && p.empty; });
         var __viewportCoverage = __dd.viewportCoverage || null;
         var __coverageRequired = __dd.strategy === 'structure-id' || __dd.via === 'structure-id';

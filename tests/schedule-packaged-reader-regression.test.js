@@ -137,6 +137,80 @@ function scheduleDoc({ columns, headers, scroller = null, bodyText = '' }) {
   };
 }
 
+function legacyNode(text, options = {}) {
+  return {
+    id: options.id || '',
+    textContent: text,
+    children: [],
+    scrollHeight: 0,
+    clientHeight: 0,
+    scrollWidth: 0,
+    clientWidth: 0,
+    getAttribute() { return ''; },
+    getBoundingClientRect() { return { left: 0, right: 240, top: 0, width: 240 }; },
+    querySelector() { return null; },
+    querySelectorAll() { return []; }
+  };
+}
+
+function legacyContainer(rows, providerHeader) {
+  return {
+    textContent: '',
+    children: rows,
+    scrollHeight: 0,
+    clientHeight: 0,
+    scrollWidth: 0,
+    clientWidth: 0,
+    getAttribute() { return ''; },
+    getBoundingClientRect() { return { left: 0, right: 240, top: 0, width: 240 }; },
+    querySelector(selector) {
+      if (selector.includes('filled-appointment-row')) return rows[0] || null;
+      if (selector.includes('appointment-header2')) return providerHeader;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector.includes('filled-appointment-row')) return rows;
+      if (selector.includes('appointment-header2')) return [providerHeader];
+      return [];
+    }
+  };
+}
+
+function legacyScheduleDoc(containers, providerHeaders, bodyText = 'Legacy Athena day schedule') {
+  const rows = containers.reduce((all, item) => all.concat(item.children || []), []);
+  const sequence = [];
+  containers.forEach((item, index) => {
+    sequence.push(providerHeaders[index]);
+    sequence.push(...item.children);
+  });
+  const allNodes = providerHeaders.concat(containers, rows);
+  return {
+    body: { innerText: bodyText },
+    location: { pathname: '/schedule/day' },
+    scrollingElement: null,
+    defaultView: {
+      getComputedStyle() { return { overflowX: 'hidden', overflowY: 'hidden' }; }
+    },
+    querySelector(selector) {
+      if (selector.includes('PatientAppointment_appointment-container')
+          || selector.includes('ScheduleColumn_schedule-column')) return null;
+      if (selector.includes('appointments-container') || selector.includes('filled-appointment-row')) {
+        return containers[0] || rows[0] || null;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === '*') return allNodes;
+      if (selector === '[class~="appointments-container"]') return containers;
+      if (selector === '[class~="filled-appointment-row"]') return rows;
+      if (selector.includes('ScheduleColumn_schedule-column')) return [];
+      if (selector === 'div,span,h1,h2,h3,h4,th,td') return providerHeaders;
+      if (selector === 'div,li,tr,section,article,a,span,p') return sequence;
+      return [];
+    }
+  };
+}
+
 function mergeReaderResult(result) {
   return mlsProv.merge(result, { appts: [], providers: [], diag: { strategy: 'empty-text-fixture' } });
 }
@@ -261,7 +335,92 @@ function timeAt(index) {
     assert.strictEqual(new Set(plain(merged.appts.map(a => `${a.time}|${a.name}`))).size, 18);
   }
 
-  console.log('PASS packaged schedule reader canonical names, hydration, hidden twins, provider multiplicity, fail-closed rows, and 38-to-18 reconciliation');
+  // Legacy athenaOne's day list renders two complete copies of the same list
+  // (alternate sort/layout containers). Each copy includes the same 18 real
+  // patients plus two OPEN capacity rows. A long but valid patient row must not
+  // be discarded by the old <300-character grouped-DOM heuristic.
+  {
+    const provider = 'Matthew_Schaeffer_MD';
+    const providerHeaders = [legacyNode(provider), legacyNode(provider)];
+    const patientRows = [];
+    let longName = '';
+    for (let i = 0; i < 18; i++) {
+      const suffix = alphaSuffix(i);
+      const name = `First${suffix} Last${suffix}`;
+      let raw = `${timeAt(i)} ${name} Office visit`;
+      if (i === 9) {
+        longName = name;
+        raw += ' ' + 'clinically relevant scheduling detail '.repeat(12);
+        assert(raw.length > 300, 'long-row fixture no longer exceeds the legacy cutoff');
+      }
+      patientRows.push(raw);
+    }
+    const openRows = ['10:20 AM OPEN', '10:30 AM OPEN slot'];
+    const firstCopy = patientRows.concat(openRows).map((text, i) => legacyNode(text, { id: `legacy-a-${i}` }));
+    const secondCopy = patientRows.concat(openRows).map((text, i) => legacyNode(text, { id: `legacy-b-${i}` }));
+    const containers = [
+      legacyContainer(firstCopy, providerHeaders[0]),
+      legacyContainer(secondCopy, providerHeaders[1])
+    ];
+    assert.strictEqual(firstCopy.length + secondCopy.length, 40, 'legacy raw-row fixture must remain 40 rows');
+
+    const result = await runtime.mlsSchedDomInline(
+      legacyScheduleDoc(containers, providerHeaders),
+      {}
+    );
+    const merged = mergeReaderResult(result);
+    assert.strictEqual(result.diag.legacyContainers, 2);
+    assert.strictEqual(result.diag.legacyFilledRows, 40);
+    assert.strictEqual(result.diag.candidateCount, 18,
+      'duplicate legacy containers or OPEN slots inflated candidate completeness: ' + JSON.stringify({
+        diag: result.diag,
+        apptCount: result.appts.length,
+        mergedCount: merged.appts.length,
+        mergedNames: merged.appts.map(a => a.name)
+      }));
+    assert.strictEqual(result.appts.length, 18,
+      'legacy reader did not reconcile two duplicate containers to 18 real appointments');
+    assert.strictEqual(merged.appts.length, 18,
+      'packaged reader + merge did not preserve exactly 18 legacy appointments');
+    assert(merged.appts.some(a => a.name === longName),
+      'real legacy appointment over 300 characters was dropped');
+    assert(merged.appts.every(a => a.provider === provider),
+      'legacy single-provider scope was not preserved on every appointment');
+    assert(!merged.appts.some(a => /\bopen\b/i.test(a.name || '')),
+      'OPEN capacity row survived as a patient');
+    assert(Number(result.diag.slotRowsRemoved || merged.providerDiag.slotRowsRemoved || 0) >= 4,
+      'the four duplicate OPEN rows were not visibly accounted for');
+    assert.strictEqual(new Set(plain(merged.appts.map(a => `${a.time}|${a.name}|${a.provider}`))).size, 18,
+      'duplicate legacy appointment rows survived reconciliation');
+  }
+
+  // A non-slot legacy row that never resolves to a two-token patient remains a
+  // completeness candidate but can never become an imported appointment.
+  {
+    const provider = 'Matthew_Schaeffer_MD';
+    const providerHeaders = [legacyNode(provider), legacyNode(provider)];
+    const unresolvedText = '11:00 AM Loading patient details';
+    const containers = [
+      legacyContainer([legacyNode(unresolvedText, { id: 'legacy-unresolved-a' })], providerHeaders[0]),
+      legacyContainer([legacyNode(unresolvedText, { id: 'legacy-unresolved-b' })], providerHeaders[1])
+    ];
+    const unresolved = await runtime.mlsSchedDomInline(
+      legacyScheduleDoc(containers, providerHeaders),
+      {}
+    );
+    const merged = mergeReaderResult(unresolved);
+    const expected = Number(unresolved.diag.candidateCount || 0);
+    const complete = merged.appts.length > 0
+      && merged.appts.length >= expected
+      && Number(unresolved.diag.unnamedCount || 0) === 0;
+    assert.strictEqual(expected, 1, 'duplicate unresolved legacy row was lost or double-counted');
+    assert.strictEqual(merged.appts.length, 0, 'unresolved legacy row was imported as a patient');
+    assert(Number(unresolved.diag.unnamedCount || 0) >= 1,
+      'unresolved legacy row was not exposed to completeness diagnostics');
+    assert.strictEqual(complete, false, 'unresolved legacy row did not fail closed');
+  }
+
+  console.log('PASS packaged schedule reader modern + legacy dedup, long rows, slots, provider scope, and fail-closed completeness');
 })().catch(error => {
   console.error(error);
   process.exit(1);

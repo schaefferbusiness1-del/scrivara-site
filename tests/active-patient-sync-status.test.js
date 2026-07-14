@@ -93,7 +93,7 @@ function runtime(source) {
     postMessage(message) {
       posted.push(JSON.parse(JSON.stringify(message)));
       if (message.type === 'mlsPing') {
-        setTimeout(() => emit({ source: 'mls-ext', type: 'mlsPong', version: '2.9.20' }), 0);
+        setTimeout(() => emit({ source: 'mls-ext', type: 'mlsPong', version: '2.9.21' }), 0);
       } else if (message.type === 'mlsAppAthenaActionV2') {
         const context = {
           patientName: probeIdentity, dob: '1/2/1980', mrn: '7788', encounterId: '44001',

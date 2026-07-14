@@ -41,7 +41,7 @@
   if (win[NS] && win[NS].installed) { return; }
 
   var BACKEND = 'https://scrivara-backend.onrender.com';
-  var SERVER_EXT_VERSION = '2.9.20'; // current published MLS Assist (extension-version.json)
+  var SERVER_EXT_VERSION = '2.9.21'; // current published MLS Assist (extension-version.json)
 
   function isFn(f) { return typeof f === 'function'; }
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -525,6 +525,7 @@
     'dom': 1,
     'text': 1,
     'structure-id': 1,
+    'legacy-day-grid': 1,
     'coord-scroll': 1,
     'table-column': 1,
     'grouped-dom': 1,
@@ -695,6 +696,7 @@
       rawCandidateObservations: count(v.rawCandidateObservations),
       confidentCandidateCount: count(v.confidentCandidateCount),
       duplicateRowsRemoved: count(v.duplicateRowsRemoved),
+      slotRowsRemoved: count(v.slotRowsRemoved),
       bareTimes: count(v.bareTimes),
       singleProviderScope: flag(v.singleProviderScope),
       scrolled: flag(v.scrolled),
