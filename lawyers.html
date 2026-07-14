@@ -138,6 +138,18 @@ header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdro
 .dir-state{text-align:center;color:var(--ink2);background:var(--soft);border:1px dashed #cdd9e8;border-radius:var(--radius);padding:38px 26px;max-width:680px;margin:0 auto}
 .dir-state h3{margin-bottom:8px}
 .dir-state p{color:var(--muted);font-size:15px;margin-top:6px}
+.dir-state.is-loading{max-width:none;text-align:left;background:transparent;border:0;padding:0}
+.dir-state.is-loading>h3,.dir-state.is-loading>p{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.dir-skeleton-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.dir-skeleton-card{min-height:252px;padding:24px;border:1px solid #E4E2DA;border-radius:16px;background:#fff;box-shadow:var(--shadow)}
+.dir-skeleton-head{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.dir-skeleton-avatar,.dir-skeleton-line{display:block;background:linear-gradient(100deg,#ECEAE4 20%,#F8F7F3 42%,#ECEAE4 64%);background-size:220% 100%;animation:dirSkeleton 1.35s ease-in-out infinite}
+.dir-skeleton-avatar{width:56px;height:56px;border-radius:14px;flex:0 0 auto}
+.dir-skeleton-copy{flex:1}.dir-skeleton-line{height:12px;border-radius:999px;margin:10px 0}.dir-skeleton-line.lg{height:16px;width:74%}.dir-skeleton-line.md{width:58%}.dir-skeleton-line.sm{width:42%}
+@keyframes dirSkeleton{0%{background-position:110% 0}100%{background-position:-110% 0}}
+@media(max-width:860px){.dir-skeleton-grid{grid-template-columns:1fr 1fr}.dir-skeleton-card:last-child{display:none}}
+@media(max-width:560px){.dir-skeleton-grid{grid-template-columns:1fr}.dir-skeleton-card:nth-child(n+2){display:none}}
+@media(prefers-reduced-motion:reduce){.dir-skeleton-avatar,.dir-skeleton-line{animation:none;background:#ECEAE4}}
 
 /* REQUEST / CONNECT */
 .req-wrap{background:linear-gradient(160deg,#143150,#0e2238);border-radius:24px;padding:44px;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start;color:#eaf1fb}
@@ -262,6 +274,7 @@ details{border-color:var(--line)}
 details summary:after{color:var(--green)}
 footer{background:var(--alt);border-color:var(--line)}
 @media(max-width:720px){
+  .nav{height:64px;gap:14px}.brand .tagpill{display:none}.nav .right .btn{display:none}.nav .signin{padding:8px 0;font-size:14px}
   .hero{padding:64px 0 52px;text-align:left}
   .hero h1,.hero p.lead{margin-left:0;margin-right:0}
   .hero .cta,.hero .trust-line{justify-content:flex-start}
@@ -373,9 +386,14 @@ footer{background:var(--alt);border-color:var(--line)}
 </div>
 
 <div id="dirGrid" class="dir-grid" style="display:none"></div>
-<div id="dirStateMsg" class="dir-state">
+<div id="dirStateMsg" class="dir-state is-loading" role="status" aria-live="polite" aria-busy="true">
 <h3>Loading the expert directory…</h3>
 <p>One moment while we find physicians near you.</p>
+<div class="dir-skeleton-grid" aria-hidden="true">
+  <div class="dir-skeleton-card"><div class="dir-skeleton-head"><span class="dir-skeleton-avatar"></span><div class="dir-skeleton-copy"><span class="dir-skeleton-line lg"></span><span class="dir-skeleton-line md"></span></div></div><span class="dir-skeleton-line md"></span><span class="dir-skeleton-line"></span><span class="dir-skeleton-line"></span><span class="dir-skeleton-line sm"></span></div>
+  <div class="dir-skeleton-card"><div class="dir-skeleton-head"><span class="dir-skeleton-avatar"></span><div class="dir-skeleton-copy"><span class="dir-skeleton-line lg"></span><span class="dir-skeleton-line md"></span></div></div><span class="dir-skeleton-line md"></span><span class="dir-skeleton-line"></span><span class="dir-skeleton-line"></span><span class="dir-skeleton-line sm"></span></div>
+  <div class="dir-skeleton-card"><div class="dir-skeleton-head"><span class="dir-skeleton-avatar"></span><div class="dir-skeleton-copy"><span class="dir-skeleton-line lg"></span><span class="dir-skeleton-line md"></span></div></div><span class="dir-skeleton-line md"></span><span class="dir-skeleton-line"></span><span class="dir-skeleton-line"></span><span class="dir-skeleton-line sm"></span></div>
+</div>
 </div>
 </div>
 </section>
@@ -563,11 +581,15 @@ function renderExperts(list){
   if(!list.length){
     featWrap.style.display='none'; grid.style.display='none'; grid.innerHTML='';
     msg.style.display='block';
+    msg.classList.remove('is-loading');
+    msg.setAttribute('aria-busy','false');
     if(ALL_EXPERTS.length){
       msg.innerHTML='<h3>No matches</h3><p>No participating physicians match that search yet. Try a different specialty or state, or send a request below and we’ll match you.</p>';
     }
     return;
   }
+  msg.classList.remove('is-loading');
+  msg.setAttribute('aria-busy','false');
   msg.style.display='none';
 
   if(YOUR_STATE){
@@ -642,6 +664,8 @@ async function loadExperts(){
       document.getElementById('dirFeatured').style.display='none';
       document.getElementById('dirGrid').style.display='none';
       msg.style.display='block';
+      msg.classList.remove('is-loading');
+      msg.setAttribute('aria-busy','false');
       msg.innerHTML='<h3>Physicians are being onboarded</h3>'
         +'<p>Our spine, pain and PM&amp;R physicians are completing their expert profiles now. New experts opt in to the public directory continually — in the meantime, send a request below and we’ll match your case to the right physician directly.</p>'
         +'<p style="margin-top:16px"><a class="btn btn-primary btn-sm" href="#request">Request a report</a></p>';
@@ -652,6 +676,8 @@ async function loadExperts(){
   }catch(e){
     document.getElementById('dirGrid').style.display='none';
     msg.style.display='block';
+    msg.classList.remove('is-loading');
+    msg.setAttribute('aria-busy','false');
     msg.innerHTML='<h3>Directory temporarily unavailable</h3><p>We couldn’t reach the directory just now. Please send a request below and we’ll match your case directly, or try again shortly.</p>';
   }
 }

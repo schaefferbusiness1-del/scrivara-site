@@ -17,6 +17,7 @@ assert(html.includes('.hero h1 .grad{background:none;color:var(--green);font-sty
 assert(html.includes('.dark{background:var(--deep)'), 'report-type band must use the redesigned MLS green');
 assert(html.includes('<b>MLS Scribe</b><span class="tagpill">For Attorneys</span>'), 'attorney header must use the redesigned MLS brand lockup');
 assert(html.includes('.nav .links a{color:var(--ink2);font-size:14.5px;font-weight:500;white-space:nowrap}'), 'attorney navigation labels must stay on one line');
+assert(html.includes('.brand .tagpill{display:none}.nav .right .btn{display:none}.nav .signin{padding:8px 0;font-size:14px}'), 'mobile attorney header must keep sign-in visible without horizontal overflow');
 
 // Directory, geolocation, request transport, and secure portal entry remain wired.
 ['dirSearch', 'dirSpec', 'dirState', 'dirGrid', 'dirStateMsg'].forEach(id => {
@@ -29,6 +30,11 @@ assert(html.includes('const REQUEST_ENDPOINT="https://formsubmit.co/ajax/michael
 assert(html.includes('Already have an attorney portal login? <a href="ScribeFlow.html">Sign in here</a>'), 'attorney portal sign-in path is missing');
 assert(html.includes('href="MLS_Sample_Report.pdf"'), 'sample report link is missing');
 assert(fs.existsSync(path.join(root, 'MLS_Sample_Report.pdf')), 'sample report file is missing');
+
+assert(html.includes('class="dir-state is-loading" role="status" aria-live="polite" aria-busy="true"'), 'directory loading state must announce progress without shifting layout');
+assert((html.match(/class="dir-skeleton-card"/g) || []).length === 3, 'directory loading state must reserve a full desktop results row');
+assert(html.includes('@media(prefers-reduced-motion:reduce)') && html.includes('animation:none'), 'directory skeleton must honor reduced-motion preferences');
+assert(html.includes("msg.setAttribute('aria-busy','false')"), 'directory must settle its busy state for success, empty, and error paths');
 
 assert(home.includes('.sales-video{padding:76px 0 48px}'), 'homepage sales video should sit lower beneath the hero');
 

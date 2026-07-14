@@ -423,6 +423,380 @@
   } catch (e) { try { boot(); } catch (e2) {} }
 })();
 
+/*! single-owner UI + account access -> window.__mlsUiUnification (v1.0.0)
+ * Keeps the easy visit recorder authoritative until the user deliberately
+ * opens Advanced, removes duplicate entry points, and puts account/security
+ * access in the always-visible top bar. The extension is not involved.
+ */
+(function () {
+  'use strict';
+  var W = (typeof window !== 'undefined') ? window : null;
+  if (!W || (W.__mlsUiUnification && W.__mlsUiUnification.installed)) return;
+
+  var VERSION = '1.0.0';
+  var STYLE_ID = 'mlsUiUnificationStyle';
+  var ACCOUNT_WRAP_ID = 'mlsAccountAccess';
+  var retryTimer = null;
+  var retryCount = 0;
+  var topObserver = null;
+  var visitObserver = null;
+  var reconciling = false;
+  var initialAdvancedSettled = false;
+
+  function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function text(el) { return String((el && el.textContent) || '').replace(/\s+/g, ' ').trim(); }
+
+  function injectStyle() {
+    if (byId(STYLE_ID)) return;
+    var st = document.createElement('style');
+    st.id = STYLE_ID;
+    st.textContent = [
+      /* When the easy lane owns the Advanced trigger, suppress the second
+         legacy toggle below it. If the easy lane is absent, the legacy row
+         remains available as the fallback owner. */
+      'body.mls-has-easy-advanced-trigger #mlsEz3 .ez3-advrow{display:none!important;}',
+      /* The exact active-patient header action is the single portal-invite
+         owner. The generic Visit link remains available when no patient is
+         selected and the exact action therefore does not exist. */
+      'body.mls-has-exact-portal-action #mlsEz3 .ez3-portal{display:none!important;}',
+      '#mlsRdMenuSlot{position:relative;}',
+      '.mls-account-wrap{position:relative;display:inline-flex;align-items:center;}',
+      '#mlsAccountMenuBtn{height:38px;display:inline-flex;align-items:center;gap:8px;border:1px solid #D9D6CD;border-radius:10px;background:#fff;color:#1A211C;padding:0 11px;font:600 13px/1 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;white-space:nowrap;}',
+      '#mlsAccountMenuBtn:hover,#mlsAccountMenuBtn[aria-expanded="true"]{background:#F4F2EC;border-color:#BFC9C2;}',
+      '.mls-account-avatar{width:23px;height:23px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#204034;color:#8FD8BE;font-size:11px;font-weight:800;}',
+      '.mls-account-pop{position:absolute;right:0;top:calc(100% + 9px);z-index:2147482000;width:260px;background:#fff;border:1px solid #DCE3DE;border-radius:14px;box-shadow:0 18px 48px rgba(20,33,28,.18);padding:9px;font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;}',
+      '.mls-account-pop[hidden]{display:none!important;}',
+      '.mls-account-id{padding:8px 9px 10px;border-bottom:1px solid #ECEFEA;margin-bottom:5px;color:#66726A;font-size:12px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+      '.mls-account-action{display:flex;width:100%;align-items:center;gap:9px;border:0;border-radius:9px;background:transparent;color:#1A211C;padding:10px 9px;text-align:left;font:600 13.5px/1.2 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;}',
+      '.mls-account-action:hover{background:#F4F2EC;}',
+      '.mls-account-action.danger{color:#9B3030;}',
+      '.mls-password-standard{display:none;margin:-6px 0 14px;color:#66726A;font:500 12px/1.4 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;}',
+      '.mls-password-standard.is-visible{display:block;}',
+      '@media(max-width:720px){#mlsAccountMenuBtn .mls-account-label{display:none}#mlsAccountMenuBtn{padding:0 7px}.mls-account-pop{position:fixed;right:12px;top:64px;width:min(280px,calc(100vw - 24px));}}'
+    ].join('');
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function accountEmail() {
+    return safe(function () {
+      return String((W.bkUser && W.bkUser.email) ||
+        (W.currentUser && W.currentUser.email) ||
+        (typeof W.getSessionEmail === 'function' && W.getSessionEmail()) || '').trim();
+    }, '');
+  }
+
+  function initials(email) {
+    var s = String(email || 'Account').trim();
+    return (s.charAt(0) || 'A').toUpperCase();
+  }
+
+  function closeAccountMenu() {
+    var btn = byId('mlsAccountMenuBtn'), pop = byId('mlsAccountPopover');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    if (pop) pop.hidden = true;
+  }
+
+  function markHidden(el, reason) {
+    if (!el || el.getAttribute('data-mls-ui-owner-hidden') === '1') return;
+    el.setAttribute('data-mls-ui-owner-hidden', '1');
+    el.setAttribute('data-mls-ui-owner-reason', reason || 'duplicate');
+    el.style.setProperty('display', 'none', 'important');
+  }
+
+  function hideLegacyAccountRows() {
+    document.querySelectorAll('#mlsRdNav .mlsRdFootBtn,#mlsTbMenu .mlsTbItem').forEach(function (el) {
+      if (/(settings|sign out|log out)$/i.test(text(el))) markHidden(el, 'account-menu');
+    });
+  }
+
+  function dedupeHowTo() {
+    var all = Array.prototype.slice.call(document.querySelectorAll('#mlsTbMenu button'))
+      .filter(function (el) {
+        return /(how-to guide|guided tour\s*\/\s*how-to)/i.test(text(el)) &&
+          safe(function () { return getComputedStyle(el).display !== 'none' && el.offsetParent !== null; }, false);
+      });
+    for (var i = 1; i < all.length; i++) markHidden(all[i], 'duplicate-how-to');
+  }
+
+  function ensureAccountAccess() {
+    var slot = byId('mlsRdMenuSlot');
+    if (!slot) return false;
+    var existing = byId(ACCOUNT_WRAP_ID);
+    if (existing && existing.parentNode !== slot) slot.appendChild(existing);
+    if (!existing) {
+      var email = accountEmail();
+      var wrap = document.createElement('div');
+      wrap.id = ACCOUNT_WRAP_ID;
+      wrap.className = 'mls-account-wrap';
+      wrap.innerHTML =
+        '<button type="button" id="mlsAccountMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="mlsAccountPopover">' +
+          '<span class="mls-account-avatar" aria-hidden="true"></span><span class="mls-account-label">Account</span>' +
+        '</button>' +
+        '<div id="mlsAccountPopover" class="mls-account-pop" role="menu" hidden>' +
+          '<div class="mls-account-id"></div>' +
+          '<button type="button" class="mls-account-action" data-account-action="settings" role="menuitem">&#9881; Account &amp; security</button>' +
+          '<button type="button" class="mls-account-action danger" data-account-action="logout" role="menuitem">&#9211; Sign out</button>' +
+        '</div>';
+      slot.appendChild(wrap);
+      var btn = wrap.querySelector('#mlsAccountMenuBtn');
+      var pop = wrap.querySelector('#mlsAccountPopover');
+      wrap.querySelector('.mls-account-avatar').textContent = initials(email);
+      wrap.querySelector('.mls-account-id').textContent = email || 'Signed-in MLS account';
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        var open = pop.hidden;
+        pop.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      wrap.querySelector('[data-account-action="settings"]').addEventListener('click', function () {
+        closeAccountMenu();
+        if (typeof W.openSettings === 'function') safe(function () { W.openSettings(); });
+        else if (typeof W.showView === 'function') safe(function () { W.showView('settings'); });
+      });
+      wrap.querySelector('[data-account-action="logout"]').addEventListener('click', function () {
+        closeAccountMenu();
+        if (typeof W.logout === 'function') safe(function () { W.logout(); });
+      });
+    } else {
+      var email2 = accountEmail();
+      var avatar = existing.querySelector('.mls-account-avatar');
+      var id = existing.querySelector('.mls-account-id');
+      if (avatar) avatar.textContent = initials(email2);
+      if (id) id.textContent = email2 || 'Signed-in MLS account';
+    }
+    hideLegacyAccountRows();
+    dedupeHowTo();
+    return true;
+  }
+
+  function closeAdvancedFromEasy(ev) {
+    if (!document.body || !document.body.classList.contains('ez3adv')) return false;
+    if (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+    }
+    setTimeout(function () {
+      var owner = byId('ez3Adv');
+      if (owner) safe(function () { owner.click(); });
+      setTimeout(reconcileAdvanced, 0);
+    }, 0);
+    return true;
+  }
+
+  function easyAdvancedClick(ev) {
+    closeAdvancedFromEasy(ev);
+  }
+
+  function reconcileAdvanced() {
+    var trigger = document.querySelector('#mlsEz3 .ez3fl-openws');
+    var owner = byId('ez3Adv');
+    if (!trigger || !owner || !document.body) {
+      if (document.body) document.body.classList.remove('mls-has-easy-advanced-trigger');
+      return false;
+    }
+    document.body.classList.add('mls-has-easy-advanced-trigger');
+    if (trigger.getAttribute('data-mls-advanced-owner') !== '1') {
+      trigger.setAttribute('data-mls-advanced-owner', '1');
+      trigger.addEventListener('click', easyAdvancedClick, true);
+    }
+    var open = document.body.classList.contains('ez3adv');
+    if (!initialAdvancedSettled) {
+      initialAdvancedSettled = true;
+      if (open) {
+        safe(function () { owner.click(); });
+        open = document.body.classList.contains('ez3adv');
+      }
+    }
+    trigger.textContent = open ? 'Hide advanced workspace' : 'Advanced visit workspace';
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    trigger.setAttribute('aria-controls', 'captureCard');
+    return true;
+  }
+
+  function reconcilePortalOwner() {
+    if (!document.body) return;
+    var exact = byId('mlsPortalInviteBtn');
+    document.body.classList.toggle('mls-has-exact-portal-action', !!(exact && exact.isConnected));
+  }
+
+  function isSignupMode() {
+    var confirm = byId('authConfirmField');
+    return !!(confirm && safe(function () { return getComputedStyle(confirm).display !== 'none'; }, confirm.style.display !== 'none'));
+  }
+
+  function authTabKeydown(ev) {
+    if (!ev || !/^(Enter| |Spacebar)$/.test(ev.key)) return;
+    ev.preventDefault();
+    safe(function () { ev.currentTarget.click(); });
+  }
+
+  function reconcileAuth() {
+    var login = byId('tabLogin'), signup = byId('tabSignup');
+    var tabs = login && login.parentNode;
+    if (tabs) tabs.setAttribute('role', 'tablist');
+    [login, signup].forEach(function (tab) {
+      if (!tab) return;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('tabindex', '0');
+      tab.setAttribute('aria-selected', tab.classList.contains('on') ? 'true' : 'false');
+      if (tab.getAttribute('data-mls-auth-keyboard') !== '1') {
+        tab.setAttribute('data-mls-auth-keyboard', '1');
+        tab.addEventListener('keydown', authTabKeydown);
+      }
+    });
+
+    var signupMode = isSignupMode();
+    var pass = byId('authPass'), confirm = byId('authPass2');
+    if (pass) {
+      if (signupMode) pass.setAttribute('minlength', '8');
+      else pass.removeAttribute('minlength'); /* preserve login compatibility */
+    }
+    if (confirm) confirm.setAttribute('minlength', '8');
+    var helper = byId('mlsPasswordStandard');
+    if (!helper && byId('authConfirmField')) {
+      helper = document.createElement('p');
+      helper.id = 'mlsPasswordStandard';
+      helper.className = 'mls-password-standard';
+      helper.textContent = 'Use at least 8 characters.';
+      byId('authConfirmField').insertAdjacentElement('afterend', helper);
+    }
+    if (helper) helper.classList.toggle('is-visible', signupMode);
+
+    ['resetPass', 'resetPass2'].forEach(function (id) {
+      var el = byId(id); if (el) el.setAttribute('minlength', '8');
+    });
+    var note = safe(function () { return document.querySelector('#resetCard .local-note'); }, null);
+    if (note) note.innerHTML = '&#128274; Choose a password of at least <b>8 characters</b>. You\'ll log in with it next.';
+  }
+
+  function showResetError(message) {
+    var err = byId('resetErr');
+    if (!err) return;
+    err.textContent = message;
+    err.classList.add('show');
+  }
+
+  function reconcileAll() {
+    if (reconciling) return;
+    reconciling = true;
+    safe(ensureAccountAccess);
+    safe(reconcileAdvanced);
+    safe(reconcilePortalOwner);
+    safe(reconcileAuth);
+    reconciling = false;
+  }
+
+  function scheduleReconcile(reset) {
+    if (reset) retryCount = 0;
+    if (retryTimer) return;
+    retryTimer = setTimeout(function run() {
+      retryTimer = null;
+      reconcileAll();
+      if ((!byId('mlsRdTop') || !byId('mlsEz3')) && retryCount++ < 80) retryTimer = setTimeout(run, 250);
+      else observeStableRoots();
+    }, 0);
+  }
+
+  function observeStableRoots() {
+    var top = byId('mlsRdTop'), visit = byId('mlsEz3');
+    if (top && !topObserver) {
+      topObserver = new MutationObserver(function () { scheduleReconcile(false); });
+      topObserver.observe(top, { childList: true, subtree: true });
+    }
+    if (visit && !visitObserver) {
+      visitObserver = new MutationObserver(function () { scheduleReconcile(false); });
+      visitObserver.observe(visit, { childList: true, subtree: true });
+    }
+  }
+
+  function onDocumentClick(ev) {
+    var target = ev && ev.target;
+    if (!target) return;
+    if (target.id === 'authBtn' || safe(function () { return !!target.closest('#authBtn'); }, false)) {
+      if (isSignupMode()) {
+        var signupPass = byId('authPass');
+        if (!signupPass || String(signupPass.value || '').length < 8) {
+          ev.preventDefault(); ev.stopPropagation();
+          if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+          if (typeof W.showAuthErr === 'function') W.showAuthErr('Password must be at least 8 characters.');
+          return;
+        }
+      }
+      initialAdvancedSettled = false;
+      scheduleReconcile(true);
+      setTimeout(reconcileAll, 500);
+      setTimeout(reconcileAll, 1400);
+      return;
+    }
+    if (target.id === 'resetBtn' || safe(function () { return !!target.closest('#resetBtn'); }, false)) {
+      var resetPass = byId('resetPass');
+      if (!resetPass || String(resetPass.value || '').length < 8) {
+        ev.preventDefault(); ev.stopPropagation();
+        if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+        showResetError('Password must be at least 8 characters.');
+        return;
+      }
+    }
+    var trigger = safe(function () { return target.closest('.ez3fl-openws'); }, null);
+    if (trigger) {
+      if (closeAdvancedFromEasy(ev)) return;
+      setTimeout(reconcileAdvanced, 0);
+      return;
+    }
+    if (!safe(function () { return !!target.closest('#' + ACCOUNT_WRAP_ID); }, false)) closeAccountMenu();
+    setTimeout(reconcileAll, 0);
+  }
+
+  function boot() {
+    injectStyle();
+    document.addEventListener('click', onDocumentClick, true);
+    scheduleReconcile(true);
+  }
+
+  function revert() {
+    document.removeEventListener('click', onDocumentClick, true);
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    if (topObserver) { topObserver.disconnect(); topObserver = null; }
+    if (visitObserver) { visitObserver.disconnect(); visitObserver = null; }
+    var wrap = byId(ACCOUNT_WRAP_ID); if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    var helper = byId('mlsPasswordStandard'); if (helper && helper.parentNode) helper.parentNode.removeChild(helper);
+    [byId('tabLogin'), byId('tabSignup')].forEach(function (tab) {
+      if (!tab) return;
+      tab.removeEventListener('keydown', authTabKeydown);
+      tab.removeAttribute('role'); tab.removeAttribute('tabindex'); tab.removeAttribute('aria-selected'); tab.removeAttribute('data-mls-auth-keyboard');
+    });
+    document.querySelectorAll('[data-mls-advanced-owner="1"]').forEach(function (trigger) {
+      trigger.removeEventListener('click', easyAdvancedClick, true);
+      trigger.removeAttribute('data-mls-advanced-owner');
+    });
+    document.querySelectorAll('[data-mls-ui-owner-hidden="1"]').forEach(function (el) {
+      el.style.removeProperty('display');
+      el.removeAttribute('data-mls-ui-owner-hidden');
+      el.removeAttribute('data-mls-ui-owner-reason');
+    });
+    if (document.body) {
+      document.body.classList.remove('mls-has-easy-advanced-trigger');
+      document.body.classList.remove('mls-has-exact-portal-action');
+    }
+    var st = byId(STYLE_ID); if (st && st.parentNode) st.parentNode.removeChild(st);
+    if (W.__mlsUiUnification) W.__mlsUiUnification.installed = false;
+  }
+
+  W.__mlsUiUnification = {
+    installed: true,
+    version: VERSION,
+    reconcile: reconcileAll,
+    closeAccountMenu: closeAccountMenu,
+    revert: revert
+  };
+
+  try {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+    else boot();
+  } catch (e) { safe(boot); }
+})();
+
 /*! visit-control continuity -> window.__mlsVisitControlContinuity (v1.0.0)
  * Keeps the three desktop voice controls stable when the inline Quick Tools
  * lane enters/leaves the viewport. Athena tab is intentionally untouched.

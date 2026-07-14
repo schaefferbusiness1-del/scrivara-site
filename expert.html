@@ -7,10 +7,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Expert physician profile | MLS for Attorneys</title>
 <meta name="description" content="Board-certified, actively-practicing physician available for IME, expert narrative, causation and record-review reports — signed within 24 hours. View credentials, jurisdictions, deposition & trial availability and fees.">
-<meta name="theme-color" content="#0e2238">
+<meta name="theme-color" content="#204034">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="icon" type="image/png" href="icon-32.png">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 :root{
 --ink:#0e2238; --ink2:#3a5575; --muted:#6a829c; --line:#e7edf4;
@@ -98,13 +99,101 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:40px 0 34
 .foot a{color:var(--ink2);font-weight:600;font-size:14.5px}
 .foot .links{display:flex;gap:22px;flex-wrap:wrap}
 .foot .fineprint{color:var(--muted);font-size:12.5px;margin-top:24px;border-top:1px solid var(--line);padding-top:18px}
+
+/* Editorial Calm — matches the attorney portal and patient portal. */
+:root{
+--paper:#FBFAF7;--alt:#F4F2EC;--card:#FFFFFF;--bar:#FCFBF8;
+--line:#E7E5DD;--line-in:#EFEDE6;--ink:#1A211C;--ink2:#55605A;--muted:#79837C;
+--deep:#204034;--green:#2E6A4B;--green-mid:#3B7C5A;--mint:#8FD8BE;--wash:#EAF1EE;
+--gold:#9A7728;--brand:var(--green);--brand-dk:var(--deep);--bg:var(--paper);
+--soft:var(--alt);--soft2:var(--wash);--serif:'Newsreader',Georgia,serif;
+--sans:'Public Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+--shadow:0 1px 2px rgba(20,33,28,.04);--maxw:1080px;
+}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans)}
+h1,h2{font-family:var(--serif);font-weight:600;letter-spacing:-.018em}
+h1{font-size:clamp(34px,4.6vw,52px);line-height:1.05}
+h2{font-size:25px}
+a{color:var(--green)}
+.wrap{padding:0 28px}
+.btn{font-family:var(--sans);font-weight:600;border-radius:11px;border-width:1px;box-shadow:none}
+.btn-primary{background:var(--deep);border-color:var(--deep)}
+.btn-primary:hover{background:#28503f;border-color:#28503f;transform:none}
+.btn-ghost{background:transparent;border-color:#D9D6CD;color:var(--ink)}
+.btn-ghost:hover{background:#fff;border-color:var(--ink2);color:var(--ink)}
+header{background:rgba(251,250,247,.88);border-color:var(--line);backdrop-filter:blur(10px)}
+.nav{height:68px;gap:26px}
+.brand{gap:11px;color:var(--ink);font-size:inherit;flex:none;white-space:nowrap}
+.brand .mk{width:34px;height:34px;border-radius:9px;background:var(--deep);display:flex;align-items:center;justify-content:center}
+.brand .mk svg{width:20px;height:20px}
+.brand b{font-family:var(--serif);font-weight:600;font-size:21px;letter-spacing:-.01em}
+.brand .tagpill{color:var(--green);background:var(--wash);border-color:#D9E6DF;font-size:10px;padding:3px 8px;white-space:nowrap}
+.nav .signin{color:var(--ink);font-size:14.5px;font-weight:600;white-space:nowrap}
+main{padding:46px 0 84px}
+.back{color:var(--green);font-weight:600;margin-bottom:26px}
+.phero{grid-template-columns:168px 1fr;gap:32px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:34px;box-shadow:var(--shadow)}
+.phero .photo,.phero .photo-ph{width:168px;height:168px;border-radius:16px;box-shadow:none}
+.phero .photo-ph{background:var(--deep);font-family:var(--serif);font-size:52px;font-weight:600}
+.phero .cred{color:var(--ink2);font-weight:500}
+.phero .spec{color:var(--green);font-weight:700}
+.phero .headline{color:var(--ink2);max-width:650px}
+.badge{background:var(--bar);border-color:var(--line);color:var(--ink2);font-weight:600}
+.badge.green{background:var(--wash);border-color:#D4E5DC;color:var(--green)}
+.badge.match{background:#FCF8EF;border-color:#E7D8B4;color:var(--gold)}
+.statebar{background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:18px 2px;margin:0 0 30px}
+.statebar select{border-color:#D9D6CD;background:#fff;color:var(--ink)}
+.layout{grid-template-columns:minmax(0,1fr) 326px;gap:24px;margin-top:0}
+.block{border-color:var(--line);border-radius:16px;box-shadow:var(--shadow);padding:26px;margin-bottom:18px}
+.block p{color:var(--ink2)}
+.kv .row{padding:8px 0;border-top:1px solid var(--line-in)}
+.kv .row:first-child{border-top:0}
+.kv .row .lbl{color:var(--muted)}
+.docs a{background:var(--bar);border-color:var(--line);color:var(--ink)}
+.chip{background:var(--wash);border-color:#D9E6DF;color:var(--green)}
+.chip.hl{background:#FCF8EF;border-color:#E7D8B4;color:var(--gold)}
+.aside .block{top:88px;background:var(--deep);border-color:#2C5041;color:#fff}
+.aside .block h2{color:#fff}
+.aside .fee{border-color:rgba(255,255,255,.16)}
+.aside .note{color:#C5D6CD}
+.aside-kicker{color:var(--mint);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin:22px 0 9px}
+.next-steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.next-steps li{display:grid;grid-template-columns:24px 1fr;gap:9px;align-items:start;color:#DCE7E1;font-size:13.5px;line-height:1.45}
+.next-steps b{width:24px;height:24px;border-radius:50%;background:rgba(143,216,190,.14);color:var(--mint);display:flex;align-items:center;justify-content:center;font-size:11px}
+footer{background:var(--alt);border-color:var(--line);margin-top:0}
+
+/* Layout-stable profile loading state. */
+#loadState{max-width:none;margin:0;text-align:left;background:transparent;border:0;border-radius:0;padding:0}
+.profile-skeleton{display:grid;gap:24px}
+.sk-hero{display:grid;grid-template-columns:168px 1fr;gap:32px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:34px}
+.sk-avatar,.sk-line,.sk-card{position:relative;overflow:hidden;background:#EAE8E1}
+.sk-avatar{width:168px;height:168px;border-radius:16px}
+.sk-copy{padding-top:8px}
+.sk-line{height:14px;border-radius:999px;margin-bottom:13px}
+.sk-line.title{height:42px;width:62%;margin-bottom:17px}.sk-line.med{width:48%}.sk-line.long{width:76%}.sk-line.short{width:34%}
+.sk-grid{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:24px}
+.sk-card{height:210px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.sk-side{height:330px;background:#DDE6E1}
+.sk-avatar:after,.sk-line:after,.sk-card:after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);animation:sk-sweep 1.25s ease-in-out infinite}
+@keyframes sk-sweep{to{transform:translateX(100%)}}
+#loadState.load-error{max-width:700px;margin:40px auto;text-align:center;background:#fff;border:1px solid var(--line);border-radius:16px;padding:42px 28px}
+#loadState.load-error h2{margin-bottom:8px}
+#loadState.load-error p{color:var(--ink2)}
+@media(prefers-reduced-motion:reduce){.sk-avatar:after,.sk-line:after,.sk-card:after{animation:none}}
+@media(max-width:860px){.layout,.sk-grid{grid-template-columns:1fr}.aside .block{position:static}.sk-side{height:220px}}
+@media(max-width:720px){
+  .wrap{padding:0 20px}.nav{height:64px}.brand .tagpill{display:none}.nav .right .btn{display:none}.nav .signin{padding:8px 0}
+  main{padding-top:30px}.phero,.sk-hero{grid-template-columns:1fr;text-align:left;padding:24px;gap:22px}
+  .phero .photo,.phero .photo-ph,.sk-avatar{margin:0;width:104px;height:104px}.phero .photo-ph{font-size:36px}
+  .phero .cta,.badges{justify-content:flex-start}.phero .cta .btn{width:100%}.statebar{align-items:flex-start}
+  .sk-line.title{width:86%;height:34px}.sk-line.long{width:92%}
+}
 </style>
 </head>
 <body id="top">
 
 <header>
 <div class="wrap nav">
-<a class="brand" href="lawyers.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkA)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS <span class="tagpill">For Attorneys</span></a>
+<a class="brand" href="lawyers.html"><span class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>MLS Scribe</b><span class="tagpill">For Attorneys</span></a>
 <div class="right">
 <a class="signin" href="ScribeFlow.html">Attorney sign in</a>
 <a class="btn btn-primary btn-sm" href="lawyers.html#request">Request a report</a>
@@ -116,7 +205,13 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:40px 0 34
 <div class="wrap">
 <a class="back" href="lawyers.html#directory">← Back to the expert directory</a>
 <div id="content" style="display:none"></div>
-<div id="loadState"><h2>Loading physician profile…</h2><p style="color:var(--muted);margin-top:8px">One moment.</p></div>
+<div id="loadState" role="status" aria-live="polite" aria-busy="true" aria-label="Loading physician profile">
+  <div class="profile-skeleton" aria-hidden="true">
+    <div class="sk-hero"><div class="sk-avatar"></div><div class="sk-copy"><div class="sk-line title"></div><div class="sk-line med"></div><div class="sk-line long"></div><div class="sk-line short"></div></div></div>
+    <div class="sk-grid"><div><div class="sk-card"></div><div class="sk-card" style="height:170px;margin-top:18px"></div></div><div class="sk-card sk-side"></div></div>
+  </div>
+  <span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Loading physician profile</span>
+</div>
 </div>
 </main>
 
@@ -124,7 +219,7 @@ footer{background:var(--soft);border-top:1px solid var(--line);padding:40px 0 34
 <div class="wrap">
 <div class="foot">
 <div>
-<a class="brand" href="index.html"><span class="mk"><svg viewBox="0 0 56 56" width="30" height="30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="mlsMkB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f9ad6"/><stop offset="1" stop-color="#127a7d"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="url(#mlsMkB)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#bff0e9"/></svg></span> MLS</a>
+<a class="brand" href="index.html"><span class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>MLS Scribe</b></a>
 <p class="muted">Connecting attorneys with board-certified spine, pain and PM&amp;R physicians for fast, defensible medico-legal reports. By MLS Scribe LLC.</p>
 </div>
 <div class="links">
@@ -226,14 +321,19 @@ function render(e){
   } else {
     h+='<p class="note">Fees on request — included with your engagement quote.</p>';
   }
-  h+='<a class="btn btn-primary" style="width:100%;margin-top:16px" href="'+reqHref+'" onclick="stashExpert()">Request this expert</a>';
-  h+='<p class="note">The requesting attorney can pay securely through the portal when the report is ready; Stripe-confirmed payment unlocks the full signed report. A signed patient authorization (HIPAA §164.508) is required before any report is released.</p>';
+  h+='<p class="aside-kicker">What happens next</p><ol class="next-steps">'
+    +'<li><b>1</b><span>Send the case details and signed patient authorization.</span></li>'
+    +'<li><b>2</b><span>MLS confirms scope, timing and the physician engagement.</span></li>'
+    +'<li><b>3</b><span>Stripe-confirmed payment unlocks the full signed report in the portal.</span></li>'
+    +'</ol>';
+  h+='<p class="note">A signed patient authorization (HIPAA §164.508) is required before any report is released.</p>';
   h+='</div></div>';
 
   h+='</div>'; // layout
 
   document.getElementById('content').innerHTML=h;
   document.getElementById('content').style.display='block';
+  document.getElementById('loadState').setAttribute('aria-busy','false');
   document.getElementById('loadState').style.display='none';
   document.title = e.name + ' — Expert physician | MLS for Attorneys';
 
@@ -250,16 +350,16 @@ function stashExpert(){
 async function load(){
   const id=qp('id');
   const ls=document.getElementById('loadState');
-  if(!id){ ls.innerHTML='<h2>No physician selected</h2><p style="margin-top:8px">Return to the <a href="lawyers.html#directory">expert directory</a> to choose a physician.</p>'; return; }
+  if(!id){ ls.className='load-error'; ls.setAttribute('aria-busy','false'); ls.innerHTML='<h2>No physician selected</h2><p>Return to the <a href="lawyers.html#directory">expert directory</a> to choose a physician.</p>'; return; }
   try{
     const r=await fetch(BACKEND_URL+'/api/public/experts/'+encodeURIComponent(id),{headers:{Accept:'application/json'}});
-    if(r.status===404){ ls.innerHTML='<h2>Profile not available</h2><p style="margin-top:8px">This physician is not currently listed in the public directory. Browse <a href="lawyers.html#directory">other experts</a> or <a href="lawyers.html#request">send a request</a> and we’ll match your case.</p>'; return; }
+    if(r.status===404){ ls.className='load-error'; ls.setAttribute('aria-busy','false'); ls.innerHTML='<h2>Profile not available</h2><p>This physician is not currently listed in the public directory. Browse <a href="lawyers.html#directory">other experts</a> or <a href="lawyers.html#request">send a request</a> and we’ll match your case.</p>'; return; }
     if(!r.ok) throw new Error('status '+r.status);
     const d=await r.json();
     if(!d.expert) throw new Error('no data');
     render(d.expert);
   }catch(e){
-    ls.innerHTML='<h2>Couldn’t load this profile</h2><p style="margin-top:8px">Please try again shortly, or browse the <a href="lawyers.html#directory">expert directory</a>.</p>';
+    ls.className='load-error'; ls.setAttribute('aria-busy','false'); ls.innerHTML='<h2>Couldn’t load this profile</h2><p>Please try again shortly, or browse the <a href="lawyers.html#directory">expert directory</a>.</p>';
   }
 }
 load();
