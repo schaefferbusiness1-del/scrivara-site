@@ -1,5 +1,5 @@
 /* ============================================================================
-   feat_opnote_history.js  ->  window.__mlsOpNoteHistory   (v1.3.0)
+   feat_opnote_history.js  ->  window.__mlsOpNoteHistory   (v1.4.0)
 
    TWO additive, reversible upgrades to the MLS op-note / visit-note path.
    Self-contained IIFE. All external calls in try/catch. Idempotent. Reversible
@@ -27,9 +27,10 @@
    Robust to any _genOpNote wrap order; missing/mismatched identity never calls AI.
    Non-op-note aiCallRaw calls (SOAP, summaries, etc.) are never touched.
 
-   Token budget: recent visits in full; older condensed to one line; oldest
-   rolled into a dated "+N earlier visits" line - summarized, never silently
-   dropped. Nothing invented: every value comes from patient.visits[].
+   Token budget: every verified visit remains in a compact longitudinal index.
+   Rich detail is selected by recency plus procedure relevance, so an older
+   clinically relevant visit is not silently displaced by six newer routine
+   visits. Nothing invented: every value comes from the exact patient record.
 
    ---------------------------------------------------------------------------
    BUILD 2 - OP-NOTE LOADING / READY INDICATOR (REAL load state - no fake spinner)
@@ -49,12 +50,12 @@
   'use strict';
   if (window.__mlsOpNoteHistory && window.__mlsOpNoteHistory.installed) return;
 
-  var VERSION = '1.3.0';
+  var VERSION = '1.4.0';
   var _rewireIv = null;
   var _reverted = false;
   var lastInjectionReceipt = null;
 
-  var MAX_HISTORY_CHARS = 9000;
+  var MAX_HISTORY_CHARS = 12000;
   var MAX_PROFILE_CHARS = 3000;
   var MAX_SNAPSHOT_CHARS = 2500;
   var FULL_DETAIL_VISITS = 6;
@@ -64,7 +65,7 @@
   function trim(x) { return S(x).trim(); }
   function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
   function isFn(f) { return typeof f === 'function'; }
-  function uniq(arr) { var o = {}, out = []; (arr || []).forEach(function (v) { v = trim(v); if (v && !o[v]) { o[v] = 1; out.push(v); } }); return out; }
+  function uniq(arr) { var o = {}, out = [], list = Array.isArray(arr) ? arr : (trim(arr) ? [arr] : []); list.forEach(function (v) { v = trim(v); if (v && !o[v]) { o[v] = 1; out.push(v); } }); return out; }
 
   function normDob(s) {
     try {
@@ -76,6 +77,30 @@
   }
 
   function normName(s) { return trim(s).toLowerCase().replace(/\s+/g, ' '); }
+
+  function nameTokenKey(s) {
+    var x = normName(s);
+    if (!x) return '';
+    try { if (isFn(x.normalize)) x = x.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+    return x.replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean).sort().join('|');
+  }
+
+  function safeNameVariant(a, b) {
+    var left = normName(a), right = normName(b);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    var leftKey = nameTokenKey(left), rightKey = nameTokenKey(right);
+    return !!leftKey && leftKey === rightKey;
+  }
+
+  function textFingerprint(value) {
+    var s = S(value), h = 2166136261;
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul ? Math.imul(h, 16777619) : ((h * 16777619) >>> 0);
+    }
+    return ('00000000' + (h >>> 0).toString(16)).slice(-8) + ':' + s.length;
+  }
 
   function verifyPatientIdentity(patientId, name, dob) {
     try {
@@ -96,13 +121,34 @@
     return verifyPatientIdentity(patientId, name, dob).patient;
   }
 
+  function visitMatchesPatient(patient, visit) {
+    if (!patient || !visit) return false;
+    var pid = trim(patient.id);
+    var binding = trim(visit.identityBinding);
+    var owner = trim(binding || visit.patientId || visit.patientExternalId || visit.patient_external_id || visit._mlsTargetPatientId);
+    var exactVerifiedBinding = !!pid && binding === pid && visit.identityVerified === true;
+    var remote = /athena|legacy|grab/i.test(trim(visit.source));
+    if (binding && !exactVerifiedBinding) return false;
+    if (remote && visit.identityVerified !== true) return false;
+    if (owner && owner !== pid) return false;
+    if (trim(visit.patientDob) && normDob(visit.patientDob) !== normDob(patient.dob)) return false;
+    if (trim(visit.patientName)) {
+      if (exactVerifiedBinding) {
+        if (!safeNameVariant(visit.patientName, patient.name)) return false;
+      } else if (normName(visit.patientName) !== normName(patient.name)) return false;
+    }
+    return true;
+  }
+
   function getVisitsFor(patient) {
     try {
       var m = window.__mlsVisitModel;
-      if (patient && m && isFn(m.usableVisits)) return m.usableVisits(patient) || [];
-      if (patient && m && isFn(m.getVisits)) return (m.getVisits(patient) || []).filter(function (v) {
+      var visits = [];
+      if (patient && m && isFn(m.usableVisits)) visits = m.usableVisits(patient) || [];
+      else if (patient && m && isFn(m.getVisits)) visits = (m.getVisits(patient) || []).filter(function (v) {
         return !/athena|legacy|grab/i.test(trim(v && v.source)) || v.identityVerified === true;
       });
+      return visits.filter(function (v) { return visitMatchesPatient(patient, v); });
     } catch (e) {}
     return [];
   }
@@ -122,7 +168,27 @@
     return parts.join(', ');
   }
 
-  function visitFull(v) {
+  function boundedClinicalText(value, max, minimum) {
+    var text = trim(value), limit = Math.max(minimum == null ? 120 : minimum, max || 1400);
+    if (!text || text.length <= limit) return text;
+    if (limit < 100) return text.slice(0, Math.max(1, limit - 3)).trim() + '...';
+    var marker = '\n...[middle shortened for prompt length]...\n';
+    var keep = Math.max(40, limit - marker.length);
+    var head = Math.floor(keep * 0.68);
+    return text.slice(0, head).trim() + marker + text.slice(-(keep - head)).trim();
+  }
+
+  function richClinicalBody(v) {
+    var seen = {}, parts = [];
+    ['raw', 'clinicalBody', 'fullText', 'body', 'detail', 'noteText', 'documentation', 'content'].forEach(function (key) {
+      var value = trim(v && v[key]);
+      var fingerprint = value.toLowerCase().replace(/\s+/g, ' ');
+      if (value && !seen[fingerprint]) { seen[fingerprint] = 1; parts.push(value); }
+    });
+    return parts.join('\n\n');
+  }
+
+  function visitFull(v, rawLimit) {
     var date = trim(v.date) || '(undated)';
     var lines = ['[' + date + '] ' + (trim(v.type) || 'Visit')];
     var dx = uniq(v.icd10); if (dx.length) lines.push('  Dx / ICD-10: ' + dx.join(', '));
@@ -131,19 +197,50 @@
     if (trim(v.findings)) lines.push('  Findings: ' + trim(v.findings));
     var sc = scoresStr(v.scores); if (sc) lines.push('  Scores: ' + sc);
     if (trim(v.plan)) lines.push('  Plan: ' + trim(v.plan));
-    var thin = !dx.length && !cpt.length && !meds.length && !trim(v.findings) && !trim(v.plan);
-    if (thin && trim(v.aiSummary)) lines.push('  Summary: ' + trim(v.aiSummary));
-    else if (thin && trim(v.raw)) lines.push('  Detail: ' + trim(v.raw).slice(0, 400));
+    if (trim(v.aiSummary)) lines.push('  Summary: ' + trim(v.aiSummary));
+    var clinical = richClinicalBody(v);
+    /* Raw Athena prose can contain the response to prior treatment, operative
+       technique, complications, or rationale that the structured fields do
+       not. Preserve it even when Dx/CPT/plan fields are also populated. */
+    if (clinical) lines.push('  Verified clinical detail: ' + boundedClinicalText(clinical, rawLimit || 1400));
     return lines.join('\n');
   }
 
-  function visitOneLine(v) {
+  function visitOneLine(v, maxChars) {
     var date = trim(v.date) || '(undated)';
     var bits = [trim(v.type) || 'Visit'];
     var dx = uniq(v.icd10); if (dx.length) bits.push('ICD ' + dx.slice(0, 3).join('/'));
     var cpt = uniq(v.cpt); if (cpt.length) bits.push('CPT ' + cpt.slice(0, 3).join('/'));
     var sc = scoresStr(v.scores); if (sc) bits.push(sc);
-    return '[' + date + '] ' + bits.join('; ');
+    var clinical = trim(v.aiSummary) || trim(v.plan) || trim(v.findings) || trim(v.recommendations) || trim(v.plannedProcedure) || richClinicalBody(v);
+    if (clinical) bits.push('clinical: ' + clinical.replace(/\s+/g, ' '));
+    return boundedClinicalText('[' + date + '] ' + bits.join('; '), maxChars || 340, 48).replace(/\n/g, ' ');
+  }
+
+  function procedureTokens(procedure) {
+    var stop = { the:1, and:1, for:1, with:1, under:1, using:1, procedure:1, note:1, visit:1, injection:1 };
+    var seen = {};
+    return normName(procedure).replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(function (word) {
+      if (!word || stop[word] || (word.length < 3 && !/^[c-lst]\d$/i.test(word)) || seen[word]) return false;
+      seen[word] = 1; return true;
+    });
+  }
+
+  function visitSearchText(v) {
+    return [v.type, v.reason, v.plannedProcedure, v.recommendations, v.plan, v.findings,
+      v.aiSummary, richClinicalBody(v), uniq(v.icd10).join(' '), uniq(v.cpt).join(' ')].map(trim).join(' ').toLowerCase();
+  }
+
+  function detailedVisitCandidates(visits, procedure) {
+    var terms = procedureTokens(procedure);
+    return visits.map(function (visit, index) {
+      var haystack = visitSearchText(visit), matches = 0;
+      terms.forEach(function (term) { if (haystack.indexOf(term) >= 0) matches++; });
+      var clinicalLength = richClinicalBody(visit).length + trim(visit.findings).length + trim(visit.plan).length;
+      var score = matches * 100 + Math.min(25, Math.floor(clinicalLength / 120)) + Math.max(0, 12 - index);
+      if (index < 2) score += 80; // always give the latest encounters a strong claim
+      return { visit: visit, index: index, score: score, matches: matches };
+    }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
   }
 
   function profileText(v, max) {
@@ -198,7 +295,12 @@
     var verified = verifyPatientIdentity(ctx.patientId, name, ctx.dob);
     if (!verified.patient) return { ok: false, reason: verified.reason, text: '', visitCount: 0, profileSections: 0 };
     var patient = verified.patient;
-    var visits = getVisitsFor(patient) || [];
+    var visits = (getVisitsFor(patient) || []).slice();
+    visits = visits.map(function (visit, index) { return { visit: visit, index: index }; }).sort(function (a, b) {
+      var ad = Date.parse(trim(a.visit && (a.visit.date || a.visit.created)) || ''), bd = Date.parse(trim(b.visit && (b.visit.date || b.visit.created)) || '');
+      if (!isNaN(ad) && !isNaN(bd) && ad !== bd) return bd - ad;
+      return a.index - b.index;
+    }).map(function (entry) { return entry.visit; });
     var profile = buildProfileBlock(patient);
     var snapshot = buildAthenaSnapshotBlock(patient);
     var begin = '=== MLS VERIFIED EXACT-PATIENT CONTEXT BEGIN ===';
@@ -210,38 +312,46 @@
       'allergies, and pain/function trend). Do NOT copy it verbatim and do NOT invent anything not present here. ' +
       'Document TODAY\'S procedure in the procedure sections; reference prior history only where clinically appropriate.';
 
-    var fullN = Math.min(FULL_DETAIL_VISITS, visits.length);
-    var blocks = [], rest = [], i;
-    for (i = 0; i < fullN; i++) blocks.push(visitFull(visits[i]));
-    for (i = fullN; i < visits.length; i++) rest.push(visitOneLine(visits[i]));
-
-    function assemble(fullBlocks, restLines, rolled) {
-      var out = begin + '\n' + header;
-      if (profile.text) out += '\n\nEXACT PATIENT PROFILE (immutable patient ID verified):\n' + profile.text;
-      if (snapshot.text) out += '\n\nLATEST VERIFIED ATHENA CHART SNAPSHOT (replaced on the most recent exact-patient pull):\n' + snapshot.text;
-      if (fullBlocks.length) out += '\n\nVERIFIED VISITS (newest first):\n' + fullBlocks.join('\n\n');
-      else out += '\n\nVERIFIED VISITS: none recorded.';
-      if (restLines.length) out += '\n\nEARLIER VERIFIED VISITS (condensed):\n' + restLines.join('\n');
-      if (rolled && rolled.length) {
-        out += '\n\n+' + rolled.length + ' still-earlier verified visit(s) on file (dates: ' +
-          rolled.join(', ') + ') - older context, not detailed here for length.';
+    var profileLimit = visits.length > 40 ? 1500 : MAX_PROFILE_CHARS;
+    var snapshotLimit = visits.length > 40 ? 1000 : MAX_SNAPSHOT_CHARS;
+    var profileTextBounded = boundedClinicalText(profile.text, profileLimit);
+    var snapshotTextBounded = boundedClinicalText(snapshot.text, snapshotLimit);
+    var skeletonLength = begin.length + end.length + header.length + profileTextBounded.length + snapshotTextBounded.length + 260;
+    var indexBudget = Math.max(900, Math.min(4200, MAX_HISTORY_CHARS - skeletonLength - 1800));
+    var indexMax = visits.length ? Math.max(48, Math.min(360, Math.floor(indexBudget / visits.length) - 1)) : 360;
+    var indexLines = visits.map(function (visit) { return visitOneLine(visit, indexMax); });
+    var candidates = detailedVisitCandidates(visits, ctx.procedure).slice(0, Math.min(FULL_DETAIL_VISITS, visits.length));
+    var detailBudget = Math.max(0, MAX_HISTORY_CHARS - skeletonLength - indexLines.join('\n').length - 180);
+    var chosen = [];
+    for (var ci = 0; ci < candidates.length && detailBudget >= 260; ci++) {
+      var remainingSlots = Math.max(1, candidates.length - ci);
+      var rawLimit = Math.max(220, Math.min(1400, Math.floor(detailBudget / remainingSlots) - 220));
+      var block = visitFull(candidates[ci].visit, rawLimit);
+      if (block.length <= detailBudget || !chosen.length) {
+        chosen.push({ index: candidates[ci].index, block: boundedClinicalText(block, Math.max(240, detailBudget)) });
+        detailBudget -= Math.min(detailBudget, block.length + 2);
       }
+    }
+    chosen.sort(function (a, b) { return a.index - b.index; });
+
+    function assemble(detailBlocks, allVisitLines) {
+      var out = begin + '\n' + header;
+      if (profileTextBounded) out += '\n\nEXACT PATIENT PROFILE (immutable patient ID verified):\n' + profileTextBounded;
+      if (snapshotTextBounded) out += '\n\nLATEST VERIFIED ATHENA CHART SNAPSHOT (replaced on the most recent exact-patient pull):\n' + snapshotTextBounded;
+      if (allVisitLines.length) out += '\n\nALL VERIFIED VISITS INDEX (newest first; every visit represented):\n' + allVisitLines.join('\n');
+      else out += '\n\nVERIFIED VISITS: none recorded.';
+      if (detailBlocks.length) out += '\n\nRICH VERIFIED CLINICAL DETAIL (recent and procedure-relevant visits):\n' + detailBlocks.map(function (x) { return x.block; }).join('\n\n');
       return out + '\n' + end;
     }
 
-    var rolledDates = [], text = assemble(blocks, rest, rolledDates), guard = 0;
-    while (text.length > MAX_HISTORY_CHARS && guard++ < 1000) {
-      if (rest.length) {
-        var dropped = rest.pop();
-        var dm = dropped.match(/^\[([^\]]+)\]/);
-        rolledDates.push(dm ? dm[1] : '(undated)');
-      } else if (blocks.length > 1) {
-        rest.unshift(visitOneLine(visits[blocks.length - 1]));
-        blocks.pop();
-      } else { break; }
-      text = assemble(blocks, rest, rolledDates);
+    var text = assemble(chosen, indexLines);
+    while (text.length > MAX_HISTORY_CHARS && chosen.length > 1) { chosen.pop(); text = assemble(chosen, indexLines); }
+    if (text.length > MAX_HISTORY_CHARS && indexMax > 48) {
+      indexMax = Math.max(48, indexMax - Math.ceil((text.length - MAX_HISTORY_CHARS) / Math.max(1, visits.length)) - 2);
+      indexLines = visits.map(function (visit) { return visitOneLine(visit, indexMax); });
+      text = assemble(chosen, indexLines);
     }
-    return { ok: true, reason: '', text: text, visitCount: visits.length, profileSections: profile.sectionCount, snapshotIncluded: snapshot.included };
+    return { ok: true, reason: '', text: text, visitCount: visits.length, profileSections: profile.sectionCount, snapshotIncluded: snapshot.included, patientId: trim(patient.id), patientName: trim(patient.name), patientDob: trim(patient.dob), procedure: trim(ctx.procedure) };
   }
 
   function buildHistoryBlock(name, ctx) {
@@ -271,8 +381,9 @@
     return u + insert;
   }
 
-  function looksLikeOpNoteCall(sys, user) {
+  function looksLikeOpNoteCall(sys, user, opts) {
     var s = S(sys), u = S(user);
+    if (opts && opts.mlsOpNotePhase === 'repair' && opts.mlsTemplateFidelity === true && trim(opts.mlsOpNotePatientId) && /repair the draft/i.test(s)) return true;
     var sysOk = /operative\s*\/\s*procedure note|operative note/i.test(s);
     var userOk = /^PATIENT:/.test(u.trim()) && /\bPROCEDURE:/.test(u);
     return sysOk && userOk;
@@ -287,6 +398,36 @@
     var u = S(user);
     var dm = u.match(/^\s*-\s*(?:date of birth|birth date|dob)\s*:?\s*(.+?)\s*$/im);
     return { patientId: trim(opts && opts.mlsOpNotePatientId), name: extractPatientName(u), dob: dm ? trim(dm[1]) : '' };
+  }
+
+  function extractProcedure(user) {
+    var m = S(user).match(/^PROCEDURE:\s*(.+?)\s*$/m);
+    return m ? trim(m[1]) : '';
+  }
+
+  function bindingToken(identity, built) {
+    return textFingerprint([trim(identity.patientId), normName(identity.name), normDob(identity.dob), trim(identity.procedure), built.text].join('\n'));
+  }
+
+  function storeBinding(opts, binding) {
+    if (!opts || typeof opts !== 'object') return false;
+    try { opts.mlsVerifiedHistoryBinding = Object.freeze ? Object.freeze(binding) : binding; return opts.mlsVerifiedHistoryBinding === binding; }
+    catch (e) { return false; }
+  }
+
+  function validateBinding(opts) {
+    var binding = opts && opts.mlsVerifiedHistoryBinding;
+    if (!binding) return { ok: false, reason: 'missing-history-binding' };
+    if (trim(binding.patientId) !== trim(opts && opts.mlsOpNotePatientId)) return { ok: false, reason: 'patient-id-changed' };
+    var identity = {
+      patientId: trim(binding.patientId), name: trim(binding.patientName), dob: trim(binding.patientDob), procedure: trim(binding.procedure)
+    };
+    var built = buildHistoryContext(identity.name, { patientId: identity.patientId, dob: identity.dob, procedure: identity.procedure });
+    if (!built.ok) return { ok: false, reason: built.reason || 'identity-check-failed' };
+    var currentToken = bindingToken(identity, built);
+    var frozenToken = bindingToken(identity, { text: S(binding.context) });
+    if (binding.token !== currentToken || binding.token !== frozenToken) return { ok: false, reason: 'patient-or-visit-context-changed' };
+    return { ok: true, reason: '', binding: binding, built: built };
   }
 
   // ===========================================================================
@@ -307,13 +448,31 @@
   }
 
   function injectIfOpNote(sys, user, opts) {
-    if (!looksLikeOpNoteCall(sys, user)) return user;
-    var identity = extractPatientIdentity(user, opts);
-    var built = buildHistoryContext(identity.name, { patientId: identity.patientId, dob: identity.dob });
+    if (!looksLikeOpNoteCall(sys, user, opts)) return user;
+    var isRepair = !!(opts && opts.mlsOpNotePhase === 'repair');
+    var binding = isRepair && opts ? opts.mlsVerifiedHistoryBinding : null;
+    var identity = isRepair && binding ? {
+      patientId: trim(binding.patientId), name: trim(binding.patientName), dob: trim(binding.patientDob), procedure: trim(binding.procedure)
+    } : extractPatientIdentity(user, opts);
+    if (!identity.procedure) identity.procedure = extractProcedure(user);
+    var built = buildHistoryContext(identity.name, { patientId: identity.patientId, dob: identity.dob, procedure: identity.procedure });
     if (!built.ok) throw identityFailure(built.reason);
+    var token = bindingToken(identity, built);
+    if (isRepair) {
+      var validation = validateBinding(opts);
+      if (!validation.ok) throw identityFailure(validation.reason);
+      binding = validation.binding; built = validation.built; token = binding.token;
+    } else {
+      binding = {
+        patientId: identity.patientId, patientName: built.patientName, patientDob: built.patientDob,
+        procedure: identity.procedure, context: built.text, token: token, visitCount: built.visitCount
+      };
+      if (!storeBinding(opts, binding)) throw identityFailure('history-binding-unavailable');
+    }
     var clean = stripInjectedHistory(user);
-    var out = injectIntoUser(clean, built.text);
-    setReceipt({ included: true, identityVerified: true, historyChars: built.text.length, visitCount: built.visitCount, profileSections: built.profileSections, snapshotIncluded: built.snapshotIncluded, promptChars: out.length, at: Date.now() });
+    var exactContext = isRepair ? S(binding.context) : built.text;
+    var out = injectIntoUser(clean, exactContext);
+    setReceipt({ included: true, identityVerified: true, phase: isRepair ? 'repair' : 'initial', historyChars: exactContext.length, visitCount: built.visitCount, profileSections: built.profileSections, snapshotIncluded: built.snapshotIncluded, contextToken: binding.token, promptChars: out.length, at: Date.now() });
     return out;
   }
 
@@ -548,10 +707,11 @@
     looksLikeOpNoteCall: looksLikeOpNoteCall,
     extractPatientName: extractPatientName,
     extractPatientIdentity: extractPatientIdentity,
+    validateBinding: validateBinding,
     lastInjectionReceipt: lastInjectionReceipt,
     readyState: readyState,
     renderChip: renderChip,
-    _internal: { ai: ai, load: load, resolvePatient: resolvePatient, verifyPatientIdentity: verifyPatientIdentity, getVisitsFor: getVisitsFor, buildProfileBlock: buildProfileBlock, buildAthenaSnapshotBlock: buildAthenaSnapshotBlock, buildHistoryContext: buildHistoryContext },
+    _internal: { ai: ai, load: load, resolvePatient: resolvePatient, verifyPatientIdentity: verifyPatientIdentity, visitMatchesPatient: visitMatchesPatient, getVisitsFor: getVisitsFor, visitFull: visitFull, visitOneLine: visitOneLine, detailedVisitCandidates: detailedVisitCandidates, buildProfileBlock: buildProfileBlock, buildAthenaSnapshotBlock: buildAthenaSnapshotBlock, buildHistoryContext: buildHistoryContext },
     rewire: wire,
     revert: revert
   };

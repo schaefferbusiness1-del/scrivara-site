@@ -32,7 +32,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var ASSET = 'feat_save_verify.js';
 
   if (window.__mlsSaveVerify && window.__mlsSaveVerify.installed) { return; }
@@ -376,6 +376,18 @@
     }
   }
 
+  /* The exact provider/day history workflow owns its aggregate receipt and
+     deliberately gives every internal bridge request an `mlssi-*` correlation
+     id.  A failed patient read is already counted in that receipt; showing this
+     standalone warning for every patient obscures the one honest final batch
+     result.  Manual/standalone reads use their own ids and keep the warning. */
+  function isManagedHistoryBatchResult(d) {
+    d = d || {};
+    var nested = d.resp || d.result || d.payload || {};
+    var requestId = String(d.id || d.requestId || nested.id || nested.requestId || '');
+    return /^mlssi-[a-z0-9]+-[a-z0-9]+$/i.test(requestId);
+  }
+
   function onResultMessage(ev) {
     try {
       var d = ev && ev.data;
@@ -388,6 +400,7 @@
       _lastPull = { visits: arr(visits), ok: ok, ts: Date.now(), ref: ref, handled: false };
       if (ok === false) {
         _lastPull.handled = true;
+        if (isManagedHistoryBatchResult(d)) return;
         banner('info', 'No visits were saved',
           ['athenaOne returned no readable visits, or the name/DOB safety check stopped the save.',
             'Nothing was stored — this is the honest result, not an error to retry blindly.'], { ttl: 9000 });
@@ -580,6 +593,7 @@
     _freshPatient: freshPatient,
     _visitKey: visitKey,
     _realContent: realContent,
+    _isManagedHistoryBatchResult: isManagedHistoryBatchResult,
     _defaultServerRead: _defaultServerRead,
     revert: revert
   };

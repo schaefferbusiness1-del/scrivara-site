@@ -74,6 +74,23 @@
     return [d, t, c].join('|');
   }
 
+  function _stableVisitKeys(v) {
+    v = v || {};
+    var out = [];
+    var encounterId = trim(v.encounterId || v.encounterID || '').toLowerCase();
+    var sourceVisitKey = trim(v.sourceVisitKey || v.rowKey || '').toLowerCase();
+    if (encounterId) out.push('encounter|' + encounterId);
+    if (sourceVisitKey) out.push('source|' + sourceVisitKey);
+    return out;
+  }
+
+  function _sharesStableVisitKey(a, b) {
+    var ak = _stableVisitKeys(a), bk = _stableVisitKeys(b);
+    if (!ak.length || !bk.length) return false;
+    for (var i = 0; i < ak.length; i++) if (bk.indexOf(ak[i]) >= 0) return true;
+    return false;
+  }
+
   function _hasVisitContent(v) {
     if (!v) return false;
     var text = trim(v.raw || v.text || v.note || v.detail || v.textHead || v.findings || v.plan || v.aiSummary || '');
@@ -103,7 +120,22 @@
   }
 
   function _remoteVisit(v) {
-    return /athena|legacy|grab/i.test(trim(v && v.source));
+    return /athena|legacy|grab|pullrec/i.test(trim(v && v.source));
+  }
+
+  function _strictVerifiedAthenaBody(v) {
+    return !!(v && _remoteVisit(v) && v.identityVerified === true && trim(v.identityBinding) &&
+      v.indexOnly !== true && v.fullDetail === true && v.bodyComplete === true && trim(v.raw));
+  }
+
+  function _unverifiedChartShell(v) {
+    if (!v || !_remoteVisit(v) || v.identityVerified === true) return false;
+    if (v.indexOnly === true) return true;
+    /* Legacy chart ingestion stored the whole chart shell as a dated synthetic
+       visit before the exact encounter reader ran.  It is safe to compact only
+       those unmistakable synthetic types; a substantive unverified encounter
+       stays visible for audit and is never merged into trusted history. */
+    return /^(?:chart summary|chart import|imported chart|athena chart(?: summary)?)$/i.test(trim(v.type));
   }
 
   function _trustCompatible(a, b) {
@@ -123,13 +155,35 @@
     var real = p.visits.filter(function (v) { return !!(v && v.id && v.indexOnly !== true && _hasVisitContent(v) && _svcToYMD(v.date)); });
     real.forEach(function (full) {
       var day = _svcToYMD(full.date);
-      var idx = -1;
-      for (var i = 0; i < p.visits.length; i++) {
+      for (var i = p.visits.length - 1; i >= 0; i--) {
         var q = p.visits[i];
-        if (q !== full && _emptyPlaceholder(q) && _svcToYMD(q.date) === day && _trustCompatible(q, full)) { idx = i; break; }
+        if (q === full) continue;
+        var qStable = _stableVisitKeys(q);
+        var compatiblePlaceholder = _emptyPlaceholder(q) && _svcToYMD(q.date) === day && _trustCompatible(q, full) &&
+          (!qStable.length || _sharesStableVisitKey(q, full));
+        var supersededUnverifiedShell = _strictVerifiedAthenaBody(full) && _unverifiedChartShell(q) &&
+          (_sharesStableVisitKey(q, full) || (!qStable.length && !!day && _svcToYMD(q.date) === day));
+        if (compatiblePlaceholder || supersededUnverifiedShell) { p.visits.splice(i, 1); changed = true; }
       }
-      if (idx >= 0) { p.visits.splice(idx, 1); changed = true; }
     });
+    return changed;
+  }
+
+  function _collapseVerifiedStableDuplicates(p, preferred) {
+    if (!p || !Array.isArray(p.visits) || !_strictVerifiedAthenaBody(preferred) || !_stableVisitKeys(preferred).length) return false;
+    var changed = false, again = true, guard = 0;
+    while (again && guard++ < 4) {
+      again = false;
+      for (var i = p.visits.length - 1; i >= 0; i--) {
+        var q = p.visits[i];
+        if (q === preferred || !_strictVerifiedAthenaBody(q) || !_trustCompatible(q, preferred) || !_sharesStableVisitKey(q, preferred)) continue;
+        /* The newest complete read is authoritative.  Carry only missing stable
+           aliases across; never mix a stale clinical body into the fresh one. */
+        if (!trim(preferred.encounterId || preferred.encounterID) && trim(q.encounterId || q.encounterID)) preferred.encounterId = trim(q.encounterId || q.encounterID);
+        if (!trim(preferred.sourceVisitKey || preferred.rowKey) && trim(q.sourceVisitKey || q.rowKey)) preferred.sourceVisitKey = trim(q.sourceVisitKey || q.rowKey);
+        p.visits.splice(i, 1); changed = true; again = true;
+      }
+    }
     return changed;
   }
 
@@ -216,7 +270,11 @@
     if (!Array.isArray(p.visits)) p.visits = [];
     var v = _normVisit(raw, opts.source, opts);
     var key = _visitKey(v);
-    var existing = p.visits.find(function (x) { return _visitKey(x) === key && _trustCompatible(x, v); });
+    /* Stable Athena aliases outrank date/type/CPT.  A row may first arrive with
+       sourceVisitKey and later with encounterId plus that same source key; both
+       shapes are the exact same encounter and must refresh in place. */
+    var existing = p.visits.find(function (x) { return _sharesStableVisitKey(x, v) && _trustCompatible(x, v); });
+    if (!existing) existing = p.visits.find(function (x) { return _visitKey(x) === key && _trustCompatible(x, v); });
     /* Organized chart pulls can create a dated shell before the optional full
        visit reader runs. Upgrade one strictly empty shell on the same day
        instead of creating a duplicate when Athena's detailed type label differs. */
@@ -277,6 +335,7 @@
       p.visits.push(v);
     }
     _compactHydratedPlaceholders(p);
+    _collapseVerifiedStableDuplicates(p, v);
     if (opts.persist !== false) _upsert(p);
     return v;
   }
@@ -284,23 +343,72 @@
   function reconcileVerifiedAthenaVisits(patientId, batchRows) {
     var p = _findPatient(patientId); if (!p) return { removed: 0, kept: 0 };
     if (!Array.isArray(p.visits)) p.visits = [];
-    var accepted = {};
-    (Array.isArray(batchRows) ? batchRows : []).forEach(function (row) {
-      var eid = trim(row && (row.encounterId || row.encounterID)).toLowerCase();
-      var sk = trim(row && (row.sourceVisitKey || row.rowKey)).toLowerCase();
-      if (eid) accepted['enc|' + eid] = 1;
-      if (sk) accepted['src|' + sk] = 1;
-    });
+    var rows = Array.isArray(batchRows) ? batchRows : [], accepted = {}, canonical = [];
+    for (var r = 0; r < rows.length; r++) {
+      var keys = _stableVisitKeys(rows[r]);
+      if (!keys.length) return { removed: 0, kept: p.visits.length, reason: 'stable-keys-incomplete' };
+      var existingCanonical = [];
+      for (var k = 0; k < keys.length; k++) {
+        if (accepted[keys[k]] != null && existingCanonical.indexOf(accepted[keys[k]]) < 0) existingCanonical.push(accepted[keys[k]]);
+      }
+      if (existingCanonical.length > 1) return { removed: 0, kept: p.visits.length, reason: 'stable-key-collision' };
+      var ci = existingCanonical.length ? existingCanonical[0] : canonical.length;
+      if (!canonical[ci]) canonical[ci] = [];
+      for (var ck = 0; ck < keys.length; ck++) if (canonical[ci].indexOf(keys[ck]) < 0) canonical[ci].push(keys[ck]);
+      for (var a = 0; a < keys.length; a++) accepted[keys[a]] = ci;
+    }
+
+    function matchedCanonical(v) {
+      var vk = _stableVisitKeys(v), hits = [];
+      for (var i = 0; i < vk.length; i++) if (accepted[vk[i]] != null && hits.indexOf(accepted[vk[i]]) < 0) hits.push(accepted[vk[i]]);
+      return hits;
+    }
+    /* Validate the full reconciliation plan before mutating.  One stored row
+       matching two accepted encounters means Athena's aliases collided; retain
+       everything and fail closed instead of deleting an arbitrary record. */
+    for (var pv = 0; pv < p.visits.length; pv++) {
+      var probe = p.visits[pv];
+      if (!_remoteVisit(probe) || probe.identityVerified !== true || trim(probe.identityBinding) !== trim(patientId)) continue;
+      if (matchedCanonical(probe).length > 1) return { removed: 0, kept: p.visits.length, reason: 'stored-key-collision' };
+    }
+
     var before = p.visits.length;
+    var winnerByCanonical = {};
+    function freshnessScore(v) {
+      var captured = Date.parse(v && v.captured || '') || 0;
+      return (_strictVerifiedAthenaBody(v) ? 1000000000000000 : 0) +
+        (_stableVisitKeys(v).length * 1000000000000) + captured + Math.min(999999, S(v && v.raw).length);
+    }
     p.visits = p.visits.filter(function (v) {
       if (!_remoteVisit(v) || v.identityVerified !== true || trim(v.identityBinding) !== trim(patientId)) return true;
-      var eid = trim(v.encounterId || v.encounterID).toLowerCase();
-      var sk = trim(v.sourceVisitKey || v.rowKey).toLowerCase();
-      return !!((eid && accepted['enc|' + eid]) || (sk && accepted['src|' + sk]));
+      var hits = matchedCanonical(v);
+      if (!hits.length) return false;
+      var idx = hits[0], prior = winnerByCanonical[idx];
+      if (!prior) { winnerByCanonical[idx] = v; return true; }
+      if (freshnessScore(v) > freshnessScore(prior)) {
+        /* Array.filter cannot retract a prior item. Mark it, then remove marked
+           losers in the second pass below. */
+        prior.__mlsExactDuplicateLoser = true;
+        winnerByCanonical[idx] = v;
+        return true;
+      }
+      return false;
     });
+    p.visits = p.visits.filter(function (v) {
+      if (v && v.__mlsExactDuplicateLoser) { try { delete v.__mlsExactDuplicateLoser; } catch (e) {} return false; }
+      return true;
+    });
+    Object.keys(winnerByCanonical).forEach(function (idx) {
+      var winner = winnerByCanonical[idx], aliases = canonical[Number(idx)] || [];
+      aliases.forEach(function (alias) {
+        if (alias.indexOf('encounter|') === 0 && !trim(winner.encounterId || winner.encounterID)) winner.encounterId = alias.slice('encounter|'.length);
+        if (alias.indexOf('source|') === 0 && !trim(winner.sourceVisitKey || winner.rowKey)) winner.sourceVisitKey = alias.slice('source|'.length);
+      });
+    });
+    _compactHydratedPlaceholders(p);
     var removed = before - p.visits.length;
     if (removed) _upsert(p);
-    return { removed: removed, kept: p.visits.length };
+    return { removed: removed, kept: p.visits.length, complete: true };
   }
 
   function ingestChart(patient, chart, source, opts) {
@@ -431,17 +539,132 @@
     return !s || /^(?:none|none recorded|not recorded|unknown|n\/a|na|no (?:known|prior|current)|not documented)\.?$/i.test(_plain(s));
   }
 
-  function _sectionValues(text, labels) {
-    var out = [], src = S(text).replace(/\r/g, '\n');
-    var names = labels.map(function (x) { return S(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|');
-    var re = new RegExp('(?:^|\\n)\\s*(?:[-*\\u2022]\\s*)?(?:\\*\\*)?(?:' + names + ')(?:\\*\\*)?\\s*[:\\-]\\s*([^\\n]{1,900})', 'ig');
-    var m;
-    while ((m = re.exec(src))) {
-      var value = _plain(m[1]).replace(/^[\-\u2022]\s*/, '');
-      if (!_notData(value)) out.push(value);
-      if (out.length >= 40) break;
+  var _clinicalSectionAliases = [
+    'assessment and plan', 'assessment/plan', 'assessment', 'problem list', 'problems', 'diagnoses', 'diagnosis',
+    'medication list', 'current medications', 'medications', 'meds', 'allergies', 'allergy',
+    'past medical history', 'medical history', 'pmh', 'past surgical history', 'surgical history', 'psh',
+    'social history', 'social', 'family history', 'family', 'smoking status', 'tobacco use', 'smoking',
+    'immunization history', 'immunizations', 'vaccines', 'last menstrual period', 'pregnancy status', 'lmp',
+    'code status', 'primary care provider', 'referring provider', 'pcp', 'preferred pharmacy', 'pharmacy',
+    'vital signs', 'vitals', 'blood pressure', 'height', 'weight', 'bmi',
+    'chief complaint', 'reason for visit', 'history of present illness', 'hpi', 'review of systems', 'ros',
+    'physical examination', 'physical exam', 'exam', 'procedure', 'procedures', 'plan', 'orders', 'follow up', 'follow-up'
+  ];
+  var _clinicalSectionLookup = _clinicalSectionAliases.reduce(function (out, x) { out[x] = 1; return out; }, {});
+  var _clinicalSectionPattern = _clinicalSectionAliases.slice().sort(function (a, b) { return b.length - a.length; }).map(function (x) {
+    return x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }).join('|');
+
+  function _sectionSource(text) {
+    var src = S(text).replace(/<br\s*\/?>/ig, '\n').replace(/\r\n?/g, '\n');
+    /* Athena sometimes flattens adjacent labeled sections onto one line. Split
+       only at known clinical headings after real punctuation, never at arbitrary
+       words inside medication instructions or narrative prose. */
+    if (_clinicalSectionPattern) {
+      var inline = new RegExp('([.!?;|])\\s+(?=(?:[-*\\u2022]\\s*)?(?:\\*\\*)?(?:' + _clinicalSectionPattern + ')(?:\\*\\*)?\\s*(?::|\\s+-\\s+))', 'ig');
+      src = src.replace(inline, '$1\n');
     }
+    return src;
+  }
+
+  function _headingFromLine(line) {
+    var clean = S(line).replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').replace(/\*\*/g, '').trim();
+    if (!clean) return null;
+    var exact = clean.toLowerCase().replace(/\s+/g, ' ');
+    if (_clinicalSectionLookup[exact]) return { label: exact, value: '' };
+    var m = clean.match(/^([^:]{1,72}?)(?::|\s+-\s+)(.*)$/);
+    if (!m) return null;
+    var label = trim(m[1]).toLowerCase().replace(/\s+/g, ' ');
+    if (_clinicalSectionLookup[label]) return { label: label, value: trim(m[2]) };
+    /* A conservative unknown colon-heading boundary keeps e.g. "Diagnostic
+       studies:" out of medications without misclassifying "Gabapentin: 300
+       mg" or "Penicillin - rash" as a new section. */
+    var generic = clean.match(/^([^:]{2,60}):(.*)$/);
+    if (generic && /(?:history|review|exam|finding|note|instruction|documentation|result|imaging|diagnostic|laborator|treatment|recommendation)/i.test(generic[1])) {
+      return { label: '__other__', value: trim(generic[2]) };
+    }
+    return null;
+  }
+
+  function _splitSectionValue(value) {
+    var out = [];
+    S(value).split(/\n|\s*[\u2022]\s*|\s*;\s*/).forEach(function (part) {
+      part = _plain(part).replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').replace(/\s+/g, ' ').trim();
+      if (part) out.push(part);
+    });
     return out;
+  }
+
+  function _recordSectionCoverage(tracker, key, detected, parsed, explicitEmpty) {
+    if (!tracker || !key || !detected) return;
+    tracker.sections = tracker.sections || {};
+    var row = tracker.sections[key] || (tracker.sections[key] = { detected: 0, parsed: 0, explicitEmpty: 0, missed: 0 });
+    row.detected += detected;
+    row.parsed += parsed;
+    row.explicitEmpty += explicitEmpty;
+    if (!parsed && !explicitEmpty) row.missed += detected;
+  }
+
+  function _sectionValues(text, labels, tracker, coverageKey) {
+    var wanted = {}, out = [], active = false, blockParsed = 0, blockExplicitEmpty = 0;
+    (labels || []).forEach(function (x) { wanted[trim(x).toLowerCase().replace(/\s+/g, ' ')] = 1; });
+    var lines = _sectionSource(text).split('\n');
+    function consume(value) {
+      var values = _splitSectionValue(value);
+      if (!values.length && trim(value)) values = [trim(value)];
+      values.forEach(function (v) {
+        if (_notData(v)) { blockExplicitEmpty++; return; }
+        out.push(v); blockParsed++;
+      });
+    }
+    function finishBlock() {
+      if (!active) return;
+      _recordSectionCoverage(tracker, coverageKey, 1, blockParsed, blockExplicitEmpty);
+      blockParsed = 0; blockExplicitEmpty = 0;
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var heading = _headingFromLine(lines[i]);
+      if (heading) {
+        finishBlock();
+        active = !!wanted[heading.label];
+        if (active) {
+          if (heading.value) consume(heading.value);
+        }
+        continue;
+      }
+      if (!active || !trim(lines[i])) continue;
+      consume(lines[i]);
+      if (out.length >= 80) break;
+    }
+    finishBlock();
+    return out.slice(0, 80);
+  }
+
+  function _structuredValues(value) {
+    var raw = Array.isArray(value) ? value : [value], out = [];
+    raw.forEach(function (item) {
+      if (item == null) return;
+      if (typeof item === 'object') {
+        Object.keys(item).forEach(function (k) { if (trim(item[k])) out = out.concat(_splitSectionValue(item[k])); });
+      } else out = out.concat(_splitSectionValue(item));
+    });
+    return out;
+  }
+
+  function _semanticCoverageReceipt(tracker) {
+    tracker = tracker || { sections: {} };
+    var sections = {}, missed = [];
+    Object.keys(tracker.sections || {}).forEach(function (key) {
+      var src = tracker.sections[key] || {}, row = {
+        detected: Number(src.detected) || 0,
+        parsed: Number(src.parsed) || 0,
+        explicitEmpty: Number(src.explicitEmpty) || 0,
+        complete: !(Number(src.missed) > 0)
+      };
+      sections[key] = row;
+      if (!row.complete) missed.push(key);
+    });
+    return { complete: missed.length === 0, sections: sections, missedSections: missed };
   }
 
   function _uniq(items) {
@@ -556,41 +779,66 @@
       history: { pmh: [], psh: [], social: [], family: [], smoking: [], immunizations: [], lmp: [], codeStatus: [], pcp: [], pharmacy: [] },
       vitals: _canonicalVitals({})
     };
+    var semanticTracker = { sections: {} };
     /* The structured chart snapshot is trusted only with the exact-patient
        six-card receipt created by the identity-gated chart sink. This captures
        profile-only facts that do not appear inside any encounter body. */
     var profileReceipt=p.athenaProfileCoverage, snap=p.athenaChartSnapshot;
     if(snap&&profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id)){
-      facts.problems=facts.problems.concat(Array.isArray(snap.problems)?snap.problems:[snap.problems]);
-      facts.meds=facts.meds.concat(Array.isArray(snap.meds)?snap.meds:[snap.meds]);
-      facts.allergies=facts.allergies.concat(Array.isArray(snap.allergies)?snap.allergies:[snap.allergies]);
+      facts.problems=facts.problems.concat(_structuredValues(snap.problems));
+      facts.meds=facts.meds.concat(_structuredValues(snap.meds));
+      facts.allergies=facts.allergies.concat(_structuredValues(snap.allergies));
       var sh=(snap.history&&!Array.isArray(snap.history)&&typeof snap.history==='object')?snap.history:{};
-      Object.keys(facts.history).forEach(function(k){facts.history[k]=facts.history[k].concat(Array.isArray(sh[k])?sh[k]:[sh[k]]);});
+      Object.keys(facts.history).forEach(function(k){facts.history[k]=facts.history[k].concat(_structuredValues(sh[k]));});
       facts.vitals=_canonicalVitals(snap.vitals);
     }
     visits.slice(0, 80).forEach(function (v) {
       var text = [v.raw, v.aiSummary, v.findings, v.plan].join('\n').slice(0, 24000);
       (v.icd10 || []).forEach(function (c) { facts.problems.push('ICD-10 ' + c); });
-      (v.meds || []).forEach(function (m) { facts.meds.push(m); });
-      facts.problems = facts.problems.concat(_sectionValues(text, ['problem list', 'problems', 'diagnoses', 'diagnosis', 'assessment']));
-      facts.meds = facts.meds.concat(_sectionValues(text, ['medications', 'medication list', 'current medications', 'meds']));
-      facts.allergies = facts.allergies.concat(_sectionValues(text, ['allergies', 'allergy']));
-      facts.history.pmh = facts.history.pmh.concat(_sectionValues(text, ['past medical history', 'medical history', 'pmh']));
-      facts.history.psh = facts.history.psh.concat(_sectionValues(text, ['past surgical history', 'surgical history', 'psh']));
-      facts.history.social = facts.history.social.concat(_sectionValues(text, ['social history', 'social']));
-      facts.history.family = facts.history.family.concat(_sectionValues(text, ['family history', 'family']));
-      facts.history.smoking = facts.history.smoking.concat(_sectionValues(text, ['smoking status', 'tobacco use', 'smoking']));
-      facts.history.immunizations = facts.history.immunizations.concat(_sectionValues(text, ['immunizations', 'immunization history', 'vaccines']));
-      facts.history.lmp = facts.history.lmp.concat(_sectionValues(text, ['lmp', 'last menstrual period', 'pregnancy status']));
-      facts.history.codeStatus = facts.history.codeStatus.concat(_sectionValues(text, ['code status']));
-      facts.history.pcp = facts.history.pcp.concat(_sectionValues(text, ['primary care provider', 'pcp', 'referring provider']));
-      facts.history.pharmacy = facts.history.pharmacy.concat(_sectionValues(text, ['preferred pharmacy', 'pharmacy']));
+      facts.meds = facts.meds.concat(_structuredValues(v.meds || []));
+      facts.problems = facts.problems.concat(_sectionValues(text, ['problem list', 'problems', 'diagnoses', 'diagnosis', 'assessment', 'assessment and plan', 'assessment/plan'], semanticTracker, 'problems'));
+      facts.meds = facts.meds.concat(_sectionValues(text, ['medications', 'medication list', 'current medications', 'meds'], semanticTracker, 'meds'));
+      facts.allergies = facts.allergies.concat(_sectionValues(text, ['allergies', 'allergy'], semanticTracker, 'allergies'));
+      facts.history.pmh = facts.history.pmh.concat(_sectionValues(text, ['past medical history', 'medical history', 'pmh'], semanticTracker, 'history.pmh'));
+      facts.history.psh = facts.history.psh.concat(_sectionValues(text, ['past surgical history', 'surgical history', 'psh'], semanticTracker, 'history.psh'));
+      facts.history.social = facts.history.social.concat(_sectionValues(text, ['social history', 'social'], semanticTracker, 'history.social'));
+      facts.history.family = facts.history.family.concat(_sectionValues(text, ['family history', 'family'], semanticTracker, 'history.family'));
+      facts.history.smoking = facts.history.smoking.concat(_sectionValues(text, ['smoking status', 'tobacco use', 'smoking'], semanticTracker, 'history.smoking'));
+      facts.history.immunizations = facts.history.immunizations.concat(_sectionValues(text, ['immunizations', 'immunization history', 'vaccines'], semanticTracker, 'history.immunizations'));
+      facts.history.lmp = facts.history.lmp.concat(_sectionValues(text, ['lmp', 'last menstrual period', 'pregnancy status'], semanticTracker, 'history.lmp'));
+      facts.history.codeStatus = facts.history.codeStatus.concat(_sectionValues(text, ['code status'], semanticTracker, 'history.codeStatus'));
+      facts.history.pcp = facts.history.pcp.concat(_sectionValues(text, ['primary care provider', 'pcp', 'referring provider'], semanticTracker, 'history.pcp'));
+      facts.history.pharmacy = facts.history.pharmacy.concat(_sectionValues(text, ['preferred pharmacy', 'pharmacy'], semanticTracker, 'history.pharmacy'));
       var vv=_vitalsFromText(text,v.date); Object.keys(facts.vitals).forEach(function(k){if(!facts.vitals[k]&&vv[k])facts.vitals[k]=vv[k];});
     });
     facts.problems = _uniq(facts.problems);
     facts.meds = _uniq(facts.meds);
     facts.allergies = _uniq(facts.allergies);
     Object.keys(facts.history).forEach(function (k) { facts.history[k] = _uniq(facts.history[k]); });
+
+    var semanticCoverage = _semanticCoverageReceipt(semanticTracker);
+    if (!semanticCoverage.complete) {
+      /* Never replace an earlier complete import with a partial parse. Keep all
+         clinician-authored and previously imported clinical fields intact, but
+         persist an honest receipt so UI/callers cannot claim the six cards are
+         current when a labeled source section was not understood. */
+      p.historyImportReceipt = {
+        complete: false,
+        verifiedVisits: visits.length,
+        excludedUnverified: excluded,
+        semanticCoverage: semanticCoverage,
+        organizedAt: new Date().toISOString()
+      };
+      if(profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id)){
+        p.athenaProfileCoverage=Object.assign({},profileReceipt,{semanticComplete:false,semanticCoverage:semanticCoverage});
+      }
+      _upsert(p);
+      return {
+        ok: false, reason: 'semantic-coverage-incomplete', complete: false,
+        verifiedVisits: visits.length, excludedUnverified: excluded,
+        semanticCoverage: semanticCoverage
+      };
+    }
 
     var oldFacts=(p.athenaHistoryFactsSnapshot&&typeof p.athenaHistoryFactsSnapshot==='object')?p.athenaHistoryFactsSnapshot:{};
     p.problems = _mergeOwnedText(p.problems, oldFacts.problems, facts.problems);
@@ -623,18 +871,21 @@
       markFound('history',Object.keys(facts.history).some(function(k){return facts.history[k].length>0;}));
       markFound('vitals',Object.keys(facts.vitals).some(function(k){return k!=='takenAt'&&!!trim(facts.vitals[k]);}));
       markFound('summary',visits.length>0);
-      p.athenaProfileCoverage=Object.assign({},profileReceipt,{cards:cards});
+      p.athenaProfileCoverage=Object.assign({},profileReceipt,{cards:cards,semanticComplete:true,semanticCoverage:semanticCoverage});
     }
     p.historyImportReceipt = {
+      complete: true,
       verifiedVisits: visits.length,
       excludedUnverified: excluded,
+      semanticCoverage: semanticCoverage,
       organizedAt: new Date().toISOString()
     };
     _upsert(p);
     return {
-      ok: true,
+      ok: true, complete: true,
       verifiedVisits: visits.length,
       excludedUnverified: excluded,
+      semanticCoverage: semanticCoverage,
       problems: facts.problems.length,
       meds: facts.meds.length,
       allergies: facts.allergies.length,
@@ -1167,8 +1418,27 @@
             var cid2 = chartIdent(chart);
             var nd = window.__mlsVisitModel._normDob;
             var targetDob = String((name && typeof name === 'object' && name.dob) || (appt && appt.dob) || p.dob || '');
+            var targetMrn = String((name && typeof name === 'object' && (name.mrn || name.athenaId)) || (appt && (appt.mrn || appt.athenaId)) || p.mrn || p.athenaId || '');
             var dobOk = !!(cid2.dob && targetDob && nd(cid2.dob) && nd(cid2.dob) === nd(targetDob));
-            var identityVerified = !!(cid2.name && targetName && namesMatch(cid2.name, targetName) && dobOk);
+            var chartIdentityVerified = !!(cid2.name && targetName && namesMatch(cid2.name, targetName) && dobOk);
+            /* The deterministic extension identity proof lives on the frozen
+               saveRef, not in the AI-parsed chart object. A complete chart parse
+               may legitimately omit chart.name/chart.dob while still returning
+               dated visit-index shells. Trust those shells only when the exact
+               patient saveRef re-passes the same app identity gate that allowed
+               the base save. This gives later authoritative full encounter rows
+               an immutable binding for date/stable-key shell compaction without
+               granting trust to a bare name, a base-return value, or payload data. */
+            var saveRefVerified = false;
+            try {
+              if (name && typeof name === 'object' && targetId && targetName && isFn(window._athenaHistoryProofMatches)) {
+                saveRefVerified = window._athenaHistoryProofMatches(
+                  { patientId: targetId, name: targetName, dob: targetDob, mrn: targetMrn },
+                  { chartName: String(name.verifiedName || ''), chartDob: String(name.verifiedDob || ''), chartMrn: String(name.verifiedMrn || '') }
+                ) === true;
+              }
+            } catch (eProof) { saveRefVerified = false; }
+            var identityVerified = saveRefVerified || chartIdentityVerified;
             window.__mlsVisitModel.ingestChart(p, chart, (appt && appt.source) || 'grab', {
               identityVerified: identityVerified,
               identityBinding: targetId,

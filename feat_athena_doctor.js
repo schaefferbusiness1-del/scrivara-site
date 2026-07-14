@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.0.1)
+ *  window.__mlsAthenaDoctor (v1.0.2)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -32,7 +32,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.0.1';
+  var VERSION = '1.0.2';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -433,6 +433,29 @@
     return { ok: ok, count: count, stage: stage, raw: r };
   }
 
+  /* Provider/day pulls deliberately issue one correlated visit read per
+     patient and own one aggregate progress/result surface. Those internal
+     reads use an `mlssi-*` request id (or an explicit managed/background
+     marker). They must not each create the standalone, persistent orange
+     warning: the batch owner already reports retryable patients once, in
+     context. A direct/manual read has no such marker and keeps the honest
+     actionable warning below. */
+  function resultRequestId(d) {
+    d = d || {};
+    var r = (d.resp && typeof d.resp === 'object') ? d.resp : d;
+    return String(d.id || d.requestId || r.id || r.requestId || '');
+  }
+
+  function isManagedPullResult(d) {
+    d = d || {};
+    var r = (d.resp && typeof d.resp === 'object') ? d.resp : d;
+    if (/^mlssi-[a-z0-9]+-[a-z0-9]+$/i.test(resultRequestId(d))) return true;
+    if (d.managed === true || d.background === true || d.silent === true ||
+        r.managed === true || r.background === true || r.silent === true) return true;
+    var owner = String(d.initiator || d.origin || d.mode || r.initiator || r.origin || r.mode || '').toLowerCase();
+    return /^(?:background|batch|prefetch|automatic|auto)$/.test(owner);
+  }
+
   function kindOf(type) {
     if (/AllVisits|Visits/i.test(type)) return 'pull';
     if (/Search/i.test(type)) return 'search';
@@ -447,6 +470,7 @@
     var kind = kindOf(d.type);
     if (kind !== 'pull' && kind !== 'search') return; // only user-facing pull/search actions
     var m = resultMeta(d);
+    var managedPull = (kind === 'pull') && isManagedPullResult(d);
 
     /* Editorial Calm consolidation (2026-07-13, RS#2): clarity shows the richer
        per-patient toast ("Pulled N real visits into <name> — saved in MLS", plus
@@ -455,6 +479,10 @@
        genuine-failure warnings remain ours (clarity does not cover those). */
     var clarityOwnsPull = (kind === 'pull') && !!(W.__mlsAthenaClarity);
     if (m.ok && (m.count == null || m.count > 0)) {
+      // A confirmed success always retires any stale warning, even when the
+      // richer clarity module owns the replacement success message.
+      clearToast();
+      if (managedPull) return;
       if (!clarityOwnsPull) {
         // honest success line (counts). §58 save-verify separately confirms persistence.
         var noun = kind === 'pull' ? 'visit' : 'result';
@@ -464,14 +492,22 @@
         showToast('ok', '✓ ' + what + ' ' + n + noun + (m.count === 1 ? '' : 's') + (kind === 'pull' ? ' from athenaOne.' : '.') + tail);
       }
     } else if (m.ok && m.count === 0) {
+      clearToast();
+      if (managedPull) return;
       if (!clarityOwnsPull) {
         showToast('info', 'ℹ The read completed but found 0 ' + (kind === 'pull' ? 'visits' : 'results') + '. The pull opens the chart automatically — re-run it, or this patient may simply have no visits yet.');
       }
       // soft auto-trigger so the user sees why (kept regardless — no toast involved)
       autoTrigger({ ok: true, count: 0, anyReal: false });
     } else {
+      // Internal per-patient/background failures are summarized by their
+      // owning workflow. Suppressing this duplicate does not conceal a
+      // manual failure; unmarked standalone pulls still warn immediately.
+      if (managedPull) return;
       // genuine failure — show honest line AND auto-open the diagnostic
-      showToast('warn', '⚠ That Athena ' + kind + ' didn\'t work — re-run, or tap the Troubleshoot Athena button…');
+      showToast('warn', '⚠ That Athena ' + kind + ' didn\'t work — re-run, or tap the Troubleshoot Athena button…', {
+        key: kind + '|' + (m.stage || 'failed')
+      });
       autoTrigger({ ok: false, count: m.count, stage: m.stage });
     }
   }
@@ -486,14 +522,35 @@
     return;
   }
 
-  function showToast(kind, text) {
+  var _lastWarnKey = '';
+  var _lastWarnAt = 0;
+
+  function clearToast() {
+    var old = document.getElementById(TOAST_ID);
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    _lastWarnKey = '';
+    _lastWarnAt = 0;
+  }
+
+  function showToast(kind, text, opts) {
+    opts = opts || {};
     ensureStyle();
     var t = document.getElementById(TOAST_ID);
-    if (t && t.parentNode) t.parentNode.removeChild(t);
+    var warnKey = kind === 'warn' ? String(opts.key || text || '') : '';
+    if (kind === 'warn' && t && t.parentNode && warnKey &&
+        warnKey === _lastWarnKey && Date.now() - _lastWarnAt < 15000) {
+      return t; // same manual failure already visible; do not flash/recreate it
+    }
+    clearToast();
     t = document.createElement('div');
     t.id = TOAST_ID;
     t.className = kind;
     t.setAttribute('role', 'status');
+    if (warnKey) {
+      _lastWarnKey = warnKey;
+      _lastWarnAt = Date.now();
+      t.setAttribute('data-mlsdoc-toast-key', warnKey);
+    }
     t.innerHTML = '<span>' + esc(text) + '</span><span class="mlsdoc-x" aria-label="dismiss">✕</span>';
     t.querySelector('.mlsdoc-x').addEventListener('click', function () { if (t.parentNode) t.parentNode.removeChild(t); });
     (document.body || document.documentElement).appendChild(t);
@@ -501,6 +558,7 @@
       setTimeout(function () { if (t && t.parentNode) t.parentNode.removeChild(t); }, 6500);
     }
     // mirror the worst signal: nothing else needed
+    return t;
   }
 
   // ---- boot: idempotent mount + light re-mount observer (no jitter) --------
@@ -545,11 +603,14 @@
     blankSteps: blankSteps,
     isPermErr: isPermErr,
     resultMeta: resultMeta,
+    resultRequestId: resultRequestId,
+    isManagedPullResult: isManagedPullResult,
     kindOf: kindOf,
     // UI / actions
     open: function (lastResult) { openDiagnostic(lastResult || null); },
     diagnose: function (lastResult) { return runChain(lastResult || null, null); },
     showToast: showToast,
+    clearToast: clearToast,
     _onResultMessage: onResultMessage,
     revert: revert
   };

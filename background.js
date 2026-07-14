@@ -3026,6 +3026,11 @@ function mlsBestIdentityFrom(idr) {
   var banner = null, best = null;
   (idr || []).forEach(function (m) {
     var r = m && m.result; if (!r || !r.name) return;
+    /* Preserve the injection frame that supplied the identity. Athena's
+       patient banner can live in an open shadow root while the clinical text
+       is light-DOM in that same frame; frame provenance lets the strict chart
+       reader bind those two surfaces without accepting tab-wide identity. */
+    if (m && typeof m.frameId === 'number' && r.frameId == null) r = Object.assign({}, r, { frameId: m.frameId });
     if (r.via === 'banner' && (!banner || (r.score || 0) > (banner.score || 0))) banner = r;
     if (!best || (r.score || 0) > (best.score || 0)) best = r;
   });
@@ -6017,13 +6022,31 @@ async function mlsSchedDomInline(doc, CFG){
     (async () => {
       try {
         const all = await chrome.tabs.query({});
-        let tab = await mlsPickAthenaTab(all, { athenaOnly: true }); /* v1.90 unified picker */
-        if (!tab) { const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\/|athena/i.test(t.url || '')); cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); tab = cand[0]; }
-        if (!tab) return sendResponse({ ok: false, error: 'Open the patient in your Athena tab, then try again.' });
         const want = String(msg.patient || '').trim();
         const wantDob = String(msg.patientDob || '').trim();
         const wantMrn = String(msg.patientMrn || '').trim();
-        let opened = false;
+        const preopened = msg.preopened === true;
+        let tab = null;
+        if (preopened) {
+          /* The DOB-gated findpatient opener records the exact Athena tab it
+             navigated. Bind this read to that tab; generic re-picking can cross
+             into another open Athena chart. Missing/stale receipts fail closed. */
+          const lease = self.__mlsExpectOpen || null;
+          const leaseNameKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (!lease || !lease.tabId || (Date.now() - Number(lease.at || 0)) > 180000 || leaseNameKey(lease.name) !== leaseNameKey(want)) {
+            return sendResponse({ ok: false, reason: 'preopened-tab-unverified', error: 'The exact Athena chart-open receipt was missing or stale. Nothing was read.' });
+          }
+          try { tab = await chrome.tabs.get(Number(lease.tabId)); } catch (eLeaseTab) { tab = null; }
+          if (!tab || !mlsIsAthenaTab(tab) || mlsAthIsLoginish(tab)) {
+            return sendResponse({ ok: false, reason: 'preopened-tab-unavailable', error: 'The exact signed-in Athena tab is no longer available. Nothing was read.' });
+          }
+        } else {
+          tab = await mlsPickAthenaTab(all, { athenaOnly: true }); /* v1.90 unified picker */
+        }
+        if (!tab) { const cand = all.filter((t) => /^https?:/i.test(t.url || '') && !/mlsscribe\.com|chrome:\/\/|athena/i.test(t.url || '')); cand.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); tab = cand[0]; }
+        if (!tab) return sendResponse({ ok: false, error: 'Open the patient in your Athena tab, then try again.' });
+        let opened = preopened;
+        try { self.__mlsVerifiedReadTarget = null; } catch (eClearReadLease) {}
         // Click a visible patient name, OR type the name into an Athena search box, so we
         // can OPEN the chart without the doctor having to click it themselves.
         const openFn = (name, expectedDob, expectedMrn) => {
@@ -6122,7 +6145,7 @@ async function mlsSchedDomInline(doc, CFG){
             return 'no';
           } catch (e) { return 'no'; }
         };
-        if (want) {
+        if (want && !preopened) {
           let statuses = [];
           try { const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: openFn, args: [want, wantDob, wantMrn] }); statuses = res.map((r) => r && r.result); } catch (e) {}
           if (statuses.indexOf('clicked') >= 0) { opened = true; await new Promise((r) => setTimeout(r, 1900)); }
@@ -6184,7 +6207,11 @@ async function mlsSchedDomInline(doc, CFG){
                  lastfirst guess; if shadow finds nothing, behavior is unchanged. */
               || (cand.via !== 'banner' && expectName && !nmm(cand.name, expectName)))) {
             const sIdent = await mlsShadowIdentityTry(tab.id);
-            if (sIdent) { cand = sIdent; identDiag.push({ via: sIdent.via || 'shadow', named: true, sc: Math.round((sIdent.score || 0) * 10) / 10, w: sIdent.w || 0, h: sIdent.h || 0 }); }
+            if (sIdent) {
+              cand = sIdent;
+              if (typeof sIdent.frameId === 'number') identityFrameResults.push({ frameId: sIdent.frameId, result: sIdent });
+              identDiag.push({ via: sIdent.via || 'shadow', named: true, sc: Math.round((sIdent.score || 0) * 10) / 10, w: sIdent.w || 0, h: sIdent.h || 0 });
+            }
           }
           /* the RIGHT patient found (any via) -> done */
           if (cand && cand.name && expectName && nmm(cand.name, expectName)) { ident = cand; try { self.__mlsExpectOpen = null; } catch (e) {} break; }
@@ -6256,7 +6283,7 @@ async function mlsSchedDomInline(doc, CFG){
         {
           /* A complete chart read requires every contributing clinical frame to be
              read in full and independently bound to the requested patient. */
-          const NOISE_FRAME_RE = /stm\.esp|coordinator\/enterprise|globalnav\.esp|statusbar\.esp|schedulenavclose|findpatient\.esp/i;
+          const NOISE_FRAME_RE = /stm\.esp|coordinator\/enterprise|globalnav\.esp|globalframeset\.esp|globaliframe\.esp|framecontent\.esp|statusbar\.esp|schedulenavclose|findpatient\.esp|(?:static\/)?blank\.html/i;
           const rawFrames = (results || []).map((r) => {
             const x = (r && r.result) || {};
             return { frameId: (r && typeof r.frameId === 'number') ? r.frameId : -1, u: x.u || '', t: x.t || '', fullLen: Number(x.fullLen || 0), truncated: x.truncated === true, readOk: x.readOk === true, reason: x.reason || '' };
@@ -6345,6 +6372,9 @@ async function mlsSchedDomInline(doc, CFG){
             consideredFrames: eligibleFrames.length, textChars: chartTextStrict.length, truncated: chartTruncatedStrict,
             identityObserved: exactGlobalIdentity, identityVia: (ident && ident.via) || ''
           };
+          if (chartReceiptStrict.complete) {
+            try { self.__mlsVerifiedReadTarget = { tabId: tab.id, name: want, dob: wantDob, mrn: wantMrn, at: Date.now(), requestId: chartReceiptStrict.requestId }; } catch (eReadLease) {}
+          }
           return sendResponse({ ok: true, requestId: chartReceiptStrict.requestId, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
         }
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
@@ -6994,16 +7024,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'mlsRunBackupNow') { runNightlyBackup('manual').then(sendResponse); return true; }
 });
 
-/* === MLS Assist visit-reader lineage (active: v2.9.19 r3) ===
+/* === MLS Assist visit-reader lineage (active: v2.9.22 r4) ===
  * Self-contained. Adds its own chrome.runtime.onMessage handler for
  * mlsAppAllVisitsRequest; does not modify existing handlers. Genuinely walks the
  * OPEN patient's encounters/visits list in athenaOne (frame-aware, content-scored),
  * reads each encounter's real content, and returns {ok, identity, visits[], diag}.
  *
- * Historical v1.34 notes (superseded by the active v2.9.19 r3 reader below):
- *  - r3 treats every list row as index-only, binds a stable source key, and clicks
+ * Historical v1.34 notes (superseded by the active v2.9.22 r4 reader below):
+ *  - r4 treats every list row as index-only, binds a stable source key, and clicks
  *    each exact row before accepting encounter-scoped clinical detail.
- *  - r3 returns visits only when the patient identity, complete index, every body,
+ *  - r4 returns visits only when the patient identity, complete index, every body,
  *    and all unique source keys are independently verified in its receipt.
  *  - Frame-aware enumeration: scores every frame's candidate row-groups by
  *    encounter-likeness (date + type-keyword + clickable + code signals), not just
@@ -7163,6 +7193,67 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return !!(n.querySelector && n.querySelector('a[href],button,[role="link"],[role="button"],[onclick],td a, td'));
       } catch (e) { return false; }
     }
+    /* v2.9.22: live Athena v26.3 prior-visit rows toggle `accordion-open` on the
+       li itself (or aria-expanded on their toggle) when their body renders in
+       place. Open-state is a REQUIRED gate before the exact row's own text can
+       be considered an encounter body. */
+    function isOpenRow(n) {
+      try {
+        var cls = String(n.className && n.className.baseVal != null ? n.className.baseVal : (n.className || ''));
+        if (/(^|\s)(accordion-open|is-open|expanded)(\s|$)/.test(cls)) return true;
+        if (n.getAttribute && n.getAttribute('aria-expanded') === 'true') return true;
+        return !!(n.querySelector && n.querySelector('[aria-expanded="true"]'));
+      } catch (e) { return false; }
+    }
+    /* v2.9.22 REDACTED failure forensics: structural booleans/counts/class
+       tokens only — never patient text, names, dates, or codes. */
+    function noRowDiag(expected) {
+      var out = { keyStyle: String(expected && expected.rowKey || '').slice(0, 4) };
+      try {
+        out.liTotal = document.querySelectorAll('li.encounter-list-item').length;
+        var eid = String(expected && expected.encounterId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+        out.eidHit = eid ? !!document.querySelector('li.encounter-list-item[data-encounter-id="' + eid + '"]') : null;
+      } catch (eNr) {}
+      return out;
+    }
+    function rowFailDiag(exactRow, expectedBinding, marker, candidates) {
+      try {
+        var rowNow = txt(exactRow);
+        var rowNorm = rowNow.toLowerCase().replace(/\s+/g, ' ').trim();
+        var kidCls = [];
+        try {
+          var ch = exactRow.querySelectorAll('*');
+          for (var q = 0; q < ch.length && kidCls.length < 12; q++) {
+            String((ch[q].className && ch[q].className.baseVal != null ? ch[q].className.baseVal : ch[q].className) || '').split(/\s+/).forEach(function (c) { if (c && kidCls.indexOf(c) < 0 && kidCls.length < 12) kidCls.push(c); });
+          }
+        } catch (eKid) {}
+        return {
+          open: isOpenRow(exactRow), rowLen: rowNow.length, idxLen: Number(expectedBinding && expectedBinding.indexTextLen) || 0,
+          cands: (candidates || []).length, candLens: (candidates || []).slice(0, 6).map(function (c) { return txt(c).length; }),
+          already: !!(marker && marker.alreadyOpen), preLen: (marker && marker.preRowLen) || 0,
+          rowClin: clinicalBody(rowNow), hashEqIdx: hashText(rowNorm) === (expectedBinding && expectedBinding.indexTextHash),
+          rowCls: String(exactRow.className || '').split(/\s+/).filter(Boolean).slice(0, 8),
+          kidCls: kidCls, ariaKids: (function () { try { return exactRow.querySelectorAll('[aria-expanded]').length; } catch (eA) { return -1; } })()
+        };
+      } catch (eD2) { return null; }
+    }
+    /* v2.9.22: an expanded row can change length/position classification between
+       ops. Recover the exact row by its FROZEN stable key (encounterId-first)
+       instead of trusting the rendered index; positional lookup stays the fast
+       path. Returns null when no row carries the frozen key — fail closed. */
+    function resolveRow(g, index, expected) {
+      var rows = (g && g.rows) || [];
+      var positional = rows[Number(index)] || null;
+      if (!expected || !expected.rowKey) return positional;
+      if (positional && rowBinding(positional, index).rowKey === expected.rowKey) return positional;
+      var pool = rows.slice();
+      try { pool = pool.concat(Array.prototype.slice.call(document.querySelectorAll('li.encounter-list-item'))); } catch (e0) {}
+      for (var pi = 0; pi < pool.length; pi++) {
+        var b = rowBinding(pool[pi], index);
+        if (b.rowKey === expected.rowKey && (!expected.encounterId || b.encounterId === expected.encounterId)) return pool[pi];
+      }
+      return null;
+    }
 
     // Score a single candidate row's text for "looks like an encounter row".
     function rowScore(t) {
@@ -7183,13 +7274,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       for (var s = 0; s < cfg.rowSelectors.length; s++) {
         var nodes;
         try { nodes = Array.prototype.slice.call(document.querySelectorAll(cfg.rowSelectors[s])); } catch (e) { continue; }
+        /* Live Athena's Visits surface mixes vitals, future appointments,
+           patient cases/documents, and real historical encounters under the
+           same `li.encounter-list-item` class. Only previous-visit rows with a
+           stable encounter id own a full encounter-summary frame. Counting the
+           other row types made a 9-visit chart look like 15 encounters and made
+           body completeness impossible by construction. */
+        if (cfg.rowSelectors[s] === 'li.encounter-list-item') {
+          var priorEncounterRows = nodes.filter(function (node) {
+            try { return !!(node.matches && node.matches('li.encounter-list-item.previous-visit[data-encounter-id]')); } catch (ePrior) { return false; }
+          });
+          if (priorEncounterRows.length) nodes = priorEncounterRows;
+        }
         if (!nodes.length) continue;
         var byParent = new Map();
         for (var i = 0; i < nodes.length; i++) {
           var n = nodes[i], t = txt(n);
-          if (t.length < 8 || t.length > 1200) continue;
+          /* v2.9.22: a clicked li.encounter-list-item expands its clinical body
+             IN PLACE (accordion-open), so the explicit Athena encounter selector
+             must keep rows that outgrew the generic 1200-char row ceiling.
+             Otherwise the expanded row silently drops out of the group and every
+             later positional lookup rebinds to the wrong row. */
+          var maxRowLen = (cfg.rowSelectors[s] === 'li.encounter-list-item') ? 400000 : 1200;
+          if (t.length < 8 || t.length > maxRowLen) continue;
           if (!hasDate(t)) continue;
-          if (excluded(t)) continue;
+          /* A canonical Athena encounter row is a read-only accordion owner, not
+             a write control. Its clinical label may legitimately contain
+             "post-op" or its expanded body may mention "signed". Keep the
+             mutation-label filter for generic fallback rows; the explicit
+             encounter row is still bound by patient + encounter ID and its
+             actual child click target is checked separately below. */
+          if (cfg.rowSelectors[s] !== 'li.encounter-list-item' && excluded(t)) continue;
           var par = n.parentElement || n;
           if (!byParent.has(par)) byParent.set(par, []);
           byParent.get(par).push(n);
@@ -7353,7 +7468,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return {
           index: i, date: d ? d[1] : '',
           type: t.replace(DATE_RE, '').slice(0, 80).trim(),
-          rowText: t, textLen: t.length, hasCode: (hasCpt(t) || hasIcd(t)),
+          /* rowText is INDEX metadata only; an already-expanded row (re-pull in
+             the same session) must not push its whole body through this index. */
+          rowText: t.slice(0, 1200), textLen: t.length, hasCode: (hasCpt(t) || hasIcd(t)),
           /* Rich list rows remain INDEX metadata. They can help a human find an
              encounter but are never accepted as its clinical body. */
           rich: false, indexOnly: true, binding: binding, rowKey: binding.rowKey,
@@ -7365,7 +7482,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!rows[ri0].rowKey || keySet[rows[ri0].rowKey]) uniqueBindings = false;
         keySet[rows[ri0].rowKey] = 1;
       }
-      var declaredCount = declaredEncounterCount(g);
+      /* Athena's nearby declared count includes non-visit artifacts sharing
+         the list (future appointments, vitals and patient cases). The exact
+         previous-visit encounter rows are the authoritative body count. */
+      var declaredCount = g.selector === 'li.encounter-list-item' ? g.count : declaredEncounterCount(g);
       var expectedCount = declaredCount == null ? g.count : declaredCount;
       return {
         ok: true, selector: g.selector, count: expectedCount, renderedCount: g.count, declaredCount: declaredCount, score: g.score,
@@ -7392,31 +7512,133 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return { ok: true, visits: visits, indexOnly: true, fullDetail: false };
     }
     if (op === 'click') {
-      var g3 = bestGroup(); if (!g3) return { clicked: false, reason: 'no-group' };
-      var row = g3.rows[idx]; if (!row) return { clicked: false, reason: 'no-row', count: g3.rows.length };
+      var g3 = bestGroup();
+      var row = resolveRow(g3, idx, expectedBinding);
+      if (!row) return g3 ? { clicked: false, reason: 'no-row', count: g3.rows.length, d2: noRowDiag(expectedBinding) } : { clicked: false, reason: 'no-group', d2: noRowDiag(expectedBinding) };
       var liveBinding = rowBinding(row, idx);
       if (!sameBinding(liveBinding, expectedBinding)) {
         return { clicked: false, reason: 'row-binding-changed', binding: liveBinding };
       }
-      if (excluded(txt(row))) return { clicked: false, reason: 'excluded' };
+      /* Guard on the row's INDEX/header label: an already-expanded row's
+         clinical body can legitimately contain words like "signed"/"post"
+         without making the row itself a destructive control. */
+      var canonicalEncounterRow = false;
+      try { canonicalEncounterRow = !!(row.matches && row.matches('li.encounter-list-item')); } catch (eGuard) {}
+      if (!canonicalEncounterRow && excluded(indexText(row))) return { clicked: false, reason: 'excluded' };
+      var rowTextPre = txt(row);
+      var preRowHash = hashText(rowTextPre.toLowerCase().replace(/\s+/g, ' ').trim());
+      /* A row left open by an earlier read already exposes its read-only
+         slideout trigger. Clicking it again would collapse it. The accordion
+         itself carries only metadata; the full body arrives in the second-stage
+         encounter-summary iframe opened below. */
+      var alreadyOpen = isOpenRow(row);
       var preDetailHashes = {};
-      try {
-        var preSel = cfg.detailSelectors.concat(['.accordion-content', '.accordion-body', '[role="region"]', '[class*="detail" i]', '[class*="note" i]', '[class*="documentation" i]']).join(',');
-        var preNodes = Array.prototype.slice.call(row.querySelectorAll(preSel));
-        for (var pi0 = 0; pi0 < preNodes.length; pi0++) if (visible(preNodes[pi0])) {
-          var preText = txt(preNodes[pi0]).toLowerCase().replace(/\s+/g, ' ').trim();
-          if (preText) preDetailHashes[hashText(preText)] = 1;
+      if (!alreadyOpen) {
+        try {
+          var preSel = cfg.detailSelectors.concat(['.accordion-content', '.accordion-body', '[role="region"]', '[class*="detail" i]', '[class*="note" i]', '[class*="documentation" i]', '[class*="summary" i]', '[data-section]']).join(',');
+          var preNodes = Array.prototype.slice.call(row.querySelectorAll(preSel));
+          for (var pi0 = 0; pi0 < preNodes.length; pi0++) if (visible(preNodes[pi0])) {
+            var preText = txt(preNodes[pi0]).toLowerCase().replace(/\s+/g, ' ').trim();
+            if (preText) preDetailHashes[hashText(preText)] = 1;
+          }
+        } catch (ePre) {}
+        var target = row;
+        if (canonicalEncounterRow) {
+          /* The li itself is not an interactive control in Athena v26.3. Only
+             its visible descendant opens the exact historical encounter row. */
+          target = null;
+          try {
+            var rowToggles = Array.prototype.slice.call(row.querySelectorAll('div.clickable.accordion-trigger'));
+            for (var rt0 = 0; rt0 < rowToggles.length; rt0++) if (visible(rowToggles[rt0])) { target = rowToggles[rt0]; break; }
+          } catch (eToggle) {}
+          if (!target) return { clicked: false, reason: 'accordion-trigger-missing', binding: liveBinding };
+        } else {
+          try { var c = row.querySelector && row.querySelector('.accordion-header,[aria-expanded],a[href],button,[role="link"],[role="button"],td a,td'); if (c && !excluded(txt(c))) target = c; } catch (e) {}
         }
-      } catch (ePre) {}
-      var target = row;
-      try { var c = row.querySelector && row.querySelector('a[href],button,[role="link"],[role="button"],td a,td'); if (c && !excluded(txt(c))) target = c; } catch (e) {}
-      try { target.click(); } catch (e2) { return { clicked: false, reason: 'click-failed', error: String(e2) }; }
-      try { window.__mlsVisitReadBinding = { index: idx, rowKey: liveBinding.rowKey, encounterId: liveBinding.encounterId || '', date: liveBinding.date || '', preDetailHashes: preDetailHashes, at: Date.now() }; } catch (e3) {}
-      return { clicked: true, len: txt(row).length, binding: liveBinding };
+        try { target.click(); } catch (e2) { return { clicked: false, reason: 'click-failed', error: String(e2) }; }
+      }
+      try { window.__mlsVisitReadBinding = { index: idx, rowKey: liveBinding.rowKey, encounterId: liveBinding.encounterId || '', date: liveBinding.date || '', preDetailHashes: preDetailHashes, preRowHash: alreadyOpen ? '' : preRowHash, preRowLen: alreadyOpen ? (Number(liveBinding.indexTextLen) || 0) : rowTextPre.length, alreadyOpen: alreadyOpen, stage: 'accordion-requested', at: Date.now() }; } catch (e3) {}
+      return { clicked: true, alreadyOpen: alreadyOpen, len: txt(row).length, binding: liveBinding };
+    }
+    if (op === 'openDetailFrame') {
+      var gOpen = bestGroup(), exactOpenRow = resolveRow(gOpen, idx, expectedBinding), openMarker = null;
+      if (!exactOpenRow) return { clicked: false, reason: 'no-row', d2: noRowDiag(expectedBinding) };
+      var openBinding = rowBinding(exactOpenRow, idx);
+      try { openMarker = window.__mlsVisitReadBinding || null; } catch (eOpenMarker) {}
+      if (!sameBinding(openBinding, expectedBinding) || !sameBinding(openMarker, expectedBinding)) return { clicked: false, reason: 'detail-binding-mismatch', binding: openBinding };
+      if (!isOpenRow(exactOpenRow)) return { clicked: false, reason: 'accordion-not-open', binding: openBinding };
+      try { if (document.querySelector('.slideout.chart-component.slideout-open')) return { clicked: false, reason: 'detail-slideout-already-open', binding: openBinding }; } catch (eOpenExisting) {}
+      var slideTrigger = null;
+      try {
+        var slideTriggers = Array.prototype.slice.call(exactOpenRow.querySelectorAll('span.slideout-trigger-open'));
+        for (var st0 = 0; st0 < slideTriggers.length; st0++) if (visible(slideTriggers[st0])) { slideTrigger = slideTriggers[st0]; break; }
+      } catch (eSlideFind) {}
+      if (!slideTrigger) return { clicked: false, reason: 'slideout-trigger-missing', binding: openBinding };
+      try { slideTrigger.click(); } catch (eSlideClick) { return { clicked: false, reason: 'slideout-click-failed', binding: openBinding }; }
+      try { openMarker.stage = 'slideout-requested'; openMarker.slideoutAt = Date.now(); window.__mlsVisitReadBinding = openMarker; } catch (eOpenStore) {}
+      return { clicked: true, binding: openBinding, stage: 'slideout-requested' };
+    }
+    if (op === 'closeDetailFrame') {
+      /* This is the sole cleanup click: the direct close child of Athena's
+         currently open read-only chart slideout. It cannot match a Save, Sign,
+         Bill, order, or other mutation control. */
+      var openSlideout = null, closeControl = null;
+      try { openSlideout = document.querySelector('.slideout.chart-component.slideout-open'); } catch (eCloseFind) {}
+      if (!openSlideout) return { ok: true, closed: true, hadOpen: false };
+      try {
+        var directKids = openSlideout.children || [];
+        for (var ck0 = 0; ck0 < directKids.length; ck0++) {
+          if (directKids[ck0].tagName === 'SPAN' && /(^|\s)close(\s|$)/.test(String(directKids[ck0].className || ''))) { closeControl = directKids[ck0]; break; }
+        }
+      } catch (eCloseChild) {}
+      if (!closeControl) return { ok: false, closed: false, reason: 'detail-close-control-missing' };
+      try { closeControl.click(); } catch (eCloseClick) { return { ok: false, closed: false, reason: 'detail-close-click-failed' }; }
+      try { window.__mlsVisitReadBinding = null; } catch (eCloseClear) {}
+      return { ok: true, closed: true, hadOpen: true };
+    }
+    if (op === 'detailSurfaceState') {
+      var surfaceSlideout = null, surfaceIframe = null, surfaceSrc = '';
+      try { surfaceSlideout = document.querySelector('.slideout.chart-component.slideout-open'); } catch (eSurfaceOpen) {}
+      try { surfaceIframe = document.querySelector('iframe#classic-full-encounter-summary-iframe'); surfaceSrc = surfaceIframe && surfaceIframe.getAttribute('src') || ''; } catch (eSurfaceFrame) {}
+      return {
+        open: !!surfaceSlideout, iframePresent: !!surfaceIframe,
+        iframeContract: !!(surfaceIframe && /encounter/i.test(surfaceSrc) && /summary/i.test(surfaceSrc) && /(?:\?|&)FROMSTREAMLINED=/i.test(surfaceSrc) && /(?:\?|&)CROSSFRAMEID=/i.test(surfaceSrc))
+      };
+    }
+    if (op === 'detailFrameProbe') {
+      var probeUrl = '';
+      try { probeUrl = String(location.href || ''); } catch (eProbeUrl) {}
+      var probeContract = /athenahealth/i.test(probeUrl) && /encounter/i.test(probeUrl) && /summary/i.test(probeUrl) && /(?:\?|&)FROMSTREAMLINED=/i.test(probeUrl) && /(?:\?|&)CROSSFRAMEID=/i.test(probeUrl);
+      var probeSection = null;
+      try { probeSection = document.getElementById('SECTIONCONTAINER'); } catch (eProbeSection) {}
+      var probeRaw = probeSection ? txt(probeSection) : '';
+      return { frameContract: probeContract, sectionPresent: !!probeSection, contentHash: probeRaw ? hashText(probeRaw) : '', len: probeRaw.length, ready: String(document.readyState || '') };
+    }
+    if (op === 'detailFrame') {
+      /* This operation is executed ONLY in the one newly created child frame
+         whose URL and parent frame satisfy the encounter-summary contract. No
+         page-wide/largest-block fallback is allowed. */
+      var frameUrl = '';
+      try { frameUrl = String(location.href || ''); } catch (eFrameUrl) {}
+      var frameContract = /athenahealth/i.test(frameUrl) && /encounter/i.test(frameUrl) && /summary/i.test(frameUrl) && /(?:\?|&)FROMSTREAMLINED=/i.test(frameUrl) && /(?:\?|&)CROSSFRAMEID=/i.test(frameUrl);
+      if (!frameContract) return { raw: '', len: 0, fullDetail: false, reason: 'encounter-frame-contract-mismatch', binding: expectedBinding || null };
+      var sectionContainer = null;
+      try { sectionContainer = document.getElementById('SECTIONCONTAINER'); } catch (eSection) {}
+      if (!sectionContainer) return { raw: '', len: 0, fullDetail: false, reason: 'encounter-section-missing', binding: expectedBinding || null };
+      var frameRaw = txt(sectionContainer);
+      if (!clinicalBody(frameRaw)) return { raw: '', len: 0, fullDetail: false, reason: 'encounter-section-incomplete', binding: expectedBinding || null };
+      var frameDate = frameRaw.match(DATE_RE);
+      return {
+        date: (frameDate && frameDate[1]) || (expectedBinding && expectedBinding.date) || '', type: '', raw: frameRaw,
+        cpt: codes(frameRaw, CPT_RE), icd10: codes(frameRaw, ICD_RE), len: frameRaw.length,
+        fullDetail: true, indexOnly: false, binding: expectedBinding || null,
+        frameContract: true
+      };
     }
     if (op === 'detail') {
-      var g4 = bestGroup(); if (!g4) return { raw: '', len: 0, fullDetail: false, reason: 'no-group' };
-      var exactRow = g4.rows[idx]; if (!exactRow) return { raw: '', len: 0, fullDetail: false, reason: 'no-row' };
+      var g4 = bestGroup();
+      var exactRow = resolveRow(g4, idx, expectedBinding);
+      if (!exactRow) return g4 ? { raw: '', len: 0, fullDetail: false, reason: 'no-row', d2: noRowDiag(expectedBinding) } : { raw: '', len: 0, fullDetail: false, reason: 'no-group', d2: noRowDiag(expectedBinding) };
       var actualBinding = rowBinding(exactRow, idx), marker = null;
       try { marker = window.__mlsVisitReadBinding || null; } catch (e0) {}
       if (!sameBinding(actualBinding, expectedBinding) || !sameBinding(marker, expectedBinding)) {
@@ -7428,7 +7650,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          encounter elsewhere in the chart would otherwise be rebound to idx. */
       var candidates = [], seen = [];
       function addCandidate(n) { if (!n || n === exactRow || seen.indexOf(n) >= 0 || !visible(n)) return; seen.push(n); candidates.push(n); }
-      var localSelectors = cfg.detailSelectors.concat(['.accordion-content', '.accordion-body', '[role="region"]', '[class*="detail" i]', '[class*="note" i]', '[class*="documentation" i]']);
+      var localSelectors = cfg.detailSelectors.concat(['.accordion-content', '.accordion-body', '[role="region"]', '[class*="detail" i]', '[class*="note" i]', '[class*="documentation" i]', '[class*="summary" i]', '[data-section]']);
       for (var s2 = 0; s2 < localSelectors.length; s2++) {
         var local = []; try { local = Array.prototype.slice.call(exactRow.querySelectorAll(localSelectors[s2])); } catch (e1) {}
         for (var l2 = 0; l2 < local.length; l2++) addCandidate(local[l2]);
@@ -7456,8 +7678,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (/\b(?:assessment|plan|hpi|exam|diagnos|procedure)\b/i.test(t2)) sc2 += 3;
         if (sc2 > bestScore) { bestScore = sc2; best = candidates[j2]; bestRaw = t2; }
       }
+      /* v2.9.22 (live Athena v26.3): the clicked li.encounter-list-item expands
+         its clinical body INSIDE ITSELF (`accordion-open`) with no dedicated
+         detail descendant, so the old descendant-only scan returned 0/15 bodies.
+         Accept the exact bound row's own text as the encounter body, but only
+         fail-closed: the row must be visibly open, its normalized text must
+         differ from the frozen index text and its own pre-click snapshot, it
+         must have GROWN past the index header, and it must read as clinical
+         content. Never another row, never page-wide text. */
+      if (!best && isOpenRow(exactRow)) {
+        var rowRaw = txt(exactRow);
+        var rowHash = hashText(rowRaw.toLowerCase().replace(/\s+/g, ' ').trim());
+        var grewPastIndex = rowRaw.length > (Number(expectedBinding.indexTextLen) || 0) + 40;
+        var changedSinceClick = marker.alreadyOpen === true || (rowHash !== marker.preRowHash && rowRaw.length > (Number(marker.preRowLen) || 0));
+        if (rowHash !== expectedBinding.indexTextHash && !(marker.preDetailHashes && marker.preDetailHashes[rowHash]) && grewPastIndex && changedSinceClick && clinicalBody(rowRaw)) {
+          best = exactRow; bestRaw = rowRaw;
+        }
+      }
       if (!best || !clinicalBody(bestRaw)) {
-        return { date: expectedBinding.date || '', type: '', raw: '', cpt: [], icd10: [], len: 0, fullDetail: false, indexOnly: true, reason: 'no-bound-clinical-detail', binding: actualBinding };
+        return { date: expectedBinding.date || '', type: '', raw: '', cpt: [], icd10: [], len: 0, fullDetail: false, indexOnly: true, reason: 'no-bound-clinical-detail', binding: actualBinding, d2: rowFailDiag(exactRow, expectedBinding, marker, candidates) };
       }
       var d3 = bestRaw.match(DATE_RE);
       return {
@@ -7473,12 +7712,56 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function emit(tabId, message, n, total) { try { if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'mlsAppVisitsProgress', message: message, n: n, total: total }); } catch (e) {} }
 
-  function pickEmrTab() {
+  function pickEmrTab(hint) {
     return new Promise(function (resolve) {
       try {
         chrome.tabs.query({}, function (tabs) {
           var cand = (tabs || []).filter(function (t) { return t.url && EMR_RE.test(t.url); });
           cand.sort(function (a, b) { return (b.active ? 1 : 0) - (a.active ? 1 : 0) || (b.id - a.id); });
+          /* Keep AllVisits in the exact Athena tab proven by the immediately
+             preceding chart receipt. The same-frame gate below still rechecks
+             name+DOB/MRN before reading any encounter body. */
+          try {
+            var lease = self.__mlsVerifiedReadTarget || null, h = hint || {};
+            var nk = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+            var dk = function (s) {
+              var m = String(s || '').match(/(\d{1,4})[\/\-.](\d{1,2})[\/\-.](\d{1,4})/); if (!m) return '';
+              var y, mo, d; if (m[1].length === 4) { y=m[1]; mo=m[2]; d=m[3]; } else { mo=m[1]; d=m[2]; y=m[3]; }
+              if (String(y).length === 2) y=(Number(y)>40?'19':'20')+y;
+              return String(y)+('0'+Number(mo)).slice(-2)+('0'+Number(d)).slice(-2);
+            };
+            var wantName = h.name || h.patient || h.patientName || '', wantDob = h.dob || h.patientDob || '', wantMrn = h.mrn || h.athenaId || '';
+            var leaseMatches = lease && (Date.now() - Number(lease.at || 0)) < 180000 && nk(lease.name) === nk(wantName) && (!wantDob || dk(lease.dob) === dk(wantDob)) && (!wantMrn || nk(lease.mrn) === nk(wantMrn));
+            if (leaseMatches) {
+              var exact = cand.find(function (t) { return Number(t.id) === Number(lease.tabId); });
+              resolve(exact || null); return;
+            }
+          } catch (eLease) {}
+          /* No lease (for example a direct Copy every visit click): prove the
+             exact patient across every signed-in Athena tab before choosing
+             one. This prevents an active/recent but wrong second Athena tab
+             from winning. The scan is read-only and still re-verifies identity
+             in the exact Visits frame before any encounter click. */
+          try {
+            var frozenPick = freezeVisitHint(hint || {});
+            if (frozenPick.name && (frozenPick.dob || frozenPick.mrn)) {
+              (async function () {
+                var exactMatches = [];
+                for (var ci0 = 0; ci0 < cand.length; ci0++) {
+                  try {
+                    var idResults = await exec(cand[ci0].id, null, ['identity', {}]);
+                    var idBest = bestResult(idResults, function (r) {
+                      return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0);
+                    }).result || {};
+                    if (visitIdentityGate(frozenPick, idBest).ok) exactMatches.push(cand[ci0]);
+                  } catch (ePickIdentity) {}
+                }
+                if (exactMatches.length) { resolve(exactMatches[0]); return; }
+                resolve(null);
+              })();
+              return;
+            }
+          } catch (eExactPick) {}
           /* v1.90: unified verified picker; the old active-first order stays the fallback */
           try {
             if (typeof mlsPickAthenaTab === 'function') { Promise.resolve(mlsPickAthenaTab(tabs, { athenaOnly: true })).then(function (t) { resolve(t || cand[0] || null); }, function () { resolve(cand[0] || null); }); return; }
@@ -7502,6 +7785,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       ]).then(function (all) { return (all[0] || []).concat(all[1] || []); });
     }
     return chrome.scripting.executeScript({ target: target, func: mlsVisitsDriverFn, args: args }).catch(function () { return []; });
+  }
+  async function encounterDetailFrames(tabId, parentFrameId) {
+    try {
+      if (!chrome.webNavigation || typeof chrome.webNavigation.getAllFrames !== 'function') return [];
+      var frames = await chrome.webNavigation.getAllFrames({ tabId: tabId });
+      return (frames || []).filter(function (frame) {
+        var u = String(frame && frame.url || '');
+        return Number(frame && frame.parentFrameId) === Number(parentFrameId) &&
+          /athenahealth/i.test(u) && /encounter/i.test(u) && /summary/i.test(u) &&
+          /(?:\?|&)FROMSTREAMLINED=/i.test(u) && /(?:\?|&)CROSSFRAMEID=/i.test(u);
+      }).map(function (frame) { return { frameId: Number(frame.frameId), parentFrameId: Number(frame.parentFrameId), documentId: String(frame.documentId || '') }; });
+    } catch (e) { return []; }
+  }
+  async function waitForEncounterDetailFrames(tabId, parentFrameId, wantCount, timeoutMs, pollMs) {
+    var deadline = Date.now() + Math.max(200, Number(timeoutMs || 1800)), frames = [];
+    do {
+      frames = await encounterDetailFrames(tabId, parentFrameId);
+      if (frames.length === wantCount) return frames;
+      await sleep(Math.max(60, Math.min(250, Number(pollMs || 120))));
+    } while (Date.now() < deadline);
+    return frames;
+  }
+  async function waitForDetailSurface(tabId, parentFrameId, wantOpen, timeoutMs, pollMs) {
+    var deadline = Date.now() + Math.max(200, Number(timeoutMs || 1800)), state = null;
+    do {
+      var states = await exec(tabId, [parentFrameId], ['detailSurfaceState', {}]);
+      state = bestResult(states, function (r) { return r && typeof r.open === 'boolean' ? 1 : 0; }).result || null;
+      if (state && state.open === wantOpen) return state;
+      await sleep(Math.max(60, Math.min(250, Number(pollMs || 120))));
+    } while (Date.now() < deadline);
+    return state;
   }
   function bestResult(results, scoreFn) {
     var best = null, bestScore = -1, bestFrame = 0;
@@ -7558,17 +7872,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   function saveDiag(diag) {
     try { chrome.storage.local.set({ mlsAthenaVisitsDiag: { at: Date.now(), diag: diag } }); } catch (e) {}
     // Redacted (no-PHI) structural map — safe to log so it can be copied for selector tuning.
-    try { console.log('[MLS Assist v2.9.19 r3 diag — redacted, no PHI]', JSON.stringify(diag)); } catch (e) {}
+    try { console.log('[MLS Assist v2.9.22 r4 diag — redacted, no PHI]', JSON.stringify(diag)); } catch (e) {}
   }
 
-  /* v2.9.19 r3: exact-patient, exact-encounter, full-body reader. This
+  /* v2.9.22 r4: exact-patient, exact-encounter, full-body reader. This
      implementation fails closed unless the complete index and all
      encounter-scoped clinical bodies are proven. */
   function runAllVisits(appTabId, hint, cfg) {
     var identity = {}, listFrame = 0, enumRes = null, diag = null;
     var qpOwnedByThisRead = false, frozenHint = freezeVisitHint(hint);
     var minLen = Math.max(60, Number(cfg.minRealLen || 60));
-    return pickEmrTab().then(async function (emr) {
+    return pickEmrTab(frozenHint).then(async function (emr) {
       if (!emr) return { ok: false, reason: 'no-athena-tab', visits: [], error: 'No signed-in athenaOne tab found. Open athenaOne with the patient chart, then retry.' };
       var emrId = emr.id;
       /* Quiet-pull visibility lease: make Athena render without focusing it or
@@ -7629,8 +7943,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       var detailWaitMs = Math.max(300, Math.min(2500, Number(cfg.waitMs || 1400)));
+      /* A newly opened Athena briefing surface can spend several seconds
+         hydrating its first accordion rows and cached encounter iframe. Keep
+         the normal path fast, but allow one same-row, same-binding cold retry
+         with a longer bounded wait. No identity, frame, or stable-key gate is
+         weakened by this retry. */
+      var coldRetryWaitMs = Math.max(detailWaitMs, Math.min(5000, Number(cfg.coldRetryWaitMs || Math.max(4000, detailWaitMs + 2600))));
       var readBudgetMs = Math.max(30000, Math.min(180000, Number(cfg.maxReadMs || 165000)));
-      var maxByBudget = Math.max(1, Math.floor((readBudgetMs - 15000) / (detailWaitMs + 350)));
+      var readDeadline = Date.now() + readBudgetMs;
+      var maxByBudget = Math.max(1, Math.floor((readBudgetMs - 15000) / ((detailWaitMs * 2) + 700)));
       if (total > maxByBudget) {
         return {
           ok: false, reason: 'visits-time-budget-exceeded', identity: identity, visits: [], diag: diag,
@@ -7639,7 +7960,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
 
-      var visits = [], failures = [];
+      var visits = [], failures = [], retryCount = 0;
       for (var i = 0; i < total; i++) {
         var snap = rows[i] || {}, expected = snap.binding || null;
         if (!expected || Number(expected.index) !== i || !expected.rowKey) {
@@ -7647,19 +7968,109 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           continue;
         }
         emit(appTabId, 'Opening encounter ' + (i + 1) + ' of ' + total + '…', i, total);
-        var clickR = await exec(emrId, [listFrame], ['click', cfg, i, expected]);
-        var clicked = bestResult(clickR, function (r) { return (r && r.clicked === true) ? 1 : 0; }).result || {};
-        if (!clicked.clicked) {
-          failures.push({ index: i, reason: clicked.reason || 'click-failed' });
+        var twoStageAthena = enumRes.selector === 'li.encounter-list-item';
+        var runBoundAttempt = async function (rowWaitMs) {
+          var preDetailFrames = [], preDetailProbes = {};
+          try {
+            if (twoStageAthena) {
+              await exec(emrId, [listFrame], ['closeDetailFrame', cfg]);
+              var closedSurface = await waitForDetailSurface(emrId, listFrame, false, Math.max(500, rowWaitMs), cfg.detailPollMs);
+              if (!closedSurface || closedSurface.open !== false) return { failure: { reason: 'stale-encounter-surface-open' } };
+              /* Athena may retain one hidden cached iframe after closing. Freeze
+                 its document id and redacted content fingerprint; a reused
+                 frame must navigate or change after the exact next-row click. */
+              preDetailFrames = await encounterDetailFrames(emrId, listFrame);
+              if (preDetailFrames.length > 1) return { failure: { reason: 'ambiguous-cached-encounter-frames' } };
+              for (var pf0 = 0; pf0 < preDetailFrames.length; pf0++) {
+                var preProbeR = await exec(emrId, [preDetailFrames[pf0].frameId], ['detailFrameProbe', cfg]);
+                preDetailProbes[String(preDetailFrames[pf0].frameId)] = bestResult(preProbeR, function (r) { return r && r.frameContract ? 1 : 0; }).result || null;
+              }
+            }
+
+            var clickR = await exec(emrId, [listFrame], ['click', cfg, i, expected]);
+            var clicked = bestResult(clickR, function (r) { return (r && r.clicked === true) ? 1 : 0; }).result || {};
+            if (!clicked.clicked) return { failure: { reason: clicked.reason || 'click-failed', d2: clicked.d2 || null } };
+
+            if (!twoStageAthena) {
+              var legacyDeadline = Date.now() + rowWaitMs, legacyDetail = {}, legacyR;
+              do {
+                await sleep(Math.max(80, Math.min(300, Number(cfg.detailPollMs || 180))));
+                legacyR = await exec(emrId, [listFrame], ['detail', cfg, i, expected]);
+                legacyDetail = bestResult(legacyR, function (r) { return (r && r.fullDetail === true && r.raw) ? r.raw.length : 0; }).result || {};
+                if (legacyDetail.fullDetail === true && legacyDetail.raw) break;
+              } while (Date.now() < legacyDeadline);
+              return { detail: legacyDetail };
+            }
+
+            /* Stage 2: after the exact row accordion opens, click only that
+               row's visible slideout trigger. This creates one new child frame
+               under the verified Visits frame. */
+            var openDeadline = Date.now() + rowWaitMs, opened = {}, openR;
+            do {
+              await sleep(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180))));
+              openR = await exec(emrId, [listFrame], ['openDetailFrame', cfg, i, expected]);
+              opened = bestResult(openR, function (r) { return (r && r.clicked === true) ? 1 : 0; }).result || {};
+              if (opened.clicked) break;
+            } while (Date.now() < openDeadline && (opened.reason === 'accordion-not-open' || opened.reason === 'slideout-trigger-missing' || !opened.reason));
+            if (!opened.clicked) return { failure: { reason: opened.reason || 'slideout-open-failed' } };
+
+            var openedSurface = await waitForDetailSurface(emrId, listFrame, true, rowWaitMs, cfg.detailPollMs);
+            if (!openedSurface || openedSurface.open !== true || openedSurface.iframeContract !== true) return { failure: { reason: 'encounter-surface-not-open' } };
+
+            var frameProofDeadline = Date.now() + rowWaitMs, detailFrames = [], detailFrame = null, frameProven = false;
+            do {
+              detailFrames = await encounterDetailFrames(emrId, listFrame);
+              if (detailFrames.length === 1 && Number.isFinite(detailFrames[0].frameId)) {
+                detailFrame = detailFrames[0];
+                var priorFrame = null;
+                for (var pfi = 0; pfi < preDetailFrames.length; pfi++) if (preDetailFrames[pfi].frameId === detailFrame.frameId) priorFrame = preDetailFrames[pfi];
+                var documentChanged = !priorFrame || (!!priorFrame.documentId && !!detailFrame.documentId && priorFrame.documentId !== detailFrame.documentId);
+                var probeR = await exec(emrId, [detailFrame.frameId], ['detailFrameProbe', cfg]);
+                var probe = bestResult(probeR, function (r) { return r && r.frameContract && r.sectionPresent && r.contentHash ? r.len || 1 : 0; }).result || null;
+                var priorProbe = preDetailProbes[String(detailFrame.frameId)] || null;
+                var contentChanged = !!(probe && (!priorProbe || probe.contentHash !== priorProbe.contentHash || Number(probe.len) !== Number(priorProbe.len)));
+                if (probe && (documentChanged || contentChanged)) { frameProven = true; break; }
+              }
+              await sleep(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180))));
+            } while (Date.now() < frameProofDeadline);
+            if (!frameProven || !detailFrame) return { failure: { reason: detailFrames.length > 1 ? 'ambiguous-encounter-frames' : 'encounter-frame-not-refreshed' } };
+
+            /* Re-prove the parent patient after the child frame opens. A tab or
+               chart switch during the two clicks invalidates this encounter. */
+            var rowIds = await exec(emrId, [listFrame], ['identity', cfg]);
+            var rowIdentity = bestResult(rowIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
+            var rowGate = visitIdentityGate(frozenHint, rowIdentity);
+            if (!rowGate.ok) return { failure: { reason: 'identity-changed-before-detail' } };
+
+            var detailDeadline = Date.now() + rowWaitMs, frameDetail = {}, detailR;
+            do {
+              await sleep(Math.max(80, Math.min(250, Number(cfg.detailPollMs || 180))));
+              detailR = await exec(emrId, [detailFrame.frameId], ['detailFrame', cfg, i, expected]);
+              frameDetail = bestResult(detailR, function (r) { return (r && r.fullDetail === true && r.frameContract === true && r.raw) ? r.raw.length : 0; }).result || {};
+              if (frameDetail.fullDetail === true && frameDetail.frameContract === true && frameDetail.raw) break;
+            } while (Date.now() < detailDeadline);
+            return { detail: frameDetail };
+          } finally {
+            if (twoStageAthena) {
+              try { await exec(emrId, [listFrame], ['closeDetailFrame', cfg]); } catch (eClose) {}
+              try { await waitForDetailSurface(emrId, listFrame, false, Math.max(500, rowWaitMs), cfg.detailPollMs); } catch (eWaitClose) {}
+            }
+          }
+        };
+        var attempt = await runBoundAttempt(detailWaitMs);
+        var retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
+        var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|slideout-trigger-missing|slideout-open-failed)$/.test(retryReason);
+        if (coldRetryable && Date.now() + 1000 < readDeadline) {
+          retryCount++;
+          emit(appTabId, 'Finishing cold encounter ' + (i + 1) + ' of ' + total + '\u2026', i, total);
+          await sleep(Math.max(120, Math.min(500, Number(cfg.coldRetryPauseMs || 300))));
+          attempt = await runBoundAttempt(coldRetryWaitMs);
+        }
+        if (attempt.failure) {
+          failures.push({ index: i, reason: attempt.failure.reason || 'detail-read-failed', d2: attempt.failure.d2 || null });
           continue;
         }
-        var detailDeadline = Date.now() + detailWaitMs, d = {}, detailR;
-        do {
-          await sleep(Math.max(80, Math.min(300, Number(cfg.detailPollMs || 180))));
-          detailR = await exec(emrId, [listFrame], ['detail', cfg, i, expected]);
-          d = bestResult(detailR, function (r) { return (r && r.fullDetail === true && r.raw) ? r.raw.length : 0; }).result || {};
-          if (d.fullDetail === true && d.raw) break;
-        } while (Date.now() < detailDeadline);
+        var d = attempt.detail || {};
         var bound = d.binding && Number(d.binding.index) === i && d.binding.rowKey === expected.rowKey && (!expected.encounterId || d.binding.encounterId === expected.encounterId);
         var visit = {
           date: snap.date || d.date || '', type: snap.type || d.type || '', raw: d.raw || '',
@@ -7670,7 +8081,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           rowKey: expected.rowKey
         };
         if (!bound || !realVisit(visit, minLen)) {
-          failures.push({ index: i, reason: d.reason || (!bound ? 'detail-binding-mismatch' : 'clinical-body-incomplete') });
+          failures.push({ index: i, reason: d.reason || (!bound ? 'detail-binding-mismatch' : 'clinical-body-incomplete'), d2: d.d2 || null });
           continue;
         }
         visits.push(visit);
@@ -7695,7 +8106,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
         fullDetail: bodyComplete, expected: total, parsed: visits.length,
-        attempted: total, failures: failures.length, cap: cfg.maxVisits,
+        attempted: total, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete,
         authoritativeEmpty: total === 0 && authoritativeEmptyIndex
       };
@@ -7712,7 +8123,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return { ok: false, identity: identity, visits: [], diag: diag, receipt: { complete: false, indexComplete: !!enumRes, bodyComplete: false, fullDetail: false }, error: String((e && e.message) || e) };
     }).then(function (res) {
       res = res || {};
-      res.readerVersion = '2.9.19-visits-r3';
+      res.readerVersion = '2.9.22-visits-r4-two-stage';
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
       var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true);
       res.receipt.complete = proven;
@@ -7724,23 +8135,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       return res;
     }).finally(async function () {
+      try {
+        var lease = self.__mlsVerifiedReadTarget || null;
+        var lk = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+        if (lease && lk(lease.name) === lk(frozenHint.name)) self.__mlsVerifiedReadTarget = null;
+      } catch (eLeaseClear) {}
       if (qpOwnedByThisRead && self.__mlsQpRelease) {
         try { await self.__mlsQpRelease('all-visits-finally'); } catch (e) {}
       }
     });
   }
 
+  var activeAllVisitsPromise = null;
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppAllVisitsRequest') return; // not ours; let other listeners handle
     var appTabId = sender && sender.tab && sender.tab.id;
+    if (activeAllVisitsPromise) {
+      sendResponse({
+        ok: false, reason: 'busy', readerVersion: '2.9.22-visits-r4-two-stage', visits: [],
+        receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false },
+        error: 'A verified history read is already running. Wait for it to finish, then retry.'
+      });
+      return true;
+    }
+    activeAllVisitsPromise = { pending: true };
     try {
       chrome.storage.local.get(['mlsAthenaVisitsCfg'], function (st) {
         var cfg = {}; var stored = (st && st.mlsAthenaVisitsCfg) || {};
         for (var k in ORCH_DEFAULT) cfg[k] = (stored[k] != null ? stored[k] : ORCH_DEFAULT[k]);
         for (var k2 in stored) if (cfg[k2] == null) cfg[k2] = stored[k2];
-        runAllVisits(appTabId, msg.hint || {}, cfg).then(sendResponse, function (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); });
+        var thisRead = runAllVisits(appTabId, msg.hint || {}, cfg);
+        activeAllVisitsPromise = thisRead;
+        thisRead.then(sendResponse, function (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }).finally(function () { if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null; });
       });
-    } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    } catch (e) { activeAllVisitsPromise = null; sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     return true; // async response
   });
 

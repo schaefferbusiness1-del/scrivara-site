@@ -66,8 +66,8 @@ context.postMessage = msg => {
     const event = { data: { source: 'mls-ext', type: 'mlsAppAllVisitsResult',
       ok: true,
       visits: [{ date: '2026-01-01', type: 'Office visit', raw: 'Verified old visit with substantive clinical detail for the regression.', fullDetail: true, sourceVisitKey: 'row:schedule-history-1' }],
-      receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.19-visits-r3' },
-      readerVersion: '2.9.19-visits-r3',
+      receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
+      readerVersion: '2.9.22-visits-r4-two-stage',
       identity: { name: patient.name, dob: patient.dob, mrn: '' }
     } };
     Array.from(listeners).forEach(fn => fn(event));

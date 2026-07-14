@@ -296,19 +296,41 @@
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
-    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(ctx.history?'\n\nVERIFIED PATIENT HISTORY:\n'+S(ctx.history).slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+S(tplText).slice(0,12000);
+    var historyAtStart=window.__mlsOpNoteHistory&&window.__mlsOpNoteHistory.installed;
+    /* When the verified-history owner is ready it is the sole history source;
+       do not also trust or duplicate a caller-supplied ctx.history string. */
+    var legacyHistory=historyAtStart?'':S(ctx.history);
+    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+S(tplText).slice(0,12000);
     var key=isFn(window.getKey)?window.getKey():'';
-    var opts={freeform:true,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true};
+    var opts={freeform:true,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
     var facts={patient:name,mrn:ctx.mrn,'date of procedure':dateStr,procedure:procedure};
     if(ctx.dob)facts['date of birth']=ctx.dob;
     if(ctx.provider)facts.provider=ctx.provider;
     if(ctx.providerNpi)facts.npi=ctx.providerNpi;
     if(ctx.facility)facts.facility=ctx.facility;
-    var first=parseResult(await window.aiCallRaw(sys,user,key,opts)); first.note=forceFacts(first.note,facts); var check=fidelity(first.note,tplText);
+    var first=parseResult(await window.aiCallRaw(sys,user,key,opts));
+    first.note=forceFacts(first.note,facts);
+    var histApi=window.__mlsOpNoteHistory, histValidation=null;
+    if(histApi&&histApi.installed){
+      histValidation=isFn(histApi.validateBinding)?histApi.validateBinding(opts):{ok:false,reason:'history-binding-validator-unavailable'};
+      if(!histValidation||!histValidation.ok){var ve=new Error('Op-note generation stopped because the exact patient or verified history changed while the draft was being created.');ve.code='MLS_OPNOTE_IDENTITY';ve.reason=histValidation&&histValidation.reason||'history-binding-invalid';throw ve;}
+    }
+    var check=fidelity(first.note,tplText);
     if(check.pass){first.templateFidelity=check;window.__mlsLastOpFidelityPass=true;return first;}
+    /* The history wrapper freezes an exact-patient context binding on the first
+       request. If that wrapper is installed, a repair must carry the same
+       binding; it may not fall back to the shorter pre-injection ctx.history. */
+    var histBinding=opts.mlsVerifiedHistoryBinding;
+    if(histApi&&histApi.installed&&(!histBinding||S(histBinding.patientId)!==S(p.id))){var he=new Error('Op-note repair stopped because verified patient history was not bound to the draft.');he.code='MLS_OPNOTE_IDENTITY';throw he;}
+    var stillExact=exactPatient(name,ctx.dob,ctx.patientId);
+    if(!stillExact||S(stillExact.id)!==S(p.id)){var pe=new Error('Op-note repair stopped because the patient changed during generation.');pe.code='MLS_OPNOTE_IDENTITY';throw pe;}
     var repairSys='Repair the draft so it follows the selected template exactly. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.';
-    var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
-    var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts)); repaired.note=forceFacts(repaired.note,facts); var check2=fidelity(repaired.note,tplText);
+    var frozenHistory=histBinding&&S(histBinding.context);
+    var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
+    opts.mlsOpNotePhase='repair';
+    var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
+    repaired.note=forceFacts(repaired.note,facts);
+    var check2=fidelity(repaired.note,tplText);
     if(!check2.pass){repaired.note=reanchor(repaired.note,tplText,facts);check2=fidelity(repaired.note,tplText);}
     if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     repaired.templateFidelity=check2;window.__mlsLastOpFidelityPass=true;return repaired;

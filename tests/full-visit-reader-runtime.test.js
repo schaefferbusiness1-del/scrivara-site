@@ -11,11 +11,11 @@ const visitsSource = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 const productionLoader = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const stagingLoader = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
 
-const visitCacheKey = 'feat_visits.js?v=20260714vis3r4';
-assert(productionLoader.includes(visitCacheKey), 'production must load the r3 visit model cache key');
-assert(stagingLoader.includes(visitCacheKey), 'staging must load the same r3 visit model cache key');
+const visitCacheKey = 'feat_visits.js?v=20260714vis3r5';
+assert(productionLoader.includes(visitCacheKey), 'production must load the r4 visit model cache key');
+assert(stagingLoader.includes(visitCacheKey), 'staging must load the same r4 visit model cache key');
 
-const start = background.indexOf('/* === MLS Assist visit-reader lineage (active: v2.9.19 r3)');
+const start = background.indexOf('/* === MLS Assist visit-reader lineage (active: v2.9.22 r4)');
 const end = background.indexOf('\n})();', start);
 assert(start >= 0 && end > start, 'all-visits reader IIFE not found');
 const readerSource = background.slice(start, end + '\n})();'.length);
@@ -25,13 +25,20 @@ for (const invariant of [
   'visitIdentityGate(frozenHint, identity)',
   "exec(emrId, [listFrame], ['identity', cfg])",
   "['click', cfg, i, expected]",
-  "['detail', cfg, i, expected]",
+  "['openDetailFrame', cfg, i, expected]",
+  "['detailFrame', cfg, i, expected]",
+  "['closeDetailFrame', cfg]",
+  'encounterDetailFrames(emrId, listFrame)',
+  'waitForDetailSurface(emrId, listFrame, true',
+  'coldRetryWaitMs',
+  'runBoundAttempt(coldRetryWaitMs)',
+  'retryCount: retryCount',
   "strategy: 'bound-click'",
   "reason: 'visits-time-budget-exceeded'",
   'maxEncountersByBudget: maxByBudget',
   'indexComplete: true, bodyComplete: bodyComplete',
   'authoritativeEmpty',
-  "res.readerVersion = '2.9.19-visits-r3'"
+  "res.readerVersion = '2.9.22-visits-r4-two-stage'"
 ]) assert(readerSource.includes(invariant), `missing full-detail reader invariant: ${invariant}`);
 
 assert(readerSource.includes('rich: false, indexOnly: true'), 'rich list rows must remain index-only');
@@ -69,6 +76,10 @@ assert.strictEqual(ambiguousEmpty.ok, false, 'unscoped/noise empty copy was trea
 
 function makeReader(options = {}) {
   const calls = [];
+  let detailOpen = false;
+  const cachedFrame = options.cachedFrame === true;
+  let detailDocVersion = 0;
+  const openAttempts = {};
   const defaultRows = [
     {
       index: 0, date: '01/02/2026', type: 'Office visit',
@@ -105,6 +116,13 @@ function makeReader(options = {}) {
           set: () => {}
         }
       },
+      webNavigation: {
+        getAllFrames: async () => (detailOpen || cachedFrame) ? [{
+          frameId: 9, parentFrameId: 5,
+          documentId: 'doc-' + detailDocVersion,
+          url: 'https://athenanet.athenahealth.com/encounter/summary?FROMSTREAMLINED=1&CROSSFRAMEID=test'
+        }] : []
+      },
       scripting: {
         executeScript: async details => {
           const op = details.args && details.args[0];
@@ -117,12 +135,33 @@ function makeReader(options = {}) {
             const binding = details.args[3];
             return [{ frameId: 5, result: { clicked: true, binding } }];
           }
-          if (op === 'detail') {
+          if (op === 'closeDetailFrame') {
+            detailOpen = false;
+            return [{ frameId: 5, result: { ok: true, closed: true } }];
+          }
+          if (op === 'detailSurfaceState') {
+            return [{ frameId: 5, result: { open: detailOpen, iframePresent: detailOpen || cachedFrame, iframeContract: detailOpen || cachedFrame } }];
+          }
+          if (op === 'openDetailFrame') {
+            const binding = details.args[3];
+            const index = Number(details.args[2]);
+            openAttempts[index] = (openAttempts[index] || 0) + 1;
+            if (options.coldSurfaceOnce === true && index === Number(options.coldSurfaceIndex || 0) && openAttempts[index] === 1) {
+              return [{ frameId: 5, result: { clicked: true, binding, stage: 'slideout-requested' } }];
+            }
+            detailOpen = true;
+            detailDocVersion++;
+            return [{ frameId: 5, result: { clicked: true, binding, stage: 'slideout-requested' } }];
+          }
+          if (op === 'detailFrameProbe') {
+            return [{ frameId: 9, result: { frameContract: true, sectionPresent: true, contentHash: 'body-' + detailDocVersion, len: 500 + detailDocVersion, ready: 'complete' } }];
+          }
+          if (op === 'detailFrame') {
             const i = details.args[2], binding = details.args[3];
             if (options.missingDetailIndex === i) return [{ frameId: 5, result: { fullDetail: false, indexOnly: true, raw: '02/03/2026 shell', reason: 'no-bound-clinical-detail', binding } }];
             const returned = options.badBindingIndex === i ? Object.assign({}, binding, { rowKey: 'enc:wrong' }) : binding;
             return [{ frameId: 5, result: {
-              fullDetail: true, indexOnly: false, binding: returned,
+              fullDetail: true, indexOnly: false, binding: returned, frameContract: true,
               raw: `HPI: encounter ${i}. Assessment: lumbar radiculopathy. Physical exam documented. Plan: continue treatment and follow-up.`,
               cpt: [], icd10: ['M54.16']
             } }];
@@ -149,13 +188,32 @@ function makeReader(options = {}) {
     [0, 1],
     'every rich or thin index row must be opened'
   );
-  assert(success.calls.filter(c => c.op === 'detail').every(c => Array.isArray(c.target.frameIds) && c.target.frameIds[0] === 5), 'details must be read only in the winning list frame');
+  assert(success.calls.filter(c => c.op === 'detailFrame').every(c => Array.isArray(c.target.frameIds) && c.target.frameIds[0] === 9), 'details must be read only in the uniquely created encounter-summary child frame');
+  assert.strictEqual(success.calls.filter(c => c.op === 'openDetailFrame').length, 2, 'every encounter must use the second-stage slideout trigger');
+  assert(success.calls.filter(c => c.op === 'closeDetailFrame').length >= 4, 'the encounter slideout must be cleaned before and after every read');
   assert.strictEqual(good.receipt.indexComplete, true);
   assert.strictEqual(good.receipt.bodyComplete, true);
   assert.strictEqual(good.receipt.fullDetail, true);
   assert.strictEqual(good.receipt.stableKeysComplete, true);
   assert.strictEqual(good.receipt.expected, 2);
   assert.strictEqual(good.receipt.parsed, 2);
+
+  const cached = makeReader({ cachedFrame: true });
+  const cachedGood = await cached.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
+  assert.strictEqual(cachedGood.ok, true, 'a safely reused hidden Athena encounter iframe must be accepted after its document changes');
+  assert.strictEqual(cachedGood.receipt.parsed, 2);
+
+  const cold = makeReader({ coldSurfaceOnce: true, coldSurfaceIndex: 0, waitMs: 300 });
+  const coldGood = await cold.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
+  assert.strictEqual(coldGood.ok, true, 'one cold briefing hydration delay must recover on the bounded same-row retry');
+  assert.strictEqual(coldGood.receipt.parsed, 2);
+  assert.strictEqual(coldGood.receipt.retryCount, 1, 'cold recovery receipt must report exactly one retry');
+  assert.deepStrictEqual(
+    cold.calls.filter(c => c.op === 'click').map(c => c.args[2]),
+    [0, 0, 1],
+    'cold recovery must re-click only the same frozen row before continuing'
+  );
+  assert.strictEqual(cold.calls.filter(c => c.op === 'openDetailFrame' && c.args[2] === 0).length, 2, 'cold row did not use exactly one second-stage retry');
 
   const unknownZero = makeReader({ rows: [] });
   const unknownEmpty = await unknownZero.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });
@@ -174,10 +232,10 @@ function makeReader(options = {}) {
   const wrong = makeReader({ identity: { name: 'Different Patient', dob: '01/02/1960', mrn: '1234', score: 50 } });
   const blocked = await wrong.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
   assert.strictEqual(blocked.ok, false);
-  assert.strictEqual(blocked.reason, 'same-frame-name-mismatch');
+  assert.strictEqual(blocked.reason, 'no-athena-tab', 'wrong-patient Athena tabs must be rejected during exact-tab selection');
   assert.strictEqual(wrong.calls.filter(c => c.op === 'click').length, 0, 'identity mismatch must block before encounter reads');
-  assert.strictEqual(blocked.receipt.indexComplete, true);
-  assert.strictEqual(blocked.receipt.bodyComplete, false);
+  assert.notStrictEqual(blocked.receipt.indexComplete, true);
+  assert.notStrictEqual(blocked.receipt.bodyComplete, true);
   assert.strictEqual(blocked.receipt.fullDetail, false);
 
   const thin = makeReader({ missingDetailIndex: 1 });

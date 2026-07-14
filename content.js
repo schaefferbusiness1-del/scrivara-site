@@ -245,16 +245,39 @@
     if (d.type === 'mlsAppReadChart') {
       try {
         var chartRequestId = mlsStr(d.requestId, 100);
-        chrome.runtime.sendMessage({
+        var chartPatient = mlsStr(d.patient, 200);
+        var chartDob = mlsStr(d.patientDob || d.dob, 20);
+        var chartMrn = mlsStr(d.patientMrn || d.mrn || d.athenaId, 40);
+        var chartMessage = {
           type: 'mlsAppChartRequest',
-          patient: mlsStr(d.patient, 200),
-          patientDob: mlsStr(d.patientDob || d.dob, 20),
-          patientMrn: mlsStr(d.patientMrn || d.mrn || d.athenaId, 40),
+          patient: chartPatient,
+          patientDob: chartDob,
+          patientMrn: chartMrn,
           patientId: mlsStr(d.patientId, 100),
           requestId: chartRequestId
-        }, function (resp) {
+        };
+        function finishChart(resp) {
           reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: chartRequestId, resp: resp || { error: 'no response' } });
-        });
+        }
+        function readPreopenedChart() {
+          chartMessage.preopened = true;
+          chrome.runtime.sendMessage(chartMessage, finishChart);
+        }
+        /* v2.9.22: named history reads must use the live-certified, DOB-gated
+           findpatient Chart opener before the reader settles the exact chart.
+           A generic visible-name click lands on Athena's exam-prep surface. */
+        if (chartPatient) {
+          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob }, function (opened) {
+            var openErr = chrome.runtime.lastError;
+            if (openErr || !opened || !opened.opened) {
+              finishChart({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient chart.' });
+              return;
+            }
+            readPreopenedChart();
+          });
+        } else {
+          chrome.runtime.sendMessage(chartMessage, finishChart);
+        }
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: mlsStr(d.requestId, 100), resp: { error: 'extension error' } }); }
     }
     /* v1.89: READ-ONLY, identity-gated read of the OPEN chart's left-rail
@@ -305,7 +328,7 @@
                    reports navigation. Run the established read-chart settle leg
                    before touching Visits; the visits driver still re-verifies the
                    requested name+DOB/MRN immediately before its rail click. */
-                chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: '' }, function (chartReady) {
+                chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: visitPatient, patientDob: visitDob, patientMrn: visitAthenaId, preopened: true }, function (chartReady) {
                   var chartErr = chrome.runtime.lastError;
                   if (chartErr || !chartReady || !chartReady.ok) {
                     finishVisits({ ok: false, reason: (chartReady && chartReady.reason) || 'chart-not-ready', error: (chartErr && chartErr.message) || (chartReady && chartReady.error) || 'The requested chart opened, but its identity banner did not become ready.' });

@@ -1,5 +1,5 @@
 {
-  "version": "2.9.21",
+  "version": "2.9.22",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.21 - Athena's legacy day grid now reads every explicit appointment row without a fragile text-length limit, excludes OPEN capacity slots, reconciles duplicate sort-mode containers, preserves provider identity and detailed visit reasons, and fails closed on unresolved patients. The packaged reader is regression-tested against the live 40-row shape: two copies of 18 real patients plus two OPEN slots per copy must resolve to exactly 18 patients."
+  "notes": "v2.9.22 - Named history reads now use the proven DOB-gated Athena patient opener before chart capture, bind chart and full-visit reads to the same exact Athena tab, retain name plus DOB/MRN fail-closed verification, and suppress repetitive per-patient zero-visit warnings during managed day/provider batches while preserving one honest final receipt."
 }

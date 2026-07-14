@@ -33,7 +33,7 @@ assert(calSource.includes("HISTORY_CHECK_ID = 'mlsCalProviderPullHistoryCheck'")
 assert(calSource.includes("(includeHistory() ? ' checked' : '')"), 'history checkbox must default from the safe default-on preference');
 assert(calSource.includes('includeHistory: withHistory'), 'calendar UI must freeze and route the checkbox value into the exact pull');
 assert(calSource.includes('Schedule-only complete:'), 'unchecked mode must report an honest schedule-only result');
-assert(loaderSource.includes('20260714si151p2'), 'production loader must cache-bust the exact-identity six-card history importer');
+assert(loaderSource.includes('20260714si151p3'), 'production loader must cache-bust the exact-identity six-card history importer');
 assert(loaderSource.includes('20260714cal130p1'), 'production loader must cache-bust the calendar provider pull UI');
 
 // Every roster normalizer runs before a provider-day pull. None may erase a
@@ -286,7 +286,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
     fetch: async (_url, init) => {
       if (!init || !init.method) return { ok: true, json: async () => ({ appointments: [] }) };
       savedBodies.push(JSON.parse(init.body));
-      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, id: `provider-day-backend-${savedBodies.length}` }) };
     }
   };
   rt.window = rt;
@@ -316,8 +316,8 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
       const event = { data: {
         source: 'mls-ext', type: 'mlsAppAllVisitsResult', ok: true,
         visits: [{ date: '2026-01-01', type: 'Office visit', raw: 'Verified old visit with substantive clinical detail for the regression.', fullDetail: true, sourceVisitKey: 'row:provider-day-1' }],
-        receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.19-visits-r3' },
-        readerVersion: '2.9.19-visits-r3', identity: { name: patient.name, dob: patient.dob, mrn: '' }
+        receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
+        readerVersion: '2.9.22-visits-r4-two-stage', identity: { name: patient.name, dob: patient.dob, mrn: '' }
       } };
       Array.from(listeners).forEach(fn => fn(event));
     });

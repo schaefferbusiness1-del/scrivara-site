@@ -554,7 +554,9 @@
       return [S(v.id), S(v.date), sigText(v.type), sigText(v.aiSummary), sigText(v.raw),
         sigText(v.findings), sigText(v.plan), (v.cpt || []).join(","), (v.icd10 || []).join(","),
         v.identityVerified === true ? "verified" : "unverified", S(v.identityBinding)].join(":");
-    }).join(",");
+    }).join(",") + "|semantic:" + S(p && p.historyImportReceipt && p.historyImportReceipt.complete) +
+      ":" + S(p && p.historyImportReceipt && p.historyImportReceipt.semanticCoverage &&
+        (p.historyImportReceipt.semanticCoverage.missedSections || []).join(","));
   }
 
   var _lastSig = "", _lastPid = "";
@@ -589,7 +591,9 @@
         if (!isFn(fn)) throw new Error("history summarizer unavailable");
         fn.call(MODEL(), p.id, function (m) { if (stEl) stEl.textContent = m; }).then(function (receipt) {
           if (receipt && receipt.ok === false) {
-            if (stEl) stEl.textContent = "Summary blocked because the imported visits are not identity-verified. Pull this chart again first.";
+            if (stEl) stEl.textContent = receipt.reason === "semantic-coverage-incomplete"
+              ? "History organization stopped because one or more labeled clinical sections could not be parsed completely. Existing profile data was preserved."
+              : "Summary blocked because the imported visits are not identity-verified. Pull this chart again first.";
             sumBtn.disabled = false; return;
           }
           if (stEl) stEl.textContent = "Verified visit summaries and patient profile sections are up to date.";
@@ -617,7 +621,9 @@
       collapseBtn.setAttribute("aria-expanded", f.collapsed ? "false" : "true");
     });
     var statusEl = document.createElement("div"); statusEl.className = "mlsxh-status"; content.appendChild(statusEl);
-    if (visits.length > usable.length) {
+    if (p.historyImportReceipt && p.historyImportReceipt.complete === false) {
+      statusEl.setAttribute("data-base-status", "History needs another verified pull: a labeled clinical section was not organized, and existing profile data was preserved.");
+    } else if (visits.length > usable.length) {
       statusEl.setAttribute("data-base-status", (visits.length - usable.length) + " older imported row(s) are visible for review but excluded from clinical summaries until a fresh identity-verified pull.");
     }
 

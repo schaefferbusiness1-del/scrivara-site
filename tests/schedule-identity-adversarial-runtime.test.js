@@ -88,8 +88,8 @@ context.postMessage = msg => {
       source: 'mls-ext', type: 'mlsAppAllVisitsResult', ok: true,
       identity: { name: target.name, dob: target.dob, mrn: target.mrn },
       visits: [{ date: '2026-01-01', type: 'Office visit', raw: 'A substantive verified encounter body used only by this regression test.', patientName: target.name, patientDob: target.dob, patientMrn: target.mrn, fullDetail: true, sourceVisitKey: 'row:schedule-identity-1' }],
-      receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.19-visits-r3' },
-      readerVersion: '2.9.19-visits-r3'
+      receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
+      readerVersion: '2.9.22-visits-r4-two-stage'
     } };
     Array.from(listeners).forEach(fn => fn(event));
   });

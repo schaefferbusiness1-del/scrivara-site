@@ -47,9 +47,11 @@
   var EST_TZ = "America/New_York";
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
+  var AUTHORITATIVE_SNAPSHOT_SUFFIX = "schedAuthoritativeDaysV1";
   var PENDING_TTL = 5 * 60 * 1000;
   var inFlight = {};
   var knownDays = {};
+  var authoritativeMemory = { v: 1, days: {} };
   var historyBatchRunning = false;
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -303,6 +305,120 @@
     if (old && old.state === "pending" && old.owner === owner) { delete x.rows[key]; writeIndex(day, x); }
     if (inFlight[key] === owner) delete inFlight[key];
   }
+  function clearDone(key, day, backendAppointmentId) {
+    var x = readIndex(day), old = x.rows[key];
+    if (!old || old.state !== "done") return false;
+    if (backendAppointmentId && String(old.backendAppointmentId || "") !== String(backendAppointmentId)) return false;
+    delete x.rows[key]; writeIndex(day, x); delete inFlight[key]; return true;
+  }
+
+  /* ---- authoritative Athena day/provider snapshots ------------------------
+   * The backend calendar is intentionally append/enrich-only because it can
+   * also contain manually entered MLS rows. A verified Athena pull therefore
+   * publishes a separate, account-local snapshot containing backend ids only
+   * (no names, DOBs, or other PHI). Schedule-facing UI may consume that exact
+   * slice while the raw calendar remains untouched. A snapshot is published
+   * only when every source row maps 1:1 to one unique backend appointment. */
+  function authoritativeKey() {
+    return safe(function () { return isFn(window.uns) ? window.uns(AUTHORITATIVE_SNAPSHOT_SUFFIX) : ""; }, "");
+  }
+  function readAuthoritativeStore() {
+    var k = authoritativeKey();
+    if (!k) return authoritativeMemory;
+    return safe(function () {
+      var x = JSON.parse(localStorage.getItem(k) || "null");
+      if (!x || x.v !== 1 || !x.days || typeof x.days !== "object") x = { v: 1, days: {} };
+      authoritativeMemory = x; return x;
+    }, authoritativeMemory);
+  }
+  function writeAuthoritativeStore(x) {
+    x = x && x.days ? x : { v: 1, days: {} };
+    authoritativeMemory = x;
+    var k = authoritativeKey(); if (!k) return;
+    safe(function () { localStorage.setItem(k, JSON.stringify(x)); });
+  }
+  function backendRowId(row) { return String(row && row.id != null ? row.id : "").trim(); }
+  function localDayOf(row) {
+    var d = normDate(row && row.appt_date); if (d) return d;
+    return safe(function () {
+      if (!row || !row.start_at) return "";
+      var x = new Date(row.start_at);
+      return x.getFullYear() + "-" + ("0" + (x.getMonth() + 1)).slice(-2) + "-" + ("0" + x.getDate()).slice(-2);
+    }, "");
+  }
+  function selectedSnapshot(day, rawProvider) {
+    var store = readAuthoritativeStore(), entry = store.days[String(day || "")] || null;
+    if (!entry) return null;
+    var req = providerRequest(rawProvider);
+    if (req.mode === "selected") return entry.providers && entry.providers[req.key] || null;
+    if (rawProvider != null && req.mode === "all") return entry.all || null;
+    if (entry.active && entry.active.mode === "provider") return entry.providers && entry.providers[entry.active.key] || null;
+    return entry.all || null;
+  }
+  function publishAuthoritativeSnapshot(input) {
+    input = input || {};
+    var date = normDate(input.date), scheduleReceipt = input.scheduleReceipt || null;
+    var providerReceipt = input.providerReceipt || null, calendarReceipt = input.calendarReceipt || null;
+    var req = providerRequest(input.provider), mappings = Array.isArray(input.resolvedAppointments) ? input.resolvedAppointments : [];
+    var expected = Number(calendarReceipt && calendarReceipt.attempted);
+    var out = { published: false, complete: false, date: date || "", scope: req.mode, providerKey: req.key || "", expected: isFinite(expected) ? expected : 0, mapped: mappings.length, reason: "unverified" };
+    if (!date || !scheduleReceipt || scheduleReceipt.complete !== true) { out.reason = "schedule-unverified"; return out; }
+    if (req.mode === "selected" && (!providerReceipt || providerReceipt.complete !== true)) { out.reason = "provider-unverified"; return out; }
+    if (!calendarReceipt || calendarReceipt.complete !== true || !isFinite(expected) || expected < 0) { out.reason = "calendar-unverified"; return out; }
+    if (expected > 0 && (!providerReceipt || providerReceipt.complete !== true)) { out.reason = "provider-unverified"; return out; }
+    var verifiedEmpty = scheduleReceipt.authoritativeEmpty === true || (req.mode === "selected" && providerReceipt && providerReceipt.reason === "provider-empty");
+    if (expected === 0 && !verifiedEmpty) { out.reason = "empty-unverified"; return out; }
+    var sourceSeen = {}, backendSeen = {}, backendIds = [];
+    for (var i = 0; i < mappings.length; i++) {
+      var sourceIdentity = String(mappings[i] && mappings[i].sourceIdentity || ""), backendId = String(mappings[i] && mappings[i].backendAppointmentId || "");
+      if (!sourceIdentity || !backendId || sourceSeen[sourceIdentity] || backendSeen[backendId]) { out.reason = "mapping-not-one-to-one"; return out; }
+      sourceSeen[sourceIdentity] = 1; backendSeen[backendId] = 1; backendIds.push(backendId);
+    }
+    if (mappings.length !== expected || backendIds.length !== expected) { out.reason = "mapping-incomplete"; return out; }
+    var store = readAuthoritativeStore(), entry = store.days[date] || { all: null, providers: {} };
+    if (!entry.providers || typeof entry.providers !== "object") entry.providers = {};
+    var snap = { v: 1, date: date, mode: req.mode, providerKey: req.key || "", backendIds: backendIds, sourceCount: expected, updated: Date.now() };
+    if (req.mode === "selected") { entry.providers[req.key] = snap; entry.active = { mode: "provider", key: req.key }; }
+    else { entry.all = snap; entry.active = { mode: "all", key: "" }; }
+    store.days[date] = entry;
+    var days = Object.keys(store.days).sort(function (a, b) {
+      var aa = store.days[a], bb = store.days[b];
+      var at = Number(aa && ((aa.all && aa.all.updated) || (aa.active && aa.providers && aa.providers[aa.active.key] && aa.providers[aa.active.key].updated)) || 0);
+      var bt = Number(bb && ((bb.all && bb.all.updated) || (bb.active && bb.providers && bb.providers[bb.active.key] && bb.providers[bb.active.key].updated)) || 0);
+      return at - bt;
+    });
+    while (days.length > 45) delete store.days[days.shift()];
+    writeAuthoritativeStore(store);
+    out.published = true; out.complete = true; out.reason = expected ? "exact" : "authoritative-empty";
+    out.backendCount = backendIds.length;
+    safe(function () {
+      window.__mlsSIAuthoritativeChangedAt = Date.now();
+      if (isFn(window.dispatchEvent) && typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("mls-authoritative-schedule", { detail: { date: date, scope: req.mode } }));
+    });
+    return out;
+  }
+  function authoritativeStatusForDay(day, rawProvider) {
+    day = normDate(day); var snap = selectedSnapshot(day, rawProvider);
+    var status = { available: false, exact: false, date: day || "", scope: snap && snap.mode || "", sourceCount: snap && Number(snap.sourceCount || 0) || 0, activeCount: 0, missingCount: 0, unclassifiedCount: 0, reason: snap ? "backend-rows-pending" : "no-snapshot" };
+    if (!snap) return status;
+    var wanted = {}, consumed = {}, byId = {}, ids = snap.backendIds || [], raw = Array.isArray(window._calAppts) ? window._calAppts : [], rows = [], unclassified = 0;
+    ids.forEach(function (id) { wanted[String(id)] = 1; });
+    raw.forEach(function (row) {
+      if (localDayOf(row) !== day) return;
+      var id = backendRowId(row);
+      if (id && wanted[id] && !consumed[id]) { consumed[id] = 1; byId[id] = row; }
+      else unclassified++;
+    });
+    ids.forEach(function (id) { if (byId[String(id)]) rows.push(byId[String(id)]); });
+    var missing = ids.filter(function (id) { return !consumed[String(id)]; }).length;
+    status.activeCount = rows.length; status.missingCount = missing; status.unclassifiedCount = unclassified;
+    status.available = missing === 0; status.exact = status.available; status.reason = status.available ? (ids.length ? "exact" : "authoritative-empty") : "backend-rows-pending";
+    status._rows = rows; return status;
+  }
+  function authoritativeRowsForDay(day, rawProvider) {
+    var status = authoritativeStatusForDay(day, rawProvider);
+    return status.available ? status._rows.slice() : null;
+  }
   function findPatient(pts, a) {
     var mrn = rowMrn(a), nk = normName(a && a.name), dk = normDob(a && a.dob), i, p;
     var localId = rowLocalPatientId(a);
@@ -400,6 +516,7 @@
         wrongDay: Number(wrongDay || 0), invalidDate: Number(invalidDate || 0),
         reason: reason || "empty", days: {}, target: normDate(opts.scopeDate || opts.date) || "",
         scope: normDate(opts.scopeDate) || "", historyTargets: [], historyUnresolved: [],
+        resolvedAppointments: [], unresolvedMappings: [],
         providerReceipt: providerReceipt || null };
     }
 
@@ -492,7 +609,7 @@
 
     var token = bkToken(), base = bkBase();
     var pts = (callG("getPatients") || []) || [];
-    var existingRows = {}, existingAmbiguous = {};
+    var existingRows = {}, existingAmbiguous = {}, backendById = {};
 
     function indexExisting(key, row) {
       if (!key || existingAmbiguous[key]) return;
@@ -504,10 +621,24 @@
 
     return safe(function () {
       return fetch(base + "/api/appointments", { headers: { Authorization: "Bearer " + token } })
-        .then(function (r) { return r.ok ? r.json() : { appointments: [] }; })
-        .catch(function () { return { appointments: [] }; });
-    }, Promise.resolve({ appointments: [] })).then(function (ed) {
+        .then(function (r) {
+          if (!r.ok) return { appointments: [], __mlsVerified: false, status: Number(r.status || 0) };
+          return Promise.resolve(r.json()).then(function (data) {
+            data = data && typeof data === "object" ? data : { appointments: [] };
+            data.__mlsVerified = true; return data;
+          });
+        })
+        .catch(function () { return { appointments: [], __mlsVerified: false }; });
+    }, Promise.resolve({ appointments: [], __mlsVerified: false })).then(function (ed) {
+      if (!ed || ed.__mlsVerified !== true) {
+        return { created: 0, repaired: 0, enrichedFields: 0, skipped: 0, failed: appts.length, attempted: appts.length,
+          wrongDay: wrongDay, invalidDate: invalidDate, reason: "calendar-read-unverified", days: {}, target: target,
+          scope: scopeDate || "", historyTargets: [], historyUnresolved: [], resolvedAppointments: [],
+          unresolvedMappings: appts.map(function (a) { return { sourceIdentity: importKey(a, a._date || normDate(a.date) || target, normTime(a.time)), reason: "calendar-read-unverified", date: a._date || normDate(a.date) || target }; }),
+          providerReceipt: providerScope.receipt };
+      }
       (ed.appointments || []).forEach(function (x) {
+        var rawBackendId = backendRowId(x); if (rawBackendId) backendById[rawBackendId] = x;
         var lt = ""; safe(function () { if (x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); });
         var ld = x.appt_date || ""; if (!ld) safe(function () { if (x.start_at) { var dd = new Date(x.start_at); ld = dd.getFullYear() + "-" + ("0" + (dd.getMonth() + 1)).slice(-2) + "-" + ("0" + dd.getDate()).slice(-2); } });
         var linked = null;
@@ -533,6 +664,16 @@
       });
 
       var created = 0, repaired = 0, enrichedFields = 0, skipped = 0, failed = 0, days = {};
+      var resolvedAppointments = [], unresolvedMappings = [];
+      function recordResolution(sourceIdentity, backendAppointmentId, date, kind) {
+        sourceIdentity = String(sourceIdentity || ""); backendAppointmentId = String(backendAppointmentId || "");
+        if (!sourceIdentity || !backendAppointmentId) {
+          unresolvedMappings.push({ sourceIdentity: sourceIdentity, reason: !sourceIdentity ? "source-identity-missing" : "backend-id-missing", date: String(date || "") });
+          return false;
+        }
+        resolvedAppointments.push({ sourceIdentity: sourceIdentity, backendAppointmentId: backendAppointmentId, date: String(date || ""), kind: String(kind || "existing") });
+        return true;
+      }
       /* Bind every imported/skipped appointment to one immutable MLS patient
          before any asynchronous chart work begins. The history pipeline uses
          these IDs (plus DOB/MRN proof), never a later name-only lookup. */
@@ -693,6 +834,7 @@
                 if (rr.ok) {
                   enrichKeys.forEach(function (field) { oldRow[field] = enrich[field]; });
                   markDone(ledgerKey, { patientId: ext || oldRow.patient_external_id || "", backendAppointmentId: oldRow.id, date: date });
+                  if (!recordResolution(ledgerKey, oldRow.id, date, "repaired")) { failed++; return; }
                   enrichedFields += enrichKeys.length;
                   repaired++; days[date] = (days[date] || 0) + 1;
                   if (onEach) safe(function () { onEach("repaired", { name: name, fields: enrichKeys.slice() }); });
@@ -705,14 +847,34 @@
                 if (onEach) safe(function () { onEach("error", { name: name, error: "network" }); });
               });
             }
-            markDone(ledgerKey, { patientId: ext || (oldRow && oldRow.patient_external_id) || "", backendAppointmentId: oldRow && oldRow.id, date: date }); skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return;
+            markDone(ledgerKey, { patientId: ext || (oldRow && oldRow.patient_external_id) || "", backendAppointmentId: oldRow && oldRow.id, date: date });
+            if (!recordResolution(ledgerKey, oldRow && oldRow.id, date, "existing")) { failed++; if (onEach) safe(function () { onEach("error", { name: name, error: "backend-id-missing" }); }); return; }
+            skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); }); return;
           }
           var owner = claim(ledgerKey, { date: date });
           if (!owner) {
             var ledgerState = safe(function () { return readIndex(date).rows[ledgerKey] || null; }, null);
             if (ledgerState && ledgerState.state === "done") {
-              queueHistory(a, existing, date, null); skipped++;
-              if (onEach) safe(function () { onEach("skipped", { name: name }); });
+              var ledgerBackendId = String(ledgerState.backendAppointmentId || ""), ledgerBackend = backendById[ledgerBackendId] || null;
+              if (ledgerBackend && localDayOf(ledgerBackend) === date) {
+                queueHistory(a, existing, date, ledgerBackend);
+                if (recordResolution(ledgerKey, ledgerBackendId, date, "ledger-existing")) {
+                  skipped++; if (onEach) safe(function () { onEach("skipped", { name: name }); });
+                } else failed++;
+                return;
+              }
+              if (ledgerBackend) {
+                failed++;
+                unresolvedMappings.push({ sourceIdentity: ledgerKey, reason: "ledger-backend-day-mismatch", date: date });
+                if (onEach) safe(function () { onEach("error", { name: name, error: "ledger-backend-day-mismatch" }); });
+                return;
+              }
+              /* A done ledger entry is only evidence when its backend id is
+                 present in the fresh appointment GET. Clear a missing target
+                 and reclaim this identity; otherwise stale browser storage
+                 falsely reports a complete day forever. */
+              clearDone(ledgerKey, date, ledgerBackendId);
+              owner = claim(ledgerKey, { date: date });
             } else {
               /* A pending/unknown ledger row is not an imported appointment.
                  Mark the calendar partial and do not repeat the old bug where
@@ -720,7 +882,7 @@
               failed++;
               if (onEach) safe(function () { onEach("error", { name: name, error: "import-in-flight" }); });
             }
-            return;
+            if (!owner) return;
           }
           var startIso = desiredStart;
           /* FIX 2026-07-01: carry the per-appointment PROVIDER into storage. The extension
@@ -741,6 +903,15 @@
                 return Promise.resolve(safe(function () { return isFn(r.json) ? r.json() : null; }, null)).catch(function () { return null; }).then(function (saved) {
                   var backendAppointmentId = String((saved && (saved.id || (saved.appointment && saved.appointment.id) || (saved.data && saved.data.id))) || "");
                   markDone(ledgerKey, { patientId: ext, backendAppointmentId: backendAppointmentId, date: date });
+                  if (!backendAppointmentId) {
+                    unresolvedMappings.push({ sourceIdentity: ledgerKey, reason: "backend-id-missing", date: date }); failed++;
+                    if (onEach) safe(function () { onEach("error", { name: name, error: "backend-id-missing" }); });
+                    return;
+                  }
+                  var savedRow = {}; for (var sk in body) if (body.hasOwnProperty(sk)) savedRow[sk] = body[sk];
+                  if (saved && typeof saved === "object") for (var rk in saved) if (saved.hasOwnProperty(rk)) savedRow[rk] = saved[rk];
+                  savedRow.id = backendAppointmentId; backendById[backendAppointmentId] = savedRow; existingRows[ledgerKey] = savedRow;
+                  recordResolution(ledgerKey, backendAppointmentId, date, "created");
                   queueHistory(a, existing, date, null); created++; days[date] = (days[date] || 0) + 1;
                   if (onEach) safe(function () { onEach("saved", { name: name }); });
                 });
@@ -793,7 +964,7 @@
           safe(function () { if (window.__mlsPick && isFn(window.__mlsPick.reapply)) window.__mlsPick.reapply(); });
           safe(function () { if (window.__mlsAsst && isFn(window.__mlsAsst._renderSchedule)) window.__mlsAsst._renderSchedule(); });
           safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
-          return { created: created, repaired: repaired, enrichedFields: enrichedFields, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, providerReceipt: providerScope.receipt };
+          return { created: created, repaired: repaired, enrichedFields: enrichedFields, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, providerReceipt: providerScope.receipt };
         });
       });
     });
@@ -978,8 +1149,8 @@
     if (!proof) throw new Error("visits-identity-proof-failed");
     var expected = Number(r && r.receipt && r.receipt.expected), parsed = Number(r && r.receipt && r.receipt.parsed);
     var readerVersion = String(r && r.readerVersion || ""), receiptReaderVersion = String(r && r.receipt && r.receipt.readerVersion || "");
-    var provenR3 = /^2\.9\.19-visits-r3$/.test(readerVersion) && receiptReaderVersion === readerVersion;
-    if (!r.receipt || r.receipt.complete !== true || r.receipt.indexComplete !== true || r.receipt.bodyComplete !== true || r.receipt.fullDetail !== true || r.receipt.stableKeysComplete !== true || !provenR3 || expected < 0 || parsed !== expected) throw new Error("visits-full-detail-unproven");
+    var provenReader = /^2\.9\.22-visits-r4-two-stage$/.test(readerVersion) && receiptReaderVersion === readerVersion;
+    if (!r.receipt || r.receipt.complete !== true || r.receipt.indexComplete !== true || r.receipt.bodyComplete !== true || r.receipt.fullDetail !== true || r.receipt.stableKeysComplete !== true || !provenReader || expected < 0 || parsed !== expected) throw new Error("visits-full-detail-unproven");
     if (expected === 0 && r.receipt.authoritativeEmpty !== true) throw new Error("visits-empty-unproven");
     var p = patientById(target.patientId), cv = window.__mlsCopyVisits, vm = window.__mlsVisitModel, visits = Array.isArray(r.visits) ? r.visits : [];
     if (visits.length !== parsed) throw new Error("visits-count-mismatch");
@@ -1165,7 +1336,19 @@
               return fail(providerReason, { scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, retry: { schedule: true, provider: selectedProvider.name } });
             }
             var attempted = Number(res.attempted != null ? res.attempted : rows.length), accounted = Number(res.created || 0) + Number(res.repaired || 0) + Number(res.skipped || 0);
-            var calendarReceipt = { complete: Number(res.failed || 0) === 0 && Number(res.wrongDay || 0) === 0 && Number(res.invalidDate || 0) === 0 && accounted >= attempted, attempted: attempted, accounted: accounted, created: Number(res.created || 0), repaired: Number(res.repaired || 0), skipped: Number(res.skipped || 0), failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0) };
+            var mappings = Array.isArray(res.resolvedAppointments) ? res.resolvedAppointments : [];
+            var uniqueSources = {}, uniqueBackend = {};
+            mappings.forEach(function (m) {
+              var sk = String(m && m.sourceIdentity || ""), bk = String(m && m.backendAppointmentId || "");
+              if (sk) uniqueSources[sk] = 1; if (bk) uniqueBackend[bk] = 1;
+            });
+            var mappingComplete = mappings.length === attempted && Object.keys(uniqueSources).length === attempted && Object.keys(uniqueBackend).length === attempted && !(res.unresolvedMappings && res.unresolvedMappings.length);
+            var calendarReceipt = { complete: Number(res.failed || 0) === 0 && Number(res.wrongDay || 0) === 0 && Number(res.invalidDate || 0) === 0 && accounted === attempted && mappingComplete, attempted: attempted, accounted: accounted, mapped: mappings.length, uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length, mappingComplete: mappingComplete, unresolvedMappings: Number(res.unresolvedMappings && res.unresolvedMappings.length || 0), created: Number(res.created || 0), repaired: Number(res.repaired || 0), skipped: Number(res.skipped || 0), failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0) };
+            var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: opts.provider, scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
+            calendarReceipt.snapshotPublished = snapshotReceipt.published === true;
+            calendarReceipt.snapshotReason = snapshotReceipt.reason;
+            if (calendarReceipt.complete && !calendarReceipt.snapshotPublished) calendarReceipt.complete = false;
+            res.authoritativeSnapshot = snapshotReceipt;
             if (res.created > 0 || res.repaired > 0) {
               var parts = [];
               if (res.created > 0) parts.push("added " + res.created + " appointment" + (res.created === 1 ? "" : "s"));
@@ -1229,9 +1412,21 @@
     window.__mlsSI.installed = false;
   }
 
+  function loadAuthoritativeNextUpConsumer() {
+    safe(function () {
+      if (window.__mlsNextUp && window.__mlsNextUp.version === "nextup-2.0.0") return;
+      if (document.querySelector('script[data-mls-asset="feat_nextup_connect.js"]')) return;
+      var s = document.createElement("script");
+      s.src = "feat_nextup_connect.js?v=20260714auth1";
+      s.async = false; s.setAttribute("data-mls-asset", "feat_nextup_connect.js");
+      (document.head || document.documentElement).appendChild(s);
+    });
+  }
+
   function boot() {
     safe(function () { window.addEventListener("message", onSchedMsg); });
     installImport();
+    loadAuthoritativeNextUpConsumer();
     /* a light retry in case a later module re-wraps _importPulledSchedule after us */
     var n = 0, iv = setInterval(function () { installImport(); if (++n > 8) clearInterval(iv); }, 1200);
   }
@@ -1249,6 +1444,14 @@
     _patientIdentity: patientIdentity,
     _appointmentIdentity: appointmentIdentity,
     _findPatient: findPatient,
+    authoritativeRowsForDay: authoritativeRowsForDay,
+    authoritativeStatusForDay: function (day, provider) {
+      var s = authoritativeStatusForDay(day, provider), out = {};
+      for (var k in s) if (s.hasOwnProperty(k) && k !== "_rows") out[k] = s[k];
+      return out;
+    },
+    _publishAuthoritativeSnapshot: publishAuthoritativeSnapshot,
+    _clearLedgerDone: clearDone,
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,
     _lastResp: function () { return lastResp; },
