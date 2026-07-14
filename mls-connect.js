@@ -3473,7 +3473,18 @@
   var api = { version: '1.1.0', running: null, latestJson: null, renders: 0 };
   var ROW = 'mlsExtVerLiveRow';
 
-  function verNum(v) { var m = String(v == null ? '' : v).match(/(\d+)\.(\d+)/); return m ? (parseInt(m[1], 10) * 1000 + parseInt(m[2], 10)) : null; }
+  function verCmp(a, b) {
+    a = String(a == null ? '' : a).trim();
+    b = String(b == null ? '' : b).trim();
+    if (!/^\d+(?:\.\d+){0,3}$/.test(a) || !/^\d+(?:\.\d+){0,3}$/.test(b)) return null;
+    var aa = a.split('.'), bb = b.split('.'), n = Math.max(aa.length, bb.length);
+    for (var i = 0; i < n; i++) {
+      var av = parseInt(aa[i] || '0', 10), bv = parseInt(bb[i] || '0', 10);
+      if (av > bv) return 1;
+      if (av < bv) return -1;
+    }
+    return 0;
+  }
   function ping(cb) {
     var done = false;
     function on(e) {
@@ -3553,8 +3564,8 @@
           }
           var html;
           if (v) {
-            var vn = verNum(v), ln = verNum(lv);
-            var upToDate = (vn != null && ln != null) ? (vn >= ln) : null;
+            var vc = verCmp(v, lv);
+            var upToDate = vc == null ? null : vc >= 0;
             html = '\ud83d\udd0e <b>Running in this browser right now: v' + String(v).replace(/</g, '&lt;') + '</b>';
             if (upToDate === true) html += ' \u2014 \u2705 up to date.';
             else if (upToDate === false) html += ' \u2014 an update (v' + String(lv).replace(/</g, '&lt;') + ') is available above.';
@@ -5689,6 +5700,36 @@
       return !!(cb && /recording|stop visit|stop recording/i.test(cb.textContent || ''));
     } catch (e) { return false; }
   }
+  function verifiedActivePatient() {
+    try {
+      var p = typeof window.activePatient === 'function' ? window.activePatient() : null;
+      if (!p || p.id == null || !(p.name || '').trim()) return null;
+      if (typeof window.getActivePtId === 'function' && String(window.getActivePtId() || '') !== String(p.id)) return null;
+      return p;
+    } catch (e) { return null; }
+  }
+  function nativeDoctorScreen() {
+    try {
+      var api = window.__mlsEasyV32 || window.__mlsEasyV31 || window.__mlsEasyV3;
+      var s = api && typeof api.state === 'function' ? api.state() : null;
+      return !!(s && s.mode === 'doctor' && s.screen === 'doctor');
+    } catch (e) { return false; }
+  }
+  function segmentApi() {
+    try { return window.__mlsRecSegments && window.__mlsRecSegments.installed ? window.__mlsRecSegments : null; } catch (e) { return null; }
+  }
+  var _topSegmentStopIv = null;
+  function finishTopSegmentAfterStop() {
+    var seg = segmentApi();
+    if (!seg || typeof seg.stopSegment !== 'function' || !(typeof seg.isArmed === 'function' && seg.isArmed())) return;
+    if (_topSegmentStopIv) clearInterval(_topSegmentStopIv);
+    var at = Date.now();
+    _topSegmentStopIv = setInterval(function () {
+      if (recordingNow() && Date.now() - at < 120000) return;
+      clearInterval(_topSegmentStopIv); _topSegmentStopIv = null;
+      if (!recordingNow()) { try { seg.stopSegment(); } catch (e) {} }
+    }, 150);
+  }
   function flowToast(msg, kind) {
     try {
       if (typeof window.toast === 'function') { window.toast(msg, kind || ''); return; }
@@ -5704,7 +5745,24 @@
   function toggleTopRecording() {
     var cb = $('captureBtn');
     if (!cb) { flowToast('The recorder is still loading. Try again in a moment.', 'err'); return; }
-    try { cb.click(); } catch (e) { flowToast('The recorder could not start. Please try again.', 'err'); }
+    var live = recordingNow();
+    if (!live) {
+      var patient = verifiedActivePatient();
+      if (!patient) {
+        flowToast('Choose a patient first so this recording is locked to the correct chart.', 'err');
+        return;
+      }
+      var seg = segmentApi();
+      try {
+        if (seg && typeof seg.isArmed === 'function' && seg.isArmed() && typeof seg.stopSegment === 'function') seg.stopSegment();
+        if (seg && typeof seg.startSegment === 'function') {
+          if (!seg.startSegment('visit')) { flowToast('The recorder could not start. Your existing transcript is safe.', 'err'); return; }
+        } else cb.click();
+      } catch (e) { flowToast('The recorder could not start. Please try again.', 'err'); return; }
+    } else {
+      try { cb.click(); finishTopSegmentAfterStop(); }
+      catch (e2) { flowToast('The recorder could not stop. Please try again.', 'err'); return; }
+    }
     setTimeout(function () { syncTopLane(document.querySelector('.ez3fl-record')); }, 250);
     setTimeout(function () { syncTopLane(document.querySelector('.ez3fl-record')); }, 900);
   }
@@ -5788,7 +5846,11 @@
     if (!staff) {
       /* (1a) Complete primary workflow: record, stop/resume, edit transcript,
          generate and edit the note without opening the optional workspace. */
-      if (!body.querySelector('.ez3fl-record')) {
+      var nativeDoctor = nativeDoctorScreen();
+      if (nativeDoctor) {
+        try { body.querySelectorAll('.ez3fl-record').forEach(function (n0) { n0.remove(); }); } catch (e0) {}
+      }
+      if (!nativeDoctor && !body.querySelector('.ez3fl-record')) {
         var wrap = body.querySelector('#ez3Wrap');
         var row2 = wrap ? wrap.querySelector('.ez3-row2') : null;
         if (wrap && row2) {
@@ -5802,7 +5864,7 @@
           rb.addEventListener('click', toggleTopRecording);
           var ob = document.createElement('button');
           ob.type = 'button'; ob.className = 'ez3fl-openws';
-          ob.innerHTML = 'Open visit workspace';
+          ob.innerHTML = 'Advanced visit workspace';
           ob.title = 'Type or paste a transcript, edit the note, use the Athena tools';
           ob.addEventListener('click', openWorkspace);
           var gb = document.createElement('button');
@@ -5862,7 +5924,7 @@
           wrap.insertBefore(rec, row2);
           syncTopLane(rec);
         }
-      } else {
+      } else if (!nativeDoctor) {
         syncTopLane(body.querySelector('.ez3fl-record'));
       }
       /* (1a1b) the home status line duplicated the banner strip's seen-count
@@ -6023,6 +6085,7 @@
       try { if (_obs) _obs.disconnect(); } catch (e) {}
       try { if (_iv) clearInterval(_iv); } catch (e) {}
       try { if (_laneIv) clearInterval(_laneIv); } catch (e) {}
+      try { if (_topSegmentStopIv) clearInterval(_topSegmentStopIv); } catch (e) {}
       try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
       try { window.__mlsEz3Flow.installed = false; } catch (e) {}
     }
@@ -35438,7 +35501,8 @@
       var spans = document.getElementsByTagName('span'), did = false;
       for (var i = 0; i < spans.length; i++) {
         var s = spans[i], t = (s.textContent || '').trim();
-        if (!/^(?:Latest|Installed):\s*v?\d/i.test(t)) continue;   // a "Latest/Installed: vX.Y" badge
+        var marked = s.getAttribute('data-mls-extension-version') === '1';
+        if (!marked && !/^(?:Latest|Installed):\s*v?\d/i.test(t)) continue;   // version badge or its no-number fallback
         var p = s, ok = false;                            // confirm it's the MLS Assist extension card
         for (var j = 0; j < 4 && p && p !== document.body && p !== document.documentElement; j++) {
           if (/MLS Assist browser extension/i.test(p.textContent || '')) { ok = true; break; }
@@ -37697,7 +37761,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260711afx3c1';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2c1';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2c1';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260713cv2112c1';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260713cv2113c1';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260625chk1c1';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3c1';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
@@ -38885,7 +38949,7 @@
 
 ;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260712sc11c1';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.1.0 fallback loader; normal builds install the cache at byte zero before boot work */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v=20260711pcs1c1';s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 6: per-patient Copilot conversation isolation + identity confirm (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260713rs110';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260713rs111';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260711ne1c1';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=wbs100c1-B177';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100c1';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
@@ -38894,7 +38958,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260712opnp3c1';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legalpack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legalpack.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_mls_legalpack.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS - legal full-history workflow + medical-legal narrative generator (Tasks 13+14; additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v=20260713da2';s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.0.0, mic chip on focus, insert-at-caret, zero observers) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v=20260713da101';s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.0.1, mic chip on focus, insert-at-caret, zero observers) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260713sg2d';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260713lb3';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calm loading vocabulary: slim working bar driven by real /api fetches + .mls-skel shimmer (window.__mlsLoadingCalm lb-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_staff_hub.js"]'))return;var s=document.createElement('script');s.src='feat_mls_staff_hub.js?v=20260713sh1';s.setAttribute('data-mls-asset','feat_mls_staff_hub.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE staff-account system: Practice-staff card in Team (roles explained, real receptionist provisioning adopted), duplicate assistant-panel month-pull retired (window.__mlsStaffHub sh-1.0.0) */

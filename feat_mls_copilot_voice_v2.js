@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.0.0)
+ * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.1.3)
  * ---------------------------------------------------------------------------
  * REPLACES the b39 "MLS Copilot Voice" button (window.__mlsCopilotVoiceB39,
  * bundle-inline) with a version that ACTUALLY WORKS as continuous hands-free
@@ -107,7 +107,7 @@
   /* cv2-1.1.1: intent replies echo into the shared conversation thread (chat feel on
    *   both surfaces, not toast-only), and speech output only plays while voice mode is
    *   actually listening (typed commands no longer talk back unexpectedly). */
-  var VERSION = 'cv2-1.1.2';
+  var VERSION = 'cv2-1.1.3';
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -152,8 +152,25 @@
   var enabled = false;         /* user has toggled listening on */
   var rec = null;
   var deniedPermanently = false;
+  var unregisterSpeech = null;
 
   function SR() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+  function speechHub() {
+    try { if (typeof window.mlsSpeechHub === 'function') return window.mlsSpeechHub(); } catch (e) {}
+    try { if (window.__mlsSpeechHub && isFn(window.__mlsSpeechHub.claim)) return window.__mlsSpeechHub; } catch (e2) {}
+    return null;
+  }
+  function registerSpeech() {
+    var h = speechHub();
+    if (!h || unregisterSpeech) return h;
+    unregisterSpeech = h.register('copilot', 'MLS Copilot Voice', function () {
+      enabled = false;
+      stopRec();
+      paintBtn($(BTN_ID));
+    });
+    return h;
+  }
+  function releaseSpeech() { safe(function () { var h = speechHub(); if (h) h.release('copilot'); }); }
 
   function paintBtn(btn) {
     if (!btn) return;
@@ -184,7 +201,19 @@
       speak('Voice control needs Chrome or Edge.');
       return false;
     }
-    rec = new Ctor();
+    var h = registerSpeech();
+    var lease = h ? h.claim('copilot') : { ok: true, previous: null };
+    if (!lease || lease.ok === false) {
+      toast('Copilot Voice could not take control of the microphone. Try again.');
+      return false;
+    }
+    if (lease.previous) toast('Stopped ' + lease.previous.label + ' so Copilot Voice can use the microphone. Any visit transcript already captured is safe.');
+    try { rec = new Ctor(); }
+    catch (e0) {
+      rec = null; releaseSpeech();
+      toast('Copilot Voice could not create the microphone listener. Try again.');
+      return false;
+    }
     rec.lang = 'en-US';
     rec.continuous = true;
     rec.interimResults = false;
@@ -201,6 +230,7 @@
       var err = ev && ev.error;
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         deniedPermanently = true; enabled = false;
+        releaseSpeech(); rec = null;
         toast('Microphone was blocked. Allow mic access for this site, then click MLS Copilot Voice again.');
         speak('Microphone access is blocked. Please allow it, then try again.');
         paintBtn($(BTN_ID));
@@ -209,6 +239,7 @@
       if (err === 'no-speech') { return; } /* keep listening, this is normal and expected */
       if (err === 'audio-capture') {
         enabled = false;
+        releaseSpeech(); rec = null;
         toast('No microphone found -- check your input device, then try again.');
         paintBtn($(BTN_ID));
         return;
@@ -217,15 +248,29 @@
     };
     rec.onend = function () {
       if (enabled && !deniedPermanently) {
-        setTimeout(function () { safe(function () { if (enabled) rec.start(); }); }, 250);
+        setTimeout(function () {
+          if (!enabled || !rec) return;
+          try { rec.start(); }
+          catch (e) {
+            enabled = false; rec = null; releaseSpeech();
+            toast('Copilot Voice could not restart the microphone. Wait a moment, then tap it again.');
+            paintBtn($(BTN_ID));
+          }
+        }, 250);
       }
     };
-    safe(function () { rec.start(); });
+    try { rec.start(); }
+    catch (e1) {
+      rec = null; releaseSpeech();
+      toast('Copilot Voice could not start the microphone. Wait a moment, then tap it again.');
+      return false;
+    }
     return true;
   }
   function stopRec() {
     safe(function () { if (rec) { rec.onend = null; rec.stop(); } });
     rec = null;
+    releaseSpeech();
   }
 
   function setEnabled(on, btn) {
@@ -293,12 +338,93 @@
     analysis: 'analysis', stats: 'analysis', statistics: 'analysis',
     studio: 'studio', ai: 'studio'
   };
+  function latestSavedNote() {
+    var ap = safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null);
+    if (!ap || ap.id == null) return null;
+    var notes = safe(function () {
+      if (isFn(window.patientNotes)) return window.patientNotes(ap.id) || [];
+      if (isFn(window.getNotes)) return (window.getNotes() || []).filter(function (n) { return String(n.patientId || '') === String(ap.id); });
+      return [];
+    }, []) || [];
+    notes = notes.slice().sort(function (a, b) { return Number(b.updated || b.created || 0) - Number(a.updated || a.created || 0); });
+    /* Prefer an actual generated/saved note over a newer transcript-only draft.
+       A draft is still a useful fallback when it is all this patient has. */
+    var finished = notes.filter(function (n) { return n && !n.isDraft; });
+    if (finished.length) notes = finished;
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i] || {};
+      var text = S(n.soap || n.text || n.note || n.transcript || '').trim();
+      if (text) return { text: text, patient: S(ap.name || n.patient || ''), draft: !!n.isDraft };
+    }
+    return null;
+  }
   function readNoteAloud() {
     var box = $('noteBox');
     var text = box ? S(box.value).trim() : '';
-    if (!text) { toast('There is no note yet to read back -- generate one first.'); speak('There is no note yet to read back.'); return; }
-    toast('Reading the note aloud.');
+    var saved = null;
+    if (!text) { saved = latestSavedNote(); text = saved ? saved.text : ''; }
+    if (!text) { toast('There is no current or saved note for this patient to read back.'); speak('There is no current or saved note for this patient to read back.'); return false; }
+    toast(saved ? 'Reading the latest saved note for ' + (saved.patient || 'this patient') + '.' : 'Reading the current note aloud.');
     speak(text.slice(0, 4000));
+    return true;
+  }
+
+  function visitRecordingNow() {
+    return safe(function () {
+      if (typeof capturing !== 'undefined' && capturing) return true;
+      var b = $('captureBtn');
+      return !!(b && (b.classList.contains('recording') || /recording|stop visit|stop recording/i.test(b.textContent || '')));
+    }, false);
+  }
+  function monitorVoiceGeneration(before) {
+    var started = Date.now(), iv = setInterval(function () {
+      var gb = $('genBtn');
+      if (gb && gb.disabled) {
+        if (Date.now() - started < 120000) return;
+        clearInterval(iv);
+        speakToast('The note is still generating. Keep this page open and watch the status message.');
+        return;
+      }
+      clearInterval(iv);
+      var after = S(($('noteBox') || {}).value || '').trim();
+      if (after && after !== before) speakToast('The note is ready. Review it before signing or sending anything.');
+      else if (!after) speakToast('Generation ended without a note. Check the on-screen status, then try again.');
+      else speakToast('Generation finished, but the note text did not change. Review the on-screen status before continuing.');
+    }, 500);
+  }
+  function requestVoiceGeneration() {
+    if (visitRecordingNow()) {
+      speakToast('Stop recording first. Your transcript will stay safe, then say "generate the note" again.');
+      return 'fail';
+    }
+    var transcript = S(($('transcript') || {}).value || '').trim();
+    if (!transcript) {
+      speakToast('There is no visit text yet. Record, dictate, type, or paste the visit first.');
+      return 'fail';
+    }
+    var gb = $('genBtn');
+    if (!isFn(window.generateNote) || !gb || gb.disabled) {
+      speakToast(gb && gb.disabled ? 'A note is already generating. Wait for it to finish.' : 'Note generation is not ready yet. Try again in a moment.');
+      return 'fail';
+    }
+    var before = S(($('noteBox') || {}).value || '').trim();
+    try { window.generateNote(); }
+    catch (e) {
+      speakToast('The note could not start generating. Your transcript is still safe.');
+      return 'fail';
+    }
+    var after = S(($('noteBox') || {}).value || '').trim();
+    if (gb.disabled) {
+      speakToast('Note generation started from the saved transcript.');
+      monitorVoiceGeneration(before);
+      return 'ok';
+    }
+    if (after && after !== before) {
+      speakToast('The note is ready. Review it before signing or sending anything.');
+      return 'ok';
+    }
+    speakToast('Note generation did not start. Check the on-screen message or account settings, then try again.');
+    return 'fail';
   }
 
   /* ---------------- cv2-1.1.0: smart patient matching + verified open ---------------- */
@@ -424,9 +550,7 @@
   function legGenerate(q) {
     if (!/^(?:please\s+)?(?:generate|write|create|make)(?:\s+(?:the|my|a))?\s+note$/i.test(S(q).trim())) return false;
     safe(function () { if (isFn(window.showView)) window.showView('visit'); });
-    safe(function () { if (isFn(window.generateNote)) window.generateNote(); });
-    speakToast('Generating the note from your recording.');
-    return true;
+    return requestVoiceGeneration();
   }
   function legNavigate(q) {
     var m = S(q).trim().match(/^(?:please\s+)?(?:go to|open|show|navigate to)\s+(?:the\s+)?([a-z ]+?)(?:\s+tab| view)?$/i);
@@ -451,7 +575,7 @@
     r = legOpenPatient(text); if (r) return r === 'ok' ? 'ok' : 'fail';
     r = legRecordNow(text); if (r) return r === 'ok' ? 'ok' : 'fail';
     if (legStop(text)) return 'ok';
-    if (legGenerate(text)) return 'ok';
+    r = legGenerate(text); if (r) return r === 'ok' ? 'ok' : 'fail';
     if (legRead(text)) return 'ok';
     if (legNavigate(text)) return 'ok';
     return 'unknown';
@@ -549,8 +673,7 @@
     unregs.push(fx.registerIntent('voice-generate-note', function (q) {
       if (!/^(?:please\s+)?(?:generate|write|create|make)(?:\s+(?:the|my|a))?\s+note$/i.test(S(q).trim())) return false;
       safe(function () { if (isFn(window.showView)) window.showView('visit'); });
-      safe(function () { if (isFn(window.generateNote)) window.generateNote(); });
-      toast('📝 Generating the note from your recording…');
+      requestVoiceGeneration();
       return true;
     }, true));
 
@@ -590,6 +713,8 @@
   function revert() {
     if (bootIv) { clearInterval(bootIv); bootIv = null; }
     setEnabled(false);
+    safe(function () { if (unregisterSpeech) unregisterSpeech(); });
+    unregisterSpeech = null;
     safe(function () { unregs.forEach(function (u) { safe(u); }); });
     safe(function () { var b = $(BTN_ID); if (b) b.remove(); });
     safe(function () { var s = $(STYLE_ID); if (s) s.remove(); });

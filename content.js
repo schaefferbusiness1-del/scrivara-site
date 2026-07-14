@@ -61,6 +61,23 @@
     if (_mlsExtraOrigins.indexOf(o) >= 0) return true;
     return false;
   }
+  /* A trusted origin is necessary but not sufficient for Sign & Save. Arm one
+     short-lived, one-use authorization only from a real click on the clearly
+     labelled MLS sign button. Programmatic .click() events are not trusted. */
+  var _mlsSignGestureUntil = 0;
+  try {
+    if (mlsTrustedOrigin(location.origin)) {
+      document.addEventListener('click', function (ev) {
+        try {
+          if (!ev || ev.isTrusted !== true) return;
+          var t = ev.target && ev.target.closest ? ev.target.closest('button,a,[role="button"],input[type="button"],input[type="submit"]') : null;
+          if (!t) return;
+          var label = String((t.textContent || t.value || '') + ' ' + (t.getAttribute('aria-label') || '') + ' ' + (t.getAttribute('title') || '')).replace(/\s+/g, ' ').trim();
+          if (/\bsign\s*(?:&|and)\s*save\b/i.test(label)) _mlsSignGestureUntil = Date.now() + 180000;
+        } catch (e) {}
+      }, true);
+    }
+  } catch (e) {}
   function mlsStr(v, max) { return (typeof v === 'string') ? v.slice(0, max || 100000) : ''; }
 
   // Bridge: the MLS web app (mlsscribe.com) can ping us (to show "Assist installed")
@@ -298,6 +315,12 @@
     // re-enforces the name+DOB patient gate and reports "signed" only on a
     // confirmed save/sign. Never autonomous; never Save/Sign without this click.
     if (d.type === 'mlsAppSignAndSave') {
+      var readOnlySignProbe = d.probe === true && d.note == null && d.codes == null;
+      if (!readOnlySignProbe && Date.now() > _mlsSignGestureUntil) {
+        reply({ source: 'mls-ext', type: 'mlsAppSignAndSaveResult', resp: { blocked: true, signed: false, error: 'fresh-user-gesture-required', message: 'Click the Sign & Save button yourself, then confirm again.' } });
+        return;
+      }
+      if (!readOnlySignProbe) _mlsSignGestureUntil = 0; /* one click authorizes one sign request */
       try {
         chrome.runtime.sendMessage({
           type: 'MLS_OVL_SIGNSAVE',
@@ -1409,7 +1432,10 @@
 (function () {
   'use strict';
   function trusted(origin) {
-    try { var h = new URL(origin).host; return /(^|\.)mlsscribe\.com$/i.test(h) || /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(h); } catch (e) { return false; }
+    try {
+      var u = new URL(origin);
+      return u.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(u.hostname);
+    } catch (e) { return false; }
   }
   window.addEventListener('message', function (ev) {
     var d = ev && ev.data;

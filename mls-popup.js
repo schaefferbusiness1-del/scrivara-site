@@ -18,6 +18,11 @@
   if (typeof window !== 'undefined' && window.__mlsPopup && window.__mlsPopup.installed) return;
 
   var VERSION = '1.50';
+  var DISPLAY_VERSION = VERSION;
+  try {
+    var manifestVersion = String(chrome.runtime.getManifest().version || '').trim();
+    if (/^\d+(?:\.\d+){0,3}$/.test(manifestVersion)) DISPLAY_VERSION = manifestVersion;
+  } catch (eVersion) {}
 
   // ---- environment detection (so the same file is unit-testable) ----------
   var hasChrome = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage);
@@ -411,7 +416,7 @@
       // ---- footer ----
       var foot = el('div', 'mlsp-foot');
       foot.appendChild(el('span', null, 'read-only until you choose to write · never signs'));
-      foot.appendChild(el('span', null, 'v' + VERSION));
+      foot.appendChild(el('span', null, 'v' + DISPLAY_VERSION));
       card.appendChild(foot);
       return card;
     }

@@ -3,18 +3,18 @@ function mlsHostOnly(u){ try { return new URL(u).hostname; } catch (e) { return 
 function mlsIsAthenaTab(t) {
   try { return !!(t && /(^|\.)athenanet\.athenahealth\.com$/i.test(new URL(t.url || '').hostname)); } catch (e) { return false; }
 }
-/* Read-side focus rail: if the focused window is currently showing any tab
- * other than the tab a legacy cleanup wants to activate, preserve the user's
- * choice unless that current tab is athenaOne itself. Reads may make Athena
- * visible in the unfocused work strip, but they must never pull a user away
- * from another app/site. Write paths intentionally do not call this helper. */
+/* Read-side focus rail: a read may activate a tab only when that exact tab is
+ * already the active tab in the focused Chrome window. A doctor deliberately
+ * browsing another Athena tab owns that choice just as much as any other tab.
+ * Reads may make Athena visible in the unfocused work strip, but they never
+ * change the user's selection. Write paths intentionally do not call this. */
 async function mlsReadFocusWouldYank(targetTabId) {
   try {
     var w = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
     var tabs = (w && w.tabs) || [], cur = null;
     for (var i = 0; i < tabs.length; i++) { if (tabs[i] && tabs[i].active) { cur = tabs[i]; break; } }
-    if (!cur || (targetTabId != null && cur.id === targetTabId)) return false;
-    return !mlsIsAthenaTab(cur);
+    if (!w || w.focused !== true || !cur) return true;
+    return !(targetTabId != null && cur.id === targetTabId);
   } catch (e) { return true; } /* fail closed: a read never guesses it may focus */
 }
 // MLS Assist — background worker. Only place that holds the API key + talks to MLS. (v1.7 robust executor)
@@ -29,17 +29,17 @@ const _mlsFrameMap = {};
  * Every app-initiated operation that foregrounds a non-MLS tab records "focus
  * debt" (self.__mlsFgNote). The debt is repaid — focus returned to the MLS app
  * tab — by the FIRST of:
- *   1) the app's explicit end-of-op mlsAppFocusMlsTab (unchanged, instant; the
- *      app-side b115 no-yank double-tap re-fires it to beat stragglers);
+ *   1) the app's explicit end-of-op mlsAppFocusMlsTab, but only while the exact
+ *      tab/window focus taken by the extension is still unchanged;
  *   2) the watchdog: debt present and the operation has gone quiet — 90s with
  *      no bridge traffic (a slow chart read can legitimately be silent ~70s,
  *      so never sooner; this is the every-path backstop for error/abort);
  *   3) a chrome.alarms backstop, so a sleeping service worker still repays.
- * The debt is cancelled if the USER brings the MLS tab forward themselves —
- * the guardian never fights a human. Read-only: activates tabs, clicks nothing.
+ * Any user tab/window/app change cancels the return; the guardian never fights
+ * a human. Read-only: activates tabs, clicks nothing.
  * =========================================================================== */
 (function () {
-  const FG = { debt: false, at: 0, appTabId: null };
+  const FG = { debt: false, at: 0, appTabId: null, focusedTabId: null, focusedWindowId: null };
   self.__mlsFg = FG;
   /* Which mlsscribe tab is "the app"? v1.75: the review-finder page is ALSO on
      mlsscribe.com, so a bare host match could return the doctor to the WRONG
@@ -52,27 +52,48 @@ const _mlsFrameMap = {};
     return mine.find((t) => /ScribeFlow/i.test(t.url || '')) || mine[0];
   }
   self.__mlsFgPickAppTab = pickAppTab;
-  async function fgFocusApp() {
-    FG.debt = false;
+  function clearDebt() {
+    FG.debt = false; FG.focusedTabId = null; FG.focusedWindowId = null;
     try { chrome.storage.session.set({ mlsFgDebt: null }); } catch (e) {}
+  }
+  async function focusStillOwned() {
+    if (!FG.debt || FG.focusedTabId == null) return false;
+    try {
+      const w = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
+      const tabs = (w && w.tabs) || [];
+      const active = tabs.find((t) => t && t.active) || null;
+      return !!(w && w.focused === true && active && active.id === FG.focusedTabId && (FG.focusedWindowId == null || w.id === FG.focusedWindowId));
+    } catch (e) { return false; }
+  }
+  self.__mlsFgFocusStillOwned = focusStillOwned;
+  async function fgFocusApp() {
+    /* Repay only focus this extension demonstrably took and still owns. If the
+       doctor changed tabs/windows meanwhile, that newer choice always wins. */
+    if (!(await focusStillOwned())) { clearDebt(); return { ok: true, activated: false, skipped: 'user-moved' }; }
     try {
       const all = await chrome.tabs.query({});
       const app = pickAppTab(all);
-      if (app && !(await mlsReadFocusWouldYank(app.id))) { await chrome.tabs.update(app.id, { active: true }); if (app.windowId != null) await chrome.windows.update(app.windowId, { focused: true }); }
-    } catch (e) {}
+      if (!app) { clearDebt(); return { ok: false, activated: false, skipped: 'no-app-tab' }; }
+      if (!(await focusStillOwned())) { clearDebt(); return { ok: true, activated: false, skipped: 'user-moved' }; }
+      await chrome.tabs.update(app.id, { active: true });
+      if (app.windowId != null) await chrome.windows.update(app.windowId, { focused: true });
+      clearDebt();
+      return { ok: true, activated: true, tabId: app.id };
+    } catch (e) { clearDebt(); return { ok: false, activated: false, error: String((e && e.message) || e) }; }
   }
   self.__mlsFgFocusApp = fgFocusApp;
-  self.__mlsFgNote = function (senderTabId) {
+  self.__mlsFgNote = function (senderTabId, focusedTabId, focusedWindowId) {
     FG.debt = true; FG.at = Date.now();
     if (senderTabId != null) FG.appTabId = senderTabId;
-    try { chrome.storage.session.set({ mlsFgDebt: { at: FG.at } }); } catch (e) {}
+    FG.focusedTabId = focusedTabId == null ? null : focusedTabId;
+    FG.focusedWindowId = focusedWindowId == null ? null : focusedWindowId;
+    try { chrome.storage.session.set({ mlsFgDebt: { at: FG.at, appTabId: FG.appTabId, focusedTabId: FG.focusedTabId, focusedWindowId: FG.focusedWindowId } }); } catch (e) {}
     try { chrome.alarms.create('mlsFgWatch', { delayInMinutes: 1 }); } catch (e) {}
   };
-  self.__mlsFgBump = function () { if (FG.debt) { FG.at = Date.now(); try { chrome.storage.session.set({ mlsFgDebt: { at: FG.at } }); } catch (e) {} } };
+  self.__mlsFgBump = function () { if (FG.debt) { FG.at = Date.now(); try { chrome.storage.session.set({ mlsFgDebt: { at: FG.at, appTabId: FG.appTabId, focusedTabId: FG.focusedTabId, focusedWindowId: FG.focusedWindowId } }); } catch (e) {} } };
   self.__mlsFgEnd = function () {
-    FG.debt = false;
+    clearDebt();
     FG.endAt = Date.now(); /* v1.89: lets the FocusMlsTab handler tell a straggler re-tap from a stale one */
-    try { chrome.storage.session.set({ mlsFgDebt: null }); } catch (e) {}
   };
   setInterval(function () {
     if (!FG.debt) return;
@@ -84,6 +105,11 @@ const _mlsFrameMap = {};
       try {
         chrome.storage.session.get(['mlsFgDebt'], function (st) {
           const d = st && st.mlsFgDebt;
+          if (d && d.at) {
+            FG.debt = true; FG.at = d.at; FG.appTabId = d.appTabId == null ? FG.appTabId : d.appTabId;
+            FG.focusedTabId = d.focusedTabId == null ? null : d.focusedTabId;
+            FG.focusedWindowId = d.focusedWindowId == null ? null : d.focusedWindowId;
+          }
           if (d && d.at && (Date.now() - d.at) > 90000) fgFocusApp();
           else if (d && d.at) { try { chrome.alarms.create('mlsFgWatch', { delayInMinutes: 1 }); } catch (e) {} }
         });
@@ -94,7 +120,7 @@ const _mlsFrameMap = {};
     chrome.tabs.onActivated.addListener(function (info) {
       try {
         chrome.tabs.get(info.tabId, function (t) {
-          try { if (t && /(^|\.)mlsscribe\.com$/i.test(new URL(t.url || '').host)) { FG.debt = false; chrome.storage.session.set({ mlsFgDebt: null }); } } catch (e) {}
+          try { if (t && /(^|\.)mlsscribe\.com$/i.test(new URL(t.url || '').host)) clearDebt(); } catch (e) {}
         });
       } catch (e) {}
     });
@@ -225,8 +251,16 @@ const _mlsFrameMap = {};
       if (!QP.active) return 'limp';
     }
 
-    /* the moved tab should be the active tab of the strip window */
-    try { var t2 = await chrome.tabs.get(tab.id); if (!t2.active) await chrome.tabs.update(tab.id, { active: true }); } catch (e) {}
+    /* The moved tab should normally already be active in the unfocused strip.
+       If a human selected another tab/window after setup, never override that
+       choice merely to make Athena visible; proceed throttled in limp mode. */
+    try {
+      var t2 = await chrome.tabs.get(tab.id);
+      if (!t2.active) {
+        if (await mlsReadFocusWouldYank(tab.id)) return 'limp';
+        await chrome.tabs.update(tab.id, { active: true });
+      }
+    } catch (e) {}
     await qpSleep(400); /* let the compositor recompute occlusion */
     if (await tabVisible(tab.id)) return 'strip';
     await qpSleep(700);
@@ -249,15 +283,15 @@ const _mlsFrameMap = {};
   self.__mlsQpEnsure = qpEnsure;
 
   async function releaseBody() {
-    /* Moving an active Athena tab back into its original window can make it the
-       destination window's active tab. Snapshot the user's current non-Athena
-       tab and explicitly preserve it across that move. */
+    /* Moving the worker Athena tab back into its original window can activate
+       it. Preserve any different tab the doctor currently selected, including
+       another Athena tab, and restore only if the move itself displaced it. */
     var preserveTabId = null;
     try {
       var focused = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
       var focusedTabs = (focused && focused.tabs) || [];
       for (var pi = 0; pi < focusedTabs.length; pi++) {
-        if (focusedTabs[pi].active && !mlsIsAthenaTab(focusedTabs[pi])) { preserveTabId = focusedTabs[pi].id; break; }
+        if (focusedTabs[pi].active && focusedTabs[pi].id !== QP.athenaTabId) { preserveTabId = focusedTabs[pi].id; break; }
       }
     } catch (e) {}
     /* athena tab back to its original window+index — NOT activated */
@@ -286,9 +320,9 @@ const _mlsFrameMap = {};
         var nowFocused = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
         var nowTabs = (nowFocused && nowFocused.tabs) || [], nowActive = null;
         for (var ni = 0; ni < nowTabs.length; ni++) { if (nowTabs[ni].active) { nowActive = nowTabs[ni]; break; } }
-        /* If the user selected a different non-Athena tab during restoration,
-           that newer choice wins. Only undo activation caused by moving Athena. */
-        if (preserved && !preserved.active && (!nowActive || mlsIsAthenaTab(nowActive))) await chrome.tabs.update(preserveTabId, { active: true });
+        /* If the user selected something else during restoration, that newer
+           choice wins. Undo only activation of our worker Athena tab. */
+        if (preserved && !preserved.active && nowActive && nowActive.id === QP.athenaTabId) await chrome.tabs.update(preserveTabId, { active: true });
       } catch (e) {}
     }
   }
@@ -1098,7 +1132,17 @@ function mlsAthenaContinueFn() {
  * load, then clear the "Continue" interstitial if it appears. Session survives. */
 var __mlsReadsSinceReload = 0;
 async function mlsRecoverAthenaTab(tabId) {
-  try { await chrome.tabs.reload(tabId); } catch (e) {}
+  /* Central fail-closed rail: several legacy callers retain generic-EMR
+     fallbacks. Athena recovery must never reload Epic/Cerner/another site and
+     risk discarding the doctor's unsaved work. */
+  var recoverTab = null;
+  try { recoverTab = await chrome.tabs.get(tabId); } catch (eGet) {
+    return { ok: false, skipped: 'tab-missing' };
+  }
+  if (!mlsIsAthenaTab(recoverTab)) return { ok: false, skipped: 'non-athena-tab' };
+  try { await chrome.tabs.reload(tabId); } catch (eReload) {
+    return { ok: false, error: String((eReload && eReload.message) || eReload) };
+  }
   await new Promise(function (res) {
     var done = false;
     var to = setTimeout(function () { if (!done) { done = true; try { chrome.tabs.onUpdated.removeListener(li); } catch (e) {} res(); } }, 20000);
@@ -1114,6 +1158,7 @@ async function mlsRecoverAthenaTab(tabId) {
   }
   __mlsReadsSinceReload = 0;
   try { await mlsArmKeepAlive(tabId, true); } catch (eKa) {} /* v1.95: the reload just killed the page keep-alive - re-arm it ourselves */
+  return { ok: true };
 }
 /* v1.95 KEEP-ALIVE SELF-HEALING: the gentle ~55s Worker keep-alive lives in the
  * athena page and DIES on every reload/navigation (live 07-10: the freeze-guard
@@ -2518,40 +2563,21 @@ var mlsProv = (function () {
     } catch (e) { try { sendResponse({ ok: false, reason: 'storage-error', error: String((e && e.message) || e).slice(0, 80) }); } catch (e3) {} }
     return true;
   }
-  /* ---- v1.56: return focus to the MLS (mlsscribe) tab. Called by the app after a
-     history pull foregrounded athenaOne, so the doctor is brought back to mlsscribe
-     instead of being left on Athena. Read-only: activates the app tab only, clicks nothing. ---- */
+  /* Return focus only when a foreground write recorded exact focus ownership
+     and that same Athena tab/window is still selected. Quiet reads create no
+     debt, and any human tab/window change cancels the return. */
   if (msg.type === 'mlsAppFocusMlsTab') {
     (async () => {
       try {
-        /* v1.89 ANTI-YANK GATE: only pull the user back to MLS when a pull
-           actually OWES a return — guardian debt open, or repaid within the
-           last 15s (the app re-fires this at ~4s/~12s to beat stragglers).
-           Live report: the unconditional handler yanked a user who had
-           deliberately clicked over to athenaOne AFTER a pull finished. */
+        /* Repeated end messages are no-ops: only live, exactly-owned focus debt
+           can activate the app tab. */
         const FGv = self.__mlsFg || {};
-        const owed = !!FGv.debt || (FGv.endAt && (Date.now() - FGv.endAt) < 15000);
-        try { self.__mlsFgEnd && self.__mlsFgEnd(); } catch (e) {} /* v1.74: op ended — settle the guardian debt */
+        const owed = !!FGv.debt;
         try { if (self.__mlsQpRelease) await self.__mlsQpRelease('app-end'); } catch (e) {} /* restore the work-strip before deciding whether a focus return is still safe */
         if (!owed) { return sendResponse({ ok: true, activated: false, skipped: 'no-focus-debt' }); }
-        const all = await chrome.tabs.query({});
-        /* v1.75: return to the tab that ASKED (the app), never to the review-finder
-           page, which is also on mlsscribe.com. */
-        let appTab = null;
-        if (sender && sender.tab && /(^|\.)mlsscribe\.com$/i.test((function () { try { return new URL(sender.tab.url || '').host; } catch (e) { return ''; } })())) {
-          appTab = all.find((t) => t.id === sender.tab.id) || sender.tab;
-        }
-        if (!appTab) appTab = self.__mlsFgPickAppTab ? self.__mlsFgPickAppTab(all) : null;
-        if (appTab && await mlsReadFocusWouldYank(appTab.id)) {
-          return sendResponse({ ok: true, activated: false, skipped: 'user-on-other-tab', tabId: appTab.id });
-        }
-        let activated = false;
-        if (appTab) {
-          await chrome.tabs.update(appTab.id, { active: true });
-          if (appTab.windowId != null) await chrome.windows.update(appTab.windowId, { focused: true });
-          try { const t2 = await chrome.tabs.get(appTab.id); activated = !!(t2 && t2.active); } catch (e) {}
-        }
-        sendResponse({ ok: !!appTab, activated: activated, tabId: appTab ? appTab.id : null });
+        if (!self.__mlsFgFocusApp) return sendResponse({ ok: true, activated: false, skipped: 'focus-guardian-unavailable' });
+        const result = await self.__mlsFgFocusApp();
+        sendResponse(result || { ok: true, activated: false, skipped: 'focus-not-owned' });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
     })();
     return true;
@@ -3958,7 +3984,19 @@ async function mlsSchedDomInline(doc, CFG){
         // before the field check meant a failed send yanked the doctor to Athena and stranded them
         // there. Measure first (in the background); foreground only to paste; and return focus to MLS
         // if a field was found but the paste failed.
-        var _focusMls = async function () { try { var _all = await chrome.tabs.query({}); var _app = _all.find(function (t) { try { return /(^|\.)mlsscribe\.com$/i.test(new URL(t.url || '').host); } catch (e) { return false; } }); if (_app) { await chrome.tabs.update(_app.id, { active: true }); if (_app.windowId != null) await chrome.windows.update(_app.windowId, { focused: true }); } } catch (e) {} };
+        var _focusMls = async function () {
+          try {
+            var fw = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
+            var cur = ((fw && fw.tabs) || []).find(function (t) { return t && t.active; }) || null;
+            if (!_fg || !fw || fw.focused !== true || fw.id !== tab.windowId || !cur || cur.id !== tab.id) return false;
+            var _all = await chrome.tabs.query({});
+            var _app = (sender && sender.tab && _all.find(function (t) { return t.id === sender.tab.id; })) || _all.find(function (t) { try { return /(^|\.)mlsscribe\.com$/i.test(new URL(t.url || '').host) && /ScribeFlow/i.test(t.url || ''); } catch (e) { return false; } });
+            if (!_app) return false;
+            await chrome.tabs.update(_app.id, { active: true });
+            if (_app.windowId != null) await chrome.windows.update(_app.windowId, { focused: true });
+            return true;
+          } catch (e) { return false; }
+        };
         let last = { ok: false }, foundField = false, _fg = false;
         for (let attempt = 0; attempt < 2; attempt++) {
           let measure = [];
@@ -4483,8 +4521,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   function runAllVisits(appTabId, hint, cfg) {
     var identity = {}, identityResults = null, listFrame = 0, enumRes = null, diag = null;
+    var qpOwnedByThisRead = false;
     var minLen = cfg.minRealLen || 60;
-    return pickEmrTab().then(function (emr) {
+    return pickEmrTab().then(async function (emr) {
       if (!emr) return { ok: false, error: 'No signed-in athenaOne tab found. Open athenaOne with the patient chart, then retry.' };
       var emrId = emr.id;
       // === v1.54 THROTTLING FIX ===
@@ -4496,7 +4535,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // focused, so athenaOne is a throttled background tab). Verified live:
       // foreground athenaOne read 38 visits; the same read timed out in the
       // background. We restore focus to the MLS tab when the read finishes.
-      try { self.__mlsQpEnsure && self.__mlsQpEnsure(emr, appTabId); } catch (e) {} /* v2.9.5 quiet pull: work strip, never focused; settles during initialWaitMs; no focus debt */
+      try {
+        var qpWasActive = !!(self.__mlsQp && self.__mlsQp.active);
+        if (self.__mlsQpEnsure) await self.__mlsQpEnsure(emr, appTabId);
+        qpOwnedByThisRead = !qpWasActive && !!(self.__mlsQp && self.__mlsQp.active && self.__mlsQp.athenaTabId === emrId);
+      } catch (e) {} /* await visibility setup before touching the Visits pane */
       emit(appTabId, '🔍 Reading visits from athenaOne… (read-only)');
       return exec(emrId, null, ['openVisits', cfg])
         .then(function () { return sleep(cfg.visitTabWaitMs || 2200); })
@@ -4604,10 +4647,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           res.selected = { selector: enumRes.selector || '', count: enumRes.count || 0,
             uniqueDates: enumRes.uniqueDates || 0, strongRows: enumRes.strongRows || 0 };
         }
-        try { var FGv = self.__mlsFg || {}; if (FGv.debt && self.__mlsFgFocusApp) await self.__mlsFgFocusApp(); } catch (e) {}
-        try { self.__mlsFgEnd && self.__mlsFgEnd(); } catch (e) {}
         return res;
-      }); /* v2.9.5: only return focus if a legacy foreground actually took it (quiet pulls owe nothing) */
+      })
+      .finally(async function () {
+        /* This legacy reader creates its own one-shot visibility lease. Restore
+           the tab/window deterministically on success, failure, or cancellation;
+           never tear down a strip that belonged to another pull. */
+        if (qpOwnedByThisRead && self.__mlsQpRelease) {
+          try { await self.__mlsQpRelease('all-visits-finally'); } catch (e) {}
+        }
+      });
   }
 
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
@@ -7563,7 +7612,7 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
           if (!tab.active) {
             await chrome.tabs.update(tab.id, { active: true });
             if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
-            try { self.__mlsFgNote && self.__mlsFgNote(sender && sender.tab && sender.tab.id); } catch (eN) {}
+            try { self.__mlsFgNote && self.__mlsFgNote(sender && sender.tab && sender.tab.id, tab.id, tab.windowId); } catch (eN) {}
           }
         } catch (eF) {}
         var fx = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [String(msg.patient || ''), String(msg.dob || ''), String(msg.athenaId || ''), secs], func: mlsUnifiedWriteDriverFn }, 90000);

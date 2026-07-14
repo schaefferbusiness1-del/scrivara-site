@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_recording_segments.js  ->  window.__mlsRecSegments   (rs-1.0.0)
+ * feat_mls_recording_segments.js  ->  window.__mlsRecSegments   (rs-1.1.1)
  * ---------------------------------------------------------------------------
  * TASK 7 - MULTIPLE RECORDINGS for the MLS Easy / MLS Assist web app.
  *
@@ -40,7 +40,7 @@
 (function () {
   "use strict";
   var NS = "__mlsRecSegments";
-  var VERSION = "rs-1.0.0";
+  var VERSION = "rs-1.1.1";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   /* ---------- staging self-gate (same policy as feat_mls_asst_fix / copilot unify) ---------- */
@@ -184,7 +184,11 @@
       startedAt: nowMs()
     };
     /* start the base recorder if not already capturing */
-    safe(function () { if (!isCapturing() && isFn(window.startCapture)) window.startCapture(); });
+    if (!isCapturing()) {
+      if (!isFn(window.startCapture)) { armed = null; render(); return null; }
+      var began = safe(function () { return window.startCapture(); }, false);
+      if (began === false || !isCapturing()) { armed = null; render(); return null; }
+    }
     render();
     return armed.id;
   }
@@ -418,7 +422,13 @@
     _switchHandler = function () { safe(onMaybeSwitch); };
     safe(function () { document.addEventListener("mls:patientpicked", _switchHandler); });
     /* also poll: not every switch path fires the event */
-    _pollIv = setInterval(function () { safe(onMaybeSwitch); }, 1200);
+    _pollIv = setInterval(function () {
+      safe(onMaybeSwitch);
+      /* The top workflow and microphone coordinator can stop the base recorder
+         without going through this panel. Finalize its armed segment as soon as
+         that happens so the advanced list always matches what was captured. */
+      if (armed && !isCapturing()) safe(stopSegment);
+    }, 1200);
     _lastPtKey = ptKey();
   }
 
@@ -455,6 +465,7 @@
     _buildCombined: buildCombined,
     startSegment: startSegment,
     stopSegment: stopSegment,
+    isArmed: function () { return !!armed; },
     captureCurrentAs: captureCurrentAs,
     relabel: relabel,
     removeSegment: removeSegment,

@@ -1,5 +1,5 @@
 /* =============================================================================
- * __mlsDictateAnywhere  da-1.0.0   (2026-07-13, owner directive)
+ * __mlsDictateAnywhere  da-1.0.1   (2026-07-13, owner directive)
  * -----------------------------------------------------------------------------
  * "There is always a chance to dictate into any text box."
  * Focus any textarea / text-ish input / contenteditable in MLS Scribe and a
@@ -23,7 +23,7 @@
   'use strict';
   if (window.__mlsDictateAnywhere) return;
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var api = { installed: true, version: 'da-1.0.0', supported: !!SR, starts: 0 };
+  var api = { installed: true, version: 'da-1.0.1', supported: !!SR, starts: 0 };
   window.__mlsDictateAnywhere = api;
   if (!SR) { api.revert = function () {}; return; }
 
@@ -35,6 +35,22 @@
   var rec = null;        /* active recognition */
   var listening = false;
   var hideT = null;
+  var unregisterSpeech = null;
+
+  function speechHub() {
+    try { if (typeof window.mlsSpeechHub === 'function') return window.mlsSpeechHub(); } catch (e) {}
+    try { if (window.__mlsSpeechHub && typeof window.__mlsSpeechHub.claim === 'function') return window.__mlsSpeechHub; } catch (e2) {}
+    return null;
+  }
+  function registerSpeech() {
+    var h = speechHub();
+    if (!h || unregisterSpeech) return h;
+    unregisterSpeech = h.register('dictate', 'Dictate', function () {
+      if (listening) stop();
+    });
+    return h;
+  }
+  function releaseSpeech() { try { var h = speechHub(); if (h) h.release('dictate'); } catch (e) {} }
 
   function css() {
     if (document.getElementById(STYLE_ID)) return;
@@ -137,6 +153,8 @@
       if (el.isContentEditable) {
         el.focus();
         document.execCommand('insertText', false, text);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
         return;
       }
       var v = el.value != null ? String(el.value) : '';
@@ -157,6 +175,15 @@
   function start() {
     if (listening || !field) return;
     var target = field;
+    var h = registerSpeech();
+    var lease = h ? h.claim('dictate') : { ok: true, previous: null };
+    if (!lease || lease.ok === false) {
+      try { if (typeof window.toast === 'function') window.toast('Dictate could not take control of the microphone. Try again.', 'err'); } catch (e0) {}
+      return;
+    }
+    if (lease.previous) {
+      try { if (typeof window.toast === 'function') window.toast('Stopped ' + lease.previous.label + ' so Dictate can use the microphone. Any visit transcript already captured is safe.', ''); } catch (e1) {}
+    }
     try {
       rec = new SR();
       rec.lang = (navigator.language && /^en/i.test(navigator.language)) ? navigator.language : 'en-US';
@@ -178,7 +205,10 @@
       api.starts++;
       listening = true;
       setLabel();
-    } catch (e) { cleanup(); }
+    } catch (e) {
+      cleanup();
+      try { if (typeof window.toast === 'function') window.toast('Dictate could not start the microphone. Wait a moment, then try again.', 'err'); } catch (e2) {}
+    }
   }
   function stop() {
     try { if (rec) rec.stop(); } catch (e) {}
@@ -187,6 +217,7 @@
   function cleanup() {
     listening = false;
     rec = null;
+    releaseSpeech();
     setLabel();
     /* if focus already left the field, finish the deferred hide */
     if (!field || document.activeElement !== field) hide();
@@ -247,6 +278,8 @@
 
   api.revert = function () {
     try { stop(); } catch (e) {}
+    try { if (unregisterSpeech) unregisterSpeech(); } catch (e0) {}
+    unregisterSpeech = null;
     document.removeEventListener('focusin', onFocusIn, true);
     document.removeEventListener('focusout', onFocusOut, true);
     window.removeEventListener('scroll', onMove, true);
