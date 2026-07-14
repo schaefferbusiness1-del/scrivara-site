@@ -37507,7 +37507,7 @@
   } catch(e){}
 })();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=b84c2';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=b84c3';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 ;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+(window.__MLS_AV||Date.now());s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */

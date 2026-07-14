@@ -79,7 +79,19 @@
   }
 
   function _emptyPlaceholder(v) {
-    return !!v && !v.id && !_hasVisitContent(v);
+    if (!v || v.id) return false;
+    if (!_hasVisitContent(v)) return true;
+    /* The organized chart reader can create a dated, summary-only shell before
+       the full per-encounter reader arrives. That AI summary is derived from
+       row metadata, not encounter content, so it must not keep a duplicate row
+       once a real ID/raw encounter exists for the same service date. Preserve
+       every other no-ID record unless it is unmistakably this reader's shell. */
+    var source = trim(v.source || '').toLowerCase();
+    if (source !== 'athena-visits') return false;
+    var body = trim(v.raw || v.text || v.note || v.detail || v.findings || v.plan || '');
+    var codes = ((v.cpt && v.cpt.length) || 0) + ((v.icd10 && v.icd10.length) || 0) + ((v.meds && v.meds.length) || 0);
+    var scores = v.scores && typeof v.scores === 'object' && Object.keys(v.scores).length;
+    return !body && !codes && !scores;
   }
 
   function _compactHydratedPlaceholders(p) {
