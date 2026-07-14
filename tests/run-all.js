@@ -45,6 +45,8 @@ const tests = [
   'patient-card-contrast-contract.test.js',
   'schedule-time-contract.test.js',
   'schedule-pull-integrity.test.js',
+  'schedule-packaged-reader-regression.test.js',
+  'extension-schedule-support-diagnostic.test.js',
   'schedule-history-pipeline.test.js',
   'schedule-identity-adversarial-runtime.test.js',
   'provider-day-pull-contract.test.js',

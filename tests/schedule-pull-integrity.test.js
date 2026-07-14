@@ -9,16 +9,19 @@ const root = path.join(__dirname, '..');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const reference = fs.readFileSync(path.join(root, 'inject_dom.js'), 'utf8');
 
-// The live reader must sweep both virtualized axes, restore scroll position,
-// and include rendered row content in the key because React recycles DOM ids.
+// The live reader must sweep both virtualized axes, prove the requested scroll
+// positions were actually reached, restore scroll state, parse Athena's
+// Last/First rows canonically, and reconcile only proven hidden/provider twins.
 for (const marker of [
   'bounded Cartesian product',
   '_vsS.scrollTop=_voyS',
   'viewportCoverage=_coverageS',
-  "var logicalKey=tm+'|'",
-  '_candS[logicalKey]=1',
-  'candidateCount=Object.keys(_candS).length',
-  'unnamedCount=_unmS'
+  '_coverageS.positionsReached===_coverageS.cellsPlanned',
+  'mlsParseName(t0)',
+  "var logicalKey=anchor.appointmentId?('appt:'",
+  'out.diag.candidateCount=out.appts.length+_unmS',
+  'out.diag.duplicateRowsRemoved=',
+  'if(out.appts.length||_unmS)return out'
 ]) assert(background.includes(marker), `missing live virtualization invariant: ${marker}`);
 
 assert(reference.includes('async function mlsSchedDomInline'));

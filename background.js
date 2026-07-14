@@ -5428,7 +5428,18 @@ async function mlsSchedDomInline(doc, CFG){
         function _sleepS(ms){return new Promise(function(r){setTimeout(r,ms);});}
         var _prS=(CFG&&CFG.provReSource)?new RegExp(CFG.provReSource):/^[A-Z][A-Za-z'’.\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD|CRNP)\b/;
         var _prCS=/([A-Z][A-Za-z'’.\-]+_[A-Za-z][A-Za-z'’.\-]*_(?:MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD|CRNP))\b/;
-        function _nmS(t0){var r=_nmSCore(t0);_pnShadow(t0,r);return r;} /* v2.9.10 shadow wrap */
+        function _nmS(t0){
+          var r='';
+          /* The live Athena grid renders names as "Last, First".  The legacy
+             structure-lane regex captured only the text after the comma, so
+             virtualized/offscreen rows were left with a one-token name and
+             silently rejected later.  Use the shared, adversarially-tested
+             parser first and retain the legacy parser only as a compatibility
+             fallback for older Athena markup. */
+          try{var p=mlsParseName(t0);if(p&&p.confident&&p.display)r=cl(p.display);}catch(_eN){}
+          if(!r)r=_nmSCore(t0);
+          _pnShadow(t0,r);return r;
+        } /* v2.9.20 canonical live schedule names */
         function _nmSCore(t){t=cl(t).replace(SFXRE,' ').replace(/\s+/g,' ');var m=t.match(/,\s*([A-Z][A-Za-z'’.\-]+(?:\s+[A-Z][A-Za-z'’.\-]*)?)\s*(?:\(|$)/);if(m)return cl(m[1]);var m2=t.match(/([A-Z][A-Za-z'’-]+)\s*,\s*([A-Z][A-Za-z'’-]+)/);if(m2)return cl(m2[0]);return _pnCore(t);/* v2.9.9 (Codex E1 follow-up): comma-less container names no longer come back EMPTY — fall through to the suffix/stop-word-aware token parser */}
         /* v2.9.3 (owner: op-note auto-match): the appointment container also holds
            the appointment TYPE / reason-for-visit (e.g. "Left Knee Injection",
@@ -5439,17 +5450,54 @@ async function mlsSchedDomInline(doc, CFG){
            another patient's row (unlike a flat-text parse). */
         function _reasonS(t){try{var nm=_nmS(t);var s=' '+cl(t)+' ';s=s.replace(RTG,' ');if(nm){nm.split(/[\s,]+/).forEach(function(w){w=w.replace(/[^A-Za-z]/g,'');if(w.length>1){try{s=s.replace(new RegExp('\\b'+w+'\\b','ig'),' ');}catch(_e){}}});}s=s.replace(/\b[01]?\d[\/\-.][0-3]?\d[\/\-.]\d{2,4}\b/g,' ');s=s.replace(/\b\d{1,3}\s*(?:yo|y\/o|yrs?|years?\s*old)\b/gi,' ');s=s.replace(/#\s?\d{3,}/g,' ').replace(/\b\d{2,}\b/g,' ');s=s.replace(/\b(arrived|checked\s*in|checked\s*out|scheduled|confirmed|cancell?ed|no\s*show|room|status|self\s*pay|copay|balance|male|female|mins?|minutes?)\b/gi,' ');s=s.replace(/[^A-Za-z0-9\/&'\- ]/g,' ').replace(/\s+/g,' ').trim();return s.slice(0,120);}catch(_e){return '';}}
         function _hdrsS(){var hs=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _prS.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});var o=[],sn={};hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var mm=cl(e.textContent).match(_prCS);if(mm){var nm=mm[1];if(!sn[nm]){sn[nm]=1;o.push({nm:nm,cx:r.left+r.width/2});}}}}catch(_e){}});return o;}
-        var _byIdS={},_candS={},_provAllS={},_provOrderS=[];
+        var _candS={},_pendingS={},_provAllS={},_provOrderS=[],_rawCandidateObsS=0;
         function _noteProvS(raw){var n=cl(raw);if(!n)return '';var k=n.toLowerCase();if(!_provAllS[k]){_provAllS[k]=n;_provOrderS.push(n);}return n;}
         function _slotS(n){var z=cl(n).toLowerCase().replace(/[\-_\/|]+/g,' ').replace(/[()[\]{}:;,]+/g,' ').replace(/\s+/g,' ').trim();var h=/^(open|available|unavailable|block(?:ed)?|hold|reserved|lunch|break|admin(?:istrative)?|meeting|closed|buffer)\b/.exec(z);if(!h)return false;var rest=z.slice(h[0].length).replace(/\b\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?\b/gi,' ').replace(/\b\d+(?:\.\d+)?\s*(?:min(?:ute)?s?|hrs?|hours?)?\b/gi,' ').replace(/\b(?:open|available|unavailable|block(?:ed)?|hold|reserved|lunch|break|admin(?:istrative)?|meeting|closed|buffer|slot|slots|time|appointment|appointments|appt|appts|capacity)\b/gi,' ').replace(/\s+/g,' ').trim();return !rest;}
-        function _collectS(forcedHdr){var hdr=(forcedHdr&&forcedHdr.length)?forcedHdr:_hdrsS();hdr.forEach(function(h){_noteProvS(h.nm);});[].slice.call(doc.querySelectorAll('[class*="ScheduleColumn_schedule-column"]')).forEach(function(col){var r;try{r=col.getBoundingClientRect();}catch(_e){return;}if(r.width<40)return;var ccx=r.left+r.width/2,best='',bd=1e9;hdr.forEach(function(h){var dd=Math.abs(ccx-h.cx);if(dd<bd){bd=dd;best=h.nm;}});var prov=(best&&bd<r.width)?_noteProvS(best):'';[].slice.call(col.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).forEach(function(b){var t=cl(b.textContent),tm=ft(t),nm=_nmS(t);if(!tm||_slotS(nm||t))return;/* React can recycle a viewport node id for a different patient, while the same patient/time can legitimately appear under two providers. Provider therefore participates in both candidate completeness and row identity. */var logicalKey=tm+'|'+String(nm||t).toLowerCase().replace(/\s+/g,' ').trim()+'|'+String(prov||'').toLowerCase().replace(/\s+/g,' ').trim();var id=(b.id||b.getAttribute('data-appointment-id')||b.getAttribute('data-testid')||'row')+'|'+logicalKey;_candS[logicalKey]=1;if(_byIdS[id])return;_byIdS[id]={prov:prov,time:tm,name:nm,reason:_reasonS(t)};});});}
+        function _normS(v){return cl(v).toLowerCase().replace(/[^a-z0-9'\- ]+/g,' ').replace(/\s+/g,' ').trim();}
+        function _anchorS(b,tm){
+          var aid='';try{aid=cl(b.getAttribute('data-appointment-id')||b.getAttribute('data-appointmentid')||b.getAttribute('data-appt-id'));}catch(_eA){}
+          if(aid)return{key:'appt:'+aid,strong:true,appointmentId:aid};
+          var did='';try{did=cl(b.id||b.getAttribute('data-testid'));}catch(_eD){}
+          if(did)return{key:'node:'+did+'|'+tm,strong:false,appointmentId:''};
+          var pos='';try{var br=b.getBoundingClientRect();pos=Math.round(Number(br.top||0)/4)+'|'+Math.round(Number(br.left||0)/4);}catch(_eP){}
+          return{key:'pos:'+tm+'|'+pos,strong:false,appointmentId:''};
+        }
+        function _visibleSigS(){
+          var parts=[];try{[].slice.call(doc.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).forEach(function(b){parts.push(cl(b.textContent).slice(0,160));});}catch(_eSig){}
+          return parts.sort().join('\u001f');
+        }
+        function _collectS(forcedHdr){
+          var hdr=(forcedHdr&&forcedHdr.length)?forcedHdr:_hdrsS(),valid=0,unresolved=0;
+          hdr.forEach(function(h){_noteProvS(h.nm);});
+          [].slice.call(doc.querySelectorAll('[class*="ScheduleColumn_schedule-column"]')).forEach(function(col){
+            var r;try{r=col.getBoundingClientRect();}catch(_e){return;}if(r.width<40)return;
+            var ccx=r.left+r.width/2,best='',bd=1e9;
+            hdr.forEach(function(h){var dd=Math.abs(ccx-h.cx);if(dd<bd){bd=dd;best=h.nm;}});
+            var prov=(best&&bd<r.width)?_noteProvS(best):'',provKey=_normS(prov);
+            [].slice.call(col.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).forEach(function(b){
+              var t=cl(b.textContent),tm=ft(t),nm=_nmS(t);if(!tm||_slotS(nm||t))return;
+              var anchor=_anchorS(b,tm),nameKey=_normS(nm);
+              if(!nm||nameKey.split(/\s+/).filter(Boolean).length<2){
+                var pend=_pendingS[anchor.key]||{time:tm,prov:prov,seen:0,strong:anchor.strong,appointmentId:anchor.appointmentId};
+                pend.seen++;pend.prov=pend.prov||prov;_pendingS[anchor.key]=pend;unresolved++;return;
+              }
+              delete _pendingS[anchor.key];valid++;_rawCandidateObsS++;
+              var logicalKey=anchor.appointmentId?('appt:'+anchor.appointmentId):('person:'+tm+'|'+nameKey+'|'+provKey);
+              var prior=_candS[logicalKey];
+              if(!prior)_candS[logicalKey]={prov:prov,time:tm,name:nm,reason:_reasonS(t),appointmentId:anchor.appointmentId||'',base:tm+'|'+nameKey,providerKey:provKey};
+              else{if(!prior.prov&&prov){prior.prov=prov;prior.providerKey=provKey;}if(!prior.reason)prior.reason=_reasonS(t);}
+            });
+          });
+          return{valid:valid,unresolved:unresolved,signature:_visibleSigS()};
+        }
         /* Athena virtualizes both provider columns and time rows. A horizontal
            pass followed by a vertical pass misses the bottom-right cells. Walk
            a bounded Cartesian product instead; success is impossible unless
            both bounds stay stable, every planned cell is visited, and both axes
            restore to the user's original position. */
         function _axisS(max,step,cap){max=Math.max(0,Number(max||0));step=Math.max(1,Number(step||1));var raw=[];for(var p=0;p<=max;p+=step)raw.push(Math.min(p,max));if(!raw.length||raw[raw.length-1]!==max)raw.push(max);var capped=raw.length>cap;if(capped)raw=raw.slice(0,cap-1).concat([max]);return{values:raw,capped:capped,max:max};}
-        var _budgetEndS=Date.now()+Math.max(4000,Math.min(24000,Number(CFG&&CFG.__maxSweepMs||15000)));
+        var _budgetEndS=Date.now()+Math.max(12000,Math.min(45000,Number(CFG&&CFG.__maxSweepMs||30000)));
+        var _settleMaxS=Math.max(300,Math.min(1200,Number(CFG&&CFG.scrollWaitMs||780))),_settleBaseS=Math.min(220,_settleMaxS);
         var _scS=null,_allS=[].slice.call(doc.querySelectorAll('*')),_dvS=(doc.defaultView||window);
         for(var _si=0;_si<_allS.length;_si++){try{var _csS=_dvS.getComputedStyle(_allS[_si]);if(/(auto|scroll)/.test(_csS.overflowX)&&_allS[_si].scrollWidth>_allS[_si].clientWidth+50&&_allS[_si].clientWidth>300){if(!_scS||_allS[_si].scrollWidth>_scS.scrollWidth)_scS=_allS[_si];}}catch(_e){}}
         var _ogS=_scS?(_scS.scrollLeft||0):0,_hMaxS=_scS?Math.max(0,_scS.scrollWidth-_scS.clientWidth):0,_hAxisS=_axisS(_hMaxS,_scS?Math.max(160,Math.round(_scS.clientWidth*((CFG&&CFG.scrollStepFrac)||0.55))):1,24);
@@ -5458,22 +5506,79 @@ async function mlsSchedDomInline(doc, CFG){
         try{var _deS=doc.scrollingElement;if(_deS&&_deS.scrollHeight>_deS.clientHeight+40&&_deS.querySelector('[class*="PatientAppointment_appointment-container"], [class~="filled-appointment-row"]'))_vS.push({el:_deS,score:(_deS.scrollHeight-_deS.clientHeight)+500000});}catch(_e){}
         _vS.sort(function(a,b){return b.score-a.score;});_vS=_vS.filter(function(v){if(_vSeenS.indexOf(v.el)>=0)return false;_vSeenS.push(v.el);return true;});
         var _vContainerCapS=_vS.length>2,_vWorkS=_vS.slice(0,2);if(!_vWorkS.length)_vWorkS=[{el:null,score:0}];
-        var _coverageS={complete:false,reason:'unverified',horizontalScrollable:!!_scS,horizontalMax:_hMaxS,horizontalSteps:_hAxisS.values.length,verticalContainers:_vS.length,verticalContainersSwept:0,cellsPlanned:0,cellsVisited:0,axisCap:!!_hAxisS.capped,containerCap:_vContainerCapS,budgetExpired:false,boundsStable:true,restored:true};
+        var _coverageS={complete:false,reason:'unverified',horizontalScrollable:!!_scS,horizontalMax:_hMaxS,horizontalSteps:_hAxisS.values.length,verticalContainers:_vS.length,verticalContainersSwept:0,cellsPlanned:0,cellsVisited:0,positionsReached:0,settleRetries:0,axisCap:!!_hAxisS.capped,containerCap:_vContainerCapS,budgetExpired:false,boundsStable:true,restored:true};
         var _hSeenS={},_hReachedS=!_scS;
         for(var _viS=0;_viS<_vWorkS.length;_viS++){var _vsS=_vWorkS[_viS].el,_voyS=_vsS?(_vsS.scrollTop||0):0,_vmaxS=_vsS?Math.max(0,(_vsS.scrollHeight||0)-(_vsS.clientHeight||0)):0,_vAxisS=_axisS(_vmaxS,_vsS?Math.max(120,Math.round((_vsS.clientHeight||240)*0.65)):1,24);_coverageS.axisCap=_coverageS.axisCap||_vAxisS.capped;_coverageS.cellsPlanned+=_hAxisS.values.length*_vAxisS.values.length;var _finishedS=true;
-          for(var _xiS=0;_xiS<_hAxisS.values.length&&_finishedS;_xiS++){if(Date.now()>=_budgetEndS){_finishedS=false;break;}var _xPosS=_hAxisS.values[_xiS];if(_scS){_scS.scrollLeft=_xPosS;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));}_hSeenS[String(_xPosS)]=1;if(Math.abs(_xPosS-_hMaxS)<=2)_hReachedS=true;var _cachedHdrS=null;
-            for(var _yiS=0;_yiS<_vAxisS.values.length;_yiS++){if(Date.now()>=_budgetEndS){_finishedS=false;break;}if(_vsS){_vsS.scrollTop=_vAxisS.values[_yiS];_vsS.dispatchEvent(new Event('scroll',{bubbles:true}));}await _sleepS(Math.min(160,Math.max(60,Number(CFG&&CFG.scrollWaitMs||90))));var _liveHdrS=_hdrsS();if(_liveHdrS.length)_cachedHdrS=_liveHdrS;_collectS(_cachedHdrS);_coverageS.cellsVisited++;}
+          for(var _xiS=0;_xiS<_hAxisS.values.length&&_finishedS;_xiS++){
+            if(Date.now()>=_budgetEndS){_finishedS=false;break;}
+            var _xPosS=_hAxisS.values[_xiS],_xBeforeSigS=_visibleSigS(),_xBeforeActualS=_scS?Number(_scS.scrollLeft||0):0;
+            if(_scS){_scS.scrollLeft=_xPosS;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));}
+            var _cachedHdrS=null;
+            for(var _yiS=0;_yiS<_vAxisS.values.length;_yiS++){
+              if(Date.now()>=_budgetEndS){_finishedS=false;break;}
+              var _yPosS=_vAxisS.values[_yiS],_beforeSigS=_yiS===0?_xBeforeSigS:_visibleSigS(),_beforeXS=_yiS===0?_xBeforeActualS:(_scS?Number(_scS.scrollLeft||0):0),_beforeYS=_vsS?Number(_vsS.scrollTop||0):0;
+              if(_vsS){_vsS.scrollTop=_yPosS;_vsS.dispatchEvent(new Event('scroll',{bubbles:true}));}
+              await _sleepS(_settleBaseS);
+              var _liveHdrS=_hdrsS();if(_liveHdrS.length)_cachedHdrS=_liveHdrS;
+              var _cellMetaS=_collectS(_cachedHdrS),_actualXS=_scS?Number(_scS.scrollLeft||0):0,_actualYS=_vsS?Number(_vsS.scrollTop||0):0;
+              var _movedS=Math.abs(_actualXS-_beforeXS)>2||Math.abs(_actualYS-_beforeYS)>2;
+              var _reachedS=(!_scS||Math.abs(_actualXS-_xPosS)<=4)&&(!_vsS||Math.abs(_actualYS-_yPosS)<=4);
+              var _needsSettleS=_cellMetaS.unresolved>0||(_movedS&&_cellMetaS.signature===_beforeSigS)||!_reachedS;
+              var _extraS=_settleMaxS-_settleBaseS;
+              if(_needsSettleS&&_extraS>0&&Date.now()+_extraS<_budgetEndS){
+                _coverageS.settleRetries++;await _sleepS(_extraS);
+                _liveHdrS=_hdrsS();if(_liveHdrS.length)_cachedHdrS=_liveHdrS;
+                _cellMetaS=_collectS(_cachedHdrS);_actualXS=_scS?Number(_scS.scrollLeft||0):0;_actualYS=_vsS?Number(_vsS.scrollTop||0):0;
+                _reachedS=(!_scS||Math.abs(_actualXS-_xPosS)<=4)&&(!_vsS||Math.abs(_actualYS-_yPosS)<=4);
+              }
+              _hSeenS[String(Math.round(_actualXS))]=1;if(Math.abs(_actualXS-_hMaxS)<=4)_hReachedS=true;
+              if(_reachedS)_coverageS.positionsReached++;
+              _coverageS.cellsVisited++;
+            }
           }
           _coverageS.verticalContainersSwept++;if(!_finishedS)_coverageS.budgetExpired=true;
           if(_vsS){var _vEndMaxS=Math.max(0,(_vsS.scrollHeight||0)-(_vsS.clientHeight||0));if(_vEndMaxS!==_vmaxS)_coverageS.boundsStable=false;_vsS.scrollTop=_voyS;_vsS.dispatchEvent(new Event('scroll',{bubbles:true}));if(Math.abs(Number(_vsS.scrollTop||0)-Number(_voyS||0))>2)_coverageS.restored=false;}
           if(!_finishedS)break;
         }
         if(_scS){var _hEndMaxS=Math.max(0,_scS.scrollWidth-_scS.clientWidth);if(_hEndMaxS!==_hMaxS)_coverageS.boundsStable=false;_scS.scrollLeft=_ogS;_scS.dispatchEvent(new Event('scroll',{bubbles:true}));if(Math.abs(Number(_scS.scrollLeft||0)-Number(_ogS||0))>2)_coverageS.restored=false;}
-        _coverageS.complete=!_coverageS.axisCap&&!_coverageS.containerCap&&!_coverageS.budgetExpired&&_coverageS.boundsStable&&_coverageS.restored&&_coverageS.cellsVisited===_coverageS.cellsPlanned&&_coverageS.verticalContainersSwept===_vWorkS.length;_coverageS.reason=_coverageS.complete?'complete':(_coverageS.budgetExpired?'sweep-budget':(_coverageS.axisCap?'axis-cap':(_coverageS.containerCap?'container-cap':(!_coverageS.boundsStable?'bounds-changed':(!_coverageS.restored?'restore-failed':'incomplete-cross-product')))));
+        _coverageS.complete=!_coverageS.axisCap&&!_coverageS.containerCap&&!_coverageS.budgetExpired&&_coverageS.boundsStable&&_coverageS.restored&&_coverageS.cellsVisited===_coverageS.cellsPlanned&&_coverageS.positionsReached===_coverageS.cellsPlanned&&_coverageS.verticalContainersSwept===_vWorkS.length;_coverageS.reason=_coverageS.complete?'complete':(_coverageS.budgetExpired?'sweep-budget':(_coverageS.axisCap?'axis-cap':(_coverageS.containerCap?'container-cap':(!_coverageS.boundsStable?'bounds-changed':(!_coverageS.restored?'restore-failed':(_coverageS.positionsReached!==_coverageS.cellsPlanned?'scroll-position-unreached':'incomplete-cross-product'))))));
         var _hMetaS={scrollable:!!_scS,steps:Object.keys(_hSeenS).length,reachedEnd:!!_hReachedS,capReached:!!_hAxisS.capped,budgetExpired:!!(_coverageS.budgetExpired&&!_hReachedS),restored:!!_coverageS.restored,boundsStable:!!_coverageS.boundsStable,maxScroll:_hMaxS};
         try{var _dhS=doc.querySelector((CFG&&CFG.dateHdrSel)||'h1.fe_c_heading--subsection');if(_dhS){var _dS=new Date(cl(_dhS.textContent).replace(/^[A-Za-z]+,\s*/,''));if(!isNaN(_dS.getTime())){var _p2S=function(n){n=String(n);return n.length<2?'0'+n:n;};out.schedDate=_dS.getFullYear()+'-'+_p2S(_dS.getMonth()+1)+'-'+_p2S(_dS.getDate());}}}catch(_e){}
-        var _idsS=Object.keys(_byIdS);
-        if(_idsS.length||_provOrderS.length){var _unmS=0;_idsS.forEach(function(id){var a=_byIdS[id];if(!a.name)_unmS++;out.appts.push({time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||''});if(a.prov)_noteProvS(a.prov);});var _declProvS=0;try{var _pmS,_ptS=String(doc.body&&doc.body.innerText||''),_preS=/\b(\d{1,3})\s+providers?\b/gi;while((_pmS=_preS.exec(_ptS)))_declProvS=Math.max(_declProvS,Number(_pmS[1]||0));}catch(_e){}out.providers=_provOrderS.slice();out.providerRoster=out.providers.map(function(raw){return{stableKey:'athena:'+raw.toLowerCase().replace(/\s+/g,' ').trim(),raw:raw,name:raw,source:'athena-schedule-header'};});var _provObservedS=out.providers.length,_provCompleteS=_provObservedS>0&&_hMetaS.reachedEnd&&_hMetaS.restored&&_hMetaS.boundsStable&&!_hMetaS.capReached&&!_hMetaS.budgetExpired&&(!_declProvS||_provObservedS>=_declProvS);var _provReasonS=_provCompleteS?'complete':(!_provObservedS?'no-provider-headers':(_hMetaS.capReached?'scroll-cap':(_hMetaS.budgetExpired?'scroll-budget':(!_hMetaS.boundsStable?'bounds-changed':(!_hMetaS.reachedEnd?'scroll-incomplete':(_declProvS&&_provObservedS<_declProvS?'declared-count-mismatch':'unverified'))))));out.providerRosterReceipt={complete:!!_provCompleteS,partial:!_provCompleteS,reason:_provReasonS,expectedCount:_declProvS||null,observedCount:_provObservedS,horizontalScrollable:_hMetaS.scrollable,reachedEnd:_hMetaS.reachedEnd,capReached:_hMetaS.capReached,budgetExpired:_hMetaS.budgetExpired,restored:_hMetaS.restored,boundsStable:_hMetaS.boundsStable,steps:_hMetaS.steps};out.diag.via='structure-id';out.diag.strategy='structure-id';out.diag.apptCount=out.appts.length;out.diag.candidateCount=Object.keys(_candS).length;out.diag.parsedCount=out.appts.length-_unmS;out.diag.unnamedCount=_unmS;/* v2.9.9: rows whose name failed to parse are VISIBLE in diag, never silent */out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice();out.diag.providerRosterReceipt=out.providerRosterReceipt;out.diag.viewportCoverage=_coverageS;if(out.appts.length||out.providers.length)return out;}
+        var _rawRowsS=Object.keys(_candS).map(function(k){return _candS[k];}),_finalRowsS=[],_apptRowsS={},_baseRowsS={};
+        _rawRowsS.forEach(function(a){
+          if(a.appointmentId){
+            var old=_apptRowsS[a.appointmentId];
+            if(!old)_apptRowsS[a.appointmentId]=a;
+            else{if(!old.prov&&a.prov){old.prov=a.prov;old.providerKey=a.providerKey;}if(!old.reason&&a.reason)old.reason=a.reason;}
+          }else{var g=_baseRowsS[a.base]||(_baseRowsS[a.base]={});var pk=a.providerKey||'';if(!g[pk])g[pk]=a;else if(!g[pk].reason&&a.reason)g[pk].reason=a.reason;}
+        });
+        Object.keys(_apptRowsS).forEach(function(k){_finalRowsS.push(_apptRowsS[k]);});
+        Object.keys(_baseRowsS).forEach(function(k){
+          var g=_baseRowsS[k],ks=Object.keys(g),named=ks.filter(function(pk){return !!pk;});
+          /* Athena often leaves a providerless hidden twin next to the same
+             attributed appointment.  Discard that proven twin, but preserve
+             two real provider keys for legitimate same-time cross-provider
+             appointments. */
+          (named.length?named:ks.slice(0,1)).forEach(function(pk){_finalRowsS.push(g[pk]);});
+        });
+        var _resolvedTPsS={};_finalRowsS.forEach(function(a){_resolvedTPsS[a.time+'|'+(a.providerKey||'')]=1;_resolvedTPsS[a.time+'|']=1;});
+        var _unmS=0;Object.keys(_pendingS).forEach(function(k){var p=_pendingS[k],pk=_normS(p.prov);if(p.appointmentId&&_apptRowsS[p.appointmentId])return;if(!p.strong&&_resolvedTPsS[p.time+'|'+pk])return;if(p.strong||p.seen>=2)_unmS++;});
+        out.appts=_finalRowsS.map(function(a){return{time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||'',appointmentId:a.appointmentId||''};});
+        if(out.appts.length||_unmS||_provOrderS.length){
+          out.appts.forEach(function(a){if(a.provider)_noteProvS(a.provider);});
+          var _declProvS=0;try{var _pmS,_ptS=String(doc.body&&doc.body.innerText||''),_preS=/\b(\d{1,3})\s+providers?\b/gi;while((_pmS=_preS.exec(_ptS)))_declProvS=Math.max(_declProvS,Number(_pmS[1]||0));}catch(_e){}
+          out.providers=_provOrderS.slice();out.providerRoster=out.providers.map(function(raw){return{stableKey:'athena:'+raw.toLowerCase().replace(/\s+/g,' ').trim(),raw:raw,name:raw,source:'athena-schedule-header'};});
+          var _provObservedS=out.providers.length,_provCompleteS=_provObservedS>0&&_hMetaS.reachedEnd&&_hMetaS.restored&&_hMetaS.boundsStable&&!_hMetaS.capReached&&!_hMetaS.budgetExpired&&(!_declProvS||_provObservedS>=_declProvS);
+          var _provReasonS=_provCompleteS?'complete':(!_provObservedS?'no-provider-headers':(_hMetaS.capReached?'scroll-cap':(_hMetaS.budgetExpired?'scroll-budget':(!_hMetaS.boundsStable?'bounds-changed':(!_hMetaS.reachedEnd?'scroll-incomplete':(_declProvS&&_provObservedS<_declProvS?'declared-count-mismatch':'unverified'))))));
+          out.providerRosterReceipt={complete:!!_provCompleteS,partial:!_provCompleteS,reason:_provReasonS,expectedCount:_declProvS||null,observedCount:_provObservedS,horizontalScrollable:_hMetaS.scrollable,reachedEnd:_hMetaS.reachedEnd,capReached:_hMetaS.capReached,budgetExpired:_hMetaS.budgetExpired,restored:_hMetaS.restored,boundsStable:_hMetaS.boundsStable,steps:_hMetaS.steps};
+          out.diag.via='structure-id';out.diag.strategy='structure-id';out.diag.apptCount=out.appts.length;out.diag.candidateCount=out.appts.length+_unmS;out.diag.parsedCount=out.appts.length;out.diag.unnamedCount=_unmS;
+          out.diag.rawCandidateObservations=_rawCandidateObsS;out.diag.confidentCandidateCount=_rawRowsS.length;out.diag.duplicateRowsRemoved=Math.max(0,_rawRowsS.length-out.appts.length);
+          out.diag.providerCount=out.providers.length;out.diag.providerNames=out.providers.slice();out.diag.providerRosterReceipt=out.providerRosterReceipt;out.diag.viewportCoverage=_coverageS;
+          /* Provider headers alone must not suppress the older table/grouped
+             fallbacks.  A non-empty structure result is returned only after
+             at least one appointment (or a persistent unresolved row) exists. */
+          if(out.appts.length||_unmS)return out;
+        }
       }
     }catch(_seS){out.diag.structErr=String(_seS&&_seS.message||_seS).slice(0,100);}
     // === v1.46 COORD STRATEGY (scroll-scrape): athenaOne Day grid VIRTUALIZES columns — only appts

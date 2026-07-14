@@ -488,6 +488,447 @@
   else boot();
 })();
 
+/* MLS_SCHEDULE_SUPPORT_DIAG_BEGIN
+ * Temporary release-support view for the existing schedule receipt. It is
+ * deliberately absent unless the exact query flag is present, never starts a
+ * pull, and retains only a redacted in-memory snapshot made from fixed enums,
+ * counts, and booleans. Raw schedule rows/text/names/dates/IDs/errors are never
+ * placed in the DOM, persisted, logged, copied, or sent anywhere. */
+;(function () {
+  'use strict';
+
+  var params;
+  try { params = new URLSearchParams(location.search || ''); } catch (e) { return; }
+  if (params.get('mlsScheduleDiag') !== '1') return;
+
+  var win = window;
+  var prior = win.__mlsScheduleDiagSupport;
+  if (prior && prior.installed) return;
+
+  var PANEL_ID = 'mlsScheduleDiagSupport';
+  var PAGE_ORIGIN = '';
+  try { PAGE_ORIGIN = typeof location.origin === 'string' ? location.origin : ''; } catch (e) {}
+  if (!PAGE_ORIGIN) return;
+
+  var OUTCOMES = {
+    'complete': 1,
+    'no-athena-tab': 1,
+    'schedule-surface-unverified': 1,
+    'schedule-request-timeout': 1,
+    'schedule-surface-changed': 1,
+    'schedule-incomplete': 1,
+    'response-without-complete-receipt': 1,
+    'unclassified': 1
+  };
+  var PARSER_KINDS = {
+    'merged': 1,
+    'dom': 1,
+    'text': 1,
+    'structure-id': 1,
+    'coord-scroll': 1,
+    'table-column': 1,
+    'grouped-dom': 1,
+    'none': 1,
+    'other': 1
+  };
+  var SURFACE_KINDS = {
+    'schedule-structure': 1,
+    'schedule-table': 1,
+    'dated-empty-schedule': 1,
+    'dated-schedule': 1,
+    'excluded-frame': 1,
+    'nav-plumbing': 1,
+    'probe-error': 1,
+    'unverified': 1,
+    'none': 1,
+    'other': 1
+  };
+  var COVERAGE_REASONS = {
+    'complete': 1,
+    'sweep-budget': 1,
+    'axis-cap': 1,
+    'container-cap': 1,
+    'bounds-changed': 1,
+    'restore-failed': 1,
+    'scroll-position-unreached': 1,
+    'incomplete-cross-product': 1,
+    'unverified': 1,
+    'none': 1,
+    'other': 1
+  };
+  var ROSTER_REASONS = {
+    'complete': 1,
+    'no-provider-headers': 1,
+    'scroll-cap': 1,
+    'scroll-budget': 1,
+    'bounds-changed': 1,
+    'scroll-incomplete': 1,
+    'declared-count-mismatch': 1,
+    'legacy-unverified': 1,
+    'unverified': 1,
+    'none': 1,
+    'other': 1
+  };
+
+  function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : null; }
+  function count(v) {
+    if (typeof v !== 'number' || !isFinite(v)) return null;
+    return Math.max(0, Math.min(1000000, Math.floor(v)));
+  }
+  function arrayCount(v) { return Array.isArray(v) ? count(v.length) : null; }
+  function flag(v) { return v === true ? true : (v === false ? false : null); }
+  function fixed(v, allowed, emptyValue, unknownValue) {
+    if (typeof v !== 'string' || !v) return emptyValue || 'none';
+    return own(allowed, v) ? v : (unknownValue || 'other');
+  }
+  function add(a, b) {
+    a = count(a); b = count(b);
+    return count((a == null ? 0 : a) + (b == null ? 0 : b));
+  }
+
+  function sanitizeCoverage(value) {
+    var v = obj(value);
+    if (!v) return null;
+    return {
+      complete: flag(v.complete),
+      reason: fixed(v.reason, COVERAGE_REASONS),
+      horizontalScrollable: flag(v.horizontalScrollable),
+      horizontalMax: count(v.horizontalMax),
+      horizontalSteps: count(v.horizontalSteps),
+      verticalContainers: count(v.verticalContainers),
+      verticalContainersSwept: count(v.verticalContainersSwept),
+      cellsPlanned: count(v.cellsPlanned),
+      cellsVisited: count(v.cellsVisited),
+      positionsReached: count(v.positionsReached),
+      settleRetries: count(v.settleRetries),
+      axisCap: flag(v.axisCap),
+      containerCap: flag(v.containerCap),
+      budgetExpired: flag(v.budgetExpired),
+      boundsStable: flag(v.boundsStable),
+      restored: flag(v.restored)
+    };
+  }
+
+  function sanitizeRosterReceipt(value) {
+    var v = obj(value);
+    if (!v) return null;
+    return {
+      complete: flag(v.complete),
+      partial: flag(v.partial),
+      reason: fixed(v.reason, ROSTER_REASONS),
+      expectedCount: count(v.expectedCount),
+      observedCount: count(v.observedCount),
+      horizontalScrollable: flag(v.horizontalScrollable),
+      reachedEnd: flag(v.reachedEnd),
+      capReached: flag(v.capReached),
+      budgetExpired: flag(v.budgetExpired),
+      restored: flag(v.restored),
+      boundsStable: flag(v.boundsStable),
+      steps: count(v.steps)
+    };
+  }
+
+  function blankHeaderShapes() {
+    return { 'react-schedule': 0, 'legacy-day-grid': 0, 'table': 0, 'provider-header': 0, 'other': 0 };
+  }
+  function headerShapeCategories(value) {
+    var out = blankHeaderShapes();
+    if (!Array.isArray(value)) return out;
+    value.slice(0, 100).forEach(function (shape) {
+      shape = obj(shape) || {};
+      var cls = (typeof shape.cls === 'string' ? shape.cls : '') + ' ' + (typeof shape.parentCls === 'string' ? shape.parentCls : '');
+      var tag = (typeof shape.tag === 'string' ? shape.tag : '') + ' ' + (typeof shape.parentTag === 'string' ? shape.parentTag : '');
+      cls = cls.toLowerCase(); tag = tag.toLowerCase();
+      var kind = /patientappointment|schedulecolumn/.test(cls) ? 'react-schedule'
+        : /appointments-container|filled-appointment-row|appointment-header2/.test(cls) ? 'legacy-day-grid'
+          : /(?:^|\s)(?:table|thead|tbody|tr|th|td)(?:\s|$)/.test(tag) ? 'table'
+            : /provider|resource|header/.test(cls) ? 'provider-header' : 'other';
+      out[kind] = add(out[kind], 1);
+    });
+    return out;
+  }
+
+  function blankAppointmentShapes() {
+    return { 'react-schedule': 0, 'legacy-day-grid': 0, 'generic-appointment': 0, 'other': 0 };
+  }
+  function noteAppointmentClass(out, value) {
+    if (typeof value !== 'string') { out.other = add(out.other, 1); return; }
+    var cls = value.toLowerCase();
+    var kind = /patientappointment|schedulecolumn/.test(cls) ? 'react-schedule'
+      : /appointments-container|filled-appointment-row|appointment-header2/.test(cls) ? 'legacy-day-grid'
+        : /appointment/.test(cls) ? 'generic-appointment' : 'other';
+    out[kind] = add(out[kind], 1);
+  }
+
+  function sanitizeNameShadow(value) {
+    var v = obj(value);
+    if (!v) return null;
+    return {
+      checked: count(v.checked),
+      differs: count(v.differs),
+      canonicalRejected: count(v.canonicalRejected),
+      canonicalAdded: count(v.canonicalAdded)
+    };
+  }
+
+  function sanitizeLane(value) {
+    var v = obj(value);
+    if (!v) return null;
+    return {
+      strategy: fixed(v.strategy, PARSER_KINDS),
+      via: fixed(v.via, PARSER_KINDS),
+      tables: count(v.tables),
+      rowsScanned: count(v.rowsScanned),
+      lineCount: count(v.lineCount),
+      headerCount: count(v.headerCount),
+      apptCount: count(v.apptCount),
+      providerCount: count(v.providerCount),
+      appointmentIdCount: count(v.appointmentIdCount),
+      providerIdCount: count(v.providerIdCount),
+      legacyContainers: count(v.legacyContainers),
+      legacyFilledRows: count(v.legacyFilledRows),
+      legacyScopeContainers: count(v.legacyScopeContainers),
+      candidateCount: count(v.candidateCount),
+      parsedCount: count(v.parsedCount),
+      unnamedCount: count(v.unnamedCount),
+      rawCandidateObservations: count(v.rawCandidateObservations),
+      confidentCandidateCount: count(v.confidentCandidateCount),
+      duplicateRowsRemoved: count(v.duplicateRowsRemoved),
+      bareTimes: count(v.bareTimes),
+      singleProviderScope: flag(v.singleProviderScope),
+      scrolled: flag(v.scrolled),
+      scheduleStructure: flag(v.scheduleStructure),
+      viewportCoverage: sanitizeCoverage(v.viewportCoverage),
+      providerRosterReceipt: sanitizeRosterReceipt(v.providerRosterReceipt),
+      nameShadow: sanitizeNameShadow(v.nameShadow),
+      providerHeaderShapeCategories: headerShapeCategories(v.providerHeaderShapes)
+    };
+  }
+
+  function sanitizeProviderDiag(value) {
+    var v = obj(value);
+    if (!v) return null;
+    return {
+      source: fixed(v.source, PARSER_KINDS),
+      primaryByCount: fixed(v.primaryByCount, PARSER_KINDS),
+      domValidRows: count(v.domValidRows),
+      textValidRows: count(v.textValidRows),
+      mergedRows: count(v.mergedRows),
+      mergedFields: count(v.mergedFields),
+      dupRowsRemoved: count(v.dupRowsRemoved),
+      slotRowsRemoved: count(v.slotRowsRemoved),
+      domSlotRowsRemoved: count(v.domSlotRowsRemoved),
+      textSlotRowsRemoved: count(v.textSlotRowsRemoved),
+      emptyRowsRemoved: count(v.emptyRowsRemoved),
+      invalidRowsRemoved: count(v.invalidRowsRemoved),
+      domInvalidRowsRemoved: count(v.domInvalidRowsRemoved),
+      textInvalidRowsRemoved: count(v.textInvalidRowsRemoved),
+      soleProviderFilled: count(v.soleProviderFilled),
+      providerCount: count(v.providerCount),
+      domLane: sanitizeLane(v.dom),
+      textLane: sanitizeLane(v.text)
+    };
+  }
+
+  function sanitizeReceipt(value) {
+    var v = obj(value);
+    if (!v) return null;
+    return {
+      scheduleVerified: flag(v.scheduleVerified),
+      complete: flag(v.complete),
+      authoritativeEmpty: flag(v.authoritativeEmpty),
+      expectedCount: count(v.expectedCount),
+      candidateCount: count(v.candidateCount),
+      parsedCount: count(v.parsedCount),
+      declaredCount: count(v.declaredCount),
+      unnamedCount: count(v.unnamedCount),
+      domValidRows: count(v.domValidRows),
+      textValidRows: count(v.textValidRows),
+      mergedRows: count(v.mergedRows),
+      invalidRowsRemoved: count(v.invalidRowsRemoved),
+      viewportCoverageComplete: flag(v.viewportCoverageComplete),
+      viewportCoverage: sanitizeCoverage(v.viewportCoverage)
+    };
+  }
+
+  function blankViaCounts() {
+    return {
+      'schedule-structure': 0,
+      'schedule-table': 0,
+      'dated-empty-schedule': 0,
+      'dated-schedule': 0,
+      'excluded-frame': 0,
+      'nav-plumbing': 0,
+      'probe-error': 0,
+      'unverified': 0,
+      'none': 0,
+      'other': 0
+    };
+  }
+  function sanitizeSurface(value) {
+    var v = obj(value);
+    if (!v) return null;
+    var viaCounts = blankViaCounts();
+    var shapeCounts = blankAppointmentShapes();
+    var probeCounts = {
+      total: 0, verified: 0, table: 0, structure: 0, legacyHeading: 0,
+      urlHint: 0, scheduleWords: 0, empty: 0, providerContext: 0,
+      timeCount: 0, appointmentNodes: 0
+    };
+    if (Array.isArray(v.via)) v.via.slice(0, 100).forEach(function (kind) {
+      kind = fixed(kind, SURFACE_KINDS);
+      viaCounts[kind] = add(viaCounts[kind], 1);
+    });
+    if (Array.isArray(v.probes)) v.probes.slice(0, 100).forEach(function (probe) {
+      probe = obj(probe) || {};
+      probeCounts.total = add(probeCounts.total, 1);
+      if (probe.verified === true) probeCounts.verified = add(probeCounts.verified, 1);
+      if (probe.table === true) probeCounts.table = add(probeCounts.table, 1);
+      if (probe.structure === true) probeCounts.structure = add(probeCounts.structure, 1);
+      if (probe.legacyHeading === true) probeCounts.legacyHeading = add(probeCounts.legacyHeading, 1);
+      if (probe.urlHint === true) probeCounts.urlHint = add(probeCounts.urlHint, 1);
+      if (probe.scheduleWords === true) probeCounts.scheduleWords = add(probeCounts.scheduleWords, 1);
+      if (probe.empty === true) probeCounts.empty = add(probeCounts.empty, 1);
+      if (probe.providerContext === true) probeCounts.providerContext = add(probeCounts.providerContext, 1);
+      probeCounts.timeCount = add(probeCounts.timeCount, count(probe.timeCount));
+      probeCounts.appointmentNodes = add(probeCounts.appointmentNodes, count(probe.appointmentNodes));
+      var via = fixed(probe.via, SURFACE_KINDS);
+      viaCounts[via] = add(viaCounts[via], 1);
+      if (Array.isArray(probe.appointmentClasses)) probe.appointmentClasses.slice(0, 100).forEach(function (cls) { noteAppointmentClass(shapeCounts, cls); });
+    });
+    return {
+      navAttempted: flag(v.navAttempted),
+      navClicked: flag(v.navClicked),
+      homeClicked: flag(v.homeClicked),
+      verifiedFrames: count(v.verifiedFrames),
+      scrapeTimeout: flag(v.scrapeTimeout),
+      viaCategoryCounts: viaCounts,
+      probeCounts: probeCounts,
+      appointmentShapeCategoryCounts: shapeCounts
+    };
+  }
+
+  function sanitizeResponse(value, sequence) {
+    var v = obj(value) || {};
+    var receipt = sanitizeReceipt(v.receipt);
+    var outcome = (v.ok === true && receipt && receipt.complete === true)
+      ? 'complete'
+      : (v.ok === true ? 'response-without-complete-receipt' : fixed(v.reason, OUTCOMES, 'unclassified', 'unclassified'));
+    return {
+      schema: 1,
+      captureSequence: count(sequence),
+      outcome: outcome,
+      ok: flag(v.ok),
+      scheduleVerified: flag(v.scheduleVerified),
+      counts: {
+        frames: count(v.frames),
+        rowsReturned: arrayCount(v.appts),
+        providersReturned: arrayCount(v.providers)
+      },
+      receipt: receipt,
+      providerRosterReceipt: sanitizeRosterReceipt(v.providerRosterReceipt),
+      parser: sanitizeProviderDiag(v.providerDiag),
+      surface: sanitizeSurface(v.surfaceDiag)
+    };
+  }
+
+  function cloneSnapshot(value) {
+    if (!value) return null;
+    try { return JSON.parse(JSON.stringify(value)); } catch (e) { return null; }
+  }
+
+  var panel = null, statusEl = null, outputEl = null, domReadyHandler = null;
+  var lastSnapshot = null, captureSequence = 0, destroyed = false;
+
+  function element(tag, textValue) {
+    var el = document.createElement(tag);
+    if (textValue != null) el.textContent = textValue;
+    return el;
+  }
+
+  function paint() {
+    if (!panel || !statusEl || !outputEl) return;
+    if (!lastSnapshot) {
+      statusEl.textContent = 'Waiting for the next explicit Pull this day result.';
+      outputEl.textContent = '';
+      return;
+    }
+    statusEl.textContent = 'Captured a redacted ' + lastSnapshot.outcome + ' receipt. Raw schedule data was not retained.';
+    outputEl.textContent = JSON.stringify(lastSnapshot, null, 2);
+  }
+
+  function mount() {
+    if (destroyed || panel || document.getElementById(PANEL_ID)) return;
+    panel = element('section');
+    panel.id = PANEL_ID;
+    panel.setAttribute('aria-label', 'Redacted schedule diagnostic');
+    panel.style.cssText = 'position:fixed;right:18px;top:76px;z-index:2147483000;width:min(430px,calc(100vw - 36px));max-height:calc(100vh - 96px);overflow:auto;padding:14px;border:1px solid #b9c9c1;border-radius:14px;background:#fff;color:#17231e;box-shadow:0 12px 36px rgba(18,49,38,.24);font:600 13px/1.4 system-ui,sans-serif';
+
+    var title = element('strong', 'Schedule diagnostic (redacted)');
+    var help = element('p', 'Read-only support view. It never starts a pull and keeps only counts, booleans, and fixed parser categories in this tab.');
+    help.style.cssText = 'margin:6px 0 10px;color:#40594e;font-weight:500';
+    statusEl = element('div');
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    statusEl.style.cssText = 'margin:0 0 10px;color:#204034';
+    outputEl = element('pre');
+    outputEl.style.cssText = 'margin:0;padding:10px;border-radius:9px;background:#f4f7f5;color:#17231e;white-space:pre-wrap;overflow-wrap:anywhere;font:500 11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace';
+    var actions = element('div');
+    actions.style.cssText = 'display:flex;gap:8px;margin-top:10px';
+    var clearButton = element('button', 'Clear redacted view');
+    var dismissButton = element('button', 'Dismiss');
+    [clearButton, dismissButton].forEach(function (button) {
+      button.type = 'button';
+      button.style.cssText = 'flex:1;padding:8px;border:1px solid #b9c9c1;border-radius:8px;background:#fff;color:#174b39;font:700 12px system-ui,sans-serif;cursor:pointer';
+    });
+    clearButton.addEventListener('click', function () { lastSnapshot = null; paint(); }, false);
+    dismissButton.addEventListener('click', revert, false);
+    actions.appendChild(clearButton); actions.appendChild(dismissButton);
+    panel.appendChild(title); panel.appendChild(help); panel.appendChild(statusEl); panel.appendChild(outputEl); panel.appendChild(actions);
+    (document.body || document.documentElement).appendChild(panel);
+    paint();
+  }
+
+  function onMessage(event) {
+    if (destroyed || !event || event.source !== win || event.origin !== PAGE_ORIGIN) return;
+    var data = event.data;
+    if (!data || typeof data !== 'object' || data.source !== 'mls-ext' || data.type !== 'mlsAppScheduleResult') return;
+    captureSequence = add(captureSequence, 1);
+    lastSnapshot = sanitizeResponse(data.resp, captureSequence);
+    paint();
+  }
+
+  function revert() {
+    if (destroyed) return;
+    destroyed = true;
+    try { win.removeEventListener('message', onMessage, false); } catch (e) {}
+    if (domReadyHandler) {
+      try { document.removeEventListener('DOMContentLoaded', domReadyHandler, false); } catch (e) {}
+      domReadyHandler = null;
+    }
+    if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+    panel = null; statusEl = null; outputEl = null; lastSnapshot = null;
+    if (win.__mlsScheduleDiagSupport) win.__mlsScheduleDiagSupport.installed = false;
+  }
+
+  win.__mlsScheduleDiagSupport = {
+    installed: true,
+    getSnapshot: function () { return cloneSnapshot(lastSnapshot); },
+    revert: revert
+  };
+  win.addEventListener('message', onMessage, false);
+  if (document.readyState === 'loading') {
+    domReadyHandler = function () {
+      document.removeEventListener('DOMContentLoaded', domReadyHandler, false);
+      domReadyHandler = null;
+      mount();
+    };
+    document.addEventListener('DOMContentLoaded', domReadyHandler, false);
+  } else mount();
+})();
+/* MLS_SCHEDULE_SUPPORT_DIAG_END */
+
 /* Release-support control. This is deliberately absent from normal product pages:
    it mounts only on the explicit ?mlsExtensionReload=1 URL, and it can issue one
    user-clicked reload request. There is no timer or automatic retry loop. */
