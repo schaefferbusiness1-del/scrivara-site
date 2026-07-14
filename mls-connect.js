@@ -5539,6 +5539,16 @@
     '#mlsEz3 .ez3fl-qlbl{font-size:10px;font-weight:700;letter-spacing:.07em;color:#A6AEA6;}',
     '#mlsEz3 .ez3fl-qchip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;color:#55605A;font-size:12.5px;font-weight:600;cursor:pointer;padding:6px 12px;transition:background .15s ease,color .15s ease;}',
     '#mlsEz3 .ez3fl-qchip:hover{background:#F4F2EC;color:#1A211C;}',
+    '#mlsEz3 .ez3fl-voicechip.on{background:#204034;color:#fff;border-color:#204034;}',
+    /* When the complete visit lane is on screen, its three inline controls are
+       the canonical voice controls. Retire the fixed duplicates so they cannot
+       cover Start recording or one another. The higher-specificity selector
+       also wins over the older listening-state display rule. */
+    'html body.mls-top-voice-tools #mlsCopVoiceBtn,html body.mls-top-voice-tools #mlsAsstFab,html body.mls-top-voice-tools #mlsDaDock{display:none!important;}',
+    /* Outside the visit lane the fixed row remains available. Reserve a real
+       scroll safe-area beneath the page so the row never owns the last content
+       pixels. (The base app had 60px; the row needs 96px including its shadow.) */
+    '@media (min-width:761px){html body:not(.mls-top-voice-tools) #appWrap{padding-bottom:96px!important;scroll-padding-bottom:96px;}}',
     '.ez3fl-step{display:flex;align-items:baseline;gap:9px;margin:0 0 12px;}',
     '.ez3fl-step .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#204034;color:#fff;font-size:12px;font-weight:700;flex:0 0 auto;transform:translateY(3px);}',
     '.ez3fl-step .t{font-family:Newsreader,Georgia,serif;font-size:17px;font-weight:600;color:#1A211C;}',
@@ -5790,7 +5800,50 @@
     value = String(value);
     if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
   }
+  function topLaneIsVisible(rec) {
+    if (!rec || !rec.parentNode || !document.body) return false;
+    try {
+      var visit = $('visitView');
+      if (visit && getComputedStyle(visit).display === 'none') return false;
+      var cs = getComputedStyle(rec);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      var rr = rec.getBoundingClientRect();
+      var vw = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
+      var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      return rr.width > 0 && rr.height > 0 && rr.bottom > 0 && rr.top < vh && rr.right > 0 && rr.left < vw;
+    } catch (e) { return false; }
+  }
+  function setTopVoiceChip(rec, id, on, idleLabel, activeLabel) {
+    var chip = rec && rec.querySelector('#' + id); if (!chip) return;
+    on = !!on;
+    if (chip.classList.contains('on') !== on) chip.classList.toggle('on', on);
+    setLaneAttr(chip, 'aria-pressed', on ? 'true' : 'false');
+    var label = chip.querySelector('.ez3fl-vlabel');
+    setLaneText(label, on ? activeLabel : idleLabel);
+  }
+  function syncPrimaryVoiceTools(rec) {
+    var visible = topLaneIsVisible(rec);
+    try { document.body.classList.toggle('mls-top-voice-tools', visible); } catch (e) {}
+    if (!rec) return;
+    var voiceOn = false, dictateOn = false, assistantOpen = false;
+    try {
+      voiceOn = !!(window.__mlsCopilotVoiceV2 && typeof window.__mlsCopilotVoiceV2.isListening === 'function' && window.__mlsCopilotVoiceV2.isListening());
+    } catch (e2) {}
+    try {
+      dictateOn = !!(window.__mlsDictateAnywhere && typeof window.__mlsDictateAnywhere.isListening === 'function' && window.__mlsDictateAnywhere.isListening());
+    } catch (e3) {}
+    try { var panel = $('mlsAsstPanel'); assistantOpen = !!(panel && panel.classList.contains('open')); } catch (e4) {}
+    setTopVoiceChip(rec, 'ez3flCopilotVoice', voiceOn, 'Copilot Voice', 'Stop Copilot Voice');
+    setTopVoiceChip(rec, 'ez3flAssistant', assistantOpen, 'MLS Assistant', 'Close MLS Assistant');
+    setTopVoiceChip(rec, 'ez3flDictate', dictateOn, 'Dictate', 'Stop Dictate');
+  }
+  function clickTopVoiceControl(id, label) {
+    var control = $(id);
+    if (!control) { flowToast(label + ' is still loading. Try again in a moment.', 'err'); return; }
+    try { control.click(); } catch (e) { flowToast(label + ' could not open. Try again.', 'err'); }
+  }
   function syncTopLane(rec) {
+    syncPrimaryVoiceTools(rec);
     if (!rec || !rec.parentNode) return;
     var live = recordingNow();
     var tx = $('transcript'), note = $('noteBox'), genReal = $('genBtn');
@@ -5910,7 +5963,26 @@
           var q = document.createElement('div');
           q.className = 'ez3fl-quick';
           var ql = document.createElement('span'); ql.className = 'ez3fl-qlbl'; ql.textContent = 'QUICK TOOLS'; q.appendChild(ql);
-          var mkq = function (html, tip, fn) { var c = document.createElement('button'); c.type = 'button'; c.className = 'ez3fl-qchip'; c.innerHTML = html; c.title = tip; c.addEventListener('click', fn); q.appendChild(c); };
+          var mkq = function (html, tip, fn) { var c = document.createElement('button'); c.type = 'button'; c.className = 'ez3fl-qchip'; c.innerHTML = html; c.title = tip; c.addEventListener('click', fn); q.appendChild(c); return c; };
+          var cv = mkq('<span aria-hidden="true">&#127897;</span><span class="ez3fl-vlabel">Copilot Voice</span>', 'Talk to Copilot Voice for hands-free visit commands', function () {
+            clickTopVoiceControl('mlsCopVoiceBtn', 'Copilot Voice');
+            setTimeout(function () { syncPrimaryVoiceTools(rec); }, 50);
+          });
+          cv.id = 'ez3flCopilotVoice'; cv.classList.add('ez3fl-voicechip'); cv.setAttribute('aria-controls', 'mlsCopVoiceBtn'); cv.setAttribute('aria-pressed', 'false');
+          var av = mkq('<span aria-hidden="true">&#129658;</span><span class="ez3fl-vlabel">MLS Assistant</span>', 'Open the MLS Assistant without leaving the visit workflow', function () {
+            var panel = $('mlsAsstPanel');
+            if (panel && panel.classList.contains('open')) {
+              var close = panel.querySelector('.as-x'); if (close) close.click();
+            } else clickTopVoiceControl('mlsAsstFab', 'MLS Assistant');
+            setTimeout(function () { syncPrimaryVoiceTools(rec); }, 50);
+          });
+          av.id = 'ez3flAssistant'; av.classList.add('ez3fl-voicechip'); av.setAttribute('aria-controls', 'mlsAsstPanel'); av.setAttribute('aria-pressed', 'false');
+          var dv = mkq('<span aria-hidden="true">&#127908;</span><span class="ez3fl-vlabel">Dictate</span>', 'Dictate into the visit transcript (separate from Copilot Voice)', function () {
+            try { var top = $('ez3flTranscript'); if (top) top.focus(); } catch (e) {}
+            clickTopVoiceControl('mlsDaDock', 'Dictate');
+            setTimeout(function () { syncPrimaryVoiceTools(rec); }, 50);
+          });
+          dv.id = 'ez3flDictate'; dv.classList.add('ez3fl-voicechip'); dv.setAttribute('aria-controls', 'ez3flTranscript'); dv.setAttribute('aria-pressed', 'false');
           mkq('&#128203; Paste a transcript', 'Type or paste the conversation in the transcript box above', function () {
             try { var top = $('ez3flTranscript'); if (top) { top.scrollIntoView({ block: 'center', behavior: 'smooth' }); top.focus(); } } catch (e) {}
           });
@@ -6093,6 +6165,7 @@
       try { if (_iv) clearInterval(_iv); } catch (e) {}
       try { if (_laneIv) clearInterval(_laneIv); } catch (e) {}
       try { if (_topSegmentStopIv) clearInterval(_topSegmentStopIv); } catch (e) {}
+      try { document.body.classList.remove('mls-top-voice-tools'); } catch (e) {}
       try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
       try { window.__mlsEz3Flow.installed = false; } catch (e) {}
     }
@@ -28951,7 +29024,11 @@
   /* 2026-07-13 corner cleanup: the floating patient avatar is gone (the patient
      banner + rail already own that access); the extension's Athena-tab chip
      joins this row so the bottom-right corner belongs to the + FAB alone */
-  var ROW = ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip'];
+  /* Dictate is a separate microphone mode, but it belongs in the same physical
+     row. Its own stylesheet centers it with translateX(-50%); layout() clears
+     that transform before assigning row coordinates. Omitting either step was
+     the root cause of Assistant/Dictate overlap. */
+  var ROW = ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsDaDock', 'mlsTabPickerChip'];
   var savedStyle = {};
   var origBtnHTML = null;
   var timers = [], obs = [];
@@ -28970,13 +29047,24 @@
     try {
       /* Editorial Calm shell: a fixed 236px rail owns the bottom-left corner
          (account chip + Settings) - start the floating row right of it */
-      var x = (document.body.classList.contains('mls-rd-shell') && window.innerWidth > 760) ? 252 : LEFT0;
+      var items = [];
       ROW.forEach(function (id) {
         var el = $(id);
         if (!el) return;
         var cs = getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') return;
         if (!(id in savedStyle)) savedStyle[id] = el.getAttribute('style');
+        /* #mlsDaDock ships with translateX(-50%); leaving that in place moves
+           it backwards over MLS Assistant even when their left values differ. */
+        setImp(el, 'transform', 'none');
+        items.push(el);
+      });
+      var total = items.reduce(function (n, el) { return n + el.getBoundingClientRect().width; }, 0) + Math.max(0, items.length - 1) * GAP;
+      var x = (document.body.classList.contains('mls-rd-shell') && window.innerWidth > 1040) ? 252 : LEFT0;
+      /* Listening labels can grow. Keep the complete row inside the viewport
+         instead of letting its last action fall offscreen. */
+      if (x + total > window.innerWidth - LEFT0) x = Math.max(LEFT0, window.innerWidth - total - LEFT0);
+      items.forEach(function (el) {
         setImp(el, 'left', x + 'px');
         setImp(el, 'right', 'auto');
         setImp(el, 'bottom', '14px');
@@ -31171,7 +31259,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b270';
+  window.__MLS_AV = window.__MLS_AV || 'b271';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31497,7 +31585,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-14-b270';
+  var MLS_APP_BUILD='2026-07-14-b271';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -33589,24 +33677,132 @@
   var API="https://scrivara-backend.onrender.com";
 
   function tok(){ try{ return localStorage.getItem('sf_bk_token'); }catch(e){ return null; } }
-  function active(){ try{ var ap=window.activePatient; if(typeof ap==='function') ap=ap(); return (ap&&typeof ap==='object')?ap:null; }catch(e){ return null; } }
+  function cleanId(v){
+    var s=(v==null?'':String(v)).trim();
+    return (!s || /^(?:undefined|null)$/i.test(s)) ? '' : s;
+  }
+  function cleanName(v){
+    var s=(v==null?'':String(v)).replace(/\s+/g,' ').trim().toLowerCase();
+    return (!s || /^(?:undefined|null)$/i.test(s)) ? '' : s;
+  }
+  function cleanDob(v){
+    var raw=(v==null?'':String(v)).trim(), m;
+    if((m=raw.match(/^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})(?:\D|$)/))){
+      raw=m[1]+m[2]+m[3];
+    }else if((m=raw.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/))){
+      raw=m[3]+('0'+m[1]).slice(-2)+('0'+m[2]).slice(-2);
+    }else{
+      raw=raw.replace(/\D/g,'');
+      if(/^\d{8}$/.test(raw) && !/^(?:18|19|20|21)/.test(raw)) raw=raw.slice(4)+raw.slice(0,4);
+    }
+    if(!/^\d{8}$/.test(raw)) return '';
+    var y=Number(raw.slice(0,4)), mo=Number(raw.slice(4,6)), d=Number(raw.slice(6,8));
+    var dt=new Date(Date.UTC(y,mo-1,d));
+    return (dt.getUTCFullYear()===y && dt.getUTCMonth()===mo-1 && dt.getUTCDate()===d) ? raw : '';
+  }
+  function stableRefs(ap){
+    if(!ap || typeof ap!=='object') return [];
+    var out=[];
+    [['id',ap.id],['athenaId',ap.athenaId],['mrn',ap.mrn]].forEach(function(pair){
+      var s=cleanId(pair[1]);
+      if(s && !out.some(function(ref){ return ref.namespace===pair[0] && ref.value===s; })) out.push({namespace:pair[0],value:s});
+    });
+    return out;
+  }
+  function refsIntersect(a,b){
+    for(var i=0;i<a.length;i++) for(var j=0;j<b.length;j++){
+      if(a[i].namespace===b[j].namespace && a[i].value===b[j].value) return true;
+    }
+    return false;
+  }
+  function demographicKey(ap){
+    var nm=cleanName(ap&&ap.name), dob=cleanDob(ap&&ap.dob);
+    return (nm && dob) ? (nm+'|'+dob) : '';
+  }
+  function patientIdentity(ap){
+    if(!ap || typeof ap!=='object') return null;
+    var refs=stableRefs(ap), demo=demographicKey(ap);
+    if(refs.length) return { key:'ref:'+refs[0].namespace+':'+refs[0].value, externalId:refs[0].value, externalIdType:refs[0].namespace, stableRefs:refs, demoKey:demo, hasStable:true };
+    if(demo) return { key:'demo:'+demo, externalId:'demo:'+demo, externalIdType:'demographic', stableRefs:[], demoKey:demo, hasStable:false };
+    return null;
+  }
+  function samePatientIdentity(a,b){
+    var left=patientIdentity(a), right=patientIdentity(b);
+    if(!left || !right) return false;
+    if(left.hasStable || right.hasStable){
+      return left.hasStable && right.hasStable && refsIntersect(left.stableRefs,right.stableRefs);
+    }
+    return left.key===right.key;
+  }
+  function patientList(){
+    try{ var list=(typeof window.getPatients==='function')?window.getPatients():null; return Array.isArray(list)?list:null; }catch(e){ return null; }
+  }
+  function uniqueDemographicFallback(ap){
+    var key=demographicKey(ap), list=patientList();
+    if(!key || !list) return false;
+    return list.filter(function(p){ return p && demographicKey(p)===key; }).length===1;
+  }
+  function active(){
+    try{
+      var ap=window.activePatient;
+      if(typeof ap==='function') ap=ap();
+      var proof=patientIdentity(ap);
+      if(!proof) return null;
+      /* A name-only/partial placeholder is never a patient identity. The
+         demographic fallback is accepted only when an exact nonblank name+DOB
+         identifies one and only one stored record. */
+      if(!proof.hasStable && !uniqueDemographicFallback(ap)) return null;
+      return ap;
+    }catch(e){ return null; }
+  }
+  function patientKey(ap){
+    var proof=patientIdentity(ap);
+    return proof ? proof.key : '';
+  }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function findEmail(ap){
     try{
-      if(!ap) return '';
-      if(ap.email) return ap.email;
-      var list=(typeof window.getPatients==='function')?window.getPatients():null;
-      if(Array.isArray(list)){
-        var m=list.filter(function(p){ return p && (p.id===ap.id || (p.name===ap.name && p.dob===ap.dob)); })[0];
-        if(m && m.email) return m.email;
+      var proof=patientIdentity(ap);
+      if(!proof || (!proof.hasStable && !uniqueDemographicFallback(ap))) return '';
+      var own=String((ap&&ap.email)||'').trim();
+      if(own) return own;
+      var list=patientList(); if(!list) return '';
+      var matches=[];
+      if(proof.hasStable){
+        matches=list.filter(function(p){
+          return refsIntersect(proof.stableRefs,stableRefs(p));
+        });
       }
+      /* A list representation can legitimately omit the stable ID. Only use
+         demographics when the exact pair has a single match; undefined IDs
+         are never compared and therefore can never make the first row win. */
+      if(!matches.length && proof.demoKey){
+        var byDemo=list.filter(function(p){ return p && demographicKey(p)===proof.demoKey; });
+        /* A stable-ID patient can fall back only to an ID-less representation.
+           A same-demographic record with another stable ID is a different
+           patient, even when the raw number happens to match another field. */
+        if(proof.hasStable && byDemo.some(function(p){ return stableRefs(p).length>0; })) return '';
+        matches=byDemo;
+      }
+      if(matches.length!==1) return '';
+      return String((matches[0]&&matches[0].email)||'').trim();
     }catch(e){}
     return '';
   }
 
   function openModal(ap){
     if(document.getElementById('mlsPiBack')) return;
-    var email=findEmail(ap), nm=(ap&&ap.name)||'this patient';
+    var proof=patientIdentity(ap);
+    if(!proof || (!proof.hasStable && !uniqueDemographicFallback(ap))) return;
+    /* Freeze the reviewed patient. Even if the app reuses/mutates its active
+       patient object, the eventual explicit send keeps this exact identity. */
+    var email=findEmail(ap);
+    ap={
+      id:cleanId(ap&&ap.id), athenaId:cleanId(ap&&ap.athenaId), mrn:cleanId(ap&&ap.mrn),
+      name:(ap&&ap.name)||'', dob:(ap&&ap.dob)||'', email:email,
+      externalId:proof.externalId, patientKey:proof.key
+    };
+    var nm=ap.name||'this patient';
     var back=document.createElement('div');
     back.id='mlsPiBack';
     back.style.cssText='position:fixed;inset:0;background:rgba(10,30,60,.45);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
@@ -33631,10 +33827,18 @@
     box.querySelector('#mlsPiSend').onclick=function(){
       var em=(box.querySelector('#mlsPiEmail').value||'').trim();
       if(!em){ showMsg('Please enter the patient’s email.',false); return; }
+      /* Keep the invite bound to the patient for whom this modal opened. A
+         background/patient switch must never turn a stale dialog into a send
+         for the wrong chart. */
+      var now=active();
+      if(!now || !ap.patientKey || !samePatientIdentity(now,ap)){
+        showMsg('The active patient changed. Close this window and open Patient portal again.',false);
+        return;
+      }
       var tk=tok();
       if(!tk){ showMsg('You’re signed out — sign back into MLS and try again.',false); return; }
       var btn=box.querySelector('#mlsPiSend'); btn.disabled=true; var old=btn.textContent; btn.textContent='Sending…';
-      var body={ email:em, name:(ap&&ap.name)||'', dob:(ap&&ap.dob)||'', external_id:(ap&&ap.id)||'', mrn:(ap&&(ap.mrn||ap.id))||'' };
+      var body={ email:em, name:ap.name, dob:ap.dob, external_id:ap.externalId, mrn:ap.mrn };
       fetch(API+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},body:JSON.stringify(body)})
         .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,status:r.status,j:j}; }); })
         .then(function(res){
@@ -33650,28 +33854,47 @@
   function makeBtn(){
     var b=document.createElement('button');
     b.id='mlsPortalInviteBtn'; b.type='button';
-    b.textContent='📧 Send portal login';
-    b.title='Email this patient a secure link to their records';
-    b.style.cssText='margin:6px 8px 2px 0;display:inline-flex;align-items:center;gap:6px;background:#eef4fc;border:1px solid #cfe0f3;color:#204034;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.2';
+    b.textContent='Patient portal';
+    b.setAttribute('aria-label','Open patient portal invite for the active patient');
+    b.style.cssText='margin:0;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#EAF1EE;border:1px solid #C9DCD2;color:#204034;border-radius:9px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;line-height:1.2;white-space:nowrap';
     b.addEventListener('mouseenter',function(){ b.style.background='#e2edfa'; });
-    b.addEventListener('mouseleave',function(){ b.style.background='#eef4fc'; });
+    b.addEventListener('mouseleave',function(){ b.style.background='#EAF1EE'; });
     b.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); var ap=active(); if(!ap){ alert('Select a patient first.'); return; } openModal(ap); });
     return b;
   }
 
   function inject(){
     try{
-      if(document.getElementById('mlsPortalInviteBtn')) return;
-      if(!active()) return; // only show when a patient is selected
+      var ap=active();
+      var b=document.getElementById('mlsPortalInviteBtn');
+      if(!ap){ if(b) b.remove(); return; } // only show for a real active patient
+
+      if(!b) b=makeBtn();
+      if(b.textContent!=='Patient portal') b.textContent='Patient portal';
+      var title='Open the patient portal for '+String(ap.name||'this patient')+'. Nothing sends until you click Send login.';
+      if(b.title!==title) b.title=title;
+
+      /* The unified patient card may render after an early fallback button.
+         Reconcile that existing node into the visible actions row instead of
+         returning merely because its ID already exists. */
+      var actions=document.querySelector('#mlsCtxBar .mlsctx-actions');
+      if(actions){
+        var switchBtn=actions.querySelector('button[data-act="switch"]')||actions.querySelector('.mlsctx-switch');
+        if(b.parentNode!==actions || (switchBtn && b.nextSibling!==switchBtn)) actions.insertBefore(b,switchBtn||null);
+        return;
+      }
+
       var host=document.querySelector('.mlsctx-id')||document.querySelector('.mlsctx-idtext')||document.querySelector('#visitHero');
       var hero=document.getElementById('heroPtName');
-      var b=makeBtn();
       if(host){
         var meta=host.querySelector('.mlsctx-meta');
-        if(meta && meta.parentNode){ meta.parentNode.insertBefore(b, meta.nextSibling); }
-        else { host.appendChild(b); }
+        var fallbackParent=(meta && meta.parentNode) ? meta.parentNode : host;
+        if(b.parentNode!==fallbackParent){
+          if(meta && meta.parentNode){ fallbackParent.insertBefore(b, meta.nextSibling); }
+          else { fallbackParent.appendChild(b); }
+        }
       } else if(hero && hero.parentNode){
-        hero.parentNode.insertBefore(b, hero.nextSibling);
+        if(b.parentNode!==hero.parentNode) hero.parentNode.insertBefore(b, hero.nextSibling);
       } else { return; }
     }catch(e){}
   }
