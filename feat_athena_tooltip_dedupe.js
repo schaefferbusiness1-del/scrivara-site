@@ -440,8 +440,12 @@
   var retryCount = 0;
   var topObserver = null;
   var visitObserver = null;
+  var settingsObserver = null;
   var reconciling = false;
   var initialAdvancedSettled = false;
+  var activeSettingsGroup = 'account';
+  var settingsWasOpen = false;
+  var settingsMoves = [];
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -473,6 +477,23 @@
       '.mls-account-action.danger{color:#9B3030;}',
       '.mls-password-standard{display:none;margin:-6px 0 14px;color:#66726A;font:500 12px/1.4 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;}',
       '.mls-password-standard.is-visible{display:block;}',
+      '#settingsModal.mls-settings-clean .modal{padding:28px 32px 92px 258px!important;background:#FBFAF7!important;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar{left:18px!important;right:auto!important;width:214px!important;padding:0 14px 0 0!important;border-left:0!important;border-right:1px solid #E7E5DD!important;background:transparent!important;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab{border-radius:9px!important;padding:10px 12px!important;color:#55605A!important;font-weight:650!important;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab:hover{background:#F4F2EC!important;color:#1A211C!important;}',
+      '#settingsModal.mls-settings-clean #settingsTabBar .set-tab.on{background:#204034!important;color:#fff!important;box-shadow:none!important;}',
+      '#settingsModal.mls-settings-clean .set-section{background:#fff!important;border:1px solid #E7E5DD!important;border-radius:14px!important;padding:18px!important;margin:0 0 14px!important;}',
+      '#settingsModal.mls-settings-clean .set-section>.set-head{color:#204034!important;font-size:12.5px!important;margin-bottom:5px!important;}',
+      '#settingsModal.mls-settings-clean .set-section>.set-desc{color:#55605A!important;}',
+      '#settingsModal.mls-settings-clean .modal>.row{position:sticky;bottom:-92px;z-index:5;background:rgba(251,250,247,.96);border-top:1px solid #E7E5DD;margin:20px -32px -92px;padding:14px 32px 18px;backdrop-filter:blur(8px);}',
+      '#settingsModal.mls-settings-clean .mls-settings-moved{border-top:1px solid #EFEDE6;padding-top:14px;margin-top:14px;}',
+      '.mls-intake-editor{display:grid;gap:8px;margin-top:9px;}',
+      '.mls-intake-row{display:grid;grid-template-columns:minmax(0,1fr) 38px;gap:8px;align-items:center;}',
+      '.mls-intake-row input{width:100%;min-width:0;}',
+      '.mls-intake-remove{height:38px;border:1px solid #E3D6D3;border-radius:9px;background:#fff;color:#9B3030;font-size:17px;cursor:pointer;}',
+      '.mls-intake-remove:hover{background:#FFF4F2;}',
+      '.mls-intake-add{justify-self:start;margin-top:2px;}',
+      '@media(max-width:820px){#settingsModal.mls-settings-clean .modal{padding:24px 24px 88px!important;}#settingsModal.mls-settings-clean #settingsTabBar{position:static!important;width:auto!important;max-height:none!important;display:flex!important;flex-flow:row nowrap!important;overflow-x:auto!important;border-right:0!important;border-bottom:1px solid #E7E5DD!important;padding:0 0 10px!important;margin:10px 0 16px!important;}#settingsModal.mls-settings-clean #settingsTabBar .set-tab{width:auto!important;flex:0 0 auto!important;}#settingsModal.mls-settings-clean .modal>.row{bottom:-88px;margin:18px -24px -88px;padding:13px 24px 17px;}}',
       '@media(max-width:720px){#mlsAccountMenuBtn .mls-account-label{display:none}#mlsAccountMenuBtn{padding:0 7px}.mls-account-pop{position:fixed;right:12px;top:64px;width:min(280px,calc(100vw - 24px));}}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
@@ -677,6 +698,305 @@
     err.classList.add('show');
   }
 
+  function directSettingsSections() {
+    var modal = byId('settingsModal');
+    return modal ? Array.prototype.slice.call(modal.querySelectorAll('.modal > .set-section')) : [];
+  }
+
+  function settingsHeading(section) {
+    return text(section && section.querySelector('.set-head'));
+  }
+
+  function settingsGroupFor(section) {
+    var heading = settingsHeading(section);
+    if (/Account & access|Security & privacy/i.test(heading)) return 'account';
+    if (/Practice & provider/i.test(heading)) return 'practice';
+    if (/Note defaults|AI personalization|Provider preferences/i.test(heading)) return 'notes';
+    if (/Display/i.test(heading)) return 'display';
+    if (/Features|App tabs/i.test(heading)) return 'features';
+    if (/Legal expert profile/i.test(heading)) return 'legal';
+    if (/Integrations/i.test(heading)) return 'integrations';
+    if (/MLS Controls/i.test(heading)) return 'advanced';
+    return '';
+  }
+
+  var SETTINGS_GROUPS = [
+    { key: 'account', label: 'Account & security' },
+    { key: 'practice', label: 'Practice & provider' },
+    { key: 'notes', label: 'Notes & AI' },
+    { key: 'display', label: 'Display' },
+    { key: 'features', label: 'Features & navigation' },
+    { key: 'legal', label: 'Legal profile' },
+    { key: 'integrations', label: 'Integrations' },
+    { key: 'advanced', label: 'Advanced' }
+  ];
+
+  function settingsIsLawyer() {
+    return safe(function () { return typeof W.isLawyerUser === 'function' && W.isLawyerUser(); }, false);
+  }
+
+  function allowedSettingsGroup(key) {
+    return !settingsIsLawyer() || key === 'account' || key === 'display';
+  }
+
+  function rememberSettingsMove(el) {
+    if (!el || el.getAttribute('data-mls-settings-move') === '1') return;
+    settingsMoves.push({ el: el, parent: el.parentNode, next: el.nextSibling });
+    el.setAttribute('data-mls-settings-move', '1');
+  }
+
+  function moveSettingField(el, parent, before) {
+    if (!el || !parent || el.parentNode === parent && (!before || el.nextSibling === before)) return;
+    rememberSettingsMove(el);
+    parent.insertBefore(el, before || null);
+    el.classList.add('mls-settings-moved');
+  }
+
+  function closestField(el) {
+    return safe(function () { return el && el.closest('.field'); }, null);
+  }
+
+  function syncProviderIdentity() {
+    var provider = byId('providerName'), legacy = byId('docName');
+    if (provider && legacy) legacy.value = String(provider.value || '').trim();
+  }
+
+  function providerIdentityInput() {
+    syncProviderIdentity();
+  }
+
+  function syncIntakeQuestions(editor) {
+    var textarea = byId('intakeQuestions');
+    editor = editor || byId('mlsIntakeQuestionEditor');
+    if (!textarea || !editor) return;
+    var values = Array.prototype.slice.call(editor.querySelectorAll('.mls-intake-question'))
+      .map(function (input) { return String(input.value || '').trim(); })
+      .filter(Boolean);
+    textarea.value = values.join('\n');
+    editor.setAttribute('data-source', textarea.value);
+  }
+
+  function makeIntakeRow(value, editor) {
+    var row = document.createElement('div');
+    row.className = 'mls-intake-row';
+    var input = document.createElement('input');
+    input.type = 'text'; input.className = 'mls-intake-question';
+    input.placeholder = 'Add a question patients should answer';
+    input.value = value || '';
+    input.addEventListener('input', function () { syncIntakeQuestions(editor); });
+    var remove = document.createElement('button');
+    remove.type = 'button'; remove.className = 'mls-intake-remove';
+    remove.setAttribute('aria-label', 'Remove intake question'); remove.textContent = '×';
+    remove.addEventListener('click', function () {
+      row.remove();
+      if (!editor.querySelector('.mls-intake-row')) editor.insertBefore(makeIntakeRow('', editor), editor.querySelector('.mls-intake-add'));
+      syncIntakeQuestions(editor);
+    });
+    row.appendChild(input); row.appendChild(remove);
+    return row;
+  }
+
+  function renderIntakeEditor(editor, force) {
+    var textarea = byId('intakeQuestions');
+    if (!textarea || !editor) return;
+    if (!force && editor.getAttribute('data-source') === textarea.value) return;
+    Array.prototype.slice.call(editor.querySelectorAll('.mls-intake-row')).forEach(function (row) { row.remove(); });
+    var values = String(textarea.value || '').split(/\r?\n/).map(function (v) { return v.trim(); }).filter(Boolean);
+    if (!values.length) values = [''];
+    var add = editor.querySelector('.mls-intake-add');
+    values.forEach(function (value) { editor.insertBefore(makeIntakeRow(value, editor), add); });
+    editor.setAttribute('data-source', textarea.value);
+  }
+
+  function ensureIntakeEditor() {
+    var textarea = byId('intakeQuestions');
+    if (!textarea) return;
+    textarea.hidden = true;
+    var editor = byId('mlsIntakeQuestionEditor');
+    if (!editor) {
+      editor = document.createElement('div');
+      editor.id = 'mlsIntakeQuestionEditor'; editor.className = 'mls-intake-editor';
+      var add = document.createElement('button');
+      add.type = 'button'; add.className = 'btn-ghost mls-intake-add'; add.textContent = '+ Add question';
+      add.addEventListener('click', function () {
+        var row = makeIntakeRow('', editor);
+        editor.insertBefore(row, add);
+        safe(function () { row.querySelector('input').focus(); });
+      });
+      editor.appendChild(add);
+      textarea.insertAdjacentElement('afterend', editor);
+    }
+    renderIntakeEditor(editor, false);
+  }
+
+  function rearrangeSettingsFields(sections) {
+    var sectionByGroup = {};
+    sections.forEach(function (section) {
+      var key = settingsGroupFor(section);
+      if (key && !sectionByGroup[key]) sectionByGroup[key] = section;
+    });
+    var account = sectionByGroup.account, practice = sectionByGroup.practice;
+    var features = sectionByGroup.features;
+
+    var legacyNameField = closestField(byId('docName'));
+    if (legacyNameField) markHidden(legacyNameField, 'duplicate-provider-name');
+    var provider = byId('providerName'), legacy = byId('docName');
+    if (provider && provider.getAttribute('data-mls-provider-sync') !== '1') {
+      provider.setAttribute('data-mls-provider-sync', '1');
+      provider.addEventListener('input', providerIdentityInput);
+      var providerLabel = safe(function () { return document.querySelector('label[for="providerName"]'); }, null);
+      if (providerLabel) {
+        providerLabel.setAttribute('data-mls-original-label', providerLabel.textContent || '');
+        providerLabel.textContent = 'Provider full name — used on notes, booking and reports';
+      }
+    }
+    if (settingsWasOpen === false && provider && legacy) {
+      if (!String(provider.value || '').trim() && String(legacy.value || '').trim()) provider.value = legacy.value;
+      syncProviderIdentity();
+    }
+
+    var specialtyField = closestField(byId('docSpec'));
+    if (specialtyField && practice) {
+      var firstGrid = practice.querySelector('.set-grid2');
+      moveSettingField(specialtyField, practice, firstGrid ? firstGrid.nextSibling : null);
+      var specialtyLabel = safe(function () { return specialtyField.querySelector('label[for="docSpec"]'); }, null);
+      if (specialtyLabel && !specialtyLabel.getAttribute('data-mls-original-label')) {
+        specialtyLabel.setAttribute('data-mls-original-label', specialtyLabel.textContent || '');
+        specialtyLabel.textContent = 'Clinical specialty — tailors notes and reports';
+      }
+    }
+
+    var confirmField = closestField(byId('qolConfirmLogout'));
+    var security = sections.filter(function (s) { return /Security & privacy/i.test(settingsHeading(s)); })[0];
+    if (confirmField && security) {
+      var idleField = closestField(byId('idleMins'));
+      moveSettingField(confirmField, security, idleField ? idleField.nextSibling : security.firstChild);
+    }
+
+    var intakeField = closestField(byId('intakeQuestions'));
+    if (intakeField && practice) moveSettingField(intakeField, practice, null);
+    ensureIntakeEditor();
+
+    var groupProcField = closestField(byId('qolGroupProc'));
+    if (groupProcField && features) moveSettingField(groupProcField, features, features.querySelector('.field'));
+    var routeReviewField = closestField(byId('autoSendEMR'));
+    /* The underlying safeguard intentionally forces this legacy automatic
+       routing preference off. Do not present a switch that cannot stay on;
+       the supervised review remains available from its real workflow. */
+    if (routeReviewField) markHidden(routeReviewField, 'retired-automatic-routing-toggle');
+
+    if (account) {
+      var desc = account.querySelector('.set-desc');
+      if (desc && !desc.getAttribute('data-mls-original-text')) {
+        desc.setAttribute('data-mls-original-text', desc.textContent || '');
+        desc.textContent = 'Your sign-in, password and AI connection for this account.';
+      }
+    }
+  }
+
+  function updateSettingsFooter(key) {
+    var modal = byId('settingsModal');
+    var footer = modal && safe(function () { return modal.querySelector('.modal > .row'); }, null);
+    if (!footer) return;
+    var primary = footer.querySelector('.btn-primary');
+    var close = footer.querySelector('.btn-ghost');
+    var dedicated = key === 'legal' || key === 'integrations' || key === 'advanced';
+    if (primary) {
+      if (!primary.getAttribute('data-mls-original-text')) primary.setAttribute('data-mls-original-text', primary.textContent || '');
+      primary.style.display = dedicated ? 'none' : '';
+      if (primary.textContent !== 'Save changes') primary.textContent = 'Save changes';
+    }
+    if (close) {
+      if (!close.getAttribute('data-mls-original-text')) close.setAttribute('data-mls-original-text', close.textContent || '');
+      var closeLabel = dedicated ? 'Done' : 'Cancel';
+      if (close.textContent !== closeLabel) close.textContent = closeLabel;
+    }
+    if (modal) modal.setAttribute('data-mls-settings-active', key);
+  }
+
+  function selectSettingsGroup(key, focusTab) {
+    var modal = byId('settingsModal'), bar = byId('settingsTabBar');
+    if (!modal || !bar || !allowedSettingsGroup(key)) return;
+    activeSettingsGroup = key;
+    directSettingsSections().forEach(function (section) {
+      var show = settingsGroupFor(section) === key && allowedSettingsGroup(key);
+      section.classList.toggle('set-tab-hidden', !show);
+      section.style.display = show ? '' : 'none';
+    });
+    Array.prototype.slice.call(bar.querySelectorAll('[data-mls-settings-group]')).forEach(function (tab) {
+      var on = tab.getAttribute('data-mls-settings-group') === key;
+      tab.classList.toggle('on', on); tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      tab.setAttribute('tabindex', on ? '0' : '-1');
+      if (on && focusTab) safe(function () { tab.focus(); });
+    });
+    var intro = byId('settingsIntro');
+    if (intro) intro.style.display = key === 'account' && text(intro) ? '' : 'none';
+    updateSettingsFooter(key);
+    var body = modal.querySelector('.modal'); if (body) body.scrollTop = 0;
+  }
+
+  function settingsTabKeydown(ev) {
+    var key = ev && ev.key;
+    if (!/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/.test(key || '')) return;
+    ev.preventDefault();
+    var tabs = Array.prototype.slice.call(byId('settingsTabBar').querySelectorAll('[data-mls-settings-group]'));
+    var idx = tabs.indexOf(ev.currentTarget);
+    if (key === 'Home') idx = 0;
+    else if (key === 'End') idx = tabs.length - 1;
+    else idx = (idx + (/Right|Down/.test(key) ? 1 : -1) + tabs.length) % tabs.length;
+    var target = tabs[idx]; if (target) selectSettingsGroup(target.getAttribute('data-mls-settings-group'), true);
+  }
+
+  function buildCleanSettingsTabs(sections) {
+    var bar = byId('settingsTabBar'); if (!bar) return;
+    var present = {};
+    sections.forEach(function (section, index) {
+      var key = settingsGroupFor(section);
+      if (!key) return;
+      present[key] = true;
+      section.id = section.id || ('mlsSettingsSection' + index);
+      section.setAttribute('data-mls-settings-group', key);
+      section.setAttribute('data-set-hidden', allowedSettingsGroup(key) ? '0' : '1');
+    });
+    var groups = SETTINGS_GROUPS.filter(function (group) { return present[group.key] && allowedSettingsGroup(group.key); });
+    if (!groups.some(function (group) { return group.key === activeSettingsGroup; })) activeSettingsGroup = groups.length ? groups[0].key : 'account';
+    bar.innerHTML = '';
+    groups.forEach(function (group) {
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'set-tab'; btn.setAttribute('role', 'tab');
+      btn.setAttribute('data-mls-settings-group', group.key); btn.textContent = group.label;
+      btn.addEventListener('click', function () { selectSettingsGroup(group.key, false); });
+      btn.addEventListener('keydown', settingsTabKeydown);
+      bar.appendChild(btn);
+    });
+    bar.setAttribute('data-mls-settings-clean', '1');
+    selectSettingsGroup(activeSettingsGroup, false);
+  }
+
+  function reconcileSettings() {
+    var modal = byId('settingsModal'); if (!modal) return false;
+    modal.classList.add('mls-settings-clean');
+    var sections = directSettingsSections();
+    if (!sections.length) return false;
+    var open = modal.classList.contains('show');
+    rearrangeSettingsFields(sections);
+    var bar = byId('settingsTabBar');
+    if (bar && (!bar.querySelector('[data-mls-settings-group]') || bar.querySelectorAll('[data-mls-settings-group]').length !== SETTINGS_GROUPS.filter(function (group) {
+      return sections.some(function (section) { return settingsGroupFor(section) === group.key; }) && allowedSettingsGroup(group.key);
+    }).length)) buildCleanSettingsTabs(sections);
+    else selectSettingsGroup(activeSettingsGroup, false);
+    if (open && !settingsWasOpen) {
+      var provider = byId('providerName'), legacy = byId('docName');
+      if (provider && legacy) {
+        if (!String(provider.value || '').trim() && String(legacy.value || '').trim()) provider.value = legacy.value;
+        syncProviderIdentity();
+      }
+      var editor = byId('mlsIntakeQuestionEditor'); if (editor) renderIntakeEditor(editor, true);
+    }
+    settingsWasOpen = open;
+    return true;
+  }
+
   function reconcileAll() {
     if (reconciling) return;
     reconciling = true;
@@ -684,6 +1004,7 @@
     safe(reconcileAdvanced);
     safe(reconcilePortalOwner);
     safe(reconcileAuth);
+    safe(reconcileSettings);
     reconciling = false;
   }
 
@@ -699,7 +1020,7 @@
   }
 
   function observeStableRoots() {
-    var top = byId('mlsRdTop'), visit = byId('mlsEz3');
+    var top = byId('mlsRdTop'), visit = byId('mlsEz3'), settings = byId('settingsModal');
     if (top && !topObserver) {
       topObserver = new MutationObserver(function () { scheduleReconcile(false); });
       topObserver.observe(top, { childList: true, subtree: true });
@@ -707,6 +1028,10 @@
     if (visit && !visitObserver) {
       visitObserver = new MutationObserver(function () { scheduleReconcile(false); });
       visitObserver.observe(visit, { childList: true, subtree: true });
+    }
+    if (settings && !settingsObserver) {
+      settingsObserver = new MutationObserver(function () { scheduleReconcile(false); });
+      settingsObserver.observe(settings, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     }
   }
 
@@ -738,6 +1063,11 @@
         return;
       }
     }
+    var settingsSave = safe(function () { return target.closest('#settingsModal .modal > .row .btn-primary'); }, null);
+    if (settingsSave) {
+      syncProviderIdentity();
+      syncIntakeQuestions();
+    }
     var trigger = safe(function () { return target.closest('.ez3fl-openws'); }, null);
     if (trigger) {
       if (closeAdvancedFromEasy(ev)) return;
@@ -759,6 +1089,7 @@
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     if (topObserver) { topObserver.disconnect(); topObserver = null; }
     if (visitObserver) { visitObserver.disconnect(); visitObserver = null; }
+    if (settingsObserver) { settingsObserver.disconnect(); settingsObserver = null; }
     var wrap = byId(ACCOUNT_WRAP_ID); if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
     var helper = byId('mlsPasswordStandard'); if (helper && helper.parentNode) helper.parentNode.removeChild(helper);
     [byId('tabLogin'), byId('tabSignup')].forEach(function (tab) {
@@ -770,6 +1101,37 @@
       trigger.removeEventListener('click', easyAdvancedClick, true);
       trigger.removeAttribute('data-mls-advanced-owner');
     });
+    var intakeEditor = byId('mlsIntakeQuestionEditor'); if (intakeEditor && intakeEditor.parentNode) intakeEditor.parentNode.removeChild(intakeEditor);
+    var intakeTextarea = byId('intakeQuestions'); if (intakeTextarea) intakeTextarea.hidden = false;
+    var provider = byId('providerName'); if (provider) { provider.removeEventListener('input', providerIdentityInput); provider.removeAttribute('data-mls-provider-sync'); }
+    document.querySelectorAll('[data-mls-original-label]').forEach(function (label) {
+      label.textContent = label.getAttribute('data-mls-original-label') || '';
+      label.removeAttribute('data-mls-original-label');
+    });
+    document.querySelectorAll('[data-mls-original-text]').forEach(function (el) {
+      el.textContent = el.getAttribute('data-mls-original-text') || '';
+      el.removeAttribute('data-mls-original-text');
+    });
+    for (var sm = settingsMoves.length - 1; sm >= 0; sm--) {
+      var move = settingsMoves[sm];
+      if (move.el && move.parent) move.parent.insertBefore(move.el, move.next && move.next.parentNode === move.parent ? move.next : null);
+      if (move.el) { move.el.removeAttribute('data-mls-settings-move'); move.el.classList.remove('mls-settings-moved'); }
+    }
+    settingsMoves = [];
+    var settingsModal = byId('settingsModal');
+    if (settingsModal) {
+      settingsModal.classList.remove('mls-settings-clean'); settingsModal.removeAttribute('data-mls-settings-active');
+      var settingsIntro = byId('settingsIntro'); if (settingsIntro) settingsIntro.style.removeProperty('display');
+      var settingsFooter = safe(function () { return settingsModal.querySelector('.modal > .row'); }, null);
+      if (settingsFooter) Array.prototype.slice.call(settingsFooter.querySelectorAll('button')).forEach(function (button) {
+        button.style.removeProperty('display');
+      });
+      directSettingsSections().forEach(function (section) {
+        section.style.removeProperty('display'); section.classList.remove('set-tab-hidden'); section.removeAttribute('data-mls-settings-group');
+      });
+    }
+    var settingsBar = byId('settingsTabBar'); if (settingsBar) settingsBar.removeAttribute('data-mls-settings-clean');
+    safe(function () { if (typeof W.mlsBuildSettingsTabs === 'function') W.mlsBuildSettingsTabs(); });
     document.querySelectorAll('[data-mls-ui-owner-hidden="1"]').forEach(function (el) {
       el.style.removeProperty('display');
       el.removeAttribute('data-mls-ui-owner-hidden');
