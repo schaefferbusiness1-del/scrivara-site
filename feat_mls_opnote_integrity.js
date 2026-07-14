@@ -1,5 +1,5 @@
 /* =============================================================================
- * MLS op-note integrity  oni-2.1.0
+ * MLS op-note integrity  oni-2.2.0
  * One final owner for procedure-template matching and template-faithful drafting.
  * - Procedure class wins over shared words, levels, or laterality.
  * - Ambiguous/no-signal rows stay unassigned instead of silently using template 1.
@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.1.0';
+  var VERSION = 'oni-2.2.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -231,6 +231,60 @@
     return {note:S(obj.note),missing:Array.isArray(obj.missing)?obj.missing:[]};
   }
 
+  /* Keep exact chart-owned identity values out of the model's discretion. */
+  function forceFacts(note, facts) {
+    facts=facts||{};
+    return S(note).split(/\r?\n/).map(function(line){
+      var h=headingLabel(line), colon=line.indexOf(':');
+      if(!h||colon<0||!Object.prototype.hasOwnProperty.call(facts,h))return line;
+      var value=S(facts[h]).trim()||'[['+h.replace(/\s+/g,'_')+']]';
+      return line.slice(0,colon+1)+' '+value;
+    }).join('\n');
+  }
+
+  function sourceSections(note) {
+    var out={}, cur=null;
+    S(note).split(/\r?\n/).forEach(function(line){
+      var h=headingLabel(line), colon=line.indexOf(':');
+      if(h){
+        cur={lines:[]}; if(!out[h])out[h]=cur;
+        if(colon>=0&&S(line.slice(colon+1)).trim())cur.lines.push(S(line.slice(colon+1)).trim());
+      } else if(cur&&S(line).trim()) cur.lines.push(line);
+    });
+    return out;
+  }
+
+  /* The model supplies clinical prose; this deterministic pass owns document
+     structure. It emits only template headings, in template order, copies every
+     fixed template line verbatim, and places same-heading draft content only in
+     empty or explicit-placeholder slots. */
+  function reanchor(note, templateText, facts) {
+    var src=sourceSections(note), segs=[], cur=null;
+    S(templateText).split(/\r?\n/).forEach(function(line){
+      var h=headingLabel(line);
+      if(h){cur={h:h,head:line,body:[]};segs.push(cur);}else if(cur){cur.body.push(line);}else{segs.push({h:'',head:line,body:[]});}
+    });
+    var out=[];
+    segs.forEach(function(seg){
+      if(!seg.h){out.push(seg.head);return;}
+      var colon=seg.head.indexOf(':'), exact=colon>=0&&facts&&Object.prototype.hasOwnProperty.call(facts,seg.h)?S(facts[seg.h]).trim():'', cand=(src[seg.h]&&src[seg.h].lines)||[];
+      /* A colon-less ALL-CAPS line is a literal document title, never a fillable field. */
+      if(colon<0){out.push(seg.head);seg.body.forEach(function(b){out.push(b);});return;}
+      var tail=S(seg.head.slice(colon+1)), bodyJoined=seg.body.join('\n'), hasBody=S(bodyJoined).trim(), hasSlot=/\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,}/i.test(tail+'\n'+bodyJoined);
+      if(exact){out.push(seg.head.slice(0,colon+1)+' '+exact);}
+      else if(S(tail).trim()&&!hasSlot){out.push(seg.head);}
+      else if(!hasBody&&!hasSlot){out.push(seg.head+(cand.length?(' '+cand.join('\n')):(' [['+seg.h.replace(/\s+/g,'_')+']]')));}
+      else {out.push(seg.head);}
+      seg.body.forEach(function(b){
+        if(/\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,}/i.test(b)){
+          if(cand.length&&/^\s*(?:\[\[[^\]]+\]\]|\[(?:FILL\s*:?\s*)?[^\]]+\]|\{\{[^}]+\}\}|_{2,})\s*$/i.test(b)) out.push.apply(out,cand);
+          else out.push(b);
+        } else out.push(b);
+      });
+    });
+    return forceFacts(out.join('\n'),facts);
+  }
+
   async function generate(name,dateStr,procedure,tplText,ctx) {
     window.__mlsLastOpFidelityError='';window.__mlsLastOpFidelityPass=false;
     ctx=ctx||{};
@@ -245,11 +299,17 @@
     var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(ctx.history?'\n\nVERIFIED PATIENT HISTORY:\n'+S(ctx.history).slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+S(tplText).slice(0,12000);
     var key=isFn(window.getKey)?window.getKey():'';
     var opts={freeform:true,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true};
-    var first=parseResult(await window.aiCallRaw(sys,user,key,opts)), check=fidelity(first.note,tplText);
+    var facts={patient:name,mrn:ctx.mrn,'date of procedure':dateStr,procedure:procedure};
+    if(ctx.dob)facts['date of birth']=ctx.dob;
+    if(ctx.provider)facts.provider=ctx.provider;
+    if(ctx.providerNpi)facts.npi=ctx.providerNpi;
+    if(ctx.facility)facts.facility=ctx.facility;
+    var first=parseResult(await window.aiCallRaw(sys,user,key,opts)); first.note=forceFacts(first.note,facts); var check=fidelity(first.note,tplText);
     if(check.pass){first.templateFidelity=check;window.__mlsLastOpFidelityPass=true;return first;}
     var repairSys='Repair the draft so it follows the selected template exactly. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.';
     var repairUser='SELECTED TEMPLATE:\n'+S(tplText).slice(0,12000)+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
-    var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts)), check2=fidelity(repaired.note,tplText);
+    var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts)); repaired.note=forceFacts(repaired.note,facts); var check2=fidelity(repaired.note,tplText);
+    if(!check2.pass){repaired.note=reanchor(repaired.note,tplText,facts);check2=fidelity(repaired.note,tplText);}
     if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template. Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     repaired.templateFidelity=check2;window.__mlsLastOpFidelityPass=true;return repaired;
   }
@@ -277,6 +337,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,generate:generate};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,rank:rank,best:best,bestFor:bestFor,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,reanchor:reanchor,generate:generate};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

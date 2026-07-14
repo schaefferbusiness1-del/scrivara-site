@@ -141,15 +141,20 @@ async function main() {
 
   calls = 0;
   context.aiCallRaw = async () => { calls++; return JSON.stringify({ note: wrong, missing: [] }); };
-  await assert.rejects(
-    context._genOpNote('Jordan Lee', '2026-07-14', 'Left L5-S1 TFESI', tplText, { patientId: 'p-exact', dob: '1984-05-12' }),
-    err => err && err.code === 'MLS_OPNOTE_TEMPLATE_FIDELITY',
-    'two structure-breaking drafts did not fail closed'
-  );
+  const anchored = await context._genOpNote('Jordan Lee', '2026-07-14', 'Left L5-S1 TFESI', tplText, { patientId: 'p-exact', dob: '1984-05-12' });
+  assert.strictEqual(api.fidelity(anchored.note, tplText).pass, true, 'two structure-breaking drafts were not deterministically re-anchored');
+  assert(anchored.note.startsWith('PATIENT: Jordan Lee'), 'verified patient identity was not forced into the anchored template');
   assert.strictEqual(calls, 2, 'fidelity failure retried more or less than once');
 
-  assert(connect.includes('feat_mls_opnote_integrity.js?v=20260714oni210'), 'production does not load the final op-note integrity owner');
-  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v=20260714oni210'), 'staging does not load the same op-note integrity owner');
+  const liveTpl = 'OPERATIVE REPORT — LUMBAR MEDIAL BRANCH RADIOFREQUENCY ABLATION\nPATIENT:\nMRN:\nDATE OF PROCEDURE:\nPREOPERATIVE DIAGNOSIS:\nPOSTOPERATIVE DIAGNOSIS:\nPROCEDURE:\nLATERALITY AND LEVELS:\nANESTHESIA:\nINDICATIONS:\nCONSENT:\nThe risks, benefits, and alternatives were discussed with the patient, and informed consent was obtained.\nTECHNIQUE:\nAfter a formal time-out, the target sites were identified under fluoroscopy.\nDESCRIPTION OF PROCEDURE:\n[[procedure_description]]\nCOMPLICATIONS:\nDISPOSITION:\nThe patient tolerated the procedure and was discharged in stable condition.';
+  const scrambledLive = 'PATIENT: Wrong Patient\nPROCEDURE: Right L3-L5 RFA\nMRN: WRONG\nDESCRIPTION OF PROCEDURE: Lesioning was completed under fluoroscopy.\nCONSENT: Changed wording.\nCOMPLICATIONS: None.';
+  const liveAnchored = api.reanchor(scrambledLive, liveTpl, {patient:'Jordan Lee',mrn:'QA-1','date of procedure':'2026-07-14',procedure:'Right L3-L5 medial branch RFA'});
+  assert.strictEqual(api.fidelity(liveAnchored, liveTpl).pass, true, 'the exact live RFA template could not be deterministically reconstructed');
+  assert(liveAnchored.includes('PATIENT: Jordan Lee') && !liveAnchored.includes('Wrong Patient') && !liveAnchored.includes('MRN: WRONG'), 'model-supplied identity leaked through template reconstruction');
+  assert(liveAnchored.includes('The risks, benefits, and alternatives were discussed with the patient, and informed consent was obtained.'), 'live template consent wording changed');
+
+  assert(connect.includes('feat_mls_opnote_integrity.js?v=20260714oni220'), 'production does not load the final op-note integrity owner');
+  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v=20260714oni220'), 'staging does not load the same op-note integrity owner');
   assert(scribeFlow.includes('✍️ Type or paste below') && stagingScribeFlow.includes('✍️ Type or paste below'), 'template text entry is not the same clear inline control in production and staging');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(scribeFlow), 'production template text entry still opens a blocking JavaScript prompt');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(stagingScribeFlow), 'staging template text entry still opens a blocking JavaScript prompt');
