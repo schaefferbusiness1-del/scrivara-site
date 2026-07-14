@@ -15,7 +15,8 @@ assert(checker.includes("type: 'mlsDevReload'"), 'reload control must use the tr
 assert(checker.includes("data.type !== 'mlsDevReloadResult'"), 'reload control must wait for the exact acknowledgement type');
 assert(checker.includes('No automatic retry was attempted.'), 'reload failure must stay one-shot and honest');
 assert(!checker.includes('setInterval(function () { window.postMessage'), 'reload must never run from an interval');
-assert(liveLoader.includes('feat_mls_checker.js?v=20260714chk2920r1'), 'live checker loader must cache-bust the reload control');
-assert(stagingLoader.includes('feat_mls_checker.js?v=20260714chk2920r1'), 'staging checker loader must match live');
+assert(liveLoader.includes('feat_mls_checker.js?v=20260714chk2920r2'), 'live checker loader must cache-bust the reload control');
+assert(stagingLoader.includes('feat_mls_checker.js?v=20260714chk2920r2'), 'staging checker loader must match live');
+assert(checker.includes("panel.className = 'mls-login-keep'"), 'reload control must remain visible on the MLS login gate');
 
 console.log('PASS extension reload helper: query-gated, one-click, exact acknowledgement, no retry loop');

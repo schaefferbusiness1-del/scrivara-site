@@ -952,6 +952,10 @@
     if (document.getElementById(CONTROL_ID)) return;
     var panel = document.createElement('section');
     panel.id = CONTROL_ID;
+    /* The release control must remain usable even when a fresh MLS tab is
+       showing the signed-out/auth gate; that gate hides every direct body
+       child except .mls-login-keep. */
+    panel.className = 'mls-login-keep';
     panel.setAttribute('aria-label', 'MLS Assist release reload');
     panel.style.cssText = 'position:fixed;right:18px;bottom:82px;z-index:2147483000;max-width:340px;padding:14px;border:1px solid #b9c9c1;border-radius:14px;background:#fff;color:#17231e;box-shadow:0 12px 36px rgba(18,49,38,.24);font:600 14px/1.35 system-ui,sans-serif';
     panel.innerHTML =
