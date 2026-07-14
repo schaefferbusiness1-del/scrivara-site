@@ -131,11 +131,22 @@
         function __curP() { try { if (__pid && typeof window.getPatients === 'function') { var ps = window.getPatients() || []; for (var _i = 0; _i < ps.length; _i++) { if (ps[_i] && ps[_i].id === __pid) return ps[_i]; } } } catch (e) {} return patient; }
         var before = {};
         getVisitsSafe(M, __curP()).forEach(function (v) { if (isRealVisit(v)) before[keyOf(v)] = 1; });
+        var beforeReal = Object.keys(before).length;
         var neutralShown = false, lastShown = 0, finished = false, honestSeen = false;
+        function realCount() {
+          var n = 0;
+          getVisitsSafe(M, __curP()).forEach(function (v) { if (isRealVisit(v)) n++; });
+          return n;
+        }
         function realDelta() {
           var n = 0;
           getVisitsSafe(M, __curP()).forEach(function (v) { if (isRealVisit(v) && !before[keyOf(v)]) n++; });
           return n;
+        }
+        function runSucceeded(o) {
+          if (!o || o.__timeout || o.err) return false;
+          var r = o.r;
+          return !(r === false || (r && typeof r === 'object' && (r.blocked || r.ok === false || r.error)));
         }
         function filtered(line) {
           if (finished) return;
@@ -163,6 +174,11 @@
           if (d > 0) {
             cb('✓ Done — ' + d + ' visit' + (d === 1 ? '' : 's') + ' read from athenaOne, each with an AI summary.');
             return (o && o.r) || { ok: true, real: d, saved: d };
+          }
+          var total = realCount();
+          if (beforeReal > 0 && total > 0 && runSucceeded(o)) {
+            cb('✓ Done — ' + total + ' real visit' + (total === 1 ? '' : 's') + ' already on file; no new visits to add.');
+            return (o && o.r) || { ok: true, real: total, saved: 0, unchanged: true };
           }
           if (!honestSeen) cb(UPDATE_MSG);
           return { blocked: true, real: 0, reason: (o && o.__timeout) ? 'timeout' : (o && o.err) ? 'error' : 'no-real-visits' };

@@ -5444,6 +5444,7 @@
     /* 1c) light-band text: every secondary control reads as ink on the light
        card — but ACTIVE (.on) chips keep their dark fills, so they stay white. */
     '#mlsEz3 .ez3-sm:not(.pri),#mlsEz3 .ez3-exbtn:not(.rec):not(.send),#mlsEz3 .ez3-qchip:not(.on),#mlsEz3 .ez3-chip:not(.on),#mlsEz3 .ez3-more{color:#1A211C !important;}',
+    '#mlsEz3 .ez3-warnbar{color:#6F4300 !important;background:#FFF6DF !important;border-color:#D99A26 !important;font-weight:650 !important;}',
     '#mlsEz3 .ez3-qchip.on,#mlsEz3 .ez3-chip.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;}',
     /* 1d) Easy step-flow sub-states on the light card */
     '#mlsEz3 .ez3-back{color:#55605A !important;}',
@@ -16187,6 +16188,9 @@
     '#mlsEz3Body{padding:8px 16px 26px;}',
     '.ez3-wrap{max-width:720px;margin:0 auto;}',
     '.ez3-h1{font-size:23px;font-weight:800;margin:4px 0 6px;text-align:center;letter-spacing:.2px;}',
+    '.ez3-titlebar{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:2px 0 6px;}',
+    '.ez3-titlebar .ez3-h1{margin:0;}',
+    '.ez3-portal{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;}',
     '.ez3-sub{font-size:13.5px;color:#C9DCD2;text-align:center;margin:0 0 16px;}',
     /* provider quick-selecter (big blue, data-sourced) */
     '.ez3-prov{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 16px;}',
@@ -16865,7 +16869,7 @@
 
   function advRowHtml() {
     return '<div class="ez3-advrow"><button type="button" id="ez3Adv">' +
-           (S.advOpen ? '▴ Hide advanced tools' : '🔧 Advanced tools') + '</button></div>';
+           (S.advOpen ? '▴ Hide advanced visit workspace' : '🔧 Advanced visit workspace') + '</button></div>';
   }
   function wireAdv() {
     on('ez3Adv', function () {
@@ -16955,6 +16959,7 @@
     h += '<div class="ez3-row2">' +
          (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep">💉 Prep notes</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
+         '<a class="ez3-sm ez3-portal" href="/send-portal-invite.html" target="_blank" rel="noopener">👤 Patient portal</a>' +
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
     h += advRowHtml();
@@ -17013,15 +17018,18 @@
      once-per-day guard — the doctor explicitly asked). */
   function startTodayPull(manual) {
     if (S.autoPull === 'running') return;
+    if (P && P.running) { if (manual) toast('A Staff schedule pull is already running - let it finish or cancel it first.'); return; }
     if (!isFn(window.pullScheduleViaAssist)) {
       S.autoPull = 'failed'; S.autoPullNote = 'The pull isn’t available on this build — ask staff to load the schedule.';
       markAutoPull(); render(); return;
     }
+    if (!claimPullLease('today')) { if (manual) toast('Another schedule pull is already running - try again when it finishes.'); return; }
     markAutoPull();
     S.autoPull = 'running'; S.autoPullAt = Date.now(); S.autoPullNote = '';
     try { window.pullScheduleViaAssist(); }
     catch (e) {
       S.autoPull = 'failed';
+      releasePullLease();
       S.autoPullNote = 'The pull could not start — make sure athenaOne is open in its tab, then tap again.';
       render(); return;
     }
@@ -17033,11 +17041,13 @@
       if (todayCountUnscoped() > 0) {
         clearInterval(autoPullIv); autoPullIv = null;
         S.autoPull = 'done'; S.autoPullNote = '';
+        releasePullLease();
         toast('Today’s patients are ready.'); render(); return;
       }
       if (Date.now() - S.autoPullAt > 120000) {
         clearInterval(autoPullIv); autoPullIv = null;
         S.autoPull = 'failed';
+        releasePullLease();
         S.autoPullNote = st || 'No patients came back — make sure athenaOne is open and signed in, then tap Pull again.';
         render(); return;
       }
@@ -17175,7 +17185,8 @@
   }
   function renderChoose() {
     var h = '<button type="button" class="ez3-back" id="ez3Back">‹ Home</button>' +
-            '<div class="ez3-h1">Today’s patients</div>';
+            '<div class="ez3-titlebar"><div class="ez3-h1">Today’s patients</div>' +
+            '<a class="ez3-sm ez3-portal" href="/send-portal-invite.html" target="_blank" rel="noopener">👤 Patient portal</a></div>';
     h += recBannerHtml(); /* v3.3 */
     h += provSelectHtml();
     h += '<p class="ez3-sub">' + homeStatus() + '</p>';
@@ -17555,33 +17566,134 @@
   function bkBase() { return safe(function () { return window.bkBase(); }, '') || 'https://scrivara-backend.onrender.com'; }
   function bkToken() { return safe(function () { return window.bkToken(); }, '') || ''; }
   function signedIn() { return !!(safe(function () { return isFn(window.backendMode) && window.backendMode(); }, false) && bkToken()); }
-  /* Month pulls continue while MLS is in the background. Chrome can clamp
-     ordinary page timers there to roughly one tick per minute, making a
-     healthy pull look frozen. Worker timers keep deadlines and pacing honest. */
+  /* One lease covers the silent Today pull and the Staff day/month engine.
+     It prevents same-page engines from consuming each other's uncorrelated
+     extension replies. The timestamp also pauses the legacy status prober. */
+  var _ez3PullLeaseId = 'easy-v32-' + Math.random().toString(36).slice(2);
+  function pullLease() {
+    var l = safe(function () { return window.__mlsSchedulePullLease; }, null);
+    if (l && Date.now() - Number(l.at || 0) > 180000) { safe(function () { delete window.__mlsSchedulePullLease; }); return null; }
+    return l;
+  }
+  function claimPullLease(kind) {
+    var l = pullLease();
+    if (l && l.id !== _ez3PullLeaseId) return false;
+    window.__mlsSchedulePullLease = { id: _ez3PullLeaseId, kind: kind || 'schedule', at: Date.now() };
+    window.__mlsPullBusyAt = Date.now();
+    return true;
+  }
+  function touchPullLease() {
+    var l = pullLease();
+    if (l && l.id === _ez3PullLeaseId) { l.at = Date.now(); window.__mlsPullBusyAt = l.at; }
+  }
+  function releasePullLease() {
+    var l = pullLease();
+    if (l && l.id === _ez3PullLeaseId) safe(function () { delete window.__mlsSchedulePullLease; window.__mlsPullBusyAt = 0; });
+  }
+
+  /* Chrome can clamp page timers in the background. One shared Worker owns
+     all deadlines; settled/cancelled operations remove their timer at once. */
   var _ez3WaitUrl = null;
-  try { _ez3WaitUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
-  function bgWait(ms) {
-    return new Promise(function (resolve) {
-      if (_ez3WaitUrl) {
-        try {
-          var w = new Worker(_ez3WaitUrl);
-          w.onmessage = function () { try { w.terminate(); } catch (e) {} resolve(); };
-          w.onerror = function () { try { w.terminate(); } catch (e) {} setTimeout(resolve, ms); };
-          w.postMessage(ms);
-          return;
-        } catch (e) {}
-      }
-      setTimeout(resolve, ms);
+  var _ez3WaitWorker = null, _ez3WaitWorkerFailed = false, _ez3WaitSeq = 0, _ez3Waiters = {};
+  try { _ez3WaitUrl = URL.createObjectURL(new Blob([
+    'var T={};onmessage=function(e){var d=e.data||{},id=String(d.id||"");if(!id)return;if(d.cancel){clearTimeout(T[id]);delete T[id];return;}clearTimeout(T[id]);T[id]=setTimeout(function(){delete T[id];postMessage({id:id})},Math.max(0,Number(d.ms)||0))}'
+  ], { type: 'application/javascript' })); } catch (e) {}
+  function finishBgWait(id, reason) {
+    var r = _ez3Waiters[id]; if (!r) return;
+    delete _ez3Waiters[id];
+    if (r.timer) clearTimeout(r.timer);
+    if (r.safety) clearTimeout(r.safety);
+    if (_ez3WaitWorker) { try { _ez3WaitWorker.postMessage({ id: id, cancel: true }); } catch (e) {} }
+    r.resolve(reason || 'elapsed');
+  }
+  function failBgWorker() {
+    if (_ez3WaitWorker) { try { _ez3WaitWorker.terminate(); } catch (e) {} }
+    _ez3WaitWorker = null; _ez3WaitWorkerFailed = true;
+    Object.keys(_ez3Waiters).forEach(function (id) {
+      var r = _ez3Waiters[id]; if (!r || r.timer) return;
+      if (r.safety) { clearTimeout(r.safety); r.safety = null; }
+      r.timer = setTimeout(function () { finishBgWait(id, 'elapsed'); }, Math.max(0, r.due - Date.now()));
     });
   }
-  function apptKey(name, date, time) {
-    if (isFn(window._apptKey)) return safe(function () { return window._apptKey(name, date, time); }, String(name || '').trim().toLowerCase() + '|' + date);
-    return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ') + '|' + String(date || '');
+  function ensureBgWorker() {
+    if (_ez3WaitWorker || _ez3WaitWorkerFailed || !_ez3WaitUrl) return _ez3WaitWorker;
+    try {
+      _ez3WaitWorker = new Worker(_ez3WaitUrl);
+      _ez3WaitWorker.onmessage = function (e) { var id = String((e.data && e.data.id) || ''); if (id) finishBgWait(id, 'elapsed'); };
+      _ez3WaitWorker.onerror = failBgWorker;
+    } catch (e) { failBgWorker(); }
+    return _ez3WaitWorker;
+  }
+  function bgWait(ms) {
+    ms = Math.max(0, Number(ms) || 0);
+    var id = 'w' + (++_ez3WaitSeq);
+    var p = new Promise(function (resolve) {
+      var r = _ez3Waiters[id] = { resolve: resolve, due: Date.now() + ms, timer: null, safety: null };
+      var w = ensureBgWorker();
+      if (w) {
+        try { w.postMessage({ id: id, ms: ms }); } catch (e) { failBgWorker(); }
+        r.safety = setTimeout(function () { finishBgWait(id, 'elapsed'); }, Math.max(ms + 5000, ms * 2));
+      } else {
+        r.timer = setTimeout(function () { finishBgWait(id, 'elapsed'); }, ms);
+      }
+    });
+    p.cancel = function (reason) { finishBgWait(id, reason || 'cancelled'); };
+    return p;
+  }
+  function cancelBgWaits() { Object.keys(_ez3Waiters).forEach(function (id) { finishBgWait(id, 'cancelled'); }); }
+
+  var _ez3FetchControllers = [];
+  function timedFetch(url, opts, timeoutMs, label) {
+    opts = opts || {};
+    var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var cfg = {}; Object.keys(opts).forEach(function (k) { cfg[k] = opts[k]; });
+    if (ctl) { cfg.signal = ctl.signal; _ez3FetchControllers.push(ctl); }
+    var wait = bgWait(timeoutMs || 30000), settled = false;
+    return new Promise(function (resolve, reject) {
+      function drop() {
+        if (settled) return false; settled = true;
+        if (wait && wait.cancel) wait.cancel('settled');
+        var i = _ez3FetchControllers.indexOf(ctl); if (i >= 0) _ez3FetchControllers.splice(i, 1);
+        return true;
+      }
+      Promise.resolve().then(function () { return fetch(url, cfg); }).then(function (r) { if (drop()) resolve(r); }, function (e) { if (drop()) reject(e); });
+      wait.then(function (why) {
+        if (settled || why === 'settled') return;
+        if (ctl) { try { ctl.abort(); } catch (e) {} }
+        if (drop()) reject(new Error(why === 'cancelled' ? 'cancelled' : ((label || 'request') + ' timed out')));
+      });
+    });
+  }
+  function abortPullFetches() {
+    _ez3FetchControllers.slice().forEach(function (c) { try { c.abort(); } catch (e) {} });
+    _ez3FetchControllers = [];
+  }
+  function cancelPullRun() {
+    if (!P) return;
+    P.cancelled = true;
+    cancelBgWaits(); abortPullFetches();
+    plog('Cancelling - stopping after the current Athena navigation step.', 'err');
+  }
+
+  function normApptTime(time) {
+    var s = String(time || '').trim().toLowerCase(), m = /(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)?/.exec(s);
+    if (!m) return '';
+    var h = +m[1]; if (/p/.test(m[3] || '') && h < 12) h += 12; if (/a/.test(m[3] || '') && h === 12) h = 0;
+    if (h > 23 || +m[2] > 59) return '';
+    return pad2(h) + ':' + m[2];
+  }
+  /* Exact-time identity preserves two legitimate visits for the same patient
+     on one day. Missing-time rows use reason, never a blanket patient+day key. */
+  function apptKey(name, date, time, reason) {
+    var n = String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    var tm = normApptTime(time);
+    var r = String(reason || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return 'A:' + n + '|' + String(date || '') + '|' + (tm ? ('T:' + tm) : ('U:' + r));
   }
   function bridge(reqType, payload, replyType, timeoutMs, onProgress) {
     return new Promise(function (res) {
-      var done = false;
-      function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', on, false); } catch (e) {} res(v); }
+      var done = false, timeoutWait = null;
+      function fin(v) { if (done) return; done = true; if (timeoutWait && timeoutWait.cancel) timeoutWait.cancel('settled'); try { window.removeEventListener('message', on, false); } catch (e) {} res(v); }
       function on(ev) {
         var d = ev && ev.data; if (!d || d.source !== 'mls-ext') return;
         if (onProgress && d.type === replyType.replace(/Result$/, 'Progress') && typeof d.message === 'string') { safe(function () { onProgress(d.message); }); return; }
@@ -17591,8 +17703,10 @@
       window.addEventListener('message', on, false);
       var msg = { source: 'mls-app', type: reqType };
       if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) msg[k] = payload[k]; } }
+      touchPullLease();
       safe(function () { window.postMessage(msg, '*'); });
-      bgWait(timeoutMs || 15000).then(function () { fin(null); });
+      timeoutWait = bgWait(timeoutMs || 15000);
+      timeoutWait.then(function (why) { if (why !== 'settled') fin(null); });
     });
   }
   function extPing() { return bridge('mlsPing', null, 'mlsPong', 3500).then(function (r) { return !!r; }); }
@@ -17615,10 +17729,10 @@
     }, []);
   }
   function parsedRows(r) {
-    return safe(function () {
-      var parsed = isFn(window._parseScheduleText) ? window._parseScheduleText(String((r && r.text) || '')) : [];
+    var parsed = safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(String((r && r.text) || '')) : []; }, []);
+    return Promise.resolve(parsed).then(function (parsed) {
       return (Array.isArray(parsed) ? parsed : []).map(function (a) { return { name: a.name, dob: a.dob || '', time: a.time || '', reason: a.reason || '', provider: a.provider || '' }; });
-    }, []);
+    }, function () { return []; });
   }
 
   /* pull-run state */
@@ -17669,22 +17783,38 @@
     var btnS = $('ez3PullStart'); if (btnS) { btnS.disabled = !!P.running; btnS.style.display = P.running ? 'none' : ''; }
   }
   function loadExistingKeys() {
-    return fetch(bkBase() + '/api/appointments', { headers: { Authorization: 'Bearer ' + bkToken() } })
+    touchPullLease();
+    return timedFetch(bkBase() + '/api/appointments', { headers: { Authorization: 'Bearer ' + bkToken() } }, 45000, 'calendar preflight')
       .then(function (r) { if (!r.ok) throw new Error('calendar preflight returned ' + r.status); return r.json(); })
       .then(function (d) {
         var map = {};
         (d.appointments || []).forEach(function (x) {
-          var lt = ''; try { if (x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); } catch (e) {}
+          var lt = normApptTime(x.start_local || x.time || x.time_display || '');
+          try { if (!lt && x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); } catch (e) {}
           var ld = x.appt_date || ''; if (!ld) { try { var dd = new Date(x.start_at); ld = ymd(dd); } catch (e) {} }
-          map[apptKey(x.name, ld, lt)] = 1;
-          map['D:' + String(x.name || '').trim().toLowerCase().replace(/\s+/g, ' ') + '|' + ld] = 1;
-          var nt = String(x.name || '').trim().toLowerCase().split(/\s+/);
-          if (nt.length > 1) map['N:' + nt[0] + '|' + nt[nt.length - 1].replace(/\./g, '') + '|' + ld] = 1;
+          map[apptKey(x.name, ld, lt, x.reason || '')] = 1;
         });
         P.existing = map;
       });
   }
   function providerFor(row, filter) { return (filter && filter !== 'all') ? filter : String(row.provider || '').trim(); }
+  function providerTokens(value) {
+    var ignored = { dr: 1, doctor: 1, md: 1, do: 1, pa: 1, pac: 1, np: 1, fnp: 1, aprn: 1, crnp: 1, dnp: 1, rn: 1, lpn: 1, pharmd: 1, mph: 1 };
+    var seen = {}, out = [];
+    String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).forEach(function (part) {
+      if (part.length < 2 || ignored[part] || seen[part]) return;
+      seen[part] = 1; out.push(part);
+    });
+    return out.sort();
+  }
+  function providerMatches(rowProvider, filter) {
+    if (!filter || filter === 'all') return true;
+    var rowParts = providerTokens(rowProvider), wantParts = providerTokens(filter);
+    if (rowParts.length < 2 || wantParts.length < 2) return false;
+    var smaller = rowParts.length <= wantParts.length ? rowParts : wantParts;
+    var larger = rowParts.length <= wantParts.length ? wantParts : rowParts;
+    return smaller.every(function (part) { return larger.indexOf(part) >= 0; });
+  }
   function saveRow(dayKey, row, filter) {
     var name = String(row.name || '').trim(); if (!name) return Promise.resolve('skip');
     /* b58 data guard (ported): never save placeholder slots or truncated display names
@@ -17692,12 +17822,9 @@
        creates duplicate patients/appointments that can never match a chart). */
     if (/^open$/i.test(name)) return Promise.resolve('badname');
     if (/^\S+ [A-Z]\.$/.test(name)) return Promise.resolve('badname');
-    var key = apptKey(name, dayKey, row.time);
-    var dayOnlyKey = 'D:' + name.toLowerCase().replace(/\s+/g, ' ') + '|' + dayKey;
-    var nt2 = name.toLowerCase().split(/\s+/);
-    var nKey = nt2.length > 1 ? ('N:' + nt2[0] + '|' + nt2[nt2.length - 1].replace(/\./g, '') + '|' + dayKey) : '';
-    if (P.existing[key] || P.existing[dayOnlyKey] || (nKey && P.existing[nKey])) return Promise.resolve('dup');
-    P.existing[key] = 1; P.existing[dayOnlyKey] = 1; if (nKey) P.existing[nKey] = 1;
+    var key = apptKey(name, dayKey, row.time, row.reason);
+    if (P.existing[key]) return Promise.resolve('dup');
+    P.existing[key] = 1;
     var pts = safe(function () { return (isFn(window.getPatients) ? window.getPatients() : []) || []; }, []);
     var ext = ''; var found = pts.find(function (x) { return String(x.name || '').trim().toLowerCase() === name.toLowerCase(); });
     if (found) { ext = found.id; if (row.dob && !found.dob && isFn(window.upsertPatient)) { found.dob = String(row.dob); safe(function () { window.upsertPatient(found); }); } }
@@ -17705,13 +17832,14 @@
       var np = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, dob: String(row.dob || ''), reason: String(row.reason || ''), source: 'athena-schedule-monthpick', created: Date.now() };
       safe(function () { window.upsertPatient(np); }); ext = np.id;
     }
-    var startIso = null;
-    if (/^\d\d?:\d\d$/.test(String(row.time || '')) && isFn(window._acctWallToUtcIso)) { startIso = safe(function () { return window._acctWallToUtcIso(dayKey, ('0' + row.time).slice(-5)); }, null); }
+    var startIso = null, rowTime = normApptTime(row.time);
+    if (rowTime && isFn(window._acctWallToUtcIso)) { startIso = safe(function () { return window._acctWallToUtcIso(dayKey, rowTime); }, null); }
     var provider = providerFor(row, filter);
     var body = { name: name, dob: String(row.dob || ''), reason: String(row.reason || ''), patient_external_id: ext || null, appt_date: dayKey, start_at: startIso, provider: provider || undefined };
-    return fetch(bkBase() + '/api/appointments', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + bkToken() }, body: JSON.stringify(body) })
-      .then(function (r) { return r.ok ? 'created' : 'failed'; })
-      .then(null, function () { return 'failed'; });
+    touchPullLease();
+    return timedFetch(bkBase() + '/api/appointments', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + bkToken() }, body: JSON.stringify(body) }, 30000, 'appointment save')
+      .then(function (r) { if (r.ok) return 'created'; if (r.status === 409) return 'dup'; delete P.existing[key]; return 'failed'; })
+      .then(null, function () { delete P.existing[key]; return 'failed'; });
   }
   function prettyDay(k) {
     var m2 = /^(\d{4})-(\d{2})-(\d{2})$/.exec(k); if (!m2) return k;
@@ -17776,29 +17904,48 @@
         if (sd && sd !== dayKey) { var e2 = 'athena showed ' + sd + ' instead of ' + dayKey; P.dayStatus[dayKey] = { status: 'failed', error: e2 }; P.failedDays.push(dayKey); plog('FAILED ' + pd + ': ' + e2, 'err'); return 'failed'; }
         if (!sd && st.navConfirmed !== dayKey) { var e3 = 'could not confirm the page date'; P.dayStatus[dayKey] = { status: 'failed', error: e3 }; P.failedDays.push(dayKey); plog('FAILED ' + pd + ': ' + e3, 'err'); return 'failed'; }
         safe(function () { ((r && r.providers) || []).forEach(function (p) { var n = String(p || '').trim(); if (n) P.providersSeen[n] = 1; }); ((r && r.appts) || []).forEach(function (a) { var n = String((a && a.provider) || '').trim(); if (n) P.providersSeen[n] = 1; }); });
-        var rows = structuredRows(r); if (!rows.length) rows = parsedRows(r);
-        var filter = P.provider;
-        if (filter !== 'all' && rows.length) { var want = filter.trim().toLowerCase().split(/[ ,]/)[0]; rows = rows.filter(function (x) { return String(x.provider || '').toLowerCase().indexOf(want) >= 0; }); }
-        if (!rows.length) { P.dayStatus[dayKey] = { status: 'empty' }; P.emptyDays.push(dayKey); plog(pd + ': no appointments' + (filter !== 'all' ? (' for ' + filter) : '') + ' — empty day, moving on.'); pCounts(); return 'empty'; }
-        P.found += rows.length;
-        plog(pd + ': ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' found' + (filter !== 'all' ? (' (provider: ' + filter + ')') : ''));
-        pCounts();
-        var i = 0, saved = 0, dup = 0, failed = 0, bad = 0;
-        function next() {
-          if (P.cancelled) return Promise.resolve();
-          if (i >= rows.length) return Promise.resolve();
-          var row = rows[i++];
-          pSet('ez3PullNow2', 'Saving ' + i + '/' + rows.length + ': ' + row.name + (row.time ? (' at ' + row.time) : '') + (row.provider ? (' — ' + row.provider) : ''));
-          return saveRow(dayKey, row, filter).then(function (res) {
-            if (res === 'created') { saved++; P.saved++; } else if (res === 'dup') { dup++; P.dups++; } else if (res === 'failed') { failed++; P.failedRows++; } else if (res === 'badname') { bad++; }
-            return next();
+        var structured = structuredRows(r);
+        return (structured.length ? Promise.resolve(structured) : parsedRows(r)).then(function (rows) {
+          rows = Array.isArray(rows) ? rows : [];
+          var filter = P.provider;
+          if (filter !== 'all' && rows.length) {
+            var providerLabelsPresent = rows.some(function (x) { return !!String(x.provider || '').trim(); });
+            if (!providerLabelsPresent) {
+              var pe = 'Athena returned ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' without provider labels; could not safely apply provider filter ' + filter;
+              P.dayStatus[dayKey] = { status: 'failed', error: pe };
+              if (P.failedDays.indexOf(dayKey) < 0) P.failedDays.push(dayKey);
+              plog('FAILED ' + pd + ': ' + pe, 'err'); pCounts(); return 'failed';
+            }
+            rows = rows.filter(function (x) { return providerMatches(x.provider, filter); });
+          }
+          if (!rows.length) { P.dayStatus[dayKey] = { status: 'empty' }; P.emptyDays.push(dayKey); plog(pd + ': no appointments' + (filter !== 'all' ? (' for ' + filter) : '') + ' — empty day, moving on.'); pCounts(); return 'empty'; }
+          P.found += rows.length;
+          plog(pd + ': ' + rows.length + ' appointment' + (rows.length === 1 ? '' : 's') + ' found' + (filter !== 'all' ? (' (provider: ' + filter + ')') : ''));
+          pCounts();
+          var i = 0, processed = 0, saved = 0, dup = 0, failed = 0, bad = 0;
+          function next() {
+            if (P.cancelled) return Promise.resolve();
+            if (i >= rows.length) return Promise.resolve();
+            var row = rows[i++];
+            pSet('ez3PullNow2', 'Saving ' + i + '/' + rows.length + ': ' + row.name + (row.time ? (' at ' + row.time) : '') + (row.provider ? (' — ' + row.provider) : ''));
+            return saveRow(dayKey, row, filter).then(function (res) {
+              processed++;
+              if (res === 'created') { saved++; P.saved++; } else if (res === 'dup') { dup++; P.dups++; } else if (res === 'failed') { failed++; P.failedRows++; } else if (res === 'badname') { bad++; }
+              return next();
+            });
+          }
+          return next().then(function () {
+            if (P.cancelled && processed < rows.length) {
+              P.dayStatus[dayKey] = { status: 'failed', error: 'cancelled after ' + processed + ' of ' + rows.length + ' appointments', found: rows.length, saved: saved, skipped: dup, failed: failed, badnames: bad };
+              if (P.failedDays.indexOf(dayKey) < 0) P.failedDays.push(dayKey);
+              plog(pd + ': cancelled after ' + processed + ' of ' + rows.length + ' appointments; day left retryable.', 'err');
+              pCounts(); return 'cancelled';
+            }
+            P.dayStatus[dayKey] = { status: 'done', found: rows.length, saved: saved, skipped: dup, failed: failed, badnames: bad };
+            plog(pd + ': saved ' + saved + ', already on calendar ' + dup + (bad ? (', skipped ' + bad + ' truncated/placeholder name' + (bad === 1 ? '' : 's') + ' (athena view abbreviates — pull that day per-provider for full names)') : '') + (failed ? (', NOT saved ' + failed + ' (needs retry)') : ''), failed ? 'err' : 'ok');
+            if (failed) { P.dayStatus[dayKey].status = 'failed'; P.dayStatus[dayKey].error = failed + ' appointment' + (failed === 1 ? '' : 's') + ' did not save'; P.failedDays.push(dayKey); }
+            pCounts(); return 'done';
           });
-        }
-        return next().then(function () {
-          P.dayStatus[dayKey] = { status: 'done', found: rows.length, saved: saved, skipped: dup, failed: failed, badnames: bad };
-          plog(pd + ': saved ' + saved + ', already on calendar ' + dup + (bad ? (', skipped ' + bad + ' truncated/placeholder name' + (bad === 1 ? '' : 's') + ' (athena view abbreviates — pull that day per-provider for full names)') : '') + (failed ? (', NOT saved ' + failed + ' (needs retry)') : ''), failed ? 'err' : 'ok');
-          if (failed) { P.dayStatus[dayKey].status = 'failed'; P.dayStatus[dayKey].error = failed + ' appointment' + (failed === 1 ? '' : 's') + ' did not save'; P.failedDays.push(dayKey); }
-          pCounts(); return 'done';
         });
       });
     });
@@ -17812,16 +17959,18 @@
     /* v3.5.1: single source of truth — the pull scope IS the Provider selector
        (null = follow the app's "Pulling as" doctor, '' = all providers) */
     var provider = activeProvider() || 'all';
+    if (retryOnly && P && !P.failedDays.length) return;
+    if (!signedIn()) { pSet('ez3PullNow', 'Sign in to MLS first.'); pSet('ez3PullNow2', 'The pull saves to your MLS account.'); if (P) plog('Not signed in — stopped before touching Athena.', 'err'); pCounts(); return; }
+    if (S.autoPull === 'running' || !claimPullLease('month')) { toast('Another schedule pull is already running — let it finish or cancel it first.'); return; }
     if (!retryOnly || !P) { P = freshPull(range, provider); }
     else { var redo = P.failedDays.slice(); if (!redo.length) return; redo.forEach(function (k) { delete P.dayStatus[k]; }); P.failedDays = []; P.keysToRun = redo; }
-    if (!signedIn()) { pSet('ez3PullNow', 'Sign in to MLS first.'); pSet('ez3PullNow2', 'The pull saves to your MLS account.'); plog('Not signed in — stopped before touching Athena.', 'err'); pCounts(); return; }
     P.running = true; P.cancelled = false;
     pSet('ez3PullNow', 'Starting…'); pSet('ez3PullNow2', ''); pCounts();
     plog('Pull target: ' + range.label + ' · provider: ' + (provider === 'all' ? 'ALL (each row tagged as scheduled)' : provider));
     loadExistingKeys().then(function () {
       return pullPrecheck();
     }).then(function (pc) {
-      if (!pc.ok) { P.running = false; pCounts(); return; }
+      if (!pc.ok) { P.running = false; releasePullLease(); pCounts(); return; }
       P.extNav = !!pc.extNav;
       plog(P.extNav ? 'Extension date navigation available — running hands-free.' : 'No hands-free date nav (older extension) — follow mode: move Athena day by day as prompted.', P.extNav ? 'ok' : '');
       pSet('ez3PullNow', 'Pulling ' + range.label);
@@ -17834,16 +17983,17 @@
       });
       return chain.then(finishMonthPull);
     }).then(null, function (e) {
+      if (P && P.cancelled) { finishMonthPull(); return; }
       var why = String((e && e.message) || e);
       plog('Stopped safely: ' + why, 'err');
       pSet('ez3PullNow', 'Month pull paused safely.');
       pSet('ez3PullNow2', 'MLS could not confirm the existing calendar before saving. Nothing new was added; try again when the connection is stable.');
-      P.running = false; pCounts();
+      P.running = false; releasePullLease(); pCounts();
     });
   }
   function finishMonthPull() {
     if (!P) return;
-    if (P.cancelled) { pSet('ez3PullNow', 'Cancelled.'); pSet('ez3PullNow2', 'Days already saved stay saved — re-running later is safe.'); plog('Cancelled.', 'err'); P.running = false; pCounts(); return; }
+    if (P.cancelled) { pSet('ez3PullNow', 'Cancelled.'); pSet('ez3PullNow2', 'Days already saved stay saved — re-running later is safe.'); plog('Cancelled.', 'err'); P.running = false; releasePullLease(); pCounts(); return; }
     plog('Updating calendar and patient lists');
     safe(function () { if (isFn(window.loadCalendar)) window.loadCalendar(); });
     safe(function () { if (isFn(window._calLoadNextUp)) window._calLoadNextUp(); });
@@ -17856,7 +18006,7 @@
       okDays + ' days with visits, ' + P.emptyDays.length + ' empty' +
       (P.failedDays.length ? (' · ' + P.failedDays.length + ' days need a retry') : ' · no failed days') +
       (provs.length ? (' · providers seen: ' + provs.join(', ')) : ''));
-    P.running = false; pCounts();
+    P.running = false; releasePullLease(); pCounts();
     render(); /* refresh the schedule list with the new rows */
   }
 
@@ -17871,16 +18021,18 @@
     var today = todayLocal();
     var range = { ym: null, from: today, to: today, keys: [today], label: 'Today' };
     var provider = activeProvider() || 'all';
+    if (retryOnly && P && !P.failedDays.length) return;
+    if (!signedIn()) { pSet('ez3PullNow', 'Sign in to MLS first.'); pSet('ez3PullNow2', 'The pull saves to your MLS account.'); if (P) plog('Not signed in — stopped before touching Athena.', 'err'); pCounts(); return; }
+    if (S.autoPull === 'running' || !claimPullLease('day')) { toast('Another schedule pull is already running — let it finish or cancel it first.'); return; }
     if (!retryOnly || !P) { P = freshPull(range, provider); }
     else { var redo = P.failedDays.slice(); if (!redo.length) return; redo.forEach(function (k) { delete P.dayStatus[k]; }); P.failedDays = []; P.keysToRun = redo; }
-    if (!signedIn()) { pSet('ez3PullNow', 'Sign in to MLS first.'); pSet('ez3PullNow2', 'The pull saves to your MLS account.'); plog('Not signed in — stopped before touching Athena.', 'err'); pCounts(); return; }
     P.running = true; P.cancelled = false;
     pSet('ez3PullNow', 'Starting…'); pSet('ez3PullNow2', ''); pCounts();
     plog('Pull target: ' + range.label + ' · provider: ' + (provider === 'all' ? 'ALL (each row tagged as scheduled)' : provider));
     loadExistingKeys().then(function () {
       return pullPrecheck();
     }).then(function (pc) {
-      if (!pc.ok) { P.running = false; pCounts(); return; }
+      if (!pc.ok) { P.running = false; releasePullLease(); pCounts(); return; }
       P.extNav = !!pc.extNav;
       plog(P.extNav ? 'Extension date navigation available — running hands-free.' : 'No hands-free date nav (older extension) — follow mode: move Athena day by day as prompted.', P.extNav ? 'ok' : '');
       pSet('ez3PullNow', 'Pulling ' + range.label);
@@ -17888,11 +18040,11 @@
       P.keysToRun.forEach(function (dayKey) {
         chain = chain.then(function () {
           if (P.cancelled) return;
-          return pullDay(dayKey).then(function () { pCounts(); return new Promise(function (res) { setTimeout(res, 1100); }); });
+          return pullDay(dayKey).then(function () { pCounts(); return bgWait(1100); });
         });
       });
       return chain.then(finishMonthPull);
-    }).then(null, function (e) { plog('Unexpected error: ' + String((e && e.message) || e), 'err'); P.running = false; pCounts(); });
+    }).then(null, function (e) { if (P && P.cancelled) { finishMonthPull(); return; } plog('Unexpected error: ' + String((e && e.message) || e), 'err'); P.running = false; releasePullLease(); pCounts(); });
   }
 
 
@@ -17999,7 +18151,7 @@
     /* v3.4: registry-based (delegated); range tabs + rows via data attributes */
     on('ez3PullStart', function () { startMonthPull(false); });
     on('ez3PullRetry', function () { startMonthPull(true); });
-    on('ez3PullCancel', function () { if (P) { P.cancelled = true; plog('Cancelling — finishing the current step only.', 'err'); } });
+    on('ez3PullCancel', cancelPullRun);
     on('ez3sPullToday', pullTodayProxy);
     on('ez3sProv', function () { var c = $('mlsProvChip'); if (c) handOff(function () { c.click(); }, 'Pick the doctor in the app’s picker.'); else toast('Provider picker not found.'); });
     on('ez3sPrep', openPrep);
@@ -18166,7 +18318,13 @@
   window.__mlsEasyV31 = api; /* b57 v3.1 (line 64) bails on this */
   window.__mlsEasyV3 = api;  /* b55 v3 (line 69) bails on this */
   window.__mlsEasyV32_revert = function () {
-    try { if (P) P.cancelled = true; } catch (e) {}
+    try { if (P) cancelPullRun(); } catch (e) {}
+    try { cancelBgWaits(); abortPullFetches(); } catch (e) {}
+    try { if (_ez3WaitWorker) _ez3WaitWorker.terminate(); } catch (e) {}
+    _ez3WaitWorker = null;
+    try { if (_ez3WaitUrl) URL.revokeObjectURL(_ez3WaitUrl); } catch (e) {}
+    _ez3WaitUrl = null;
+    try { releasePullLease(); } catch (e) {}
     cleanup.forEach(function (f) { try { f(); } catch (e) {} });
     try { document.body.classList.remove('ez3adv'); } catch (e) {}
     try { delete window.__mlsEasyV32; } catch (e) { window.__mlsEasyV32 = undefined; }
@@ -37285,7 +37443,7 @@
   } catch(e){}
 })();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=b84c1';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=b84c2';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 ;(function(){try{var s=document.createElement('script');s.src='legal-chart-fill-ui.js?v='+(window.__MLS_AV||Date.now());s.defer=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* load legal-chart-fill-ui */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */
@@ -37299,7 +37457,7 @@
 (function(){try{if(!document.querySelector('script[data-mls-asset="feat_ease.js"]')){var s=document.createElement('script');s.src='feat_ease.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_ease.js');s.async=false;(document.head||document.documentElement).appendChild(s);}}catch(e){}})();
 
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_guard.js"]'))return;var s=document.createElement('script');s.src='feat_athena_guard.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_guard.js');document.head.appendChild(s);}catch(e){}})(); /* MLS — athenaOne-open guard (block fake progress/saves when logged out) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_honest.js"]'))return;var s=document.createElement('script');s.src='feat_visits_honest.js?v=b85c1';s.setAttribute('data-mls-asset','feat_visits_honest.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_honest.js"]'))return;var s=document.createElement('script');s.src='feat_visits_honest.js?v=b85c2';s.setAttribute('data-mls-asset','feat_visits_honest.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_visits_counter_guard.js"]'))return;var s=document.createElement('script');s.src='feat_visits_counter_guard.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_visits_counter_guard.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 

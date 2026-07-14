@@ -109,7 +109,7 @@
       <input id="dob" type="date" required />
       <label for="pid">Patient chart ID <span style="color:#c0392b">*</span></label>
       <input id="pid" type="text" required placeholder="use “Pick from your charts” above to fill this correctly" />
-      <button class="btn green" id="autoSend" type="button" style="display:none">⚡ Auto-send to the email on file</button>
+      <button class="btn green" id="autoSend" type="button" style="display:none">⚡ Use email on file — review first</button>
       <button class="btn" id="send" type="submit">Review &amp; send portal login</button>
     </form>
 
@@ -118,7 +118,7 @@
     <div id="credBox" class="cred" style="display:none"></div>
     <div class="note">🔒 Access is limited to this one patient's own records, protected by password + date of birth, with sessions that expire automatically. You can disable access anytime from MLS.</div>
     <div class="note" style="background:#eaf7f0;border-color:#bce6cf;color:#0f6b49">✉️ When the office's email is set up, MLS emails the patient a secure one-time link (expires in ~72 hours). Until then, MLS creates the login and shows it once here for you to hand over — either way works.</div>
-    <p class="foot">Preview the portal: <a href="/patient-portal.html" target="_blank" rel="noopener">patient-portal.html</a></p>
+    <p class="foot">Open the patient portal: <a href="/patient-portal.html" target="_blank" rel="noopener">Patient portal login</a></p>
   </div>
 </div>
 
@@ -156,6 +156,18 @@
   if(!token){ $('noauth').style.display='block'; }
   else { $('picker').style.display='block'; }
 
+  /* HTML date inputs only accept YYYY-MM-DD. Patient charts historically
+     store DOB in either YYYY-MM-DD or MM/DD/YYYY, so normalize before every
+     form fill instead of silently leaving the required DOB field blank. */
+  function dobInputValue(value){
+    var s=String(value||'').trim(), m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
+    m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+    if(!m) return '';
+    var y=+m[3]; if(y<100) y+=(y>40?1900:2000);
+    return y+'-'+String(+m[1]).padStart(2,'0')+'-'+String(+m[2]).padStart(2,'0');
+  }
+
   // Prefill ONCE from URL params (in-app deep link), then SCRUB the URL so no
   // patient details (PHI) linger in the address bar, browser history, or logs.
   var deepId='';
@@ -163,7 +175,7 @@
     var p=new URLSearchParams(location.search);
     if(p.get('email')) $('email').value=p.get('email');
     if(p.get('name')) $('name').value=p.get('name');
-    if(p.get('dob')) $('dob').value=p.get('dob');
+    if(p.get('dob')) $('dob').value=dobInputValue(p.get('dob'));
     if(p.get('id')||p.get('pid')){ $('pid').value=p.get('id')||p.get('pid'); deepId=$('pid').value; }
     if([...p.keys()].length){ history.replaceState(null,'',location.pathname); }
   }catch(e){}
@@ -178,8 +190,17 @@
     return m ? (m[2]+'/'+m[3]+'/'+m[1]) : String(iso||'—');
   }
   function lastNameOf(full){
-    var parts=String(full||'').trim().replace(/\s+/g,' ').split(' ');
-    return (parts.length?parts[parts.length-1]:'').toLowerCase().replace(/[^a-z'-]/g,'');
+    var s=String(full||'').trim().replace(/\s+/g,' '), surname='';
+    /* Chart names may be "Last, First" or end in Jr/Sr/II/III/IV/V. The
+       confirmation must always ask for the surname, never the first name or
+       suffix merely because it happens to be the last whitespace token. */
+    if(s.indexOf(',')>=0) surname=s.split(',')[0];
+    else {
+      var parts=s.split(' ').filter(Boolean);
+      while(parts.length>1 && /^(jr\.?|sr\.?|ii|iii|iv|v|esq\.?)$/i.test(parts[parts.length-1])) parts.pop();
+      surname=parts.length?parts[parts.length-1]:'';
+    }
+    return surname.toLowerCase().replace(/[^a-z'-]/g,'');
   }
   function genPassword(){
     // 14 chars, unambiguous alphabet, crypto-random
@@ -215,7 +236,7 @@
     var d=(r&&r.data)||{};
     var em=chartEmail(d);
     return { external_id:String(r.external_id||d.id||''), name:String(d.name||r.label||'').trim(),
-             dob:String(d.dob||'').slice(0,10), email:em.email, emailSrc:em.src, mrn:String(d.mrn||'') };
+             dob:dobInputValue(d.dob), email:em.email, emailSrc:em.src, mrn:String(d.mrn||'') };
   }
   function bearer(){ return { 'Authorization':'Bearer '+token }; }
   function searchCharts(q){
@@ -233,9 +254,11 @@
   }
   function filterAll(q){
     q=q.toLowerCase();
+    var qDob=dobInputValue(q);
     return ALL.filter(function(h){
       return h.name.toLowerCase().indexOf(q)>=0 || h.external_id.toLowerCase().indexOf(q)>=0 ||
-             h.mrn.toLowerCase().indexOf(q)>=0 || h.dob.indexOf(q)>=0;
+             h.mrn.toLowerCase().indexOf(q)>=0 || h.dob.indexOf(q)>=0 ||
+             fmtDob(h.dob).toLowerCase().indexOf(q)>=0 || (qDob && h.dob===qDob);
     }).slice(0,20);
   }
   function renderHits(hits){
