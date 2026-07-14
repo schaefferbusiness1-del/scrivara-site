@@ -1,5 +1,5 @@
 {
-  "version": "2.9.18",
+  "version": "2.9.19",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.18 - Confirmed Athena actions now use one frozen patient and visit binding from recording through review. Separate confirmations can write the reviewed note, save a draft, proof-gated Sign & Save, or stage only the reviewed E/M and CPT/HCPCS codes. No action is inferred or chained, and billing does not submit a claim."
+  "notes": "v2.9.19 - Exact patient history and prior visits now flow into six organized chart sections and operative-note context. Provider/day pulls verify complete schedule coverage, preserve stable patient and provider identities, enrich repeat pulls without duplicates, and fail closed on partial reads. Recording can stop and resume into one note, and every Athena note, billing, Save, Sign, or order action stays behind one exact human-reviewed confirmation."
 }
