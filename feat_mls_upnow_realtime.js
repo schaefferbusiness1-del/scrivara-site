@@ -51,7 +51,10 @@
       return null;
     }, null);
   }
-  function nowMin() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  function nowMin() {
+    try { if (typeof window._acctNowMinutes === "function") return window._acctNowMinutes(); } catch (e) {}
+    var d = new Date(); return d.getHours() * 60 + d.getMinutes();
+  }
 
   /* timed appts exist, but now is past every one (none in-room <=30 min, none upcoming) */
   function pastAllList(appts) {

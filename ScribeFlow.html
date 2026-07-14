@@ -4461,6 +4461,7 @@ async function refreshMe(){
         if(pp.phone) localStorage.setItem(uns('clinicPhone'),String(pp.phone));
         if(pp.address) localStorage.setItem(uns('clinicAddress'),String(pp.address));
         if(pp.google_business_url) localStorage.setItem(uns('googleBusinessUrl'),String(pp.google_business_url));
+        if(pp.timezone) localStorage.setItem(uns('acctTz'),String(pp.timezone));
       }catch(e){}
       // Canonical identity comes from the server (the Bearer token), not a stale
       // localStorage value. Sync session + header UI so they always match the
@@ -5768,7 +5769,7 @@ async function purgeAthenaImportedPatients(){
     }catch(e){}
     // Today's pulled appointments linked to those patients.
     try{
-      var today=(new Date()).toISOString().slice(0,10);
+      var today=_acctTodayKey();
       var ar=await fetch(bkBase()+'/api/appointments?date='+today,{headers:{Authorization:'Bearer '+bkToken()}});
       if(ar.ok){ var ad=await ar.json(); var appts=ad.appointments||[]; for(var j=0;j<appts.length;j++){ var ap=appts[j]; if(ap&&ap.id!=null&&athIds[ap.patient_external_id]){ try{ await fetch(bkBase()+'/api/appointments/'+ap.id,{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}}); }catch(e){} } } }
     }catch(e){}
@@ -7022,8 +7023,8 @@ let currentView='patients';
 var _calYear=null, _calMonth=null, _calAppts=[], _calMe={}, _calProviders=[], _calMode='month', _calRefDate=null;
 function _calPad(n){ return (n<10?'0':'')+n; }
 function _calShiftRef(deltaDays){ var d=new Date(_calRefDate+'T12:00'); d.setDate(d.getDate()+deltaDays); _calRefDate=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); }
-function _calInit(){ if(_calYear==null){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.getMonth(); } }
-function calToday(){ var n=new Date(); _calYear=n.getFullYear(); _calMonth=n.getMonth(); _calRefDate=n.getFullYear()+'-'+_calPad(n.getMonth()+1)+'-'+_calPad(n.getDate()); var p=document.getElementById('calDayPanel'); if(p) p.style.display='none'; renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
+function _calInit(){ if(_calYear==null){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); } }
+function calToday(){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); _calRefDate=(p.length===3?k:(n.getFullYear()+'-'+_calPad(n.getMonth()+1)+'-'+_calPad(n.getDate()))); var panel=document.getElementById('calDayPanel'); if(panel) panel.style.display='none'; renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
 function calPrev(){ _calInit(); if(_calMode==='month'){ _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } } else if(_calMode==='week'){ _calShiftRef(-7); } else { _calShiftRef(-1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
 function calNext(){ _calInit(); if(_calMode==='month'){ _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } } else if(_calMode==='week'){ _calShiftRef(7); } else { _calShiftRef(1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
 function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump'); if(jump) jump.style.display=(m==='month')?'':'none'; var pn=document.getElementById('calDayPanel'); if(pn&&m!=='day') pn.style.display='none'; renderCalendar(); if(m==='day') calOpenDay(_calRefDate); }
@@ -7049,7 +7050,7 @@ function _calFilterVal(){
 }
 function renderCalendar(){
   _calInit();
-  if(!_calRefDate){ var _n=new Date(); _calRefDate=_n.getFullYear()+'-'+_calPad(_n.getMonth()+1)+'-'+_calPad(_n.getDate()); }
+  if(!_calRefDate){ _calRefDate=(typeof _acctTodayKey==='function'?_acctTodayKey():''); if(!_calRefDate){ var _n=new Date(); _calRefDate=_n.getFullYear()+'-'+_calPad(_n.getMonth()+1)+'-'+_calPad(_n.getDate()); } }
   ['month','week','day'].forEach(function(m){ var b=document.getElementById('calMode_'+m); if(b){ var on=_calMode===m; b.style.background=on?'var(--brand,#2E6A4B)':'#fff'; b.style.color=on?'#fff':'var(--ink)'; } });
   if(_calMode==='week') return _calRenderWeek();
   if(_calMode==='day') return _calRenderDay();
@@ -7059,6 +7060,19 @@ function renderCalendar(){
    Appointment start_at is stored in UTC. Show every time in the ACCOUNT's time zone
    (default US Eastern — change by setting the 'acctTz' pref) and in 12-hour AM/PM. ===== */
 function _acctTz(){ try{ var t=localStorage.getItem(uns('acctTz')); return (t&&t.trim())?t.trim():'America/New_York'; }catch(e){ return 'America/New_York'; } }
+/* One shared account-clock truth for Calendar, front desk, guided patient highlighting,
+   and day-relative workflows. Browser/device time zones must never move a practice day. */
+function _acctNowParts(d){
+  try{
+    d=d||new Date(); var out={};
+    new Intl.DateTimeFormat('en-US',{timeZone:_acctTz(),hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(d).forEach(function(p){ out[p.type]=p.value; });
+    var h=parseInt(out.hour,10); if(h===24) h=0;
+    return {year:parseInt(out.year,10),month:parseInt(out.month,10),day:parseInt(out.day,10),hour:h,minute:parseInt(out.minute,10)};
+  }catch(e){ var n=d||new Date(); return {year:n.getFullYear(),month:n.getMonth()+1,day:n.getDate(),hour:n.getHours(),minute:n.getMinutes()}; }
+}
+function _acctDateKeyOf(d){ var p=_acctNowParts(d||new Date()); return p.year+'-'+_calPad(p.month)+'-'+_calPad(p.day); }
+function _acctTodayKey(){ return _acctDateKeyOf(new Date()); }
+function _acctNowMinutes(){ var p=_acctNowParts(new Date()); return p.hour*60+p.minute; }
 /* Minutes-since-midnight of an appointment IN the account time zone (from a UTC ISO start_at). */
 function _apptMinsTz(iso){
   try{ var d=new Date(iso); if(isNaN(d.getTime())) return null;
@@ -7281,7 +7295,7 @@ function calNewAppt(){
   var box=document.getElementById('calNewApptBox'); if(!box) return;
   var av=document.getElementById('calAvailBox'); if(av) av.style.display='none';
   if(box.style.display!=='none'){ box.style.display='none'; return; }
-  var today=_calRefDate||(new Date()).toISOString().slice(0,10);
+  var today=_calRefDate||_acctTodayKey();
   var _apn=''; var _apExt=''; try{ if(typeof activePatient==='function'&&activePatient()){ _apn=activePatient().name||''; _apExt=activePatient().id||''; } }catch(e){}
   var provSel=''; if((_calProviders||[]).length){ provSel='<select id="calNewDoc" title="Provider" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px"><option value="">Any provider</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+'</select>'; }
   // Link the appointment to a REAL patient chart: datalist of existing patients.
@@ -7326,7 +7340,7 @@ async function calCreateAppt(btn){
   var name=((document.getElementById('calNewName')||{}).value||'').trim();
   var msg=document.getElementById('calNewMsg');
   if(!name){ if(msg){ msg.style.color='#c0392b'; msg.textContent='Enter a patient name.'; } return; }
-  var date=(document.getElementById('calNewDate')||{}).value||(new Date()).toISOString().slice(0,10);
+  var date=(document.getElementById('calNewDate')||{}).value||_acctTodayKey();
   var time=(document.getElementById('calNewTime')||{}).value||'';
   var doc=(document.getElementById('calNewDoc')||{}).value||'';
   var phone=(document.getElementById('calNewPhone')||{}).value||'';
@@ -7339,7 +7353,7 @@ async function calCreateAppt(btn){
   try{ if(!ext){ var pts=(typeof getPatients==='function'?getPatients():[])||[]; var mp=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(mp) ext=mp.id; } }catch(e){}
   var reason=[type, notes].filter(Boolean).join(' — ');
   var startIso=null, endIso=null;
-  if(time){ try{ startIso=new Date(date+'T'+time).toISOString(); if(dur){ endIso=new Date(new Date(startIso).getTime()+dur*60000).toISOString(); } }catch(e){} }
+  if(time){ try{ startIso=_acctWallToUtcIso(date,time); if(startIso&&dur){ endIso=new Date(new Date(startIso).getTime()+dur*60000).toISOString(); } }catch(e){} }
   if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Scheduling…'; }
   try{
     var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,phone:phone,room:room,doctor_user_id:doc||null,patient_external_id:ext||null,appt_date:date,start_at:startIso,end_at:endIso})});
@@ -7362,6 +7376,7 @@ async function calWorkingHours(){
     var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.innerHTML='<div class="mini" style="color:#a12c2c">Working hours are for practice staff accounts.</div>'; return; }
     var d=await r.json();
+    try{ if(d&&d.availability&&d.availability.tz) localStorage.setItem(uns('acctTz'),String(d.availability.tz)); }catch(e){}
     box.innerHTML=(typeof _avRenderEditor==='function')?_avRenderEditor((d&&d.availability)||{}):'<div class="mini">Editor unavailable.</div>';
   }catch(e){ box.innerHTML='<div class="mini" style="color:#a12c2c">Could not load your hours. Try again.</div>'; }
 }
@@ -7383,7 +7398,7 @@ async function calAddAppt(key, btn){
   var time=(document.getElementById('calAddTime')||{}).value||'';
   var doc=(document.getElementById('calAddDoc')||{}).value||'';
   var reason=(document.getElementById('calAddReason')||{}).value||'';
-  var startIso=null; if(time){ try{ startIso=new Date(key+'T'+time).toISOString(); }catch(e){} }
+  var startIso=null; if(time){ try{ startIso=_acctWallToUtcIso(key,time); }catch(e){} }
   if(btn) btn.disabled=true; if(msg){ msg.style.color='var(--muted)'; msg.textContent='Adding…'; }
   try{
     var r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:key,start_at:startIso})});
@@ -7473,7 +7488,7 @@ function calStartVisit(id){
 async function _renderWaitingRoom(){
   var bar=document.getElementById('waitingRoomBar'); if(!bar) return;
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ bar.style.display='none'; return; }
-  var today=(new Date()).toISOString().slice(0,10);
+  var today=_acctTodayKey();
   var appts=[];
   try{ var r=await fetch(bkBase()+'/api/appointments?date='+today,{headers:{Authorization:'Bearer '+bkToken()}}); if(r.ok){ var d=await r.json(); appts=d.appointments||[]; } }catch(e){}
   var waiting=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
@@ -7497,7 +7512,7 @@ async function _renderDailyBrief(){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ var ex0=document.getElementById('dailyBriefBar'); if(ex0) ex0.style.display='none'; return; }
   var bar=document.getElementById('dailyBriefBar');
   if(!bar){ bar=document.createElement('div'); bar.id='dailyBriefBar'; bar.style.cssText='margin:0 0 12px'; host.insertBefore(bar, host.firstChild); }
-  var today=(new Date()).toISOString().slice(0,10); var appts=[];
+  var today=_acctTodayKey(); var appts=[];
   try{ var r=await fetch(bkBase()+'/api/appointments?date='+today,{headers:{Authorization:'Bearer '+bkToken()}}); if(r.ok){ var d=await r.json(); appts=d.appointments||[]; } }catch(e){}
   if(!appts.length){ bar.style.display='none'; bar.innerHTML=''; return; }
   var checkedIn=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).length;
@@ -8003,6 +8018,7 @@ async function suRenderSchedule(){
   try{
     var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
     var d=await r.json();
+    try{ if(d&&d.availability&&d.availability.tz) localStorage.setItem(uns('acctTz'),String(d.availability.tz)); }catch(e){}
     box.innerHTML=(typeof _avRenderEditor==='function')?_avRenderEditor((d&&d.availability)||{}):'<div class="note">Schedule editor unavailable.</div>';
   }catch(e){ box.innerHTML='<div class="note" style="color:#c0392b">Could not load your schedule.</div>'; }
 }
@@ -8105,7 +8121,7 @@ function copyBookingLinkText(){
 }
 var _boardDoctors=[];
 var _boardDate='';
-function _todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _todayStr(){ return (typeof _acctTodayKey==='function')?_acctTodayKey():(new Date()).toISOString().slice(0,10); }
 function _boardDay(){ return _boardDate||_todayStr(); }
 function changeBoardDate(delta){ var d=new Date((_boardDate||_todayStr())+'T12:00'); d.setDate(d.getDate()+delta); _boardDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); loadBoard(true); }
 function jumpBoardDate(v){ if(v){ _boardDate=String(v).slice(0,10); loadBoard(true); } }
@@ -8142,7 +8158,7 @@ function renderBoard(appts){
     +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px;margin-left:auto" onclick="loadBoard(true)">↻ Refresh</button></div>';
   if(!sorted.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No appointments on this day. Add one below, or share your booking link.</div>'; }
   sorted.forEach(function(a){
-    const t=a.start_at?new Date(a.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';
+    const t=a.start_at?_fmtApptTime(a.start_at):'';
     const badge={booked:'#5f7186',checked_in:'#127a55',roomed:'#2E6A4B',completed:'#8a8a8a',cancelled:'#c0392b',no_show:'#c0392b'}[a.status]||'#5f7186';
     h+='<div style="border:1px solid #e2e9f1;border-radius:10px;padding:9px 11px;margin-bottom:7px;background:#fff">';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
@@ -8190,7 +8206,7 @@ async function addApptFromBoard(){
   const doc=(document.getElementById('bAddDoc')||{}).value||'';
   const reason=(document.getElementById('bAddReason')||{}).value||'';
   let startIso=null;
-  if(time){ try{ startIso=new Date(_boardDay()+'T'+time).toISOString(); }catch(e){} }
+  if(time){ try{ startIso=_acctWallToUtcIso(_boardDay(),time); }catch(e){} }
   try{
     const r=await fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({name:name,reason:reason,doctor_user_id:doc||null,appt_date:_boardDay(),start_at:startIso})});
     if(!r.ok){ toast('Could not add the appointment.','err'); return; }
@@ -8371,7 +8387,7 @@ var _fuDays=3, _fuAuto=false;
 // ===== BOOKING AVAILABILITY (doctor sets the days/hours patients can book) =====
 var _AVDN=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function _avRenderEditor(av){
-  av=av||{}; var days=av.days||{}; var tz=av.tz||'America/Chicago'; var slot=av.slotMin||30;
+  av=av||{}; var days=av.days||{}; var tz=av.tz||(typeof _acctTz==='function'?_acctTz():'America/New_York'); var slot=av.slotMin||30;
   var tzs=['America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'];
   var h='<div style="font-weight:700;font-size:15px;margin-bottom:4px">🕘 Booking availability</div>';
   h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">Patients booking online <b>and</b> your AI phone assistant can only be offered these open hours. Closed days are never offered.</div>';
@@ -8424,6 +8440,7 @@ async function openAvailability(){
     var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===403){ box.innerHTML='<div class="mini" style="color:#a12c2c">Availability is for practice staff accounts.</div>'; return; }
     var d=await r.json();
+    try{ if(d&&d.availability&&d.availability.tz) localStorage.setItem(uns('acctTz'),String(d.availability.tz)); }catch(e){}
     box.innerHTML=_avRenderEditor((d&&d.availability)||{});
   }catch(e){ box.innerHTML='<div class="mini" style="color:#a12c2c">Could not load availability. Try again.</div>'; }
 }
@@ -8440,7 +8457,7 @@ async function saveAvailability(btn){
   try{
     var r=await fetch(bkBase()+'/api/schedule/availability',{method:'POST',headers:{Authorization:'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify({availability:av})});
     if(btn) btn.disabled=false;
-    if(r.ok){ if(msg){ msg.style.color='#127a55'; msg.textContent='✓ Saved. Patients can now only book during these hours.'; } toast('Availability saved.','ok'); }
+    if(r.ok){ try{ localStorage.setItem(uns('acctTz'),String(av.tz||'America/New_York')); }catch(e){} if(msg){ msg.style.color='#127a55'; msg.textContent='✓ Saved. Calendar, guided view, front desk, online booking, and phone scheduling now use this time zone.'; } toast('Availability and practice time zone saved.','ok'); }
     else { if(msg){ msg.style.color='#a12c2c'; msg.textContent='Could not save — try again.'; } }
   }catch(e){ if(btn) btn.disabled=false; if(msg){ msg.style.color='#a12c2c'; msg.textContent='Network error — try again.'; } }
 }
@@ -9053,7 +9070,7 @@ function _copilotAutogrow(el){ if(!el) return; el.style.height='auto'; el.style.
    snapshot but trimmed so the payload stays small and fast. */
 function copilotSnapshot(){
   var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[],appointments:[]}; }
-  var today=new Date(); var todayStr=today.toISOString().slice(0,10);
+  var today=new Date(); var todayStr=_acctTodayKey();
   function daysSince(d){ try{ if(!d) return null; var t=new Date(d); if(isNaN(t.getTime())) return null; return Math.max(0, Math.round((today-t)/86400000)); }catch(e){ return null; } }
   var pts=(snap.patients||[]).map(function(p){
     return { id:p.id, name:p.name, age:p.age, sex:p.sex, problems:(p.problems||[]).slice(0,6),
@@ -10005,12 +10022,12 @@ function getTemplateById(id){ return getTemplates().find(t=>t.id===id)||null; }
    a ready op report; prompt for case-specific blanks (needle size etc.) with a dropdown
    of previously-used values. ===== */
 function _opTomorrowAppts(){
-  try{ var d=new Date(); d.setDate(d.getDate()+1); var key=d.toISOString().slice(0,10);
+  try{ var d=new Date(_acctTodayKey()+'T12:00'); d.setDate(d.getDate()+1); var key=_opDayKey(d);
     return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
-      .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at)}; })
+      .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', patientId:String(a.patient_external_id||''), time:_apptHHMMTz(a.start_at)}; })
       .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
-function _opTomorrowDateStr(){ var d=new Date(); d.setDate(d.getDate()+1); return d.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }
+function _opTomorrowDateStr(){ var d=new Date(_acctTodayKey()+'T12:00'); d.setDate(d.getDate()+1); return d.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }
 /* Score templates against a procedure description; return them best-first. */
 function _opRankTemplates(procedure){
   var procL=String(procedure||'').toLowerCase();
@@ -10063,32 +10080,36 @@ function _ptBmi(p){ try{ if(!p) return null; if(p.bmi){ var b=parseFloat(p.bmi);
 /* Spinal-needle length usually scales with body habitus: heavier patients need a longer needle. */
 function _predictNeedleSize(bmi){ if(bmi==null) return ''; return (bmi>=30) ? '5.0' : '3.5'; }
 /* Gather everything we already know about this patient for the op note (so it auto-fills, no prompt). */
-function _opPatientCtx(name){
+function _opPatientCtx(name, patientId){
   try{
     var pts=(typeof getPatients==='function'?getPatients():[])||[];
     var nm=String(name||'').trim().toLowerCase();
-    var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; })||null;
+    var p=patientId?pts.find(function(x){ return String(x.id)===String(patientId); }):null;
+    if(!p){ var matches=pts.filter(function(x){ return String(x.name||'').trim().toLowerCase()===nm; }); if(matches.length===1) p=matches[0]; }
     if(!p) return {};
-    return { dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||'') };
+    var history='';
+    try{ if(typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
+    if(!history){ history=['Problems: '+String(p.problems||''),'Medications: '+String(p.meds||p.medications||''),'Allergies: '+String(p.allergies||''),'Chart summary: '+String(p.summary||'')].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
+    return { patientId:String(p.id||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||''), history:String(history||'').slice(0,14000) };
   }catch(e){ return {}; }
 }
-function _opNewRow(name, reason, dob, dateStr){
+function _opNewRow(name, reason, dob, dateStr, patientId){
   var rank=_opRankTemplates(reason||'');
-  return { appt:{name:name, reason:reason||'', dob:dob||''}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
+  return { appt:{name:name, reason:reason||'', dob:dob||'', patientId:String(patientId||'')}, proc:(reason||''), dateStr:(dateStr||''), tplId:(rank[0]&&rank[0].tpl)?rank[0].tpl.id:'', note:'', missing:[], values:{}, gen:false };
 }
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
 function _opApptsForDay(key){
   try{ return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
-    .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at)}; })
+    .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', patientId:String(a.patient_external_id||''), time:_apptHHMMTz(a.start_at)}; })
     .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
 function openOpPrep(dayKey){
   window._opPrepMode='all';
   if(!dayKey){ var d=new Date(); d.setDate(d.getDate()+1); dayKey=_opDayKey(d); }   // default = tomorrow
   window._opPrepDay=dayKey;
-  window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey)); });
+  window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey), a.patientId); });
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 /* Re-load the all-patients list for a different day without closing the modal. */
@@ -10101,7 +10122,7 @@ function openOpPrepForPatient(pid){
   if(!p){ try{ toast('Open a patient first, then draft their op note.','err'); }catch(e){} return; }
   var reason=''; try{ var ap=((window._calAppts||[])||[]).filter(function(a){ return String(a.patient_external_id||'')===p.id || String(a.name||'').trim().toLowerCase()===String(p.name||'').trim().toLowerCase(); }).sort(function(a,b){ return String(b.start_at||'').localeCompare(String(a.start_at||'')); })[0]; if(ap) reason=ap.reason||p.reason||''; else reason=p.reason||''; }catch(e){}
   window._opPrepMode='patient'; window._opPrepPatientId=p.id; window._opPrepPatientName=p.name;
-  window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})) ];
+  window._opPrep=[ _opNewRow(p.name, reason, p.dob, (new Date(_acctTodayKey()+'T12:00')).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}), p.id) ];
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
@@ -10223,7 +10244,7 @@ async function opPrepGenerateOne(i){
   if(!tpl){ try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
   var st=document.getElementById('opPrepStatus'); if(st) st.textContent='Drafting '+row.appt.name+'’s op note…';
   try{
-    var ctx=_opPatientCtx(row.appt.name); row._ctx=ctx;     // name/DOB/sex/age/BMI we already have → auto-filled, never re-asked
+    var ctx=_opPatientCtx(row.appt.name,row.appt.patientId); row._ctx=ctx; // exact chart id first; full chart/history is drafting context
     var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
@@ -10235,14 +10256,24 @@ async function opPrepGenerateOne(i){
     if(st) st.textContent='Drafted '+row.appt.name+'’s op note'+(nblank?(' — '+nblank+' blank'+(nblank===1?'':'s')+' to confirm'):'')+' · saved as a draft to History.';
   }catch(e){ if(st) st.textContent='Couldn’t draft that one — try again.'; }
 }
+/* Resolve an op-note row to exactly one chart. An immutable appointment/chart id wins;
+   legacy name-only rows are accepted only when name (+DOB when available) is unique. */
+function _opResolvePatient(row){
+  row=row||{}; var a=row.appt||{}; var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var pid=String(a.patientId||row.patientId||''); if(pid){ var byId=pts.find(function(x){return String(x.id)===pid;}); if(byId){ row._patientAmbiguous=false; return byId; } }
+  var nm=String(a.name||'').trim().toLowerCase(); var matches=pts.filter(function(x){return String(x.name||'').trim().toLowerCase()===nm;});
+  var dob=String(a.dob||'').replace(/[^0-9]/g,''); if(dob){ var dm=matches.filter(function(x){return String(x.dob||'').replace(/[^0-9]/g,'')===dob;}); if(dm.length) matches=dm; }
+  row._patientAmbiguous=matches.length>1; return matches.length===1?matches[0]:null;
+}
 /* Save (or update) this op-note row as a DRAFT in History immediately, so it's never lost even
    if the doctor navigates away without clicking Save. Re-uses the same note id on re-draft. */
 function opPrepAutosaveDraft(i){
   try{
     var row=(window._opPrep||[])[i]; if(!row||!row.note) return;
-    var nm=row.appt.name; var pts=(typeof getPatients==='function'?getPatients():[])||[];
-    var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===String(nm||'').trim().toLowerCase(); });
+    var nm=row.appt.name; var p=_opResolvePatient(row);
+    if(!p && row._patientAmbiguous) return; // never file a draft to an arbitrary same-name chart
     if(!p){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:row.appt.dob||'', created:Date.now(), source:'athena-schedule' }; if(typeof upsertPatient==='function') upsertPatient(p); }
+    row.appt.patientId=p.id;
     var ns=getNotes(); var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
@@ -10311,7 +10342,7 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   ctx=ctx||{};
   var known=[]; if(name) known.push('name: '+name); if(ctx.sex) known.push('sex: '+ctx.sex); if(ctx.dob) known.push('date of birth: '+ctx.dob); if(ctx.age!=null) known.push('age: '+ctx.age); if(ctx.bmi!=null) known.push('BMI: '+ctx.bmi); if(ctx.mrn) known.push('MRN: '+ctx.mrn);
   var sys='You draft an OPERATIVE / PROCEDURE NOTE for a pain/spine physician by adapting ONE of their OWN prior operative notes (the TEMPLATE) to a new patient and procedure. Keep the template’s exact structure, section headings, wording and style. Fill in the patient name, the date of procedure, and the specific procedure with its laterality and spinal levels. Keep all standard boilerplate. '
-    +'CRITICAL — the KNOWN PATIENT FACTS below are already in our chart: fill each one DIRECTLY into the note wherever the template needs it, and NEVER list any known fact in "missing". '
+    +'CRITICAL — the KNOWN PATIENT FACTS and PATIENT CHART/HISTORY below come from the chart attached to this exact operative-note row. Use only documented facts relevant to the procedure; never transfer facts from another patient or invent new findings. Fill known facts directly wherever the template needs them and NEVER list a documented fact in "missing". '
     +'NEVER ask for patient name, sex/gender, age, date of birth, MRN, or BMI — treat those as known or as boilerplate that needs no input. '
     +'ONLY put a [[key]] placeholder (and a "missing" entry) for a detail that genuinely VARIES per case AND is not known — e.g. needle gauge/size, medication name/dose/volume, contrast amount, fluoroscopy time, sedation, or an ambiguous level. '
     +'BE CONSERVATIVE — use the FEWEST placeholders possible. If the TEMPLATE already states a standard value for something (a routine dose, a standard volume, default contrast), KEEP the template’s value rather than blanking it; only blank a detail that truly changes patient-to-patient and is not derivable. Each placeholder key must be UNIQUE and appear exactly once. '
@@ -10319,6 +10350,7 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
     +'Use snake_case keys (e.g. needle_size, contrast_volume, sedation). Return ONLY JSON, no prose, no code fence: {"note":"<full operative note text, with [[key]] placeholders where needed>","missing":[{"key":"needle_size","label":"Needle size / gauge","example":"22g 3.5in"}]}.';
   var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure
     +(known.length?('\n\nKNOWN PATIENT FACTS (already in our chart — fill these in, do NOT ask for them):\n- '+known.join('\n- ')):'')
+    +(ctx.history?('\n\nPATIENT CHART / PRIOR HISTORY (use only documented, procedure-relevant facts; do not invent):\n'+String(ctx.history).slice(0,14000)):'')
     +'\n\nTEMPLATE (the doctor’s own prior op note — match its structure & style exactly):\n'+String(tplText||'').slice(0,9000);
   var raw=await aiCallRaw(sys, user, (typeof getKey==='function'?getKey():''), {freeform:true});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
@@ -10340,9 +10372,10 @@ function opPrepSave(i){
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
   var leftover=(note.match(/\[\[[a-z0-9_]+\]\]/gi)||[]).length;
   var nm=row.appt.name;
-  var pts=(typeof getPatients==='function'?getPatients():[])||[];
-  var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===String(nm||'').trim().toLowerCase(); });
+  var p=_opResolvePatient(row);
+  if(!p && row._patientAmbiguous){ try{ toast('More than one chart has this name. Open the correct patient and draft their op note from that chart.','err'); }catch(e){} return; }
   if(!p){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:row.appt.dob||'', created:Date.now(), source:'athena-schedule' }; if(typeof upsertPatient==='function') upsertPatient(p); }
+  row.appt.patientId=p.id;
   try{
     var ns=getNotes();
     var cc=(row.proc||row.appt.reason||'Operative note')+' (op note)';
@@ -11864,7 +11897,7 @@ async function _parsePatientChart(text){
 async function _parseScheduleText(text){
   var sys='You extract a clinic’s appointment schedule from raw EMR/Athena page text. It is messy: it often has a mini month-calendar (lists of day numbers — IGNORE those), a time grid like "07:00 AM 08:00 AM …" (IGNORE the empty grid labels), and provider rows like "Benner_John_MD: 3 appointments". The PATIENT appointments appear as a patient NAME next to a time and sometimes a visit reason/type. The view may span MULTIPLE DAYS (a week or multi-day view) — capture the DATE each appointment falls on whenever the text makes it determinable (column header, day label, or a date near the appointment). Return ONLY a JSON array (no prose, no code fence): [{"name":"<patient full name>","dob":"<MM/DD/YYYY or empty>","date":"<the appointment'+"'"+'s date as YYYY-MM-DD or MM/DD/YYYY, or empty if only one day is shown>","time":"<HH:MM 24-hour or empty>","reason":"<visit type/reason or empty>"}]. RULES: include ONLY real PATIENT appointments (a person being seen). EXCLUDE: provider/clinician names (e.g. anything like Lastname_Firstname_MD/PA-C/DO, or "Dr. X"), department/location names (e.g. "POSM CL WEST CHESTER", "PHSC OT …"), menu/button/column-header/UI text, message-inbox sender names, and the bare day-number lists from the mini calendar. A provider row that says "0 appointments" means that provider has none — do not invent patients. If there are genuinely no patient appointments in the text, return [].';
   sys+=' DATES ARE CRITICAL — they decide which calendar day each patient lands on. If the view is a WEEK or MULTI-DAY grid, each day has a header (a weekday and/or a date like "Mon 6/15", "Tuesday", "Jun 16"); assign EVERY appointment the date of the column/section it sits under. If only weekday NAMES appear (no full date), resolve them to the ACTUAL calendar dates of the week being shown, using the anchor date below and any date range in the title/header. Always output a full YYYY-MM-DD date when you can determine it; only leave "date" empty if the page truly shows a single unlabeled day. Never put two different days’ patients on the same date.';
-  var anchor=(function(){ var d=new Date(); return d.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' (ISO '+d.toISOString().slice(0,10)+')'; })();
+  var anchor=(function(){ var key=_acctTodayKey(); var d=new Date(key+'T12:00'); return d.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' (ISO '+key+', '+_acctTz()+')'; })();
   var raw=await aiCallRaw(sys, 'ANCHOR — today is '+anchor+'. Use it to resolve weekday-only labels to real dates.\n\nEMR PAGE TEXT:\n'+String(text||'').slice(0,22000), (typeof getKey==='function'?getKey():''), {freeform:true});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   try{ var arr=JSON.parse(s); if(Array.isArray(arr)) return arr; }catch(e){}
@@ -11875,9 +11908,9 @@ async function _parseScheduleText(text){
    1) a date printed in the Athena text (e.g. "Monday, June 15, 2026"), else
    2) the next clinic day (today if it's a weekday, otherwise the upcoming Monday). */
 function _nextClinicDay(){
-  var d=new Date();
+  var d=new Date(_acctTodayKey()+'T12:00');
   while(d.getDay()===0||d.getDay()===6){ d.setDate(d.getDate()+1); } // skip Sun(0)/Sat(6)
-  return d.toISOString().slice(0,10);
+  return _opDayKey(d);
 }
 function _detectSchedDate(text){
   try{
@@ -11933,7 +11966,7 @@ async function cleanupDuplicateAppointments(btn){
 }
 async function _importPulledSchedule(appts){
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to import the schedule.','err'); }catch(e){} return; }
-  var todayKey=(new Date()).toISOString().slice(0,10);
+  var todayKey=_acctTodayKey();
   var fallbackDate=_detectSchedDate(window.__schedRaw&&window.__schedRaw.text)||_nextClinicDay();
   // Sanity guard: if a huge number of appts would all land on ONE day, that's almost always a
   // whole-clinic or multi-day view being collapsed — warn rather than silently dumping 100+ on Monday.
@@ -11997,13 +12030,13 @@ async function _importPulledSchedule(appts){
 }
 /* A patient counts as "seen" today once they have a real (non-draft) saved note dated today. */
 function _seenToday(name){
-  try{ var nm=String(name||'').trim().toLowerCase(); if(!nm) return false; var today=(new Date()).toISOString().slice(0,10);
-    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patient||'').trim().toLowerCase()===nm && !n.isDraft && (new Date(n.updated||n.created||0)).toISOString().slice(0,10)===today; });
+  try{ var nm=String(name||'').trim().toLowerCase(); if(!nm) return false; var today=_acctTodayKey();
+    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patient||'').trim().toLowerCase()===nm && !n.isDraft && _acctDateKeyOf(new Date(n.updated||n.created||0))===today; });
   }catch(e){ return false; }
 }
 /* Tomorrow's appointments pulled from the calendar (so they file into a Tomorrow folder). */
 function _tomorrowAppts(){
-  try{ var d=new Date(); d.setDate(d.getDate()+1); var key=d.toISOString().slice(0,10);
+  try{ var d=new Date(_acctTodayKey()+'T12:00'); d.setDate(d.getDate()+1); var key=_opDayKey(d);
     return ((window._calAppts||[])||[]).filter(function(a){ return (a.appt_date||String(a.start_at||'').slice(0,10))===key; })
       .map(function(a){ return {name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), time:_apptHHMMTz(a.start_at), reason:a.reason||'', dob:a.dob||''}; })
       .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
@@ -12022,7 +12055,7 @@ function _heroPatChip(a,onclick,opts){
    (started ≤30 min ago), else the next upcoming, else the first. */
 function _heroAutoPos(pending){
   if(!pending.length) return 0;
-  var now=new Date(); var nowMin=now.getHours()*60+now.getMinutes();
+  var nowMin=_acctNowMinutes();
   var inRoom=-1, next=-1;
   for(var k=0;k<pending.length;k++){ var m=_calApptMins(pending[k].a); if(m==null) continue; if(m<=nowMin && nowMin-m<=30) inRoom=k; if(m>=nowMin && next<0) next=k; }
   if(inRoom>=0) return inRoom; if(next>=0) return next; return 0;
@@ -12047,7 +12080,7 @@ function _renderTodayPatients(appts){
      matching pulled _calAppts record — before anything renders. Truly unknown times
      stay bare (never guess). */
   try{
-    var _dn=new Date(); var _todayK=_dn.getFullYear()+'-'+('0'+(_dn.getMonth()+1)).slice(-2)+'-'+('0'+_dn.getDate()).slice(-2);
+    var _todayK=_acctTodayKey();
     function _m12(sl){ var m=String(sl||'').match(/^(\d{1,2}):(\d{2})/); if(!m) return ''; var h=+m[1]; return ((h%12)||12)+':'+m[2]+' '+(h<12?'AM':'PM'); }
     (appts||[]).forEach(function(a){
       if(!a) return; var t=String(a.time||'');
@@ -12106,10 +12139,16 @@ function _heroPickTomorrow(j){
 /* Based on the pulled Athena schedule + the current clock time, pick who's "up now"
    (the appt that just started, else the next upcoming, else the last of the day) and
    load them into the hero so the doctor just hits record. */
-function _calApptMins(a){ var t=String((a&&a.time)||''); if(/^\d\d?:\d\d$/.test(t)){ var p=t.split(':'); return parseInt(p[0],10)*60+parseInt(p[1],10); } return null; }
+function _calApptMins(a){
+  try{ if(a&&a.start_at&&typeof _apptMinsTz==='function'){ var z=_apptMinsTz(a.start_at); if(z!=null) return z; } }catch(e){}
+  var t=String((a&&(a.time_display||a.time||a.start_local))||'').trim();
+  var m=t.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/); if(m){ var h=parseInt(m[1],10)%12; if(/[Pp]/.test(m[3])) h+=12; return h*60+parseInt(m[2],10); }
+  m=t.match(/(?:^|T|\s)(\d{1,2}):(\d{2})/); if(m){ var hh=parseInt(m[1],10), mm=parseInt(m[2],10); if(hh>=0&&hh<24&&mm>=0&&mm<60) return hh*60+mm; }
+  return null;
+}
 function _calPickNowIdx(appts){
   if(!appts||!appts.length) return -1;
-  var now=new Date(); var nowMin=now.getHours()*60+now.getMinutes();
+  var nowMin=_acctNowMinutes();
   var timed=[]; appts.forEach(function(a,i){ var m=_calApptMins(a); if(m!=null) timed.push({i:i,m:m}); });
   if(!timed.length) return 0;                                  // no times → just take the first
   timed.sort(function(a,b){ return a.m-b.m; });
@@ -12488,21 +12527,25 @@ function _legalMatchPatient(patientRef, pts){
   var rl=String(patientRef).toLowerCase();
   var dobM=rl.match(/(\d{4}-\d{1,2}-\d{1,2})/)||rl.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   var refDobN=dobM?dobM[1].replace(/[^0-9]/g,''):'';
-  var best='', bestScore=0;
+  var best='', bestScore=0, tied=false;
   (pts||[]).forEach(function(p){
     var nm=String(p.name||'').toLowerCase().trim();
-    var score=0;
-    if(nm && nm.length>1 && rl.indexOf(nm)>=0){ score+=3; }
+    var nameScore=0;
+    if(nm && nm.length>1 && rl.indexOf(nm)>=0){ nameScore=3; }
     else {
       var parts=nm.split(/\s+/).filter(function(x){return x.length>1;});
       var hits=parts.filter(function(x){return rl.indexOf(x)>=0;}).length;
-      if(parts.length>=2 && hits>=2) score+=2;
-      else if(parts.length>=1 && hits>=1) score+=1;
+      if(parts.length>=2 && hits>=2) nameScore=2;
+      else if(parts.length>=1 && hits>=1) nameScore=1;
     }
-    if(refDobN && p.dob && String(p.dob).replace(/[^0-9]/g,'')===refDobN) score+=2;
-    if(score>bestScore){ bestScore=score; best=String(p.id); }
+    var dobScore=(refDobN && p.dob && String(p.dob).replace(/[^0-9]/g,'')===refDobN)?2:0;
+    // A DOB by itself is not enough to propose a chart; require a strong name or name+DOB.
+    if(!(nameScore>=2 || (nameScore>=1 && dobScore>0))) return;
+    var score=nameScore+dobScore;
+    if(score>bestScore){ bestScore=score; best=String(p.id); tied=false; }
+    else if(score===bestScore && score>0){ tied=true; }
   });
-  return bestScore>=2 ? best : '';
+  return (bestScore>=2 && !tied) ? best : '';
 }
 function setLegalAttachedPatient(id, auto){
   var p=null, nv=0;

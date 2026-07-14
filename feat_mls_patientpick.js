@@ -137,7 +137,10 @@
     var ap = h < 12 ? "AM" : "PM"; var h12 = h % 12; if (h12 === 0) h12 = 12;
     return h12 + ":" + (mi < 10 ? "0" : "") + mi + " " + ap;
   }
-  function nowMins() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  function nowMins() {
+    try { if (typeof window._acctNowMinutes === "function") return window._acctNowMinutes(); } catch (e) {}
+    var d = new Date(); return d.getHours() * 60 + d.getMinutes();
+  }
   /* index of the first card at/after "now" (the slot we are advancing toward);
      if every slot is in the past, points at the last card. -1 when list empty. */
   function nowIndex(list) {
@@ -183,7 +186,9 @@
   /* scope: "today" | "week" | "recent" (recent = most recent day that has appointments) */
   function scopeList(scope, provider) {
     var all = appts(), idx = buildIndex();
-    var today = localDateStr(new Date());
+    var today = "";
+    try { today = (typeof window._acctTodayKey === "function") ? window._acctTodayKey() : ""; } catch (e) {}
+    if (!today) today = localDateStr(new Date());
     var pool = [], dateLabel = "", fallback = false;
 
     function dayPool(ds) { return all.filter(function (a) { return apptDate(a) === ds; }); }
