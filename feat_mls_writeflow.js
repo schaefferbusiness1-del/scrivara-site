@@ -1,5 +1,7 @@
 /* =============================================================================
- * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.4.0)
+ * feat_mls_writeflow.js -> window.__mlsWriteFlow  (wf2-1.4.1)
+ * wf2-1.4.1 (2026-07-14): confirmed billing uses a frozen structured code
+ *   snapshot; diagnosis/order prose can never be inferred as CPT/HCPCS.
  * wf2-1.4.0 (2026-07-14): encounter-locked, confirmation-gated note writes;
  *   Sign remains disabled until that exact receipt's note write is verified.
  *   Billing failures report every verified/uncertain partial result honestly.
@@ -48,7 +50,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-1.4.0';
+  var VERSION = 'wf2-1.4.1';
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0 };
   var stopped = false;
@@ -229,16 +231,37 @@
       var emLine = /(?:E\/?M(?:\s+level)?|visit\s+level)\s*[:#-]?\s*(\d{5})/i.exec(raw);
       if (emLine) em = emLine[1];
     }
-    var cptInput = source.cpt || source.cpts || source.cptCodes || source.codes || [];
+    var aliases = [source.cpt, source.cpts, source.cptCodes, source.codes], cptInput = [];
+    for (var ai = 0; ai < aliases.length; ai++) {
+      var candidate = aliases[ai];
+      if (Array.isArray(candidate) ? candidate.length : S(candidate).trim()) { cptInput = candidate; break; }
+    }
     if (!Array.isArray(cptInput)) cptInput = [cptInput];
     if (!cptInput.length && raw) {
+      /* Legacy free-text fallback is section-aware. A generic five-character
+         scan cannot distinguish an undotted ICD-10 value (for example M5450)
+         from HCPCS, so only an explicit CPT/HCPCS line or section is eligible. */
+      var inCptSection = false;
       raw.split(/\r?\n/).forEach(function (line) {
-        if (/\bE\/?M(?:\s+level)?\s*[:#-]?\s*[A-Z0-9]{5}\b/i.test(line)) return;
-        if (/\b(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*\d)[A-Z0-9]{5}\b/i.test(line)) cptInput.push(line);
+        var text = S(line).trim();
+        if (!text) { inCptSection = false; return; }
+        if (/^(?:BILLING|CHARGES?)\s*:?$/i.test(text)) return;
+        if (/^E\/?M(?:\s+(?:level|code))?\s*[:#-]?\s*[A-Z0-9]{5}\b/i.test(text)) { inCptSection = false; return; }
+        var explicit = /^(?:[-*•]\s*)?(?:CPT|HCPCS)(?:\s+(?:charges?|codes?|procedures?))?\s*(?::|#|-)?\s*(.*)$/i.exec(text);
+        if (explicit) {
+          inCptSection = true;
+          var tail = S(explicit[1]).trim();
+          if (/^(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*\d)[A-Z0-9]{5}\b/i.test(tail)) cptInput.push(tail);
+          return;
+        }
+        if (/^(?:[-*•]\s*)?(?:attach\b|ICD-?10\b|diagnos(?:is|es)\b|DX\b|orders?\b|patient\b|provider\b|date\b)/i.test(text)) { inCptSection = false; return; }
+        if (inCptSection && /^(?:[-*•]\s*)?(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*\d)[A-Z0-9]{5}\b/i.test(text)) { cptInput.push(text); return; }
+        inCptSection = false;
       });
     }
     var parsedCpt = cptInput.map(parseBillingItem);
-    var invalid = invalidEm.concat(parsedCpt.filter(function (x) { return !x.code && x.raw; }).map(function (x) { return x.raw; }));
+    var sourceInvalid = stringList(source.invalid).concat(stringList(source.conflicts));
+    var invalid = sourceInvalid.concat(invalidEm, parsedCpt.filter(function (x) { return !x.code && x.raw; }).map(function (x) { return x.raw; }));
     var cpt = parsedCpt.filter(function (x) { return !!x.code; });
     var dx = stringList(source.diagnoses || source.icd || source.icd10 || source.dx);
     if (!dx.length && raw) {

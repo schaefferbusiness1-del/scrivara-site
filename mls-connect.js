@@ -7056,6 +7056,7 @@
     if (window._savePatientChart.__mlsStructWrapped) return true;
     var orig = window._savePatientChart;
     var w = function (name, appt, chart) {
+      var baseCalled = false, ret = false;
       try {
         chart = chart || {};
         // If the AI parse under-structured (thin fields but a fat summary), enrich
@@ -7080,12 +7081,16 @@
           dob: chart.dob, problems: chart.problems, meds: chart.meds,
           allergies: chart.allergies, summary: chart.summary, history: [], visits: []
         };
-        var ret = orig(name, appt, slim);
+        baseCalled = true;
+        ret = orig(name, appt, slim);
         STATS.savesWrapped++;
+        if (ret !== true) return ret;
         // After the base persisted, re-fetch the patient and route insurance + visits.
         try {
-          var nm = low(trim(name)); var p = null, ps = getPatients();
-          for (var i = 0; i < ps.length; i++) { if (low(trim(ps[i].name)) === nm) { p = ps[i]; break; } }
+          var nm = low(trim(name && typeof name === 'object' ? name.name : name)); var p = null, ps = getPatients();
+          var targetId = trim((name && typeof name === 'object' && (name.patientId || name.id)) || (appt && (appt._mlsTargetPatientId || appt.patientId)) || '');
+          if (!targetId) return ret;
+          for (var i = 0; i < ps.length; i++) { if (String(ps[i] && ps[i].id || '') === targetId) { p = ps[i]; break; } }
           if (p) {
             var did = false;
             if (routeInsurance(p, insurance)) did = true;
@@ -7094,7 +7099,7 @@
           }
         } catch (e) {}
         return ret;
-      } catch (e) { return orig(name, appt, chart); }
+      } catch (e) { return baseCalled ? ret : orig(name, appt, chart); }
     };
     w.__mlsStructWrapped = true; w.__orig = orig;
     window._savePatientChart = w;
@@ -8614,7 +8619,23 @@
  * ============================================================================= */
 (function () {
   'use strict';
-  if (window.__mlsVisitSessionStash) { return; }
+  if (window.__mlsVisitSessionStash && window.__mlsVisitSessionStash.disabled === true) { return; }
+  if (window.__mlsVisitSessionStash && typeof window.__mlsVisitSessionStash_revert === 'function') {
+    try { window.__mlsVisitSessionStash_revert(); } catch (e) {}
+  }
+
+  /* Retired: this legacy cross-patient stash rebuilt an async result from the
+     currently visible editor and persisted it directly, bypassing the app's
+     immutable visit binding and quarantine checks. The base app now preserves
+     drafts and rejects stale async results itself, so this module must remain a
+     visible no-op. A full page reload removes any wrapper from an older build. */
+  window.__mlsVisitSessionStashDisabled = true;
+  window.__mlsVisitSessionStash = { ver: '2.0.0', disabled: true, reason: 'superseded-by-immutable-visit-binding' };
+  window.__mlsVisitSessionStash_revert = function () {
+    delete window.__mlsVisitSessionStash;
+    delete window.__mlsVisitSessionStash_revert;
+  };
+  return;
 
   var api = { ver: '1.0.0', snapshots: 0, restores: 0, refiled: 0 };
   window.__mlsVisitSessionStash = api;
@@ -9232,6 +9253,20 @@
 
   function getPatients() { try { return (typeof window.getPatients === 'function') ? (window.getPatients() || []) : []; } catch (e) { return []; } }
   function findPatient(name) { var k = nrm(name); var ps = getPatients(); for (var i = 0; i < ps.length; i++) { var pn = nrm(ps[i].name); if (pn && (pn === k || pn.indexOf(k) >= 0 || k.indexOf(pn) >= 0)) return ps[i]; } return null; }
+  function frozenTarget(name) {
+    var key=nrm(name),ps=getPatients(),matches=[];
+    for(var i=0;i<ps.length;i++){if(ps[i]&&nrm(ps[i].name)===key)matches.push(ps[i]);}
+    if(matches.length!==1)return null;
+    var p=matches[0],target={patientId:String(p.id||''),name:String(p.name||''),dob:String(p.dob||''),mrn:String(p.mrn||p.athenaId||'')};
+    if(!target.patientId||(!target.dob&&!target.mrn))return null;
+    try{Object.freeze(target);}catch(e){}
+    return target;
+  }
+  function patientForTarget(target){
+    if(!target||!target.patientId)return null;
+    var ps=getPatients();for(var i=0;i<ps.length;i++){if(ps[i]&&String(ps[i].id||'')===String(target.patientId))return ps[i];}
+    return null;
+  }
   function summaryOf(p) { try { return String((p && p.summary) || ''); } catch (e) { return ''; } }
   function isRealChart(s) { return s.length > 400 && /assessment|diagnos|medication|prescription|chief complaint|problem|radicul|cervical|lumbar|reason for visit|encounter|history|allerg|surg/i.test(s); }
   function hasPulled(p) { var s = summaryOf(p); return s.length > 400 && /pulled from athena/i.test(s) && isRealChart(s); }
@@ -9277,6 +9312,8 @@
   function pullOne(name, dayHint) {
     return (async function () {
       var row = { name: name, opened: false, chartName: '', ok: false, reason: '' };
+      var target=frozenTarget(name);
+      if(!target){row.reason='ambiguous-or-missing-identity';return row;}
       if (!(await ground())) { row.reason = 'gohome-failed'; return row; }
       var opened = false;
       for (var a = 0; a < 2 && !opened; a++) {
@@ -9291,7 +9328,7 @@
       for (var b = 0; b < 2; b++) {
         /* read-only (empty patient): search-open already opened the chart; the heavy
            openFn scan across the 2.3MB clinical frame froze athenaOne mid-pull. */
-        r = await bridge('mlsAppReadChart', { patient: '' }, 'mlsAppChartResult', 75000);
+        r = await bridge('mlsAppReadChart', { patient: '', patientDob:target.dob, patientMrn:target.mrn, patientId:target.patientId }, 'mlsAppChartResult', 75000);
         if (r && r.ok && r.text && r.text.length >= 400) break;
         await wait(1500);
       }
@@ -9311,9 +9348,11 @@
         idOk = (hits >= Math.min(2, toks.length)) && (adob ? dobOk : (toks.length >= 2 && hits === toks.length));
       }
       if (!idOk) { row.reason = 'identity-mismatch:' + (r.chartName || '?'); return row; }
-      var p = findPatient(name);
+      var p = patientForTarget(target);
       if (!p) { row.reason = 'no-record'; return row; }
       var cleanText = strip(r.text);
+      var saveRef=(typeof window._athenaHistoryVerifiedRef==='function')?window._athenaHistoryVerifiedRef(target,{chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''}):null;
+      if(!saveRef||typeof window._savePatientChart!=='function'||window._savePatientChart(saveRef,null,{text:cleanText,summary:cleanText,dob:r.chartDob||''})!==true){row.reason='identity-save-refused';return row;}
       try {
         var M = window.__mlsVisitModel;
         var vday = ((typeof dayHint === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dayHint)) ? dayHint : '') || apptDayFor(name) || todayKey();
@@ -9325,7 +9364,7 @@
       } catch (e) { row.reason = 'ingest:' + ((e && e.message) || e); return row; }
       await wait(1800);
       try {
-        var p2 = findPatient(name) || p;
+        var p2 = patientForTarget(target) || p;
         var cur = summaryOf(p2);
         cur = (function () { /* b126 refresh: the chart just passed the identity gate - the fresh read is authoritative; old value stashed on _sumPrev */
           try {
@@ -9349,18 +9388,18 @@
         }
         if (r.chartDob) { var ndB = dg(r.chartDob), odB = dg(p2.dob || ''); if (ndB && ndB !== odB) { if (p2.dob) p2._dobPrev = p2.dob; p2.dob = r.chartDob; if (typeof window.upsertPatient === 'function') window.upsertPatient(p2); } } /* b126: banner-verified DOB corrects a junk stored DOB */
       } catch (e) {}
-      try { var p3 = findPatient(name); if (window.__mlsSummarySanitize && p3 && typeof p3.summary === 'string' && hasCode(p3.summary)) { p3.summary = strip(p3.summary); if (typeof window.upsertPatient === 'function') window.upsertPatient(p3); } } catch (e) {}
+      try { var p3 = patientForTarget(target); if (window.__mlsSummarySanitize && p3 && typeof p3.summary === 'string' && hasCode(p3.summary)) { p3.summary = strip(p3.summary); if (typeof window.upsertPatient === 'function') window.upsertPatient(p3); } } catch (e) {}
       /* Optional full-detail leg: the organized chart summary above is always
          saved; when enabled, capture each dated visit through the existing
          strict name+DOB gate too. */
       try {
         var vp = window.__mlsVisitSavePref;
-        var pFull = findPatient(name);
+        var pFull = patientForTarget(target);
         if (vp && vp.enabled && vp.enabled() && pFull) {
           row.fullVisits = await vp.runForPatient(pFull, function () {});
         }
       } catch (eFull) { row.fullVisitsError = String((eFull && eFull.message) || eFull).slice(0, 100); }
-      var pf = findPatient(name);
+      var pf = patientForTarget(target);
       row.visits = (pf && pf.visits || []).length;
       row.ok = isRealChart(summaryOf(pf));
       if (!row.ok) row.reason = row.reason || 'thin-after-ingest';
@@ -10480,6 +10519,15 @@
 
   function getPatients() { try { return (typeof window.getPatients === 'function') ? (window.getPatients() || []) : []; } catch (e) { return []; } }
   function findPatient(name) { var k = nrm(name); var ps = getPatients(); for (var i = 0; i < ps.length; i++) { var pn = nrm(ps[i].name); if (pn && (pn === k || pn.indexOf(k) >= 0 || k.indexOf(pn) >= 0)) return ps[i]; } return null; }
+  function frozenTarget(name) {
+    var key=nrm(name),ps=getPatients(),matches=[];
+    for(var i=0;i<ps.length;i++){if(ps[i]&&nrm(ps[i].name)===key)matches.push(ps[i]);}
+    if(matches.length!==1)return null;
+    var p=matches[0],target={patientId:String(p.id||''),name:String(p.name||''),dob:String(p.dob||''),mrn:String(p.mrn||p.athenaId||'')};
+    if(!target.patientId||(!target.dob&&!target.mrn))return null;
+    try{Object.freeze(target);}catch(e){}
+    return target;
+  }
   function summaryOf(p) { try { return String((p && p.summary) || ''); } catch (e) { return ''; } }
   function isRealChart(s) { return /assessment|diagnos|medication|prescription|chief complaint|problem|radicul|cervical|lumbar|reason for visit|encounter|history/i.test(s) && !/no conversations|install athena|colleagues load all/i.test(s); }
   function hasPulled(p) { var s = summaryOf(p); return s.length > 300 && /pulled from athena/i.test(s); }
@@ -10512,6 +10560,8 @@
   function pullOne(name, dayHint) {
     return (async function () {
       var row = { name: name, opened: false, chartName: '', ok: false, reason: '' };
+      var target=frozenTarget(name);
+      if(!target){row.reason='ambiguous-or-missing-identity';return row;}
       // 1) re-ground: return athenaOne to the clinical schedule (foregrounds the tab)
       var gh = await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 15000);
       if (gh && gh.__timeout) { row.reason = 'no-gohome'; row._noBridge = true; return row; }
@@ -10519,7 +10569,7 @@
       // 2) open + read the chart (retry once)
       var r = null;
       for (var attempt = 0; attempt < 2; attempt++) {
-        r = await bridge('mlsAppReadChart', { patient: name }, 'mlsAppChartResult', 75000);
+        r = await bridge('mlsAppReadChart', { patient: target.name, patientDob:target.dob, patientMrn:target.mrn, patientId:target.patientId }, 'mlsAppChartResult', 75000);
         if (r && r.ok && r.text && r.text.length >= 400) break;
         if (attempt === 0) { await bridge('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 15000); await wait(2600); }
       }
@@ -10530,15 +10580,12 @@
       var overlap = kt.split(' ').filter(function (x) { return x.length > 1 && kc.indexOf(x) >= 0; }).length;
       var idOk = !kc || overlap >= 2 || kc.indexOf(kt) >= 0 || kt.indexOf(kc) >= 0;
       if (!idOk) { row.reason = 'identity-mismatch:' + (r.chartName || '?'); return row; }
-      // 4) find the app record + ingest the real chart context
-      var p = findPatient(name);
-      if (!p) { row.reason = 'no-record'; return row; }
+      // 4) save only through the exact ID-bound sink after DOB/MRN proof.
       try {
-        var M = window.__mlsVisitModel;
-        if (M && typeof M.ingestChart === 'function') { M.ingestChart(p, { text: r.text, summary: r.text, name: r.chartName || name, dob: r.chartDob || '' }, 'athena-copy'); }
-        else if (typeof window._savePatientChart === 'function') { p.summary = '— Pulled from Athena —\n' + r.text; window._savePatientChart(p); }
+        var saveRef=(typeof window._athenaHistoryVerifiedRef==='function')?window._athenaHistoryVerifiedRef(target,{chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''}):null;
+        if(!saveRef||typeof window._savePatientChart!=='function'||window._savePatientChart(saveRef,null,{text:r.text,summary:r.text,dob:r.chartDob||''})!==true){row.reason='identity-save-refused';return row;}
       } catch (e) { row.reason = 'ingest:' + ((e && e.message) || e); return row; }
-      row.ok = isRealChart(summaryOf(p));
+      row.ok = true;
       if (!row.ok) row.reason = 'thin-after-ingest';
       return row;
     })();
@@ -11334,16 +11381,17 @@
     try {
       if (!name || !rawText || String(rawText).length < 200) return false;
       var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
-      var key = normName(name);
-      var p = null;
-      for (var i = 0; i < ps.length; i++) { if (ps[i] && normName(ps[i].name) === key) { p = ps[i]; break; } }
-      if (!p) { F8.noMatch++; return false; }                       /* never create records here */
-      var nd = String(dob || '').replace(/[^0-9]/g, ''), pd = String(p.dob || '').replace(/[^0-9]/g, '');
-      if (nd && pd && nd !== pd && nd.slice(-4) !== pd.slice(-4)) { F8.refusedDob++; return false; }
+      var key = normName(name), nd = String(dob || '').replace(/[^0-9]/g, '');
+      if (!nd) { F8.refusedDob++; return false; }
+      var matches = [];
+      for (var i = 0; i < ps.length; i++) { if (ps[i] && normName(ps[i].name) === key && String(ps[i].dob || '').replace(/[^0-9]/g, '') === nd) matches.push(ps[i]); }
+      if (matches.length !== 1) { if (matches.length) F8.refusedDob++; else F8.noMatch++; return false; }
+      var p = matches[0];
       var chart = parseChartSections(rawText);
       if (dob) chart.dob = String(dob);
       if (typeof window._savePatientChart === 'function') {
-        window._savePatientChart(p.name, null, chart);
+        var saveRef={patientId:String(p.id||''),name:String(p.name||''),dob:String(p.dob||dob||''),mrn:String(p.mrn||p.athenaId||''),verifiedName:String(name||''),verifiedDob:String(dob||''),verifiedMrn:''};
+        if(window._savePatientChart(saveRef,null,chart)!==true)return false;
         F8.filed++;
         try { if (typeof window.toast === 'function') window.toast('✓ ' + p.name + '’s Athena chart filed to their MLS record (history now reaches the AI).', 'ok'); } catch (e) {}
         return true;
@@ -11370,7 +11418,6 @@
   api.__onGatePass = function (want, dob, text) {
     setTimeout(function () {
       try {
-        if (typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(want)) return;
         fileChartText(want, dob, text);
       } catch (e) {}
     }, 5000);
@@ -11405,20 +11452,16 @@
     } catch (e) {}
     return out;
   }
-  function pullOneHistory(name) {
-    return new Promise(function (resolve) {
-      var done = false;
-      function fin(v) { if (!done) { done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(v); } }
-      function h(ev) {
-        var d = ev && ev.data;
-        if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppChartResult' || !d.resp) return;
-        /* only the FINAL delivered reply reaches us (the gate swallows interim ones) */
-        fin(!!d.resp.ok);
-      }
-      window.addEventListener('message', h, false);
-      try { window.postMessage({ source: 'mls-app', type: 'mlsAppReadChart', patient: name }, location.origin); } catch (e) { fin(false); }
-      setTimeout(function () { fin(false); }, 80000);
-    });
+  function pullOneHistory(target) {
+    if(!target||!target.patientId||typeof window._assistReadChart!=='function')return Promise.resolve(false);
+    return Promise.resolve(window._assistReadChart(target,function(){})).then(function(rd){
+      return Promise.resolve(window._parsePatientChart(rd.text)).then(function(chart){return {rd:rd,chart:chart};});
+    }).then(function(parsed){
+      var chart=parsed.chart,rd=parsed.rd;
+      if(!chart||!(chart.problems||chart.meds||chart.allergies||chart.summary||(chart.history&&chart.history.length)))return false;
+      var saveRef=(typeof window._athenaHistoryVerifiedRef==='function')?window._athenaHistoryVerifiedRef(target,rd):null;
+      return !!(saveRef&&typeof window._savePatientChart==='function'&&window._savePatientChart(saveRef,null,chart)===true);
+    },function(){return false;});
   }
   api.pullAllHistories = function (prefix) {
     if (BULK.running) { bulkSay('A history pull is already running (' + BULK.done + '/' + BULK.total + ').'); return 'already-running'; }
@@ -11428,13 +11471,20 @@
       prefix = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
     }
     var names = apptNamesFor(prefix);
-    var todo = names.filter(function (n) {
-      try { return !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(n)); } catch (e) { return true; }
+    var unresolved=0,todo=[];
+    names.forEach(function(n){
+      try{
+        var ps=(typeof window.getPatients==='function'?(window.getPatients()||[]):[]),matches=ps.filter(function(p){return p&&normName(p.name)===normName(n);});
+        if(matches.length!==1){unresolved++;return;}
+        var p=matches[0],target=(typeof window._athenaHistoryTargetSnapshot==='function')?window._athenaHistoryTargetSnapshot({patientId:p.id,name:p.name,dob:p.dob||'',mrn:p.mrn||p.athenaId||''},false):null;
+        if(!target){unresolved++;return;}
+        if(!(typeof window._hasImportedHistory==='function'&&window._hasImportedHistory(target)))todo.push(target);
+      }catch(e){unresolved++;}
     });
-    BULK.running = true; BULK.total = todo.length; BULK.done = 0; BULK.ok = 0; BULK.refused = 0;
-    BULK.skipped = names.length - todo.length; BULK.current = '';
+    BULK.running = true; BULK.total = todo.length; BULK.done = 0; BULK.ok = 0; BULK.refused = unresolved;
+    BULK.skipped = names.length - todo.length - unresolved; BULK.current = '';
     bulkSay('📚 Pulling chart history for ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + ' (' + prefix + ')' + (BULK.skipped ? ' — ' + BULK.skipped + ' already have it.' : '.'));
-    if (!todo.length) { BULK.running = false; bulkSay('✅ Every pulled patient for ' + prefix + ' already has chart history.'); return 'nothing-to-do'; }
+    if (!todo.length) { BULK.running = false; bulkSay(unresolved?('No histories were saved — '+unresolved+' patient match'+(unresolved===1?' was':'es were')+' missing DOB/MRN or ambiguous.'):'✅ Every pulled patient for ' + prefix + ' already has chart history.'); return 'nothing-to-do'; }
     var i = 0;
     (function next() {
       if (i >= todo.length) {
@@ -11442,9 +11492,9 @@
         bulkSay('📚 History pull finished: ' + BULK.ok + ' filed, ' + BULK.refused + ' could not be verified (open those charts once and re-run).');
         return;
       }
-      var name = todo[i++]; BULK.current = name;
+      var target=todo[i++],name=target.name; BULK.current = name;
       bulkSay('📖 (' + i + '/' + todo.length + ') Opening ' + name + '’s chart in athenaOne…');
-      pullOneHistory(name).then(function (ok) {
+      pullOneHistory(target).then(function (ok) {
         BULK.done++; if (ok) BULK.ok++; else BULK.refused++;
         /* v3.7: after the history read, ALSO attempt the per-visit capture
            (__mlsCopyVisits.run walks EVERY encounter via the extension,
@@ -11453,9 +11503,8 @@
            is not (briefing view), it refuses honestly and we move on. */
         if (!ok || !window.__mlsCopyVisits || typeof window.__mlsCopyVisits.run !== 'function') { setTimeout(next, 2500); return; }
         try {
-          var ps2 = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
-          var key2 = normName(name), p2 = null;
-          for (var j = 0; j < ps2.length; j++) { if (ps2[j] && normName(ps2[j].name) === key2) { p2 = ps2[j]; break; } }
+          var ps2 = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [],p2 = null;
+          for (var j = 0; j < ps2.length; j++) { if (ps2[j] && String(ps2[j].id||'')===String(target.patientId)) { p2 = ps2[j]; break; } }
           if (p2 && typeof window.selectPatient === 'function') window.selectPatient(p2.id);
         } catch (e) {}
         var moved = false;
@@ -12587,12 +12636,11 @@
   function appAppts() { try { return window._calAppts || []; } catch (e) { return []; } }
   function findAppPatient(name, dob) {
     var n = normName(name); if (!n) return null;
-    var pts = appPatients(), i;
-    for (i = 0; i < pts.length; i++) {
-      if (normName(pts[i].name) === n && sameDob(dob, pts[i].dob)) return pts[i];
-    }
-    for (i = 0; i < pts.length; i++) { if (normName(pts[i].name) === n) return pts[i]; }
-    return null;
+    var pts = appPatients(), matches=[];
+    for(var i=0;i<pts.length;i++){if(normName(pts[i].name)===n)matches.push(pts[i]);}
+    var dd=digits(dob);
+    if(dd)matches=matches.filter(function(p){return digits(p&&p.dob)===dd;});
+    return matches.length===1?matches[0]:null;
   }
 
   /* The lump chart-import note carries the WHOLE pulled history dated the IMPORT day —
@@ -12682,18 +12730,20 @@
       typeof window._parsePatientChart === 'function' &&
       typeof window._savePatientChart === 'function';
   }
-  function hasImported(name) {
-    try { return typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(name); }
+  function hasImported(target) {
+    try { return typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(target); }
     catch (e) { return false; }
   }
-  function livePull(name) {
-    return withTimeout(window._assistReadChart(name, function () {}), 45000, 'Athena read')
-      .then(function (rd) { return window._parsePatientChart(rd && rd.text); })
-      .then(function (chart) {
+  function livePull(target) {
+    if(!target)return Promise.resolve(false);
+    return withTimeout(window._assistReadChart(target, function () {}), 45000, 'Athena read')
+      .then(function (rd) { return Promise.resolve(window._parsePatientChart(rd && rd.text)).then(function(chart){return {rd:rd,chart:chart};}); })
+      .then(function (parsed) {
+        var chart=parsed.chart,rd=parsed.rd;
         if (chart && (chart.problems || chart.meds || chart.allergies || chart.summary ||
           (chart.history && chart.history.length) || (chart.visits && chart.visits.length))) {
-          window._savePatientChart(name, null, chart);  // app-local save; Athena untouched
-          return true;
+          var saveRef=(typeof window._athenaHistoryVerifiedRef==='function')?window._athenaHistoryVerifiedRef(target,rd):null;
+          return !!(saveRef&&window._savePatientChart(saveRef,null,chart)===true); // app-local save; Athena untouched
         }
         return false;
       });
@@ -12724,8 +12774,9 @@
       var pt = g.patients[i++];
       say('Pulling ' + i + '/' + g.patients.length + ' (' + pt.name + ')…');
       var pre = Promise.resolve(false);
-      if (canLive && !hasImported(pt.name)) {
-        pre = livePull(pt.name).then(function (ok) { if (ok) live++; return ok; }, function () { return false; });
+      var appPt=findAppPatient(pt.name,pt.dob),target=(appPt&&typeof window._athenaHistoryTargetSnapshot==='function')?window._athenaHistoryTargetSnapshot({patientId:appPt.id,name:appPt.name,dob:appPt.dob||pt.dob||'',mrn:appPt.mrn||appPt.athenaId||pt.mrn||''},false):null;
+      if (canLive && target && !hasImported(target)) {
+        pre = livePull(target).then(function (ok) { if (ok) live++; return ok; }, function () { return false; });
       }
       return pre.then(function (didLive) {
         // a live read just updated this patient's chart — reindex so its new visits are seen
@@ -13548,10 +13599,15 @@
     try { var m = S(text).match(/\[\[[a-z0-9_]+\]\]/gi); return m ? m.length : 0; } catch (e) { return 0; }
   }
   /* fill the chosen op template into #noteBox. returns a Promise. */
-  function fillOpSkeleton(tpl, transcript) {
+  function fillOpSkeleton(tpl, transcript, expectedBinding, expectedEpoch) {
     return new Promise(function (resolve) {
       try {
         if (!window.Promise || !isFn(window.aiCallRaw)) { resolve({ ok: false, reason: "no-ai" }); return; }
+        if (!expectedBinding || !isFn(window._athenaAsyncBindingStillSafe)
+            || !window._athenaAsyncBindingStillSafe(expectedBinding, "operative-note formatting", expectedEpoch)) {
+          resolve({ ok: false, reason: "stale-visit" }); return;
+        }
+        var editorFingerprint = isFn(window._athenaEditorFingerprint) ? window._athenaEditorFingerprint() : null;
         var nb = $("noteBox");
         var base = nb ? S(nb.value) : "";
         var ctx = chartCtx();
@@ -13559,6 +13615,11 @@
         var key = ""; try { key = isFn(window.getKey) ? (window.getKey() || "") : ""; } catch (e) {}
         Promise.resolve(window.aiCallRaw(p.sys, p.user, key, { freeform: true })).then(function (raw) {
           try {
+            if (!isFn(window._athenaAsyncBindingStillSafe)
+                || !window._athenaAsyncBindingStillSafe(expectedBinding, "operative-note formatting", expectedEpoch)
+                || (editorFingerprint !== null && (!isFn(window._athenaEditorFingerprint) || window._athenaEditorFingerprint() !== editorFingerprint))) {
+              resolve({ ok: false, reason: "stale-visit" }); return;
+            }
             var parsed = parseJsonNote(raw);
             var note = S(parsed.note).trim();
             if (!note) { resolve({ ok: false, reason: "empty" }); return; }
@@ -13598,7 +13659,7 @@
     try {
       if (_origMaybe || !isFn(window.maybeApplyTemplate) || window.maybeApplyTemplate.__opnf) return;
       _origMaybe = window.maybeApplyTemplate;
-      var w = function (visitText) {
+      var w = function (visitText, expectedBinding, expectedEpoch) {
         var self = this, args = arguments;
         return Promise.resolve().then(function () {
           try {
@@ -13613,8 +13674,9 @@
               return _origMaybe.apply(self, args);
             }
             logEvent("op-pick", pick.tpl.name, true, pick.reason);
-            return fillOpSkeleton(pick.tpl, S(visitText)).then(function (r) {
+            return fillOpSkeleton(pick.tpl, S(visitText), expectedBinding, expectedEpoch).then(function (r) {
               if (r && r.ok) return;                       /* filled -> done, do NOT run b61 too */
+              if (r && r.reason === "stale-visit") return; /* never retry stale A work in visit B */
               return _origMaybe.apply(self, args);         /* fill declined/rejected -> b61 safety net */
             });
           } catch (e) {
@@ -15772,16 +15834,17 @@
     try {
       if (!name || !rawText || String(rawText).length < 200) return false;
       var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
-      var key = normName(name);
-      var p = null;
-      for (var i = 0; i < ps.length; i++) { if (ps[i] && normName(ps[i].name) === key) { p = ps[i]; break; } }
-      if (!p) { F8.noMatch++; return false; }                       /* never create records here */
-      var nd = String(dob || '').replace(/[^0-9]/g, ''), pd = String(p.dob || '').replace(/[^0-9]/g, '');
-      if (nd && pd && nd !== pd && nd.slice(-4) !== pd.slice(-4)) { F8.refusedDob++; return false; }
+      var key = normName(name), nd = String(dob || '').replace(/[^0-9]/g, '');
+      if (!nd) { F8.refusedDob++; return false; }
+      var matches = [];
+      for (var i = 0; i < ps.length; i++) { if (ps[i] && normName(ps[i].name) === key && String(ps[i].dob || '').replace(/[^0-9]/g, '') === nd) matches.push(ps[i]); }
+      if (matches.length !== 1) { if (matches.length) F8.refusedDob++; else F8.noMatch++; return false; }
+      var p = matches[0];
       var chart = parseChartSections(rawText);
       if (dob) chart.dob = String(dob);
       if (typeof window._savePatientChart === 'function') {
-        window._savePatientChart(p.name, null, chart);
+        var saveRef={patientId:String(p.id||''),name:String(p.name||''),dob:String(p.dob||dob||''),mrn:String(p.mrn||p.athenaId||''),verifiedName:String(name||''),verifiedDob:String(dob||''),verifiedMrn:''};
+        if(window._savePatientChart(saveRef,null,chart)!==true)return false;
         F8.filed++;
         try { if (typeof window.toast === 'function') window.toast('✓ ' + p.name + '’s Athena chart filed to their MLS record (history now reaches the AI).', 'ok'); } catch (e) {}
         return true;
@@ -15808,7 +15871,6 @@
   api.__onGatePass = function (want, dob, text) {
     setTimeout(function () {
       try {
-        if (typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(want)) return;
         fileChartText(want, dob, text);
       } catch (e) {}
     }, 5000);
@@ -19369,19 +19431,21 @@
            deterministic. Fill chart.dob from the freshest matching chart response
            BEFORE the save merges into the patient record (fill-only downstream). */
         safe(function () {
-          if (chart && !chart.dob) { var d = chartDobFor(name); if (d) chart.dob = d; }
+          if (chart && !chart.dob) { var d = chartDobFor(name && typeof name === 'object' ? name.name : name); if (d) chart.dob = d; }
         });
         var r = orig._savePatientChart.apply(this, arguments);
+        if (r !== true) return r;
         /* F13a belt-and-braces: make sure INDIVIDUAL VISITS materialize on the
            patient record even if feat_visits' own _savePatientChart wrap didn't
            install (its ingest is _visitKey-deduped, so double-ingest is a no-op).
-           Skipped when the save was identity-BLOCKED (r === null). */
+           This runs only after the exact ID-bound base save returned true. */
         safe(function () {
-          if (r === null || !chart || !window.__mlsVisitModel || !isFn(window.__mlsVisitModel.ingestChart)) return;
-          var key = normName(name);
+          if (!chart || !window.__mlsVisitModel || !isFn(window.__mlsVisitModel.ingestChart)) return;
+          var targetId = String((name && typeof name === 'object' && (name.patientId || name.id)) || (appt && (appt._mlsTargetPatientId || appt.patientId)) || '');
+          if (!targetId) return;
           var pts = (isFn(window.getPatients) ? window.getPatients() : []) || [];
           var p = null;
-          for (var i = 0; i < pts.length; i++) { if (pts[i] && normName(pts[i].name) === key) { p = pts[i]; break; } }
+          for (var i = 0; i < pts.length; i++) { if (pts[i] && String(pts[i].id || '') === targetId) { p = pts[i]; break; } }
           if (p) window.__mlsVisitModel.ingestChart(p, chart, (appt && appt.source) || 'pullrec');
         });
         refreshEasy('history-saved');
@@ -19453,35 +19517,41 @@
         var ms = mlsStatus();
         return (function run(list, isRetry) {
           if (!list || !list.length) return Promise.resolve();
-          /* dedup by name; skip patients whose history we already imported */
-          var seen = {}, todo = [];
+          /* Resolve one immutable MLS patient id before any delayed Athena read. */
+          var seen = {}, todo = [], unresolved = [];
           list.forEach(function (a) {
             var nm = String((a && a.name) || '').trim(); if (!nm) return;
-            var k = nm.toLowerCase(); if (seen[k]) return; seen[k] = 1;
-            var has = safe(function () { return isFn(window._hasImportedHistory) && window._hasImportedHistory(nm); }, false);
-            if (!has) todo.push(a);
+            var target = safe(function () {
+              return isFn(window._athenaHistoryTargetSnapshot) && window._athenaHistoryTargetSnapshot({patientId:String((a&&a.patient_external_id)||(a&&a._mlsTargetPatientId)||''),name:nm,dob:String((a&&a.dob)||''),mrn:String((a&&a.mrn)||(a&&a.athenaId)||'')},false);
+            }, null);
+            if (!target) { unresolved.push(nm); return; }
+            if (seen[target.patientId]) return; seen[target.patientId] = 1;
+            var has = safe(function () { return isFn(window._hasImportedHistory) && window._hasImportedHistory(target); }, false);
+            if (!has) todo.push({appt:a,target:target});
           });
-          if (!todo.length) { progressSay('✅ All pulled patients already have their chart history saved.', 'ok'); return Promise.resolve(); }
+          if (!todo.length) { progressSay(unresolved.length?('No histories were saved — '+unresolved.length+' patient match'+(unresolved.length===1?' was':'es were')+' missing DOB/MRN or ambiguous.'):'✅ All pulled patients already have their chart history saved.', unresolved.length?'err':'ok'); return Promise.resolve(); }
           if (ms) ms.begin('Pulling chart histories from athenaOne', 'athenaOne (read-only)');
-          var saved = 0, failed = [], oldExt = false, i = 0;
+          var saved = 0, failed = unresolved.slice(), oldExt = false, i = 0;
           function one() {
             if (i >= todo.length) return Promise.resolve();
-            var a = todo[i++] || {}; var name = String(a.name || '').trim();
-            if (!name) return one();
+            var item = todo[i++] || {}, a = item.appt || {}, target = item.target;
+            var name = String((target&&target.name) || '').trim(); if (!target || !name) return one();
             var label = (isRetry ? 'Retrying ' : 'Pulling history for ') + name + ' (' + i + ' of ' + todo.length + ')…';
             progressSay('📥 ' + label);
             if (ms) ms.step('prf_h' + i, label);
             function attempt() {
               return Promise.resolve()
-                .then(function () { return window._assistReadChart(name, function () {}); })
-                .then(function (rd) { return window._parsePatientChart(rd.text); })
-                .then(function (chart) {
+                .then(function () { return window._assistReadChart(target, function () {}); })
+                .then(function (rd) { return Promise.resolve(window._parsePatientChart(rd.text)).then(function(chart){return {rd:rd,chart:chart};}); })
+                .then(function (parsed) {
+                  var chart=parsed.chart,rd=parsed.rd;
                   if (chart && (chart.problems || chart.meds || chart.allergies || chart.summary || (chart.history && chart.history.length))) {
-                    window._savePatientChart(name, a, chart);
+                    var saveRef=safe(function(){return isFn(window._athenaHistoryVerifiedRef)&&window._athenaHistoryVerifiedRef(target,rd);},null);
+                    if(!saveRef||window._savePatientChart(saveRef,a,chart)!==true) throw new Error('IDENTITY_SAVE_REFUSED');
                     var pSaved = null;
                     safe(function () {
                       var ps2 = (isFn(window.getPatients) ? window.getPatients() : []) || [];
-                      for (var pi2 = 0; pi2 < ps2.length; pi2++) { if (ps2[pi2] && normName(ps2[pi2].name) === normName(name)) { pSaved = ps2[pi2]; break; } }
+                      for (var pi2 = 0; pi2 < ps2.length; pi2++) { if (ps2[pi2] && String(ps2[pi2].id||'') === String(target.patientId)) { pSaved = ps2[pi2]; break; } }
                     });
                     var fullLeg = Promise.resolve();
                     try {
@@ -19495,7 +19565,7 @@
                       return true;
                     });
                   }
-                  return false;
+                  throw new Error('EMPTY_CHART');
                 });
             }
             return attempt().then(null, function (e) {
@@ -20308,7 +20378,7 @@
     try {
       if (_origApply || !isFn(window.applyTemplateToNote) || window.applyTemplateToNote.__ngv1) return;
       _origApply = window.applyTemplateToNote;
-      var w = function (template, visitText) {
+      var w = function (template, visitText, expectedBinding, expectedEpoch) {
         var self = this, args = arguments;
         return Promise.resolve().then(function () {
           if (!template || !template.text) return _origApply.apply(self, args);
@@ -20317,8 +20387,10 @@
           if (san.stripped) logEvent("sanitize", template.name, true, san.stripped + " canned assertion line(s) stripped before AI apply");
           var nb = $("noteBox");
           var pre = nb ? S(nb.value) : "";
-          return Promise.resolve(_origApply.call(self, safeTpl, visitText)).then(function (r) {
+          return Promise.resolve(_origApply.call(self, safeTpl, visitText, expectedBinding, expectedEpoch)).then(function (r) {
             try {
+              if (!expectedBinding || !isFn(window._athenaAsyncBindingStillSafe)
+                  || !window._athenaAsyncBindingStillSafe(expectedBinding, "template formatting audit", expectedEpoch)) return r;
               var nb2 = $("noteBox"); if (!nb2) return r;
               var post = S(nb2.value);
               if (!post || post === pre) return r;
@@ -31099,7 +31171,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b268';
+  window.__MLS_AV = window.__MLS_AV || 'b270';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31425,7 +31497,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-13-b268';
+  var MLS_APP_BUILD='2026-07-14-b270';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
@@ -35045,19 +35117,21 @@
 
   function compare(chart, pt){
     if(!chart||!pt) return {state:'unknown'};
-    var cn=norm(chart.name||chart.patient||''), pn=norm(pt.name||'');
-    var cd=norm(chart.dob||''), pd=norm(pt.dob||'');
+    var chartName=chart.chartName||chart.name||chart.patient||'', chartDob=chart.chartDob||chart.dob||'';
+    var cn=norm(chartName), pn=norm(pt.name||'');
+    var cd=norm(chartDob), pd=norm(pt.dob||'');
     var nameHit = cn && pn && (cn===pn || cn.indexOf(pn)>=0 || pn.indexOf(cn)>=0);
     var dobHit = cd && pd && cd===pd;
-    if(nameHit && (dobHit||!cd)) return {state:'match', detail:(chart.name||chart.patient||'')};
-    if(nameHit || dobHit) return {state:'partial', detail:(chart.name||chart.patient||'')};
-    return {state:'mismatch', detail:(chart.name||chart.patient||'')};
+    if(nameHit && (dobHit||!cd)) return {state:'match', detail:chartName};
+    if(nameHit || dobHit) return {state:'partial', detail:chartName};
+    return {state:'mismatch', detail:chartName};
   }
-  function readOpenChart(cb){
+  function readOpenChart(pt, cb){
     // Best-effort, honest: attempt to read the open Athena chart via the app's Assist bridge.
     if(!bridgeAvailable()){ cb(null,'no-bridge'); return; }
     safe(function(){
-      var ret = window._assistReadChart ? window._assistReadChart() : (window._assistReadAthenaTab?window._assistReadAthenaTab():null);
+      var target = (pt && typeof window._athenaHistoryTargetSnapshot === 'function') ? window._athenaHistoryTargetSnapshot({patientId:pt.id,name:pt.name,dob:pt.dob||'',mrn:pt.mrn||pt.athenaId||''},false) : null;
+      var ret = window._assistReadChart ? (target ? window._assistReadChart(target) : null) : (window._assistReadAthenaTab?window._assistReadAthenaTab():null);
       if(ret && typeof ret.then==='function'){ ret.then(function(d){ cb(d,d?null:'empty'); }).catch(function(){ cb(null,'error'); }); }
       else if(ret){ cb(ret,null); }
       else cb(null,'empty');
@@ -35067,10 +35141,10 @@
     var pt=activePt();
     if(!pt){ toast('Pick an active patient first'); return; }
     panel('Checking the open Athena chart…','wait');
-    readOpenChart(function(chart, err){
+    readOpenChart(pt, function(chart, err){
       if(err==='no-bridge'){ panel('Athena chart match needs MLS Assist + an open, signed-in Athena tab. Install/enable Assist and open the patient in Athena, then check again.','gate'); return; }
       if(!chart || err){ panel('No open Athena chart detected. Open the patient’s chart in your signed-in Athena tab (via MLS Assist), then check again.','gate'); return; }
-      if(!(chart.name||chart.patient||chart.dob)){ panel('MLS Assist is connected but no patient chart is open in Athena yet. Open the chart in your signed-in Athena tab, then check again.','gate'); return; }
+      if(!(chart.chartName||chart.name||chart.patient||chart.chartDob||chart.dob)){ panel('MLS Assist is connected but no patient chart is open in Athena yet. Open the chart in your signed-in Athena tab, then check again.','gate'); return; }
       var r=compare(chart, pt);
       if(r.state==='match') panel('✓ Match — the open Athena chart is '+esc(pt.name)+'.','ok');
       else if(r.state==='partial') panel('⚠ Partial match — open chart “'+esc(r.detail)+'” vs active “'+esc(pt.name)+'”. Verify before charting.','warn');
@@ -36258,21 +36332,21 @@
   }
 
   /* ---------- read one chart via the app's Assist bridge ---------- */
-  function readChartFor(name){
+  function readChartFor(target){
     return new Promise(function(resolve){
       var done=false; function fin(v){ if(!done){ done=true; resolve(v); } }
       var TIMEOUT=setTimeout(function(){ fin({__err:'error', __timeout:true}); }, 45000);
       safe(function(){
         if(typeof window._assistReadChart!=='function'){ clearTimeout(TIMEOUT); fin({__err:'no-bridge'}); return; }
-        var p=window._assistReadChart(name);
+        var p=window._assistReadChart(target);
         if(!p || typeof p.then!=='function'){ clearTimeout(TIMEOUT); fin({__err:'no-bridge'}); return; }
         p.then(function(rd){
           if(!rd || !rd.text){ clearTimeout(TIMEOUT); fin(null); return; }
           var parsed=null; try{ parsed=window._parsePatientChart?window._parsePatientChart(rd.text):null; }catch(e){}
           if(parsed && typeof parsed.then==='function'){
-            parsed.then(function(c){ c=c||{}; c.text=rd.text; c.url=rd.url; clearTimeout(TIMEOUT); fin(c); })
-                  .catch(function(){ clearTimeout(TIMEOUT); fin({name:'',dob:'',text:rd.text,url:rd.url}); });
-          } else { var c=parsed||{}; c.text=rd.text; c.url=rd.url; clearTimeout(TIMEOUT); fin(c); }
+            parsed.then(function(c){ c=c||{}; c.text=rd.text; c.url=rd.url; c.__mlsReadIdentity={chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''}; clearTimeout(TIMEOUT); fin(c); })
+                  .catch(function(){ clearTimeout(TIMEOUT); fin({name:'',dob:'',text:rd.text,url:rd.url,__mlsReadIdentity:{chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''}}); });
+          } else { var c=parsed||{}; c.text=rd.text; c.url=rd.url; c.__mlsReadIdentity={chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''}; clearTimeout(TIMEOUT); fin(c); }
         }).catch(function(e){ clearTimeout(TIMEOUT); fin({__err:(e&&e.message==='OLDEXT')?'old-ext':'error'}); });
       }) || (clearTimeout(TIMEOUT), fin({__err:'error'}));
     });
@@ -36550,18 +36624,23 @@
 
   function importRow(row, cohort, resolver){
     resolver = resolver || readChartFor;
-    return Promise.resolve(safe(function(){ return resolver(row.name); }, null)).then(function(chart){
+    var ps=getPatients(),rn=norm(row&&row.name),rdob=normDob(row&&row.dob),matches=ps.filter(function(x){return x&&norm(x.name)===rn;});
+    if(rdob)matches=matches.filter(function(x){return normDob(x&&x.dob)===rdob;});
+    if(matches.length>1)return Promise.resolve({row:row,status:'review',reason:'duplicate MLS patients match this name/DOB'});
+    var p=matches[0]||null;
+    if(!p){
+      if(!rdob)return Promise.resolve({row:row,status:'review',reason:'DOB is required before creating an MLS target'});
+      p=safe(function(){var np={id:'p'+Date.now()+Math.random().toString(36).slice(2,7),name:row.name,dob:row.dob||'',problems:'',meds:'',allergies:'',summary:'',docs:[],source:'study-import',created:Date.now(),updated:Date.now()};window.upsertPatient(np);return np;},null);
+    }
+    var target=(p&&typeof window._athenaHistoryTargetSnapshot==='function')?window._athenaHistoryTargetSnapshot({patientId:p.id,name:p.name,dob:p.dob||row.dob||'',mrn:p.mrn||p.athenaId||''},false):null;
+    if(!target)return Promise.resolve({row:row,status:'review',reason:'could not freeze one verified MLS patient target'});
+    return Promise.resolve(safe(function(){ return resolver===readChartFor?resolver(target):resolver(row.name); }, null)).then(function(chart){
       var r=strictMatch(row, chart);
       if(r.status==='match'){
-        safe(function(){ if(window._savePatientChart) window._savePatientChart(row.name, null, chart||{}); });
-        var p=findByName(row.name);
-        if(!p){
-          p = safe(function(){
-            var np={ id:'p'+Date.now()+Math.random().toString(36).slice(2,7), name:row.name, dob:row.dob||'',
-                     problems:'', meds:'', allergies:'', summary:'', docs:[], source:'study-import', created:Date.now(), updated:Date.now() };
-            window.upsertPatient(np); return np;
-          }, null);
-        }
+        var observed=(chart&&chart.__mlsReadIdentity)||{chartName:(chart&&(chart.name||chart.patient))||r.chartName||'',chartDob:(chart&&chart.dob)||row.dob||'',chartMrn:(chart&&(chart.mrn||chart.chartMrn))||''};
+        var saveRef=(typeof window._athenaHistoryVerifiedRef==='function')?window._athenaHistoryVerifiedRef(target,observed):null;
+        if(!saveRef||!window._savePatientChart||window._savePatientChart(saveRef,null,chart||{})!==true)return {row:row,status:'error',reason:'exact patient save was refused'};
+        p=getPatients().filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
         if(p){ if(!p.dob && (row.dob||(chart&&chart.dob))) p.dob=row.dob||chart.dob; tagPatientCohort(p, cohort); }
         return { row:row, status:'match', chartName:r.chartName||row.name, patientId:p?p.id:null, appt:buildApptForRow(row) };
       }
@@ -37915,7 +37994,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_widgetinsert.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widgetinsert.js?v=20260624wi2c1';s.setAttribute('data-mls-asset','feat_mls_widgetinsert.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* FIX 2: robust custom-widget Add-to-note (body/mirror fallback) + surface generated widgets (PROD) - additive, reversible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260624link2c1';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260713mer1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260714asst213';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v=20260713si130c1';s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.3.0 - structured exact times + verified-day import + missing-time repair */
 
 
@@ -37953,12 +38032,12 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260711afx3c1';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260710p2c1';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260710ca2c1';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: Copilot smart actions/followups/email-draft */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260714cv2151';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_voice_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_voice_v2.js?v=20260714cv2114';s.setAttribute('data-mls-asset','feat_mls_copilot_voice_v2.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b113: MLS Copilot Voice v2 */ /* item19: MLS Assistant fixes (honest real-time status, Open athenaOne button, context-aware chat intents, FAB overlap, dynamic provider picker, in-flight read honesty) -- additive, reversible (window.__mlsAsstFix.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260714chk2915';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260714chk2918';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260625uns3c1';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
-;(function(){try{var A='feat_mls_voice_ai.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625ac1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS — voice AI command layer: speech/NL -> chained intents -> existing app fns (additive, reversible: window.__mlsVoiceAI.revert()) */
+;(function(){try{var A='feat_mls_voice_ai.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260714vai111';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS — voice AI command layer: speech/NL -> chained intents -> existing app fns (additive, reversible: window.__mlsVoiceAI.revert()) */
 
 ;(function(){try{var A='feat_mls_voice_ai_micbridge.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625mb1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item24: bridge existing mic transcripts into __mlsVoiceAI for chained natural-language commands (additive, reversible: window.__mlsVoiceMicBridge.revert()) */
 
@@ -38781,7 +38860,7 @@
 ;(function(){try{var A="feat_mls_lastmonth_b51.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706b51c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b51: Pull Last Month button + honest relabel of the rolling pull button - see feat_mls_lastmonth_b51.js header. Revert: window.__mlsLastMonthB51.revert() */
 
 
-;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260707b53c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Revert: window.__mlsPatientLock.revert() */
+;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260714b53c2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Revert: window.__mlsPatientLock.revert() */
 
 
 /* =========================================================================
@@ -39165,8 +39244,9 @@
 
 ;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v=20260712sc11c1';s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.1.0 fallback loader; normal builds install the cache at byte zero before boot work */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v=20260711pcs1c1';s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 6: per-patient Copilot conversation isolation + identity confirm (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v=20260714crs101';s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260713rs111';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260711ne1c1';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260714ne110';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=wbs100c1-B177';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100c1';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v=20260712pf110';s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
@@ -39174,7 +39254,7 @@
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260712opnp3c1';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - ID/DOB identity, attestation, draft-only (window.__mlsOpNotePrep opnp-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_legalpack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_legalpack.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_mls_legalpack.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS - legal full-history workflow + medical-legal narrative generator (Tasks 13+14; additive, guarded, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260711dl1c1-B177';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 15: dictate-a-letter tool - preview-only, network-free, action-free (window.__mlsDictateLetter dl-1.0.0) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v=20260713da101';s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.0.1, mic chip on focus, insert-at-caret, zero observers) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_anywhere.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_anywhere.js?v=20260714da102';s.setAttribute('data-mls-asset','feat_mls_dictate_anywhere.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* owner directive: dictate into ANY text box (window.__mlsDictateAnywhere da-1.0.2, mic chip on focus, insert-at-caret, zero observers) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260713sg2d';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* AI Studio study consolidation: ONE study surface, legacy named-groups strip behind a disclosure (window.__mlsStudyCalm sg2-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_loading_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_loading_calm.js?v=20260713lb3';s.setAttribute('data-mls-asset','feat_mls_loading_calm.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calm loading vocabulary: slim working bar driven by real /api fetches + .mls-skel shimmer (window.__mlsLoadingCalm lb-1.0.0) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_staff_hub.js"]'))return;var s=document.createElement('script');s.src='feat_mls_staff_hub.js?v=20260713sh1';s.setAttribute('data-mls-asset','feat_mls_staff_hub.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* ONE staff-account system: Practice-staff card in Team (roles explained, real receptionist provisioning adopted), duplicate assistant-panel month-pull retired (window.__mlsStaffHub sh-1.0.0) */
@@ -39726,9 +39806,12 @@
     origSingle = window.pullPatientChartViaAssist;
     var w = function () {
       var args = arguments, self = this;
+      var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
+      var target=(typeof window._athenaHistoryTargetSnapshot==='function')?safe(function(){return window._athenaHistoryTargetSnapshot(before,false);},null):null;
       return Promise.resolve(origSingle.apply(self, args)).then(function (r) {
-        var p = activeP();
-        if (!enabled() || !p || !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(p.name))) return r;
+        if(r!==true||!target)return r;
+        var ps=(typeof window.getPatients==='function'?(window.getPatients()||[]):[]),p=ps.filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
+        if (!enabled() || !p || !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(target))) return r;
         return api.runForPatient(p, function (m) { if (m) toast(m, ''); }).then(function () { return r; });
       });
     };

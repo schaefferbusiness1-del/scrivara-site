@@ -690,7 +690,6 @@
     if (window._savePatientChart.__mlsWrapped) return true;
     var orig = window._savePatientChart;
     var norm2 = function (s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); };
-    var tokset = function (s) { return norm2(s).split(' ').filter(function (x) { return x.length > 1; }).sort().join(' '); };
     var chartIdent = function (chart) {
       var nm = (chart && (chart.name || chart.patientName || chart.patient)) || '';
       if (!nm && chart && chart.summary) { var m = String(chart.summary).match(/^\s*([A-Z][A-Za-z'-]+(?: [A-Z][A-Za-z'.-]+){1,3}) is a patient/); if (m) nm = m[1]; }
@@ -704,27 +703,27 @@
       return overlap >= 2 || (overlap >= 1 && Math.min(ta.length, tb.length) === 1);
     };
     var wrapped = function (name, appt, chart) {
+      var targetName = String((name && typeof name === 'object' && name.name) || '');
+      var targetId = String((name && typeof name === 'object' && (name.patientId || name.id)) ||
+        (appt && (appt._mlsTargetPatientId || appt.patientId)) || '');
       /* IDENTITY GUARD (2026-07-06): a schedule/bulk import once fed ONE open
          chart to EVERY appointment name, filing the same patient's data into
          62 charts. If the chart declares an identity that does not match the
          target name, BLOCK the whole save for that patient. */
       try {
         var cid = chartIdent(chart);
-        if (chart && cid.name && !namesMatch(cid.name, name)) {
-          console.warn('[mls-visit-wire] BLOCKED cross-patient chart write: chart belongs to "' + cid.name + '" but target is "' + String(name) + '". Nothing saved for this patient.');
-          try { window.__mlsVisitWire._blocked = (window.__mlsVisitWire._blocked || 0) + 1; window.__mlsVisitWire._lastBlocked = { chart: cid.name, target: String(name), at: new Date().toISOString() }; } catch (e) {}
-          return null; /* the wrong chart must never touch this patient */
+        if (chart && cid.name && (!targetName || !namesMatch(cid.name, targetName))) {
+          console.warn('[mls-visit-wire] BLOCKED cross-patient chart write: chart belongs to "' + cid.name + '" but target is "' + targetName + '". Nothing saved for this patient.');
+          try { window.__mlsVisitWire._blocked = (window.__mlsVisitWire._blocked || 0) + 1; window.__mlsVisitWire._lastBlocked = { chart: cid.name, target: targetName, at: new Date().toISOString() }; } catch (e) {}
+          return false; /* the wrong chart must never touch this patient */
         }
       } catch (e) {}
       var r = orig.apply(this, arguments);
+      if (r !== true) return r;
       try {
-        if (chart && window.__mlsVisitModel) {
+        if (targetId && chart && window.__mlsVisitModel) {
           var pts = isFn(window.getPatients) ? (window.getPatients() || []) : [];
-          var want = tokset(name);
-          /* token-sorted match fixes "Last, First" vs "First Last" so pulled
-             visits actually land in the visit-history timeline */
-          var p = pts.find(function (x) { return tokset(x && x.name) === want; }) ||
-                  pts.find(function (x) { return namesMatch(x && x.name, name) && tokset(x && x.name).length; });
+          var p = pts.find(function (x) { return String(x && x.id || '') === targetId; });
           if (p) window.__mlsVisitModel.ingestChart(p, chart, (appt && appt.source) || 'grab');
         }
       } catch (e) {}

@@ -1830,12 +1830,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <!-- Superbill -->
       <div class="extra-card" id="billCard" style="display:none">
         <h3>🧾 Superbill <span style="font-weight:400;font-size:13px;color:var(--muted)">(dx + CPT for billing)</span>
-          <button class="sec-copy" style="margin-left:auto;background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:700" onclick="pushSuperbillToAthena()" title="Review E/M, CPT, modifiers, units and diagnosis pointers. After exact encounter confirmation, only the exact E/M and CPT/HCPCS codes are staged; the other attributes stay manual. No claim is submitted.">Review &amp; stage Athena billing</button>
+          <button class="sec-copy" style="margin-left:auto;background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:700" onclick="pushSuperbillToAthena()" title="Athena is checked read-only first. The final confirmation then stages only this frozen set of reviewed E/M and CPT/HCPCS codes in the exact encounter. No claim is submitted.">Check Athena &amp; confirm billing</button>
           <button class="sec-copy" onclick="copyExtra('billBodyText')">📑 Copy</button>
           <button class="sec-copy" onclick="printExtra('Superbill','billBody')">🖨 Print</button>
         </h3>
         <table class="superbill" style="width:100%;border-collapse:collapse;margin-top:10px" id="billBody"></table>
-        <div class="code-disclaim">⚠️ Suggested codes for provider review — confirm before submitting a claim. Final coding is the provider's responsibility.</div>
+        <div class="code-disclaim">⚠️ Suggested codes for provider review. The final Athena confirmation adds only the frozen E/M and CPT/HCPCS codes shown there; diagnoses, modifiers, units and diagnosis links stay manual. No claim is submitted.</div>
+        <div id="billAthenaStatus" role="status" style="display:none;margin-top:9px;border-radius:8px;background:#f7f9fb;border:1px solid #e2e8f2;padding:9px 10px;font-size:12.5px"></div>
       </div>
 
       <!-- Patient cost estimate (Good Faith Estimate off the patient's own benefits) -->
@@ -2012,7 +2013,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="Review exactly what goes to Athena, then choose one independent write, billing, save, or sign action.">Review Athena actions</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
-      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: see exactly what belongs where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders). Write, billing, and Save each require their own exact-encounter check and confirmation. Sign &amp; Save unlocks only after this receipt verifies its exact note write, then requires another confirmation. Nothing auto-chains; orders and prescriptions stay separate and manual.</div>
+      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: see exactly what belongs where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders). Write, billing, and Save each require their own exact-encounter check and final confirmation; that final confirmation immediately performs only the named Athena action. Sign &amp; Save unlocks only after this receipt verifies its exact note write, then requires another confirmation. Nothing auto-chains; orders and prescriptions stay separate and manual.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:11px 14px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
@@ -4366,7 +4367,7 @@ function startSession(email){
   try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){} // 🧩 doctor-built custom widget cards (per-user)
   renderDots();
   renderHistory();
-  newVisit();
+  newVisit({preserveRecovery:true});
   updateNavCounts();
   showView('visit');   // land ready to record the first patient — not the busy Patients list
   applyBackendModeUI();
@@ -5616,7 +5617,9 @@ function _saveVisitDraft(){
     var soap=(typeof currentSoap!=='undefined'?currentSoap:'')||'';
     var ins=(typeof currentInsurance!=='undefined'?currentInsurance:'')||'';
     if(!String(t).trim() && !String(soap).trim() && !String(ins).trim()) return;
-    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), pt:(document.getElementById('patientLabel')||{}).value||'', ts:Date.now() }));
+    var binding=(typeof currentVisitAthenaBinding!=='undefined'&&currentVisitAthenaBinding)?currentVisitAthenaBinding:null;
+    var bindingCopy=binding?{patient:binding.patient||null,source:binding.source||'',historical:binding.historical===true,identityConflict:binding.identityConflict===true,routeBlocked:binding.routeBlocked===true,visitContext:binding.visitContext||null,noteTimestamp:binding.noteTimestamp||null,displayDate:binding.displayDate||'',displayProvider:binding.displayProvider||''}:null;
+    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), pt:(document.getElementById('patientLabel')||{}).value||'', ts:Date.now(), athenaBinding:bindingCopy, athenaCompromised:(typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised===true) }));
   }catch(e){}
 }
 function _wipeVisitDraft(){ _visitDirty=false; try{ sessionStorage.removeItem(_visitDraftKey()); }catch(e){} var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); }
@@ -5636,6 +5639,7 @@ function _maybeRestoreVisitDraft(){
 }
 function _restoreVisitDraft(){
   try{
+    if(typeof _athenaGuardBoundEditor==='function'&&!_athenaGuardBoundEditor('restoring a draft'))return;
     var d=JSON.parse(sessionStorage.getItem(_visitDraftKey())||'{}');
     var tx=document.getElementById('transcript'); if(tx) tx.value=d.t||'';
     if(typeof finalText!=='undefined') finalText=d.t||'';
@@ -5644,6 +5648,13 @@ function _restoreVisitDraft(){
     if(typeof currentFormat!=='undefined' && d.fmt) currentFormat=d.fmt;
     var pl=document.getElementById('patientLabel'); if(pl && d.pt) pl.value=d.pt;
     var nb=document.getElementById('noteBox'); if(nb){ nb.value=((typeof currentFormat!=='undefined'&&currentFormat==='insurance')?(d.ins||''):(d.soap||'')); }
+    if(typeof _athenaFreezeVisitBinding==='function'&&typeof _athenaSetVisitBinding==='function'){
+      var rb=d.athenaBinding||null, restored=null;
+      if(rb&&rb.patient)restored=_athenaFreezeVisitBinding(rb.patient,{source:'restored-draft',historical:rb.historical===true,identityConflict:rb.identityConflict===true,routeBlocked:rb.routeBlocked===true,visitContext:rb.visitContext||null,noteTimestamp:rb.noteTimestamp||d.ts||null,displayDate:rb.displayDate||'',displayProvider:rb.displayProvider||''});
+      else restored=_athenaFreezeVisitBinding({name:d.pt||'Recovered unassigned draft'},{source:'legacy-restored-draft',historical:false,routeBlocked:true,noteTimestamp:d.ts||null});
+      _athenaSetVisitBinding(restored,true);
+      if(d.athenaCompromised===true||!rb)currentVisitAthenaCompromised=true;
+    }
     var b=document.getElementById('_visitRestoreBar'); if(b) b.remove();
     _visitDirty=true;
     try{ toast('Restored your unsaved visit.','ok'); }catch(e){}
@@ -5685,7 +5696,7 @@ function _infoDialog(title, text){
 }
 (function(){
   try{
-    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); } }, true);
+    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); try{if(typeof _athenaMarkBoundEdit==='function')_athenaMarkBoundEdit(id);}catch(_){} } }, true);
     window.addEventListener('beforeunload', function(e){ if(_visitDirty || (typeof capturing!=='undefined' && capturing)){ e.preventDefault(); e.returnValue=''; return ''; } });
   }catch(e){}
 })();
@@ -5700,7 +5711,11 @@ function _infoDialog(title, text){
 function getPatients(){ try{return JSON.parse(localStorage.getItem(uns('patients')))||[];}catch(e){return [];} }
 function savePatients(arr){ localStorage.setItem(uns('patients'),JSON.stringify(arr)); }
 function getActivePtId(){ return localStorage.getItem(uns('activePt'))||''; }
-function setActivePtId(id){ if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt')); }
+function setActivePtId(id){
+  var previous=''; try{previous=getActivePtId();}catch(e){}
+  if(String(previous)!==String(id||'')){ try{if(typeof _athenaHandleActivePatientChange==='function')_athenaHandleActivePatientChange(previous,id||'');}catch(e2){} }
+  if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
+}
 function activePatient(){ const id=getActivePtId(); return getPatients().find(p=>p.id===id)||null; }
 function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
 function upsertPatient(p){
@@ -9505,6 +9520,7 @@ function selectPatient(id){
   // Always OPEN the patient (re-clicking the active one just re-opens — never silently deselects,
   // which surprised users and broke Copilot/Studio "open patient" actions). Clear via the ✕ Deselect button.
   if(!id) return;
+  _athenaResetSuperbill(true);
   setActivePtId(id);
   renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
 }
@@ -9512,10 +9528,12 @@ function selectPatient(id){
    AI Studio widgets, and the calendar, where deselecting on a re-click would be surprising. */
 function openPatient(id){
   if(!id) return;
+  _athenaResetSuperbill(true);
   setActivePtId(id);
   renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
 }
 function deselectPatient(){
+  _athenaResetSuperbill(true);
   setActivePtId('');
   renderPatients(); renderProfile(); renderPatientBar(); updateNavCounts();
   toast('No patient selected. Visits will be unassigned.','');
@@ -10366,10 +10384,14 @@ function renderTemplateList(){
 /* MORE WAYS TO USE A TEMPLATE: */
 function setActiveTemplateId(id){ try{ localStorage.setItem(uns('templateActive'),id); }catch(e){} try{ renderTemplateList(); renderTemplateActiveSelect(); }catch(e){} try{ toast('Set as the default template for new notes.','ok'); }catch(e){} }
 async function useTemplateNow(id){
+  if(!currentVisitAthenaBinding){ toast('Open or generate this note inside the correct patient visit before applying a template. Nothing changed in Athena.','err'); return; }
+  if(!_athenaGuardBoundEditor('template formatting')) return;
+  var expectedBinding=currentVisitAthenaBinding;
+  var expectedEpoch=currentVisitAthenaEpoch;
   var t=getTemplateById(id); if(!t){ toast('Template not found.','err'); return; }
   if(!currentSoap && !(typeof currentInsurance!=='undefined'&&currentInsurance)){ toast('Generate or open a note first, then apply a template to it.','err'); return; }
   toast('Reformatting the current note to “'+(t.name||'template')+'”…','');
-  try{ await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||''); }catch(e){ toast('Couldn’t apply that template.','err'); }
+  try{ await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||'',expectedBinding,expectedEpoch); }catch(e){ toast('Couldn’t apply that template.','err'); }
 }
 function previewTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ alert('TEMPLATE: '+(t.name||'')+'\n\n'+String(t.text||'').slice(0,4000)+((t.text||'').length>4000?'\n\n…(truncated)':'')); }catch(e){} }
 function editTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ document.getElementById('tplName').value=t.name||''; document.getElementById('tplKeywords').value=(t.keywords||[]).join(', '); document.getElementById('tplText').value=t.text||''; document.getElementById('tplName').scrollIntoView({behavior:'smooth',block:'center'}); toast('Loaded into the form — edit and Save (it adds a copy; delete the old one if replacing).',''); }catch(e){} }
@@ -10687,19 +10709,32 @@ function resolveActiveTemplate(visitText){
    /api/complete path (which honors a custom system prompt in BOTH hosted and
    per-device-key modes). Only ever called when templates are ON. On any
    failure the original note is kept unchanged. */
-async function applyTemplateToNote(template,visitText){
+async function applyTemplateToNote(template,visitText,expectedBinding,expectedEpoch){
   if(!template || !template.text) return;
   if(!hasAI()) return; // offline example path: leave note as-is
+  if(!expectedBinding){
+    toast('Open or generate this note inside the correct patient visit before applying a template. Nothing changed in Athena.','err');
+    return false;
+  }
+  if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return false;
   const baseNote=(currentFormat==='soap'?currentSoap:currentInsurance)||currentSoap||'';
   if(!baseNote.trim()) return;
+  const templateFingerprint=_athenaEditorFingerprint();
+  const templateFormat=currentFormat;
   const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
   const user='TEMPLATE (match this format exactly):\n"""\n'+String(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   try{
     let out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return false;
+    if(currentFormat!==templateFormat||_athenaEditorFingerprint()!==templateFingerprint){
+      toast('The visit changed while the template was being applied, so MLS discarded that older result. Nothing changed in Athena.','err');
+      return false;
+    }
     if(out){
       if(currentFormat==='soap') currentSoap=out; else currentInsurance=out;
       const nb=document.getElementById('noteBox');
       if(nb && nb.style.display!=='none') nb.value=out;
+      try{_markVisitDirty();}catch(_){}
       toast('Note formatted to template: '+template.name,'ok');
     }
   }catch(e){
@@ -10709,11 +10744,11 @@ async function applyTemplateToNote(template,visitText){
 
 /* Entry point called from generateNote AFTER a note is produced.
    No-op (and never touches the prompt) unless the toggle is ON. */
-async function maybeApplyTemplate(visitText){
+async function maybeApplyTemplate(visitText,expectedBinding,expectedEpoch){
   if(!useTemplatesOn()) return;               // OFF path: do nothing
   const tpl=resolveActiveTemplate(visitText);
   if(!tpl){ return; }
-  await applyTemplateToNote(tpl,visitText);
+  await applyTemplateToNote(tpl,visitText,expectedBinding||currentVisitAthenaBinding,expectedEpoch==null?currentVisitAthenaEpoch:expectedEpoch);
 }
 
 function openDoc(id){
@@ -10813,8 +10848,10 @@ function copyDocSummary(){
    Called when a note is saved. Updates the patient's summary, problem and
    med lists from the visit's EMR data, and links the note via patientId. */
 function attachVisitToPatient(rec){
-  const p=activePatient();
-  if(!p){ return; }                 // no active patient → note simply stays unassigned
+  let p=null;
+  if(rec&&rec.patientId){ try{ p=(typeof findPatient==='function')?findPatient(rec.patientId):null; }catch(e){} }
+  else if(!currentVisitAthenaBinding){ try{ p=activePatient(); }catch(e2){} }
+  if(!p){ return; }                 // no bound patient → note simply stays unassigned
   rec.patientId=p.id;               // tag the note
   // update problem & med lists from this visit's structured data (honest: only what's documented)
   const e=rec.emr||{};
@@ -10838,15 +10875,20 @@ function attachVisitToPatient(rec){
 
 let currentNoteId=null; // id of the history record being edited (null = brand new)
 
-function newVisit(){
+function newVisit(opts){
+  opts=opts||{};
+  try{var _vh=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(_vh&&_vh.current&&_vh.current()){_vh.claim('visit-reset');_vh.release('visit-reset');}}catch(eSpeech){}
   if(capturing) stopCapture();
-  try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){}
+  try{ if(typeof phoneMicCode!=='undefined'&&phoneMicCode&&typeof stopPhoneMic==='function') stopPhoneMic(); }catch(e0){}
+  try{ if(typeof _resetAiVisitOutputs==='function') _resetAiVisitOutputs(); }catch(eAi){}
+  if(!opts.preserveRecovery){ try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){} }
   try{ if(typeof _hideNextActions==='function') _hideNextActions(); }catch(e){}
   currentNoteId=null;
   try{ if(typeof _heroReset==='function') _heroReset(); }catch(e){}   // clear the record-first hero for the next patient
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
   currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap';
+  _athenaSetVisitBinding(null); _athenaResetSuperbill(true);
   currentAVS=''; currentReferral=''; currentRecs=null; currentHandout=''; currentIME='';
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
   currentPriorAuth=''; currentMips=''; currentOutcome=null; lastOutcomeEntryId=null;
@@ -10883,9 +10925,13 @@ function newVisit(){
 }
 
 function noteRecordFromState(markSigned){
+  const routePatient=currentVisitAthenaBinding&&currentVisitAthenaBinding.patient?currentVisitAthenaBinding.patient:null;
+  const routeContext=currentVisitAthenaBinding&&currentVisitAthenaBinding.visitContext?currentVisitAthenaBinding.visitContext:null;
   return {
     id: currentNoteId || ('n'+Date.now()+Math.random().toString(36).slice(2,6)),
-    patient: document.getElementById('patientLabel').value.trim() || 'Unlabeled',
+    patient: (routePatient&&routePatient.name)||document.getElementById('patientLabel').value.trim()||'Unlabeled',
+    patientDob: (routePatient&&routePatient.dob)||'',
+    patientMrn: (routePatient&&routePatient.mrn)||'',
     cc: (currentCoding && lastEMR && lastEMR.cc) ? lastEMR.cc : (lastEMR&&lastEMR.cc)||'—',
     transcript: document.getElementById('transcript').value,
     soap: (currentFormat==='soap'?document.getElementById('noteBox').value:currentSoap),
@@ -10912,19 +10958,27 @@ function noteRecordFromState(markSigned){
     visitComment: getVisitComment(),
     signed: typeof markSigned==='boolean' ? markSigned : signed,
     signLine: document.getElementById('signLine').style.display!=='none' ? document.getElementById('signLine').textContent : '',
-    patientId: getActivePtId()||'',
+    patientId: (routePatient&&routePatient.patientId)||(!currentVisitAthenaBinding?(getActivePtId()||''):''),
+    visitTimestamp: (currentVisitAthenaBinding&&currentVisitAthenaBinding.noteTimestamp)||null,
+    visitDate: (routeContext&&routeContext.visitDate)||(currentVisitAthenaBinding&&currentVisitAthenaBinding.displayDate)||'',
+    provider: (routeContext&&routeContext.provider)||(currentVisitAthenaBinding&&currentVisitAthenaBinding.displayProvider)||'',
+    appointmentId: (routeContext&&routeContext.appointmentId)||'',
+    encounterId: (routeContext&&routeContext.encounterId)||'',
+    encounterUrl: (routeContext&&routeContext.encounterUrl)||'',
+    athenaRouteBlocked: !!(currentVisitAthenaCompromised||(currentVisitAthenaBinding&&!_athenaCurrentMatchesBound(currentVisitAthenaBinding))||(currentVisitAthenaBinding&&(currentVisitAthenaBinding.routeBlocked||currentVisitAthenaBinding.identityConflict||!currentVisitAthenaBinding.patient||!currentVisitAthenaBinding.patient.name||!currentVisitAthenaBinding.patient.dob))),
     updated: Date.now()
   };
 }
 
 function upsertNote(rec){
+  if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this visit')) throw new Error('Patient/visit mismatch: start a New visit before saving.');
   const arr=getNotes();
   const i=arr.findIndex(n=>n.id===rec.id);
   // preserve an existing patient link if the note already had one
   if(i>=0 && arr[i].patientId && !rec.patientId) rec.patientId=arr[i].patientId;
   // attach to (and update) the active patient — only for real notes, not bare drafts
   if(!rec.isDraft) attachVisitToPatient(rec);
-  else if(activePatient() && !rec.patientId) rec.patientId=getActivePtId();
+  else if(!currentVisitAthenaBinding && activePatient() && !rec.patientId) rec.patientId=getActivePtId();
   if(i>=0){ const created=arr[i].created||arr[i].updated; arr[i]=rec; arr[i].created=created; }
   else { rec.created=Date.now(); arr.unshift(rec); }
   saveNotes(arr);
@@ -10938,15 +10992,18 @@ function upsertNote(rec){
 }
 
 function saveDraft(){
+  if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this draft')) return false;
   const tr=document.getElementById('transcript').value.trim();
   if(!tr && !currentSoap){ toast('Nothing to save yet — capture or load a visit first.','err'); return; }
   const rec=noteRecordFromState(false);
   rec.isDraft = !currentSoap; // a draft is a transcript with no generated note yet
-  upsertNote(rec);
+  try{upsertNote(rec);}catch(err){toast('Could not save this draft: '+((err&&err.message)||err),'err');return false;}
   toast('Draft saved to history on this device.','ok');
+  return true;
 }
 
 function saveCurrentNote(announce){
+  if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -10963,17 +11020,18 @@ function saveCurrentNote(announce){
   }catch(err){
     console.error('saveCurrentNote failed',err);
     toast('Could not save this visit: '+((err&&err.message)||err),'err');
-    return;
+    return false;
   }
   try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){}
   if(announce){
-    const ap=activePatient();
+    const ap=rec.patientId&&typeof findPatient==='function'?findPatient(rec.patientId):null;
     if(ap) toast((rec.signed?'Signed note':'Note')+' saved to '+ap.name+'’s history.','ok');
     else toast('Note saved to history (no active patient — it shows as “Unassigned”; open History to attach it to a chart).','ok');
     try{ if(typeof _showNextActions==='function') _showNextActions(rec.signed?'signed':'saved'); }catch(e){}
     try{ if(rec.signed && typeof getAutoSendEMR==='function' && getAutoSendEMR() && typeof sendToEMRviaAssist==='function'){ setTimeout(function(){ sendToEMRviaAssist(null,{silent:true}); }, 600); } }catch(e){}
   }
   // Backend write-through happens inside upsertNote (hosted mode, best-effort).
+  return true;
 }
 
 /* Best-effort backend persistence. Local save is the source of truth on-device;
@@ -11281,6 +11339,8 @@ function reopenViewed(){
 
 function loadRecordIntoEditor(n){
   if(capturing) stopCapture();
+  _athenaSetVisitBinding(_athenaBindingForSavedRecord(n),true);
+  _athenaResetSuperbill(true);
   currentNoteId=n.id;
   document.getElementById('patientLabel').value=n.patient&&n.patient!=='Unlabeled'?n.patient:'';
   document.getElementById('transcript').value=n.transcript||''; finalText=(n.transcript||'')+' ';
@@ -11335,7 +11395,7 @@ function loadRecordIntoEditor(n){
 /* =========================================================
    SPEECH CAPTURE
    ========================================================= */
-let recog=null, capturing=false, finalText='';
+let recog=null, capturing=false, finalText='', captureSessionEpoch=0;
 /* One microphone owner across visit recording, field Dictate, and Copilot Voice.
    Each feature registers a synchronous stop callback. Claiming the microphone
    stops the previous owner first, so SpeechRecognition instances never fight. */
@@ -11366,8 +11426,10 @@ function mlsSpeechHub(){
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 function initRecog(){
   if(!SR) return false;
-  recog=new SR(); recog.continuous=true; recog.interimResults=true; recog.lang='en-US';
-  recog.onresult=e=>{
+  const instance=new SR(); recog=instance; instance.continuous=true; instance.interimResults=true; instance.lang='en-US';
+  instance.onresult=e=>{
+    if(instance!==recog||!capturing||instance._mlsCaptureEpoch!==captureSessionEpoch||!currentVisitAthenaBinding||instance._mlsBindingId!==currentVisitAthenaBinding.id||Number(instance._mlsBindingEpoch)!==Number(currentVisitAthenaEpoch))return;
+    if(!_athenaCurrentMatchesBound(currentVisitAthenaBinding)){ currentVisitAthenaCompromised=true; try{stopCapture();}catch(_){} return; }
     let interim='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       const r=e.results[i];
@@ -11375,15 +11437,17 @@ function initRecog(){
       else interim+=r[0].transcript;
     }
     document.getElementById('transcript').value=(finalText+interim).trim();
+    try{_markVisitDirty();}catch(_){}
     try{ if(capturing){ var _w=(finalText+interim).trim().split(/\s+/).filter(Boolean).length; _updateLiveCapture(_w); } }catch(e){}
   };
-  recog.onerror=e=>{
+  instance.onerror=e=>{
+    if(instance!==recog)return;
     if(e.error==='not-allowed'||e.error==='service-not-allowed'){
       showMicWarn('Microphone access was blocked. Allow mic access in your browser, or just type/paste the visit below.');
       stopCapture();
     } else if(e.error==='no-speech'){ /* keep going */ }
   };
-  recog.onend=()=>{ if(capturing){ try{recog.start()}catch(e){} } };
+  instance.onend=()=>{ if(instance===recog&&capturing&&instance._mlsCaptureEpoch===captureSessionEpoch&&currentVisitAthenaBinding&&instance._mlsBindingId===currentVisitAthenaBinding.id&&Number(instance._mlsBindingEpoch)===Number(currentVisitAthenaEpoch)){ try{instance.start()}catch(e){} } };
   return true;
 }
 function showMicWarn(msg){
@@ -11535,11 +11599,78 @@ function _assistReadAthenaTab(onStatus){
     }
   });
 }
+/* Immutable local target + returned-Athena identity proof used by every history pull.
+   A display name is never a save destination: it may help resolve a target only before
+   an async read, and only when DOB/MRN makes that resolution unique. */
+function _athenaHistoryDigits(v){ return String(v||'').replace(/\D/g,''); }
+function _athenaHistoryName(v){ return String(v||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+function _athenaHistoryTargetSnapshot(ref, allowCreate){
+  ref=(ref&&typeof ref==='object')?ref:{name:String(ref||'')};
+  var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var targetId=String(ref.patientId||ref.id||'').trim();
+  var wantName=String(ref.name||'').trim();
+  var wantDob=String(ref.dob||'').trim();
+  var wantMrn=String(ref.mrn||ref.athenaId||'').trim();
+  var matches=[];
+  if(targetId){
+    matches=pts.filter(function(x){return String(x&&x.id||'')===targetId;});
+  }else if(wantName){
+    matches=pts.filter(function(x){return _athenaHistoryName(x&&x.name)===_athenaHistoryName(wantName);});
+    if(wantDob){ var dd=_athenaHistoryDigits(wantDob); matches=matches.filter(function(x){return dd&&_athenaHistoryDigits(x&&x.dob)===dd;}); }
+    if(wantMrn){ var mm=_athenaHistoryDigits(wantMrn); matches=matches.filter(function(x){return mm&&_athenaHistoryDigits((x&&x.mrn)||(x&&x.athenaId))===mm;}); }
+  }
+  if(matches.length>1) return null;
+  var p=matches[0]||null;
+  if(!p&&allowCreate===true&&wantName&&(wantDob||wantMrn)&&typeof upsertPatient==='function'){
+    p={id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:wantName,dob:wantDob,mrn:wantMrn,reason:String(ref.reason||''),source:'athena-schedule',created:Date.now()};
+    try{upsertPatient(p);}catch(e){return null;}
+  }
+  if(!p||!p.id) return null;
+  if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)) return null;
+  if(wantDob&&p.dob&&_athenaHistoryDigits(wantDob)!==_athenaHistoryDigits(p.dob)) return null;
+  if(wantMrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(wantMrn)!==_athenaHistoryDigits(p.mrn||p.athenaId)) return null;
+  var out={patientId:String(p.id),name:String(p.name||wantName),dob:String(p.dob||wantDob),mrn:String(p.mrn||p.athenaId||wantMrn)};
+  if(!out.dob&&!out.mrn) return null;
+  try{Object.freeze(out);}catch(e2){}
+  return out;
+}
+function _athenaHistoryTargetStillExact(target){
+  if(!target||!target.patientId) return false;
+  var pts=(typeof getPatients==='function'?getPatients():[])||[];
+  var p=pts.find(function(x){return String(x&&x.id||'')===String(target.patientId);});
+  if(!p||_athenaHistoryName(p.name)!==_athenaHistoryName(target.name)) return false;
+  if(target.dob&&p.dob&&_athenaHistoryDigits(p.dob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(target.mrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(p.mrn||p.athenaId)!==_athenaHistoryDigits(target.mrn)) return false;
+  return true;
+}
+function _athenaHistoryProofMatches(target, observed){
+  observed=observed||{};
+  if(!target||!target.patientId||!_athenaHistoryTargetStillExact(target)) return false;
+  var seenName=String(observed.chartName||observed.name||'').trim();
+  var seenDob=String(observed.chartDob||observed.dob||'').trim();
+  var seenMrn=String(observed.chartMrn||observed.mrn||'').trim();
+  if(seenName&&_athenaHistoryName(seenName)!==_athenaHistoryName(target.name)) return false;
+  if(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)!==_athenaHistoryDigits(target.mrn)) return false;
+  var dobProof=!!(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)===_athenaHistoryDigits(target.dob));
+  var mrnProof=!!(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)===_athenaHistoryDigits(target.mrn));
+  return dobProof||mrnProof;
+}
+function _athenaHistoryVerifiedRef(target, observed){
+  if(!_athenaHistoryProofMatches(target,observed)) return null;
+  var out={patientId:target.patientId,name:target.name,dob:target.dob,mrn:target.mrn,
+    verifiedName:String((observed&&observed.chartName)||''),verifiedDob:String((observed&&observed.chartDob)||''),verifiedMrn:String((observed&&observed.chartMrn)||'')};
+  try{Object.freeze(out);}catch(e){}
+  return out;
+}
 /* Like _assistReadAthenaTab but for ONE patient's chart: passes the patient name so the
    current extension can open and identity-verify that exact chart. Never falls back to
    reading arbitrary schedule text as a patient chart. */
-function _assistReadChart(patientName, onStatus){
+function _assistReadChart(patientRef, onStatus){
   return new Promise(function(resolve,reject){
+    var target=_athenaHistoryTargetSnapshot(patientRef,false);
+    if(!target){ reject(new Error('Choose one MLS patient with a verified DOB or MRN before pulling history. Name alone is not safe, so nothing was saved.')); return; }
+    var patientName=String(target.name||'').trim();
     var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
     var ponged=false, tries=0, iv=null, got=false, deadline=null;
     var requestId='chart-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
@@ -11556,12 +11687,14 @@ function _assistReadChart(patientName, onStatus){
       if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
       if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read the chart from your Athena tab.')); return; }
-      resolve({text:r.text||'', url:r.url||'', opened:!!r.opened, chartName:r.chartName||'', chartDob:r.chartDob||'', chartMrn:r.chartMrn||''});
+      var observed={chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''};
+      if(!_athenaHistoryProofMatches(target,observed)){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
+      resolve({text:r.text||'', url:r.url||'', opened:!!r.opened, chartName:observed.chartName, chartDob:observed.chartDob, chartMrn:observed.chartMrn, targetPatientId:target.patientId});
     }
     function proceed(){
       say(patientName?('Opening '+patientName+'’s chart in Athena…'):'Reading the chart from Athena…');
       window.addEventListener('message',onResult);
-      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||'',requestId:requestId},'*'); }catch(e){ fail(e); return; }
+      try{ window.postMessage({source:'mls-app',type:'mlsAppReadChart',patient:patientName||'',patientDob:String(target.dob||''),patientMrn:String(target.mrn||target.athenaId||''),patientId:String(target.patientId||target.id||''),requestId:requestId},'*'); }catch(e){ fail(e); return; }
       /* The extension's bounded chart-ready + text-read budget can legitimately
          exceed 30 seconds on a heavy Athena renderer. Leave relay overhead and
          fail honestly without issuing a second/bare read. */
@@ -11583,95 +11716,112 @@ function pullPatientFromAthenaPrompt(btn){
 }
 async function pullPatientChartViaAssist(btn, opts){
   opts=opts||{};
-  var pts=(typeof getPatients==='function'?getPatients():[])||[];
-  var p=null;
-  // Resolve the patient from the caller (e.g. a calendar appointment) so it auto-opens —
-  // by id, else by name (find or CREATE), else fall back to the active patient.
-  if(opts.patientId){ p=pts.find(function(x){ return x.id===opts.patientId; })||null; }
-  if(!p && opts.name){
-    var nm=String(opts.name).trim();
-    p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm.toLowerCase(); })||null;
-    if(!p && nm && typeof upsertPatient==='function'){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:opts.dob||'', reason:opts.reason||'', source:'athena-schedule', created:Date.now() }; try{ upsertPatient(p); }catch(e){} }
-  }
-  if(!p) p=(typeof activePatient==='function')?activePatient():null;
-  if(!p){ try{ toast('Open a patient first, then pull their chart.','err'); }catch(e){} return; }
+  var requested=(opts.patientId||opts.name)?opts:((typeof activePatient==='function'&&activePatient())||null);
+  var pullTarget=_athenaHistoryTargetSnapshot(requested,true);
+  if(!pullTarget){ try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
   // Make this patient the active one so the pulled chart attaches to them + the UI follows.
-  try{ if(typeof setActivePtId==='function' && (typeof getActivePtId!=='function' || getActivePtId()!==p.id)){ setActivePtId(p.id); if(typeof renderProfile==='function') renderProfile(); if(typeof renderPatientBar==='function') renderPatientBar(); if(typeof renderPatients==='function') renderPatients(); } }catch(e){}
+  try{ if(typeof setActivePtId==='function' && (typeof getActivePtId!=='function' || getActivePtId()!==pullTarget.patientId)){ setActivePtId(pullTarget.patientId); if(typeof renderProfile==='function') renderProfile(); if(typeof renderPatientBar==='function') renderPatientBar(); if(typeof renderPatients==='function') renderPatients(); } }catch(e){}
   var orig = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled=true; btn.innerHTML='… reading Athena'; }
   var setT=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
   try{
     var rd;
-    rd=await _assistReadChart(p.name, setT);
+    rd=await _assistReadChart(pullTarget, setT);
     if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
     setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
     var chart=await _parsePatientChart(rd.text);
     if(!chart || (!chart.problems && !chart.meds && !chart.allergies && !(chart.history&&chart.history.length) && !chart.summary)){
       setT('Read the page but couldn’t find a patient chart. Open the patient’s CHART in Athena (problems / meds / history), then pull again.','err');
-      if(btn){ btn.disabled=false; btn.innerHTML=orig; } return;
+      if(btn){ btn.disabled=false; btn.innerHTML=orig; } return false;
     }
-    _savePatientChart(p.name, null, chart);
+    var saveRef=_athenaHistoryVerifiedRef(pullTarget,rd);
+    if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient changed or could not be re-verified before save, so the history was discarded. Nothing was saved.');
     try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
-    setT('✅ Saved '+p.name+'’s Athena history to their MLS chart — it’s on your account now.','ok');
+    setT('✅ Saved '+pullTarget.name+'’s Athena history to their MLS chart — it’s on your account now.','ok');
+    if(btn){ btn.disabled=false; btn.innerHTML=orig; }
+    return true;
   }catch(err){
     setT((err&&err.message)?err.message:'Couldn’t pull the chart. Open the patient’s chart in Athena and try again.','err');
   }
   if(btn){ btn.disabled=false; btn.innerHTML=orig; }
+  return false;
 }
-/* Save a parsed Athena chart into the patient record (find-or-create by name), durably
-   (server-synced via upsertPatient) + a dated history note. Used by single + bulk pulls. */
+/* Save a parsed Athena chart only to the exact, pre-resolved MLS patient ID after the
+   returned Athena DOB/MRN re-verifies it; legacy name-only callers fail closed. */
 function _savePatientChart(name, appt, chart){
   if(!chart) return false;
-  var nm=String(name||'').trim(); if(!nm) return false;
+  var ref=(name&&typeof name==='object')?name:{};
+  var nm=String(ref.name||'').trim();
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
-  var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm.toLowerCase(); });
-  if(!p){ p={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:nm, dob:(chart.dob||(appt&&appt.dob)||''), created:Date.now(), source:'athena-schedule' }; }
+  var targetId=String(ref.patientId||ref.id||(appt&&appt._mlsTargetPatientId)||'').trim();
+  if(!targetId||!nm) return false; /* legacy name-only callers fail closed */
+  var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null;
+  if(!p) return false;
+  var target={patientId:targetId,name:nm,dob:String(ref.dob||(appt&&appt._mlsTargetDob)||''),mrn:String(ref.mrn||ref.athenaId||(appt&&appt._mlsTargetMrn)||'')};
+  var observed={chartName:String(ref.verifiedName||(appt&&appt._mlsVerifiedName)||''),chartDob:String(ref.verifiedDob||(appt&&appt._mlsVerifiedDob)||''),chartMrn:String(ref.verifiedMrn||(appt&&appt._mlsVerifiedMrn)||'')};
+  if(!_athenaHistoryProofMatches(target,observed)) return false;
+  p=Object.assign({},p);
   var merge=function(cur,add){ add=(add||'').trim(); if(!add) return cur||''; cur=(cur||'').trim(); if(!cur) return add; if(cur.toLowerCase().indexOf(add.toLowerCase())>=0) return cur; return cur+'; '+add; };
   if(chart.problems)  p.problems  = merge(p.problems,  chart.problems);
   if(chart.meds)      p.meds      = merge(p.meds,      chart.meds);
   if(chart.allergies) p.allergies = merge(p.allergies, chart.allergies);
-  if(chart.dob && !p.dob) p.dob = chart.dob;
+  if(!p.dob && observed.chartDob) p.dob=observed.chartDob;
+  if(!p.mrn && observed.chartMrn) p.mrn=observed.chartMrn;
   var stamp='— Pulled from Athena '+(new Date()).toLocaleDateString()+' —';
   var block=stamp+'\n'+(chart.summary||'');
   if(chart.history && chart.history.length){ block+='\n\nPrior history:\n• '+chart.history.join('\n• '); }
   if(chart.visits && chart.visits.length){ block+='\n\nRecent visits:\n• '+chart.visits.join('\n• '); }
   if(!(p.summary||'').includes(stamp)){ p.summary=((p.summary||'').trim()+'\n\n'+block).trim(); }
-  if(typeof upsertPatient==='function') upsertPatient(p);
+  if(typeof upsertPatient!=='function') return false;
+  try{ upsertPatient(p); }catch(e){ return false; }
   try{ if(typeof getNotes==='function' && typeof saveNotes==='function'){ var ns=getNotes(); if(!ns.some(function(n){ return n.patientId===p.id && n.cc==='Athena chart import'; })){ ns.unshift({ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:'Athena chart import', text:block, created:Date.now(), updated:Date.now(), signed:false, isDraft:false }); saveNotes(ns); } } }catch(e){}
   return true;
 }
 /* Bulk: after pulling the schedule, auto-pull EACH patient's chart/history from Athena
    (the extension finds + opens each chart — no manual clicking) and save it durably. */
 /* True if this patient already has an Athena chart imported (so we don't re-pull it). */
-function _hasImportedHistory(name){
-  try{ var nm=String(name||'').trim().toLowerCase(); if(!nm) return false;
+function _hasImportedHistory(ref){
+  try{ var obj=(ref&&typeof ref==='object')?ref:null; if(!obj)return false;
     var pts=(typeof getPatients==='function'?getPatients():[])||[];
-    var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+    var targetId=String(obj.patientId||obj.id||'').trim(); if(!targetId)return false;
+    var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null; if(!p)return false;
+    if(obj.name&&_athenaHistoryName(obj.name)!==_athenaHistoryName(p.name))return false;
+    if(obj.dob&&p.dob&&_athenaHistoryDigits(obj.dob)!==_athenaHistoryDigits(p.dob))return false;
+    if((obj.mrn||obj.athenaId)&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(obj.mrn||obj.athenaId)!==_athenaHistoryDigits(p.mrn||p.athenaId))return false;
     if(p && /Pulled from Athena/i.test(p.summary||'')) return true;
-    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patient||'').trim().toLowerCase()===nm && n.cc==='Athena chart import'; });
+    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patientId||'')===String(p.id||'') && n.cc==='Athena chart import'; });
   }catch(e){ return false; }
 }
 async function _pullAllHistories(appts){
   if(!appts||!appts.length) return;
   var setT=function(m,k){ var el=document.getElementById('heroPullStatus'); if(el){ el.textContent=m; el.style.color=(k==='err')?'#ffe0e0':(k==='ok'?'#d8ffe8':'rgba(255,255,255,.95)'); el.style.display='block'; } };
-  // Only pull history for patients we DON'T already have it for — dedup by name.
-  var seen={}, todo=[];
-  appts.forEach(function(a){ var nm=String((a&&a.name)||'').trim(); if(!nm) return; var k=nm.toLowerCase(); if(seen[k]) return; seen[k]=1; if(!_hasImportedHistory(nm)) todo.push(a); });
-  if(!todo.length){ setT('✅ All pulled patients already have their chart history saved — nothing new to fetch.','ok'); return; }
+  // Resolve each appointment to one immutable MLS patient before any async read.
+  var seen={}, todo=[],failed=0;
+  appts.forEach(function(a){
+    a=a||{};
+    var target=_athenaHistoryTargetSnapshot({patientId:String(a.patient_external_id||a._mlsTargetPatientId||''),name:String(a.name||''),dob:String(a.dob||''),mrn:String(a.mrn||a.athenaId||'')},false);
+    if(!target){failed++;return;}
+    if(seen[target.patientId])return;seen[target.patientId]=1;
+    if(!_hasImportedHistory(target))todo.push({appt:a,target:target});
+  });
+  if(!todo.length){ setT(failed?('No histories were saved — '+failed+' patient match'+(failed===1?' was':'es were')+' missing DOB/MRN or ambiguous.'):'✅ All pulled patients already have their chart history saved — nothing new to fetch.',failed?'err':'ok'); return; }
   var saved=0, oldExt=false;
   for(var i=0;i<todo.length;i++){
-    var a=todo[i]||{}; var name=String(a.name||'').trim(); if(!name) continue;
+    var item=todo[i]||{};var a=item.appt||{};var target=item.target;if(!target){failed++;continue;}var name=target.name;
     setT('📥 Pulling new histories from Athena… '+(i+1)+'/'+todo.length+' — '+name);
     try{
-      var rd=await _assistReadChart(name, function(){});
+      var rd=await _assistReadChart(target, function(){});
       var chart=await _parsePatientChart(rd.text);
-      if(chart && (chart.problems||chart.meds||chart.allergies||chart.summary||(chart.history&&chart.history.length))){ _savePatientChart(name, a, chart); saved++; }
-    }catch(e){ if((e&&e.message)==='OLDEXT'){ oldExt=true; break; } }
+      if(chart && (chart.problems||chart.meds||chart.allergies||chart.summary||(chart.history&&chart.history.length))){
+        var saveRef=_athenaHistoryVerifiedRef(target,rd);
+        if(saveRef&&_savePatientChart(saveRef,a,chart)===true)saved++;else failed++;
+      }else failed++;
+    }catch(e){ if((e&&e.message)==='OLDEXT'){ oldExt=true; break; } failed++; }
     await new Promise(function(r){ setTimeout(r, 350); });
   }
   if(oldExt){ setT('Imported the schedule. To also auto-pull each chart, update MLS Assist to the latest version (Settings → Download).','err'); return; }
-  setT('✅ Pulled '+saved+' new chart histor'+(saved===1?'y':'ies')+' from Athena — saved to your account.','ok');
+  setT('✅ Pulled '+saved+' new chart histor'+(saved===1?'y':'ies')+' from Athena — saved to your account.'+(failed?(' '+failed+' could not be identity-verified and were skipped.') :''),failed?'err':'ok');
   try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
   try{ if(typeof loadPatients==='function') loadPatients(); }catch(e){}
 }
@@ -11979,10 +12129,12 @@ function _heroPickPatient(i){
 }
 function toggleCapture(){ capturing?stopCapture():startCapture(); }
 function startCapture(){
+  if(!_athenaPrepareRecording('recording')) return false;
   if(!recog && !initRecog()){
     showMicWarn('Live voice transcription isn’t supported in this browser. Try Chrome or Edge — or just type/paste the visit conversation below. Everything else works the same.');
     return false;
   }
+  const captureBindingCandidate=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('recording');
   const hub=mlsSpeechHub();
   hub.register('visit','Visit recording',function(){
     if(!capturing) return;
@@ -12000,6 +12152,11 @@ function startCapture(){
     showMicWarn('The microphone is still busy or could not start. Wait a moment, then press Start recording again. Your transcript is safe.');
     return false;
   }
+  if(!currentVisitAthenaBinding) _athenaSetVisitBinding(captureBindingCandidate);
+  captureSessionEpoch++;
+  recog._mlsCaptureEpoch=captureSessionEpoch;
+  recog._mlsBindingId=currentVisitAthenaBinding&&currentVisitAthenaBinding.id||'';
+  recog._mlsBindingEpoch=currentVisitAthenaEpoch;
   capturing=true;
   const b=document.getElementById('captureBtn');
   b.classList.remove('btn-primary'); b.classList.add('recording');
@@ -12009,7 +12166,9 @@ function startCapture(){
 }
 function stopCapture(){
   capturing=false;
-  if(recog){ try{recog.stop()}catch(e){} }
+  captureSessionEpoch++;
+  const oldRecog=recog; recog=null;
+  if(oldRecog){ try{oldRecog.stop()}catch(e){} }
   try{ mlsSpeechHub().release('visit'); }catch(e){}
   const b=document.getElementById('captureBtn');
   b.classList.remove('recording'); b.classList.add('btn-primary');
@@ -12018,8 +12177,10 @@ function stopCapture(){
   return true;
 }
 function clearTranscript(){
+  if(!_athenaGuardBoundEditor('transcript editing')) return false;
   document.getElementById('transcript').value=''; finalText='';
   try{ _hideLiveCapture(); }catch(e){}
+  return true;
 }
 /* Live "it's listening" reassurance — shows a pulsing word count as the doctor talks. */
 function _liveCaptureEl(){
@@ -12036,9 +12197,12 @@ function _hideLiveCapture(){ var el=document.getElementById('liveCaptureInfo'); 
    backend, which transcribes it; we poll and append the new
    tail into the active visit transcript on this computer.
    ========================================================= */
-let phoneMicCode='', phoneMicPollT=null, phoneMicSeen=0;
+let phoneMicCode='', phoneMicPollT=null, phoneMicSeen=0, phoneMicBindingId='', phoneMicBindingEpoch=null;
 async function startPhoneMic(){
   if(!backendMode()){ toast('Phone mic requires the hosted version.','err'); return; }
+  if(!_athenaPrepareRecording('phone recording')) return;
+  const phoneBindingCandidate=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('phone-recording');
+  const phoneBindingEpoch=currentVisitAthenaEpoch;
   const btn=document.getElementById('phoneMicBtn');
   if(btn && btn.disabled) return; // in-flight guard: a second call must not capture 'Starting...' as the original label
   const orig=btn?btn.textContent:'';
@@ -12052,7 +12216,14 @@ async function startPhoneMic(){
     if(res.status===401){ handle401(); return; }
     try{ data=await res.json(); }catch(e){ data={}; }
     if(!res.ok || !data.code){ toast((data&&(data.error||data.message))||'Could not start phone mic.','err'); return; }
+    if(!_athenaAsyncBindingStillSafe(phoneBindingCandidate,'phone recording',phoneBindingEpoch)){
+      try{await fetch(bkBase()+'/api/mic/'+encodeURIComponent(data.code)+'/stop',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()}});}catch(stopErr){}
+      return;
+    }
     phoneMicCode=data.code;
+    if(!currentVisitAthenaBinding) _athenaSetVisitBinding(phoneBindingCandidate);
+    phoneMicBindingId=currentVisitAthenaBinding&&currentVisitAthenaBinding.id||'';
+    phoneMicBindingEpoch=currentVisitAthenaEpoch;
     // how much of the server transcript we've already pulled in — start from
     // whatever the doctor has typed so far is NOT counted; server starts empty.
     phoneMicSeen=0;
@@ -12072,14 +12243,16 @@ async function startPhoneMic(){
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
 }
 async function pollPhoneMic(){
-  if(!phoneMicCode) return;
+  const code=phoneMicCode, bindingId=phoneMicBindingId, bindingEpoch=phoneMicBindingEpoch;
+  if(!code||!bindingId||bindingEpoch==null) return;
   try{
-    const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(phoneMicCode),{
+    const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code),{
       headers:{'Authorization':'Bearer '+bkToken()}
     });
     if(r.status===401){ handle401(); stopPhoneMic(); return; }
     if(!r.ok) return;
     const d=await r.json();
+    if(code!==phoneMicCode||bindingId!==phoneMicBindingId||Number(bindingEpoch)!==Number(phoneMicBindingEpoch)||Number(bindingEpoch)!==Number(currentVisitAthenaEpoch)||!currentVisitAthenaBinding||currentVisitAthenaBinding.id!==bindingId||!_athenaCurrentMatchesBound(currentVisitAthenaBinding)) return;
     const full=(d&&d.transcript)||'';
     if(full.length>phoneMicSeen){
       // Append ONLY the new tail — never clobber what the doctor typed.
@@ -12090,6 +12263,7 @@ async function pollPhoneMic(){
         ta.value=ta.value+sep+tail;
         // keep the SpeechRecognition buffer in sync so it doesn't overwrite us
         finalText=ta.value+' ';
+        try{_markVisitDirty();}catch(_){}
       }
       phoneMicSeen=full.length;
     }
@@ -12099,6 +12273,7 @@ async function stopPhoneMic(){
   const code=phoneMicCode;
   if(phoneMicPollT){ clearInterval(phoneMicPollT); phoneMicPollT=null; }
   phoneMicCode='';
+  phoneMicBindingId=''; phoneMicBindingEpoch=null;
   document.getElementById('phoneMicPanel').style.display='none';
   document.getElementById('phoneMicListening').style.display='none';
   if(code){
@@ -12217,7 +12392,9 @@ function stopPhoneRec(){
    "Patient:" prefixes. The app and prompts infer who's speaking from context. */
 const EXAMPLE=`Good morning, what brings you in today? Hi, I've had this cough for about two weeks now and it's just not going away. It's worse at night. Okay. Any fever, chills, or shortness of breath? I had a low fever the first few days, around a hundred, but that's gone. No real trouble breathing, but my chest feels a little tight when I cough hard. Are you bringing up any phlegm? What color? Yeah, a bit, kind of yellowish-green. Any sore throat, runny nose, or ear pain? A little stuffy nose at the start. No ear pain. Do you smoke? Any asthma or lung problems before? I quit smoking three years ago. No asthma. I do have high blood pressure, I take lisinopril ten milligrams. Any allergies to medications? Penicillin gives me a rash. Alright, let me listen to your lungs. Take a deep breath. And again. Okay, I hear some coarse sounds at the right base. Your temperature today is ninety-nine one, blood pressure a hundred twenty-eight over eighty, heart rate seventy-eight, oxygen saturation ninety-seven percent. Your throat looks fine and your ears are clear. So what do you think it is? This looks like acute bronchitis, possibly an early lower respiratory infection. Given the colored sputum and the lung sounds, I'd like to get a chest X-ray to rule out pneumonia. Since you're allergic to penicillin, if we treat it I'll use doxycycline a hundred milligrams twice a day for seven days. For now, push fluids, rest, and you can take guaifenesin for the cough. Okay. If you get a high fever, worsening shortness of breath, or coughing up blood, go to urgent care right away. Otherwise come back in one week if you're not improving. Sounds good, thank you.`;
 function loadExample(){
+  if(!_athenaGuardBoundEditor('example loading')) return;
   document.getElementById('transcript').value=EXAMPLE; finalText=EXAMPLE+' ';
+  try{_markVisitDirty();}catch(_){}
   if(!document.getElementById('patientLabel').value.trim()) document.getElementById('patientLabel').value='Example — R.B.';
   toast('Example visit loaded. Press Generate Note.','ok');
 }
@@ -12227,6 +12404,11 @@ function loadExample(){
    ========================================================= */
 let signed=false;
 let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, currentFormat='soap';
+/* One immutable patient/visit owner for the editor contents. Changing the
+   active patient does not retarget an already-recorded or reopened visit. */
+let currentVisitAthenaBinding=null, currentSuperbillSnapshot=null;
+let currentVisitAthenaCompromised=false, currentVisitAthenaAwayFingerprint=null;
+let currentVisitAthenaEpoch=0;
 /* Snapshot of the AI's ORIGINAL note draft, captured at generation time BEFORE
    the physician edits it. Used by "Teach Scrivara" to diff draft vs. edited. */
 let lastAIDraft='';
@@ -12380,6 +12562,7 @@ function setFormat(fmt){
 }
 
 function renderCoding(c){
+  _athenaResetSuperbill(true);
   const card=document.getElementById('codeCard');
   if(typeof renderRevenueEstimate==='function') renderRevenueEstimate();
   if(!c || (!c.em && !(c.icd&&c.icd.length) && !(c.cpt&&c.cpt.length))){ card.style.display='none'; return; }
@@ -12414,12 +12597,57 @@ function enableOutputs(on){
 }
 /* ===== Revenue tools (denial-risk + prior-auth) and decision support ===== */
 function _currentNoteText(){ var n=document.getElementById('noteBox'); return (n&&n.value||'').trim(); }
+function _aiOutputSourceFingerprint(sys,user,outId){
+  try{return JSON.stringify([String(outId||''),String(sys||''),String(user||''),_athenaEditorFingerprint(),_currentNoteText(),(typeof currentFormat!=='undefined'?currentFormat:'')]);}
+  catch(e){return '';}
+}
+function _resetAiVisitOutputs(){
+  ['revToolsOut','dsOut'].forEach(function(id){
+    var out=document.getElementById(id); if(!out)return;
+    out._mlsAiRequestGeneration=(Number(out._mlsAiRequestGeneration)||0)+1;
+    out._mlsAiOutputTargetFingerprint='';
+    out.textContent=''; out.style.display='none';
+  });
+  ['revToolsCard','dsCard'].forEach(function(id){
+    var card=document.getElementById(id); if(!card)return;
+    Array.prototype.forEach.call(card.querySelectorAll('button'),function(btn){
+      btn._mlsAiButtonGeneration=(Number(btn._mlsAiButtonGeneration)||0)+1;
+      btn.disabled=false;
+    });
+  });
+}
 async function _aiToOut(sys,user,btn,outId){
-  var out=document.getElementById(outId); if(out){ out.style.display='block'; out.textContent='Working…'; }
-  if(btn){ btn.disabled=true; }
-  try{ var t=await aiCallRaw(sys,user,null,{freeform:true}); if(out) out.textContent=String(t||'').trim()||'(no output)'; }
-  catch(e){ if(out) out.textContent='Could not complete — '+((e&&e.message)||'try again'); }
-  finally{ if(btn) btn.disabled=false; }
+  var out=document.getElementById(outId); if(!out)return false;
+  if(!currentVisitAthenaBinding){toast('Generate or open this note inside the correct patient visit before running this tool.','err');return false;}
+  if(!_athenaGuardBoundEditor('revenue or decision-support generation'))return false;
+  var requestBinding=currentVisitAthenaBinding,requestEpoch=currentVisitAthenaEpoch;
+  var sourceFingerprint=_aiOutputSourceFingerprint(sys,user,outId);
+  if(!sourceFingerprint){toast('Could not safely read the current visit for this tool.','err');return false;}
+  var requestGeneration=(Number(out._mlsAiRequestGeneration)||0)+1;
+  out._mlsAiRequestGeneration=requestGeneration;
+  var outputTargetFingerprint=String(outId)+'@'+requestGeneration;
+  out._mlsAiOutputTargetFingerprint=outputTargetFingerprint;
+  var buttonGeneration=0;
+  if(btn){buttonGeneration=(Number(btn._mlsAiButtonGeneration)||0)+1;btn._mlsAiButtonGeneration=buttonGeneration;btn.disabled=true;}
+  out.style.display='block'; out.textContent='Working…';
+  function ownsOutput(){return document.getElementById(outId)===out&&Number(out._mlsAiRequestGeneration)===requestGeneration&&out._mlsAiOutputTargetFingerprint===outputTargetFingerprint;}
+  function discardOwnedOutput(){if(ownsOutput()){out.textContent='';out.style.display='none';}return false;}
+  function resultStillSafe(){
+    if(!ownsOutput())return false;
+    if(!_athenaAsyncBindingStillSafe(requestBinding,'revenue or decision-support generation',requestEpoch))return false;
+    if(_aiOutputSourceFingerprint(sys,user,outId)!==sourceFingerprint){toast('The visit content changed while this tool was working, so MLS discarded that older result. Run it again for the current visit.','err');return false;}
+    return true;
+  }
+  try{
+    var t=await aiCallRaw(sys,user,null,{freeform:true});
+    if(!resultStillSafe())return discardOwnedOutput();
+    out.textContent=String(t||'').trim()||'(no output)'; return true;
+  }
+  catch(e){
+    if(!resultStillSafe())return discardOwnedOutput();
+    out.textContent='Could not complete — '+((e&&e.message)||'try again'); return false;
+  }
+  finally{if(btn&&Number(btn._mlsAiButtonGeneration)===buttonGeneration)btn.disabled=false;}
 }
 function revenueDenialCheck(){
   var note=_currentNoteText(); if(!note){ toast('Generate a note first.','err'); return; }
@@ -12507,7 +12735,13 @@ function showNote(text){
    ========================================================= */
 async function generateNote(){
   const transcript=document.getElementById('transcript').value.trim();
-  if(!transcript){ toast('Capture or paste a visit first.','err'); return; }
+  if(!transcript){ toast('Capture or paste a visit first.','err'); return false; }
+  if(!_athenaGuardBoundEditor('note generation')) return false;
+  const generationBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('generated');
+  const generationEpoch=currentVisitAthenaEpoch;
+  const generationFingerprint=_athenaEditorFingerprint();
+  const generationFormat=currentFormat;
+  const generationOptFingerprint=JSON.stringify(currentOpt||null);
   const key=getKey();
   const gb=document.getElementById('genBtn');
 
@@ -12517,6 +12751,7 @@ async function generateNote(){
       lastAIDraft=currentSoap; // baseline for "Teach Scrivara"
       currentInsurance=offlineExampleInsuranceNote();
       currentCoding=offlineExampleCoding();
+      _athenaSetVisitBinding(generationBinding);
       currentOpt=null;
       currentFormat='soap';
       lastEMR=offlineExampleEMR();
@@ -12532,21 +12767,29 @@ async function generateNote(){
       try{ maybeAutoProcNote({note:currentSoap}); }catch(e){}
       try{ maybeCapturePainScore({note:currentSoap}); }catch(e){}
       try{ initCollapsibleExtras(); }catch(e){}
+      try{ _markVisitDirty(); }catch(e){}
       toast('No API key yet — showing an offline example note. Add your key in Settings for AI on any visit.','');
     } else {
       toast('Add your OpenAI API key in Settings to generate notes.','err');
       openSettings();
+      return false;
     }
-    return;
+    return true;
   }
 
   gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
   try{
     const result=await callOpenAI(transcript,key);
+    if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)) return false;
+    if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint){
+      toast('The visit changed while the note was being generated, so MLS discarded that older result. Review the current visit and generate again. Nothing changed in Athena.','err');
+      return false;
+    }
     currentSoap=_reorderNoteForStyle(result.note, getGenStyle());
     lastAIDraft=currentSoap; // baseline snapshot for "Teach Scrivara" before edits
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
+    _athenaSetVisitBinding(generationBinding);
     currentOpt=null;
     currentFormat='soap';
     lastEMR=result.emr;
@@ -12564,9 +12807,12 @@ async function generateNote(){
     toast(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.','ok');
     // OPTIONAL: if templates are enabled, reformat the note to the chosen
     // template. This is a guarded no-op when the toggle is OFF (default).
-    try{ await maybeApplyTemplate(transcript); }catch(e){}
+    try{ await maybeApplyTemplate(transcript,generationBinding,currentVisitAthenaEpoch); }catch(e){}
+    try{ _markVisitDirty(); }catch(e){}
+    return true;
   }catch(err){
     toast(friendlyError(err),'err');
+    return false;
   }finally{
     gb.disabled=false; gb.innerHTML='✨ Generate Note';
   }
@@ -13328,6 +13574,14 @@ function parseGenJSON(content){
    ========================================================= */
 async function optimizeForPayout(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  if(!currentVisitAthenaBinding){
+    toast('Open or generate this note inside the correct patient visit before reviewing its coding. Nothing changed in Athena.','err');
+    return;
+  }
+  if(!_athenaGuardBoundEditor('coding optimization')) return;
+  const optimizationBinding=currentVisitAthenaBinding;
+  const optimizationEpoch=currentVisitAthenaEpoch;
+  const optimizationFingerprint=_athenaEditorFingerprint();
   const key=getKey();
   const preOptEm=(currentCoding&&currentCoding.em)||'';
   const noteText=(currentFormat==='soap'?document.getElementById('noteBox').value:currentSoap);
@@ -13341,6 +13595,7 @@ async function optimizeForPayout(){
       currentOpt=offlineExampleOptimization();
       currentOpt.docEm=preOptEm;
       renderOpt(currentOpt);
+      _markVisitDirty();
       toast('Offline example optimization shown. Add your OpenAI key for any visit.','');
       document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
     } else {
@@ -13378,6 +13633,11 @@ Return ONLY valid JSON (no fences) with this shape:
     const pctx=buildPatientContext();
     const user=`SOAP NOTE:\n${noteText}\n\nINSURANCE-READY NOTE:\n${insText||'(none)'}\n\nORIGINAL TRANSCRIPT (ground truth — do not exceed what this supports):\n${transcript||'(not available)'}`+(pctx?('\n\nPATIENT CHART BACKGROUND (chronic problems/meds already on file — relevant to MDM problem-complexity, but do NOT invent data review or findings not documented):\n'+pctx):'');
     const data=await postChatRaw(sys,user,key);
+    if(!_athenaAsyncBindingStillSafe(optimizationBinding,'coding optimization',optimizationEpoch)) return;
+    if(_athenaEditorFingerprint()!==optimizationFingerprint){
+      toast('The visit content changed while coding was being reviewed, so MLS discarded that result. Review the current note and try again. Nothing changed in Athena.','err');
+      return;
+    }
     currentOpt=normalizeOpt(data);
     currentOpt.docEm=preOptEm;
     // update suggested coding to the audited (still accurate) codes if present
@@ -13387,6 +13647,7 @@ Return ONLY valid JSON (no fences) with this shape:
     renderCoding(currentCoding);
     if(lastEMR) populateEMR(lastEMR,currentCoding);
     renderOpt(currentOpt);
+    _markVisitDirty();
     toast('Coding reviewed. Check the flagged gaps — document only what truly happened.','ok');
     document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
   }catch(err){
@@ -13668,10 +13929,34 @@ async function generateRecommendations(){
     return;
   }
 
+  if(!_athenaGuardBoundEditor('recommendation generation')) return;
+  const recBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('recommendations');
+  const recEpoch=currentVisitAthenaEpoch;
+  const recSourceNow=()=>{
+    try{
+      const editor=_athenaEditorFingerprint();
+      const c=currentCoding||{};
+      const codingLine='Suggested coding for this visit (already accurate; do NOT upcode): E/M '+(c.em||'—')+'; ICD-10 '+((c.icd&&c.icd.length)?c.icd.join('; '):'none')+'; CPT '+((c.cpt&&c.cpt.length)?c.cpt.join('; '):'none')+'.';
+      const note=currentNoteText();
+      const trans=((document.getElementById('transcript')||{}).value||'').trim();
+      const pctx=buildPatientContext();
+      return {codingLine,note,trans,pctx,fingerprint:JSON.stringify([editor,codingLine,note,trans,pctx])};
+    }catch(e){ return null; }
+  };
+  const recSource=recSourceNow();
+  if(!recSource){ toast('Could not safely read the current visit for recommendations.','err'); return; }
+  const recResultStillSafe=()=>{
+    if(!_athenaAsyncBindingStillSafe(recBinding,'recommendation generation',recEpoch)) return false;
+    const now=recSourceNow();
+    if(!now||now.fingerprint!==recSource.fingerprint){
+      toast('The visit content changed while recommendations were being generated, so MLS discarded that older result. Generate them again for the current visit.','err');
+      return false;
+    }
+    return true;
+  };
+
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Thinking…';
   try{
-    const c=currentCoding||{};
-    const codingLine='Suggested coding for this visit (already accurate; do NOT upcode): E/M '+(c.em||'—')+'; ICD-10 '+((c.icd&&c.icd.length)?c.icd.join('; '):'none')+'; CPT '+((c.cpt&&c.cpt.length)?c.cpt.join('; '):'none')+'.';
     const sys=`You are a clinical decision-support assistant generating ADVISORY recommendations FOR THE PHYSICIAN (not the patient) after a visit. You receive the clinical note for today's visit and the patient's chart background (problem list, medications, allergies, history). Produce concise, genuinely useful items the provider may want to consider.
 
 STRICT GUARDRAILS:
@@ -13689,27 +13974,26 @@ Return ONLY valid JSON (no markdown fences) with this exact shape (each value an
  "follow_up": [ "<follow-up or monitoring item the documented plan implies>" ],
  "documentation": [ "<conditional documentation tip to fully + accurately support the coded level; never upcoding>" ]
 }`;
-    const pctx=buildPatientContext();
-    const noteText=currentNoteText();
-    const trans=document.getElementById('transcript').value.trim();
-    const user='TODAY\'S CLINICAL NOTE:\n'+(noteText||'(note not generated — see transcript below)')+'\n\n'+codingLine+
-      (trans?('\n\nORIGINAL VISIT TRANSCRIPT (ground truth for today\'s encounter):\n'+trans):'')+
-      (pctx?('\n\nPATIENT CHART BACKGROUND (problem list, current meds, allergies, prior-visit history):\n'+pctx):'\n\n(No additional chart background on file — use the visit data only.)');
+    const user='TODAY\'S CLINICAL NOTE:\n'+(recSource.note||'(note not generated — see transcript below)')+'\n\n'+recSource.codingLine+
+      (recSource.trans?('\n\nORIGINAL VISIT TRANSCRIPT (ground truth for today\'s encounter):\n'+recSource.trans):'')+
+      (recSource.pctx?('\n\nPATIENT CHART BACKGROUND (problem list, current meds, allergies, prior-visit history):\n'+recSource.pctx):'\n\n(No additional chart background on file — use the visit data only.)');
     let data;
     if(backendMode()){
       // hosted: free-form helper → /api/complete with Bearer auth
       let raw=await aiCallRaw(sys,user,getKey(),{freeform:true});
+      if(!recResultStillSafe()) return;
       raw=String(raw||'').replace(/^```json\s*/i,'').replace(/```$/,'').trim();
       try{ data=JSON.parse(raw); }
       catch(e){ data={}; }
     } else {
       data=await postChatRaw(sys,user,getKey());
+      if(!recResultStillSafe()) return;
     }
     currentRecs=normalizeRecs(data);
     renderRecommendations();
     toast('Recommendations ready — advisory only; use clinical judgment.','ok');
   }catch(err){
-    toast(friendlyError(err),'err');
+    if(recResultStillSafe()) toast(friendlyError(err),'err');
   }finally{
     btn.disabled=false; btn.innerHTML='✨ Generate Recommendations';
   }
@@ -13767,6 +14051,7 @@ function offlineExampleRecommendations(){
    ========================================================= */
 function signNote(){
   if(signed){ toast('Note is already signed.',''); return; }
+  if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('signing this note')) return;
   setBadge(true);
   const name=getName()||'Clinician';
   const ts=new Date().toLocaleString();
@@ -13774,7 +14059,7 @@ function signNote(){
   line.style.display='block';
   line.textContent=`Electronically signed by ${name} on ${ts}. AI-generated — reviewed before signing.`;
   // auto-save the signed note to history
-  saveCurrentNote(false);
+  if(saveCurrentNote(false)!==true){ setBadge(false); line.style.display='none'; toast('The note was not signed because it could not be saved safely.','err'); return; }
   toast('Note signed and saved to history on this device.','ok');
 }
 function fullText(){
@@ -13856,10 +14141,250 @@ function sendToEMRviaAssist(btn, opts){
 /* ===== FULL-VISIT ATHENA ROUTING PLAN. This preserves the exact clinical-note,
    diagnosis, billing and order destinations in a visible review surface. It is
    preview-only/manual and never starts the retired AI autopilot. ===== */
+function _athenaEditorFingerprint(){
+  try{
+    var transcript=(document.getElementById('transcript')||{}).value||'';
+    var note=(document.getElementById('noteBox')||{}).value||'';
+    return JSON.stringify([transcript,note,(typeof currentSoap!=='undefined'?currentSoap:''),(typeof currentInsurance!=='undefined'?currentInsurance:''),(typeof currentCoding!=='undefined'?currentCoding:null),(typeof currentOrders!=='undefined'?currentOrders:[])]);
+  }catch(e){return '';}
+}
+function _athenaEditorIsEmpty(){
+  try{return !String((document.getElementById('transcript')||{}).value||'').trim()&&!String((document.getElementById('noteBox')||{}).value||'').trim()&&!String(typeof currentSoap!=='undefined'?currentSoap:'').trim()&&!String(typeof currentInsurance!=='undefined'?currentInsurance:'').trim()&&!(typeof currentCoding!=='undefined'&&currentCoding)&&!(typeof currentOrders!=='undefined'&&currentOrders&&currentOrders.length);}catch(e){return false;}
+}
+function _athenaEditorMatchesSavedVisit(){
+  try{
+    if(typeof currentNoteId==='undefined'||!currentNoteId||typeof getNotes!=='function')return false;
+    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);});if(!saved)return false;
+    var shown=(typeof currentFormat!=='undefined'&&currentFormat==='insurance')?String(saved.insurance||''):String(saved.soap||'');
+    return _athenaEditorFingerprint()===JSON.stringify([String(saved.transcript||''),shown,String(saved.soap||''),String(saved.insurance||''),saved.coding||null,Array.isArray(saved.orders)?saved.orders:[]]);
+  }catch(e){return false;}
+}
+function _athenaSetVisitBinding(binding,replaceExisting){
+  if(currentVisitAthenaBinding&&binding&&currentVisitAthenaBinding.id===binding.id)return true;
+  if(currentVisitAthenaBinding&&binding&&!replaceExisting)return false;
+  currentVisitAthenaBinding=binding||null;
+  currentVisitAthenaCompromised=false;
+  currentVisitAthenaAwayFingerprint=null;
+  currentVisitAthenaEpoch++;
+  return true;
+}
+function _athenaCurrentMatchesBound(binding){
+  if(!binding||!binding.patient)return false;
+  var active=null; try{active=(typeof activePatient==='function')?activePatient():null;}catch(e){}
+  if(active)return _athenaSameBoundPatient(binding.patient,active);
+  if(binding.patient.patientId)return false;
+  var label=''; try{label=(document.getElementById('patientLabel')||{}).value||'';}catch(e2){}
+  return _athenaNormIdentity(binding.patient.name)===_athenaNormIdentity(label);
+}
+function _athenaHandleActivePatientChange(previousId,nextId){
+  if(String(previousId||'')===String(nextId||''))return;
+  try{_athenaResetSuperbill(true);}catch(e){}
+  try{if(typeof _resetAiVisitOutputs==='function')_resetAiVisitOutputs();}catch(eAi){}
+  try{var speech=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(speech&&speech.current&&speech.current()){speech.claim('patient-switch');speech.release('patient-switch');}}catch(e1){}
+  try{if(typeof capturing!=='undefined'&&capturing&&typeof stopCapture==='function')stopCapture();}catch(e2){}
+  try{if(typeof phoneMicCode!=='undefined'&&phoneMicCode&&typeof stopPhoneMic==='function')stopPhoneMic();}catch(e3){}
+  var binding=currentVisitAthenaBinding;if(!binding||!binding.patient)return;
+  var previous=null,next=null;
+  try{previous=previousId&&typeof findPatient==='function'?findPatient(previousId):null;}catch(e4){}
+  try{next=nextId&&typeof findPatient==='function'?findPatient(nextId):null;}catch(e5){}
+  var wasOwner=previous?_athenaSameBoundPatient(binding.patient,previous):false;
+  var willBeOwner=next?_athenaSameBoundPatient(binding.patient,next):false;
+  var fingerprint=_athenaEditorFingerprint();
+  if(wasOwner&&!willBeOwner)currentVisitAthenaAwayFingerprint=fingerprint;
+  else if(!willBeOwner&&currentVisitAthenaAwayFingerprint===null)currentVisitAthenaAwayFingerprint=fingerprint;
+  if(!wasOwner&&currentVisitAthenaAwayFingerprint!==null&&fingerprint!==currentVisitAthenaAwayFingerprint)currentVisitAthenaCompromised=true;
+  if(willBeOwner&&!currentVisitAthenaCompromised)currentVisitAthenaAwayFingerprint=null;
+}
+function _athenaMarkBoundEdit(fieldId){
+  if(!currentVisitAthenaBinding&&(fieldId==='transcript'||fieldId==='noteBox')){
+    var el=null;try{el=document.getElementById(fieldId);}catch(e){}
+    if(el&&String(el.value||'').trim())_athenaSetVisitBinding(_athenaBindingForCurrentVisit('manual-entry'));
+  }
+  if(fieldId==='patientLabel'&&currentVisitAthenaBinding&&!currentVisitAthenaCompromised){
+    var bp=currentVisitAthenaBinding.patient||{},active=null,label='';
+    try{active=(typeof activePatient==='function')?activePatient():null;}catch(e2){}
+    try{label=String((document.getElementById('patientLabel')||{}).value||'').trim();}catch(e3){}
+    if(!active&&!bp.patientId&&!bp.name&&!bp.dob&&!bp.mrn&&label){
+      var old=currentVisitAthenaBinding;
+      _athenaSetVisitBinding(_athenaFreezeVisitBinding({name:label},{source:old.source||'manual-entry',historical:old.historical===true,routeBlocked:old.routeBlocked===true,visitContext:old.visitContext||null,noteTimestamp:old.noteTimestamp||null,displayDate:old.displayDate||'',displayProvider:old.displayProvider||''}),true);
+      /* This is identity completion for the same unassigned visit, not a
+         patient switch. Keep an active recorder attached to the replacement
+         immutable binding so transcription does not silently stall. */
+      if(typeof capturing!=='undefined'&&capturing&&typeof recog!=='undefined'&&recog){
+        recog._mlsBindingId=currentVisitAthenaBinding.id;
+        recog._mlsBindingEpoch=currentVisitAthenaEpoch;
+      }
+      if(typeof phoneMicCode!=='undefined'&&phoneMicCode){
+        phoneMicBindingId=currentVisitAthenaBinding.id;
+        phoneMicBindingEpoch=currentVisitAthenaEpoch;
+      }
+    }
+  }
+  if(currentVisitAthenaBinding&&!_athenaCurrentMatchesBound(currentVisitAthenaBinding))currentVisitAthenaCompromised=true;
+}
+function _athenaGuardBoundEditor(actionLabel){
+  var binding=currentVisitAthenaBinding;if(!binding)return true;
+  if(binding.identityConflict){
+    try{toast('This saved visit identity conflicts with its linked patient chart, so it cannot be edited, saved, signed, or sent to Athena. Reattach or correct the saved visit first. Nothing changed in Athena.','err');}catch(e00){}
+    return false;
+  }
+  if(binding.routeBlocked){
+    try{toast('This restored visit does not have a verified patient binding, so it cannot be saved or sent to Athena. Copy it into a New visit for the correct patient. Nothing changed in Athena.','err');}catch(e0){}
+    return false;
+  }
+  var matches=_athenaCurrentMatchesBound(binding);
+  if(matches&&currentVisitAthenaAwayFingerprint!==null){
+    if(_athenaEditorFingerprint()!==currentVisitAthenaAwayFingerprint)currentVisitAthenaCompromised=true;
+    else currentVisitAthenaAwayFingerprint=null;
+  }
+  if(!matches){
+    try{toast('This editor still belongs to '+String((binding.patient&&binding.patient.name)||'another patient')+'. Start a New visit before '+String(actionLabel||'continuing')+' for the selected patient. The existing visit was not changed.','err');}catch(e){}
+    return false;
+  }
+  if(currentVisitAthenaCompromised){
+    try{toast('This visit was edited while a different patient was selected, so MLS will not reuse its Athena destination. Start a New visit and review the content again. Nothing changed in Athena.','err');}catch(e2){}
+    return false;
+  }
+  return true;
+}
+function _athenaAsyncBindingStillSafe(candidate,actionLabel,expectedEpoch){
+  var sameBinding=!currentVisitAthenaBinding||(candidate&&currentVisitAthenaBinding.id===candidate.id);
+  var sameEpoch=expectedEpoch==null||Number(expectedEpoch)===Number(currentVisitAthenaEpoch);
+  if(!candidate||!sameBinding||!sameEpoch||currentVisitAthenaCompromised||!_athenaCurrentMatchesBound(candidate)){
+    try{toast('The selected patient or visit changed while '+String(actionLabel||'the request')+' was starting, so MLS discarded that result. Start again on the correct patient. Nothing changed in Athena.','err');}catch(e){}
+    return false;
+  }
+  return true;
+}
+function _athenaPrepareRecording(actionLabel){
+  var binding=currentVisitAthenaBinding;
+  if(!binding||_athenaCurrentMatchesBound(binding))return _athenaGuardBoundEditor(actionLabel);
+  var cleanCompleted=typeof _visitDirty!=='undefined'&&!_visitDirty&&(_athenaEditorIsEmpty()||_athenaEditorMatchesSavedVisit());
+  if(!currentVisitAthenaCompromised&&cleanCompleted){
+    try{newVisit();if(typeof prefillContextFromProfile==='function')prefillContextFromProfile();toast('Started a fresh visit for '+String(((typeof activePatient==='function'&&activePatient())||{}).name||'the selected patient')+'.','ok');return true;}catch(e){}
+  }
+  return _athenaGuardBoundEditor(actionLabel);
+}
+function _athenaLocalDay(ts){
+  var d=new Date(ts||Date.now());
+  try{
+    var out={};
+    new Intl.DateTimeFormat('en-US',{timeZone:(typeof _acctTz==='function'?_acctTz():'America/New_York'),year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d).forEach(function(p){out[p.type]=p.value;});
+    if(out.year&&out.month&&out.day)return out.year+'-'+out.month+'-'+out.day;
+  }catch(e){}
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+function _athenaPatientSnapshot(p,fallbackName){
+  p=p||{};
+  return {name:String(p.name||fallbackName||'').trim(),dob:String(p.dob||'').trim(),mrn:String(p.mrn||p.athenaId||'').trim(),patientId:String(p.id||p.patientId||'').trim()};
+}
+function _athenaFreezeVisitBinding(patient,meta){
+  meta=meta||{}; var pt=_athenaPatientSnapshot(patient,'');
+  var rawCtx=meta.visitContext||{};
+  var historical=meta.historical===true||rawCtx.historical===true;
+  var noteTimestamp=Number(meta.noteTimestamp||rawCtx.noteTimestamp||0)||null;
+  var ctx=(meta.visitContext||noteTimestamp)?{historical:historical,noteTimestamp:noteTimestamp,visitDate:String(rawCtx.visitDate||''),provider:String(rawCtx.provider||''),appointmentId:String(rawCtx.appointmentId||''),encounterId:String(rawCtx.encounterId||''),encounterUrl:String(rawCtx.encounterUrl||'')}:null;
+  var binding={id:'visit-bind-'+Date.now()+'-'+Math.random().toString(36).slice(2),patient:pt,source:String(meta.source||''),historical:historical,identityConflict:meta.identityConflict===true,routeBlocked:meta.routeBlocked===true,visitContext:ctx,noteTimestamp:noteTimestamp,displayDate:String(meta.displayDate||''),displayProvider:String(meta.displayProvider||'')};
+  try{Object.freeze(pt);if(ctx)Object.freeze(ctx);Object.freeze(binding);}catch(e){}
+  return binding;
+}
+function _athenaBindingForCurrentVisit(source){
+  var p=null; try{p=(typeof activePatient==='function')?activePatient():null;}catch(e){}
+  var label=''; try{label=(document.getElementById('patientLabel')||{}).value||'';}catch(e2){}
+  var provider=''; try{provider=(typeof getProviderName==='function'&&getProviderName())||(typeof getName==='function'&&getName())||'';}catch(e3){}
+  var now=Date.now();
+  return _athenaFreezeVisitBinding(_athenaPatientSnapshot(p,label),{source:source||'current',historical:false,noteTimestamp:now,displayDate:_athenaLocalDay(now),displayProvider:provider});
+}
+function _athenaBindingForSavedRecord(n){
+  n=n||{}; var p=null;
+  try{if(n.patientId&&typeof findPatient==='function')p=findPatient(n.patientId)||null;}catch(e){}
+  var stored=_athenaPatientSnapshot({patientId:n.patientId,name:n.patient,dob:n.patientDob||n.dob,mrn:n.patientMrn||n.mrn},n.patient);
+  var pt=p?_athenaPatientSnapshot(p,n.patient):stored;
+  var identityConflict=!!(p&&((_athenaNormIdentity(stored.name)&&_athenaNormIdentity(stored.name)!==_athenaNormIdentity(pt.name))||(_athenaDigits(stored.dob)&&_athenaDigits(pt.dob)&&_athenaDigits(stored.dob)!==_athenaDigits(pt.dob))||(_athenaDigits(stored.mrn)&&_athenaDigits(pt.mrn)&&_athenaDigits(stored.mrn)!==_athenaDigits(pt.mrn))));
+  var noteTimestamp=Number(n.visitTimestamp||n.encounterTimestamp||0)||null;
+  var visitDate=String(n.visitDate||n.noteDate||n.appt_date||n.apptDate||'').slice(0,10);
+  if(!visitDate&&noteTimestamp){try{visitDate=_athenaLocalDay(noteTimestamp);}catch(e2){}}
+  var provider=String(n.provider||n.providerName||'').trim();
+  var ctx={visitDate:visitDate,provider:provider,appointmentId:String(n.appointmentId||n.apptId||n.scheduleAppointmentId||''),encounterId:String(n.encounterId||n.athenaEncounterId||n.visitId||''),encounterUrl:String(n.encounterUrl||n.athenaEncounterUrl||n.visitUrl||'')};
+  return _athenaFreezeVisitBinding(pt,{source:'saved-record',historical:true,identityConflict:identityConflict,routeBlocked:n.athenaRouteBlocked===true,visitContext:ctx,noteTimestamp:noteTimestamp,displayDate:visitDate,displayProvider:provider});
+}
+function _athenaNormIdentity(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+function _athenaDigits(v){return String(v||'').replace(/\D/g,'');}
+function _athenaSameBoundPatient(bound,active){
+  if(!bound||!active)return false;
+  var bid=String(bound.patientId||''),aid=String(active.id||active.patientId||'');
+  if(bid&&aid&&bid!==aid)return false;
+  if(_athenaNormIdentity(bound.name)!==_athenaNormIdentity(active.name))return false;
+  var bd=_athenaDigits(bound.dob),ad=_athenaDigits(active.dob);
+  if(bd&&ad&&bd!==ad)return false;
+  var bm=_athenaDigits(bound.mrn),am=_athenaDigits(active.mrn||active.athenaId);
+  if(bm&&am&&bm!==am)return false;
+  return !!((bid&&aid)||(bd&&ad));
+}
+function _athenaBoundVisitForAction(actionLabel,requireExactHistorical){
+  var binding=currentVisitAthenaBinding; var active=null;
+  try{active=(typeof activePatient==='function')?activePatient():null;}catch(e){}
+  if(binding&&!_athenaGuardBoundEditor(actionLabel||'continuing'))return null;
+  if(binding&&binding.identityConflict){
+    try{toast('This saved visit patient identity conflicts with its linked chart. Reattach or correct the saved visit before any Athena action. Nothing changed.','err');}catch(e1){}
+    return null;
+  }
+  if(!binding||!binding.patient||!binding.patient.name||!binding.patient.dob){
+    try{toast('This visit is not bound to one patient with a name and DOB. Select the correct patient, start a new visit, and generate the note again. Nothing changed in Athena.','err');}catch(e2){}
+    return null;
+  }
+  if(!_athenaSameBoundPatient(binding.patient,active)){
+    try{toast('Patient mismatch: this '+String(actionLabel||'visit')+' belongs to '+binding.patient.name+'. Re-select that patient or start a new visit. Nothing changed in Athena.','err');}catch(e3){}
+    return null;
+  }
+  if(binding.historical&&requireExactHistorical&&(!binding.visitContext||!binding.visitContext.visitDate||!binding.visitContext.provider)){
+    try{toast('This saved visit is missing its original encounter date or provider, so MLS will not guess an Athena destination. Nothing changed.','err');}catch(e4){}
+    return null;
+  }
+  return binding;
+}
+function _athenaResetSuperbill(hide){
+  currentSuperbillSnapshot=null;
+  var status=document.getElementById('billAthenaStatus');
+  if(status){status.style.display='none';status.textContent='';status.style.color='';}
+  if(hide){var card=document.getElementById('billCard');if(card)card.style.display='none';}
+}
+/* Snapshot only the executable E/M and CPT/HCPCS code identities. Descriptions,
+   diagnoses, units, modifiers and diagnosis pointers remain visible review data
+   and are never inferred back out of prose at confirmation time. */
+function _athenaCanonicalBilling(coding){
+  var c=coding||{};
+  var codeOf=function(value, emOnly){
+    var raw='';
+    if(value&&typeof value==='object') raw=String(value.code||value.cpt||value.hcpcs||value.label||value.text||'');
+    else raw=String(value||'');
+    var re=emOnly?/^\s*(?:E\/?M(?:\s+(?:level|code))?\s*[:#-]?\s*)?(\d{5})\b/i:/^\s*(?:(?:CPT|HCPCS)(?:\s+(?:charges?|codes?|procedures?))?\s*[:#-]?\s*)?((?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*\d)[A-Z0-9]{5})\b/i;
+    var m=re.exec(raw); return m?String(m[1]||'').toUpperCase():'';
+  };
+  var invalid=(Array.isArray(c.invalid)?c.invalid:[]).concat(Array.isArray(c.conflicts)?c.conflicts:[]).map(function(x){return String(x||'').trim();}).filter(Boolean);
+  var emAliases=[c.emCode,c.em,c.em_level,c.emLevel],emCodes=[];
+  emAliases.forEach(function(value){if(!String(value||'').trim())return;var code=codeOf(value,true);if(!code)invalid.push('Invalid E/M code: '+String(value));else if(emCodes.indexOf(code)<0)emCodes.push(code);});
+  var em=emCodes[0]||'';
+  if(emCodes.length>1)invalid.push('Conflicting E/M codes: '+emCodes.join(' vs '));
+  var aliases=[c.cptCodes,c.cpt,c.cpts,c.codes],lists=[];
+  aliases.forEach(function(candidate){
+    if(!(Array.isArray(candidate)?candidate.length:String(candidate||'').trim()))return;
+    var items=Array.isArray(candidate)?candidate:[candidate],seen={},codes=[];
+    items.forEach(function(item){var code=codeOf(item,false);if(!code){invalid.push('Invalid CPT/HCPCS item: '+String((item&&item.code)||item||''));return;}if(code!==em&&!seen[code]){seen[code]=1;codes.push(code);}});
+    lists.push(codes);
+  });
+  var cpt=lists.length?lists[0]:[];
+  if(lists.length>1){
+    var base=cpt.slice().sort().join('|');
+    for(var li=1;li<lists.length;li++){if(lists[li].slice().sort().join('|')!==base){invalid.push('Conflicting CPT/HCPCS code lists');break;}}
+  }
+  var invalidSeen={}; invalid=invalid.filter(function(x){if(!x||invalidSeen[x])return false;invalidSeen[x]=1;return true;});
+  return {emCode:em,cptCodes:cpt,invalid:invalid};
+}
 /* One plan builder keeps every review surface on the same source of truth. */
-function _athenaBuildPlan(){
+function _athenaBuildPlan(binding){
   var noteText=''; try{ noteText=emrReadyText(); }catch(e){}
-  var p=(typeof activePatient==='function')?activePatient():null;
+  var p=binding&&binding.patient?binding.patient:null;
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
   var orders=(typeof currentOrders!=='undefined'&&currentOrders)?currentOrders:[];
   var who=p?p.name:'this patient';
@@ -13869,17 +14394,16 @@ function _athenaBuildPlan(){
   lines.push(ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest);
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+'  ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   var hasBill=(c&&c.em)||(c&&c.cpt&&c.cpt.length);
-  if(hasBill){ var bb='BILLING:\n'+(c&&c.em?('E/M level: '+c.em+'\n'):'')+((c&&c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c&&c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
+  if(hasBill){ var bb='BILLING:\n'+(c&&c.em?('E/M level: '+c.em+'\n'):'')+((c&&c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c&&c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb, billing:_athenaCanonicalBilling(c)}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
   if(orders&&orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type)+(o.fields?(' — '+Object.keys(o.fields).map(function(k){return o.fields[k];}).filter(Boolean).join(' ')):''); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+'  ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
   if(!currentSoap){ try{ toast('Generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
-  var built=_athenaBuildPlan();
+  var binding=_athenaBoundVisitForAction('note',false); if(!binding)return;
+  var built=_athenaBuildPlan(binding);
   if(!built.noteText.trim()){ try{ toast('Nothing to review yet.','err'); }catch(e){} return; }
-  var p=(typeof activePatient==='function')?activePatient():null;
-  var immutablePatient=p?{name:String(p.name||''),dob:String(p.dob||''),mrn:String(p.mrn||p.athenaId||''),patientId:String(p.id||'')}:null;
-  _athenaPushPlan(built.plan, built.who, immutablePatient);
+  _athenaPushPlan(built.plan,built.who,binding.patient,binding.visitContext||{historical:false,noteTimestamp:binding.noteTimestamp||null});
 }
 /* Legacy natural-language autopilot is intentionally contained. Typed V2 is
    the only app write lane; this runner never posts mlsAppPushVisit. */
@@ -13896,7 +14420,7 @@ var ATHENA_SECTIONS={
     goalHead:'In the patient encounter CURRENTLY OPEN in athenaOne, go to the CLINICAL DOCUMENTATION area — the encounter note: the Intake/Exam or the "Assessment & Plan" / HPI text fields (athenaOne lays out the encounter as Chief Complaint, HPI, ROS, Exam, Assessment & Plan). Click into the main note / Assessment & Plan text area and enter the note text below. Announce "athenaOne: Encounter note" when you start.' },
   dx:{ icon:'🩺', label:'DIAGNOSES', dest:'Athena » Assessment & Plan — Diagnosis search (Add assessment)',
     goalHead:'In the OPEN athenaOne encounter, go to the ASSESSMENT & PLAN / DIAGNOSES area. Use athenaOne’s diagnosis search (often "Add assessment" or a Dx / problem search box). For EACH ICD-10 below, type the code or its description, pick the matching result, and add it to the encounter’s diagnosis list. Announce "athenaOne: Assessment/Diagnoses" when you start.' },
-  billing:{ icon:'💲', label:'CHARGES / BILLING', dest:'Athena » Billing slate — E/M level + CPT charges (attach Dx)',
+  billing:{ icon:'💲', label:'CHARGES / BILLING', dest:'Athena » Billing slate — E/M + CPT/HCPCS codes (Dx links manual; no claim)',
     goalHead:'In the OPEN athenaOne encounter, open the BILLING / CHARGES slate (the "Billing" tab or the E&M / "Add Charge" / Superbill area). Set the E/M level and add each CPT procedure code via the charge search ("Add Charge" / "Add CPT"). If athenaOne asks, attach the matching ICD-10 diagnosis pointer to each charge. Announce "athenaOne: Billing" when you start.' },
   orders:{ icon:'📋', label:'ORDERS', dest:'Athena » Orders — Add order (labs / imaging / Rx / referral)',
     goalHead:'In the OPEN athenaOne encounter, open the ORDERS area ("Add order" / order entry). For each order below use the right order type — labs, imaging, medication/Rx, referral, or DME — search for it and add it. Announce "athenaOne: Orders" when you start.' }
@@ -14016,6 +14540,7 @@ function _athenaReceiptAction(action){
   if(action==='write_note'){ wf.writeReceiptDrafts(opts); return; }
   if(action==='stage_billing'){
     var billing=state.sections.filter(function(s){ return s.kind==='billing'; })[0];
+    opts.billing=billing&&billing.billing?billing.billing:null;
     opts.billingText=billing?billing.body:'';
     wf.startAthenaAction('stage_billing',opts); return;
   }
@@ -14046,7 +14571,15 @@ function _athenaShowReceipt(who, results, partial, immutablePatient, sections, v
   try{
     var old=document.getElementById('athenaReceipt'); if(old) old.remove();
     var patientCopy={name:String((immutablePatient&&immutablePatient.name)||who||''),dob:String((immutablePatient&&immutablePatient.dob)||''),mrn:String((immutablePatient&&immutablePatient.mrn)||''),patientId:String((immutablePatient&&immutablePatient.patientId)||'')};
-    var sectionCopy=(sections||[]).map(function(s){ var x={kind:String(s.kind||''),body:String(s.body||'')}; try{Object.freeze(x);}catch(e){} return x; });
+    var sectionCopy=(sections||[]).map(function(s){
+      var x={kind:String(s.kind||''),body:String(s.body||'')};
+      if(x.kind==='billing'){
+        var typed=_athenaCanonicalBilling((s&&s.billing)||{});
+        x.billing={emCode:String(typed.emCode||''),cptCodes:(typed.cptCodes||[]).slice(),invalid:(typed.invalid||[]).slice()};
+        try{Object.freeze(x.billing.cptCodes);Object.freeze(x.billing.invalid);Object.freeze(x.billing);}catch(e0){}
+      }
+      try{Object.freeze(x);}catch(e){} return x;
+    });
     var expectedCopy=visitContext?{visitDate:String(visitContext.visitDate||visitContext.encounterDate||''),provider:String(visitContext.provider||visitContext.providerName||''),appointmentId:String(visitContext.appointmentId||visitContext.id||''),encounterId:String(visitContext.encounterId||visitContext.visitId||''),encounterUrl:String(visitContext.encounterUrl||visitContext.visitUrl||'')}:null;
     var hashInput={patient:patientCopy,sections:sectionCopy};
     var wf=window.__mlsWriteFlow;
@@ -14071,20 +14604,23 @@ function _athenaShowReceipt(who, results, partial, immutablePatient, sections, v
         +'<div style="font-size:11.5px;color:#385b49;margin-top:2px">&rarr; '+esc(r.dest)+'</div>'+itemsHtml+'</div>';
     }).join('');
     var hasNote=sectionCopy.some(function(s){return s.kind==='note'&&s.body.trim();});
-    var hasBilling=sectionCopy.some(function(s){return s.kind==='billing'&&s.body.trim();});
+    var billingSection=sectionCopy.filter(function(s){return s.kind==='billing';})[0]||null;
+    var billingInvalid=billingSection&&billingSection.billing&&billingSection.billing.invalid?billingSection.billing.invalid:[];
+    var hasBilling=sectionCopy.some(function(s){return s.kind==='billing'&&s.body.trim();})&&!billingInvalid.length;
     var historicalContextMissing=!!(visitContext&&visitContext.historical&&(!expectedCopy||!expectedCopy.visitDate||!expectedCopy.provider));
     var historicalWarning=historicalContextMissing?'<div style="background:#fff0f0;border:1px solid #e4aaaa;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#8b2525;margin-top:8px"><b>Athena actions disabled for this saved visit.</b> Its stored record does not contain both the original encounter date and provider. MLS will not substitute the record save time or the currently signed-in provider, because that could target the wrong historical encounter.</div>':'';
+    var billingWarning=billingInvalid.length?'<div style="background:#fff0f0;border:1px solid #e4aaaa;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#8b2525;margin-top:8px"><b>Billing action disabled.</b> The stored coding fields conflict or contain an invalid item. Regenerate or correct the suggested coding before confirming; MLS will not guess which codes are intended.</div>':'';
     var actionStyle='border:1px solid #cfdad4;background:#fff;color:#204034;border-radius:10px;padding:10px 11px;font-size:12.5px;font-weight:750;cursor:pointer;text-align:left';
     var card=document.createElement('div'); card.id='athenaReceipt';
     card.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(10,25,50,.45);display:flex;align-items:center;justify-content:center;padding:18px';
     card.innerHTML='<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 24px 70px rgba(10,30,70,.4);padding:20px 22px">'
       +'<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:17px;font-weight:800;color:#204034">Review what goes to Athena - '+esc(who||'patient')+'</div><div style="font-size:12px;color:#4f665b;margin-top:2px">'+esc(when+identityLine)+'</div></div><button type="button" onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" aria-label="Close" style="background:none;border:none;font-size:22px;color:#66766d;cursor:pointer;line-height:1">&times;</button></div>'
-      +'<div style="font-size:12.5px;color:#204034;margin:10px 0 12px">Review the exact destination list. Nothing changes until you choose one action and confirm the Athena patient and encounter.</div>'
-      +rows+historicalWarning
+      +'<div style="font-size:12.5px;color:#204034;margin:10px 0 12px">Review the exact destination list. Nothing changes until you choose one action and confirm the Athena patient and encounter. The final Confirm button immediately performs only that named action.</div>'
+      +rows+historicalWarning+billingWarning
       +'<div id="athenaReceiptInitialState" style="background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#6d5010;margin-top:4px"><b>Nothing has changed yet.</b> Writing is unsigned and requires an exact patient/date/provider/encounter/editor check plus confirmation. Billing stages exact E/M and CPT/HCPCS codes only; units, modifiers and diagnosis links remain manual, and no claim is submitted. Save verifies this exact reviewed note in the encounter editor before saving, but does not sign or bill. Sign &amp; Save remains locked until this receipt verifies its exact note write. Orders and prescriptions remain separate and manual.</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'
       +'<button type="button" id="athenaReceiptWrite" onclick="_athenaReceiptAction(\'write_note\')" '+((hasNote&&!historicalContextMissing)?'':'disabled ')+'style="'+actionStyle+'"><b>Write reviewed note</b><br><span style="font-weight:500;color:#4f665b">Unsigned note only; exact encounter confirmation</span></button>'
-      +'<button type="button" id="athenaReceiptBilling" onclick="_athenaReceiptAction(\'stage_billing\')" '+((hasBilling&&!historicalContextMissing)?'':'disabled ')+'style="'+actionStyle+'"><b>Stage billing codes</b><br><span style="font-weight:500;color:#4f665b">Athena Billing / Charges · no claim submission</span></button>'
+      +'<button type="button" id="athenaReceiptBilling" onclick="_athenaReceiptAction(\'stage_billing\')" '+((hasBilling&&!historicalContextMissing)?'':'disabled ')+'style="'+actionStyle+'"><b>Add confirmed billing codes to Athena</b><br><span style="font-weight:500;color:#4f665b">Final confirmation stages exact codes · no claim</span></button>'
       +'<button type="button" id="athenaReceiptSave" '+((historicalContextMissing||!hasNote)?'disabled ':'')+'onclick="_athenaReceiptAction(\'save_draft\')" style="'+actionStyle+'"><b>Save draft in Athena</b><br><span style="font-weight:500;color:#4f665b">Athena encounter note · does not sign or bill</span></button>'
       +'<button type="button" id="athenaReceiptSign" disabled aria-disabled="true" title="Write and verify this exact reviewed note in the exact Athena encounter first." onclick="_athenaReceiptAction(\'sign_encounter\')" style="'+actionStyle+';background:#e5ebe8;color:#66766d;cursor:not-allowed"><b>Sign &amp; Save in Athena</b><br><span style="font-weight:500;color:#66766d">Athena encounter note · locked until write verified</span></button>'
       +'</div><div id="athenaReceiptSignWhy" style="margin-top:7px;font-size:11.8px;color:#6d5010">Sign &amp; Save is disabled until this receipt writes and verifies the exact reviewed note in the exact Athena encounter. It never runs automatically.</div><div id="athenaReceiptStatus" role="status" style="display:none;margin-top:10px;border-radius:8px;background:#f7f9fb;border:1px solid #e2e8f2;padding:9px 10px;font-size:12.5px"></div>'
@@ -14098,13 +14634,22 @@ function _athenaShowReceipt(who, results, partial, immutablePatient, sections, v
 /* Review the superbill routing, then optionally stage it as an independent,
    exact-encounter-confirmed action. This never submits a claim. */
 function pushSuperbillToAthena(){
-  var c=(typeof currentCoding!=='undefined')?currentCoding:null;
-  if(!c || (!c.em && !(c.cpt&&c.cpt.length) && !(c.icd&&c.icd.length))){ try{ toast('Generate the note + coding first — there are no charges to review yet.','err'); }catch(e){} return; }
-  var p=(typeof activePatient==='function')?activePatient():null; var who=p?p.name:'this patient';
-  var lines=[]; if(c.em) lines.push('• E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('• CPT  '+x); }); if(c.icd&&c.icd.length) c.icd.forEach(function(x){ lines.push('• Dx (attach)  '+x); });
-  var body='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these ICD-10 diagnoses to the charges: '+c.icd.join('; ')):'')+(p&&p.name?('\n\nPatient: '+p.name):'');
-  var immutablePatient=p?{name:String(p.name||''),dob:String(p.dob||''),mrn:String(p.mrn||p.athenaId||''),patientId:String(p.id||'')}:null;
-  _athenaPushPlan([{kind:'billing', body:body}], who, immutablePatient);
+  var binding=_athenaBoundVisitForAction('Superbill',true); if(!binding)return;
+  var snap=currentSuperbillSnapshot;
+  if(!snap||snap.bindingId!==binding.id){
+    try{toast('This Superbill is stale. Open Superbill again to review and freeze the current codes before confirming. Nothing changed in Athena.','err');}catch(e){}
+    return;
+  }
+  var billing={emCode:String(snap.billing.emCode||''),cptCodes:(snap.billing.cptCodes||[]).slice(),invalid:(snap.billing.invalid||[]).slice()};
+  if(billing.invalid.length){try{toast('The frozen Superbill contains conflicting or invalid coding. Reopen it after correcting the codes. Nothing changed in Athena.','err');}catch(e0){}return;}
+  if(!billing.emCode&&!billing.cptCodes.length){ try{ toast('No exact E/M or CPT/HCPCS codes are ready. Review the suggested coding first.','err'); }catch(e){} return; }
+  var wf=window.__mlsWriteFlow; var status=document.getElementById('billAthenaStatus');
+  if(!wf||typeof wf.startAthenaAction!=='function'){
+    if(status){status.style.display='block';status.style.color='#9f2d2d';status.textContent='MLS Assist is still loading. Nothing changed; wait a moment and try again.';}
+    try{toast('MLS Assist is still loading. Nothing changed.','err');}catch(e){} return;
+  }
+  if(status){status.style.display='block';status.style.color='#6f5a20';status.textContent='Checking the exact Athena patient, encounter and Billing / Charges destination read-only…';}
+  wf.startAthenaAction('stage_billing',{patient:snap.patient,billing:billing,statusEl:status,expectedContext:snap.expectedContext||null,noteTimestamp:snap.noteTimestamp||null,requireExpectedVisit:snap.historical===true});
 }
 /* Preview a SAVED visit using the identity stored with that record. Never use
    whichever patient happens to be active when History is opened. */
@@ -14113,22 +14658,19 @@ function pushHistoryNoteToAthena(id){
   var n=ns.find(function(x){ return x.id===id; }); if(!n){ try{ toast('That visit no longer exists.','err'); }catch(e){} return; }
   var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ try{ toast('This visit has no note text to review.','err'); }catch(e){} return; }
   var c=n.coding||null; var orders=Array.isArray(n.orders)?n.orders:[];
-  var savedPatient=null;
-  try{ if(n.patientId&&typeof findPatient==='function') savedPatient=findPatient(n.patientId)||null; }catch(e){}
-  var immutablePatient=savedPatient?{name:String(savedPatient.name||''),dob:String(savedPatient.dob||''),mrn:String(savedPatient.mrn||savedPatient.athenaId||''),patientId:String(savedPatient.id||n.patientId||'')}:{name:String(n.patient||''),dob:'',mrn:'',patientId:String(n.patientId||'')};
+  var savedBinding=_athenaBindingForSavedRecord(n);
+  if(savedBinding.routeBlocked){try{toast('This saved visit was quarantined because its patient binding was not safe. Recreate it as a New visit for the correct patient before any Athena action. Nothing changed.','err');}catch(e00){}return;}
+  if(savedBinding.identityConflict){try{toast('This saved visit patient identity conflicts with its linked chart. Correct or reattach it before any Athena action. Nothing changed.','err');}catch(e0){}return;}
+  var immutablePatient=savedBinding.patient;
   var who=immutablePatient.name||'this saved patient';
   var plan=[{kind:'note', body:'NOTE TEXT:\n'+bundle}]; var lines=[ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest];
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+' ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
-  if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
+  if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb,billing:_athenaCanonicalBilling(c)}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
   if(orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+' ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
   /* Historical writes must use visit metadata stored with this record. The
      record's later save/update time and the currently signed-in provider are
      not evidence of the original encounter and must never be substituted. */
-  var noteTimestamp=Number(n.visitTimestamp||n.encounterTimestamp||0)||null;
-  var noteDate=String(n.visitDate||n.noteDate||n.appt_date||n.apptDate||'').slice(0,10);
-  if(!noteDate&&noteTimestamp){ try{ noteDate=new Date(noteTimestamp).toISOString().slice(0,10); }catch(e){} }
-  var noteProvider=String(n.provider||n.providerName||'').trim();
-  var visitContext={historical:true,visitDate:noteDate,provider:noteProvider,noteTimestamp:noteTimestamp,appointmentId:String(n.appointmentId||n.apptId||n.scheduleAppointmentId||''),encounterId:String(n.encounterId||n.athenaEncounterId||n.visitId||''),encounterUrl:String(n.encounterUrl||n.athenaEncounterUrl||n.visitUrl||'')};
+  var visitContext=savedBinding.visitContext||{historical:true,noteTimestamp:savedBinding.noteTimestamp||null,visitDate:'',provider:'',appointmentId:'',encounterId:'',encounterUrl:''};
   if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who, immutablePatient, visitContext); else { try{ toast('Could not open the Athena review. Nothing was written.','err'); }catch(e){} }
 }
 function getAutoSendEMR(){ return false; }
@@ -14973,6 +15515,7 @@ function printOrders(){
 
 /* ---- persistence: save orders alongside the current visit note ---- */
 function saveOrdersToHistory(){
+  if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving these orders')) return false;
   if(!currentOrders.length){ toast('No orders to save.','err'); return; }
   // Keep editor note in sync, then persist the visit record (which now carries orders).
   if(currentFormat==='soap'){
@@ -15082,25 +15625,54 @@ function setPaMode(mode){
   const gb=document.getElementById('paGenBtn'); if(gb) gb.innerHTML = isAppeal?'✨ Generate appeal letter':'✨ Generate prior-auth letter';
 }
 async function generatePriorAuth(){
-  const service=paSelectedService();
-  if(!service){ toast('Pick an order or enter the service requested first.','err'); return; }
+  if(!paSelectedService()){ toast('Pick an order or enter the service requested first.','err'); return; }
   if(!hasAI()){ toast('Add your OpenAI key (Settings) to draft this letter.','err'); return; }
-  const isAppeal = paMode==='appeal';
+  if(!currentVisitAthenaBinding){
+    toast('Open or generate this request inside the correct patient visit before drafting prior authorization. Nothing changed in Athena.','err');
+    return;
+  }
+  if(!_athenaGuardBoundEditor('drafting prior authorization')) return;
+  const priorAuthBinding=currentVisitAthenaBinding;
+  const priorAuthEpoch=currentVisitAthenaEpoch;
+  const _readPriorAuthSources=()=>{
+    const noteEl=document.getElementById('noteBox');
+    const noteShown=!!(noteEl&&noteEl.style.display!=='none');
+    const soapNow=(noteShown&&currentFormat==='soap')?noteEl.value:currentSoap;
+    const insuranceNow=(noteShown&&currentFormat!=='soap')?noteEl.value:currentInsurance;
+    const noteNow=(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'';
+    const apNow=activePatient();
+    const ptLineNow=apNow ? ('Patient (de-identified): '+apNow.name+(apNow.dob?(' · DOB/age context: '+apNow.dob):'')+(apNow.sex?(' · '+apNow.sex):'')+(apNow.mrn?(' · MRN '+apNow.mrn):'')) : 'Patient: [patient initials / age — provider to complete]';
+    const dxNow=noteDiagnosisText();
+    const dxLineNow=[dxNow.text, (dxNow.icd&&dxNow.icd.length)?('ICD-10: '+dxNow.icd.join('; ')):''].filter(Boolean).join(' · ') || (ordersDx.text||'[diagnosis — provider to complete]');
+    const appealNow=paMode==='appeal';
+    return {
+      service:paSelectedService(), isAppeal:appealNow, ptLine:ptLineNow,
+      provider:getName()||'[Provider name]', spec:getPreset()||getSpec()||'',
+      dxLine:dxLineNow, note:noteNow, noteFormat:currentFormat,
+      pctx:buildPatientContext(),
+      denialReason:appealNow?(((document.getElementById('paDenialReason')||{}).value)||'Not medically necessary'):'',
+      denialText:appealNow?((((document.getElementById('paDenialText')||{}).value)||'').trim()):'',
+      key:getKey()
+    };
+  };
+  currentNoteText(); // preserve the existing editor-to-note-buffer sync before freezing the request inputs
+  const priorAuthSources=_readPriorAuthSources();
+  const priorAuthSourceFingerprint=JSON.stringify(priorAuthSources);
+  const service=priorAuthSources.service;
+  const isAppeal=priorAuthSources.isAppeal;
   const btn=document.getElementById('paGenBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
-    const ap=activePatient();
-    const ptLine = ap ? ('Patient (de-identified): '+ap.name+(ap.dob?(' · DOB/age context: '+ap.dob):'')+(ap.sex?(' · '+ap.sex):'')+(ap.mrn?(' · MRN '+ap.mrn):'')) : 'Patient: [patient initials / age — provider to complete]';
-    const provider=getName()||'[Provider name]';
-    const spec=getPreset()||getSpec()||'';
-    const dx=noteDiagnosisText();
-    const dxLine=[dx.text, (dx.icd&&dx.icd.length)?('ICD-10: '+dx.icd.join('; ')):''].filter(Boolean).join(' · ') || (ordersDx.text||'[diagnosis — provider to complete]');
-    const note=currentNoteText();
-    const pctx=buildPatientContext();
+    const ptLine=priorAuthSources.ptLine;
+    const provider=priorAuthSources.provider;
+    const spec=priorAuthSources.spec;
+    const dxLine=priorAuthSources.dxLine;
+    const note=priorAuthSources.note;
+    const pctx=priorAuthSources.pctx;
     let sys, user;
     if(isAppeal){
-      const reason=(document.getElementById('paDenialReason')||{}).value||'Not medically necessary';
-      const denialText=((document.getElementById('paDenialText')||{}).value||'').trim();
+      const reason=priorAuthSources.denialReason;
+      const denialText=priorAuthSources.denialText;
       sys=`You are a physician's assistant drafting a PAYER-READY APPEAL LETTER addressed to a health insurance plan's appeals / utilization-management department, appealing the DENIAL of a previously requested service. Write a complete, professional business letter that DIRECTLY REBUTS the specific stated denial reason.
 
 STRUCTURE:
@@ -15146,8 +15718,14 @@ CRITICAL HONESTY RULES:
 Return ONLY the letter text, no preamble, no markdown fences.`;
       user='REQUESTED SERVICE / ITEM:\n'+service+'\n\n'+ptLine+'\nRequesting provider: '+provider+(spec?(' ('+spec+')'):'')+'\nWorking diagnosis: '+dxLine+'\n\nVISIT NOTE (sole source of clinical facts — do not invent beyond this):\n'+(note||'[No note generated — provider to complete clinical narrative]')+(pctx?('\n\nPATIENT CHART BACKGROUND (history/meds/allergies — for context; do not invent new findings):\n'+pctx):'');
     }
-    currentPriorAuth=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
-    document.getElementById('paLetter').value=currentPriorAuth;
+    const priorAuthDraft=(await aiCallRaw(sys,user,priorAuthSources.key,{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    if(!_athenaAsyncBindingStillSafe(priorAuthBinding,'prior-authorization drafting',priorAuthEpoch)) return;
+    if(JSON.stringify(_readPriorAuthSources())!==priorAuthSourceFingerprint){
+      toast('The prior-authorization inputs changed while the letter was being drafted, so MLS discarded that older result. Review the current visit and draft again. Nothing changed in Athena.','err');
+      return;
+    }
+    currentPriorAuth=priorAuthDraft;
+    document.getElementById('paLetter').value=priorAuthDraft;
     document.getElementById('paResultWrap').style.display='block';
     document.getElementById('paResultWrap').scrollIntoView({behavior:'smooth',block:'nearest'});
     toast((isAppeal?'Appeal letter':'Prior-auth letter')+' drafted. Review and complete any [bracketed] items.','ok');
@@ -15807,6 +16385,27 @@ function mipsToHtml(text){
 async function runMipsCheck(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   if(!hasAI()){ toast('Add your OpenAI key (Settings) to run a MIPS check.','err'); return; }
+  if(!currentVisitAthenaBinding){
+    toast('Open or generate this note inside the correct patient visit before running a MIPS check. Nothing changed in Athena.','err');
+    return;
+  }
+  if(!_athenaGuardBoundEditor('running a MIPS check')) return;
+  const mipsBinding=currentVisitAthenaBinding;
+  const mipsEpoch=currentVisitAthenaEpoch;
+  const _readMipsSources=()=>{
+    const noteEl=document.getElementById('noteBox');
+    const noteShown=!!(noteEl&&noteEl.style.display!=='none');
+    const soapNow=(noteShown&&currentFormat==='soap')?noteEl.value:currentSoap;
+    const insuranceNow=(noteShown&&currentFormat!=='soap')?noteEl.value:currentInsurance;
+    return {
+      note:(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'',
+      noteFormat:currentFormat,
+      key:getKey()
+    };
+  };
+  currentNoteText(); // preserve the existing editor-to-note-buffer sync before freezing the request inputs
+  const mipsSources=_readMipsSources();
+  const mipsSourceFingerprint=JSON.stringify(mipsSources);
   const btn=document.getElementById('mipsBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Checking…';
   try{
@@ -15824,9 +16423,15 @@ RULES:
 - For each measure output one line: "<Measure name>: MET" or "<Measure name>: GAP — <one concise documentation snippet the provider could add to capture it>" or "<Measure name>: N/A (<short reason>)".
 - Keep snippets short, realistic, and clinically appropriate; never instruct the provider to document something that did not happen — phrase snippets as prompts to document real care.
 - This is advisory only. Output a clean plain-text list, one measure per line, no markdown fences, no preamble.`;
-    const user='VISIT NOTE:\n'+currentNoteText();
-    currentMips=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
-    document.getElementById('mipsBody').innerHTML=mipsToHtml(currentMips);
+    const user='VISIT NOTE:\n'+mipsSources.note;
+    const mipsDraft=(await aiCallRaw(sys,user,mipsSources.key,{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    if(!_athenaAsyncBindingStillSafe(mipsBinding,'MIPS checking',mipsEpoch)) return;
+    if(JSON.stringify(_readMipsSources())!==mipsSourceFingerprint){
+      toast('The note changed while the MIPS check was running, so MLS discarded that older result. Review the current visit and run the check again. Nothing changed in Athena.','err');
+      return;
+    }
+    currentMips=mipsDraft;
+    document.getElementById('mipsBody').innerHTML=mipsToHtml(mipsDraft);
     document.getElementById('mipsCard').style.display='block';
     try{ expandCardSliver('mipsCard'); }catch(e){}
     document.getElementById('mipsCard').scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -15935,7 +16540,7 @@ function regenerateNote(){
   // clear derived outputs so they re-generate from the fresh note
   currentAVS=''; currentReferral=''; currentRecs=null;
   ['avsCard','refCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-  generateNote();
+  return generateNote();
 }
 
 /* =========================================================
@@ -15951,19 +16556,47 @@ function currentNoteText(){
 async function generateAVS(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   const btn=document.getElementById('avsBtn');
+  if(!currentVisitAthenaBinding){
+    toast('Open or generate this note inside the correct patient visit before creating a patient summary. Nothing changed in Athena.','err');
+    return;
+  }
+  if(!_athenaGuardBoundEditor('creating a patient summary')) return;
   if(!hasAI()){
     currentAVS=offlineAVS();
     showExtra('avsCard','avsBody',currentAVS);
     toast(backendMode()?'':'Offline example summary shown. Add your key for any visit.','');
     return;
   }
+  const avsBinding=currentVisitAthenaBinding;
+  const avsEpoch=currentVisitAthenaEpoch;
+  const _readAvsSources=()=>{
+    const noteEl=document.getElementById('noteBox');
+    const noteShown=!!(noteEl&&noteEl.style.display!=='none');
+    const soapNow=(noteShown&&currentFormat==='soap')?noteEl.value:currentSoap;
+    const insuranceNow=(noteShown&&currentFormat!=='soap')?noteEl.value:currentInsurance;
+    return {
+      note:(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'',
+      noteFormat:currentFormat,
+      pctx:buildPatientContext(),
+      prefs:docPrefsBlock(),
+      key:getKey()
+    };
+  };
+  currentNoteText(); // preserve the existing editor-to-note-buffer sync before freezing the request inputs
+  const avsSources=_readAvsSources();
+  const avsSourceFingerprint=JSON.stringify(avsSources);
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
   try{
-    const sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+docPrefsBlock();
-    const pctx=buildPatientContext();
-    const user='CLINICAL NOTE:\n'+currentNoteText()+(pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+pctx):'');
-    currentAVS=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
-    showExtra('avsCard','avsBody',currentAVS);
+    const sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+avsSources.prefs;
+    const user='CLINICAL NOTE:\n'+avsSources.note+(avsSources.pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+avsSources.pctx):'');
+    const avsDraft=(await aiCallRaw(sys,user,avsSources.key,{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    if(!_athenaAsyncBindingStillSafe(avsBinding,'patient-summary drafting',avsEpoch)) return;
+    if(JSON.stringify(_readAvsSources())!==avsSourceFingerprint){
+      toast('The note or patient background changed while the summary was being written, so MLS discarded that older result. Review the current visit and generate it again. Nothing changed in Athena.','err');
+      return;
+    }
+    currentAVS=avsDraft;
+    showExtra('avsCard','avsBody',avsDraft);
     toast('Patient summary ready. Review before handing out.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='👤 Patient summary'; }
@@ -15975,6 +16608,11 @@ async function generateAVS(){
 async function generateReferral(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   const btn=document.getElementById('refBtn');
+  if(!currentVisitAthenaBinding){
+    toast('Open or generate this note inside the correct patient visit before drafting a referral. Nothing changed in Athena.','err');
+    return;
+  }
+  if(!_athenaGuardBoundEditor('drafting a referral')) return;
   if(!hasAI()){
     currentReferral=offlineReferral();
     showExtra('refCard','refBody',currentReferral);
@@ -15983,15 +16621,39 @@ async function generateReferral(){
   }
   const to=prompt('Refer to which specialty / consultant? (e.g. Cardiology, Dr. Lee)','Specialist');
   if(to===null){ return; } // user cancelled
+  const referralBinding=currentVisitAthenaBinding;
+  const referralEpoch=currentVisitAthenaEpoch;
+  const _readReferralSources=()=>{
+    const noteEl=document.getElementById('noteBox');
+    const noteShown=!!(noteEl&&noteEl.style.display!=='none');
+    const soapNow=(noteShown&&currentFormat==='soap')?noteEl.value:currentSoap;
+    const insuranceNow=(noteShown&&currentFormat!=='soap')?noteEl.value:currentInsurance;
+    return {
+      to:to.trim()||'Specialist',
+      from:getName()||'Referring provider',
+      spec:getPreset()||getSpec()||'',
+      note:(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'',
+      noteFormat:currentFormat,
+      pctx:buildPatientContext(),
+      prefs:docPrefsBlock(),
+      key:getKey()
+    };
+  };
+  currentNoteText(); // preserve the existing editor-to-note-buffer sync before freezing the request inputs
+  const referralSources=_readReferralSources();
+  const referralSourceFingerprint=JSON.stringify(referralSources);
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
-    const from=getName()||'Referring provider';
-    const spec=getPreset()||getSpec()||'';
-    const pctx=buildPatientContext();
-    const sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. Use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`+docPrefsBlock();
-    const user=`Referring provider: ${from}${spec?' ('+spec+')':''}\nReferring to: ${to.trim()||'Specialist'}\n\nCLINICAL NOTE:\n${currentNoteText()}`+(pctx?('\n\nPATIENT BACKGROUND (chart history):\n'+pctx):'');
-    currentReferral=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
-    showExtra('refCard','refBody',currentReferral);
+    const sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. Use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`+referralSources.prefs;
+    const user=`Referring provider: ${referralSources.from}${referralSources.spec?' ('+referralSources.spec+')':''}\nReferring to: ${referralSources.to}\n\nCLINICAL NOTE:\n${referralSources.note}`+(referralSources.pctx?('\n\nPATIENT BACKGROUND (chart history):\n'+referralSources.pctx):'');
+    const referralDraft=(await aiCallRaw(sys,user,referralSources.key,{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    if(!_athenaAsyncBindingStillSafe(referralBinding,'referral drafting',referralEpoch)) return;
+    if(JSON.stringify(_readReferralSources())!==referralSourceFingerprint){
+      toast('The note, patient background, or referral details changed while the letter was being drafted, so MLS discarded that older result. Review the current visit and draft it again. Nothing changed in Athena.','err');
+      return;
+    }
+    currentReferral=referralDraft;
+    showExtra('refCard','refBody',referralDraft);
     toast('Referral letter drafted. Review before sending.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='✉️ Referral letter'; }
@@ -16092,12 +16754,35 @@ function applyTeachSuggestions(){
 async function runRedFlagScan(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   if(!hasAI()){ toast('Add your OpenAI key (Settings) to run the red-flag scan.','err'); return; }
+  if(!_athenaGuardBoundEditor('red-flag scan')) return;
+  const redFlagBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('red-flag-scan');
+  const redFlagEpoch=currentVisitAthenaEpoch;
+  const redFlagSourceNow=()=>{
+    try{
+      const editor=_athenaEditorFingerprint();
+      const note=currentNoteText();
+      const tr=((document.getElementById('transcript')||{}).value||'').trim();
+      const pctx=buildPatientContext();
+      return {note,tr,pctx,fingerprint:JSON.stringify([editor,note,tr,pctx])};
+    }catch(e){ return null; }
+  };
+  const redFlagSource=redFlagSourceNow();
+  if(!redFlagSource){ toast('Could not safely read the current visit for the red-flag scan.','err'); return; }
+  const redFlagResultStillSafe=()=>{
+    if(!_athenaAsyncBindingStillSafe(redFlagBinding,'the red-flag scan',redFlagEpoch)) return false;
+    const now=redFlagSourceNow();
+    if(!now||now.fingerprint!==redFlagSource.fingerprint){
+      toast('The visit content changed while the red-flag scan was running, so MLS discarded that older result. Run it again for the current visit.','err');
+      return false;
+    }
+    return true;
+  };
   const btn=document.getElementById('redflagBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Scanning…';
   try{
-    const note=currentNoteText();
-    const tr=(document.getElementById('transcript').value||'').trim();
-    const pctx=buildPatientContext();
+    const note=redFlagSource.note;
+    const tr=redFlagSource.tr;
+    const pctx=redFlagSource.pctx;
     const sys=`You are a clinical safety reviewer for a spine / PM&R / pain practice. Review the provided visit note (and transcript) for RED FLAGS that warrant urgent evaluation. Check EACH of these categories:
 1. Cauda equina syndrome (saddle anesthesia, bowel/bladder dysfunction or retention, bilateral sciatica, progressive motor loss)
 2. Progressive or severe neurologic deficit (worsening weakness, foot drop, myelopathy signs)
@@ -16113,10 +16798,12 @@ where STATUS is "PRESENT" if supporting findings are documented, or "NOT MENTION
 
 CRITICAL: Never invent findings. "PRESENT" only when the note actually documents supporting evidence. If nothing is documented for a category, it is "NOT MENTIONED" with evidence "none documented". Start your answer with a single summary line: "OVERALL: <n> red flag(s) present" or "OVERALL: No red flags documented". Then the per-category lines. No markdown, no preamble.`;
     const user='VISIT NOTE:\n'+note+(tr?('\n\nRAW TRANSCRIPT (for additional context):\n'+tr):'')+(pctx?('\n\nPATIENT CHART BACKGROUND:\n'+pctx):'');
-    currentRedFlags=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true});
+    if(!redFlagResultStillSafe()) return;
+    currentRedFlags=String(raw||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     renderRedFlags(currentRedFlags);
     toast('Red-flag scan complete. Advisory — confirm clinically.','ok');
-  }catch(err){ toast(friendlyError(err),'err'); }
+  }catch(err){ if(redFlagResultStillSafe()) toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='🚩 Red-flag scan'; }
 }
 function renderRedFlags(text){
@@ -16161,13 +16848,37 @@ function copyRedFlags(){
 async function generateDifferentials(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   if(!hasAI()){ toast('Add your OpenAI key (Settings) to list differentials.','err'); return; }
+  if(!_athenaGuardBoundEditor('differential generation')) return;
+  const ddxBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('differentials');
+  const ddxEpoch=currentVisitAthenaEpoch;
+  const ddxSourceNow=()=>{
+    try{
+      const editor=_athenaEditorFingerprint();
+      const note=currentNoteText();
+      const tr=((document.getElementById('transcript')||{}).value||'').trim();
+      const cc=(lastEMR&&lastEMR.cc&&lastEMR.cc!=='—')?lastEMR.cc:'';
+      const pctx=buildPatientContext();
+      return {note,tr,cc,pctx,fingerprint:JSON.stringify([editor,note,tr,cc,pctx])};
+    }catch(e){ return null; }
+  };
+  const ddxSource=ddxSourceNow();
+  if(!ddxSource){ toast('Could not safely read the current visit for differential generation.','err'); return; }
+  const ddxResultStillSafe=()=>{
+    if(!_athenaAsyncBindingStillSafe(ddxBinding,'differential generation',ddxEpoch)) return false;
+    const now=ddxSourceNow();
+    if(!now||now.fingerprint!==ddxSource.fingerprint){
+      toast('The visit content changed while differentials were being generated, so MLS discarded that older result. Generate them again for the current visit.','err');
+      return false;
+    }
+    return true;
+  };
   const btn=document.getElementById('ddxBtn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Thinking…';
   try{
-    const note=currentNoteText();
-    const tr=(document.getElementById('transcript').value||'').trim();
-    const cc=(lastEMR&&lastEMR.cc&&lastEMR.cc!=='—')?lastEMR.cc:'';
-    const pctx=buildPatientContext();
+    const note=ddxSource.note;
+    const tr=ddxSource.tr;
+    const cc=ddxSource.cc;
+    const pctx=ddxSource.pctx;
     const sys=`You are an experienced physician assisting a spine / PM&R / pain colleague. From the presentation below, produce a RANKED DIFFERENTIAL DIAGNOSIS (most to least likely given what is documented). For EACH item give:
 - the diagnosis,
 - a one-line rationale grounded in the documented findings,
@@ -16177,10 +16888,12 @@ Be spine/MSK/pain aware (e.g., lumbar radiculopathy, discogenic pain, facet arth
 
 CRITICAL: These are CONSIDERATIONS FOR THE PROVIDER, not a diagnosis. Reason ONLY from documented findings; do not invent symptoms or exam results. End with one line: "These are considerations for the provider, not a diagnosis." No markdown fences.`;
     const user=(cc?('CHIEF COMPLAINT: '+cc+'\n\n'):'')+'VISIT NOTE:\n'+note+(tr?('\n\nRAW TRANSCRIPT:\n'+tr):'')+(pctx?('\n\nPATIENT CHART BACKGROUND:\n'+pctx):'');
-    currentDdx=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true});
+    if(!ddxResultStillSafe()) return;
+    currentDdx=String(raw||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     showExtra('ddxCard','ddxBody',currentDdx);
     toast('Differential considerations ready. For the provider — not a diagnosis.','ok');
-  }catch(err){ toast(friendlyError(err),'err'); }
+  }catch(err){ if(ddxResultStillSafe()) toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='🔍 Differentials'; }
 }
 function copyDdx(){
@@ -16658,6 +17371,31 @@ async function generateHandout(){
     toast(backendMode()?'':'Offline example handout shown. Add your key for any visit.','');
     return;
   }
+  if(!_athenaGuardBoundEditor('patient handout generation')) return;
+  const handoutBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('patient-handout');
+  const handoutEpoch=currentVisitAthenaEpoch;
+  const handoutSourceNow=()=>{
+    try{
+      const editor=_athenaEditorFingerprint();
+      const currentDx=noteDiagnosisText();
+      const currentDxStr=[currentDx.text,currentDx.icd.join('; ')].filter(Boolean).join(' · ')||'the diagnosis from this visit';
+      const note=currentNoteText();
+      const target=((document.getElementById('handoutBody')||{}).value||'');
+      const stored=String(typeof currentHandout==='undefined'?'':currentHandout||'');
+      return {dxStr:currentDxStr,note,fingerprint:JSON.stringify([editor,currentDxStr,note,target,stored])};
+    }catch(e){ return null; }
+  };
+  const handoutSource=handoutSourceNow();
+  if(!handoutSource){ toast('Could not safely read the current visit for the patient handout.','err'); return; }
+  const handoutResultStillSafe=()=>{
+    if(!_athenaAsyncBindingStillSafe(handoutBinding,'patient handout generation',handoutEpoch)) return false;
+    const now=handoutSourceNow();
+    if(!now||now.fingerprint!==handoutSource.fingerprint){
+      toast('The visit content changed while the patient handout was being generated, so MLS discarded that older result. Generate it again for the current visit.','err');
+      return false;
+    }
+    return true;
+  };
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
   try{
     const sys=`You are a physical medicine & rehabilitation (PM&R)/spine clinician writing a PLAIN-LANGUAGE PATIENT HANDOUT for a home-exercise and self-care program. Write at about a 6th-grade reading level in a warm, encouraging tone. Use simple section headers:
@@ -16667,14 +17405,16 @@ async function generateHandout(){
 "Call us right away if" (red-flag symptoms — e.g. new weakness, numbness, loss of bowel/bladder control, fever, severe worsening),
 "Follow-up" (when to come back).
 Use ONLY the diagnosis and note provided; do not invent specific medications or test results. End with the exact line: "Follow your physician's specific instructions." Keep it concise and printable.`;
-    const user='DIAGNOSIS: '+dxStr+'\n\nVISIT NOTE (for context):\n'+currentNoteText();
-    currentHandout=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const user='DIAGNOSIS: '+handoutSource.dxStr+'\n\nVISIT NOTE (for context):\n'+handoutSource.note;
+    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true});
+    if(!handoutResultStillSafe()) return;
+    currentHandout=String(raw||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     document.getElementById('handoutBody').value=currentHandout;
     document.getElementById('handoutCard').style.display='block';
     try{ expandCardSliver('handoutCard'); }catch(e){}
     document.getElementById('handoutCard').scrollIntoView({behavior:'smooth',block:'nearest'});
     toast('Patient handout ready. Review and edit before printing.','ok');
-  }catch(err){ toast(friendlyError(err),'err'); }
+  }catch(err){ if(handoutResultStillSafe()) toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='📝 Patient handout'; }
 }
 function offlineHandout(dxStr){
@@ -16818,15 +17558,26 @@ function copyChartSummary(){
    ========================================================= */
 function showSuperbill(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
+  const binding=_athenaBoundVisitForAction('Superbill',false); if(!binding) return;
+  _athenaResetSuperbill(true);
   const c=currentCoding||{};
   const e=lastEMR||{};
-  const provider=getName()||'Clinician';
+  const provider=binding.displayProvider||'Provider unavailable';
   const spec=getPreset()||getSpec()||'';
-  const dateStr=new Date().toLocaleDateString();
-  const ap=activePatient();
-  const patient=document.getElementById('patientLabel').value.trim()||(ap?ap.name:'')||'Unlabeled';
+  const dateStr=binding.displayDate||'Original visit date unavailable';
+  const boundPatient=binding.patient;
+  let activeRecord=null; try{activeRecord=activePatient();}catch(e0){}
+  const ap={name:boundPatient.name,dob:boundPatient.dob,mrn:boundPatient.mrn,patientId:boundPatient.patientId,sex:(activeRecord&&activeRecord.sex)||'',insurance:(activeRecord&&activeRecord.insurance)||null};
+  const patient=boundPatient.name||'Unlabeled';
   const icd=(c.icd&&c.icd.length)?c.icd:[];
   const cpt=(c.cpt&&c.cpt.length)?c.cpt:[];
+  const typedBilling=_athenaCanonicalBilling(c);
+  if(typedBilling.invalid&&typedBilling.invalid.length){ toast('The suggested coding fields conflict or contain an invalid item. Correct or regenerate the coding before opening the Superbill.','err'); return; }
+  const frozenPatient={name:String(ap.name||''),dob:String(ap.dob||''),mrn:String(ap.mrn||''),patientId:String(ap.patientId||'')};
+  const frozenBilling={emCode:String(typedBilling.emCode||''),cptCodes:(typedBilling.cptCodes||[]).slice(),invalid:(typedBilling.invalid||[]).slice()};
+  const frozenContext=binding.historical&&binding.visitContext?{visitDate:String(binding.visitContext.visitDate||''),provider:String(binding.visitContext.provider||''),appointmentId:String(binding.visitContext.appointmentId||''),encounterId:String(binding.visitContext.encounterId||''),encounterUrl:String(binding.visitContext.encounterUrl||'')}:null;
+  currentSuperbillSnapshot={bindingId:binding.id,patient:frozenPatient,billing:frozenBilling,expectedContext:frozenContext,noteTimestamp:binding.noteTimestamp||null,historical:binding.historical===true};
+  try{Object.freeze(frozenPatient);Object.freeze(frozenBilling.cptCodes);Object.freeze(frozenBilling.invalid);Object.freeze(frozenBilling);if(frozenContext)Object.freeze(frozenContext);Object.freeze(currentSuperbillSnapshot);}catch(e1){}
   // Estimated reimbursement from the coded E/M + CPTs (same ballpark fee table as the revenue estimate)
   let estTotal=0, estAny=false; const estParts=[];
   const emBase=c.em?String(c.em).trim().split(/[\s—\-:]/)[0]:'';
@@ -17062,9 +17813,33 @@ async function generateIME(){
     toast('Add your OpenAI key (Settings) to draft an IME report.','err');
     return;
   }
+  if(!_athenaGuardBoundEditor('IME report generation')) return;
+  const imeBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('ime-report');
+  const imeEpoch=currentVisitAthenaEpoch;
+  const imeSourceNow=()=>{
+    try{
+      const editor=_athenaEditorFingerprint();
+      const note=currentNoteText();
+      const transcript=((document.getElementById('transcript')||{}).value||'').trim();
+      const pctx=buildPatientContext();
+      const prefs=docPrefsBlock();
+      return {note,transcript,pctx,prefs,fingerprint:JSON.stringify([editor,note,transcript,pctx,prefs])};
+    }catch(e){ return null; }
+  };
+  const imeSource=imeSourceNow();
+  if(!imeSource){ toast('Could not safely read the current visit for the IME report.','err'); return; }
+  const imeResultStillSafe=()=>{
+    if(!_athenaAsyncBindingStillSafe(imeBinding,'IME report generation',imeEpoch)) return false;
+    const now=imeSourceNow();
+    if(!now||now.fingerprint!==imeSource.fingerprint){
+      toast('The visit content changed while the IME report was being generated, so MLS discarded that older result. Generate it again for the current visit.','err');
+      return false;
+    }
+    return true;
+  };
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
-    const pctx=buildPatientContext();
+    const pctx=imeSource.pctx;
     const sys=`You are drafting an INDEPENDENT MEDICAL EXAMINATION (IME) report in correct medico-legal format for a physician examiner. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Use UPPERCASE section headers exactly as listed, in this order, each on its own line:
 
 1. Header block (label each on its own line): Examinee name; Date of birth; Date of examination; Examiner [name, credentials]; Referral source; Claim/Case number; Date of injury/onset.
@@ -17082,12 +17857,14 @@ async function generateIME(){
 13. ANSWERS TO REFERRAL QUESTIONS — address each referral question; bracket the questions if none are documented.
 14. EXAMINER ATTESTATION — a certification that the examination was performed for evaluation purposes only, that no physician-patient treating relationship is established, and that the opinions are the examiner's own and held to a reasonable degree of medical certainty; followed by a signature/credentials/date block (use bracketed placeholders for the signature, name, credentials, and date).
 
-CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the note/transcript/background. NEVER fabricate findings, history, causation, impairment percentages, MMI status, restrictions, or records. For anything not present in the record, use a clearly [bracketed placeholder]. This is a DRAFT for the examining physician to verify, complete, and sign — do not present uncertain items as established fact.`+docPrefsBlock();
-    const user='CLINICAL NOTE:\n'+currentNoteText()+(tr?('\n\nRAW TRANSCRIPT (for additional context):\n'+tr):'')+(pctx?('\n\nPATIENT BACKGROUND (chart history — context only, do not invent new findings):\n'+pctx):'');
-    currentIME=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the note/transcript/background. NEVER fabricate findings, history, causation, impairment percentages, MMI status, restrictions, or records. For anything not present in the record, use a clearly [bracketed placeholder]. This is a DRAFT for the examining physician to verify, complete, and sign — do not present uncertain items as established fact.`+imeSource.prefs;
+    const user='CLINICAL NOTE:\n'+imeSource.note+(imeSource.transcript?('\n\nRAW TRANSCRIPT (for additional context):\n'+imeSource.transcript):'')+(pctx?('\n\nPATIENT BACKGROUND (chart history — context only, do not invent new findings):\n'+pctx):'');
+    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true});
+    if(!imeResultStillSafe()) return;
+    currentIME=String(raw||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     showExtra('imeCard','imeBody',currentIME);
     toast('IME report drafted. DRAFT — verify, complete, and sign before use.','ok');
-  }catch(err){ toast(friendlyError(err),'err'); }
+  }catch(err){ if(imeResultStillSafe()) toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='🧾 IME report'; }
 }
 function offlineIME(){
@@ -21221,6 +21998,41 @@ async function runCustomWidget(id,opts){
     if(opts.manual) toast('Add your OpenAI key (Settings) to fill this widget.','err');
     return;
   }
+  if(!_athenaGuardBoundEditor('custom widget generation')) return;
+  const customWidgetBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('custom-widget');
+  const customWidgetEpoch=currentVisitAthenaEpoch;
+  const customWidgetSourceNow=()=>{
+    try{
+      const editor=_athenaEditorFingerprint();
+      const liveWidget=getCustomWidgets().find(x=>x.id===id);
+      if(!liveWidget) return null;
+      let payload=cwBuildUserPayload();
+      if(liveWidget.useHistory){
+        const prior=cwBuildPriorVisits();
+        if(prior) payload+='\n\nPRIOR VISITS (most recent first — use ONLY for trends/longitudinal blocks; do NOT treat as today\'s findings):\n'+prior;
+      }
+      const priorOutput=String(_cwLatest[id]||'');
+      const priorState=JSON.stringify(_cwState[id]||null);
+      return {widget:liveWidget,payload,fingerprint:JSON.stringify([editor,liveWidget,payload,priorOutput,priorState])};
+    }catch(e){ return null; }
+  };
+  const customWidgetSource=customWidgetSourceNow();
+  if(!customWidgetSource){
+    if(opts.manual) toast('Could not safely read this widget and the current visit.','err');
+    return;
+  }
+  const customWidgetRequestEpoch=(Number(body._mlsArtifactRequestEpoch)||0)+1;
+  body._mlsArtifactRequestEpoch=customWidgetRequestEpoch;
+  const customWidgetResultStillSafe=()=>{
+    if(!_athenaAsyncBindingStillSafe(customWidgetBinding,'custom widget generation',customWidgetEpoch)) return false;
+    if(document.getElementById('cwBody_'+id)!==body||Number(body._mlsArtifactRequestEpoch)!==customWidgetRequestEpoch) return false;
+    const now=customWidgetSourceNow();
+    if(!now||now.fingerprint!==customWidgetSource.fingerprint){
+      toast('The visit or widget changed while this custom widget was being generated, so MLS discarded that older result. Refresh it again for the current visit.','err');
+      return false;
+    }
+    return true;
+  };
   const rbtn=document.getElementById('cwRefresh_'+id);
   if(rbtn) rbtn.disabled=true;
   body.style.color='var(--muted)';
@@ -21234,22 +22046,21 @@ async function runCustomWidget(id,opts){
       +'This is an advisory DRAFT the provider reviews — never a directive. '
       +(hasLayout?'':'If the visit contains nothing relevant to this widget, output exactly: Nothing documented this visit for this widget.')
       +'\n\n'+outSpec;
-    let payload=cwBuildUserPayload();
-    if(w.useHistory){
-      const prior=cwBuildPriorVisits();
-      if(prior) payload+='\n\nPRIOR VISITS (most recent first — use ONLY for trends/longitudinal blocks; do NOT treat as today\'s findings):\n'+prior;
-    }
-    const raw=(await aiCallRaw(sys,payload,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const response=await aiCallRaw(sys,customWidgetSource.payload,getKey(),{freeform:true});
+    if(!customWidgetResultStillSafe()) return;
+    const raw=String(response||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     _cwLatest[id]=raw;
     delete _cwState[id];           // fresh fill → recompute block state from this reply
     cwRenderOutput(w,raw);
   }catch(err){
-    body.innerHTML='';
-    body.textContent='Couldn\'t generate this widget for this visit.';
-    body.style.color='var(--muted)';
-    if(opts.manual) toast(friendlyError(err),'err');
+    if(customWidgetResultStillSafe()){
+      body.innerHTML='';
+      body.textContent='Couldn\'t generate this widget for this visit.';
+      body.style.color='var(--muted)';
+      if(opts.manual) toast(friendlyError(err),'err');
+    }
   }finally{
-    if(rbtn) rbtn.disabled=false;
+    if(rbtn&&document.getElementById('cwRefresh_'+id)===rbtn&&Number(body._mlsArtifactRequestEpoch)===customWidgetRequestEpoch) rbtn.disabled=false;
   }
 }
 function refreshCustomWidget(id){ runCustomWidget(id,{manual:true}); }
@@ -21263,9 +22074,33 @@ async function autoPopulateCustomWidgets(){
     if(!hasAI()) return;
     const list=getCustomWidgets().filter(w=>w.auto);
     if(!list.length) return;
+    if(!_athenaGuardBoundEditor('automatic custom widget generation')) return;
+    const autoWidgetBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('auto-custom-widgets');
+    const autoWidgetEpoch=currentVisitAthenaEpoch;
+    const autoWidgetSourceNow=()=>{
+      try{
+        const editor=_athenaEditorFingerprint();
+        const liveList=getCustomWidgets().filter(w=>w.auto);
+        const payload=cwBuildUserPayload();
+        const prior=liveList.some(w=>w.useHistory)?cwBuildPriorVisits():'';
+        return JSON.stringify([editor,liveList,payload,prior]);
+      }catch(e){ return ''; }
+    };
+    const autoWidgetSourceFingerprint=autoWidgetSourceNow();
+    if(!autoWidgetSourceFingerprint) return;
+    const autoWidgetResultStillSafe=()=>{
+      if(!_athenaAsyncBindingStillSafe(autoWidgetBinding,'automatic custom widget generation',autoWidgetEpoch)) return false;
+      if(autoWidgetSourceNow()!==autoWidgetSourceFingerprint){
+        toast('The visit or widget list changed while custom widgets were being generated, so MLS stopped that older fill. Generate or refresh them for the current visit.','err');
+        return false;
+      }
+      return true;
+    };
     renderCustomWidgets();                 // make sure every card exists & is registered
     for(const w of list){
+      if(!autoWidgetResultStillSafe()) return;
       try{ await runCustomWidget(w.id,{manual:false}); }catch(e){ /* per-widget — keep going */ }
+      if(!autoWidgetResultStillSafe()) return;
     }
   }catch(e){ /* never block the note flow */ }
 }

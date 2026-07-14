@@ -1,4 +1,4 @@
-/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.2)
+/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.3)
  *
  *  THE full design-language MLS Assistant panel (Slice 3 of the Assistant rework).
  *  STAGING-FIRST, then prod via the data: staging marker (self-gated exactly like the
@@ -48,7 +48,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "asst-2.1.2";
+  var VERSION = "asst-2.1.3";
   try { if (window.__mlsAsst && window.__mlsAsst.installed) return; } catch (e) { return; }
 
   /* ---------- self-gate: staging page OR prod staging-marker (active on both) ---------- */
@@ -448,8 +448,30 @@
    *  PART B - the panel
    * ===================================================================== */
   var PANEL_ID = "mlsAsstPanel", FAB_ID = "mlsAsstFab", STYLE_ID = "mlsAsstStyle";
-  var history = [];           // chat: {role:'user'|'ai'|'pending', text}
-  var busy = false;
+  /* Chat is patient-owned state. A single module-global array allowed a delayed
+     patient-A reply to land in the thread after the doctor had switched to B.
+     Keep one bucket (and one in-flight request slot) per stable patient id. */
+  var CHAT_NONE = "patient:none";
+  var chatStates = Object.create(null); // owner -> {history,busy,requestSeq}
+  var renderedChatOwner = "";
+  var patientPickedHandler = null;
+  function chatOwnerKey() {
+    var id = safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : ""; }, "");
+    if (id != null && String(id).trim()) return "patient:" + String(id).trim();
+    var p = safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null);
+    if (p && p.id != null && String(p.id).trim()) return "patient:" + String(p.id).trim();
+    return CHAT_NONE;
+  }
+  function chatState(owner) {
+    owner = owner || chatOwnerKey();
+    if (!chatStates[owner]) chatStates[owner] = { history: [], busy: false, requestSeq: 0 };
+    return chatStates[owner];
+  }
+  function ensureGreeting(owner) {
+    var st = chatState(owner);
+    if (!st.history.length) st.history.push({ role: "ai", text: "Hi - I'm the MLS Assistant. Use the Schedule tab to pull and pick your patients, or ask me anything here. The status above shows your real athenaOne connection." });
+    return st;
+  }
   var unsub = null;
   var tab = "schedule";       // 'schedule' | 'chat'
   var selDate = todayStr();
@@ -738,7 +760,13 @@
   }
 
   /* ---------- CHAT pane ---------- */
-  function renderThread() {
+  function renderThread(owner) {
+    owner = owner || chatOwnerKey();
+    /* A completed request may belong to a hidden patient bucket. Store it
+       there, but never repaint that reply into the currently selected chart. */
+    if (owner !== chatOwnerKey()) return;
+    var history = ensureGreeting(owner).history;
+    renderedChatOwner = owner;
     var t = $(PANEL_ID) && $(PANEL_ID).querySelector(".as-thread");
     if (!t) return;
     var html = "";
@@ -751,7 +779,13 @@
     var body = $(PANEL_ID) && $(PANEL_ID).querySelector(".as-body");
     if (body && tab === "chat") body.scrollTop = body.scrollHeight;
   }
-  function addMsg(role, text) { history.push({ role: role, text: text }); renderThread(); }
+  function addMsg(role, text, owner, requestId) {
+    owner = owner || chatOwnerKey();
+    var msg = { role: role, text: text };
+    if (requestId != null) msg.requestId = requestId;
+    chatState(owner).history.push(msg);
+    renderThread(owner);
+  }
   function backendReady() {
     var bm = safe(function () { return isFn(window.backendMode) && window.backendMode(); }, false);
     var tok = safe(function () { return isFn(window.bkToken) && window.bkToken(); }, "");
@@ -759,22 +793,26 @@
   }
   function ask(q) {
     q = String(q || "").trim();
-    if (!q || busy) return;
-    addMsg("user", q);
+    var owner = chatOwnerKey();
+    var state = ensureGreeting(owner);
+    if (!q || state.busy) return;
+    addMsg("user", q, owner);
     /* Smart adaptive writeback location: handle "put injections under X instead" or
        "where does everything go?" locally + deterministically (works even offline),
        and tell the doctor exactly where each thing will be written. */
     var _wbr = safe(function () { return window.__mlsWbRouter; }, null);
     if (_wbr && isFn(_wbr.parseCommand)) {
       var _pc = safe(function () { return _wbr.parseCommand(q); }, null);
-      if (_pc && _pc.matched) { addMsg("ai", _pc.reply); return; }
+      if (_pc && _pc.matched) { addMsg("ai", _pc.reply, owner); return; }
     }
     if (!backendReady()) {
-      addMsg("ai", "Sign in to your MLS account to chat with the assistant - it needs your account to read your practice data.");
+      addMsg("ai", "Sign in to your MLS account to chat with the assistant - it needs your account to read your practice data.", owner);
       return;
     }
-    busy = true; setSendEnabled(false);
-    history.push({ role: "pending", text: "Thinking..." }); renderThread();
+    state.busy = true;
+    var requestId = ++state.requestSeq;
+    if (owner === chatOwnerKey()) setSendEnabled(false);
+    state.history.push({ role: "pending", text: "Thinking...", requestId: requestId }); renderThread(owner);
     var base = safe(function () { return window.bkBase(); }, "");
     var tok = safe(function () { return window.bkToken(); }, "");
     var ctx = safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot() : null; }, null);
@@ -790,29 +828,43 @@
         total_patients: (getPatients() || []).length, total_appointments: (appts() || []).length,
         writeback_targets: safe(function () { return (window.__mlsWbRouter && window.__mlsWbRouter.all) ? window.__mlsWbRouter.all() : null; }, null) };
     }, null);
-    var hist = history.filter(function (m) { return m.role === "user" || m.role === "ai"; })
+    var hist = state.history.filter(function (m) { return m.role === "user" || m.role === "ai"; })
                       .map(function (m) { return { role: m.role === "user" ? "user" : "ai", text: m.text }; });
     hist = hist.slice(0, -1);
     var body = { question: q, history: hist };
     if (ctx) body.context = ctx;
     if (asstCtx) body.assistant_context = asstCtx;
-    fetch(base + "/api/copilot", {
+    return fetch(base + "/api/copilot", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok },
       body: JSON.stringify(body)
     }).then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (d) {
-        dropPending();
+        dropPending(owner, requestId);
         var reply = (d && (d.reply || d.text || d.answer)) || "";
         reply = String(reply).trim();
         if (!reply) reply = "The assistant did not return a response. Please try again.";
-        addMsg("ai", reply);
+        addMsg("ai", reply, owner);
       })
-      .catch(function () { dropPending(); addMsg("ai", "Couldn't reach the assistant just now (network or backend). Please try again in a moment."); })
-      .then(function () { busy = false; setSendEnabled(true); });
+      .catch(function () { dropPending(owner, requestId); addMsg("ai", "Couldn't reach the assistant just now (network or backend). Please try again in a moment.", owner); })
+      .then(function () {
+        state.busy = false;
+        if (owner === chatOwnerKey()) setSendEnabled(true);
+      });
   }
-  function dropPending() { history = history.filter(function (m) { return m.role !== "pending"; }); renderThread(); }
+  function dropPending(owner, requestId) {
+    var state = chatState(owner);
+    state.history = state.history.filter(function (m) { return m.role !== "pending" || (requestId != null && m.requestId !== requestId); });
+    renderThread(owner);
+  }
   function setSendEnabled(on) { var b = $(PANEL_ID) && $(PANEL_ID).querySelector(".as-send"); if (b) b.disabled = !on; }
+  function syncChatOwner(force) {
+    var owner = chatOwnerKey();
+    if (!force && owner === renderedChatOwner) return;
+    ensureGreeting(owner);
+    renderThread(owner);
+    setSendEnabled(!chatState(owner).busy);
+  }
 
   /* ---------- tab switching ---------- */
   function setTab(which) {
@@ -824,7 +876,7 @@
     if (sp) sp.hidden = which !== "schedule";
     if (cp) cp.hidden = which !== "chat";
     if (which === "schedule") renderSchedule();
-    if (which === "chat") { renderThread(); var ta = p.querySelector("textarea"); if (ta) safe(function () { ta.focus(); }); }
+    if (which === "chat") { syncChatOwner(true); var ta = p.querySelector("textarea"); if (ta) safe(function () { ta.focus(); }); }
   }
 
   /* ---------- build panel + FAB (once) ---------- */
@@ -902,13 +954,15 @@
     ta.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); var v = ta.value; ta.value = ""; ask(v); }
     });
-    if (!history.length) addMsg("ai", "Hi - I'm the MLS Assistant. Use the Schedule tab to pull and pick your patients, or ask me anything here. The status above shows your real athenaOne connection.");
+    ensureGreeting(chatOwnerKey());
 
     renderStatus();
     renderSchedule();
     bindTruth();
-    /* react to selections made elsewhere (picker, patients list) so the cards re-highlight */
-    safe(function () { document.addEventListener("mls:patientpicked", function () { renderSchedule(); }); });
+    /* react to selections made elsewhere (picker, patients list) so both the
+       cards and the patient-owned chat bucket switch together. */
+    patientPickedHandler = function () { renderSchedule(); syncChatOwner(true); };
+    safe(function () { document.addEventListener("mls:patientpicked", patientPickedHandler); });
   }
 
   function syncInputVisibility() {
@@ -923,7 +977,7 @@
     if (f) f.style.display = willOpen ? "none" : "";
     if (willOpen) {
       renderStatus();
-      if (tab === "schedule") renderSchedule(); else renderThread();
+      if (tab === "schedule") renderSchedule(); else syncChatOwner(true);
       syncInputVisibility();
       var c = ct(); if (c && isFn(c.check)) safe(function () { c.check(); });
     }
@@ -995,7 +1049,13 @@
   }
   function scheduleDup() {
     if (_dupRaf) return;
-    _dupRaf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () { _dupRaf = 0; killBadge(); });
+    _dupRaf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
+      _dupRaf = 0;
+      killBadge();
+      /* Patient changes repaint the context UI, so this existing observer is a
+         zero-extra-poll backstop for selection paths that emit no custom event. */
+      syncChatOwner(false);
+    });
   }
   var _dupFullPoll = null;
   function startDupWatch() {
@@ -1032,6 +1092,7 @@
     safe(function () { if (_healPoll) clearInterval(_healPoll); });
     safe(function () { if (_wbPoll) clearInterval(_wbPoll); });
     safe(function () { if (isFn(unsub)) unsub(); });
+    safe(function () { if (patientPickedHandler) document.removeEventListener("mls:patientpicked", patientPickedHandler); patientPickedHandler = null; });
     /* restore the original (undefined) TZ hooks so nothing of ours lingers */
     safe(function () { if (_hooksInstalled) { for (var k in _origHooks) { if (Object.prototype.hasOwnProperty.call(_origHooks, k)) { try { window[k] = _origHooks[k]; } catch (e) {} } } try { delete window.__mlsEstForced; } catch (e) { window.__mlsEstForced = false; } } });
     /* restore wrapped writeback + step */
@@ -1066,7 +1127,14 @@
     setProvider: function (pv) { selProvider = pv || "All doctors"; renderSchedule(); },
     _neutralizeSelfHeal: neutralizeSelfHeal,
     _killDup: killDupFull,
-    _history: function () { return history.slice(); },
+    _ownerKey: chatOwnerKey,
+    _syncChatOwner: function () { syncChatOwner(true); },
+    _history: function () { return chatState(chatOwnerKey()).history.slice(); },
+    _historyFor: function (owner) {
+      owner = String(owner || "");
+      if (owner && owner.indexOf("patient:") !== 0) owner = "patient:" + owner;
+      return chatState(owner || CHAT_NONE).history.slice();
+    },
     revert: revert
   };
 

@@ -15,12 +15,12 @@
  *     dictate into the whole note or a chosen section (draft-only).
  *   - FINAL PREVIEW (read-only) of exactly what will be signed.
  *
- * PATIENT SAFETY: the base app binds the note to the active patient
- * (patientId = getActivePtId()) at save time; this layer never changes that. The
- * revision stack is KEYED BY active patient id -> a revision from patient A can
- * never be restored into patient B's note. Every mutating op re-checks that the
- * editor's patient still matches the active patient. Draft-only: no orders, no
- * Athena writes, no signing (signNote stays the base local-only action).
+ * PATIENT SAFETY: every delayed mutation captures the base app's immutable
+ * visit binding + visit epoch before it starts and re-validates both before it
+ * can touch the editor. A patient switch, New visit, abandoned generation, or
+ * compromised binding therefore discards the delayed result. The revision
+ * stack is also keyed by patient id. Draft-only: no orders, no Athena writes,
+ * no signing (signNote stays the base local-only action).
  *
  * Reversible (window.__mlsNoteEditor.revert()), idempotent, additive, UTF-8
  * (emoji only in UI labels; serve with charset=utf-8), try/catch throughout, no
@@ -30,7 +30,7 @@
 (function () {
   "use strict";
   var NS = "__mlsNoteEditor";
-  var VERSION = "ne-1.0.0";
+  var VERSION = "ne-1.1.0";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -50,6 +50,21 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function nowMs() { return safe(function () { return Date.now(); }, 0); }
   function toast(m, k) { safe(function () { if (isFn(window.toast)) window.toast(m, k || ""); }); }
+  var unregisterNoteSpeech = null;
+  function noteSpeechHub() {
+    return safe(function () {
+      if (isFn(window.mlsSpeechHub)) return window.mlsSpeechHub();
+      if (window.__mlsSpeechHub && isFn(window.__mlsSpeechHub.claim)) return window.__mlsSpeechHub;
+      return null;
+    }, null);
+  }
+  function claimNoteSpeech() {
+    var h = noteSpeechHub();
+    if (!h) return { ok: true, previous: null };
+    if (!unregisterNoteSpeech && isFn(h.register)) unregisterNoteSpeech = h.register("note-edit-dictate", "Note dictation", function () { discardDictation(); });
+    return h.claim("note-edit-dictate");
+  }
+  function releaseNoteSpeech() { safe(function () { var h = noteSpeechHub(); if (h) h.release("note-edit-dictate"); }); }
 
   function activePtId() {
     var v = safe(function () {
@@ -59,6 +74,50 @@
     }, null);
     if (v != null) return v;
     return safe(function () { return isFn(window.getActivePtId) ? String(window.getActivePtId() || "") : ""; }, "");
+  }
+
+  /* The core visit owner lives in top-level `let` bindings, so it is readable
+     by name from this classic script but is not reliably exposed on `window`.
+     Delayed note-editor work must never infer ownership from whichever patient
+     happens to be active when a callback finally runs. */
+  function coreVisitBinding() {
+    return safe(function () { return (typeof currentVisitAthenaBinding !== "undefined") ? currentVisitAthenaBinding : null; }, null);
+  }
+  function coreVisitEpoch() {
+    return safe(function () {
+      if (typeof currentVisitAthenaEpoch === "undefined") return null;
+      var n = Number(currentVisitAthenaEpoch);
+      return isFinite(n) ? n : null;
+    }, null);
+  }
+  function captureVisitToken(actionLabel) {
+    var binding = coreVisitBinding(), epoch = coreVisitEpoch();
+    var bindingId = binding && binding.id != null ? String(binding.id) : "";
+    if (!binding || !bindingId || epoch == null) {
+      toast("This note is not tied to one verified visit. Start a New visit for the correct patient before " + String(actionLabel || "editing") + ".", "err");
+      return null;
+    }
+    var guard = safe(function () {
+      return isFn(window._athenaGuardBoundEditor) && window._athenaGuardBoundEditor(actionLabel || "editing") === true;
+    }, false);
+    if (!guard) return null;
+    return { binding: binding, bindingId: bindingId, epoch: epoch, patientId: activePtId() };
+  }
+  function visitTokenStillSafe(token, actionLabel) {
+    if (!token || !token.binding || !token.bindingId || token.epoch == null) return false;
+    if (isFn(window._athenaAsyncBindingStillSafe)) {
+      return safe(function () {
+        return window._athenaAsyncBindingStillSafe(token.binding, actionLabel || "the note edit", token.epoch) === true;
+      }, false);
+    }
+    /* Fail closed if the core async helper is unavailable. The exact fallback
+       below exists only for compatible embedded/test builds that still expose
+       the immutable binding and epoch. */
+    var current = coreVisitBinding(), epoch = coreVisitEpoch();
+    if (!current || String(current.id || "") !== token.bindingId || epoch == null || Number(epoch) !== Number(token.epoch) || activePtId() !== token.patientId) return false;
+    return safe(function () {
+      return isFn(window._athenaGuardBoundEditor) && window._athenaGuardBoundEditor(actionLabel || "editing") === true;
+    }, false);
   }
 
   function noteEl() { return $("noteBox"); }
@@ -203,16 +262,22 @@
     if (isFn(window.regenerateNote) && !window.regenerateNote.__neWrap) {
       wrapped.regenerateNote = window.regenerateNote;
       var w = function () {
+        var visitToken = captureVisitToken("regenerating this note");
+        if (!visitToken) return false;
         snapshot("pre-regenerate");
         var savedLocked = snapshotLockedText();
         var before = noteVal();
         var r = wrapped.regenerateNote.apply(this, arguments);
-        if (Object.keys(savedLocked).length) {
-          var tries = 0, iv = setInterval(function () {
-            tries++;
-            if (noteVal() !== before) { clearInterval(iv); safe(function () { reapplyLocked(savedLocked); }); }
-            else if (tries > 60) clearInterval(iv); /* ~9s */
-          }, 150);
+        if (Object.keys(savedLocked).length && r && isFn(r.then)) {
+          return Promise.resolve(r).then(function (accepted) {
+            /* Core generation returns true only after its own binding, epoch,
+               fingerprint and format checks accepted the AI result. A manual
+               edit or stale visit returns false, so it can never masquerade as
+               the regeneration completion that unlocks restoration. */
+            if (accepted !== true || !visitTokenStillSafe(visitToken, "locked-section restoration")) return accepted;
+            if (noteVal() !== before && visitTokenStillSafe(visitToken, "locked-section restoration")) safe(function () { reapplyLocked(savedLocked); });
+            return accepted;
+          });
         }
         return r;
       };
@@ -296,7 +361,10 @@
     var cur = noteVal();
     if (!parseSections(cur)[key]) { toast("No " + sec.name + " section found to regenerate.", "err"); return; }
     var transcript = safe(function () { var t = $("transcript"); return t ? String(t.value || "").trim() : ""; }, "");
+    var sectionFingerprint = JSON.stringify([cur, transcript]);
     if (!isFn(window.aiCallRaw)) { toast("Section regeneration needs the AI backend.", "err"); return; }
+    var visitToken = captureVisitToken("regenerating this section");
+    if (!visitToken) return false;
     var pctx = safe(function () { return isFn(window.buildPatientContext) ? window.buildPatientContext() : ""; }, "");
     var sys = "You are a clinical documentation assistant. Rewrite ONLY the " + sec.name.toUpperCase() +
       " section of this SOAP note, using ONLY facts already supported by the transcript, the existing note, and the patient background. Do NOT invent findings. Return ONLY the rewritten " + sec.name + " section, beginning with the header '" + sec.head + "'. Keep the other sections out of your answer.";
@@ -304,55 +372,97 @@
     snapshot("pre-section-regen");
     var savedLocked = snapshotLockedText();
     toast("Regenerating " + sec.name + "...", "");
-    safe(function () {
-      window.aiCallRaw(sys, user, (isFn(window.getKey) ? window.getKey() : null), { freeform: true })
+    return safe(function () {
+      return window.aiCallRaw(sys, user, (isFn(window.getKey) ? window.getKey() : null), { freeform: true })
         .then(function (out) {
+          if (!visitTokenStillSafe(visitToken, "section regeneration")) return false;
+          var transcriptNow = safe(function () { var t = $("transcript"); return t ? String(t.value || "").trim() : ""; }, "");
+          if (JSON.stringify([noteVal(), transcriptNow]) !== sectionFingerprint) {
+            toast("The note changed while that section was being regenerated, so the older result was discarded.", "err");
+            return false;
+          }
           var clean = String(out || "").replace(/^```\w*\s*/, "").replace(/```$/, "").trim();
           if (!clean) { toast("No section text came back.", "err"); return; }
           var now = noteVal();
           var replaced = replaceSection(now, key, clean.charAt(clean.length - 1) === "\n" ? clean : (clean + "\n"));
           if (replaced == null) { toast("Could not splice the new " + sec.name + ".", "err"); return; }
+          if (!visitTokenStillSafe(visitToken, "section regeneration")) return false;
           setNote(replaced, sec.name + " regenerated.");
-          reapplyLocked(savedLocked);
+          if (visitTokenStillSafe(visitToken, "locked-section restoration")) reapplyLocked(savedLocked);
+          return true;
         })
         .then(null, function () { toast("Could not regenerate " + sec.name + " -- try again.", "err"); });
-    });
+    }, null);
   }
 
   /* =====================================================================
    * DICTATION  (mic -> note or a chosen section; draft-only)
    * ===================================================================== */
   var SR = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
-  var dictRecog = null, dictating = false, dictTarget = null, dictBuf = "";
+  var dictRecog = null, dictating = false, dictTarget = null, dictBuf = "", dictVisitToken = null, dictSession = 0;
   function dictSupported() { return !!SR; }
+  function discardDictation() {
+    dictating = false;
+    dictSession++;
+    var instance = dictRecog;
+    dictRecog = null; dictVisitToken = null; dictBuf = ""; dictTarget = null;
+    if (instance) {
+      try { if (isFn(instance.abort)) instance.abort(); else instance.stop(); } catch (e) {}
+    }
+    releaseNoteSpeech();
+    renderBar();
+    return "";
+  }
   function startDictation(key) {
     if (!SR) { toast("Voice editing is not supported in this browser - you can type instead (Chrome/Edge support the mic).", "err"); return false; }
     if (dictating) { stopDictation(); return false; }
     if (key && isLocked(key)) { toast(secByKey(key).name + " is locked. Unlock it to dictate.", "err"); return false; }
+    var visitToken = captureVisitToken("starting note dictation");
+    if (!visitToken) return false;
+    var lease = claimNoteSpeech();
+    if (!lease || lease.ok === false) { toast("Note dictation could not take control of the microphone. Try again.", "err"); return false; }
+    if (lease.previous) toast("Stopped " + lease.previous.label + " so Note dictation can use the microphone. Captured visit text is safe.", "");
     dictTarget = key || null; dictBuf = "";
-    try { dictRecog = new SR(); } catch (e) { toast("Could not start the microphone.", "err"); return false; }
-    dictRecog.continuous = true; dictRecog.interimResults = true; dictRecog.lang = "en-US";
-    dictRecog.onresult = function (e) {
+    var instance;
+    try { instance = new SR(); } catch (e) { releaseNoteSpeech(); toast("Could not start the microphone.", "err"); return false; }
+    var session = ++dictSession;
+    dictRecog = instance; dictVisitToken = visitToken; dictating = true;
+    instance.continuous = true; instance.interimResults = true; instance.lang = "en-US";
+    instance.onresult = function (e) {
+      if (instance !== dictRecog || session !== dictSession || !dictating) return;
+      if (!visitTokenStillSafe(visitToken, "note dictation")) { discardDictation(); return; }
       var finalTxt = "";
       for (var i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) finalTxt += e.results[i][0].transcript + " "; }
       if (finalTxt) dictBuf += finalTxt;
     };
-    dictRecog.onerror = function (ev) {
-      if (ev && (ev.error === "not-allowed" || ev.error === "service-not-allowed")) { toast("Microphone was blocked. Allow mic access, or type your edit.", "err"); stopDictation(); }
+    instance.onerror = function (ev) {
+      if (instance !== dictRecog || session !== dictSession) return;
+      if (ev && (ev.error === "not-allowed" || ev.error === "service-not-allowed")) { toast("Microphone was blocked. Allow mic access, or type your edit.", "err"); discardDictation(); }
     };
-    dictRecog.onend = function () { if (dictating) { try { dictRecog.start(); } catch (e) {} } };
-    try { dictRecog.start(); } catch (e) { toast("Could not start the microphone.", "err"); return false; }
-    dictating = true; renderBar();
+    instance.onend = function () {
+      if (instance !== dictRecog || session !== dictSession || !dictating) return;
+      if (!visitTokenStillSafe(visitToken, "note dictation")) { discardDictation(); return; }
+      try { instance.start(); } catch (e) { discardDictation(); }
+    };
+    try { instance.start(); }
+    catch (e) { discardDictation(); toast("Could not start the microphone.", "err"); return false; }
+    renderBar();
     toast("Listening - dictate your edit" + (key ? (" for " + secByKey(key).name) : "") + ". Tap again to insert.", "");
     return true;
   }
   function stopDictation() {
+    var visitToken = dictVisitToken;
+    var instance = dictRecog;
     dictating = false;
-    if (dictRecog) { try { dictRecog.stop(); } catch (e) {} }
+    dictSession++;
+    dictRecog = null; dictVisitToken = null;
+    if (instance) { try { instance.stop(); } catch (e) {} }
+    releaseNoteSpeech();
     var text = String(dictBuf || "").trim();
     dictBuf = "";
     var key = dictTarget; dictTarget = null;
     renderBar();
+    if (!visitTokenStillSafe(visitToken, "note dictation")) return "";
     if (text) addSentence(text, key);
     return text;
   }
@@ -531,6 +641,9 @@
   var _lastPt = null, _pollIv = null, _switchHandler = null, _obs = null;
   function onMaybeSwitch() {
     var pt = activePtId();
+    /* A same-patient New visit changes the epoch without changing pt. Stop its
+       old recognizer too; no buffered words may cross that visit boundary. */
+    if (dictating && dictVisitToken && !visitTokenStillSafe(dictVisitToken, "note dictation")) discardDictation();
     if (pt !== _lastPt) {
       _lastPt = pt;
       redoStack = []; _revDropOpen = false;
@@ -572,7 +685,8 @@
     try { if (_pollIv) clearInterval(_pollIv); } catch (e) {}
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { if (_switchHandler) document.removeEventListener("mls:patientpicked", _switchHandler); } catch (e) {}
-    safe(function () { if (dictating) stopDictation(); });
+    safe(function () { if (dictating) discardDictation(); });
+    safe(function () { if (unregisterNoteSpeech) unregisterNoteSpeech(); unregisterNoteSpeech = null; });
     unwrap();
     try { var b = $(BAR_ID); if (b && b.parentNode) b.parentNode.removeChild(b); } catch (e) {}
     try { var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e) {}
@@ -592,6 +706,7 @@
     deleteLastSentence: deleteLastSentence, replaceText: replaceText,
     regenerateSection: regenerateSection, baselineText: baselineText, diffLines: diffLines,
     startDictation: startDictation, stopDictation: stopDictation, dictSupported: dictSupported,
+    _captureVisitToken: captureVisitToken, _visitTokenStillSafe: visitTokenStillSafe, _wrapOverwriters: wrapOverwriters,
     openCompare: openCompare, openPreview: openPreview, render: renderBar, revert: revert
   };
 

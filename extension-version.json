@@ -1,5 +1,5 @@
 {
-  "version": "2.9.17",
+  "version": "2.9.18",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.17 - Supervised Athena destination actions: write selected narrative drafts, stage exact E/M and CPT/HCPCS codes, save a draft, or Sign & Save only after an exact patient and encounter check plus a fresh confirmation. Billing is staged only; no claim, order, or prescription is submitted automatically."
+  "notes": "v2.9.18 - Confirmed Athena actions now use one frozen patient and visit binding from recording through review. Separate confirmations can write the reviewed note, save a draft, proof-gated Sign & Save, or stage only the reviewed E/M and CPT/HCPCS codes. No action is inferred or chained, and billing does not submit a claim."
 }

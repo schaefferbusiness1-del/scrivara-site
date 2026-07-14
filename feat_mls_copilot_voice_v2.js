@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.1.3)
+ * feat_mls_copilot_voice_v2.js  ->  window.__mlsCopilotVoiceV2   (cv2-1.1.4)
  * ---------------------------------------------------------------------------
  * REPLACES the b39 "MLS Copilot Voice" button (window.__mlsCopilotVoiceB39,
  * bundle-inline) with a version that ACTUALLY WORKS as continuous hands-free
@@ -107,7 +107,7 @@
   /* cv2-1.1.1: intent replies echo into the shared conversation thread (chat feel on
    *   both surfaces, not toast-only), and speech output only plays while voice mode is
    *   actually listening (typed commands no longer talk back unexpectedly). */
-  var VERSION = 'cv2-1.1.3';
+  var VERSION = 'cv2-1.1.4';
   var ASSET = 'feat_mls_copilot_voice_v2.js';
   var BTN_ID = 'mlsCopVoiceBtn';
   var STYLE_ID = 'mlsVoiceV2Style';
@@ -116,6 +116,36 @@
   function isFn(f) { return typeof f === 'function'; }
   function $(id) { return safe(function () { return document.getElementById(id); }, null); }
   function S(x) { return x == null ? '' : String(x); }
+  function activePatientId() {
+    return S(safe(function () {
+      if (isFn(window.getActivePtId)) return window.getActivePtId() || '';
+      var p = isFn(window.activePatient) ? window.activePatient() : null;
+      return p && p.id != null ? p.id : '';
+    }, ''));
+  }
+  function captureVoiceActionToken() {
+    var binding = safe(function () { return (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null; }, null);
+    var epoch = safe(function () { return (typeof currentVisitAthenaEpoch !== 'undefined') ? Number(currentVisitAthenaEpoch) : null; }, null);
+    return {
+      patientId: activePatientId(),
+      binding: binding,
+      bindingId: S((binding && binding.id) || ''),
+      epoch: epoch
+    };
+  }
+  function voiceActionTokenStillSafe(token) {
+    if (!token || activePatientId() !== token.patientId) return false;
+    var current = safe(function () { return (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null; }, null);
+    var epoch = safe(function () { return (typeof currentVisitAthenaEpoch !== 'undefined') ? Number(currentVisitAthenaEpoch) : null; }, null);
+    if (S((current && current.id) || '') !== token.bindingId) return false;
+    if ((token.epoch == null) !== (epoch == null)) return false;
+    if (token.epoch != null && Number(token.epoch) !== Number(epoch)) return false;
+    if (token.binding) {
+      if (!isFn(window._athenaAsyncBindingStillSafe)) return false;
+      return safe(function () { return window._athenaAsyncBindingStillSafe(token.binding, 'voice command chain', token.epoch) === true; }, false);
+    }
+    return true;
+  }
   function toast(m) { safe(function () { if (isFn(window.toast)) window.toast(m, ''); }); }
   function speak(text) {
     safe(function () {
@@ -151,6 +181,7 @@
 
   var enabled = false;         /* user has toggled listening on */
   var rec = null;
+  var recSessionEpoch = 0;
   var deniedPermanently = false;
   var unregisterSpeech = null;
 
@@ -208,29 +239,34 @@
       return false;
     }
     if (lease.previous) toast('Stopped ' + lease.previous.label + ' so Copilot Voice can use the microphone. Any visit transcript already captured is safe.');
-    try { rec = new Ctor(); }
+    var instance;
+    try { instance = new Ctor(); rec = instance; }
     catch (e0) {
       rec = null; releaseSpeech();
       toast('Copilot Voice could not create the microphone listener. Try again.');
       return false;
     }
-    rec.lang = 'en-US';
-    rec.continuous = true;
-    rec.interimResults = false;
-    rec.onresult = function (ev) {
+    var sessionEpoch = ++recSessionEpoch;
+    instance.lang = 'en-US';
+    instance.continuous = true;
+    instance.interimResults = false;
+    instance.onresult = function (ev) {
+      if (!enabled || instance !== rec || sessionEpoch !== recSessionEpoch) return;
       try {
         for (var i = ev.resultIndex; i < ev.results.length; i++) {
+          if (!enabled || instance !== rec || sessionEpoch !== recSessionEpoch) break;
           if (!ev.results[i].isFinal) continue;
           var said = S(ev.results[i][0] && ev.results[i][0].transcript).trim();
           if (said) handleSaid(said);
         }
       } catch (e) {}
     };
-    rec.onerror = function (ev) {
+    instance.onerror = function (ev) {
+      if (instance !== rec || sessionEpoch !== recSessionEpoch) return;
       var err = ev && ev.error;
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         deniedPermanently = true; enabled = false;
-        releaseSpeech(); rec = null;
+        recSessionEpoch++; releaseSpeech(); rec = null;
         toast('Microphone was blocked. Allow mic access for this site, then click MLS Copilot Voice again.');
         speak('Microphone access is blocked. Please allow it, then try again.');
         paintBtn($(BTN_ID));
@@ -239,37 +275,41 @@
       if (err === 'no-speech') { return; } /* keep listening, this is normal and expected */
       if (err === 'audio-capture') {
         enabled = false;
-        releaseSpeech(); rec = null;
+        recSessionEpoch++; releaseSpeech(); rec = null;
         toast('No microphone found -- check your input device, then try again.');
         paintBtn($(BTN_ID));
         return;
       }
       /* network / aborted / other -- onend will decide whether to restart */
     };
-    rec.onend = function () {
-      if (enabled && !deniedPermanently) {
+    instance.onend = function () {
+      if (instance === rec && sessionEpoch === recSessionEpoch && enabled && !deniedPermanently) {
         setTimeout(function () {
-          if (!enabled || !rec) return;
-          try { rec.start(); }
+          if (!enabled || instance !== rec || sessionEpoch !== recSessionEpoch) return;
+          try { instance.start(); }
           catch (e) {
-            enabled = false; rec = null; releaseSpeech();
+            if (instance !== rec || sessionEpoch !== recSessionEpoch) return;
+            enabled = false; rec = null; recSessionEpoch++; releaseSpeech();
             toast('Copilot Voice could not restart the microphone. Wait a moment, then tap it again.');
             paintBtn($(BTN_ID));
           }
         }, 250);
       }
     };
-    try { rec.start(); }
+    try { instance.start(); }
     catch (e1) {
-      rec = null; releaseSpeech();
+      if (instance === rec) rec = null;
+      recSessionEpoch++; releaseSpeech();
       toast('Copilot Voice could not start the microphone. Wait a moment, then tap it again.');
       return false;
     }
     return true;
   }
   function stopRec() {
-    safe(function () { if (rec) { rec.onend = null; rec.stop(); } });
+    var old = rec;
+    recSessionEpoch++;
     rec = null;
+    safe(function () { if (old) { old.onend = null; old.onresult = null; old.onerror = null; old.stop(); } });
     releaseSpeech();
   }
 
@@ -581,6 +621,29 @@
     return 'unknown';
   }
 
+  function runVoiceChain(parts) {
+    var i = 0, expectedToken = null;
+    var step = function () {
+      if (expectedToken && !voiceActionTokenStillSafe(expectedToken)) {
+        speakToast('The patient or visit changed, so I stopped the rest of that command.');
+        return;
+      }
+      if (i >= parts.length) return;
+      var leg = parts[i]; i++;
+      var out = runLeg(leg);
+      if (out === 'refused') return;
+      if (out === 'fail') {
+        if (i < parts.length) speakToast('I stopped there, so the rest of that command did not run.');
+        return;
+      }
+      if (out === 'unknown') speakToast('I did not catch the part "' + leg + '" -- try it as its own command.');
+      expectedToken = captureVoiceActionToken();
+      if (i < parts.length) setTimeout(step, 600);
+    };
+    step();
+    return true;
+  }
+
   /* ---------------- register new deterministic intents ---------------- */
   var unregs = [], registered = false;
   function registerIntents() {
@@ -646,21 +709,7 @@
       var understood = refusalShaped(probe) ||
         /^(?:please\s+)?(?:open|pull up|bring up|switch to|select|show me|show|load|record|start|begin|stop|end|finish|generate|write|create|make|go to|navigate to|read|play)\b/i.test(probe);
       if (!understood) return false;
-      var i = 0;
-      var step = function () {
-        if (i >= parts.length) return;
-        var leg = parts[i]; i++;
-        var out = runLeg(leg);
-        if (out === 'refused') return;                          /* refusal already spoken; stop the chain */
-        if (out === 'fail') {                                    /* e.g. ambiguous open -- NEVER run "record" on the wrong patient */
-          if (i < parts.length) speakToast('I stopped there, so the rest of that command did not run.');
-          return;
-        }
-        if (out === 'unknown') speakToast('I didn’t catch the part "' + leg + '" -- try it as its own command.');
-        if (i < parts.length) setTimeout(step, 600);            /* let selection/render settle between legs */
-      };
-      step();
-      return true;
+      return runVoiceChain(parts);
     }, true));
 
     unregs.push(fx.registerIntent('voice-stop-recording', function (q) {
@@ -737,7 +786,15 @@
     asset: ASSET,
     _muted: false,
     _testHandle: handleSaid,
-    _test: { runLeg: runLeg, findPatientsSmart: findPatientsSmart, legOpenPatient: legOpenPatient },
+    _test: {
+      runLeg: runLeg,
+      runVoiceChain: runVoiceChain,
+      findPatientsSmart: findPatientsSmart,
+      legOpenPatient: legOpenPatient,
+      openPatientVerified: openPatientVerified,
+      captureVoiceActionToken: captureVoiceActionToken,
+      voiceActionTokenStillSafe: voiceActionTokenStillSafe
+    },
     isListening: function () { return enabled; },
     start: function () { setEnabled(true); },
     stop: function () { setEnabled(false); },

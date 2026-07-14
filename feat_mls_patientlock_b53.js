@@ -75,7 +75,7 @@
 (function () {
   "use strict";
   if (window.__mlsPatientLock) return;
-  var VERSION = "1.0.1-b53";
+  var VERSION = "1.0.2-b53";
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === "function"; }
@@ -164,28 +164,16 @@
   if (isFn(window.setActivePtId)) window.setActivePtId = guardedSwitchFn(window.setActivePtId, function (args) { return args[0]; }, guardPrimary);
   if (isFn(window.selectPatient)) window.selectPatient = guardedSwitchFn(window.selectPatient, function (args) { return args[0]; }, guardSecondary);
 
-  /* ---------------- item 11: force save-time patient binding to the recording snapshot ---------------- */
-  if (isFn(window.noteRecordFromState)) {
-    var origNRFS = window.noteRecordFromState;
-    window.noteRecordFromState = function () {
-      var rec = origNRFS.apply(this, arguments);
-      safe(function () { if (rec && LOCK.hasPendingWork && LOCK.snapshot && LOCK.snapshot.id) rec.patientId = LOCK.snapshot.id; });
-      return rec;
-    };
-  }
-  if (isFn(window.attachVisitToPatient)) {
-    var origAttach = window.attachVisitToPatient;
-    window.attachVisitToPatient = function (rec) {
-      var r = origAttach.apply(this, arguments);
-      safe(function () { if (rec && LOCK.hasPendingWork && LOCK.snapshot && LOCK.snapshot.id) rec.patientId = LOCK.snapshot.id; });
-      return r;
-    };
-  }
+  /* ---------------- item 11: save-time ownership ----------------
+   * Retired: the core editor now owns an immutable patient/visit binding and
+   * quarantines any mismatch. A second mutable LOCK snapshot must never
+   * relabel the record returned by noteRecordFromState or the record already
+   * attached by attachVisitToPatient. */
 
   /* ---------------- item 11: clear the lock once the visit is actually finalized ---------------- */
   if (isFn(window.saveCurrentNote)) {
     var origSave = window.saveCurrentNote;
-    window.saveCurrentNote = function () { var r = origSave.apply(this, arguments); clearLock(); return r; };
+    window.saveCurrentNote = function () { var r = origSave.apply(this, arguments); if (r === true) clearLock(); return r; };
   }
   if (isFn(window.newVisit)) {
     var origNewVisit = window.newVisit;

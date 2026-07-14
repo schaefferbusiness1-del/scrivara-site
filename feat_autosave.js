@@ -1,4 +1,4 @@
-/* feat_autosave.js  ->  window.__mlsAutosave  (v1.0.0)
+/* feat_autosave.js  ->  window.__mlsAutosave  (v1.1.0)
  *
  * AUTOSAVE + DRAFT RECOVERY for the MLS note editors, so a doctor NEVER
  * loses an in-progress note to an accidental navigation, refresh, crash,
@@ -37,9 +37,9 @@
  *    checkmark AFTER the localStorage write actually succeeds, so it can never
  *    claim a save that did not happen and never implies the chart/server was
  *    written. Honest failure ("Couldn't save draft") on a storage error.
- *  - A draft is cleared the moment the doctor explicitly saves the note
- *    (the app's saveCurrentNote / saveNotes / saveNoteToBackend, and a Save
- *    click inside the raw-note modal) -> no draft survives an explicit save.
+ *  - A draft is cleared only after the app explicitly reports a successful
+ *    saveCurrentNote/saveDraft (or the raw-note Save control is used), and the
+ *    clear stays pinned to the patient/note that initiated that save.
  *
  * ASCII-only. NUL-free. node --check clean.
  */
@@ -47,7 +47,7 @@
   "use strict";
   try { if (window.__mlsAutosave && window.__mlsAutosave.installed) return; } catch (e) { return; }
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.1.0";
   var ASSET = "feat_autosave.js";
 
   // ---------------- tiny safe helpers ----------------
@@ -137,6 +137,16 @@
     return activePtId();
   }
   function keyFor(field) { return field.kind + "::" + scopeId(field); }
+  function snapshotFor(field, el) {
+    var pid = activePtId();
+    var viewId = _curViewNoteId;
+    var scope = field && field.scope === "view" ? ("v_" + (viewId || pid)) : pid;
+    return { field: field, el: el, key: field.kind + "::" + scope, ptId: pid, viewId: viewId, text: norm(safe(function () { return el.value; }, "")) };
+  }
+  function snapshotStillVisible(snap) {
+    return !!(snap && snap.field && snap.el && keyFor(snap.field) === snap.key
+      && norm(safe(function () { return snap.el.value; }, "")) === snap.text);
+  }
 
   // ---------------- indicator UI (per field) ----------------
   function ensureStyle() {
@@ -190,30 +200,34 @@
   function clockTime(ts) { return safe(function () { return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }, ""); }
 
   // ---------------- autosave (debounced) ----------------
-  var _timers = {}; // by field id
+  var _timers = {}; // by immutable patient/note draft key
   function scheduleSave(el) {
     var f = fieldFor(el); if (!f) return;
     setInd(el, "saving", "Saving draft...");
-    var id = f.id;
-    if (_timers[id]) clearTimeout(_timers[id]);
-    _timers[id] = setTimeout(function () { _timers[id] = null; saveDraftNow(el); }, DEBOUNCE_MS);
+    var snap = snapshotFor(f, el), timerKey = snap.key;
+    if (_timers[timerKey]) clearTimeout(_timers[timerKey]);
+    _timers[timerKey] = setTimeout(function () { _timers[timerKey] = null; saveDraftSnapshot(snap); }, DEBOUNCE_MS);
   }
   function saveDraftNow(el) {
     var f = fieldFor(el); if (!f || !isEl(el)) return false;
-    var val = safe(function () { return el.value; }, "");
+    return saveDraftSnapshot(snapshotFor(f, el));
+  }
+  function saveDraftSnapshot(snap) {
+    if (!snap || !snap.field || !isEl(snap.el)) return false;
+    var f = snap.field, el = snap.el, val = snap.text;
     var o = readStore();
-    var key = keyFor(f);
+    var key = snap.key;
     if (norm(val).trim() === "") {
       // nothing meaningful to keep -> remove any stale draft, quiet indicator
       if (o.drafts[key]) { delete o.drafts[key]; writeStore(o); }
       stats.skippedEmpty++;
-      setInd(el, "", "");
+      if (snapshotStillVisible(snap)) setInd(el, "", "");
       return false;
     }
-    o.drafts[key] = { text: norm(val), ts: now(), kind: f.kind, ptId: activePtId() };
+    o.drafts[key] = { text: norm(val), ts: now(), kind: f.kind, ptId: snap.ptId };
     var ok = writeStore(o);
-    if (ok) { stats.writes++; setInd(el, "saved", "Draft saved " + String.fromCharCode(10003) + " " + clockTime(now())); }
-    else { stats.writeErrors++; setInd(el, "error", "Couldn't save draft"); }
+    if (ok) { stats.writes++; if (snapshotStillVisible(snap)) setInd(el, "saved", "Draft saved " + String.fromCharCode(10003) + " " + clockTime(now())); }
+    else { stats.writeErrors++; if (snapshotStillVisible(snap)) setInd(el, "error", "Couldn't save draft"); }
     return ok;
   }
 
@@ -238,9 +252,9 @@
     // only offer when the draft is genuinely NEWER than the last explicit save
     var savedAt = (o.savedAt && o.savedAt[key]) || 0;
     if (d.ts <= savedAt) return;
-    showRecover(el, f, d);
+    showRecover(el, f, d, key);
   }
-  function showRecover(el, f, d) {
+  function showRecover(el, f, d, capturedKey) {
     ensureStyle();
     removeRecoverUI(el);
     var box = safe(function () { return document.createElement("div"); });
@@ -254,15 +268,19 @@
     rec.type = "button"; rec.className = "mls-as-rec"; rec.textContent = "Recover";
     var disc = safe(function () { return document.createElement("button"); });
     disc.type = "button"; disc.className = "mls-as-disc"; disc.textContent = "Discard";
-    rec.addEventListener("click", function () { doRecover(el, f); });
-    disc.addEventListener("click", function () { doDiscard(el, f); });
+    rec.addEventListener("click", function () { doRecover(el, f, capturedKey); });
+    disc.addEventListener("click", function () { doDiscard(el, f, capturedKey); });
     box.appendChild(msg); box.appendChild(rec); box.appendChild(disc);
     safe(function () { if (el.parentNode) el.parentNode.insertBefore(box, el.nextSibling); });
-    _promptShown[keyFor(f)] = true;
+    _promptShown[capturedKey] = true;
     stats.promptsShown++;
   }
-  function doRecover(el, f) {
-    var o = readStore(), key = keyFor(f), d = o.drafts[key];
+  function doRecover(el, f, capturedKey) {
+    var key = capturedKey || keyFor(f);
+    /* A recovery prompt can outlive a patient/history-note switch. Never put
+       its old text into the newly selected patient's reused textarea. */
+    if (keyFor(f) !== key) { removeRecoverUI(el); return false; }
+    var o = readStore(), d = o.drafts[key];
     if (d && isEl(el)) {
       // The ONLY place this module writes into a note box -> explicit user action.
       safe(function () { el.value = d.text; });
@@ -274,20 +292,25 @@
     removeRecoverUI(el);
     _promptShown[key] = true;
     setInd(el, "saved", "Draft recovered");
+    return !!d;
   }
-  function doDiscard(el, f) {
-    var o = readStore(), key = keyFor(f);
+  function doDiscard(el, f, capturedKey) {
+    var key = capturedKey || keyFor(f);
+    if (keyFor(f) !== key) { removeRecoverUI(el); return false; }
+    var o = readStore();
     if (o.drafts[key]) { delete o.drafts[key]; writeStore(o); stats.discarded++; }
     removeRecoverUI(el);
     _promptShown[key] = true;
     setInd(el, "", "");
+    return true;
   }
 
   // ---------------- clear-on-explicit-save ----------------
   // Clears every draft scoped to the active patient (note/proc/scratch/transcript)
   // and stamps savedAt so a stale draft can never re-prompt over a saved note.
-  function clearForActive() {
-    var o = readStore(), pid = activePtId(), t = now();
+  function clearForPatient(pid) {
+    pid = String(pid || "none");
+    var o = readStore(), t = now();
     var prefixes = ["note", "proc", "scratch", "transcript"];
     for (var i = 0; i < prefixes.length; i++) {
       var key = prefixes[i] + "::" + pid;
@@ -298,21 +321,25 @@
     writeStore(o);
     stats.cleared++;
     // quiet any visible indicators / prompts for those fields
-    for (var k = 0; k < FIELDS.length; k++) {
-      if (FIELDS[k].scope !== "pt") continue;
-      var el = gid(FIELDS[k].id);
-      if (el) { removeRecoverUI(el); setInd(el, "", ""); }
+    if (activePtId() === pid) {
+      for (var k = 0; k < FIELDS.length; k++) {
+        if (FIELDS[k].scope !== "pt") continue;
+        var el = gid(FIELDS[k].id);
+        if (el) { removeRecoverUI(el); setInd(el, "", ""); }
+      }
     }
     return true;
   }
-  function clearViewDraft() {
+  function clearForActive() { return clearForPatient(activePtId()); }
+  function clearViewDraft(capturedKey) {
     var f = FIELDS[2]; // viewBody
-    var o = readStore(), key = keyFor(f);
+    var o = readStore(), key = capturedKey || keyFor(f);
     if (o.drafts[key]) { delete o.drafts[key]; }
     o.savedAt[key] = now();
     delete _promptShown[key];
     writeStore(o);
-    var el = gid("viewBody"); if (el) { removeRecoverUI(el); setInd(el, "", ""); }
+    var el = gid("viewBody");
+    if (el && keyFor(f) === key) { removeRecoverUI(el); setInd(el, "", ""); }
     stats.cleared++;
   }
 
@@ -322,13 +349,11 @@
     var orig = safe(function () { return window[name]; });
     if (typeof orig !== "function" || orig.__mlsAsWrapped) return;
     function wrapped() {
-      var r;
-      try { r = orig.apply(this, arguments); }
-      finally {
-        // clear after the save runs; if it returns a promise, clear on settle too
-        safe(clearForActive);
-        if (r && typeof r.then === "function") safe(function () { r.then(function () { safe(clearForActive); }, function () {}); });
+      var pid = activePtId(), r = orig.apply(this, arguments);
+      if (r && typeof r.then === "function") {
+        return r.then(function (accepted) { if (accepted === true) safe(function () { clearForPatient(pid); }); return accepted; });
       }
+      if (r === true) safe(function () { clearForPatient(pid); });
       return r;
     }
     wrapped.__mlsAsWrapped = true;
@@ -367,7 +392,10 @@
       var modal = gid("viewModal"); if (!modal || !modal.contains(t)) return;
       var btn = t.closest ? t.closest("button,a,[role=button]") : null;
       var lbl = ((btn && (btn.textContent || btn.value)) || "").toLowerCase();
-      if (/\bsave\b/.test(lbl)) safe(function () { setTimeout(clearViewDraft, 0); });
+      if (/\bsave\b/.test(lbl)) {
+        var viewKey = keyFor(FIELDS[2]);
+        safe(function () { setTimeout(function () { clearViewDraft(viewKey); }, 0); });
+      }
     });
   }
 
@@ -400,7 +428,7 @@
     safe(function () { document.addEventListener("input", onInput, true); });
     safe(function () { document.addEventListener("focusin", onFocus, true); });
     safe(function () { document.addEventListener("click", onModalClick, true); });
-    ["saveCurrentNote", "saveNotes", "saveNoteToBackend"].forEach(wrapSave);
+    ["saveCurrentNote", "saveDraft"].forEach(wrapSave);
     wrapOpenNote();
     safe(function () {
       _obs = new MutationObserver(function () { if (!_reverted) scheduleScan(); });
@@ -409,7 +437,7 @@
     // a slow poll re-wraps saves that load after us and re-scans for fields
     _poll = setInterval(function () {
       if (_reverted) return;
-      safe(function () { ["saveCurrentNote", "saveNotes", "saveNoteToBackend"].forEach(wrapSave); wrapOpenNote(); });
+      safe(function () { ["saveCurrentNote", "saveDraft"].forEach(wrapSave); wrapOpenNote(); });
       safe(scan);
     }, 1500);
     safe(scan);
@@ -451,8 +479,8 @@
     _saveDraftNow: saveDraftNow,
     _maybePrompt: maybePrompt,
     _setViewNoteId: function (id) { _curViewNoteId = (id == null ? "" : String(id)); },
-    recover: function (el) { var f = fieldFor(el); if (f) doRecover(el, f); },
-    discard: function (el) { var f = fieldFor(el); if (f) doDiscard(el, f); },
+    recover: function (el) { var f = fieldFor(el); if (f) return doRecover(el, f, keyFor(f)); return false; },
+    discard: function (el) { var f = fieldFor(el); if (f) return doDiscard(el, f, keyFor(f)); return false; },
     clearForActive: clearForActive,
     clearViewDraft: clearViewDraft,
     scan: function () { safe(scan); },

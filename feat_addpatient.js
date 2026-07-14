@@ -145,6 +145,32 @@
   /* ---------- the modal UI ---------- */
   var _pending = [];   // visits queued in the modal before save
   var _details = {};   // patient details
+  var _modalEpoch = 0; // invalidates async work from a closed/replaced modal
+
+  function modalStillCurrent(modal, epoch) {
+    if (!modal || Number(epoch) !== Number(_modalEpoch)) return false;
+    var current = document.getElementById('mlsAddPtModal');
+    return current === modal && Number(modal.__mlsAddPatientEpoch) === Number(epoch);
+  }
+
+  function activePatientId() {
+    try { if (isFn(window.getActivePtId)) return S(window.getActivePtId()); } catch (e) {}
+    try {
+      if (isFn(window.activePatient)) {
+        var p = window.activePatient();
+        return p && p.id != null ? S(p.id) : '';
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function modalPatientFingerprint(modal) {
+    if (!modal || !isFn(modal.querySelector)) return '';
+    return ['#apName', '#apDob', '#apMrn', '#apSex', '#apPhone'].map(function (id) {
+      var el = modal.querySelector(id);
+      return el ? trim(el.value) : '';
+    }).join('\u001f');
+  }
 
   function listToArr(s) { return S(s).split(/[\n,;]+/).map(trim).filter(Boolean); }
 
@@ -207,6 +233,36 @@
       _pending.map(pendingRowHtml).join('');
     box.querySelectorAll('.ap-del').forEach(function (b) {
       b.addEventListener('click', function () { _pending.splice(parseInt(b.getAttribute('data-i'), 10), 1); refreshPending(modal); });
+    });
+  }
+
+  function acceptStructuredResult(modal, expectedModalEpoch, expectedModeEpoch, currentModeEpoch, v) {
+    if (!modalStillCurrent(modal, expectedModalEpoch) || Number(expectedModeEpoch) !== Number(currentModeEpoch)) return false;
+    if (!v || typeof v !== 'object') return false;
+    v._ai = true;
+    _pending.push(v);
+    refreshPending(modal);
+    return true;
+  }
+
+  function structureAndQueue(modal, text, expectedModalEpoch, expectedModeEpoch, getCurrentModeEpoch, ui) {
+    ui = ui || {};
+    return structureWithAI(text).then(function (v) {
+      var currentModeEpoch = isFn(getCurrentModeEpoch) ? getCurrentModeEpoch() : expectedModeEpoch;
+      if (!acceptStructuredResult(modal, expectedModalEpoch, expectedModeEpoch, currentModeEpoch, v)) {
+        return { added: false, reason: 'stale-modal' };
+      }
+      if (ui.textarea) ui.textarea.value = '';
+      if (ui.status) ui.status.textContent = v._aiParseFailed ? 'Added (kept raw text - codes auto-detected).' : 'Structured & added.';
+      if (ui.button) ui.button.disabled = false;
+      return { added: true, visit: v };
+    }, function (err) {
+      var currentModeEpoch = isFn(getCurrentModeEpoch) ? getCurrentModeEpoch() : expectedModeEpoch;
+      if (modalStillCurrent(modal, expectedModalEpoch) && Number(expectedModeEpoch) === Number(currentModeEpoch)) {
+        if (ui.status) ui.status.textContent = 'AI failed (' + (err && err.message || 'error') + ').';
+        if (ui.button) ui.button.disabled = false;
+      }
+      return { added: false, reason: 'ai-error', error: err };
     });
   }
 
@@ -308,10 +364,15 @@
       '</div>';
     document.body.appendChild(ov);
     var modal = ov.querySelector('#mlsAddPtModal');
+    var modalEpoch = _modalEpoch;
+    ov.__mlsAddPatientEpoch = modalEpoch;
+    modal.__mlsAddPatientEpoch = modalEpoch;
 
     // mode switching
     var mode = 'guided';
+    var modeEpoch = 0;
     function renderMode() {
+      modeEpoch++;
       var host = modal.querySelector('#apModeHost');
       host.innerHTML = (mode === 'guided') ? guidedFormHtml() : pasteFormHtml();
       if (mode === 'guided') {
@@ -327,13 +388,10 @@
           if (!t) { stEl.textContent = 'Paste a visit first.'; return; }
           if (!isFn(window.aiCallRaw)) { stEl.textContent = 'AI transport unavailable — use Guided fields.'; return; }
           var btn = modal.querySelector('#appStruct'); btn.disabled = true; stEl.textContent = 'Structuring with AI…';
-          structureWithAI(t).then(function (v) {
-            v._ai = true;
-            _pending.push(v); refreshPending(modal);
-            modal.querySelector('#appText').value = '';
-            stEl.textContent = v._aiParseFailed ? 'Added (kept raw text — codes auto-detected).' : 'Structured & added.';
-            btn.disabled = false;
-          }, function (err) { stEl.textContent = 'AI failed (' + (err && err.message || 'error') + ').'; btn.disabled = false; });
+          var requestModeEpoch = modeEpoch;
+          structureAndQueue(modal, t, modalEpoch, requestModeEpoch, function () { return modeEpoch; }, {
+            textarea: modal.querySelector('#appText'), status: stEl, button: btn
+          });
         });
       }
     }
@@ -358,10 +416,10 @@
 
     modal.querySelector('#apSave').addEventListener('click', function () { doSave(modal, gatherDetails()); });
     modal.querySelector('#apAthena').addEventListener('click', function () { doAthena(modal, gatherDetails()); });
-    var closeFn = function () { close(); };
+    var closeFn = function () { close(modalEpoch); };
     modal.querySelector('#apClose').addEventListener('click', closeFn);
     modal.querySelector('#apCancel').addEventListener('click', closeFn);
-    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(modalEpoch); });
 
     return ov;
   }
@@ -370,36 +428,60 @@
 
   /* ---------- SAVE (manual + AI visits) into the §40 model ---------- */
   function doSave(modal, details) {
-    if (!trim(details.name)) { setStatus(modal, 'Enter the patient name first.'); return; }
+    var saveEpoch = Number(modal && modal.__mlsAddPatientEpoch);
+    if (!modalStillCurrent(modal, saveEpoch)) return Promise.resolve({ saved: false, reason: 'stale-modal' });
+    if (!trim(details.name)) { setStatus(modal, 'Enter the patient name first.'); return Promise.resolve({ saved: false, reason: 'missing-name' }); }
     var mod = M();
-    if (!mod) { setStatus(modal, 'Visit model not ready — reload the page.'); return; }
-    if (!_pending.length) { setStatus(modal, 'Add at least one visit, or use “Pull from athenaOne”.'); return; }
+    if (!mod) { setStatus(modal, 'Visit model not ready — reload the page.'); return Promise.resolve({ saved: false, reason: 'model-unavailable' }); }
+    if (!_pending.length) { setStatus(modal, 'Add at least one visit, or use “Pull from athenaOne”.'); return Promise.resolve({ saved: false, reason: 'missing-visit' }); }
     var btn = modal.querySelector('#apSave'); btn.disabled = true;
     setStatus(modal, 'Saving patient…');
+    var activeAtStart = activePatientId();
+    var formAtStart = modalPatientFingerprint(modal);
     var res = createOrFindPatient(details);
     var p = res.patient;
     var saved = 0;
-    _pending.forEach(function (v) {
+    var visitsToSave = _pending.slice();
+    visitsToSave.forEach(function (v) {
       var src = v._ai ? 'manual-ai' : 'manual';
       var stored = mod.addVisit(p.id, v, { source: src });
       if (stored) saved++;
     });
+    // Consume only this save's captured visits before the await. Any visits added
+    // later belong to the still-open (or subsequently reopened) modal session.
+    _pending.splice(0, visitsToSave.length);
     setStatus(modal, 'Saved ' + saved + ' visit' + (saved === 1 ? '' : 's') + '. Generating AI summaries…');
-    mod.ensureSummaries(p.id, function (m) { setStatus(modal, m); }).then(function () {
-      _pending = [];
+    var summaryPromise;
+    try {
+      summaryPromise = mod.ensureSummaries(p.id, function (m) {
+        if (modalStillCurrent(modal, saveEpoch)) setStatus(modal, m);
+      });
+    } catch (e) { summaryPromise = Promise.reject(e); }
+
+    function finish(summaryOk) {
+      if (!modalStillCurrent(modal, saveEpoch)) return { saved: true, patientId: p.id, uiUpdated: false };
+      var contextMoved = activePatientId() !== activeAtStart || modalPatientFingerprint(modal) !== formAtStart;
+      var base = summaryOk
+        ? ('Saved ' + (res.created ? 'new patient' : 'patient') + ' "' + p.name + '" with ' + mod.getVisits(p).length + ' visit(s).')
+        : ('Saved "' + p.name + '" (summaries can be generated from the profile).');
+      if (contextMoved) {
+        btn.disabled = false;
+        setStatus(modal, base + ' Your current patient and form were left unchanged.');
+        return { saved: true, patientId: p.id, uiUpdated: true, selectionPreserved: true };
+      }
       selectPatient(p.id);
-      setStatus(modal, '✓ Saved ' + (res.created ? 'new patient' : 'patient') + ' “' + p.name + '” with ' + mod.getVisits(p).length + ' visit(s).');
-      setTimeout(close, 900);
-    }, function () {
-      _pending = [];
-      selectPatient(p.id);
-      setStatus(modal, '✓ Saved “' + p.name + '” (summaries can be generated from the profile).');
-      setTimeout(close, 1100);
-    });
+      setStatus(modal, base);
+      setTimeout(function () { close(saveEpoch); }, summaryOk ? 900 : 1100);
+      return { saved: true, patientId: p.id, uiUpdated: true, selectionPreserved: false };
+    }
+
+    return Promise.resolve(summaryPromise).then(function () { return finish(true); }, function () { return finish(false); });
   }
 
   /* ---------- ATHENA pull from the same UI (reuse §40 copy-every-visit) ---------- */
   function doAthena(modal, details) {
+    var athenaEpoch = Number(modal && modal.__mlsAddPatientEpoch);
+    if (!modalStillCurrent(modal, athenaEpoch)) return Promise.resolve({ pulled: false, reason: 'stale-modal' });
     if (!trim(details.name)) { setStatus(modal, 'Enter the patient name (and DOB) first — the Athena pull verifies name + DOB.'); return; }
     if (!window.__mlsCopyVisits || !isFn(window.__mlsCopyVisits.run)) {
       setStatus(modal, 'Copy-every-visit module not loaded. Save manually, then use “📋 Copy every visit” on the profile.');
@@ -418,22 +500,30 @@
     selectPatient(p.id);   // copy-every-visit operates on the ACTIVE patient
     setStatus(modal, 'Open ' + esc(p.name) + '’s chart in athenaOne — pulling every visit (read-only)…');
     // run the proven §40 flow; it verifies name+DOB against the open Athena chart
-    window.__mlsCopyVisits.run(function (m) { setStatus(modal, m); }).then(function () {
+    return window.__mlsCopyVisits.run(function (m) { if (modalStillCurrent(modal, athenaEpoch)) setStatus(modal, m); }).then(function () {
+      if (!modalStillCurrent(modal, athenaEpoch)) return { pulled: true, uiUpdated: false };
       setStatus(modal, '✓ Athena pull complete — see the Visit history on the profile.');
-      setTimeout(close, 1200);
+      setTimeout(function () { close(athenaEpoch); }, 1200);
+      return { pulled: true, uiUpdated: true };
     }, function (err) {
+      if (!modalStillCurrent(modal, athenaEpoch)) return { pulled: false, uiUpdated: false, error: err };
       setStatus(modal, '⚠ ' + (err && err.message || 'Athena pull failed.') + ' (Any manual visits were saved.)');
       btn.disabled = false;
+      return { pulled: false, uiUpdated: true, error: err };
     });
   }
 
-  function close() {
+  function close(expectedEpoch) {
+    if (arguments.length && Number(expectedEpoch) !== Number(_modalEpoch)) return false;
+    _modalEpoch++;
     var ov = document.getElementById('mlsAddPtOv'); if (ov) ov.remove();
+    return true;
   }
   function open() {
     if (document.getElementById('mlsAddPtOv')) return;
+    _modalEpoch++;
     _pending = [];
-    buildModal();
+    return buildModal();
   }
 
   /* ---------- launcher button (robust: find a patients-area anchor, else float) ---------- */
@@ -487,6 +577,11 @@
     _collectGuidedFrom: collectGuided,
     _listToArr: listToArr,
     _STRUCT_SYS: STRUCT_SYS,
-    _pending: function () { return _pending; }
+    _pending: function () { return _pending; },
+    _modalEpoch: function () { return _modalEpoch; },
+    _modalStillCurrent: modalStillCurrent,
+    _acceptStructuredResult: acceptStructuredResult,
+    _structureAndQueue: structureAndQueue,
+    _doSave: doSave
   };
 })();

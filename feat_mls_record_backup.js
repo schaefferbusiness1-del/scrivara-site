@@ -1,4 +1,4 @@
-/* feat_mls_record_backup.js — v rb-1.0.0 (2026-07-01)
+/* feat_mls_record_backup.js — v rb-1.0.1 (2026-07-14)
  *
  * RECORDING SAFETY NET (additive, reversible — window.__mlsRecBackup.revert()).
  * The visit recorder is Web Speech recognition only: if the recognizer hiccups or the tab
@@ -20,7 +20,7 @@
   "use strict";
   if (window.__mlsRecBackup && window.__mlsRecBackup.installed) return;
 
-  var VERSION = "rb-1.0.0";
+  var VERSION = "rb-1.0.1";
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === "function"; }
 
@@ -86,7 +86,19 @@
   }
 
   /* ---------------- backup recorder ---------------- */
-  var rec = null, stream = null, sessId = null, seq = 0;
+  var rec = null, stream = null, sessId = null;
+  /* getUserMedia can resolve after Stop/New Visit/a patient switch. Every
+     request therefore owns one epoch. stopBackup() invalidates that epoch even
+     when MediaRecorder has not been created yet, and a stale resolved stream is
+     closed before it can construct or start a recorder. */
+  var backupRequestEpoch = 0, pendingBackupEpoch = 0;
+  function stopStreamTracks(s) {
+    safe(function () { if (s && isFn(s.getTracks)) s.getTracks().forEach(function (t) { if (t && isFn(t.stop)) t.stop(); }); });
+  }
+  function invalidatePendingBackup() {
+    backupRequestEpoch++;
+    pendingBackupEpoch = 0;
+  }
   function pickMime() {
     var c = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", ""];
     for (var i = 0; i < c.length; i++) { if (!c[i] || safe(function () { return MediaRecorder.isTypeSupported(c[i]); }, false)) return c[i]; }
@@ -101,31 +113,56 @@
     }, "patient");
   }
   function startBackup() {
-    if (rec) return; /* already running */
-    if (!window.MediaRecorder || !navigator.mediaDevices || !isFn(navigator.mediaDevices.getUserMedia)) return;
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+    if (rec) return true; /* already running */
+    if (!window.MediaRecorder || !navigator.mediaDevices || !isFn(navigator.mediaDevices.getUserMedia)) return false;
+    var requestEpoch = ++backupRequestEpoch;
+    pendingBackupEpoch = requestEpoch;
+    var micRequest;
+    try { micRequest = navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) {
+      if (pendingBackupEpoch === requestEpoch) pendingBackupEpoch = 0;
+      chip("Backup mic unavailable — dictation still works normally.", true);
+      return false;
+    }
+    Promise.resolve(micRequest).then(function (s) {
+      if (requestEpoch !== backupRequestEpoch || pendingBackupEpoch !== requestEpoch) {
+        stopStreamTracks(s);
+        return;
+      }
+      pendingBackupEpoch = 0;
+      var nextRec = null, nextSessId = null, nextSeq = 0;
       try {
-        stream = s;
         var mt = pickMime();
-        rec = new MediaRecorder(s, mt ? { mimeType: mt } : undefined);
-        sessId = Date.now(); seq = 0;
-        var mime = rec.mimeType || mt || "audio/webm";
-        putSess({ sess: sessId, at: sessId, patient: ptLabel(), mime: mime, open: 1 });
-        rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) putChunk(sessId, seq++, ev.data); };
-        rec.onerror = function () { chip("Audio backup hit an error — dictation itself is unaffected.", true); };
-        rec.start(5000); /* one durable chunk every 5s */
+        nextRec = new MediaRecorder(s, mt ? { mimeType: mt } : undefined);
+        nextSessId = Date.now();
+        var mime = nextRec.mimeType || mt || "audio/webm";
+        /* Keep chunk ownership local to this recorder. A final dataavailable
+           event from a stopped visit must never use the next visit's globals. */
+        nextRec.ondataavailable = function (ev) { if (ev.data && ev.data.size) putChunk(nextSessId, nextSeq++, ev.data); };
+        nextRec.onerror = function () { chip("Audio backup hit an error — dictation itself is unaffected.", true); };
+        rec = nextRec; stream = s; sessId = nextSessId;
+        nextRec.start(5000); /* one durable chunk every 5s */
+        putSess({ sess: nextSessId, at: nextSessId, patient: ptLabel(), mime: mime, open: 1 });
         prune(10);
         chip("Backup recording ✓ (audio kept on this device)");
-      } catch (e) { rec = null; safe(function () { s.getTracks().forEach(function (t) { t.stop(); }); }); }
+      } catch (e) {
+        if (rec === nextRec) { rec = null; stream = null; sessId = null; }
+        safe(function () { if (nextRec && nextRec.state !== "inactive") nextRec.stop(); });
+        stopStreamTracks(s);
+      }
     })["catch"](function () {
+      if (requestEpoch !== backupRequestEpoch || pendingBackupEpoch !== requestEpoch) return;
+      pendingBackupEpoch = 0;
       chip("Backup mic unavailable — dictation still works normally.", true);
     });
+    return true;
   }
   function stopBackup() {
-    if (!rec) return;
-    var r = rec, s = stream, id = sessId; rec = null; stream = null;
+    invalidatePendingBackup();
+    var r = rec, s = stream, id = sessId; rec = null; stream = null; sessId = null;
+    if (!r) { if (s) stopStreamTracks(s); return; }
     safe(function () { r.stop(); });
-    setTimeout(function () { safe(function () { if (s) s.getTracks().forEach(function (t) { t.stop(); }); }); }, 400);
+    setTimeout(function () { stopStreamTracks(s); }, 400);
     if (id) { putSessOpen(id, 0); chip("Audio backup saved ✓ — tap 🎧 to recover it any time"); }
   }
   function putSessOpen(id, open) {
@@ -141,7 +178,18 @@
     var sc = window.startCapture, xc = window.stopCapture;
     if (!isFn(sc) || !isFn(xc)) return false;
     wrapped = { sc: sc, xc: xc };
-    window.startCapture = function () { safe(startBackup); return sc.apply(this, arguments); };
+    window.startCapture = function () {
+      /* A new base attempt supersedes any pending/active backup. Run the base
+         start first so a refused microphone/visit binding never owns backup
+         audio; only a successful capture receives one request epoch. */
+      safe(stopBackup);
+      var result;
+      try { result = sc.apply(this, arguments); }
+      catch (e) { safe(stopBackup); throw e; }
+      if (result === false) { safe(stopBackup); return result; }
+      safe(startBackup);
+      return result;
+    };
     window.stopCapture = function () { safe(stopBackup); return xc.apply(this, arguments); };
     return true;
   }

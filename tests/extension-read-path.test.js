@@ -68,9 +68,12 @@ assert(!gotoDateHandler.includes('await chrome.scripting.executeScript('), 'Goto
 // app-side detour must remain retired: it issued a second bare read and raced
 // the page's 30-second timeout. A slow verified read now gets the extension's
 // full bounded budget and responses are correlated to their initiating call.
-const chartRead = between(app, 'function _assistReadChart(patientName, onStatus)', '/* ===== Pull a PATIENT');
+const chartRead = between(app, 'function _assistReadChart(patientRef, onStatus)', '/* ===== Pull a PATIENT');
 assert(chartRead.includes("requestId='chart-"));
 assert(chartRead.includes('requestId:requestId'));
+assert(chartRead.includes("patientDob:String(target.dob||'')"));
+assert(chartRead.includes("patientMrn:String(target.mrn||target.athenaId||'')"));
+assert(chartRead.includes("patientId:String(target.patientId||target.id||'')"));
 assert(chartRead.includes('e.data.requestId!==requestId'));
 assert(chartRead.includes('100000'));
 assert(!chartRead.includes("new Error('OLDEXT')"));

@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_stdline_autoinsert.js  ->  window.__mlsStdLineAuto   (v1.0.0)
+ * feat_stdline_autoinsert.js  ->  window.__mlsStdLineAuto   (v1.1.0)
  * ---------------------------------------------------------------------------
  * UPGRADE to the Templates-tab line-inserter (§55 mls-template-stdline.js +
  * the §"DEPLOY 3" feat_stdline_insert.js / window.__mlsStdLineInsert).
@@ -56,7 +56,7 @@
   'use strict';
   try { if (window.__mlsStdLineAuto && window.__mlsStdLineAuto.installed) return; } catch (e) {}
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var SECTION_ID = 'mls-stdline-section';
   var STYLE_ID = 'mls-slai-style';
   var BTN_AI = 'mls-slai-ai';        // primary: AI weave-and-add
@@ -119,6 +119,65 @@
     else { el.textContent = val; }
     safe(function () { el.dispatchEvent(new Event('input', { bubbles: true })); });
     safe(function () { el.dispatchEvent(new Event('change', { bubbles: true })); });
+  }
+
+  /* ---------- immutable editor ownership across the AI await ------------ */
+  function activePatientId() {
+    return String(safe(function () {
+      if (isFn(window.getActivePtId)) return window.getActivePtId() || '';
+      var p = isFn(window.activePatient) ? window.activePatient() : null;
+      return p && p.id != null ? p.id : '';
+    }, '') || '');
+  }
+  function visitBinding() {
+    return safe(function () { return (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null; }, null);
+  }
+  function visitEpoch() {
+    return safe(function () { return (typeof currentVisitAthenaEpoch !== 'undefined') ? Number(currentVisitAthenaEpoch) : null; }, null);
+  }
+  function openHistoryNoteId() {
+    return String(safe(function () { return (typeof currentNoteId !== 'undefined' && currentNoteId != null) ? currentNoteId : ''; }, '') || '');
+  }
+  function captureEditorToken(box) {
+    if (!box) return null;
+    var binding = visitBinding(), epoch = visitEpoch();
+    var isVisitNote = box.id === 'noteBox';
+    if (isVisitNote) {
+      if (!binding || !binding.id || !isFn(window._athenaAsyncBindingStillSafe)
+          || !safe(function () { return isFn(window._athenaGuardBoundEditor) && window._athenaGuardBoundEditor('adding a saved line') === true; }, false)) {
+        toastMsg('Open this note inside the correct patient visit before adding a saved line. Nothing changed.');
+        return null;
+      }
+    }
+    return {
+      box: box,
+      boxId: String(box.id || ''),
+      before: readBox(box),
+      patientId: activePatientId(),
+      historyNoteId: openHistoryNoteId(),
+      binding: binding,
+      bindingId: binding && binding.id != null ? String(binding.id) : '',
+      epoch: epoch,
+      editorFingerprint: isVisitNote && isFn(window._athenaEditorFingerprint) ? safe(function () { return window._athenaEditorFingerprint(); }, null) : null,
+      requiresBinding: isVisitNote
+    };
+  }
+  function editorTokenStillSafe(token) {
+    if (!token || !token.box) return false;
+    if (token.boxId && gid(token.boxId) !== token.box) return false;
+    if (readBox(token.box) !== token.before) return false; // same-visit manual edit
+    if (activePatientId() !== token.patientId || openHistoryNoteId() !== token.historyNoteId) return false;
+    var current = visitBinding(), epoch = visitEpoch();
+    if (String((current && current.id) || '') !== token.bindingId) return false;
+    if (token.epoch != null && Number(epoch) !== Number(token.epoch)) return false;
+    if (token.requiresBinding) {
+      if (!token.binding || !isFn(window._athenaAsyncBindingStillSafe)) return false;
+      if (token.editorFingerprint !== null
+          && (!isFn(window._athenaEditorFingerprint)
+              || safe(function () { return window._athenaEditorFingerprint(); }, null) !== token.editorFingerprint)) return false;
+      return safe(function () { return window._athenaAsyncBindingStillSafe(token.binding, 'adding a saved line', token.epoch) === true; }, false);
+    }
+    return true;
   }
 
   /* ---------- reuse the §55 engine for presence + deterministic placement -- */
@@ -246,6 +305,11 @@
     btn.textContent = '✨ Weaving in…'; // sparkle + ellipsis
     btn.classList.remove('ok'); btn.classList.remove('warn');
   }
+  function staleEditorResult(btn) {
+    flash(btn, 'Visit changed - not added', false);
+    toastMsg('The patient or note changed while MLS was adding that line, so the older result was discarded.');
+    return { ok: false, reason: 'stale-editor' };
+  }
 
   /* ---------- the core action: AI weave -> gate -> write -> RE-READ -------- */
   function coreAdd(item, btn) {
@@ -253,7 +317,9 @@
     if (!line) { flash(btn, 'No line text', false); return Promise.resolve({ ok: false, reason: 'no-line' }); }
     var box = noteBox();
     if (!box) { flash(btn, 'Open a note first', false); return Promise.resolve({ ok: false, reason: 'no-box' }); }
-    var before = readBox(box);
+    var editorToken = captureEditorToken(box);
+    if (!editorToken) { flash(btn, 'Open the correct visit', false); return Promise.resolve({ ok: false, reason: 'unsafe-editor' }); }
+    var before = editorToken.before;
     if (isPresent(before, line)) {
       markAdded(item, line);
       flash(btn, 'Already in note ✓', true);
@@ -263,6 +329,7 @@
     setWorking(btn);
 
     return aiWeave(before, line).then(function (weave) {
+      if (!editorTokenStillSafe(editorToken)) return staleEditorResult(btn);
       var candidate = null, method = '';
       if (weave && weave.text) { candidate = weave.text; method = 'ai'; }
       if (candidate == null) {
@@ -275,6 +342,7 @@
         return { ok: false, reason: 'no-candidate' };
       }
       // re-read the box just before writing in case it changed under us
+      if (!editorTokenStillSafe(editorToken)) return staleEditorResult(btn);
       var nowBefore = readBox(box);
       if (isPresent(nowBefore, line)) { markAdded(item, line); flash(btn, 'Already in note ✓', true); return { ok: true, reason: 'already', method: method }; }
       writeBox(box, candidate);
@@ -294,6 +362,7 @@
       flash(btn, '⚠ Not added — try again', false);
       return { ok: false, reason: 'verify-failed', method: method };
     }).catch(function () {
+      if (!editorTokenStillSafe(editorToken)) return staleEditorResult(btn);
       // last-resort deterministic attempt
       var det = deterministicInsert(before, line);
       if (det !== before) {
@@ -490,6 +559,8 @@
     preserves: preserves,
     aiWeave: aiWeave,
     coreAdd: coreAdd,
+    _captureEditorToken: captureEditorToken,
+    _editorTokenStillSafe: editorTokenStillSafe,
     verifyInNote: verifyInNote,
     decorateItem: decorateItem,
     sweep: sweep,

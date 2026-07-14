@@ -110,8 +110,9 @@ const resultUi = between(writeflow, 'function renderResp(logEl, resp, want)', '/
 assert(/r\.written && r\.verified && durable/.test(resultUi), 'Done must require written, verified, and durable evidence');
 assert(/persisted\|\|r\.serverVerified/.test(resultUi), 'durable evidence must be persisted or server verified');
 
-// Full-visit/billing/history controls are destination previews only. A saved
-// visit uses its immutable saved identity, never whichever patient is active.
+// Full-visit/history controls open the destination review. The Superbill
+// shortcut starts only the typed read-only probe/final-confirmation controller.
+// A saved visit uses its immutable saved identity, never the active patient.
 const fullVisit = between(app, 'function pushEntireVisitToAthena(btn)', '/* Legacy natural-language autopilot');
 assert(fullVisit.includes('_athenaPushPlan'));
 assert(!fullVisit.includes('postMessage'));
@@ -119,9 +120,11 @@ const fullPlan = between(app, 'function _athenaPushPlan(sections, who, immutable
 assert(!fullPlan.includes('postMessage'));
 assert(fullPlan.includes('_athenaShowReceipt'));
 const billingPlan = between(app, 'function pushSuperbillToAthena()', '/* Preview a SAVED visit');
-assert(billingPlan.includes('_athenaPushPlan') && !billingPlan.includes('postMessage'));
+assert(/startAthenaAction\(['"]stage_billing['"]/.test(billingPlan), 'Superbill must use the supervised typed billing action');
+assert(!billingPlan.includes('postMessage') && !/mode\s*:\s*['"]execute['"]/.test(billingPlan), 'Superbill must not bypass the final confirmation controller');
 const savedPlan = between(app, 'function pushHistoryNoteToAthena(id)', 'function getAutoSendEMR()');
-assert(savedPlan.includes('n.patientId'));
+assert(savedPlan.includes('_athenaBindingForSavedRecord(n)'), 'saved history must rebuild its immutable saved-record binding');
+assert(savedPlan.includes('savedBinding.identityConflict'), 'saved history must fail closed when saved identity conflicts with the linked chart');
 assert(!savedPlan.includes('activePatient'), 'saved history routing must not borrow the currently active patient');
 assert(savedPlan.includes('_athenaPushPlan') && !savedPlan.includes('postMessage'));
 assert(app.includes('function getAutoSendEMR(){ return false; }'));

@@ -1,5 +1,5 @@
 /* =============================================================================
- * __mlsDictateAnywhere  da-1.0.1   (2026-07-13, owner directive)
+ * __mlsDictateAnywhere  da-1.0.2   (2026-07-14, owner directive)
  * -----------------------------------------------------------------------------
  * "There is always a chance to dictate into any text box."
  * Focus any textarea / text-ish input / contenteditable in MLS Scribe and a
@@ -23,7 +23,7 @@
   'use strict';
   if (window.__mlsDictateAnywhere) return;
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var api = { installed: true, version: 'da-1.0.1', supported: !!SR, starts: 0 };
+  var api = { installed: true, version: 'da-1.0.2', supported: !!SR, starts: 0 };
   window.__mlsDictateAnywhere = api;
   if (!SR) { api.revert = function () {}; return; }
 
@@ -34,6 +34,10 @@
   var lastField = null;  /* survives blur - the bottom dock targets this */
   var rec = null;        /* active recognition */
   var listening = false;
+  var recognitionEpoch = 0;
+  var recognitionTarget = null;
+  var recognitionBinding = null;
+  var recognitionBindingEpoch = null;
   var hideT = null;
   var unregisterSpeech = null;
 
@@ -51,6 +55,43 @@
     return h;
   }
   function releaseSpeech() { try { var h = speechHub(); if (h) h.release('dictate'); } catch (e) {} }
+
+  function isVisitField(el) {
+    var id = el && el.id ? String(el.id) : '';
+    return id === 'transcript' || id === 'noteBox' || id === 'patientLabel'
+      || id === 'ez3Transcript' || id === 'ez3Note' || id === 'mlsProtoScratch';
+  }
+  function captureVisitToken(target) {
+    var binding = null, epoch = null;
+    try { binding = (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null; } catch (e) {}
+    /* A clinical field must be owned before the first spoken word. This closes
+       the blank-editor window where a later patient switch could otherwise
+       reuse the same DOM field before its first input event establishes it. */
+    if (!binding && isVisitField(target)) {
+      try {
+        if (typeof window._athenaBindingForCurrentVisit === 'function' && typeof window._athenaSetVisitBinding === 'function') {
+          var candidate = window._athenaBindingForCurrentVisit('field-dictation');
+          if (candidate) window._athenaSetVisitBinding(candidate);
+          binding = (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null;
+        }
+      } catch (e2) {}
+    }
+    try { epoch = (typeof currentVisitAthenaEpoch !== 'undefined') ? currentVisitAthenaEpoch : null; } catch (e3) {}
+    return { binding: binding, epoch: epoch };
+  }
+  function visitTokenStillSafe(target, binding, epoch) {
+    try { if (!target || !document.contains(target) || target !== recognitionTarget) return false; } catch (e) { return false; }
+    if (isVisitField(target) && !binding) return false;
+    if (binding) {
+      try {
+        return typeof window._athenaAsyncBindingStillSafe === 'function'
+          && window._athenaAsyncBindingStillSafe(binding, 'field dictation', epoch);
+      } catch (e2) { return false; }
+    }
+    try {
+      return epoch == null || (typeof currentVisitAthenaEpoch !== 'undefined' && Number(epoch) === Number(currentVisitAthenaEpoch));
+    } catch (e3) { return false; }
+  }
 
   function css() {
     if (document.getElementById(STYLE_ID)) return;
@@ -175,6 +216,11 @@
   function start() {
     if (listening || !field) return;
     var target = field;
+    var visitToken = captureVisitToken(target);
+    if (isVisitField(target) && !visitToken.binding) {
+      try { if (typeof window.toast === 'function') window.toast('Open the correct patient visit before dictating into this field.', 'err'); } catch (e00) {}
+      return;
+    }
     var h = registerSpeech();
     var lease = h ? h.claim('dictate') : { ok: true, previous: null };
     if (!lease || lease.ok === false) {
@@ -185,23 +231,41 @@
       try { if (typeof window.toast === 'function') window.toast('Stopped ' + lease.previous.label + ' so Dictate can use the microphone. Any visit transcript already captured is safe.', ''); } catch (e1) {}
     }
     try {
-      rec = new SR();
-      rec.lang = (navigator.language && /^en/i.test(navigator.language)) ? navigator.language : 'en-US';
-      rec.continuous = true;
-      rec.interimResults = false;
-      rec.onresult = function (ev) {
+      var instance = new SR();
+      rec = instance;
+      var sessionEpoch = ++recognitionEpoch;
+      recognitionTarget = target;
+      recognitionBinding = visitToken.binding;
+      recognitionBindingEpoch = visitToken.epoch;
+      instance.lang = (navigator.language && /^en/i.test(navigator.language)) ? navigator.language : 'en-US';
+      instance.continuous = true;
+      instance.interimResults = false;
+      instance.onresult = function (ev) {
+        if (instance !== rec || !listening || sessionEpoch !== recognitionEpoch
+            || !visitTokenStillSafe(target, recognitionBinding, recognitionBindingEpoch)) {
+          if (instance === rec) {
+            /* The immutable-binding helper already explains a bound-visit
+               mismatch. A non-visit field only needs our generic notice. */
+            if (!recognitionBinding) {
+              try { if (typeof window.toast === 'function') window.toast('The visit changed, so that older dictation was discarded. Nothing changed in Athena.', 'err'); } catch (e0) {}
+            }
+            stop();
+          }
+          return;
+        }
         for (var i = ev.resultIndex; i < ev.results.length; i++) {
           if (ev.results[i].isFinal) insertText(target, ev.results[i][0].transcript.trim());
         }
       };
-      rec.onerror = function (ev) {
+      instance.onerror = function (ev) {
+        if (instance !== rec) return;
         var why = ev && ev.error === 'not-allowed' ? 'Microphone permission is blocked for this site.' :
                   ev && ev.error === 'no-speech' ? null : 'Dictation stopped (' + ((ev && ev.error) || 'error') + ').';
         if (why) { try { if (typeof window.toast === 'function') window.toast(why, 'err'); } catch (e) {} }
-        cleanup();
+        cleanup(instance);
       };
-      rec.onend = function () { cleanup(); };
-      rec.start();
+      instance.onend = function () { cleanup(instance); };
+      instance.start();
       api.starts++;
       listening = true;
       setLabel();
@@ -211,12 +275,25 @@
     }
   }
   function stop() {
-    try { if (rec) rec.stop(); } catch (e) {}
-    cleanup();
+    var old = rec;
+    recognitionEpoch++;
+    rec = null;
+    listening = false;
+    recognitionTarget = null;
+    recognitionBinding = null;
+    recognitionBindingEpoch = null;
+    releaseSpeech();
+    try { if (old) old.stop(); } catch (e) {}
+    setLabel();
+    if (!field || document.activeElement !== field) hide();
   }
-  function cleanup() {
+  function cleanup(instance) {
+    if (instance && instance !== rec) return;
     listening = false;
     rec = null;
+    recognitionTarget = null;
+    recognitionBinding = null;
+    recognitionBindingEpoch = null;
     releaseSpeech();
     setLabel();
     /* if focus already left the field, finish the deferred hide */
@@ -290,4 +367,6 @@
     api.installed = false;
     delete window.__mlsDictateAnywhere;
   };
+  api.stop = stop;
+  api.isListening = function () { return listening; };
 })();

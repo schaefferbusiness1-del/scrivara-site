@@ -1,4 +1,4 @@
-/* feat_mls_voice_ai.js  ->  window.__mlsVoiceAI  (v1.0.0)
+/* feat_mls_voice_ai.js  ->  window.__mlsVoiceAI  (v1.1.0)
  * ==========================================================================
  * VOICE-DRIVEN COMMAND LAYER for the MLSscribe app (mlsscribe.com / ScribeFlow).
  *
@@ -14,15 +14,14 @@
  *   generate the note -> generateNote()           (backend-dependent: degrades honestly)
  *   save draft        -> saveDraft()
  *   pull from Athena  -> pullPatientFromAthenaPrompt()
- *   save to Athena    -> window.__mlsAthenaWriteback.writeNoteToChart({})
- *                        (inserts note into the OPEN chart's note field; the
- *                         writeback module's OWN rails apply: wrong-patient guard +
- *                         verified destination, and it NEVER clicks Save/Sign.)
+ *   save to Athena    -> pushEntireVisitToAthena()
+ *                        (opens the exact-patient review/confirmation surface;
+ *                         voice never bypasses the clinician's final confirm.)
  *
  * HARD SAFETY RAILS (enforced here):
- *   - NEVER signs, saves, attests, or final-submits an Athena chart. The only
- *     Athena action this layer can trigger is the existing writeback INSERT,
- *     whose own handler never clicks Save/Sign. The clinician signs.
+ *   - NEVER bypasses the visible Athena action review. Voice can only open the
+ *     exact-patient confirmation surface; the clinician must choose and confirm
+ *     any write, save, sign, or billing action on screen.
  *   - HONEST status only. If a step's function is missing, or generation fails
  *     (e.g. AI backend down), the step is reported as failed/skipped with a
  *     truthful reason — it NEVER fabricates success.
@@ -46,7 +45,7 @@
     if (window.__mlsVoiceAI && window.__mlsVoiceAI.installed) return;
   } catch (e) { return; }
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.1';
   var ASSET = 'feat_mls_voice_ai.js';
   var WAKE = 'mls assistant';
   var STYLE_ID = 'mlsVoiceAiStyle';
@@ -63,6 +62,32 @@
       .replace(/\s+/g, ' ')
       .trim();
   }
+  function captureVisitToken(actionLabel) {
+    var binding = safe(function () { return (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null; });
+    var epoch = safe(function () { return (typeof currentVisitAthenaEpoch !== 'undefined') ? Number(currentVisitAthenaEpoch) : null; });
+    if (!binding || !binding.id || epoch == null || !isFinite(epoch)) return null;
+    if (!isFn(window._athenaGuardBoundEditor) || window._athenaGuardBoundEditor(actionLabel || 'voice action') !== true) return null;
+    return { binding: binding, epoch: epoch };
+  }
+  function visitTokenStillSafe(token, actionLabel) {
+    return !!(token && token.binding && isFn(window._athenaAsyncBindingStillSafe)
+      && safe(function () { return window._athenaAsyncBindingStillSafe(token.binding, actionLabel || 'voice action', token.epoch) === true; }));
+  }
+  var unregisterVoiceSpeech = null;
+  function voiceSpeechHub() {
+    return safe(function () {
+      if (isFn(window.mlsSpeechHub)) return window.mlsSpeechHub();
+      if (window.__mlsSpeechHub && isFn(window.__mlsSpeechHub.claim)) return window.__mlsSpeechHub;
+      return null;
+    });
+  }
+  function claimVoiceSpeech() {
+    var h = voiceSpeechHub();
+    if (!h) return { ok: true, previous: null };
+    if (!unregisterVoiceSpeech && isFn(h.register)) unregisterVoiceSpeech = h.register('voice-ai', 'MLS Assistant', function () { stop(); });
+    return h.claim('voice-ai');
+  }
+  function releaseVoiceSpeech() { safe(function () { var h = voiceSpeechHub(); if (h) h.release('voice-ai'); }); }
 
   /* ---------------- on-screen toast (reversible) ---------------- */
   function ensureStyle() {
@@ -152,48 +177,43 @@
       name: 'generate_note',
       label: 'Generate note',
       patterns: [/\b(generate|create|make|write|draft|produce)\b.*\bnote\b/, /\bgenerate\b/, /\bnote\b.*\b(generate|create)\b/],
-      run: function () {
+      run: function (chain) {
         var fn = window.generateNote;
         if (!isFn(fn)) return R(false, 'unavailable', 'Generate-Note function not found on this page.');
-        // generateNote() is async + backend-dependent. We invoke it and then
-        // OBSERVE the note field to decide success — never assume.
-        var box = document.getElementById('noteBox');
-        var before = box ? String(box.value || '') : '__noBox__';
-        var threw = false;
-        safe(function () { var r = fn(); if (r && isFn(r.then)) r.catch(function () { threw = true; }); });
-        return new Promise(function (resolve) {
-          var deadline = now() + 30000; // up to 30s for the AI backend
-          (function poll() {
-            if (threw) return resolve(R(false, 'failed', "Couldn't generate — AI backend unavailable."));
-            var b = document.getElementById('noteBox');
-            var val = b ? String(b.value || '') : '';
-            if (b && val && val !== before && val.trim().length > 0) {
-              return resolve(R(true, 'ok', 'Note generated.'));
-            }
-            if (now() > deadline) {
-              return resolve(R(false, 'failed', "Couldn't confirm a note was generated — AI backend may be unavailable. Nothing fabricated."));
-            }
-            setTimeout(poll, 600);
-          })();
-        });
+        var token = captureVisitToken('voice note generation');
+        if (!token) return R(false, 'failed', 'Open the correct patient visit before generating. Nothing changed in Athena.');
+        if (chain) chain.visitToken = token;
+        var verifiedRun;
+        try { verifiedRun = fn(); }
+        catch (e) { return R(false, 'failed', 'Could not generate the note because the AI request failed.'); }
+        return Promise.resolve(verifiedRun).then(function (accepted) {
+          if (accepted !== true) return R(false, 'failed', 'Could not confirm a note was generated. The visit may have changed; nothing was sent to Athena.');
+          if (!visitTokenStillSafe(token, 'voice note generation')) return R(false, 'failed', 'The patient or visit changed, so the voice chain stopped. Nothing was sent to Athena.');
+          return R(true, 'ok', 'Note generated.');
+        }, function () { return R(false, 'failed', 'Could not generate the note because the AI request failed.'); });
+
       }
     },
     {
       name: 'save_draft',
       label: 'Save draft',
       patterns: [/\bsave\b.*\bdraft\b/, /\bsave (the )?draft\b/, /\bdraft\b.*\bsave\b/, /^save draft$/],
-      run: function () {
+      run: function (chain) {
         var fn = window.saveDraft;
         if (!isFn(fn)) return R(false, 'unavailable', 'Save-Draft function not found on this page.');
-        return safe(function () { fn(); return R(true, 'ok', 'Draft saved.'); })
+        var token = (chain && chain.visitToken) || captureVisitToken('voice draft save');
+        if (!visitTokenStillSafe(token, 'voice draft save')) return R(false, 'failed', 'The patient or visit changed, so the voice chain stopped before saving.');
+        return safe(function () { return fn() === true ? R(true, 'ok', 'Draft saved.') : R(false, 'failed', 'Could not save draft.'); })
           || R(false, 'failed', 'Could not save draft.');
+
       }
     },
     {
       name: 'pull_patient',
       label: 'Pull patient from Athena',
       patterns: [/\bpull\b.*\bathena\b/, /\bpull\b.*\bpatient\b/, /\bget\b.*\bpatient\b.*\bathena\b/, /\bload\b.*\bathena\b.*\bpatient\b/],
-      run: function () {
+      run: function (chain) {
+        if (chain) chain.visitToken = null;
         var fn = window.pullPatientFromAthenaPrompt;
         if (!isFn(fn)) return R(false, 'unavailable', 'Pull-from-Athena function not found on this page.');
         return safe(function () { fn(); return R(true, 'ok', 'Pulling patient from Athena…'); })
@@ -204,20 +224,16 @@
       name: 'save_to_athena',
       label: 'Save to Athena (writeback)',
       patterns: [/\b(save|write|put|insert|send|push)\b.*\bathena\b/, /\bathena\b.*\b(writeback|write back|chart)\b/, /\bto athena\b/],
-      run: function () {
-        var wb = window.__mlsAthenaWriteback;
-        if (!wb || !isFn(wb.writeNoteToChart)) {
-          return R(false, 'unavailable',
-            'Athena writeback not available here — it runs where an athenaOne chart is open (extension content script). Nothing was written.');
-        }
-        // Don't write an empty note. If there's no note yet, skip honestly.
-        var box = document.getElementById('noteBox');
-        if (box && !String(box.value || '').trim()) {
-          return R(false, 'skipped', 'No note to write yet — skipped Athena writeback.');
-        }
-        // writeNoteToChart inserts into the open chart's note field and NEVER signs.
-        return safe(function () { wb.writeNoteToChart({}); return R(true, 'ok', 'Sent note to the open Athena chart as an UNSIGNED draft — you sign it in athenaOne.'); })
-          || R(false, 'failed', 'Could not run Athena writeback.');
+      run: function (chain) {
+        var review = window.pushEntireVisitToAthena;
+        if (!isFn(review)) return R(false, 'unavailable', 'Athena review is not available on this page. Nothing was written.');
+        var token = (chain && chain.visitToken) || captureVisitToken('voice Athena review');
+        if (!visitTokenStillSafe(token, 'voice Athena review')) return R(false, 'failed', 'The patient or visit changed, so the voice chain stopped. Nothing was written.');
+        var reviewBox = document.getElementById('noteBox');
+        if (reviewBox && !String(reviewBox.value || '').trim()) return R(false, 'skipped', 'No note to review yet. Nothing was written.');
+        return safe(function () { review(); return R(true, 'ok', 'Opened the exact-patient Athena review. Choose the action and make the final confirmation on screen.'); })
+          || R(false, 'failed', 'Could not open the Athena review. Nothing was written.');
+
       }
     }
   ];
@@ -280,6 +296,7 @@
    * ============================================================ */
   function executeChain(intentNames, opts) {
     opts = opts || {};
+    var chainContext = { visitToken: null };
     var results = [];
     var rows = [];
     showToast('Running ' + intentNames.length + ' step(s)…', intentNames.map(function (n) {
@@ -303,7 +320,7 @@
         showToast('Step ' + (i + 1) + ' of ' + intentNames.length, rows.slice());
         speak((it ? it.label : name));
 
-        Promise.resolve(safe(function () { return it ? it.run() : R(false, 'failed', 'Unknown intent.'); }))
+        Promise.resolve(safe(function () { return it ? it.run(chainContext) : R(false, 'failed', 'Unknown intent.'); }))
           .then(function (res) {
             res = res || R(false, 'failed', 'No result.');
             results.push({ intent: name, ok: res.ok, status: res.status, msg: res.msg });
@@ -314,6 +331,17 @@
             showToast('Step ' + (i + 1) + ' of ' + intentNames.length, rows.slice());
             if (!res.ok) speak(res.msg);
             i++;
+            if (!res.ok) {
+              /* Stop after a failed prerequisite. Never offer an older note
+                 for Athena review after generation or validation was rejected. */
+              while (i < intentNames.length) {
+                var skippedName = intentNames[i], skippedIntent = intentByName(skippedName);
+                var skippedMsg = 'Skipped because the previous step did not complete.';
+                results.push({ intent: skippedName, ok: false, status: 'skipped', msg: skippedMsg });
+                rows.push({ text: '- ' + (skippedIntent ? skippedIntent.label : skippedName) + ' - ' + skippedMsg, cls: 'skip' });
+                i++;
+              }
+            }
             setTimeout(step, 350);
           });
       }
@@ -344,7 +372,7 @@
   /* ============================================================
    *  MIC MODE (opt-in) — Web Speech API recognition
    * ============================================================ */
-  var rec = null, listening = false;
+  var rec = null, listening = false, voiceSessionEpoch = 0;
   function SR() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
 
   function start() {
@@ -354,11 +382,17 @@
       showToast('Voice unavailable', [{ text: 'This browser has no Web Speech API. Use Chrome/Edge, or call __mlsVoiceAI.handleUtterance(text).', cls: 'bad' }]);
       return false;
     }
-    rec = new Ctor();
-    rec.lang = 'en-US';
-    rec.continuous = true;
-    rec.interimResults = false;
-    rec.onresult = function (ev) {
+    var lease = claimVoiceSpeech();
+    if (!lease || lease.ok === false) return false;
+    var instance;
+    try { instance = new Ctor(); } catch (e0) { releaseVoiceSpeech(); return false; }
+    rec = instance;
+    var sessionEpoch = ++voiceSessionEpoch;
+    instance.lang = 'en-US';
+    instance.continuous = true;
+    instance.interimResults = false;
+    instance.onresult = function (ev) {
+      if (instance !== rec || !listening || sessionEpoch !== voiceSessionEpoch) return;
       try {
         for (var k = ev.resultIndex; k < ev.results.length; k++) {
           if (!ev.results[k].isFinal) continue;
@@ -367,23 +401,27 @@
         }
       } catch (e) {}
     };
-    rec.onend = function () { if (listening) { safe(function () { rec.start(); }); } };
-    rec.onerror = function () {};
-    safe(function () { rec.start(); });
+    instance.onend = function () { if (instance === rec && listening && sessionEpoch === voiceSessionEpoch) { safe(function () { instance.start(); }); } };
+    instance.onerror = function () {};
+    try { instance.start(); } catch (e1) { rec = null; releaseVoiceSpeech(); return false; }
     listening = true;
     showToast('Listening', [{ text: 'Say “MLS Assistant, …”. e.g. “generate note and then save to Athena”.', cls: '' }]);
     return true;
   }
   function stop() {
+    var old = rec;
+    voiceSessionEpoch++;
     listening = false;
-    safe(function () { if (rec) rec.stop(); });
     rec = null;
+    releaseVoiceSpeech();
+    safe(function () { if (old) old.stop(); });
     return true;
   }
 
   /* ---------------- revert ---------------- */
   function revert() {
     safe(stop);
+    safe(function () { if (unregisterVoiceSpeech) unregisterVoiceSpeech(); unregisterVoiceSpeech = null; });
     safe(function () { var t = document.getElementById(TOAST_ID); if (t && t.parentNode) t.parentNode.removeChild(t); });
     safe(function () { var s = document.getElementById(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); });
     try { window.__mlsVoiceAI.installed = false; } catch (e) {}
