@@ -1413,7 +1413,6 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
-        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="generatePatientLegalReport()" title="AI-draft a narrative report, IME, or utilization review from this chart for an attorney — you review, edit, and sign it">⚖️ Legal report</button>
       </h2>
       <p class="sub" id="profDemo">—</p>
 
@@ -2043,7 +2042,6 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" id="teachBtn" onclick="teachFromEdits()" disabled title="Learn reusable style preferences from how you edited this note (no patient details stored)">💡 Teach MLS</button>
         <button class="btn-ghost" onclick="exportFHIR()" disabled id="fhirBtn" title="Build a FHIR R4 Bundle">🔌 Export FHIR</button>
         <button class="btn-ghost" id="templatesBtn" onclick="openTemplates()" title="Import and manage output templates (optional — off by default)">📄 Templates</button>
-        <button class="btn-ghost" id="legalBtn" onclick="openLegal()" title="Generate a formal medical-legal report (optional — enable in Settings)" style="display:none">⚖️ Legal</button>
         <button class="btn-ghost" onclick="downloadNote()" disabled id="dlBtn">⬇ Download .txt</button>
       </div>
     </div>
@@ -3719,7 +3717,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div class="modal" style="max-width:680px">
     <button class="modal-x" onclick="closeLegal()">×</button>
     <h3>⚖️ Medical-legal report <span style="font-weight:400;font-size:14px;color:var(--muted)">(attorney request → formal report)</span></h3>
-    <p class="note">Drafts a formal medical-legal report for the <b>active patient</b> using their record and the attorney's request. Built only from documented facts — anything missing appears as a [bracketed placeholder] for you to complete. A DRAFT you must verify and sign.</p>
+    <p class="note">Review the request, attach the correct patient chart if you treated the patient, and add or edit counsel's legal questions before generating. Nothing drafts until you press <b>Generate report</b>.</p>
+
+    <div id="legalModalPatientRow" style="margin:10px 0 14px;background:#fff8e8;border:1px solid #f0d9a0;border-radius:10px;padding:12px">
+      <label for="legalModalPatientSel" style="display:block;font-weight:700;margin-bottom:6px">👤 Attach the patient chart used for this report</label>
+      <select id="legalModalPatientSel" class="sf-select" style="width:100%;max-width:none" onchange="setLegalAttachedPatient(this.value)">
+        <option value="">— Choose a patient chart to attach —</option>
+      </select>
+      <div id="legalModalPatientStatus" style="font-size:12.5px;line-height:1.5;margin-top:7px;color:#8a5a00;font-weight:600">No patient chart attached. The report will not use any patient's MLS history.</div>
+      <div id="legalPatientSuggestion" style="display:none;font-size:12px;line-height:1.45;margin-top:5px;color:var(--muted)"></div>
+    </div>
 
     <div class="row tight" style="margin-top:4px">
       <div class="field" style="flex:1">
@@ -3767,7 +3774,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <button class="btn-green" id="legalGenBtn" onclick="generateLegalReport()" style="flex:1">⚖️ Generate report</button>
       <button class="btn-ghost" onclick="closeLegal()">Close</button>
     </div>
-    <p class="note" style="margin-top:10px;color:var(--muted)">Uses the active patient's chart and any note for clinical content. The report is a DRAFT to verify, complete, and sign.</p>
+    <p class="note" id="legalSourceSummary" style="margin-top:10px;color:var(--muted)">No patient history will be used unless you attach a patient chart above. The report is a DRAFT to verify, complete, and sign.</p>
   </div>
 </div>
 
@@ -7699,6 +7706,9 @@ function showView(v){
   // This is real access control, not just hidden tabs (a stray button/quick-find can't sneak a Lite user in).
   try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){ try{ toast('That’s a Standard feature — your Lite plan covers note generation. Upgrade in Settings to unlock the full app.','err'); }catch(e){} v='visit'; } }catch(e){}
   currentView=v;
+  // The legal builder and its review/sign/PDF card have one permanent runtime
+  // home: Legal requests. Move the original live nodes before that view renders.
+  if(v==='legalreq'){ try{ if(typeof ensureLegalRequestWorkspace==='function') ensureLegalRequestWorkspace(); }catch(e){} }
   // Global motion polish (injected once): smooth tab transitions + a subtle press
   // response on every button, so the whole app feels responsive and alive.
   if(!window._mlsPolishCss){ window._mlsPolishCss=1; try{ var _s=document.createElement('style'); _s.textContent='@keyframes mlsViewIn{from{opacity:.35;transform:translateY(6px)}to{opacity:1;transform:none}} button{transition:transform .07s ease} button:active{transform:scale(.97)}'; document.head.appendChild(_s); }catch(e){} }
@@ -12418,20 +12428,40 @@ let currentLegal=''; // MLS additive — optional Legal report (off by default)
 let currentLegalRequestId=null; // MLS additive — set when a clinician opens an attorney request to fulfill
 let legalReqFilesText='';       // MLS additive — extracted text of the attorney's uploaded files (feeds the legal draft)
 let legalAttachedPatientId=null; // MLS additive — the doctor's OWN patient chart they chose to fold into the report (if they also treated the examinee)
+/* Keep the legacy report card/modal physically inside Legal requests. This base
+   guard runs even if an enhancement bundle is late or unavailable. */
+function ensureLegalRequestWorkspace(){
+  var view=document.getElementById('legalReqView'); if(!view) return false;
+  var card=document.getElementById('legalCard');
+  if(card && card.parentNode!==view){
+    var expert=document.getElementById('expertCard');
+    if(expert && expert.parentNode===view) view.insertBefore(card,expert); else view.appendChild(card);
+  }
+  var modal=document.getElementById('legalModal');
+  if(modal && modal.parentNode!==view) view.appendChild(modal);
+  return true;
+}
 /* Populate the "add my own patient" dropdown in the Legal tool with the doctor's
-   patients; pre-select one whose name matches the attorney's patient reference. */
+   patients. A likely match is suggested, but never silently attached. */
 function populateLegalMyPatient(patientRef){
-  var sel=document.getElementById('legalMyPatientSel'); if(!sel) return;
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
-  var opts='<option value="">— None (use the attorney’s records only) —</option>';
-  pts.forEach(function(p){ opts+='<option value="'+esc(String(p.id))+'">'+esc(p.name||'(unnamed)')+(p.dob?(' — '+esc(p.dob)):'')+'</option>'; });
-  sel.innerHTML=opts;
-  // AUTO-DETECT whether the examinee is already one of the doctor's patients (by name
-  // and/or date of birth) and preselect them so their history + visits are folded into
-  // the report automatically — before it's even generated.
   var match=_legalMatchPatient(patientRef, pts);
-  sel.value=match||'';
-  setLegalAttachedPatient(match||'', !!match);
+  var opts='<option value="">— Choose a patient chart to attach —</option>';
+  pts.forEach(function(p){
+    var suggested=match && String(p.id)===String(match);
+    opts+='<option value="'+esc(String(p.id))+'">'+(suggested?'⭐ Suggested match: ':'')+esc(p.name||'(unnamed)')+(p.dob?(' — DOB '+esc(p.dob)):'')+'</option>';
+  });
+  ['legalMyPatientSel','legalModalPatientSel'].forEach(function(id){
+    var sel=document.getElementById(id); if(!sel) return;
+    sel.innerHTML=opts; sel.value=legalAttachedPatientId||'';
+  });
+  var hint=document.getElementById('legalPatientSuggestion');
+  if(hint){
+    var mp=match?pts.find(function(p){return String(p.id)===String(match);}):null;
+    hint.style.display=mp?'block':'none';
+    hint.textContent=mp?'Suggested from the attorney reference: '+(mp.name||'patient')+(mp.dob?(' (DOB '+mp.dob+')'):'')+'. Confirm by selecting that chart above.':'';
+  }
+  setLegalAttachedPatient(legalAttachedPatientId||'');
 }
 /* Find the doctor's patient that best matches the attorney's reference (full name, both
    name parts, or DOB). Returns the patient id, or '' if no confident match. */
@@ -12457,18 +12487,24 @@ function _legalMatchPatient(patientRef, pts){
   return bestScore>=2 ? best : '';
 }
 function setLegalAttachedPatient(id, auto){
-  legalAttachedPatientId=id||null;
   var p=null, nv=0;
-  if(legalAttachedPatientId){
-    p=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){return String(x.id)===String(legalAttachedPatientId);});
+  if(id){
+    p=((typeof getPatients==='function'?getPatients():[])||[]).find(function(x){return String(x.id)===String(id);});
     nv=p?((typeof patientNotes==='function'?patientNotes(p.id):[])||[]).length:0;
   }
+  legalAttachedPatientId=p?String(p.id):null;
+  ['legalMyPatientSel','legalModalPatientSel'].forEach(function(selId){ var sel=document.getElementById(selId); if(sel) sel.value=legalAttachedPatientId||''; });
+  var included=legalAttachedPatientId
+    ? ('✓ ATTACHED: '+(p?p.name:'patient')+' — all '+nv+' saved visit'+(nv===1?'':'s')+' plus demographics, problems, medications, allergies, and chart history will be used.')
+    : 'No patient chart attached. The report will not use any patient’s MLS history.';
   var st=document.getElementById('legalMyPatientStatus');
-  if(st){
-    st.textContent=legalAttachedPatientId
-      ? ((auto?'🔎 Auto-matched — you treated this patient. Including ':'✓ Including ')+(p?p.name:'patient')+'’s chart + '+nv+' visit'+(nv===1?'':'s'))
-      : '';
-  }
+  if(st) st.textContent=included;
+  var mst=document.getElementById('legalModalPatientStatus');
+  if(mst){ mst.textContent=included; mst.style.color=legalAttachedPatientId?'#1c7a43':'#8a5a00'; }
+  var src=document.getElementById('legalSourceSummary');
+  if(src) src.textContent=legalAttachedPatientId
+    ? ('This draft will use '+(p?p.name:'the attached patient')+'’s complete MLS chart and '+nv+' saved visit'+(nv===1?'':'s')+', together with any attorney-uploaded records.')
+    : 'No patient history will be used unless you attach a patient chart above. Attorney-uploaded records can still be used.';
   var bn=document.getElementById('legalPatientBanner');
   if(bn){
     if(legalAttachedPatientId){
@@ -12479,6 +12515,7 @@ function setLegalAttachedPatient(id, auto){
       bn.textContent='⚠️ No patient chart attached yet — this report uses only the attorney’s request details. If you treated this patient, attach your chart below to include your exam and visits.';
     }
   }
+  try{ if(window.__mlsLegalChartFill&&typeof window.__mlsLegalChartFill.updateBanner==='function') window.__mlsLegalChartFill.updateBanner(); }catch(e){}
 }
 /* Build the doctor's own record text for the attached patient (chart + all visits +
    the in-progress visit if it's for that patient). '' if none attached. */
@@ -12535,7 +12572,6 @@ function legalSuggestFee(docType){
   if(/narrative/.test(t)) return 750;
   return 1000;
 }
-let _legalAutoDraftedFor=null;  // MLS additive — request id already auto-drafted (guard: fire once per request)
 let _lawReports={}; // MLS additive — lawyer portal: requestId -> {result_text, doc_type} for the report viewer
 let currentRecs=null; // {care_gaps:[],interactions:[],follow_up:[],documentation:[]}
 
@@ -17935,11 +17971,8 @@ Date: [Date]
    ========================================================= */
 function openLegal(){
   if(!legalEnabled()) return;                 // guard — feature is off
-  // An attorney request with uploaded records can be drafted WITHOUT an in-house
-  // chart (the examinee may not be the doctor's patient). Only require a chart when
-  // there are neither counsel records nor an active patient to build from.
-  var _haveCounsel = (typeof legalReqFilesText!=='undefined' && legalReqFilesText && legalReqFilesText.trim());
-  if(!activePatient() && !_haveCounsel){ toast('Select or create a patient first — or open an attorney request that has uploaded records.','err'); showView('patients'); return; }
+  ensureLegalRequestWorkspace();
+  if(typeof showView==='function') showView('legalreq');
   const m=document.getElementById('legalModal'); if(m) m.classList.add('show');
 }
 function closeLegal(){ const m=document.getElementById('legalModal'); if(m) m.classList.remove('show'); }
@@ -18078,14 +18111,9 @@ async function generateLegalReport(){
   const _rq=(typeof currentLegalRequestId!=='undefined' && currentLegalRequestId && typeof _legalInboxById!=='undefined') ? _legalInboxById[String(currentLegalRequestId)] : null;
   const patientRef=_rq && _rq.patient_ref ? String(_rq.patient_ref).trim() : '';
   const haveCounsel=!!(currentLegalRequestId && legalReqFilesText && legalReqFilesText.trim());
-  let useChart=false;
-  if(p){
-    if(!currentLegalRequestId){ useChart=true; }          // manual draft from a chart
-    else if(patientRef){
-      const _nm=String(p.name||'').toLowerCase().trim();
-      useChart=!!(_nm && _nm.length>1 && patientRef.toLowerCase().indexOf(_nm)>=0); // only if the open chart matches the attorney's reference
-    } else { useChart=true; }                              // request with no reference: fall back to the open chart
-  }
+  // Attorney requests never inherit whichever chart happens to be active elsewhere.
+  // They use only an explicitly attached patient chart and/or counsel's records.
+  let useChart=!!(p && !currentLegalRequestId);
   // The doctor may EXPLICITLY attach their OWN chart for this examinee (if they also
   // treated the patient) — their full record + visit/meeting notes enrich the report.
   const myRecord=(typeof legalMyPatientRecord==='function')?legalMyPatientRecord():'';
@@ -18158,10 +18186,10 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     if(body) body.value=out;
     legalSetSignedBadge(false);
     closeLegal();
-    // When fulfilling an attorney request, the review card lives in the Visit view —
-    // take the doctor there so they actually SEE the draft to review BEFORE anything is
-    // sent. Nothing goes back to the attorney until they click "Sign & send".
-    if(currentLegalRequestId && typeof showView==='function'){ showView('visit'); }
+    // Legal drafting, review, signing, PDF, and attorney return all stay in the
+    // Legal requests workspace. Nothing is sent until "Sign & send" is clicked.
+    ensureLegalRequestWorkspace();
+    if(typeof showView==='function'){ showView('legalreq'); }
     if(card){ card.style.display='block'; setTimeout(function(){ try{ card.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} }, 80); }
     toast(currentLegalRequestId?'Draft ready — review it below. Nothing is sent until you click “Sign & send to attorney.”':'Medical-legal report drafted. DRAFT — verify, complete, and sign before use.','ok');
     // Ask the doctor to complete any blanks the records couldn't fill, rather than
@@ -19646,7 +19674,7 @@ function legalReqRowHtml(rq,mode){
       actions+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="lawRequestAppearance(\''+esc(String(id))+'\')" title="'+esc(_rateTitle)+'">📅 Request testimony</button>';
     }
   }else{
-    actions='<button class="'+(fulfilled?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="openLegalRequest(\''+esc(String(id))+'\')">'+(fulfilled?'⚖️ Re-open':'⚖️ Fulfill')+'</button>';
+    actions='<button class="'+(fulfilled?'btn-ghost':'btn-green')+'" style="font-size:13px;padding:7px 12px" onclick="openLegalRequest(\''+esc(String(id))+'\')">'+(fulfilled?'⚖️ Re-open':'⚖️ Open & prepare')+'</button>';
     // Connect the legal request to the actual chart + scheduling: if the attorney's
     // patient reference matches one of the doctor's patients, surface one-tap links.
     try{
@@ -20255,6 +20283,8 @@ async function openLegalRequest(id){
     toast('Enable the ⚖️ Legal tool in Settings to fulfill requests.','err');
     return;
   }
+  ensureLegalRequestWorkspace();
+  if(typeof showView==='function') showView('legalreq');
   currentLegalRequestId=id;
   // Fresh request — clear any prior draft so this request drafts from scratch and a
   // previous examinee's report can never leak into a different request.
@@ -20327,32 +20357,10 @@ async function openLegalRequest(id){
     legalReqFilesText=await loadLegalRequestFilesText(id);
     if(legalReqFilesText) toast('Attorney files read — their content will inform the draft.','ok');
   }catch(e){ legalReqFilesText=''; }
-  // Open the Legal tool. If the examinee isn't an in-house chart, we can still draft
-  // from the counsel-uploaded records. Only send the doctor to pick a patient when
-  // there are NO uploaded records to work from.
-  if(!activePatient() && !(legalReqFilesText && legalReqFilesText.trim())){
-    toast('No records were uploaded with this request — pull up the matching patient (see the reference), then click ⚖️ Legal to generate.','');
-    showView('patients');
-    return;
-  }
-  if(!activePatient() && legalReqFilesText && legalReqFilesText.trim()){
-    toast('No in-house chart for this examinee — drafting from the attorney’s uploaded records.','');
-  }
+  // Opening a request is preparation only. The clinician can attach the correct
+  // patient and edit/add legal questions before explicitly pressing Generate.
   openLegal();
-  // MLS additive — AUTO-DRAFT the requested document from the case file.
-  // Guards: request still pending, report body empty, AI key present, and only
-  // once per request. The lawyer never sees this draft — only an explicit
-  // "Return to attorney" (fulfill) sends anything back.
-  try{
-    const st=String(rq.status||'pending').toLowerCase();
-    const stillPending=!(st==='fulfilled'||st==='done'||st==='complete'||rq.result_text);
-    const bodyEl=document.getElementById('legalBody');
-    if(stillPending && bodyEl && !bodyEl.value.trim() && _legalAutoDraftedFor!==String(id) && hasAI()){
-      _legalAutoDraftedFor=String(id);
-      toast('Drafting the requested '+(rq.doc_type||'report')+' from the case file…','');
-      generateLegalReport();
-    }
-  }catch(e){ /* auto-draft is best-effort — the doctor can always generate manually */ }
+  toast('Request opened. Confirm the attached patient and add any legal questions, then press Generate report.','ok');
 }
 
 /* Clinician: ONE-CLICK SIGN-OFF — append an electronic signature + attestation to the

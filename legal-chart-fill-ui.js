@@ -65,7 +65,9 @@
   }
   function recordDetail(p) {
     if (!p) return '';
-    var vc = Array.isArray(p.visits) ? p.visits.length
+    var vc = 0;
+    try { if (typeof window.patientNotes === 'function') vc = (window.patientNotes(p.id) || []).length; } catch (e) {}
+    if (!vc) vc = Array.isArray(p.visits) ? p.visits.length
            : (Array.isArray(p.notes) ? p.notes.length : 0);
     return vc ? (vc + ' visit' + (vc === 1 ? '' : 's')) : '';
   }
@@ -170,11 +172,23 @@
     return null;
   }
   function fulfillName() {
-    var a = activePatient();
-    if (a && a.name) return { name: a.name, detail: recordDetail(a) };
+    // Only the explicit Legal attachment is a valid report source. Never describe
+    // an unrelated chart that merely happens to be active elsewhere in the app.
+    var attached = null;
+    try {
+      var id = (typeof legalAttachedPatientId !== 'undefined') ? legalAttachedPatientId : null;
+      if (id) attached = patientById(id);
+    } catch (e) {}
+    if (attached && attached.name) return { name: attached.name, detail: recordDetail(attached) };
     var reqId = window.__mlsActiveLegalReq;
     var rec = reqId ? load()[reqId] : null;
-    if (rec && rec.name) return { name: rec.name, detail: rec.detail || '' };
+    if (rec && rec.pid) {
+      var recorded = patientById(rec.pid);
+      try {
+        var explicitId = (typeof legalAttachedPatientId !== 'undefined') ? legalAttachedPatientId : null;
+        if (explicitId && recorded && String(explicitId) === String(rec.pid)) return { name: recorded.name || rec.name, detail: recordDetail(recorded) || rec.detail || '' };
+      } catch (e) {}
+    }
     return null;
   }
   function updateBanner() {

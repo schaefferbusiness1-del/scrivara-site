@@ -29530,7 +29530,7 @@
   }
 
   /* ================= ticks ================= */
-  function tick() { try { css(); fixDayProgress(); wrapBrief(); fixClinicalTools(); legalTick(); } catch (e) {} }
+  function tick() { try { css(); fixDayProgress(); wrapBrief(); fixClinicalTools(); } catch (e) {} }
   tick();
   var iv = setInterval(tick, 1100);
 
@@ -40833,14 +40833,64 @@
      view: email yourself the phone link (mailto, prefilled with add-to-home-
      screen steps) or copy it. Never shown in phone mode itself. */
   var PHONE_URL2 = 'https://mlsscribe.com/ScribeFlow.html?phone=1';
-  function mailtoHref() {
+  function setupEmailParts() {
     var sub = 'MLS Scribe on your phone - setup link';
     var body = 'Open this on your phone and sign in:\n' + PHONE_URL2 +
       '\n\nAdd it to your home screen so it opens like an app:\n' +
       '- iPhone (Safari): tap the Share button, then "Add to Home Screen".\n' +
       '- Android (Chrome): tap the three-dot menu, then "Add to Home screen".\n\n' +
       'Athena pulls you start on the phone run on your office computer - keep MLS open there with the MLS Assist extension.';
-    return 'mailto:?subject=' + encodeURIComponent(sub) + '&body=' + encodeURIComponent(body);
+    return { subject: sub, body: body };
+  }
+  function accountEmail() {
+    try {
+      var vals = [
+        (typeof bkUser !== 'undefined' && bkUser ? bkUser.email : ''),
+        (typeof session !== 'undefined' && session ? session.email : ''),
+        (typeof getSessionEmail === 'function' ? getSessionEmail() : '')
+      ];
+      for (var i = 0; i < vals.length; i++) {
+        var v = String(vals[i] || '').trim();
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return v;
+      }
+    } catch (e) {}
+    return '';
+  }
+  function openSetupEmailDraft(to, parts) {
+    var gmail = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(to) +
+      '&su=' + encodeURIComponent(parts.subject) + '&body=' + encodeURIComponent(parts.body);
+    var mailto = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(parts.subject) + '&body=' + encodeURIComponent(parts.body);
+    try {
+      var w = window.open(gmail, '_blank');
+      if (w) w.opener = null;
+      else window.location.href = mailto;
+      if (typeof window.toast === 'function') window.toast(to ? ('Email draft opened for ' + to + '.') : 'Email draft opened - add your address and send it to yourself.', '');
+    } catch (e) { try { window.location.href = mailto; } catch (_) {} }
+  }
+  async function openSetupEmail() {
+    var parts = setupEmailParts();
+    var to = accountEmail();
+    var btn = $('mlsPhEmail');
+    if (btn && btn.disabled) return;
+    if (!to || typeof backendMode !== 'function' || !backendMode() || typeof bkToken !== 'function' || !bkToken()) {
+      openSetupEmailDraft(to, parts);
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = 'sending setup link...'; }
+    try {
+      var r = await fetch(bkBase() + '/api/copilot/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + bkToken() },
+        body: JSON.stringify({ to: to, subject: parts.subject, body: parts.body })
+      });
+      if (!r.ok) throw new Error('send-failed');
+      if (typeof window.toast === 'function') window.toast('Setup link emailed to ' + to + '.', 'ok');
+    } catch (e) {
+      openSetupEmailDraft(to, parts);
+      if (typeof window.toast === 'function') window.toast('Automatic email was unavailable, so a ready-to-send draft was opened instead.', '');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'email yourself the setup link'; }
+    }
   }
   function installPrompt() {
     try {
@@ -40852,10 +40902,11 @@
       card.id = 'mlsPhPrompt';
       card.style.cssText = 'display:flex;align-items:center;gap:11px;flex-wrap:wrap;background:#F6FBF8;border:1px solid #D8E5DE;border-radius:12px;padding:11px 14px;margin:0 0 10px;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;';
       card.innerHTML = '<span>📱 Put MLS on your phone — scan the QR in Settings → Integrations, or</span>' +
-        '<a href="' + mailtoHref() + '" style="color:#2E6A4B;font-weight:700;text-decoration:underline;text-underline-offset:2px">email yourself the setup link</a>' +
+        '<button type="button" id="mlsPhEmail" style="border:0;background:transparent;padding:0;color:#2E6A4B;font:700 13px Public Sans,system-ui,sans-serif;text-decoration:underline;text-underline-offset:2px;cursor:pointer">email yourself the setup link</button>' +
         '<button type="button" id="mlsPhCopy" style="border:1px solid #E4E1D8;background:#fff;color:#1A211C;font:600 12px system-ui;border-radius:8px;padding:6px 11px;cursor:pointer">Copy link</button>' +
         '<button type="button" id="mlsPhDismiss" title="Don’t show this again" style="margin-left:auto;border:0;background:transparent;color:#79837C;font-size:16px;cursor:pointer;line-height:1">×</button>';
       body.insertBefore(card, body.firstChild);
+      $('mlsPhEmail').addEventListener('click', openSetupEmail);
       $('mlsPhCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_URL2); if (typeof window.toast === 'function') window.toast('Link copied - text or email it to your phone.', 'ok'); } catch (e) {} });
       $('mlsPhDismiss').addEventListener('click', function () { try { localStorage.setItem('mls_phone_prompt_done', '1'); } catch (e) {} card.remove(); });
     } catch (e) {}

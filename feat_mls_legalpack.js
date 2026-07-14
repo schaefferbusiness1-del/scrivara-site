@@ -352,7 +352,10 @@
     '#mlsLpSearchRes .r{padding:8px 12px;font-size:13.5px;cursor:pointer}',
     '#mlsLpSearchRes .r:hover{background:#EAF1EE}',
     '#mlsLpNarrOut{width:100%;min-height:360px;resize:vertical;font-family:Segoe UI,Arial,sans-serif}',
-    '#mlsLpHost .lp-disclaim{background:#fff4f0;border:1px solid #f4c9b8;border-radius:9px;color:#a13c22;font-size:12.5px;padding:8px 11px;margin-top:8px}'
+    '#mlsLpHost .lp-disclaim{background:#fff4f0;border:1px solid #f4c9b8;border-radius:9px;color:#a13c22;font-size:12.5px;padding:8px 11px;margin-top:8px}',
+    '#legalBtn,#profileCard button[onclick="generatePatientLegalReport()"],#mlsR3LegalBanner{display:none!important}',
+    '#legalReqView #legalCard{margin:0 0 18px!important;scroll-margin-top:18px}',
+    '#legalReqView #legalCard[style*="display: block"]{display:block!important}'
   ].join('\n');
 
   function buildHost() {
@@ -698,7 +701,7 @@
     try { if (isFn(window.legalSetSignedBadge)) window.legalSetSignedBadge(false); } catch (e) {}
     card.style.display = 'block';
     try { if (isFn(window.legalUpdateFillBtn)) window.legalUpdateFillBtn(); } catch (e) {}
-    try { if (isFn(window.showView)) window.showView('visit'); } catch (e) {}
+    try { if (isFn(window.showView)) window.showView('legalreq'); } catch (e) {}
     try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
     say('Narrative moved to the Legal tool — review, Fill in blanks, Save as PDF, Save to chart, or Sign there.', 'ok');
   }
@@ -722,11 +725,31 @@
 
   /* ---------------- mount ---------------- */
   var _style = null, _host = null, _mo = null;
+  var _legacyCardHome = null, _legacyCardNext = null;
+  var _legacyModalHome = null, _legacyModalNext = null;
+  function mountLegacyLegalTool(view) {
+    try {
+      var card = $('legalCard');
+      if (card && card.parentNode !== view) {
+        if (!_legacyCardHome) { _legacyCardHome = card.parentNode; _legacyCardNext = card.nextSibling; }
+        var expert = $('expertCard');
+        if (expert && expert.parentNode === view) view.insertBefore(card, expert);
+        else view.appendChild(card);
+      }
+      var modal = $('legalModal');
+      if (modal && modal.parentNode !== view) {
+        if (!_legacyModalHome) { _legacyModalHome = modal.parentNode; _legacyModalNext = modal.nextSibling; }
+        view.appendChild(modal);
+      }
+      var oldBanner = $('mlsR3LegalBanner'); if (oldBanner) oldBanner.remove();
+    } catch (e) {}
+  }
   function mount() {
     try {
-      if ($('mlsLpHost')) return true;
       var view = $('legalReqView');
       if (!view) return false;
+      mountLegacyLegalTool(view);
+      if ($('mlsLpHost')) return true;
       if (!_style) { _style = document.createElement('style'); _style.id = 'mlsLpStyle'; _style.textContent = CSS; document.head.appendChild(_style); }
       _host = buildHost();
       var firstCard = view.querySelector('.card');
@@ -758,6 +781,8 @@
       try { if (_mo) { _mo.disconnect(); _mo = null; } } catch (e) {}
       try { var h = $('mlsLpHost'); if (h && h.parentNode) h.parentNode.removeChild(h); } catch (e) {}
       try { var s = $('mlsLpStyle'); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e) {}
+      try { var c = $('legalCard'); if (c && _legacyCardHome) _legacyCardHome.insertBefore(c, _legacyCardNext); } catch (e) {}
+      try { var m = $('legalModal'); if (m && _legacyModalHome) _legacyModalHome.insertBefore(m, _legacyModalNext); } catch (e) {}
       window.__mlsLegalPack = null;
     }
   };
