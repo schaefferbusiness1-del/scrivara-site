@@ -432,8 +432,8 @@
       switch (s.state) {
         case 'idle':
           body.appendChild(el('h2', 'mlsp-title', s.conn.patientOpen ? 'Ready' : 'Open a patient in Athena'));
-          body.appendChild(el('p', 'mlsp-sub', 'Read this patient & pull their full history.'));
-          body.appendChild(bigBtn('▶  Go', 'primary', function () { core.go(); }, !core.canGo()));
+          body.appendChild(el('p', 'mlsp-sub', s.conn.patientOpen ? 'Pull the open patient\'s history into MLS.' : 'Open a patient below, then pull their history into MLS.'));
+          body.appendChild(bigBtn('▶  Pull history', 'primary', function () { core.go(); }, !core.canGo()));
           /* v1.50 patient picker: one-tap open from today's MLS schedule */
           (function () {
             var pickBtn = el('button', 'mlsp-btn secondary', '📋 Pick a patient (today’s schedule)');

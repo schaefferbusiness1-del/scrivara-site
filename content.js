@@ -219,10 +219,48 @@
           into one entry. */
     if (d.type === 'mlsAppReadVisits') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppReadVisitsRequest', patient: mlsStr(d.patient || d.name, 200), dob: mlsStr(d.dob, 20), athenaId: mlsStr(d.athenaId, 40) }, function (resp) {
-          reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: resp || { error: 'no response' } });
-        });
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: { error: 'extension error' } }); }
+        var visitPatient = mlsStr(d.patient || d.name, 200);
+        var visitDob = mlsStr(d.dob, 20);
+        var visitAthenaId = mlsStr(d.athenaId, 40);
+        var visitRequest = { type: 'mlsAppReadVisitsRequest', patient: visitPatient, dob: visitDob, athenaId: visitAthenaId };
+        function finishVisits(resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: resp || { ok: false, reason: 'no-response', error: 'No response from MLS Assist' } });
+        }
+        function readVisitsOnce(canOpen) {
+          chrome.runtime.sendMessage(visitRequest, function (resp) {
+            var runtimeErr = chrome.runtime.lastError;
+            if (runtimeErr || !resp) { finishVisits({ ok: false, reason: 'extension-error', error: (runtimeErr && runtimeErr.message) || 'No response from MLS Assist' }); return; }
+            /* v2.9.15: a history read may be requested while Athena is parked on
+               the dashboard or a different chart. The reader correctly refuses
+               that state; recover ONCE through the already-proven, DOB-gated
+               patient opener, then repeat the identity-gated read. */
+            if (canOpen && visitPatient && /^(wrong-chart|unverified-patient)$/.test(String(resp.reason || ''))) {
+              chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob }, function (opened) {
+                var openErr = chrome.runtime.lastError;
+                if (openErr || !opened || !opened.opened) {
+                  finishVisits({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient before reading history.' });
+                  return;
+                }
+                /* The Athena airlock renders its identity banner after the opener
+                   reports navigation. Run the established read-chart settle leg
+                   before touching Visits; the visits driver still re-verifies the
+                   requested name+DOB/MRN immediately before its rail click. */
+                chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: '' }, function (chartReady) {
+                  var chartErr = chrome.runtime.lastError;
+                  if (chartErr || !chartReady || !chartReady.ok) {
+                    finishVisits({ ok: false, reason: (chartReady && chartReady.reason) || 'chart-not-ready', error: (chartErr && chartErr.message) || (chartReady && chartReady.error) || 'The requested chart opened, but its identity banner did not become ready.' });
+                    return;
+                  }
+                  readVisitsOnce(false);
+                });
+              });
+              return;
+            }
+            finishVisits(resp);
+          });
+        }
+        readVisitsOnce(true);
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: { ok: false, reason: 'extension-error', error: 'Extension error' } }); }
     }
     // READ-ONLY: read the open Athena REPORT / claims / procedure / patient LIST tab so MLS
     // can enumerate patients by procedure/CPT (Study cohort, Mode B). Unlike mlsAppPullSchedule

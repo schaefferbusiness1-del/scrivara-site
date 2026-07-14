@@ -11,12 +11,13 @@
 }
 
 #mls-popup-root {
-  position: fixed;
+  position: fixed !important;
   top: 16px;
   right: 16px;
-  z-index: 2147483600;            /* above Athena, below browser chrome */
-  width: 360px;
-  color: #1A211C;
+  z-index: 2147483600 !important;            /* above Athena, below browser chrome */
+  width: min(360px, calc(100vw - 32px)) !important;
+  color: #1A211C !important;
+  background: transparent !important;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -26,7 +27,8 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: #ffffff;
+  background: #204034 !important;
+  color: #ffffff !important;
   border: 1px solid #E7E5DD;
   border-radius: 999px;
   box-shadow: 0 1px 2px rgba(20,33,28,.05), 0 6px 24px rgba(20, 33, 28, 0.14);
@@ -39,8 +41,9 @@
 
 /* ---- expanded card ---- */
 #mls-popup-root .mlsp-card {
-  background: #ffffff;
-  border: 1px solid #E7E5DD;
+  background: #ffffff !important;
+  color: #1A211C !important;
+  border: 1px solid #D9E4DE !important;
   border-radius: 16px;
   box-shadow: 0 1px 2px rgba(20,33,28,.04), 0 18px 50px rgba(20, 33, 28, 0.2);
   overflow: hidden;
@@ -52,19 +55,20 @@
   align-items: center;
   gap: 8px;
   padding: 12px 14px;
-  background: #FCFBF8;
-  border-bottom: 1px solid #EFEDE6;
+  background: #204034 !important;
+  color: #ffffff !important;
+  border-bottom: 1px solid #173027 !important;
   cursor: grab;
 }
 #mls-popup-root .mlsp-head.mlsp-dragging { cursor: grabbing; }
-#mls-popup-root .mlsp-brand { font-weight: 700; font-size: 14px; letter-spacing: .2px; color: #1A211C; }
-#mls-popup-root .mlsp-pt { font-size: 13px; color: #55605A; margin-left: 2px; flex: 1;
+#mls-popup-root .mlsp-brand { font-weight: 700; font-size: 14px; letter-spacing: .2px; color: #ffffff !important; }
+#mls-popup-root .mlsp-pt { font-size: 13px; color: #DDEBE4 !important; margin-left: 2px; flex: 1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #mls-popup-root .mlsp-iconbtn {
   border: none; background: transparent; cursor: pointer; font-size: 16px;
-  line-height: 1; padding: 4px 6px; border-radius: 8px; color: #8A8F86;
+  line-height: 1; padding: 4px 6px; border-radius: 8px; color: #ffffff !important;
 }
-#mls-popup-root .mlsp-iconbtn:hover { background: #F0EEE7; }
+#mls-popup-root .mlsp-iconbtn:hover { background: rgba(255,255,255,.14) !important; }
 
 /* connection dot */
 #mls-popup-root .mlsp-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
@@ -73,9 +77,9 @@
 #mls-popup-root .mlsp-dot.amber { background: #B07636; box-shadow: 0 0 0 3px rgba(176,118,54,.18); }
 
 /* body */
-#mls-popup-root .mlsp-body { padding: 16px 16px 12px; }
-#mls-popup-root .mlsp-title { font-size: 17px; font-weight: 700; color: #1A211C; margin: 0 0 4px; }
-#mls-popup-root .mlsp-sub   { font-size: 13px; color: #55605A; margin: 0 0 14px; line-height: 1.45; }
+#mls-popup-root .mlsp-body { padding: 16px 16px 12px; background: #ffffff !important; color: #1A211C !important; }
+#mls-popup-root .mlsp-title { font-size: 17px; font-weight: 700; color: #1A211C !important; margin: 0 0 4px; }
+#mls-popup-root .mlsp-sub   { font-size: 13px; color: #3F5148 !important; margin: 0 0 14px; line-height: 1.45; }
 
 /* big buttons (>=48px tall, full width) */
 #mls-popup-root .mlsp-btn {
@@ -154,7 +158,7 @@
 #mls-popup-root .mlsp-foot {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 14px 12px; border-top: 1px solid #EFEDE6;
-  font-size: 11px; color: #A6AEA6;
+  font-size: 11px; color: #55605A !important; background: #FCFBF8 !important;
 }
 
 #mls-popup-root .mlsp-hidden { display: none !important; }
