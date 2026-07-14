@@ -35,6 +35,7 @@
 
   var CHIP_ID='mlsAgendaChip', POP_ID='mlsAgendaPop', STYLE_ID='mlsAgendaChip-style';
   var WRAP_STYLE_ID='mls-ctxbar-wrap-style';
+  var LEGACY_LAYOUT_STYLE_ID='mls-patientbar-stable-layout';
   var timer=null, origRenderBar=null, lastSig='__init__', docClickBound=null;
 
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -93,6 +94,38 @@
     try{var s=document.createElement('style');s.id=WRAP_STYLE_ID;
       s.textContent='#mlsCtxBar{flex-wrap:wrap;row-gap:6px;}';
       document.head.appendChild(s);}catch(e){}
+  }
+
+  /* Several independent chips share the legacy no-active-patient bar. Their
+     refresh timers can legally reinsert nodes in a different DOM order, which
+     used to make the bar alternate between two wrap layouts every few seconds.
+     Explicit grid areas make visual placement stable regardless of insertion
+     order. The active-patient #mlsCtxBar is intentionally left unchanged. */
+  function ensureLegacyLayoutStyle(){
+    if (document.getElementById(LEGACY_LAYOUT_STYLE_ID)) return;
+    try{
+      var s=document.createElement('style'); s.id=LEGACY_LAYOUT_STYLE_ID;
+      s.textContent=
+        '#patientBar{display:grid!important;grid-template-columns:auto minmax(140px,1fr) auto auto;'+
+        'align-items:center!important;column-gap:12px!important;row-gap:8px!important;}'+
+        '#patientBar>#mlsAgendaChip{grid-column:1;grid-row:1;order:0!important;margin-left:0!important;}'+
+        '#patientBar>#patientBarInner{grid-column:2;grid-row:1;min-width:0;overflow:hidden;}'+
+        '#patientBar>#patientBarInner .pnone{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'+
+        '#patientBar>#mlsDayProgress{grid-column:1/3;grid-row:2;margin-left:0!important;min-width:0;}'+
+        '#patientBar>#mlsRecentPts{grid-column:3;grid-row:2;margin-left:0!important;}'+
+        '#patientBar>.spacer{grid-column:4;grid-row:2;min-width:0;}'+
+        '#patientBar>.btn-ghost{grid-column:3;grid-row:1;margin:0!important;white-space:nowrap;}'+
+        '#patientBar>#wf2OneClick{grid-column:4;grid-row:1;margin:0!important;white-space:nowrap;}'+
+        '@media(max-width:900px){#patientBar{grid-template-columns:minmax(0,1fr) auto!important;}'+
+        '#patientBar>#mlsAgendaChip{grid-column:1/3;grid-row:1;}'+
+        '#patientBar>#patientBarInner{grid-column:1/3;grid-row:2;}'+
+        '#patientBar>#mlsDayProgress{grid-column:1/3;grid-row:3;max-width:100%;overflow:hidden;}'+
+        '#patientBar>#mlsRecentPts{grid-column:1;grid-row:4;}'+
+        '#patientBar>.spacer{display:none!important;}'+
+        '#patientBar>.btn-ghost{grid-column:2;grid-row:4;}'+
+        '#patientBar>#wf2OneClick{grid-column:1/3;grid-row:5;justify-self:stretch;}}';
+      (document.head||document.documentElement).appendChild(s);
+    }catch(e){}
   }
 
   function visibleBar(){
@@ -164,7 +197,7 @@
 
   function render(){
     var loc=visibleBar(); if(!loc) return;
-    ensureWrapStyle(); injectCss();
+    ensureWrapStyle(); ensureLegacyLayoutStyle(); injectCss();
     var list=appts();
     var chip=document.getElementById(CHIP_ID);
 
@@ -197,7 +230,7 @@
   }
 
   function boot(){
-    injectCss(); ensureWrapStyle();
+    injectCss(); ensureWrapStyle(); ensureLegacyLayoutStyle();
     try{ render(); }catch(e){}
     if (typeof window.renderPatientBar==='function' && !origRenderBar){
       origRenderBar=window.renderPatientBar;
@@ -221,7 +254,7 @@
       try{ if(docClickBound){document.removeEventListener('click',docClickBound,true);docClickBound=null;} }catch(e){}
       try{ window.removeEventListener('resize', closePop, true);}catch(e){}
       try{ window.removeEventListener('scroll', closePop, true);}catch(e){}
-      ['mlsAgendaChip','mlsAgendaPop','mlsAgendaChip-style'].forEach(function(id){var n=document.getElementById(id);if(n&&n.parentNode)n.parentNode.removeChild(n);});
+      ['mlsAgendaChip','mlsAgendaPop','mlsAgendaChip-style',LEGACY_LAYOUT_STYLE_ID].forEach(function(id){var n=document.getElementById(id);if(n&&n.parentNode)n.parentNode.removeChild(n);});
       window.__mlsAgenda.__booted=false;
       return true;
     }
