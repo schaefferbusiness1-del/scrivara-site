@@ -88,6 +88,18 @@ header.site{position:sticky;top:0;z-index:60;background:rgba(251,250,247,.88);ba
 .hero .trust{display:flex;gap:20px;justify-content:center;margin-top:30px;font-size:13.5px;color:var(--muted);flex-wrap:wrap}
 .hero .trust i{font-style:normal;color:#D9D6CD}
 
+/* 30-second product overview */
+.sales-video{padding:42px 0 48px}
+.sales-video .wrap{max-width:980px}
+.sales-video-head{text-align:center;margin:0 auto 22px;max-width:680px}
+.sales-video-head .eyebrow{margin-bottom:8px}
+.sales-video-head h2{font-family:var(--serif);font-weight:500;font-size:clamp(28px,4vw,38px);line-height:1.12;letter-spacing:-.015em}
+.sales-video-head p{margin-top:10px;color:var(--ink2);font-size:15.5px}
+.sales-video-frame{overflow:hidden;border:1px solid #D9DED8;border-radius:20px;background:#14261F;box-shadow:var(--sh-card),var(--sh-float)}
+.sales-video-frame video{display:block;width:100%;height:auto;aspect-ratio:16/9;background:#14261F;object-fit:contain}
+.sales-video-caption{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;background:var(--bar);border-top:1px solid var(--line-in);color:var(--ink2);font-size:12.5px;text-align:left}
+.sales-video-caption strong{color:var(--green);font-weight:700;white-space:nowrap}
+
 /* product mock */
 .pmock-wrap{max-width:780px;margin:14px auto 0;padding:0 28px 88px}
 .pmock{border:1px solid #E4E2DA;border-radius:16px;background:#fff;box-shadow:var(--sh-card),var(--sh-float);overflow:hidden}
@@ -334,6 +346,10 @@ body.mdl-lock{overflow:hidden}
   .grid12{grid-template-columns:1fr}
   .pmock .cols{grid-template-columns:1fr}
   .hero{padding-top:56px}
+  .sales-video{padding:34px 0 40px}
+  .sales-video .wrap{padding:0 16px}
+  .sales-video-frame{border-radius:14px}
+  .sales-video-caption{align-items:flex-start;flex-direction:column;gap:3px}
   .band .stat{font-size:58px}
   .band blockquote p{font-size:21px}
   .finalcta h2{font-size:36px}
@@ -378,6 +394,24 @@ body.mdl-lock{overflow:hidden}
 <a class="btn btn-ghost btn-lg" href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">Founder rewards on Kickstarter <span class="arrow">&nearr;</span></a>
 </div>
 <div class="trust"><span>HIPAA-ready architecture</span><i>·</i><span>You sign every note</span><i>·</i><span>Built for spine, pain &amp; PM&amp;R</span></div>
+</div>
+</section>
+
+<!-- 30-SECOND PRODUCT OVERVIEW -->
+<section class="sales-video" aria-labelledby="salesVideoTitle">
+<div class="wrap">
+<div class="sales-video-head">
+<span class="eyebrow">See MLS in 30 seconds</span>
+<h2 id="salesVideoTitle">From conversation to a note ready for your review.</h2>
+<p>A quick look at the workflow your practice can use on every visit.</p>
+</div>
+<div class="sales-video-frame">
+<video controls playsinline preload="metadata" aria-label="Thirty-second overview of the MLS Scribe clinical workflow">
+<source src="mls-scribe-30-second-overview.mp4" type="video/mp4">
+Your browser does not support embedded video. <a href="mls-scribe-30-second-overview.mp4">Open the MLS Scribe overview video</a>.
+</video>
+<div class="sales-video-caption"><span>Ambient capture, structured notes, coding support, and clinician review in one workflow.</span><strong>30-second overview</strong></div>
+</div>
 </div>
 </section>
 
