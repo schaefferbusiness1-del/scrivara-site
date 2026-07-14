@@ -31822,6 +31822,28 @@
   var BOOK_URL=location.origin+'/easy-book.html';
   var REVIEW_URL='/review-finder.html';
   var BACKEND='https://scrivara-backend.onrender.com';
+  function localBookingFallback(){
+    var q=new URLSearchParams();
+    try{ var p=typeof getPracticeName==='function'?getPracticeName():''; if(p)q.set('practice',p); }catch(e){}
+    try{ var d=typeof getProviderName==='function'?getProviderName():''; if(d)q.set('doctor',d); }catch(e){}
+    try{ var ph=typeof getClinicPhone==='function'?getClinicPhone():''; if(ph)q.set('phone',ph); }catch(e){}
+    try{ var gb=localStorage.getItem(uns('googleBusinessUrl'))||''; if(gb)q.set('gbp',gb); }catch(e){}
+    return location.origin+'/easy-book.html'+(q.toString()?('?'+q.toString()):'');
+  }
+  function applyResolvedBookUrl(wrap,url){
+    BOOK_URL=url||localBookingFallback();
+    var input=wrap&&wrap.querySelector('#mlsBookLink'); if(input)input.value=BOOK_URL;
+    var sms=wrap&&wrap.querySelector('#mlsBookSms'); if(sms)sms.href='sms:?&body='+encodeURIComponent('Book your appointment here: '+BOOK_URL);
+    var mail=wrap&&wrap.querySelector('#mlsBookEmail'); if(mail)mail.href='mailto:?subject='+encodeURIComponent('Book your appointment')+'&body='+encodeURIComponent('Hi,\n\nYou can request an appointment here: '+BOOK_URL+'\n\nThank you.');
+  }
+  function resolveBookUrl(wrap){
+    applyResolvedBookUrl(wrap,localBookingFallback());
+    var tok=''; try{tok=typeof bkToken==='function'?bkToken():'';}catch(e){}
+    if(!tok)return;
+    fetch(BACKEND+'/api/schedule/token',{headers:{Authorization:'Bearer '+tok}}).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(d){
+      if(d&&d.token)applyResolvedBookUrl(wrap,location.origin+'/booking.html?token='+encodeURIComponent(d.token));
+    }).catch(function(){});
+  }
   function overlay(id){
     var vw=document.getElementById(id); if(vw) return vw;
     vw=document.createElement('div'); vw.id=id; vw.setAttribute('data-mls-pview','1');
@@ -31878,7 +31900,7 @@
       +'<div style="background:#fff;border:1px solid #E7E5DD;border-radius:14px;padding:16px;margin-bottom:14px">'
       +  '<b>Booking link</b><div style="font-size:12.5px;color:#55605A;margin:2px 0 10px">Give this to patients or put it on your Google Business Profile and website so anyone can request an appointment.</div>'
       +  '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="mlsBookLink" readonly value="'+BOOK_URL+'" style="flex:1;min-width:220px;background:#FCFBF8;border:1px solid #E4E1D8;border-radius:8px;color:#1A211C;padding:9px 11px"><button id="mlsCopyBook" style="background:#2E6A4B;border:none;color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">Copy link</button></div>'
-      +  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a href="sms:?&body='+encodeURIComponent('Book your appointment here: '+BOOK_URL)+'" style="text-decoration:none;border:1px solid #D9D6CD;color:#1A211C;border-radius:8px;padding:9px 12px">Text a patient</a><a href="mailto:?subject='+encodeURIComponent('Book your appointment')+'&body='+encodeURIComponent('Hi,\n\nYou can request an appointment here: '+BOOK_URL+'\n\nThank you.')+'" style="text-decoration:none;border:1px solid #D9D6CD;color:#1A211C;border-radius:8px;padding:9px 12px">Email a patient</a><button id="mlsCfgBook" style="background:transparent;border:1px solid #D9D6CD;color:#1A211C;border-radius:8px;padding:9px 12px;cursor:pointer">Set up / preview page</button></div>'
+      +  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><a id="mlsBookSms" href="#" style="text-decoration:none;border:1px solid #D9D6CD;color:#1A211C;border-radius:8px;padding:9px 12px">Text a patient</a><a id="mlsBookEmail" href="#" style="text-decoration:none;border:1px solid #D9D6CD;color:#1A211C;border-radius:8px;padding:9px 12px">Email a patient</a><button id="mlsCfgBook" style="background:transparent;border:1px solid #D9D6CD;color:#1A211C;border-radius:8px;padding:9px 12px;cursor:pointer">Set up / preview page</button></div>'
       +'</div>'
       +'<div style="background:#fff;border:1px solid #E7E5DD;border-radius:14px;padding:16px">'
       +  '<b>Patient portal access</b><div style="font-size:12.5px;color:#55605A;margin:2px 0 10px">Email a specific patient a secure login to view their records and chat with them.'+(p&&p.name?(' Active patient: <b>'+String(p.name)+'</b>.'):'')+'</div>'
@@ -31887,6 +31909,7 @@
       +'</div>'
       +'<div id="mlsCfgFrame"></div>';
     vw.appendChild(wrap);
+    resolveBookUrl(wrap);
     wrap.querySelector('#mlsCopyBook').onclick=function(){ var b=this; try{navigator.clipboard.writeText(BOOK_URL);}catch(e){} b.textContent='Copied'; setTimeout(function(){b.textContent='Copy link';},1400); };
     wrap.querySelector('#mlsCfgBook').onclick=function(){ var c=wrap.querySelector('#mlsCfgFrame'); if(c.querySelector('iframe')){ c.innerHTML=''; return; } var f=document.createElement('iframe'); f.src=BOOK_URL; f.style.cssText='width:100%;height:70vh;border:1px solid #E7E5DD;border-radius:12px;margin-top:14px;background:#FBFAF7'; c.appendChild(f); };
     var em=wrap.querySelector('#mlsPortalEmail'); try{ if(p&&p.email) em.value=p.email; }catch(e){}

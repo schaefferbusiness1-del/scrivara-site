@@ -2882,7 +2882,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- ============ SECTION: Practice / Provider (MLS — additive) ============ -->
     <div class="set-section">
       <p class="set-head">🏥 Practice &amp; provider</p>
-      <p class="set-desc">Your clinic and provider details. Stored on this device. When filled, they appear on the printed note header.</p>
+      <p class="set-desc">Your clinic and provider details. Saved to your MLS account so booking, patient messages, reports, and printed notes all use the same identity.</p>
       <div class="field">
         <label for="practiceName">Clinic / practice name</label>
         <input type="text" id="practiceName" placeholder="e.g. Chester County Spine Care">
@@ -2910,6 +2910,11 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="field">
         <label for="clinicAddress">Clinic address</label>
         <input type="text" id="clinicAddress" placeholder="Street, City, State ZIP">
+      </div>
+      <div class="field">
+        <label for="googleBusinessUrl">Google Business / Maps link</label>
+        <input type="url" id="googleBusinessUrl" placeholder="https://maps.google.com/...">
+        <p class="set-desc" style="margin-top:5px">Optional. If blank, MLS searches Google Maps using your practice name and address.</p>
       </div>
       <div class="field">
         <label for="clinicLogoInput">Practice logo <span style="font-size:11px;font-weight:700;color:#2E6A4B;background:#e8f1fc;border-radius:10px;padding:1px 8px;margin-left:4px">Premium</span></label>
@@ -4449,6 +4454,14 @@ async function refreshMe(){
       const d=await r.json();
       bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
       try{ window._calendarOn = d.calendarEnabled!==false; }catch(e){}
+      try{
+        var pp=d.practice||{};
+        if(pp.name) localStorage.setItem(uns('practiceName'),String(pp.name));
+        if(pp.provider_name) localStorage.setItem(uns('providerName'),String(pp.provider_name));
+        if(pp.phone) localStorage.setItem(uns('clinicPhone'),String(pp.phone));
+        if(pp.address) localStorage.setItem(uns('clinicAddress'),String(pp.address));
+        if(pp.google_business_url) localStorage.setItem(uns('googleBusinessUrl'),String(pp.google_business_url));
+      }catch(e){}
       // Canonical identity comes from the server (the Bearer token), not a stale
       // localStorage value. Sync session + header UI so they always match the
       // actually-authenticated user. (backend mode only — guarded above.)
@@ -5367,6 +5380,7 @@ function openSettings(){
   const _npi=document.getElementById('npi'); if(_npi) _npi.value=getNpi();
   const _cad=document.getElementById('clinicAddress'); if(_cad) _cad.value=getClinicAddress();
   const _cph=document.getElementById('clinicPhone'); if(_cph) _cph.value=getClinicPhone();
+  const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) _gbu.value=localStorage.getItem(uns('googleBusinessUrl'))||'';
   if(typeof renderLogoSetting==='function') renderLogoSetting();
   const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
   const _nm=document.getElementById('noteModelSel'); if(_nm){ _nm.value=getNoteModel(); const _nmPrem=(typeof effectivePremium==='function')?effectivePremium():false; _nm.disabled=!_nmPrem; const _nmh=document.getElementById('noteModelHint'); if(_nmh && !_nmPrem) _nmh.textContent='Model selection is a Premium feature — Standard always uses the fast model. Upgrade to choose the stronger model.'; }
@@ -5428,6 +5442,7 @@ function saveSettings(){
   const _npi=document.getElementById('npi'); if(_npi) localStorage.setItem(uns('npi'),(_npi.value||'').trim());
   const _cad=document.getElementById('clinicAddress'); if(_cad) localStorage.setItem(uns('clinicAddress'),(_cad.value||'').trim());
   const _cph=document.getElementById('clinicPhone'); if(_cph) localStorage.setItem(uns('clinicPhone'),(_cph.value||'').trim());
+  const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) localStorage.setItem(uns('googleBusinessUrl'),(_gbu.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
   const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(_nm.value==='gpt-4o-mini')?'gpt-4o-mini':'gpt-4o');
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
@@ -5461,7 +5476,7 @@ function saveSettings(){
    ========================================================= */
 const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact',
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
-  'providerCred','npi','clinicAddress','clinicPhone','defaultFormat','noteStyle',
+  'providerCred','npi','clinicAddress','clinicPhone','googleBusinessUrl','defaultFormat','noteStyle',
   'featMME','featSurgical','featUR','featIME','featCost','legalEnabled',
   'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets'];
 function syncPrefsToServer(){
@@ -7922,6 +7937,8 @@ async function suNext(btn){
   if(SU_STEP===1){
     var nm=document.getElementById('su_name').value.trim();
     if(!nm){ var msg=document.getElementById('setupMsg'); if(msg){msg.style.color='#c0392b'; msg.textContent='Please enter your name first.';} return; }
+    var pn=document.getElementById('su_practice').value.trim();
+    if(!pn){ var pmsg=document.getElementById('setupMsg'); if(pmsg){pmsg.style.color='#c0392b'; pmsg.textContent='Please add your clinic or practice name so booking and patient messages identify the right office.';} return; }
     suPersistIdentity();
   }
   if(SU_STEP===2 && document.getElementById('avDay0') && typeof saveAvailability==='function'){ try{ await saveAvailability(null); }catch(e){} }
@@ -7940,6 +7957,7 @@ function suPersistIdentity(){
   localStorage.setItem(uns('clinicAddress'), document.getElementById('su_addr').value.trim());
   localStorage.setItem(uns('qolSignature'), document.getElementById('su_sig').value.trim());
   try{ if(typeof syncProfileName==='function') syncProfileName(); }catch(e){}
+  try{ if(typeof syncPrefsToServer==='function') syncPrefsToServer(); }catch(e){}
 }
 function suFinish(){
   suPersistIdentity();
