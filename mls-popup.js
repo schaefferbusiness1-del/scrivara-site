@@ -554,9 +554,7 @@
       var m = s.mismatch || {};
       box.appendChild(el('div', null, 'MLS: ' + idStr(m.mlsIdentity)));
       box.appendChild(el('div', null, 'Open chart: ' + idStr(m.chartIdentity)));
-      var ov = el('button', 'mlsp-btn danger', 'Write anyway — I confirmed this patient');
-      ov.addEventListener('click', function () { core.writeBack(true); });
-      box.appendChild(ov);
+      box.appendChild(el('p', 'mlsp-sub', 'Open the correct patient chart in athenaOne, press Go again, and retry. There is no wrong-patient override.'));
       body.appendChild(box);
     }
 

@@ -41,7 +41,7 @@
   if (win[NS] && win[NS].installed) { return; }
 
   var BACKEND = 'https://scrivara-backend.onrender.com';
-  var SERVER_EXT_VERSION = '2.9.16'; // current published MLS Assist (extension-version.json)
+  var SERVER_EXT_VERSION = '2.9.17'; // current published MLS Assist (extension-version.json)
 
   function isFn(f) { return typeof f === 'function'; }
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -88,6 +88,12 @@
   }
   function apptTime(a) {
     return safe(function () { return String(a.time || (a.start_at ? String(a.start_at).slice(11, 16) : '') || ''); }, '');
+  }
+  function compareVersions(a, b) {
+    var aa = String(a || '').replace(/^v/i, '').split('.'), bb = String(b || '').replace(/^v/i, '').split('.');
+    if (!aa.length || !bb.length || aa.some(function (x) { return !/^\d+$/.test(x); }) || bb.some(function (x) { return !/^\d+$/.test(x); })) return null;
+    for (var i = 0; i < Math.max(aa.length, bb.length); i++) { var av = Number(aa[i] || 0), bv = Number(bb[i] || 0); if (av !== bv) return av > bv ? 1 : -1; }
+    return 0;
   }
 
   /* ================= THE CHECK REGISTRY ================= */
@@ -138,15 +144,16 @@
     register({
       id: 'ext-version', code: 'EXT-003', name: 'MLS Assist version is current',
       run: function () {
-        // The page cannot read the installed extension's manifest version (isolated
-        // world; mlsPong carries no version). Honest 'unknown' -- never guess pass.
         return extRequest('mlsPing', 'mlsPong', 2500).then(function (r) {
           if (!r.ok) return R('unknown', 'EXT-003', 'Extension not responding, so its version cannot be read.',
             'Fix EXT-002 first, then re-run.', 'no pong');
-          return R('unknown', 'EXT-003',
-            'This page cannot read the installed extension version (the extension runs in an isolated world and its pong carries no version).',
-            'In Chrome open chrome://extensions and confirm MLS Assist is v' + SERVER_EXT_VERSION + '. The extension self-checks against extension-version.json and shows an update banner if it is behind.',
-            'published current = v' + SERVER_EXT_VERSION);
+          var installed = String((r.data && r.data.version) || '').replace(/^v/i, '').trim();
+          var cmp = compareVersions(installed, SERVER_EXT_VERSION);
+          if (cmp == null) return R('unknown', 'EXT-003', 'The extension answered but did not provide a valid installed version.',
+            'Reload MLS Assist at chrome://extensions, refresh MLS, then re-run.', 'reported=' + (installed || '(empty)') + '; latest=v' + SERVER_EXT_VERSION);
+          if (cmp < 0) return R('fail', 'EXT-003', 'MLS Assist v' + installed + ' is installed; v' + SERVER_EXT_VERSION + ' is available.',
+            'Update it from Settings → Get the extension, then click Reload for MLS Assist at chrome://extensions.', 'installed=v' + installed + '; latest=v' + SERVER_EXT_VERSION);
+          return R('pass', 'EXT-003', '', '', 'Installed=v' + installed + (cmp > 0 ? ' (newer than published v' + SERVER_EXT_VERSION + ')' : ' · up to date'));
         });
       }
     });

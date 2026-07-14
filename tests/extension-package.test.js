@@ -168,6 +168,9 @@ assert(checkerMatch, 'feat_mls_checker.js must declare SERVER_EXT_VERSION');
 assert.strictEqual(manifest.version, published.version, 'manifest and extension-version versions differ');
 assert.strictEqual(manifest.version, checkerMatch[1], 'manifest and checker versions differ');
 assert(/^\d+(?:\.\d+){0,3}$/.test(manifest.version), 'manifest version is not Chrome-compatible');
+assert(/r\.data\s*&&\s*r\.data\.version/.test(checker), 'checker must read the installed version carried by mlsPong');
+assert(/compareVersions\(installed,\s*SERVER_EXT_VERSION\)/.test(checker), 'checker must compare installed and published extension versions');
+assert(!/cannot read the installed extension version/i.test(checker), 'checker must not claim the installed version is inherently unreadable');
 
 const downloadPage = read('get-extension.html');
 const pageFilesMatch = downloadPage.match(/var\s+FILES\s*=\s*(\[[^;]+\])/s);

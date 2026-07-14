@@ -6,6 +6,8 @@ const { spawnSync } = require('child_process');
 const tests = [
   'static-site.test.js',
   'athena-write-contract.test.js',
+  'athena-action-contract.test.js',
+  'athena-adversarial-contract.test.js',
   'primary-workflow-contract.test.js',
   'schedule-time-contract.test.js',
   'performance-lifecycle-contract.test.js',

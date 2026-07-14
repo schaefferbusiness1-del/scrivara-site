@@ -1830,7 +1830,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <!-- Superbill -->
       <div class="extra-card" id="billCard" style="display:none">
         <h3>🧾 Superbill <span style="font-weight:400;font-size:13px;color:var(--muted)">(dx + CPT for billing)</span>
-          <button class="sec-copy" style="margin-left:auto;background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:700" onclick="pushSuperbillToAthena()" title="Review the suggested E/M, CPT and diagnosis routing before entering it manually in Athena">👁 Review Athena billing plan</button>
+          <button class="sec-copy" style="margin-left:auto;background:#2E6A4B;color:#fff;border-color:#2E6A4B;font-weight:700" onclick="pushSuperbillToAthena()" title="Review E/M, CPT, modifiers, units and diagnosis pointers. After exact encounter confirmation, only the exact E/M and CPT/HCPCS codes are staged; the other attributes stay manual. No claim is submitted.">Review &amp; stage Athena billing</button>
           <button class="sec-copy" onclick="copyExtra('billBodyText')">📑 Copy</button>
           <button class="sec-copy" onclick="printExtra('Superbill','billBody')">🖨 Print</button>
         </h3>
@@ -2009,10 +2009,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-green" id="signBtn" onclick="signNote()" disabled>✔ Review &amp; Sign</button>
         <button class="btn-ghost" id="saveNoteBtn" onclick="saveCurrentNote(true)" disabled>💾 Save to history</button>
         <button class="btn-primary" onclick="copyForEMR()" disabled id="copyEmrBtn" title="Copy only the generated clinical note text. Diagnoses, billing and orders remain separate for manual review.">📋 Copy note text</button>
-        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="Review the note, diagnoses, billing and orders with their intended Athena destinations. This is a manual-entry plan and does not write to Athena.">👁 Review manual Athena plan</button>
+        <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="Review exactly what goes to Athena, then choose one independent write, billing, save, or sign action.">Review Athena actions</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
-      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6">👁 <b>Last step — Review the manual entry plan</b>: see exactly what belongs where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders). This preview does not write, save, sign, submit, or place orders in Athena.</div>
+      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: see exactly what belongs where (<b>Note</b>→encounter note · <b>Diagnoses</b>→Assessment &amp; Plan · <b>E/M + CPT</b>→Billing · <b>Orders</b>→Orders). Write, billing, and Save each require their own exact-encounter check and confirmation. Sign &amp; Save unlocks only after this receipt verifies its exact note write, then requires another confirmation. Nothing auto-chains; orders and prescriptions stay separate and manual.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:12px;padding:11px 14px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">auto-built from the note · sent with Submit</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
@@ -11179,7 +11179,7 @@ function renderHistory(){
       ? `<button class="del" title="Attach this visit to ${esc(ap.name)}" style="color:var(--green-dk);font-size:14px;font-weight:700;width:auto;padding:4px 9px" onclick="event.stopPropagation();attachNoteToActive('${n.id}')">＋ Attach</button>`
       : '';
     // Review the saved visit's manual Athena routing plan (real notes only).
-    const pushBtn = (!n.isDraft && (n.text||n.soap)) ? `<button title="Review this saved visit and its intended Athena destinations. Preview only; nothing is written." style="background:#2E6A4B;color:#fff;border:1px solid #2E6A4B;border-radius:8px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">👁 Athena plan</button>` : '';
+    const pushBtn = (!n.isDraft && (n.text||n.soap)) ? `<button title="Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action." style="background:#2E6A4B;color:#fff;border:1px solid #2E6A4B;border-radius:8px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">Review Athena actions</button>` : '';
     return `<div class="hist-item" onclick="openNoteFromHistory('${n.id}')">
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
@@ -13874,7 +13874,7 @@ function _athenaBuildPlan(){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  if(!currentSoap){ try{ toast('Generate the note first, then review the Athena entry plan.','err'); }catch(e){} return; }
+  if(!currentSoap){ try{ toast('Generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
   var built=_athenaBuildPlan();
   if(!built.noteText.trim()){ try{ toast('Nothing to review yet.','err'); }catch(e){} return; }
   var p=(typeof activePatient==='function')?activePatient():null;
@@ -13912,6 +13912,7 @@ function _athenaItemsOf(s){
   var out=[]; String(s.body||'').split('\n').forEach(function(ln){ ln=ln.trim(); if(ln.indexOf('•')===0) out.push(ln.replace(/^•\s*/,'')); else if(/^E\/M level:/i.test(ln)) out.push(ln); else if(/^Attach these (diagnoses|ICD)/i.test(ln)) out.push(ln); }); return out;
 }
 function _athenaPushPlan(sections, who, immutablePatient){
+  var visitContext=arguments[3]||null;
   var allowed={note:1,dx:1,billing:1,orders:1};
   sections=(sections||[]).filter(function(s){ return s && s.body && String(s.body).trim(); });
   var unknown=sections.filter(function(s){ return !allowed[s.kind]; });
@@ -13921,10 +13922,10 @@ function _athenaPushPlan(sections, who, immutablePatient){
     var meta=ATHENA_SECTIONS[s.kind]||{label:s.kind,dest:''};
     return {kind:s.kind,label:meta.label,dest:meta.dest,icon:(meta.icon||'•'),ok:false,previewOnly:true,items:_athenaItemsOf(s)};
   });
-  _athenaShowReceipt(who,results,false,immutablePatient);
+  _athenaShowReceipt(who,results,false,immutablePatient,sections,visitContext||null);
 }
 /* Review card — this is a plan, never a write receipt. */
-function _athenaShowReceipt(who, results, partial, immutablePatient){
+function _athenaShowReceiptLegacy(who, results, partial, immutablePatient){
   try{
     var old=document.getElementById('athenaReceipt'); if(old) old.remove();
     var when=new Date().toLocaleString();
@@ -13952,7 +13953,150 @@ function _athenaShowReceipt(who, results, partial, immutablePatient){
     try{ toast('Athena entry plan ready. Preview only — nothing was written.',''); }catch(e){}
   }catch(e){ try{ toast('Could not open the manual Athena plan. Nothing was written.','err'); }catch(_){} }
 }
-/* Preview the superbill routing. Structured billing remains manual-only. */
+var _athenaReceiptState=null;
+function _athenaReceiptHash(value){
+  var src=''; try{ src=JSON.stringify(value||{}); }catch(e){ src=String(value||''); }
+  var h=2166136261; for(var i=0;i<src.length;i++){ h^=src.charCodeAt(i); h=Math.imul(h,16777619); }
+  return 'mls-preview-'+(h>>>0).toString(16);
+}
+function _athenaReceiptAction(action){
+  var state=_athenaReceiptState;
+  var wf=window.__mlsWriteFlow;
+  var status=document.getElementById('athenaReceiptStatus');
+  if(!state || !wf || typeof wf.startAthenaAction!=='function' || typeof wf.writeReceiptDrafts!=='function'){
+    if(status){ status.style.display='block'; status.style.color='#9f2d2d'; status.textContent='MLS Assist is still loading. Nothing was changed; wait a moment and try again.'; }
+    try{ toast('MLS Assist is still loading. Nothing was changed.','err'); }catch(e){}
+    return;
+  }
+  if(status){ status.style.display='block'; status.style.color='#6f5a20'; status.textContent='Preparing the selected Athena action...'; }
+  var opts={patient:state.patient,plan:state.sections,statusEl:status,previewHash:state.previewHash,expectedContext:state.expectedContext||null,noteTimestamp:state.noteTimestamp||null,requireExpectedVisit:state.requireExpectedVisit===true,receiptSessionId:state.receiptSessionId,noteWriteProof:(state.session&&state.session.noteWriteProof)||''};
+  opts.onResult=function(resp,meta){
+    if(_athenaReceiptState!==state) return;
+    var initial=document.getElementById('athenaReceiptInitialState');
+    if(initial&&resp&&(resp.__timeout===true||resp.reason==='outcome-uncertain')) initial.innerHTML='<b>The Athena outcome is uncertain.</b> The requested destination may already have changed even though MLS did not receive durable confirmation. Inspect the exact open Athena note or billing slate before retrying. Nothing else ran automatically.';
+    else if(initial&&resp&&(resp.attempted===true||resp.partialMutation===true||resp.ok===true)) initial.innerHTML='<b>An Athena action was attempted.</b> Use the detailed result below as the source of truth. If any result is partial or uncertain, inspect the exact open Athena destination before retrying. Nothing else ran automatically.';
+    if(action==='sign_encounter'){
+      state.session.noteWriteProof=null;
+      var usedSign=document.getElementById('athenaReceiptSign');
+      var usedWhy=document.getElementById('athenaReceiptSignWhy');
+      if(usedSign){usedSign.disabled=true;usedSign.setAttribute('aria-disabled','true');usedSign.style.background='#e5ebe8';usedSign.style.color='#66766d';usedSign.style.cursor='not-allowed';usedSign.title='This one-use signing attempt is closed. Re-open the Athena review and verify the note before another final action.';}
+      if(usedWhy) usedWhy.textContent='This one-use signing attempt is closed. The result above is authoritative; MLS will not retry or auto-chain.';
+      return;
+    }
+    if(action!=='write_note') return;
+    var proof=resp&&resp.noteWriteProof;
+    var receipt=meta&&meta.verifiedWrite;
+    var ctx=(meta&&meta.context)||(receipt&&receipt.context)||{};
+    var samePreview=receipt&&receipt.previewHash===state.previewHash;
+    var sameSession=receipt&&receipt.receiptSessionId===state.receiptSessionId;
+    var normText=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();};
+    var onlyDigits=function(v){return String(v||'').replace(/\D/g,'');};
+    var samePatient=receipt&&normText(receipt.patientName)===normText(state.patient.name)&&onlyDigits(receipt.patientDob)===onlyDigits(state.patient.dob)&&(!state.patient.mrn||onlyDigits(receipt.patientMrn)===onlyDigits(state.patient.mrn));
+    var sameEncounter=!!(ctx.encounterId&&receipt&&receipt.contextSignature);
+    if(resp&&resp.written===true&&resp.verified===true&&proof&&receipt&&receipt.noteWriteProof===proof&&samePatient&&samePreview&&sameSession&&sameEncounter){
+      state.session.noteWriteProof=proof;
+      state.session.noteWriteProofExpiresAt=Number(resp.noteWriteProofExpiresAt||0)||0;
+      state.session.encounterId=String(ctx.encounterId||'');
+      state.session.contextHash=String(ctx.contextHash||receipt.contextSignature||'');
+      var sign=document.getElementById('athenaReceiptSign');
+      var why=document.getElementById('athenaReceiptSignWhy');
+      if(sign){ sign.disabled=false; sign.removeAttribute('aria-disabled'); sign.style.background='#204034'; sign.style.color='#fff'; sign.style.cursor='pointer'; var sub=sign.querySelector('span'); if(sub){sub.style.color='#dceae3';sub.textContent='Athena encounter note · separate confirmation required';} sign.title='This exact receipt note was written and verified in Athena encounter '+state.session.encounterId+'. Signing still requires its own confirmation.'; }
+      if(why) why.textContent='Verified note write for encounter '+state.session.encounterId+' - ready for a separate Sign & Save confirmation.';
+      if(state.session.noteWriteProofExpiresAt>Date.now()){
+        (function(lockedProof,expiresAt){ setTimeout(function(){
+          if(_athenaReceiptState!==state||state.session.noteWriteProof!==lockedProof||Date.now()<expiresAt) return;
+          state.session.noteWriteProof=null;
+          var expiredSign=document.getElementById('athenaReceiptSign'); var expiredWhy=document.getElementById('athenaReceiptSignWhy');
+          if(expiredSign){expiredSign.disabled=true;expiredSign.setAttribute('aria-disabled','true');expiredSign.style.background='#e5ebe8';expiredSign.style.color='#66766d';expiredSign.style.cursor='not-allowed';expiredSign.title='The verified-note signing proof expired. Re-open the Athena review and verify the note again.';}
+          if(expiredWhy) expiredWhy.textContent='The one-use signing proof expired. Re-open the Athena review and verify the note again; nothing runs automatically.';
+        },Math.max(0,expiresAt-Date.now()+50)); })(proof,state.session.noteWriteProofExpiresAt);
+      }
+    }
+  };
+  if(action==='write_note'){ wf.writeReceiptDrafts(opts); return; }
+  if(action==='stage_billing'){
+    var billing=state.sections.filter(function(s){ return s.kind==='billing'; })[0];
+    opts.billingText=billing?billing.body:'';
+    wf.startAthenaAction('stage_billing',opts); return;
+  }
+  if(action==='save_draft'){ wf.startAthenaAction('save_draft',opts); return; }
+  if(action==='sign_encounter'){
+    var proofExpiresAt=state.session?Number(state.session.noteWriteProofExpiresAt||0)||0:0;
+    if(!proofExpiresAt||Date.now()>=proofExpiresAt){
+      if(state.session){ state.session.noteWriteProof=null; state.session.noteWriteProofExpiresAt=0; }
+      var expiredSign=document.getElementById('athenaReceiptSign');
+      var expiredWhy=document.getElementById('athenaReceiptSignWhy');
+      if(expiredSign){ expiredSign.disabled=true; expiredSign.setAttribute('aria-disabled','true'); expiredSign.style.background='#e5ebe8'; expiredSign.style.color='#66766d'; expiredSign.style.cursor='not-allowed'; expiredSign.title='The verified-note signing proof expired. Re-open the Athena review and verify the note again.'; }
+      if(expiredWhy) expiredWhy.textContent='The one-use signing proof expired. Re-open the Athena review and verify the note again; nothing runs automatically.';
+      if(status){ status.style.display='block'; status.style.color='#9f2d2d'; status.textContent='Sign & Save is locked because the verified-note proof expired. Re-open the Athena review and verify the note again.'; }
+      try{ toast('Sign & Save proof expired. Re-open the Athena review and verify the note again.','err'); }catch(e){}
+      return;
+    }
+    if(!state.session||!state.session.noteWriteProof||!state.session.encounterId){
+      if(status){ status.style.display='block'; status.style.color='#9f2d2d'; status.textContent='Sign & Save is locked. Write and verify this exact note to the exact Athena encounter first.'; }
+      try{ toast('Sign & Save is locked until this receipt verifies its note write.','err'); }catch(e){}
+      return;
+    }
+    wf.startAthenaAction('sign_encounter',opts);
+  }
+}
+/* One truthful destination map. Note write, billing, and Save are separately
+   confirmed; Sign additionally requires this receipt's verified note-write proof. */
+function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext){
+  try{
+    var old=document.getElementById('athenaReceipt'); if(old) old.remove();
+    var patientCopy={name:String((immutablePatient&&immutablePatient.name)||who||''),dob:String((immutablePatient&&immutablePatient.dob)||''),mrn:String((immutablePatient&&immutablePatient.mrn)||''),patientId:String((immutablePatient&&immutablePatient.patientId)||'')};
+    var sectionCopy=(sections||[]).map(function(s){ var x={kind:String(s.kind||''),body:String(s.body||'')}; try{Object.freeze(x);}catch(e){} return x; });
+    var expectedCopy=visitContext?{visitDate:String(visitContext.visitDate||visitContext.encounterDate||''),provider:String(visitContext.provider||visitContext.providerName||''),appointmentId:String(visitContext.appointmentId||visitContext.id||''),encounterId:String(visitContext.encounterId||visitContext.visitId||''),encounterUrl:String(visitContext.encounterUrl||visitContext.visitUrl||'')}:null;
+    var hashInput={patient:patientCopy,sections:sectionCopy};
+    var wf=window.__mlsWriteFlow;
+    var previewHash=(wf&&typeof wf.previewHash==='function')?wf.previewHash(hashInput):_athenaReceiptHash(hashInput);
+    try{ Object.freeze(patientCopy); Object.freeze(sectionCopy); if(expectedCopy)Object.freeze(expectedCopy); }catch(e0){}
+    var receiptSessionId='athena-receipt-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+    var receiptSession={noteWriteProof:null,noteWriteProofExpiresAt:0,encounterId:'',contextHash:''};
+    _athenaReceiptState={patient:patientCopy,sections:sectionCopy,expectedContext:expectedCopy,previewHash:previewHash,noteTimestamp:(visitContext&&visitContext.noteTimestamp)||null,requireExpectedVisit:!!(visitContext&&visitContext.historical),receiptSessionId:receiptSessionId,session:receiptSession};
+    try{ Object.freeze(_athenaReceiptState); }catch(e1){}
+    var when=new Date().toLocaleString();
+    var identityBits=[];
+    if(patientCopy.dob) identityBits.push('DOB '+patientCopy.dob);
+    if(patientCopy.mrn) identityBits.push('MRN '+patientCopy.mrn);
+    if(expectedCopy&&expectedCopy.visitDate) identityBits.push('Visit '+expectedCopy.visitDate);
+    if(expectedCopy&&expectedCopy.provider) identityBits.push('Provider '+expectedCopy.provider);
+    var identityLine=identityBits.length?(' | '+identityBits.join(' | ')):'';
+    var rows=(results||[]).map(function(r){
+      var itemsHtml=(r.items&&r.items.length)?('<ul style="margin:4px 0 0 0;padding-left:18px;font-size:12.5px;color:#204034">'+r.items.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>'):'';
+      var routeStatus=r.kind==='note'?'UNSIGNED DRAFT':(r.kind==='billing'?'SEPARATE ACTION':'MANUAL');
+      return '<div style="border:1px solid #e2e8f2;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#f7f9fb">'
+        +'<div style="display:flex;align-items:center;gap:8px"><b style="font-size:13.5px">'+r.icon+' '+esc(r.label)+'</b><span style="margin-left:auto;font-size:11px;color:#6d5010">'+routeStatus+'</span></div>'
+        +'<div style="font-size:11.5px;color:#385b49;margin-top:2px">&rarr; '+esc(r.dest)+'</div>'+itemsHtml+'</div>';
+    }).join('');
+    var hasNote=sectionCopy.some(function(s){return s.kind==='note'&&s.body.trim();});
+    var hasBilling=sectionCopy.some(function(s){return s.kind==='billing'&&s.body.trim();});
+    var historicalContextMissing=!!(visitContext&&visitContext.historical&&(!expectedCopy||!expectedCopy.visitDate||!expectedCopy.provider));
+    var historicalWarning=historicalContextMissing?'<div style="background:#fff0f0;border:1px solid #e4aaaa;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#8b2525;margin-top:8px"><b>Athena actions disabled for this saved visit.</b> Its stored record does not contain both the original encounter date and provider. MLS will not substitute the record save time or the currently signed-in provider, because that could target the wrong historical encounter.</div>':'';
+    var actionStyle='border:1px solid #cfdad4;background:#fff;color:#204034;border-radius:10px;padding:10px 11px;font-size:12.5px;font-weight:750;cursor:pointer;text-align:left';
+    var card=document.createElement('div'); card.id='athenaReceipt';
+    card.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(10,25,50,.45);display:flex;align-items:center;justify-content:center;padding:18px';
+    card.innerHTML='<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 24px 70px rgba(10,30,70,.4);padding:20px 22px">'
+      +'<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:17px;font-weight:800;color:#204034">Review what goes to Athena - '+esc(who||'patient')+'</div><div style="font-size:12px;color:#4f665b;margin-top:2px">'+esc(when+identityLine)+'</div></div><button type="button" onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" aria-label="Close" style="background:none;border:none;font-size:22px;color:#66766d;cursor:pointer;line-height:1">&times;</button></div>'
+      +'<div style="font-size:12.5px;color:#204034;margin:10px 0 12px">Review the exact destination list. Nothing changes until you choose one action and confirm the Athena patient and encounter.</div>'
+      +rows+historicalWarning
+      +'<div id="athenaReceiptInitialState" style="background:#fff7e6;border:1px solid #f0d79a;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#6d5010;margin-top:4px"><b>Nothing has changed yet.</b> Writing is unsigned and requires an exact patient/date/provider/encounter/editor check plus confirmation. Billing stages exact E/M and CPT/HCPCS codes only; units, modifiers and diagnosis links remain manual, and no claim is submitted. Save verifies this exact reviewed note in the encounter editor before saving, but does not sign or bill. Sign &amp; Save remains locked until this receipt verifies its exact note write. Orders and prescriptions remain separate and manual.</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'
+      +'<button type="button" id="athenaReceiptWrite" onclick="_athenaReceiptAction(\'write_note\')" '+((hasNote&&!historicalContextMissing)?'':'disabled ')+'style="'+actionStyle+'"><b>Write reviewed note</b><br><span style="font-weight:500;color:#4f665b">Unsigned note only; exact encounter confirmation</span></button>'
+      +'<button type="button" id="athenaReceiptBilling" onclick="_athenaReceiptAction(\'stage_billing\')" '+((hasBilling&&!historicalContextMissing)?'':'disabled ')+'style="'+actionStyle+'"><b>Stage billing codes</b><br><span style="font-weight:500;color:#4f665b">Athena Billing / Charges · no claim submission</span></button>'
+      +'<button type="button" id="athenaReceiptSave" '+((historicalContextMissing||!hasNote)?'disabled ':'')+'onclick="_athenaReceiptAction(\'save_draft\')" style="'+actionStyle+'"><b>Save draft in Athena</b><br><span style="font-weight:500;color:#4f665b">Athena encounter note · does not sign or bill</span></button>'
+      +'<button type="button" id="athenaReceiptSign" disabled aria-disabled="true" title="Write and verify this exact reviewed note in the exact Athena encounter first." onclick="_athenaReceiptAction(\'sign_encounter\')" style="'+actionStyle+';background:#e5ebe8;color:#66766d;cursor:not-allowed"><b>Sign &amp; Save in Athena</b><br><span style="font-weight:500;color:#66766d">Athena encounter note · locked until write verified</span></button>'
+      +'</div><div id="athenaReceiptSignWhy" style="margin-top:7px;font-size:11.8px;color:#6d5010">Sign &amp; Save is disabled until this receipt writes and verifies the exact reviewed note in the exact Athena encounter. It never runs automatically.</div><div id="athenaReceiptStatus" role="status" style="display:none;margin-top:10px;border-radius:8px;background:#f7f9fb;border:1px solid #e2e8f2;padding:9px 10px;font-size:12.5px"></div>'
+      +'<div style="display:flex;gap:8px;margin-top:12px"><button type="button" onclick="var p=document.getElementById(\'athenaReceipt\');if(p)p.remove();" style="flex:1;background:#fff;color:#204034;border:1px solid #cfdad4;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Close review</button></div>'
+      +'</div>';
+    document.body.appendChild(card);
+    card.addEventListener('click',function(e){if(e.target===card)card.remove();});
+    try{toast('Athena review ready. Nothing has changed until you choose and confirm one action.','');}catch(e){}
+  }catch(e){try{toast('Could not open the Athena review. Nothing was changed.','err');}catch(_){} }
+}
+/* Review the superbill routing, then optionally stage it as an independent,
+   exact-encounter-confirmed action. This never submits a claim. */
 function pushSuperbillToAthena(){
   var c=(typeof currentCoding!=='undefined')?currentCoding:null;
   if(!c || (!c.em && !(c.cpt&&c.cpt.length) && !(c.icd&&c.icd.length))){ try{ toast('Generate the note + coding first — there are no charges to review yet.','err'); }catch(e){} return; }
@@ -13977,7 +14121,15 @@ function pushHistoryNoteToAthena(id){
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+' ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
   if(orders.length){ var ol=orders.map(function(o){ var def=(typeof ORDER_DEFS!=='undefined'&&ORDER_DEFS[o.type])||{}; return o._src||(def.label||o.type); }); plan.push({kind:'orders', body:'ORDERS (add each):\n• '+ol.map(function(x){return String(x).slice(0,80);}).join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS  →  '+ATHENA_SECTIONS.orders.dest+' ('+orders.length+'):'); ol.forEach(function(x){ lines.push('      • '+String(x).slice(0,60)); }); }
-  if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who, immutablePatient); else { try{ toast('Could not open the Athena manual-entry plan. Nothing was written.','err'); }catch(e){} }
+  /* Historical writes must use visit metadata stored with this record. The
+     record's later save/update time and the currently signed-in provider are
+     not evidence of the original encounter and must never be substituted. */
+  var noteTimestamp=Number(n.visitTimestamp||n.encounterTimestamp||0)||null;
+  var noteDate=String(n.visitDate||n.noteDate||n.appt_date||n.apptDate||'').slice(0,10);
+  if(!noteDate&&noteTimestamp){ try{ noteDate=new Date(noteTimestamp).toISOString().slice(0,10); }catch(e){} }
+  var noteProvider=String(n.provider||n.providerName||'').trim();
+  var visitContext={historical:true,visitDate:noteDate,provider:noteProvider,noteTimestamp:noteTimestamp,appointmentId:String(n.appointmentId||n.apptId||n.scheduleAppointmentId||''),encounterId:String(n.encounterId||n.athenaEncounterId||n.visitId||''),encounterUrl:String(n.encounterUrl||n.athenaEncounterUrl||n.visitUrl||'')};
+  if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who, immutablePatient, visitContext); else { try{ toast('Could not open the Athena review. Nothing was written.','err'); }catch(e){} }
 }
 function getAutoSendEMR(){ return false; }
 function applyAutoSendPreview(c){

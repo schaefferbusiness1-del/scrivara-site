@@ -26,7 +26,7 @@ const contractSource = between(
 );
 const contract = Function(`${contractSource}\nreturn { version: ROUTE_CONTRACT_VERSION, aliases: ROUTE_ALIASES, policy: ROUTE_POLICY, canonical: canonicalRouteKey };`)();
 
-assert.strictEqual(contract.version, 'athena-routes-1');
+assert(/^athena-routes-\d+$/.test(contract.version), 'typed write routes must stay versioned');
 assert.strictEqual(contract.canonical('hpi'), 'hpi');
 assert.strictEqual(contract.canonical('history'), '', 'ambiguous history must never route to a drawer or generic note');
 assert.strictEqual(contract.canonical('past_surgical_history'), 'past_surgical_history');
@@ -36,8 +36,11 @@ assert.strictEqual(contract.canonical('totally_unknown'), '');
 for (const key of ['encounter_note', 'hpi', 'ros', 'physical_exam', 'assessment_narrative', 'plan', 'follow_up']) {
   assert.strictEqual(contract.policy[key].draft, true, `${key} should be a supervised narrative draft route`);
 }
-for (const key of ['procedure_note', 'past_surgical_history', 'diagnoses_icd10', 'medications_rx', 'orders_preview', 'lab_order', 'imaging_order', 'referral_order', 'pt_order', 'billing_preview', 'billing_em', 'billing_cpt']) {
+for (const key of ['procedure_note', 'past_surgical_history', 'diagnoses_icd10', 'medications_rx', 'orders_preview', 'lab_order', 'imaging_order', 'referral_order', 'pt_order']) {
   assert.strictEqual(contract.policy[key].draft, false, `${key} must remain preview/target-only`);
+}
+for (const key of ['billing_preview', 'billing_em', 'billing_cpt']) {
+  assert.notStrictEqual(contract.policy[key].draft, true, `${key} must not become a generic narrative draft route`);
 }
 
 const defsSource = between(background, 'var DEFS = {', 'function bestFieldFor(key)');
@@ -78,7 +81,9 @@ for (const required of ['final-action-blocked', 'structured-route-blocked', 'Sav
 }
 
 const signHandler = between(background, "if (msg.type === 'MLS_OVL_SIGNSAVE')", "var OFFSCREEN_PATH = 'offscreen.html';");
-assert(/sign-route-disabled/.test(signHandler));
+assert(/msg\.userInitiated\s*!==\s*true/.test(signHandler), 'the legacy overlay sign route must still reject non-user actions');
+assert(/probe/.test(signHandler), 'the legacy overlay route must preserve its read-only probe');
+assert(/sign-route-disabled/.test(signHandler), 'the legacy overlay route must remain mutation-disabled; finalization belongs only to the supervised v2 action contract');
 const prepHandler = between(background, "if (!msg || msg.type !== 'mlsAppPrepProcTemplateRequest') return;", 'function getCfg()');
 assert(/procedure-template-mutation-disabled/.test(prepHandler));
 
@@ -110,7 +115,7 @@ assert(/persisted\|\|r\.serverVerified/.test(resultUi), 'durable evidence must b
 const fullVisit = between(app, 'function pushEntireVisitToAthena(btn)', '/* Legacy natural-language autopilot');
 assert(fullVisit.includes('_athenaPushPlan'));
 assert(!fullVisit.includes('postMessage'));
-const fullPlan = between(app, 'function _athenaPushPlan(sections, who, immutablePatient)', '/* Review card');
+const fullPlan = between(app, 'function _athenaPushPlan(sections, who, immutablePatient', '/* Review card');
 assert(!fullPlan.includes('postMessage'));
 assert(fullPlan.includes('_athenaShowReceipt'));
 const billingPlan = between(app, 'function pushSuperbillToAthena()', '/* Preview a SAVED visit');

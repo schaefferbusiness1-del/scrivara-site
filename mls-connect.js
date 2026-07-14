@@ -8043,8 +8043,20 @@
   function close() { var ov = document.getElementById('mlsApvOv'); if (ov && ov.parentNode) { ov.parentNode.removeChild(ov); } }
   window.__mlsAthenaPreview_close = close;
 
+  function actionableReviewReady() {
+    return !!(window.__mlsWriteFlow && typeof window.__mlsWriteFlow.startAthenaAction === 'function' &&
+      typeof window._athenaShowReceipt === 'function' && typeof window.pushEntireVisitToAthena === 'function');
+  }
+
   function open() {
     api.opens++;
+    /* Older entry buttons delegate to the app's single actionable destination
+       receipt. They may not replace it with this retired manual-only sheet. */
+    if (actionableReviewReady()) {
+      close();
+      safe(function () { window.pushEntireVisitToAthena(null); });
+      return;
+    }
     if (!noteExists()) {
       safe(function () { if (isFn(window.toast)) window.toast('Generate the note first — there is nothing to preview yet.', 'err'); });
       return;
@@ -8168,12 +8180,17 @@
   /* ---- entry points -------------------------------------------------------- */
 
   /* (a) Persistent button in the base note card, right beside the real
-     "🚀 Send full visit to Athena" (#pushAllEmrBtn). Survives ez3 hiding the
+     "Review Athena actions" (#pushAllEmrBtn). Survives ez3 hiding the
      card (it is only display:none'd, never removed). */
   function ensureNoteCardBtn() {
     safe(function () {
       var push = document.getElementById('pushAllEmrBtn');
-      if (!push || document.getElementById('mlsApvNoteBtn')) { return; }
+      var existing = document.getElementById('mlsApvNoteBtn');
+      if (!push) { return; }
+      /* The canonical top button already opens the actionable receipt. Do not
+         leave a second adjacent button with the same label/behavior. */
+      if (actionableReviewReady()) { if (existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
+      if (existing) { existing.textContent = actionableReviewReady() ? 'Review Athena actions' : 'Preview what goes to Athena'; existing.onclick = open; return; }
       var b = document.createElement('button');
       b.id = 'mlsApvNoteBtn';
       b.type = 'button';
@@ -8181,6 +8198,7 @@
       b.style.cssText = 'margin-left:8px';
       b.textContent = '👁 Preview what goes to Athena';
       b.onclick = open;
+      b.textContent = actionableReviewReady() ? 'Review Athena actions' : 'Preview what goes to Athena';
       push.parentNode.insertBefore(b, push);
     });
   }
@@ -8199,7 +8217,11 @@
         if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
         return;
       }
-      if (existing) { return; }
+      if (existing) {
+        var oldBtn = existing.querySelector('button');
+        if (oldBtn) { oldBtn.textContent = actionableReviewReady() ? 'Review Athena actions' : 'Preview what goes to Athena'; oldBtn.onclick = open; }
+        return;
+      }
       var row = document.createElement('div');
       row.id = ROW_ID;
       row.className = 'ez3-row2';
@@ -8209,6 +8231,7 @@
       b.className = 'ez3-sm';
       b.textContent = '👁 Preview what goes to Athena';
       b.onclick = open;
+      b.textContent = actionableReviewReady() ? 'Review Athena actions' : 'Preview what goes to Athena';
       row.appendChild(b);
       /* place after the ux-fixes phone-mic row if present, else after #ez3Wrap */
       var anchor = document.getElementById('mlsUxEz3ExtraRow') || wrapEl;
@@ -28641,7 +28664,7 @@
     { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown/hidden in MLS Controls.' },
     { k: 'guide tour how to help', name: '📖 How-to guide + tour', where: 'Top bar ❓ Help / Menu → How-To Guide', how: 'The one current guide; the spotlight tour walks the real UI.' },
     { k: 'qr phone mobile record', name: '📱 Phone recording', where: 'Patient page — phone mic button', how: 'Click it to SHOW the QR; scan with your phone to record there (crash-proof, auto-retry).' },
-    { k: 'send athena writeback emr sign', name: '🚀 Send full visit to Athena', where: 'Visit flow step 4 / EMR sections modal', how: 'Review & confirm each section; NOTHING writes to athenaOne without your per-section confirm. Orders are never possible.' },
+    { k: 'send athena writeback emr sign billing save', name: 'Review Athena actions', where: 'Visit flow step 4 / Athena review', how: 'See every destination. Write, billing, and Save each verify the exact encounter and ask for confirmation. Sign & Save stays locked until this receipt verifies its exact note write, then asks for a separate confirmation. Nothing auto-chains; orders and prescriptions remain separate.' },
     { k: 'study group research cohort', name: 'Study Groups PRO', where: 'AI Studio → advanced section', how: 'Build cohorts by procedure, auto-format all patients, run a study (graph/Excel/PDF + premium AI narrative).' },
     { k: 'pay report money premium billing', name: '💵 Pay Reports', where: 'Top of AI Studio and Calendar', how: 'Premium feature — per-provider payment reporting.' },
     { k: 'agenda today schedule quick pick', name: "Today's Agenda / quick-pick", where: 'Home hero strip', how: 'Shows the selected doctor\'s patients (scoped like Who\'s Next). Chips show 🎂 birthdays and 12-hour times.' },
@@ -30494,10 +30517,9 @@
       '<b>record → MLS auto-sorts → review & edit → confirm approved → insert to athenaOne</b>. ' +
       'The <b>⚙ Writeback destination</b> gear (top-right of that window) sets where each section lands ' +
       'in the chart. Tick the sections you approve. <b>Nothing is written until you confirm and Insert.</b>'],
-    ['🚀', 'Send the visit to athenaOne',
-      'When the note and sections look right, use <b>🚀 Send full visit to Athena</b> (or <b>Sign & Save</b>). ' +
-      'Your signature block is appended automatically. This is the only step that writes to the chart, and ' +
-      'it always waits for you.'],
+    ['Athena', 'Review the Athena actions',
+      'When the note and sections look right, use <b>Review Athena actions</b>. The receipt shows every destination. ' +
+      '<b>Write drafts</b>, <b>Stage billing</b>, and <b>Save draft</b> each verify the exact encounter and ask for confirmation. <b>Sign &amp; Save</b> unlocks only after this receipt verifies its exact note write, then requires a separate confirmation. Nothing runs automatically.'],
     ['📅', 'Calendar & schedule',
       'The <b>Calendar</b> tab shows the month, a day panel and <b>Who’s Next</b>. Pick any day to see ' +
       'that day’s patients, then tap one to jump straight into the visit with them loaded.'],
@@ -30640,7 +30662,7 @@
  * - Step-driven focus: the card that matters for the current step gets a blue
  *   focus ring; the others dim gently (hover restores them — nothing is hidden
  *   or disabled, purely visual guidance).
- * - Surfaces the buried "Send full visit to Athena" (#pushAllEmrBtn) as a clear
+ * - Surfaces the buried "Review Athena actions" (#pushAllEmrBtn) as a clear
  *   CTA in the stepper bar; clicking it triggers the real button (user-initiated
  *   only) and scrolls the note card into view.
  * - Mobile responsive (@media max-width:640px). Fully reversible:
@@ -30714,11 +30736,11 @@
     var b = document.createElement('button');
     b.className = CLS+'-send';
     b.type = 'button';
-    b.title = 'Writes the full finished visit note into athenaOne. Nothing is sent until you click this.';
-    b.innerHTML = '🚀 Send full visit to Athena';
+    b.title = 'Review every Athena destination, then choose one independent confirmation-gated action.';
+    b.innerHTML = 'Review Athena actions';
     b.addEventListener('click', function(){
       var r = $('#pushAllEmrBtn');
-      if(!r){ b.textContent = 'Open a visit note first'; setTimeout(function(){ b.innerHTML='🚀 Send full visit to Athena'; },1800); return; }
+      if(!r){ b.textContent = 'Open a visit note first'; setTimeout(function(){ b.innerHTML='Review Athena actions'; },1800); return; }
       var noteCard = $('#noteCard');
       if(noteCard) noteCard.scrollIntoView({behavior:'smooth', block:'center'});
       r.classList.add(CLS+'-pulse');
@@ -31609,7 +31631,7 @@
       {label:'\uD83D\uDDC2 EMR sections',run:function(){go([{id:'emrBtn'},{re:/^EMR sections$/i}],'Generate a note first - then EMR sections opens.');}},
       {label:'\uD83D\uDCE4 Upload templates',run:function(){go([{id:'mlsUplTplBtn'},{re:/Upload templates/i}],'Upload templates not found.');}}]},
     4:{title:'Finalize & send',btns:[
-      {label:'\uD83D\uDD8A Sign & Save in Athena',primary:1,run:function(){go([{re:/Sign\s*&\s*Save in Athena/i}],'Generate the note first, then sign.');}},
+      {label:'\uD83D\uDD8A Review Athena actions',primary:1,run:function(){go([{id:'pushAllEmrBtn'}],'Generate the note first, then review the Athena actions.');}},
       {label:'\uD83D\uDCE7 Send portal login',run:function(){go([{id:'mlsPortalInviteBtn'},{re:/Send portal login/i}],'Send-portal control not found.');}},
       {label:'\uD83D\uDCC4 After-visit summary',run:function(){go([{id:'mlsavsBtn'},{re:/After.?visit summary/i}],'After-visit summary not available yet.');}}]}
   };
@@ -39251,6 +39273,40 @@
   api.revert = function () { try { st.remove(); } catch (e) {} api.installed = false; delete window.__mlsFabTidy; };
 })();
 
+/* Retire the old write-then-sign console control. Its chained behavior bypassed
+   the new probe -> exact-context -> trusted-confirmation contract. The routing
+   console remains available; only its outdated Sign & Save launchers are hidden. */
+(function () {
+  'use strict';
+  if (window.__mlsLegacySignRetired) return;
+  var hidden = [];
+  function retire() {
+    try {
+      var buttons = document.querySelectorAll('[data-mlswbc-sign]');
+      for (var i = 0; i < buttons.length; i++) {
+        var host = buttons[i].closest && buttons[i].closest('span[data-mlswbc]');
+        host = host || buttons[i];
+        if (host.getAttribute('data-mls-retired-sign') === '1') continue;
+        host.setAttribute('data-mls-retired-sign', '1');
+        host.setAttribute('aria-hidden', 'true');
+        host.style.display = 'none';
+        hidden.push(host);
+      }
+    } catch (e) {}
+  }
+  var mo = null;
+  try { mo = new MutationObserver(retire); mo.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+  retire();
+  window.__mlsLegacySignRetired = {
+    installed: true,
+    revert: function () {
+      try { if (mo) mo.disconnect(); } catch (e) {}
+      for (var i = 0; i < hidden.length; i++) { try { hidden[i].style.display = ''; hidden[i].removeAttribute('aria-hidden'); hidden[i].removeAttribute('data-mls-retired-sign'); } catch (e2) {} }
+      delete window.__mlsLegacySignRetired;
+    }
+  };
+})();
+
 /* =============================================================================
  * __mlsWfReview  wfr-1.0.0   (2026-07-13, owner HIGH priority)
  * -----------------------------------------------------------------------------
@@ -39269,6 +39325,9 @@
     try {
       var b = ev.target && ev.target.closest && ev.target.closest('#pushAllEmrBtn');
       if (!b) return;
+      /* The current app button already opens the actionable receipt. Do not
+         replace it with the legacy manual-only preview. */
+      if (window.__mlsWriteFlow && typeof window.__mlsWriteFlow.startAthenaAction === 'function' && typeof window._athenaShowReceipt === 'function') return;
       if (api.armed) { api.armed = false; return; }              /* review's own send passes through */
       if (typeof window.__mlsAthenaPreview_open !== 'function') return;   /* fail-open */
       ev.preventDefault();

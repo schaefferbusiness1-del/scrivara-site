@@ -1,5 +1,5 @@
 {
-  "version": "2.9.16",
+  "version": "2.9.17",
   "url": "https://mlsscribe.com/get-extension.html",
-  "notes": "v2.9.16 - Reliability update: stable record, stop, and resume with one-note generation; exact schedule times; focus-safe day, month, chart, and visit-history reads; patient-verified routing; clearer loading states; and substantially lower background page activity. Athena destinations are shown for review; nothing is signed or submitted automatically."
+  "notes": "v2.9.17 - Supervised Athena destination actions: write selected narrative drafts, stage exact E/M and CPT/HCPCS codes, save a draft, or Sign & Save only after an exact patient and encounter check plus a fresh confirmation. Billing is staged only; no claim, order, or prescription is submitted automatically."
 }

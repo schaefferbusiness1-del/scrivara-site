@@ -141,6 +141,1112 @@ const _mlsFrameMap = {};
   } catch (e) {}
 })();
 
+/* ATHENA_ACTION_V2_DRIVER_START */
+/* A self-contained page driver for the supervised v2 Athena action contract.
+ * It is injected once into the TOP frame and walks only same-origin descendants.
+ * It never navigates, reloads, retries, submits charges, or chains actions. */
+async function mlsAthenaActionV2DriverFn(req) {
+  try {
+    req = req || {};
+    var mode = String(req.mode || 'probe');
+    var action = String(req.action || '');
+    var expectedPatient = req.expectedPatient || {};
+    var expectedContext = req.expectedContext || {};
+    var locked = req.locked || null;
+    var billing = req.billing || {};
+    var mutationAttempted = false;
+    var sleep = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
+    var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1 };
+    if (!ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
+
+    function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+    function norm(v) { return text(v).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+    function digits(v) { return String(v || '').replace(/\D/g, ''); }
+    function dateKey(v) {
+      var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(String(v || ''));
+      if (!m) return '';
+      var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y;
+      return Number(m[1]) + '/' + Number(m[2]) + '/' + y;
+    }
+    function dateSeen(body, want) {
+      var k = dateKey(want); if (!k) return false;
+      var p = k.split('/');
+      var variants = [p[0] + '/' + p[1] + '/' + p[2], ('0' + p[0]).slice(-2) + '/' + ('0' + p[1]).slice(-2) + '/' + p[2], p[0] + '-' + p[1] + '-' + p[2], ('0' + p[0]).slice(-2) + '-' + ('0' + p[1]).slice(-2) + '-' + p[2]];
+      var low = String(body || '').toLowerCase();
+      for (var i = 0; i < variants.length; i++) if (low.indexOf(variants[i].toLowerCase()) >= 0) return true;
+      return false;
+    }
+    function nameKey(v) {
+      var raw = text(v), comma = /^\s*([^,]+),\s*(.+)$/.exec(raw);
+      if (comma) raw = comma[2] + ' ' + comma[1];
+      return norm(raw);
+    }
+    function noteNorm(v) {
+      return String(v == null ? '' : v).replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').split('\n').map(function (line) { return line.replace(/[ \t]+$/g, ''); }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+    function providerSeen(body, want) {
+      var w = norm(want), b = norm(body);
+      return w.length >= 3 && (' ' + b + ' ').indexOf(' ' + w + ' ') >= 0;
+    }
+    function stableHash(v) {
+      var s = String(v || ''), h = 2166136261;
+      for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+    }
+    function visible(el, win) {
+      try {
+        if (!el || el.disabled || el.getAttribute('aria-hidden') === 'true') return false;
+        var s = (win || window).getComputedStyle(el), r = el.getBoundingClientRect();
+        return s.display !== 'none' && s.visibility !== 'hidden' && parseFloat(s.opacity || '1') > 0.05 && r.width > 2 && r.height > 2;
+      } catch (e) { return false; }
+    }
+    function label(el) {
+      try { return text((el.textContent || el.value || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')); }
+      catch (e) { return ''; }
+    }
+    function labelSources(el) {
+      try { return [el.textContent, el.value, el.getAttribute('aria-label'), el.getAttribute('title')].map(text).filter(Boolean); }
+      catch (e) { return []; }
+    }
+    function domPath(el) {
+      var out = [], n = el, guard = 0;
+      while (n && n.nodeType === 1 && guard++ < 8) {
+        var part = String(n.tagName || '').toLowerCase();
+        if (n.id) part += '#' + n.id;
+        else if (n.getAttribute && n.getAttribute('data-testid')) part += '[data-testid=' + n.getAttribute('data-testid') + ']';
+        else if (n.getAttribute && n.getAttribute('name')) part += '[name=' + n.getAttribute('name') + ']';
+        out.unshift(part);
+        if (n.parentElement) n = n.parentElement;
+        else {
+          try { var root = n.getRootNode && n.getRootNode(); n = root && root.host ? root.host : null; } catch (e) { n = null; }
+        }
+      }
+      return out.join('>');
+    }
+    function controlFingerprint(el, frameUrl, kind) {
+      /* Fingerprints authorize a DOM owner, never its mutable text/value. The
+         note editor changes from empty to populated between Write and Sign. */
+      var stableLabels = '';
+      try { stableLabels = [el.getAttribute('aria-label') || '', el.getAttribute('title') || '', el.getAttribute('placeholder') || ''].map(norm).join('|'); } catch (e) {}
+      return stableHash([kind, frameUrl, el.tagName, el.id || '', el.getAttribute('name') || '', el.getAttribute('data-testid') || '', stableLabels, domPath(el)].join('|'));
+    }
+    function encounterId(url) {
+      var s = String(url || '');
+      var m = /\/(?:encounter|visit|appointment)\/(\d{3,})/i.exec(s) || /(?:encounter|appointment|visit)(?:id)?[=\/](\d{3,})/i.exec(s);
+      return m ? m[1] : '';
+    }
+    function sameOriginFrames() {
+      var out = [];
+      function walk(w, depth, path) {
+        if (depth > 6) return;
+        try { void w.document; out.push({ w: w, doc: w.document, url: String(w.location.href || ''), path: path }); } catch (e) { return; }
+        for (var i = 0; i < w.frames.length; i++) {
+          try { void w.frames[i].document; walk(w.frames[i], depth + 1, path + '.' + i); } catch (e2) {}
+        }
+      }
+      walk(window, 0, 'top');
+      return out;
+    }
+    function parentAcrossRoots(node) {
+      if (!node) return null;
+      if (node.parentElement) return node.parentElement;
+      try { var root = node.getRootNode && node.getRootNode(); return root && root.host ? root.host : null; } catch (e) { return null; }
+    }
+    function deepContains(root, node) {
+      var cur = node, guard = 0;
+      while (cur && guard++ < 40) { if (cur === root) return true; cur = parentAcrossRoots(cur); }
+      return false;
+    }
+    function closestAcrossRoots(node, selector, stopAt) {
+      var cur = node, seen = new Set();
+      while (cur && !seen.has(cur)) {
+        seen.add(cur);
+        try { if (cur.matches && cur.matches(selector)) return cur; } catch (e) {}
+        if (cur === stopAt) break;
+        cur = parentAcrossRoots(cur);
+      }
+      return null;
+    }
+    function deepQueryAll(root, selector) {
+      var out = [], seen = new Set(), queued = new Set(), queue = [root];
+      queued.add(root);
+      while (queue.length) {
+        var scope = queue.shift(), matches = [], all = [];
+        /* A caller may hand us the custom-element host itself. Queue its open
+           shadow root before looking at descendants, then drain every unique
+           open root so nested web components cannot hide an action target. */
+        var ownShadow = null; try { ownShadow = scope && scope.shadowRoot; } catch (eShadow) {}
+        if (ownShadow && !queued.has(ownShadow)) { queued.add(ownShadow); queue.push(ownShadow); }
+        try { if (scope.matches && scope.matches(selector)) matches.push(scope); } catch (e0) {}
+        try { matches = matches.concat(Array.prototype.slice.call(scope.querySelectorAll(selector))); } catch (e1) {}
+        for (var mi = 0; mi < matches.length; mi++) if (!seen.has(matches[mi])) { seen.add(matches[mi]); out.push(matches[mi]); }
+        try { all = Array.prototype.slice.call(scope.querySelectorAll('*')); } catch (e2) {}
+        for (var ai = 0; ai < all.length; ai++) {
+          var shadow = null; try { shadow = all[ai].shadowRoot; } catch (e3) {}
+          if (shadow && !queued.has(shadow)) { queued.add(shadow); queue.push(shadow); }
+        }
+      }
+      return out;
+    }
+    function collapseContainedMatches(nodes) {
+      return (nodes || []).filter(function (node, index, all) {
+        for (var i = 0; i < all.length; i++) {
+          if (i !== index && deepContains(node, all[i])) return false;
+        }
+        return true;
+      });
+    }
+    function collapseToOutermostMatches(nodes) {
+      return (nodes || []).filter(function (node, index, all) {
+        for (var i = 0; i < all.length; i++) {
+          if (i !== index && deepContains(all[i], node)) return false;
+        }
+        return true;
+      });
+    }
+    function uniqueBy(values, keyFn) {
+      var out = [], seen = {};
+      for (var i = 0; i < values.length; i++) {
+        var v = text(values[i]), k = keyFn(v); if (!k || seen[k]) continue;
+        seen[k] = 1; out.push(v);
+      }
+      return out;
+    }
+    function valueOf(el, attrs) {
+      if (!el) return '';
+      for (var i = 0; i < attrs.length; i++) { try { var a = el.getAttribute(attrs[i]); if (text(a)) return text(a); } catch (e) {} }
+      try { if (text(el.value)) return text(el.value); } catch (e2) {}
+      return text(el.textContent);
+    }
+    /* ATHENA_ACTION_V2_PATIENT_HEADER_START */
+    function identityRoots(frame) {
+      var selector = [
+        '[data-testid*="patient-header" i]','[data-testid*="patient-banner" i]','[data-testid*="patient-identity" i]','[data-testid*="patient-demographic" i]','[data-testid*="chart-header" i]',
+        '[data-component*="patient-header" i]','[data-component*="patient-banner" i]','[data-component*="patient-identity" i]','[data-component*="chart-header" i]',
+        '[aria-label*="patient header" i]','[aria-label*="patient banner" i]','[aria-label*="patient identity" i]','[aria-label*="patient demographic" i]','[aria-label*="chart header" i]',
+        '#patient-header','#patientHeader','#patient-banner','#patientBanner','#chart-header','#chartHeader','.patient-header','.patientHeader','.patient-banner','.patientBanner','.patient-identity','.patient-demographics','.chart-header','.chartHeader'
+      ].join(',');
+      var raw = []; try { raw = deepQueryAll(frame.doc, selector); } catch (e) {}
+      return raw.filter(function (el, idx) { return visible(el, frame.w) && raw.indexOf(el) === idx; });
+    }
+    function parseIdentity(root) {
+      var names = [], dobs = [], ids = [], raw = '';
+      try { raw = String(root.innerText || root.textContent || ''); } catch (e) {}
+      function collect(selector, bucket, attrs) {
+        var els = []; try { els = deepQueryAll(root, selector); } catch (e2) {}
+        if (root.matches) try { if (root.matches(selector)) els.unshift(root); } catch (e3) {}
+        for (var i = 0; i < els.length; i++) { var v = valueOf(els[i], attrs || []); if (v) bucket.push(v); }
+      }
+      collect('[data-patient-name],[data-testid*="patient-name" i],[aria-label^="patient name" i],[name="patientName" i]', names, ['data-patient-name','aria-label']);
+      collect('[data-patient-dob],[data-testid*="patient-dob" i],[data-testid="dob" i],[aria-label*="date of birth" i],[aria-label^="dob" i]', dobs, ['data-patient-dob','aria-label']);
+      collect('[data-patient-mrn],[data-patient-id],[data-testid*="patient-mrn" i],[data-testid*="patient-id" i],[data-testid*="medical-record" i],[aria-label*="medical record" i],[aria-label^="mrn" i],[aria-label^="patient id" i]', ids, ['data-patient-mrn','data-patient-id','aria-label']);
+      try { if (text(root.getAttribute('data-patient-name'))) names.push(root.getAttribute('data-patient-name')); } catch (e4) {}
+      try { if (text(root.getAttribute('data-patient-dob'))) dobs.push(root.getAttribute('data-patient-dob')); } catch (e5) {}
+      try { if (text(root.getAttribute('data-patient-mrn'))) ids.push(root.getAttribute('data-patient-mrn')); } catch (e6) {}
+      var m;
+      var dobRe = /(?:^|\n|\|)\s*(?:dob|date\s+of\s+birth)\s*[:#\-]?\s*([01]?\d[\/\-.][0-3]?\d[\/\-.]\d{2,4})/ig;
+      while ((m = dobRe.exec(raw)) && dobs.length < 12) dobs.push(m[1]);
+      var idRe = /(?:^|\n|\|)\s*(?:mrn|medical\s+record\s+(?:number|no\.?|id)|patient\s*(?:id|number))\s*[:#\-]?\s*([A-Z0-9\-]{4,})/ig;
+      while ((m = idRe.exec(raw)) && ids.length < 12) ids.push(m[1]);
+      if (!names.length) {
+        var nameRe = /(?:^|\n|\|)\s*patient\s+name\s*[:#\-]\s*([^\n|]{3,100})/ig;
+        while ((m = nameRe.exec(raw)) && names.length < 6) names.push(m[1]);
+      }
+      if (!names.length) {
+        var heads = []; try { heads = deepQueryAll(root, 'h1,h2,[role="heading"]'); } catch (e7) {}
+        for (var hi = 0; hi < heads.length; hi++) { var hv = text(heads[hi].textContent); if (hv && hv.length <= 100 && !/\d/.test(hv)) names.push(hv); }
+      }
+      names = uniqueBy(names.map(function (v) { return text(v).replace(/^patient\s+name\s*[:#\-]?\s*/i, ''); }).filter(function (v) { return v.length >= 3 && !/\b(?:dob|date of birth|mrn|medical record)\b/i.test(v) && !/\d/.test(v); }), nameKey);
+      dobs = uniqueBy(dobs.map(dateKey).filter(Boolean), dateKey);
+      ids = uniqueBy(ids.map(digits).filter(function (v) { return v.length >= 4; }), digits);
+      if (names.length !== 1 || dobs.length !== 1 || ids.length !== 1) return null;
+      return { name: names[0], dob: dobs[0], mrn: ids[0], root: root };
+    }
+    function anchoredIdentity(frame) {
+      var roots = identityRoots(frame);
+      /* A repeated copy of the same demographics is still more than one
+         possible chart-header owner. Do not collapse duplicate text across
+         containers: one visible explicit header must own the identity. */
+      if (roots.length !== 1) return { identity: null, ambiguous: roots.length > 1 };
+      var parsed = parseIdentity(roots[0]);
+      return parsed ? { identity: parsed, ambiguous: false } : { identity: null, ambiguous: false };
+    }
+    /* ATHENA_ACTION_V2_PATIENT_HEADER_END */
+    function exactSave(el) {
+      var raw = [];
+      try { raw = [el.textContent, el.value, el.getAttribute && el.getAttribute('aria-label'), el.getAttribute && el.getAttribute('title')].filter(function (v) { return String(v || '').trim(); }); } catch (e) {}
+      if (!raw.length) raw = [label(el)];
+      var src = raw.map(norm);
+      if (src.some(function (n) { return /\b(sign|submit|post|bill|charge|claim|delete|discard|void)\b/.test(n); })) return false;
+      return src.some(function (n) { return n === 'save' || n === 'save draft' || n === 'save note'; });
+    }
+    function exactSign(el) {
+      var raw = [];
+      try { raw = [el.textContent, el.value, el.getAttribute && el.getAttribute('aria-label'), el.getAttribute && el.getAttribute('title')].filter(function (v) { return String(v || '').trim(); }); } catch (e) {}
+      if (!raw.length) raw = [label(el)];
+      var src = raw.map(norm);
+      if (src.some(function (n) { return /\b(unsign|sign out|submit|post|bill|charge|claim|delete|discard|void)\b/.test(n); })) return false;
+      return src.some(function (n) { return n === 'sign and save'; });
+    }
+    function interactive(doc, win) {
+      return deepQueryAll(doc, 'button,[role="button"],input[type="button"],input[type="submit"]').filter(function (el) { return visible(el, win); });
+    }
+    function fieldHay(el) {
+      var s = '';
+      try {
+        s = [el.id, el.name, el.placeholder, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('data-testid')].join(' ');
+        var p = el.parentElement, n = 0;
+        while (p && n++ < 4) { s += ' ' + (p.getAttribute('aria-label') || '') + ' ' + (p.getAttribute('data-testid') || '') + ' ' + (p.id || '') + ' ' + String(p.className || ''); p = p.parentElement; }
+      } catch (e) {}
+      return norm(s);
+    }
+    function billingField(frame) {
+      var els = deepQueryAll(frame.doc, 'input:not([type="hidden"]),textarea,[contenteditable="true"],[contenteditable="plaintext-only"]').filter(function (el) { return visible(el, frame.w); });
+      var hits = els.filter(function (el) { return /\b(add charge|charge search|cpt|procedure code|billing code|superbill|e m level|level of service)\b/.test(fieldHay(el)); });
+      if (hits.length !== 1) return { error: hits.length ? 'billing-duplicate-rejected' : 'billing-context-unverified' };
+      var root = hits[0], p = hits[0], guard = 0;
+      while (p && guard++ < 7) {
+        var ph = norm((p.getAttribute && ((p.getAttribute('aria-label') || '') + ' ' + (p.getAttribute('data-testid') || '') + ' ' + (p.id || '') + ' ' + String(p.className || ''))) || '');
+        if (/\b(billing|charges|superbill|claim charges)\b/.test(ph)) { root = p; break; }
+        p = parentAcrossRoots(p);
+      }
+      if (root === hits[0]) return { error: 'billing-context-unverified' };
+      return { el: hits[0], root: root };
+    }
+    /* ATHENA_ACTION_V2_NOTE_SCOPE_START */
+    function scopeDescriptor(el) {
+      var out = '';
+      try {
+        out = [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component'), String(el.className || '')].join(' ');
+        var heads = deepQueryAll(el, 'legend,h1,h2,h3,header,[role="heading"]').slice(0, 4);
+        for (var i = 0; i < heads.length; i++) out += ' ' + text(heads[i].textContent);
+      } catch (e) {}
+      return norm(out);
+    }
+    function noteScopeStrength(el) {
+      var h = scopeDescriptor(el);
+      if (/\b(clinical|encounter|visit|progress|soap|chart)\s+(note|documentation)\b|\b(note|documentation)\s+(editor|form|workspace|panel)\b|\bdraft\s+note\b/.test(h)) return 3;
+      if (/\bencounter\b/.test(h) && /\b(note|documentation|clinical)\b/.test(h)) return 3;
+      if (/\b(note|documentation)\b/.test(h)) return 1;
+      return 0;
+    }
+    function explicitNoteScopes(frame) {
+      var selector = [
+        '[data-testid*="encounter-note" i]','[data-testid*="encounter-documentation" i]','[data-testid*="note-container" i]','[data-testid*="note-editor" i]','[data-testid*="note-workspace" i]','[data-testid*="documentation-container" i]','[data-testid*="documentation-workspace" i]',
+        '[data-component*="encounter-note" i]','[data-component*="encounter-documentation" i]','[data-component*="note-editor" i]','[data-component*="note-workspace" i]',
+        '[aria-label*="encounter note" i]','[aria-label*="encounter documentation" i]','[aria-label*="clinical note" i]','[aria-label*="note editor" i]','[aria-label*="note workspace" i]',
+        '#encounter-note','#encounterNote','#clinical-note','#clinicalNote','.encounter-note','.encounterNote','.clinical-note','.clinicalNote','.note-editor','.note-workspace','.documentation-container','.documentation-workspace'
+      ].join(',');
+      var scopes = []; try { scopes = deepQueryAll(frame.doc, selector); } catch (e) {}
+      scopes = scopes.filter(function (el, idx) { return visible(el, frame.w) && noteScopeStrength(el) >= 3 && scopes.indexOf(el) === idx; });
+      return scopes.length === 1 ? scopes : [];
+    }
+    function noteScopeAncestors(el) {
+      var out = [], p = el && el.parentElement, guard = 0;
+      while (p && guard++ < 12) {
+        if (/^(FORM|SECTION|ARTICLE|FIELDSET|DIV|MAIN)$/.test(String(p.tagName || '')) || p.getAttribute('role') === 'form') {
+          var strength = noteScopeStrength(p); if (strength >= 3) out.push({ root: p, strength: strength });
+        }
+        p = parentAcrossRoots(p);
+      }
+      return out;
+    }
+    function editorHay(el) {
+      var h = fieldHay(el), p = el.parentElement, guard = 0;
+      while (p && guard++ < 3) { h += ' ' + scopeDescriptor(p); p = p.parentElement; }
+      return norm(h);
+    }
+    function editorsIn(root, frame) {
+      var els = deepQueryAll(root, 'textarea,[contenteditable="true"],[contenteditable="plaintext-only"]').filter(function (el) { return visible(el, frame.w); });
+      return els.filter(function (el) { return !/\b(search|find|lookup|filter|message|comment|chat|patient id|mrn|billing|charge|claim|order)\b/.test(editorHay(el)); });
+    }
+    function editorValue(el) {
+      try { return noteNorm(el.isContentEditable ? el.innerText : el.value); } catch (e) { return ''; }
+    }
+    function editorFingerprint(el, frameUrl) { return controlFingerprint(el, frameUrl, 'note_editor'); }
+    function noteTargetForControl(frame, control, allowGenericSave) {
+      var scopes = noteScopeAncestors(control);
+      for (var i = 0; i < scopes.length; i++) {
+        var editors = editorsIn(scopes[i].root, frame);
+        if (editors.length === 1 && (!allowGenericSave || scopes[i].strength >= 3)) return { control: control, editor: editors[0], root: scopes[i].root, strength: scopes[i].strength };
+      }
+      return null;
+    }
+    function findNoteAction(frame, action) {
+      var noteContainers = explicitNoteScopes(frame);
+      if (noteContainers.length !== 1) return null;
+      var noteScope = noteContainers[0], noteEditors = editorsIn(noteScope, frame);
+      if (noteEditors.length !== 1) return null;
+      if (action === 'write_note') return { control: noteEditors[0], editor: noteEditors[0], root: noteScope, strength: noteScopeStrength(noteScope) };
+      var all = interactive(noteScope, frame.w), preferred = [], generic = [], sign = [];
+      for (var i = 0; i < all.length; i++) {
+        if (action === 'sign_encounter' && exactSign(all[i])) { sign.push({ control: all[i], editor: noteEditors[0], root: noteScope, strength: noteScopeStrength(noteScope) }); continue; }
+        if (action !== 'save_draft' || !exactSave(all[i])) continue;
+        var sources = labelSources(all[i]).map(norm), isPreferred = sources.some(function (s) { return s === 'save draft' || s === 'save note'; });
+        var target = { control: all[i], editor: noteEditors[0], root: noteScope, strength: noteScopeStrength(noteScope) };
+        if (!isPreferred && target.strength < 3) continue;
+        (isPreferred ? preferred : generic).push(target);
+      }
+      var pool = action === 'sign_encounter' ? sign : (preferred.length ? preferred : generic);
+      return pool.length === 1 ? pool[0] : null;
+    }
+    /* ATHENA_ACTION_V2_NOTE_SCOPE_END */
+    /* ATHENA_ACTION_V2_SCOPED_STATUS_START */
+    function statusElements(root) {
+      if (!root || !root.querySelectorAll) return [];
+      var selector = '[role="status"],[role="alert"],.toast,.notification,[data-testid*="status"],[data-testid*="success"]';
+      var els = typeof deepQueryAll === 'function' ? deepQueryAll(root, selector) : Array.prototype.slice.call(root.querySelectorAll(selector));
+      return els.filter(function (el) { return visible(el, el.ownerDocument && el.ownerDocument.defaultView); });
+    }
+    function statusEvidenceSnapshot(roots) {
+      var baseline = new Map();
+      for (var i = 0; i < roots.length; i++) {
+        var els = statusElements(roots[i]);
+        for (var j = 0; j < els.length; j++) baseline.set(els[j], norm(label(els[j])));
+      }
+      return baseline;
+    }
+    function newScopedStatus(before, roots, re) {
+      for (var i = 0; i < roots.length; i++) {
+        var els = statusElements(roots[i]);
+        for (var j = 0; j < els.length; j++) {
+          var now = norm(label(els[j]));
+          /* A pre-existing status node changing text is not durable evidence:
+             Athena reuses global/toast nodes. Require a newly created scoped
+             node inside this exact note container or its action dialog. */
+          if (re.test(now) && !before.has(els[j])) return true;
+        }
+      }
+      return false;
+    }
+    /* ATHENA_ACTION_V2_SCOPED_STATUS_END */
+    function canonicalContext(c) {
+      return [nameKey(c.patientName), dateKey(c.dob), digits(c.mrn), String(c.encounterId || ''), String(c.encounterUrl || ''), dateKey(c.visitDate), norm(c.provider), String(c.framePath || ''), String(c.encounterRootFingerprint || ''), String(c.controlFingerprint || ''), String(c.actionContainerFingerprint || ''), String(c.editorFingerprint || '')].join('|');
+    }
+    function discoverLabeled(doc, kind) {
+      var found = {}, els = [];
+      try { els = deepQueryAll(doc, 'label,dt,dd,th,td,[aria-label],[data-testid],section,fieldset,div,span'); } catch (e) {}
+      for (var i = 0; i < els.length && i < 12000; i++) {
+        var docView = doc.defaultView || (doc.ownerDocument && doc.ownerDocument.defaultView) || window;
+        if (!visible(els[i], docView)) continue;
+        var t = text((els[i].getAttribute && ((els[i].getAttribute('aria-label') || '') + ' ' + (els[i].getAttribute('data-testid') || ''))) + ' ' + (els[i].textContent || ''));
+        if (!t || t.length > 260) continue;
+        if (kind === 'date' && /\b(date of service|visit date|appointment date|encounter date|dos)\b/i.test(t)) {
+          var d = dateKey(t); if (d) found[d] = d;
+        }
+        if (kind === 'provider' && /\b(rendering provider|visit provider|seen by|clinician|physician|provider)\b/i.test(t)) {
+          var m = /\b(?:rendering provider|visit provider|seen by|clinician|physician|provider)\b\s*[:\-]?\s*([A-Za-z][A-Za-z'\.\-]+(?:\s+[A-Za-z][A-Za-z'\.\-,]+){1,5})/i.exec(t);
+          if (m) {
+            var v = text(m[1]).replace(/\s+(?:date of service|visit date|appointment date|encounter date|dos)\b.*$/i, '');
+            if (norm(v).split(' ').length >= 2) found[norm(v)] = v;
+          }
+        }
+      }
+      return Object.keys(found).map(function (k) { return found[k]; });
+    }
+    function encounterMetadataFor(frame, actionRoot, identityRoot) {
+      var root = actionRoot, guard = 0;
+      while (root && guard++ < 18) {
+        var tag = String(root.tagName || '').toUpperCase();
+        if ((tag === 'BODY' || tag === 'HTML') || root === frame.doc.body || root === frame.doc.documentElement) break;
+        if (deepContains(root, identityRoot)) {
+          var descriptor = scopeDescriptor(root);
+          if (/\b(encounter|visit|clinical|chart|documentation)\b/.test(descriptor)) {
+            var dates = discoverLabeled(root, 'date'), providers = discoverLabeled(root, 'provider');
+            if (dates.length === 1 && providers.length === 1) return { root: root, visitDate: dateKey(dates[0]), provider: text(providers[0]) };
+          }
+        }
+        root = parentAcrossRoots(root);
+      }
+      return null;
+    }
+
+    if (!text(expectedPatient.name) || !dateKey(expectedPatient.dob)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'Expected patient name and DOB are required.' };
+    var reviewedNote = noteNorm(req.noteText), notePolicy = String(req.notePolicy || 'empty_only');
+    if (action !== 'stage_billing' && !reviewedNote) return { ok: false, blocked: true, reason: 'note-content-required', error: 'The exact reviewed note text is required.' };
+    if (action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy', error: 'Only empty_only note placement is allowed.' };
+
+    var frames = sameOriginFrames(), candidates = [];
+    for (var fi = 0; fi < frames.length; fi++) {
+      var fr = frames[fi], eid = encounterId(fr.url);
+      if (!eid) continue;
+      var chartHeader = anchoredIdentity(fr), observedIdentity = chartHeader.identity;
+      if (!observedIdentity || chartHeader.ambiguous) continue;
+      if (nameKey(observedIdentity.name) !== nameKey(expectedPatient.name) || dateKey(observedIdentity.dob) !== dateKey(expectedPatient.dob)) continue;
+      var wantMrn = digits(expectedPatient.mrn);
+      if (wantMrn && digits(observedIdentity.mrn) !== wantMrn) continue;
+      if (expectedContext.encounterUrl && String(expectedContext.encounterUrl).split('#')[0] !== String(fr.url).split('#')[0]) continue;
+      if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) continue;
+      var noteTarget = null, billTarget = null;
+      if (action === 'stage_billing') { billTarget = billingField(fr); if (!billTarget.el) continue; }
+      else {
+        noteTarget = findNoteAction(fr, action); if (!noteTarget) continue;
+        var currentNote = editorValue(noteTarget.editor);
+        if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) continue; }
+        else if (currentNote !== reviewedNote) continue;
+      }
+      var targetRoot = billTarget ? billTarget.root : noteTarget.root;
+      var encounterMeta = encounterMetadataFor(fr, targetRoot, observedIdentity.root);
+      if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) continue;
+      if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) continue;
+      if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;
+      candidates.push({ frame: fr, observedIdentity: observedIdentity, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget });
+    }
+    if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : 'context-unverified', error: 'Could not identify one exact patient encounter frame.' };
+    var hit = candidates[0], observedPatient = hit.observedIdentity, noteScope = hit.noteTarget && hit.noteTarget.root, noteEditor = hit.noteTarget && hit.noteTarget.editor;
+    var bill = hit.bill, actionControl = bill ? bill.el : hit.noteTarget.control;
+    var actionScope = bill ? bill.root : noteScope;
+    var controlLabels = labelSources(actionControl).map(text).filter(Boolean);
+    var controlFallback = '';
+    try { controlFallback = text(actionControl.getAttribute('placeholder') || actionControl.getAttribute('name') || actionControl.getAttribute('data-testid') || ''); } catch (eLabel) {}
+    if (!controlFallback) controlFallback = action === 'write_note' ? 'Encounter note editor' : (action === 'stage_billing' ? 'Athena Billing / Charges field' : '');
+    var context = {
+      mrn: digits(observedPatient.mrn),
+      patientName: text(observedPatient.name),
+      dob: dateKey(observedPatient.dob),
+      encounterId: hit.encounterId,
+      encounterUrl: hit.frame.url,
+      visitDate: hit.visitDate,
+      provider: hit.provider,
+      framePath: hit.frame.path,
+      encounterRootFingerprint: controlFingerprint(hit.encounterRoot, hit.frame.url, 'encounter_root'),
+      controlFingerprint: controlFingerprint(actionControl, hit.frame.url, action),
+      noteScopeFingerprint: controlFingerprint(actionScope, hit.frame.url, 'action_scope'),
+      actionContainerFingerprint: controlFingerprint(actionScope, hit.frame.url, 'action_scope'),
+      editorFingerprint: noteEditor ? editorFingerprint(noteEditor, hit.frame.url) : controlFingerprint(actionControl, hit.frame.url, 'billing_field'),
+      controlLabel: controlLabels[0] || controlFallback
+    };
+    context.contextHash = stableHash(canonicalContext(context));
+    if (locked && (String(locked.contextHash || '') !== context.contextHash || String(locked.encounterRootFingerprint || '') !== context.encounterRootFingerprint || String(locked.controlFingerprint || '') !== context.controlFingerprint || String(locked.noteScopeFingerprint || '') !== context.noteScopeFingerprint || String(locked.editorFingerprint || '') !== context.editorFingerprint || nameKey(locked.patientName) !== nameKey(context.patientName) || dateKey(locked.dob) !== dateKey(context.dob) || digits(locked.mrn) !== digits(context.mrn) || String(locked.encounterId || '') !== String(context.encounterId || ''))) {
+      return { ok: false, blocked: true, reason: 'context-mismatch', context: context };
+    }
+    /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
+    if (mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: action === 'stage_billing' ? 'billing-context-verified' : 'context-verified', contextVerified: true, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+    if (mode !== 'execute') return { ok: false, blocked: true, reason: 'unknown-action' };
+    /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
+
+    function setNoteEditorExact(el, value) {
+      try { el.focus(); } catch (e) {}
+      try {
+        if (el.isContentEditable) {
+          el.textContent = value;
+          try { el.dispatchEvent(new hit.frame.w.InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })); } catch (e1) { el.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); }
+        } else {
+          var proto = el.tagName === 'TEXTAREA' ? hit.frame.w.HTMLTextAreaElement.prototype : hit.frame.w.HTMLInputElement.prototype;
+          var desc = Object.getOwnPropertyDescriptor(proto, 'value'); if (desc && desc.set) desc.set.call(el, value); else el.value = value;
+          try { el.dispatchEvent(new hit.frame.w.InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })); } catch (e2) { el.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); }
+        }
+        el.dispatchEvent(new hit.frame.w.Event('change', { bubbles: true }));
+      } catch (e3) { return false; }
+      return true;
+    }
+
+    /* ATHENA_ACTION_V2_WRITE_NOTE_START */
+    if (action === 'write_note') {
+      var beforeNote = editorValue(noteEditor), alreadyExact = beforeNote === reviewedNote;
+      if (beforeNote && !alreadyExact) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-not-empty', context: context, results: [{ key: 'note', attempted: false, written: false, verified: false, reason: 'note-editor-not-empty' }], noAutomaticChaining: 'no-automatic-chaining' };
+      var noteAttempted = false;
+      if (!alreadyExact) { noteAttempted = true; mutationAttempted = true; if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: 'note', attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' }; await sleep(250); }
+      var noteVerified = editorValue(noteEditor) === reviewedNote;
+      if (!noteVerified) return { ok: false, action: action, attempted: noteAttempted, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: 'note', attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
+      return { ok: true, action: action, attempted: noteAttempted, written: true, verified: true, draftEntered: true, draftVerified: true, reason: 'exact-note-editor-verified', context: context, results: [{ key: 'note', attempted: noteAttempted, written: true, verified: true, alreadyPresent: alreadyExact }], noAutomaticChaining: 'no-automatic-chaining' };
+    }
+    /* ATHENA_ACTION_V2_WRITE_NOTE_END */
+
+    function exactCode(code) { return /^(?=[A-Z0-9]*\d)[A-Z0-9]{5}$/.test(String(code || '').trim().toUpperCase()); }
+    function tokenRe(code) { return new RegExp('(^|[^A-Z0-9])' + String(code).toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^A-Z0-9]|$)', 'i'); }
+    function codeTokens(value) {
+      var raw = String(value || '').toUpperCase().match(/\b(?=[A-Z0-9]*\d)[A-Z0-9]{5}\b/g) || [], out = [], seen = {};
+      for (var i = 0; i < raw.length; i++) if (!seen[raw[i]]) { seen[raw[i]] = 1; out.push(raw[i]); }
+      return out;
+    }
+    function codeOccurrenceCount(value, code) {
+      var exact = String(code || '').trim().toUpperCase();
+      if (!/^[A-Z0-9]{5}$/.test(exact)) return 0;
+      var re = new RegExp('(^|[^A-Z0-9])' + exact + '(?=$|[^A-Z0-9])', 'gi'), count = 0;
+      while (re.exec(String(value || ''))) count++;
+      return count;
+    }
+    function metadataFieldSemantics(raw) {
+      var s = String(raw || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_:.\[\]]+/g, ' ').toLowerCase();
+      return /(?:^|[^a-z0-9])(?:modifier|mod|units?|qty|quantity|diagnosis|diagnoses|diag|dx|icd(?:9|10)?|pointer)(?:[^a-z]|[0-9]|$)/.test(s);
+    }
+    function activeMetadataDescriptor(raw) {
+      var s = String(raw || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+      if (/(?:modifier|mod)[^a-z0-9]*(?:[0-9]+|[a-z]{2}|[a-z][0-9]|[0-9][a-z]|active|applied|selected|true)\b/i.test(s)) return true;
+      if (/(?:units?|qty|quantity)[^a-z0-9]*(?:[0-9]+|active|applied|selected|true)\b/i.test(s)) return true;
+      if (/(?:diagnosis|diag|dx|icd(?:9|10)?|pointer)[^a-z0-9]*(?:[a-z][0-9][0-9a-z](?:\.[0-9a-z]{1,4}|[0-9a-z]{1,4})?|[a-z]|[0-9]+|active|applied|selected|true)\b/i.test(s)) return true;
+      return /(?:active|applied|selected|true)[^a-z0-9]+(?:modifier|mod|units?|qty|quantity|diagnosis|diag|dx|icd(?:9|10)?|pointer)\b/i.test(s);
+    }
+    function metadataSemantics(raw, code) {
+      var s = String(raw || ''), escaped = String(code || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (metadataFieldSemantics(s)) return true;
+      var withoutRequestedCode = escaped ? s.replace(new RegExp('(^|[^A-Z0-9])' + escaped + '(?=$|[^A-Z0-9])', 'gi'), '$1 ') : s;
+      if (/(?:^|[^A-Z0-9])[A-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4}|[0-9A-Z]{1,4})?(?=$|[^A-Z0-9])/i.test(withoutRequestedCode)) return true;
+      if (/\b\d+\b/.test(withoutRequestedCode) || /(?:^|[^A-Za-z0-9])(?:[A-Z]|[A-Z][0-9]|[0-9][A-Z]|[A-Z]{2})(?=$|[^A-Za-z0-9])/.test(withoutRequestedCode)) return true;
+      if (escaped && new RegExp(escaped + '\\s*(?:[,|/:-]\\s*[A-Z0-9]{1,2}\\b|\\(\\s*[A-Z0-9]{1,2}\\s*\\)|(?:[x\\u00d7]\\s*\\d+|\\d+\\s*[x\\u00d7])\\b|\\s+(?:\\d+|[A-Z]{1,2})\\b)', 'i').test(s)) return true;
+      if (escaped && new RegExp('(?:\\(\\s*[A-Z0-9]{1,2}\\s*\\)|(?:^|[^A-Z0-9])(?:\\d+|[A-Z]{1,2}))\\s*' + escaped + '(?=$|[^A-Z0-9])', 'i').test(s)) return true;
+      if (/(?:^|[^A-Z0-9])(?:x|\u00d7)\s*\d+\b/i.test(s)) return true;
+      if (/\b\d+\s*(?:units?|qty|x|\u00d7)\b/i.test(s)) return true;
+      if (/\b(?:dx|diagnosis|pointer)\s*[:#-]?\s*[A-TV-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?\b/i.test(s)) return true;
+      return false;
+    }
+    function elementAttributes(el) {
+      var attrs = [];
+      try {
+        for (var i = 0; i < el.attributes.length; i++) attrs.push([String(el.attributes[i].name || '').toLowerCase(), String(el.attributes[i].value || '')]);
+      } catch (eAttrs) { attrs.push(['<unreadable>', '']); }
+      attrs.sort(function (a, b) { var ak = a[0] + '\u0000' + a[1], bk = b[0] + '\u0000' + b[1]; return ak < bk ? -1 : (ak > bk ? 1 : 0); });
+      return attrs;
+    }
+    function chargeRowStateKey(el, ignoredControl) {
+      var parts = [], controls = [el].concat(deepQueryAll(el, '*')).filter(function (node) { return node !== ignoredControl; });
+      for (var i = 0; i < controls.length; i++) {
+        var c = controls[i], value = '', nodeText = '';
+        try { if ('value' in c) value = String(c.value == null ? '' : c.value); } catch (eValue) { value = '<unreadable>'; }
+        try { nodeText = String(c.textContent || ''); } catch (eText) { nodeText = '<unreadable>'; }
+        try { parts.push(JSON.stringify([i, String(c.tagName || ''), elementAttributes(c), value, c.checked === true, c.selected === true, Number.isFinite(Number(c.selectedIndex)) ? Number(c.selectedIndex) : -1, nodeText])); }
+        catch (eState) { parts.push(String(i) + '|unreadable'); }
+      }
+      return JSON.stringify(parts);
+    }
+    function chargeRowHasMetadata(el, code) {
+      var rowSignals = '';
+      try { rowSignals = [el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')].join(' '); } catch (eRow) {}
+      var metaNodes = [el].concat(deepQueryAll(el, '*'));
+      for (var mi = 0; mi < metaNodes.length; mi++) {
+        var node = metaNodes[mi], attrs = elementAttributes(node), descriptor = '', nodeValue = '';
+        try { if ('value' in node) nodeValue = norm(node.value); } catch (eNodeValue) {}
+        try { if (!nodeValue && node.children && node.children.length === 0) nodeValue = norm(node.textContent); } catch (eNodeText) {}
+        for (var ai = 0; ai < attrs.length; ai++) {
+          var attrName = attrs[ai][0], attrValue = norm(attrs[ai][1]);
+          descriptor += ' ' + attrName + ' ' + attrs[ai][1];
+          if (metadataFieldSemantics(attrName) && attrValue && !/^(none|select|choose|n a|not set|false|0)$/.test(attrValue)) return true;
+          if (attrName === 'data-value' && attrValue) nodeValue = attrValue;
+          if (/^(aria-label|title|data-testid|data-action|data-value)$/.test(attrName)) rowSignals += ' ' + attrs[ai][1];
+        }
+        if (activeMetadataDescriptor(descriptor)) return true;
+        if (metadataFieldSemantics(descriptor) && (node.checked === true || node.selected === true || (nodeValue && !/^(none|select|choose|n a|not set|false|0)$/.test(nodeValue)))) return true;
+      }
+      if (metadataSemantics(rowSignals, code)) return true;
+      var controls = deepQueryAll(el, 'input,select,textarea,[contenteditable="true"],[contenteditable="plaintext-only"]');
+      for (var i = 0; i < controls.length; i++) {
+        var c = controls[i], hay = fieldHay(c) + ' ' + elementAttributes(c).map(function (pair) { return pair.join(' '); }).join(' '), value = '';
+        if (!metadataFieldSemantics(hay)) continue;
+        try { value = norm(c.isContentEditable ? c.textContent : c.value); } catch (eValue) {}
+        if (c.checked === true || c.selected === true || (value && !/^(none|select|choose|n a|not set)$/.test(value))) return true;
+      }
+      return false;
+    }
+    function persistedChargeRows(root, exclude) {
+      var rows = deepQueryAll(root, 'tr,[role="row"],li,.charge-row,[data-testid*="charge"],[data-testid*="billing"]').filter(function (el) {
+        if (!visible(el, hit.frame.w) || (exclude && deepContains(exclude, el))) return false;
+        if (closestAcrossRoots(el, '[role="listbox"],[role="menu"],.dropdown,.autocomplete,.typeahead', root)) return false;
+        return codeTokens(el.textContent).length > 0;
+      });
+      return collapseToOutermostMatches(rows);
+    }
+    function rowsIn(root, code, exclude) {
+      var re = tokenRe(code);
+      return persistedChargeRows(root, exclude).filter(function (el) { return re.test(text(el.textContent)); });
+    }
+    function chargeRowsSnapshot(root, exclude, requestedCode, ignoredControl) {
+      return persistedChargeRows(root, exclude).map(function (el) { return { text: text(el.textContent), state: chargeRowStateKey(el, ignoredControl), codes: codeTokens(el.textContent), requestedOccurrences: codeOccurrenceCount(el.textContent, requestedCode), hasMetadata: chargeRowHasMetadata(el, requestedCode) }; });
+    }
+    function sameChargeRowState(before, after) {
+      if (!Array.isArray(before) || !Array.isArray(after) || before.length !== after.length) return false;
+      var beforeState = before.map(function (row) { return row.state; }).sort();
+      var afterState = after.map(function (row) { return row.state; }).sort();
+      return JSON.stringify(beforeState) === JSON.stringify(afterState);
+    }
+    async function stableChargeRows(root, exclude, requestedCode, ignoredControl) {
+      var started = Date.now(), quietSince = started, last = chargeRowsSnapshot(root, exclude, requestedCode, ignoredControl), lastKey = JSON.stringify(last);
+      while (Date.now() - started < 6000) {
+        await sleep(250);
+        var current = chargeRowsSnapshot(root, exclude, requestedCode, ignoredControl), key = JSON.stringify(current);
+        if (key !== lastKey) { last = current; lastKey = key; quietSince = Date.now(); }
+        if (Date.now() - started >= 3000 && Date.now() - quietSince >= 1000) return last;
+      }
+      return null;
+    }
+    function verifiedIsolatedCodeAdd(before, after, code) {
+      if (!Array.isArray(before) || !Array.isArray(after) || after.length !== before.length + 1) return false;
+      var addedIndex = -1;
+      for (var i = 0; i < after.length; i++) {
+        if (after[i].codes.indexOf(code) < 0) continue;
+        if (addedIndex >= 0 || after[i].codes.length !== 1 || after[i].requestedOccurrences !== 1 || after[i].hasMetadata === true) return false;
+        addedIndex = i;
+      }
+      if (addedIndex < 0) return false;
+      var beforeState = before.map(function (row) { return row.state; }).sort();
+      var afterState = after.filter(function (_, index) { return index !== addedIndex; }).map(function (row) { return row.state; }).sort();
+      return JSON.stringify(beforeState) === JSON.stringify(afterState);
+    }
+    function setField(el, value) {
+      try { el.focus(); } catch (e) {}
+      var editable = false;
+      try { editable = !!el.isContentEditable || /^(true|plaintext-only)$/i.test(String(el.getAttribute('contenteditable') || '')); } catch (eEditable) {}
+      try {
+        if (editable) el.textContent = '';
+        else {
+          var proto = el.tagName === 'TEXTAREA' ? hit.frame.w.HTMLTextAreaElement.prototype : hit.frame.w.HTMLInputElement.prototype;
+          var desc = Object.getOwnPropertyDescriptor(proto, 'value'); if (desc && desc.set) desc.set.call(el, ''); else el.value = '';
+        }
+      } catch (e2) { try { if (editable) el.textContent = ''; else el.value = ''; } catch (e3) {} }
+      /* Never dispatch `change` while discovering options: reactive billing
+         widgets may treat it as a commit. Input events populate the picker; the
+         verified option click below is the only commit operation. */
+      try { el.dispatchEvent(new hit.frame.w.InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: null })); } catch (eClear) { try { el.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); } catch (eClear2) {} }
+      for (var i = 0; i < value.length; i++) {
+        var next = String(editable ? (el.textContent || '') : (el.value || '')) + value.charAt(i);
+        try {
+          if (editable) el.textContent = next;
+          else { var p = el.tagName === 'TEXTAREA' ? hit.frame.w.HTMLTextAreaElement.prototype : hit.frame.w.HTMLInputElement.prototype; var d = Object.getOwnPropertyDescriptor(p, 'value'); if (d && d.set) d.set.call(el, next); else el.value = next; }
+        } catch (e4) { if (editable) el.textContent = next; else el.value = next; }
+        try { el.dispatchEvent(new hit.frame.w.InputEvent('input', { bubbles: true, inputType: 'insertText', data: value.charAt(i) })); } catch (e5) { el.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); }
+      }
+    }
+
+    /* ATHENA_ACTION_V2_STAGE_BILLING_START */
+    /* STAGE_BILLING_START */
+    if (action === 'stage_billing') {
+      var codes = [], em = text(billing.emCode), cp = Array.isArray(billing.cptCodes) ? billing.cptCodes : [];
+      if (em) codes.push(em.toUpperCase()); for (var ci = 0; ci < cp.length; ci++) codes.push(text(cp[ci]).toUpperCase());
+      if (!codes.length) return { ok: false, blocked: true, attempted: false, verified: false, staged: false, partialMutation: false, results: [], stagedCodes: [], failedCodes: [], reason: 'billing-context-unverified', error: 'No E/M or CPT codes were supplied.' };
+      var seen = {};
+      for (var vc = 0; vc < codes.length; vc++) {
+        if (!exactCode(codes[vc])) return { ok: false, blocked: true, attempted: false, verified: false, staged: false, partialMutation: false, results: [], stagedCodes: [], failedCodes: [codes[vc]], reason: 'billing-near-match-rejected', code: codes[vc] };
+        if (seen[codes[vc]]) return { ok: false, blocked: true, attempted: false, verified: false, staged: false, partialMutation: false, results: [], stagedCodes: [], failedCodes: [codes[vc]], reason: 'billing-duplicate-rejected', code: codes[vc] };
+        seen[codes[vc]] = 1;
+      }
+      function billingOption(code) {
+        var scope = null, owns = bill.el.getAttribute('aria-controls') || bill.el.getAttribute('aria-owns');
+        if (owns) scope = hit.frame.doc.getElementById(owns);
+        if (!scope) {
+          var boxes = deepQueryAll(bill.root, '[role="listbox"],.dropdown,.autocomplete,.typeahead').filter(function (el) { return visible(el, hit.frame.w); });
+          if (boxes.length === 1) scope = boxes[0];
+        }
+        if (!scope) return { error: 'billing-context-unverified' };
+        var scopeContract = '';
+        try { scopeContract = norm([scope.getAttribute('role'), scope.getAttribute('aria-label'), scope.getAttribute('data-testid'), String(scope.className || '')].join(' ')); } catch (eScope) {}
+        if (!/\b(listbox|option|result|suggestion|dropdown|autocomplete|typeahead|code search|charge search)\b/.test(scopeContract)) return { error: 'billing-context-unverified' };
+        var optionRows = deepQueryAll(scope, '[role="option"],li,tr,[role="row"],button').filter(function (el) { return visible(el, hit.frame.w); });
+        function optionStateUnsafe(node) {
+          try {
+            return !!node.disabled || node.checked === true || node.selected === true ||
+              norm(node.getAttribute && node.getAttribute('aria-disabled')) === 'true' ||
+              norm(node.getAttribute && node.getAttribute('aria-selected')) === 'true' ||
+              norm(node.getAttribute && node.getAttribute('aria-checked')) === 'true' ||
+              norm(node.getAttribute && node.getAttribute('aria-pressed')) === 'true' ||
+              norm(node.getAttribute && node.getAttribute('data-selected')) === 'true' ||
+              /\b(selected|checked)\b/.test(norm(String(node.className || '')));
+          } catch (eState) { return true; }
+        }
+        function optionSafetySignal(node) {
+          try { return norm([label(node), node.getAttribute && node.getAttribute('aria-label'), node.getAttribute && node.getAttribute('title'), node.getAttribute && node.getAttribute('data-testid'), node.getAttribute && node.getAttribute('data-action'), String(node.className || '')].join(' ')); }
+          catch (eSignal) { return ''; }
+        }
+        var exact = optionRows.filter(function (el) {
+          var optionLabel = norm(label(el)), safetySignals = optionLabel;
+          try {
+            var owner = el, ownerSeen = new Set(), reachedScope = false;
+            while (owner && !ownerSeen.has(owner)) {
+              ownerSeen.add(owner);
+              safetySignals += ' ' + optionSafetySignal(owner);
+              if (optionStateUnsafe(owner)) return false;
+              if (owner === scope) { reachedScope = true; break; }
+              owner = parentAcrossRoots(owner);
+            }
+            if (!reachedScope) return false;
+            var signalNodes = deepQueryAll(el, '[aria-label],[title],[data-testid],[data-action],[aria-selected],[aria-checked],[aria-pressed],[data-selected],input,option,button,[role="button"]');
+            for (var si = 0; si < signalNodes.length; si++) { safetySignals += ' ' + optionSafetySignal(signalNodes[si]); if (optionStateUnsafe(signalNodes[si])) return false; }
+          } catch (eSafety) { return false; }
+          if (/\b(remove|delete|discard|void|unselect|undo|clear|cancel|save|sign|submit|post|file|claim|place order|replace|swap|substitute|bundle|package|instead|exchange|overwrite|merge|convert)\b/.test(safetySignals)) return false;
+          var role = ''; try { role = norm(el.getAttribute('role')); } catch (eRole) {}
+          var ownActionSignal = ''; try { ownActionSignal = norm([label(el), el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('data-action')].join(' ')); } catch (eOwn) {}
+          var explicitlyUnselectedOption = role === 'option' && norm(el.getAttribute && el.getAttribute('aria-selected')) === 'false';
+          var positiveOwner = explicitlyUnselectedOption || /\b(add|select|choose|use)\b/.test(ownActionSignal);
+          var rawOptionParts = []; try { rawOptionParts = [el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), el.value, el.getAttribute('data-value')].filter(function (part) { return String(part || '').trim(); }); } catch (eRaw) { rawOptionParts = [String(el.textContent || '')]; }
+          var rawOption = rawOptionParts.join(' '), optionOccurrenceSafe = rawOptionParts.every(function (part) { return codeOccurrenceCount(part, code) <= 1; });
+          var optionCodes = codeTokens(rawOption);
+          return positiveOwner && optionOccurrenceSafe && !metadataSemantics(rawOption + ' ' + safetySignals, code) && optionCodes.length === 1 && optionCodes[0] === code;
+        });
+        exact = collapseContainedMatches(exact);
+        if (!exact.length) return { error: 'billing-near-match-rejected' };
+        if (exact.length !== 1) return { error: 'billing-duplicate-rejected' };
+        return { option: exact[0], scope: scope, fingerprint: controlFingerprint(exact[0], hit.frame.url, 'billing_option') };
+      }
+      /* ATHENA_ACTION_V2_BILLING_PREFLIGHT_START */
+      var preflight = [], results = [];
+      for (var pf = 0; pf < codes.length; pf++) {
+        var preCode = codes[pf], existing = rowsIn(bill.root, preCode, null);
+        if (existing.length > 1) return { ok: false, blocked: true, attempted: false, verified: false, staged: false, partialMutation: false, results: results, stagedCodes: [], failedCodes: [preCode], reason: 'billing-duplicate-rejected', code: preCode };
+        if (existing.length === 1) {
+          var existingCodes = codeTokens(existing[0].textContent);
+          if (existingCodes.length !== 1 || existingCodes[0] !== preCode || codeOccurrenceCount(existing[0].textContent, preCode) !== 1 || chargeRowHasMetadata(existing[0], preCode)) return { ok: false, blocked: true, attempted: false, verified: false, staged: false, partialMutation: false, results: results, stagedCodes: [], failedCodes: [preCode], reason: 'billing-existing-row-ambiguous', code: preCode };
+          preflight.push({ code: preCode, alreadyPresent: true }); continue;
+        }
+        var preInputRows = chargeRowsSnapshot(bill.root, null, preCode, bill.el);
+        mutationAttempted = true;
+        setField(bill.el, preCode); await sleep(650);
+        var preOption = billingOption(preCode);
+        var prePickerRows = chargeRowsSnapshot(bill.root, preOption.scope || null, preCode, bill.el);
+        if (!sameChargeRowState(preInputRows, prePickerRows)) {
+          setField(bill.el, '');
+          return { ok: false, attempted: true, verified: false, staged: false, partialMutation: true, results: results, stagedCodes: [], failedCodes: codes.slice(pf), reason: 'outcome-uncertain', detail: 'billing-input-side-effect', code: preCode, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        }
+        if (!preOption.option) {
+          setField(bill.el, ''); await sleep(300);
+          var missingOptionClearRows = chargeRowsSnapshot(bill.root, null, preCode, bill.el);
+          if (!sameChargeRowState(preInputRows, missingOptionClearRows)) return { ok: false, attempted: true, verified: false, staged: false, partialMutation: true, results: results, stagedCodes: [], failedCodes: codes.slice(pf), reason: 'outcome-uncertain', detail: 'billing-input-side-effect', code: preCode, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+          return { ok: false, blocked: true, attempted: false, verified: false, staged: false, partialMutation: false, results: results, stagedCodes: [], failedCodes: [preCode], reason: preOption.error || 'billing-context-unverified', code: preCode };
+        }
+        setField(bill.el, ''); await sleep(300);
+        var preClearRows = chargeRowsSnapshot(bill.root, null, preCode, bill.el);
+        if (!sameChargeRowState(preInputRows, preClearRows)) return { ok: false, attempted: true, verified: false, staged: false, partialMutation: true, results: results, stagedCodes: [], failedCodes: codes.slice(pf), reason: 'outcome-uncertain', detail: 'billing-input-side-effect', code: preCode, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        preflight.push({ code: preCode, alreadyPresent: false, optionFingerprint: preOption.fingerprint });
+      }
+      /* ATHENA_ACTION_V2_BILLING_PREFLIGHT_END */
+      /* ATHENA_ACTION_V2_BILLING_COMMIT_START */
+      var stagedCodes = [], failedCodes = [];
+      for (var bc = 0; bc < preflight.length; bc++) {
+        var code = preflight[bc].code;
+        if (preflight[bc].alreadyPresent) { results.push({ code: code, attempted: false, verified: true, reason: 'billing-exact-match', alreadyPresent: true }); continue; }
+        var beforeChargeRows = chargeRowsSnapshot(bill.root, null, code, bill.el);
+        mutationAttempted = true;
+        setField(bill.el, code);
+        await sleep(650);
+        var commitOption = billingOption(code);
+        var afterCommitInputRows = chargeRowsSnapshot(bill.root, commitOption.scope || null, code, bill.el);
+        if (!sameChargeRowState(beforeChargeRows, afterCommitInputRows)) {
+          setField(bill.el, '');
+          failedCodes = codes.slice(bc);
+          results.push({ code: code, attempted: true, verified: false, reason: 'outcome-uncertain' });
+          return { ok: false, attempted: true, verified: false, staged: false, partialMutation: true, reason: 'outcome-uncertain', detail: 'billing-input-side-effect', code: code, results: results, stagedCodes: stagedCodes, failedCodes: failedCodes, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        }
+        if (!commitOption.option || commitOption.fingerprint !== preflight[bc].optionFingerprint) {
+          setField(bill.el, '');
+          failedCodes = codes.slice(bc); return { ok: false, attempted: stagedCodes.length > 0, verified: false, staged: false, partialMutation: stagedCodes.length > 0, reason: commitOption.error || 'outcome-uncertain', code: code, results: results, stagedCodes: stagedCodes, failedCodes: failedCodes, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        }
+        try { commitOption.option.click(); }
+        catch (clickError) {
+          setField(bill.el, '');
+          failedCodes = codes.slice(bc);
+          results.push({ code: code, attempted: true, verified: false, reason: 'outcome-uncertain' });
+          return { ok: false, attempted: true, verified: false, staged: false, partialMutation: true, reason: 'outcome-uncertain', detail: 'billing-click-outcome-uncertain', code: code, results: results, stagedCodes: stagedCodes, failedCodes: failedCodes, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        }
+        setField(bill.el, '');
+        var afterChargeRows = await stableChargeRows(bill.root, commitOption.scope, code, bill.el);
+        var after = rowsIn(bill.root, code, commitOption.scope);
+        var isolatedCodeAdd = !!afterChargeRows && verifiedIsolatedCodeAdd(beforeChargeRows, afterChargeRows, code);
+        if (after.length !== 1 || !isolatedCodeAdd) {
+          failedCodes = codes.slice(bc);
+          results.push({ code: code, attempted: true, verified: false, reason: 'outcome-uncertain' });
+          /* The option was clicked, so the current code may have been staged
+             even when DOM readback failed. Always surface a possible partial
+             mutation, including when this was the first requested code. */
+          return { ok: false, attempted: true, verified: false, staged: false, partialMutation: true, reason: 'outcome-uncertain', detail: !afterChargeRows ? 'billing-readback-not-stable' : (!isolatedCodeAdd ? 'billing-unrelated-charge-change' : (after.length ? 'billing-duplicate-rejected' : 'billing-context-unverified')), code: code, results: results, stagedCodes: stagedCodes, failedCodes: failedCodes, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        }
+        stagedCodes.push(code);
+        results.push({ code: code, attempted: true, verified: true, reason: 'billing-exact-match' });
+      }
+      return { ok: true, action: action, attempted: stagedCodes.length > 0, verified: true, staged: true, partialMutation: false, reason: 'billing-context-verified', results: results, stagedCodes: stagedCodes, failedCodes: failedCodes, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      /* ATHENA_ACTION_V2_BILLING_COMMIT_END */
+    }
+    /* STAGE_BILLING_END */
+    /* ATHENA_ACTION_V2_STAGE_BILLING_END */
+
+    function clickOnce(el) { try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
+
+    /* ATHENA_ACTION_V2_SAVE_DRAFT_START */
+    /* SAVE_DRAFT_START */
+    if (action === 'save_draft') {
+      var saveStatusEvidenceSnapshot = statusEvidenceSnapshot([noteScope]);
+      mutationAttempted = true;
+      clickOnce(actionControl);
+      await sleep(1400);
+      var saveVerified = newScopedStatus(saveStatusEvidenceSnapshot, [noteScope], /\b(draft saved|note saved|saved successfully|changes saved)\b/);
+      return { ok: saveVerified, action: action, attempted: true, verified: saveVerified, saved: saveVerified, reason: saveVerified ? 'exact-save-control-context-verified' : 'outcome-uncertain', control: 'exact-save-control', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+    }
+    /* SAVE_DRAFT_END */
+    /* ATHENA_ACTION_V2_SAVE_DRAFT_END */
+
+    /* ATHENA_ACTION_V2_SIGN_ENCOUNTER_START */
+    /* SIGN_ENCOUNTER_START */
+    if (action === 'sign_encounter') {
+      var signStatusEvidenceSnapshot = statusEvidenceSnapshot([noteScope]);
+      mutationAttempted = true;
+      clickOnce(actionControl);
+      await sleep(550);
+      var dialogs = deepQueryAll(noteScope, '[role="dialog"],[role="alertdialog"],.modal,.dialog').filter(function (el) { return visible(el, hit.frame.w); });
+      var actionDialog = null;
+      if (dialogs.length) {
+        var confirms = [];
+        for (var di = 0; di < dialogs.length; di++) confirms = confirms.concat(interactive(dialogs[di], hit.frame.w).filter(exactSign));
+        if (confirms.length !== 1) return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', detail: 'exact-sign-confirmation-not-unique', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+        actionDialog = confirms[0].closest('[role="dialog"],[role="alertdialog"],.modal,.dialog');
+        /* The dialog was created by the first click. Snapshot its existing
+           status nodes before the final confirmation so static dialog copy
+           cannot be mistaken for post-sign success evidence. */
+        var dialogStatusSnapshot = statusEvidenceSnapshot([actionDialog]);
+        dialogStatusSnapshot.forEach(function (value, node) { signStatusEvidenceSnapshot.set(node, value); });
+        clickOnce(confirms[0]);
+      }
+      await sleep(1600);
+      var signStatusRoots = actionDialog ? [noteScope, actionDialog] : [noteScope];
+      var signVerified = newScopedStatus(signStatusEvidenceSnapshot, signStatusRoots, /\b(signed and saved|successfully signed|encounter signed|note signed|signed by)\b/);
+      return { ok: signVerified, action: action, attempted: true, verified: signVerified, signed: signVerified, reason: signVerified ? 'exact-sign-control-context-verified' : 'outcome-uncertain', control: 'exact-sign-control', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+    }
+    /* SIGN_ENCOUNTER_END */
+    /* ATHENA_ACTION_V2_SIGN_ENCOUNTER_END */
+    return { ok: false, blocked: true, reason: 'unknown-action' };
+  } catch (e) {
+    if (mutationAttempted) {
+      return { ok: false, attempted: true, verified: false, partialMutation: action === 'stage_billing', reason: 'outcome-uncertain', detail: action === 'stage_billing' ? 'billing-action-threw-after-mutation-boundary' : 'action-threw-after-mutation-boundary', error: String((e && e.message) || e).slice(0, 220), noAutomaticChaining: 'no-automatic-chaining' };
+    }
+    return { ok: false, blocked: true, attempted: false, verified: false, reason: 'context-unverified', error: String((e && e.message) || e).slice(0, 220) };
+  }
+}
+/* ATHENA_ACTION_V2_DRIVER_END */
+
+/* ATHENA_ACTION_V2_HANDLER_START */
+(function () {
+  'use strict';
+  if (self.__mlsAthenaActionV2Wired) return;
+  self.__mlsAthenaActionV2Wired = true;
+  var tokens = Object.create(null);
+  var noteWriteProofs = Object.create(null);
+  var TOKEN_TTL_MS = 90000;
+  var NOTE_PROOF_TTL_MS = 180000;
+  var executeBusy = false;
+  function clean(v) { return String(v == null ? '' : v).trim(); }
+  function norm(v) { return clean(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function digits(v) { return clean(v).replace(/\D/g, ''); }
+  function dateKey(v) { var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(clean(v)); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
+  function simpleHash(v) { var s = String(v || ''), h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8); }
+  function patientKey(p) { p = p || {}; return [norm(p.name), dateKey(p.dob)].join('|'); }
+  function noteNorm(v) { return String(v == null ? '' : v).replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').split('\n').map(function (line) { return line.replace(/[ \t]+$/g, ''); }).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
+  function notePayloadKey(noteText, sections, policy) {
+    var safe = Array.isArray(sections) ? sections : [];
+    var sectionPayloads = [];
+    for (var i = 0; i < safe.length; i++) { var s = safe[i] || {}; sectionPayloads.push([clean(s.key), String(s.text == null ? '' : s.text), s.execute === true, clean(s.destination)]); }
+    /* JSON escapes every separator/control character, so two different note
+       and section tuples cannot collapse into the same authorization value.
+       Preserve the raw note string here: normalization is useful for editor
+       readback, but may never authorize different execute-time whitespace. */
+    return JSON.stringify([String(noteText == null ? '' : noteText), clean(policy || 'empty_only'), sectionPayloads]);
+  }
+  function urlKey(v) { return clean(v).split('#')[0]; }
+  function expectedContextKey(c) { c = c || {}; return [digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider)].join('|'); }
+  function expectedContextShape(c, requireEncounter) {
+    c = c || {};
+    var hasDate = !!clean(c.visitDate), hasProvider = !!clean(c.provider);
+    var hasEncounterId = !!clean(c.encounterId), hasEncounterUrl = !!clean(c.encounterUrl);
+    var hasAny = hasDate || hasProvider || hasEncounterId || hasEncounterUrl;
+    if (requireEncounter) return !!dateKey(c.visitDate) && !!norm(c.provider) && !!digits(c.encounterId) && !!urlKey(c.encounterUrl);
+    /* A probe with no schedule context may safely use the driver's unique,
+       labeled date/provider discovery. Once the caller supplies any context,
+       it must provide a usable date/provider pair; encounter ID and URL are
+       optional, but may only be supplied together. */
+    if (!hasAny) return true;
+    if (!dateKey(c.visitDate) || !norm(c.provider)) return false;
+    if (hasEncounterId !== hasEncounterUrl) return false;
+    if (hasEncounterId && (!digits(c.encounterId) || !urlKey(c.encounterUrl))) return false;
+    return true;
+  }
+  function lockedContextShape(c) {
+    c = c || {};
+    return !!norm(c.patientName) && !!dateKey(c.dob) && !!digits(c.mrn) && !!digits(c.encounterId) && !!urlKey(c.encounterUrl) &&
+      !!dateKey(c.visitDate) && !!norm(c.provider) && !!clean(c.framePath) &&
+      !!clean(c.encounterRootFingerprint) && !!clean(c.controlFingerprint) && !!clean(c.noteScopeFingerprint) && !!clean(c.editorFingerprint) && !!clean(c.contextHash);
+  }
+  function expectedContextMatches(got, expectedAtProbe, locked) {
+    got = got || {}; expectedAtProbe = expectedAtProbe || {}; locked = locked || {};
+    if (!expectedContextShape(got, true)) return false;
+    if (expectedContextKey(got) !== expectedContextKey(locked)) return false;
+    if (dateKey(expectedAtProbe.visitDate) && dateKey(got.visitDate) !== dateKey(expectedAtProbe.visitDate)) return false;
+    if (norm(expectedAtProbe.provider) && norm(got.provider) !== norm(expectedAtProbe.provider)) return false;
+    if (digits(expectedAtProbe.encounterId) && digits(got.encounterId) !== digits(expectedAtProbe.encounterId)) return false;
+    if (urlKey(expectedAtProbe.encounterUrl) && urlKey(got.encounterUrl) !== urlKey(expectedAtProbe.encounterUrl)) return false;
+    return true;
+  }
+  function probeContextMatches(got, locked) {
+    got = got || {}; locked = locked || {};
+    if (!lockedContextShape(got) || !lockedContextShape(locked)) return false;
+    return digits(got.mrn) === digits(locked.mrn) &&
+      norm(got.patientName) === norm(locked.patientName) &&
+      dateKey(got.dob) === dateKey(locked.dob) &&
+      digits(got.encounterId) === digits(locked.encounterId) &&
+      urlKey(got.encounterUrl) === urlKey(locked.encounterUrl) &&
+      dateKey(got.visitDate) === dateKey(locked.visitDate) &&
+      norm(got.provider) === norm(locked.provider) &&
+      clean(got.framePath) === clean(locked.framePath) &&
+      clean(got.encounterRootFingerprint) === clean(locked.encounterRootFingerprint) &&
+      clean(got.controlFingerprint) === clean(locked.controlFingerprint) &&
+      clean(got.noteScopeFingerprint) === clean(locked.noteScopeFingerprint) &&
+      clean(got.editorFingerprint) === clean(locked.editorFingerprint) &&
+      clean(got.contextHash) === clean(locked.contextHash);
+  }
+  function encounterProofKey(c) { c = c || {}; return [norm(c.patientName), dateKey(c.dob), digits(c.mrn), digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider), clean(c.framePath), clean(c.encounterRootFingerprint), clean(c.noteScopeFingerprint), clean(c.editorFingerprint)].join('|'); }
+  function billingKey(b) { b = b || {}; var c = Array.isArray(b.cptCodes) ? b.cptCodes : [], out = []; for (var i = 0; i < c.length; i++) out.push(clean(c[i]).toUpperCase()); return JSON.stringify([clean(b.emCode).toUpperCase(), out]); }
+  function appSender(sender) {
+    try { var u = new URL(sender && sender.tab && sender.tab.url || ''); return u.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(u.hostname); } catch (e) { return false; }
+  }
+  function tokenValue() {
+    try { var a = new Uint32Array(6); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (n) { return ('00000000' + n.toString(16)).slice(-8); }).join(''); }
+    catch (e) { return simpleHash(Date.now() + '|' + Math.random()) + simpleHash(Math.random()); }
+  }
+  function exactAthenaTabs(all) {
+    return (all || []).filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (e) { return false; } });
+  }
+  async function pickExactAthena(sender, expectedPatient, all) {
+    /* Final/financial actions are stricter than read and narrative-draft lanes:
+       more than one signed-in Athena tab is always ambiguous, even if an older
+       read flow remembered a target. */
+    var candidates = exactAthenaTabs(all);
+    if (candidates.length !== 1) return { __error: candidates.length ? 'ambiguous-athena-tabs' : 'no-athena-tab', __message: candidates.length ? 'More than one signed-in Athena tab is open. Leave exactly one Athena tab open, then retry. Nothing was changed.' : 'Open one signed-in Athena tab, then retry. Nothing was changed.' };
+    return candidates[0];
+  }
+  async function injectOnce(tabId, payload) {
+    /* Intentionally one TOP-frame injection: no allFrames, no retry/reload. */
+    try {
+      var r = await chrome.scripting.executeScript({ target: { tabId: tabId }, world: 'MAIN', args: [payload], func: mlsAthenaActionV2DriverFn });
+      return r && r[0] && r[0].result ? r[0].result : { ok: false, reason: 'outcome-uncertain', error: 'The Athena action returned no result.' };
+    } catch (e) { return { ok: false, reason: 'outcome-uncertain', error: String((e && e.message) || e) }; }
+  }
+  function matchingNoteWriteProof(id, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) {
+    var proof = noteWriteProofs[clean(id)];
+    if (!proof || proof.used || Date.now() > proof.expiresAt) return null;
+    if (Number(proof.senderTabId) !== Number(senderTabId) || Number(proof.athenaTabId) !== Number(athenaTabId)) return null;
+    /* Hashes remain useful diagnostics, but authorization uses the complete
+       canonical values so a 32-bit hash collision cannot swap patient, note,
+       or encounter data between probe and execute. */
+    if (proof.previewHash !== previewHash || proof.patientKey !== patientKey(p) || proof.patientHash !== simpleHash(patientKey(p))) return null;
+    if (proof.notePayload !== notePayload || proof.noteHash !== noteHash) return null;
+    if (context && (proof.lockedContextKey !== encounterProofKey(context) || proof.lockedContextHash !== simpleHash(encounterProofKey(context)))) return null;
+    return proof;
+  }
+  function noteWriteProofFailure(id) {
+    var proofRecord = noteWriteProofs[clean(id)];
+    if (proofRecord && proofRecord.used) return 'note-write-proof-used';
+    if (proofRecord && Date.now() > proofRecord.expiresAt) return 'note-write-proof-expired';
+    return 'verified-note-write-required';
+  }
+
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== 'mlsAppAthenaActionV2Request') return;
+    (async function () {
+      var mode = clean(msg.mode).toLowerCase(), action = clean(msg.action).toLowerCase();
+      var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1 };
+      if (!/^(probe|execute)$/.test(mode) || !ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
+      var actionToken = '', rec = null;
+      if (mode === 'execute') {
+        actionToken = clean(msg.actionToken); rec = tokens[actionToken];
+        if (!rec) return { ok: false, blocked: true, reason: 'token-expired' };
+        if (rec.used) return { ok: false, blocked: true, reason: 'token-used' };
+        if (Date.now() > rec.expiresAt) { rec.used = true; return { ok: false, blocked: true, reason: 'token-expired' }; }
+        /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
+        rec.used = true; // the first execute attempt consumes the token, even on a later mismatch
+      }
+      var previewHash = clean(msg.previewHash), p = msg.expectedPatient || {}, c = msg.expectedContext || {}, b = msg.billing || {};
+      var noteText = String(msg.noteText == null ? '' : msg.noteText), notePolicy = clean(msg.notePolicy || 'empty_only'), noteSections = Array.isArray(msg.sections) ? msg.sections : [];
+      var canonicalNotePayload = notePayloadKey(noteText, noteSections, notePolicy);
+      var canonicalBillingPayload = billingKey(b);
+      var noteHash = simpleHash(canonicalNotePayload);
+      var noteWriteProofId = clean(msg.noteWriteProof), proofRecord = null;
+      if (!previewHash) return { ok: false, blocked: true, reason: 'preview-hash-mismatch' };
+      if (!clean(p.name) || !dateKey(p.dob)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      if (!expectedContextShape(c, mode === 'execute')) return { ok: false, blocked: true, reason: 'context-mismatch' };
+      if (action !== 'stage_billing' && !noteNorm(noteText)) return { ok: false, blocked: true, reason: 'note-content-required' };
+      if (action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy' };
+      if (action === 'stage_billing') {
+        var rawCodes = []; if (clean(b.emCode)) rawCodes.push(clean(b.emCode).toUpperCase()); if (Array.isArray(b.cptCodes)) rawCodes = rawCodes.concat(b.cptCodes.map(function (x) { return clean(x).toUpperCase(); }));
+        if (!rawCodes.length || rawCodes.some(function (x) { return !/^(?=[A-Z0-9]*\d)[A-Z0-9]{5}$/.test(x); })) return { ok: false, blocked: true, reason: 'billing-near-match-rejected' };
+        var uniq = {}; for (var ui = 0; ui < rawCodes.length; ui++) { if (uniq[rawCodes[ui]]) return { ok: false, blocked: true, reason: 'billing-duplicate-rejected' }; uniq[rawCodes[ui]] = 1; }
+      }
+      if (mode === 'probe') {
+        if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
+        var all = await chrome.tabs.query({}), tab = await pickExactAthena(sender, p, all);
+        if (tab && tab.__error) return { ok: false, blocked: true, reason: tab.__error, error: tab.__message };
+        if (action === 'sign_encounter') {
+          proofRecord = matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, null);
+          if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId), error: 'Write and verify this exact reviewed note in this encounter before signing.' };
+        }
+        var probe = await injectOnce(tab.id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, noteText: noteText, notePolicy: notePolicy, locked: null });
+        if (!probe || !probe.ok || !probe.contextVerified || !lockedContextShape(probe.context)) return probe && probe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (probe || { ok: false, blocked: true, reason: 'context-unverified' });
+        if (action === 'sign_encounter' && !matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, probe.context)) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch', error: 'The verified note write does not match this encounter.' };
+        if ((dateKey(c.visitDate) && dateKey(c.visitDate) !== dateKey(probe.context.visitDate)) ||
+            (norm(c.provider) && norm(c.provider) !== norm(probe.context.provider)) ||
+            (digits(c.encounterId) && digits(c.encounterId) !== digits(probe.context.encounterId)) ||
+            (urlKey(c.encounterUrl) && urlKey(c.encounterUrl) !== urlKey(probe.context.encounterUrl))) return { ok: false, blocked: true, reason: 'context-mismatch' };
+        var tok = tokenValue(), now = Date.now();
+        tokens[tok] = {
+          used: false, issuedAt: now, expiresAt: now + TOKEN_TTL_MS,
+          senderTabId: sender.tab.id, athenaTabId: tab.id, action: action,
+          previewHash: previewHash, patientHash: simpleHash(patientKey(p)), expectedMrn: digits(p.mrn),
+          expectedContextHash: simpleHash(expectedContextKey(c)), billingHash: simpleHash(canonicalBillingPayload), billingPayload: canonicalBillingPayload, noteHash: noteHash, notePayload: canonicalNotePayload,
+          noteWriteProof: action === 'sign_encounter' ? noteWriteProofId : '',
+          expectedContext: { encounterId: digits(c.encounterId), encounterUrl: urlKey(c.encounterUrl), visitDate: dateKey(c.visitDate), provider: norm(c.provider) },
+          lockedContextHash: simpleHash(expectedContextKey(probe.context)),
+          locked: probe.context
+        };
+        /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
+        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
+      }
+
+      if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
+      if (Number(rec.senderTabId) !== Number(sender.tab.id)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
+      if (rec.action !== action) return { ok: false, blocked: true, reason: 'token-action-mismatch' };
+      if (rec.previewHash !== previewHash) return { ok: false, blocked: true, reason: 'preview-hash-mismatch' };
+      if (rec.patientHash !== simpleHash(patientKey(p))) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      if (digits(p.mrn) && digits(p.mrn) !== digits(rec.locked && rec.locked.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      if (rec.expectedMrn && rec.expectedMrn !== digits(rec.locked && rec.locked.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      if (rec.billingPayload !== canonicalBillingPayload || rec.billingHash !== simpleHash(canonicalBillingPayload)) return { ok: false, blocked: true, reason: 'billing-payload-mismatch' };
+      if (rec.notePayload !== canonicalNotePayload || rec.noteHash !== noteHash) return { ok: false, blocked: true, reason: 'note-payload-mismatch' };
+      if (!expectedContextMatches(c, rec.expectedContext, rec.locked) || rec.lockedContextHash !== simpleHash(expectedContextKey(c))) return { ok: false, blocked: true, reason: 'context-mismatch' };
+      if (!probeContextMatches(msg.probeContext, rec.locked)) return { ok: false, blocked: true, reason: 'context-mismatch' };
+      if (msg.userGesture !== true || !clean(msg.gestureProof)) return { ok: false, blocked: true, reason: 'fresh-trusted-click-required' };
+      /* Re-query the complete tab set at the last pre-mutation gate. A token
+         cannot remain valid if another signed-in Athena tab appeared, the
+         locked tab signed out, or a different Athena tab replaced it. */
+      var liveCandidates = exactAthenaTabs(await chrome.tabs.query({}));
+      if (liveCandidates.length !== 1 || Number(liveCandidates[0].id) !== Number(rec.athenaTabId)) return { ok: false, blocked: true, reason: 'token-tab-mismatch', error: liveCandidates.length > 1 ? 'More than one signed-in Athena tab is open. Leave exactly one Athena tab open, then retry. Nothing was changed.' : 'The locked Athena tab is no longer the only signed-in Athena tab. Nothing was changed.' };
+      if (executeBusy) return { ok: false, blocked: true, reason: 'outcome-uncertain', detail: 'another-athena-action-is-running', noAutomaticChaining: 'no-automatic-chaining' };
+      if (action === 'sign_encounter') {
+        if (!noteWriteProofId || noteWriteProofId !== rec.noteWriteProof) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch' };
+        proofRecord = matchingNoteWriteProof(noteWriteProofId, sender.tab.id, rec.athenaTabId, p, previewHash, noteHash, canonicalNotePayload, rec.locked);
+        if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId) };
+        proofRecord.used = true; // the immediate pre-injection Sign attempt consumes the proof
+      }
+      executeBusy = true;
+      var executed;
+      try {
+        /* ATHENA_ACTION_V2_EXECUTE_INJECTION */
+        executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, noteText: noteText, notePolicy: notePolicy, locked: rec.locked });
+      } finally { executeBusy = false; }
+      if (!executed) return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', noAutomaticChaining: 'no-automatic-chaining' };
+      if (action === 'write_note' && executed.written === true && executed.verified === true && executed.draftVerified === true && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {
+        var noteWriteProof = tokenValue(), proofNow = Date.now();
+        noteWriteProofs[noteWriteProof] = {
+          used: false, issuedAt: proofNow, expiresAt: proofNow + NOTE_PROOF_TTL_MS,
+          senderTabId: sender.tab.id, athenaTabId: rec.athenaTabId,
+          previewHash: previewHash, patientKey: patientKey(p), patientHash: simpleHash(patientKey(p)),
+          notePayload: canonicalNotePayload, noteHash: noteHash,
+          lockedContextKey: encounterProofKey(executed.context), lockedContextHash: simpleHash(encounterProofKey(executed.context))
+        };
+        executed.noteWriteProof = noteWriteProof;
+        executed.noteWriteProofExpiresAt = proofNow + NOTE_PROOF_TTL_MS;
+      }
+      if (action === 'sign_encounter' && proofRecord && proofRecord.used) executed.noteWriteProofConsumed = true;
+      executed.actionTokenConsumed = true;
+      executed.noAutomaticChaining = 'no-automatic-chaining';
+      return executed;
+    })().then(function (r) { sendResponse(r); }).catch(function (e) { sendResponse({ ok: false, reason: 'outcome-uncertain', error: String((e && e.message) || e), noAutomaticChaining: 'no-automatic-chaining' }); });
+    return true;
+  });
+})();
+/* ATHENA_ACTION_V2_HANDLER_END */
+
 /* ===========================================================================
  * v2.9.5 QUIET PULL (__mlsQp) — pulls must never steal the doctor's focus.
  * Live-measured ground truth (2026-07-13, this machine): a Chrome window that
@@ -4248,6 +5354,7 @@ async function mlsSchedDomInline(doc, CFG){
         /* v1.90: unified verified picker; newest non-athena tab stays the generic-EMR fallback. */
         const tab = (await mlsPickAthenaTab(tabs, { athenaOnly: true })) || (function () { const c = tabs.filter(t => /^https?:/.test(t.url || '') && !/mlsscribe\.com|athena/i.test((t.url || '') + ' ' + (t.title || ''))); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); return c[0]; })();
         if (!tab) return sendResponse({ error: 'No EMR tab is open. Open the patient in your EMR in another tab, then try again.' });
+        if (mlsAthTabHost(tab) === 'athenanet.athenahealth.com') return sendResponse({ ok: false, blocked: true, reason: 'legacy-untyped-write-disabled', error: 'Use Review Athena actions for an exact patient, encounter, and note confirmation. Nothing was written.' });
 
         // v1.57: same identity gate mlsVerifiedWrite already uses -- read the open chart's
         // identity + the MLS active patient, and refuse (unless the doctor explicitly forces)
@@ -5800,10 +6907,9 @@ async function mlsAthenaSignSave(mode) {
 
   // ---- feature flag: the codes-into-pickers driver stays OFF until it has
   //      had one real athenaOne selector-tuning pass (see 04_codes_writeback).
-  var FLAGS = { codesDriver: false };
-  try { chrome.storage && chrome.storage.local.get(['mlsFlags'], function (v) {
-    if (v && v.mlsFlags) Object.assign(FLAGS, v.mlsFlags);
-  }); } catch (e) {}
+  /* Legacy codes automation is a permanent kill switch. A storage value must
+     never enable this old all-frame driver; v2 actions use a separate contract. */
+  var FLAGS = Object.freeze({ codesDriver: false });
 
   // ---- per-tab session: the identity locked at "Go" -----------------------
   var sessions = {};   // tabId -> { lockedIdentity:{name,dob} }
@@ -6352,7 +7458,7 @@ async function mlsAthenaSignSave(mode) {
       return readP.then(function (chartId) {
         var matchTarget = locked || null;
         var confident = matchTarget && chartId && identitiesMatch(matchTarget, chartId);
-        if (!confident && !msg.override) {
+        if (!confident) {
           return { blocked: true, mlsIdentity: matchTarget, chartIdentity: chartId };
         }
         // ---- write the NOTE (segmented router handled inside pasteNote) ----
@@ -8005,6 +9111,9 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
     (async function () {
       var V = '';
       try { V = chrome.runtime.getManifest().version; } catch (eV) {}
+      var trustedSender = false;
+      try { var senderUrl = new URL(sender && sender.tab && sender.tab.url || ''); trustedSender = senderUrl.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(senderUrl.hostname); } catch (eSender) {}
+      if (!trustedSender || msg.userGesture !== true || !String(msg.gestureProof || '').trim()) { sendResponse({ ok: false, blocked: true, reason: 'fresh-trusted-click-required', version: V, error: 'Click Write selected drafts yourself, then try again.' }); return; }
       if (busy) { sendResponse({ ok: false, reason: 'busy', version: V, error: 'A write is already running - one at a time.' }); return; }
       busy = 1;
       var usedWriteTarget = false;
@@ -8022,6 +9131,8 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
         }
         if (unknown.length) { sendResponse({ ok: false, reason: 'unknown-section-key', version: V, unknownKeys: unknown, error: 'Unknown Athena destination key(s): ' + unknown.join(', ') + '. Nothing was touched.' }); return; }
         var all = await chrome.tabs.query({});
+        var candidates = all.filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (e) { return false; } });
+        if (candidates.length > 1) { sendResponse({ ok: false, reason: 'ambiguous-athena-tabs', version: V, error: 'More than one signed-in Athena tab is open. Leave exactly one Athena tab open, then retry. Nothing was touched.' }); return; }
         var tab = null, wt = null;
         var senderTabId = sender && sender.tab && sender.tab.id;
         function nKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -8034,13 +9145,11 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
           var wtDob = wtFresh && (!dKey(wt.dob) || !dKey(msg.dob) || dKey(wt.dob) === dKey(msg.dob));
           if (wtFresh && wtApp && wtName && wtDob) {
             var exact = await chrome.tabs.get(wt.tabId);
-            if (exact && mlsAthTabHost(exact) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(exact)) { tab = exact; usedWriteTarget = true; }
+            if (exact && candidates.length === 1 && Number(candidates[0].id) === Number(exact.id) && mlsAthTabHost(exact) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(exact)) { tab = exact; usedWriteTarget = true; }
           }
         } catch (eExactWrite) { tab = null; }
         if (!tab) {
-          var candidates = all.filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (e) { return false; } });
-          if (candidates.length > 1) { sendResponse({ ok: false, reason: 'ambiguous-athena-tabs', version: V, error: 'More than one signed-in athenaOne tab is open and none is locked to this patient. Re-open the patient from MLS, then try again. Nothing was touched.' }); return; }
-          tab = candidates.length === 1 ? candidates[0] : await mlsPickAthenaTab(all, { athenaOnly: true });
+          tab = candidates.length === 1 ? candidates[0] : null;
         }
         if (!tab) { sendResponse({ ok: false, reason: 'no-athena-tab', version: V, error: 'Open your signed-in athenaOne in another tab, then try again.' }); return; }
         /* v2.9.5: writes keep the proven foreground-for-write path — leave quiet-pull
@@ -8071,3 +9180,4 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
     return true;
   });
 })();
+/* ATHENA_ACTION_V2_HANDLER_START */ /* contract boundary: generic v2 writer ends above; supervised handler is isolated earlier in this file */
