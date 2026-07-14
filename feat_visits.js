@@ -70,6 +70,34 @@
     return [d, t, c].join('|');
   }
 
+  function _hasVisitContent(v) {
+    if (!v) return false;
+    var text = trim(v.raw || v.text || v.note || v.detail || v.findings || v.plan || v.aiSummary || '');
+    var codes = ((v.cpt && v.cpt.length) || 0) + ((v.icd10 && v.icd10.length) || 0) + ((v.meds && v.meds.length) || 0);
+    var scores = v.scores && typeof v.scores === 'object' && Object.keys(v.scores).length;
+    return !!(text || codes || scores);
+  }
+
+  function _emptyPlaceholder(v) {
+    return !!v && !v.id && !_hasVisitContent(v);
+  }
+
+  function _compactHydratedPlaceholders(p) {
+    if (!p || !Array.isArray(p.visits)) return false;
+    var changed = false;
+    var real = p.visits.filter(function (v) { return !!(v && v.id && _hasVisitContent(v) && _svcToYMD(v.date)); });
+    real.forEach(function (full) {
+      var day = _svcToYMD(full.date);
+      var idx = -1;
+      for (var i = 0; i < p.visits.length; i++) {
+        var q = p.visits[i];
+        if (q !== full && _emptyPlaceholder(q) && _svcToYMD(q.date) === day) { idx = i; break; }
+      }
+      if (idx >= 0) { p.visits.splice(idx, 1); changed = true; }
+    });
+    return changed;
+  }
+
   function _normVisit(raw, source) {
     var v = (raw && typeof raw === 'object') ? raw : {};
     var text = (typeof raw === 'string') ? raw : S(v.raw || v.text || v.note || v.detail || '');
@@ -111,6 +139,14 @@
     var v = _normVisit(raw, opts.source);
     var key = _visitKey(v);
     var existing = p.visits.find(function (x) { return _visitKey(x) === key; });
+    /* Organized chart pulls can create a dated shell before the optional full
+       visit reader runs. Upgrade one strictly empty shell on the same day
+       instead of creating a duplicate when Athena's detailed type label differs. */
+    if (!existing && v.date) {
+      existing = p.visits.find(function (x) {
+        return _emptyPlaceholder(x) && _svcToYMD(x.date) === _svcToYMD(v.date);
+      }) || null;
+    }
     if (existing) {
       /* Older organized-history imports created date/type placeholders without
          a stable visit id. A later full-detail pull must upgrade that same row
@@ -130,6 +166,7 @@
     } else {
       p.visits.push(v);
     }
+    _compactHydratedPlaceholders(p);
     if (opts.persist !== false) _upsert(p);
     return v;
   }

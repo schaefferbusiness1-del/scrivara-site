@@ -5876,7 +5876,7 @@
       try {
         var advB = $('ez3Adv');
         if (advB && /advanced tools/i.test(advB.textContent || '')) {
-          advB.innerHTML = /hide/i.test(advB.textContent) ? '&#9650; Hide visit workspace' : '&#128295; Visit workspace &amp; tools';
+          advB.innerHTML = /hide/i.test(advB.textContent) ? '&#9650; Hide advanced visit workspace' : '&#128295; Advanced visit workspace';
         }
       } catch (e) {}
 
