@@ -487,3 +487,80 @@
   }
   else boot();
 })();
+
+/* Release-support control. This is deliberately absent from normal product pages:
+   it mounts only on the explicit ?mlsExtensionReload=1 URL, and it can issue one
+   user-clicked reload request. There is no timer or automatic retry loop. */
+;(function () {
+  'use strict';
+  var params;
+  try { params = new URLSearchParams(location.search || ''); } catch (e) { return; }
+  if (params.get('mlsExtensionReload') !== '1') return;
+
+  var CONTROL_ID = 'mlsExtensionReloadControl';
+  var messageHandler = null;
+  var domReadyHandler = null;
+
+  function cleanupMessageHandler() {
+    if (!messageHandler) return;
+    try { window.removeEventListener('message', messageHandler, false); } catch (e) {}
+    messageHandler = null;
+  }
+
+  function mountReloadControl() {
+    if (document.getElementById(CONTROL_ID)) return;
+    var panel = document.createElement('section');
+    panel.id = CONTROL_ID;
+    panel.setAttribute('aria-label', 'MLS Assist release reload');
+    panel.style.cssText = 'position:fixed;right:18px;bottom:82px;z-index:2147483000;max-width:340px;padding:14px;border:1px solid #b9c9c1;border-radius:14px;background:#fff;color:#17231e;box-shadow:0 12px 36px rgba(18,49,38,.24);font:600 14px/1.35 system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="margin-bottom:9px">MLS Assist release control</div>' +
+      '<button type="button" style="width:100%;padding:10px 12px;border:0;border-radius:9px;background:#174b39;color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer">Reload installed extension</button>' +
+      '<div role="status" aria-live="polite" style="margin-top:9px;color:#40594e;font-weight:500">Ready. Reload runs only when you click.</div>';
+    (document.body || document.documentElement).appendChild(panel);
+
+    var button = panel.querySelector('button');
+    var status = panel.querySelector('[role="status"]');
+    var used = false;
+    button.addEventListener('click', function () {
+      if (used) return;
+      used = true;
+      button.disabled = true;
+      button.textContent = 'Reloading MLS Assist...';
+      status.textContent = 'Waiting for the installed extension to acknowledge the reload.';
+
+      messageHandler = function (event) {
+        var data = event && event.data;
+        if (!data || data.source !== 'mls-ext' || data.type !== 'mlsDevReloadResult') return;
+        cleanupMessageHandler();
+        var response = data.resp || {};
+        if (response.ok && response.reloading) {
+          status.textContent = 'Reload accepted. Refresh the MLS and Athena tabs to use the new version.';
+          button.textContent = 'Reload accepted';
+          return;
+        }
+        status.textContent = 'Reload was not accepted. No automatic retry was attempted.';
+        button.textContent = 'Reload unavailable';
+      };
+      window.addEventListener('message', messageHandler, false);
+      window.postMessage({ source: 'mls-app', type: 'mlsDevReload' }, location.origin);
+      window.setTimeout(function () {
+        if (!messageHandler) return;
+        cleanupMessageHandler();
+        status.textContent = 'No reload acknowledgement arrived. No automatic retry was attempted.';
+        button.textContent = 'Reload unavailable';
+      }, 5000);
+    }, false);
+  }
+
+  if (document.readyState === 'loading') {
+    domReadyHandler = function () {
+      document.removeEventListener('DOMContentLoaded', domReadyHandler, false);
+      domReadyHandler = null;
+      mountReloadControl();
+    };
+    document.addEventListener('DOMContentLoaded', domReadyHandler, false);
+  } else {
+    mountReloadControl();
+  }
+})();

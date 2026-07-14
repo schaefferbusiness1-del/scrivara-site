@@ -53,8 +53,10 @@ const tests = [
   'startup-explicit-pull-contract.test.js',
   'performance-lifecycle-contract.test.js',
   'extension-read-path.test.js',
-  'extension-package.test.js'
-  ,'portal-staff-booking-contract.test.js'
+  'extension-package.test.js',
+  'extension-reload-helper-contract.test.js',
+  'portal-staff-booking-contract.test.js',
+  'settings-cleanup-contract.test.js'
 ];
 
 for (const test of tests) {
