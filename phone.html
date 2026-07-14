@@ -300,5 +300,11 @@
   window.__mlsPhoneGuard={v:'b40', pending:function(){return queue.length;}, download:ensureDownloadBtn};
 })();
 </script>
+<script>
+  (function(){
+    var tips={connectBtn:'Connect this phone to the MLS visit open on your computer',recBtn:'Start or pause recording from this phone',doneBtn:'Finish the phone recording and continue the visit on your computer'};
+    Object.keys(tips).forEach(function(id){var el=document.getElementById(id);if(el)el.title=tips[id];});
+  })();
+</script>
 </body>
 </html>

@@ -477,5 +477,17 @@ load(); renderPlatforms(); dash();
 })();
 </script>
 <script src="mls_reviews_scrape_app.js?v=20260710b"></script>
+<script>
+  /* Add one native hover explanation only where the compact label is not self-explanatory. */
+  (function(){
+    var tips=[
+      ['button[onclick="quotes()"]','Pull out strong positive quotes from the review text above'],
+      ['button[onclick="respond()"]','Draft a privacy-safe public response to the review above'],
+      ['button[onclick="flag()"]',"Check whether the review may violate the platform's removal policies"],
+      ['button[onclick="testimonials()"]','Turn positive quotes into a showcase and patient invitation drafts']
+    ];
+    tips.forEach(function(row){var el=document.querySelector(row[0]);if(el)el.title=row[1];});
+  })();
+</script>
 </body>
 </html>

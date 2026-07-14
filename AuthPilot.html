@@ -876,5 +876,12 @@
   }
 })();
 </script>
+<script>
+  /* Hover help for compact/ambiguous actions. Mode tabs are intentionally excluded. */
+  (function(){
+    var tips={histToggle:'Open your previously generated letters',setToggle:'Add or update the OpenAI API key used to generate letters',clearKey:'Remove the saved API key from this browser',saveBtn:'Save this letter to History',clearBtn:'Clear the current letter and start over'};
+    Object.keys(tips).forEach(function(id){var el=document.getElementById(id);if(el&&!el.closest('[role="tablist"]')&&!el.classList.contains('tab'))el.title=tips[id];});
+  })();
+</script>
 </body>
 </html>
