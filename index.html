@@ -215,6 +215,18 @@ header.site{position:sticky;top:0;z-index:60;background:rgba(251,250,247,.88);ba
 .price .btn{margin-top:auto;width:100%}
 .demolink{display:block;text-align:center;font-size:12.5px;color:var(--muted);margin-top:10px;text-decoration:none}
 .demolink:hover{color:var(--green)}
+.founder-offer{scroll-margin-top:86px;margin:0 0 30px;padding:28px;border:1px solid #D8E4DC;border-radius:18px;background:linear-gradient(135deg,#F4FAF6 0%,#FFFDF7 100%);box-shadow:var(--sh-card)}
+.founder-offer-head{display:flex;align-items:flex-end;justify-content:space-between;gap:22px;margin-bottom:20px}
+.founder-offer-head h3{font-family:var(--serif);font-size:29px;font-weight:500;line-height:1.15;margin-top:6px}
+.founder-offer-head p{font-size:14px;color:var(--ink2);max-width:620px;margin-top:8px}
+.founder-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.founder-tier{background:rgba(255,255,255,.78);border:1px solid #E1E7E2;border-radius:12px;padding:15px 16px}
+.founder-tier b{display:block;font-size:15px;color:var(--ink)}
+.founder-tier span{display:block;font-size:12.5px;color:var(--ink2);margin-top:3px}
+.founder-tier strong{color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.founder-foot{font-size:12.5px;color:var(--muted);margin-top:14px;text-align:center}
+@media (max-width:800px){.founder-offer-head{align-items:flex-start;flex-direction:column}.founder-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:520px){.founder-grid{grid-template-columns:1fr}.founder-offer{padding:22px 18px}}
 
 /* security */
 .trust3{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
@@ -342,6 +354,7 @@ body.mdl-lock{overflow:hidden}
 <a href="#features">Features</a>
 <a href="#api">API &amp; EHR</a>
 <a href="#pricing">Pricing</a>
+<a href="#kickstarter">Kickstarter</a>
 <a href="lawyers.html">For attorneys</a>
 </nav>
 <div class="cta">
@@ -362,6 +375,7 @@ body.mdl-lock{overflow:hidden}
 <div class="ctas">
 <a class="btn btn-primary btn-lg" href="#demo">Book a 20-minute demo</a>
 <a class="btn btn-ghost btn-lg" href="#pricing">See pricing</a>
+<a class="btn btn-ghost btn-lg" href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">Founder rewards on Kickstarter <span class="arrow">&nearr;</span></a>
 </div>
 <div class="trust"><span>HIPAA-ready architecture</span><i>·</i><span>You sign every note</span><i>·</i><span>Built for spine, pain &amp; PM&amp;R</span></div>
 </div>
@@ -570,6 +584,25 @@ body.mdl-lock{overflow:hidden}
 <h2 class="d">Simple, honest, per provider.</h2>
 <p class="sub">Flat per-provider pricing with generous fair use. Annual plans get two months free. Still 3–8× less than any comparable athenahealth-integrated scribe.</p>
 </div>
+<div id="kickstarter" class="founder-offer">
+<div class="founder-offer-head">
+<div>
+<span class="eyebrow">Kickstarter founder rewards</span>
+<h3>Lock in 10% to about 71% off.</h3>
+<p>Choose one year, three years, or a five-year founding-practice package. Every comparison below uses the regular website prices shown on this page.</p>
+</div>
+<a class="btn btn-primary" href="https://www.kickstarter.com/projects/mlsscribe/1281360255?ref=6uxarf&amp;token=d7e65610" target="_blank" rel="noopener noreferrer">View founder rewards <span class="arrow">&nearr;</span></a>
+</div>
+<div class="founder-grid">
+<div class="founder-tier"><strong>10% off</strong><b>$135 · Lite</b><span>1 provider · 1 year · website value $150</span></div>
+<div class="founder-tier"><strong>About 21% off</strong><b>$230 · Standard</b><span>1 provider · 1 year · website value $290</span></div>
+<div class="founder-tier"><strong>30% off</strong><b>$315 · Premium</b><span>1 provider · 1 year · website value $450</span></div>
+<div class="founder-tier"><strong>40% off</strong><b>$810 · Premium</b><span>1 provider · 3 years · website value $1,350</span></div>
+<div class="founder-tier"><strong>50% off</strong><b>$1,575 · Group</b><span>Up to 3 providers · 3 years · website value $3,150</span></div>
+<div class="founder-tier"><strong>About 71% off</strong><b>$4,000 · Founding practice</b><span>Up to 8 providers · 5 years · website value $14,000</span></div>
+</div>
+<p class="founder-foot">You can also support the campaign from $10. The preview link automatically redirects to the live campaign after launch.</p>
+</div>
 <div class="price-grid">
 <div class="price">
 <div class="tier">Lite</div>
@@ -729,6 +762,7 @@ body.mdl-lock{overflow:hidden}
 <a href="#features">Features</a>
 <a href="#api">API &amp; EHR</a>
 <a href="#pricing">Pricing</a>
+<a href="#kickstarter">Kickstarter</a>
 <a href="#security">Security</a>
 <a href="lawyers.html">For attorneys</a>
 <a href="review-finder.html">Reviews</a>
