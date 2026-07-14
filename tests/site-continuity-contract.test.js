@@ -9,6 +9,7 @@ const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 const app = read('ScribeFlow.html');
 const patientPick = read('feat_mls_patientpick.js');
 const upNow = read('feat_mls_upnow_realtime.js');
+const connect = read('mls-connect.js');
 
 let inlineBlocks = 0;
 for (const match of app.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {
@@ -30,6 +31,11 @@ assert(!app.includes("new Date(date+'T'+time).toISOString()"), 'calendar creatio
 assert(!app.includes("new Date(_boardDay()+'T'+time).toISOString()"), 'front desk must not use the browser timezone');
 assert(patientPick.includes('window._acctTodayKey()') && patientPick.includes('window._acctNowMinutes()'), 'guided patient cards must use the practice clock');
 assert(upNow.includes('window._acctNowMinutes()'), 'realtime up-now correction must use the practice clock');
+assert(connect.includes("typeof window._acctTodayKey === 'function'"), 'guided visit home must use the practice day');
+assert(connect.includes("typeof window._acctNowParts === 'function'"), 'guided visit clock must use the practice timezone');
+assert(connect.includes("typeof window._acctWallToUtcIso === 'function'"), 'guided fallback times must be interpreted in the practice timezone');
+assert(!connect.includes('nowMs - t <= 90 * 60000'), 'an appointment more than 30 minutes old must not be labeled happening now');
+assert(connect.includes('nowMs - t <= 30 * 60000'), 'guided view needs a bounded happening-now window');
 
 const apptMins = app.slice(app.indexOf('function _calApptMins(a)'), app.indexOf('function _calPickNowIdx', app.indexOf('function _calApptMins(a)')));
 assert(apptMins.includes('_apptMinsTz(a.start_at)'), 'up-now selection must prefer timezone-normalized appointment instants');

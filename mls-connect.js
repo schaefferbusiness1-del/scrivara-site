@@ -16199,7 +16199,7 @@
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function pad2(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
   function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
-  function todayLocal() { return ymd(new Date()); }
+  function todayLocal() { try { if (typeof window._acctTodayKey === 'function') return window._acctTodayKey(); } catch (e) {} return ymd(new Date()); }
   function tomorrowLocal() { var d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); }
   function viewMonthRange(offset) {
     var d = new Date(), y = d.getFullYear(), m = d.getMonth() + (offset || 0);
@@ -16366,22 +16366,24 @@
     var h = +m[1], mn = +m[2], ap = m[3] ? m[3].toUpperCase() : null;
     if (ap === 'PM' && h < 12) h += 12;
     if (ap === 'AM' && h === 12) h = 0;
+    try { if (typeof window._acctWallToUtcIso === 'function') { var iso = window._acctWallToUtcIso(todayLocal(), pad2(h) + ':' + pad2(mn)); var zoned = new Date(iso); if (!isNaN(zoned.getTime())) return zoned.getTime(); } } catch (e) {}
     var t = new Date(); t.setHours(h, mn, 0, 0);
     return t.getTime();
   }
   function fmtClock(ms) {
+    if (!ms) { try { if (typeof window._acctNowParts === 'function') { var p = window._acctNowParts(new Date()); var ph = p.hour, pap = ph >= 12 ? 'PM' : 'AM'; ph = ph % 12 || 12; return ph + ':' + pad2(p.minute) + ' ' + pap; } } catch (e) {} }
     var d = new Date(ms || Date.now());
     var h = d.getHours(), mn = pad2(d.getMinutes());
     var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
     return h + ':' + mn + ' ' + ap;
   }
   function fmtToday() {
-    var d = new Date();
+    var d = new Date(todayLocal() + 'T12:00:00');
     var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return DAYS[d.getDay()] + ', ' + MONTH_NAMES[d.getMonth()] + ' ' + d.getDate();
   }
   /* NOW / NEXT / lateness over today's unseen, provider-scoped rows.
-     now  = the most recent unseen appt that has already started (≤ 90 min ago)
+     now  = the most recent unseen appt that has already started (≤ 30 min ago)
      next = the first unseen appt that hasn't started yet
      late = minutes past `now`'s start (gentle nudge after 5 min)           */
   function timeContext() {
@@ -16389,7 +16391,7 @@
     var nowMs = Date.now(), cur = null, nxt = null, waiting = 0;
     for (var i = 0; i < rows.length; i++) {
       var t = apptStartMs(rows[i]); if (isNaN(t)) continue;
-      if (t <= nowMs && nowMs - t <= 90 * 60000) {
+      if (t <= nowMs && nowMs - t <= 30 * 60000) {
         waiting++;
         if (!cur || t > apptStartMs(cur)) cur = rows[i];
       }
@@ -20804,7 +20806,7 @@
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function pad2(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
   function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
-  function todayLocal() { return ymd(new Date()); }
+  function todayLocal() { try { if (typeof window._acctTodayKey === 'function') return window._acctTodayKey(); } catch (e) {} return ymd(new Date()); }
   function tomorrowLocal() { var d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); }
   function viewMonthRange(offset) {
     var d = new Date(), y = d.getFullYear(), m = d.getMonth() + (offset || 0);
@@ -20927,22 +20929,24 @@
     var h = +m[1], mn = +m[2], ap = m[3] ? m[3].toUpperCase() : null;
     if (ap === 'PM' && h < 12) h += 12;
     if (ap === 'AM' && h === 12) h = 0;
+    try { if (typeof window._acctWallToUtcIso === 'function') { var iso = window._acctWallToUtcIso(todayLocal(), pad2(h) + ':' + pad2(mn)); var zoned = new Date(iso); if (!isNaN(zoned.getTime())) return zoned.getTime(); } } catch (e) {}
     var t = new Date(); t.setHours(h, mn, 0, 0);
     return t.getTime();
   }
   function fmtClock(ms) {
+    if (!ms) { try { if (typeof window._acctNowParts === 'function') { var p = window._acctNowParts(new Date()); var ph = p.hour, pap = ph >= 12 ? 'PM' : 'AM'; ph = ph % 12 || 12; return ph + ':' + pad2(p.minute) + ' ' + pap; } } catch (e) {} }
     var d = new Date(ms || Date.now());
     var h = d.getHours(), mn = pad2(d.getMinutes());
     var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
     return h + ':' + mn + ' ' + ap;
   }
   function fmtToday() {
-    var d = new Date();
+    var d = new Date(todayLocal() + 'T12:00:00');
     var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return DAYS[d.getDay()] + ', ' + MONTH_NAMES[d.getMonth()] + ' ' + d.getDate();
   }
   /* NOW / NEXT / lateness over today's unseen, provider-scoped rows.
-     now  = the most recent unseen appt that has already started (≤ 90 min ago)
+     now  = the most recent unseen appt that has already started (≤ 30 min ago)
      next = the first unseen appt that hasn't started yet
      late = minutes past `now`'s start (gentle nudge after 5 min)           */
   function timeContext() {
@@ -20950,7 +20954,7 @@
     var nowMs = Date.now(), cur = null, nxt = null, waiting = 0;
     for (var i = 0; i < rows.length; i++) {
       var t = apptStartMs(rows[i]); if (isNaN(t)) continue;
-      if (t <= nowMs && nowMs - t <= 90 * 60000) {
+      if (t <= nowMs && nowMs - t <= 30 * 60000) {
         waiting++;
         if (!cur || t > apptStartMs(cur)) cur = rows[i];
       }
@@ -22875,7 +22879,7 @@
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function pad2(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
   function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
-  function todayLocal() { return ymd(new Date()); }
+  function todayLocal() { try { if (typeof window._acctTodayKey === 'function') return window._acctTodayKey(); } catch (e) {} return ymd(new Date()); }
   function tomorrowLocal() { var d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); }
   function viewMonthRange(offset) {
     var d = new Date(), y = d.getFullYear(), m = d.getMonth() + (offset || 0);
@@ -22998,22 +23002,24 @@
     var h = +m[1], mn = +m[2], ap = m[3] ? m[3].toUpperCase() : null;
     if (ap === 'PM' && h < 12) h += 12;
     if (ap === 'AM' && h === 12) h = 0;
+    try { if (typeof window._acctWallToUtcIso === 'function') { var iso = window._acctWallToUtcIso(todayLocal(), pad2(h) + ':' + pad2(mn)); var zoned = new Date(iso); if (!isNaN(zoned.getTime())) return zoned.getTime(); } } catch (e) {}
     var t = new Date(); t.setHours(h, mn, 0, 0);
     return t.getTime();
   }
   function fmtClock(ms) {
+    if (!ms) { try { if (typeof window._acctNowParts === 'function') { var p = window._acctNowParts(new Date()); var ph = p.hour, pap = ph >= 12 ? 'PM' : 'AM'; ph = ph % 12 || 12; return ph + ':' + pad2(p.minute) + ' ' + pap; } } catch (e) {} }
     var d = new Date(ms || Date.now());
     var h = d.getHours(), mn = pad2(d.getMinutes());
     var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
     return h + ':' + mn + ' ' + ap;
   }
   function fmtToday() {
-    var d = new Date();
+    var d = new Date(todayLocal() + 'T12:00:00');
     var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return DAYS[d.getDay()] + ', ' + MONTH_NAMES[d.getMonth()] + ' ' + d.getDate();
   }
   /* NOW / NEXT / lateness over today's unseen, provider-scoped rows.
-     now  = the most recent unseen appt that has already started (≤ 90 min ago)
+     now  = the most recent unseen appt that has already started (≤ 30 min ago)
      next = the first unseen appt that hasn't started yet
      late = minutes past `now`'s start (gentle nudge after 5 min)           */
   function timeContext() {
@@ -23021,7 +23027,7 @@
     var nowMs = Date.now(), cur = null, nxt = null, waiting = 0;
     for (var i = 0; i < rows.length; i++) {
       var t = apptStartMs(rows[i]); if (isNaN(t)) continue;
-      if (t <= nowMs && nowMs - t <= 90 * 60000) {
+      if (t <= nowMs && nowMs - t <= 30 * 60000) {
         waiting++;
         if (!cur || t > apptStartMs(cur)) cur = rows[i];
       }
