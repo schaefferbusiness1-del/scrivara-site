@@ -16,6 +16,7 @@ assert(html.includes('--paper:#FBFAF7') && html.includes('--deep:#204034'), 'sha
 assert(html.includes('.hero h1 .grad{background:none;color:var(--green);font-style:italic}'), 'attorney hero must use the new editorial emphasis');
 assert(html.includes('.dark{background:var(--deep)'), 'report-type band must use the redesigned MLS green');
 assert(html.includes('<b>MLS Scribe</b><span class="tagpill">For Attorneys</span>'), 'attorney header must use the redesigned MLS brand lockup');
+assert(html.includes('.nav .links a{color:var(--ink2);font-size:14.5px;font-weight:500;white-space:nowrap}'), 'attorney navigation labels must stay on one line');
 
 // Directory, geolocation, request transport, and secure portal entry remain wired.
 ['dirSearch', 'dirSpec', 'dirState', 'dirGrid', 'dirStateMsg'].forEach(id => {
