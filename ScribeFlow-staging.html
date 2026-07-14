@@ -3413,7 +3413,7 @@
     </div>
     <div class="row tight" style="margin-top:0">
       <button class="edit" onclick="document.getElementById('tplFileInput').click()">⬆ Upload template (Word / PDF / image / text)</button>
-      <button class="btn-ghost" onclick="tplPasteText()">📋 Paste text instead</button>
+      <button class="btn-ghost" onclick="tplPasteText()">✍️ Type or paste below</button>
     </div>
     <input type="file" id="tplFileInput" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" style="display:none" onchange="onTplFile(event)">
     <div id="tplDropZone" ondragover="_tplDragOver(event,true)" ondragleave="_tplDragOver(event,false)" ondrop="_tplDrop(event)" onclick="document.getElementById('tplFileInput').click()" style="margin-top:8px;border:2px dashed #cfe0f5;border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:13px;background:#fafcff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop a template file here — Word (.doc/.docx), PDF, image, text, or any file — or click to browse</div>
@@ -10347,9 +10347,11 @@ function clearTplForm(){
   document.getElementById('tplText').value='';
 }
 function tplPasteText(){
-  const t=prompt('Paste the template / blank form text:');
-  if(t===null) return;
-  document.getElementById('tplText').value=t;
+  const field=document.getElementById('tplText');
+  if(!field) return;
+  field.focus();
+  try{ field.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+  try{ toast('Paste or type the complete template in the box below.','ok'); }catch(e){}
 }
 /* Drag & drop onto the template form. */
 function _tplDragOver(ev,on){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='copy'; }catch(e){} var z=document.getElementById('tplDropZone'); if(z){ z.style.borderColor=on?'#1f7ae0':'#cfe0f5'; z.style.background=on?'#eef5ff':'#fafcff'; } }
