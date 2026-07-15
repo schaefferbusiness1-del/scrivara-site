@@ -12388,18 +12388,22 @@ function _patientHistoryCardCoverage(patientOrId){
   var pid=String(id||(p&&p.id)||'');
   return r&&r.complete===true&&String(r.patientId||'')===pid?r:null;
 }
+/* Every fail-closed exit records WHICH gate refused (PHI-free) — refusals are
+   nondeterministic across pulls (the chart parse is an AI call) and were
+   undiagnosable while every exit looked identical. */
+function _chartSaveRefused(gate,extra){ try{ window.__mlsChartSaveTrace=window.__mlsChartSaveTrace||[]; window.__mlsChartSaveTrace.push(Object.assign({gate:gate,at:new Date().toISOString()},extra||{})); if(window.__mlsChartSaveTrace.length>60)window.__mlsChartSaveTrace.shift(); }catch(_){} return false; }
 function _savePatientChart(name, appt, chart){
-  if(!chart) return false;
+  if(!chart) return _chartSaveRefused('no-chart');
   var ref=(name&&typeof name==='object')?name:{};
   var nm=String(ref.name||'').trim();
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var targetId=String(ref.patientId||ref.id||(appt&&appt._mlsTargetPatientId)||'').trim();
-  if(!targetId||!nm) return false; /* legacy name-only callers fail closed */
+  if(!targetId||!nm) return _chartSaveRefused('no-target-id-or-name'); /* legacy name-only callers fail closed */
   var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null;
-  if(!p) return false;
+  if(!p) return _chartSaveRefused('patient-not-found');
   var target={patientId:targetId,name:nm,dob:String(ref.dob||(appt&&appt._mlsTargetDob)||''),mrn:String(ref.mrn||ref.athenaId||(appt&&appt._mlsTargetMrn)||'')};
   var observed={chartName:String(ref.verifiedName||(appt&&appt._mlsVerifiedName)||''),chartDob:String(ref.verifiedDob||(appt&&appt._mlsVerifiedDob)||''),chartMrn:String(ref.verifiedMrn||(appt&&appt._mlsVerifiedMrn)||'')};
-  if(!_athenaHistoryProofMatches(target,observed)) return false;
+  if(!_athenaHistoryProofMatches(target,observed)) return _chartSaveRefused('identity-proof-mismatch',{hasObsName:!!observed.chartName,hasObsDob:!!observed.chartDob,hasObsMrn:!!observed.chartMrn});
   p=Object.assign({},p);
   var priorAthenaSnapshot=(p.athenaChartSnapshot&&typeof p.athenaChartSnapshot==='object')?p.athenaChartSnapshot:{};
   /* Merge clinical lists fact-by-fact. Athena commonly changes separators between
@@ -12438,7 +12442,7 @@ function _savePatientChart(name, appt, chart){
   var profileCoverage=_athenaChartProfileCoverage(chart,structuredHistory,structuredVitals);
   /* A fully-read frame set is not enough: every visible patient-profile card
      must be explicitly classified as populated or genuinely absent. */
-  if(profileCoverage.complete!==true) return false;
+  if(profileCoverage.complete!==true) return _chartSaveRefused('profile-coverage-incomplete',{cards:(function(){var o={};try{Object.keys(profileCoverage.cards||{}).forEach(function(k){var c=profileCoverage.cards[k]||{};o[k]=(c.populated?'populated':(c.present?'present':'absent'))+(c.reason?(':'+String(c.reason).slice(0,40)):'');});}catch(_){}return o;})(),reason:String(profileCoverage.reason||'').slice(0,80)});
   p.problems  = mergeOwned(p.problems,  priorAthenaSnapshot.problems,  chart.problems);
   p.meds      = mergeOwned(p.meds,      priorAthenaSnapshot.meds,      chart.meds);
   p.allergies = mergeOwned(p.allergies, priorAthenaSnapshot.allergies, chart.allergies);
@@ -12485,10 +12489,10 @@ function _savePatientChart(name, appt, chart){
   });
   p.athenaChartSummaryBlock=block;
   p.summary=(manualSummary?manualSummary+'\n\n':'')+block;
-  if(typeof upsertPatient!=='function') return false;
+  if(typeof upsertPatient!=='function') return _chartSaveRefused('no-upsert');
   /* A refused chart save must leave a diagnosable trail: this catch used to
      swallow the persist error entirely, which cost hours of live triage. */
-  try{ upsertPatient(p); }catch(e){ try{ window.__mlsLastChartSaveError={ at:new Date().toISOString(), message:String(e&&e.message||e).slice(0,200) }; console.warn('MLS chart save persist failed:', e); }catch(_){} return false; }
+  try{ upsertPatient(p); }catch(e){ try{ console.warn('MLS chart save persist failed:', e); }catch(_){} return _chartSaveRefused('persist-failed',{message:String(e&&e.message||e).slice(0,200)}); }
   try{
     if(typeof saveNotes==='function'){
       var keep=null;
@@ -23531,6 +23535,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b300";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
+<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b301";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
 </body>
 </html>

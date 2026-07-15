@@ -28,7 +28,8 @@ const bulk = between(app, 'async function _pullAllHistories(appts)', 'async func
 const visitSaveWrapper = between(visits, 'var wrapped = function (name, appt, chart)', 'wrapped.__mlsWrapped = true');
 const chartReader = between(background, "if (msg.type === 'mlsAppChartRequest')", '/* ---- v1.51: read the OPEN athena chart');
 
-assert(save.includes('if(!targetId||!nm) return false'), 'the canonical save still permits a name-only destination');
+assert(save.includes("if(!targetId||!nm) return _chartSaveRefused('no-target-id-or-name')"), 'the canonical save still permits a name-only destination');
+assert(save.includes('function _chartSaveRefused(gate,extra)'), 'refused chart saves no longer record which gate failed');
 assert(save.includes('_athenaHistoryProofMatches(target,observed)'), 'the canonical save omits returned DOB/MRN proof');
 assert(singlePull.indexOf('saveRef=_athenaHistoryVerifiedRef(pullTarget,rd)') < singlePull.indexOf('_savePatientChart(saveRef,null,chart)!==true'), 'single pull does not bind the verified read to its exact save');
 assert(bulk.indexOf('_assistReadChart(target') < bulk.indexOf('_savePatientChart(saveRef,a,chart)===true'), 'bulk pull is not ID-bound from read through save');
