@@ -19602,7 +19602,7 @@
         refreshEasy('import-verified');
         if (claimedAdd && after <= beforeCount && attempt >= 3) {
           var ms = mlsStatus();
-          if (ms) ms.stepFail('prf_sync', 'Pulled visits saved to your account but the calendar did not refresh — click Retry to reload it.', function () { safe(function () { window.loadCalendar(); }); });
+          if (ms && typeof ms.stepFail === 'function') ms.stepFail('prf_sync', 'Pulled visits saved to your account but the calendar did not refresh — click Retry to reload it.', function () { safe(function () { window.loadCalendar(); }); });
           else toastSafe('Pulled visits saved, but the screen did not refresh — switching views once will show them.', 'err');
         }
         return;
@@ -19643,7 +19643,8 @@
         });
         refreshEasy('history-saved');
         bumpBeacon('mlsEasy');
-        var ms = mlsStatus(); if (ms) ms.note('Chart history saved for ' + String(name || 'patient'));
+        /* 2026-07-15: MLSStatus is owned by Task-3 (set/on/running only). A missing notifier method threw AFTER the successful base save and turned EVERY managed history save into chart-identity-save-refused. A status note may never void a completed save. */
+        safe(function () { var ms = mlsStatus(); if (ms && typeof ms.note === 'function') ms.note('Chart history saved.'); });
         return r;
       };
       sp.__prf = 1; window._savePatientChart = sp;
@@ -19731,7 +19732,7 @@
             var name = String((target&&target.name) || '').trim(); if (!target || !name) return one();
             var label = (isRetry ? 'Retrying ' : 'Pulling history for ') + name + ' (' + i + ' of ' + todo.length + ')…';
             progressSay('📥 ' + label);
-            if (ms) ms.step('prf_h' + i, label);
+            if (ms && typeof ms.step === 'function') ms.step('prf_h' + i, label);
             function attempt() {
               return Promise.resolve()
                 .then(function () { return window._assistReadChart(target, function () {}); })
@@ -19767,7 +19768,7 @@
               return new Promise(function (r) { setTimeout(r, 1200); }).then(attempt).then(null, function (e2) {
                 if (e2 && e2.message === 'OLDEXT') { oldExt = true; return 'OLDEXT'; }
                 failed.push(name);
-                if (ms) ms.stepFail('prf_h' + i, 'Could not pull ' + name + '’s chart');
+                if (ms && typeof ms.stepFail === 'function') ms.stepFail('prf_h' + i, 'Could not pull ' + name + '’s chart');
                 return false;
               });
             }).then(function (res) {
@@ -19776,11 +19777,11 @@
             });
           }
           return one().then(function () {
-            if (oldExt) { progressSay('Imported the schedule. To also auto-pull each chart, update MLS Assist to the latest version (Settings → Download).', 'err'); if (ms) ms.finish('Histories skipped — MLS Assist needs an update.', 'fail'); return; }
+            if (oldExt) { progressSay('Imported the schedule. To also auto-pull each chart, update MLS Assist to the latest version (Settings → Download).', 'err'); if (ms && typeof ms.finish === 'function') ms.finish('Histories skipped — MLS Assist needs an update.', 'fail'); return; }
             var msg = '✅ Pulled ' + saved + ' new chart histor' + (saved === 1 ? 'y' : 'ies') +
                       (failed.length ? (' · ' + failed.length + ' failed: ' + failed.slice(0, 4).join(', ') + (failed.length > 4 ? '…' : '')) : '');
             progressSay(msg, failed.length ? 'err' : 'ok');
-            if (ms) {
+            if (ms && typeof ms.stepFail === 'function' && typeof ms.finish === 'function') {
               if (failed.length) ms.stepFail('prf_hfail', failed.length + ' histor' + (failed.length === 1 ? 'y' : 'ies') + ' failed — click Retry to pull just those.', function () {
                 var redo = list.filter(function (a) { return failed.indexOf(String((a && a.name) || '').trim()) >= 0; });
                 run(redo, true);
@@ -31379,7 +31380,7 @@
   var ST=window.__mlsT6Stab={v:'b19',dupesBlocked:0,pulses:0,fetch:{coalesced:0,ttlHits:0,pass:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b287';
+  window.__MLS_AV = window.__MLS_AV || 'b288';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -31705,7 +31706,7 @@
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-15-b287';
+  var MLS_APP_BUILD='2026-07-15-b288';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='https://mlsscribe.com/mls-connect.js';
   var banner=null;
