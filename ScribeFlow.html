@@ -12486,7 +12486,9 @@ function _savePatientChart(name, appt, chart){
   p.athenaChartSummaryBlock=block;
   p.summary=(manualSummary?manualSummary+'\n\n':'')+block;
   if(typeof upsertPatient!=='function') return false;
-  try{ upsertPatient(p); }catch(e){ return false; }
+  /* A refused chart save must leave a diagnosable trail: this catch used to
+     swallow the persist error entirely, which cost hours of live triage. */
+  try{ upsertPatient(p); }catch(e){ try{ window.__mlsLastChartSaveError={ at:new Date().toISOString(), message:String(e&&e.message||e).slice(0,200) }; console.warn('MLS chart save persist failed:', e); }catch(_){} return false; }
   try{
     if(typeof saveNotes==='function'){
       var keep=null;
@@ -23529,6 +23531,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b299";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
+<script>/* MLS-CONNECT loader: a stable release key makes the 2.6 MB bundle cacheable between logins. Readiness waits for the critical UI owner, not just network completion. */(function(){try{window.__MLS_AV="b300";var done=function(ok){var started=Date.now(),finish=function(){var critical=!!(window.__mlsUiUnification&&window.__mlsUiUnification.installed);if(!ok||critical||Date.now()-started>4200){try{if(critical&&typeof window.__mlsUiUnification.reconcile==="function")window.__mlsUiUnification.reconcile();}catch(e){}requestAnimationFrame(function(){requestAnimationFrame(function(){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=!ok||!critical;window.dispatchEvent(new Event("mls:ui-ready"));});});return;}setTimeout(finish,100);};setTimeout(finish,120);};var s=document.createElement("script");s.src="mls-connect.js?v="+window.__MLS_AV;s.async=true;s.onload=function(){done(true);};s.onerror=function(){done(false);};(document.body||document.documentElement).appendChild(s);}catch(e){window.__mlsUiBundleReady=true;window.__mlsUiBundleFailed=true;window.dispatchEvent(new Event("mls:ui-ready"));}})();</script>
 </body>
 </html>
